@@ -81,7 +81,10 @@ function canEdit(report: DprReportRecord | null, roles: RoleKey[], currentUserId
   return ['draft', 'reopened'].includes(report.status) && canManageReport(report, roles, currentUserId);
 }
 function reportTitle(report: DprReportRecord): string { return report.number ? `DPR-${report.number}` : `Brouillon #${report.id}`; }
-function projectLabel(report: DprReportRecord): string { return report.projectCode || report.unlistedProjectName || 'Sans projet'; }
+function projectLabel(report: DprReportRecord): string {
+  return report.projectCode || report.projectTitle || report.unlistedProjectName
+    || (report.projectId !== null ? `Projet #${report.projectId}` : 'Sans projet');
+}
 function formatDate(value: string): string { return value ? new Intl.DateTimeFormat('fr-FR').format(new Date(`${value}T12:00:00`)) : '-'; }
 
 function Field({ label, children, wide = false }: { label: string; children: ReactNode; wide?: boolean }) {

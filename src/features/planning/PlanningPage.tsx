@@ -174,6 +174,7 @@ import { PlanningCrewTimelineRow, PlanningFleetBoardTimelineRow, PlanningFleetTi
 import {
   buildPlanningCrewLanes,
   buildPlanningFleetLanes,
+  defaultPlanningVesselName,
   buildPlanningProjectLanes,
   patchPlanningEvent,
   planningConfirmationLabel,
@@ -526,7 +527,21 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [requestedPerspective, setPerspective] = useState<PlanningPerspective>('fleet');
   const perspective = requestedPerspective === 'crew' && !readPermissions.canViewCrewPlanning ? 'fleet' : requestedPerspective;
   const [crewGrouping, setCrewGrouping] = useState<PlanningCrewGrouping>('people');
-  const [filters, setFilters] = useState<PlanningFilters>(EMPTY_FILTERS);
+  const filterScope = `${isPersonalPlanningView}:${currentPersonId}`;
+  const [filterSelection, setFilterSelection] = useState<{ scope: string; value: PlanningFilters } | null>(null);
+  const defaultFilters = useMemo(() => ({
+    ...EMPTY_FILTERS,
+    vesselName: isPersonalPlanningView ? defaultPlanningVesselName(planningData, currentPersonId, initialAnchorDate) : '',
+  }), [currentPersonId, initialAnchorDate, isPersonalPlanningView, planningData]);
+  const filters = filterSelection?.scope === filterScope ? filterSelection.value : defaultFilters;
+  const setFilters = useCallback((update: PlanningFilters | ((current: PlanningFilters) => PlanningFilters)) => {
+    setFilterSelection((current) => ({
+      scope: filterScope,
+      value: typeof update === 'function'
+        ? update(current?.scope === filterScope ? current.value : defaultFilters)
+        : update,
+    }));
+  }, [defaultFilters, filterScope]);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [sideTab, setSideTab] = useState<SideTab>('billing');
@@ -797,8 +812,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
   const allPlanningCrewEvents = useMemo(() => getAllPlanningCrewEvents(planningData), [planningData]);
   const fleetLanes = useMemo(
-    () => buildPlanningFleetLanes(planningData, range, filters, allPlanningCrewEvents),
-    [allPlanningCrewEvents, filters, planningData, range],
+    () => buildPlanningFleetLanes(planningData, range, filters, allPlanningCrewEvents, isPersonalPlanningView),
+    [allPlanningCrewEvents, filters, isPersonalPlanningView, planningData, range],
   );
   const projectLanes = useMemo(
     () => perspective === 'projects' ? buildPlanningProjectLanes(planningData, range, filters) : [],
@@ -807,8 +822,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const fleetRows = useMemo(
     () => buildPlanningCrewRows(planningData, timelineDays, filters, allPlanningCrewEvents, {
       employmentRange: referenceMonthRange,
+      includeEmptyVessels: isPersonalPlanningView,
     }),
-    [allPlanningCrewEvents, filters, planningData, referenceMonthRange, timelineDays],
+    [allPlanningCrewEvents, filters, isPersonalPlanningView, planningData, referenceMonthRange, timelineDays],
   );
   const fleetLanesByVessel = useMemo(
     () => new Map(fleetLanes.map((lane) => [lane.vessel, lane])),

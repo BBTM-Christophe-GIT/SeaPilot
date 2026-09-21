@@ -19,10 +19,36 @@ import type {
   PlanningProjectRecord,
   PlanningVessel,
 } from './planningQueries';
-import { PLANNING_VESSEL_LOCATION_SOURCE } from './planningQueries';
+import { PLANNING_ASSIGNMENT_NOTE_SOURCE, PLANNING_VESSEL_LOCATION_SOURCE } from './planningQueries';
 
 export type PlanningPerspective = 'fleet' | 'projects' | 'crew';
 export type PlanningCrewGrouping = 'people' | 'teams';
+
+/** Select today's posting, never an old or future assignment. A manual fleet
+ * selection is handled by the page and takes precedence over this default. */
+export function defaultPlanningVesselName(overview: PlanningOverview, personId: number | null, date: string): string {
+  if (personId === null) return '';
+  const vessels = new Map(overview.vessels.filter((vessel) => vessel.active).map((vessel) => [vessel.id, vessel.name]));
+  const day = overview.days.filter((item) => item.personId === personId && item.workDate === date
+    && item.sourceLabel !== PLANNING_ASSIGNMENT_NOTE_SOURCE && item.sourceLabel !== PLANNING_VESSEL_LOCATION_SOURCE)
+    .sort((left, right) => right.id - left.id)[0];
+  if (day) return normalizePlanningStatus(day.sailorStatus || day.dayStatus) === 'En Mer'
+    ? vessels.get(day.vesselId ?? -1) || '' : '';
+  const assignment = overview.assignments.filter((item) =>
+    (item.crewPersonId === personId || item.captainPersonId === personId)
+    && item.startsOn <= date && item.endsOn >= date
+    && item.confirmationStatus !== 'cancelled' && vessels.has(item.vesselId)
+    && normalizePlanningStatus(item.statusLabel) === 'En Mer',
+  ).sort((left, right) => Number(right.crewPersonId === personId) - Number(left.crewPersonId === personId)
+    || Number(right.confirmationStatus === 'confirmed') - Number(left.confirmationStatus === 'confirmed')
+    || right.startsOn.localeCompare(left.startsOn) || right.id - left.id)[0];
+  if (assignment) return vessels.get(assignment.vesselId) || '';
+  const period = overview.periods.filter((item) => item.personId === personId
+    && item.startsOn <= date && item.endsOn >= date
+    && normalizePlanningStatus(item.sailorStatus) === 'En Mer',
+  ).sort((left, right) => right.startsOn.localeCompare(left.startsOn) || right.id - left.id)[0];
+  return vessels.get(period?.vesselId ?? -1) || '';
+}
 
 export interface PlanningFleetLane {
   key: string;
@@ -161,6 +187,7 @@ export function buildPlanningFleetLanes(
   range: PlanningDateRange,
   filters: PlanningFilters,
   eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
+  includeEmptyVessels = false,
 ): PlanningFleetLane[] {
   const uniqueProjects = [...new Map(overview.projects.map((project) => [
     `${project.id}:${(project.vesselIds || [project.primaryVesselId, project.secondaryVesselId]).join(',')}:${project.startsOn}:${project.endsOn}`,
@@ -188,6 +215,9 @@ export function buildPlanningFleetLanes(
   ));
   const vesselNames = new Set(
     [
+      ...(includeEmptyVessels && !filters.personName ? overview.vessels
+        .filter((vessel) => vessel.active && (!filters.vesselName || vessel.name === filters.vesselName))
+        .map((vessel) => vessel.name) : []),
       ...eventPool
       .filter((event) => (
         event.confirmationStatus !== 'cancelled'

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Routes, Route, Outlet } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { PlanningPage } from './PlanningPage';
 import { formatPlanningDate, startOfPlanningWeek, todayPlanningDate } from './planningDates';
@@ -1147,6 +1148,38 @@ describe('PlanningPage cockpit', () => {
     await user.dblClick(screen.getAllByRole('button', { name: /Paul DURAND, En Mer/ })[0]);
     expect(screen.getByLabelText('Bordée / groupe').tagName).toBe('SELECT');
     expect(screen.getByLabelText('Bordée / groupe')).toHaveValue('Bordée 1');
+  });
+
+  it.each(['capitaine', 'marin'] as const)('defaults to the assigned vessel but lets a real %s select the whole fleet', async (role) => {
+    const user = userEvent.setup();
+    const { client } = createClient({
+      vessels: [vesselRow, secondVesselRow],
+      publishedSnapshot: {
+        assignments: [
+          { ...assignmentOverviewRow, starts_on: '2026-06-29' },
+          { ...assignmentOverviewRow, id: 101, vessel_id: 2, vessel_name: 'SUROIT', crew_person_id: 12, captain_person_id: null, crew_name: 'Luc MOREL', starts_on: '2026-06-29' },
+        ], days: [], periods: [], projects: [], handovers: [], derogations: [],
+      },
+    });
+    render(<MemoryRouter><Routes><Route element={<Outlet context={{ currentPerson: { id: role === 'capitaine' ? 10 : 11 }, roles: [role], client, previewMode: false }} />}>
+      <Route path="/" element={<PlanningPage />} />
+    </Route></Routes></MemoryRouter>);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('button', { name: /Filtres/ }));
+    const vesselFilter = screen.getByLabelText('Filtre navire');
+    expect(vesselFilter).toHaveValue('COTENTIN');
+    expect(screen.queryByText('Luc MOREL')).not.toBeInTheDocument();
+    await user.selectOptions(vesselFilter, 'SUROIT');
+    expect(screen.getAllByText('Luc MOREL').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Paul DURAND')).not.toBeInTheDocument();
+    await user.selectOptions(vesselFilter, '');
+    expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Luc MOREL').length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /Actualiser/ }));
+    await waitFor(() => expect(vesselFilter).toHaveValue(''));
+    expect(client.rpc).toHaveBeenCalledWith('latest_planning_release');
+    expect(client.rpc).not.toHaveBeenCalledWith('planning_assignment_overview_with_revisions');
+    expect(screen.queryByRole('button', { name: 'Créer une affectation' })).not.toBeInTheDocument();
   });
 
   it('keeps marins in read-only mode with leave requests, crew lists and project details', async () => {

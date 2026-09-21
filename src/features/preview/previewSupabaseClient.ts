@@ -2307,6 +2307,9 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       configuration_complete: true,
     }, error: null });
   }
+  if (functionName === 'dpr_report_projects') {
+    return Promise.resolve({ data: previewRows('projects').map(({ id, project_code, title }) => ({ id, project_code, title })), error: null });
+  }
   if (functionName === 'dpr_entry_context') {
     const reportDate = String(args.target_date || '2026-08-01');
     const requestedVesselId = args.target_vessel_id === null || args.target_vessel_id === undefined ? 9201 : Number(args.target_vessel_id);

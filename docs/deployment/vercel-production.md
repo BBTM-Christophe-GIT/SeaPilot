@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.46.0` corrige les libellés des projets DPR pour les profils terrain et leur permet de consulter toute la flotte publiée, avec le navire affecté sélectionné par défaut. Appliquer la migration `20260921121717_dpr_project_labels_and_planning_fleet_read.sql` avant le client. Voir [DPR et Planning terrain](./dpr-project-labels-planning-fleet.md).
+
 Version `3.45.0` applique la proposition 2 aux notes de frais : sections repliables, contrôles tactiles et total/action d'émission fixes sur mobile. Le bouton **Mes véhicules** ouvre le carnet personnel et permet de choisir un véhicule par défaut, repris dans les nouvelles notes kilométriques. La migration `20260921084003_expense_default_vehicle.sql` a été appliquée avant le frontend ; la préférence reste isolée par compte et société et les notes émises sont inchangées. Voir [expense-notes.md](./expense-notes.md).
 
 Version `3.44.1` limite les listes d'émetteurs NDF aux personnes en poste selon les dates RH du jour à Paris. Appliquer `20260921081145_expense_current_issuers.sql` avant le frontend. Les anciennes notes restent consultables et recherchables. Voir [expense-notes.md](./expense-notes.md).
