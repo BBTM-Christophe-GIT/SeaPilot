@@ -1,4 +1,14 @@
-# Notes de frais — v3.44.1
+# Notes de frais — v3.45.0
+
+## Formulaire mobile et véhicule par défaut
+
+La proposition 2 remplace la disposition horizontale par des sections repliables : **Informations**, **Mon véhicule**, **Déplacements**, **Compléments** (ou **Montant et paiement** pour une dépense). Les résumés restent visibles lorsque les sections sont fermées. Sur smartphone, la fenêtre occupe la hauteur disponible ; seul le corps défile, le total et l'action d'émission restent visibles. Les contrôles ont une hauteur minimale de 44 px. Un champ obligatoire masqué provoque l'ouverture de sa section et reçoit le focus ; les saisies et justificatifs sont conservés pendant le repli.
+
+Le bouton **Mes véhicules** de la barre de menu ouvre le carnet personnel : ajouter, modifier, retirer un véhicule et choisir **Utiliser par défaut**. Il est possible de désactiver cette présélection. Le choix appartient au compte connecté dans sa société active, indépendamment de l'émetteur indiqué sur la note. Une nouvelle note kilométrique reprend le modèle, la puissance fiscale et le carburant du véhicule choisi. Un chargement tardif ne remplace pas une saisie déjà commencée. Modifier ou retirer un véhicule ne change aucune note déjà émise.
+
+Migration `20260921084003_expense_default_vehicle.sql` appliquée le 21 septembre 2026 avant le frontend : colonne `is_default`, index unique par compte/société et RPC transactionnel `set_expense_default_vehicle`. Le changement valide la propriété du véhicule avant de remplacer le choix précédent ; la RLS existante reste appliquée. Un véhicule d'un autre compte ou d'une autre société est refusé sans effacer le choix précédent.
+
+Validation : 59 tests ciblés frontend/service d'envoi, 73 assertions SQL transactionnelles sur les cinq profils réels et deux sociétés, lint et compilation production. Recette navigateur à 320 × 740, 390 × 844 et 1440 × 1000, changement de préférence puis nouvelle note, calcul avec péages, validation d'une section repliée et absence de débordement horizontal. Voir [la recette visuelle](../../design-qa.md). Aucun faux document comptable n'a été émis.
 
 ## Émetteurs en poste
 
@@ -8,8 +18,8 @@ Migration `20260921081145_expense_current_issuers.sql` appliquée avant le front
 
 ## Formulaires compacts et véhicules personnels
 
-- La disposition horizontale retenue place la saisie à gauche et les justificatifs à droite. La fenêtre Dépense mesure au maximum 860 px de large ; les indemnités 1 040 px. Sur petit écran, les justificatifs passent sous les champs et le pied conserve le total et l'action d'émission.
-- La description est dépliable sans perdre son contenu. Les déplacements kilométriques sont des lignes compactes ; les règles NDF, les péages et les montants électriques restent inchangés.
+- Depuis la version 3.45.0, les sections repliables remplacent la disposition horizontale introduite en 3.44.0. La fenêtre mesure au maximum 760 px sur ordinateur et occupe l'écran sur smartphone.
+- La description et les justificatifs sont regroupés dans Compléments. Les déplacements kilométriques s'affichent en blocs adaptés au mobile ; les règles NDF, les péages et les montants électriques restent inchangés.
 - Dans **Indemnités kilométriques → Mes véhicules**, chaque compte peut conserver plusieurs modèles avec puissance fiscale et carburant. **Nouveau véhicule / saisie ponctuelle** permet une nouvelle saisie ; **Enregistrer ce véhicule** la rend réutilisable dans les sessions suivantes. Sélectionner un véhicule préremplit la note. **Modifier** puis **Mettre à jour le véhicule** actualise le carnet ; le retrait est confirmé dans le formulaire.
 - Le carnet appartient au compte connecté dans sa société active, indépendamment du nom d'émetteur choisi sur la note. Aucun rôle, y compris Admin/Direction, ne consulte les véhicules des autres comptes. La saisie manuelle reste disponible si le chargement échoue.
 - Les informations du véhicule sont copiées dans le JSON de chaque note, sans clé étrangère vers le carnet. Modifier ou retirer un véhicule ne modifie donc jamais une note existante ni son PDF.

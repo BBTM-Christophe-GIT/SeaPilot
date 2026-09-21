@@ -1,21 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Pencil, Save, Trash2 } from 'lucide-react';
-import { FUEL_LABELS, type Fuel } from './expenseNoteModel';
-import { deletePersonalVehicle, fetchPersonalVehicles, savePersonalVehicle, type ExpensePersonalVehicle, type ExpenseVehicleDraft } from './expenseVehicleQueries';
+import { FUEL_LABELS } from './expenseNoteModel';
+import { ExpenseVehicleFields } from './ExpenseVehicleFields';
+import { deletePersonalVehicle, fetchPersonalVehicles, PREVIEW_VEHICLES, savePersonalVehicle, type ExpensePersonalVehicle, type ExpenseVehicleDraft } from './expenseVehicleQueries';
 
 interface Props {
   client: SupabaseClient;
   previewMode: boolean;
   value: ExpenseVehicleDraft;
   onChange: (value: ExpenseVehicleDraft) => void;
+  onDefaultLoaded?: () => void;
+  previewVehicles?: ExpensePersonalVehicle[];
+  onPreviewChange?: (vehicles: ExpensePersonalVehicle[]) => void;
 }
-const previewVehicles: ExpensePersonalVehicle[] = [
-  { id: 'demo-diesel', vehicle: 'Peugeot 308', fiscalPower: '6 CV', fuel: 'diesel' },
-  { id: 'demo-electric', vehicle: 'Renault Mégane E-Tech', fiscalPower: '4 CV', fuel: 'electric' },
-];
 
-export function ExpenseVehiclePicker({ client, previewMode, value, onChange }: Props) {
+export function ExpenseVehiclePicker({ client, previewMode, value, onChange, onDefaultLoaded, previewVehicles = PREVIEW_VEHICLES, onPreviewChange }: Props) {
   const [vehicles, setVehicles] = useState<ExpensePersonalVehicle[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [editing, setEditing] = useState(true);
@@ -24,24 +24,39 @@ export function ExpenseVehiclePicker({ client, previewMode, value, onChange }: P
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const latest = useRef({ value, onChange, onDefaultLoaded });
+  const touched = useRef(false);
+  useEffect(() => { latest.current = { value, onChange, onDefaultLoaded }; }, [value, onChange, onDefaultLoaded]);
   useEffect(() => {
     let active = true;
     async function load() {
       try {
         const entries = previewMode ? previewVehicles : await fetchPersonalVehicles(client);
-        if (active) setVehicles(entries);
+        if (active) {
+          setVehicles(entries);
+          const current = latest.current;
+          const matching = entries.find((entry) => entry.vehicle === current.value.vehicle && entry.fiscalPower === current.value.fiscalPower && entry.fuel === current.value.fuel);
+          const preferred = entries.find((entry) => entry.isDefault);
+          if (!touched.current && matching) { setSelectedId(matching.id); setEditing(false); }
+          else if (!touched.current && !current.value.vehicle && !current.value.fiscalPower && preferred) {
+            setSelectedId(preferred.id); setEditing(false); current.onChange(preferred); current.onDefaultLoaded?.();
+          }
+        }
       } catch { if (active) setError('Impossible de charger vos véhicules. La saisie manuelle reste disponible.'); }
       finally { if (active) setLoading(false); }
     }
     void load();
     return () => { active = false; };
-  }, [client, previewMode]);
+  }, [client, previewMode, previewVehicles]);
+
+  function updateEntries(entries: ExpensePersonalVehicle[]) { setVehicles(entries); if (previewMode) onPreviewChange?.(entries); }
+  function change(value: ExpenseVehicleDraft) { touched.current = true; onChange(value); }
 
   function selectVehicle(id: string) {
     setSelectedId(id); setConfirmDelete(false); setNotice(''); setError('');
     const vehicle = vehicles.find((entry) => entry.id === id);
     setEditing(!vehicle);
-    onChange(vehicle || { vehicle: '', fiscalPower: '', fuel: 'diesel' });
+    change(vehicle || { vehicle: '', fiscalPower: '', fuel: 'diesel' });
   }
   async function save() {
     if (!value.vehicle.trim() || !value.fiscalPower.trim()) {
@@ -49,8 +64,8 @@ export function ExpenseVehiclePicker({ client, previewMode, value, onChange }: P
     }
     setSaving(true); setError(''); setNotice('');
     try {
-      const saved = previewMode ? { ...value, id: selectedId || crypto.randomUUID() } : await savePersonalVehicle(client, value, selectedId || undefined);
-      setVehicles((current) => [...current.filter((entry) => entry.id !== saved.id), saved].sort((a, b) => a.vehicle.localeCompare(b.vehicle, 'fr')));
+      const saved = previewMode ? { ...value, id: selectedId || crypto.randomUUID(), isDefault: vehicles.find((v) => v.id === selectedId)?.isDefault || false } : await savePersonalVehicle(client, value, selectedId || undefined);
+      updateEntries([...vehicles.filter((entry) => entry.id !== saved.id), saved].sort((a, b) => a.vehicle.localeCompare(b.vehicle, 'fr')));
       setSelectedId(saved.id); setEditing(false); onChange(saved);
       setNotice(previewMode ? 'Véhicule enregistré dans cette démonstration uniquement.' : 'Véhicule enregistré dans votre carnet.');
     } catch { setError('Enregistrement du véhicule impossible. Votre saisie est conservée, vous pouvez réessayer.'); }
@@ -60,7 +75,7 @@ export function ExpenseVehiclePicker({ client, previewMode, value, onChange }: P
     setSaving(true); setError(''); setNotice('');
     try {
       if (!previewMode) await deletePersonalVehicle(client, selectedId);
-      setVehicles((current) => current.filter((entry) => entry.id !== selectedId));
+      updateEntries(vehicles.filter((entry) => entry.id !== selectedId));
       setSelectedId(''); setEditing(true); setConfirmDelete(false);
       // Preserve the in-progress note; removing a saved vehicle never changes a note.
       setNotice('Véhicule retiré du carnet. Les informations de cette note sont conservées.');
@@ -79,11 +94,7 @@ export function ExpenseVehiclePicker({ client, previewMode, value, onChange }: P
       </div> : null}
     </div>
     {editing ? <>
-      <div className="expense-entry__vehicle">
-        <label>Marque / modèle du véhicule<input required maxLength={150} placeholder="Ex. Peugeot 308" value={value.vehicle} onChange={(event) => onChange({ ...value, vehicle: event.target.value })} /></label>
-        <label>Puissance fiscale<input required maxLength={30} placeholder="Ex. 6 CV" value={value.fiscalPower} onChange={(event) => onChange({ ...value, fiscalPower: event.target.value })} /></label>
-        <label>Carburant<select value={value.fuel} onChange={(event) => onChange({ ...value, fuel: event.target.value as Fuel })}>{Object.entries(FUEL_LABELS).map(([fuel, label]) => <option key={fuel} value={fuel}>{label}</option>)}</select></label>
-      </div>
+      <ExpenseVehicleFields value={value} onChange={change} />
       <div className="expense-vehicle-picker__save"><button className="expense-button" type="button" onClick={() => void save()}><Save size={15} />{saving ? 'Enregistrement…' : selectedId ? 'Mettre à jour le véhicule' : 'Enregistrer ce véhicule'}</button><span className="expense-hint">Réutilisable depuis votre compte.</span></div>
     </> : <p className="expense-hint">{value.fiscalPower} · {FUEL_LABELS[value.fuel]} · Véhicule de votre carnet personnel</p>}
     {confirmDelete ? <div className="expense-vehicle-picker__confirmation"><p>Retirer ce véhicule du carnet ? Les notes déjà émises sont conservées.</p><button type="button" className="expense-button" onClick={() => setConfirmDelete(false)}>Annuler</button><button type="button" className="expense-button" onClick={() => void remove()}>Confirmer le retrait</button></div> : null}

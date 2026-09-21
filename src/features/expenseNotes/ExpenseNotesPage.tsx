@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Download, FilePlus2, Mail, ReceiptText, RefreshCw, Settings, Ship, Users } from 'lucide-react';
+import { CarFront, Download, FilePlus2, Mail, ReceiptText, RefreshCw, Settings, Ship, Users } from 'lucide-react';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { ExpenseNoteForm } from './ExpenseNoteForm';
@@ -8,6 +8,8 @@ import { canViewAllExpenseNotes, DELIVERY_LABELS, expenseIssuerKey, formatExpens
 import { downloadExpenseNote, fetchExpenseIdentity, fetchExpenseNotes, fetchExpensePeople, fetchExpenseSettings, fetchExpenseVessels, saveExpenseSettings, submitExpenseNote, transmitExpenseNote, type ExpenseIdentity, type ExpensePerson, type ExpenseSettings, type ExpenseVessel } from './expenseNoteQueries';
 import { fetchCurrentAssignedVessel } from '../purchaseRequests/purchaseRequestQueries';
 import { ExpenseNoteSettings } from './ExpenseNoteSettings';
+import { ExpenseVehiclesDialog } from './ExpenseVehiclesDialog';
+import { PREVIEW_VEHICLES } from './expenseVehicleQueries';
 import { EXPENSE_NOTE_PREVIEW } from './expenseNotePreview';
 import './expenseNotes.css';
 
@@ -21,6 +23,8 @@ export function ExpenseNotesPage() {
   const [directory, setDirectory] = useState<ExpensePerson[]>([]);
   const [settings, setSettings] = useState<ExpenseSettings>({ company_id: 1, payment_methods: PAYMENT_METHODS, default_payment_method: 'CB-Perso' });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [vehiclesOpen, setVehiclesOpen] = useState(false);
+  const [previewVehicles, setPreviewVehicles] = useState(PREVIEW_VEHICLES);
   const [defaultVesselId, setDefaultVesselId] = useState<number | null>(null);
   const currentPersonId = context.currentPerson?.id;
   const [loading, setLoading] = useState(true);
@@ -97,6 +101,7 @@ export function ExpenseNotesPage() {
   return <section className="expense-page">
     <ModuleRibbon ariaLabel="Actions des notes de frais"><ModuleRibbonGroup label="Notes de frais">
       <ModuleRibbonCommand icon={<FilePlus2 />} label="Nouvelle note" disabled={loading || !identity || !!busyId} onClick={() => { setError(''); setMessage(''); setCreating(true); }} />
+      <ModuleRibbonCommand icon={<CarFront />} label="Mes véhicules" disabled={loading || !identity || !!busyId} onClick={() => setVehiclesOpen(true)} />
       <ModuleRibbonCommand icon={<RefreshCw />} label="Actualiser" disabled={loading || !!busyId} onClick={refresh} />
       {roles.includes('admin') ? <ModuleRibbonCommand icon={<Settings />} label="Paramétrage" disabled={loading} onClick={() => setSettingsOpen(true)} /> : null}
     </ModuleRibbonGroup></ModuleRibbon>
@@ -117,7 +122,8 @@ export function ExpenseNotesPage() {
         <td><div className="expense-row-actions"><button className="expense-button" disabled={!!busyId} aria-label={`Télécharger le PDF : ${note.title}`} onClick={() => void action(note, 'pdf')}><Download size={16} /> PDF</button>{['pending', 'failed'].includes(note.delivery_status) ? <button className="expense-button" disabled={!!busyId} aria-label={`Transmettre : ${note.title}`} onClick={() => void action(note, 'send')}><Mail size={16} /> Transmettre</button> : null}</div></td>
       </tr>)}</tbody></table></div></section>)}
     </section>)}</div> : <div className="expense-empty"><ReceiptText size={36} /><h2>{scopedNotes.length ? 'Aucune note pour ces filtres' : 'Aucune note émise'}</h2><p>{scopedNotes.length ? 'Modifiez vos filtres pour retrouver vos notes.' : 'Créez une première note pour enregistrer une dépense ou un déplacement.'}</p></div>}
-    {creating && identity ? <ExpenseNoteForm client={client} previewMode={previewMode} identity={identity} vessels={vessels} people={directory} settings={settings} defaultVesselId={defaultVesselId} functionLabel={context.currentPerson?.functionLabel || ''} onClose={() => setCreating(false)} onSubmit={submit} /> : null}
+    {creating && identity ? <ExpenseNoteForm client={client} previewMode={previewMode} previewVehicles={previewVehicles} onPreviewVehiclesChange={setPreviewVehicles} identity={identity} vessels={vessels} people={directory} settings={settings} defaultVesselId={defaultVesselId} functionLabel={context.currentPerson?.functionLabel || ''} onClose={() => setCreating(false)} onSubmit={submit} /> : null}
+    {vehiclesOpen ? <ExpenseVehiclesDialog client={client} previewMode={previewMode} previewVehicles={previewVehicles} onPreviewChange={setPreviewVehicles} onClose={() => setVehiclesOpen(false)} /> : null}
     {settingsOpen ? <ExpenseNoteSettings initial={settings} onClose={() => setSettingsOpen(false)} onSave={async (next) => { if (previewMode) throw new Error('Les paramètres ne peuvent pas être enregistrés en démonstration.'); await saveExpenseSettings(client, next); setSettings(next); setMessage('Paramètres enregistrés.'); }} /> : null}
   </section>;
 }

@@ -4,9 +4,9 @@ import { ExpenseNoteForm } from './ExpenseNoteForm';
 import { PAYMENT_METHODS } from './expenseNoteModel';
 
 const vehicles = vi.hoisted(() => ({ fetch: vi.fn(), save: vi.fn(), remove: vi.fn() }));
-vi.mock('./expenseVehicleQueries', () => ({ fetchPersonalVehicles: vehicles.fetch, savePersonalVehicle: vehicles.save, deletePersonalVehicle: vehicles.remove }));
-const diesel = { id: 'diesel-1', vehicle: 'Peugeot 308', fiscalPower: '6 CV', fuel: 'diesel' };
-const electric = { id: 'electric-1', vehicle: 'Renault Mégane', fiscalPower: '4 CV', fuel: 'electric' };
+vi.mock('./expenseVehicleQueries', () => ({ PREVIEW_VEHICLES: [], fetchPersonalVehicles: vehicles.fetch, savePersonalVehicle: vehicles.save, deletePersonalVehicle: vehicles.remove }));
+const diesel = { id: 'diesel-1', vehicle: 'Peugeot 308', fiscalPower: '6 CV', fuel: 'diesel', isDefault: false };
+const electric = { id: 'electric-1', vehicle: 'Renault Mégane', fiscalPower: '4 CV', fuel: 'electric', isDefault: false };
 const submit = vi.fn();
 function show() {
   return render(<ExpenseNoteForm client={{} as never} previewMode={false} identity={{ id: 'owner', name: 'Camille Martin' }} vessels={[{ id: 1, name: 'GOURY' }]} people={[{ id: 1, name: 'Camille Martin', is_current: true }]} functionLabel="Matelot" settings={{ company_id: 1, payment_methods: PAYMENT_METHODS, default_payment_method: 'CB-Perso' }} defaultVesselId={1} onClose={vi.fn()} onSubmit={submit} />);
@@ -28,12 +28,12 @@ beforeEach(() => {
 describe('compact expense and mileage form', () => {
   it('preserves description and receipts when collapsing and changing note type', async () => {
     show();
-    fireEvent.click(screen.getByRole('button', { name: 'Ajouter une description' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Compléments' }));
     change('Description', 'Pièce complémentaire');
     const file = new File(['receipt'], 'ticket.pdf', { type: 'application/pdf' });
     fireEvent.change(screen.getByLabelText('Justificatifs', { selector: 'input' }), { target: { files: [file] } });
-    fireEvent.click(screen.getByRole('button', { name: 'Masquer la description' }));
-    expect(screen.queryByLabelText('Description')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Compléments' }));
+    expect(screen.getByLabelText('Description')).not.toBeVisible();
     await mileage();
     fireEvent.click(screen.getByRole('button', { name: 'Dépense' }));
     change('Montant TTC (€)', '25');
@@ -102,5 +102,34 @@ describe('compact expense and mileage form', () => {
     fireEvent.submit(screen.getByRole('dialog'));
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(2));
     expect(submit.mock.calls[0][0].id).toBe(submit.mock.calls[1][0].id);
+  });
+  it('prefills the profile default on a fresh note and keeps the chosen vehicle across note types', async () => {
+    vehicles.fetch.mockResolvedValue([diesel, { ...electric, isDefault: true }]);
+    show(); fireEvent.click(screen.getByRole('button', { name: 'Indemnités kilométriques' }));
+    await waitFor(() => expect(screen.getByLabelText('Mes véhicules')).toHaveValue('electric-1'));
+    expect(screen.getByRole('button', { name: 'Mon véhicule' })).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'Mon véhicule' }));
+    change('Mes véhicules', 'diesel-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Dépense' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Indemnités kilométriques' }));
+    await waitFor(() => expect(screen.getByLabelText('Mes véhicules')).toHaveValue('diesel-1'));
+  });
+  it('never replaces a vehicle being typed when a delayed default arrives', async () => {
+    let resolve!: (value: unknown) => void;
+    vehicles.fetch.mockReturnValue(new Promise((done) => { resolve = done; }));
+    show(); fireEvent.click(screen.getByRole('button', { name: 'Indemnités kilométriques' }));
+    change('Marque / modèle du véhicule', 'Mon véhicule ponctuel');
+    resolve([{ ...diesel, isDefault: true }]);
+    await screen.findByRole('option', { name: 'Peugeot 308 · 6 CV · Diesel' });
+    expect(screen.getByLabelText('Marque / modèle du véhicule')).toHaveValue('Mon véhicule ponctuel');
+    expect(screen.getByLabelText('Mes véhicules')).toHaveValue('');
+  });
+  it('reveals a collapsed required field on invalid submission', async () => {
+    show(); fireEvent.click(screen.getByRole('button', { name: 'Informations' }));
+    expect(screen.getByLabelText('Objet')).not.toBeVisible();
+    fireEvent.invalid(screen.getByLabelText('Objet'));
+    expect(screen.getByLabelText('Objet')).toBeVisible();
+    await waitFor(() => expect(screen.getByLabelText('Objet')).toHaveFocus());
+    expect(submit).not.toHaveBeenCalled();
   });
 });
