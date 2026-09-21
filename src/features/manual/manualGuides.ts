@@ -15,7 +15,7 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
     steps: [
       { title: 'Prendre connaissance de votre accueil', detail: 'Consultez les informations et les échéances proposées. Ouvrez les éléments disponibles pour accéder à leur module.' },
       { title: 'Consulter la cloche', detail: 'En haut à droite, la cloche regroupe notamment les notes de service à signer, les échéances de vos documents RH et les notifications qui vous concernent.' },
-      { title: 'Ouvrir un module', detail: 'Utilisez le menu de gauche. Sur téléphone, ouvrez-le avec le bouton de navigation. La roue crantée vous ramène à ce manuel.' },
+      { title: 'Ouvrir un module', detail: 'Utilisez le menu de gauche. Sur téléphone, ouvrez-le avec le bouton de navigation. Le point d’interrogation vous ramène à ce manuel.' },
     ],
     reminders: ['Un menu absent peut dépendre des droits de votre compte. Contactez l’administrateur si un accès nécessaire manque.', 'Une notification ouvre l’élément concerné ; consultez la notice du module pour savoir comment le traiter.'],
   },

@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  CircleHelp,
   Clock3,
   ClipboardCheck,
   FileCheck2,
@@ -633,7 +634,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
               title="Manuel d’utilisation"
               to="/manual"
             >
-              <Settings aria-hidden="true" size={19} />
+              <CircleHelp aria-hidden="true" size={19} />
             </Link>
             <div className="user-menu">
               <button
