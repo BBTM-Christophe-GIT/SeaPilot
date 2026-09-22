@@ -682,23 +682,19 @@ export function ProjectEditor({
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage('');
+    const submitter = (event.nativeEvent as SubmitEvent).submitter;
+    const submittedForm = submitter instanceof HTMLButtonElement && submitter.value === 'draft'
+      ? { ...form, status: 'Non validé' }
+      : form;
     const operationVesselIds = [form.primaryVesselId, form.secondaryVesselId]
       .filter((vesselId): vesselId is number => vesselId !== null);
-    if (!project) {
-      const missingOperationFields = [
-        !form.primaryVesselId ? 'le navire principal' : '',
-        !form.deliveryAt ? 'la livraison' : '',
-        !form.redeliveryAt ? 'la restitution' : '',
-      ].filter(Boolean);
-      if (missingOperationFields.length > 0) {
-        setActiveStep(!form.deliveryAt || !form.redeliveryAt ? 'planning' : 'billing');
-        setErrorMessage(
-          `Pour créer l’opération dans le planning, renseignez ${missingOperationFields.join(', ')}.`,
-        );
-        return;
-      }
+    const canScheduleOperation = Boolean(form.primaryVesselId && form.deliveryAt && form.redeliveryAt);
+    if (!project && !canScheduleOperation && (initialOperationFiles.length > 0 || initialOperationForm?.description.trim())) {
+      setActiveStep('planning');
+      setErrorMessage('Pour conserver la mission ou les documents de l’opération, renseignez le navire, la livraison et la restitution. Pour un projet sans dates, reportez la mission dans Identification et les pièces jointes dans Documents, puis retirez-les de la première opération.');
+      return;
     }
-    const automaticOperation = !project && initialOperationForm ? {
+    const automaticOperation = !project && initialOperationForm && canScheduleOperation ? {
       ...initialOperationForm,
       description: initialOperationForm.description.trim() || projectDescriptionToPlainText(form.description),
       endsOn: dateOnly(form.redeliveryAt),
@@ -716,22 +712,22 @@ export function ProjectEditor({
       const effectiveHirePeriods = usesDirectHire ? [] : hirePeriods;
       const firstHirePeriod = [...effectiveHirePeriods].sort((left, right) => left.startsOn.localeCompare(right.startsOn))[0];
       const projectCoreChanged = !project
-        || projectCoreSnapshot(form) !== projectCoreSnapshot(initialForm);
+        || projectCoreSnapshot(submittedForm) !== projectCoreSnapshot(initialForm);
       const projectContractChanged = !project
         || !contract
         || projectContractSnapshot(form) !== projectContractSnapshot(initialForm);
       const hirePeriodsChanged = !project
         || hirePeriodsSnapshot(effectiveHirePeriods) !== hirePeriodsSnapshot(initialHirePeriods);
       const formWithEffectiveHire = firstHirePeriod ? {
-        ...form,
+        ...submittedForm,
         charterHire: firstHirePeriod.charterHire,
         hireCurrency: firstHirePeriod.hireCurrency,
         hireUnit: firstHirePeriod.hireUnit,
       } : usesDirectHire ? {
-        ...form,
+        ...submittedForm,
         hireCurrency: 'EUR',
         hireUnit: isCommercialOffer || isBareboatContract ? 'jour' : '',
-      } : form;
+      } : submittedForm;
       const result = projectCoreChanged
         ? await saveProject(client, formWithEffectiveHire)
         : {
@@ -961,6 +957,7 @@ export function ProjectEditor({
 
           <fieldset hidden={activeStep !== 'planning'} id="project-step-planning">
             <legend><span>3</span> Opérations</legend>
+            {!project ? <p>Les dates sont facultatives. Une opération sera ajoutée au planning à la création uniquement si le navire principal, la livraison et la restitution sont renseignés.</p> : null}
             <div className="project-editor-grid">
               {initialOperation && initialOperationForm && !isBareboat ? (
                 <section className="project-initial-operation is-wide" aria-label="Première opération">
@@ -998,8 +995,8 @@ export function ProjectEditor({
                   }} type="date" value={form.endsOn} /></Field>
                 </>
               ) : null}
-              <Field label={isBareboat ? '7. Date de livraison *' : 'Livraison *'}><input onChange={(event) => update('deliveryAt', event.target.value)} type="datetime-local" value={form.deliveryAt} /></Field>
-              <Field label={isBareboat ? '9. Date de restitution *' : 'Restitution *'}><input onChange={(event) => update('redeliveryAt', event.target.value)} type="datetime-local" value={form.redeliveryAt} /></Field>
+              <Field label={isBareboat ? '7. Date de livraison' : 'Livraison'}><input onChange={(event) => update('deliveryAt', event.target.value)} type="datetime-local" value={form.deliveryAt} /></Field>
+              <Field label={isBareboat ? '9. Date de restitution' : 'Restitution'}><input onChange={(event) => update('redeliveryAt', event.target.value)} type="datetime-local" value={form.redeliveryAt} /></Field>
               {!isTowage && !isBareboat ? (
                 <>
                   <Field label="Début d’affrètement"><input onChange={(event) => update('charterStartsAt', event.target.value)} type="datetime-local" value={form.charterStartsAt} /></Field>
@@ -1645,7 +1642,7 @@ export function ProjectEditor({
           {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
           <footer>
             <button disabled={isSaving} onClick={onClose} type="button">Annuler</button>
-            <button disabled={isSaving} onClick={() => update('status', 'En préparation')} type="submit">Enregistrer le brouillon</button>
+            <button disabled={isSaving} name="saveMode" type="submit" value="draft">Enregistrer le brouillon</button>
             <button className="is-primary" disabled={isSaving} type="submit">{isSaving ? 'Enregistrement…' : project ? 'Enregistrer le projet' : 'Créer le projet'}</button>
           </footer>
         </form>

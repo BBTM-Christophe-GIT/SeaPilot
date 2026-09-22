@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { PDFDict, PDFDocument, PDFName } from 'pdf-lib';
+import { decodePDFRawStream, PDFDict, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
 import JSZip from 'jszip';
 import { describe, expect, it, vi } from 'vitest';
 import type { ClientRecord, ProjectContractRecord, ProjectRecord } from './projectQueries';
@@ -233,6 +233,43 @@ describe('projectDocumentGeneration', () => {
     } finally {
       fetchMock.mockRestore();
     }
+  });
+
+  describe.each(['fr', 'en'] as const)('commercial-offer firm duration (%s)', (language) => {
+    it.each([
+      { startsOn: '', endsOn: '', days: null },
+      { startsOn: '2026-07-01', endsOn: '', days: null },
+      { startsOn: '', endsOn: '2026-07-15', days: null },
+      { startsOn: '2026-07-01', endsOn: '2026-07-15', days: 15 },
+      { startsOn: '2026-07-01', endsOn: '2026-07-01', days: 1 },
+    ])('only prints a firm duration with both dates: %j', async ({ startsOn, endsOn, days }) => {
+      const logo = await readFile(resolve('public/bbtm-report-logo.png'));
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(logo, { headers: { 'content-type': 'image/png' }, status: 200 }),
+      );
+
+      try {
+        const generated = await generateProjectDocument('offer', {
+          client, contract, language, project: { ...project, startsOn, endsOn },
+        });
+        const pdf = await PDFDocument.load(await generated.blob.arrayBuffer());
+        const content = pdf.getPage(0).node.lookup(PDFName.of('Contents'));
+        if (!(content instanceof PDFRawStream)) throw new Error('Expected a PDF content stream');
+        const pageCommands = Buffer.from(decodePDFRawStream(content).decode()).toString('latin1');
+        const copy = PROJECT_OFFER_TRANSLATIONS[language];
+        expect(pageCommands).toContain(copy.operationalFramework);
+        expect(pageCommands).toContain(copy.fuel.toLocaleUpperCase('fr-FR'));
+        if (days === null) {
+          expect(pageCommands).not.toContain(copy.firmDuration.toLocaleUpperCase('fr-FR'));
+          expect(pageCommands).not.toContain(copy.calendarDays);
+        } else {
+          expect(pageCommands).toContain(copy.firmDuration.toLocaleUpperCase('fr-FR'));
+          expect(pageCommands).toContain(`${days} ${copy.calendarDays}`);
+        }
+      } finally {
+        fetchMock.mockRestore();
+      }
+    });
   });
 
   it('generates an offer PDF with the BBTM logo asset', async () => {
