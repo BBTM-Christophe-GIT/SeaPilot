@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Web.Script.Serialization;
 
@@ -13,7 +14,7 @@ using System.Web.Script.Serialization;
 // No remote listener, startup service, saved login token, or arbitrary file reads.
 public static class SeaPilotDriveBridge
 {
-    public const string Version = "2.1.0";
+    public const string Version = "2.2.0";
     public const int ConnectionPortCount = 16;
     const int MaxBody = 36 * 1024 * 1024;
     const string Api = "https://szlvyrrmvdvhzixilymh.supabase.co";
@@ -22,6 +23,7 @@ public static class SeaPilotDriveBridge
     {
         return origin == "https://sea-pilot-ten.vercel.app"
             || origin == "https://sea-pilot-git-codex-procedure-publishing-workflow-bbtm-app.vercel.app"
+            || origin == "https://sea-pilot-git-codex-qhse-produits-chimiques-bbtm-app.vercel.app"
             || origin == "http://localhost:5178" || origin == "http://localhost:5173";
     }
     static object Remote(string resource, string body, string token, string apiKey)
@@ -116,7 +118,7 @@ public static class SeaPilotDriveBridge
     static object Execute(Dictionary<string, object> data, string token, string apiKey)
     {
         string action = Text(data, "action");
-        if (action != "configure" && action != "status" && action != "ensure-person" && action != "write") throw new ArgumentException("Action inconnue.");
+        if (action != "configure" && action != "status" && action != "ensure-person" && action != "write" && action != "read") throw new ArgumentException("Action inconnue.");
         long company = data.ContainsKey("companyId") ? Number(data, "companyId") : 0;
         Func<string, string, object> remote = (resource, body) => Remote(resource, body, token, apiKey);
         if (action == "configure" || action == "status") RequireAccess(action, company, remote);
@@ -136,6 +138,8 @@ public static class SeaPilotDriveBridge
         if (String.IsNullOrEmpty(baseRoot)) throw new IOException("Ce PC doit etre configure dans Administration > Documents et Google Drive.");
         string module = Text(data, "module");
         if (String.IsNullOrEmpty(module)) module = "disciplinary";
+        if (module == "chemicals") return ExecuteChemical(baseRoot, data, remote);
+        if (action == "read") throw new UnauthorizedAccessException("Lecture non autorisee pour ce module.");
         long personId = data.ContainsKey("personId") ? Number(data, "personId") : 0;
         var scope = remote("rpc/desktop_drive_scope", Json().Serialize(new { target_module = module, target_company = company, target_person = personId })) as Dictionary<string, object>;
         if (scope == null) throw new UnauthorizedAccessException("Dossier autorise introuvable.");
@@ -158,6 +162,62 @@ public static class SeaPilotDriveBridge
         WriteFile(confidentialRoot, path, bytes);
         return new { path = path, bytes = bytes.Length };
     }
+    // Reads only one exact file authorized by its registered attachment id, never a caller-provided directory.
+    public static byte[] ReadChemicalFile(string root, string relative, string expectedHash, long expectedSize)
+    {
+        SeaPilotDrive.ValidateParts(relative);
+        if (!Regex.IsMatch(relative, @"\.(pdf|png|jpe?g|docx|xlsx|txt)\z", RegexOptions.IgnoreCase)
+            || !Regex.IsMatch(expectedHash, @"\A[a-f0-9]{64}\z") || expectedSize <= 0 || expectedSize > 20 * 1024 * 1024)
+            throw new ArgumentException("Reference de fichier chimique invalide.");
+        string path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+        SeaPilotDrive.CheckWithinRoot(root, path);
+        byte[] bytes;
+        using (var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            SeaPilotDrive.CheckWithinRoot(root, path);
+            if (file.Length != expectedSize) throw new IOException("Le fichier Drive a change ou sa synchronisation est incomplete. Ajoutez sa nouvelle version.");
+            bytes = new byte[(int)file.Length]; int offset = 0;
+            while (offset < bytes.Length) { int read = file.Read(bytes, offset, bytes.Length - offset); if (read == 0) throw new IOException("Fichier incomplet."); offset += read; }
+        }
+        using (var sha = SHA256.Create())
+        {
+            string hash = BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
+            if (hash != expectedHash) throw new IOException("Le fichier Drive a change. Ajoutez sa nouvelle version dans SeaPilot.");
+        }
+        return bytes;
+    }
+    public static object ExecuteChemical(string baseRoot, Dictionary<string, object> data, Func<string, string, object> remote)
+    {
+        string action = Text(data, "action"); Guid product, attachment;
+        if (!Guid.TryParse(Text(data, "productId"), out product) || (action != "write" && action != "read"))
+            throw new ArgumentException("Operation chimique invalide.");
+        string attachmentId = null;
+        if (action == "read") {
+            if (!Guid.TryParse(Text(data, "attachmentId"), out attachment)) throw new ArgumentException("Piece jointe invalide.");
+            attachmentId = attachment.ToString();
+        }
+        var scope = remote("rpc/chemical_drive_scope", Json().Serialize(new { target_product = product.ToString(), target_attachment = attachmentId })) as Dictionary<string, object>;
+        if (scope == null || Text(scope, "directory") != "Produits Chimiques") throw new UnauthorizedAccessException("Acces au dossier chimique refuse.");
+        string folder = Text(scope, "folder"); SeaPilotDrive.ValidateParts(folder);
+        if (String.IsNullOrEmpty(folder)) throw new UnauthorizedAccessException("Dossier chimique manquant.");
+        string path = Text(data, "path"); SeaPilotDrive.ValidateParts(path);
+        if (!path.StartsWith(folder + "/", StringComparison.Ordinal) || path.Split('/').Length != folder.Split('/').Length + 1)
+            throw new UnauthorizedAccessException("Fichier hors du dossier produit autorise.");
+        string root = Path.Combine(baseRoot, "Produits Chimiques");
+        if (action == "read") {
+            if (Text(scope, "path") != path) throw new UnauthorizedAccessException("Seule la piece jointe demandee peut etre lue.");
+            SeaPilotDrive.CheckWithinRoot(baseRoot, root);
+            byte[] content = ReadChemicalFile(root, path, Text(scope, "sha256"), Number(scope, "bytes"));
+            return new { path = path, bytes = content.Length, base64 = Convert.ToBase64String(content) };
+        }
+        byte[] bytes = Convert.FromBase64String(Text(data, "base64"));
+        if (bytes.Length > 20 * 1024 * 1024 || !Regex.IsMatch(path, @"\.(pdf|png|jpe?g|docx|xlsx|txt)\z", RegexOptions.IgnoreCase))
+            throw new ArgumentException("Formats acceptes : PDF, PNG, JPEG, DOCX, XLSX et TXT, 20 Mo maximum.");
+        EnsureDirectory(baseRoot, "Produits Chimiques");
+        WriteFile(root, path, bytes);
+        return new { path = path, bytes = bytes.Length };
+    }
+
     static string ReadHeaders(NetworkStream stream)
     {
         var bytes = new List<byte>();

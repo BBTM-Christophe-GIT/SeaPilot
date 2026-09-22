@@ -17,6 +17,7 @@ import {
   ClipboardCheck,
   FileCheck2,
   FileText,
+  FlaskConical,
   FolderKanban,
   Gauge,
   Home,
@@ -77,6 +78,7 @@ export interface AppShellOutletContext {
 const NAVIGATION_FAMILIES: AppModule['family'][] = [
   'Accueil',
   'QHSE',
+  'Registres',
   'Opérations',
   'Achats',
   'Facturation',
@@ -90,6 +92,7 @@ const NAVIGATION_FAMILIES: AppModule['family'][] = [
 const FAMILY_ICONS: Record<AppModule['family'], LucideIcon> = {
   Accueil: Home,
   QHSE: ShieldCheck,
+  Registres: BookOpenCheck,
   Opérations: Gauge,
   Achats: ShoppingCart,
   Facturation: ReceiptText,
@@ -103,6 +106,7 @@ const FAMILY_ICONS: Record<AppModule['family'], LucideIcon> = {
 const FAMILY_THEME_KEYS: Record<AppModule['family'], string> = {
   Accueil: 'home',
   QHSE: 'qhse',
+  Registres: 'registers',
   Opérations: 'operations',
   Achats: 'purchasing',
   Facturation: 'billing',
@@ -117,6 +121,7 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   home: LayoutDashboard,
   kpi: BarChart3,
   qhse: ShieldCheck,
+  chemicals: FlaskConical,
   certificates: FileCheck2,
   procedures: FileText,
   serviceNotes: Mail,

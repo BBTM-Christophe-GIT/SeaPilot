@@ -3,7 +3,7 @@ import type { RoleKey } from '../permissions/roles';
 import type { LiftingCertificate, UploadedLiftingCertificate } from './liftingCertificateQueries';
 import { accessoryDefinition } from './liftingControls';
 import { BBTM_FLEET_PHOTOS, fleetCatalogThumbnailPath } from '../fleet/fleetPhotoCatalog';
-import { annualExpiry, canManageLifting, todayLocal, defaultChecks, INSPECTOR, type LiftingInspection, type LiftingItem, type LiftingVessel, type InspectionEntry } from './liftingModel';
+import { annualExpiry, canManageLifting, canRemoveLiftingItem, todayLocal, defaultChecks, INSPECTOR, type LiftingInspection, type LiftingItem, type LiftingVessel, type InspectionEntry } from './liftingModel';
 
 // Independent demonstration data. No customer inventory or signature is bundled into public previews.
 export const demoVessel: LiftingVessel = { id: 90001, company_id: 1, name: 'NAVIRE DÉMONSTRATION', acronym: 'DEMO', registration_number: 'Démonstration', call_sign: 'DEMO', registration_port: 'Marseille' };
@@ -68,7 +68,7 @@ export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspect
     from: (name: keyof typeof tables) => query(tables[name] || []),
     rpc: async (name: string, args: Record<string, unknown> = {}) => {
       if (name === 'lifting_can_start_inspection') return { data: canStart, error: null };
-      if (['set_lifting_item_active', 'delete_lifting_inspection_draft', 'replace_lifting_item'].includes(name) && !manager) return denied();
+      if (['delete_lifting_inspection_draft', 'replace_lifting_item'].includes(name) && !manager) return denied();
       if (name === 'add_lifting_item_certificate') {
         const item = items.find((row) => row.id === args.p_item_id);
         const path = String(args.p_storage_path);
@@ -104,7 +104,14 @@ export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspect
         } as LiftingItem);
         return { data: old?.id || items.at(-1)?.id, error: null };
       }
-      if (name === 'set_lifting_item_active') { const item = items.find((i) => i.id === args.p_id); if (item) item.active = Boolean(args.p_active); return { data: null, error: null }; }
+      if (name === 'set_lifting_item_active') {
+        if (args.p_active !== true && args.p_active !== false) return denied();
+        if (args.p_active ? !manager : !canRemoveLiftingItem(roles)) return denied();
+        const item = items.find((i) => i.id === args.p_id);
+        if (!item) return denied();
+        item.active = args.p_active;
+        return { data: null, error: null };
+      }
       if (name === 'delete_lifting_inspection_draft') {
         const index = reports.findIndex((r) => r.id === args.p_id); const report = reports[index];
         if (!report) return { data: null, error: { message: 'Brouillon introuvable ou accès refusé.' } };

@@ -54,7 +54,7 @@ describe('common Windows launcher', () => {
     const session = await connectLocalDrive();
     expect(session.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/[a-f0-9]{32}$/);
   });
-  it.each([['procedures', 'Procedures'], ['disciplinary', 'Sanctions Disciplinaires']] as const)('uses the root protocol for %s', (module, directory) => {
+  it.each([['procedures', 'Procedures'], ['disciplinary', 'Sanctions Disciplinaires'], ['chemicals', 'Produits Chimiques']] as const)('uses the root protocol for %s', (module, directory) => {
     const uri = launcherOpenUri(module, 'Équipe/Courrier.docx');
     expect(uri).toMatch(/^seapilot-drive:\/\/root\/open\/[A-Za-z0-9_-]+$/);
     const payload = uri.split('/').pop()!.replace(/-/g, '+').replace(/_/g, '/');

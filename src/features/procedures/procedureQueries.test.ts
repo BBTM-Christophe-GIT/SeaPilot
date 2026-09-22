@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildProcedureDesktopUri,
+  fetchProcedureVessels,
   getProcedurePublicationDate,
   isProcedureNumberTaken,
   suggestNextProcedureNumber,
@@ -8,6 +9,24 @@ import {
   type ProcedureInput,
   type ProcedureRecord,
 } from './procedureQueries';
+
+describe('procedure fleet options', () => {
+  it('queries the active fleet, removes empty names and excludes office and quay entries', async () => {
+    const order = vi.fn().mockResolvedValue({ data: [{ name: 'LANDEMER' }, { name: 'GOURY' }, { name: 'GOURY' }, { name: 'YARD LE HAVRE' }, { name: 'BUREAU' }, { name: 'Agence', asset_kind: 'office' }, { name: ' ' }], error: null });
+    const eq = vi.fn(() => ({ order }));
+    const select = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ select }));
+    expect(await fetchProcedureVessels({ from } as never)).toEqual(['GOURY', 'LANDEMER']);
+    expect(from).toHaveBeenCalledWith('vessels');
+    expect(select).toHaveBeenCalledWith('name,asset_kind');
+    expect(eq).toHaveBeenCalledWith('active', true);
+  });
+  it('propagates a fleet loading error instead of presenting it as an empty fleet', async () => {
+    const error = new Error('Unavailable');
+    const client = { from: () => ({ select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: null, error }) }) }) }) };
+    await expect(fetchProcedureVessels(client as never)).rejects.toThrow('Unavailable');
+  });
+});
 
 function fileRecord(fileName: string, mimeType = ''): ProcedureRecord {
   return { fileName, mimeType } as ProcedureRecord;

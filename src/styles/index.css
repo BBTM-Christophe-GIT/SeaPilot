@@ -361,7 +361,8 @@ button:disabled {
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
 }
 
-.navigation-family[data-family-theme='qhse'] {
+.navigation-family[data-family-theme='qhse'],
+.navigation-family[data-family-theme='registers'] {
   --navigation-accent: #22c55e;
   --navigation-accent-rgb: 34, 197, 94;
 }

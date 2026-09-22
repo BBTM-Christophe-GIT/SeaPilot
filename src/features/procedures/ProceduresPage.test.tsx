@@ -2,6 +2,9 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ProceduresPage } from './ProceduresPage';
+import { downloadProcedureListPdf } from './procedureListPdf';
+
+vi.mock('./procedureListPdf', () => ({ downloadProcedureListPdf: vi.fn().mockResolvedValue(undefined) }));
 
 const baseMetadata = {
   category_label: 'Procédure d’urgence',
@@ -87,7 +90,7 @@ function orderedResult(data: unknown[]) {
   return result;
 }
 
-function createClient(options: { procedures?: unknown[]; publications?: unknown[]; projects?: unknown[]; created?: unknown; published?: unknown } = {}) {
+function createClient(options: { procedures?: unknown[]; publications?: unknown[]; projects?: unknown[]; vessels?: unknown[]; created?: unknown; published?: unknown } = {}) {
   const procedures = options.procedures ?? [approvedProcedureRow, draftProcedureRow];
   const publications = options.publications ?? [publishedProcedureRow];
   const projects = options.projects ?? projectRows;
@@ -130,6 +133,7 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
         select: vi.fn(() => orderedResult(projects)),
       };
     }
+    if (table === 'vessels') return { select: vi.fn(() => orderedResult(options.vessels ?? [{ name: 'GOURY' }, { name: 'LE ROZEL' }, { name: 'LANDEMER' }])) };
     throw new Error(`Unexpected table ${table}`);
   });
   const client = {
@@ -140,6 +144,103 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
 }
 
 describe('ProceduresPage', () => {
+  it('lists vessel-specific and common documents, exporting only the checked documents in the current scope', async () => {
+    const user = userEvent.setup();
+    const common = { ...approvedProcedureRow, id: 14, title: 'Procédure commune', vessel_name: null };
+    const { client } = createClient({ procedures: [approvedProcedureRow, draftProcedureRow, common] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Procédures QHSE' });
+    await user.selectOptions(screen.getByLabelText('Navire'), 'LE ROZEL');
+    expect(screen.getByText('Procédure commune')).toBeInTheDocument();
+    expect(screen.queryByText('Consigne machine provisoire')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Générer une liste des documents' }));
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByLabelText('Navire de la liste')).toHaveValue('LE ROZEL');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(2);
+    await user.click(dialog.getByLabelText('Inclure Procédure commune'));
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ vessel: 'LE ROZEL', library: 'sources', records: [expect.objectContaining({ id: 12 })] }));
+    await user.selectOptions(dialog.getByLabelText('Navire de la liste'), 'GOURY');
+    expect(dialog.queryByLabelText('Inclure Procédure embarquement ROZEL')).not.toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Tout désélectionner' }));
+    expect(dialog.getByRole('button', { name: 'Télécharger la liste PDF' })).toBeDisabled();
+    await user.click(dialog.getByRole('button', { name: 'Tout sélectionner' }));
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ vessel: 'GOURY', records: [expect.objectContaining({ id: 14 }), expect.objectContaining({ id: 13 })] }));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('combines vessel and status filters, preserving exclusions while exporting only visible selected documents', async () => {
+    const user = userEvent.setup();
+    const common = { ...approvedProcedureRow, id: 14, title: 'Procédure commune', vessel_name: null };
+    const { client } = createClient({ procedures: [approvedProcedureRow, draftProcedureRow, common] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: 'Générer une liste des documents' }));
+    const dialog = within(screen.getByRole('dialog'));
+    const status = dialog.getByRole('combobox', { name: 'Statut' });
+    expect(status).toHaveValue('');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(3);
+
+    await user.selectOptions(dialog.getByLabelText('Navire de la liste'), 'GOURY');
+    await user.selectOptions(status, 'published');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    expect(dialog.getByText(/1 document\(s\) disponible/)).toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ vessel: 'GOURY', records: [expect.objectContaining({ id: 14 })] }));
+    await user.click(dialog.getByRole('button', { name: 'Tout désélectionner' }));
+
+    await user.selectOptions(status, 'draft');
+    expect(dialog.getByLabelText('Inclure Consigne machine provisoire')).toBeChecked();
+    await user.click(dialog.getByRole('button', { name: 'Tout sélectionner' }));
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ records: [expect.objectContaining({ id: 13 })] }));
+    await user.selectOptions(status, '');
+    expect(dialog.getByLabelText('Inclure Procédure commune')).not.toBeChecked();
+    expect(dialog.getByLabelText('Inclure Consigne machine provisoire')).toBeChecked();
+    expect(dialog.getByText('1 document(s) sélectionné(s)')).toBeInTheDocument();
+
+    await user.selectOptions(status, 'review');
+    expect(dialog.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(dialog.getByText('Aucun document ne correspond aux filtres sélectionnés.')).toBeInTheDocument();
+    expect(dialog.getByRole('button', { name: 'Télécharger la liste PDF' })).toBeDisabled();
+    expect(dialog.getByRole('button', { name: 'Tout sélectionner' })).toBeDisabled();
+  });
+
+  it.each(['armement', 'capitaine', 'marin'] as const)('exports only published PDFs for a real %s role fixture', async (role) => {
+    const user = userEvent.setup();
+    const { client, from } = createClient();
+    render(<ProceduresPage client={client as never} roles={[role]} />);
+    await user.click(await screen.findByRole('button', { name: 'Générer une liste des documents' }));
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    await user.selectOptions(dialog.getByRole('combobox', { name: 'Statut' }), 'draft');
+    expect(dialog.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(dialog.getByRole('button', { name: 'Télécharger la liste PDF' })).toBeDisabled();
+    await user.selectOptions(dialog.getByRole('combobox', { name: 'Statut' }), 'published');
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ library: 'published', records: [expect.objectContaining({ id: 32 })] }));
+    expect(from).not.toHaveBeenCalledWith('procedures');
+  });
+
+  it('offers fleet vessels without existing procedures and retains a legacy vessel when editing', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ vessels: [{ name: 'LANDEMER' }] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
+    let dialog = within(screen.getByRole('dialog'));
+    const vessel = dialog.getByRole('combobox', { name: /^Navire/ });
+    expect(vessel).toHaveValue('');
+    expect(within(vessel).getByRole('option', { name: 'LANDEMER' })).toBeInTheDocument();
+    expect(within(vessel).queryByRole('option', { name: 'LE ROZEL' })).not.toBeInTheDocument();
+    await user.selectOptions(vessel, 'LANDEMER');
+    expect(vessel).toHaveValue('LANDEMER');
+    await user.click(dialog.getByRole('button', { name: 'Annuler' }));
+    await user.click(screen.getByLabelText('Modifier Procédure embarquement ROZEL'));
+    dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByRole('combobox', { name: /^Navire/ })).toHaveValue('LE ROZEL');
+  });
+
   it('uses the QSMS icon for every chapter and separates unassigned documents', async () => {
     const iconCases = [
       ['01', '01 - Généralités', 'info', 'blue'],
@@ -252,6 +353,7 @@ describe('ProceduresPage', () => {
     await user.selectOptions(within(dialog).getByLabelText('Thème'), 'URG');
     fireEvent.change(within(dialog).getByLabelText('Numéro'), { target: { value: '08' } });
     fireEvent.change(within(dialog).getByLabelText('Version'), { target: { value: 'a' } });
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: /^Navire/ }), 'LANDEMER');
     fireEvent.change(within(dialog).getByLabelText('Projet'), { target: { value: 'P144 - GUARD VESSEL EMDT' } });
     fireEvent.change(within(dialog).getByLabelText('Date diffusion'), { target: { value: '2026-09-02' } });
     await user.click(within(dialog).getByLabelText(/Revue annuelle/));
@@ -272,6 +374,7 @@ describe('ProceduresPage', () => {
       procedure_code: 'URG 08-A',
       document_number: '08',
       version_label: 'A',
+      vessel_name: 'LANDEMER',
       project_name: 'P144 - GUARD VESSEL EMDT',
       annual_review: true,
       source_storage_bucket: 'procedure-documents',

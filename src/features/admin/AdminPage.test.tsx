@@ -170,7 +170,7 @@ describe('AdminPage', () => {
     expect(documentsLink).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('heading', { name: 'Un seul dossier SeaPilot pour ce PC' })).toBeVisible();
     expect(screen.queryByRole('heading', { name: 'Gestion des utilisateurs' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Installer le lanceur Windows' })).toHaveAttribute('href', '/connectors/seapilot-drive-windows.zip?v=2.1.0');
+    expect(screen.getByRole('link', { name: 'Installer le lanceur Windows' })).toHaveAttribute('href', '/connectors/seapilot-drive-windows.zip?v=2.2.0');
     expect(screen.getByRole('link', { name: 'Installer le lanceur Windows' })).toHaveAttribute('download');
     expect(screen.getByLabelText('Chemin du dossier SeaPilot sur ce PC')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Configurer le dossier disciplinaire sur ce PC' })).not.toBeInTheDocument();
