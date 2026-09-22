@@ -69,7 +69,7 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
       { title: 'Trouver la procédure', detail: 'Recherchez par nom, numéro ou thème. Vous pouvez aussi filtrer par projet et par navire. Le filtre Navire inclut les procédures de ce navire et celles sans navire, communes à la flotte.' },
       { title: 'Parcourir la bibliothèque', detail: 'Développez le chapitre de classement, puis sélectionnez la procédure souhaitée.' },
       { title: 'Lire la version publiée', detail: 'Ouvrez le PDF disponible et vérifiez son titre ainsi que sa version avant d’appliquer les consignes.' },
-      { title: 'Générer une liste', detail: 'Cliquez sur Générer une liste des documents, choisissez le navire et cochez les procédures à inclure. Tout sélectionner et Tout désélectionner portent sur les documents affichés. Le PDF A4 portrait regroupe les documents par chapitre ISM, sans statut ni navire. La mise en page vise une seule page selon la longueur de la sélection.' },
+      { title: 'Générer une liste', detail: 'Cliquez sur Générer une liste des documents, choisissez le navire et le statut, puis cochez les procédures à inclure. Tous les statuts est sélectionné par défaut. Tout sélectionner et Tout désélectionner portent sur les documents affichés. Le PDF A4 portrait regroupe les documents par chapitre ISM, sans statut ni navire. La mise en page vise une seule page selon la longueur de la sélection.' },
     ],
     reminders: ['Si la procédure attendue n’apparaît pas, vérifiez les filtres puis contactez le responsable QHSE.', 'Une ancienne copie conservée sur votre poste peut avoir été remplacée par une nouvelle publication.'],
   },

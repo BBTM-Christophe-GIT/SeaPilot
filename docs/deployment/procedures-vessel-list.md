@@ -9,10 +9,13 @@ des filtres de recherche et de projet de la bibliothèque. Le navire du filtre p
 tous les documents dont le champ Navire est vide (y compris les anciennes valeurs nulles ou
 constituées d’espaces). La comparaison ignore la casse et les accents, sans correspondance partielle.
 Le filtre Navire de la bibliothèque applique la même règle.
+Le filtre **Statut** de la fenêtre se combine avec le navire et propose Tous les statuts
+(valeur initiale), Brouillon, En revue, Approuvée, Publié, Archivée et Non renseigné.
 
 Tous les documents disponibles sont cochés initialement. La sélection individuelle et les boutons
-Tout sélectionner / Tout désélectionner portent sur le navire affiché. Les exclusions sont conservées
-pendant les changements de navire et réinitialisées à la réouverture. Le PDF exporte uniquement
+Tout sélectionner / Tout désélectionner portent sur les documents correspondant au navire et au statut
+affichés. Les exclusions sont conservées pendant les changements de filtre et réinitialisées
+à la réouverture. Le compteur de sélection et le PDF exporté prennent uniquement en compte
 les documents cochés appartenant au périmètre affiché, avec référence, titre, version et date de
 diffusion, regroupés par chapitre ISM. Le statut et le navire n’apparaissent pas dans le PDF.
 Le format est A4 portrait. La taille du texte et les espacements s’adaptent pour viser une seule page
