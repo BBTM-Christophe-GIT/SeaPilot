@@ -37,6 +37,7 @@ describe('module access', () => {
       ['Accueil', 'Accueil', 'direct'],
       ['QHSE', 'KPI', 'submenu'],
       ['Registres', 'Produits Chimiques', 'submenu'],
+      ['Registres', 'Registre des Exercices', 'submenu'],
       ['QHSE', 'Certificats flotte', 'submenu'],
       ['QHSE', 'Procédures QHSE', 'submenu'],
       ['QHSE', 'Notes de Service', 'submenu'],
