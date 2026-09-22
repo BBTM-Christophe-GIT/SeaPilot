@@ -571,6 +571,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [vesselForm, setVesselForm] = useState<VesselFormState | null>(null);
   const [dayStateForm, setDayStateForm] = useState<PlanningDayStateForm | null>(null);
   const [eligiblePeopleDialog, setEligiblePeopleDialog] = useState<PlanningEligiblePeopleDialogState | null>(null);
+  const [pendingBoardRows, setPendingBoardRows] = useState<{ rangeStart: string; rangeEnd: string; ids: Set<number> }>(
+    () => ({ rangeStart: '', rangeEnd: '', ids: new Set() }),
+  );
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isBoardingCertificateOpen, setIsBoardingCertificateOpen] = useState(false);
   const [isSilaeExportOpen, setIsSilaeExportOpen] = useState(false);
@@ -823,9 +826,21 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     () => buildPlanningCrewRows(planningData, timelineDays, filters, allPlanningCrewEvents, {
       employmentRange: referenceMonthRange,
       includeEmptyVessels: isPersonalPlanningView,
+      pendingBoardRowIds: canEditPlanning && pendingBoardRows.rangeStart === range.start && pendingBoardRows.rangeEnd === range.end
+        ? pendingBoardRows.ids : undefined,
     }),
-    [allPlanningCrewEvents, filters, isPersonalPlanningView, planningData, referenceMonthRange, timelineDays],
+    [allPlanningCrewEvents, canEditPlanning, filters, isPersonalPlanningView, pendingBoardRows, planningData, range, referenceMonthRange, timelineDays],
   );
+  // Retire the editing exception when its first visible assignment arrives,
+  // so removing that assignment later cannot bring an empty row back.
+  if (pendingBoardRows.ids.size) {
+    const assignedRowIds = new Set(fleetRows
+      .filter((row) => row.boardRowId !== null && row.events.length > 0)
+      .map((row) => row.boardRowId!));
+    if ([...pendingBoardRows.ids].some((id) => assignedRowIds.has(id))) {
+      setPendingBoardRows((current) => ({ ...current, ids: new Set([...current.ids].filter((id) => !assignedRowIds.has(id))) }));
+    }
+  }
   const fleetLanesByVessel = useMemo(
     () => new Map(fleetLanes.map((lane) => [lane.vessel, lane])),
     [fleetLanes],
@@ -1496,11 +1511,29 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setPendingMutationId(`departed-person-${person.id}`);
     setErrorMessage(null);
     try {
-      await addPlanningBoardRow(effectiveClient, {
+      const boardRowId = await addPlanningBoardRow(effectiveClient, {
         vesselId: eligiblePeopleDialog.vesselId,
         watchGroup: eligiblePeopleDialog.watchGroup,
         personId: person.id,
         referenceMonth: referenceMonthRange.start,
+      });
+      setPendingBoardRows((current) => ({
+        rangeStart: range.start,
+        rangeEnd: range.end,
+        ids: new Set([
+          ...(current.rangeStart === range.start && current.rangeEnd === range.end ? current.ids : []),
+          boardRowId,
+        ]),
+      }));
+      setCollapsedFleetNodes((current) => {
+        const expanded = new Set(current);
+        fleetRows.forEach((row) => {
+          if (row.vesselId === eligiblePeopleDialog.vesselId
+            && (row.type === 'vessel' || (row.type === 'board' && row.board === eligiblePeopleDialog.watchGroup))) {
+            expanded.delete(row.key);
+          }
+        });
+        return expanded;
       });
       await loadPlanning();
       setEligiblePeopleDialog(null);

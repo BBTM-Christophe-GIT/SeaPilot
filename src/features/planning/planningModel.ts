@@ -134,6 +134,7 @@ function crewEventFromAnnualReview(review: PlanningAnnualReviewRecord): Planning
 export interface PlanningCrewRowOptions {
   employmentRange?: PlanningDateRange;
   includeEmptyVessels?: boolean;
+  pendingBoardRowIds?: ReadonlySet<number>;
 }
 
 export interface PlanningAlert {
@@ -666,6 +667,7 @@ export function buildPlanningCrewRows(
               const boardRow = boardContent.rows.find((entry) => entry.person.id === linkedPerson?.id)?.boardRow;
               const personId = eventPersonId || linkedPerson?.id || null;
               if (linkedPerson && !isPlanningPersonEmployedDuring(linkedPerson, employmentRange)) return;
+              if (!personEvents.length && (!boardRow || !options.pendingBoardRowIds?.has(boardRow.id))) return;
               const recordPrefix = `${vessel}|${board}|`;
               const hasAnyRecords = (
                 (personId !== null && allEventRecordKeys.has(`${recordPrefix}id:${personId}`))

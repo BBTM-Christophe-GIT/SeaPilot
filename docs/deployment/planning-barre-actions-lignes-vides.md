@@ -10,7 +10,7 @@
 - Les groupes suivent l’ordre métier `Président`, `Capitaine`, `Chef Mécanicien`, `2nd Capitaine`, `Maître d'Equipage`, `Matelot polyvalent`, `Matelot Qualifié`, `Directeur QHSE / Chef de Projet`, `Directrice Administrative et Financière`, puis `Stagiaire`. Cet ordre est aussi appliqué aux marins de chaque bordée dans l’arborescence.
 - Les profils sans fonction RH ne sont pas affichés dans cette fenêtre. Les CDI sans date de départ n’affichent plus de ligne contractuelle ; une date de départ renseignée reste affichée avec le type de contrat, par exemple `CDD · Départ 31/12/2026`.
 - Chaque marin reste ajoutable même s’il possède déjà une ligne ou un enregistrement dans la bordée ; les conflits éventuels sont traités séparément.
-- Le marin ajouté apparaît sur une ligne persistante sans événement coloré.
+- La ligne de bordée est persistante, mais l’affichage vide est temporaire après ajout : voir [la règle de visibilité par période](planning-empty-rows.md).
 - La suppression est proposée uniquement tant que cette ligne ne possède aucune affectation, période ou journée.
 
 ## Migration Supabase
