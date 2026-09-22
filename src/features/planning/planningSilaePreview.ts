@@ -1,5 +1,6 @@
 import { getHrEnimClassification } from '../humanResources/peopleQueries';
 import { getAllPlanningCrewEvents } from './planningModel';
+import { planningEventFunctionOnDate } from './planningFunctions';
 import type { PlanningOverview } from './planningQueries';
 import type { SilaeData } from './planningSilae';
 
@@ -15,6 +16,13 @@ export function buildPlanningSilaePreviewData(overview: PlanningOverview): Silae
     vessels: overview.vessels.map((vessel) => ({ ...vessel, registrationNumber: vessel.registrationNumber || '' })),
     sources: getAllPlanningCrewEvents(overview)
       .filter((event) => event.kind !== 'annualReview' && event.confirmationStatus !== 'cancelled')
-      .map((event) => ({ personId: event.personId, vesselId: event.vesselId, startsOn: event.startsOn, endsOn: event.endsOn, status: event.status, functionLabel: event.functionLabel, priority: event.kind === 'day' ? 3 : event.kind === 'assignment' ? 2 : 1 })),
+      .flatMap((event) => [
+        { personId: event.personId, vesselId: event.vesselId, startsOn: event.startsOn, endsOn: event.endsOn, status: event.status, functionLabel: event.functionLabel, priority: event.kind === 'day' ? 3 : event.kind === 'assignment' ? 2 : 1, sourceId: event.assignmentId || undefined },
+        ...[...new Set([...Object.keys(event.dailyStatuses || {}), ...Object.keys(event.dailyFunctionLabels || {})])]
+          .filter((date) => date >= event.startsOn && date <= event.endsOn)
+          .map((date) => ({ personId: event.personId, vesselId: event.vesselId, startsOn: date, endsOn: date,
+            status: event.dailyStatuses?.[date] || event.status, functionLabel: planningEventFunctionOnDate(event, date),
+            priority: 3, parentAssignmentId: event.assignmentId || undefined })),
+      ]),
   };
 }

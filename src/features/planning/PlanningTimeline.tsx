@@ -33,6 +33,7 @@ import {
   type PlanningFleetLane,
 } from './planningViews';
 import { planningStaffingBoardKey } from './planningStaffingQueries';
+import { planningEventFunctionOnDate, planningShortFunctionLabel, planningTemporaryFunctionSegments } from './planningFunctions';
 import { samePlanningLaneSelection, shallowPlanningEqual, withStablePlanningHandlers } from './planningRendering';
 
 export const PlanningFleetTimelineRow = withStablePlanningHandlers(PlanningFleetTimelineRowContent);
@@ -731,12 +732,16 @@ function PlanningCrewTimelineRowContent({
     window.addEventListener('pointercancel', cancel, { once: true });
   };
 
+  const temporarySegments = lane.events.flatMap((event) => event.kind === 'annualReview' ? [] : planningTemporaryFunctionSegments(event, lane.functionLabel || ''))
+    .filter((segment) => segment.startsOn <= days[days.length - 1].date && segment.endsOn >= days[0].date);
+  const temporaryFunctions = [...new Set(temporarySegments.map((segment) => segment.functionLabel))];
   return (
-    <div className={`planning-calendar-grid planning-timeline-row is-crew${hierarchy ? ' is-fleet-person' : ''}${balances ? ' has-crew-balances' : ''}`}>
+    <div className={`planning-calendar-grid planning-timeline-row is-crew${hierarchy ? ' is-fleet-person' : ''}${balances ? ' has-crew-balances' : ''}${temporarySegments.length ? ' has-temporary-functions' : ''}`}>
       <div className={`planning-row-label${onDeleteEmptyRow ? ' has-empty-row-action' : ''}`}>
         <span>
           <strong>{lane.label}</strong>
           <small>{hierarchy ? (lane.functionLabel || 'Fonction non renseignée') : (lane.detail || 'Sans détail')}</small>
+          {temporaryFunctions.length ? <small className="planning-temporary-function-summary">Temp. : {temporaryFunctions.join(' / ')}</small> : null}
         </span>
         {onInitializeBalance ? <button className="planning-balance-open" aria-label={`Saisir le solde de ${lane.label}`} onClick={onInitializeBalance} type="button">Solde</button> : null}
         {onDeleteEmptyRow ? <button aria-label={`Supprimer la ligne vide de ${lane.label}`} className="planning-empty-row-delete" disabled={isDeletingEmptyRow} onClick={onDeleteEmptyRow} title="Supprimer la ligne vide" type="button"><Trash2 aria-hidden="true" size={13} /></button> : null}
@@ -929,7 +934,7 @@ function PlanningCrewTimelineRowContent({
               vesselId: event.vesselId,
               vessel: event.vessel,
               watchGroup: event.board,
-              functionLabel: event.functionLabel,
+              functionLabel: planningEventFunctionOnDate(event, day.date),
               assignmentId: event.assignmentId || null,
               eventId: event.id,
               status: normalizePlanningGridStatus(event.dailyStatuses?.[day.date] || event.status, event.vessel),
@@ -944,6 +949,7 @@ function PlanningCrewTimelineRowContent({
                 ...storedCell,
                 key: adjacentKey,
                 workDate: date,
+                functionLabel: planningEventFunctionOnDate(event, date),
                 status: normalizePlanningGridStatus(event.dailyStatuses?.[date] || event.status, event.vessel),
                 note: event.dailyNotes?.[date] || '',
                 isConflict: conflictDates.has(date),
@@ -994,7 +1000,7 @@ function PlanningCrewTimelineRowContent({
                   onOpen(event);
                 }}
                 style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
-                title={[hasStaffingAlert ? 'Écart vis-à-vis de la Décision d’effectif — confirmation administrateur requise' : '', documentAlert, cell.isConflict ? `Conflit d'affectation — ${cell.note || 'aucun commentaire'}` : cell.note || 'Case sans commentaire'].filter(Boolean).join('\n')}
+                title={[cell.functionLabel, hasStaffingAlert ? 'Écart vis-à-vis de la Décision d’effectif — confirmation administrateur requise' : '', documentAlert, cell.isConflict ? `Conflit d'affectation — ${cell.note || 'aucun commentaire'}` : cell.note || 'Case sans commentaire'].filter(Boolean).join('\n')}
                 type="button"
               >{cell.note}{documentAlert ? <FileWarning aria-hidden="true" className="planning-expired-document-icon" size={13} /> : null}{hasStaffingAlert ? <AlertTriangle aria-hidden="true" className="planning-staffing-alert-icon" size={13} /> : null}{cell.isConflict ? <AlertTriangle aria-hidden="true" className="planning-grid-conflict-icon" size={13} /> : null}</button>
             );
@@ -1010,6 +1016,15 @@ function PlanningCrewTimelineRowContent({
           ) : null}
           </Fragment>
         );
+      })}
+      {temporarySegments.map((segment) => {
+        const placement = dateGridPlacement(segment.startsOn, segment.endsOn, days);
+        if (!placement) return null;
+        const label = `Fonction temporaire : ${segment.functionLabel}, du ${formatPlanningDate(segment.startsOn)} au ${formatPlanningDate(segment.endsOn)}`;
+        return <span aria-label={label} className="planning-temporary-function-label" key={`function-${segment.id}-${segment.startsOn}`}
+          style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }} title={label}>
+          {placement.span * dayWidth >= segment.functionLabel.length * 6 + 12 ? segment.functionLabel : planningShortFunctionLabel(segment.functionLabel)}
+        </span>;
       })}
       {laneAbsences.map((absence) => {
         const placement = dateGridPlacement(absence.startsOn, absence.endsOn, days);

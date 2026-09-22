@@ -413,7 +413,7 @@ function createClient(options: {
       return Promise.resolve({ data: { revision: 'fixture-periods', periods: options.periods ?? [] }, error: null });
     }
     if (functionName === 'save_planning_crew_balance') return Promise.resolve({ data: null, error: null });
-    if (functionName === 'save_planning_assignment_day_states') {
+    if (functionName === 'save_planning_assignment_day_states' || functionName === 'save_planning_assignment_day_details_range') {
       return Promise.resolve({ data: 1, error: null });
     }
     if (functionName === 'planning_assignment_overview_with_revisions') {
@@ -471,7 +471,7 @@ function createClient(options: {
     if (functionName === 'save_planning_assignment_day_note') {
       return Promise.resolve({ data: 202, error: null });
     }
-    if (functionName === 'save_planning_assignment_day_state') {
+    if (functionName === 'save_planning_assignment_day_state' || functionName === 'save_planning_assignment_day_details') {
       return Promise.resolve({ data: 202, error: null });
     }
     if (functionName === 'apply_planning_grid_cells') {
@@ -802,7 +802,7 @@ describe('PlanningPage cockpit', () => {
     }
   });
 
-  it('hides former employees but keeps empty active sailor rows for the selected reference month', async () => {
+  it('hides former employees and empty sailor rows for the selected reference month', async () => {
     const departedBeforeAugust = { ...departedCrewRow, departed_on: '2026-07-31' };
     const departedAssignment = {
       ...assignmentOverviewRow,
@@ -830,8 +830,8 @@ describe('PlanningPage cockpit', () => {
 
     await waitFor(() => expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0));
     expect(screen.queryByText('Alain ANCIEN')).not.toBeInTheDocument();
-    expect(screen.getByText('Luc MOREL')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Supprimer la ligne vide de Luc MOREL' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Supprimer la ligne vide de Luc MOREL' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Case vide de Luc MOREL/ })).not.toBeInTheDocument();
   });
 
   it('opens the searchable project catalog by double-clicking a vessel cell', async () => {
@@ -1450,6 +1450,40 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Repos enregistré pour Paul DURAND sur toute la période.')).toBeInTheDocument();
   });
 
+  it.each(['day', 'group'])('saves a temporary function for the selected %s without editing the parent assignment or RH', async (scope) => {
+    const user = userEvent.setup();
+    const { client, rpc, updateAssignment } = createClient({ assignments: [{ ...assignmentOverviewRow, assignment_role: 'Capitaine' }], periods: [], days: [] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    fireEvent.contextMenu(await screen.findByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
+    expect(within(dialog).getByLabelText('Fonction temporaire')).toHaveValue('Capitaine');
+    await user.selectOptions(within(dialog).getByLabelText('Fonction temporaire'), '2nd Capitaine');
+    if (scope === 'group') await user.click(within(dialog).getByRole('button', { name: 'Tout le groupe de cases' }));
+    expect(within(dialog).getByLabelText('Fonction temporaire')).toHaveValue('2nd Capitaine');
+    await user.click(within(dialog).getByRole('button', { name: scope === 'day' ? 'Appliquer à ce jour' : 'Appliquer à la période' }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith(scope === 'day' ? 'save_planning_assignment_day_details' : 'save_planning_assignment_day_details_range', {
+      p_assignment_id: 100, p_status: 'En Mer', p_note: '', p_function_label: '2nd Capitaine',
+      ...(scope === 'day' ? { p_work_date: '2026-07-14' } : { p_starts_on: '2026-07-01', p_ends_on: '2026-07-14' }),
+    }));
+    expect(updateAssignment).not.toHaveBeenCalled();
+  });
+
+  it('shows dated temporary function labels while retaining the RH function and the daily comment', async () => {
+    const { client } = createClient({ assignments: [{ ...assignmentOverviewRow, assignment_role: 'Matelot' }], periods: [], days: [{
+      ...planningDayRow, person_id: 11, vessel_id: 1, work_date: '2026-07-14', function_label: '2nd Capitaine',
+      sailor_status: 'En Mer', slot365: 'assignment:100', source_label: 'seapilot-assignment-note', comments: 'Escale',
+    }] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    const cell = await screen.findByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' });
+    const row = cell.closest('.planning-timeline-row')! as HTMLElement;
+    expect(row).toHaveClass('has-temporary-functions');
+    expect(within(row).getByText('Matelot', { exact: true })).toBeInTheDocument();
+    expect(within(row).getByText('Temp. : 2nd Capitaine')).toBeInTheDocument();
+    expect(within(row).getByLabelText('Fonction temporaire : 2nd Capitaine, du 14/07/2026 au 14/07/2026')).toHaveTextContent('2nd C.');
+    expect(cell).toHaveTextContent('Escale');
+    expect(within(row).getAllByLabelText(/^Fonction temporaire/)).toHaveLength(1);
+  });
+
   it('creates a board independently from the vessel staffing decision', async () => {
     const user = userEvent.setup();
     const { client, rpc } = createClient({
@@ -1683,18 +1717,47 @@ describe('PlanningPage cockpit', () => {
     }));
   });
 
-  it('renders a sailor as soon as an empty board row is added', async () => {
+  it('hides saved empty rows but shows a sailor added again until an assignment is entered', async () => {
+    const user = userEvent.setup();
+    const assignments = [assignmentOverviewRow, {
+      ...assignmentOverviewRow, id: 101, crew_person_id: 13, crew_name: 'Alain ANCIEN',
+      starts_on: '2025-01-01', ends_on: '2025-01-10',
+    }];
     const { client, rpc } = createClient({
-      assignments: [assignmentOverviewRow],
-      boardRows: [emptyBoardRow],
+      assignments,
+      boardRows: [{ ...emptyBoardRow, id: 901 }],
       people: [captainRow, crewRow, departedCrewRow],
     });
     render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
 
-    expect(screen.getByRole('button', { name: 'Supprimer la ligne vide de Alain ANCIEN' })).toBeInTheDocument();
-    expect(screen.getByText('Alain ANCIEN')).toBeInTheDocument();
-    expect(rpc).not.toHaveBeenCalledWith('delete_planning_board_row', { p_row_id: 900 });
+    const emptyCellName = /Case vide de Alain ANCIEN le 15\/07\/2026/;
+    expect(screen.queryByRole('button', { name: emptyCellName })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Ajouter un marin à Affectation de COTENTIN' }));
+    await user.click(within(await screen.findByRole('dialog', { name: 'Ajouter un marin à Affectation' }))
+      .getByRole('button', { name: 'Ajouter Alain ANCIEN' }));
+    expect(await screen.findByRole('button', { name: emptyCellName })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Actualiser' }));
+    expect(await screen.findByRole('button', { name: emptyCellName })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-10' } });
+    expect(screen.queryByRole('button', { name: /Case vide de Alain ANCIEN/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Aujourd’hui' }));
+    expect(screen.getByRole('button', { name: emptyCellName })).toBeInTheDocument();
+
+    assignments.push({
+      ...assignmentOverviewRow, id: 102, crew_person_id: 13, crew_name: 'Alain ANCIEN',
+      starts_on: '2026-07-15', ends_on: '2026-07-15',
+    });
+    await user.dblClick(screen.getByRole('button', { name: emptyCellName }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('apply_planning_grid_cells', expect.anything()));
+    await screen.findByRole('button', { name: 'Modifier le statut et le commentaire du 15/07/2026 pour Alain ANCIEN' });
+
+    assignments.pop();
+    await user.click(screen.getByRole('button', { name: 'Actualiser' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: emptyCellName })).not.toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Modifier le statut et le commentaire du 15/07/2026 pour Alain ANCIEN' })).not.toBeInTheDocument();
+    expect(rpc).not.toHaveBeenCalledWith('delete_planning_board_row', expect.anything());
   });
 
   it('colors an empty fleet cell only on double-click without opening the full form', async () => {

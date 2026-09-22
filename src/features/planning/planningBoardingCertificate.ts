@@ -8,6 +8,7 @@ import {
 } from './planningDates';
 import { formatPlanningPerson, getAllPlanningCrewEvents, normalizePlanningStatus } from './planningModel';
 import type { PlanningOverview } from './planningQueries';
+import { planningEventFunctionOnDate } from './planningFunctions';
 
 export type BoardingCertificateFormat = 'docx' | 'pdf';
 
@@ -95,7 +96,7 @@ function serviceDays(overview: PlanningOverview, input: BoardingCertificateInput
       for (let date = start; date <= end; date = addPlanningDays(date, 1)) {
         const status = event.dailyStatuses?.[date] || event.status;
         if (normalizePlanningStatus(status) !== 'En Mer') continue;
-        const functionLabel = event.functionLabel.trim();
+        const functionLabel = planningEventFunctionOnDate(event, date).trim();
         const key = [date, vessel.id, functionLabel.toLocaleUpperCase('fr-FR')].join('|');
         byKey.set(key, {
           date,
