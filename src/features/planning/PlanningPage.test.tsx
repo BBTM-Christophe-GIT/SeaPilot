@@ -1468,6 +1468,22 @@ describe('PlanningPage cockpit', () => {
     expect(updateAssignment).not.toHaveBeenCalled();
   });
 
+  it('shows dated temporary function labels while retaining the RH function and the daily comment', async () => {
+    const { client } = createClient({ assignments: [{ ...assignmentOverviewRow, assignment_role: 'Matelot' }], periods: [], days: [{
+      ...planningDayRow, person_id: 11, vessel_id: 1, work_date: '2026-07-14', function_label: '2nd Capitaine',
+      sailor_status: 'En Mer', slot365: 'assignment:100', source_label: 'seapilot-assignment-note', comments: 'Escale',
+    }] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    const cell = await screen.findByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' });
+    const row = cell.closest('.planning-timeline-row')! as HTMLElement;
+    expect(row).toHaveClass('has-temporary-functions');
+    expect(within(row).getByText('Matelot', { exact: true })).toBeInTheDocument();
+    expect(within(row).getByText('Temp. : 2nd Capitaine')).toBeInTheDocument();
+    expect(within(row).getByLabelText('Fonction temporaire : 2nd Capitaine, du 14/07/2026 au 14/07/2026')).toHaveTextContent('2nd C.');
+    expect(cell).toHaveTextContent('Escale');
+    expect(within(row).getAllByLabelText(/^Fonction temporaire/)).toHaveLength(1);
+  });
+
   it('creates a board independently from the vessel staffing decision', async () => {
     const user = userEvent.setup();
     const { client, rpc } = createClient({

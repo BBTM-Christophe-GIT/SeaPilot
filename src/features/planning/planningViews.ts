@@ -1,4 +1,5 @@
 import { rangesOverlap } from './planningDates';
+import { comparePlanningCrewPeriods, planningCrewPeriod } from './planningCrewOrder';
 import {
   getAllPlanningCrewEvents,
   isPlanningPersonEmployedDuring,
@@ -288,10 +289,12 @@ export function buildPlanningCrewLanes(
         personId: person.id, vesselId: null, vessel: '', watchGroup: '', functionLabel: person.functionLabel, events: [] });
     });
   }
+  const periodsByLane = new Map([...groups.values()].map((lane) => [lane.key, planningCrewPeriod(lane.events, range)]));
   return [...groups.values()].map((lane) => ({ ...lane,
     detail: [grouping === 'teams' ? lane.watchGroup || 'Sans équipe' : lane.functionLabel,
       ...new Set(lane.events.map((event) => event.vessel).filter(Boolean))].filter(Boolean).join(' · '),
-  })).sort((left, right) => (grouping === 'teams' ? left.watchGroup.localeCompare(right.watchGroup, 'fr') : 0)
+  })).sort((left, right) => comparePlanningCrewPeriods(periodsByLane.get(left.key) || null, periodsByLane.get(right.key) || null)
+    || (grouping === 'teams' ? left.watchGroup.localeCompare(right.watchGroup, 'fr') : 0)
     || (overview.people.find((person) => person.id === left.personId)?.lastName || left.label)
       .localeCompare(overview.people.find((person) => person.id === right.personId)?.lastName || right.label, 'fr')
     || left.label.localeCompare(right.label, 'fr'));

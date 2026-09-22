@@ -11,7 +11,18 @@ La fonction exercée est conservée dans `planning_days.function_label`, avec
 `source_label = 'seapilot-assignment-note'` et le lien à l’affectation existant.
 Les modifications de statut, de commentaire et le copier-coller conservent
 cette fonction. Les cases adjacentes ayant des fonctions différentes sont
-séparées visuellement ; le survol indique la fonction du jour.
+séparées visuellement. Une étiquette violette affiche la fonction sous les dates
+concernées dans les vues Flotte et Équipages. Sur une case étroite, le libellé est
+abrégé ; le libellé complet reste visible près du nom du marin et au survol.
+La fonction RH reste affichée. Les anciennes catégories génériques « Pont » ou
+« Machine » ne sont pas présentées comme des changements de fonction.
+
+Les lignes sont regroupées par navire puis par dates d’affectation visibles,
+avant le tri par fonction ou nom. La vue Flotte conserve sa hiérarchie de
+navires et bordées. Si une ligne couvre plusieurs rotations, son classement
+utilise l’affectation la plus longue dans la période affichée, puis la plus
+ancienne en cas d’égalité. Les journées consécutives d’un même navire restent
+dans une même rotation, même lorsque la fonction change.
 
 Les crew lists IMO utilisent la fonction du jour demandé. Les attestations
 d’armement, les exports du planning et les calendriers ICS séparent les périodes
@@ -44,7 +55,9 @@ dans tous ses exports ; rétablir le frontend corrigé avant de les éditer.
   attestation, export journalier, SILAE avec code/catégorie et calendrier ICS.
 - Tests SQL transactionnels des écritures, de la conservation des fonctions,
   de l’effectif et des refus pour les vrais profils Marin et Capitaine.
-- Lint, compilation de production et vérification navigateur du formulaire.
+- Tests de regroupement des rotations dans les vues Flotte et Équipages.
+- Lint, compilation de production et vérification navigateur du formulaire,
+  des étiquettes de fonction et de l’ordre des marins sur ordinateur et mobile.
 
 La migration a été appliquée à Supabase et le test SQL transactionnel y passe
 également, avec annulation de toutes les données de test. L’audit Supabase ne

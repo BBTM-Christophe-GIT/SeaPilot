@@ -2,7 +2,7 @@ import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { createPlanningPreviewOverview, updatePlanningPreviewDayState } from './planningPreviewData';
 import { getAllPlanningCrewEvents, buildPlanningExportRows } from './planningModel';
-import { planningEventFunctionForScope, planningEventFunctionOnDate, splitPlanningEventByFunction } from './planningFunctions';
+import { planningEventFunctionForScope, planningEventFunctionOnDate, planningTemporaryFunctionSegments, splitPlanningEventByFunction } from './planningFunctions';
 import { buildPlanningCrewList, generatePlanningCrewList } from './planningCrewList';
 import { buildBoardingCertificateData } from './planningBoardingCertificate';
 import { buildPlanningSilaePreviewData } from './planningSilaePreview';
@@ -22,6 +22,16 @@ function fixture() {
 }
 
 describe('temporary planning functions across dated documents', () => {
+  it('identifies dated or assignment-wide function changes without treating legacy departments as functions', () => {
+    const { event } = fixture();
+    expect(planningTemporaryFunctionSegments(event, 'Capitaine').map(({ startsOn, endsOn, functionLabel }) => ({ startsOn, endsOn, functionLabel })))
+      .toEqual([{ startsOn: '2026-07-14', endsOn: '2026-07-15', functionLabel: '2nd Capitaine' }]);
+    expect(planningTemporaryFunctionSegments({ ...event, functionLabel: '2nd Capitaine', dailyFunctionLabels: {} }, 'Capitaine'))
+      .toHaveLength(1);
+    expect(planningTemporaryFunctionSegments({ ...event, functionLabel: 'Pont', dailyFunctionLabels: {} }, 'Matelot'))
+      .toEqual([]);
+  });
+
   it('keeps RH and the assignment unchanged and coalesces consecutive daily functions', () => {
     const { original, overview, event } = fixture();
     expect(overview.people).toEqual(original.people);

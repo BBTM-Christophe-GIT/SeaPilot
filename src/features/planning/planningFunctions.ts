@@ -5,6 +5,19 @@ export function planningEventFunctionOnDate(event: PlanningCrewEvent, date: stri
   return event.dailyFunctionLabels?.[date]?.trim() || event.functionLabel;
 }
 
+export function planningTemporaryFunctionSegments(event: PlanningCrewEvent, hrFunction: string): PlanningCrewEvent[] {
+  const sameFunction = (left: string, right: string) => left.trim().localeCompare(right.trim(), 'fr', { sensitivity: 'base' }) === 0;
+  // Legacy assignments sometimes contain a department instead of a function.
+  const hasAssignmentFunction = !['', 'Pont', 'Machine', 'Équipage'].some((label) => sameFunction(event.functionLabel, label));
+  return splitPlanningEventByFunction(event).filter((segment) => !sameFunction(segment.functionLabel, event.functionLabel)
+    || Boolean(hasAssignmentFunction && hrFunction && !sameFunction(segment.functionLabel, hrFunction)));
+}
+
+export function planningShortFunctionLabel(label: string): string {
+  return ({ Capitaine: 'Capt.', '2nd Capitaine': '2nd C.', 'Chef Mécanicien': 'Ch. M.', '2nd Mécanicien': '2nd M.',
+    "Maître d'Equipage": 'M. éq.', 'Matelot polyvalent': 'Mat. P.', 'Matelot Qualifié': 'Mat. Q.', Stagiaire: 'Stag.' } as Record<string, string>)[label] || label;
+}
+
 export function planningEventFunctionForScope(event: PlanningCrewEvent, date: string | null): string {
   if (date) return planningEventFunctionOnDate(event, date);
   const functions = new Set(splitPlanningEventByFunction(event).map((segment) => segment.functionLabel));

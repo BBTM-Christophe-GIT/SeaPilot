@@ -25,6 +25,7 @@ import {
 } from './planningDates';
 
 import { planningEventFunctionOnDate } from './planningFunctions';
+import { comparePlanningCrewPeriods, planningCrewPeriod } from './planningCrewOrder';
 
 export { addPlanningDays, daysBetween, formatPlanningDate, isoDate, rangesOverlap } from './planningDates';
 
@@ -665,11 +666,13 @@ export function buildPlanningCrewRows(
           boardContent.rows.forEach((entry) => {
             if (!people.has(entry.personName)) people.set(entry.personName, []);
           });
+          const periodsByPerson = new Map([...people].map(([name, events]) => [name, planningCrewPeriod(events, range)]));
           [...people.entries()]
             .sort(([leftName, leftEvents], [rightName, rightEvents]) => {
               const leftRole = peopleByName.get(leftName)?.functionLabel || leftEvents[0]?.functionLabel || '';
               const rightRole = peopleByName.get(rightName)?.functionLabel || rightEvents[0]?.functionLabel || '';
-              return comparePlanningPersonnelFunctions(leftRole, rightRole) || leftName.localeCompare(rightName, 'fr');
+              return comparePlanningCrewPeriods(periodsByPerson.get(leftName) || null, periodsByPerson.get(rightName) || null)
+                || comparePlanningPersonnelFunctions(leftRole, rightRole) || leftName.localeCompare(rightName, 'fr');
             })
             .forEach(([person, personEvents]) => {
               const eventPersonId = personEvents.find((event) => event.personId !== null)?.personId ?? null;

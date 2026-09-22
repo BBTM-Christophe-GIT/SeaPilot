@@ -19050,6 +19050,33 @@ button.planning-p12-conflict-card {
   pointer-events: none;
 }
 
+.planning-timeline-row.has-temporary-functions { min-height: 62px; contain-intrinsic-size: auto 62px; }
+.planning-timeline-row.has-temporary-functions.has-crew-balances { min-height: 88px; contain-intrinsic-size: auto 88px; }
+.has-temporary-functions > .planning-crew-bar,
+.has-temporary-functions > .planning-assignment-note-cell { align-self: start; margin-top: 8px; }
+.has-temporary-functions > .planning-fleet-assignment-label { align-self: start; margin-top: 8px; }
+.planning-row-label .planning-temporary-function-summary { color: #6b3aa0; white-space: normal; }
+.planning-temporary-function-label {
+  z-index: 10;
+  min-width: 0;
+  height: 18px;
+  align-self: start;
+  overflow: hidden;
+  margin: 36px 2px 0;
+  border: 1px solid #cbb4e5;
+  border-radius: 4px;
+  padding: 0 3px;
+  color: #542582;
+  background: #f3eafa;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .planning-tools-group {
   display: grid;
   gap: 3px;
