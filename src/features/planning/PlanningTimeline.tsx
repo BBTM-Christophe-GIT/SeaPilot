@@ -33,6 +33,7 @@ import {
   type PlanningFleetLane,
 } from './planningViews';
 import { planningStaffingBoardKey } from './planningStaffingQueries';
+import { planningEventFunctionOnDate } from './planningFunctions';
 import { samePlanningLaneSelection, shallowPlanningEqual, withStablePlanningHandlers } from './planningRendering';
 
 export const PlanningFleetTimelineRow = withStablePlanningHandlers(PlanningFleetTimelineRowContent);
@@ -929,7 +930,7 @@ function PlanningCrewTimelineRowContent({
               vesselId: event.vesselId,
               vessel: event.vessel,
               watchGroup: event.board,
-              functionLabel: event.functionLabel,
+              functionLabel: planningEventFunctionOnDate(event, day.date),
               assignmentId: event.assignmentId || null,
               eventId: event.id,
               status: normalizePlanningGridStatus(event.dailyStatuses?.[day.date] || event.status, event.vessel),
@@ -944,6 +945,7 @@ function PlanningCrewTimelineRowContent({
                 ...storedCell,
                 key: adjacentKey,
                 workDate: date,
+                functionLabel: planningEventFunctionOnDate(event, date),
                 status: normalizePlanningGridStatus(event.dailyStatuses?.[date] || event.status, event.vessel),
                 note: event.dailyNotes?.[date] || '',
                 isConflict: conflictDates.has(date),
@@ -994,7 +996,7 @@ function PlanningCrewTimelineRowContent({
                   onOpen(event);
                 }}
                 style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
-                title={[hasStaffingAlert ? 'Écart vis-à-vis de la Décision d’effectif — confirmation administrateur requise' : '', documentAlert, cell.isConflict ? `Conflit d'affectation — ${cell.note || 'aucun commentaire'}` : cell.note || 'Case sans commentaire'].filter(Boolean).join('\n')}
+                title={[cell.functionLabel, hasStaffingAlert ? 'Écart vis-à-vis de la Décision d’effectif — confirmation administrateur requise' : '', documentAlert, cell.isConflict ? `Conflit d'affectation — ${cell.note || 'aucun commentaire'}` : cell.note || 'Case sans commentaire'].filter(Boolean).join('\n')}
                 type="button"
               >{cell.note}{documentAlert ? <FileWarning aria-hidden="true" className="planning-expired-document-icon" size={13} /> : null}{hasStaffingAlert ? <AlertTriangle aria-hidden="true" className="planning-staffing-alert-icon" size={13} /> : null}{cell.isConflict ? <AlertTriangle aria-hidden="true" className="planning-grid-conflict-icon" size={13} /> : null}</button>
             );

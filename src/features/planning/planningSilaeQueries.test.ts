@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import { fetchPlanningSilaeData } from './planningSilaeQueries';
+import { buildSilaeEmployee, buildSilaeRows } from './planningSilae';
 
 function mockClient(rows: Record<string, Record<string, unknown>[]>, failing = '') {
   const calls: { table: string; start: number; end: number; filters: unknown[]; columns: string }[] = [];
@@ -22,6 +23,24 @@ function mockClient(rows: Record<string, Record<string, unknown>[]>, failing = '
 }
 
 describe('SILAE authenticated data reads', () => {
+  it('exports a daily second-captain function between captain periods from persisted records', async () => {
+    const { client } = mockClient({
+      people: [{ id: 1, first_name: 'Pierre', last_name: 'TEST', employee_number: '00004', function_label: 'Capitaine', enim_function_code: 'AA01A', enim_category: '15', active: true }],
+      vessels: [{ id: 10, name: 'GOURY', registration_number: '934968' }],
+      planning_assignments: [{ id: 20, crew_person_id: 1, vessel_id: 10, starts_on: '2026-09-01', ends_on: '2026-09-30', status_label: 'En Mer', assignment_role: 'Capitaine', confirmation_status: 'confirmed' }],
+      planning_days: [{ id: 30, person_id: 1, vessel_id: 10, work_date: '2026-09-14', sailor_status: 'En Mer', function_label: '2nd Capitaine', source_label: 'seapilot-assignment-note', slot365: 'assignment:20' }],
+    });
+    const data = await fetchPlanningSilaeData(client, '2026-09');
+    const employee = buildSilaeEmployee(data, data.people[0], '2026-09');
+    expect(employee.issues).toEqual([]);
+    expect(employee.periods).toMatchObject([
+      { startsOn: '2026-09-01', endsOn: '2026-09-13', functionLabel: 'Capitaine', enimFunctionCode: 'AA01A' },
+      { startsOn: '2026-09-14', endsOn: '2026-09-14', functionLabel: '2nd Capitaine', enimFunctionCode: 'CA01A', enimCategory: '12' },
+      { startsOn: '2026-09-15', endsOn: '2026-09-30', functionLabel: 'Capitaine', enimFunctionCode: 'AA01A' },
+    ]);
+    expect(buildSilaeRows([employee]).flat()).toContain('CA01A');
+    expect(data.people[0].functionLabel).toBe('Capitaine');
+  });
   it('paginates each relation and preserves HR text codes with leading zeroes', async () => {
     const { client, calls } = mockClient({
       people: [{ id: 1, first_name: 'Pierre', last_name: 'AUGUIN', employee_number: '00004', enim_function_code: 'AA01A', enim_category: '05', active: true }],

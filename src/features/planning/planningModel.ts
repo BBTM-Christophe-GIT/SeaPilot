@@ -24,6 +24,8 @@ import {
   startOfPlanningWeek,
 } from './planningDates';
 
+import { planningEventFunctionOnDate } from './planningFunctions';
+
 export { addPlanningDays, daysBetween, formatPlanningDate, isoDate, rangesOverlap } from './planningDates';
 
 export type PlanningViewMode = 'day' | 'week' | 'fortnight' | 'month' | 'year';
@@ -68,6 +70,7 @@ export interface PlanningCrewEvent {
   updatedAt?: string;
   dailyNotes?: Record<string, string>;
   dailyStatuses?: Record<string, string>;
+  dailyFunctionLabels?: Record<string, string>;
 }
 
 export interface PlanningCrewRow {
@@ -461,6 +464,7 @@ export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCr
   const eventIndexesByKey = new Map(events.map((event, index) => [eventKey(event), index]));
   const notesByAssignment = new Map<number, Record<string, string>>();
   const statusesByAssignment = new Map<number, Record<string, string>>();
+  const functionsByAssignment = new Map<number, Record<string, string>>();
   overview.days.forEach((day) => {
     if (day.sourceLabel !== PLANNING_ASSIGNMENT_NOTE_SOURCE) return;
     const assignmentId = Number(day.slot365.replace('assignment:', ''));
@@ -471,6 +475,11 @@ export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCr
     const statuses = statusesByAssignment.get(assignmentId) || {};
     statuses[day.workDate] = normalizePlanningStatus(day.sailorStatus);
     statusesByAssignment.set(assignmentId, statuses);
+    if (day.functionLabel.trim()) {
+      const functions = functionsByAssignment.get(assignmentId) || {};
+      functions[day.workDate] = day.functionLabel.trim();
+      functionsByAssignment.set(assignmentId, functions);
+    }
   });
   overview.assignments.filter((assignment) => assignment.confirmationStatus !== 'cancelled')
     .sort((a, b) => comparePlanningRevision({ ...a, sourceId: a.id }, { ...b, sourceId: b.id })).map((assignment) => crewEventFromAssignment(
@@ -481,6 +490,7 @@ export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCr
       ...event,
       dailyNotes: notesByAssignment.get(event.assignmentId || 0) || {},
       dailyStatuses: statusesByAssignment.get(event.assignmentId || 0) || {},
+      dailyFunctionLabels: functionsByAssignment.get(event.assignmentId || 0) || {},
     };
     const key = eventKey(event);
     const existingIndex = eventIndexesByKey.get(key);
@@ -1017,12 +1027,12 @@ export function buildPlanningExportRows(
         rows.push({
           date,
           person: event.person,
-          worked: normalizePlanningStatus(event.status) === 'En Mer' ? 'Oui' : 'Non',
-          status: normalizePlanningStatus(event.status),
-          functionLabel: event.functionLabel,
+          worked: normalizePlanningStatus(event.dailyStatuses?.[date] || event.status) === 'En Mer' ? 'Oui' : 'Non',
+          status: normalizePlanningStatus(event.dailyStatuses?.[date] || event.status),
+          functionLabel: planningEventFunctionOnDate(event, date),
           vessel: event.vessel,
           watchGroup: event.board,
-          comments: event.comments,
+          comments: event.dailyNotes?.[date] ?? event.comments,
           source: event.sourceLabel,
         });
       }

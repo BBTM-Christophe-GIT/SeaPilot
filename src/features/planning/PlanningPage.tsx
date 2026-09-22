@@ -51,6 +51,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { PLANNING_ASSISTANT_ENABLED, PLANNING_PREDICTIONS_ENABLED } from '../../config/featureFlags';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
+import { planningEventFunctionForScope, planningEventFunctionOnDate } from './planningFunctions';
 import {
   buildPlanningCertificateAlerts,
   comparePlanningPersonnelFunctions,
@@ -81,7 +82,7 @@ import { addPlanningDays, daysBetween, formatPlanningDate, formatPlanningDateTim
 import { planningErrorMessage } from './planningErrors';
 import { getPlanningConflictDatesByEvent } from './planningOverlap';
 import { getPlanningPermissions } from './planningPermissions';
-import { createPlanningPreviewOverview } from './planningPreviewData';
+import { createPlanningPreviewOverview, updatePlanningPreviewDayState } from './planningPreviewData';
 import {
   addPlanningBoardRow,
   archivePlanningVessel,
@@ -247,6 +248,8 @@ interface PlanningDayStateForm {
   selectedDate: string;
   status: PlanningGridStatus;
   note: string;
+  functionLabel: string;
+  functionChanged: boolean;
 }
 interface PlanningEligiblePeopleDialogState {
   vesselId: number;
@@ -1120,7 +1123,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   function openDayState(event: PlanningCrewEvent, date: string | null) {
     const status = (date ? event.dailyStatuses?.[date] : event.status) || 'En Mer';
     const allowedStatus = isPlanningGridStatus(status) ? status : 'En Mer';
-    setDayStateForm({ event, date, selectedDate: date || event.startsOn, status: allowedStatus, note: date ? event.dailyNotes?.[date] || '' : event.comments || '' });
+    setDayStateForm({ event, date, selectedDate: date || event.startsOn, status: allowedStatus,
+      note: date ? event.dailyNotes?.[date] || '' : event.comments || '',
+      functionLabel: planningEventFunctionForScope(event, date), functionChanged: false });
   }
 
   async function saveDayState(event: FormEvent<HTMLFormElement>) {
@@ -1138,16 +1143,21 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         assignmentId: dayStateForm.event.assignmentId!,
         status: dayStateForm.status,
         note: dayStateForm.note,
+        ...(dayStateForm.functionChanged && dayStateForm.functionLabel ? { functionLabel: dayStateForm.functionLabel } : {}),
       };
-      if (dates.length === 1) await savePlanningAssignmentDayState(effectiveClient, { ...input, workDate: dates[0] });
-      else await savePlanningAssignmentDayStates(effectiveClient, { ...input, startsOn: dates[0], endsOn: dates[dates.length - 1] });
-      const daysData = await fetchPlanningDays(effectiveClient);
-      updateOverview((current) => ({ ...current, days: daysData }));
+      if (previewMode) {
+        updateOverview((current) => dates.reduce((result, workDate) => updatePlanningPreviewDayState(result, { ...input, workDate }), current));
+      } else {
+        if (dates.length === 1) await savePlanningAssignmentDayState(effectiveClient, { ...input, workDate: dates[0] });
+        else await savePlanningAssignmentDayStates(effectiveClient, { ...input, startsOn: dates[0], endsOn: dates[dates.length - 1] });
+        const daysData = await fetchPlanningDays(effectiveClient);
+        updateOverview((current) => ({ ...current, days: daysData }));
+      }
       const displayStatus = planningStatusDisplayLabel(dayStateForm.status);
       setStatusMessage(`${displayStatus} ${displayStatus === 'Congés' ? 'enregistrés' : 'enregistré'} pour ${dayStateForm.event.person}${dayStateForm.date ? ` le ${formatPlanningDate(dayStateForm.date)}` : ' sur toute la période'}.`);
       setDayStateForm(null);
     } catch (error) {
-      setErrorMessage(planningErrorMessage(error, 'Impossible d’enregistrer le statut et le commentaire.'));
+      setErrorMessage(planningErrorMessage(error, 'Impossible d’enregistrer le statut, la fonction et le commentaire.'));
     } finally {
       setIsSaving(false);
     }
@@ -1171,7 +1181,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       vesselId: event.vesselId!,
       vessel: event.vessel,
       watchGroup: event.board,
-      functionLabel: event.functionLabel,
+      functionLabel: planningEventFunctionOnDate(event, workDate),
       assignmentId,
       eventId: event.id,
       status: normalizePlanningGridStatus(event.dailyStatuses?.[workDate] || event.status, event.vessel),
@@ -3036,6 +3046,12 @@ function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onDelete, o
   onSave: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
+  const functionOptions = uniqueSorted([...PLANNING_ASSIGNMENT_FUNCTIONS, form.functionLabel, form.event.functionLabel]);
+  function changeScope(date: string | null) {
+    setIsDeleteConfirming(false);
+    onChange({ ...form, date,
+      functionLabel: form.functionChanged ? form.functionLabel : planningEventFunctionForScope(form.event, date) });
+  }
   const options = [
     ['En Mer', 'En mer', 'sea'],
     ['A Terre', 'À terre', 'shore'],
@@ -3049,9 +3065,11 @@ function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onDelete, o
   return <div className="planning-dialog-backdrop" role="presentation">
     <form aria-label="Statut et commentaire" aria-modal="true" className="planning-dialog planning-day-state-dialog" onSubmit={onSave} role="dialog">
       <header><div><Pencil aria-hidden="true" size={20} /><span><small>{form.date ? formatPlanningDate(form.date) : 'Période complète'}</small><h2>{form.event.person}</h2></span></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header>
-      <p className="planning-dialog-intro">Choisissez l’état visible dans la grille et, si besoin, un commentaire court.</p>
-      <fieldset className="planning-day-scope-options"><legend>Appliquer à</legend><button className={form.date ? 'is-active' : ''} onClick={() => { setIsDeleteConfirming(false); onChange({ ...form, date: form.selectedDate }); }} type="button">Ce jour</button><button className={form.date ? '' : 'is-active'} onClick={() => { setIsDeleteConfirming(false); onChange({ ...form, date: null }); }} type="button">Tout le groupe de cases</button></fieldset>
+      <p className="planning-dialog-intro">Choisissez le statut, la fonction exercée et, si besoin, un commentaire court.</p>
+      <fieldset className="planning-day-scope-options"><legend>Appliquer à</legend><button className={form.date ? 'is-active' : ''} onClick={() => changeScope(form.selectedDate)} type="button">Ce jour</button><button className={form.date ? '' : 'is-active'} onClick={() => changeScope(null)} type="button">Tout le groupe de cases</button></fieldset>
       <fieldset className="planning-day-status-options"><legend>Statut</legend>{options.map(([value, label, tone]) => <label className={`is-${tone}`} key={value}><input checked={form.status === value} name="daily-status" onChange={() => onChange({ ...form, status: value })} type="radio" /><span>{label}</span></label>)}</fieldset>
+      <label className="planning-day-comment">Fonction temporaire<select aria-describedby="planning-temporary-function-help" onChange={(event) => onChange({ ...form, functionLabel: event.target.value, functionChanged: true })} value={form.functionLabel}><option value="">Conserver les fonctions de chaque jour</option>{functionOptions.map((label) => <option key={label} value={label}>{label}</option>)}</select></label>
+      <small id="planning-temporary-function-help">Appliquée aux dates sélectionnées et aux exports. La fonction RH reste inchangée.</small>
       <label className="planning-day-comment">Commentaire<input autoFocus maxLength={32} onChange={(event) => onChange({ ...form, note: event.target.value })} placeholder="Texte court affiché dans la case" value={form.note} /></label>
       <small>{form.note.length}/32</small>
       {isDeleteConfirming ? <div className="planning-inline-delete-confirm" role="alert"><p>{form.date ? 'Supprimer uniquement cette case ?' : 'Supprimer tout le groupe de cases ?'}</p><span><button className="is-secondary" onClick={() => setIsDeleteConfirming(false)} type="button">Conserver</button><button className="is-danger" disabled={isSaving} onClick={onDelete} type="button"><Trash2 aria-hidden="true" size={15} />Confirmer la suppression</button></span></div> : null}

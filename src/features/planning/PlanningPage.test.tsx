@@ -413,7 +413,7 @@ function createClient(options: {
       return Promise.resolve({ data: { revision: 'fixture-periods', periods: options.periods ?? [] }, error: null });
     }
     if (functionName === 'save_planning_crew_balance') return Promise.resolve({ data: null, error: null });
-    if (functionName === 'save_planning_assignment_day_states') {
+    if (functionName === 'save_planning_assignment_day_states' || functionName === 'save_planning_assignment_day_details_range') {
       return Promise.resolve({ data: 1, error: null });
     }
     if (functionName === 'planning_assignment_overview_with_revisions') {
@@ -471,7 +471,7 @@ function createClient(options: {
     if (functionName === 'save_planning_assignment_day_note') {
       return Promise.resolve({ data: 202, error: null });
     }
-    if (functionName === 'save_planning_assignment_day_state') {
+    if (functionName === 'save_planning_assignment_day_state' || functionName === 'save_planning_assignment_day_details') {
       return Promise.resolve({ data: 202, error: null });
     }
     if (functionName === 'apply_planning_grid_cells') {
@@ -1448,6 +1448,24 @@ describe('PlanningPage cockpit', () => {
     expect(rpc.mock.calls.filter(([name]) => name === 'save_planning_assignment_day_states')).toHaveLength(1);
     expect(rpc.mock.calls.some(([name]) => name === 'save_planning_assignment_day_state')).toBe(false);
     expect(await screen.findByText('Repos enregistré pour Paul DURAND sur toute la période.')).toBeInTheDocument();
+  });
+
+  it.each(['day', 'group'])('saves a temporary function for the selected %s without editing the parent assignment or RH', async (scope) => {
+    const user = userEvent.setup();
+    const { client, rpc, updateAssignment } = createClient({ assignments: [{ ...assignmentOverviewRow, assignment_role: 'Capitaine' }], periods: [], days: [] });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    fireEvent.contextMenu(await screen.findByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
+    expect(within(dialog).getByLabelText('Fonction temporaire')).toHaveValue('Capitaine');
+    await user.selectOptions(within(dialog).getByLabelText('Fonction temporaire'), '2nd Capitaine');
+    if (scope === 'group') await user.click(within(dialog).getByRole('button', { name: 'Tout le groupe de cases' }));
+    expect(within(dialog).getByLabelText('Fonction temporaire')).toHaveValue('2nd Capitaine');
+    await user.click(within(dialog).getByRole('button', { name: scope === 'day' ? 'Appliquer à ce jour' : 'Appliquer à la période' }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith(scope === 'day' ? 'save_planning_assignment_day_details' : 'save_planning_assignment_day_details_range', {
+      p_assignment_id: 100, p_status: 'En Mer', p_note: '', p_function_label: '2nd Capitaine',
+      ...(scope === 'day' ? { p_work_date: '2026-07-14' } : { p_starts_on: '2026-07-01', p_ends_on: '2026-07-14' }),
+    }));
+    expect(updateAssignment).not.toHaveBeenCalled();
   });
 
   it('creates a board independently from the vessel staffing decision', async () => {

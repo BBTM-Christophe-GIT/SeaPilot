@@ -1,5 +1,26 @@
 import { addPlanningDays } from './planningDates';
-import type { PlanningOverview, PlanningPerson } from './planningQueries';
+import type { PlanningOverview, PlanningPerson, SavePlanningAssignmentDayStateInput } from './planningQueries';
+
+export function updatePlanningPreviewDayState(overview: PlanningOverview, input: SavePlanningAssignmentDayStateInput): PlanningOverview {
+  const assignment = overview.assignments.find((row) => row.id === input.assignmentId);
+  if (!assignment || input.workDate < assignment.startsOn || input.workDate > assignment.endsOn) return overview;
+  const slot365 = `assignment:${assignment.id}`;
+  const existing = overview.days.find((day) => day.sourceLabel === 'seapilot-assignment-note' && day.slot365 === slot365 && day.workDate === input.workDate);
+  const functionLabel = input.functionLabel || existing?.functionLabel || assignment.assignmentRole;
+  const days = overview.days.filter((day) => day !== existing);
+  if (input.status === assignment.statusLabel && !input.note.trim() && functionLabel === assignment.assignmentRole) return { ...overview, days };
+  days.push({
+    id: existing?.id ?? Math.max(0, ...overview.days.map((day) => day.id)) + 1,
+    personId: assignment.crewPersonId, vesselId: assignment.vesselId, crewName: assignment.crewName,
+    captainName: assignment.captainName, vesselName: assignment.vesselName, workDate: input.workDate,
+    disembarkOn: '', yearNumber: Number(input.workDate.slice(0, 4)), monthNumber: Number(input.workDate.slice(5, 7)),
+    monthLabel: '', dayNumber: Number(input.workDate.slice(8, 10)), functionLabel,
+    sailorStatus: input.status, dayStatus: 'État quotidien', rhythmLabel: '', watchGroup: assignment.watchGroup,
+    slot365, departureOn: '', workedHours: null, rest24h: null, cumulative7d: null,
+    comments: input.note, sourceLabel: 'seapilot-assignment-note',
+  });
+  return { ...overview, days };
+}
 
 function previewPerson(
   id: number,

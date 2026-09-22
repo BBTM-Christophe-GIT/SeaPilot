@@ -49,7 +49,7 @@ select ok(
 );
 select matches(
   pg_get_functiondef('public.planning_staffing_board_status(bigint,text,date)'::regprocedure),
-  '(?is)person.function_label = ''Capitaine''.*assignment.assignment_role = ''Capitaine''',
+  '(?is)person.function_label = ''Capitaine''.*planning_assignment_function_on_date\(assignment.id, p_work_date\) = ''Capitaine''',
   'captain eligibility combines the exact HR truth with the confirmed Planning function'
 );
 select matches(

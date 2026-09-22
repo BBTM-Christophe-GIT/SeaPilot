@@ -52,14 +52,15 @@ export function normalizePlanningGridStatus(status: string, vessel: string): Pla
 }
 
 export function planningGridCellsShareSegment(
-  left: Pick<PlanningGridCell, 'status' | 'note' | 'isConflict'> | null,
-  right: Pick<PlanningGridCell, 'status' | 'note' | 'isConflict'> | null,
+  left: Pick<PlanningGridCell, 'status' | 'note' | 'isConflict' | 'functionLabel'> | null,
+  right: Pick<PlanningGridCell, 'status' | 'note' | 'isConflict' | 'functionLabel'> | null,
 ): boolean {
   return Boolean(
     left
     && right
     && left.status === right.status
     && left.note === right.note
+    && left.functionLabel === right.functionLabel
     && left.isConflict === right.isConflict,
   );
 }
@@ -90,6 +91,7 @@ export function buildPlanningGridPaste(
         eventId: workDate === targetLane.workDate ? targetLane.eventId : null,
         status: cell.status,
         note: cell.note,
+        functionLabel: cell.functionLabel,
         isConflict: false,
       };
     });
@@ -97,6 +99,6 @@ export function buildPlanningGridPaste(
 
   return targets.map((target, index) => {
     const sourceCell = source[index % source.length];
-    return { ...target, status: sourceCell.status, note: sourceCell.note };
+    return { ...target, status: sourceCell.status, note: sourceCell.note, functionLabel: sourceCell.functionLabel };
   });
 }

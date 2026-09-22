@@ -763,6 +763,7 @@ export interface SavePlanningAssignmentDayNoteInput {
 
 export interface SavePlanningAssignmentDayStateInput extends SavePlanningAssignmentDayNoteInput {
   status: PlanningGridStatus;
+  functionLabel?: string;
 }
 
 export interface PlanningGridMutationCell {
@@ -1733,11 +1734,13 @@ export async function savePlanningAssignmentDayState(
   const note = input.note.trim();
   if (!isPlanningGridStatus(input.status)) throw new Error('Le statut quotidien est invalide.');
   if (note.length > 32) throw new Error('Le commentaire quotidien ne peut pas dépasser 32 caractères.');
-  const { data, error } = await client.rpc('save_planning_assignment_day_state', {
+  const functionLabel = input.functionLabel === undefined ? undefined : requiredPlanningText(input.functionLabel, 'La fonction temporaire');
+  const { data, error } = await client.rpc(functionLabel === undefined ? 'save_planning_assignment_day_state' : 'save_planning_assignment_day_details', {
     p_assignment_id: assignmentId,
     p_work_date: input.workDate,
     p_status: input.status,
     p_note: note,
+    ...(functionLabel === undefined ? {} : { p_function_label: functionLabel }),
   });
   if (error) throwPlanningDataError('save-assignment-day-state', 'Impossible d’enregistrer le statut quotidien.', error);
   return typeof data === 'number' ? data : null;
@@ -1752,12 +1755,14 @@ export async function savePlanningAssignmentDayStates(
   const note = input.note.trim();
   if (!isPlanningGridStatus(input.status)) throw new Error('Le statut quotidien est invalide.');
   if (note.length > 32) throw new Error('Le commentaire quotidien ne peut pas dépasser 32 caractères.');
-  const { error } = await client.rpc('save_planning_assignment_day_states', {
+  const functionLabel = input.functionLabel === undefined ? undefined : requiredPlanningText(input.functionLabel, 'La fonction temporaire');
+  const { error } = await client.rpc(functionLabel === undefined ? 'save_planning_assignment_day_states' : 'save_planning_assignment_day_details_range', {
     p_assignment_id: assignmentId,
     p_starts_on: input.startsOn,
     p_ends_on: input.endsOn,
     p_status: input.status,
     p_note: note,
+    ...(functionLabel === undefined ? {} : { p_function_label: functionLabel }),
   });
   if (error) throwPlanningDataError('save-assignment-day-states', 'Impossible d’enregistrer les statuts quotidiens.', error);
 }
