@@ -13,7 +13,7 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
     purpose: 'Tenir l’inventaire des produits chimiques par navire et retrouver leurs fiches de données de sécurité.',
     access: 'Tous les profils, y compris Marin et Capitaine, peuvent consulter, ajouter, modifier et supprimer les produits de leur société, joindre leurs documents et exporter un inventaire.',
     steps: [
-      { title: 'Choisir le navire', detail: 'Dans QHSE, ouvrez Produits Chimiques. Cliquez sur l’illustration d’un navire pour filtrer son inventaire ou sur Flotte pour consulter tous les navires. La recherche retrouve un produit, une variante ou un usage.' },
+      { title: 'Choisir le navire', detail: 'Dans Registres, ouvrez Produits Chimiques. Cliquez sur l’illustration d’un navire pour filtrer son inventaire ou sur Flotte pour consulter tous les navires. La recherche retrouve un produit, une variante ou un usage.' },
       { title: 'Renseigner un produit', detail: 'Cliquez sur Ajouter un produit ou sur le crayon d’une ligne. Indiquez le navire, la marque, le type, la variante, le stock en litres et les conditions de stockage. Sélectionnez les pictogrammes de la FDS et complétez les dangers, les conseils de prudence et les EPI, puis enregistrez.' },
       { title: 'Consulter et joindre une FDS', detail: 'Cliquez sur le nom du produit pour lire toutes ses consignes. Dans FDS et pièces jointes, choisissez le type de document et ajoutez vos fichiers, jusqu’à 20 Mo chacun. Les fichiers sont classés dans Google Drive, sous SeaPilot / Produits Chimiques / navire / produit. Cliquez sur un nom de fichier pour le télécharger.' },
       { title: 'Exporter le PDF BBTM', detail: 'Choisissez Exporter en PDF, sélectionnez le navire et cochez Inclure les pièces jointes si nécessaire. L’export comprend tout l’inventaire de ce navire même lorsqu’une recherche est active. Les PDF et images sont ajoutés en annexe ; les autres fichiers sont inclus dans le panneau des pièces jointes du lecteur PDF.' },
@@ -66,9 +66,10 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
     purpose: 'Lire les procédures QHSE approuvées et publiées pour préparer votre intervention.',
     access: 'Le Marin consulte uniquement les versions PDF approuvées et publiées. Les fichiers de travail restent réservés aux responsables.',
     steps: [
-      { title: 'Trouver la procédure', detail: 'Recherchez par nom, numéro ou thème. Vous pouvez aussi filtrer par projet et par navire.' },
+      { title: 'Trouver la procédure', detail: 'Recherchez par nom, numéro ou thème. Vous pouvez aussi filtrer par projet et par navire. Le filtre Navire inclut les procédures de ce navire et celles sans navire, communes à la flotte.' },
       { title: 'Parcourir la bibliothèque', detail: 'Développez le chapitre de classement, puis sélectionnez la procédure souhaitée.' },
       { title: 'Lire la version publiée', detail: 'Ouvrez le PDF disponible et vérifiez son titre ainsi que sa version avant d’appliquer les consignes.' },
+      { title: 'Générer une liste', detail: 'Cliquez sur Générer une liste des documents, choisissez le navire et cochez les procédures à inclure. Tout sélectionner et Tout désélectionner portent sur les documents affichés. Le PDF A4 portrait regroupe les documents par chapitre ISM, sans statut ni navire. La mise en page vise une seule page selon la longueur de la sélection.' },
     ],
     reminders: ['Si la procédure attendue n’apparaît pas, vérifiez les filtres puis contactez le responsable QHSE.', 'Une ancienne copie conservée sur votre poste peut avoir été remplacée par une nouvelle publication.'],
   },

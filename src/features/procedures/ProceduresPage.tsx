@@ -21,6 +21,7 @@ import {
   FolderKanban,
   Info,
   List,
+  ListChecks,
   Search,
   Send,
   ShipWheel,
@@ -46,6 +47,7 @@ import {
   deleteProcedure,
   deletePublishedProcedure,
   fetchProcedureProjects,
+  fetchProcedureVessels,
   fetchProceduresData,
   getProcedurePublicationDate,
   getProcedureFileUrl,
@@ -64,6 +66,9 @@ import {
 import { buildProcedureCode, getAnnualReviewAlert, getAnnualReviewDueDate } from './procedureReview';
 import { googleDriveFileUrl, parseProcedureDriveLink } from './procedureGoogleDrive';
 import './procedureGoogleDrive.css';
+import { ProcedureListDialog } from './ProcedureListDialog';
+import { procedureAppliesToVessel } from './procedureList';
+import { CHAPTERS, chapterKey, type ProcedureChapterKey } from './procedureChapters';
 
 interface ProceduresPageProps {
   client?: SupabaseClient;
@@ -78,25 +83,6 @@ interface ProcedureFilterState {
 
 type LibraryView = 'sources' | 'published';
 
-const CHAPTERS = [
-  ['01', '01 - Généralités'],
-  ['02', "02 - Politique en Matière de Sécurité et de Protection de l'Environnement"],
-  ['03', '03 - Responsabilité et Autorité de la Compagnie'],
-  ['04', '04 - Personne(s) Désignée(s)'],
-  ['05', '05 - Responsabilité et Autorité du Capitaine'],
-  ['06', '06 - Ressources et Personnel'],
-  ['07', '07 - Établissement de Plans pour les Opérations à Bord'],
-  ['08', "08 - Préparation aux Situations d'Urgence"],
-  ['09', '09 - Rapports et Analyse des Non-conformités, Accidents et Incidents'],
-  ['10', '10 - Maintenance du Navire et de son Équipement'],
-  ['11', '11 - Documentation'],
-  ['12', '12 - Vérification, Examen et Évaluation de la Compagnie'],
-  ['13', '13 - Certification, Vérification et Contrôle'],
-  ['uncontrolled', 'Documents non contrôlés'],
-  ['unassigned', 'ISM - Chapitre non renseigné'],
-] as const;
-
-type ProcedureChapterKey = typeof CHAPTERS[number][0];
 type ProcedureChapterTone = 'blue' | 'teal' | 'orange' | 'amber';
 
 const CHAPTER_VISUALS: Record<ProcedureChapterKey, { Icon: LucideIcon; tone: ProcedureChapterTone }> = {
@@ -135,12 +121,6 @@ function normalizeSearch(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
-function chapterKey(value: string): ProcedureChapterKey {
-  const match = value.match(/^\s*(0[1-9]|1[0-3])/);
-  if (match) return match[1] as ProcedureChapterKey;
-  return normalizeSearch(value).includes('non controle') ? 'uncontrolled' : 'unassigned';
-}
-
 function ProcedureChapterIcon({ chapter }: { chapter: ProcedureChapterKey }) {
   const { Icon, tone } = CHAPTER_VISUALS[chapter];
   return <span aria-hidden="true" className={`procedure-chapter-icon is-${tone}`} data-chapter-icon={chapter}><Icon size={16} /></span>;
@@ -152,7 +132,7 @@ function projectNames(value: string): string[] {
 
 function matchesFilters(record: ProcedureRecord, filters: ProcedureFilterState): boolean {
   if (filters.project && !projectNames(record.projectName).includes(filters.project)) return false;
-  if (filters.vessel && record.vesselName !== filters.vessel) return false;
+  if (!procedureAppliesToVessel(record, filters.vessel)) return false;
   if (!filters.search) return true;
   const searchable = normalizeSearch([
     record.title, record.procedureCode, record.documentNumber, record.theme, record.ismChapter, record.description,
@@ -207,12 +187,15 @@ interface ProcedureEditorProps {
   procedure: ProcedureRecord | null;
   procedures: ProcedureRecord[];
   projectOptions: ProcedureProjectOption[];
+  vesselOptions: string[];
+  vesselsLoading: boolean;
+  vesselsError: string;
   onClose: () => void;
   onSave: (input: ProcedureInput, file: File | null) => Promise<void>;
   saving: boolean;
 }
 
-function ProcedureEditor({ procedure, procedures, projectOptions, onClose, onSave, saving }: ProcedureEditorProps) {
+function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions, vesselsLoading, vesselsError, onClose, onSave, saving }: ProcedureEditorProps) {
   const [form, setForm] = useState(() => procedure ? formFromProcedure(procedure) : { ...EMPTY_FORM });
   const [file, setFile] = useState<File | null>(null);
   const [usesDrive, setUsesDrive] = useState(procedure ? Boolean(procedure.googleDriveFileId) : true);
@@ -304,7 +287,13 @@ function ProcedureEditor({ procedure, procedures, projectOptions, onClose, onSav
                   </small>
                 </label>
                 <label>Version<input placeholder="Ex. D" value={form.versionLabel} onChange={(event) => setValue('versionLabel', event.target.value)} /></label>
-                <label>Navire<input value={form.vesselName} onChange={(event) => setValue('vesselName', event.target.value)} /></label>
+                <label>Navire<select disabled={vesselsLoading} value={form.vesselName} onChange={(event) => setValue('vesselName', event.target.value)}>
+                  <option value="">Tous les navires (champ vide)</option>
+                  {form.vesselName && !vesselOptions.includes(form.vesselName) ? <option value={form.vesselName}>{form.vesselName} (valeur actuelle)</option> : null}
+                  {vesselOptions.map((name) => <option key={name}>{name}</option>)}
+                </select><small>{vesselsLoading ? 'Chargement de la flotte…' : 'Laissez ce champ vide pour une procédure commune à toute la flotte.'}</small>
+                  {vesselsError ? <small className="procedure-field-error" role="alert">{vesselsError}</small> : null}
+                </label>
                 <label className="procedure-form-wide">ISM Chapitre<select value={form.ismChapter} onChange={(event) => setValue('ismChapter', event.target.value)}>{CHAPTERS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
                 <label className="procedure-form-wide">Projet
                   <div className="procedure-project-combobox"><FolderKanban aria-hidden="true" size={16} /><input aria-label="Projet" autoComplete="off" list={projectListId} placeholder="Rechercher par numéro ou nom de projet…" value={form.projectName} onChange={(event) => setValue('projectName', event.target.value)} /></div>
@@ -390,6 +379,10 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
   const [procedures, setProcedures] = useState<ProcedureRecord[]>([]);
   const [publications, setPublications] = useState<PublishedProcedureRecord[]>([]);
   const [procedureProjects, setProcedureProjects] = useState<ProcedureProjectOption[]>([]);
+  const [fleetVessels, setFleetVessels] = useState<string[]>([]);
+  const [vesselsLoading, setVesselsLoading] = useState(true);
+  const [vesselsError, setVesselsError] = useState('');
+  const [isListOpen, setIsListOpen] = useState(false);
   const [filters, setFilters] = useState<ProcedureFilterState>(EMPTY_FILTERS);
   const [view, setView] = useState<LibraryView>(linkedPublicationId ? 'published' : isManager ? 'sources' : 'published');
   const [selectedId, setSelectedId] = useState<number | null>(linkedPublicationId);
@@ -430,10 +423,22 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
     return () => { mounted = false; };
   }, [effectiveClient, isManager]);
 
-  const activeRecords = view === 'sources' ? procedures : publications;
+  useEffect(() => {
+    let mounted = true;
+    setVesselsLoading(true);
+    setVesselsError('');
+    setFleetVessels([]);
+    fetchProcedureVessels(effectiveClient)
+      .then((names) => { if (mounted) setFleetVessels(names); })
+      .catch(() => { if (mounted) setVesselsError('Impossible de charger les navires de la flotte. Rechargez la page pour réessayer.'); })
+      .finally(() => { if (mounted) setVesselsLoading(false); });
+    return () => { mounted = false; };
+  }, [effectiveClient]);
+
+  const activeRecords = isManager && view === 'sources' ? procedures : publications;
   const filteredRecords = useMemo(() => activeRecords.filter((record) => matchesFilters(record, filters)), [activeRecords, filters]);
   const projects = useMemo(() => [...new Set(activeRecords.flatMap((record) => projectNames(record.projectName)))].sort(), [activeRecords]);
-  const vessels = useMemo(() => [...new Set(activeRecords.map((record) => record.vesselName).filter(Boolean))].sort(compareFleetNames), [activeRecords]);
+  const vessels = useMemo(() => [...new Set([...fleetVessels, ...activeRecords.map((record) => record.vesselName.trim()).filter(Boolean)])].sort(compareFleetNames), [activeRecords, fleetVessels]);
   const selectedProcedure = procedures.find((procedure) => procedure.id === selectedId) || null;
   const metrics = useMemo(() => buildProcedureMetrics({ procedures, publications }), [procedures, publications]);
 
@@ -538,6 +543,8 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
           <strong>{filteredRecords.length}</strong>
         </div>
 
+        <div className="procedure-list-action"><button className="procedure-button-secondary" disabled={!activeRecords.length} onClick={() => setIsListOpen(true)} type="button"><ListChecks size={17} />Générer une liste des documents</button></div>
+
         {isManager ? (
           <div className="procedure-toolbar">
             <div><strong>{selectedProcedure ? '1 document sélectionné' : '0 document sélectionné'}</strong><small>{filteredRecords.length} document(s) affiché(s)</small></div>
@@ -597,7 +604,8 @@ export function ProceduresPage({ client, roles }: ProceduresPageProps) {
         </div>
       </section>
 
-      {editorProcedure ? <ProcedureEditor procedure={editorProcedure === 'new' ? null : editorProcedure} procedures={procedures} projectOptions={procedureProjects} onClose={() => setEditorProcedure(null)} onSave={handleSave} saving={isSaving} /> : null}
+      {editorProcedure ? <ProcedureEditor procedure={editorProcedure === 'new' ? null : editorProcedure} procedures={procedures} projectOptions={procedureProjects} vesselOptions={fleetVessels} vesselsLoading={vesselsLoading} vesselsError={vesselsError} onClose={() => setEditorProcedure(null)} onSave={handleSave} saving={isSaving} /> : null}
+      {isListOpen ? <ProcedureListDialog records={activeRecords} vessels={vessels} initialVessel={filters.vessel} library={isManager ? view : 'published'} onClose={() => setIsListOpen(false)} /> : null}
       {publishTarget ? <PublishDialog procedure={publishTarget} onClose={() => setPublishTarget(null)} onPublish={handlePublish} saving={isSaving} /> : null}
     </section>
   );

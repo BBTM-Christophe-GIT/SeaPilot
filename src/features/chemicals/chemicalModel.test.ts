@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { attachmentMime, blankChemical, filterChemicals, stockLabel, validateChemical, type ChemicalProduct } from './chemicalModel';
 import { getDefaultVisibleModules } from '../permissions/navigationPermissions';
 describe('chemical inventory rules', () => {
-  it.each(['admin','direction','armement','capitaine','marin'] as const)('makes the QHSE submenu accessible to the real %s role fixture', (role) => {
-    expect(getDefaultVisibleModules([role])).toContainEqual(expect.objectContaining({key:'chemicals',family:'QHSE'}));
+  it.each(['admin','direction','armement','capitaine','marin'] as const)('makes the Registres submenu accessible to the real %s role fixture', (role) => {
+    expect(getDefaultVisibleModules([role])).toContainEqual(expect.objectContaining({key:'chemicals',family:'Registres'}));
   });
   it('distinguishes an unknown stock from zero and accepts decimal litres', () => {
     expect(stockLabel(null)).toBe('À renseigner'); expect(stockLabel(0)).toBe('0 L'); expect(stockLabel(4.5)).toBe('4,5 L');

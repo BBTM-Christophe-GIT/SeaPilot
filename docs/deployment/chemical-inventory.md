@@ -1,6 +1,6 @@
-# QHSE — Produits Chimiques · 3.49.0
+# Registres — Produits Chimiques
 
-QHSE → Produits Chimiques est activé pour Administration, Direction, Armement,
+Registres → Produits Chimiques est activé pour Administration, Direction, Armement,
 Capitaine et Marin. Chaque profil peut consulter et gérer l'inventaire des navires de
 sa société active, sélectionner les neuf pictogrammes SGH, modifier le stock en litres,
 ajouter des FDS et exporter un PDF BBTM par navire. Les illustrations des navires et

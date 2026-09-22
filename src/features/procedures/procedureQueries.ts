@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { compareFleetNames, fleetAssetKind, type FleetAssetKind } from '../fleet/fleetDisplay';
 import { buildProcedureCode } from './procedureReview';
 import { buildGoogleDriveDesktopUri, googleDriveFileUrl, parseProcedureDriveLink } from './procedureGoogleDrive';
 
@@ -327,6 +328,15 @@ export async function fetchProcedureProjects(client: SupabaseClient): Promise<Pr
       label: [nullableText(row.project_code).trim(), row.title.trim()].filter(Boolean).join(' - '),
     }))
     .filter((option) => option.label);
+}
+
+export async function fetchProcedureVessels(client: SupabaseClient): Promise<string[]> {
+  const { data, error } = await client.from('vessels').select('name,asset_kind').eq('active', true).order('name');
+  if (error) throw error;
+  return [...new Set(((data || []) as { name: string; asset_kind?: FleetAssetKind }[])
+    .filter((row) => fleetAssetKind({ name: row.name, assetKind: row.asset_kind }) === 'vessel')
+    .map((row) => row.name.trim())
+    .filter(Boolean))].sort(compareFleetNames);
 }
 
 function procedurePayload(input: ProcedureInput) {

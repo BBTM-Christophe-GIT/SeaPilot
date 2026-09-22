@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+Le menu **Registres → Produits Chimiques** regroupe désormais le registre existant.
+Les procédures QHSE proposent une liste PDF sélectionnable par navire, incluant les
+procédures communes sans navire, et une liste déroulante de la flotte pour le champ Navire.
+Aucune migration ni nouvelle configuration n’est requise. Voir [procedures-vessel-list.md](./procedures-vessel-list.md).
+
 Version `3.49.0` ajoute QHSE → Produits Chimiques pour les cinq profils, les inventaires
 GOURY/LANDEMER, les pictogrammes et le PDF BBTM avec annexes facultatives.
 Les fichiers sont stockés dans Google Drive via le lanceur Windows **2.2.0**.
