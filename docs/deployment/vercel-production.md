@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.49.0` ajoute QHSE → Produits Chimiques pour les cinq profils, les inventaires
+GOURY/LANDEMER, les pictogrammes et le PDF BBTM avec annexes facultatives.
+Les fichiers sont stockés dans Google Drive via le lanceur Windows **2.2.0**.
+Appliquer `20260922093349_qhse_chemical_inventory.sql`, puis
+`20260922095332_chemical_documents_google_drive.sql` avant le client (déjà appliquées).
+Voir [Produits Chimiques](./chemical-inventory.md).
+
 Version `3.48.0` ajoute le répertoire partagé « Liens utiles », ses catégories, les favicons et les 15 liens initiaux.
 Appliquer `20260921194845_useful_links.sql` avant le client. Les cinq profils sont contrôlés par la matrice
 Administration ; seuls Administration et Direction gèrent les liens. Voir [la recette et les droits](./useful-links.md).

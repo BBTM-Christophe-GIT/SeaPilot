@@ -104,7 +104,7 @@ describe('Manuel d’utilisation', () => {
     expect(screen.getByText('Aucune notice ne correspond à votre recherche.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Effacer la recherche' }));
     expect(input).toHaveValue('');
-    expect(screen.getByRole('status')).toHaveTextContent('18 notices disponibles');
+    expect(screen.getByRole('status')).toHaveTextContent('19 notices disponibles');
   });
 
   it.each(['/manual/dpr', '/manual/unknown'])('refuses a hidden or unknown direct notice at %s', async (route) => {

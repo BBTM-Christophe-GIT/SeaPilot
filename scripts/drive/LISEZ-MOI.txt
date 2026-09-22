@@ -1,7 +1,7 @@
-SEAPILOT - LANCEUR WINDOWS COMMUN 2.1.0
-CONNEXION LOCALE CORRIGEE - 16/09/2026
+SEAPILOT - LANCEUR WINDOWS COMMUN 2.2.0
+PRODUITS CHIMIQUES ET FDS GOOGLE DRIVE - 22/09/2026
 
-Une installation pour Procedures, Sanctions Disciplinaires et les futurs modules.
+Une installation pour Procedures, Sanctions Disciplinaires, Produits Chimiques et les futurs modules.
 
 1. Installez Google Drive pour ordinateur et connectez votre compte autorise.
 2. Verifiez que SeaPilot est visible dans l'Explorateur. Le dossier Sanctions Disciplinaires doit deja etre synchronise et partage uniquement avec Administration et Direction.
@@ -25,3 +25,8 @@ Les droits SeaPilot et les partages Google Drive sont independants. Retirez les 
 Un fichier deplace ou renomme necessite de mettre a jour sa reference dans SeaPilot. Les PDF publies restent des versions distinctes des fichiers de travail.
 
 Desinstallation : supprimer HKCU\Software\Classes\seapilot-drive et le dossier %LOCALAPPDATA%\SeaPilotDrive. Le reglage est dans HKCU\Software\SeaPilot\Drive (SeaPilotRoot). Les documents Drive ne sont pas supprimes.
+
+Produits Chimiques (2.2) : SeaPilot / Produits Chimiques / NAVIRE - c<entreprise>-v<navire> / <produit> / <piece>-fichier. Fichiers PDF, PNG, JPEG, DOCX, XLSX et TXT, 20 Mo maximum. Les dossiers sont prepares au premier ajout.
+Les fichiers sont stockes exclusivement dans ce dossier Google Drive. SeaPilot conserve leur reference, taille et empreinte SHA-256. Le retrait dans SeaPilot preserve le fichier original.
+Le telechargement et les annexes PDF lisent uniquement une piece enregistree et autorisee par le serveur. Chaque lecture controle le compte, le produit, la piece, le chemin exact, la taille et son empreinte. Aucun acces de lecture generique aux autres dossiers. Si un fichier change ou est deplace sur Drive, ajoutez sa nouvelle version dans SeaPilot.
+Partagez Produits Chimiques avec les profils concernes dans Google Drive. Attendez la synchronisation avant de changer de PC.
