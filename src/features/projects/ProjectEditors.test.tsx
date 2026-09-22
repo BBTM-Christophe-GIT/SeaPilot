@@ -144,8 +144,8 @@ describe('ProjectEditor contract hire periods', () => {
     expect(screen.queryByLabelText('Description')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Opérations/ }));
     expect(screen.getByLabelText('Sur camion – Déchargement à la charge de l’affréteur')).not.toBeChecked();
-    expect(screen.getByLabelText('7. Date de livraison *')).toBeInTheDocument();
-    expect(screen.getByLabelText('9. Date de restitution *')).toBeInTheDocument();
+    expect(screen.getByLabelText('7. Date de livraison')).toBeInTheDocument();
+    expect(screen.getByLabelText('9. Date de restitution')).toBeInTheDocument();
     expect(screen.queryByLabelText('Début du projet')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Fin du projet')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Début d’affrètement')).not.toBeInTheDocument();
@@ -197,41 +197,121 @@ describe('ProjectEditor contract hire periods', () => {
     fireEvent.input(screen.getByLabelText('Début du projet'), { target: { value: '2026-09-04' } });
     fireEvent.input(screen.getByLabelText('Fin du projet'), { target: { value: '2026-09-11' } });
 
-    expect(screen.getByLabelText('Livraison *')).toHaveValue('2026-09-04T10:00');
+    expect(screen.getByLabelText('Livraison')).toHaveValue('2026-09-04T10:00');
     expect(screen.getByLabelText('Début d’affrètement')).toHaveValue('2026-09-04T10:00');
-    expect(screen.getByLabelText('Restitution *')).toHaveValue('2026-09-11T18:00');
+    expect(screen.getByLabelText('Restitution')).toHaveValue('2026-09-11T18:00');
     expect(screen.getByLabelText('Fin d’affrètement')).toHaveValue('2026-09-11T18:00');
 
     await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
     expect(screen.getByLabelText('Fuel')).toHaveValue("A la charge de l'affréteur");
   });
 
-  it('asks for the vessel, delivery and redelivery before creating a new planning operation', async () => {
+  it.each(['Créer le projet', 'Enregistrer le brouillon'])('saves an undated project with %s without creating a planning operation', async (buttonName) => {
     const user = userEvent.setup();
-    mutationMocks.saveProject.mockClear();
-    mutationMocks.saveProjectPlanningOccurrence.mockClear();
+    const onSaved = vi.fn();
+    const result = { id: 501, projectCode: 'P501', title: 'Projet sans dates', updatedAt: '2026-09-22T10:00:00Z' };
+    mutationMocks.saveProject.mockResolvedValueOnce(result);
     render(
       <ProjectEditor
         client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never}
         clients={[]}
         contractTypes={[]}
         onClose={vi.fn()}
-        onSaved={vi.fn()}
+        onSaved={onSaved}
         statuses={['Non validé']}
         towedAssets={[]}
         vessels={vessels}
       />,
     );
 
-    await user.type(screen.getByLabelText('Nom du projet *'), 'Mission automatique');
+    await user.type(screen.getByLabelText('Nom du projet *'), 'Projet sans dates');
+    await user.selectOptions(screen.getByLabelText('Statut'), 'Validé');
+    await user.click(screen.getByRole('button', { name: buttonName }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(result));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(mutationMocks.saveProject).toHaveBeenCalledExactlyOnceWith(expect.anything(), expect.objectContaining({
+      title: 'Projet sans dates',
+      startsOn: '',
+      endsOn: '',
+      deliveryAt: '',
+      redeliveryAt: '',
+      primaryVesselId: null,
+      status: buttonName === 'Enregistrer le brouillon' ? 'Non validé' : 'Validé',
+    }));
+    expect(mutationMocks.saveProjectPlanningOccurrence).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { startsOn: '2026-10-01', endsOn: '', vesselIds: [1] },
+    { startsOn: '', endsOn: '2026-10-03', vesselIds: [1] },
+    { startsOn: '2026-10-01', endsOn: '2026-10-03', vesselIds: [] },
+  ])('saves partial planning information without scheduling an operation: %j', async (initialOperation) => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    const result = { id: 502, projectCode: 'P502', title: 'Projet à compléter', updatedAt: '2026-09-22T10:00:00Z' };
+    mutationMocks.saveProject.mockResolvedValueOnce(result);
+    render(<ProjectEditor
+      client={{ rpc: vi.fn().mockResolvedValue({ data: 'P502', error: null }) } as never}
+      clients={[]} contractTypes={[]} initialOperation={initialOperation} onClose={vi.fn()}
+      onSaved={onSaved} statuses={[]} towedAssets={[]} vessels={vessels}
+    />);
+
+    await user.type(screen.getByLabelText('Nom du projet *'), 'Projet à compléter');
     await user.click(screen.getByRole('button', { name: 'Créer le projet' }));
 
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'renseignez le navire principal, la livraison, la restitution',
-    );
-    expect(screen.getByRole('button', { name: /Opérations/ })).toHaveAttribute('aria-current', 'step');
-    expect(mutationMocks.saveProject).not.toHaveBeenCalled();
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(result));
+    expect(mutationMocks.saveProject).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      startsOn: initialOperation.startsOn,
+      endsOn: initialOperation.endsOn,
+      primaryVesselId: initialOperation.vesselIds[0] ?? null,
+    }));
     expect(mutationMocks.saveProjectPlanningOccurrence).not.toHaveBeenCalled();
+  });
+
+  it('keeps the chosen status after a failed draft save and allows retrying normal creation', async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    mutationMocks.saveProject.mockRejectedValueOnce(new Error('Connexion indisponible'));
+    render(<ProjectEditor
+      client={{ rpc: vi.fn().mockResolvedValue({ data: 'P503', error: null }) } as never}
+      clients={[]} contractTypes={[]} onClose={vi.fn()} onSaved={onSaved}
+      statuses={[]} towedAssets={[]} vessels={vessels}
+    />);
+    await user.type(screen.getByLabelText('Nom du projet *'), 'Projet à reprendre');
+    await user.selectOptions(screen.getByLabelText('Statut'), 'Validé');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Connexion indisponible');
+    expect(screen.getByLabelText('Statut')).toHaveValue('Validé');
+    expect(onSaved).not.toHaveBeenCalled();
+    const result = { id: 503, projectCode: 'P503', title: 'Projet à reprendre', updatedAt: '2026-09-22T10:00:00Z' };
+    mutationMocks.saveProject.mockResolvedValueOnce(result);
+    await user.click(screen.getByRole('button', { name: 'Créer le projet' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(result));
+    expect(mutationMocks.saveProject).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ status: 'Validé' }));
+  });
+
+  it.each(['mission', 'documents'])('does not silently discard pending operation %s when dates are absent', async (content) => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    render(<ProjectEditor
+      client={{ rpc: vi.fn().mockResolvedValue({ data: 'P504', error: null }) } as never}
+      clients={[]} contractTypes={[]} initialOperation={{ startsOn: '', endsOn: '', vesselIds: [1] }}
+      onClose={vi.fn()} onSaved={onSaved} statuses={[]} towedAssets={[]} vessels={vessels}
+    />);
+    await user.type(screen.getByLabelText('Nom du projet *'), 'Projet avec mission');
+    await user.click(screen.getByRole('button', { name: /Opérations/ }));
+    if (content === 'mission') {
+      await user.type(screen.getByLabelText('Description / mission'), 'Inspection du port');
+    } else {
+      await user.upload(screen.getByLabelText(/Documents de l’opération/), new File(['mission'], 'mission.pdf', { type: 'application/pdf' }));
+    }
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Pour un projet sans dates');
+    expect(mutationMocks.saveProject).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
   });
 
   it('creates a non-validated planning operation from Delivery, Redelivery and selected vessels', async () => {
@@ -264,8 +344,8 @@ describe('ProjectEditor contract hire periods', () => {
     fireEvent.input(descriptionEditor);
     expect(within(screen.getByRole('region', { name: 'Aperçu du document généré' })).getByText('Inspection en mer').tagName).toBe('STRONG');
     await user.click(screen.getByRole('button', { name: /Opérations/ }));
-    fireEvent.change(screen.getByLabelText('Livraison *'), { target: { value: '2026-09-04T10:00' } });
-    fireEvent.change(screen.getByLabelText('Restitution *'), { target: { value: '2026-09-11T18:00' } });
+    fireEvent.change(screen.getByLabelText('Livraison'), { target: { value: '2026-09-04T10:00' } });
+    fireEvent.change(screen.getByLabelText('Restitution'), { target: { value: '2026-09-11T18:00' } });
     await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
     [
       ['Description de la prestation incluse dans le loyer d’affrètement', 'Navire et équipage dédiés.'],
