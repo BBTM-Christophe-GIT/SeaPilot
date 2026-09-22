@@ -17,7 +17,8 @@ les documents cochés appartenant au périmètre affiché, avec référence, tit
 diffusion, regroupés par chapitre ISM. Le statut et le navire n’apparaissent pas dans le PDF.
 Le format est A4 portrait. La taille du texte et les espacements s’adaptent pour viser une seule page
 (de 9 à 7 points). Si la sélection est trop longue, toutes les lignes sont conservées sur plusieurs
-pages, avec en-têtes et pagination répétés.
+pages, avec en-têtes et pagination répétés. Le logo BBTM des rapports est intégré dans
+l’en-tête de chaque page, sans réduire la place disponible pour les documents.
 
 Administration et Direction génèrent la liste de l’onglet actif (sources privées ou PDF publiés).
 Armement, Capitaine et Marin utilisent uniquement les publications accessibles avec leur compte.

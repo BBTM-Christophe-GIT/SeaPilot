@@ -1,8 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { PDFDocument } from 'pdf-lib';
 import { buildProcedureListPdf } from './procedureListPdf';
 import type { ProcedureRecord } from './procedureQueries';
+
+const logo = new Uint8Array(readFileSync('public/bbtm-report-logo.png'));
 
 function sampleRecords(count: number): ProcedureRecord[] {
   return Array.from({ length: count }, (_, id) => ({
@@ -13,11 +16,12 @@ function sampleRecords(count: number): ProcedureRecord[] {
 }
 
 async function pdfText(blob: Blob): Promise<string[]> {
-  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const { getDocument, OPS } = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const task = getDocument({ data: new Uint8Array(await blob.arrayBuffer()), useSystemFonts: true });
   const parsed = await task.promise;
   const pages = await Promise.all(Array.from({ length: parsed.numPages }, async (_, index) => {
     const page = await parsed.getPage(index + 1);
+    expect((await page.getOperatorList()).fnArray).toContain(OPS.paintImageXObject);
     return (await page.getTextContent()).items.map((item) => 'str' in item ? item.str : '').join(' ');
   }));
   await task.destroy();
@@ -26,7 +30,7 @@ async function pdfText(blob: Blob): Promise<string[]> {
 
 describe('procedure list PDF', () => {
   it('fits 50 documents on one portrait A4 page, groups by ISM and omits vessel and status', async () => {
-    const { blob, filename } = await buildProcedureListPdf({ records: sampleRecords(50).reverse(), vessel: 'GOURY', library: 'published', issuedAt: new Date('2026-09-22T12:00:00') });
+    const { blob, filename } = await buildProcedureListPdf({ records: sampleRecords(50).reverse(), vessel: 'GOURY', library: 'published', logo, issuedAt: new Date('2026-09-22T12:00:00') });
     const document = await PDFDocument.load(await blob.arrayBuffer());
     expect(filename).toBe('liste-documents-qhse-goury.pdf');
     expect(document.getPageCount()).toBe(1);
@@ -43,7 +47,7 @@ describe('procedure list PDF', () => {
     expect(text.indexOf('DOC 46-A')).toBeLessThan(text.indexOf('DOC 2-A'));
   });
   it('keeps every document when a large selection needs more than one page', async () => {
-    const { blob } = await buildProcedureListPdf({ records: sampleRecords(160), vessel: '', library: 'sources' });
+    const { blob } = await buildProcedureListPdf({ records: sampleRecords(160), vessel: '', library: 'sources', logo });
     const pages = await pdfText(blob);
     expect(pages.length).toBeGreaterThan(1);
     expect(pages.every((text) => text.includes('LISTE DES DOCUMENTS QHSE'))).toBe(true);
@@ -52,7 +56,7 @@ describe('procedure list PDF', () => {
   it('retains unassigned and uncontrolled chapters after numbered chapters', async () => {
     const records = sampleRecords(3);
     records[0].ismChapter = ''; records[1].ismChapter = 'Documents non contrôlés'; records[2].ismChapter = '13';
-    const { blob } = await buildProcedureListPdf({ records, vessel: '', library: 'sources' });
+    const { blob } = await buildProcedureListPdf({ records, vessel: '', library: 'sources', logo });
     const [text] = await pdfText(blob);
     expect(text.indexOf('DOC 3-A')).toBeLessThan(text.indexOf('DOC 2-A'));
     expect(text.indexOf('DOC 2-A')).toBeLessThan(text.indexOf('DOC 1-A'));

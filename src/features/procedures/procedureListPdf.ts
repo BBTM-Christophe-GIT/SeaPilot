@@ -7,11 +7,20 @@ export interface ProcedureListPdfInput {
   vessel: string;
   library: 'sources' | 'published';
   issuedAt?: Date;
+  logo?: Uint8Array;
 }
 
-export async function buildProcedureListPdf({ records, vessel, library, issuedAt = new Date() }: ProcedureListPdfInput) {
+async function loadBbtmLogo(): Promise<Uint8Array> {
+  const response = await fetch('/bbtm-report-logo.png');
+  if (!response.ok) throw new Error('Le logo BBTM est indisponible. Réessayez.');
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+export async function buildProcedureListPdf({ records, vessel, library, issuedAt = new Date(), logo }: ProcedureListPdfInput) {
   if (!records.length) throw new Error('Sélectionnez au moins un document.');
-  const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
+  const [{ jsPDF }, { autoTable }, logoBytes] = await Promise.all([
+    import('jspdf'), import('jspdf-autotable'), logo ? Promise.resolve(logo) : loadBbtmLogo(),
+  ]);
   const date = issuedAt.toLocaleDateString('fr-FR');
   const libraryLabel = library === 'sources' ? 'Documents de travail privés' : 'PDF publiés';
   const body: RowInput[] = CHAPTERS.flatMap(([key, label]) => {
@@ -45,10 +54,11 @@ export async function buildProcedureListPdf({ records, vessel, library, issuedAt
       rowPageBreak: 'avoid',
       didDrawPage: () => {
         pdf.setFillColor(15, 38, 63); pdf.rect(0, 0, 210, 3, 'F');
+        pdf.addImage(logoBytes, 'PNG', 10, 6, 16, 16, 'bbtm-logo');
         pdf.setTextColor(15, 38, 63); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(14);
-        pdf.text('LISTE DES DOCUMENTS QHSE', 10, 12);
+        pdf.text('LISTE DES DOCUMENTS QHSE', 31, 12);
         pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8);
-        pdf.text(`${records.length} document(s) - ${libraryLabel}`, 10, 20);
+        pdf.text(`${records.length} document(s) - ${libraryLabel}`, 31, 20);
         pdf.text(`Éditée le ${date}`, 200, 20, { align: 'right' });
       },
     });
