@@ -45,6 +45,10 @@ describe('AppShell', () => {
     const qhseButton = screen.getByRole('button', { name: 'QHSE' });
     expect(qhseButton).toBeInTheDocument();
     expect(qhseButton.closest('section')).toHaveAttribute('data-family-theme', 'qhse');
+    const registersButton = screen.getByRole('button', { name: 'Registres' });
+    expect(registersButton.closest('section')).toHaveAttribute('data-family-theme', 'registers');
+    expect(registersButton.closest('section')).toContainElement(screen.getByRole('link', { name: 'Produits Chimiques' }));
+    expect(qhseButton.closest('section')).not.toContainElement(screen.getByRole('link', { name: 'Produits Chimiques' }));
     expect(screen.getByRole('link', { name: 'KPI' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Planning' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Facturation' })).not.toBeInTheDocument();
