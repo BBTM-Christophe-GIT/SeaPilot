@@ -5,7 +5,7 @@ do $test$
 declare
   c bigint; other_c bigint; vessel bigint; other_vessel bigint; unassigned_vessel bigint; item bigint; towing bigint;
   inspection bigint; entry bigint; revision integer; certificate bigint; captain bigint; sailor bigint;
-  uid uuid; role_name text; path text; result integer;
+  uid uuid; role_name text; path text; result integer; target_item bigint; other_item bigint; unassigned_item bigint;
   repeat_inspection bigint; repeat_entry bigint; repeat_certificate bigint; repeat_path text; later_inspection bigint; first_towing bigint;
   good_checks jsonb := '{"EG":"ok","ID":"ok","NID":"na","V1":"ok","V2":"ok","V3":"ok","V4":"ok","V5":"ok"}';
 begin
@@ -14,6 +14,10 @@ begin
   insert into public.vessels(company_id,name,acronym,active,asset_kind) values(c,'LIFTING TEST VESSEL','LVT',true,'vessel') returning id into vessel;
   insert into public.vessels(company_id,name,acronym,active,asset_kind) values(other_c,'LIFTING OTHER VESSEL','LVO',true,'vessel') returning id into other_vessel;
   insert into public.vessels(company_id,name,acronym,active,asset_kind) values(c,'LIFTING UNASSIGNED VESSEL','LVU',true,'vessel') returning id into unassigned_vessel;
+  insert into public.lifting_inventory(company_id,vessel_id,kind,reference,material_type,description)
+    values(other_c,other_vessel,'lifting','1','Manilles','Other company item') returning id into other_item;
+  insert into public.lifting_inventory(company_id,vessel_id,kind,reference,material_type,description)
+    values(c,unassigned_vessel,'lifting','1','Manilles','Unassigned vessel item') returning id into unassigned_item;
   update public.vessels set photo_url='/vessels/existing.jpg',
     illustration_storage_bucket='fleet-media',illustration_storage_path=c||'/'||vessel||'/fixture.png',
     illustration_thumbnail_url='/vessels/bbtm/fixture-0123456789abcdef.webp' where id=vessel;
@@ -40,6 +44,7 @@ begin
   assert not has_table_privilege('authenticated','public.lifting_inspections','UPDATE'), 'Inspection writes must use RPCs';
   assert not has_table_privilege('authenticated','public.lifting_inventory','DELETE'), 'No physical inventory deletion';
   assert not has_function_privilege('anon','public.start_lifting_inspection(bigint,text,date,date)','EXECUTE'), 'Anonymous RPC access';
+  assert not has_function_privilege('anon','public.set_lifting_item_active(bigint,boolean)','EXECUTE'), 'Anonymous removal denied';
   execute 'set local role authenticated';
   perform set_config('request.jwt.claim.sub','9e090000-0000-0000-0000-000000000001',true);
   item := public.save_lifting_item(vessel,'lifting','{"reference":"L1","material_type":"Élingue","description":"Original sling","swl_tonnes":2}');
@@ -86,10 +91,32 @@ begin
     assert not exists(select 1 from public.lifting_available_vessels() v where v.id in (other_vessel,unassigned_vessel)), 'Photo filter excludes unassigned and cross-tenant vessels';
     assert exists(select 1 from storage.objects where bucket_id='fleet-media' and name=c||'/'||vessel||'/fixture.png'), 'Real onboard role can read assigned vessel photo';
     assert exists(select 1 from public.lifting_inspection_entries where id=entry), 'Onboard RLS permits assigned vessel';
-    begin
-      perform public.set_lifting_item_active(item,false);
-      raise exception 'Onboard profile administered inventory';
-    exception when insufficient_privilege then null; end;
+    foreach target_item in array array[item,towing] loop
+      if public.has_any_role(array['capitaine']) then
+        perform public.set_lifting_item_active(target_item,false);
+        assert (select not active and updated_by=uid from public.lifting_inventory where id=target_item), 'Captain removes assigned inventory with actor tracking';
+        assert (select item_snapshot->>'description' from public.lifting_inspection_entries where id=entry)='Original sling', 'Removal preserves inspection snapshots';
+      else
+        begin
+          perform public.set_lifting_item_active(target_item,false);
+          raise exception 'Marin removed inventory';
+        exception when insufficient_privilege then null; end;
+        assert (select active from public.lifting_inventory where id=target_item), 'Marin denial preserves inventory';
+      end if;
+      begin
+        perform public.set_lifting_item_active(target_item,true);
+        raise exception 'Onboard profile restored inventory';
+      exception when insufficient_privilege then null; end;
+      perform set_config('request.jwt.claim.sub','9e090000-0000-0000-0000-000000000001',true);
+      perform public.set_lifting_item_active(target_item,true);
+      perform set_config('request.jwt.claim.sub',uid::text,true);
+    end loop;
+    foreach target_item in array array[unassigned_item,other_item] loop
+      begin
+        perform public.set_lifting_item_active(target_item,false);
+        raise exception 'Onboard profile removed out-of-scope inventory';
+      exception when insufficient_privilege then null; end;
+    end loop;
     select r.revision into revision from public.lifting_inspections r where id=inspection;
     result := public.save_lifting_inspection_entry(inspection,entry,revision,'good',good_checks,'');
     assert result=revision+1,'Onboard save increments revision';
@@ -99,6 +126,11 @@ begin
     exception when insufficient_privilege then null; end;
   end loop;
   perform set_config('request.jwt.claim.sub','9e090000-0000-0000-0000-000000000001',true);
+  assert (select active from public.lifting_inventory where id=unassigned_item), 'Unassigned inventory unchanged';
+  begin
+    perform public.set_lifting_item_active(other_item,false);
+    raise exception 'Admin removed another company inventory';
+  exception when insufficient_privilege then null; end;
   select r.revision into revision from public.lifting_inspections r where id=inspection;
   begin
     perform public.save_lifting_inspection_entry(inspection,entry,revision-1,'good',good_checks,'');

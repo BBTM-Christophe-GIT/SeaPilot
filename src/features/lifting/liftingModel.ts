@@ -50,6 +50,9 @@ export interface LiftingInspection {
 export function canManageLifting(roles: RoleKey[]): boolean {
   return roles.some((role) => ['admin', 'direction', 'armement'].includes(role));
 }
+export function canRemoveLiftingItem(roles: RoleKey[]): boolean {
+  return canManageLifting(roles) || roles.includes('capitaine');
+}
 export function emptyChecks(): Partial<Record<CheckKey, CheckValue>> {
   return Object.fromEntries(CHECK_KEYS.map((key) => [key, 'pending']));
 }
