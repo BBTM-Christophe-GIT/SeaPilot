@@ -119,6 +119,74 @@ if ([SeaPilotDrive]::ResolvePath($moduleRoot, $futureUri) -ne (Join-Path $future
 if ([SeaPilotDriveBridge]::AllowedOrigin('https://sea-pilot-ten.vercel.app.evil.example') -or [SeaPilotDriveBridge]::AllowedOrigin('null')) { throw 'Foreign browser origin accepted.' }
 Write-Output 'PASS: automatic collaborator folders, stable identity, native writes, no overwrite, junction rejection and future module opening.'
 
+$chemicalProduct = [guid]::NewGuid().ToString()
+$chemicalAttachment = [guid]::NewGuid().ToString()
+$chemicalFolder = "TEST - c1-v1/$chemicalProduct"
+$chemicalPath = "$chemicalFolder/$chemicalAttachment-fds.pdf"
+$chemicalScope = New-Object 'System.Collections.Generic.Dictionary[string,object]'
+$chemicalScope['directory'] = 'Produits Chimiques'
+$chemicalScope['folder'] = $chemicalFolder
+Add-Type -ReferencedAssemblies System.Web.Extensions -TypeDefinition @'
+public sealed class ChemicalScopeFixture {
+    public System.Collections.Generic.Dictionary<string,object> Scope;
+    public string Product;
+    public System.Func<string,string,object> Remote;
+    public ChemicalScopeFixture() { Remote = Get; }
+    object Get(string resource, string body) {
+        var args = new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<System.Collections.Generic.Dictionary<string,object>>(body);
+        if (resource != "rpc/chemical_drive_scope" || (string)args["target_product"] != Product) throw new System.Exception("Wrong product authorization.");
+        return Scope;
+    }
+}
+'@
+$scopeFixture = New-Object ChemicalScopeFixture
+$scopeFixture.Scope = $chemicalScope
+$scopeFixture.Product = $chemicalProduct
+$chemicalRemote = $scopeFixture.Remote
+$chemicalRequest = New-Object 'System.Collections.Generic.Dictionary[string,object]'
+$chemicalRequest['action'] = 'write'
+$chemicalRequest['productId'] = $chemicalProduct
+$chemicalRequest['path'] = $chemicalPath
+$chemicalRequest['base64'] = [Convert]::ToBase64String($pdfBytes)
+$receipt = [SeaPilotDriveBridge]::ExecuteChemical($moduleRoot, $chemicalRequest, $chemicalRemote)
+if ($receipt.path -ne $chemicalPath -or $receipt.bytes -ne $pdfBytes.Length) { throw 'Chemical write receipt mismatch.' }
+$chemicalScope['path'] = $chemicalPath
+$chemicalScope['bytes'] = $pdfBytes.Length
+$hash = [Security.Cryptography.SHA256]::Create()
+try { $chemicalScope['sha256'] = ([BitConverter]::ToString($hash.ComputeHash($pdfBytes))).Replace('-', '').ToLowerInvariant() } finally { $hash.Dispose() }
+$chemicalRequest['action'] = 'read'
+$chemicalRequest['attachmentId'] = $chemicalAttachment
+$receipt = [SeaPilotDriveBridge]::ExecuteChemical($moduleRoot, $chemicalRequest, $chemicalRemote)
+if ($receipt.base64 -ne [Convert]::ToBase64String($pdfBytes)) { throw 'Chemical read bytes mismatch.' }
+function Assert-ChemicalRejected([scriptblock]$operation) {
+    $denied = $false
+    try { & $operation | Out-Null } catch { $denied = $true }
+    if (!$denied) { throw 'Unauthorized or corrupt chemical file accepted.' }
+}
+$chemicalRequest['path'] = "$chemicalFolder/other.pdf"
+Assert-ChemicalRejected { [SeaPilotDriveBridge]::ExecuteChemical($moduleRoot, $chemicalRequest, $chemicalRemote) }
+$chemicalRequest['path'] = "OTHER/$chemicalProduct/other.pdf"
+Assert-ChemicalRejected { [SeaPilotDriveBridge]::ExecuteChemical($moduleRoot, $chemicalRequest, $chemicalRemote) }
+$chemicalRequest['path'] = $chemicalPath
+$chemicalRequest.Remove('attachmentId') | Out-Null
+Assert-ChemicalRejected { [SeaPilotDriveBridge]::ExecuteChemical($moduleRoot, $chemicalRequest, $chemicalRemote) }
+$chemicalRequest['attachmentId'] = $chemicalAttachment
+$chemicalScope['sha256'] = ('0' * 64)
+Assert-ChemicalRejected { [SeaPilotDriveBridge]::ExecuteChemical($moduleRoot, $chemicalRequest, $chemicalRemote) }
+$chemicalScope['bytes'] = $pdfBytes.Length + 1
+Assert-ChemicalRejected { [SeaPilotDriveBridge]::ExecuteChemical($moduleRoot, $chemicalRequest, $chemicalRemote) }
+$chemicalScope['directory'] = 'Sanctions Disciplinaires'
+Assert-ChemicalRejected { [SeaPilotDriveBridge]::ExecuteChemical($moduleRoot, $chemicalRequest, $chemicalRemote) }
+$chemicalRoot = Join-Path $moduleRoot 'Produits Chimiques'
+New-Item -ItemType Junction -Path (Join-Path $chemicalRoot 'outside') -Value $outsideRoot | Out-Null
+Assert-ChemicalRejected { [SeaPilotDriveBridge]::ReadChemicalFile($chemicalRoot, 'outside/outside.docx', ('a' * 64), 4) }
+$chemicalScope['directory'] = 'Produits Chimiques'
+$chemicalRequest['action'] = 'write'
+Assert-ChemicalRejected { [SeaPilotDriveBridge]::ExecuteChemical($moduleRoot, $chemicalRequest, $chemicalRemote) }
+$chemicalRequest['path'] = "$chemicalFolder/run.exe"
+Assert-ChemicalRejected { [SeaPilotDriveBridge]::ExecuteChemical($moduleRoot, $chemicalRequest, $chemicalRemote) }
+Write-Output 'PASS: chemical Drive write/read, exact registered path, attachment id, module scope, SHA-256, size, junction and overwrite protections.'
+
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $testExecutable = Join-Path $testRoot 'SeaPilotDriveTest.exe'
 & $compiler /nologo /target:winexe /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll "/out:$testExecutable" (Join-Path $PSScriptRoot 'SeaPilotDrive.cs') (Join-Path $PSScriptRoot 'SeaPilotDriveBridge.cs')
@@ -138,7 +206,7 @@ try {
     for ($attempt = 0; $attempt -lt 20; $attempt++) {
         try { $health = Invoke-RestMethod -Uri "$endpoint/health" -Headers $allowedHeaders -TimeoutSec 2; $ready = $true; break } catch { $healthError = $_.Exception.Message; Start-Sleep -Milliseconds 150 }
     }
-    if (!$ready -or $health.version -ne '2.1.0' -or $health.nonce -ne $nonce) { throw "Native bridge failed to start (process exited: $($nativeProcess.HasExited)): $healthError" }
+    if (!$ready -or $health.version -ne '2.2.0' -or $health.nonce -ne $nonce) { throw "Native bridge failed to start (process exited: $($nativeProcess.HasExited)): $healthError" }
     foreach ($testUri in @("http://127.0.0.1:$port/wrong/health", "$endpoint/request")) {
         $denied = $false
         try { Invoke-RestMethod -Uri $testUri -Method Post -ContentType 'application/json' -Body '{}' -Headers $allowedHeaders -TimeoutSec 5 | Out-Null } catch { $denied = $true }
@@ -170,7 +238,7 @@ try {
             if (!$ready) { throw 'Installed launcher did not start.' }
             $replacement = Install-SeaPilotDriveBinary -InstallFolder $installTestFolder -Compiler $compiler -Sources $sources
             if ($replacement -eq $published -or !(Test-Path -LiteralPath $replacement)) { throw 'Update did not publish a separate executable.' }
-            if ((Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2).version -ne '2.1.0') { throw 'Update interrupted the running launcher.' }
+            if ((Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2).version -ne '2.2.0') { throw 'Update interrupted the running launcher.' }
             $invalidSource = Join-Path $testRoot 'invalid.cs'
             Set-Content -LiteralPath $invalidSource -Value 'This is an intentionally invalid compiler fixture'
             $failed = $false

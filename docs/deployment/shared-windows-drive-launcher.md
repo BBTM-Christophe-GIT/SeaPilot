@@ -1,4 +1,13 @@
-# Lanceur Windows commun — API 2.1.0
+# Lanceur Windows commun — API 2.2.0
+
+La version 2.2 ajoute l'écriture et la lecture des FDS dans **Produits Chimiques**.
+Installer l'archive actualisée sur chaque PC ; la racine existante est conservée.
+La RPC `chemical_drive_scope` contrôle le produit et, pour une lecture, la pièce exacte.
+Le lanceur vérifie chemin, taille et SHA-256 avant de renvoyer un fichier au navigateur.
+La lecture est limitée à ce module et aux documents enregistrés, avec les mêmes contrôles
+de session, d'origine et de chemins que l'écriture. Aucun parcours générique de Drive.
+PDF, PNG, JPEG, DOCX, XLSX et TXT jusqu'à 20 Mo. Détails : [Produits Chimiques](./chemical-inventory.md).
+
 
 ## Configuration
 

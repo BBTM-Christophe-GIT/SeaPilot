@@ -9,6 +9,18 @@ export interface ManualGuide {
 
 // Notices du profil Marin. Les noms, l’ordre et les accès viennent de la navigation.
 export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
+  chemicals: {
+    purpose: 'Tenir l’inventaire des produits chimiques par navire et retrouver leurs fiches de données de sécurité.',
+    access: 'Tous les profils, y compris Marin et Capitaine, peuvent consulter, ajouter, modifier et supprimer les produits de leur société, joindre leurs documents et exporter un inventaire.',
+    steps: [
+      { title: 'Choisir le navire', detail: 'Dans QHSE, ouvrez Produits Chimiques. Cliquez sur l’illustration d’un navire pour filtrer son inventaire ou sur Flotte pour consulter tous les navires. La recherche retrouve un produit, une variante ou un usage.' },
+      { title: 'Renseigner un produit', detail: 'Cliquez sur Ajouter un produit ou sur le crayon d’une ligne. Indiquez le navire, la marque, le type, la variante, le stock en litres et les conditions de stockage. Sélectionnez les pictogrammes de la FDS et complétez les dangers, les conseils de prudence et les EPI, puis enregistrez.' },
+      { title: 'Consulter et joindre une FDS', detail: 'Cliquez sur le nom du produit pour lire toutes ses consignes. Dans FDS et pièces jointes, choisissez le type de document et ajoutez vos fichiers, jusqu’à 20 Mo chacun. Les fichiers sont classés dans Google Drive, sous SeaPilot / Produits Chimiques / navire / produit. Cliquez sur un nom de fichier pour le télécharger.' },
+      { title: 'Exporter le PDF BBTM', detail: 'Choisissez Exporter en PDF, sélectionnez le navire et cochez Inclure les pièces jointes si nécessaire. L’export comprend tout l’inventaire de ce navire même lorsqu’une recherche est active. Les PDF et images sont ajoutés en annexe ; les autres fichiers sont inclus dans le panneau des pièces jointes du lecteur PDF.' },
+      { title: 'Retirer un élément', detail: 'Utilisez la corbeille et confirmez la suppression du produit ou de sa pièce jointe. Le produit supprimé disparaît de l’inventaire et des exports. Les fichiers originaux restent sur Google Drive.' },
+    ],
+    reminders: ['L’ajout, le téléchargement et les exports avec pièces jointes nécessitent un PC Windows avec Google Drive synchronisé et le lanceur SeaPilot 2.2. Installez-le depuis Administration → Documents et Google Drive ; la racine existante est conservée.', 'Si un document a changé sur Drive, ajoutez sa nouvelle version dans SeaPilot.', 'Un stock vide signifie « À renseigner » ; saisissez 0 lorsque le stock est réellement nul.', 'Les informations du registre doivent correspondre à la FDS et à l’étiquette du produit.', 'Si un autre utilisateur a modifié le produit entre-temps, actualisez avant de reprendre votre correction.'],
+  },
   usefulLinks: {
     purpose: 'Retrouver les portails, les outils et les réunions utiles à votre activité dans le répertoire partagé de votre société.',
     access: 'L’accès est activé par profil dans Administration. Marin, Capitaine et Armement consultent le répertoire ; Administration et Direction peuvent gérer les liens et les catégories.',

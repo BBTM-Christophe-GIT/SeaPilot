@@ -26,6 +26,7 @@ const UsefulLinksPage = lazy(() => import('./features/usefulLinks/UsefulLinksPag
 const WorkingTimePage = lazy(() => import('./features/workingTime/WorkingTimePage').then((module) => ({ default: module.WorkingTimePage })));
 const ExpenseNotesPage = lazy(() => import('./features/expenseNotes/ExpenseNotesPage').then((module) => ({ default: module.ExpenseNotesPage })));
 const UserManualPage = lazy(() => import('./features/manual/UserManualPage').then((module) => ({ default: module.UserManualPage })));
+const ChemicalsPage = lazy(() => import('./features/chemicals/ChemicalsPage').then((module) => ({ default: module.ChemicalsPage })));
 const PlanningPage = lazy(() => import('./features/planning/PlanningPage').then((module) => ({ default: module.PlanningPage })));
 const KpiPage = lazy(() => import('./features/kpi/KpiPage').then((module) => ({ default: module.KpiPage })));
 const HomePage = lazy(() => import('./features/home/HomePage').then((module) => ({ default: module.HomePage })));
@@ -72,6 +73,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <AdminPage client={previewMode ? previewSupabaseClient : undefined} previewMode={previewMode} />
                 ) : module.key === 'kpi' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des indicateurs HSE…</div>}><KpiPage /></Suspense>
+                ) : module.key === 'chemicals' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement des produits chimiques…</div>}><ChemicalsPage /></Suspense>
                 ) : module.key === 'actionPlan' ? (
                   <ActionPlanPage />
                 ) : module.key === 'dpr' ? (

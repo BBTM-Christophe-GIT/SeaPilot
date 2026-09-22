@@ -1,9 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadAppEnv } from '../../lib/env';
 
-export const DRIVE_MODULES = { procedures: 'Procedures', disciplinary: 'Sanctions Disciplinaires' } as const;
+export const DRIVE_MODULES = { procedures: 'Procedures', disciplinary: 'Sanctions Disciplinaires', chemicals: 'Produits Chimiques' } as const;
 export type DriveModule = keyof typeof DRIVE_MODULES;
-export interface LocalDriveConnection { url: string; expiresAt: number }
+export interface LocalDriveConnection { url: string; expiresAt: number; version?: string }
 export interface LocalDriveStatus { root: string | null; version: string; collaborators?: number }
 let connection: LocalDriveConnection | null = null;
 let connecting: Promise<LocalDriveConnection> | null = null;
@@ -14,7 +14,7 @@ export function localDrivePorts(firstPort: number): number[] {
   return Array.from({ length: 16 }, (_, attempt) => 49152 + (firstPort - 49152 + attempt * 1019) % 16384);
 }
 
-async function findLocalDrive(firstPort: number, nonce: string): Promise<string> {
+async function findLocalDrive(firstPort: number, nonce: string): Promise<{ url: string; version: string }> {
   const controller = new AbortController();
   try {
     return await Promise.any(localDrivePorts(firstPort).map(async (port, index) => {
@@ -26,7 +26,7 @@ async function findLocalDrive(firstPort: number, nonce: string): Promise<string>
       const health = await response.json();
       // Older launchers can still connect on the original port while the update
       // is installed. New launchers also prove which random session they serve.
-      if ((health.version === '2.1.0' && health.nonce === nonce) || (health.version === '2.0.0' && index === 0)) return url;
+      if ((['2.1.0', '2.2.0'].includes(health.version) && health.nonce === nonce) || (health.version === '2.0.0' && index === 0)) return { url, version: health.version };
       throw new Error('Session locale incompatible');
     }));
   } finally { controller.abort(); }
@@ -47,8 +47,8 @@ export function connectLocalDrive(): Promise<LocalDriveConnection> {
   connecting = (async () => {
     for (let attempt = 0; attempt < 35; attempt++) {
       try {
-        const url = await findLocalDrive(port, nonce);
-        connection = { url, expiresAt: Date.now() + 100_000 };
+        const found = await findLocalDrive(port, nonce);
+        connection = { ...found, expiresAt: Date.now() + 100_000 };
         return connection;
       } catch { /* Wait for Windows to start the user-authorized launcher. */ }
       await new Promise((resolve) => window.setTimeout(resolve, 500));
