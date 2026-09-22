@@ -591,8 +591,10 @@ export async function generateProjectDocument(
     detailRow(language === 'en' ? 'Contract type' : 'Type de contrat', copy.contractType, 18, 145, 78);
     detailRow(copy.delivery, [input.project.deliveryPort, formatDate(input.project.deliveryAt, language)].filter(Boolean).join(' - ') || '-', 18, 153, 78);
     detailRow(copy.redelivery, [input.project.redeliveryPort, formatDate(input.project.redeliveryAt, language)].filter(Boolean).join(' - ') || '-', 18, 161, 78);
-    detailRow(copy.firmDuration, duration ? `${duration} ${copy.calendarDays}` : '-', 18, 169, 78);
-    detailRow(copy.fuel, translateProjectOfferStandardText(supplytime.box19_special_fuel || '-', language), 18, 177, 78);
+    if (duration) {
+      detailRow(copy.firmDuration, `${duration} ${copy.calendarDays}`, 18, 169, 78);
+    }
+    detailRow(copy.fuel, translateProjectOfferStandardText(supplytime.box19_special_fuel || '-', language), 18, duration ? 177 : 169, 78);
 
     sectionHeading('2', copy.commercialTerms, 112, 111);
     if (conditionsMode === 'free_text') {

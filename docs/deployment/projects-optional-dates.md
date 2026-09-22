@@ -14,6 +14,12 @@ Le bouton de brouillon transmet explicitement le statut **Non validé**, sans mo
 le statut sélectionné dans le formulaire avant que la sauvegarde ait réussi.
 Les projets créés normalement conservent le statut choisi.
 
+Dans l’aperçu et le PDF de l’offre commerciale, la ligne **DURÉE FERME** est absente
+tant que les deux dates du projet ne sont pas renseignées. Cela vaut également pour
+la version anglaise (**FIRM PERIOD**). La ligne **CARBURANT** remonte à sa place,
+sans laisser de ligne vide. Une fois les deux dates saisies, la durée calendaire
+inclusive réapparaît.
+
 La mission et les fichiers saisis pour une première opération ne sont jamais abandonnés
 silencieusement : si les informations nécessaires à cette opération manquent, le
 formulaire invite à reporter la mission dans **Identification** et les pièces jointes
@@ -29,4 +35,6 @@ accepte déjà les dates nulles et conserve les contrôles de société et de r�
   navire, statut choisi, échec puis nouvelle tentative, et création automatique
   d’une opération complète.
 - Test de mutation : transmission de dates et navires absents sous forme de `null`.
+- Tests d’aperçu et du contenu réel des PDF français et anglais : aucune date,
+  début seul, fin seule, intervalle complet et journée unique.
 - Vérification du module Projets et compilation de production avec pnpm 10.34.5.

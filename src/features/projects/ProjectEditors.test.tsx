@@ -178,6 +178,27 @@ describe('ProjectEditor contract hire periods', () => {
     expect(screen.getByLabelText('Date d’échéance de contrat.pdf')).toHaveAttribute('type', 'date');
   });
 
+  it('shows the firm duration in the offer preview only while both dates are filled', async () => {
+    const user = userEvent.setup();
+    render(<ProjectEditor
+      client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never}
+      clients={[]} contractTypes={[]} onClose={vi.fn()} onSaved={vi.fn()}
+      statuses={[]} towedAssets={[]} vessels={vessels}
+    />);
+    const preview = within(screen.getByRole('region', { name: 'Aperçu du document généré' }));
+    expect(preview.queryByText('DURÉE FERME')).not.toBeInTheDocument();
+    expect(preview.getByText('CARBURANT')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Opérations/ }));
+    fireEvent.input(screen.getByLabelText('Début du projet'), { target: { value: '2026-09-04' } });
+    expect(preview.queryByText('DURÉE FERME')).not.toBeInTheDocument();
+    fireEvent.input(screen.getByLabelText('Fin du projet'), { target: { value: '2026-09-11' } });
+    expect(preview.getByText('DURÉE FERME')).toBeInTheDocument();
+    expect(preview.getByText('8 jours calendaires')).toBeInTheDocument();
+    fireEvent.input(screen.getByLabelText('Début du projet'), { target: { value: '' } });
+    expect(preview.queryByText('DURÉE FERME')).not.toBeInTheDocument();
+    expect(preview.getByText('CARBURANT')).toBeInTheDocument();
+  });
+
   it('copies project boundaries to planning timestamps and defaults the Fuel terms', async () => {
     const user = userEvent.setup();
     render(
