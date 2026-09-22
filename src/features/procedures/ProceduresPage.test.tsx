@@ -171,6 +171,42 @@ describe('ProceduresPage', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('combines vessel and status filters, preserving exclusions while exporting only visible selected documents', async () => {
+    const user = userEvent.setup();
+    const common = { ...approvedProcedureRow, id: 14, title: 'Procédure commune', vessel_name: null };
+    const { client } = createClient({ procedures: [approvedProcedureRow, draftProcedureRow, common] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: 'Générer une liste des documents' }));
+    const dialog = within(screen.getByRole('dialog'));
+    const status = dialog.getByRole('combobox', { name: 'Statut' });
+    expect(status).toHaveValue('');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(3);
+
+    await user.selectOptions(dialog.getByLabelText('Navire de la liste'), 'GOURY');
+    await user.selectOptions(status, 'published');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    expect(dialog.getByText(/1 document\(s\) disponible/)).toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ vessel: 'GOURY', records: [expect.objectContaining({ id: 14 })] }));
+    await user.click(dialog.getByRole('button', { name: 'Tout désélectionner' }));
+
+    await user.selectOptions(status, 'draft');
+    expect(dialog.getByLabelText('Inclure Consigne machine provisoire')).toBeChecked();
+    await user.click(dialog.getByRole('button', { name: 'Tout sélectionner' }));
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ records: [expect.objectContaining({ id: 13 })] }));
+    await user.selectOptions(status, '');
+    expect(dialog.getByLabelText('Inclure Procédure commune')).not.toBeChecked();
+    expect(dialog.getByLabelText('Inclure Consigne machine provisoire')).toBeChecked();
+    expect(dialog.getByText('1 document(s) sélectionné(s)')).toBeInTheDocument();
+
+    await user.selectOptions(status, 'review');
+    expect(dialog.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(dialog.getByText('Aucun document ne correspond aux filtres sélectionnés.')).toBeInTheDocument();
+    expect(dialog.getByRole('button', { name: 'Télécharger la liste PDF' })).toBeDisabled();
+    expect(dialog.getByRole('button', { name: 'Tout sélectionner' })).toBeDisabled();
+  });
+
   it.each(['armement', 'capitaine', 'marin'] as const)('exports only published PDFs for a real %s role fixture', async (role) => {
     const user = userEvent.setup();
     const { client, from } = createClient();
@@ -178,6 +214,10 @@ describe('ProceduresPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Générer une liste des documents' }));
     const dialog = within(screen.getByRole('dialog'));
     expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    await user.selectOptions(dialog.getByRole('combobox', { name: 'Statut' }), 'draft');
+    expect(dialog.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(dialog.getByRole('button', { name: 'Télécharger la liste PDF' })).toBeDisabled();
+    await user.selectOptions(dialog.getByRole('combobox', { name: 'Statut' }), 'published');
     await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
     expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ library: 'published', records: [expect.objectContaining({ id: 32 })] }));
     expect(from).not.toHaveBeenCalledWith('procedures');
