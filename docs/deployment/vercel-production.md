@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.50.0` ajoute **Registres → Registre des Exercices** : vue flotte ou navire,
+graphique et tableau mensuels, carnet PDF individuel avec le pied de page et le nommage
+historiques. Les migrations du registre et des illustrations sont déjà appliquées.
+Voir [droits, calcul et déploiement](./emergency-exercises.md).
+
 Les vues Capitaine et Marin s'adaptent à la largeur disponible : navigation,
 Demandes d'achat, registre des heures, DPR, Planning et fiche RH. Le bouton
 **Suivant** de la création d'une demande d'achat est débloqué à l'étape Demandeur.

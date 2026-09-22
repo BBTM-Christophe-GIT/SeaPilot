@@ -122,6 +122,7 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   kpi: BarChart3,
   qhse: ShieldCheck,
   chemicals: FlaskConical,
+  emergencyExercises: BookOpenCheck,
   certificates: FileCheck2,
   procedures: FileText,
   serviceNotes: Mail,

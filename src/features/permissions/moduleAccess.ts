@@ -5,6 +5,7 @@ export type ModuleKey =
   | 'kpi'
   | 'qhse'
   | 'chemicals'
+  | 'emergencyExercises'
   | 'certificates'
   | 'procedures'
   | 'serviceNotes'
@@ -54,6 +55,7 @@ export const APP_MODULES: AppModule[] = [
   { key: 'home', label: 'Accueil', family: 'Accueil', navigationKind: 'direct', allowedRoles: ALL_ROLES },
   { key: 'kpi', label: 'KPI', family: 'QHSE', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   { key: 'chemicals', label: 'Produits Chimiques', family: 'Registres', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'emergencyExercises', label: 'Registre des Exercices', family: 'Registres', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   {
     key: 'certificates',
     label: 'Certificats flotte',

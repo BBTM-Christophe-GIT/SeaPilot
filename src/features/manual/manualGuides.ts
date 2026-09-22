@@ -9,6 +9,16 @@ export interface ManualGuide {
 
 // Notices du profil Marin. Les noms, l’ordre et les accès viennent de la navigation.
 export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
+  emergencyExercises: {
+    purpose: 'Consulter les exercices d’urgence issus des Daily Progress Reports et télécharger le carnet annuel individuel.',
+    access: 'Administration, Direction et Armement voient tous les marins, avec En poste sélectionné par défaut. Un Capitaine voit sa bordée ; un Marin consulte uniquement ses propres données.',
+    steps: [
+      { title: 'Choisir le périmètre', detail: 'Dans Registres, ouvrez Registre des Exercices. La vue Flotte est sélectionnée par défaut. Cliquez sur l’icône d’un navire pour restreindre le graphique et le tableau à ce navire, puis choisissez l’année.' },
+      { title: 'Choisir le marin', detail: 'Sélectionnez le collaborateur dont vous souhaitez consulter le carnet. Administration, Direction et Armement peuvent aussi afficher les anciens marins ou tous les marins. Pour le profil Marin, le collaborateur est automatiquement votre propre fiche.' },
+      { title: 'Exporter le carnet', detail: 'Après sélection d’un marin, cliquez sur Exporter le PDF. Le document reprend le graphique, le tableau mensuel, l’année et le périmètre navire sélectionnés. Pour le carnet complet, sélectionnez Flotte. Le nom reste Exercices-Urgence-Prénom-NOM-Année.pdf.' },
+    ],
+    reminders: ['Seuls les DPR soumis ou validés, non supprimés, sont comptabilisés.', 'La vue collective compte chaque exercice une fois par DPR, sans additionner les participations de chaque marin.', 'Si votre fiche personnelle n’est pas liée à votre compte, contactez l’armement.'],
+  },
   chemicals: {
     purpose: 'Tenir l’inventaire des produits chimiques par navire et retrouver leurs fiches de données de sécurité.',
     access: 'Tous les profils, y compris Marin et Capitaine, peuvent consulter, ajouter, modifier et supprimer les produits de leur société, joindre leurs documents et exporter un inventaire.',
