@@ -982,6 +982,7 @@ button:disabled {
 .content-area {
   min-width: 0;
   padding: 18px;
+  container: app-content / inline-size;
 }
 
 .module-page {
@@ -12406,7 +12407,7 @@ button:disabled {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 1100px) {
   .app-shell {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -12541,6 +12542,9 @@ button:disabled {
   .user-identity {
     display: none;
   }
+}
+
+@media (max-width: 760px) {
 
   .admin-header {
     align-items: flex-start;
@@ -25465,4 +25469,169 @@ body:has(.procedure-dialog-backdrop) { overflow: hidden; }
   border: 0;
   background-color: transparent;
   box-shadow: none;
+}
+
+/* Adapt to the space left by navigation, including a collapsed sidebar or zoom. */
+.working-time-command-bar {
+  position: relative;
+  z-index: 10;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.working-time-command-group > div { flex-wrap: wrap; }
+.working-time-register-list { grid-template-columns: minmax(0, 1fr); }
+.working-time-register-detail > header { flex-wrap: wrap; }
+.working-time-register-header-tools { flex-wrap: wrap; }
+.working-time-signatures > .working-time-side-tabs { grid-column: 1 / -1; }
+.working-time-analysis-bar dl > div { min-width: 0; overflow-wrap: anywhere; }
+.working-time-timeline-panel { overflow-x: auto; }
+.working-time-timeline-track { min-width: 600px; }
+
+/* Purchase panes must fit their container, not the full browser viewport. */
+.purchase-master-detail {
+  grid-template-columns: minmax(580px, .95fr) minmax(610px, 1.05fr);
+}
+.purchase-detail-panel { container: purchase-detail / inline-size; }
+.purchase-detail-heading,
+.purchase-modern-filters > label,
+.purchase-wizard-card label,
+.purchase-form-grid > * { min-width: 0; }
+.purchase-detail-meta-line,
+.purchase-detail-meta,
+.purchase-context-actions { flex-wrap: wrap; }
+.purchase-detail-heading h2,
+.purchase-detail-section p,
+.purchase-detail-section dd { overflow-wrap: anywhere; }
+.purchase-detail-section dl {
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+}
+.purchase-detail-section dl div { grid-template-columns: minmax(80px, .8fr) minmax(0, 1fr); }
+.purchase-modern-filters select,
+.purchase-wizard-card input,
+.purchase-wizard-card select,
+.purchase-wizard-card textarea { min-width: 0; width: 100%; }
+.purchase-wizard-card .purchase-checkbox input { width: auto; }
+
+@container app-content (max-width: 1200px) {
+  .purchase-master-detail { grid-template-columns: minmax(0, 1fr); }
+  .purchase-list-panel { min-height: 0; border-right: 0; border-bottom: 1px solid var(--purchase-border); }
+  .purchase-list-body { max-height: 360px; }
+  .purchase-detail-panel { max-height: none; }
+}
+
+@container purchase-detail (max-width: 680px) {
+  .purchase-workflow { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; padding: 20px 18px; }
+  .purchase-workflow-line { display: none; }
+  .purchase-workflow-step small { max-width: 100%; overflow-wrap: anywhere; }
+  .purchase-detail-meta-line { align-items: flex-start; flex-direction: column; }
+  .purchase-context-actions { width: 100%; }
+}
+
+@container app-content (max-width: 1100px) {
+  .dpr-workspace { grid-template-columns: minmax(0, 1fr); }
+  .dpr-preview { position: static; max-height: none; }
+  .working-time-register-detail,
+  .working-time-register-detail.is-monthly { grid-template-columns: minmax(0, 1fr); }
+
+  .working-time-register-detail > .working-time-signatures,
+  .working-time-register-detail > .working-time-intervals,
+  .working-time-register-detail > .working-time-non-compliance,
+  .working-time-register-detail > .working-time-workflow-actions {
+    grid-column: 1;
+    grid-row: auto;
+    position: static;
+  }
+
+  .working-time-register-detail > .working-time-signatures {
+    grid-row: 3;
+    grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  }
+
+  .working-time-register-detail > .working-time-intervals { grid-row: 2; }
+
+  .working-time-analysis-bar { grid-template-columns: minmax(0, 1fr); }
+  .working-time-analysis-bar > span { justify-content: start; }
+  .working-time-analysis-bar dl { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
+}
+
+@container app-content (max-width: 850px) {
+  .purchase-modern-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .working-time-workspace-grid { grid-template-columns: minmax(0, 1fr); }
+  .working-time-register-list {
+    position: static;
+    max-height: 300px;
+    overflow: auto;
+  }
+
+  .hr-profile-header {
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .hr-profile-avatar { width: 52px; height: 52px; }
+
+  .hr-profile-header-actions {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+}
+
+@container app-content (max-width: 600px) {
+  .dpr-period { flex-wrap: wrap; }
+  .dpr-period input { flex: 1 1 130px; min-width: 0; max-width: 100%; }
+  .purchase-modern-filters { grid-template-columns: minmax(0, 1fr); }
+  .purchase-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; }
+  .purchase-tabs button { min-height: 44px; }
+  .purchase-list-head { display: none; }
+  .purchase-list-row { grid-template-columns: minmax(0, 1fr) auto; padding-inline: 14px; gap: 8px; }
+  .purchase-list-row > .purchase-request-name { grid-column: 1 / -1; }
+  .purchase-list-row > span:nth-child(4),
+  .purchase-list-row > span:nth-child(5) { display: none; }
+  .purchase-request-name strong { overflow-wrap: anywhere; }
+  .purchase-detail-header,
+  .purchase-detail-section,
+  .purchase-activity { padding-inline: 16px; }
+  .planning-toolbar-main,
+  .planning-toolbar-navigation { flex-wrap: wrap; overflow: visible; }
+  .planning-toolbar-navigation > .planning-period-controls { flex: 1 1 100%; }
+  .planning-period-controls { flex-wrap: wrap; min-width: 0; }
+  .hr-person-compact-row { grid-template-columns: 28px minmax(0, 1fr) 40px 50px 14px; }
+  .working-time-command-group { max-width: 100%; padding-inline: 10px; }
+  .working-time-register-header-tools { justify-content: flex-start; }
+  .working-time-subheading { flex-wrap: wrap; }
+  .working-time-form-actions { flex-wrap: wrap; }
+  .working-time-form-actions button { flex: 1 1 auto; justify-content: center; }
+  .working-time-timeline-legend { flex-wrap: wrap; }
+  .working-time-analysis-bar dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .working-time-register-detail > .working-time-signatures,
+  .working-time-register-detail.is-monthly > .working-time-signatures { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 900px) {
+  .purchase-wizard { grid-template-columns: minmax(0, 1fr); margin: 0; min-height: 0; }
+  .purchase-wizard > aside { margin: 0 0 14px; padding: 10px; }
+  .purchase-wizard > aside > small,
+  .purchase-wizard > aside > strong { display: none; }
+  .purchase-wizard nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .purchase-wizard nav button { grid-template-columns: auto minmax(0, 1fr); gap: 5px; padding: 5px; font-size: .7rem; }
+  .purchase-wizard > section { min-width: 0; padding: 0; }
+  .purchase-wizard-card { padding-inline: 12px; }
+  .purchase-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .purchase-wizard-footer { flex-wrap: wrap; }
+  .purchase-wizard-footer button { flex: 1 1 auto; }
+}
+
+@media (max-width: 420px) {
+  .purchase-wizard nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (pointer: coarse) {
+  .navigation-family-links a,
+  .topbar-menu-button,
+  .topbar-icon-button,
+  .working-time-month-navigation button,
+  .working-time-view-toggle button,
+  .working-time-side-tabs button { min-height: 44px; }
 }

@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Les vues Capitaine et Marin s'adaptent à la largeur disponible : navigation,
+Demandes d'achat, registre des heures, DPR, Planning et fiche RH. Le bouton
+**Suivant** de la création d'une demande d'achat est débloqué à l'étape Demandeur.
+Aucune migration ni nouvelle configuration n'est requise. Voir
+[Affichage Capitaine et Marin](./crew-responsive-layout.md).
+
 Le menu **Registres → Produits Chimiques** regroupe désormais le registre existant.
 Les procédures QHSE proposent une liste PDF sélectionnable par navire, incluant les
 procédures communes sans navire, et une liste déroulante de la flotte pour le champ Navire.

@@ -332,4 +332,27 @@ describe('PurchaseRequestsPage', () => {
     await user.click(screen.getByRole('button', { name: /3.*Prix/i }));
     expect(screen.getByLabelText('Refacturation')).toHaveTextContent('NAVIRE CANONIQUE');
   });
+
+  it('lets a captain reach the need step before requiring the request title', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+    render(<PurchaseRequestsPage client={client as never} roles={['capitaine']} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Nouvelle demande' }));
+    expect(screen.getByRole('button', { name: 'Suivant' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Suivant' }));
+
+    expect(screen.getByLabelText('Désignation *')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Suivant' })).toBeDisabled();
+    await user.type(screen.getByLabelText('Désignation *'), 'Filtre hydraulique');
+    await user.click(screen.getByRole('button', { name: 'Suivant' }));
+    expect(screen.getByLabelText('Prix unitaire HT')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: /6.*Pièces jointes/i }));
+    expect(screen.getByRole('button', { name: 'Créer la demande' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: /2.*Besoin/i }));
+    await user.clear(screen.getByLabelText('Désignation *'));
+    await user.click(screen.getByRole('button', { name: /6.*Pièces jointes/i }));
+    expect(screen.getByRole('button', { name: 'Créer la demande' })).toBeDisabled();
+  });
 });
