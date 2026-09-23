@@ -51,6 +51,7 @@ interface PurchaseRequestRow {
 }
 
 interface FleetCertificateRow {
+  register?: 'lsa';
   id: number;
   vessel_id?: number | null;
   vessel_name: string | null;
@@ -466,15 +467,15 @@ function fleetCertificateItems(rows: FleetCertificateRow[], today: Date, vessels
       : expiry ? deadlineForDate(expiry, today, 'Expire') : 'Document manquant';
 
     return [{
-      id: `fleet-${row.id}`,
+      id: `${row.register === 'lsa' ? 'lsa' : 'fleet'}-${row.id}`,
       vessels: vessels.forRow(row.vessel_id, row.vessel_name),
       group: 'fleetDocuments',
       tags: ['documents', 'fleet'],
       title: row.document_title || row.title || 'Document flotte',
-      context: `Flotte · ${row.vessel_name || 'Navire non renseigné'}`,
+      context: `${row.register === 'lsa' ? 'LSA' : 'Flotte'} · ${row.vessel_name || 'Navire non renseigné'}`,
       deadline,
-      action,
-      to: '/modules/certificates',
+      action: row.register === 'lsa' ? 'Ouvrir le registre LSA' : action,
+      to: row.register === 'lsa' ? '/modules/lsa' : '/modules/certificates',
       dueDate,
       visibleDates: visibleDatesFor(dueDate, today, urgent),
       queueVisibleDates: queueVisibleDatesFor(dueDate, alarmDate, today, queueTone),
@@ -731,7 +732,7 @@ export async function fetchManagerHomeDashboard(
     ? 'procedures'
     : 'published_procedures';
 
-  const [purchases, procedures, fleetCertificates, people, hrDocuments, workingTimeCalculations] = await Promise.all([
+  const [purchases, procedures, fleetCertificates, lsaItems, people, hrDocuments, workingTimeCalculations] = await Promise.all([
     loadRows<PurchaseRequestRow>('les achats', async () => {
       let query = client.from('purchase_requests')
         .select('id,request_number,title,requested_on,requester_name,project_code,vessel_id,vessel_name,status,urgent,approval_status,ordered_on,expected_delivery_on,received_on')
@@ -750,6 +751,13 @@ export async function fetchManagerHomeDashboard(
     }),
     loadRows<FleetCertificateRow>('les documents flotte', async () => {
       let query = client.from('fleet_certificates')
+        .select('id,vessel_id,vessel_name,document_title,title,status,expires_on,planned_on,workflow_status,is_active_fleet')
+        .order('expires_on', { ascending: true, nullsFirst: false });
+      if (assignmentScope) query = query.in('vessel_id', assignmentScope.vesselIds);
+      return query;
+    }),
+    loadRows<FleetCertificateRow>('le registre LSA', async () => {
+      let query = client.from('lsa_items')
         .select('id,vessel_id,vessel_name,document_title,title,status,expires_on,planned_on,workflow_status,is_active_fleet')
         .order('expires_on', { ascending: true, nullsFirst: false });
       if (assignmentScope) query = query.in('vessel_id', assignmentScope.vesselIds);
@@ -782,12 +790,12 @@ export async function fetchManagerHomeDashboard(
     }),
   ]);
 
-  const results = [assignments, purchases, procedures, fleetCertificates, people, hrDocuments, workingTimeCalculations];
+  const results = [assignments, purchases, procedures, fleetCertificates, lsaItems, people, hrDocuments, workingTimeCalculations];
   const sources: ManagerHomeSourceRows = {
     assignments: assignments.rows,
     purchases: purchases.rows,
     procedures: procedures.rows,
-    fleetCertificates: fleetCertificates.rows,
+    fleetCertificates: [...fleetCertificates.rows, ...lsaItems.rows.map((row) => ({ ...row, register: 'lsa' as const }))],
     people: people.rows,
     hrDocuments: hrDocuments.rows,
     workingTimeCalculations: workingTimeCalculations.rows,

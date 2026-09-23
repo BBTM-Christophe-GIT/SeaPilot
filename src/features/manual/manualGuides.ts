@@ -9,6 +9,16 @@ export interface ManualGuide {
 
 // Notices du profil Marin. Les noms, l’ordre et les accès viennent de la navigation.
 export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
+  lsa: {
+    purpose: 'Retrouver les équipements de sauvetage et leurs documents dans le Registre LSA.',
+    access: 'Marin et Capitaine consultent les données de leur périmètre autorisé. Administration, Direction et Armement peuvent ajouter et modifier les fiches de leur société.',
+    steps: [
+      { title: 'Choisir un navire', detail: 'Dans Registres → Registre LSA, sélectionnez la carte du navire comme dans le Registre des Remorques.' },
+      { title: 'Filtrer l’inventaire', detail: 'Choisissez Life Jacket, GMDSS, Pyrotechnie ou Bouée/Feux à retournement/MOB. La recherche porte sur les désignations, identifiants et notes.' },
+      { title: 'Consulter les documents', detail: 'Ouvrez Documents de contrôle, puis filtrez par année. Téléchargez les fichiers avec la flèche. Détails et historique conserve les notes et les événements de renouvellement de chaque fiche.' },
+    ],
+    reminders: ['Les quatre catégories ont quitté Certificats flotte après vérification de leur copie.', 'Les documents en attente de validation gardent leur statut. Une échéance absente reste à renseigner.'],
+  },
   emergencyExercises: {
     purpose: 'Consulter les exercices d’urgence issus des Daily Progress Reports et télécharger le carnet annuel individuel.',
     access: 'Administration, Direction et Armement voient tous les marins, avec En poste sélectionné par défaut. Un Capitaine voit sa bordée ; un Marin consulte uniquement ses propres données.',

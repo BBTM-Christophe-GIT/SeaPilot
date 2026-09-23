@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.53.0` ajoute **Registres → Registre LSA** et transfère les catégories
+Life Jacket, GMDSS, Pyrotechnie et Bouée/Feux à retournement/MOB depuis Certificats
+flotte. Appliquer `20260923095002_lsa_register.sql` avant le client : copie et
+vérification intégrale des fiches, versions et historiques avant retrait de la
+source, sans suppression des PDF. Voir [le protocole et la recette](./lsa-register-v3-53-0.md).
+
 Version `3.51.2` inclut les TBT à thème libre dans le registre des exercices, ses totaux et le PDF individuel. La migration `20260923060419_emergency_exercises_tbt.sql` est appliquée et vérifiée. Les cinq profils authentifiés utilisent le même périmètre que les exercices prédéfinis. Aucune note de mise à jour ajoutée. Voir [le registre et les vérifications](./emergency-exercises.md).
 
 Version `3.51.1` harmonise les filtres navires du plus long au plus court. Le registre des exercices propose uniquement les navires actifs, une seule fois par nom, et conserve les exercices historiques dans la vue flotte. La migration `20260923053355_emergency_exercises_active_vessels.sql` est appliquée et vérifiée avec les cinq profils authentifiés. Aucune nouvelle note de mise à jour, conformément à la demande. Voir [la correction des filtres](./vessel-filter-order.md).

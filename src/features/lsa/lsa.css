@@ -1,0 +1,13 @@
+.lsa-page .lifting-register-filters > label:first-child { max-width: 340px; }
+.lsa-page .lifting-id { font-size: 12px; }
+.lsa-details { margin-top: 12px; font-size: 12px; line-height: 1.6; }
+.lsa-details summary { cursor: pointer; font-weight: 650; }
+.lsa-details dl { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.lsa-details dt { font-weight: 650; }
+.lsa-details dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lsa-details p { overflow-wrap: anywhere; }
+.lsa-details button { margin: 6px 10px; }
+@media (max-width: 680px) {
+  .lsa-page .lifting-register-filters > label:first-child { max-width: none; }
+  .lsa-details dl { grid-template-columns: 1fr; }
+}
