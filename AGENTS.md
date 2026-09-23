@@ -23,3 +23,7 @@ Never include unrelated local changes, secrets, or generated credentials in a co
 ## Profile-specific UI verification
 
 For Marin and Capitaine workflows, never use the Marin or Capitaine views simulated from the current user session as the source of truth: they do not represent what real Marin and Capitaine accounts see. Inspect and test the role-gated application code, RPC/RLS rules, and profile-specific test fixtures for each real profile instead.
+
+## User-requested release notes
+
+Create an in-app release note only when the user requests one. Append it to `src/features/releaseNotes/releaseNotesCatalog.ts` with a unique stable ID, version, publication date, and user-facing description. Keep previous notes and IDs so missed updates remain available. See `docs/deployment/release-notes-and-lifting-sections.md` for the acknowledgement and read-later behavior.

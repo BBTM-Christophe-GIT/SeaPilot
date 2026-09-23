@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Link, useOutletContext } from 'react-router-dom';
+import { Link, useNavigate, useOutletContext } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, Download, FileCheck2, Package, Pencil, Plus, Printer, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { supabase } from '../../lib/supabaseClient';
@@ -24,24 +24,20 @@ import './lifting.css';
 import { createLiftingPreviewClient } from './liftingPreview';
 import { LiftingVesselFilter } from './LiftingVesselFilter';
 import './liftingNavigation.css';
+import { LIFTING_SECTIONS, type LiftingSection } from './liftingSections';
 
 function messageOf(error: unknown) { return error && typeof error === 'object' && 'message' in error ? String(error.message) : 'Impossible de réaliser cette opération. Réessayez.'; }
-const SECTIONS = [
-  { key: 'crane', title: 'Examen à fond - Grue', subtitle: 'Structure, équipements et essais' },
-  { key: 'lifting', title: 'Registre des Apparaux de Levage', subtitle: 'Inventaire et contrôles annuels' },
-  { key: 'towing', title: 'Remorques', subtitle: 'Lignes et accessoires de remorquage' },
-] as const;
-
-export function LiftingPage({ client, roles }: { client?: SupabaseClient; roles?: RoleKey[] }) {
+export function LiftingPage({ client, roles, section = 'lifting' }: { client?: SupabaseClient; roles?: RoleKey[]; section?: LiftingSection }) {
   const context = useOutletContext<AppShellOutletContext | undefined>();
+  const navigate = useNavigate();
   const [previewClient] = useState(() => createLiftingPreviewClient({ roles: roles || context?.roles || ['admin'], fleet: true }));
   const db = client || (context?.previewMode ? previewClient : context?.client) || supabase;
   const currentRoles = roles || context?.roles || [];
   const manager = canManageLifting(currentRoles);
   const canRemoveItem = canRemoveLiftingItem(currentRoles);
-  const [section, setSection] = useState<LiftingKind | 'crane'>('lifting');
+  const currentSection = LIFTING_SECTIONS.find((item) => item.key === section)!;
   const [vessels, setVessels] = useState<LiftingVessel[]>([]);
-  const [vesselId, setVesselId] = useState(0);
+  const [vesselId, setVesselId] = useState(context?.liftingVesselId || 0);
   const [items, setItems] = useState<LiftingItem[]>([]);
   const [inspections, setInspections] = useState<LiftingInspection[]>([]);
   const [report, setReport] = useState<LiftingInspection | null>(null);
@@ -74,6 +70,12 @@ export function LiftingPage({ client, roles }: { client?: SupabaseClient; roles?
   const inventoryItems = items.filter((item) => showInactive || item.active);
   const filtered = inventoryItems.filter((item) => matchesLiftingItem(item, query, accessoryType));
   const displayedReports = inspections.filter((r) => !year || String(r.inspection_year) === year);
+  const setNavigationBlocked = context?.setLiftingNavigationBlocked;
+
+  useEffect(() => {
+    setNavigationBlocked?.(busy || dirty);
+    return () => setNavigationBlocked?.(false);
+  }, [busy, dirty, setNavigationBlocked]);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,10 +150,9 @@ export function LiftingPage({ client, roles }: { client?: SupabaseClient; roles?
     });
   }
   return <section className="lifting-page">
-    <header className="lifting-heading"><div><p className="lifting-eyebrow">SÉCURITÉ DES ÉQUIPEMENTS</p><h1>Levage</h1><p>Les équipements à bord, leur état et leurs contrôles.</p></div><Link className="secondary-button" to="/modules/certificates"><FileCheck2 size={17} /> Certificats flotte</Link></header>
-    <nav className="lifting-sections" aria-label="Sections du module Levage">{SECTIONS.map((s) => <button disabled={busy || dirty} key={s.key} aria-label={s.title} className={section === s.key ? 'is-selected' : ''} aria-pressed={section === s.key} onClick={() => setSection(s.key)}><span className={`lifting-section-icon ${s.key}`}><LiftingIcon kind={s.key} /></span><span><strong>{s.title}</strong><small>{s.subtitle}</small></span></button>)}</nav>
-    {section === 'crane' ? <div className="lifting-crane"><LiftingIcon kind="crane" /><div><h2>Examen à fond - Grue</h2><p>Cette section est réservée au contrôle de la grue. Les rapports existants restent disponibles dans les certificats du navire.</p><p>La première version du module couvre le registre des apparaux et les remorques.</p><Link to="/modules/certificates">Consulter les certificats flotte</Link></div></div> : <>
-      <LiftingVesselFilter vessels={vessels} value={vesselId} disabled={busy || dirty} onChange={setVesselId} />
+    <header className="lifting-heading"><div><p className="lifting-eyebrow">LEVAGE · SÉCURITÉ DES ÉQUIPEMENTS</p><h1>{currentSection.title}</h1><p>{currentSection.description}</p></div><Link className="secondary-button" to="/modules/certificates"><FileCheck2 size={17} /> Certificats flotte</Link></header>
+    {section === 'crane' ? <div className="lifting-crane"><LiftingIcon kind="crane" /><div><h2>Examen à Fond - Grue</h2><p>Cette section est réservée au contrôle de la grue. Les rapports existants restent disponibles dans les certificats du navire.</p><p>La première version du module couvre le registre des apparaux et les remorques.</p><Link to="/modules/certificates">Consulter les certificats flotte</Link></div></div> : <>
+      <LiftingVesselFilter vessels={vessels} value={vesselId} disabled={busy || dirty} onChange={(id) => { setVesselId(id); context?.setLiftingVesselId?.(id); }} />
       {error && !replacement && !removeDraft && !paperOpen && !editor && !startOpen && !publishOpen && !removeItem && <div className="lifting-error" role="alert">{error}<button onClick={() => { setError(''); void reloadCurrentReport(); }}>Recharger</button></div>}
       {notice && <p className="lifting-notice" role="status"><CheckCircle2 size={18} />{notice}</p>}
       {!report ? <>
@@ -172,7 +173,7 @@ export function LiftingPage({ client, roles }: { client?: SupabaseClient; roles?
         {report.status === 'draft' && !manager && <p className="lifting-muted lifting-footnote">La Direction ou l’Armement finalisera le rapport après vérification.</p>}
       </div>}
     </>}
-    {editor && section !== 'crane' && <LiftingItemForm initial={editor.draft} kind={section} busy={busy} error={error} onClose={() => { setEditor(null); setError(''); }} onSave={(draft) => void act(async () => { const targetKind = accessoryDefinition(draft.material_type)?.code === 'TL' ? 'towing' : 'lifting'; await saveLiftingItem(db, vesselId, targetKind, draft, editor.id); setEditor(null); if (targetKind !== section) setSection(targetKind); await reload(); setNotice('Matériel enregistré.'); })} />}
+    {editor && section !== 'crane' && <LiftingItemForm initial={editor.draft} kind={section} busy={busy} error={error} onClose={() => { setEditor(null); setError(''); }} onSave={(draft) => void act(async () => { const targetKind = accessoryDefinition(draft.material_type)?.code === 'TL' ? 'towing' : 'lifting'; await saveLiftingItem(db, vesselId, targetKind, draft, editor.id); setEditor(null); if (targetKind !== section) { context?.setLiftingVesselId?.(vesselId); navigate(`/modules/lifting/${LIFTING_SECTIONS.find((item) => item.key === targetKind)!.path}`); return; } await reload(); setNotice('Matériel enregistré.'); })} />}
     {paperOpen && section !== 'crane' && <LiftingPaperForm vessels={vessels} initialVesselId={vesselId} initialKind={section} busy={busy} error={error} onClose={() => { setPaperOpen(false); setError(''); }} onDownload={(selectedVesselId, kind, includeNotice) => void act(async () => {
       const current = await fetchLiftingPaperInventory(db, selectedVesselId, kind);
       const pdf = await buildLiftingPaperPdf(current.vessel, kind, current.items, { includeNotice });
