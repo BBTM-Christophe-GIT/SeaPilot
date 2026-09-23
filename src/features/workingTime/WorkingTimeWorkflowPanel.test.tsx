@@ -560,9 +560,10 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(validateWorkingTimeDay).toHaveBeenCalledWith(client, 501);
   });
 
-  it('lets the assigned exact HR Captain validate a compliant sailor draft directly', async () => {
+  it.each(['capitaine', 'marin'] as const)('lets a temporary Captain with role %s validate a compliant sailor draft', async (role) => {
     const user = userEvent.setup();
     const data = workspace('validated', 20);
+    data.canActAsCaptain = true;
     vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue({
       assignmentId: 1,
       vesselId: 7,
@@ -571,7 +572,7 @@ describe('WorkingTimeWorkflowPanel', () => {
       approverPersonId: 10,
       captainCandidates: [{ personId: 10, firstName: 'Camille', lastName: 'CAPITAINE', name: 'Camille CAPITAINE' }],
     });
-    renderPanel(['capitaine'], data);
+    renderPanel([role], data, { ...currentPerson, functionLabel: '2nd Capitaine' });
 
     await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
     const validateButton = screen.getByRole('button', { name: 'Valider' });

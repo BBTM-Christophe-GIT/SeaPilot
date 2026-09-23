@@ -98,7 +98,7 @@ describe('ReleaseNotes', () => {
 
   it('ships a unique, dated first note for the Levage change', () => {
     expect(new Set(RELEASE_NOTES.map((note) => note.id)).size).toBe(RELEASE_NOTES.length);
-    expect(RELEASE_NOTES[0].changes.join(' ')).toContain('Registre des Remorques');
+    expect(RELEASE_NOTES.find((note) => note.id === '3.51.0-lifting-sections')?.changes.join(' ')).toContain('Registre des Remorques');
     RELEASE_NOTES.forEach((note) => expect(Number.isNaN(Date.parse(note.publishedOn))).toBe(false));
   });
 

@@ -71,6 +71,7 @@ export interface DprReportRecord {
   description: string;
   qhseNote: string;
   createdBy: string | null;
+  canManage?: boolean;
   createdAt: string;
   updatedAt: string;
   fuelConsumedLiters: number;
@@ -86,7 +87,7 @@ function scalarText(value: unknown): string {
 }
 function numberOrNull(value: unknown): number | null { const parsed = Number(value); return value === null || value === undefined || !Number.isFinite(parsed) ? null : parsed; }
 function crewFunction(functionLabel: string, gradeLabel: string): CrewFunction {
-  const label = `${functionLabel} ${gradeLabel}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const label = (functionLabel.trim() || gradeLabel).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   if (label.includes('chef mecanicien')) return 'chief-engineer';
   if (label.includes('second capitaine') || label.includes('2nd capitaine')) return 'second-captain';
   if (label.includes('capitaine')) return 'captain';
@@ -154,7 +155,7 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { ownRe
 
   let reportQuery = client
     .from('dpr_reports')
-    .select('id,dpr_number,status,report_date,project_id,unlisted_project_name,vessel_id,validator_person_id,validator_name_snapshot,issuer_name_snapshot,description,qhse_note,created_by,created_at,updated_at')
+    .select('id,dpr_number,status,report_date,project_id,unlisted_project_name,vessel_id,validator_person_id,validator_name_snapshot,issuer_name_snapshot,description,qhse_note,created_by,created_at,updated_at,can_manage:dpr_report_can_manage')
     .is('deleted_at', null);
   if (options.ownReportsOnly) reportQuery = reportQuery.eq('created_by', profile.id);
   const reportPromise = reportQuery
@@ -213,6 +214,7 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { ownRe
       vesselId, vesselName: vesselId ? vesselMap.get(vesselId)?.name || '' : '',
       validatorPersonId: numberOrNull(row.validator_person_id), validatorName: text(row.validator_name_snapshot), issuerName: text(row.issuer_name_snapshot),
       description: text(row.description), qhseNote: text(row.qhse_note), createdBy: row.created_by ? text(row.created_by) : null,
+      canManage: row.can_manage === true,
       createdAt: text(row.created_at), updatedAt: text(row.updated_at), fuelConsumedLiters: metrics.get(Number(row.id)) || 0,
       incidentCount: incidents.get(Number(row.id)) || 0, files: filesByReport.get(Number(row.id)) || [],
     } satisfies DprReportRecord;

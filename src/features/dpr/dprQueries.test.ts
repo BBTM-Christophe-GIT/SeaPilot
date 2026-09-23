@@ -15,6 +15,14 @@ function queryResult(data: unknown) {
 }
 
 describe('DPR Supabase commands', () => {
+  it('uses the temporary Planning function before the permanent HR grade', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: {
+      people: [{ id: 18, firstName: 'Arthur', lastName: 'RICHER', functionLabel: 'Capitaine', gradeLabel: '2nd Capitaine' }],
+      crewPersonIds: [18],
+    }, error: null });
+    const context = await fetchDprEntryContext({ rpc } as never, '2026-09-23', 2);
+    expect(context.people[0].crewFunction).toBe('captain');
+  });
   it('maps the narrow Planning project snapshot returned to field profiles', async () => {
     const rpc = vi.fn().mockResolvedValueOnce({
       data: {

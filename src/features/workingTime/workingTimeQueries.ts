@@ -10,6 +10,7 @@ import type {
 
 interface EntryContextRow {
   current_person_id?: number | string;
+  can_act_as_captain?: boolean;
   readable_people?: unknown[];
   editable_people?: unknown[];
 }
@@ -312,6 +313,7 @@ export interface WorkingTimePolicyThresholds {
 
 export interface WorkingTimeWorkspace {
   currentPersonId: number;
+  canActAsCaptain?: boolean;
   readablePeople: WorkingTimeEditablePerson[];
   editablePeople: WorkingTimeEditablePerson[];
   registers: WorkingTimeWorkspaceRegister[];
@@ -641,6 +643,7 @@ export async function fetchWorkingTimeWorkspace(
 
   return {
     currentPersonId: Number(context.current_person_id || 0),
+    canActAsCaptain: context.can_act_as_captain === true,
     readablePeople,
     editablePeople,
     registers: ((registerResult.data || []) as RegisterRow[]).map(mapRegister)
