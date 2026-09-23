@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useOutletContext } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -70,6 +70,21 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Examen à Fond - Grue' })).toHaveAttribute('href', '/modules/lifting/grue');
     expect(screen.getByText(APP_VERSION_LABEL)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Réduire le menu' })).toBeInTheDocument();
+
+    const navigation = within(screen.getByRole('navigation', { name: 'Navigation principale' }));
+    for (const button of navigation.getAllByRole('button')) {
+      expect(button).toHaveAttribute('aria-expanded', 'true');
+    }
+    const user = userEvent.setup();
+    await user.click(qhseButton);
+    expect(qhseButton).toHaveAttribute('aria-expanded', 'false');
+    expect(navigation.queryByRole('link', { name: 'KPI' })).not.toBeInTheDocument();
+    expect(navigation.getByRole('link', { name: 'Registre des Exercices' })).toBeInTheDocument();
+    await user.click(qhseButton);
+    expect(navigation.getByRole('link', { name: 'KPI' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Réduire le menu' }));
+    await user.click(screen.getByRole('button', { name: 'Agrandir le menu' }));
+    expect(qhseButton).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('keeps the administrator role active without exposing profile simulations', async () => {

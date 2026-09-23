@@ -1,3 +1,50 @@
+# Sidebar compacte — contrôle visuel
+
+final result: passed
+
+## Sources et captures
+
+Preuves versionnées : `docs/design/compact-sidebar/` (référence normalisée, rendu, comparaisons et mobile).
+
+- Proposition 2 sélectionnée : `C:/Users/chris/.codex/generated_images/01a0cc7f-3df8-77d2-b655-b9c31069277e/exec-78030bc3-eaeb-4e12-bf1b-c15cd5b9ee4f.png` (768 × 2048).
+- Déclinaison avec toutes les rubriques ouvertes : `C:/Users/chris/.codex/generated_images/01a0cc7f-3df8-77d2-b655-b9c31069277e/exec-4324d817-bc00-4fdc-a757-e15fd718419b.png` (890 × 1767). Le panneau utile 474 × 1767 est normalisé à 286 × 1066 ; la marge blanche est exclue.
+- Dossier des preuves : `C:/Users/chris/.codex/visualizations/2026/09/23/01a0cc7f-3df8-77d2-b655-b9c31069277e/`.
+- Capture navigateur finale : `sidebar-desktop.png`, 286 × 1200, recadrée sur la sidebar d'un viewport CSS 1440 × 1200, devicePixelRatio 1.
+- Comparaison simultanée : `sidebar-comparison.png` ; détail des icônes : `register-icons-comparison.png`. Les deux regroupent référence et rendu dans une même image.
+- États complémentaires : `sidebar-mobile.png` (390 × 844, pointeur tactile) et `sidebar-collapsed.png` (82 × 1200).
+- État comparé : données de démonstration Admin, registre des exercices actif, toutes les rubriques ouvertes, notes acquittées. Cette préversion sert à contrôler la présentation, pas à valider les droits Marin/Capitaine.
+
+## Résultat et différences intentionnelles
+
+Aucun écart P0/P1/P2 restant. Fond bleu nuit continu, séparateurs fins, hiérarchie, rubriques colorées, sélection verte avec repère gauche et pied compact correspondent à la proposition retenue.
+
+- Typographie : Inter existante conservée (repli système), rubriques 14 px/700, liens 13,12 px/500 et interligne 1,4. Le texte reste plus grand que la maquette raster normalisée, pour conserver la lisibilité. Les titres complets restent accessibles par libellé et infobulle ; les libellés Levage peuvent revenir à la ligne.
+- Espacement : largeur existante 286 px ; en-tête 62 px, rubriques 34 px, liens au minimum 28 px et pied 43 px. Le contenu de navigation passe de 1371 à 1084 px à population identique. La hauteur supplémentaire face à la maquette est intentionnelle pour la lisibilité et les interactions.
+- Couleurs : fond `#0b1220`, texte secondaire `#cbd5e1`, rubriques vert/bleu/orange/violet/turquoise, surbrillance liée à la rubrique. Les couleurs bleu et violet ont été éclaircies pour des icônes sans fond. Focus clavier contrasté.
+- Assets : logo SeaPilot fourni conservé ; icônes standard Lucide existantes. Trois images générées distinctes : manille, câble seul sans boucle et crochet industriel, conformément à la dernière correction. PNG transparents optimisés à 128 × 128 (15,4 Ko au total), appliqués en masques de couleur ; contrôle des silhouettes à leur taille d'utilisation.
+- Contenu : routes et libellés applicatifs conservés, Planning et Administration restent des liens directs (la déclinaison générée les dupliquait). Aucun nouveau texte de note de mise à jour.
+
+## Historique de comparaison
+
+1. Premier rendu (`sidebar-compact-initial.png`) : P2, les grandes images générées perdaient la continuité de leurs traits en masque à 20 px. Le problème était visible dans les trois liens du registre.
+2. Correction : optimisation des assets de 1254 à 128 px, masque ajusté au cadrage des silhouettes, renforcement léger du trait. La capture a été reprise après rechargement.
+3. Comparaison finale (`sidebar-comparison.png` et `register-icons-comparison.png`) : câble sans œil, manille fermée par son axe et crochet différenciés ; hiérarchie et alignements cohérents. Aucun correctif visuel supplémentaire requis.
+
+## Vérifications fonctionnelles
+
+- Ouverture initiale des sept groupes, repli QHSE indépendant et restauration, mode réduit 82 px puis agrandissement.
+- Accès aux trois routes apparaux/remorques/grue et titres de pages vérifiés dans le navigateur.
+- Mobile 390 × 844 : volet 300 px, aucun débordement horizontal, pied accessible, cibles tactiles 44 px, fermeture du volet après navigation.
+- Aucun avertissement ni erreur dans la console navigateur lors du parcours.
+- 54 tests ciblés de navigation, permissions, routage et notes de mise à jour passent ; lint et build passent. Les permissions et protections de saisie ne sont pas modifiées.
+
+## Limites et suivi
+
+Les longs libellés RH gardent leur troncature et leur infobulle, comme dans l'application existante. Aucune simulation de rôle depuis une session Admin utilisée comme preuve pour les droits Marin/Capitaine ; les fixtures automatisées couvrent les règles existantes. Aucune migration ni modification RPC/RLS.
+
+
+---
+
 # Design QA — Notes de frais en accordéon et véhicule par défaut, v3.45.0
 
 final result: passed

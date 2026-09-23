@@ -5,3 +5,21 @@
   line-height: 1.4;
 }
 .navigation-family-links .lifting-navigation-link[aria-disabled='true'] { cursor: not-allowed; opacity: .6; }
+
+.navigation-equipment-icon {
+  width: 20px;
+  height: 20px;
+  margin-left: -2px;
+  background: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: 125%;
+  filter: drop-shadow(0.35px 0 currentColor) drop-shadow(-0.35px 0 currentColor);
+}
+
+.navigation-equipment-icon--lifting { mask-image: url('/icons/lifting-shackle.png'); }
+.navigation-equipment-icon--towing { mask-image: url('/icons/towing-cable.png'); }
+.navigation-equipment-icon--crane {
+  mask-image: url('/icons/crane-hook.png');
+  mask-size: 150%;
+}
