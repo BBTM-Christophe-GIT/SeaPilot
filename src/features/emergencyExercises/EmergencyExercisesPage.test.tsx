@@ -44,12 +44,18 @@ describe('emergency register interface', () => {
     expect(screen.getByLabelText('Filtrer les marins')).toHaveValue('current');
     expect(screen.queryByRole('option',{name:'Camille DURAND'})).not.toBeInTheDocument();
     expect(screen.getByRole('button',{name:'Exporter le PDF'})).toBeDisabled();
+    expect(screen.getByRole('rowheader', { name: 'TBT — thème libre' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /Répartition mensuelle/ })).toHaveAccessibleName(/Jan 7, Fév 0, Mar 7/);
+    expect(screen.getByText('35 exercices')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button',{name:'SUROIT'}));
     await screen.findByRole('heading',{name:/SUROIT/});
     fireEvent.change(screen.getByLabelText('Collaborateur'),{target:{value:'1'}});
     await screen.findByRole('heading',{name:/Alex MARTIN/});
     fireEvent.click(screen.getByRole('button',{name:'Exporter le PDF'}));
-    await waitFor(()=>expect(downloadExercisePdf).toHaveBeenCalledWith(expect.objectContaining({person:expect.objectContaining({id:1}),vessel:expect.objectContaining({id:2}),year:new Date().getFullYear()})));
+    await waitFor(()=>expect(downloadExercisePdf).toHaveBeenCalledWith(expect.objectContaining({
+      person:expect.objectContaining({id:1}),vessel:expect.objectContaining({id:2}),year:new Date().getFullYear(),total:25,
+      rows:expect.arrayContaining([expect.objectContaining({key:'tbt',name:'TBT — thème libre',total:5})]),
+    })));
     await screen.findByText('Le carnet PDF a été téléchargé.');
     fireEvent.change(screen.getByLabelText('Filtrer les marins'),{target:{value:'former'}});
     await screen.findByRole('heading',{name:/SUROIT/});

@@ -38,6 +38,12 @@ describe('validateDprPayload', () => {
       'Les quantités et compteurs ne peuvent pas être négatifs.',
     ]));
   });
+  it('accepts a TBT with a free-text theme and no predefined emergency exercise', () => {
+    const payload = validPayload();
+    payload.hseActions.tbtPerformed = true;
+    payload.hseActions.tbtTheme = 'Préparation libre : communication pendant le remorquage';
+    expect(validateDprPayload(payload, true)).toEqual([]);
+  });
 
   it('enforces the single referenced-or-unlisted project choice', () => {
     const payload = validPayload();

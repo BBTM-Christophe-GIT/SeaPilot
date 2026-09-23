@@ -18,8 +18,25 @@ describe('emergency exercise PDF',()=>{
     const content=await (await pdf.getPage(1)).getTextContent();
     const text=content.items.map(item=>'str' in item?item.str:'').join(' ');
     expect(text).toContain(EXERCISE_FOOTER);
-    expect(text).toContain("Aucun exercice d'urgence");
+    expect(text).toContain('Aucun exercice ni TBT');
     expect(text).toContain('Adrien BOIS - 2026');
+    await task.destroy();
+  });
+  it('exports a TBT-only year with its monthly counts included in the total', async () => {
+    const report = buildExerciseReport({ ...data, counts: [
+      { exercise_key: 'tbt', exercise_name: 'TBT — thème libre', month: 2, count: 2 },
+      { exercise_key: 'tbt', exercise_name: 'TBT — thème libre', month: 9, count: 3 },
+    ] });
+    const result = await buildExercisePdf(report, logo);
+    const task = getDocument({ data: new Uint8Array(await result.blob.arrayBuffer()), useSystemFonts: true });
+    const pdf = await task.promise;
+    const content = await (await pdf.getPage(1)).getTextContent();
+    const text = content.items.map((item) => 'str' in item ? item.str : '').join(' ');
+    expect(text).toContain('CARNET DES EXERCICES ET TBT');
+    expect(text).toContain('Total exercices (TBT inclus) : 5.');
+    expect(text).toContain('TBT - thème libre');
+    expect(text).not.toContain('Aucun exercice');
+    expect(text).toContain(EXERCISE_FOOTER);
     await task.destroy();
   });
   it('paginates long tables with the exact footer on every page and all rows present',async()=>{

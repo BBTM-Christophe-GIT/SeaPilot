@@ -1,10 +1,12 @@
-# Registre des Exercices — version 3.50.0
+# Registre des Exercices — version 3.51.2
 
 Route : `/modules/emergencyExercises`, menu **Registres → Registre des Exercices**.
 Choisir l’année, éventuellement un navire via son illustration, puis un marin pour
 exporter son carnet. La vue **Flotte** est sélectionnée par défaut. Le graphique
 et le tableau s’actualisent avec chaque filtre. Les navires sans illustration ont
-une icône de remplacement. Les navires historiques restent disponibles.
+une icône de remplacement. Les filtres affichent les navires actifs, une seule fois
+par nom, du plus long au plus court. Les historiques des navires archivés restent
+comptés dans la vue flotte et les carnets individuels.
 
 ## Accès et sources
 
@@ -33,6 +35,18 @@ fois par DPR, même si plusieurs membres ou fonctions correspondent au filtre.
 Les libellés historiques sont conservés. Incendie puis abandon sont placés en
 premier et surlignés comme dans l’ancien Dashboard.
 
+Les TBT déclarés dans `dpr_hse_actions` avec `tbt_performed = true` sont considérés
+comme des exercices. Ils sont regroupés sur une ligne **TBT — thème libre** et inclus
+dans le graphique, les totaux mensuels/annuels et le PDF. Un TBT est compté une seule
+fois par DPR, indépendamment du nombre d’exercices prédéfinis ou de participants.
+Un DPR contenant seulement un TBT est inclus. Les mêmes filtres de statut, année,
+navire, société et personnel s’appliquent aux deux sources.
+
+Le thème reste saisi librement dans la rubrique **Actions HSE → Thème du TBT** du DPR,
+sans correspondance obligatoire dans `emergency_exercise_types`. Le texte original
+reste dans le DPR ; le registre regroupe les TBT quel que soit leur thème. La règle
+existante de saisie d’un thème non vide dans le DPR est conservée.
+
 ## PDF
 
 Document A4 avec graphique et tableau mensuel ; l’en-tête précise le marin, l’année
@@ -52,6 +66,8 @@ Appliquer dans l’ordre les migrations suivantes avant le client (déjà appliq
 
 1. `20260922200914_emergency_exercises_register.sql`
 2. `20260922201159_emergency_exercises_vessel_illustration.sql`
+3. `20260923053355_emergency_exercises_active_vessels.sql`
+4. `20260923060419_emergency_exercises_tbt.sql`
 
 Aucune nouvelle variable d’environnement ni dépendance.
 `supabase/tests/emergency_exercises_access_test.sql` vérifie les cinq profils réels
@@ -62,5 +78,8 @@ de l’interface ne constituent pas la preuve des droits.
 
 Tests Vitest : agrégation, nommage, filtres, réponses obsolètes, états vides et
 erreurs, PDF vide et pagination avec pied de page sur chaque page.
+Les fixtures SQL couvrent aussi les TBT seuls, les thèmes libres, les TBT non cochés,
+les DPR multi-exercices/multi-participants, les brouillons, les DPR supprimés,
+les années précédentes, les anciens marins et l’isolation entre sociétés.
 Recette navigateur : menu réel en aperçu, ordinateur et mobile, illustrations,
 filtre navire, changement d’année, téléchargement et console.

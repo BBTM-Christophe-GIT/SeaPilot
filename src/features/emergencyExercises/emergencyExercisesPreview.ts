@@ -10,11 +10,11 @@ export function createExercisePreviewClient(): SupabaseClient {
     vessels: ['LE ROZEL', 'SUROIT', 'GOURY', 'LANDEMER', 'KROKDUR', 'HIRONDELLE DE LA MANCHE', 'HOLENN EUSA', 'BBTM TENDER 1']
       .map((name, index) => ({ id: index + 1, name, iconUrl: fleetIllustration({ name }) || null })),
   };
-  const names = ["Protection contre l'incendie", 'Évacuation et abandon du navire', 'ANTIPOLLUTION', 'Sauvetage en mer'];
+  const names = ["Protection contre l'incendie", 'Évacuation et abandon du navire', 'ANTIPOLLUTION', 'Sauvetage en mer', 'TBT — thème libre'];
   return { rpc: async (name: string, args: Record<string, unknown> = {}) => {
     if (name === 'emergency_exercises_people') return { data: roster, error: null };
     const counts: ExerciseCount[] = names.flatMap((label, i) => [1, 3, 5, 7, 8].map((month) => ({
-      exercise_key: String(i), exercise_name: label, month, count: args.target_vessel_id ? 1 : i % 2 + 1,
+      exercise_key: label.startsWith('TBT') ? 'tbt' : String(i), exercise_name: label, month, count: args.target_vessel_id ? 1 : i % 2 + 1,
     })));
     return { data: { person: roster.people.find((p) => p.id === args.target_person_id) || null,
       vessel: roster.vessels.find((v) => v.id === args.target_vessel_id) || null,
