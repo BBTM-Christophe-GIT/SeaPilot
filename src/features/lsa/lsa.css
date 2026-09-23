@@ -7,7 +7,20 @@
 .lsa-details dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .lsa-details p { overflow-wrap: anywhere; }
 .lsa-details button { margin: 6px 10px; }
+.lsa-designation-preview { display: grid; gap: 5px; padding: 12px; border-radius: 8px; background: #eef6fb; }
+.lsa-designation-preview span, .lsa-designation-preview small { color: #52677d; }
+.lsa-catalog-tree { display: grid; gap: 16px; margin-top: 16px; }
+.lsa-catalog-tree section { padding: 16px; border: 1px solid #dce4ec; border-radius: 12px; }
+.lsa-catalog-tree header, .lsa-catalog-tree li, .lsa-catalog-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.lsa-catalog-tree h3 { margin: 0; }
+.lsa-catalog-tree ul { list-style: none; padding: 0; }
+.lsa-catalog-tree li { padding: 6px 0; border-bottom: 1px solid #eef2f5; }
+.lsa-catalog-tree small { font-weight: 400; }
+.lsa-catalog-editor .lsa-catalog-active { display: flex; flex-direction: row; align-items: center; grid-column: 1 / -1; }
+.lsa-catalog-active input { width: auto; }
+.lsa-catalog-actions { margin-top: 20px; flex-wrap: wrap; }
 @media (max-width: 680px) {
   .lsa-page .lifting-register-filters > label:first-child { max-width: none; }
   .lsa-details dl { grid-template-columns: 1fr; }
+  .lsa-catalog-tree header { align-items: flex-start; flex-direction: column; }
 }

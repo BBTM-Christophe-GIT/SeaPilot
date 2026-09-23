@@ -14,10 +14,10 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
     access: 'Marin et Capitaine consultent les données de leur périmètre autorisé. Administration, Direction et Armement peuvent ajouter et modifier les fiches de leur société.',
     steps: [
       { title: 'Choisir un navire', detail: 'Dans Registres → Registre LSA, sélectionnez la carte du navire comme dans le Registre des Remorques.' },
-      { title: 'Filtrer l’inventaire', detail: 'Choisissez Life Jacket, GMDSS, Pyrotechnie ou Bouée/Feux à retournement/MOB. La recherche porte sur les désignations, identifiants et notes.' },
+      { title: 'Filtrer l’inventaire', detail: 'Choisissez Gilets de Sauvetage, GMDSS, Navigation, Pyrotechnie ou Survie. La recherche porte aussi sur la marque, le modèle et le numéro de série.' },
       { title: 'Consulter les documents', detail: 'Ouvrez Documents de contrôle, puis filtrez par année. Téléchargez les fichiers avec la flèche. Détails et historique conserve les notes et les événements de renouvellement de chaque fiche.' },
     ],
-    reminders: ['Les quatre catégories ont quitté Certificats flotte après vérification de leur copie.', 'Les documents en attente de validation gardent leur statut. Une échéance absente reste à renseigner.'],
+    reminders: ['Les quatre catégories ont quitté Certificats flotte après vérification de leur copie.', 'Les désignations sont classées par type et par ordre alphabétique. Le numéro est automatique pour chaque désignation et chaque navire.', 'Les administrateurs peuvent adapter l’arborescence depuis Gérer les désignations. Les éléments archivés restent conservés sur les fiches.', 'L’alarme se déclenche à J−90 de la date d’échéance. Les documents en attente de validation gardent leur statut. Une échéance absente reste à renseigner.'],
   },
   emergencyExercises: {
     purpose: 'Consulter les exercices d’urgence issus des Daily Progress Reports et télécharger le carnet annuel individuel.',

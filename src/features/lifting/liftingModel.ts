@@ -86,10 +86,10 @@ export function todayLocal(): string {
 export function formatLiftingDate(date: string): string {
   return date ? date.split('-').reverse().join('/') : '—';
 }
-export function liftingDeadline(date?: string | null, today = todayLocal()): 'expired' | 'soon' | '' {
+export function liftingDeadline(date?: string | null, today = todayLocal(), alertDays = 60): 'expired' | 'soon' | '' {
   if (!date) return '';
   const days = (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86400000;
-  return days < 0 ? 'expired' : days <= 60 ? 'soon' : '';
+  return days < 0 ? 'expired' : days <= alertDays ? 'soon' : '';
 }
 export function entryComplete(entry: InspectionEntry): boolean {
   if (entry.condition === 'pending') return false;

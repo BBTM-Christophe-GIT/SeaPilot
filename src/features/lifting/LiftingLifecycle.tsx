@@ -16,8 +16,8 @@ export function useLiftingToday() {
   return today;
 }
 
-export function LiftingDueBadge({ date, today }: { date?: string | null; today: string }) {
-  const state = liftingDeadline(date, today);
+export function LiftingDueBadge({ date, today, alertDays = 60 }: { date?: string | null; today: string; alertDays?: number }) {
+  const state = liftingDeadline(date, today, alertDays);
   if (!date) return null;
   const Icon = state === 'expired' ? CircleAlert : TriangleAlert;
   return <span className={`lifting-due ${state}`}>

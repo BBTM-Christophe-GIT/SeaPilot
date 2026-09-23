@@ -17,6 +17,9 @@ export interface LsaItem {
   renewal_notes: string | null; status: string; workflow_status: string;
   file_name: string | null; storage_bucket: string | null; storage_path: string | null;
   file_url: string | null; source_label: string | null; updated_at: string;
+  designation_id: number | null; item_number: number | null;
+  brand: string | null; model: string | null; serial_number: string | null;
+  original_designation: string | null;
 }
 
 export interface LsaVersion {
@@ -31,9 +34,32 @@ export interface LsaEvent {
   planned_on: string | null; provider_name: string | null; visit_location: string | null; notes: string | null;
 }
 
-export type LsaDraft = Pick<LsaItem, 'category_key' | 'document_title' | 'issued_on' | 'expires_on' | 'planned_on' | 'provider_name' | 'visit_location' | 'notes' | 'renewal_notes'>;
+export interface LsaEquipmentType { id: number; name: string; legacy_key: string | null; active: boolean; updated_at: string }
+export interface LsaDesignation { id: number; equipment_type_id: number; name: string; active: boolean; updated_at: string }
+export interface LsaCatalog { types: LsaEquipmentType[]; designations: LsaDesignation[] }
+export type LsaDraft = Pick<LsaItem, 'designation_id' | 'brand' | 'model' | 'serial_number' | 'expires_on' | 'notes'>;
 
-export const blankLsaDraft = (): LsaDraft => ({ category_key: LSA_CATEGORIES[0].key, document_title: '', issued_on: null, expires_on: null, planned_on: null, provider_name: '', visit_location: '', notes: '', renewal_notes: '' });
+export const blankLsaDraft = (): LsaDraft => ({ designation_id: null, brand: '', model: '', serial_number: '', expires_on: null, notes: '' });
+
+export const LSA_DEFAULT_DESIGNATIONS = [
+  { name: 'GMDSS', legacy_key: '07-4-gmdss', designations: ['Batterie VHF GMDSS', 'EPIRB', 'SART'] },
+  { name: 'Pyrotechnie', legacy_key: '07-6-pyrotechnie', designations: ['Fusée à parachute', 'Fusée du lance amarre', 'Feu à main', 'Fumigène flottant'] },
+  { name: 'Survie', legacy_key: '07-8-bouee-feux-retournement-mob', designations: ['Combinaison d’immersion', 'Feu à retournement', 'Lampe flash', 'Lampe à éclat', 'Couverture de survie'] },
+  { name: 'Gilets de Sauvetage', legacy_key: '07-2-life-jacket', designations: ['VFI - 150N', 'VFI - 250N', 'VFI - 300N'] },
+  { name: 'Navigation', legacy_key: null, designations: ['Bloc Marine'] },
+];
+export const compareLsaNames = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base', numeric: true });
+export const lsaTypeKey = (id: number) => `lsa-type-${id}`;
+export const numberedLsaTitle = (name: string, number: number) => `${name} - ${String(number).padStart(2, '0')}`;
+
+// Imported titles and document provenance remain intact until the user edits a designation.
+export function categorizeLsaItems(items: LsaItem[], catalog: LsaCatalog): LsaItem[] {
+  return items.map((item) => {
+    const designation = catalog.designations.find((entry) => entry.id === item.designation_id);
+    const type = catalog.types.find((entry) => designation ? entry.id === designation.equipment_type_id : entry.legacy_key === item.category_key || lsaTypeKey(entry.id) === item.category_key);
+    return type ? { ...item, category_key: lsaTypeKey(type.id), category_label: type.name } : item;
+  });
+}
 
 function searchable(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr');
@@ -42,7 +68,7 @@ function searchable(value: string) {
 export function matchesLsaItem(item: LsaItem, query: string, category: string): boolean {
   const text = searchable([
     item.id, item.document_title, item.title, item.category_label, item.provider_name,
-    item.visit_location, item.notes, item.renewal_notes,
+    item.visit_location, item.notes, item.renewal_notes, item.brand, item.model, item.serial_number, item.original_designation,
   ].join(' '));
   return (!category || item.category_key === category) && searchable(query).trim().split(/\s+/).every((word) => text.includes(word));
 }
