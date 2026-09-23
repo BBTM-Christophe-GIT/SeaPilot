@@ -59,6 +59,13 @@ const dashboard: DprDashboardData = {
 };
 
 describe('DprPage Phase 7', () => {
+  it('lets a Marin acting as Captain reopen an older crew DPR when the server authorizes it', async () => {
+    const user = userEvent.setup();
+    mocks.fetchDashboard.mockResolvedValue({ ...dashboard, reports: [{ ...report, createdBy: 'another-sailor', createdAt: '2026-07-21T08:00:00Z', canManage: true }] });
+    render(<DprPage client={{} as never} roles={['marin']} />);
+    await user.click(await screen.findByRole('button', { name: 'Consulter' }));
+    expect(await screen.findByRole('button', { name: 'Réouvrir' })).toBeEnabled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:dpr-preview') });
@@ -125,7 +132,7 @@ describe('DprPage Phase 7', () => {
     expect(screen.queryByText('APERÇU AVANT PRODUCTION')).not.toBeInTheDocument();
     expect(screen.getByText(/modifier pendant 3 jours/)).toBeInTheDocument();
     expect(screen.getByText('DPR-1056')).toBeInTheDocument();
-    expect(mocks.fetchDashboard).toHaveBeenCalledWith(expect.anything(), { ownReportsOnly: true });
+    expect(mocks.fetchDashboard).toHaveBeenCalledWith(expect.anything());
 
     await user.click(screen.getByRole('button', { name: /Saisir un DPR/ }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();

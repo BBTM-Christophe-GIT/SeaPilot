@@ -9,6 +9,18 @@ export interface ReleaseNote {
 // Add a note only when the user requests one. Published IDs and notes remain stable.
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    id: '3.54.1-temporary-captain-rights',
+    version: '3.54.1',
+    publishedOn: '2026-09-23',
+    title: 'Les fonctions temporaires de Capitaine sont prises en compte',
+    changes: [
+      'Une affectation confirmée comme Capitaine dans le Planning donne accès aux actions de Capitaine sur le navire et les journées concernés, y compris lorsque la fonction RH reste 2nd Capitaine.',
+      'Le DPR reprend la fonction exercée dans le Planning. Le Capitaine temporaire peut gérer les DPR de son navire pendant son affectation.',
+      'Le Capitaine temporaire peut saisir et valider ses heures et celles de sa bordée, avec les mêmes signatures et contrôles de conformité qu’un Capitaine titulaire.',
+      'Les fonctions définies à la journée sont prises en compte. Les droits suivent les dates de l’affectation et ne modifient ni la fiche RH ni le profil permanent.',
+    ],
+  },
+  {
     id: '3.53.0-lsa-register',
     version: '3.53.0',
     publishedOn: '2026-09-23',

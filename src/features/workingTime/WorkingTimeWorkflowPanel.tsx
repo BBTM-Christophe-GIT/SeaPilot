@@ -304,9 +304,9 @@ export function WorkingTimeWorkflowPanel({
   const [approvalNavigationTarget, setApprovalNavigationTarget] = useState<{ personId: number; date: string } | null>(null);
 
   const currentPersonId = workspace?.currentPersonId || currentPerson?.id || 0;
-  const isExactHrCaptain = currentPerson?.functionLabel === 'Capitaine';
+  const canActAsCaptain = currentPerson?.functionLabel === 'Capitaine' || workspace?.canActAsCaptain === true;
   const isSailorOnlyView = roles.includes('marin')
-    && !isExactHrCaptain
+    && !canActAsCaptain
     && !roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
   const visibleRegisters = useMemo(
     () => workspace?.registers.filter((register) => !isSailorOnlyView || register.personId === currentPersonId) || [],
@@ -398,7 +398,7 @@ export function WorkingTimeWorkflowPanel({
     [selectedRollingImpactDetails],
   );
   const isOwnRegister = selectedRegister?.personId === currentPersonId;
-  const hasCaptainRole = isExactHrCaptain;
+  const hasCaptainRole = canActAsCaptain;
   const hasManagementValidationRole = roles.includes('admin') || roles.includes('armement');
   const hasDirectionRole = roles.includes('direction');
   const canManageApproval = (approval: WorkingTimeDayApproval) => currentPersonId > 0
@@ -429,6 +429,7 @@ export function WorkingTimeWorkflowPanel({
         && ((hasCaptainRole && selectedDayApproval.approverPersonId === currentPersonId) || canManageApproval(selectedDayApproval)))
       || (!selectedDayApproval
         && entryWindowOpen
+        && (isOwnRegister || hasManagementValidationRole || isAssignedCaptainForSelectedDay)
         && visibleEditablePeople.some((person) => person.personId === selectedRegister.personId))
     ));
 
@@ -699,7 +700,7 @@ export function WorkingTimeWorkflowPanel({
       : intent === 'submit-day'
         ? !activeDayContext?.approverPersonId
           ? 'La journée a été signée et transmise pour approbation à un Administrateur, à la Direction ou à l’Armement.'
-          : isExactHrCaptain
+          : activeDayContext?.approverPersonId === currentPersonId
           ? 'La journée est signée : elle est validée si elle est conforme, sinon sa justification reste à compléter.'
           : 'La journée a été signée et transmise au capitaine de la bordée.'
         : 'La journée a été validée et clôturée. Les autres jours du mois restent ouverts.';

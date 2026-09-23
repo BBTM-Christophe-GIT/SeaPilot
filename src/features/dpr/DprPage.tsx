@@ -70,6 +70,7 @@ function canManageReport(
   currentUserId: string | null | undefined,
   now = Date.now(),
 ): boolean {
+  if (report?.canManage !== undefined) return report.canManage;
   if (!report || !isPureMarin(roles)) return true;
   const createdAt = Date.parse(report.createdAt);
   return report.createdBy === currentUserId
@@ -156,7 +157,7 @@ export function DprPage({ client, roles }: DprPageProps) {
   const [issuerName, setIssuerName] = useState('');
 
   const load = async (): Promise<DprDashboardData> => {
-    const data = await fetchDprDashboard(db, { ownReportsOnly: isMarinView });
+    const data = await fetchDprDashboard(db);
     setDashboard(data);
     return data;
   };
@@ -164,11 +165,11 @@ export function DprPage({ client, roles }: DprPageProps) {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    fetchDprDashboard(db, { ownReportsOnly: isMarinView }).then((data) => { if (active) setDashboard(data); })
+    fetchDprDashboard(db).then((data) => { if (active) setDashboard(data); })
       .catch((reason: Error) => { if (active) setError(reason.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [db, isMarinView]);
+  }, [db]);
 
   const dirty = modalOpen && (JSON.stringify(payload) !== initialSignature || pendingFiles.length > 0);
   useEffect(() => {
