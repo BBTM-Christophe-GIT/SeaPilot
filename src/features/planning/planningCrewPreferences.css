@@ -1,0 +1,8 @@
+.planning-board-toolbar.is-crew-toolbar .planning-toolbar-main {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.planning-board-toolbar.is-crew-toolbar .planning-select-control {
+  max-width: 100%;
+}

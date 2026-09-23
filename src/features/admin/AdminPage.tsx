@@ -32,12 +32,14 @@ import {
   type AdminCollaboratorRow, type AdminPopulation,
 } from './adminCollaborators';
 import './adminSections.css';
+import { AdminCrewPreferences } from './AdminCrewPreferences';
 
 const ADMIN_SECTIONS = [
   { key: 'users', label: 'Utilisateurs', icon: Users },
   { key: 'access', label: 'Accès et rôles', icon: ShieldCheck },
   { key: 'documents', label: 'Documents et Google Drive', icon: FolderSync },
   { key: 'action-plan', label: 'Plan d’action', icon: ClipboardCheck },
+  { key: 'crew', label: 'Équipages', icon: Users },
   { key: 'imports', label: 'Imports et migration', icon: Database },
 ] as const;
 
@@ -284,6 +286,8 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
         {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
       </div>
 
+      {activeSection === 'crew' ? <AdminCrewPreferences client={client} /> : null}
+
       {isLoading && activeSection !== 'documents' ? <div className="admin-state" role="status">Chargement des paramètres...</div> : null}
 
       {activeSection === 'users' && !isLoading && directoryReady ? (
@@ -442,8 +446,8 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
                         <label className="role-toggle">
                           <input
                             aria-label={`${module.label} visible pour ${ROLE_LABELS[role]}`}
-                            checked={module.key === 'disciplinary' && !['admin', 'direction'].includes(role) ? false : permission?.isVisible || false}
-                            disabled={savingNavigationKey !== null || (module.key === 'disciplinary' && !['admin', 'direction'].includes(role))}
+                            checked={(module.key === 'admin' && role !== 'admin') || (module.key === 'disciplinary' && !['admin', 'direction'].includes(role)) ? false : permission?.isVisible || false}
+                            disabled={savingNavigationKey !== null || (module.key === 'admin' && role !== 'admin') || (module.key === 'disciplinary' && !['admin', 'direction'].includes(role))}
                             onChange={(event) =>
                               void handleNavigationPermissionChange(role, module.key, event.target.checked)
                             }

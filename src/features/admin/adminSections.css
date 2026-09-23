@@ -12,7 +12,7 @@
 
 .admin-section-menu {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -50,6 +50,12 @@
 }
 
 .admin-panel[hidden] { display: none; }
+.admin-crew-preferences fieldset { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.admin-crew-preferences label { font-weight: 700; }
+.admin-crew-preferences select { width: 100%; max-width: 360px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #253044; font: inherit; }
+.admin-crew-preferences p { margin: 8px 0; line-height: 1.6; color: #52647b; }
+.admin-crew-preferences .admin-crew-example { margin: 0 0 12px; }
+.admin-crew-preferences button { justify-self: start; }
 .admin-panel .admin-section-header { margin-top: 0; }
 .admin-panel h2 { margin: 0; color: #111827; font-size: 1.35rem; line-height: 1.4; }
 .admin-panel h3 { margin: 0; color: #253044; font-size: 1rem; line-height: 1.4; }

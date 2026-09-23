@@ -264,6 +264,7 @@ const publicationRow = {
 };
 
 function createClient(options: {
+  crewPreferences?: { name_format: string; sort_order: string };
   vessels?: unknown[];
   people?: unknown[];
   assignments?: unknown[];
@@ -311,6 +312,9 @@ function createClient(options: {
   options.vesselResponses?.forEach((response) => vesselOrder.mockResolvedValueOnce(response));
   vesselOrder.mockResolvedValue({ data: options.vessels ?? [vesselRow], error: null });
   const from = vi.fn().mockImplementation((table: string) => {
+    if (table === 'planning_crew_display_preferences') {
+      return { select: () => ({ maybeSingle: async () => ({ data: options.crewPreferences ?? null, error: null }) }) };
+    }
     if (table === 'vessels') {
       return { select: vi.fn().mockReturnValue({ order: vesselOrder }) };
     }
@@ -520,6 +524,23 @@ function createClient(options: {
 }
 
 describe('PlanningPage cockpit', () => {
+  it('restores saved crew preferences and switches sorting without changing the person filter identity', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ crewPreferences: { name_format: 'last_first', sort_order: 'function' } });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    expect(await screen.findByRole('combobox', { name: 'Tri des équipages' })).toHaveValue('function');
+    await screen.findByText('MARTIN Jean');
+    const labels = () => [...container.querySelectorAll('.planning-timeline-row.is-crew .planning-row-label strong')].map((node) => node.textContent);
+    expect(labels().indexOf('MARTIN Jean')).toBeLessThan(labels().indexOf('DURAND Paul'));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Tri des équipages' }), 'last_name');
+    expect(labels().indexOf('DURAND Paul')).toBeLessThan(labels().indexOf('MARTIN Jean'));
+    await user.click(screen.getByRole('button', { name: 'Filtres' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Filtre marin' }), 'Paul DURAND');
+    expect(labels()).toContain('DURAND Paul');
+    expect(labels()).not.toContain('MARTIN Jean');
+  });
   it('shows a compact project-only view with empty vessels and opens the existing project picker', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ vessels: [vesselRow, secondVesselRow], assignments: [assignmentOverviewRow], projects: [planningProjectRow] });

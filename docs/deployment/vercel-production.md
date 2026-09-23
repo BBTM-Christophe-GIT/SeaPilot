@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.55.0` ajoute les préférences personnelles d’affichage et de tri des
+Équipages dans Administration. Appliquer
+`20260923201855_planning_crew_display_preferences.sql` avant le client.
+Voir [les réglages et la recette](./crew-display-preferences-v3-55-0.md).
+
 Version `3.54.0` simplifie la fiche LSA : catalogue de désignations administrable,
 numérotation automatique par navire, marque/modèle/numéro de série et alarmes à J−90.
 Appliquer la migration `lsa_designation_catalog` avant le client. Voir [la recette](./lsa-designations-v3-54-0.md).

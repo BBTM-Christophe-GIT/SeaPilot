@@ -39,6 +39,19 @@ const range = { start: '2026-07-06', end: '2026-07-19' };
 const emptyFilters = { vesselName: '', personName: '', eventType: '', status: '', responsible: '' };
 
 describe('planning P0.2 views', () => {
+  it('applies explicit surname/function sorting independently of posting periods and display format', () => {
+    const roles = ['Matelot', 'Maître Machine', "Maître d’Equipage", '2nd Capitaine', 'Chef Mécanicien', 'Capitaine'];
+    const people = roles.map((functionLabel, index) => ({ ...overview.people[0], id: index + 1, firstName: 'Jean', lastName: String.fromCharCode(65 + index), functionLabel }));
+    const data = { ...overview, people, periods: [], assignments: people.map((person, index) =>
+      ({ ...overview.assignments[0], id: index + 1, crewPersonId: person.id, crewName: `Jean ${person.lastName}`, startsOn: `2026-07-${String(12 - index).padStart(2, '0')}` })) };
+    const byName = buildPlanningCrewLanes(data, range, emptyFilters, 'people', undefined, { nameFormat: 'last_first', sortOrder: 'last_name' });
+    expect(byName.map((lane) => lane.label)).toEqual(['A Jean', 'B Jean', 'C Jean', 'D Jean', 'E Jean', 'F Jean']);
+    const byFunction = buildPlanningCrewLanes(data, range, emptyFilters, 'people', undefined, { nameFormat: 'first_last', sortOrder: 'function' });
+    expect(byFunction.map((lane) => lane.label)).toEqual(['Jean F', 'Jean E', 'Jean D', 'Jean C', 'Jean B', 'Jean A']);
+    expect(buildPlanningCrewLanes(data, range, { ...emptyFilters, personName: 'Jean A' }, 'people', undefined,
+      { nameFormat: 'last_first', sortOrder: 'function' }).map((lane) => lane.label)).toEqual(['A Jean']);
+    expect(byName[0].events[0].person).toBe('Jean A');
+  });
   it('keeps empty active vessels in the project view without crew or location data', () => {
     const lanes = buildPlanningProjectLanes(overview, range, emptyFilters);
     expect(lanes.map((lane) => lane.label)).toEqual(['COTENTIN', 'SUROIT']);
