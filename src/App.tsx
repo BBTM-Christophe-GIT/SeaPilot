@@ -21,6 +21,7 @@ import { ServiceProvidersPage } from './features/serviceProviders/ServiceProvide
 import { ServiceNotesPage } from './features/serviceNotes/ServiceNotesPage';
 import { AppShell } from './features/shell/AppShell';
 import type { RoleKey } from './features/permissions/roles';
+import { LIFTING_SECTIONS } from './features/lifting/liftingSections';
 
 const UsefulLinksPage = lazy(() => import('./features/usefulLinks/UsefulLinksPage').then((module) => ({ default: module.UsefulLinksPage })));
 const WorkingTimePage = lazy(() => import('./features/workingTime/WorkingTimePage').then((module) => ({ default: module.WorkingTimePage })));
@@ -63,6 +64,7 @@ export default function App({ previewModeOverride }: AppProps) {
         >
           <Route index element={<Suspense fallback={<div className="admin-state" role="status">Chargement de votre accueil…</div>}><HomePage /></Suspense>} />
           <Route path="manual/:moduleKey?" element={<Suspense fallback={<div className="admin-state" role="status">Chargement du manuel…</div>}><UserManualPage /></Suspense>} />
+          {LIFTING_SECTIONS.map((section) => <Route key={section.key} path={`modules/lifting/${section.path}`} element={<Suspense fallback={<div className="admin-state" role="status">Chargement du registre de levage…</div>}><LiftingPage section={section.key} /></Suspense>} />)}
           {APP_MODULES.filter((module) => module.key !== 'home').map((module) => (
             <Route
               key={module.key}
@@ -111,7 +113,7 @@ export default function App({ previewModeOverride }: AppProps) {
                 ) : module.key === 'serviceProviders' ? (
                   <ServiceProvidersPage />
                 ) : module.key === 'lifting' ? (
-                  <Suspense fallback={<div className="admin-state" role="status">Chargement du registre de levage…</div>}><LiftingPage /></Suspense>
+                  <Navigate to="/modules/lifting/apparaux" replace />
                 ) : module.key === 'qhse' ? (
                   <QhseDocumentsPage />
                 ) : (

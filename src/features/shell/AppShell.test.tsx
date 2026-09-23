@@ -59,7 +59,11 @@ describe('AppShell', () => {
       'operations',
     );
     expect(screen.getByRole('link', { name: 'Suivi du Temps de travail' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Levage' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Levage' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Levage' }).closest('section')).toContainElement(screen.getByRole('link', { name: 'Registre des Apparaux de Levage' }));
+    expect(screen.getByRole('link', { name: 'Registre des Apparaux de Levage' })).toHaveAttribute('href', '/modules/lifting/apparaux');
+    expect(screen.getByRole('link', { name: 'Registre des Remorques' })).toHaveAttribute('href', '/modules/lifting/remorques');
+    expect(screen.getByRole('link', { name: 'Examen à fond - Grue' })).toHaveAttribute('href', '/modules/lifting/grue');
     expect(screen.getByText(APP_VERSION_LABEL)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Réduire le menu' })).toBeInTheDocument();
   });

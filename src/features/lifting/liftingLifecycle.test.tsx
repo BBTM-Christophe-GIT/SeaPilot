@@ -44,9 +44,8 @@ describe('inventory lifecycle and equipment certificates', () => {
     const client = createLiftingPreviewClient(); const user = userEvent.setup();
     const original = (await fetchLiftingRegister(client, demoVessel.id, kind)).items[0];
     await addLiftingCertificate(client, original, new File(['%PDF-1.7 fixture'], 'Certificat origine.pdf', { type: 'application/pdf' }));
-    render(<MemoryRouter><LiftingPage client={client} roles={['admin']} /></MemoryRouter>);
-    await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
-    if (kind === 'towing') { await user.click(screen.getByRole('button', { name: 'Remorques' })); await screen.findByText(original.description); }
+    render(<MemoryRouter><LiftingPage client={client} roles={['admin']} section={kind} /></MemoryRouter>);
+    await screen.findByText(original.description);
     await user.click(screen.getByRole('button', { name: `Remplacer ${original.reference}` }));
     const dialog = within(screen.getByRole('dialog'));
     await dialog.findByText(/Un nouveau certificat est requis/);

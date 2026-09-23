@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.51.0` rend les trois rubriques Levage accessibles directement dans le menu et ajoute les notes de mise à jour à lecture différée, avec compteur par compte. Appliquer `20260923043157_user_release_note_states.sql` avant le client. Voir [le fonctionnement et la recette](./release-notes-and-lifting-sections.md).
+
 Version `3.50.0` ajoute **Registres → Registre des Exercices** : vue flotte ou navire,
 graphique et tableau mensuels, carnet PDF individuel avec le pied de page et le nommage
 historiques. Les migrations du registre et des illustrations sont déjà appliquées.

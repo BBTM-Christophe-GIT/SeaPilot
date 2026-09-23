@@ -14,9 +14,7 @@ describe('inventory removal by profile', () => {
       const user = userEvent.setup();
       const original = (await fetchLiftingRegister(client, demoVessel.id, kind)).items;
       const rpc = vi.spyOn(client, 'rpc');
-      render(<MemoryRouter><LiftingPage client={client} roles={[role]} /></MemoryRouter>);
-      await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
-      if (kind === 'towing') await user.click(screen.getByRole('button', { name: 'Remorques' }));
+      render(<MemoryRouter><LiftingPage client={client} roles={[role]} section={kind} /></MemoryRouter>);
       await screen.findByText(original[0].description);
       const removeButtons = screen.queryAllByRole('button', { name: /^Supprimer \d+$/ });
       if (role === 'marin') {

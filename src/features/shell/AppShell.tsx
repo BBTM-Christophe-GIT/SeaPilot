@@ -39,7 +39,9 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { APP_BUILD_VERSION, APP_VERSION_LABEL } from '../../config/appVersion';
+import { ReleaseNotes } from '../releaseNotes/ReleaseNotes';
+import { LIFTING_SECTIONS } from '../lifting/liftingSections';
+import './liftingNavigationLinks.css';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../auth/AuthProvider';
 import {
@@ -73,6 +75,9 @@ export interface AppShellOutletContext {
   client: SupabaseClient;
   previewMode: boolean;
   currentPerson: CurrentPersonSummary | null;
+  setLiftingNavigationBlocked?: (blocked: boolean) => void;
+  liftingVesselId?: number;
+  setLiftingVesselId?: (id: number) => void;
 }
 
 const NAVIGATION_FAMILIES: AppModule['family'][] = [
@@ -187,6 +192,8 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const [currentPerson, setCurrentPerson] = useState<CurrentPersonSummary | null>(null);
   const [isLoadingPerson, setIsLoadingPerson] = useState(!rolesOverride || previewMode);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isLiftingNavigationBlocked, setLiftingNavigationBlocked] = useState(false);
+  const [liftingVesselId, setLiftingVesselId] = useState(0);
   const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -400,6 +407,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   }
 
   const requestedModule = getRequestedModule(location.pathname);
+  const liftingSection = requestedModule?.key === 'lifting' ? LIFTING_SECTIONS.find((section) => location.pathname.replace(/\/+$/, '').endsWith(`/${section.path}`)) : undefined;
   const isManualPage = location.pathname === '/manual' || location.pathname.startsWith('/manual/');
   const activeVisibleModules = visibleModules;
   const isRequestedModuleDenied = requestedModule
@@ -555,6 +563,13 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                   <div className="navigation-family-links">
                     {modules.map((module) => {
                       const ModuleIcon = MODULE_ICONS[module.key];
+                      if (module.key === 'lifting') return LIFTING_SECTIONS.map((section) => (
+                        <NavLink aria-label={section.title} aria-disabled={isLiftingNavigationBlocked || undefined} onClick={(event) => { if (isLiftingNavigationBlocked) event.preventDefault(); }} key={section.key} title={isLiftingNavigationBlocked ? 'Terminez l’opération et enregistrez vos modifications avant de changer de rubrique.' : section.title} to={`/modules/lifting/${section.path}`}>
+                          <span aria-hidden="true" className="navigation-submenu-bullet" />
+                          <ModuleIcon aria-hidden="true" size={16} />
+                          <span className="navigation-link-label">{section.title}</span>
+                        </NavLink>
+                      ));
 
                       return (
                         <NavLink
@@ -577,10 +592,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
         </nav>
 
         <div className="sidebar-footer">
-          <div className="app-version" title={`Build ${APP_BUILD_VERSION}`}>
-            <span>Version</span>
-            <strong>{APP_VERSION_LABEL}</strong>
-          </div>
+          <ReleaseNotes key={previewMode ? 'preview' : sessionUserId} client={client} userId={sessionUserId} previewMode={previewMode} />
           <button
             aria-label={isSidebarCollapsed ? 'Agrandir le menu' : 'Réduire le menu'}
             className="sidebar-collapse-button"
@@ -610,7 +622,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
             </button>
             <span>{isManualPage ? 'Aide' : requestedModule?.family || 'BBTM'}</span>
             <ChevronRight aria-hidden="true" size={16} />
-            <strong>{isManualPage ? 'Manuel d’utilisation' : requestedModule?.label || 'Accueil'}</strong>
+            <strong>{isManualPage ? 'Manuel d’utilisation' : liftingSection?.title || requestedModule?.label || 'Accueil'}</strong>
             {previewMode ? <span className="preview-mode-badge">Préversion · données de démonstration</span> : null}
           </div>
 
@@ -680,7 +692,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
           {isRequestedModuleDenied ? (
             <div className="auth-loading">Acces refuse pour ce module.</div>
           ) : (
-            <Outlet context={{ roles, client, previewMode, currentPerson, visibleModules: activeVisibleModules } satisfies AppShellOutletContext} />
+            <Outlet context={{ roles, client, previewMode, currentPerson, visibleModules: activeVisibleModules, setLiftingNavigationBlocked, liftingVesselId, setLiftingVesselId } satisfies AppShellOutletContext} />
           )}
         </main>
       </div>
