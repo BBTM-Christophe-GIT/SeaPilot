@@ -90,7 +90,6 @@ const NAVIGATION_FAMILIES: AppModule['family'][] = [
   'Planning',
   'Ressources Humaines',
   'Maintenance',
-  'Levage',
   'Administration',
 ];
 
@@ -104,7 +103,6 @@ const FAMILY_ICONS: Record<AppModule['family'], LucideIcon> = {
   Planning: CalendarDays,
   'Ressources Humaines': Users,
   Maintenance: Wrench,
-  Levage: LiftingOperationsIcon,
   Administration: Settings,
 };
 
@@ -118,7 +116,6 @@ const FAMILY_THEME_KEYS: Record<AppModule['family'], string> = {
   Planning: 'planning',
   'Ressources Humaines': 'human-resources',
   Maintenance: 'maintenance',
-  Levage: 'lifting',
   Administration: 'administration',
 };
 
@@ -564,7 +561,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                     {modules.map((module) => {
                       const ModuleIcon = MODULE_ICONS[module.key];
                       if (module.key === 'lifting') return LIFTING_SECTIONS.map((section) => (
-                        <NavLink aria-label={section.title} aria-disabled={isLiftingNavigationBlocked || undefined} onClick={(event) => { if (isLiftingNavigationBlocked) event.preventDefault(); }} key={section.key} title={isLiftingNavigationBlocked ? 'Terminez l’opération et enregistrez vos modifications avant de changer de rubrique.' : section.title} to={`/modules/lifting/${section.path}`}>
+                        <NavLink className="lifting-navigation-link" aria-label={section.title} aria-disabled={isLiftingNavigationBlocked || undefined} onClick={(event) => { if (isLiftingNavigationBlocked) event.preventDefault(); }} key={section.key} title={isLiftingNavigationBlocked ? 'Terminez l’opération et enregistrez vos modifications avant de changer de rubrique.' : section.title} to={`/modules/lifting/${section.path}`}>
                           <span aria-hidden="true" className="navigation-submenu-bullet" />
                           <ModuleIcon aria-hidden="true" size={16} />
                           <span className="navigation-link-label">{section.title}</span>

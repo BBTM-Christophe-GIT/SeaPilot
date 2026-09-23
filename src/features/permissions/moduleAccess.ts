@@ -38,7 +38,6 @@ export type ModuleFamily =
   | 'Planning'
   | 'Ressources Humaines'
   | 'Maintenance'
-  | 'Levage'
   | 'Administration';
 
 export interface AppModule {
@@ -168,7 +167,7 @@ export const APP_MODULES: AppModule[] = [
     navigationKind: 'submenu',
     allowedRoles: ALL_ROLES,
   },
-  { key: 'lifting', label: 'Levage', family: 'Levage', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'lifting', label: 'Levage', family: 'Registres', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   { key: 'usefulLinks', label: 'Liens utiles', family: 'Accueil', navigationKind: 'direct', allowedRoles: ALL_ROLES },
   {
     key: 'admin',

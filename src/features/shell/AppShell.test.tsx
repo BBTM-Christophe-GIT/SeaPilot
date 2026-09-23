@@ -60,10 +60,14 @@ describe('AppShell', () => {
     );
     expect(screen.getByRole('link', { name: 'Suivi du Temps de travail' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Levage' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Levage' }).closest('section')).toContainElement(screen.getByRole('link', { name: 'Registre des Apparaux de Levage' }));
-    expect(screen.getByRole('link', { name: 'Registre des Apparaux de Levage' })).toHaveAttribute('href', '/modules/lifting/apparaux');
+    expect(screen.queryByRole('button', { name: 'Levage' })).not.toBeInTheDocument();
+    const registersSection = screen.getByRole('button', { name: 'Registres' }).closest('section');
+    expect(registersSection).toContainElement(screen.getByRole('link', { name: 'Registre des Apparaux de levage' }));
+    expect(registersSection).toContainElement(screen.getByRole('link', { name: 'Registre des Remorques' }));
+    expect(registersSection).toContainElement(screen.getByRole('link', { name: 'Examen à Fond - Grue' }));
+    expect(screen.getByRole('link', { name: 'Registre des Apparaux de levage' })).toHaveAttribute('href', '/modules/lifting/apparaux');
     expect(screen.getByRole('link', { name: 'Registre des Remorques' })).toHaveAttribute('href', '/modules/lifting/remorques');
-    expect(screen.getByRole('link', { name: 'Examen à fond - Grue' })).toHaveAttribute('href', '/modules/lifting/grue');
+    expect(screen.getByRole('link', { name: 'Examen à Fond - Grue' })).toHaveAttribute('href', '/modules/lifting/grue');
     expect(screen.getByText(APP_VERSION_LABEL)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Réduire le menu' })).toBeInTheDocument();
   });

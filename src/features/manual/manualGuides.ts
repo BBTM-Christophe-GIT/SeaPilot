@@ -214,7 +214,7 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
     purpose: 'Consulter le registre des équipements de levage et les rapports de contrôle.',
     access: 'Le Marin consulte les équipements et les rapports accessibles. La gestion du registre et la finalisation des contrôles sont réservées aux profils habilités.',
     steps: [
-      { title: 'Choisir le registre et le navire', detail: 'Dans le menu Levage, ouvrez Registre des Apparaux de Levage ou Registre des Remorques, puis sélectionnez le navire. Examen à fond - Grue donne accès aux certificats existants.' },
+      { title: 'Choisir le registre et le navire', detail: 'Dans le menu Registres, ouvrez Registre des Apparaux de levage ou Registre des Remorques, puis sélectionnez le navire. Examen à Fond - Grue donne accès aux certificats existants.' },
       { title: 'Consulter le registre', detail: 'Vérifiez l’identification de l’équipement, ses caractéristiques et les informations de contrôle disponibles.' },
       { title: 'Ouvrir un rapport', detail: 'Dans la liste des rapports, filtrez par année si nécessaire, puis ouvrez le contrôle souhaité ou téléchargez son PDF.' },
     ],

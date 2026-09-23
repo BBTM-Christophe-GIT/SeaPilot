@@ -55,7 +55,7 @@ describe('module access', () => {
       ['Ressources Humaines', 'Sanctions Disciplinaires', 'submenu'],
       ['Maintenance', 'Marad', 'submenu'],
       ['Maintenance', 'Documents Techniques', 'submenu'],
-      ['Levage', 'Levage', 'submenu'],
+      ['Registres', 'Levage', 'submenu'],
       ['Accueil', 'Liens utiles', 'direct'],
       ['Administration', 'Administration', 'direct'],
     ]);

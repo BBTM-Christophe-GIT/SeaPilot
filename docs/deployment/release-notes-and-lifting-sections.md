@@ -2,11 +2,11 @@
 
 ## Navigation Levage
 
-Le menu Levage contient directement trois rubriques :
+Le menu Registres contient directement les trois rubriques suivantes. Le menu Levage est supprimé :
 
-- Registre des Apparaux de Levage : `/modules/lifting/apparaux`.
+- Registre des Apparaux de levage : `/modules/lifting/apparaux`.
 - Registre des Remorques : `/modules/lifting/remorques`.
-- Examen à fond - Grue : `/modules/lifting/grue`.
+- Examen à Fond - Grue : `/modules/lifting/grue`.
 
 L'ancien lien `/modules/lifting` redirige vers les apparaux. Les trois routes héritent de la permission `lifting` existante : aucune nouvelle permission ni modification des RPC/RLS Levage. Les composants, inventaires, filtres navires, rapports, contrôles, documents, fiches papier et règles par profil sont conservés. La sélection du navire est conservée entre rubriques ; un contrôle modifié doit être enregistré avant de changer de rubrique. L'ajout d'une remorque depuis les apparaux ouvre le bon registre après enregistrement. Grue conserve son écran d'accès aux certificats flotte existants.
 

@@ -128,7 +128,7 @@ describe('lifting annual workflow', () => {
   it('groups all items, prechecks only applicable codes, and marks the code and item red when unchecked', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><LiftingPage client={createLiftingPreviewClient()} roles={['admin']} /></MemoryRouter>);
-    expect(screen.getByRole('heading',{name:'Registre des Apparaux de Levage'})).toBeInTheDocument();
+    expect(screen.getByRole('heading',{name:'Registre des Apparaux de levage'})).toBeInTheDocument();
     expect(screen.queryByRole('navigation',{name:'Sections du module Levage'})).not.toBeInTheDocument();
     await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
     await user.click(screen.getByRole('button',{name:'Nouveau contrôle annuel'}));

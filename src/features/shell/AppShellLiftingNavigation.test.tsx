@@ -52,7 +52,7 @@ describe('Levage with authenticated profile fixtures and the real permission loa
     const towing = screen.getByRole('link', { name: 'Registre des Remorques' });
     expect(towing).toHaveAttribute('aria-disabled', 'true');
     await user.click(towing);
-    expect(screen.getByRole('link', { name: 'Registre des Apparaux de Levage' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Registre des Apparaux de levage' })).toHaveAttribute('aria-current', 'page');
     await user.click(screen.getByRole('button', { name: 'Enregistrer le contrôle' }));
     await user.click(towing);
     expect(towing).toHaveAttribute('aria-current', 'page');
@@ -62,9 +62,12 @@ describe('Levage with authenticated profile fixtures and the real permission loa
     expect(await screen.findByText('Registre autorisé')).toBeInTheDocument();
     const navigation = within(screen.getByRole('navigation', { name: 'Navigation principale' }));
     expect(navigation.queryByRole('link', { name: 'Levage' })).not.toBeInTheDocument();
+    expect(navigation.queryByRole('button', { name: 'Levage' })).not.toBeInTheDocument();
+    const registersSection = navigation.getByRole('button', { name: 'Registres' }).closest('section');
     for (const section of LIFTING_SECTIONS) {
       const link = navigation.getByRole('link', { name: section.title });
       expect(link).toHaveAttribute('href', `/modules/lifting/${section.path}`);
+      expect(registersSection).toContainElement(link);
       if (section.path === path) expect(link).toHaveAttribute('aria-current', 'page');
     }
   });
