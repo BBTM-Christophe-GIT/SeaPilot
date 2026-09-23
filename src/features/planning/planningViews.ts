@@ -1,5 +1,6 @@
 import { rangesOverlap } from './planningDates';
 import { comparePlanningCrewPeriods, planningCrewPeriod } from './planningCrewOrder';
+import { compareCrewNames, crewFunctionRank, DEFAULT_CREW_PREFERENCES, formatCrewName, type CrewDisplayPreferences } from './planningCrewPreferences';
 import {
   getAllPlanningCrewEvents,
   isPlanningPersonEmployedDuring,
@@ -260,7 +261,9 @@ export function buildPlanningCrewLanes(
   filters: PlanningFilters,
   grouping: PlanningCrewGrouping,
   eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
+  preferences: CrewDisplayPreferences = DEFAULT_CREW_PREFERENCES,
 ): PlanningCrewLane[] {
+  const peopleById = new Map(overview.people.map((person) => [person.id, person]));
   const vesselsByName = new Map(overview.vessels.map((vessel) => [vessel.name, vessel.id]));
   const events = eventPool.filter((event) => event.confirmationStatus !== 'cancelled'
     && rangesOverlap(event.startsOn, event.endsOn, range.start, range.end) && crewEventMatchesFilters(event, filters))
@@ -269,9 +272,9 @@ export function buildPlanningCrewLanes(
   const peopleByName = new Map(overview.people.map((person) => [normalizePlanningText(formatPlanningPerson(person)), person]));
   const groups = new Map<string, PlanningCrewLane>();
   events.forEach((event) => {
-    const person = overview.people.find((item) => item.id === event.personId) || peopleByName.get(normalizePlanningText(event.person));
+    const person = peopleById.get(event.personId ?? -1) || peopleByName.get(normalizePlanningText(event.person));
     const key = person ? `person-${person.id}` : `person-name-${normalizePlanningText(event.person)}`;
-    const lane = groups.get(key) || { key, label: person ? formatPlanningPerson(person) : event.person,
+    const lane = groups.get(key) || { key, label: person ? formatCrewName(person, preferences.nameFormat) : event.person,
       detail: person?.functionLabel || event.functionLabel, personId: person?.id ?? event.personId,
       vesselId: event.vesselId, vessel: event.vessel, watchGroup: event.board,
       functionLabel: person?.functionLabel || event.functionLabel, events: [] };
@@ -285,7 +288,7 @@ export function buildPlanningCrewLanes(
       && !isSedentaryPlanningFunction(person.functionLabel)
       && (!filters.personName || filters.personName === formatPlanningPerson(person))).forEach((person) => {
       const key = `person-${person.id}`;
-      if (!groups.has(key)) groups.set(key, { key, label: formatPlanningPerson(person), detail: person.functionLabel,
+      if (!groups.has(key)) groups.set(key, { key, label: formatCrewName(person, preferences.nameFormat), detail: person.functionLabel,
         personId: person.id, vesselId: null, vessel: '', watchGroup: '', functionLabel: person.functionLabel, events: [] });
     });
   }
@@ -293,11 +296,15 @@ export function buildPlanningCrewLanes(
   return [...groups.values()].map((lane) => ({ ...lane,
     detail: [grouping === 'teams' ? lane.watchGroup || 'Sans équipe' : lane.functionLabel,
       ...new Set(lane.events.map((event) => event.vessel).filter(Boolean))].filter(Boolean).join(' · '),
-  })).sort((left, right) => comparePlanningCrewPeriods(periodsByLane.get(left.key) || null, periodsByLane.get(right.key) || null)
+  })).sort((left, right) => (preferences.sortOrder === 'period'
+    ? comparePlanningCrewPeriods(periodsByLane.get(left.key) || null, periodsByLane.get(right.key) || null) : 0)
     || (grouping === 'teams' ? left.watchGroup.localeCompare(right.watchGroup, 'fr') : 0)
-    || (overview.people.find((person) => person.id === left.personId)?.lastName || left.label)
-      .localeCompare(overview.people.find((person) => person.id === right.personId)?.lastName || right.label, 'fr')
-    || left.label.localeCompare(right.label, 'fr'));
+    || (preferences.sortOrder === 'function' ? crewFunctionRank(left.functionLabel || '') - crewFunctionRank(right.functionLabel || '') : 0)
+    || compareCrewNames(
+      peopleById.get(left.personId ?? -1) || { firstName: '', lastName: left.label },
+      peopleById.get(right.personId ?? -1) || { firstName: '', lastName: right.label },
+    )
+    || left.key.localeCompare(right.key, 'fr', { numeric: true }));
 }
 
 export function patchPlanningEvent(

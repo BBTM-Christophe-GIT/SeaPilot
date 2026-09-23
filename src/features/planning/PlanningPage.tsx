@@ -1,9 +1,12 @@
 import { compareFleetNames } from '../fleet/fleetDisplay';
+import { CREW_SORT_OPTIONS, formatCrewName, type CrewSortOrder } from './planningCrewPreferences';
+import { useCrewDisplayPreferences } from './useCrewDisplayPreferences';
 import { PlanningCrewBalanceDialog } from './PlanningCrewBalanceDialog';
 import { buildPlanningCrewBalanceDays, type PlanningCrewBalanceCheckpoint } from './planningCrewBalance';
 import { fetchPlanningCrewBalances, savePlanningCrewBalance } from './planningCrewBalanceQueries';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import './planningProjectView.css';
+import './planningCrewPreferences.css';
 import { displayBrandName } from '../../lib/branding';
 import {
   Activity,
@@ -530,6 +533,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [requestedPerspective, setPerspective] = useState<PlanningPerspective>('fleet');
   const perspective = requestedPerspective === 'crew' && !readPermissions.canViewCrewPlanning ? 'fleet' : requestedPerspective;
   const [crewGrouping, setCrewGrouping] = useState<PlanningCrewGrouping>('people');
+  const { preferences: crewPreferences, error: crewPreferencesError } = useCrewDisplayPreferences(effectiveClient, effectiveRoles.includes('admin'));
+  const [crewSortOverride, setCrewSortOverride] = useState<CrewSortOrder | null>(null);
+  const crewDisplay = useMemo(() => ({ ...crewPreferences, sortOrder: crewSortOverride ?? crewPreferences.sortOrder }), [crewPreferences, crewSortOverride]);
   const filterScope = `${isPersonalPlanningView}:${currentPersonId}`;
   const [filterSelection, setFilterSelection] = useState<{ scope: string; value: PlanningFilters } | null>(null);
   const defaultFilters = useMemo(() => ({
@@ -879,8 +885,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     buildPlanningCrewBalanceDays(person, planningData, absences, balancesLoaded || previewMode ? balanceCheckpoints : [], range),
   ])), [planningData, absences, balanceCheckpoints, balancesLoaded, previewMode, range, readPermissions.canViewCrewPlanning]);
   const crewLanes = useMemo(
-    () => readPermissions.canViewCrewPlanning ? buildPlanningCrewLanes(planningData, range, filters, crewGrouping, allPlanningCrewEvents) : [],
-    [allPlanningCrewEvents, crewGrouping, filters, planningData, range, readPermissions.canViewCrewPlanning],
+    () => readPermissions.canViewCrewPlanning ? buildPlanningCrewLanes(planningData, range, filters, crewGrouping, allPlanningCrewEvents, crewDisplay) : [],
+    [allPlanningCrewEvents, crewDisplay, crewGrouping, filters, planningData, range, readPermissions.canViewCrewPlanning],
   );
   const certificateAlerts = useMemo(() => buildPlanningCertificateAlerts(planningData, todayDate), [planningData, todayDate]);
   const hrAlerts = useMemo(() => buildPlanningHrAlerts(planningData, todayDate), [planningData, todayDate]);
@@ -995,6 +1001,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     () => uniqueSorted(planningData.people.map(formatPlanningPerson).concat(planningData.periods.map((period) => period.crewName))),
     [planningData.people, planningData.periods],
   );
+  const crewPersonLabels = useMemo(() => new Map(planningData.people.map((person) =>
+    [formatPlanningPerson(person), formatCrewName(person, crewDisplay.nameFormat)])), [planningData.people, crewDisplay.nameFormat]);
   const responsibleOptions = useMemo(
     () => uniqueSorted([
       ...planningData.projects.map((project) => project.responsibleName),
@@ -2606,7 +2614,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
       <div className="planning-layout">
         <section className="planning-board-card" aria-label={perspective === 'projects' ? 'Calendrier des projets' : 'Calendrier des affectations'}>
-          <div className="planning-board-toolbar">
+          <div className={`planning-board-toolbar${perspective === 'crew' ? ' is-crew-toolbar' : ''}`}>
             <div className="planning-toolbar-main">
               <div className="planning-perspective-switch" aria-label="Vue du planning" role="tablist">
                 <button aria-selected={perspective === 'fleet'} className={perspective === 'fleet' ? 'is-active' : ''} onClick={() => changePerspective('fleet')} role="tab" type="button">Flotte</button>
@@ -2634,6 +2642,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               <div className="planning-toolbar-spacer" />
               {perspective === 'crew' && balanceLoadError ? <span role="alert">{balanceLoadError} <button type="button" onClick={() => setBalanceRevision((value) => value + 1)}>Réessayer</button></span> : null}
               {perspective === 'crew' ? <div className="planning-grouping-switch" aria-label="Regrouper les équipages"><button className={crewGrouping === 'people' ? 'is-active' : ''} onClick={() => setCrewGrouping('people')} type="button">Marins</button><button className={crewGrouping === 'teams' ? 'is-active' : ''} onClick={() => setCrewGrouping('teams')} type="button">Équipes</button></div> : null}
+              {perspective === 'crew' ? <label className="planning-select-control"><span>Trier par</span><select aria-label="Tri des équipages" value={crewDisplay.sortOrder} onChange={(event) => setCrewSortOverride(event.target.value as CrewSortOrder)}>{CREW_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label> : null}
+              {perspective === 'crew' && crewPreferencesError ? <p className="form-error" role="alert">{crewPreferencesError}</p> : null}
             </div>
 
             <div className="planning-toolbar-navigation">
@@ -2656,7 +2666,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
             {isFiltersOpen ? <div className="planning-filter-strip" aria-label="Filtres du planning">
               <label className="planning-select-control"><Ship aria-hidden="true" size={16} /><span className="sr-only">Filtre navire</span><select aria-label="Filtre navire" onChange={(event) => setFilters((current) => ({ ...current, vesselName: event.target.value }))} value={filters.vesselName}><option value="">Tous les navires</option>{vesselOptions.map((value) => <option key={value}>{value}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
-              {perspective === 'crew' ? <label className="planning-select-control"><Search aria-hidden="true" size={16} /><span className="sr-only">Filtre marin</span><select aria-label="Filtre marin" onChange={(event) => setFilters((current) => ({ ...current, personName: event.target.value }))} value={filters.personName}><option value="">Tous les marins</option>{personOptions.map((value) => <option key={value}>{value}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label> : null}
+              {perspective === 'crew' ? <label className="planning-select-control"><Search aria-hidden="true" size={16} /><span className="sr-only">Filtre marin</span><select aria-label="Filtre marin" onChange={(event) => setFilters((current) => ({ ...current, personName: event.target.value }))} value={filters.personName}><option value="">Tous les marins</option>{personOptions.map((value) => <option key={value} value={value}>{crewPersonLabels.get(value) || value}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label> : null}
               <label className="planning-select-control"><span className="sr-only">Filtre type</span><select aria-label="Filtre type d’événement" onChange={(event) => setFilters((current) => ({ ...current, eventType: event.target.value }))} value={filters.eventType}><option value="">Tous les types</option>{perspective !== 'crew' ? FLEET_EVENT_TYPES.map((type) => <option key={type} value={type}>{planningFleetEventTypeLabel(type)}</option>) : ['assignment', 'rest', 'leave', 'training', 'unavailability'].map((type) => <option key={type} value={type}>{planningCrewEventTypeLabel(type)}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
               <label className="planning-select-control"><span className="sr-only">Filtre statut</span><select aria-label="Filtre statut" onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))} value={filters.status}><option value="">Tous les statuts</option>{statusOptions.map((status) => <option key={status} value={status}>{status === 'provisional' || status === 'confirmed' || status === 'cancelled' ? planningConfirmationLabel(status) : planningStatusDisplayLabel(status)}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
               <label className="planning-select-control"><span className="sr-only">Filtre responsable</span><select aria-label="Filtre responsable" onChange={(event) => setFilters((current) => ({ ...current, responsible: event.target.value }))} value={filters.responsible}><option value="">Tous les responsables</option>{responsibleOptions.map((value) => <option key={value}>{value}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>

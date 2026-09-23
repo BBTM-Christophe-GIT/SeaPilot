@@ -216,6 +216,7 @@ function createPreviewFleetFindingEvents(): unknown[] {
 }
 
 const PREVIEW_ROWS: Record<string, unknown[]> = {
+  planning_crew_display_preferences: [],
   useful_links: PREVIEW_USEFUL_LINKS,
   useful_link_categories: PREVIEW_LINK_CATEGORIES,
   procedures: [
@@ -1748,6 +1749,11 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'planning_save_crew_display_preferences') {
+    const row = { name_format: args.p_name_format, sort_order: args.p_sort_order };
+    PREVIEW_ROWS.planning_crew_display_preferences = [row];
+    return createPreviewQuery({ data: row, error: null });
+  }
   if (functionName === 'useful_links_can_manage') return createPreviewQuery({ data: true, error: null });
   if (functionName === 'service_note_targeting_options') {
     const note = previewRows('qhse_service_notes').find((row) => Number(row.id) === Number(args.p_note_id));

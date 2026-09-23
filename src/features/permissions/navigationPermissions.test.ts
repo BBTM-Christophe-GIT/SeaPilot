@@ -8,6 +8,9 @@ import {
 } from './navigationPermissions';
 
 describe('navigation permissions', () => {
+  it.each(['direction', 'armement', 'capitaine', 'marin'] as const)('keeps Administration inaccessible to %s even with a stale visible permission', (role) => {
+    expect(getVisibleModulesForPermissions([role], [{ moduleKey: 'admin', roleKey: role, isVisible: true }])).toEqual([]);
+  });
   it('keeps the role matrix as the seeded default for configured navigation items', () => {
     const permissions = getDefaultNavigationPermissions();
     const adminModules = getVisibleModulesForPermissions(['admin'], permissions);
