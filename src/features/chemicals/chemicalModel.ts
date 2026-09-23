@@ -6,7 +6,7 @@ export const PICTOGRAMS = [
   { code: 'GHS09', label: 'Dangereux pour l’environnement' },
 ] as const;
 export type PictogramCode = (typeof PICTOGRAMS)[number]['code'];
-export interface ChemicalVessel { id: number; company_id: number; name: string; acronym: string; icon_url: string | null }
+export interface ChemicalVessel { id: number; company_id: number; name: string; acronym: string; icon_url: string | null; length_overall?: string | null }
 export interface ChemicalDraft {
   vessel_id: number; brand: string; product_type: string; variant: string;
   storage_compatibility: string; usage: string; pictograms: PictogramCode[];

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import type { ChemicalFileStore } from './chemicalDrive';
 import { attachmentMime, chemicalDraft, validateChemical, type ChemicalAttachment, type ChemicalDraft, type ChemicalProduct, type ChemicalVessel } from './chemicalModel';
 
@@ -23,7 +24,7 @@ export async function fetchChemicalWorkspace(client: SupabaseClient) {
   ]);
   if (vessels.error) throw vessels.error;
   products.sort((a, b) => (a.brand + a.product_type + a.variant).localeCompare(b.brand + b.product_type + b.variant, 'fr'));
-  return { vessels: (vessels.data || []) as ChemicalVessel[], products, attachments };
+  return { vessels: [...(vessels.data || []) as ChemicalVessel[]].sort(compareFleetAssets), products, attachments };
 }
 export async function saveChemicalProduct(client: SupabaseClient, draft: ChemicalDraft, vessel: ChemicalVessel, existing?: ChemicalProduct) {
   validateChemical(draft);

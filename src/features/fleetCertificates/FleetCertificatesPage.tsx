@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { compareFleetNames } from '../fleet/fleetDisplay';
 import {
   AlertCircle, CalendarPlus, CheckCircle2, Download,
   ExternalLink, FileCheck2, FilePlus2, FileText, Filter, Flag, Image,
@@ -186,7 +187,7 @@ function FindingForm({ certificate, finding, responsibles, onClose, onOpenAttach
 
 function DocumentForm({ certificates, documentNames, onClose, onSave }: { certificates: FleetCertificateRecord[]; documentNames: string[]; onClose: () => void; onSave: (form: FormData) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
-  const vessels = useMemo(() => Array.from(new Map(certificates.filter((item) => item.vesselId).map((item) => [item.vesselId, item])).values()), [certificates]);
+  const vessels = useMemo(() => Array.from(new Map(certificates.filter((item) => item.vesselId).map((item) => [item.vesselId, item])).values()).sort((a, b) => compareFleetNames(a.vesselName, b.vesselName)), [certificates]);
   const categories = useMemo(() => getFleetCertificateCategoryOptions(certificates), [certificates]);
   const vesselLabels = useMemo(() => certificates.flatMap((item) => [item.vesselName, item.vesselAcronym]), [certificates]);
   const suggestedNames = useMemo(() => Array.from(new Set([...documentNames, ...certificates.map((item) => item.documentTitle)]
@@ -265,7 +266,7 @@ function DocumentMetadataForm({ certificate, certificates, documentNames, onClos
 }) {
   const vessels = useMemo(() => Array.from(new Map(certificates
     .filter((item) => item.vesselId)
-    .map((item) => [item.vesselId, item])).values()), [certificates]);
+    .map((item) => [item.vesselId, item])).values()).sort((a, b) => compareFleetNames(a.vesselName, b.vesselName)), [certificates]);
   const categories = useMemo(() => getFleetCertificateCategoryOptions(certificates), [certificates]);
   const vesselLabels = useMemo(() => certificates.flatMap((item) => [item.vesselName, item.vesselAcronym]), [certificates]);
   const suggestedNames = useMemo(() => Array.from(new Set([...documentNames, ...certificates.map((item) => item.documentTitle)]

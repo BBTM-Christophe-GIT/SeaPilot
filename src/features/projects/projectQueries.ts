@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { normalizeProjectStatus } from './projectStatus';
 import { projectDescriptionToPlainText } from './projectDescription';
 
@@ -821,7 +822,7 @@ export function mapVesselRows(rows: VesselRow[]): VesselRecord[] {
     builtYear: nullableNumber(row.built_year),
     navigationCategory: nullableText(row.navigation_category),
     liabilityInsurer: nullableText(row.liability_insurer),
-  }));
+  })).sort(compareFleetAssets);
 }
 
 export function mapProjectVesselCertificateRows(

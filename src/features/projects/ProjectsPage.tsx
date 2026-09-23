@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { compareFleetNames } from '../fleet/fleetDisplay';
 import {
   Archive,
   CalendarDays,
@@ -1404,7 +1405,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     [projectsData.clients, projectsData.projects],
   );
   const vesselOptions = useMemo(
-    () => uniqueSorted(projectsData.projects.flatMap((project) => getProjectVesselNames(project))),
+    () => uniqueSorted(projectsData.projects.flatMap((project) => getProjectVesselNames(project))).sort(compareFleetNames),
     [projectsData.projects],
   );
   const selectedProject = resolveSelectedProject(filteredProjects, selectedProjectId);

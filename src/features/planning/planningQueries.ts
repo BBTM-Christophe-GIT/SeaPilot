@@ -14,7 +14,7 @@ import {
   requiredPlanningText,
 } from './planningValidation';
 
-const VESSEL_SELECT = 'id, name, acronym, registration_number, active';
+const VESSEL_SELECT = 'id, name, acronym, registration_number, active, length_overall';
 const PLANNING_READ_PAGE_SIZE = 1_000;
 const PLANNING_PERSON_SELECT =
   'id, first_name, last_name, function_label, grade_label, role_label, sailor_number, contract_type, hired_on, departed_on, birth_date, birth_place, identity_document_number, identity_document_type, deck_certificate_label, engine_certificate_label, active';
@@ -56,6 +56,7 @@ interface VesselRow {
   acronym: string | null;
   registration_number?: string | null;
   active: boolean;
+  length_overall?: string | null;
 }
 
 interface PlanningPersonRow {
@@ -349,6 +350,7 @@ export interface PlanningVessel {
   acronym: string;
   registrationNumber?: string;
   active: boolean;
+  lengthOverall?: string | null;
 }
 
 export interface PlanningPerson {
@@ -856,6 +858,7 @@ export function mapVesselRows(rows: VesselRow[]): PlanningVessel[] {
     acronym: row.acronym || '',
     registrationNumber: row.registration_number || '',
     active: row.active,
+    lengthOverall: row.length_overall,
   })).sort(compareFleetAssets);
 }
 

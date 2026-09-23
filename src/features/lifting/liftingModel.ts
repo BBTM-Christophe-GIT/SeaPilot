@@ -18,6 +18,7 @@ export interface LiftingVessel {
   id: number; company_id: number; name: string; acronym: string; registration_number: string;
   call_sign: string; registration_port: string;
   illustration_thumbnail_url?: string | null;
+  length_overall?: string | null;
 }
 export interface LiftingItem {
   id: number; company_id: number; vessel_id: number; kind: LiftingKind; reference: string;
