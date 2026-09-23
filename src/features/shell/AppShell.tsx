@@ -11,7 +11,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
   CircleHelp,
   Clock3,
   ClipboardCheck,
@@ -551,9 +550,9 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                   </span>
                   <span className="navigation-label">{family}</span>
                   {isExpanded ? (
-                    <ChevronUp aria-hidden="true" className="navigation-chevron" size={15} />
-                  ) : (
                     <ChevronDown aria-hidden="true" className="navigation-chevron" size={15} />
+                  ) : (
+                    <ChevronRight aria-hidden="true" className="navigation-chevron" size={15} />
                   )}
                 </button>
                 {isExpanded ? (
@@ -562,8 +561,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                       const ModuleIcon = MODULE_ICONS[module.key];
                       if (module.key === 'lifting') return LIFTING_SECTIONS.map((section) => (
                         <NavLink className="lifting-navigation-link" aria-label={section.title} aria-disabled={isLiftingNavigationBlocked || undefined} onClick={(event) => { if (isLiftingNavigationBlocked) event.preventDefault(); }} key={section.key} title={isLiftingNavigationBlocked ? 'Terminez l’opération et enregistrez vos modifications avant de changer de rubrique.' : section.title} to={`/modules/lifting/${section.path}`}>
-                          <span aria-hidden="true" className="navigation-submenu-bullet" />
-                          <ModuleIcon aria-hidden="true" size={16} />
+                          <span aria-hidden="true" className={`navigation-equipment-icon navigation-equipment-icon--${section.key}`} />
                           <span className="navigation-link-label">{section.title}</span>
                         </NavLink>
                       ));
@@ -575,7 +573,6 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                           title={module.label}
                           to={module.key === 'home' ? '/' : `/modules/${module.key}`}
                         >
-                          <span aria-hidden="true" className="navigation-submenu-bullet" />
                           <ModuleIcon aria-hidden="true" size={16} />
                           <span className="navigation-link-label">{module.label}</span>
                         </NavLink>
@@ -601,7 +598,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
             ) : (
               <ChevronLeft aria-hidden="true" size={17} />
             )}
-            <span>{isSidebarCollapsed ? 'Agrandir' : 'Réduire le menu'}</span>
+            <span>{isSidebarCollapsed ? 'Agrandir' : 'Réduire'}</span>
           </button>
         </div>
       </aside>
