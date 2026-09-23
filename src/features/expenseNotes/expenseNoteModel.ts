@@ -1,4 +1,5 @@
 import type { RoleKey } from '../permissions/roles';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 
 export type ExpenseKind = 'expense' | 'mileage';
 export type Fuel = 'essence' | 'diesel' | 'hybrid' | 'electric';
@@ -43,7 +44,7 @@ export function groupExpenseNotes(notes: ExpenseNote[]) {
     if (!vessel.issuers.has(expenseIssuerKey(note))) vessel.issuers.set(expenseIssuerKey(note), { id: expenseIssuerKey(note), name: note.issuer_name, notes: [] });
     vessel.issuers.get(expenseIssuerKey(note))!.notes.push(note);
   }
-  return [...vessels.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr')).map((vessel) => ({
+  return [...vessels.values()].sort(compareFleetAssets).map((vessel) => ({
     ...vessel, issuers: [...vessel.issuers.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr')).map((issuer) => ({
       ...issuer, notes: issuer.notes.sort((a, b) => (b.issued_at || '').localeCompare(a.issued_at || '') || a.id.localeCompare(b.id)),
     })),

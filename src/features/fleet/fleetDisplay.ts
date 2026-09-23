@@ -5,6 +5,8 @@ export interface FleetDisplayAsset {
   name: string;
   assetKind?: FleetAssetKind;
   lengthOverall?: string | number | null;
+  asset_kind?: FleetAssetKind;
+  length_overall?: string | number | null;
 }
 
 export function normalizeFleetName(name: string): string {
@@ -19,7 +21,7 @@ const BBTM_LENGTHS: Record<string, number> = {
 };
 
 export function fleetAssetKind(asset: FleetDisplayAsset): FleetAssetKind {
-  if (asset.assetKind) return asset.assetKind;
+  if (asset.assetKind || asset.asset_kind) return (asset.assetKind || asset.asset_kind)!;
   const name = normalizeFleetName(asset.name);
   if (/^(YARD|QUAI)\b/.test(name)) return 'quay';
   if (/^(BUREAU|BUREAUX|ARMEMENT)\b/.test(name)) return 'office';
@@ -31,7 +33,7 @@ export function fleetDisplayName(asset: FleetDisplayAsset): string {
 }
 
 export function fleetLength(asset: FleetDisplayAsset): number {
-  const parsed = Number.parseFloat(String(asset.lengthOverall ?? '').replace(',', '.'));
+  const parsed = Number.parseFloat(String(asset.lengthOverall ?? asset.length_overall ?? '').replace(',', '.'));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : BBTM_LENGTHS[normalizeFleetName(asset.name)] ?? 0;
 }
 

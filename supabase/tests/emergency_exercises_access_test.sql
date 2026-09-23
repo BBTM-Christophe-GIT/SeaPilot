@@ -101,6 +101,24 @@ begin
       exception when invalid_parameter_value then null; end;
     execute 'reset role';
   end loop;
+  -- Archiving a vessel removes it from all five role-specific filters, while
+  -- fleet/person history still contains the exercises performed aboard it.
+  update public.vessels set active=false where id=vessel2;
+  for i in 1..5 loop
+    actor := ('eea00000-0000-4000-8000-00000000000'||i)::uuid;
+    perform set_config('request.jwt.claim.sub',actor::text,true);
+    perform set_config('request.jwt.claims',json_build_object('sub',actor,'role','authenticated')::text,true);
+    execute 'set local role authenticated';
+    roster := public.emergency_exercises_people();
+    assert not exists(select 1 from jsonb_array_elements(roster->'vessels') v where (v->>'id')::bigint=vessel2),'Archived vessel remains in filter';
+    assert exists(select 1 from jsonb_array_elements(roster->'vessels') v where (v->>'id')::bigint=vessel and v ? 'lengthOverall'),'Active vessel or its length missing';
+    report := public.emergency_exercises_report(sailor,2026);
+    select sum((x->>'count')::integer) into total from jsonb_array_elements(report->'counts') x;
+    assert total=3,'Archiving a vessel erased historical exercises';
+    begin perform public.emergency_exercises_report(sailor,2026,vessel2); raise exception 'Archived vessel accepted as selectable';
+      exception when insufficient_privilege then null; end;
+    execute 'reset role';
+  end loop;
   -- Cancellation and expiry revoke the captain's watch scope immediately.
   perform set_config('request.jwt.claim.sub',captain_user::text,true);
   perform set_config('request.jwt.claims',json_build_object('sub',captain_user,'role','authenticated')::text,true);

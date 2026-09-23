@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { fleetIllustration } from '../fleet/fleetDisplay';
 import type { ExerciseCount, ExerciseRoster } from './emergencyExercisesModel';
 
 // Demonstration only. Role verification uses authenticated database fixtures.
@@ -6,7 +7,8 @@ export function createExercisePreviewClient(): SupabaseClient {
   const roster: ExerciseRoster = {
     scope: 'fleet',
     people: [{ id: 1, name: 'Alex MARTIN', current: true, former: false }, { id: 2, name: 'Camille DURAND', current: false, former: true }],
-    vessels: [{ id: 1, name: 'LE ROZEL', iconUrl: null }, { id: 2, name: 'SUROIT', iconUrl: null }],
+    vessels: ['LE ROZEL', 'SUROIT', 'GOURY', 'LANDEMER', 'KROKDUR', 'HIRONDELLE DE LA MANCHE', 'HOLENN EUSA', 'BBTM TENDER 1']
+      .map((name, index) => ({ id: index + 1, name, iconUrl: fleetIllustration({ name }) || null })),
   };
   const names = ["Protection contre l'incendie", 'Évacuation et abandon du navire', 'ANTIPOLLUTION', 'Sauvetage en mer'];
   return { rpc: async (name: string, args: Record<string, unknown> = {}) => {

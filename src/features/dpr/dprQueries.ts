@@ -166,7 +166,7 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { ownRe
     reportPromise,
     client.from('projects').select('id,project_code,title').order('project_code'),
     client.rpc('dpr_report_projects'),
-    client.from('vessels').select('id,name').order('name'),
+    client.from('vessels').select('id,name,length_overall').order('name'),
     client.from('emergency_exercise_types').select('key,label').eq('active', true).order('display_order'),
     client.from('port_call_reason_types').select('key,label').eq('active', true).order('display_order'),
     fetchDprEntryContext(client, new Date().toISOString().slice(0, 10)),
@@ -189,7 +189,7 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { ownRe
   const projects = entryContext.project && !catalogProjects.some((project) => project.id === entryContext.project?.id)
     ? [...catalogProjects, entryContext.project].sort((left, right) => left.code.localeCompare(right.code, 'fr'))
     : catalogProjects;
-  const vessels = (vesselResult.data || []).map((row) => ({ id: Number(row.id), name: text(row.name) })).sort(compareFleetAssets);
+  const vessels = (vesselResult.data || []).map((row) => ({ id: Number(row.id), name: text(row.name), lengthOverall: text(row.length_overall) })).sort(compareFleetAssets);
   const metrics = new Map((metricResult.data || []).map((row) => [Number(row.dpr_id), Number(row.fuel_consumed_liters || 0)]));
   const incidents = new Map<number, number>();
   (incidentResult.data || []).forEach((row) => {

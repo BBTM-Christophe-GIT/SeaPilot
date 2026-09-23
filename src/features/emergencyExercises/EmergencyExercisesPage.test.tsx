@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
@@ -10,6 +10,33 @@ vi.mock('../../lib/supabaseClient', () => ({supabase:{}}));
 vi.mock('./emergencyExercisesPdf', () => ({downloadExercisePdf:vi.fn(async()=>{})}));
 const mount = (client:SupabaseClient) => render(<MemoryRouter><EmergencyExercisesPage client={client}/></MemoryRouter>);
 describe('emergency register interface', () => {
+  it('shows one button per vessel in descending length order and filters with the retained vessel ID', async () => {
+    const base = createExercisePreviewClient();
+    const vessels = [
+      { id: 6, name: 'HIRONDELLE DE LA MANCHE', iconUrl: null },
+      { id: 1, name: 'LE ROZEL', iconUrl: null, lengthOverall: '19,2' },
+      { id: 57, name: '  Hirondelle  de la Manche ', iconUrl: null },
+      { id: 3, name: 'GOURY', iconUrl: null, lengthOverall: '30.62 m' },
+      { id: 2, name: 'SUROIT', iconUrl: null, lengthOverall: '18,60' },
+    ];
+    const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      const response = await base.rpc(name, args);
+      if (name === 'emergency_exercises_people') response.data = { ...response.data, vessels };
+      if (name === 'emergency_exercises_report') response.data = { ...response.data, vessel: vessels.find((v) => v.id === args?.target_vessel_id) || null };
+      return response;
+    });
+    mount({ rpc } as unknown as SupabaseClient);
+    await screen.findByRole('heading', { name: /Toute la flotte/ });
+    const filter = within(screen.getByRole('navigation', { name: 'Filtrer les exercices par navire' }));
+    const buttons = filter.getAllByRole('button');
+    expect(buttons.map((button) => button.textContent?.trim().toUpperCase())).toEqual([
+      'FLOTTE', 'GOURY', 'LE ROZEL', 'SUROIT', 'HIRONDELLE DE LA MANCHE',
+    ]);
+    fireEvent.click(buttons[4]);
+    await screen.findByRole('heading', { name: /HIRONDELLE DE LA MANCHE/i });
+    expect(rpc).toHaveBeenLastCalledWith('emergency_exercises_report', expect.objectContaining({ target_vessel_id: 6 }));
+    expect(vessels).toHaveLength(5);
+  });
   it('starts with the fleet and active sailors, filters by vessel, and exports the selected sailor/year/scope', async () => {
     const client=createExercisePreviewClient(), spy=vi.spyOn(client,'rpc'); mount(client);
     await screen.findByRole('heading',{name:/Toute la flotte/},{timeout:5000});

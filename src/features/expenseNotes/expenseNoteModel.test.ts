@@ -16,7 +16,7 @@ describe('expense note rules', () => {
   });
   it('groups by vessel and stable issuer ID, including no vessel and namesakes', () => {
     const groups = groupExpenseNotes([...EXPENSE_NOTE_PREVIEW, { ...EXPENSE_NOTE_PREVIEW[0], id: 'other', issuer_person_id: 99 }]);
-    expect(groups.map((g) => g.name)).toEqual(['GOURY', 'Hors navire', 'SUROIT']);
+    expect(groups.map((g) => g.name)).toEqual(['GOURY', 'SUROIT', 'Hors navire']);
     expect(groups[0].issuers).toHaveLength(3);
     expect(groups[0].issuers.filter((p) => p.name === 'Camille Martin')).toHaveLength(2);
   });

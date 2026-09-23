@@ -159,6 +159,7 @@ interface VesselRow {
   registration_number?: string | null;
   imo_number?: string | null;
   flag_state?: string | null;
+  length_overall?: string | null;
 }
 
 export interface WorkingTimeEditablePerson {
@@ -611,7 +612,7 @@ export async function fetchWorkingTimeWorkspace(
     signatureQuery,
     client.from('working_time_validations').select(VALIDATION_SELECT).order('occurred_at', { ascending: false }).limit(1000),
     dayApprovalQuery,
-    client.from('vessels').select('id,name,acronym,registration_number,imo_number,flag_state').eq('active', true).order('name'),
+    client.from('vessels').select('id,name,acronym,registration_number,imo_number,flag_state,length_overall').eq('active', true).order('name'),
     client.from('planning_work_rest_policies').select(POLICY_SELECT).order('effective_from', { ascending: false }),
   ]);
 
@@ -698,6 +699,7 @@ export async function fetchWorkingTimeWorkspace(
       registrationNumber: vessel.registration_number || '',
       imoNumber: vessel.imo_number || '',
       flagState: vessel.flag_state || '',
+      lengthOverall: vessel.length_overall,
     })).sort(compareFleetAssets),
     policies: ((policyResult.data || []) as PolicyRow[]).map(mapPolicy),
   };

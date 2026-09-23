@@ -1,7 +1,7 @@
 export const EXERCISE_MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
 export const EXERCISE_FOOTER = 'REP 08-A - Verifiez la liste de diffusion pour vous assurer d avoir toujours la derniere version de ce formulaire.';
 export interface ExercisePerson { id: number; name: string; current: boolean; former: boolean }
-export interface ExerciseVessel { id: number; name: string; iconUrl: string | null }
+export interface ExerciseVessel { id: number; name: string; iconUrl: string | null; lengthOverall?: string | number | null }
 export interface ExerciseRoster { scope: 'fleet' | 'watch' | 'self'; people: ExercisePerson[]; vessels: ExerciseVessel[] }
 export interface ExerciseCount { exercise_key: string; exercise_name: string; month: number; count: number }
 export interface ExerciseReportData { person: ExercisePerson | null; vessel: ExerciseVessel | null; year: number; counts: ExerciseCount[] }

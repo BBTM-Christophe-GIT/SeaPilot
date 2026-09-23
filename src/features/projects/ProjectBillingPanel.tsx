@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { compareFleetNames } from '../fleet/fleetDisplay';
 import {
   CalendarRange,
   Download,
@@ -261,7 +262,7 @@ export function ProjectBillingPanel({
     [data.expenses],
   );
   const vesselOptions = useMemo(
-    () => Array.from(new Set(operations.map((operation) => operation.primaryVesselName).filter(Boolean))).sort(),
+    () => Array.from(new Set(operations.map((operation) => operation.primaryVesselName).filter(Boolean))).sort(compareFleetNames),
     [operations],
   );
   const exportRange = periodMode === 'calendar-month'

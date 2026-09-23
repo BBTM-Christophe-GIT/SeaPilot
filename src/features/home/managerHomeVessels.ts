@@ -1,4 +1,5 @@
 import type { ManagerHomeItem, ManagerHomeSourceRows } from './managerHomeData';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 
 export interface ManagerHomeVessel {
   key: string;
@@ -61,7 +62,7 @@ export function buildManagerHomeVessels(sources: ManagerHomeSourceRows) {
     }
   }
   return {
-    vessels: [...vesselsByKey.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr')),
+    vessels: [...vesselsByKey.values()].sort(compareFleetAssets),
     forRow,
     forPerson: (personId: number | null | undefined): ManagerHomeVessel[] => [...(byPerson.get(personId ?? -1)?.values() || [])],
   };

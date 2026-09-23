@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { compareFleetNames } from '../fleet/fleetDisplay';
 import { useOutletContext } from 'react-router-dom';
 import { CarFront, Download, FilePlus2, Mail, ReceiptText, RefreshCw, Settings, Ship, Users } from 'lucide-react';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
@@ -66,7 +67,7 @@ export function ExpenseNotesPage() {
       .sort((a, b) => a[1].localeCompare(b[1], 'fr'));
   }, [scopedNotes, directory]);
   const activePersonFilter = people.some(([id]) => id === personFilter) ? personFilter : 'all';
-  const filterVessels = useMemo(() => [...new Map(scopedNotes.map((note) => [String(note.vessel_id ?? 'none'), note.vessel_name])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'fr')), [scopedNotes]);
+  const filterVessels = useMemo(() => [...new Map(scopedNotes.map((note) => [String(note.vessel_id ?? 'none'), note.vessel_name])).entries()].sort((a, b) => compareFleetNames(a[1], b[1])), [scopedNotes]);
   const filtered = useMemo(() => scopedNotes.filter((note) => (vesselFilter === 'all' || String(note.vessel_id ?? 'none') === vesselFilter)
     && (!allNotes || activePersonFilter === 'all' || expenseIssuerKey(note) === activePersonFilter)
     && `${note.title} ${note.description} ${note.issuer_name} ${note.vessel_name}`.toLocaleLowerCase('fr').includes(search.toLocaleLowerCase('fr'))), [scopedNotes, vesselFilter, allNotes, activePersonFilter, search]);

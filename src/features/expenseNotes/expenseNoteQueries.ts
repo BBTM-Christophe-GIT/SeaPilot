@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { ExpenseInputError, PAYMENT_METHODS, validateExpenseFiles, type ExpenseNote, type ExpenseNoteInput } from './expenseNoteModel';
 
 export const EXPENSE_PDF_BUCKET = 'expense-note-pdfs';
@@ -33,9 +34,9 @@ export async function fetchExpenseIdentity(client: SupabaseClient): Promise<Expe
 }
 
 export async function fetchExpenseVessels(client: SupabaseClient): Promise<ExpenseVessel[]> {
-  const { data, error } = await client.from('vessels').select('id,name').eq('active', true).order('name');
+  const { data, error } = await client.from('vessels').select('id,name,length_overall,asset_kind').eq('active', true).order('name');
   if (error) throw error;
-  return data || [];
+  return [...(data || []) as ExpenseVessel[]].sort(compareFleetAssets);
 }
 
 export async function fetchExpenseNotes(client: SupabaseClient): Promise<ExpenseNote[]> {

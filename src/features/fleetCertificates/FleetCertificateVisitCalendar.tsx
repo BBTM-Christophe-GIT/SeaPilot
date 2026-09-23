@@ -1,5 +1,6 @@
 import { CalendarDays, ChevronRight, MapPin, Plus, UsersRound } from 'lucide-react';
 import { useMemo } from 'react';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import type { FleetCertificateVisit } from './fleetCertificateVisits';
 
 interface DocumentGroup {
@@ -41,7 +42,7 @@ function groupVisits(visits: FleetCertificateVisit[]): VesselGroup[] {
       label,
       documents: Array.from(documents.values()).sort((a, b) => collator.compare(a.documentTitle, b.documentTitle)),
     })).sort((a, b) => collator.compare(a.label, b.label)),
-  })).sort((a, b) => collator.compare(a.name, b.name));
+  })).sort(compareFleetAssets);
 }
 
 function formatVisitDate(value: string): string {
