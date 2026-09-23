@@ -52,12 +52,40 @@ begin
       (report_id,company,captain,'captain','Fixture captain');
     insert into public.dpr_emergency_exercises(dpr_id,company_id,exercise_type_key)
       values(report_id,company,'fire-protection');
+    -- Arbitrary TBT themes never need a catalogue entry. Multiple exercises and
+    -- duplicated crew functions must not multiply the TBT count for this DPR.
+    insert into public.dpr_hse_actions(dpr_id,company_id,tbt_performed,tbt_theme)
+      values(report_id,company,j<>2,case when j<>2 then 'Thème libre numéro '||j end);
+    if j=1 then
+      insert into public.dpr_emergency_exercises(dpr_id,company_id,exercise_type_key)
+        values(report_id,company,'abandon-ship');
+    end if;
   end loop;
   insert into public.dpr_reports(company_id,vessel_id,report_date,issuer_user_id,issuer_name_snapshot,status,dpr_number,submitted_by,submitted_at)
     values(company,vessel,date '2026-08-01',captain_user,'Fixture captain','submitted',8,captain_user,now()) returning id into report_id;
   insert into public.dpr_crew_members(dpr_id,company_id,person_id,crew_function,display_name_snapshot)
     values(report_id,company,former,'execution','Former sailor');
   insert into public.dpr_emergency_exercises(dpr_id,company_id,exercise_type_key) values(report_id,company,'abandon-ship');
+  insert into public.dpr_hse_actions(dpr_id,company_id,tbt_performed,tbt_theme)
+    values(report_id,company,true,'Thème libre ancien marin');
+
+  -- A TBT-only DPR counts even without predefined exercises. A DPR without
+  -- participating crew and a foreign-company DPR must not enter the register.
+  for j in 9..11 loop
+    insert into public.dpr_reports(company_id,vessel_id,report_date,issuer_user_id,issuer_name_snapshot,status,dpr_number,submitted_by,submitted_at)
+      values(case when j=11 then other_company else company end,
+        case when j=11 then other_vessel else vessel end,date '2026-09-01',captain_user,'Fixture captain','submitted',j,captain_user,now())
+      returning id into report_id;
+    insert into public.dpr_hse_actions(dpr_id,company_id,tbt_performed,tbt_theme)
+      values(report_id,case when j=11 then other_company else company end,true,'Communication avant remorquage');
+    if j=9 then
+      insert into public.dpr_crew_members(dpr_id,company_id,person_id,crew_function,display_name_snapshot)
+        values(report_id,company,sailor,'execution','Fixture sailor'),(report_id,company,captain,'captain','Fixture captain');
+    elsif j=11 then
+      insert into public.dpr_crew_members(dpr_id,company_id,person_id,crew_function,display_name_snapshot)
+        values(report_id,other_company,foreign_person,'execution','Foreign sailor');
+    end if;
+  end loop;
 
   for i in 1..5 loop
     actor := ('eea00000-0000-4000-8000-00000000000'||i)::uuid;
@@ -70,20 +98,26 @@ begin
     assert not exists(select 1 from jsonb_array_elements(roster->'people') p where (p->>'id')::bigint=foreign_person),'Foreign sailor leaked';
     report := public.emergency_exercises_report(sailor,2026);
     select sum((x->>'count')::integer) into total from jsonb_array_elements(report->'counts') x;
-    assert total=3,'Duplicate crew or excluded DPR counted / legitimate DPR lost';
+    assert total=7,'Duplicate crew/exercises or excluded DPR counted / legitimate exercise or TBT lost';
+    assert (select sum((x->>'count')::integer) from jsonb_array_elements(report->'counts') x where x->>'exercise_key'='tbt')=3,'TBT count incorrect';
+    assert exists(select 1 from jsonb_array_elements(report->'counts') x where x->>'exercise_key'='tbt'
+      and x->>'exercise_name'='TBT — thème libre' and x->>'month'='9' and x->>'count'='1'),'TBT-only DPR missing';
     report := public.emergency_exercises_report(sailor,2026,vessel2);
     assert jsonb_array_length(report->'counts')=1 and report->'counts'->0->>'month'='2','Vessel filter ignored';
     report := public.emergency_exercises_report(sailor,2025);
-    assert jsonb_array_length(report->'counts')=1 and report->'counts'->0->>'month'='12','Year boundary incorrect';
+    assert jsonb_array_length(report->'counts')=2
+      and not exists(select 1 from jsonb_array_elements(report->'counts') x where x->>'month'<>'12'),'Year boundary incorrect';
     report := public.emergency_exercises_report(null,2026);
     select sum((x->>'count')::integer) into total from jsonb_array_elements(report->'counts') x;
-    assert total=3,'Default collective double counts participants or includes former sailor';
+    assert total=7,'Default collective double counts participants or includes former sailor';
     if i<=3 then
       report := public.emergency_exercises_report(null,2026,null,'all');
       select sum((x->>'count')::integer) into total from jsonb_array_elements(report->'counts') x;
-      assert total=4,'All-personnel filter omitted former sailor';
+      assert total=9,'All-personnel filter omitted former sailor exercises/TBT';
       report := public.emergency_exercises_report(null,2026,null,'former');
-      assert jsonb_array_length(report->'counts')=1 and report->'counts'->0->>'exercise_key'='abandon-ship','Former filter incorrect';
+      assert jsonb_array_length(report->'counts')=2
+        and exists(select 1 from jsonb_array_elements(report->'counts') x where x->>'exercise_key'='tbt' and x->>'count'='1')
+        and exists(select 1 from jsonb_array_elements(report->'counts') x where x->>'exercise_key'='abandon-ship' and x->>'count'='1'),'Former filter incorrect';
     else
       begin perform public.emergency_exercises_report(outsider,2026); raise exception 'Other watch sailor accepted';
         exception when insufficient_privilege then null; end;
@@ -114,7 +148,7 @@ begin
     assert exists(select 1 from jsonb_array_elements(roster->'vessels') v where (v->>'id')::bigint=vessel and v ? 'lengthOverall'),'Active vessel or its length missing';
     report := public.emergency_exercises_report(sailor,2026);
     select sum((x->>'count')::integer) into total from jsonb_array_elements(report->'counts') x;
-    assert total=3,'Archiving a vessel erased historical exercises';
+    assert total=7,'Archiving a vessel erased historical exercises/TBT';
     begin perform public.emergency_exercises_report(sailor,2026,vessel2); raise exception 'Archived vessel accepted as selectable';
       exception when insufficient_privilege then null; end;
     execute 'reset role';
@@ -150,4 +184,4 @@ begin
 end;
 $test$;
 rollback;
-select 'Emergency exercise role, isolation, count and filter assertions passed; fixtures rolled back.' as result;
+select 'Emergency exercise and TBT role, isolation, count and filter assertions passed; fixtures rolled back.' as result;

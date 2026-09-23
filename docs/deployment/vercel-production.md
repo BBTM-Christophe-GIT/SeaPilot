@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.51.2` inclut les TBT à thème libre dans le registre des exercices, ses totaux et le PDF individuel. La migration `20260923060419_emergency_exercises_tbt.sql` est appliquée et vérifiée. Les cinq profils authentifiés utilisent le même périmètre que les exercices prédéfinis. Aucune note de mise à jour ajoutée. Voir [le registre et les vérifications](./emergency-exercises.md).
+
 Version `3.51.1` harmonise les filtres navires du plus long au plus court. Le registre des exercices propose uniquement les navires actifs, une seule fois par nom, et conserve les exercices historiques dans la vue flotte. La migration `20260923053355_emergency_exercises_active_vessels.sql` est appliquée et vérifiée avec les cinq profils authentifiés. Aucune nouvelle note de mise à jour, conformément à la demande. Voir [la correction des filtres](./vessel-filter-order.md).
 
 Version `3.51.0` réunit les trois rubriques de levage dans **Registres**, supprime le menu **Levage** et ajoute les notes de mise à jour à lecture différée, avec compteur par compte. La migration `20260923043157_user_release_note_states.sql` est déjà appliquée. Voir [le fonctionnement et la recette](./release-notes-and-lifting-sections.md).

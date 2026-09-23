@@ -61,7 +61,7 @@ export function EmergencyExercisesPage({ client }: { client?: SupabaseClient }) 
   }
   const years = Array.from({ length: Math.max(1, new Date().getFullYear() - 2000 + 1) }, (_, i) => new Date().getFullYear() - i);
   return <section className="exercise-page">
-    <header className="exercise-header"><div><h1>Registre des Exercices</h1><p>Carnet individuel des exercices d’urgence déclarés dans les DPR.</p></div>
+    <header className="exercise-header"><div><h1>Registre des Exercices</h1><p>Carnet individuel des exercices d’urgence et des TBT déclarés dans les DPR.</p></div>
       <button type="button" className="exercise-refresh" aria-label="Actualiser le registre" disabled={busy || loading} onClick={() => setRevision((n) => n + 1)}><RefreshCw size={18}/></button></header>
     {context?.previewMode && !client ? <p className="exercise-notice">Démonstration · données fictives.</p> : null}
     <nav className="exercise-vessels" aria-label="Filtrer les exercices par navire">
@@ -90,7 +90,7 @@ export function EmergencyExercisesPage({ client }: { client?: SupabaseClient }) 
         {report.rows.map((row) => <tr className={row.priority ? 'exercise-priority' : ''} key={row.key}><th scope="row">{row.name}</th>{row.months.map((n, i) => <td key={i}>{n || '—'}</td>)}<td><strong>{row.total}</strong></td></tr>)}
         {!report.rows.length ? <tr><td colSpan={14} className="exercise-empty">{roster?.scope === 'self' && !roster.people.length ? 'Aucune fiche marin n’est liée à votre compte. Contactez l’armement.' : 'Aucun exercice déclaré pour cette sélection.'}</td></tr> : null}
       </tbody><tfoot><tr><th scope="row">Total</th>{report.months.map((n, i) => <td key={i}>{n}</td>)}<td>{report.total}</td></tr></tfoot></table></div>
-      <p className="exercise-source">Un exercice est compté une fois par DPR, pour les marins présents dans la bordée. La vue collective ne cumule pas les participations individuelles.</p>
+      <p className="exercise-source">Chaque exercice, y compris un TBT, est compté une fois par DPR, pour les marins présents dans la bordée. Les TBT sont regroupés sous « TBT — thème libre » ; leur thème est saisi librement dans le DPR. La vue collective ne cumule pas les participations individuelles.</p>
     </article> : null}
   </section>;
 }

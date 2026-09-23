@@ -5,18 +5,18 @@ export async function buildExercisePdf(report: ExerciseReport, logo: Uint8Array,
   const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
   const filename = exerciseFilename(report.person.name, report.year);
-  pdf.setProperties({ title: "CARNET DES EXERCICES D'URGENCE", subject: `${report.person.name} - ${report.year}`, creator: 'SeaPilot - BBTM' });
+  pdf.setProperties({ title: 'CARNET DES EXERCICES ET TBT', subject: `${report.person.name} - ${report.year}`, creator: 'SeaPilot - BBTM' });
   const header = () => {
     pdf.setFillColor(16, 43, 70); pdf.rect(0, 0, 210, 3, 'F');
     pdf.addImage(logo, 'PNG', 10, 9, 17, 17);
     pdf.setFont('helvetica', 'bold'); pdf.setFontSize(13); pdf.setTextColor(21, 96, 130);
-    pdf.text("CARNET DES EXERCICES D'URGENCE", 32, 17);
+    pdf.text('CARNET DES EXERCICES ET TBT', 32, 17);
     pdf.setTextColor(16, 43, 70); pdf.setFontSize(11);
     pdf.text(pdf.splitTextToSize(`${report.person!.name} - ${report.year}`, 166), 32, 24);
   };
   header();
   pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor(84, 103, 124);
-  pdf.text(`Rapport généré le ${generatedAt.toLocaleDateString('fr-FR')}. Total exercices : ${report.total}.`, 10, 36);
+  pdf.text(`Rapport généré le ${generatedAt.toLocaleDateString('fr-FR')}. Total exercices (TBT inclus) : ${report.total}.`, 10, 36);
   pdf.text(`Périmètre : ${report.vessel?.name || 'Toute la flotte'} - DPR soumis et validés.`, 10, 41);
   pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); pdf.setTextColor(16, 43, 70);
   pdf.text('Répartition mensuelle', 10, 53);
@@ -49,7 +49,7 @@ export async function buildExercisePdf(report: ExerciseReport, logo: Uint8Array,
   });
   if (!report.rows.length) {
     pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); pdf.setTextColor(84, 103, 124);
-    pdf.text("Aucun exercice d'urgence pour ce marin et cette année dans le périmètre sélectionné.", 10, 142);
+    pdf.text('Aucun exercice ni TBT pour ce marin et cette année dans le périmètre sélectionné.', 10, 142);
   }
   for (let page = 1; page <= pdf.getNumberOfPages(); page++) {
     pdf.setPage(page); pdf.setDrawColor(206, 222, 242); pdf.setLineWidth(0.2); pdf.line(10, 282, 200, 282);
