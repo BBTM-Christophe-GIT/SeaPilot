@@ -1,7 +1,24 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
 import type { LiftingVessel } from '../lifting/liftingModel';
-import type { LsaDraft, LsaEvent, LsaItem, LsaVersion } from './lsaModel';
+import type { LsaCatalog, LsaDraft, LsaEvent, LsaItem, LsaVersion } from './lsaModel';
+
+export async function fetchLsaCatalog(client: SupabaseClient): Promise<LsaCatalog> {
+  const [types, designations] = await Promise.all([
+    client.from('lsa_equipment_types').select('*').order('name'),
+    client.from('lsa_designations').select('*').order('name'),
+  ]);
+  if (types.error) throw types.error;
+  if (designations.error) throw designations.error;
+  return { types: types.data || [], designations: designations.data || [] };
+}
+
+export async function saveLsaCatalogEntry(client: SupabaseClient, kind: 'type' | 'designation', entry: {
+  id?: number; name: string; equipment_type_id?: number; active: boolean; updated_at?: string;
+}) {
+  const { error } = await client.rpc('save_lsa_catalog_entry', { p_kind: kind, p_entry: entry });
+  if (error) throw error;
+}
 
 export async function fetchLsaVessels(client: SupabaseClient): Promise<LiftingVessel[]> {
   const { data, error } = await client.rpc('lsa_available_vessels');
@@ -36,4 +53,10 @@ export async function downloadLsaDocument(client: SupabaseClient, document: { st
   const { data, error } = await client.storage.from(document.storage_bucket).download(document.storage_path);
   if (error || !data) throw error || new Error('Le document est indisponible.');
   return data;
+}
+
+export async function fetchNextLsaNumber(client: SupabaseClient, vesselId: number, designationId: number): Promise<number> {
+  const { data, error } = await client.rpc('lsa_next_item_number', { p_vessel_id: vesselId, p_designation_id: designationId });
+  if (error) throw error;
+  return data as number;
 }

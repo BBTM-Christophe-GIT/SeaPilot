@@ -4,13 +4,13 @@ do $$
 declare
   company bigint; other_company bigint; vessel bigint; unassigned bigint; foreign_vessel bigint;
   actor uuid; person bigint; role_name text; item bigint; other_item bigint; hidden_item bigint;
-  current_revision timestamptz; saved bigint; count_before bigint;
-  payload jsonb := '{"category_key":"07-2-life-jacket","document_title":"LSA fixture","issued_on":"2026-01-01","expires_on":"2030-01-01"}';
+  current_revision timestamptz; saved bigint; count_before bigint; designation bigint;
+  payload jsonb;
 begin
   assert not exists(select 1 from public.fleet_certificates where category_key in
     ('07-2-life-jacket','07-4-gmdss','07-6-pyrotechnie','07-8-bouee-feux-retournement-mob')), 'Transferred categories remain in source';
   assert not exists(select 1 from private.lsa_transfer_audit a left join public.lsa_items i on i.id=a.source_id
-    where a.source_table='fleet_certificates' and a.snapshot is distinct from to_jsonb(i)), 'Item copy differs';
+    where a.source_table='fleet_certificates' and i.id is null), 'Transferred item missing';
   assert not exists(select 1 from private.lsa_transfer_audit a left join public.lsa_versions v on v.id=a.source_id
     where a.source_table='fleet_certificate_versions' and a.snapshot is distinct from to_jsonb(v)), 'Version copy differs';
   assert not exists(select 1 from private.lsa_transfer_audit a left join public.lsa_renewal_events e on e.id=a.source_id
@@ -20,6 +20,8 @@ begin
   assert not has_table_privilege('authenticated','public.lsa_items','DELETE'), 'Direct delete bypass';
   assert not has_function_privilege('anon','public.save_lsa_item(bigint,jsonb,bigint,timestamptz)','EXECUTE'), 'Anonymous write RPC';
   select id into strict company from public.companies where code='bbtm';
+  select id into strict designation from public.lsa_designations where company_id=company and name='EPIRB';
+  payload:=jsonb_build_object('designation_id',designation,'expires_on','2030-01-01','notes','LSA fixture');
   insert into public.companies(code,name) values('lsa-fixture-'||gen_random_uuid(),'LSA other company') returning id into other_company;
   insert into public.vessels(company_id,name,acronym,active,asset_kind) values(company,'LSA assigned fixture','LSAA',true,'vessel') returning id into vessel;
   insert into public.vessels(company_id,name,acronym,active,asset_kind) values(company,'LSA unassigned fixture','LSAU',true,'vessel') returning id into unassigned;
@@ -47,6 +49,8 @@ begin
     perform set_config('request.jwt.claims',json_build_object('sub',actor,'role','authenticated')::text,true);
     execute 'set local role authenticated';
     assert exists(select 1 from public.lsa_items where id=item), role_name||' cannot see assigned inventory';
+    assert exists(select 1 from public.lsa_designations where id=designation), 'Catalog invisible';
+    assert not exists(select 1 from public.lsa_designations where company_id=other_company), 'Foreign catalog visible';
     assert not exists(select 1 from public.lsa_items where id=other_item), role_name||' cross-company leak';
     assert exists(select 1 from public.lsa_available_vessels() where id=vessel), role_name||' missing vessel';
     assert not exists(select 1 from public.lsa_available_vessels() where id=foreign_vessel), 'Foreign vessel leak';
@@ -63,8 +67,8 @@ begin
     else
       saved := public.save_lsa_item(vessel,payload);
       select updated_at into current_revision from public.lsa_items where id=saved;
-      perform public.save_lsa_item(vessel,payload||'{"document_title":"Edited fixture"}',saved,current_revision);
-      assert (select document_title='Edited fixture' from public.lsa_items where id=saved), 'Update lost';
+      perform public.save_lsa_item(vessel,payload||'{"notes":"Edited fixture","brand":"Ocean","model":"Test","serial_number":"SN-001"}',saved,current_revision);
+      assert (select notes='Edited fixture' and brand='Ocean' and model='Test' and serial_number='SN-001' from public.lsa_items where id=saved), 'Update lost';
       begin
         perform public.save_lsa_item(vessel,payload,saved,current_revision);
         raise exception 'Stale update accepted';
@@ -74,11 +78,18 @@ begin
         raise exception 'Cross-company write accepted';
       exception when insufficient_privilege then null; end;
     end if;
+    if role_name <> 'admin' then
+      begin
+        perform public.save_lsa_catalog_entry('type', '{"name":"Unauthorized type"}');
+        raise exception 'Non-administrator edited catalog';
+      exception when insufficient_privilege then null; end;
+    end if;
     execute 'reset role';
     -- Revoking the navigation permission also revokes reads and RPC writes.
     update public.role_module_permissions set is_visible=false where module_key='lsa' and role_key=role_name;
     execute 'set local role authenticated';
     select count(*) into count_before from public.lsa_items;
+    assert not exists(select 1 from public.lsa_equipment_types), 'Disabled module leaked catalog';
     assert count_before=0, 'Disabled module still readable';
     assert not exists(select 1 from public.lsa_available_vessels()), 'Disabled module leaked vessels';
     begin

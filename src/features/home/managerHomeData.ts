@@ -427,6 +427,11 @@ function purchaseItems(rows: PurchaseRequestRow[], today: Date, vessels: Manager
 }
 
 function effectiveFleetStatus(row: FleetCertificateRow, today: Date): string {
+  if (row.register === 'lsa') {
+    if (!row.expires_on) return 'valid';
+    const days = daysFromToday(row.expires_on.slice(0, 10), today);
+    return days < 0 ? 'expired' : days <= UPCOMING_HORIZON_DAYS ? 'renew_due' : 'valid';
+  }
   const status = normalize(row.status);
   if (['missing', 'manquant', 'pending_validation', 'a valider'].some((value) => status.includes(value))) return status;
   const expiry = row.expires_on?.slice(0, 10) || '';
@@ -448,7 +453,7 @@ function fleetCertificateItems(rows: FleetCertificateRow[], today: Date, vessels
     const status = effectiveFleetStatus(row, today);
     if (status === 'valid' || status === 'valide') return [];
 
-    const planned = row.planned_on?.slice(0, 10) || '';
+    const planned = row.register === 'lsa' ? '' : row.planned_on?.slice(0, 10) || '';
     const plannedIsUpcoming = planned && daysFromToday(planned, today) >= 0;
     const expiryIsUpcoming = expiry && daysFromToday(expiry, today) >= 0;
     const dueDate = plannedIsUpcoming ? planned : expiryIsUpcoming ? expiry : todayKey;

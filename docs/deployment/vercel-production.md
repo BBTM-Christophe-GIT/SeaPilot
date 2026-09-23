@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.54.0` simplifie la fiche LSA : catalogue de désignations administrable,
+numérotation automatique par navire, marque/modèle/numéro de série et alarmes à J−90.
+Appliquer la migration `lsa_designation_catalog` avant le client. Voir [la recette](./lsa-designations-v3-54-0.md).
+
 Version `3.53.0` ajoute **Registres → Registre LSA** et transfère les catégories
 Life Jacket, GMDSS, Pyrotechnie et Bouée/Feux à retournement/MOB depuis Certificats
 flotte. Appliquer `20260923095002_lsa_register.sql` avant le client : copie et

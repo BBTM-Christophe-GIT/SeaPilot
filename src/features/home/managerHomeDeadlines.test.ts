@@ -42,6 +42,19 @@ describe('home deadline horizon', () => {
     });
     expect(items.find((item) => item.id === 'fleet-1')?.to).toBe('/modules/certificates');
   });
+  it.each(['valid', 'missing', 'pending_validation', 'expired'])('uses only the LSA expiry for alarms with legacy status %s', (status) => {
+    for (const days of [-1, 0, 60, 90, 91]) {
+      const items = buildManagerHomeItems(sources({ fleetCertificates: [{
+        ...fleetDocument(status, expiryIn(days)), register: 'lsa', planned_on: expiryIn(5),
+      }] }), TODAY);
+      expect(items).toHaveLength(days <= 90 ? 1 : 0);
+      if (days <= 90) {
+        expect(items[0].queueTone).toBe(days < 0 ? 'danger' : 'warning');
+        expect(items[0].deadline).not.toContain('Visite');
+      }
+    }
+    expect(buildManagerHomeItems(sources({ fleetCertificates: [{ ...fleetDocument(status, null), register: 'lsa' }] }), TODAY)).toEqual([]);
+  });
   it.each(['valid', 'expired', 'renew_due', 'missing', 'manquant', 'pending_validation', 'À valider'])(
     'limits fleet documents with status %s to 90 days, regardless of imported status',
     (status) => {
