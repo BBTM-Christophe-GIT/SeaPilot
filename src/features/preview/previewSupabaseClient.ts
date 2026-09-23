@@ -306,7 +306,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     },
   ],
   profiles: [{ id: 'preview-user', display_name: 'Administrateur Démonstration', email: 'admin@example.invalid', user_roles: [{ role_key: 'admin' }] }],
-  role_module_permissions: [],
+    role_module_permissions: [],
+    lsa_items: [],
   sharepoint_sources: [{
     key: 'library-procedures-demo', title: 'Procédures — démonstration', source_type: 'library',
     module_key: 'procedures', target_table: 'procedures', import_priority: 10, confirmed: true,

@@ -36,6 +36,7 @@ const BillingElementsPage = lazy(() => import('./features/projects/BillingElemen
 const AnnualReviewsPage = lazy(() => import('./features/annualReviews/AnnualReviewsPage').then((module) => ({ default: module.AnnualReviewsPage })));
 const DisciplinaryPage = lazy(() => import('./features/disciplinary/DisciplinaryPage').then((module) => ({ default: module.DisciplinaryPage })));
 const LiftingPage = lazy(() => import('./features/lifting/LiftingPage').then((module) => ({ default: module.LiftingPage })));
+const LsaPage = lazy(() => import('./features/lsa/LsaPage').then((module) => ({ default: module.LsaPage })));
 
 interface AppProps {
   previewModeOverride?: boolean;
@@ -78,6 +79,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des indicateurs HSE…</div>}><KpiPage /></Suspense>
                 ) : module.key === 'emergencyExercises' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement du registre des exercices…</div>}><EmergencyExercisesPage /></Suspense>
+                ) : module.key === 'lsa' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement du registre LSA…</div>}><LsaPage /></Suspense>
                 ) : module.key === 'chemicals' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des produits chimiques…</div>}><ChemicalsPage /></Suspense>
                 ) : module.key === 'actionPlan' ? (

@@ -31,6 +31,17 @@ function hrDocument(status: string, expiresOn: string | null): ManagerHomeSource
 }
 
 describe('home deadline horizon', () => {
+  it('preserves transferred LSA alerts with a distinct identity and the new destination', () => {
+    const items = buildManagerHomeItems(sources({ fleetCertificates: [
+      fleetDocument('expired', expiryIn(-1)),
+      { ...fleetDocument('expired', expiryIn(-1)), register: 'lsa' },
+    ] }), TODAY);
+    expect(items).toHaveLength(2);
+    expect(items.find((item) => item.id === 'lsa-1')).toMatchObject({
+      to: '/modules/lsa', context: 'LSA · SUROIT', action: 'Ouvrir le registre LSA', urgent: true,
+    });
+    expect(items.find((item) => item.id === 'fleet-1')?.to).toBe('/modules/certificates');
+  });
   it.each(['valid', 'expired', 'renew_due', 'missing', 'manquant', 'pending_validation', 'À valider'])(
     'limits fleet documents with status %s to 90 days, regardless of imported status',
     (status) => {

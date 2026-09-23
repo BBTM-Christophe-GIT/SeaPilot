@@ -9,6 +9,18 @@ export interface ReleaseNote {
 // Add a note only when the user requests one. Published IDs and notes remain stable.
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    id: '3.53.0-lsa-register',
+    version: '3.53.0',
+    publishedOn: '2026-09-23',
+    title: 'Vos équipements de sauvetage dans le Registre LSA',
+    changes: [
+      'Le menu Registres accueille le Registre LSA, avec la présentation et les filtres du Registre des Remorques : sélection du navire, type d’équipement, recherche et année des documents.',
+      'Les fiches Life Jacket, GMDSS, Pyrotechnie et Bouée, Feux à retournement et MOB ont été transférées depuis Certificats flotte. Les dates, notes, documents et historiques sont conservés.',
+      'La copie a été vérifiée avant le retrait des fiches des Certificats flotte. Les autres catégories restent à leur emplacement habituel.',
+      'Administration, Direction et Armement peuvent ajouter et modifier les fiches LSA. Marin et Capitaine consultent les équipements et les documents dans leur périmètre autorisé.',
+    ],
+  },
+  {
     id: '3.51.0-lifting-sections',
     version: '3.51.0',
     publishedOn: '2026-09-23',
