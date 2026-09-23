@@ -12,7 +12,8 @@ de Certificats flotte, notamment les radeaux/HRU, restent en place.
 
 ## Transfert
 
-Migration : `20260923095002_lsa_register.sql`.
+Migrations : `20260923095002_lsa_register.sql` et
+`20260923095146_lsa_vessel_index.sql` (index de la relation navire).
 
 Inventaire avant transfert sur SeaPilot :
 
