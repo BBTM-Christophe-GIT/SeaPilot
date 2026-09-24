@@ -188,6 +188,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const currentPerson = outletContext?.currentPerson || null;
   const processingAllowed = canProcess(effectiveRoles);
   const decisionAllowed = canDecide(effectiveRoles);
+  const approvalAllowed = decisionAllowed || effectiveRoles.includes('marin');
   const creationAllowed = canCreate(effectiveRoles, currentPerson?.functionLabel || '');
   const captainView = isCaptainScopedPurchaseView(effectiveRoles);
 
@@ -401,7 +402,8 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
                 <div className="purchase-detail-meta-line">
                   <div className="purchase-detail-meta"><span><Ship size={15} />{selectedRequest.vesselName || 'Sans navire'}</span><em className={`purchase-category is-${categoryKind(selectedRequest.categoryLabel)}`}>{categoryKind(selectedRequest.categoryLabel) === 'service' ? 'Prestation' : 'Fourniture'}</em><span><CircleUserRound size={15} />{selectedRequest.requesterName || 'Demandeur'}</span><span><CalendarDays size={15} />{formatDate(selectedRequest.requestedOn)}</span></div>
                   <div className="purchase-context-actions">
-                    {decisionAllowed && selectedRequest.stage === 'to_process' && selectedRequestDecisionPending ? <><button className="purchase-context-primary" disabled={isSaving} onClick={() => void runAction('approve')} type="button"><ShieldCheck size={15} />Approuver</button><button className="purchase-context-danger" disabled={isSaving} onClick={() => setActionDialog({ action: 'refuse', comment: '', effectiveDate: '', title: 'Refuser la demande' })} type="button"><AlertTriangle size={15} />Refuser</button></> : null}
+                    {approvalAllowed && selectedRequest.stage === 'to_process' && selectedRequestDecisionPending ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => void runAction('approve')} type="button"><ShieldCheck size={15} />Approuver</button> : null}
+                    {decisionAllowed && selectedRequest.stage === 'to_process' && selectedRequestDecisionPending ? <button className="purchase-context-danger" disabled={isSaving} onClick={() => setActionDialog({ action: 'refuse', comment: '', effectiveDate: '', title: 'Refuser la demande' })} type="button"><AlertTriangle size={15} />Refuser</button> : null}
                     {processingAllowed && selectedRequest.stage === 'to_process' && selectedRequestApproved ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => void runAction('take_charge')} type="button"><ClipboardCheck size={15} />Prendre en charge</button> : null}
                     {processingAllowed && selectedRequestApproved && selectedRequest.stage === 'ordered' ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => setActionDialog({ action: 'plan_delivery', comment: '', effectiveDate: selectedRequest.expectedDeliveryOn, title: 'Planifier la livraison à bord' })} type="button"><Truck size={15} />Planifier la livraison</button> : null}
                     {processingAllowed && selectedRequestApproved && selectedRequest.stage === 'receiving' ? <button className="purchase-context-primary" disabled={isSaving} onClick={() => void runAction('mark_received')} type="button"><PackageCheck size={15} />Reçu à bord</button> : null}
