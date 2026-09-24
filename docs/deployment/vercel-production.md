@@ -1,5 +1,14 @@
 # SeaPilot Vercel Production Notes
 
+Le build `2026-09-24.001` de la version `3.55.0` ajoute, à la demande de
+l’utilisateur, une note annonçant le module **Notes de Frais**, le suivi des notes
+émises et l’arrêt de l’ancienne application à la fin de septembre 2026. Son nouvel
+identifiant `3.55.0-expense-notes-launch` déclenche la fenêtre à la prochaine
+ouverture de SeaPilot après connexion, même si les notes précédentes ont déjà été
+lues. **Ok** enregistre la lecture par compte ; **Lire plus tard** conserve la note
+accessible depuis la version avec une pastille. Les notes précédentes sont
+conservées. Aucune migration ni modification de configuration n’est requise.
+
 Version `3.55.0` ajoute les préférences personnelles d’affichage et de tri des
 Équipages dans Administration. Appliquer
 `20260923201855_planning_crew_display_preferences.sql` avant le client.
