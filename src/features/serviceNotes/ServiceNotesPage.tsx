@@ -75,12 +75,12 @@ export function resolveServiceNoteAudiencePeople(
 }
 
 function serviceNoteLibraryTimestamp(note: ServiceNote): number {
-  const timestamp = new Date(note.publishedAt || note.updatedAt || note.authoredOn).getTime();
+  const timestamp = new Date(note.authoredOn || note.publishedAt || note.updatedAt).getTime();
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
 function serviceNoteLibraryYear(note: ServiceNote): number {
-  const date = new Date(note.publishedAt || note.updatedAt || note.authoredOn);
+  const date = new Date(note.authoredOn || note.publishedAt || note.updatedAt);
   return Number.isNaN(date.getTime()) ? 0 : date.getFullYear();
 }
 
@@ -127,7 +127,7 @@ function ServiceNoteListRow({ note, currentUserId, selected, onSelect }: {
     && !note.signatures.some((signature) => signature.userId === currentUserId);
   return <button className={`${selected ? 'is-selected' : ''}${pendingForMe ? ' is-pending' : ''}`} onClick={() => onSelect(note.id)} role="listitem" type="button">
     <span className={`service-note-file-icon is-${note.status}`}>{note.status === 'draft' ? <FileClock size={20} /> : note.status === 'recalled' ? <ArchiveRestore size={20} /> : <FileCheck2 size={20} />}</span>
-    <span className="service-note-list-copy"><span><strong>{serviceNoteDisplayCode(note)}</strong><em className={`is-${note.status}`}>{serviceNoteStatusLabel(note.status)}</em></span><b>{note.subject || 'Sans objet'}</b><small><Ship size={12} /> {serviceNoteAudienceLabel(note)} · {formatServiceNoteDate(note.publishedAt || note.updatedAt)}</small></span>
+    <span className="service-note-list-copy"><span><strong>{serviceNoteDisplayCode(note)}</strong><em className={`is-${note.status}`}>{serviceNoteStatusLabel(note.status)}</em></span><b>{note.subject || 'Sans objet'}</b><small><Ship size={12} /> {serviceNoteAudienceLabel(note)} · {formatServiceNoteDate(note.authoredOn || note.publishedAt || note.updatedAt)}</small></span>
     <span className={`service-note-list-progress${missing.length ? ' is-missing' : ''}`} title={missing.map((person) => `${person.firstName} ${person.lastName}`).join(', ')}><strong>{note.status === 'recalled' ? 'Archive' : recipients ? `${percent(signed, recipients)}%` : '—'}</strong><small>{note.status === 'recalled' ? 'Retirée des destinataires' : missing.length ? `${missing.length} non-signataire${missing.length > 1 ? 's' : ''}` : recipients ? 'Tout le monde a signé' : 'Non diffusée'}</small>{recipients && note.status !== 'recalled' ? <i><span style={{ width: `${percent(signed, recipients)}%` }} /></i> : null}</span>
     <ChevronRight size={18} />
   </button>;

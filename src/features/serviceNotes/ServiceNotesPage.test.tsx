@@ -6,6 +6,7 @@ import { previewSupabaseClient } from '../preview/previewSupabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { buildServiceNoteLinkGroups, groupServiceNotesByYear, resolveServiceNoteAudiencePeople, ServiceNotesPage } from './ServiceNotesPage';
 import type { ServiceNote, ServiceNoteLinkOption } from './serviceNoteQueries';
+import * as serviceNoteQueries from './serviceNoteQueries';
 
 function renderPage(roles: AppShellOutletContext['roles'] = ['admin']) {
   const context: AppShellOutletContext = {
@@ -16,6 +17,23 @@ function renderPage(roles: AppShellOutletContext['roles'] = ['admin']) {
 }
 
 describe('ServiceNotesPage', () => {
+  it('shows the corrected issue date in the library even when published later', async () => {
+    const notes = await serviceNoteQueries.fetchServiceNotes(previewSupabaseClient);
+    const fetchNotes = vi.spyOn(serviceNoteQueries, 'fetchServiceNotes').mockResolvedValueOnce(notes.map((note) => (
+      note.chronologyCode === 'NS 08-26'
+        ? { ...note, authoredOn: '2026-09-22', publishedAt: '2026-09-24T05:32:40Z', updatedAt: '2026-09-24T06:00:00Z' }
+        : note
+    )));
+    try {
+      renderPage();
+      const row = (await screen.findByText('NS 08-26')).closest('[role="listitem"]');
+      expect(row).toHaveTextContent('22/09/2026');
+      expect(row).not.toHaveTextContent('24/09/2026');
+    } finally {
+      fetchNotes.mockRestore();
+    }
+  });
+
   it('keeps focus in the message when clicking and typing in a draft', async () => {
     const user = userEvent.setup();
     renderPage();
@@ -162,9 +180,9 @@ describe('ServiceNotesPage', () => {
       lastRecalledChronologyCode: '', attachments: [], recipients: [], signatures: [],
     });
     const groups = groupServiceNotesByYear([
-      note('NS 99-25', '2025-12-31T10:00:00Z', 'SUROÎT'),
-      note('NS 02-26', '2026-09-03T10:00:00Z', 'KROKDUR'),
-      note('NS 09-26', '2026-09-02T10:00:00Z', 'GOURY'),
+      { ...note('NS 99-25', '2026-01-02T10:00:00Z', 'SUROÎT'), authoredOn: '2025-12-31' },
+      { ...note('NS 02-26', '2026-09-23T10:00:00Z', 'KROKDUR'), authoredOn: '2026-09-23' },
+      { ...note('NS 09-26', '2026-09-24T10:00:00Z', 'GOURY'), authoredOn: '2026-09-22' },
     ]);
     expect(groups.map((group) => group.year)).toEqual([2026, 2025]);
     expect(groups[0].notes.map((item) => item.chronologyCode)).toEqual(['NS 02-26', 'NS 09-26']);
