@@ -236,7 +236,7 @@ describe('PurchaseRequestsPage', () => {
     expect(confirmButton).toBeEnabled();
   });
 
-  it.each(['admin', 'direction', 'armement'] as const)('lets the %s profile approve a pending request', async (role) => {
+  it.each(['admin', 'direction', 'armement', 'marin'] as const)('lets the %s profile approve a pending request', async (role) => {
     const user = userEvent.setup();
     const { client, rpc } = createClient([baseRequest]);
 
@@ -251,7 +251,7 @@ describe('PurchaseRequestsPage', () => {
     }));
   });
 
-  it.each(['capitaine', 'marin'] as const)('does not expose approval decisions to the %s profile', async (role) => {
+  it.each(['capitaine'] as const)('does not expose approval decisions to the %s profile', async (role) => {
     const { client } = createClient([baseRequest]);
 
     render(<PurchaseRequestsPage client={client as never} roles={[role]} />);
@@ -260,6 +260,43 @@ describe('PurchaseRequestsPage', () => {
     expect(screen.queryByRole('button', { name: 'Approuver' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Refuser' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Prendre en charge' })).not.toBeInTheDocument();
+  });
+
+  it('lets a Marin approve and refresh the request before taking charge, without refusal or creation rights', async () => {
+    const user = userEvent.setup();
+    const requests = [{ ...baseRequest }];
+    const { client, rpc } = createClient(requests);
+    rpc.mockImplementationOnce(async () => {
+      requests[0] = { ...baseRequest, approval_status: 'Demande acceptée' };
+      return { data: requests[0], error: null };
+    });
+
+    render(<PurchaseRequestsPage client={client as never} roles={['marin']} />);
+    const approve = await screen.findByRole('button', { name: 'Approuver' });
+    expect(screen.queryByRole('button', { name: 'Refuser' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nouvelle demande' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Prendre en charge' })).not.toBeInTheDocument();
+
+    await user.click(approve);
+
+    expect(await screen.findByRole('button', { name: 'Prendre en charge' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Approuver' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refuser' })).not.toBeInTheDocument();
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { ...baseRequest, approval_status: 'Demande refusée' },
+    approvedRequest,
+    { ...approvedRequest, status: 'Traitée', received_on: '2026-09-24' },
+  ])('does not let a Marin approve a request with decision $approval_status and status $status', async (request) => {
+    const { client, rpc } = createClient([request]);
+    render(<PurchaseRequestsPage client={client as never} roles={['marin']} />);
+
+    await screen.findByRole('heading', { name: /#95.*Moteur de commande/i });
+    expect(screen.queryByRole('button', { name: 'Approuver' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refuser' })).not.toBeInTheDocument();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('lets a Marin run each contextual order-processing transition without granting request creation', async () => {
