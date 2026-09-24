@@ -44,6 +44,17 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       'Une pastille rouge près de la version indique le nombre de notes non lues. Si plusieurs notes vous attendent, elles sont présentées de la plus ancienne à la plus récente.',
     ],
   },
+  {
+    id: '3.55.0-expense-notes-launch',
+    version: '3.55.0',
+    publishedOn: '2026-09-24',
+    title: 'Le module « Notes de Frais » est disponible dans SeaPilot',
+    changes: [
+      'Le module « Notes de Frais » vous permet de retrouver et de suivre les notes de frais émises, directement dans SeaPilot.',
+      'Il remplace l’ancienne application de notes de frais, qui sera arrêtée à la fin du mois de septembre 2026.',
+      'Utilisez dès maintenant le module « Notes de Frais » de SeaPilot pour le suivi de vos notes de frais.',
+    ],
+  },
 ];
 
 export function chronologicalNotes(notes: readonly ReleaseNote[]): ReleaseNote[] {
