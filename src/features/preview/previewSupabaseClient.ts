@@ -90,6 +90,8 @@ const PREVIEW_STCW_SOURCE_ROWS: Array<[number, string, string, string[], boolean
   [45, 'Arrêt de Travail', 'Ressources Humaines', [], false],
   [46, 'Arrêt Maladie', 'Ressources Humaines', [], false],
   [56, 'Dérogation', 'Ressources Humaines', [], false],
+  [57, 'Attestation de droits', 'Ressources Humaines', [], false],
+  [58, 'Carte Vitale', 'Ressources Humaines', [], false],
   [47, 'CACES', "Conduite d'Engin", [], true],
   [48, 'APAVE - Formation Conduite de Grue - LMG 130', 'Levage', [], true],
   [49, 'Autorisation de Conduite', "Conduite d'Engin", [], true],

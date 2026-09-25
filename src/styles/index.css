@@ -3829,6 +3829,7 @@ button:disabled {
 
 .hr-renewal-dialog {
   width: min(100%, 720px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .hr-dialog-header,

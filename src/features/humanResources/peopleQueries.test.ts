@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildGeneratedHrDocumentFileName,
   buildHumanResourcesDashboard,
@@ -9,6 +9,7 @@ import {
   buildWorkforceExitBreakdown,
   buildWorkforceTurnover,
   createHrDocument,
+  downloadHrDocumentBlob,
   createPerson,
   deletePerson,
   deleteHrDocument,
@@ -30,6 +31,10 @@ import {
   updatePersonDetails,
   updatePersonActive,
 } from './peopleQueries';
+
+import { writeHrDriveFile, readHrDriveFile } from './hrDocumentDrive';
+vi.mock('./hrDocumentDrive', () => ({ writeHrDriveFile: vi.fn(), readHrDriveFile: vi.fn() }));
+beforeEach(() => { vi.mocked(writeHrDriveFile).mockImplementation(async (_client, id, name) => ({ drive_path: `person-${id}/${name}`, drive_sha256: 'a'.repeat(64) })); });
 
 const personRow = {
   id: 1,
@@ -260,6 +265,9 @@ describe('mapHrDocumentRows', () => {
         sourceLabel: 'SharePoint',
         notes: 'Validation capitaine requise',
         fileUrl: 'https://sharepoint.test/visite-medicale.pdf',
+        drivePath: '',
+        driveSha256: '',
+        driveFileId: '',
         storageBucket: '',
         storagePath: '',
         fileSizeBytes: null,
@@ -340,7 +348,7 @@ describe('createHrDocument', () => {
     ])[0];
     const file = new File(['certificate'], 'scan original.pdf', { type: 'application/pdf' });
     const title = dueDate ? 'Jean MARTIN - CFBS - 2030' : 'Jean MARTIN - CFBS';
-    const expectedStoragePath = `people/1/${title}.pdf`;
+    const expectedStoragePath = `person-1/${title}.pdf`;
     const createdRow = {
       ...documentRow,
       id: 42,
@@ -350,10 +358,10 @@ describe('createHrDocument', () => {
       title,
       status: 'valid',
       expires_on: dueDate || null,
-      source_label: 'supabase',
+      source_label: 'google_drive',
       file_url: null,
-      storage_bucket: 'hr-documents',
-      storage_path: expectedStoragePath,
+      storage_bucket: null,
+      storage_path: null, drive_path: expectedStoragePath, drive_sha256: 'a'.repeat(64),
       file_size_bytes: file.size,
       mime_type: 'application/pdf',
     };
@@ -381,19 +389,17 @@ describe('createHrDocument', () => {
           person,
         },
       ),
-    ).resolves.toEqual(expect.objectContaining({ id: 42, storagePath: expectedStoragePath }));
+    ).resolves.toEqual(expect.objectContaining({ id: 42, drivePath: expectedStoragePath }));
 
-    expect(upload).toHaveBeenCalledWith(expectedStoragePath, file, {
-      contentType: 'application/pdf',
-      upsert: false,
-    });
+    expect(writeHrDriveFile).toHaveBeenCalledWith(expect.anything(), 1, `${title}.pdf`, file);
+    expect(upload).not.toHaveBeenCalled();
     expect(insert).toHaveBeenCalledWith(
       expect.objectContaining({
         category_key: 'safety_training',
         expires_on: dueDate || null,
         person_id: 1,
         person_name: 'Jean MARTIN',
-        storage_path: expectedStoragePath,
+        storage_path: null, drive_path: expectedStoragePath, drive_sha256: 'a'.repeat(64),
         title,
       }),
     );
@@ -484,7 +490,7 @@ describe('HR document metadata and deletion', () => {
 });
 
 describe('renewHrDocument', () => {
-  it('normalizes accented storage keys, updates metadata and removes the previous Supabase object', async () => {
+  it('writes renewal to Drive and preserves the previous source', async () => {
     const person = mapPersonRows([{ ...personRow, id: 31, first_name: 'Boris', last_name: 'BROT' }])[0];
     const document = mapHrDocumentRows([
       {
@@ -500,7 +506,7 @@ describe('renewHrDocument', () => {
       },
     ])[0];
     const file = new File(['medical'], 'certificat.pdf', { type: 'application/pdf' });
-    const expectedStoragePath = 'people/31/Boris BROT - Visite Medicale - 2029.pdf';
+    const expectedStoragePath = 'person-31/Boris BROT - Visite Médicale - 2029.pdf';
     const upload = vi.fn().mockResolvedValue({ error: null });
     const remove = vi.fn().mockResolvedValue({ error: null });
     const single = vi.fn().mockResolvedValue({
@@ -511,10 +517,10 @@ describe('renewHrDocument', () => {
         title: 'Boris BROT - Visite Médicale - 2029',
         status: 'valid',
         expires_on: '2029-07-05',
-        source_label: 'supabase',
+        source_label: 'google_drive',
         file_url: null,
-        storage_bucket: 'hr-documents',
-        storage_path: expectedStoragePath,
+        storage_bucket: null,
+        storage_path: null, drive_path: expectedStoragePath, drive_sha256: 'a'.repeat(64),
         file_size_bytes: file.size,
         mime_type: 'application/pdf',
         medical_restriction: '2eme Categorie',
@@ -553,15 +559,13 @@ describe('renewHrDocument', () => {
         fileSizeBytes: file.size,
         medicalBridgeWatch: false,
         medicalRestriction: '2eme Categorie',
-        sourceLabel: 'supabase',
-        storagePath: expectedStoragePath,
+        sourceLabel: 'google_drive',
+        drivePath: expectedStoragePath,
       }),
     );
 
-    expect(upload).toHaveBeenCalledWith(expectedStoragePath, file, {
-      contentType: 'application/pdf',
-      upsert: false,
-    });
+    expect(writeHrDriveFile).toHaveBeenCalledWith(expect.anything(), 31, 'Boris BROT - Visite Médicale - 2029.pdf', file);
+    expect(upload).not.toHaveBeenCalled();
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
         expires_on: '2029-07-05',
@@ -571,12 +575,12 @@ describe('renewHrDocument', () => {
         medical_restriction: '2eme Categorie',
         medical_unfit: false,
         mime_type: 'application/pdf',
-        source_label: 'supabase',
-        storage_bucket: 'hr-documents',
-        storage_path: expectedStoragePath,
+        source_label: 'google_drive',
+        storage_bucket: null,
+        storage_path: null, drive_path: expectedStoragePath, drive_sha256: 'a'.repeat(64),
       }),
     );
-    expect(remove).toHaveBeenCalledWith(['people/31/old-medical.pdf']);
+    expect(remove).not.toHaveBeenCalled();
   });
 });
 
@@ -1280,5 +1284,16 @@ describe('updatePersonDetails', () => {
       crane_induction_on: '2025-03-12',
     });
     expect(eq).toHaveBeenCalledWith('id', 1);
+  });
+});
+
+describe('Drive document download', () => {
+  it('prefers Drive over retained legacy backup references', async () => {
+    const blob = new Blob(['verified']);
+    vi.mocked(readHrDriveFile).mockResolvedValueOnce(blob);
+    const doc = mapHrDocumentRows([{ ...documentRow, drive_path: 'person/file.pdf', drive_sha256: 'a'.repeat(64), storage_bucket: 'hr-documents', storage_path: 'old.pdf' }])[0];
+    const client = { storage: { from: vi.fn() } };
+    expect(await downloadHrDocumentBlob(client as never, doc)).toBe(blob);
+    expect(client.storage.from).not.toHaveBeenCalled();
   });
 });

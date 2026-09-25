@@ -94,7 +94,7 @@ Write-Output 'PASS: disciplinary PDF and four unsafe path cases.'
 $moduleRoot = Join-Path $testRoot 'SeaPilot'
 New-Item -ItemType Directory -Path $moduleRoot | Out-Null
 [SeaPilotDrive]::EnsureModuleDirectories($moduleRoot)
-foreach ($folder in @('Procedures', 'Procedures PDF', 'Sanctions Disciplinaires', 'Produits Chimiques')) {
+foreach ($folder in @('Procedures', 'Procedures PDF', 'Sanctions Disciplinaires', 'Produits Chimiques', 'Ressources Humaines')) {
     if (!(Test-Path -LiteralPath (Join-Path $moduleRoot $folder) -PathType Container)) { throw "Module folder was not created: $folder" }
 }
 $preserved = Join-Path $moduleRoot 'Procedures/existing.docx'
@@ -102,6 +102,41 @@ $preserved = Join-Path $moduleRoot 'Procedures/existing.docx'
 [SeaPilotDrive]::EnsureModuleDirectories($moduleRoot)
 if ([IO.File]::ReadAllText($preserved) -ne 'Preserved source') { throw 'Folder initialization changed an existing document.' }
 Write-Output 'PASS: every module folder created automatically, repeat initialization preserves files.'
+$hrFolder = 'Synthetic PERSON - c1-p5'
+$hrData = [Collections.Generic.Dictionary[string,object]]::new()
+$hrData['action']='write'; $hrData['personId']=5; $hrData['path']=$hrFolder+'/fixture.pdf'
+$hrData['base64']=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('HR fixture'))
+$hrScope = [Collections.Generic.Dictionary[string,object]]::new()
+$hrScope['directory']='Ressources Humaines'; $hrScope['folder']=$hrFolder
+Add-Type -TypeDefinition @'
+public sealed class HrScopeFixture {
+    public System.Collections.Generic.Dictionary<string,object> Scope;
+    public System.Func<string,string,object> Remote;
+    public HrScopeFixture() { Remote = Get; }
+    object Get(string resource, string body) {
+        if (resource != "rpc/hr_document_drive_scope") throw new System.Exception("Unexpected RH authority.");
+        return Scope;
+    }
+}
+'@
+$hrFixture = New-Object HrScopeFixture
+$hrFixture.Scope=$hrScope
+$hrRemote=$hrFixture.Remote
+$hrWritten = [SeaPilotDriveBridge]::ExecuteHr($moduleRoot,$hrData,$hrRemote)
+if ($hrWritten.bytes -ne 10 -or $hrWritten.sha256.Length -ne 64) { throw 'RH write receipt invalid.' }
+$hrScope['path']=$hrWritten.path; $hrScope['bytes']=$hrWritten.bytes; $hrScope['sha256']=$hrWritten.sha256
+$hrData['action']='read'; $hrData['documentId']=11; $hrData['path']='other/untrusted.pdf'
+$hrRead = [SeaPilotDriveBridge]::ExecuteHr($moduleRoot,$hrData,$hrRemote)
+if ($hrRead.path -ne $hrWritten.path -or $hrRead.base64 -ne $hrData['base64']) { throw 'RH read did not use authorized document reference.' }
+$hrScope['sha256']='0'*64
+$hrDenied=$false
+try { [SeaPilotDriveBridge]::ExecuteHr($moduleRoot,$hrData,$hrRemote) | Out-Null } catch { $hrDenied=$true }
+if (!$hrDenied) { throw 'Changed RH contents accepted.' }
+$hrData['action']='write'; $hrData['path']='other/stolen.pdf'
+$hrDenied=$false
+try { [SeaPilotDriveBridge]::ExecuteHr($moduleRoot,$hrData,$hrRemote) | Out-Null } catch { $hrDenied=$true }
+if (!$hrDenied) { throw 'Cross-person RH write accepted.' }
+Write-Output 'PASS: RH write/read integrity, server-selected path, corrupt content and cross-person denial.'
 $disciplinaryRoot = [SeaPilotDriveBridge]::EnsureDirectory($moduleRoot, 'Sanctions Disciplinaires')
 $personFolder = [SeaPilotDriveBridge]::EnsurePersonFolder($disciplinaryRoot, 2, 41, 'Camille EXEMPLE')
 if ($personFolder -ne 'Camille EXEMPLE - c2-p41') { throw 'Collaborator folder is not canonical.' }
@@ -281,7 +316,7 @@ try {
     for ($attempt = 0; $attempt -lt 20; $attempt++) {
         try { $health = Invoke-RestMethod -Uri "$endpoint/health" -Headers $allowedHeaders -TimeoutSec 2; $ready = $true; break } catch { $healthError = $_.Exception.Message; Start-Sleep -Milliseconds 150 }
     }
-    if (!$ready -or $health.version -ne '2.3.0' -or $health.nonce -ne $nonce) { throw "Native bridge failed to start (process exited: $($nativeProcess.HasExited)): $healthError" }
+    if (!$ready -or $health.version -ne '2.4.0' -or $health.nonce -ne $nonce) { throw "Native bridge failed to start (process exited: $($nativeProcess.HasExited)): $healthError" }
     foreach ($testUri in @("http://127.0.0.1:$port/wrong/health", "$endpoint/request")) {
         $denied = $false
         try { Invoke-RestMethod -Uri $testUri -Method Post -ContentType 'application/json' -Body '{}' -Headers $allowedHeaders -TimeoutSec 5 | Out-Null } catch { $denied = $true }
@@ -313,7 +348,7 @@ try {
             if (!$ready) { throw 'Installed launcher did not start.' }
             $replacement = Install-SeaPilotDriveBinary -InstallFolder $installTestFolder -Compiler $compiler -Sources $sources
             if ($replacement -eq $published -or !(Test-Path -LiteralPath $replacement)) { throw 'Update did not publish a separate executable.' }
-            if ((Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2).version -ne '2.3.0') { throw 'Update interrupted the running launcher.' }
+            if ((Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2).version -ne '2.4.0') { throw 'Update interrupted the running launcher.' }
             $invalidSource = Join-Path $testRoot 'invalid.cs'
             Set-Content -LiteralPath $invalidSource -Value 'This is an intentionally invalid compiler fixture'
             $failed = $false

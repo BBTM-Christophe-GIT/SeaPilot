@@ -30,7 +30,7 @@ async function hashBytes(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
 export function createProcedureFileStore(client: SupabaseClient): ProcedureFileStore {
   async function connect() {
     const connection = await connectLocalDrive();
-    if (connection.version !== '2.3.0') throw new Error('Installez le lanceur SeaPilot 2.3 depuis Administration → Documents et Google Drive. Votre dossier configuré sera conservé.');
+    if (!['2.3.0', '2.4.0'].includes(connection.version || '')) throw new Error('Installez le lanceur SeaPilot 2.3 depuis Administration → Documents et Google Drive. Votre dossier configuré sera conservé.');
     return connection;
   }
   return {

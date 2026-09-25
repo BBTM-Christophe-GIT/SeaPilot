@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadAppEnv } from '../../lib/env';
 
-export const DRIVE_MODULES = { procedures: 'Procedures', procedurePdfs: 'Procedures PDF', disciplinary: 'Sanctions Disciplinaires', chemicals: 'Produits Chimiques' } as const;
+export const DRIVE_MODULES = { procedures: 'Procedures', procedurePdfs: 'Procedures PDF', disciplinary: 'Sanctions Disciplinaires', chemicals: 'Produits Chimiques', humanResources: 'Ressources Humaines' } as const;
 export type DriveModule = keyof typeof DRIVE_MODULES;
 export interface LocalDriveConnection { url: string; expiresAt: number; version?: string }
 export interface LocalDriveStatus { root: string | null; version: string; collaborators?: number }
@@ -26,7 +26,7 @@ async function findLocalDrive(firstPort: number, nonce: string): Promise<{ url: 
       const health = await response.json();
       // Older launchers can still connect on the original port while the update
       // is installed. New launchers also prove which random session they serve.
-      if ((['2.1.0', '2.2.0', '2.3.0'].includes(health.version) && health.nonce === nonce) || (health.version === '2.0.0' && index === 0)) return { url, version: health.version };
+      if ((['2.1.0', '2.2.0', '2.3.0', '2.4.0'].includes(health.version) && health.nonce === nonce) || (health.version === '2.0.0' && index === 0)) return { url, version: health.version };
       throw new Error('Session locale incompatible');
     }));
   } finally { controller.abort(); }

@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { HumanResourcesPage } from './HumanResourcesPage';
+import { connectHrDrive, readHrDriveFile, writeHrDriveFile } from './hrDocumentDrive';
+vi.mock('./hrDocumentDrive', () => ({ connectHrDrive: vi.fn(), writeHrDriveFile: vi.fn(async (_client, id, name) => ({ drive_path: `person-${id}/${name}`, drive_sha256: 'a'.repeat(64) })), readHrDriveFile: vi.fn() }));
 import { openTrainingPlanReport } from './trainingPlanReport';
 
 vi.mock('./trainingPlanReport', async () => {
@@ -118,6 +120,8 @@ interface HrDocumentFixture {
   file_url: string | null;
   storage_bucket?: string | null;
   storage_path?: string | null;
+  drive_path?: string;
+  drive_sha256?: string;
   file_size_bytes?: number | null;
   mime_type?: string | null;
 }
@@ -551,10 +555,11 @@ describe('HumanResourcesPage', () => {
         file_name: 'Dérogation',
       },
     ];
+    catalogRows.push(...[{ id: 57, source_item_id: 57, name: 'Attestation de droits', category: 'Ressources Humaines', file_name: 'Attestation de droits' }, { id: 58, source_item_id: 58, name: 'Carte Vitale', category: 'Ressources Humaines', file_name: 'Carte Vitale' }]);
     const file = new File(['certificate'], 'scan-cfbs.pdf', { type: 'application/pdf' });
     const title = noExpiry ? 'Jean MARTIN - CFBS' : 'Jean MARTIN - CFBS - 2030';
     const expiresOn = noExpiry ? null : '2030-06-30';
-    const storagePath = `people/1/${title}.pdf`;
+    const storagePath = `person-1/${title}.pdf`;
     const createdDocument = {
       ...documents[1],
       id: 42,
@@ -563,11 +568,11 @@ describe('HumanResourcesPage', () => {
       status: 'valid',
       issued_on: null,
       expires_on: expiresOn,
-      source_label: 'supabase',
+      source_label: 'google_drive',
       notes: null,
       file_url: null,
-      storage_bucket: 'hr-documents',
-      storage_path: storagePath,
+      storage_bucket: null,
+      storage_path: null, drive_path: storagePath, drive_sha256: 'a'.repeat(64),
       file_size_bytes: file.size,
       mime_type: 'application/pdf',
     };
@@ -601,6 +606,7 @@ describe('HumanResourcesPage', () => {
     const dialog = screen.getByRole('dialog', { name: 'Ajouter un document pour Jean MARTIN' });
     const derogationOption = within(dialog).getByRole('option', { name: 'Dérogation' });
     expect(derogationOption.closest('optgroup')).toHaveAttribute('label', 'Documents administratifs');
+    for (const name of ['Attestation de droits', 'Carte Vitale']) expect(within(dialog).getByRole('option', { name }).closest('optgroup')).toHaveAttribute('label', 'Documents administratifs');
     await user.selectOptions(within(dialog).getByLabelText('Brevet / document'), '25');
     fireEvent.change(within(dialog).getByLabelText("Date d'echeance"), { target: { value: '2030-06-30' } });
     if (noExpiry) {
@@ -614,11 +620,12 @@ describe('HumanResourcesPage', () => {
     expect(within(dialog).getByRole('button', { name: 'Creer le document' })).toBeEnabled();
     fireEvent.submit(dialog.querySelector('form') as HTMLFormElement);
 
-    await waitFor(() => expect(upload).toHaveBeenCalledWith(storagePath, file, { contentType: 'application/pdf', upsert: false }));
+    await waitFor(() => expect(writeHrDriveFile).toHaveBeenCalledWith(expect.anything(), 1, `${title}.pdf`, file));
+    expect(upload).not.toHaveBeenCalled();
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({
       category_key: 'safety_training',
       expires_on: expiresOn,
-      storage_path: storagePath,
+      storage_path: null, drive_path: storagePath, drive_sha256: 'a'.repeat(64),
       title,
     }));
     expect(await screen.findByText('Document ajoute.')).toBeInTheDocument();
@@ -701,7 +708,7 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).queryByRole('button', { name: 'Renouveler' })).not.toBeInTheDocument();
   });
 
-  it('downloads one selected HR document with the stored file extension', async () => {
+  it('downloads one selected Drive document with its stored file extension', async () => {
     const user = userEvent.setup();
     const wordDocument: HrDocumentFixture = {
       ...documents[1],
@@ -710,10 +717,14 @@ describe('HumanResourcesPage', () => {
       title: 'Jean MARTIN - Contrat - 2030',
       file_url: 'https://sharepoint.test/documents/contrat-signe.docx?download=1',
       mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      drive_path: 'Jean MARTIN - c1-p1/scan.docx',
+      drive_sha256: 'a'.repeat(64),
+      file_size_bytes: 8,
     };
+    vi.mocked(readHrDriveFile).mockResolvedValue(new Blob(['document']));
     const fetchMock = vi.fn().mockResolvedValue({
       blob: () => Promise.resolve(new Blob(['document'])),
-      ok: true,
+      ok: true, headers: new Headers(),
     });
     const originalFetch = globalThis.fetch;
     const originalCreateObjectUrl = URL.createObjectURL;
@@ -737,7 +748,8 @@ describe('HumanResourcesPage', () => {
       await user.click(screen.getByRole('button', { name: 'Telecharger' }));
 
       await waitFor(() => expect(downloadedFileName).toBe('Jean MARTIN - Contrat - 2030.docx'));
-      expect(fetchMock).toHaveBeenCalledWith(wordDocument.file_url, { credentials: 'include' });
+      expect(readHrDriveFile).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 43 }));
+      expect(fetchMock).not.toHaveBeenCalled();
       expect(revokeObjectURL).toHaveBeenCalledWith('blob:document-rh');
     } finally {
       globalThis.fetch = originalFetch;
@@ -747,11 +759,15 @@ describe('HumanResourcesPage', () => {
     }
   });
 
-  it('downloads multiple selected HR documents as a ZIP archive', async () => {
+  it('downloads multiple selected Drive documents as a ZIP archive', async () => {
     const user = userEvent.setup();
+    vi.mocked(readHrDriveFile).mockClear();
+    vi.mocked(connectHrDrive).mockClear();
+    const driveDocuments = documents.map((document) => ({ ...document, drive_path: `Jean MARTIN - c1-p1/${document.id}.pdf`, drive_sha256: 'a'.repeat(64), file_size_bytes: 8 }));
+    vi.mocked(readHrDriveFile).mockResolvedValue(new Blob(['document'], { type: 'application/pdf' }));
     const fetchMock = vi.fn().mockResolvedValue({
       blob: () => Promise.resolve(new Blob(['document'], { type: 'application/pdf' })),
-      ok: true,
+      ok: true, headers: new Headers(),
     });
     const originalFetch = globalThis.fetch;
     const originalCreateObjectUrl = URL.createObjectURL;
@@ -764,7 +780,7 @@ describe('HumanResourcesPage', () => {
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
 
     try {
-      render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
+      render(<HumanResourcesPage client={createClient([activePerson], driveDocuments) as never} roles={['admin']} />);
 
       const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
       await user.click(within(profile).getByRole('button', { name: 'Documents' }));
@@ -775,7 +791,9 @@ describe('HumanResourcesPage', () => {
       expect(selectionBar).toHaveTextContent('2 document(s) selectionne(s)');
       await user.click(within(selectionBar).getByRole('button', { name: 'Telecharger' }));
 
-      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(readHrDriveFile).toHaveBeenCalledTimes(2));
+      expect(connectHrDrive).toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
       await waitFor(() => expect(screen.queryByRole('region', { name: 'Selection documentaire RH' })).not.toBeInTheDocument());
       expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
       expect(clickSpy).toHaveBeenCalledTimes(1);
@@ -786,6 +804,19 @@ describe('HumanResourcesPage', () => {
       Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: originalRevokeObjectUrl });
       clickSpy.mockRestore();
     }
+  });
+
+  it('keeps the selection and shows the Drive error when a download fails', async () => {
+    const user = userEvent.setup();
+    vi.mocked(readHrDriveFile).mockRejectedValueOnce(new Error('Fichier absent du dossier Google Drive.'));
+    const document = { ...documents[0], drive_path: 'Jean MARTIN - c1-p1/scan.pdf', drive_sha256: 'a'.repeat(64), file_size_bytes: 8 };
+    render(<HumanResourcesPage client={createClient([activePerson], [document]) as never} roles={['admin']} />);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+    await user.click(within(profile).getByRole('checkbox', { name: `Sélectionner ${document.title}` }));
+    await user.click(screen.getByRole('button', { name: 'Telecharger' }));
+    expect(await screen.findByText('Fichier absent du dossier Google Drive.')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Selection documentaire RH' })).toHaveTextContent('1 document(s) selectionne(s)');
   });
 
   it('uses controlled dropdowns for structured personnel fields and departure reasons', async () => {

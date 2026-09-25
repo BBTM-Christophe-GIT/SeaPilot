@@ -14,7 +14,7 @@ using System.Web.Script.Serialization;
 // No remote listener, startup service, saved login token, or arbitrary file reads.
 public static class SeaPilotDriveBridge
 {
-    public const string Version = "2.3.0";
+    public const string Version = "2.4.0";
     public const int ConnectionPortCount = 16;
     const int MaxBody = 36 * 1024 * 1024;
     const string Api = "https://szlvyrrmvdvhzixilymh.supabase.co";
@@ -25,6 +25,7 @@ public static class SeaPilotDriveBridge
             || origin == "https://sea-pilot-git-codex-procedure-publishing-workflow-bbtm-app.vercel.app"
             || origin == "https://sea-pilot-git-codex-qhse-produits-chimiques-bbtm-app.vercel.app"
             || origin == "https://sea-pilot-git-codex-procedure-template-ism-bbtm-app.vercel.app"
+            || origin == "https://sea-pilot-git-codex-hr-documents-google-drive-bbtm-app.vercel.app"
             || origin == "http://localhost:5178" || origin == "http://localhost:5173";
     }
     static object Remote(string resource, string body, string token, string apiKey)
@@ -85,7 +86,7 @@ public static class SeaPilotDriveBridge
     public static void WriteFile(string root, string relative, byte[] bytes)
     {
         SeaPilotDrive.ValidateParts(relative);
-        if (!Regex.IsMatch(relative, @"\.(docx|xlsx|pptx|odt|ods|odp|txt|pdf|png|jpe?g)\z", RegexOptions.IgnoreCase)
+        if (!Regex.IsMatch(relative, @"\.(docx?|xlsx?|pptx?|odt|ods|odp|txt|pdf|png|jpe?g)\z", RegexOptions.IgnoreCase)
             || bytes.Length == 0 || bytes.Length > 25 * 1024 * 1024) throw new ArgumentException("Format ou taille de fichier non autorise.");
         int slash = relative.LastIndexOf('/');
         if (slash < 0) throw new ArgumentException("Dossier du collaborateur manquant.");
@@ -139,6 +140,7 @@ public static class SeaPilotDriveBridge
         string module = Text(data, "module");
         if (String.IsNullOrEmpty(module)) module = "disciplinary";
         if (module == "chemicals") return ExecuteChemical(baseRoot, data, remote);
+        if (module == "humanResources") return ExecuteHr(baseRoot, data, remote);
         if (module == "procedures") return SeaPilotProcedureFiles.Execute(baseRoot, data, remote, SeaPilotProcedureFiles.ExportPdf, documentPath => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(documentPath) { UseShellExecute = true }));
         if (action == "publish" || action == "open") throw new UnauthorizedAccessException("Action non autorisee pour ce module.");
         if (action == "read") throw new UnauthorizedAccessException("Lecture non autorisee pour ce module.");
@@ -218,6 +220,53 @@ public static class SeaPilotDriveBridge
         EnsureDirectory(baseRoot, "Produits Chimiques");
         WriteFile(root, path, bytes);
         return new { path = path, bytes = bytes.Length };
+    }
+
+    // The read path comes exclusively from an RLS-protected document, not the caller.
+    public static object ExecuteHr(string baseRoot, Dictionary<string, object> data, Func<string, string, object> remote)
+    {
+        string action = Text(data, "action");
+        if (action != "read" && action != "write") throw new UnauthorizedAccessException("Action RH refusee.");
+        long id = Number(data, action == "read" ? "documentId" : "personId");
+        if (id <= 0) throw new ArgumentException("Reference RH invalide.");
+        string request = action == "read" ? Json().Serialize(new { target_document = id }) : Json().Serialize(new { target_person = id });
+        var scope = remote("rpc/hr_document_drive_scope", request) as Dictionary<string, object>;
+        if (scope == null || Text(scope, "directory") != "Ressources Humaines") throw new UnauthorizedAccessException("Acces RH refuse.");
+        string root = Path.Combine(baseRoot, "Ressources Humaines");
+        string path = action == "read" ? Text(scope, "path") : Text(data, "path");
+        SeaPilotDrive.ValidateParts(path);
+        if (path.Split('/').Length != 2 || !Regex.IsMatch(path, @"\.(pdf|png|jpe?g|docx?|xlsx?|pptx?|odt|ods|odp|txt)\z", RegexOptions.IgnoreCase))
+            throw new ArgumentException("Chemin de document RH invalide.");
+        byte[] bytes;
+        if (action == "write")
+        {
+            string folder = Text(scope, "folder");
+            SeaPilotDrive.ValidateParts(folder);
+            if (folder.Contains("/") || !path.StartsWith(folder + "/", StringComparison.Ordinal)) throw new UnauthorizedAccessException("Dossier du collaborateur refuse.");
+            bytes = Convert.FromBase64String(Text(data, "base64"));
+            EnsureDirectory(baseRoot, "Ressources Humaines");
+            WriteFile(root, path, bytes);
+        }
+        else
+        {
+            SeaPilotDrive.CheckWithinRoot(baseRoot, root);
+            string fullPath = Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar));
+            SeaPilotDrive.CheckWithinRoot(root, fullPath);
+            long expectedSize = Number(scope, "bytes");
+            if (expectedSize <= 0 || expectedSize > 25 * 1024 * 1024 || !Regex.IsMatch(Text(scope, "sha256"), @"\A[a-f0-9]{64}\z"))
+                throw new ArgumentException("Reference RH incomplete.");
+            using (var file = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                SeaPilotDrive.CheckWithinRoot(root, fullPath);
+                if (file.Length != expectedSize) throw new IOException("Synchronisation Drive incomplete ou fichier modifie.");
+                bytes = new byte[(int)expectedSize]; int offset = 0;
+                while (offset < bytes.Length) { int read = file.Read(bytes, offset, bytes.Length - offset); if (read == 0) throw new IOException("Fichier incomplet."); offset += read; }
+            }
+        }
+        string hash;
+        using (var sha = SHA256.Create()) hash = BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
+        if (action == "read" && hash != Text(scope, "sha256")) throw new IOException("Le document RH a change. Ajoutez sa nouvelle version dans SeaPilot.");
+        return new { path = path, bytes = bytes.Length, sha256 = hash, base64 = action == "read" ? Convert.ToBase64String(bytes) : null };
     }
 
     static string ReadHeaders(NetworkStream stream)
