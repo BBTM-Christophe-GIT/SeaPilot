@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+Le temps de travail rattache désormais le blocage de validation à la même journée
+que l'alerte affichée, et charge tous les calculs du mois par pagination.
+Appliquer `20260925100533_align_working_time_daily_compliance.sql` avant le client
+(déjà appliquée au projet lié). Voir [la correction et les tests](./working-time-daily-validation-attribution.md).
+
 Le Planning propose **Projet rapide** depuis **Nouvelle opération** dans les vues
 Flotte et Projet : titre seul, numéro Pxxx, statut Brouillon et ajout immédiat sur
 la case choisie, sans quitter le planning. La migration

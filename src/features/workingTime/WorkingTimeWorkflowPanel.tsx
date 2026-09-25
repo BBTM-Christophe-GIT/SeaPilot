@@ -369,18 +369,14 @@ export function WorkingTimeWorkflowPanel({
   const selectedCatalogPerson = visibleReadablePeople.find((person) => person.personId === selectedPersonId) || null;
   const displayedMonthLabel = formatMonthLabel(range.start);
   const selectedIntervals = useMemo(
-    () => workspace?.intervals.filter((interval) => interval.personId === selectedPersonId
-      && interval.localWorkDate >= range.start
-      && interval.localWorkDate <= range.end) || [],
-    [range.end, range.start, selectedPersonId, workspace?.intervals],
+    () => workspace?.intervals.filter((interval) => interval.personId === selectedPersonId) || [],
+    [selectedPersonId, workspace?.intervals],
   );
   const selectedDayIntervals = useMemo(
     () => selectedIntervals.filter((interval) => interval.localWorkDate === selectedDay),
     [selectedDay, selectedIntervals],
   );
-  const selectedCalculations = useMemo(() => workspace?.calculations.filter((calculation) => calculation.personId === selectedPersonId
-    && calculation.localWindowEndDate >= range.start
-    && calculation.localWindowEndDate <= range.end) || [], [range.end, range.start, selectedPersonId, workspace?.calculations]);
+  const selectedCalculations = useMemo(() => workspace?.calculations.filter((calculation) => calculation.personId === selectedPersonId) || [], [selectedPersonId, workspace?.calculations]);
   const selectedCalculation = useMemo(
     () => workingTimeStatusCalculation(selectedCalculations, selectedIntervals, selectedDay),
     [selectedCalculations, selectedDay, selectedIntervals],
@@ -823,7 +819,7 @@ export function WorkingTimeWorkflowPanel({
                     <button aria-selected={rightPanelTab === 'approvals'} className={rightPanelTab === 'approvals' ? 'is-active' : ''} onClick={() => setRightPanelTab('approvals')} role="tab" type="button">Approbation{pendingApprovals.length ? <em>{pendingApprovals.length}</em> : null}</button>
                   </div>
                   {rightPanelTab === 'compliance' ? <>
-                    <article className="working-time-conformity-item"><FileClock aria-hidden="true" size={20} /><span>Travail sur 7 jours</span><strong>{compactDuration(selectedCalculation?.work7dSeconds)}</strong><small>{selectedRegister.workRestPolicyId ? 'Calcul serveur P1.3' : 'Politique requise'}</small></article>
+                    <article className="working-time-conformity-item"><FileClock aria-hidden="true" size={20} /><span>Travail sur 7 jours</span><strong>{compactDuration(selectedCalculation?.work7dSeconds)}</strong><small>{selectedCalculation?.workRestPolicyId ? 'Calcul serveur P1.3' : 'Politique requise'}</small></article>
                     <article className="working-time-conformity-item"><CalendarDays aria-hidden="true" size={20} /><span>Repos consécutif actuel</span><strong>{compactDuration(selectedCalculation?.longestRest24hSeconds)}</strong><small>Fenêtre glissante de 24 h</small></article>
                     <article className="working-time-conformity-item"><Bell aria-hidden="true" size={20} /><span>Alertes</span><strong>{nonCompliantDates.includes(selectedDay) ? selectedViolationDetails.length : 0}</strong><small>{nonCompliantDates.includes(selectedDay) && selectedViolationDetails[0] ? workingTimeViolationText(selectedViolationDetails[0]) : 'Aucune alerte détectée'}</small></article>
                     <SignatureCard imageUrl={subjectSignatureEvidence ? signatureUrls[signatureKey(subjectSignatureEvidence)] : undefined} label="Titulaire du registre" signature={subjectSignatureEvidence} />
@@ -892,7 +888,7 @@ export function WorkingTimeWorkflowPanel({
                       || (isAssignedCaptainForSelectedDay && !subjectSignature)}
                     validateDisabled={!canValidate}
                     />
-                    {!selectedIntervals.length ? <p className="working-time-empty">Aucune heure saisie.</p> : null}
+                    {!selectedIntervals.some((interval) => interval.localWorkDate >= range.start && interval.localWorkDate <= range.end) ? <p className="working-time-empty">Aucune heure saisie.</p> : null}
 
                     {voidCandidateId ? (
                     <div className="working-time-void-form">

@@ -489,6 +489,50 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.queryByText('2026-08-18', { selector: '.working-time-non-compliance-card strong' })).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['2026-08-03', '2026-08-04', /mar 04 août$/],
+    ['2026-07-31', '2026-08-01', /sam 01 août$/],
+  ])('allows the assigned Captain to approve %s carry-over on %s without a false justification', async (alarmDay, day, tabName) => {
+    const user = userEvent.setup();
+    const data = workspace('draft', 20);
+    data.registers[0].workRestPolicyId = null;
+    const interval = data.intervals[0];
+    data.intervals = [
+      { ...interval, localWorkDate: alarmDay, startsAt: `${alarmDay}T15:00:00Z`, endsAt: `${alarmDay}T19:30:00Z` },
+      { ...interval, id: 201, localWorkDate: day, startsAt: `${day}T07:00:00Z`, endsAt: `${day}T10:30:00Z` },
+      { ...interval, id: 202, localWorkDate: day, startsAt: `${day}T11:30:00Z`, endsAt: `${day}T16:30:00Z` },
+    ];
+    data.calculations = [{
+      id: 402, companyId: 1, personId: 20, windowEnd: `${day}T01:00:00Z`, localWindowEndDate: day,
+      timezoneName: 'Europe/Paris', vesselId: 7, workRestPolicyId: 1, work24hSeconds: 36_000, rest24hSeconds: 50_400,
+      longestRest24hSeconds: 19_800, restPeriodCount24h: 3, work7dSeconds: 208_800, rest7dSeconds: 396_000,
+      nightWork24hSeconds: 0, isCompliant: false, violationCodes: ['consecutive_rest'], calculationVersion: 1,
+      calculatedAt: `${day}T01:00:01Z`,
+    }, {
+      id: 403, companyId: 1, personId: 20, windowEnd: `${day}T16:30:00Z`, localWindowEndDate: day,
+      timezoneName: 'Europe/Paris', vesselId: 7, workRestPolicyId: 1, work24hSeconds: 30_600, rest24hSeconds: 55_800,
+      longestRest24hSeconds: 41_400, restPeriodCount24h: 2, work7dSeconds: 228_600, rest7dSeconds: 376_200,
+      nightWork24hSeconds: 0, isCompliant: true, violationCodes: [], calculationVersion: 1,
+      calculatedAt: `${day}T16:30:01Z`,
+    }];
+    data.dayApprovals = [{
+      id: 520, companyId: 1, registerId: 100, personId: 20, localWorkDate: day,
+      status: 'submitted', planningAssignmentId: 1, vesselId: 7, watchGroup: 'Bordée 1', approverPersonId: 10,
+      submittedAt: `${day}T17:00:00Z`, validatedAt: null, validatedByPersonId: null,
+      subjectSignatureSnapshot: null, approverSignatureSnapshot: null,
+    }];
+    renderPanel(['capitaine'], data);
+    await user.click(screen.getByRole('tab', { name: tabName }));
+    expect(screen.getByText('Alertes').closest('article')).toHaveTextContent('0Aucune alerte détectée');
+    expect(screen.getByText('Calcul serveur P1.3')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Impact des 24 heures glissantes' })).toHaveTextContent('5,5 h / minimum 6 h');
+    await user.click(screen.getByRole('button', { name: 'Valider la journée' }));
+    expect(validateWorkingTimeDay).toHaveBeenCalledWith(client, 520);
+    expect(validateWorkingTimeDayWithComment).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Mois' }));
+    expect(screen.getByText(alarmDay.startsWith('2026-07') ? '8 h 30 sur le mois' : '13 h 00 sur le mois')).toBeInTheDocument();
+  });
+
   it('does not flag an empty day because of a rolling-window breach inherited from the previous day', async () => {
     const user = userEvent.setup();
     const data = workspace('draft', 20);
