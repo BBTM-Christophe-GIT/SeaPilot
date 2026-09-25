@@ -34,7 +34,7 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
@@ -203,18 +203,24 @@ function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions,
   const [file, setFile] = useState<File | null>(null);
   const [fromTemplate, setFromTemplate] = useState(false);
   const [fileError, setFileError] = useState('');
-  const projectListId = useId();
   const generatedProcedureCode = buildProcedureCode(form.theme, form.documentNumber, form.versionLabel);
   const annualReviewDueOn = form.annualReview ? getAnnualReviewDueDate(form.diffusionOn) : '';
   const numberTaken = isProcedureNumberTaken(procedures, form.theme, form.documentNumber, procedure?.id);
   const suggestedNumber = suggestNextProcedureNumber(procedures, form.theme);
   const availableProjectOptions = useMemo(() => {
-    const knownLabels = new Set(projectOptions.map(option => option.label));
-    return [...projectOptions, ...projectNames(form.projectName).filter(label => !knownLabels.has(label)).map((label, index) => ({ id: -index - 1, label }))];
+    return form.projectName && !projectOptions.some(option => option.label === form.projectName)
+      ? [...projectOptions, { id: -1, label: form.projectName }]
+      : projectOptions;
   }, [form.projectName, projectOptions]);
 
   function setValue<K extends keyof ProcedureInput>(key: K, value: ProcedureInput[K]) {
     setForm(current => ({ ...current, [key]: value }));
+  }
+  function setCreationMode(template: boolean) {
+    if (template === fromTemplate) return;
+    setFromTemplate(template);
+    setFile(null);
+    setFileError('');
   }
   function setTheme(theme: string) {
     setForm(current => ({ ...current, theme, documentNumber: theme ? suggestNextProcedureNumber(procedures, theme) : '' }));
@@ -246,9 +252,17 @@ function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions,
         <div className="procedure-form-body">
           <section className="procedure-form-section" aria-labelledby="procedure-identification-title">
             <header><FileText aria-hidden="true" size={18} /><h3 id="procedure-identification-title">Identification du document</h3></header>
-            {!procedure ? <div className="procedure-form-grid procedure-creation-mode"><label className="procedure-form-wide">Mode de création<select value={fromTemplate ? 'template' : 'existing'} disabled={saving} onChange={event => { setFromTemplate(event.target.value === 'template'); setFile(null); setFileError(''); }}>
-              <option value="existing">À partir d’un fichier existant</option><option value="template">À partir d’un modèle</option>
-            </select></label>{fromTemplate ? <small className="procedure-form-wide">Modèle Procédure.docx · le nouveau document sera créé puis ouvert dans Word.</small> : null}</div> : null}
+            {!procedure ? <div className="procedure-creation-mode" role="group" aria-labelledby="procedure-document-type">
+              <span id="procedure-document-type">Type de document</span>
+              <div className="procedure-creation-options">
+                <button type="button" aria-pressed={!fromTemplate} disabled={saving} onClick={() => setCreationMode(false)}><Upload aria-hidden="true" size={18} />Importer un fichier existant</button>
+                <button type="button" aria-pressed={fromTemplate} disabled={saving} onClick={() => setCreationMode(true)}><FilePlus2 aria-hidden="true" size={18} />Nouvelle Procédure</button>
+              </div>
+              {fromTemplate ? <small>Modèle Procédure.docx · le nouveau document sera créé puis ouvert dans Word.</small> : null}
+            </div> : null}
+            <div className="procedure-form-grid procedure-chapter-field">
+              <label className="procedure-form-wide">ISM Chapitre<select aria-label="ISM Chapitre" value={form.ismChapter} onChange={event => setChapter(event.target.value as ProcedureChapterKey)}>{CHAPTERS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+            </div>
             <div className="procedure-form-grid procedure-identity-fields">
               <label>Thème<select aria-label="Thème" required value={form.theme} onChange={event => setTheme(event.target.value)}><option value="">Choisir</option>{THEMES.map(theme => <option key={theme}>{theme}</option>)}</select></label>
               <label>Numéro<input aria-label="Numéro" aria-describedby="procedure-number-help" aria-invalid={numberTaken || undefined} required inputMode="decimal" pattern="[0-9]+(?:\.[0-9]+)*" value={form.documentNumber} onChange={event => setValue('documentNumber', event.target.value)} /></label>
@@ -257,14 +271,13 @@ function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions,
             </div>
             <small className={numberTaken ? 'procedure-field-error' : ''} id="procedure-number-help">{numberTaken ? `La combinaison ${form.theme} ${form.documentNumber.trim()} existe déjà.` : `Proposition pour ${form.theme || 'le thème'} : ${suggestedNumber || '—'}. Le numéro reste modifiable.`}</small>
             <div className="procedure-form-grid procedure-context-fields">
-              <label className="procedure-form-wide">ISM Chapitre<select aria-label="ISM Chapitre" value={form.ismChapter} onChange={event => setChapter(event.target.value as ProcedureChapterKey)}>{CHAPTERS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
               <label>Navire<select aria-label="Navire" disabled={vesselsLoading} value={form.vesselName} onChange={event => setValue('vesselName', event.target.value)}>
                 <option value="">Tous les navires (champ vide)</option>
                 {form.vesselName && form.vesselName !== 'Armement' && !vesselOptions.includes(form.vesselName) ? <option value={form.vesselName}>{form.vesselName} (valeur actuelle)</option> : null}
                 {vesselOptions.filter(name => name !== 'Armement').map(name => <option key={name}>{name}</option>)}
                 <option value="Armement">Armement</option>
               </select>{vesselsError ? <small className="procedure-field-error" role="alert">{vesselsError}</small> : null}</label>
-              <label>Projet<input aria-label="Projet" autoComplete="off" list={projectListId} placeholder="Numéro ou nom du projet" value={form.projectName} onChange={event => setValue('projectName', event.target.value)} /><datalist id={projectListId}>{availableProjectOptions.map(option => <option key={option.id} value={option.label} />)}</datalist></label>
+              <label>Projet<select aria-label="Projet" value={form.projectName} onChange={event => setValue('projectName', event.target.value)}><option value="">Aucun projet</option>{availableProjectOptions.map(option => <option key={option.id} value={option.label}>{option.label}</option>)}</select></label>
             </div>
           </section>
           <section className="procedure-form-section" aria-labelledby="procedure-lifecycle-title">

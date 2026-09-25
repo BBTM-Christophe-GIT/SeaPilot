@@ -162,6 +162,8 @@ describe('ProceduresPage', () => {
     render(<ProceduresPage client={client as never} roles={['admin']} />);
     await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
     const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByRole('button', { name: 'Importer un fichier existant' })).toHaveAttribute('aria-pressed', 'true');
+    expect(dialog.getByRole('button', { name: 'Nouvelle Procédure' })).toHaveAttribute('aria-pressed', 'false');
     expect(dialog.getByLabelText('Thème')).toHaveValue('GEN');
     expect(dialog.getByLabelText('Numéro')).toHaveValue('01');
     for (const [index, theme] of ['GEN', 'POL', 'RAC', 'DPA', 'AUT', 'REP', 'OPE', 'URG', 'SEC', 'TEC', 'SMS', 'VPC'].entries()) {
@@ -183,7 +185,8 @@ describe('ProceduresPage', () => {
     render(<ProceduresPage client={client as never} roles={['admin']} />);
     await user.click(await screen.findByLabelText('Modifier Procédure embarquement ROZEL'));
     const dialog = within(screen.getByRole('dialog'));
-    expect(dialog.queryByLabelText('Mode de création')).not.toBeInTheDocument();
+    expect(dialog.queryByRole('group', { name: 'Type de document' })).not.toBeInTheDocument();
+    expect(dialog.getByRole('combobox', { name: 'Projet' })).toHaveValue(baseMetadata.project_name);
     expect(dialog.getByLabelText('Numéro')).toHaveValue('07.1');
     await user.selectOptions(dialog.getByLabelText('ISM Chapitre'), '08');
     expect(dialog.getByLabelText('Numéro')).toHaveValue('07.1');
@@ -199,7 +202,9 @@ describe('ProceduresPage', () => {
     render(<ProceduresPage client={client as never} roles={['direction']} />);
     await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
     const dialog = within(screen.getByRole('dialog'));
-    await user.selectOptions(dialog.getByLabelText('Mode de création'), 'template');
+    await user.click(dialog.getByRole('button', { name: 'Nouvelle Procédure' }));
+    expect(dialog.getByRole('button', { name: 'Nouvelle Procédure' })).toHaveAttribute('aria-pressed', 'true');
+    expect(dialog.getByRole('button', { name: 'Importer un fichier existant' })).toHaveAttribute('aria-pressed', 'false');
     expect(dialog.queryByRole('link', { name: /Télécharger/ })).not.toBeInTheDocument();
     expect(dialog.queryByLabelText('Stockage du fichier')).not.toBeInTheDocument();
     expect(dialog.getByLabelText('Version')).toHaveValue('A');
@@ -224,7 +229,7 @@ describe('ProceduresPage', () => {
     render(<ProceduresPage client={client as never} roles={['admin']} />);
     await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
     const dialog = within(screen.getByRole('dialog'));
-    await user.selectOptions(dialog.getByLabelText('Mode de création'), 'template');
+    await user.click(dialog.getByRole('button', { name: 'Nouvelle Procédure' }));
     await user.type(dialog.getByLabelText('Titre'), 'Essai');
     await user.click(dialog.getByRole('button', { name: 'Ouvrir' }));
     expect(await dialog.findByRole('alert')).toHaveTextContent('modèle Procédure.docx est indisponible');
@@ -242,7 +247,7 @@ describe('ProceduresPage', () => {
     render(<ProceduresPage client={client as never} roles={['admin']} />);
     await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
     const dialog = within(screen.getByRole('dialog'));
-    await user.selectOptions(dialog.getByLabelText('Mode de création'), 'template');
+    await user.click(dialog.getByRole('button', { name: 'Nouvelle Procédure' }));
     await user.type(dialog.getByLabelText('Titre'), 'Copie Drive');
     await user.click(dialog.getByRole('button', { name: 'Ouvrir' }));
     expect(await dialog.findByRole('alert')).toHaveTextContent('Drive indisponible');
@@ -257,8 +262,8 @@ describe('ProceduresPage', () => {
     render(<ProceduresPage client={client as never} roles={['admin']} />);
     await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
     const dialog = within(screen.getByRole('dialog'));
-    await user.selectOptions(dialog.getByLabelText('Mode de création'), 'template');
-    await user.selectOptions(dialog.getByLabelText('Mode de création'), 'existing');
+    await user.click(dialog.getByRole('button', { name: 'Nouvelle Procédure' }));
+    await user.click(dialog.getByRole('button', { name: 'Importer un fichier existant' }));
     expect(dialog.queryByText('Modèle Procédure.docx')).not.toBeInTheDocument();
     expect(dialog.getByLabelText('Fichier à importer')).toBeRequired();
   });
@@ -324,6 +329,45 @@ describe('ProceduresPage', () => {
     expect(dialog.getByText('Aucun document ne correspond aux filtres sélectionnés.')).toBeInTheDocument();
     expect(dialog.getByRole('button', { name: 'Télécharger la liste PDF' })).toBeDisabled();
     expect(dialog.getByRole('button', { name: 'Tout sélectionner' })).toBeDisabled();
+  });
+
+  it('combines ISM chapters with vessel and status, retaining exclusions across chapter changes', async () => {
+    const user = userEvent.setup();
+    const procedures = [
+      approvedProcedureRow,
+      draftProcedureRow,
+      { ...approvedProcedureRow, id: 14, title: 'Urgences communes', vessel_name: '', ism_chapter: "08 - Préparation aux situations d’urgence" },
+      { ...approvedProcedureRow, id: 15, title: 'Maintenance commune', vessel_name: '', ism_chapter: '10' },
+      { ...approvedProcedureRow, id: 16, title: 'Sans chapitre', vessel_name: '', ism_chapter: '' },
+      { ...approvedProcedureRow, id: 17, title: 'Document non contrôlé', vessel_name: '', ism_chapter: 'Documents non contrôlés' },
+    ];
+    const { client } = createClient({ procedures });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: 'Générer une liste des documents' }));
+    const dialog = within(screen.getByRole('dialog'));
+    const chapter = dialog.getByRole('combobox', { name: 'ISM Chapitre' });
+    expect(chapter).toHaveValue('');
+    await user.selectOptions(chapter, '08');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(2);
+    await user.selectOptions(dialog.getByLabelText('Navire de la liste'), 'GOURY');
+    await user.selectOptions(dialog.getByLabelText('Statut'), 'published');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    await user.click(dialog.getByRole('button', { name: 'Tout désélectionner' }));
+    await user.selectOptions(chapter, '10');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    expect(dialog.getByLabelText('Inclure Maintenance commune')).toBeChecked();
+    await user.click(dialog.getByRole('button', { name: 'Tout sélectionner' }));
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ vessel: 'GOURY', records: [expect.objectContaining({ id: 15 })] }));
+    await user.selectOptions(chapter, '08');
+    expect(dialog.getByLabelText('Inclure Urgences communes')).not.toBeChecked();
+    expect(dialog.getByRole('button', { name: 'Télécharger la liste PDF' })).toBeDisabled();
+    await user.selectOptions(chapter, 'unassigned');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    expect(dialog.getByLabelText('Inclure Sans chapitre')).toBeChecked();
+    await user.selectOptions(chapter, 'uncontrolled');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    expect(dialog.getByLabelText('Inclure Document non contrôlé')).toBeChecked();
   });
 
   it.each(['armement', 'capitaine', 'marin'] as const)('exports only published PDFs for a real %s role fixture', async (role) => {
@@ -473,12 +517,12 @@ describe('ProceduresPage', () => {
     fireEvent.change(within(dialog).getByLabelText('Numéro'), { target: { value: '08' } });
     fireEvent.change(within(dialog).getByLabelText('Version'), { target: { value: 'a' } });
     await user.selectOptions(within(dialog).getByRole('combobox', { name: /^Navire/ }), 'LANDEMER');
-    fireEvent.change(within(dialog).getByLabelText('Projet'), { target: { value: 'P144 - GUARD VESSEL EMDT' } });
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Projet' }), 'P144 - GUARD VESSEL EMDT');
     fireEvent.change(within(dialog).getByLabelText('Date diffusion'), { target: { value: '2026-09-02' } });
     await user.click(within(dialog).getByLabelText(/Revue annuelle/));
     expect(within(dialog).getByRole('heading', { name: 'URG 08-A - Plan de préparation aux urgences' })).toBeInTheDocument();
     expect(within(dialog).getByText('Échéance le 02/09/2027')).toBeInTheDocument();
-    const projectValues = Array.from(dialog.querySelectorAll('datalist option')).map((option) => option.getAttribute('value'));
+    const projectValues = within(within(dialog).getByRole('combobox', { name: 'Projet' })).getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
     expect(projectValues).toContain('P254 - NIVELAGE QUAI BOUGAINVILLE');
     expect(projectValues).not.toContain('P264 - PROJET ARCHIVÉ');
     const sourceFile = new File(['source'], 'urgence.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });

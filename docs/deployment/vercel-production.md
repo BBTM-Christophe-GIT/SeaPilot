@@ -1,5 +1,15 @@
 # SeaPilot Vercel Production Notes
 
+Le module Procédures propose le modèle Word fourni, les boutons **Importer un fichier
+existant / Nouvelle Procédure**, le chapitre ISM avant la référence et une liste de
+projets. La liste des documents se filtre aussi par chapitre ISM et affiche une ligne
+compacte par document. Le lanceur Windows **2.3.0** crée les dossiers de modules et
+convertit les sources Office en PDF lors de la publication. Les migrations
+`20260925072400_procedures_drive_workflow.sql` et
+`20260925073813_procedures_drive_receipt_validation.sql` précèdent le frontend et sont
+déjà appliquées. Voir [le modèle et le formulaire](./procedures-template-ism.md),
+[les listes](./procedures-vessel-list.md) et [Google Drive](./procedures-google-drive.md).
+
 Le build `2026-09-24.001` de la version `3.55.0` ajoute, à la demande de
 l’utilisateur, une note annonçant le module **Notes de Frais**, le suivi des notes
 émises et l’arrêt de l’ancienne application à la fin de septembre 2026. Son nouvel

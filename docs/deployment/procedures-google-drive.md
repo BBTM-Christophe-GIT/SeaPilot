@@ -25,7 +25,7 @@ reste réservée aux gestionnaires autorisés.
 
 ## Création et import
 
-**Nouveau document → À partir d'un modèle → Ouvrir** copie le modèle fourni dans
+**Nouveau document → Nouvelle Procédure → Ouvrir** copie le modèle fourni dans
 `Procedures`, crée la fiche, ferme la fenêtre puis ouvre le document dans Word.
 Le nom est **Thème Numéro Version - Titre.docx**. Version initiale : **A**.
 Les informations saisies décrivent la fiche ; le modèle Word reste à compléter.

@@ -1,8 +1,14 @@
 # Création de procédures à partir du modèle Word
 
-Dans **Nouveau document**, le champ **Mode de création** propose **À partir d’un
-fichier existant** et **À partir d’un modèle** aux profils Administration et
-Direction.
+Dans **Nouveau document**, **Type de document** propose deux boutons avec icônes :
+**Importer un fichier existant** et **Nouvelle Procédure**, pour les profils
+Administration et Direction. Le premier est sélectionné à l'ouverture.
+
+**ISM Chapitre** précède la ligne **Thème, Numéro, Version, Titre**. Navire et
+Projet suivent cette ligne. **Projet** est une liste déroulante des projets actifs
+du module Projet (code et titre), avec l'option **Aucun projet**. La modification
+conserve une ancienne valeur, y compris une association historique à plusieurs
+projets, tant qu'un autre projet n'est pas sélectionné.
 
 Le modèle `public/templates/procedure.docx` est la copie exacte du fichier
 `Procédure.docx` fourni. Il conserve sa page de garde, ses styles, son historique
@@ -10,7 +16,7 @@ des révisions, sa table des matières et ses champs Word. Il ne contient aucun
 document de travail rempli. Les informations saisies dans SeaPilot constituent
 la fiche documentaire ; le contenu Word reste à compléter dans Word.
 
-En mode modèle, le bouton **Ouvrir** crée une copie exacte du modèle dans
+Avec **Nouvelle Procédure**, le bouton **Ouvrir** crée une copie exacte du modèle dans
 `SeaPilot/Procedures`, enregistre la fiche, ferme la fenêtre puis ouvre Word.
 Le nom est `Thème Numéro Version - Titre.docx`, avec `A` comme version initiale.
 Aucun téléchargement manuel du modèle ni choix de stockage n'est nécessaire.
