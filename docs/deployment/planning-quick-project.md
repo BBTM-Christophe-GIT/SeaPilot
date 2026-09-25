@@ -11,7 +11,7 @@ Les droits de création restent ceux du module Projets : Admin et Direction.
 Armement conserve le rattachement d'un projet existant. Les profils terrain
 restent en lecture seule. Le bouton de création complète reste disponible.
 
-Appliquer `20260925090102_planning_quick_draft_project.sql` avant le frontend.
+Appliquer `20260925090628_planning_quick_draft_project.sql` avant le frontend.
 La RPC `planning_create_quick_project` utilise SECURITY INVOKER et appelle les
 fonctions métier existantes dans une transaction unique. La numérotation utilise
 le compteur existant, les droits et la société sont vérifiés côté serveur et
