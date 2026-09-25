@@ -19,6 +19,15 @@ Chaque document occupe une seule ligne compacte avec case à cocher, référence
 titre côte à côte, navire, version et statut. Les titres longs restent disponibles
 au survol ; sur mobile, le tableau défile horizontalement dans la fenêtre.
 
+La liste forme une arborescence par chapitre ISM, dans l'ordre 01 à 13 puis
+Documents non contrôlés et Chapitre non renseigné. Chaque chapitre contenant des
+documents affiche un dossier repliable et son nombre de documents ; les documents
+sont indentés et triés par référence avec numérotation naturelle. Les chapitres
+sont dépliés à l'ouverture. **Tout déplier / Tout replier** agit uniquement sur
+l'affichage : replier un chapitre conserve les cases cochées, le compteur et les
+documents inclus dans l'export. Les filtres et la sélection globale s'appliquent
+également aux documents des chapitres repliés.
+
 Tous les documents disponibles sont cochés initialement. La sélection individuelle et les boutons
 Tout sélectionner / Tout désélectionner portent sur les documents correspondant au chapitre, au navire et au statut
 affichés. Les exclusions sont conservées pendant les changements de filtre et réinitialisées
