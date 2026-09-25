@@ -19,7 +19,6 @@ import {
   RefreshCw,
   ReceiptText,
   RotateCcw,
-  Rows3,
   Share2,
   Ship,
   Trash2,
@@ -1294,7 +1293,6 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [serviceCatalogOpen, setServiceCatalogOpen] = useState(false);
   const [planningEditorOpen, setPlanningEditorOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [compactDensity, setCompactDensity] = useState(true);
   const [editingProject, setEditingProject] = useState<ProjectRecord | undefined>();
   const [editingOccurrence, setEditingOccurrence] = useState<ProjectPlanningOccurrenceRecord | undefined>();
   const [mutationMessage, setMutationMessage] = useState('');
@@ -1706,7 +1704,6 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         <ProjectRibbonGroup label="Affichage">
           <ProjectRibbonButton aria-pressed={filtersOpen} icon={<Filter aria-hidden="true" size={20} />} label="Filtres" onClick={() => setFiltersOpen((open) => !open)} />
           <ProjectRibbonButton disabled={!hasActiveFilters} icon={<RotateCcw aria-hidden="true" size={20} />} label="Réinitialiser" onClick={resetFilters} />
-          <ProjectRibbonButton aria-pressed={compactDensity} icon={<Rows3 aria-hidden="true" size={20} />} label="Densité" onClick={() => setCompactDensity((compact) => !compact)} />
         </ProjectRibbonGroup>
       </nav>
 
@@ -1812,7 +1809,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           </div>
         </div>
       ) : (
-        <div className={`projects-read-layout project-contract-workspace${compactDensity ? ' is-compact' : ''}`}>
+        <div className="projects-read-layout project-contract-workspace is-compact">
           <section className="projects-panel project-list-panel" aria-labelledby="projects-list-title">
             <div className="project-contract-list-heading">
               <div>
