@@ -5,3 +5,16 @@
   line-height: 1.6;
   margin: 10px 0 0;
 }
+
+.procedure-template-notice {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f0f6fc;
+  color: #334c65;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.procedure-template-notice p { margin: 4px 0 8px; }
+.procedure-template-notice a { display: inline-flex; align-items: center; gap: 6px; color: #126ebe; }

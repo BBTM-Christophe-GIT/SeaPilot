@@ -68,7 +68,8 @@ import { googleDriveFileUrl, parseProcedureDriveLink } from './procedureGoogleDr
 import './procedureGoogleDrive.css';
 import { ProcedureListDialog } from './ProcedureListDialog';
 import { procedureAppliesToVessel } from './procedureList';
-import { CHAPTERS, chapterKey, type ProcedureChapterKey } from './procedureChapters';
+import { CHAPTERS, ISM_CHAPTER_THEMES, chapterKey, type ProcedureChapterKey } from './procedureChapters';
+import { createProcedureTemplateFile, PROCEDURE_TEMPLATE_URL } from './procedureTemplate';
 
 interface ProceduresPageProps {
   client?: SupabaseClient;
@@ -109,7 +110,7 @@ const EMPTY_FILTERS: ProcedureFilterState = { search: '', project: '', vessel: '
 const EMPTY_FORM: ProcedureInput = {
   procedureCode: '', title: '', status: 'draft', revisionLabel: '', diffusionOn: '', categoryLabel: '',
   description: '', regulatoryRequirement: '', ismChapter: '01', vesselName: '', projectName: '', documentNumber: '',
-  restrictions: '', annualReview: false, theme: '', documentType: '',
+  restrictions: '', annualReview: false, theme: ISM_CHAPTER_THEMES['01']!, documentType: '',
   bridgeWatch: false, versionLabel: '', notes: '',
 };
 
@@ -196,8 +197,12 @@ interface ProcedureEditorProps {
 }
 
 function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions, vesselsLoading, vesselsError, onClose, onSave, saving }: ProcedureEditorProps) {
-  const [form, setForm] = useState(() => procedure ? formFromProcedure(procedure) : { ...EMPTY_FORM });
+  const [form, setForm] = useState(() => procedure ? formFromProcedure(procedure) : {
+    ...EMPTY_FORM, documentNumber: suggestNextProcedureNumber(procedures, EMPTY_FORM.theme),
+  });
   const [file, setFile] = useState<File | null>(null);
+  const [fromTemplate, setFromTemplate] = useState(false);
+  const [preparingTemplate, setPreparingTemplate] = useState(false);
   const [usesDrive, setUsesDrive] = useState(procedure ? Boolean(procedure.googleDriveFileId) : true);
   const [driveUrl, setDriveUrl] = useState(procedure?.googleDriveFileId ? googleDriveFileUrl(procedure.googleDriveFileId) : '');
   const [drivePath, setDrivePath] = useState(procedure?.googleDrivePath || '');
@@ -229,23 +234,45 @@ function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions,
     }));
   }
 
+  function setChapter(ismChapter: ProcedureChapterKey) {
+    const theme = ISM_CHAPTER_THEMES[ismChapter] || '';
+    setForm((current) => ({
+      ...current, ismChapter, theme,
+      documentNumber: theme === current.theme ? current.documentNumber
+        : theme ? suggestNextProcedureNumber(procedures, theme) : '',
+    }));
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (numberTaken) return;
+    if (numberTaken || saving || preparingTemplate) return;
     if (usesDrive) {
       try { parseProcedureDriveLink(driveUrl, drivePath); }
       catch (error) { setFileError((error as Error).message); return; }
     }
     setFileError('');
     const versionLabel = form.versionLabel.trim().toUpperCase();
-    await onSave({
+    const input = {
       ...form,
       googleDriveUrl: usesDrive ? driveUrl : '',
       googleDrivePath: usesDrive ? drivePath : '',
       procedureCode: buildProcedureCode(form.theme, form.documentNumber, versionLabel),
       revisionLabel: versionLabel,
       versionLabel,
-    }, file);
+    };
+    if (fromTemplate && !usesDrive) {
+      setPreparingTemplate(true);
+      try {
+        const templateFile = await createProcedureTemplateFile(input.procedureCode, input.title);
+        await onSave(input, templateFile);
+      } catch (error) {
+        setFileError(error instanceof Error ? error.message : 'Le modèle n’a pas pu être chargé. Réessayez.');
+      } finally {
+        setPreparingTemplate(false);
+      }
+    } else {
+      await onSave(input, file);
+    }
   }
 
   return (
@@ -257,14 +284,32 @@ function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions,
             <h2 id="procedure-editor-title">{identity}</h2>
             <p>La référence est générée automatiquement à partir du thème, du numéro et de la version.</p>
           </div>
-          <button aria-label="Fermer" onClick={onClose} type="button"><X size={19} /></button>
+          <button aria-label="Fermer" disabled={saving || preparingTemplate} onClick={onClose} type="button"><X size={19} /></button>
         </header>
         <form onSubmit={handleSubmit}>
           <div className="procedure-form-body">
+            {!procedure ? <section className="procedure-form-section" aria-labelledby="procedure-creation-title">
+              <header><FilePlus2 aria-hidden="true" size={18} /><div><h3 id="procedure-creation-title">Nouveau document</h3><p>Choisissez comment commencer votre document.</p></div></header>
+              <div className="procedure-form-grid">
+                <label className="procedure-form-wide">Mode de création<select value={fromTemplate ? 'template' : 'existing'} onChange={(event) => {
+                  const useTemplate = event.target.value === 'template';
+                  setFromTemplate(useTemplate);
+                  setUsesDrive(!useTemplate);
+                  setFile(null);
+                  setFileError('');
+                }}><option value="existing">À partir d’un fichier existant</option><option value="template">À partir d’un modèle</option></select></label>
+                {fromTemplate ? <div className="procedure-form-wide procedure-template-notice">
+                  <strong>Modèle Procédure.docx</strong>
+                  <p>Page de garde, historique des révisions, table des matières et rubriques de la procédure. Le contenu du modèle est à compléter dans Word.</p>
+                  <a href={PROCEDURE_TEMPLATE_URL} download="Procédure.docx"><Download aria-hidden="true" size={16} />Télécharger le modèle Word</a>
+                </div> : null}
+              </div>
+            </section> : null}
             <section className="procedure-form-section" aria-labelledby="procedure-identification-title">
               <header><FileText aria-hidden="true" size={18} /><div><h3 id="procedure-identification-title">Identification du document</h3><p>Les informations essentielles qui structurent la bibliothèque QSMS.</p></div></header>
               <div className="procedure-form-grid">
                 <label className="procedure-form-wide">Titre<input required value={form.title} onChange={(event) => setValue('title', event.target.value)} /></label>
+                <label className="procedure-form-wide">ISM Chapitre<select aria-label="ISM Chapitre" aria-describedby="procedure-theme-help" value={form.ismChapter} onChange={(event) => setChapter(event.target.value as ProcedureChapterKey)}>{CHAPTERS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><small id="procedure-theme-help">Les chapitres 01 à 12 renseignent automatiquement le thème. Le thème reste modifiable.</small></label>
                 <label>Thème<select value={form.theme} onChange={(event) => setTheme(event.target.value)}><option value="">Non renseigné</option>{THEMES.map((theme) => <option key={theme}>{theme}</option>)}</select></label>
                 <label>Numéro
                   <input
@@ -294,7 +339,6 @@ function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions,
                 </select><small>{vesselsLoading ? 'Chargement de la flotte…' : 'Laissez ce champ vide pour une procédure commune à toute la flotte.'}</small>
                   {vesselsError ? <small className="procedure-field-error" role="alert">{vesselsError}</small> : null}
                 </label>
-                <label className="procedure-form-wide">ISM Chapitre<select value={form.ismChapter} onChange={(event) => setValue('ismChapter', event.target.value)}>{CHAPTERS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
                 <label className="procedure-form-wide">Projet
                   <div className="procedure-project-combobox"><FolderKanban aria-hidden="true" size={16} /><input aria-label="Projet" autoComplete="off" list={projectListId} placeholder="Rechercher par numéro ou nom de projet…" value={form.projectName} onChange={(event) => setValue('projectName', event.target.value)} /></div>
                   <datalist id={projectListId}>{availableProjectOptions.map((option) => <option key={option.id} value={option.label} />)}</datalist>
@@ -325,11 +369,11 @@ function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions,
               <header><Upload aria-hidden="true" size={18} /><div><h3 id="procedure-file-title">Fichier de travail</h3><p>Le fichier source reste privé et accessible uniquement aux profils autorisés.</p></div></header>
               <div className="procedure-form-grid"><label className="procedure-form-wide">Stockage du fichier<select aria-label="Stockage du fichier" value={usesDrive ? 'google-drive' : 'supabase'} onChange={(event) => { setUsesDrive(event.target.value === 'google-drive'); setFile(null); setFileError(''); }}><option value="supabase">SeaPilot</option><option value="google-drive">Google Drive synchronisé</option></select></label></div>
               {usesDrive ? <div className="procedure-form-grid procedure-drive-form">
-                <p className="procedure-form-wide">Enregistrez le fichier Word ou Excel dans le dossier Google Drive synchronisé, puis liez-le ici. Les modifications enregistrées dans Office seront synchronisées par Drive pour ordinateur.</p>
+                <p className="procedure-form-wide">{fromTemplate ? 'Téléchargez le modèle Word ci-dessus, complétez-le et enregistrez votre copie dans le dossier Google Drive synchronisé, puis liez-la ici.' : 'Enregistrez le fichier Word ou Excel dans le dossier Google Drive synchronisé, puis liez-le ici.'} Les modifications enregistrées dans Office seront synchronisées par Drive pour ordinateur.</p>
                 <label className="procedure-form-wide">Lien du fichier Google Drive<input required type="url" placeholder="https://drive.google.com/file/d/…/view" value={driveUrl} onChange={(event) => setDriveUrl(event.target.value)} /></label>
                 <label className="procedure-form-wide">Chemin dans le dossier synchronisé<input aria-label="Chemin dans le dossier synchronisé" required placeholder="URG/Procedure.docx" value={drivePath} onChange={(event) => setDrivePath(event.target.value)} /><small>Chemin relatif au sous-dossier Procedures de SeaPilot. Après un déplacement ou un renommage, mettez ce chemin à jour.</small></label>
                 <p className="procedure-form-wide">Réservez l’accès au dossier Google Drive source aux gestionnaires autorisés.</p>
-              </div> : <label className="procedure-file-field">
+              </div> : fromTemplate ? <p className="procedure-template-notice">Une copie du modèle Procédure.docx sera enregistrée comme fichier source à la validation. Vous pourrez ensuite la télécharger pour la compléter dans Word.</p> : <label className="procedure-file-field">
                 <Upload size={18} />
                 <span>{procedure ? 'Enregistrer une nouvelle version du fichier source (facultatif)' : 'Fichier source modifiable'}</span>
                 <input accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.txt" required={!procedure || Boolean(procedure.googleDriveFileId)} type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} />
@@ -338,7 +382,7 @@ function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions,
               {fileError ? <p className="form-error" role="alert">{fileError}</p> : null}
             </section>
           </div>
-          <footer><button className="procedure-button-secondary" onClick={onClose} type="button">Annuler</button><button className="procedure-button-primary" disabled={saving || numberTaken} type="submit">{saving ? 'Enregistrement…' : 'Enregistrer'}</button></footer>
+          <footer><button className="procedure-button-secondary" disabled={saving || preparingTemplate} onClick={onClose} type="button">Annuler</button><button className="procedure-button-primary" disabled={saving || preparingTemplate || numberTaken} type="submit">{preparingTemplate ? 'Préparation du modèle…' : saving ? 'Enregistrement…' : 'Enregistrer'}</button></footer>
         </form>
       </section>
     </div>

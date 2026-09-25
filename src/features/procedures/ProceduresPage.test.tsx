@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ProceduresPage } from './ProceduresPage';
 import { downloadProcedureListPdf } from './procedureListPdf';
 
 vi.mock('./procedureListPdf', () => ({ downloadProcedureListPdf: vi.fn().mockResolvedValue(undefined) }));
+afterEach(() => vi.unstubAllGlobals());
 
 const baseMetadata = {
   category_label: 'Procédure d’urgence',
@@ -144,6 +145,113 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
 }
 
 describe('ProceduresPage', () => {
+  it('assigns all twelve ISM themes and updates the suggested number when the theme changes', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ procedures: [{ ...approvedProcedureRow, theme: 'OPE', document_number: '18' }] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByLabelText('Thème')).toHaveValue('GEN');
+    expect(dialog.getByLabelText('Numéro')).toHaveValue('01');
+    for (const [index, theme] of ['GEN', 'POL', 'RAC', 'DPA', 'AUT', 'REP', 'OPE', 'URG', 'SEC', 'TEC', 'SMS', 'VPC'].entries()) {
+      await user.selectOptions(dialog.getByLabelText('ISM Chapitre'), String(index + 1).padStart(2, '0'));
+      expect(dialog.getByLabelText('Thème')).toHaveValue(theme);
+      expect(dialog.getByLabelText('Numéro')).toHaveValue(theme === 'OPE' ? '19' : '01');
+    }
+    for (const chapter of ['13', 'uncontrolled', 'unassigned']) {
+      await user.selectOptions(dialog.getByLabelText('ISM Chapitre'), chapter);
+      expect(dialog.getByLabelText('Thème')).toHaveValue('');
+      await user.selectOptions(dialog.getByLabelText('Thème'), 'ADM');
+      expect(dialog.getByLabelText('Thème')).toHaveValue('ADM');
+    }
+  });
+
+  it('preserves an existing document until its chapter changes and keeps its number for the same theme', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ procedures: [{ ...approvedProcedureRow, theme: 'URG', document_number: '07.1' }] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByLabelText('Modifier Procédure embarquement ROZEL'));
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.queryByLabelText('Mode de création')).not.toBeInTheDocument();
+    expect(dialog.getByLabelText('Numéro')).toHaveValue('07.1');
+    await user.selectOptions(dialog.getByLabelText('ISM Chapitre'), '08');
+    expect(dialog.getByLabelText('Numéro')).toHaveValue('07.1');
+    await user.selectOptions(dialog.getByLabelText('ISM Chapitre'), '10');
+    expect(dialog.getByLabelText('Thème')).toHaveValue('TEC');
+    expect(dialog.getByLabelText('Numéro')).toHaveValue('01');
+  });
+
+  it('creates a private Word source from the template without a manual upload', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new Uint8Array([80, 75, 3, 4, 42]).buffer }));
+    const { client, upload, procedureInsert } = createClient({ procedures: [], publications: [] });
+    render(<ProceduresPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
+    const dialog = within(screen.getByRole('dialog'));
+    await user.selectOptions(dialog.getByLabelText('Mode de création'), 'template');
+    expect(dialog.getByRole('link', { name: 'Télécharger le modèle Word' })).toHaveAttribute('href', '/templates/procedure.docx');
+    expect(dialog.getByLabelText('Stockage du fichier')).toHaveValue('supabase');
+    expect(dialog.queryByLabelText(/Fichier source modifiable/i)).not.toBeInTheDocument();
+    await user.type(dialog.getByLabelText('Titre'), 'Plan urgence');
+    await user.selectOptions(dialog.getByLabelText('ISM Chapitre'), '08');
+    await user.type(dialog.getByLabelText('Version'), 'a');
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    expect(await screen.findByText('Document QSMS ajouté.')).toBeInTheDocument();
+    expect(upload).toHaveBeenCalledWith(expect.stringMatching(/^sources\//), expect.objectContaining({ name: 'URG 01-A - Plan urgence.docx', size: 5 }), expect.objectContaining({ upsert: false }));
+    expect(procedureInsert).toHaveBeenCalledWith(expect.objectContaining({ theme: 'URG', ism_chapter: '08', document_number: '01', source_file_name: 'URG 01-A - Plan urgence.docx' }));
+  });
+
+  it('keeps the dialog open on template failure and allows a retry', async () => {
+    const user = userEvent.setup();
+    const fetch = vi.fn().mockResolvedValueOnce({ ok: false }).mockResolvedValue({ ok: true, arrayBuffer: async () => new Uint8Array([80, 75, 3, 4]).buffer });
+    vi.stubGlobal('fetch', fetch);
+    const { client, upload, procedureInsert } = createClient({ procedures: [], publications: [] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
+    const dialog = within(screen.getByRole('dialog'));
+    await user.selectOptions(dialog.getByLabelText('Mode de création'), 'template');
+    await user.type(dialog.getByLabelText('Titre'), 'Essai');
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    expect(await dialog.findByRole('alert')).toHaveTextContent('modèle Procédure.docx est indisponible');
+    expect(upload).not.toHaveBeenCalled();
+    expect(procedureInsert).not.toHaveBeenCalled();
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    expect(await screen.findByText('Document QSMS ajouté.')).toBeInTheDocument();
+  });
+
+  it('supports saving a downloaded template in Drive without uploading another copy', async () => {
+    const user = userEvent.setup();
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    const { client, upload, procedureInsert } = createClient({ procedures: [], publications: [] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
+    const dialog = within(screen.getByRole('dialog'));
+    await user.selectOptions(dialog.getByLabelText('Mode de création'), 'template');
+    await user.selectOptions(dialog.getByLabelText('Stockage du fichier'), 'google-drive');
+    await user.type(dialog.getByLabelText('Titre'), 'Copie Drive');
+    await user.type(dialog.getByLabelText('Lien du fichier Google Drive'), 'https://drive.google.com/file/d/1234567890abcdef/view');
+    await user.type(dialog.getByLabelText('Chemin dans le dossier synchronisé'), 'GEN/Copie.docx');
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    expect(await screen.findByText('Document QSMS ajouté.')).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
+    expect(procedureInsert).toHaveBeenCalledWith(expect.objectContaining({ source_google_drive_file_id: '1234567890abcdef', source_google_drive_path: 'GEN/Copie.docx' }));
+  });
+
+  it('restores the existing-file workflow when leaving template creation', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
+    const dialog = within(screen.getByRole('dialog'));
+    await user.selectOptions(dialog.getByLabelText('Mode de création'), 'template');
+    await user.selectOptions(dialog.getByLabelText('Mode de création'), 'existing');
+    expect(dialog.queryByText('Modèle Procédure.docx')).not.toBeInTheDocument();
+    await user.selectOptions(dialog.getByLabelText('Stockage du fichier'), 'supabase');
+    expect(dialog.getByLabelText(/Fichier source modifiable/i)).toBeRequired();
+  });
+
   it('lists vessel-specific and common documents, exporting only the checked documents in the current scope', async () => {
     const user = userEvent.setup();
     const common = { ...approvedProcedureRow, id: 14, title: 'Procédure commune', vessel_name: null };

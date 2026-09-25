@@ -18,6 +18,12 @@ export const CHAPTERS = [
 
 export type ProcedureChapterKey = typeof CHAPTERS[number][0];
 
+export const ISM_CHAPTER_THEMES: Partial<Record<ProcedureChapterKey, string>> = {
+  '01': 'GEN', '02': 'POL', '03': 'RAC', '04': 'DPA',
+  '05': 'AUT', '06': 'REP', '07': 'OPE', '08': 'URG',
+  '09': 'SEC', '10': 'TEC', '11': 'SMS', '12': 'VPC',
+};
+
 export function chapterKey(value: string): ProcedureChapterKey {
   const match = value.match(/^\s*(0[1-9]|1[0-3])/);
   if (match) return match[1] as ProcedureChapterKey;
