@@ -50,6 +50,11 @@ rattachés restent identifiés par leur identifiant SharePoint ou, à défaut, l
 nom enregistré dans un dossier historique distinct, sans rattachement arbitraire
 à un compte courant.
 
+`hr_legacy_document_metadata` permet la mise à jour des métadonnées de ces
+imports sans identifiant. Le contrôle d'entreprise continue de vérifier chaque
+création et changement de collaborateur ou d'entreprise ; les règles RLS
+et la validation des chemins Drive restent actives.
+
 Le script produit dans un dossier hors Git `before.json`, `manifest.json` et,
 si nécessaire, `unavailable.json`. Un original SharePoint récupéré par le
 connecteur peut être fourni dans `-SharePointFiles` sous `<id>.source` ; sa taille

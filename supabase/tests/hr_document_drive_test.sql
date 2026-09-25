@@ -1,5 +1,8 @@
 -- Real database profiles; no simulated Marin or Capitaine session.
 begin;
+-- Existing unlinked imports can receive file metadata without inventing a person.
+-- The transaction rolls this no-op back with every other fixture.
+update public.hr_documents set notes=notes where person_id is null;
 create temporary table hr_drive_roles(user_id uuid, role_key text);
 insert into hr_drive_roles values
  ('77000000-0000-0000-0000-000000000211','admin'),
@@ -34,6 +37,14 @@ begin
   if r.role_key in ('admin','direction','armement') then
    scope:=public.hr_document_drive_scope(person,null);
    assert scope->>'folder' is not null,'Managers can write to their authorized collaborator folder';
+   begin
+    update public.hr_documents set person_id=null where id=document;
+    raise exception 'Removing the collaborator was accepted';
+   exception when check_violation then null; end;
+   begin
+    update public.hr_documents set company_id=-1 where id=document;
+    raise exception 'Cross-company reassignment was accepted';
+   exception when check_violation then null; end;
    begin
     update public.hr_documents set drive_path='Another person - c999-p999/stolen.pdf' where id=document;
     raise exception 'Forged folder was accepted';

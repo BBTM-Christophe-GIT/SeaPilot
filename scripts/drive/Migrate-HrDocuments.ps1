@@ -100,8 +100,10 @@ if (!$Activate) {
     Write-Output "Copied and locally verified $($manifest.Count) documents; $($failures.Count) sources unavailable. Database references unchanged."
     exit
 }
-$verified = @(Get-Content -LiteralPath (Join-Path $work 'cloud-verified.json') -Raw | ConvertFrom-Json)
-$manifest = @(Get-Content -LiteralPath (Join-Path $work 'manifest.json') -Raw | ConvertFrom-Json)
+# Windows PowerShell 5.1 emits the JSON array as one pipeline object. Direct
+# assignment keeps the actual entries instead of wrapping them in another array.
+$verified = Get-Content -LiteralPath (Join-Path $work 'cloud-verified.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$manifest = Get-Content -LiteralPath (Join-Path $work 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($verified.Count -ne $manifest.Count) { throw 'Cloud verification is incomplete.' }
 foreach ($entry in $manifest) {
     $match = @($verified | Where-Object {$_.id -eq $entry.id -and $_.path -ceq $entry.path -and $_.md5 -eq $entry.md5 -and $_.bytes -eq $entry.bytes -and $_.driveFileId})

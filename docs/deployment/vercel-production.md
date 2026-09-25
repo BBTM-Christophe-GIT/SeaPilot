@@ -2,7 +2,8 @@
 
 RH / Brevets ajoute **Attestation de droits** et **Carte Vitale**, et utilise le
 lanceur Windows **2.4.0** pour les pièces dans Google Drive, classées par
-collaborateur. Appliquer `hr_documents_google_drive` avant le frontend, vérifier
+collaborateur. Appliquer `hr_documents_google_drive` puis
+`hr_legacy_document_metadata` avant le frontend, vérifier
 les copies cloud avant d'activer les références migrées et mettre à jour le
 lanceur sur chaque poste. Voir [la migration et les contrôles](./hr-documents-google-drive.md).
 
