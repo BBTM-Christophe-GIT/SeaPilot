@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+RH / Brevets ajoute **Attestation de droits** et **Carte Vitale**, et utilise le
+lanceur Windows **2.4.0** pour les pièces dans Google Drive, classées par
+collaborateur. Appliquer `hr_documents_google_drive` avant le frontend, vérifier
+les copies cloud avant d'activer les références migrées et mettre à jour le
+lanceur sur chaque poste. Voir [la migration et les contrôles](./hr-documents-google-drive.md).
+
 Le temps de travail rattache désormais le blocage de validation à la même journée
 que l'alerte affichée, et charge tous les calculs du mois par pagination.
 Appliquer `20260925100533_align_working_time_daily_compliance.sql` avant le client

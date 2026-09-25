@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { readHrDriveFile, writeHrDriveFile } from './hrDocumentDrive';
 import type { RoleKey } from '../permissions/roles';
 
 const PEOPLE_SELECT = [
@@ -64,6 +65,9 @@ const HR_DOCUMENT_SELECT = [
   'source_label',
   'notes',
   'file_url',
+  'drive_path',
+  'drive_sha256',
+  'drive_file_id',
   'storage_bucket',
   'storage_path',
   'file_size_bytes',
@@ -191,6 +195,9 @@ interface HrDocumentRow {
   source_label: string | null;
   notes: string | null;
   file_url: string | null;
+  drive_path?: string | null;
+  drive_sha256?: string | null;
+  drive_file_id?: string | null;
   storage_bucket?: string | null;
   storage_path?: string | null;
   file_size_bytes?: number | string | null;
@@ -268,6 +275,9 @@ export interface HrDocumentRecord {
   sourceLabel: string;
   notes: string;
   fileUrl: string;
+  drivePath?: string;
+  driveSha256?: string;
+  driveFileId?: string;
   storageBucket: string;
   storagePath: string;
   fileSizeBytes: number | null;
@@ -707,17 +717,6 @@ export function buildGeneratedHrDocumentFileNameFromType(
   return parts.length >= 2 ? `${parts.join(' - ')}${extension}` : '';
 }
 
-function buildHrDocumentStoragePath(person: PersonRecord, fileName: string): string {
-  const storageFileName = fileName
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9 ._-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return `people/${person.id}/${storageFileName}`;
-}
-
 const HR_DOCUMENT_FILE_NAME_ALIASES = new Map<string, string>([
   ['asn agent de surete du navire', 'ASN'],
   ['caeers certificat d exploitation des embarcations et radeaux de sauvetage', 'CAEERS'],
@@ -874,6 +873,9 @@ export function mapHrDocumentRows(rows: HrDocumentRow[]): HrDocumentRecord[] {
     sourceLabel: nullableText(row.source_label),
     notes: nullableText(row.notes),
     fileUrl: nullableText(row.file_url),
+    drivePath: nullableText(row.drive_path),
+    driveSha256: nullableText(row.drive_sha256),
+    driveFileId: nullableText(row.drive_file_id),
     storageBucket: nullableText(row.storage_bucket),
     storagePath: nullableText(row.storage_path),
     fileSizeBytes: nullableNumber(row.file_size_bytes),
@@ -1396,15 +1398,6 @@ export async function updatePersonActive(
   return mapPersonRows([data as unknown as PersonRow])[0];
 }
 
-function isDuplicateStorageObjectError(error: { message?: string; statusCode?: string | number } | null): boolean {
-  if (!error) {
-    return false;
-  }
-
-  const message = normalizeSearchValue(error.message || '');
-  return error.statusCode === 409 || message.includes('already exists') || message.includes('duplicate');
-}
-
 export async function createHrDocument(
   client: SupabaseClient,
   input: CreateHrDocumentInput,
@@ -1421,19 +1414,7 @@ export async function createHrDocument(
     throw new Error('Le nom du nouveau document ne peut pas etre genere.');
   }
 
-  const storagePath = buildHrDocumentStoragePath(input.person, fileName);
-  const { error: uploadError } = await client.storage.from(HR_DOCUMENT_STORAGE_BUCKET).upload(storagePath, input.file, {
-    contentType: input.file.type || undefined,
-    upsert: false,
-  });
-
-  if (uploadError) {
-    if (isDuplicateStorageObjectError(uploadError)) {
-      throw new Error(`Le fichier "${fileName}" existe deja. Modifiez le document ou la date d echeance.`);
-    }
-
-    throw uploadError;
-  }
+  const drive = await writeHrDriveFile(client, input.person.id, fileName, input.file);
 
   const isMedicalVisit = input.documentType.categoryKey === 'medical_visit';
   const payload = {
@@ -1444,11 +1425,13 @@ export async function createHrDocument(
     status: statusFromDueDate(input.dueDate),
     expires_on: optionalText(input.dueDate),
     requires_captain_validation: false,
-    source_label: 'supabase',
+    source_label: 'google_drive',
+    ...drive,
+    drive_file_id: null,
     notes: null,
     file_url: null,
-    storage_bucket: HR_DOCUMENT_STORAGE_BUCKET,
-    storage_path: storagePath,
+    storage_bucket: null,
+    storage_path: null,
     file_size_bytes: input.file.size,
     mime_type: input.file.type || null,
     medical_restriction: isMedicalVisit ? optionalText(input.medicalRestriction) : null,
@@ -1458,8 +1441,8 @@ export async function createHrDocument(
   const { data, error } = await client.from('hr_documents').insert(payload).select(HR_DOCUMENT_SELECT).single();
 
   if (error) {
-    await client.storage.from(HR_DOCUMENT_STORAGE_BUCKET).remove([storagePath]);
-    throw error;
+    // Preserve the verified Drive file so a failed metadata save never loses it.
+    throw new Error('Le fichier a été enregistré dans Drive, mais sa fiche RH n’a pas pu être enregistrée. Réessayez après avoir vérifié la connexion.');
   }
 
   return mapHrDocumentRows([data as unknown as HrDocumentRow])[0];
@@ -1472,24 +1455,18 @@ export async function renewHrDocument(client: SupabaseClient, input: RenewHrDocu
     throw new Error('Le nom du document renouvele ne peut pas etre genere.');
   }
 
-  const storagePath = buildHrDocumentStoragePath(input.person, fileName);
-  const { error: uploadError } = await client.storage.from(HR_DOCUMENT_STORAGE_BUCKET).upload(storagePath, input.file, {
-    contentType: input.file.type || undefined,
-    upsert: false,
-  });
-
-  if (uploadError) {
-    throw uploadError;
-  }
+  const drive = await writeHrDriveFile(client, input.person.id, fileName, input.file);
 
   const payload = {
     title: stripFileExtension(fileName),
     status: statusFromDueDate(input.dueDate),
     expires_on: optionalText(input.dueDate),
-    source_label: 'supabase',
+    source_label: 'google_drive',
+    ...drive,
+    drive_file_id: null,
     file_url: null,
-    storage_bucket: HR_DOCUMENT_STORAGE_BUCKET,
-    storage_path: storagePath,
+    storage_bucket: null,
+    storage_path: null,
     file_size_bytes: input.file.size,
     mime_type: input.file.type || null,
     renewed_at: new Date().toISOString(),
@@ -1507,16 +1484,8 @@ export async function renewHrDocument(client: SupabaseClient, input: RenewHrDocu
   const { data, error } = await client.from('hr_documents').update(payload).eq('id', input.document.id).select(HR_DOCUMENT_SELECT).single();
 
   if (error) {
-    await client.storage.from(HR_DOCUMENT_STORAGE_BUCKET).remove([storagePath]);
-    throw error;
-  }
-
-  if (
-    input.document.storageBucket === HR_DOCUMENT_STORAGE_BUCKET &&
-    input.document.storagePath &&
-    input.document.storagePath !== storagePath
-  ) {
-    await client.storage.from(HR_DOCUMENT_STORAGE_BUCKET).remove([input.document.storagePath]);
+    // Preserve the verified Drive file so a failed metadata save never loses it.
+    throw new Error('Le fichier a été enregistré dans Drive, mais sa fiche RH n’a pas pu être enregistrée. Réessayez après avoir vérifié la connexion.');
   }
 
   return mapHrDocumentRows([data as unknown as HrDocumentRow])[0];
@@ -1568,7 +1537,7 @@ export async function deleteHrDocument(client: SupabaseClient, documentId: numbe
     throw new Error('Les entretiens annuels se gèrent dans leur rubrique dédiée.');
   }
 
-  const hasStoredFile = document.storageBucket === HR_DOCUMENT_STORAGE_BUCKET && Boolean(document.storagePath);
+  const hasStoredFile = !document.drivePath && document.storageBucket === HR_DOCUMENT_STORAGE_BUCKET && Boolean(document.storagePath);
   if (hasStoredFile) {
     // Storage SELECT authorization depends on this row: remove the file before its metadata.
     // Removing an already absent object is safe, so a failed metadata deletion can be retried.
@@ -1604,6 +1573,7 @@ export async function updateHrDocumentMedicalDetails(
 }
 
 export async function createHrDocumentSignedUrl(client: SupabaseClient, document: HrDocumentRecord): Promise<string> {
+  if (document.drivePath) return URL.createObjectURL(await readHrDriveFile(client, document));
   if (document.storageBucket && document.storagePath) {
     const { data, error } = await client.storage.from(document.storageBucket).createSignedUrl(document.storagePath, 60);
 
@@ -1622,6 +1592,7 @@ export async function createHrDocumentSignedUrl(client: SupabaseClient, document
 }
 
 export async function downloadHrDocumentBlob(client: SupabaseClient, document: HrDocumentRecord): Promise<Blob> {
+  if (document.drivePath) return readHrDriveFile(client, document);
   if (document.storageBucket && document.storagePath) {
     const { data, error } = await client.storage.from(document.storageBucket).download(document.storagePath);
 
@@ -1633,14 +1604,15 @@ export async function downloadHrDocumentBlob(client: SupabaseClient, document: H
   }
 
   const url = await createHrDocumentSignedUrl(client, document);
-  const response = await fetch(url, {
-    credentials: 'include',
-  });
+  let response: Response;
+  try { response = await fetch(url, { credentials: 'include' }); }
+  catch { throw new Error(`Le fichier « ${document.title} » est encore sur SharePoint et n’est pas accessible depuis SeaPilot. Sa migration vers Drive reste à terminer.`); }
 
   if (!response.ok) {
     throw new Error(`Impossible de telecharger "${document.title}".`);
   }
 
+  if (response.headers.get('content-type')?.includes('text/html')) throw new Error(`Le lien de « ${document.title} » renvoie une page de connexion, pas le fichier.`);
   return response.blob();
 }
 

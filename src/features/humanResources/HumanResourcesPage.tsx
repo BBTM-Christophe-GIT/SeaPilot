@@ -1,3 +1,4 @@
+import { connectHrDrive } from './hrDocumentDrive';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
@@ -532,7 +533,7 @@ function buildMedicalFitnessNote(document: HrDocumentRecord): MedicalFitnessNote
 }
 
 function documentDownloadFileName(document: HrDocumentRecord): string {
-  const sourcePath = (document.storagePath || document.fileUrl).split(/[?#]/)[0];
+  const sourcePath = (document.drivePath || document.storagePath || document.fileUrl).split(/[?#]/)[0];
   const extension = /\.[a-z0-9]+$/i.test(document.title)
     ? ''
     : getFileExtension(sourcePath) || (document.mimeType === 'application/pdf' ? '.pdf' : '');
@@ -1063,8 +1064,9 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     try {
       const url = await createHrDocumentSignedUrl(effectiveClient, document);
       window.open(url, '_blank', 'noopener,noreferrer');
-    } catch {
-      setErrorMessage("Impossible d'ouvrir ce document.");
+      if (url.startsWith('blob:')) window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Impossible d'ouvrir ce document.");
     }
   }
 
@@ -1082,24 +1084,23 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
         const blob = await downloadHrDocumentBlob(effectiveClient, documentToDownload);
         saveBlob(blob, documentDownloadFileName(documentToDownload));
       } else {
+        if (selectedDocuments.some(document => document.drivePath)) await connectHrDrive();
         const { default: JSZip } = await import('jszip');
         const zip = new JSZip();
         const usedNames = new Map<string, number>();
 
-        await Promise.all(
-          selectedDocuments.map(async (documentToDownload) => {
-            const blob = await downloadHrDocumentBlob(effectiveClient, documentToDownload);
-            zip.file(uniqueFileName(documentDownloadFileName(documentToDownload), usedNames), blob);
-          }),
-        );
+        for (const documentToDownload of selectedDocuments) {
+          const blob = await downloadHrDocumentBlob(effectiveClient, documentToDownload);
+          zip.file(uniqueFileName(documentDownloadFileName(documentToDownload), usedNames), blob);
+        }
 
         const zipBlob = await zip.generateAsync({ type: 'blob' });
         saveBlob(zipBlob, `Documents RH - ${new Date().toISOString().slice(0, 10)}.zip`);
       }
 
       setSelectedDocumentIds(new Set());
-    } catch {
-      setErrorMessage('Impossible de telecharger les fichiers selectionnes.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Impossible de télécharger les fichiers sélectionnés.');
     } finally {
       setIsDownloading(false);
     }
@@ -2270,7 +2271,7 @@ function DocumentDetailsDialog({ document, isSaving, mode, onClose, onSubmit }: 
           {isDeleting ? (
             <div className="hr-document-delete-explanation">
               <p>Le document « {getHrDocumentDisplayName(document)} » sera retiré du dossier de {document.personName || 'ce collaborateur'}.</p>
-              <p>{document.storageBucket === 'hr-documents' && document.storagePath
+              <p>{!document.drivePath && document.storageBucket === 'hr-documents' && document.storagePath
                 ? 'Le fichier sera également supprimé. Cette action est définitive.'
                 : 'Seul le lien dans BBTM sera supprimé. Le fichier d’origine restera sur son espace de stockage.'}</p>
             </div>
@@ -2418,6 +2419,7 @@ function DocumentCreationDialog({
           <label className="hr-edit-field">
             Fichier
             <input
+              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.txt"
               disabled={isSaving}
               onChange={(event) => setFile(event.currentTarget.files?.[0] || null)}
               required
@@ -2533,6 +2535,7 @@ function DocumentRenewalDialog({
           <label className="hr-edit-field">
             Nouveau document
             <input
+              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.txt"
               disabled={isSaving}
               onChange={(event) => setFile(event.currentTarget.files?.[0] || null)}
               type="file"

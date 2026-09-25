@@ -21,7 +21,7 @@ describe('previewSupabaseClient', () => {
     const write = await previewSupabaseClient.rpc('save_planning_manning_matrix', {});
 
     expect(catalog.error).toBeNull();
-    expect(catalog.data).toHaveLength(55);
+    expect(catalog.data).toHaveLength(57);
     expect(catalog.data).toEqual(expect.arrayContaining([
       expect.objectContaining({ category: 'Pont' }),
       expect.objectContaining({ category: 'Machine' }),
