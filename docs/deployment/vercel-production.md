@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La fenêtre **Générer une liste des documents** affiche désormais une arborescence
+de chapitres ISM repliables, avec documents indentés, tri par référence et compteur
+par chapitre. Replier un chapitre conserve la sélection et l'export PDF. Aucune
+migration ni configuration supplémentaire. Voir [les listes](./procedures-vessel-list.md).
+
 Le module Procédures propose le modèle Word fourni, les boutons **Importer un fichier
 existant / Nouvelle Procédure**, le chapitre ISM avant la référence et une liste de
 projets. La liste des documents se filtre aussi par chapitre ISM et affiche une ligne

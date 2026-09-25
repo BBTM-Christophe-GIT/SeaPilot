@@ -295,6 +295,45 @@ describe('ProceduresPage', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('groups documents by ISM and preserves selection and export when chapters are collapsed', async () => {
+    const user = userEvent.setup();
+    const common = { ...approvedProcedureRow, id: 14, title: 'Urgences communes', procedure_code: 'URG 2-A', vessel_name: '', ism_chapter: "08 - Préparation aux situations d’urgence" };
+    const { client } = createClient({ procedures: [{ ...approvedProcedureRow, procedure_code: 'URG 10-A' }, draftProcedureRow, common] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: 'Générer une liste des documents' }));
+    const dialog = within(screen.getByRole('dialog'));
+    const emergencyGroup = dialog.getByRole('rowgroup', { name: /^08 -/ });
+    expect(within(emergencyGroup).getAllByRole('checkbox').map(input => input.getAttribute('aria-label'))).toEqual([
+      'Inclure Urgences communes', 'Inclure Procédure embarquement ROZEL',
+    ]);
+    expect(dialog.getAllByRole('button', { expanded: true }).map(button => button.textContent?.slice(0, 2))).toEqual(['08', '10']);
+    await user.click(dialog.getByLabelText('Inclure Urgences communes'));
+    const emergencyChapter = dialog.getByRole('button', { name: /^08 -/ });
+    emergencyChapter.focus();
+    await user.keyboard('{Enter}');
+    expect(emergencyChapter).toHaveAttribute('aria-expanded', 'false');
+    expect(within(emergencyGroup).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(dialog.getByText('2 document(s) sélectionné(s)')).toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ records: [expect.objectContaining({ id: 12 }), expect.objectContaining({ id: 13 })] }));
+
+    await user.selectOptions(dialog.getByLabelText('Statut'), 'published');
+    expect(dialog.queryByRole('button', { name: /^10 -/ })).not.toBeInTheDocument();
+    expect(dialog.queryByRole('checkbox')).not.toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Tout sélectionner' }));
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ records: [expect.objectContaining({ id: 12 }), expect.objectContaining({ id: 14 })] }));
+    await user.click(dialog.getByRole('button', { name: 'Tout déplier' }));
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(2);
+    expect(dialog.getByLabelText('Inclure Urgences communes')).toBeChecked();
+    await user.click(dialog.getByRole('button', { name: 'Tout replier' }));
+    await user.click(dialog.getByRole('button', { name: 'Tout désélectionner' }));
+    expect(dialog.getByRole('button', { name: 'Télécharger la liste PDF' })).toBeDisabled();
+    await user.click(dialog.getByRole('button', { name: 'Tout déplier' }));
+    expect(dialog.getByLabelText('Inclure Urgences communes')).not.toBeChecked();
+    expect(dialog.getByLabelText('Inclure Procédure embarquement ROZEL')).not.toBeChecked();
+  });
+
   it('combines vessel and status filters, preserving exclusions while exporting only visible selected documents', async () => {
     const user = userEvent.setup();
     const common = { ...approvedProcedureRow, id: 14, title: 'Procédure commune', vessel_name: null };
@@ -363,9 +402,11 @@ describe('ProceduresPage', () => {
     expect(dialog.getByLabelText('Inclure Urgences communes')).not.toBeChecked();
     expect(dialog.getByRole('button', { name: 'Télécharger la liste PDF' })).toBeDisabled();
     await user.selectOptions(chapter, 'unassigned');
+    expect(dialog.getByRole('rowgroup', { name: 'ISM - Chapitre non renseigné' })).toBeInTheDocument();
     expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
     expect(dialog.getByLabelText('Inclure Sans chapitre')).toBeChecked();
     await user.selectOptions(chapter, 'uncontrolled');
+    expect(dialog.getByRole('rowgroup', { name: 'Documents non contrôlés' })).toBeInTheDocument();
     expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
     expect(dialog.getByLabelText('Inclure Document non contrôlé')).toBeChecked();
   });

@@ -11,8 +11,20 @@
 .procedure-list-table th:nth-child(4) { width: 70px; }
 .procedure-list-table th:nth-child(5) { width: 100px; }
 .procedure-list-table input { display: block; width: 18px; height: 18px; margin: 0 auto; accent-color: #2563eb; cursor: pointer; }
-.procedure-list-document > span { display: block; overflow: hidden; text-overflow: ellipsis; }
+.procedure-list-document-branch { display: flex; align-items: center; gap: 8px; padding-left: 10px; border-left: 1px solid #cedae7; }
+.procedure-list-document-branch > svg { flex-shrink: 0; color: #768ba3; }
+.procedure-list-document-branch > span { overflow: hidden; text-overflow: ellipsis; }
 .procedure-list-table tbody tr:hover { background: #f4f8fc; }
+.procedure-list-tree-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.procedure-list-tree-controls > span { flex: 1; color: #52677f; font-size: 12px; }
+.procedure-list-table .procedure-list-chapter-heading { padding: 0; text-align: left; background: #e9f1fa; }
+.procedure-list-chapter-heading button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 38px; padding: 8px 12px; border: 0; color: #234d77; background: transparent; text-align: left; font: inherit; font-weight: 700; cursor: pointer; }
+.procedure-list-chapter-heading button:hover { background: #dfeaf7; }
+.procedure-list-chapter-heading button:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
+.procedure-list-chapter-heading button:disabled { opacity: .6; cursor: wait; }
+.procedure-list-chapter-heading svg { flex-shrink: 0; }
+.procedure-list-chapter-name { flex: 1; white-space: normal; }
+.procedure-list-chapter-count { flex-shrink: 0; color: #52677f; font-size: 11px; font-weight: 500; }
 .procedure-list-empty { padding: 28px; text-align: center; color: #52677f; }
 .procedure-list-action { display: flex; justify-content: flex-end; padding: 10px 16px; border-bottom: 1px solid #e4e9ef; }
 @media (max-width: 640px) {
