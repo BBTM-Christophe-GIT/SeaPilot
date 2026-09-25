@@ -429,6 +429,28 @@ function assertResult(error: { message?: string } | null, fallback: string): voi
   if (error) throw new Error(error.message || fallback);
 }
 
+// PostgREST caps a response even when the client does not set a limit.
+// Keep a stable id tie-breaker and fail the whole load if any page fails.
+async function allWorkspacePages<T>(query: {
+  range: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message?: string } | null }>;
+}) {
+  const data: T[] = [];
+  const pageSize = 500;
+  for (let from = 0; ; from += pageSize) {
+    const result = await query.range(from, from + pageSize - 1);
+    if (result.error) return { data: null, error: result.error };
+    const page = result.data || [];
+    data.push(...page);
+    if (page.length < pageSize) return { data, error: null };
+  }
+}
+
+function shiftDate(day: string, days: number): string {
+  const date = new Date(`${day}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 function mapRegister(row: RegisterRow): WorkingTimeWorkspaceRegister {
   const person = personRelation(row);
   const firstName = String(person.first_name || '');
@@ -570,20 +592,23 @@ export async function fetchWorkingTimeWorkspace(
     .filter((personId) => Number.isFinite(personId) && personId > 0);
   const currentPersonId = Number(context.current_person_id || 0);
   const emptyPersonScope = -1;
+  // Rolling violations may end after the month, or belong to work before it.
+  const complianceStart = shiftDate(range.start, -7);
+  const complianceEnd = shiftDate(range.end, 7);
 
   let registerQuery = client.from('working_time_registers').select(REGISTER_SELECT)
     .is('discarded_at', null)
-    .lte('period_start', range.end).gte('period_end', range.start).order('period_start', { ascending: false });
+    .lte('period_start', range.end).gte('period_end', range.start).order('period_start', { ascending: false }).order('id');
   let intervalQuery = client.from('working_time_intervals').select(INTERVAL_SELECT)
-    .gte('local_work_date', range.start).lte('local_work_date', range.end).is('voided_at', null).order('starts_at');
+    .gte('local_work_date', complianceStart).lte('local_work_date', complianceEnd).is('voided_at', null).order('starts_at').order('id');
   let calculationQuery = client.from('working_time_calculation_windows').select(CALCULATION_SELECT)
-    .gte('local_window_end_date', range.start).lte('local_window_end_date', range.end).order('window_end');
+    .gte('local_window_end_date', range.start).lte('local_window_end_date', complianceEnd).order('window_end').order('id');
   let commentQuery = client.from('working_time_day_comments').select('id,register_id,person_id,local_work_date,cause_category,operational_context,immediate_action,compensatory_rest_plan,comment,authored_by,authored_by_person_id,updated_at')
-    .gte('local_work_date', range.start).lte('local_work_date', range.end).order('local_work_date');
+    .gte('local_work_date', range.start).lte('local_work_date', range.end).order('local_work_date').order('id');
   let signatureQuery = client.from('working_time_profile_signatures').select('id,person_id,version_number,storage_bucket,storage_path,mime_type,file_size_bytes,sha256,valid_from')
-    .is('valid_to', null).order('version_number', { ascending: false });
+    .is('valid_to', null).order('version_number', { ascending: false }).order('id');
   let dayApprovalQuery = client.from('working_time_day_approvals').select(DAY_APPROVAL_SELECT)
-    .order('local_work_date', { ascending: false }).limit(2000);
+    .order('local_work_date', { ascending: false }).order('id');
 
   if (readablePersonIds.length) {
     registerQuery = registerQuery.in('person_id', readablePersonIds);
@@ -607,13 +632,13 @@ export async function fetchWorkingTimeWorkspace(
   }
 
   const [registerResult, intervalResult, calculationResult, commentResult, signatureResult, validationResult, dayApprovalResult, vesselResult, policyResult] = await Promise.all([
-    registerQuery,
-    intervalQuery,
-    calculationQuery,
-    commentQuery,
-    signatureQuery,
+    allWorkspacePages(registerQuery),
+    allWorkspacePages(intervalQuery),
+    allWorkspacePages(calculationQuery),
+    allWorkspacePages(commentQuery),
+    allWorkspacePages(signatureQuery),
     client.from('working_time_validations').select(VALIDATION_SELECT).order('occurred_at', { ascending: false }).limit(1000),
-    dayApprovalQuery,
+    allWorkspacePages(dayApprovalQuery),
     client.from('vessels').select('id,name,acronym,registration_number,imo_number,flag_state,length_overall').eq('active', true).order('name'),
     client.from('planning_work_rest_policies').select(POLICY_SELECT).order('effective_from', { ascending: false }),
   ]);
@@ -649,9 +674,9 @@ export async function fetchWorkingTimeWorkspace(
     registers: ((registerResult.data || []) as RegisterRow[]).map(mapRegister)
       .filter((register) => register.periodStart <= range.end && register.periodEnd >= range.start),
     intervals: ((intervalResult.data || []) as IntervalRow[]).map(mapInterval)
-      .filter((interval) => interval.localWorkDate >= range.start && interval.localWorkDate <= range.end),
+      .filter((interval) => interval.localWorkDate >= complianceStart && interval.localWorkDate <= complianceEnd),
     calculations: ((calculationResult.data || []) as CalculationRow[]).map(mapCalculation)
-      .filter((calculation) => calculation.localWindowEndDate >= range.start && calculation.localWindowEndDate <= range.end),
+      .filter((calculation) => calculation.localWindowEndDate >= range.start && calculation.localWindowEndDate <= complianceEnd),
     dayComments: ((commentResult.data || []) as CommentRow[]).map((comment) => ({
       id: Number(comment.id),
       registerId: Number(comment.register_id),

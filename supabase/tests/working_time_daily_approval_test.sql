@@ -56,9 +56,9 @@ select ok(
   'clients cannot bypass daily workflow RPC checks'
 );
 select matches(
-  pg_get_functiondef('public.working_time_day_has_non_compliance(bigint,date)'::regprocedure),
-  '(?is)working_time_intervals.*voided_at is null.*working_time_calculation_windows',
-  'a rolling-window breach is attached to a day only when that day contains actual work'
+  pg_get_functiondef('public.working_time_day_violations(bigint,date)'::regprocedure),
+  '(?is)working_time_calculation_windows.*working_time_intervals.*voided_at is null.*contributing_day.local_work_date = p_local_work_date',
+  'a rolling-window breach is attached to the last contributing worked day'
 );
 select matches(
   pg_get_functiondef('public.validate_working_time_day(bigint)'::regprocedure),

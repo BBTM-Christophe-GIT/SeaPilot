@@ -65,7 +65,9 @@ export function WorkingTimeMonthlyView({
   const days = periodDays(periodStart, periodEnd);
   const nonCompliant = new Set(nonCompliantDates);
   const vesselNames = new Map(vessels.map((vessel) => [vessel.id, vessel.name]));
-  const monthMinutes = intervals.reduce((sum, interval) => sum + workingTimeIntervalMinutes(interval), 0);
+  const monthMinutes = intervals
+    .filter((interval) => interval.localWorkDate >= periodStart && interval.localWorkDate <= periodEnd)
+    .reduce((sum, interval) => sum + workingTimeIntervalMinutes(interval), 0);
 
   return (
     <section aria-labelledby="working-time-monthly-title" className="working-time-monthly-view">

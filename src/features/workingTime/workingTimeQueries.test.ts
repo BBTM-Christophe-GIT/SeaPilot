@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
+import { workingTimeNonCompliantDates } from './workingTimeCompliance';
 import {
   fetchWorkingTimeEntryRecommendation,
   fetchWorkingTimePhasesRecommendation,
@@ -14,13 +15,18 @@ import {
 
 function queryResult(data: unknown, onCall?: (method: string, args: unknown[]) => void) {
   const result = { data, error: null };
+  let from = 0;
+  let to = 999;
   const query = new Proxy({}, {
     get(_target, property) {
       if (property === 'then') {
-        return (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve);
+        return (resolve: (value: typeof result) => unknown) => Promise.resolve({
+          ...result, data: Array.isArray(data) ? data.slice(from, to + 1) : data,
+        }).then(resolve);
       }
       return (...args: unknown[]) => {
         onCall?.(String(property), args);
+        if (property === 'range') [from, to] = args as [number, number];
         return query;
       };
     },
@@ -91,10 +97,76 @@ function workspaceClient() {
       error: null,
     }),
   } as unknown as SupabaseClient;
-  return { client, queryCalls };
+  return { client, queryCalls, rows };
 }
 
 describe('working-time workflow queries', () => {
+  it('loads late-month violations and approvals beyond the API row cap', async () => {
+    const { client, rows, queryCalls } = workspaceClient();
+    const calculation = rows.working_time_calculation_windows[0] as Record<string, unknown>;
+    rows.working_time_calculation_windows = Array.from({ length: 1201 }, (_, index) => ({
+      ...calculation, id: index + 1, is_compliant: index === 1200,
+      violation_codes: index === 1200 ? [] : ['work_24h'],
+    }));
+    // The only late-month violation must survive after two complete pages.
+    rows.working_time_calculation_windows[1200] = {
+      ...calculation, id: 1201, window_end: '2026-08-24T16:00:00Z', local_window_end_date: '2026-08-24',
+    };
+    const interval = rows.working_time_intervals[0] as Record<string, unknown>;
+    rows.working_time_intervals = Array.from({ length: 1201 }, (_, index) => ({ ...interval, id: index + 1 }));
+    rows.working_time_intervals[1200] = {
+      ...interval, id: 1201, local_work_date: '2026-08-24', starts_at: '2026-08-24T06:00:00Z', ends_at: '2026-08-24T14:00:00Z',
+    };
+    rows.working_time_day_approvals = Array.from({ length: 2101 }, (_, index) => ({
+      id: index + 1, company_id: 1, register_id: 10, person_id: 42, local_work_date: '2026-08-24',
+      status: 'submitted', approver_person_id: 9,
+    }));
+    const workspace = await fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' });
+    expect(workspace.calculations).toHaveLength(1201);
+    expect(workspace.intervals).toHaveLength(1201);
+    expect(workspace.dayApprovals).toHaveLength(2101);
+    expect(workingTimeNonCompliantDates(workspace.calculations, workspace.intervals)).toContain('2026-08-24');
+    expect(queryCalls).toContainEqual({ table: 'working_time_calculation_windows', method: 'range', args: [1000, 1499] });
+    expect(queryCalls).toContainEqual({ table: 'working_time_calculation_windows', method: 'order', args: ['id'] });
+  });
+
+  it('retains adjacent-month context for rolling violations without widening the register scope', async () => {
+    const { client, rows, queryCalls } = workspaceClient();
+    const interval = rows.working_time_intervals[0] as Record<string, unknown>;
+    rows.working_time_intervals.push({
+      ...interval, id: 21, local_work_date: '2026-07-31', starts_at: '2026-07-31T06:00:00Z', ends_at: '2026-07-31T20:00:00Z',
+    });
+    const calculation = rows.working_time_calculation_windows[0] as Record<string, unknown>;
+    rows.working_time_calculation_windows.push({
+      ...calculation, id: 31, local_window_end_date: '2026-09-01', window_end: '2026-09-01T01:00:00Z',
+    });
+    const workspace = await fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' });
+    expect(workspace.intervals.some((item) => item.localWorkDate === '2026-07-31')).toBe(true);
+    expect(workspace.calculations.some((item) => item.localWindowEndDate === '2026-09-01')).toBe(true);
+    expect(queryCalls).toContainEqual({ table: 'working_time_intervals', method: 'gte', args: ['local_work_date', '2026-07-25'] });
+    expect(queryCalls).toContainEqual({ table: 'working_time_calculation_windows', method: 'lte', args: ['local_window_end_date', '2026-09-07'] });
+    expect(queryCalls).toContainEqual({ table: 'working_time_registers', method: 'gte', args: ['period_end', '2026-08-01'] });
+  });
+
+  it('rejects a failed later page instead of displaying incomplete compliance as zero alerts', async () => {
+    const { client, rows } = workspaceClient();
+    const originalFrom = vi.mocked(client.from).getMockImplementation()!;
+    vi.mocked(client.from).mockImplementation(((table: string) => {
+      if (table !== 'working_time_calculation_windows') return originalFrom(table);
+      const query = new Proxy({}, {
+        get(_target, property) {
+          if (property === 'range') return (from: number) => Promise.resolve(from === 0
+            ? { data: Array.from({ length: 500 }, () => rows[table][0]), error: null }
+            : { data: null, error: { message: 'Calculation page unavailable' } });
+          return () => query;
+        },
+      });
+      return query;
+    }) as typeof client.from);
+    await expect(fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' }))
+      .rejects.toThrow('Calculation page unavailable');
+  });
+
   it('loads and maps all read-only workflow sources in one workspace request', async () => {
     const { client, queryCalls } = workspaceClient();
     const workspace = await fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' });
