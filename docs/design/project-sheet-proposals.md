@@ -71,3 +71,17 @@ nouveau format.
 Sur écran étroit, le portefeuille passe au-dessus de la fiche ; sur mobile, les
 sections deviennent une navigation horizontale et les données une seule colonne.
 Voir [le contrôle visuel et fonctionnel](../../design-qa.md).
+
+## Correction du chevauchement du portefeuille
+
+Au-delà de 40 projets, la pagination imposait une largeur minimale d'environ
+271 px à la grille interne du portefeuille, pourtant placée dans une colonne
+de 240 px. L'en-tête et la liste empiétaient alors sur la navigation de la fiche.
+La grille interne utilise désormais une colonne réductible ; le numéro de page
+est placé au-dessus des deux boutons et les noms longs peuvent revenir à la ligne.
+
+Reproduction et contrôle navigateur avec 45 projets synthétiques, des références
+sans espaces et une barre de défilement : aucun débordement du portefeuille après
+correction. Pagination aller/retour, recherche et navigation P144 contrôlées à
+1878, 1280 et 390 px. Ce jeu de contrôle temporaire ne fait pas partie des données
+livrées et ne modifie aucune donnée de production.

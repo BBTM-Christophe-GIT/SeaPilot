@@ -3,6 +3,49 @@
   overflow: visible;
 }
 
+/* Pagination and long client names must stay inside the portfolio grid track. */
+.project-contract-workspace:has(.project-dossier) .project-list-panel {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.project-contract-workspace:has(.project-dossier) .project-list-panel > *,
+.project-contract-workspace:has(.project-dossier) .project-contract-list-heading > * {
+  min-width: 0;
+}
+
+.project-contract-workspace:has(.project-dossier) .project-contract-list-heading {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.project-contract-workspace:has(.project-dossier) .project-contract-list-row {
+  grid-template-columns: minmax(0, 1fr);
+  overflow-wrap: anywhere;
+}
+
+.project-contract-workspace:has(.project-dossier) .project-contract-list-meta > span {
+  min-width: 0;
+}
+
+.project-contract-workspace:has(.project-dossier) .project-pagination {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px;
+}
+
+.project-contract-workspace:has(.project-dossier) .project-pagination > span {
+  grid-column: 1 / -1;
+  order: -1;
+  text-align: center;
+}
+
+.project-contract-workspace:has(.project-dossier) .project-pagination button {
+  min-width: 0;
+  gap: 4px;
+  padding-inline: 6px;
+  font-size: 0.78rem;
+}
+
 .project-contract-workspace .project-detail.project-contract-sheet.project-dossier {
   display: grid;
   grid-template-columns: 190px minmax(0, 1fr);
