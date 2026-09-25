@@ -807,7 +807,7 @@ describe('PlanningPage cockpit', () => {
     await user.click(within(billingPanel).getByRole('tab', { name: 'À facturer, 1 projet' }));
     await user.click(within(billingPanel).getByRole('button', { name: /Mission facturable/ }));
     const statusSelect = within(billingPanel).getByLabelText('Statut de Mission facturable');
-    expect(within(statusSelect).getAllByRole('option').map((option) => option.textContent)).toEqual(['Non validé', 'Validé', 'Stand-by météo', 'Facturé']);
+    expect(within(statusSelect).getAllByRole('option').map((option) => option.textContent)).toEqual(['Brouillon', 'Non validé', 'Validé', 'Stand-by météo', 'Facturé']);
     await user.selectOptions(statusSelect, 'Facturé');
     await waitFor(() => expect(updateProject).toHaveBeenCalledWith(expect.objectContaining({ status: 'Facturé' })));
     expect(await within(billingPanel).findByText('Aucun projet à facturer.')).toBeInTheDocument();
@@ -884,6 +884,31 @@ describe('PlanningPage cockpit', () => {
     expect(insertProject).not.toHaveBeenCalled();
     window.history.replaceState({}, '', previousUrl);
   }, 20_000);
+
+  it.each(['Flotte', 'Projet'])('creates a quick draft in the %s view and stays on the planning', async (view) => {
+    const user = userEvent.setup();
+    const previousUrl = window.location.href;
+    window.history.replaceState({}, '', '/modules/planning');
+    try {
+      const { client, rpc } = createClient({ projects: [] });
+      render(<PlanningPage client={client as never} roles={['admin']} />);
+      await screen.findByRole('heading', { name: 'Planning' });
+      await user.click(screen.getByRole('tab', { name: view }));
+      await user.dblClick(screen.getByRole('button', { name: `Planifier un projet pour COTENTIN le ${formatPlanningDate(todayPlanningDate())}` }));
+      await screen.findByRole('option', { name: /P267/ });
+      await user.click(screen.getByRole('button', { name: 'Projet rapide' }));
+      await user.type(screen.getByLabelText('Titre du projet'), 'Mission rapide');
+      rpc.mockResolvedValueOnce({ data: [{ ...planningProjectRow, id: 990, catalog_project_id: 801, title: 'P268 - Mission rapide', status: 'Brouillon', starts_on: todayPlanningDate(), ends_on: todayPlanningDate(), event_type: 'operation' }], error: null });
+      await user.click(screen.getByRole('button', { name: 'Créer le projet' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(await screen.findByRole('button', { name: /P268 - Mission rapide/ })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: view })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByText(/P268 - Mission rapide créé en brouillon/)).toBeInTheDocument();
+      expect(window.location.pathname).toBe('/modules/planning');
+    } finally {
+      window.history.replaceState({}, '', previousUrl);
+    }
+  });
 
   it('keeps fleet filters active and avoids a full reload after an event update', async () => {
     const user = userEvent.setup();

@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Le Planning propose **Projet rapide** depuis **Nouvelle opération** dans les vues
+Flotte et Projet : titre seul, numéro Pxxx, statut Brouillon et ajout immédiat sur
+la case choisie, sans quitter le planning. La migration
+`20260925090102_planning_quick_draft_project.sql` est appliquée avant le frontend.
+Voir [le parcours et les vérifications](./planning-quick-project.md).
+
 La fenêtre **Générer une liste des documents** affiche désormais une arborescence
 de chapitres ISM repliables, avec documents indentés, tri par référence et compteur
 par chapitre. Replier un chapitre conserve la sélection et l'export PDF. Aucune
