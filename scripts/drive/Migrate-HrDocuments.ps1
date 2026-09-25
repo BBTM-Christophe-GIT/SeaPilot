@@ -40,8 +40,17 @@ if (!$Activate) {
         } else {
             # Preserve an unresolved historic identity without assigning it to a different person.
             $identity = $row.person_sharepoint_item_id
-            if (!$identity -or $identity -notmatch '^\d+$') { throw "Missing historic person identity for document $($row.id)." }
-            $folder = [SeaPilotDriveBridge]::SafeName($row.person_name) + ' - c' + $row.company_id + '-sp' + $identity
+            if ($identity -and $identity -match '^\d+$') { $suffix = '-sp' + $identity }
+            else {
+                if ([string]::IsNullOrWhiteSpace($row.person_name)) { throw "Missing historic person name for document $($row.id)." }
+                # Some imports have no person id at all. Keep their recorded name
+                # in a distinct historical folder; never link them by name to a user.
+                $hash = [Security.Cryptography.SHA256]::Create()
+                try { $digest = $hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($row.company_id.ToString()+'|'+$row.person_name)) }
+                finally { $hash.Dispose() }
+                $suffix = '-historique-' + ([BitConverter]::ToString($digest).Replace('-','').Substring(0,12).ToLowerInvariant())
+            }
+            $folder = [SeaPilotDriveBridge]::SafeName($row.person_name) + ' - c' + $row.company_id + $suffix
         }
         $source = Join-Path $work ($row.id.ToString()+'.source')
         if ($row.storage_bucket -and $row.storage_path) {
@@ -87,6 +96,7 @@ if (!$Activate) {
             $failures | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $work 'unavailable.json') -Encoding utf8
         }
     }
+    ConvertTo-Json -InputObject @($failures) | Set-Content -LiteralPath (Join-Path $work 'unavailable.json') -Encoding utf8
     Write-Output "Copied and locally verified $($manifest.Count) documents; $($failures.Count) sources unavailable. Database references unchanged."
     exit
 }

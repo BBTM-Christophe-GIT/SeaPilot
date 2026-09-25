@@ -46,8 +46,9 @@ fichier est conservé pour récupération et l'application signale l'échec.
 `scripts/drive/Migrate-HrDocuments.ps1` copie les objets du bucket `hr-documents`
 et les originaux de la bibliothèque SharePoint **Brevets et Visites Médicales**.
 Les références d'origine sont conservées. Les collaborateurs historiques non
-rattachés restent identifiés par leur identifiant SharePoint, sans rattachement
-arbitraire à un compte courant.
+rattachés restent identifiés par leur identifiant SharePoint ou, à défaut, leur
+nom enregistré dans un dossier historique distinct, sans rattachement arbitraire
+à un compte courant.
 
 Le script produit dans un dossier hors Git `before.json`, `manifest.json` et,
 si nécessaire, `unavailable.json`. Un original SharePoint récupéré par le
