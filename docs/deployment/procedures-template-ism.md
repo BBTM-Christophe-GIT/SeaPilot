@@ -10,13 +10,16 @@ des révisions, sa table des matières et ses champs Word. Il ne contient aucun
 document de travail rempli. Les informations saisies dans SeaPilot constituent
 la fiche documentaire ; le contenu Word reste à compléter dans Word.
 
-En mode modèle, SeaPilot est le stockage proposé : à l’enregistrement, une copie
-du modèle est déposée dans le stockage privé existant, avec un nom composé de la
-référence et du titre. Aucun fichier manuel n’est requis. En cas d’échec de
-chargement du modèle, le formulaire conserve la saisie et permet de réessayer.
-Le téléchargement du modèle permet également de créer et compléter une copie
-dans le dossier Google Drive synchronisé, puis de renseigner son lien et son
-chemin en choisissant ce stockage.
+En mode modèle, le bouton **Ouvrir** crée une copie exacte du modèle dans
+`SeaPilot/Procedures`, enregistre la fiche, ferme la fenêtre puis ouvre Word.
+Le nom est `Thème Numéro Version - Titre.docx`, avec `A` comme version initiale.
+Aucun téléchargement manuel du modèle ni choix de stockage n'est nécessaire.
+En cas d'échec de copie, la saisie est conservée et aucune fiche n'est créée.
+Si seule l'ouverture échoue, la fiche et le fichier déjà créés sont conservés.
+
+La carte **Importer un fichier** propose uniquement le fichier à ajouter. Le
+lanceur le copie dans `SeaPilot/Procedures`, avec le même nommage et son extension
+d'origine. Le champ Navire propose également **Armement**.
 
 ## Correspondance des chapitres ISM
 
@@ -45,13 +48,18 @@ saisie manuelle. Ouvrir une fiche existante ne modifie pas ses données.
 
 ## Déploiement et recette
 
-Aucune dépendance ni migration de base de données supplémentaire. Le build doit
-inclure le modèle dans `dist/templates/procedure.docx`. Les autorisations des
-sources privées et des PDF publiés restent celles du module Procédures.
+Appliquer `20260925072400_procedures_drive_workflow.sql` puis
+`20260925073813_procedures_drive_receipt_validation.sql` avant le frontend.
+Installer le lanceur 2.3 sur les postes Windows : il conserve la racine déjà
+configurée et crée les dossiers de modules manquants. Le build inclut le modèle
+inchangé dans `dist/templates/procedure.docx`.
+
+Les détails de publication, de stockage et de droits figurent dans
+[Procédures et Google Drive](procedures-google-drive.md).
 
 - Tester les douze correspondances, les numéros disponibles et les doublons.
-- Créer une procédure avec le modèle, puis télécharger sa source Word.
-- Vérifier que son contenu binaire correspond au modèle fourni.
-- Vérifier l’import existant, l’association Drive et la modification d’une fiche.
-- Vérifier les fixtures des profils Armement, Capitaine et Marin : PDF publiés
-  uniquement, sans action de création ni lecture des sources privées.
+- Vérifier la création du Word, sa référence exacte et l'ouverture après fermeture.
+- Vérifier l'import, les erreurs de copie et la modification d'une fiche existante.
+- Vérifier la conversion Office et l'enregistrement atomique de la publication.
+- Tester les vrais rôles Admin, Direction, Capitaine et Marin avec
+  `supabase/tests/procedures_drive_workflow_test.sql`, sans simulation de session.

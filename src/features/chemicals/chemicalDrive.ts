@@ -18,7 +18,7 @@ export function chemicalDriveFilename(id: string, filename: string) {
 export function createChemicalDrive(client: SupabaseClient): ChemicalFileStore {
   async function session() {
     const connection = await connectLocalDrive();
-    if (connection.version !== '2.2.0') throw new Error('Installez le lanceur SeaPilot 2.2 depuis Administration → Documents et Google Drive pour utiliser les pièces jointes chimiques. Le dossier déjà configuré sera conservé.');
+    if (!['2.2.0', '2.3.0'].includes(connection.version || '')) throw new Error('Installez le lanceur SeaPilot depuis Administration → Documents et Google Drive pour utiliser les pièces jointes chimiques. Le dossier déjà configuré sera conservé.');
     return connection;
   }
   return {

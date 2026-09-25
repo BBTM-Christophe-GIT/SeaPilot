@@ -93,6 +93,15 @@ Write-Output 'PASS: disciplinary PDF and four unsafe path cases.'
 
 $moduleRoot = Join-Path $testRoot 'SeaPilot'
 New-Item -ItemType Directory -Path $moduleRoot | Out-Null
+[SeaPilotDrive]::EnsureModuleDirectories($moduleRoot)
+foreach ($folder in @('Procedures', 'Procedures PDF', 'Sanctions Disciplinaires', 'Produits Chimiques')) {
+    if (!(Test-Path -LiteralPath (Join-Path $moduleRoot $folder) -PathType Container)) { throw "Module folder was not created: $folder" }
+}
+$preserved = Join-Path $moduleRoot 'Procedures/existing.docx'
+[IO.File]::WriteAllText($preserved, 'Preserved source')
+[SeaPilotDrive]::EnsureModuleDirectories($moduleRoot)
+if ([IO.File]::ReadAllText($preserved) -ne 'Preserved source') { throw 'Folder initialization changed an existing document.' }
+Write-Output 'PASS: every module folder created automatically, repeat initialization preserves files.'
 $disciplinaryRoot = [SeaPilotDriveBridge]::EnsureDirectory($moduleRoot, 'Sanctions Disciplinaires')
 $personFolder = [SeaPilotDriveBridge]::EnsurePersonFolder($disciplinaryRoot, 2, 41, 'Camille EXEMPLE')
 if ($personFolder -ne 'Camille EXEMPLE - c2-p41') { throw 'Collaborator folder is not canonical.' }
@@ -187,6 +196,72 @@ $chemicalRequest['path'] = "$chemicalFolder/run.exe"
 Assert-ChemicalRejected { [SeaPilotDriveBridge]::ExecuteChemical($moduleRoot, $chemicalRequest, $chemicalRemote) }
 Write-Output 'PASS: chemical Drive write/read, exact registered path, attachment id, module scope, SHA-256, size, junction and overwrite protections.'
 
+# Exercise procedure authorization and filesystem behavior without Office in CI.
+Add-Type -ReferencedAssemblies System.Web.Extensions -TypeDefinition @'
+public sealed class ProcedureScopeFixture {
+ public System.Collections.Generic.Dictionary<string,object> Scope = new System.Collections.Generic.Dictionary<string,object>();
+ public bool Deny; public string Opened; public string Converted; public byte[] Pdf; public string Action; public long Procedure; public long Publication;
+ public System.Func<string,string,object> Remote; public System.Func<string,byte[]> Export; public System.Action<string> Open;
+ public ProcedureScopeFixture() { Remote=Get; Export=Convert; Open=Show; }
+ object Get(string resource,string body) {
+  if(Deny) throw new System.UnauthorizedAccessException();
+  var args=new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<System.Collections.Generic.Dictionary<string,object>>(body);
+  if(resource!="rpc/procedure_drive_scope" || (string)args["target_action"]!=Action || System.Convert.ToInt64(args["target_procedure"])!=Procedure || System.Convert.ToInt64(args["target_publication"])!=Publication) throw new System.Exception("Wrong procedure authorization");
+  return Scope;
+ }
+ byte[] Convert(string path) { Converted=path; return Pdf; }
+ void Show(string path) { Opened=path; }
+}
+'@
+$procedureFixture = New-Object ProcedureScopeFixture
+$procedureFixture.Scope['directory'] = 'Procedures'
+$procedureFixture.Pdf = $pdfBytes
+$procedureFixture.Action = 'write'
+$request = New-Object 'System.Collections.Generic.Dictionary[string,object]'
+$request['action'] = 'write'
+$request['path'] = 'URG 01 A - Exercice.docx'
+$request['base64'] = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('Word source'))
+$sourceReceipt = [SeaPilotProcedureFiles]::Execute($moduleRoot,$request,$procedureFixture.Remote,$procedureFixture.Export,$procedureFixture.Open)
+if ($sourceReceipt.path -ne $request['path'] -or $sourceReceipt.bytes -ne 11) { throw 'Wrong source receipt' }
+[SeaPilotProcedureFiles]::Execute($moduleRoot,$request,$procedureFixture.Remote,$procedureFixture.Export,$procedureFixture.Open) | Out-Null
+$request['base64'] = [Convert]::ToBase64String([byte[]](1,2,3))
+Assert-ChemicalRejected { [SeaPilotProcedureFiles]::Execute($moduleRoot,$request,$procedureFixture.Remote,$procedureFixture.Export,$procedureFixture.Open) }
+$procedureFixture.Deny = $true
+$request['path'] = 'denied.docx'
+Assert-ChemicalRejected { [SeaPilotProcedureFiles]::Execute($moduleRoot,$request,$procedureFixture.Remote,$procedureFixture.Export,$procedureFixture.Open) }
+if (Test-Path (Join-Path $moduleRoot 'Procedures/denied.docx')) { throw 'Denied request created a file' }
+$procedureFixture.Deny = $false
+$procedureFixture.Action = 'open'; $request['action'] = 'open'; $request['procedureId'] = 41; $procedureFixture.Procedure = 41
+$procedureFixture.Scope['path'] = $sourceReceipt.path
+$request['path'] = '../untrusted.docx'
+[SeaPilotProcedureFiles]::Execute($moduleRoot,$request,$procedureFixture.Remote,$procedureFixture.Export,$procedureFixture.Open) | Out-Null
+if ($procedureFixture.Opened -ne (Join-Path $moduleRoot ('Procedures/' + $sourceReceipt.path))) { throw 'Open used an untrusted client path' }
+$procedureFixture.Action = 'publish'; $request['action'] = 'publish'
+$procedureFixture.Scope['pdfName'] = 'URG 01 A - Exercice.pdf'
+$pdfReceipt = [SeaPilotProcedureFiles]::Execute($moduleRoot,$request,$procedureFixture.Remote,$procedureFixture.Export,$procedureFixture.Open)
+if ($procedureFixture.Converted -ne $procedureFixture.Opened -or $pdfReceipt.sha256 -ne [SeaPilotProcedureFiles]::Hash($pdfBytes)) { throw 'Publication source or hash mismatch' }
+$procedureFixture.Converted = $null
+$procedureFixture.Pdf = [Text.Encoding]::ASCII.GetBytes('%PDF-1.4 Different export timestamp')
+$retryReceipt = [SeaPilotProcedureFiles]::Execute($moduleRoot,$request,$procedureFixture.Remote,$procedureFixture.Export,$procedureFixture.Open)
+if ($procedureFixture.Converted -or $retryReceipt.sha256 -ne $pdfReceipt.sha256) { throw 'Publication retry re-exported an unchanged source' }
+$procedureFixture.Scope['directory'] = 'Procedures PDF'; $procedureFixture.Scope['path'] = $pdfReceipt.path
+$procedureFixture.Scope['sha256'] = $pdfReceipt.sha256; $procedureFixture.Scope['bytes'] = $pdfReceipt.bytes
+$procedureFixture.Action = 'read'; $request['action'] = 'read'; $request['procedureId'] = 0; $procedureFixture.Procedure = 0
+$request['publicationId'] = 51; $procedureFixture.Publication = 51
+$readReceipt = [SeaPilotProcedureFiles]::Execute($moduleRoot,$request,$procedureFixture.Remote,$procedureFixture.Export,$procedureFixture.Open)
+if ($readReceipt.base64 -ne [Convert]::ToBase64String($pdfBytes)) { throw 'Published PDF bytes changed' }
+$procedureFixture.Scope['sha256'] = ('0' * 64)
+Assert-ChemicalRejected { [SeaPilotProcedureFiles]::Execute($moduleRoot,$request,$procedureFixture.Remote,$procedureFixture.Export,$procedureFixture.Open) }
+$procedureFixture.Action = 'write'; $request['action'] = 'write'
+Assert-ChemicalRejected { [SeaPilotProcedureFiles]::Execute($moduleRoot,$request,$procedureFixture.Remote,$procedureFixture.Export,$procedureFixture.Open) }
+$procedureRoot = Join-Path $moduleRoot 'Procedures'
+foreach ($unsafe in @('../escape.docx','NUL.docx','macro.docm','script.exe','folder/new.docx')) {
+ Assert-ChemicalRejected { [SeaPilotProcedureFiles]::Write($procedureRoot,$unsafe,[byte[]](1,2,3)) }
+}
+New-Item -ItemType Junction -Path (Join-Path $procedureRoot 'linked') -Value $outsideRoot | Out-Null
+Assert-ChemicalRejected { [SeaPilotProcedureFiles]::Read($procedureRoot,'linked/outside.docx') }
+Write-Output 'PASS: procedure create/retry, no overwrite, exact RPC source, PDF receipt, read-only publication, integrity, traversal and junction rejection.'
+
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $testExecutable = Join-Path $testRoot 'SeaPilotDriveTest.exe'
 & $compiler /nologo /target:winexe /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll "/out:$testExecutable" (Join-Path $PSScriptRoot 'SeaPilotDrive.cs') (Join-Path $PSScriptRoot 'SeaPilotDriveBridge.cs')
@@ -206,7 +281,7 @@ try {
     for ($attempt = 0; $attempt -lt 20; $attempt++) {
         try { $health = Invoke-RestMethod -Uri "$endpoint/health" -Headers $allowedHeaders -TimeoutSec 2; $ready = $true; break } catch { $healthError = $_.Exception.Message; Start-Sleep -Milliseconds 150 }
     }
-    if (!$ready -or $health.version -ne '2.2.0' -or $health.nonce -ne $nonce) { throw "Native bridge failed to start (process exited: $($nativeProcess.HasExited)): $healthError" }
+    if (!$ready -or $health.version -ne '2.3.0' -or $health.nonce -ne $nonce) { throw "Native bridge failed to start (process exited: $($nativeProcess.HasExited)): $healthError" }
     foreach ($testUri in @("http://127.0.0.1:$port/wrong/health", "$endpoint/request")) {
         $denied = $false
         try { Invoke-RestMethod -Uri $testUri -Method Post -ContentType 'application/json' -Body '{}' -Headers $allowedHeaders -TimeoutSec 5 | Out-Null } catch { $denied = $true }
@@ -238,7 +313,7 @@ try {
             if (!$ready) { throw 'Installed launcher did not start.' }
             $replacement = Install-SeaPilotDriveBinary -InstallFolder $installTestFolder -Compiler $compiler -Sources $sources
             if ($replacement -eq $published -or !(Test-Path -LiteralPath $replacement)) { throw 'Update did not publish a separate executable.' }
-            if ((Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2).version -ne '2.2.0') { throw 'Update interrupted the running launcher.' }
+            if ((Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2).version -ne '2.3.0') { throw 'Update interrupted the running launcher.' }
             $invalidSource = Join-Path $testRoot 'invalid.cs'
             Set-Content -LiteralPath $invalidSource -Value 'This is an intentionally invalid compiler fixture'
             $failed = $false

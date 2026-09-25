@@ -1,10 +1,10 @@
-SEAPILOT - LANCEUR WINDOWS COMMUN 2.2.0
-PRODUITS CHIMIQUES ET FDS GOOGLE DRIVE - 22/09/2026
+SEAPILOT - LANCEUR WINDOWS COMMUN 2.3.0
+PROCEDURES, PDF ET DOSSIERS AUTOMATIQUES - 25/09/2026
 
-Une installation pour Procedures, Sanctions Disciplinaires, Produits Chimiques et les futurs modules.
+Une installation pour Procedures, Procedures PDF, Sanctions Disciplinaires, Produits Chimiques et les futurs modules.
 
 1. Installez Google Drive pour ordinateur et connectez votre compte autorise.
-2. Verifiez que SeaPilot est visible dans l'Explorateur. Le dossier Sanctions Disciplinaires doit deja etre synchronise et partage uniquement avec Administration et Direction.
+2. Verifiez que SeaPilot est visible dans l'Explorateur. Les sous-dossiers des modules sont crees automatiquement. Procedures et Sanctions Disciplinaires doivent etre reserves a Administration et Direction dans les partages Google Drive.
 3. Extrayez entierement cette archive puis executez Installer.cmd une fois. Word et Excel doivent etre installes pour modifier leurs documents.
 4. Ouvrez Administration > Documents et Google Drive dans SeaPilot. Renseignez la racine (exemple G:\Mon Drive\SeaPilot) et enregistrez-la : les dossiers des collaborateurs en poste sont prepares.
 5. Autorisez l'ouverture du lanceur et la connexion locale si le navigateur le demande.
@@ -30,3 +30,5 @@ Produits Chimiques (2.2) : SeaPilot / Produits Chimiques / NAVIRE - c<entreprise
 Les fichiers sont stockes exclusivement dans ce dossier Google Drive. SeaPilot conserve leur reference, taille et empreinte SHA-256. Le retrait dans SeaPilot preserve le fichier original.
 Le telechargement et les annexes PDF lisent uniquement une piece enregistree et autorisee par le serveur. Chaque lecture controle le compte, le produit, la piece, le chemin exact, la taille et son empreinte. Aucun acces de lecture generique aux autres dossiers. Si un fichier change ou est deplace sur Drive, ajoutez sa nouvelle version dans SeaPilot.
 Partagez Produits Chimiques avec les profils concernes dans Google Drive. Attendez la synchronisation avant de changer de PC.
+
+Procedures (2.3) : Nouveau document cree une copie Word ou importe un fichier dans SeaPilot/Procedures. Le nom est Theme Numero Version - Titre. Ouvrir cree la fiche, ferme la fenetre puis lance le document. Publier convertit la version enregistree dans Office en PDF dans SeaPilot/Procedures PDF. Word, Excel ou PowerPoint doit etre installe pour les formats correspondants. 25 Mo maximum. Un nom deja utilise par un contenu different est refuse : incrementez la version. Les PDFs sont verifies par empreinte avant lecture et restent accessibles uniquement aux profils autorises. Le lanceur ne modifie jamais les permissions Google Drive.

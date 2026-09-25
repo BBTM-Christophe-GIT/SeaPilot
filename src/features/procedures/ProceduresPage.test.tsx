@@ -1,9 +1,19 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProceduresPage } from './ProceduresPage';
+import { procedureDriveFilename } from './procedureDriveFiles';
 import { downloadProcedureListPdf } from './procedureListPdf';
 
+const drive = vi.hoisted(() => ({ connect: vi.fn(), write: vi.fn(), publish: vi.fn(), open: vi.fn(), read: vi.fn() }));
+vi.mock('./procedureDriveFiles', async importOriginal => ({ ...await importOriginal<typeof import('./procedureDriveFiles')>(), createProcedureFileStore: () => drive }));
+beforeEach(() => {
+  Object.values(drive).forEach(mock => mock.mockReset());
+  drive.connect.mockResolvedValue({ version: '2.3.0', endpoint: 'http://127.0.0.1:50000/session' });
+  drive.write.mockImplementation(async (input, file) => ({ path: procedureDriveFilename(input, file.name.match(/\.[^.]+$/)[0]), bytes: file.size, sha256: 'a'.repeat(64), mimeType: file.type }));
+  drive.publish.mockResolvedValue({ path: 'URG QSMS-OPS-01 4 - Procédure embarquement ROZEL.pdf', bytes: 100, sha256: 'a'.repeat(64) });
+  drive.open.mockResolvedValue(undefined);
+});
 vi.mock('./procedureListPdf', () => ({ downloadProcedureListPdf: vi.fn().mockResolvedValue(undefined) }));
 afterEach(() => vi.unstubAllGlobals());
 
@@ -137,11 +147,12 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
     if (table === 'vessels') return { select: vi.fn(() => orderedResult(options.vessels ?? [{ name: 'GOURY' }, { name: 'LE ROZEL' }, { name: 'LANDEMER' }])) };
     throw new Error(`Unexpected table ${table}`);
   });
+  const rpc = vi.fn().mockResolvedValue({ data: options.published || publishedProcedureRow, error: null });
   const client = {
-    from,
+    rpc, from,
     storage: { from: vi.fn(() => ({ upload, remove, createSignedUrl })) },
   };
-  return { client, from, upload, createSignedUrl, procedureInsert, publicationInsert };
+  return { client, rpc, from, upload, createSignedUrl, procedureInsert, publicationInsert };
 }
 
 describe('ProceduresPage', () => {
@@ -189,16 +200,20 @@ describe('ProceduresPage', () => {
     await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
     const dialog = within(screen.getByRole('dialog'));
     await user.selectOptions(dialog.getByLabelText('Mode de création'), 'template');
-    expect(dialog.getByRole('link', { name: 'Télécharger le modèle Word' })).toHaveAttribute('href', '/templates/procedure.docx');
-    expect(dialog.getByLabelText('Stockage du fichier')).toHaveValue('supabase');
+    expect(dialog.queryByRole('link', { name: /Télécharger/ })).not.toBeInTheDocument();
+    expect(dialog.queryByLabelText('Stockage du fichier')).not.toBeInTheDocument();
+    expect(dialog.getByLabelText('Version')).toHaveValue('A');
+    expect(dialog.getByRole('option', { name: 'Armement' })).toBeInTheDocument();
     expect(dialog.queryByLabelText(/Fichier source modifiable/i)).not.toBeInTheDocument();
     await user.type(dialog.getByLabelText('Titre'), 'Plan urgence');
     await user.selectOptions(dialog.getByLabelText('ISM Chapitre'), '08');
-    await user.type(dialog.getByLabelText('Version'), 'a');
-    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await user.click(dialog.getByRole('button', { name: 'Ouvrir' }));
     expect(await screen.findByText('Document QSMS ajouté.')).toBeInTheDocument();
-    expect(upload).toHaveBeenCalledWith(expect.stringMatching(/^sources\//), expect.objectContaining({ name: 'URG 01-A - Plan urgence.docx', size: 5 }), expect.objectContaining({ upsert: false }));
-    expect(procedureInsert).toHaveBeenCalledWith(expect.objectContaining({ theme: 'URG', ism_chapter: '08', document_number: '01', source_file_name: 'URG 01-A - Plan urgence.docx' }));
+    expect(upload).not.toHaveBeenCalled();
+    expect(drive.write).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ name: 'URG 01 A - Plan urgence.docx', size: 5 }), expect.any(Object));
+    expect(drive.open).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(procedureInsert).toHaveBeenCalledWith(expect.objectContaining({ theme: 'URG', ism_chapter: '08', document_number: '01', source_file_name: 'URG 01 A - Plan urgence.docx' }));
   });
 
   it('keeps the dialog open on template failure and allows a retry', async () => {
@@ -211,32 +226,29 @@ describe('ProceduresPage', () => {
     const dialog = within(screen.getByRole('dialog'));
     await user.selectOptions(dialog.getByLabelText('Mode de création'), 'template');
     await user.type(dialog.getByLabelText('Titre'), 'Essai');
-    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await user.click(dialog.getByRole('button', { name: 'Ouvrir' }));
     expect(await dialog.findByRole('alert')).toHaveTextContent('modèle Procédure.docx est indisponible');
     expect(upload).not.toHaveBeenCalled();
     expect(procedureInsert).not.toHaveBeenCalled();
-    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await user.click(dialog.getByRole('button', { name: 'Ouvrir' }));
     expect(await screen.findByText('Document QSMS ajouté.')).toBeInTheDocument();
   });
 
-  it('supports saving a downloaded template in Drive without uploading another copy', async () => {
+  it('keeps the form and never registers metadata if the launcher cannot copy the source', async () => {
     const user = userEvent.setup();
-    const fetch = vi.fn();
-    vi.stubGlobal('fetch', fetch);
-    const { client, upload, procedureInsert } = createClient({ procedures: [], publications: [] });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new Uint8Array([80, 75, 3, 4]).buffer }));
+    drive.write.mockRejectedValue(new Error('Drive indisponible'));
+    const { client, procedureInsert } = createClient({ procedures: [], publications: [] });
     render(<ProceduresPage client={client as never} roles={['admin']} />);
     await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
     const dialog = within(screen.getByRole('dialog'));
     await user.selectOptions(dialog.getByLabelText('Mode de création'), 'template');
-    await user.selectOptions(dialog.getByLabelText('Stockage du fichier'), 'google-drive');
     await user.type(dialog.getByLabelText('Titre'), 'Copie Drive');
-    await user.type(dialog.getByLabelText('Lien du fichier Google Drive'), 'https://drive.google.com/file/d/1234567890abcdef/view');
-    await user.type(dialog.getByLabelText('Chemin dans le dossier synchronisé'), 'GEN/Copie.docx');
-    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
-    expect(await screen.findByText('Document QSMS ajouté.')).toBeInTheDocument();
-    expect(fetch).not.toHaveBeenCalled();
-    expect(upload).not.toHaveBeenCalled();
-    expect(procedureInsert).toHaveBeenCalledWith(expect.objectContaining({ source_google_drive_file_id: '1234567890abcdef', source_google_drive_path: 'GEN/Copie.docx' }));
+    await user.click(dialog.getByRole('button', { name: 'Ouvrir' }));
+    expect(await dialog.findByRole('alert')).toHaveTextContent('Drive indisponible');
+    expect(procedureInsert).not.toHaveBeenCalled();
+    expect(drive.open).not.toHaveBeenCalled();
+    expect(dialog.getByLabelText('Titre')).toHaveValue('Copie Drive');
   });
 
   it('restores the existing-file workflow when leaving template creation', async () => {
@@ -248,8 +260,7 @@ describe('ProceduresPage', () => {
     await user.selectOptions(dialog.getByLabelText('Mode de création'), 'template');
     await user.selectOptions(dialog.getByLabelText('Mode de création'), 'existing');
     expect(dialog.queryByText('Modèle Procédure.docx')).not.toBeInTheDocument();
-    await user.selectOptions(dialog.getByLabelText('Stockage du fichier'), 'supabase');
-    expect(dialog.getByLabelText(/Fichier source modifiable/i)).toBeRequired();
+    expect(dialog.getByLabelText('Fichier à importer')).toBeRequired();
   });
 
   it('lists vessel-specific and common documents, exporting only the checked documents in the current scope', async () => {
@@ -441,7 +452,7 @@ describe('ProceduresPage', () => {
     },
   );
 
-  it('uploads a new editable source to the private Supabase bucket', async () => {
+  it('imports a new editable source into the synchronized Procedures folder', async () => {
     const user = userEvent.setup();
     const created = { ...approvedProcedureRow, id: 44, title: 'Plan de préparation aux urgences', procedure_code: 'URG 08-A', document_number: '08' };
     const { client, upload, procedureInsert } = createClient({ procedures: [], publications: [], created });
@@ -471,12 +482,12 @@ describe('ProceduresPage', () => {
     expect(projectValues).toContain('P254 - NIVELAGE QUAI BOUGAINVILLE');
     expect(projectValues).not.toContain('P264 - PROJET ARCHIVÉ');
     const sourceFile = new File(['source'], 'urgence.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-    await user.selectOptions(within(dialog).getByLabelText('Stockage du fichier'), 'supabase');
-    await user.upload(within(dialog).getByLabelText(/Fichier source modifiable/i), sourceFile);
+    await user.upload(within(dialog).getByLabelText('Fichier à importer'), sourceFile);
     fireEvent.submit(within(dialog).getByRole('button', { name: 'Enregistrer' }).closest('form') as HTMLFormElement);
 
     expect(await screen.findByText('Document QSMS ajouté.')).toBeInTheDocument();
-    expect(upload).toHaveBeenCalledWith(expect.stringMatching(/^sources\//), sourceFile, expect.objectContaining({ upsert: false }));
+    expect(upload).not.toHaveBeenCalled();
+    expect(drive.write).toHaveBeenCalledWith(expect.any(Object), sourceFile, expect.any(Object));
     expect(procedureInsert).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Plan de préparation aux urgences',
       procedure_code: 'URG 08-A',
@@ -485,34 +496,36 @@ describe('ProceduresPage', () => {
       vessel_name: 'LANDEMER',
       project_name: 'P144 - GUARD VESSEL EMDT',
       annual_review: true,
-      source_storage_bucket: 'procedure-documents',
-      source_file_name: 'urgence.docx',
+      source_storage_bucket: null,
+      source_google_drive_path: 'URG 08 A - Plan de préparation aux urgences.docx',
+      source_file_name: 'URG 08 A - Plan de préparation aux urgences.docx',
     }));
   });
 
-  it('publishes a selected PDF as a separate distribution record', async () => {
+  it('converts the saved source and atomically registers its published PDF', async () => {
     const user = userEvent.setup();
-    const { client, publicationInsert, upload } = createClient();
+    const { client, rpc, publicationInsert, upload } = createClient();
     render(<ProceduresPage client={client as never} roles={['admin']} />);
-    await screen.findByText('Procédure embarquement ROZEL');
-
-    await user.click(screen.getByLabelText('Publier Procédure embarquement ROZEL'));
-    const dialog = screen.getByRole('dialog', { name: 'Confirmer la publication' });
-    expect(within(dialog).getByText(/Êtes-vous sûr de vouloir publier ce document/i)).toBeInTheDocument();
-    const pdf = new File(['pdf'], 'procedure-approuvee.pdf', { type: 'application/pdf' });
-    await user.upload(within(dialog).getByLabelText(/PDF à diffuser/i), pdf);
-    await user.click(within(dialog).getByRole('button', { name: 'Oui, publier' }));
-
-    expect(upload).toHaveBeenCalledWith(expect.stringMatching(/^published\/12\//), pdf, expect.any(Object));
-    expect(publicationInsert).toHaveBeenCalledWith(expect.objectContaining({
-      procedure_id: 12,
-      storage_bucket: 'procedure-documents',
-      file_name: 'procedure-approuvee.pdf',
-      mime_type: 'application/pdf',
-      status: 'published',
-      diffusion_on: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-    }));
+    await user.click(await screen.findByLabelText('Publier Procédure embarquement ROZEL'));
+    const dialog = within(screen.getByRole('dialog', { name: 'Confirmer la publication' }));
+    expect(dialog.queryByLabelText(/PDF à diffuser/i)).not.toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Oui, publier' }));
     expect(await screen.findByText(/PDF publié pour les profils Armement/i)).toBeInTheDocument();
+    expect(drive.publish).toHaveBeenCalledWith(expect.objectContaining({ id: 12 }));
+    expect(rpc).toHaveBeenCalledWith('publish_procedure_drive', { target_procedure: 12, pdf_path: 'URG QSMS-OPS-01 4 - Procédure embarquement ROZEL.pdf', pdf_bytes: 100, pdf_sha256: 'a'.repeat(64) });
+    expect(upload).not.toHaveBeenCalled();
+    expect(publicationInsert).not.toHaveBeenCalled();
+  });
+
+  it('does not publish or change lifecycle when PDF conversion fails', async () => {
+    drive.publish.mockRejectedValue(new Error('Word indisponible'));
+    const user = userEvent.setup();
+    const { client, rpc } = createClient();
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByLabelText('Publier Procédure embarquement ROZEL'));
+    await user.click(screen.getByRole('button', { name: 'Oui, publier' }));
+    expect(await screen.findByText('Word indisponible')).toBeInTheDocument();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('proposes the next number for a theme and blocks an existing combination', async () => {
@@ -557,25 +570,6 @@ describe('ProceduresPage', () => {
     open.mockRestore();
   });
 
-  it('creates a private Google Drive source without uploading a stale copy to Supabase', async () => {
-    const user = userEvent.setup();
-    const { client, upload, procedureInsert } = createClient({ procedures: [], publications: [] });
-    render(<ProceduresPage client={client as never} roles={['admin']} />);
-    await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
-    const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByLabelText('Stockage du fichier')).toHaveValue('google-drive');
-    fireEvent.change(within(dialog).getByLabelText('Titre'), { target: { value: 'Source Drive' } });
-    fireEvent.change(within(dialog).getByLabelText('Lien du fichier Google Drive'), { target: { value: 'https://drive.google.com/file/d/1234567890abcdef/view' } });
-    fireEvent.change(within(dialog).getByLabelText('Chemin dans le dossier synchronisé'), { target: { value: 'URG/source.docx' } });
-    fireEvent.submit(within(dialog).getByRole('button', { name: 'Enregistrer' }).closest('form')!);
-    expect(await screen.findByText('Document QSMS ajouté.')).toBeInTheDocument();
-    expect(upload).not.toHaveBeenCalled();
-    expect(procedureInsert).toHaveBeenCalledWith(expect.objectContaining({
-      source_google_drive_file_id: '1234567890abcdef', source_google_drive_path: 'URG/source.docx',
-      source_file_name: 'source.docx', source_size_bytes: null,
-    }));
-  });
-
   it('launches the native Drive source and provides the authenticated Drive web link', async () => {
     const user = userEvent.setup();
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
@@ -583,7 +577,7 @@ describe('ProceduresPage', () => {
       source_google_drive_file_id: '1234567890abcdef', source_google_drive_path: 'source.docx' }], publications: [] });
     render(<ProceduresPage client={client as never} roles={['admin']} />);
     await user.click(await screen.findByRole('button', { name: 'Ouvrir QSMS-OPS-01 Procédure embarquement ROZEL' }));
-    expect(open).toHaveBeenCalledWith(expect.stringMatching(/^seapilot-drive:\/\/root\/open\//), '_self', undefined);
+    expect(drive.open).toHaveBeenCalledWith(expect.objectContaining({ id: 12, googleDrivePath: 'source.docx' }));
     await user.click(screen.getByLabelText('Voir dans Drive Procédure embarquement ROZEL'));
     expect(open).toHaveBeenLastCalledWith('https://drive.google.com/file/d/1234567890abcdef/view', '_blank', 'noopener,noreferrer');
     expect(createSignedUrl).not.toHaveBeenCalled();
