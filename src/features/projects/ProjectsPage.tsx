@@ -61,9 +61,10 @@ import {
   type ProjectsData,
   type ProjectsDataSource,
 } from './projectQueries';
-import { BIMCO_P144_GROUPS } from './projectContractModels';
+import { BIMCO_PROJECT_SECTIONS, type BimcoProjectSectionId } from './projectContractModels';
+import { buildProjectBimcoSections } from './projectBimcoSections';
+import './ProjectSheet.css';
 import {
-  buildSupplytimePreview,
   documentBelongsToProject,
   EMPTY_PROJECT_FILTERS,
   filterDocumentsForProjects,
@@ -270,11 +271,7 @@ type ProjectDetailTab =
   | 'time-charter-operations'
   | 'time-charter-rates'
   | 'time-charter-clauses'
-  | 'bimco-boxes-01-12'
-  | 'bimco-boxes-13-21'
-  | 'bimco-boxes-22-34'
-  | 'bimco-signatures'
-  | 'bimco-annexes';
+  | BimcoProjectSectionId;
 
 interface ProjectDetailTabDefinition {
   description?: string;
@@ -321,13 +318,10 @@ const PROJECT_CONTRACT_TABS: Record<ProjectContractVariant, ProjectDetailTabDefi
     { group: 'Affrètement à temps', icon: ReceiptText, id: 'time-charter-rates', label: 'Conditions tarifaires' },
     { group: 'Affrètement à temps', icon: PackageCheck, id: 'time-charter-clauses', label: 'Clauses & signatures' },
   ],
-  bimco: [
-    { group: 'BIMCO', icon: ClipboardList, id: 'bimco-boxes-01-12', label: 'Cases 1–12' },
-    { group: 'BIMCO', icon: ClipboardList, id: 'bimco-boxes-13-21', label: 'Cases 13–21' },
-    { group: 'BIMCO', icon: ClipboardList, id: 'bimco-boxes-22-34', label: 'Cases 22–34' },
-    { group: 'BIMCO', icon: PackageCheck, id: 'bimco-signatures', label: 'Signatures' },
-    { group: 'BIMCO', icon: Files, id: 'bimco-annexes', label: 'Annexes' },
-  ],
+  bimco: BIMCO_PROJECT_SECTIONS.map((section) => ({
+    group: 'BIMCO', icon: section.id === 'bimco-pricing' ? ReceiptText : section.id === 'bimco-operations' ? Ship : FileText,
+    id: section.id, label: section.label,
+  })),
 };
 
 function projectContractVariant(contractType?: string | null): ProjectContractVariant | null {
@@ -353,7 +347,9 @@ function ProjectDetailTabs({
   activeTab,
   onChange,
   tabs,
+  counts,
 }: {
+  counts: Record<string, number>;
   activeTab: ProjectDetailTab;
   onChange: (tab: ProjectDetailTab) => void;
   tabs: ProjectDetailTabDefinition[];
@@ -375,6 +371,7 @@ function ProjectDetailTabs({
           <div className="project-detail-tab-item" key={tab.id}>
             {startsGroup ? <span className="project-detail-tab-group">{tab.group}</span> : null}
             <button
+              aria-label={tab.label}
               aria-controls="project-detail-panel"
               aria-selected={activeTab === tab.id}
               id={`project-tab-${tab.id}`}
@@ -399,6 +396,7 @@ function ProjectDetailTabs({
             >
               <Icon aria-hidden="true" size={19} />
               <span>{tab.label}</span>
+              {counts[tab.id] !== undefined ? <small aria-hidden="true" className="project-sheet-tab-count">{counts[tab.id]}</small> : null}
             </button>
           </div>
         );
@@ -757,54 +755,52 @@ function ProjectDetail({
   const selectedContractDefinition = PROJECT_CONTRACT_VARIANTS.find((definition) => definition.id === selectedContractVariant);
   const selectedContractKind = selectedContractDefinition?.documentKind;
   const supplytime = contract?.supplytimeData || {};
-  const supplytimePreview = useMemo(() => buildSupplytimePreview(project, contract), [contract, project]);
-  const bimcoPreviewFields = supplytimePreview.flatMap((group) => group.fields);
-  const activeBimcoFields = activeTab === 'bimco-boxes-01-12'
-    ? bimcoPreviewFields.filter((field) => {
-        const boxNumber = Number(/^box(\d+)/.exec(field.key)?.[1]);
-        return boxNumber >= 1 && boxNumber <= 12;
-      })
-    : activeTab === 'bimco-boxes-13-21'
-      ? bimcoPreviewFields.filter((field) => {
-          const boxNumber = Number(/^box(\d+)/.exec(field.key)?.[1]);
-          return boxNumber >= 13 && boxNumber <= 21;
-        })
-      : activeTab === 'bimco-boxes-22-34'
-        ? bimcoPreviewFields.filter((field) => {
-            const boxNumber = Number(/^box(\d+)/.exec(field.key)?.[1]);
-            return boxNumber >= 22 && boxNumber <= 34;
-          })
-        : activeTab === 'bimco-signatures'
-          ? bimcoPreviewFields.filter((field) => field.key.startsWith('signature_'))
-          : [];
+  const bimcoSections = useMemo(() => buildProjectBimcoSections(project, contract), [project, contract]);
+  const activeBimcoSection = bimcoSections.find((section) => section.id === activeTab);
+  const contractTabs = selectedContractVariant ? PROJECT_CONTRACT_TABS[selectedContractVariant] : [];
+  const isContractSection = contractTabs.some((tab) => tab.id === activeTab);
+  const primaryTab = isContractSection ? 'offer-contract' : activeTab;
+  const documentCount = contractDocuments.length + projectDocuments.length + operationDocuments.length;
+  function openContractSection(tab: ProjectDetailTab) {
+    setActiveTab(tab);
+    window.requestAnimationFrame(() => document.getElementById('project-detail-panel')?.focus({ preventScroll: true }));
+  }
+  const contractNavigation = (
+    <nav aria-label="Rubriques du contrat" className="project-sheet-contract-links">
+      {contractTabs.map((tab) => {
+        const Icon = tab.icon;
+        return <button aria-current={activeTab === tab.id ? 'page' : undefined} key={tab.id} onClick={() => openContractSection(tab.id)} type="button">
+          <Icon aria-hidden="true" size={19} /><span>{tab.label}</span><ChevronRight aria-hidden="true" size={17} />
+        </button>;
+      })}
+    </nav>
+  );
   return (
-    <article className="project-detail project-contract-sheet" aria-label={`Détails du contrat ${project.projectCode || project.title}`}>
-      <header className="project-contract-header">
-        <div className="project-contract-identity">
-          <span className="project-contract-icon"><ClipboardList aria-hidden="true" size={22} /></span>
+    <article className="project-detail project-contract-sheet project-dossier" aria-label={`Détails du contrat ${project.projectCode || project.title}`}>
+      <aside className="project-sheet-sidebar">
+        <div className="project-sheet-reference">
+          <span>Fiche projet</span>
+          <strong>{project.projectCode || project.title}</strong>
+          {project.projectCode ? <b>{project.title}</b> : null}
+          <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
+        </div>
+        <ProjectDetailTabs activeTab={primaryTab} counts={{ operations: planningOccurrences.length, documents: documentCount }} onChange={setActiveTab} tabs={projectDetailTabs(null)} />
+      </aside>
+      <div className="project-sheet-main">
+      <header className="project-sheet-header">
+        <div className="project-sheet-title-row">
           <div>
-            <div className="project-contract-title">
-              <h2>{project.projectCode ? `${project.projectCode} – ` : ''}{project.title}</h2>
-              <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
-            </div>
-            <dl className="project-contract-summary">
-              <DetailField label="Client" value={displayText(project.clientName)} />
-              <DetailField label="Type" value={displayText(project.contractType)} />
-              <DetailField label="Période" value={formatPeriod(projectStart, projectEnd)} />
-              <DetailField
-                label="Loyer du contrat"
-                value={formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || '', contract?.hireUnit)}
-              />
-            </dl>
+            <span className="project-sheet-eyebrow">Fiche projet</span>
+            <h2>{project.projectCode ? `${project.projectCode} – ` : ''}{project.title}</h2>
           </div>
+          {isManager && !project.archivedAt ? <button className="project-sheet-edit" onClick={onEditProject} type="button"><Pencil aria-hidden="true" size={17} /> Modifier</button> : null}
         </div>
-        <div className="project-contract-header-actions">
-          {isManager && !project.archivedAt ? <button onClick={onEditProject} type="button"><Pencil aria-hidden="true" size={15} /> Modifier</button> : null}
-          <div className="project-contract-counts" aria-label="Indicateurs du contrat">
-            <span><small>Opérations</small><strong>{planningOccurrences.length}</strong></span>
-            <span><small>Documents</small><strong>{contractDocuments.length + projectDocuments.length + operationDocuments.length}</strong></span>
-          </div>
-        </div>
+        <dl className="project-sheet-summary">
+          <DetailField label="Numéro" value={displayText(project.projectCode)} />
+          <DetailField label="Statut" value={project.archivedAt ? 'Archivé' : displayText(project.status)} />
+          <DetailField label="Type de contrat" value={displayText(project.contractType)} />
+          <DetailField label="Période" value={formatPeriod(projectStart, projectEnd)} />
+        </dl>
       </header>
       {contractUnavailable ? (
         <p className="project-partial-state" role="status">
@@ -817,37 +813,47 @@ function ProjectDetail({
       ) : null}
 
       <div className="project-detail-tabs-shell">
-        <ProjectDetailTabs activeTab={activeTab} onChange={setActiveTab} tabs={detailTabs} />
         <div
-          aria-labelledby={`project-tab-${activeTab}`}
+          aria-labelledby={`project-tab-${primaryTab}`}
           className="project-detail-tab-panel"
           id="project-detail-panel"
           role="tabpanel"
           tabIndex={0}
         >
 
+      {isContractSection ? (
+        <div className="project-sheet-contract-navigation">
+          <button className="project-sheet-back" onClick={() => openContractSection('offer-contract')} type="button"><ChevronLeft aria-hidden="true" size={16} /> Offre & contrat</button>
+          {contractNavigation}
+        </div>
+      ) : null}
       {activeTab === 'identification' ? (
-      <section aria-label="Identification" className="project-detail-section">
-        <dl className="project-detail-grid">
-          <DetailField label="Numéro" value={displayText(project.projectCode)} />
-          <DetailField label="Statut" value={displayText(project.status)} />
-          <DetailField label="Type de contrat" value={displayText(project.contractType)} />
-          <DetailField label="Affréteur / client" value={displayText(project.clientName)} />
-          <DetailField label="Armateur" value={displayText(contract?.ownerIdentity)} wide />
-          <DetailField label="Navire principal" value={displayText(project.primaryVesselName)} />
-          <DetailField label="Second navire" value={displayText(project.secondaryVesselName)} />
-          <DetailField label="Affectation du navire limitée à" value={displayText(contract?.vesselAssignmentLimit)} wide />
-          <DetailField label="Support ROV" value={project.isRovSupport ? 'Oui' : 'Non'} />
-          <DetailField label="Support plongée" value={project.isDivingSupport ? 'Oui' : 'Non'} />
-          {client ? (
-            <DetailField
-              label="Coordonnées client"
-              value={[client.code, client.email, client.phone, client.city, client.country].filter(Boolean).join(' · ') || 'Non renseignées'}
-              wide
-            />
-          ) : null}
-        </dl>
-      </section>
+        <section aria-label="Identification" className="project-detail-section project-sheet-identification">
+          <section className="project-sheet-group" aria-labelledby="project-parties-heading">
+            <h3 id="project-parties-heading"><Users aria-hidden="true" size={24} /> Parties prenantes</h3>
+            <dl className="project-sheet-parties">
+              <DetailField label="Affréteur / client" value={displayText(project.clientName)} />
+              <DetailField label="Armateur" value={displayText(contract?.ownerIdentity)} />
+              {client ? <DetailField label="Coordonnées client" value={[client.code, client.email, client.phone, client.city, client.country].filter(Boolean).join(' · ') || 'Non renseignées'} wide /> : null}
+            </dl>
+          </section>
+          <section className="project-sheet-group" aria-labelledby="project-vessels-heading">
+            <h3 id="project-vessels-heading"><Ship aria-hidden="true" size={24} /> Navires & affectation</h3>
+            <dl className="project-sheet-vessels">
+              <DetailField label="Navire principal" value={displayText(project.primaryVesselName)} />
+              <DetailField label="Second navire" value={displayText(project.secondaryVesselName)} />
+              <DetailField label="Affectation du navire limitée à" value={displayText(contract?.vesselAssignmentLimit)} />
+            </dl>
+          </section>
+          <section className="project-sheet-conditions" aria-labelledby="project-conditions-heading">
+            <h3 id="project-conditions-heading"><FileText aria-hidden="true" size={24} /> Conditions de la mission</h3>
+            <dl>
+              <DetailField label="Loyer du contrat" value={formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || '', contract?.hireUnit)} />
+              <DetailField label="Support ROV" value={project.isRovSupport ? 'Oui' : 'Non'} />
+              <DetailField label="Support plongée" value={project.isDivingSupport ? 'Oui' : 'Non'} />
+            </dl>
+          </section>
+        </section>
       ) : null}
 
       {activeTab === 'offer-contract' ? (
@@ -912,7 +918,7 @@ function ProjectDetail({
             <Info aria-hidden="true" size={20} />
             <span>
               <strong>{selectedContractDefinition ? selectedContractDefinition.label : 'Aucun contrat sélectionné'}</strong>
-              <small>Les informations saisies restent consultables dans les rubriques dédiées à gauche.</small>
+              <small>Consultez les informations saisies dans les rubriques ci-dessous.</small>
             </span>
           </div>
           {isManager ? (
@@ -926,6 +932,10 @@ function ProjectDetail({
             </button>
           ) : null}
         </div>
+        {contractTabs.length > 0 ? <section className="project-sheet-contract-index" aria-label="Informations du contrat">
+          <h4>Informations du contrat</h4>
+          {contractNavigation}
+        </section> : null}
       </section>
       ) : null}
 
@@ -1238,26 +1248,15 @@ function ProjectDetail({
         />
       ) : null}
 
-      {activeBimcoFields.length > 0 ? (
+      {activeBimcoSection ? (
         <ProjectContractInformation
-          description="Les données métier et les valeurs historiques enregistrées dans les cases du formulaire BIMCO."
-          fields={activeBimcoFields.map((field) => ({ label: field.label, value: field.value, wide: true }))}
-          title={detailTabs.find((tab) => tab.id === activeTab)?.label || 'BIMCO'}
-        />
-      ) : null}
-
-      {activeTab === 'bimco-annexes' ? (
-        <ProjectContractInformation
-          description="Les pièces et informations annexes conservées avec le contrat BIMCO."
-          fields={BIMCO_P144_GROUPS.find((group) => group.id === 'annexes')?.fields.map((field) => ({
-            label: field.label,
-            value: supplytime[field.key],
-            wide: true,
-          })) || []}
-          title="Annexes"
+          description="Les informations du contrat sont regroupées par sujet. Les valeurs enregistrées et les références du document sont conservées."
+          fields={activeBimcoSection.fields.map((field) => ({ label: field.label, value: field.value, wide: true }))}
+          title={activeBimcoSection.label}
         />
       ) : null}
         </div>
+      </div>
       </div>
     </article>
   );

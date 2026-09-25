@@ -68,7 +68,7 @@ import {
   withBareboatContractDefaults,
   withTowageContractDefaults,
 } from './projectContractOptions';
-import { BIMCO_P144_GROUPS } from './projectContractModels';
+import { BIMCO_P144_BUSINESS_GROUPS } from './projectContractModels';
 import {
   COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY,
   COMMERCIAL_CONDITIONS_DESCRIPTION_KEY,
@@ -1482,7 +1482,7 @@ export function ProjectEditor({
               <Field label="Période maximale d’audit"><input onChange={(event) => update('maxAuditPeriod', event.target.value)} value={form.maxAuditPeriod} /></Field>
             </div>
             <div className="project-supplytime-editor">
-              {BIMCO_P144_GROUPS.map((group) => (
+              {BIMCO_P144_BUSINESS_GROUPS.map((group) => (
                 <section key={group.id}>
                   <h3>{group.label}</h3>
                   {group.fields.map((field) => (

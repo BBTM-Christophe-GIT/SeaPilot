@@ -1090,3 +1090,100 @@ final result: passed
 3. Implémentation finale : navigation contextuelle ajoutée pour chaque type et réaffichage des valeurs contractuelles sauvegardées ; comparaison combinée sans écart P0, P1 ou P2.
 
 final result: passed
+
+---
+
+# Fiche Projet — contrôle de la préversion
+
+Date : 25 septembre 2026. Route : `/modules/projects?preview=1`.
+
+## Références et captures
+
+- Source retenue : `docs/design/project-sheet-dossier-proposal.png`, 1622 × 970 px, proposition 2.
+- Adaptation P144 : `docs/design/project-sheet-p144-proposal.png`, 1487 × 1057 px.
+- Rendu P144 : `docs/design/project-sheet-p144-preview.png`, 1181 × 1038 px, région de la fiche, Offre & contrat / BIMCO.
+- Rendu P280 : `docs/design/project-sheet-p280-preview.png`, navigateur entier, Identité.
+- Rendu mobile : `docs/design/project-sheet-mobile-preview.png`, 390 × 844 px, Identité P280 après défilement.
+- Navigateurs : navigateur intégré Codex ; largeurs CSS 1760, 1280 et 390 px.
+
+Les sources et les captures ont été ouvertes ensemble dans une même entrée de
+comparaison. La maquette montre uniquement la fiche ; SeaPilot conserve son
+menu global, son ruban et le portefeuille. La comparaison porte donc sur la
+région de la fiche, à largeur relative identique, et non sur ces éléments externes.
+Les images de conception n'ont pas de densité CSS définie ; aucune égalité pixel
+à pixel n'est revendiquée. La capture complète P280 est réduite par le navigateur
+intégré : elle sert à contrôler la composition. La capture P144 et la vue mobile
+servent au contrôle lisible des textes, actions, séparateurs et retours à la ligne.
+Les données et dates P144 sont des exemples, contrairement aux libellés métier.
+
+## Constats et corrections
+
+- [P1, corrigé] L'ancienne grille interne réservait une deuxième colonne de
+  navigation, comprimant le contenu. Le conteneur interne est passé en bloc et
+  la fiche possède une seule grille de navigation/contenu. La capture P144 montre
+  les radios et les six rubriques sur toute la largeur utile.
+- [P2, corrigé] Les anciennes règles CSS écrasaient certains espacements et
+  maintenaient les encarts gris. Les sélecteurs sont limités à la fiche et ont
+  une priorité suffisante. P280 retrouve les trois groupes de la maquette ; les
+  valeurs sont présentées directement sur fond blanc.
+- [P2, corrigé] Le cumul menu global, portefeuille et navigation réduisait trop
+  la fiche à 1280 px. Le portefeuille passe au-dessus sous 1400 px. Sur mobile,
+  les champs passent sur une colonne et les cinq sections restent accessibles
+  dans une barre défilante. Aucun débordement horizontal de la page constaté à
+  390 px ; les noms longs et l'adresse restent lisibles dans la capture mobile.
+- [P2, corrigé] L'espacement hérité du parcours documentaire ajoutait des vides
+  excessifs. Les marges du sélecteur et du bloc d'émission ont été réduites. La
+  capture P144 finale montre la continuité entre offre, choix et rubriques.
+
+Les captures référencées sont postérieures à ces corrections. Aucun P0/P1/P2
+visuel restant n'a été relevé lors de la comparaison finale.
+
+## Fidélité contrôlée
+
+- Typographie : police existante de SeaPilot, titre dominant, sous-titres plus
+  sobres, valeurs lisibles et retours à la ligne sur les noms longs. La police
+  de la génération n'est pas introduite comme nouvelle dépendance.
+- Espacement : navigation pâle à gauche, en-tête séparé par un filet bleu,
+  groupes espacés et bandeau des conditions. Les informations et aides du
+  parcours documentaire existant sont conservées ; sa hauteur dépasse donc
+  légèrement celle du concept P144.
+- Couleurs : bleu SeaPilot pour les actions et l'état actif, fond blanc,
+  navigation bleu-gris clair et filets discrets. Focus clavier visible.
+- Images et icônes : icônes Lucide existantes ; logo officiel de l'application
+  conservé dans le menu global. Les logos décoratifs suggérés par ImageGen ne
+  sont pas intégrés. Aucune image métier ni illustration à reproduire.
+- Contenu : cinq sections principales ; aucune rubrique « Cases 1–12 » dans
+  la fiche. Six thèmes BIMCO dans la consultation et l'éditeur. Les références
+  numérotées restent présentes sur les champs de saisie et le document officiel.
+
+## Vérifications fonctionnelles
+
+- Choix P280 puis P144 depuis le portefeuille ; passage Identité / Offre & contrat.
+- Navigation dans les thèmes, tarifs multilignes et Signatures & annexes P144.
+- Ouverture de Modifier puis de l'étape BIMCO : six thèmes présents et champs
+  disponibles ; fermeture sans enregistrer.
+- Console du navigateur : aucune erreur ou alerte relevée durant ces parcours.
+- 76 tests ciblés : page Projets, regroupements BIMCO, éditeur, génération
+  documentaire et client de démonstration. Les 37 clés P144 apparaissent chacune
+  exactement une fois ; valeurs explicites, zéro, multilignes et anciens champs
+  sont couverts.
+- Vérification TypeScript, lint ciblé et compilation de production réussis.
+
+## Limites et suivi
+
+- Les conditions réelles P144 n'ont pas été extraites ni modifiées ; le mode
+  préversion est explicitement un jeu de démonstration.
+- Le contrôle mobile visuel détaillé porte sur l'identité P280 ; les six thèmes
+  P144 sont couverts par les essais de navigation sur ordinateur et automatisés.
+- [P3] Les pictogrammes des six thèmes peuvent être différenciés davantage lors
+  d'une prochaine itération, sans modifier la navigation ou les données.
+
+## Checklist finale
+
+- [x] Proposition 2 intégrée, bouton Densité supprimé.
+- [x] P144 regroupé par thèmes, stockage et génération conservés.
+- [x] Vues bureau et mobile contrôlées après corrections.
+- [x] Interactions principales et console vérifiées.
+- [x] Tests ciblés, lint et build réussis.
+
+final result: passed

@@ -17,7 +17,7 @@ import {
   normalizeProjectContractType,
   TOWAGE_CONTRACT_TYPE,
 } from './projectContractOptions';
-import { BIMCO_P144_FIELDS, BIMCO_P144_GROUPS } from './projectContractModels';
+import { BIMCO_P144_FIELDS, BIMCO_P144_BUSINESS_GROUPS } from './projectContractModels';
 import bimcoPage01Url from './assets/contract-previews/bimco-p144-page-01.png';
 import bimcoPage02Url from './assets/contract-previews/bimco-p144-page-02.png';
 import bimcoPage03Url from './assets/contract-previews/bimco-p144-page-03.png';
@@ -597,7 +597,7 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
       : Math.round(((basicCompletion + [projectDescriptionHasContent(props.form.description), props.form.charterHire, props.form.mobilisationFee, props.form.supplytimeData.box23_payment].filter(Boolean).length) / 9) * 100);
   const safeCompletion = Math.max(0, Math.min(100, completion));
   const checklist = contractType === BIMCO_CONTRACT_TYPE
-    ? BIMCO_P144_GROUPS.map((group) => ({
+    ? BIMCO_P144_BUSINESS_GROUPS.map((group) => ({
         complete: group.fields.every((field) => Boolean(bimcoValues[field.key]?.trim())),
         label: group.label,
       }))
