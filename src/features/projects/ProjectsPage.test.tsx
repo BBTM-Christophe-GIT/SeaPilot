@@ -636,7 +636,7 @@ describe('ProjectsPage', () => {
     });
     render(<ProjectsPage client={client as never} roles={['direction']} />);
     await screen.findByRole('heading', { name: 'P144 – EMDT - GOURY' });
-    expect(screen.getByRole('heading', { name: 'Parties prenantes' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Client' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Navires & affectation' })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Offre & contrat' }));
     expect(screen.queryByText(/Cases \d/)).not.toBeInTheDocument();

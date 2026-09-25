@@ -830,7 +830,7 @@ function ProjectDetail({
       {activeTab === 'identification' ? (
         <section aria-label="Identification" className="project-detail-section project-sheet-identification">
           <section className="project-sheet-group" aria-labelledby="project-parties-heading">
-            <h3 id="project-parties-heading"><Users aria-hidden="true" size={24} /> Parties prenantes</h3>
+            <h3 id="project-parties-heading"><Users aria-hidden="true" size={24} /> Client</h3>
             <dl className="project-sheet-parties">
               <DetailField label="Affréteur / client" value={displayText(project.clientName)} />
               <DetailField label="Armateur" value={displayText(contract?.ownerIdentity)} />

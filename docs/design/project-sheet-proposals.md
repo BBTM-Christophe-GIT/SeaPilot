@@ -37,6 +37,9 @@ l'intégration réutilise les composants et ressources existants de SeaPilot.
 
 ## Préversion retenue et P144
 
+Dans la section Identité, le titre « Parties prenantes » de la maquette est
+remplacé par « Client », à la demande de l'utilisateur.
+
 La navigation principale conserve cinq sections. Les rubriques propres au type
 de contrat sont accessibles depuis « Offre & contrat », au centre de la fiche.
 Pour BIMCO, les regroupements par numéros de cases sont remplacés par :
