@@ -2,10 +2,13 @@
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
-.planning-quick-project-form {
+.planning-project-picker > .planning-quick-project-form {
   display: grid;
+  grid-template-rows: none;
+  align-content: start;
   gap: 14px;
   padding: 28px;
+  overflow-y: auto;
 }
 
 .planning-quick-project-form h2,
