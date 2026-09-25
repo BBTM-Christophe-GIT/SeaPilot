@@ -2482,7 +2482,8 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   if (functionName === 'planning_schedule_catalog_project') {
     return createPreviewQuery(schedulePreviewProject(args));
   }
-  if (functionName === 'planning_create_and_schedule_project') {
+  if (functionName === 'planning_create_and_schedule_project' || functionName === 'planning_create_quick_project') {
+    if (functionName === 'planning_create_quick_project') args = { ...args, target_status: 'Brouillon' };
     const vessel = previewVessel(Number(args.target_primary_vessel_id));
     const client = previewRows('clients').find((row) => Number(row.id) === Number(args.target_client_id));
     const projectId = nextPreviewId('projects', 9002);

@@ -1,0 +1,40 @@
+.planning-project-picker .planning-project-picker-tools {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.planning-project-picker > .planning-quick-project-form {
+  display: grid;
+  grid-template-rows: none;
+  align-content: start;
+  gap: 14px;
+  padding: 28px;
+  overflow-y: auto;
+}
+
+.planning-quick-project-form h2,
+.planning-quick-project-form p {
+  margin: 0;
+}
+
+.planning-quick-project-form label {
+  font-weight: 700;
+}
+
+.planning-quick-project-form input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid #cdd8e6;
+  border-radius: 7px;
+  padding: 10px 14px;
+  font: inherit;
+}
+
+.planning-quick-project-form small {
+  color: #53647b;
+}
+
+@media (max-width: 760px) {
+  .planning-project-picker .planning-project-picker-tools {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

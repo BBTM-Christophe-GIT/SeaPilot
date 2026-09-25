@@ -31,6 +31,7 @@ function renderPicker(overrides: Partial<React.ComponentProps<typeof PlanningPro
     editable: true,
     onClose: vi.fn(),
     onCreateProject: vi.fn(),
+    onQuickProjectCreated: vi.fn(),
     onSelectProject: vi.fn(),
     vessel,
     ...overrides,
@@ -77,6 +78,44 @@ describe('PlanningProjectPickerDialog', () => {
     renderPicker({ canCreateProject: false, editable: false });
     expect(await screen.findByText('Mode lecture seule')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Créer un nouveau projet' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Projet rapide' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Continuer' })).toBeDisabled();
+  });
+
+  it('creates a draft with only a title and the selected cell context, without opening Projects', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient();
+    const { props } = renderPicker({ client: client as never });
+    await screen.findByRole('option', { name: /P267/ });
+    await user.click(screen.getByRole('button', { name: 'Projet rapide' }));
+    expect(screen.getByRole('button', { name: 'Créer le projet' })).toBeDisabled();
+    expect(screen.getByLabelText('Titre du projet')).toHaveFocus();
+    await user.type(screen.getByLabelText('Titre du projet'), '  Essai rapide  ');
+    rpc.mockResolvedValueOnce({ data: [{ id: 991, catalog_project_id: 801, title: 'P268 - Essai rapide', status: 'Brouillon', starts_on: '2026-07-18', ends_on: '2026-07-18', primary_vessel_id: 1, primary_vessel_name: 'GOURY', event_type: 'operation' }], error: null });
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(props.onQuickProjectCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 991, catalogProjectId: 801, status: 'Brouillon' })));
+    expect(rpc).toHaveBeenLastCalledWith('planning_create_quick_project', { target_title: 'Essai rapide', target_primary_vessel_id: 1, target_starts_on: '2026-07-18' });
+    expect(props.onCreateProject).not.toHaveBeenCalled();
+    expect(props.onSelectProject).not.toHaveBeenCalled();
+  });
+
+  it('keeps the title on failure and prevents duplicate submissions while saving', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient();
+    const { props } = renderPicker({ client: client as never });
+    await screen.findByRole('option', { name: /P267/ });
+    await user.click(screen.getByRole('button', { name: 'Projet rapide' }));
+    await user.type(screen.getByLabelText('Titre du projet'), 'Mission');
+    let finish!: (value: unknown) => void;
+    rpc.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    await user.dblClick(screen.getByRole('button', { name: 'Créer le projet' }));
+    expect(rpc.mock.calls.filter(([name]) => name === 'planning_create_quick_project')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Création…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Fermer' })).toBeDisabled();
+    finish({ data: null, error: { message: 'Échec réseau' } });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Échec réseau');
+    expect(screen.getByLabelText('Titre du projet')).toHaveValue('Mission');
+    expect(screen.getByRole('button', { name: 'Créer le projet' })).toBeEnabled();
+    expect(props.onQuickProjectCreated).not.toHaveBeenCalled();
   });
 });

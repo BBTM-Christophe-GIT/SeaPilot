@@ -2973,6 +2973,12 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           editable={canEditPlanning}
           onClose={() => setProjectCellContext(null)}
           onCreateProject={createProjectFromPlanning}
+          onQuickProjectCreated={(project) => {
+            updateOverview((current) => ({ ...current, projects: [...current.projects, project] }));
+            setSelectedTimelineId(`project-${project.id}`);
+            setProjectCellContext(null);
+            setStatusMessage(`${project.title} créé en brouillon et ajouté au planning.`);
+          }}
           onSelectProject={openCatalogOperationEditor}
           vessel={projectCellContext.vessel}
         />
