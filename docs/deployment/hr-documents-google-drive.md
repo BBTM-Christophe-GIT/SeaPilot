@@ -18,6 +18,10 @@ choisir un autre fichier. Les téléchargements ZIP sont séquentiels pour ne pa
 saturer le serveur local du lanceur. Les erreurs précisent le fichier ou la
 connexion à vérifier, et la sélection reste présente après un échec.
 
+Les fenêtres de création, modification et renouvellement des documents gardent
+leurs boutons de validation visibles. Seuls les champs défilent lorsque le
+formulaire dépasse la hauteur disponible, notamment pour les visites médicales.
+
 ## Configuration et droits
 
 Installer la mise à jour depuis **Administration → Documents et Google Drive**
