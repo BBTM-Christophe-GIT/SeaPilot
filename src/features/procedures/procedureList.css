@@ -1,19 +1,22 @@
-.procedure-list-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-bottom: 18px; }
-.procedure-list-controls label { display: grid; gap: 6px; min-width: 210px; font-weight: 600; }
-.procedure-list-controls select { width: 100%; min-height: 40px; padding: 8px 12px; border: 1px solid #d7dfe8; border-radius: 8px; color: #1f3148; background: white; font: inherit; }
-.procedure-list-controls p { flex: 1; min-width: 160px; margin: 0; color: #52677f; font-size: 13px; }
+.procedure-list-controls { display: grid; grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); align-items: end; gap: 10px; margin-bottom: 12px; }
+.procedure-list-controls label { display: grid; gap: 6px; min-width: 0; font-weight: 600; }
+.procedure-list-controls select { width: 100%; min-width: 0; min-height: 40px; padding: 8px 12px; border: 1px solid #d7dfe8; border-radius: 8px; color: #1f3148; background: white; font: inherit; text-overflow: ellipsis; }
+.procedure-list-controls p { align-self: center; margin: 0; color: #52677f; font-size: 13px; }
 .procedure-list-table-wrap { overflow-x: auto; }
-.procedure-list-table { width: 100%; border-collapse: collapse; color: #24374e; font-size: 13px; }
+.procedure-list-table { width: 100%; table-layout: fixed; border-collapse: collapse; color: #24374e; font-size: 13px; }
 .procedure-list-table th { background: #edf3f8; text-align: left; font-size: 12px; }
-.procedure-list-table th, .procedure-list-table td { padding: 12px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
-.procedure-list-table td:first-child { width: 65px; text-align: center; }
-.procedure-list-table input { width: 18px; height: 18px; accent-color: #2563eb; cursor: pointer; }
-.procedure-list-table td span, .procedure-list-table td small { display: block; margin-top: 4px; }
-.procedure-list-table td small { color: #52677f; }
+.procedure-list-table th, .procedure-list-table td { height: 36px; padding: 6px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.procedure-list-table th:first-child, .procedure-list-table td:first-child { width: 64px; text-align: center; }
+.procedure-list-table th:nth-child(3) { width: 120px; }
+.procedure-list-table th:nth-child(4) { width: 70px; }
+.procedure-list-table th:nth-child(5) { width: 100px; }
+.procedure-list-table input { display: block; width: 18px; height: 18px; margin: 0 auto; accent-color: #2563eb; cursor: pointer; }
+.procedure-list-document > span { display: block; overflow: hidden; text-overflow: ellipsis; }
+.procedure-list-table tbody tr:hover { background: #f4f8fc; }
 .procedure-list-empty { padding: 28px; text-align: center; color: #52677f; }
 .procedure-list-action { display: flex; justify-content: flex-end; padding: 10px 16px; border-bottom: 1px solid #e4e9ef; }
 @media (max-width: 640px) {
-  .procedure-list-controls label { width: 100%; }
-  .procedure-list-controls p { flex-basis: 100%; }
+  .procedure-list-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .procedure-list-controls .procedure-list-chapter, .procedure-list-controls p { grid-column: 1 / -1; }
   .procedure-list-table { min-width: 600px; }
 }

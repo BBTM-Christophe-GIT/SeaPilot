@@ -11,9 +11,16 @@ constituées d’espaces). La comparaison ignore la casse et les accents, sans c
 Le filtre Navire de la bibliothèque applique la même règle.
 Le filtre **Statut** de la fenêtre se combine avec le navire et propose Tous les statuts
 (valeur initiale), Brouillon, En revue, Approuvée, Publié, Archivée et Non renseigné.
+Le filtre **ISM Chapitre** se combine avec Navire et Statut : tous les chapitres
+par défaut, chapitres 01 à 13, documents non contrôlés ou chapitre non renseigné.
+Il reconnaît également les anciens libellés complets de chapitre.
+
+Chaque document occupe une seule ligne compacte avec case à cocher, référence et
+titre côte à côte, navire, version et statut. Les titres longs restent disponibles
+au survol ; sur mobile, le tableau défile horizontalement dans la fenêtre.
 
 Tous les documents disponibles sont cochés initialement. La sélection individuelle et les boutons
-Tout sélectionner / Tout désélectionner portent sur les documents correspondant au navire et au statut
+Tout sélectionner / Tout désélectionner portent sur les documents correspondant au chapitre, au navire et au statut
 affichés. Les exclusions sont conservées pendant les changements de filtre et réinitialisées
 à la réouverture. Le compteur de sélection et le PDF exporté prennent uniquement en compte
 les documents cochés appartenant au périmètre affiché, avec référence, titre, version et date de

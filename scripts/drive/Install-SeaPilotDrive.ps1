@@ -46,6 +46,8 @@ if ($SeaPilotRoot) {
     if (!(Test-Path -LiteralPath $SeaPilotRoot -PathType Container) -or (Split-Path -Leaf $SeaPilotRoot) -ne 'SeaPilot') { throw 'Selectionnez la racine SeaPilot.' }
     New-Item -Path $settingsPath -Force | Out-Null
     New-ItemProperty -Path $settingsPath -Name SeaPilotRoot -Value $SeaPilotRoot -PropertyType String -Force | Out-Null
+    $initialize = Start-Process -FilePath $executable -ArgumentList 'seapilot-drive://initialize' -WindowStyle Hidden -Wait -PassThru
+    if ($initialize.ExitCode -ne 0) { throw 'Les dossiers SeaPilot n ont pas pu etre prepares. Verifiez la synchronisation et les droits du dossier.' }
 } elseif (!$NoConfigure) {
     Start-Process -FilePath $executable -ArgumentList 'seapilot-drive://configure' -WindowStyle Hidden
 }

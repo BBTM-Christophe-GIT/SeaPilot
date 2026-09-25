@@ -14,7 +14,8 @@ public static class SeaPilotDrive
     const string SettingsKey = @"Software\SeaPilot\Drive";
     // Known legacy routes. New modules use root/open and need no launcher update.
     public static readonly Dictionary<string, string> ModuleFolders = new Dictionary<string, string> {
-        { "procedures", "Procedures" }, { "disciplinary", "Sanctions Disciplinaires" }
+        { "procedures", "Procedures" }, { "procedurePdfs", "Procedures PDF" },
+        { "disciplinary", "Sanctions Disciplinaires" }, { "chemicals", "Produits Chimiques" }
     };
 
     public static string ConfiguredRoot()
@@ -34,8 +35,13 @@ public static class SeaPilotDrive
     public static string ConfigureRoot(string root)
     {
         string full = ValidateRoot(root);
+        EnsureModuleDirectories(full);
         using (var key = Registry.CurrentUser.CreateSubKey(SettingsKey)) key.SetValue("SeaPilotRoot", full);
         return full;
+    }
+    public static void EnsureModuleDirectories(string root)
+    {
+        foreach (string directory in ModuleFolders.Values) SeaPilotDriveBridge.EnsureDirectory(root, directory);
     }
     public static string ModuleRoot(string module)
     {
@@ -126,7 +132,11 @@ public static class SeaPilotDrive
     {
         try
         {
+            if (args.Length == 3 && args[0] == "--procedure-pdf-worker") {
+                SeaPilotProcedureFiles.ConvertOfficeToPdf(args[1], args[2]); return 0;
+            }
             if (args.Length != 1) throw new ArgumentException("Un seul lien SeaPilot est attendu.");
+            if (args[0] == "seapilot-drive://initialize") { EnsureModuleDirectories(ValidateRoot(ConfiguredRoot())); return 0; }
             var connection = Regex.Match(args[0], @"\Aseapilot-drive://connect/(\d{5})/([a-f0-9]{32})/?\z");
             if (connection.Success) { SeaPilotDriveBridge.Serve(Int32.Parse(connection.Groups[1].Value), connection.Groups[2].Value); return 0; }
             if (args[0] == "seapilot-drive://configure" || args[0] == "seapilot-drive://configure/")
@@ -154,6 +164,7 @@ public static class SeaPilotDrive
         }
         catch (Exception error)
         {
+            if (args.Length == 3 && args[0] == "--procedure-pdf-worker") return 1;
             MessageBox.Show(error.Message, "SeaPilot Drive", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return 1;
         }

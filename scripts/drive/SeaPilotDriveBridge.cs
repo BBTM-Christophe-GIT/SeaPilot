@@ -14,7 +14,7 @@ using System.Web.Script.Serialization;
 // No remote listener, startup service, saved login token, or arbitrary file reads.
 public static class SeaPilotDriveBridge
 {
-    public const string Version = "2.2.0";
+    public const string Version = "2.3.0";
     public const int ConnectionPortCount = 16;
     const int MaxBody = 36 * 1024 * 1024;
     const string Api = "https://szlvyrrmvdvhzixilymh.supabase.co";
@@ -24,6 +24,7 @@ public static class SeaPilotDriveBridge
         return origin == "https://sea-pilot-ten.vercel.app"
             || origin == "https://sea-pilot-git-codex-procedure-publishing-workflow-bbtm-app.vercel.app"
             || origin == "https://sea-pilot-git-codex-qhse-produits-chimiques-bbtm-app.vercel.app"
+            || origin == "https://sea-pilot-git-codex-procedure-template-ism-bbtm-app.vercel.app"
             || origin == "http://localhost:5178" || origin == "http://localhost:5173";
     }
     static object Remote(string resource, string body, string token, string apiKey)
@@ -118,7 +119,7 @@ public static class SeaPilotDriveBridge
     static object Execute(Dictionary<string, object> data, string token, string apiKey)
     {
         string action = Text(data, "action");
-        if (action != "configure" && action != "status" && action != "ensure-person" && action != "write" && action != "read") throw new ArgumentException("Action inconnue.");
+        if (action != "configure" && action != "status" && action != "ensure-person" && action != "write" && action != "read" && action != "publish" && action != "open") throw new ArgumentException("Action inconnue.");
         long company = data.ContainsKey("companyId") ? Number(data, "companyId") : 0;
         Func<string, string, object> remote = (resource, body) => Remote(resource, body, token, apiKey);
         if (action == "configure" || action == "status") RequireAccess(action, company, remote);
@@ -126,9 +127,8 @@ public static class SeaPilotDriveBridge
         {
             string root = SeaPilotDrive.ValidateRoot(Text(data, "root"));
             string disciplinary = Path.Combine(root, SeaPilotDrive.ModuleFolders["disciplinary"]);
-            if (!Directory.Exists(disciplinary)) throw new IOException("Le dossier confidentiel Sanctions Disciplinaires doit deja etre partage avec les comptes autorises et synchronise dans SeaPilot.");
+            SeaPilotDrive.EnsureModuleDirectories(root);
             SeaPilotDrive.CheckWithinRoot(root, disciplinary);
-            EnsureDirectory(root, "Procedures");
             int count = SyncPeople(disciplinary, remote);
             SeaPilotDrive.ConfigureRoot(root);
             return new { root = root, version = Version, collaborators = count };
@@ -139,6 +139,8 @@ public static class SeaPilotDriveBridge
         string module = Text(data, "module");
         if (String.IsNullOrEmpty(module)) module = "disciplinary";
         if (module == "chemicals") return ExecuteChemical(baseRoot, data, remote);
+        if (module == "procedures") return SeaPilotProcedureFiles.Execute(baseRoot, data, remote, SeaPilotProcedureFiles.ExportPdf, documentPath => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(documentPath) { UseShellExecute = true }));
+        if (action == "publish" || action == "open") throw new UnauthorizedAccessException("Action non autorisee pour ce module.");
         if (action == "read") throw new UnauthorizedAccessException("Lecture non autorisee pour ce module.");
         long personId = data.ContainsKey("personId") ? Number(data, "personId") : 0;
         var scope = remote("rpc/desktop_drive_scope", Json().Serialize(new { target_module = module, target_company = company, target_person = personId })) as Dictionary<string, object>;
@@ -318,5 +320,160 @@ public static class SeaPilotDriveBridge
             }
         }
         finally { listener.Stop(); }
+    }
+}
+
+// The RPC resolves every read/open/export to a registered document for the real
+// signed-in profile. No client-supplied path can grant access to a source file.
+public static class SeaPilotProcedureFiles
+{
+    const int Limit = 25 * 1024 * 1024;
+    static string Text(Dictionary<string, object> data, string key) { return data.ContainsKey(key) ? Convert.ToString(data[key], CultureInfo.InvariantCulture) : ""; }
+    static long Id(Dictionary<string, object> data, string key) { return data.ContainsKey(key) ? Convert.ToInt64(data[key], CultureInfo.InvariantCulture) : 0; }
+    public static string Hash(byte[] bytes) { using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant(); }
+    static bool Pdf(byte[] bytes) { return bytes.Length >= 5 && Encoding.ASCII.GetString(bytes, 0, 5) == "%PDF-"; }
+    static void Validate(string path, bool pdfOnly)
+    {
+        SeaPilotDrive.ValidateParts(path);
+        if (!Regex.IsMatch(path, pdfOnly ? @"\.pdf\z" : @"\.(docx?|xlsx?|pptx?|odt|ods|odp|txt|pdf)\z", RegexOptions.IgnoreCase)) throw new ArgumentException("Format de procedure non autorise.");
+    }
+    public static byte[] Read(string root, string relative)
+    {
+        Validate(relative, false);
+        string path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+        SeaPilotDrive.CheckWithinRoot(root, path);
+        using (var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read)) {
+            SeaPilotDrive.CheckWithinRoot(root, path);
+            if (file.Length <= 0 || file.Length > Limit) throw new IOException("La procedure doit peser entre 1 octet et 25 Mo.");
+            byte[] bytes = new byte[(int)file.Length]; int offset = 0;
+            while (offset < bytes.Length) { int n = file.Read(bytes, offset, bytes.Length - offset); if (n == 0) throw new IOException("Fichier incomplet."); offset += n; }
+            return bytes;
+        }
+    }
+    // An identical retry is safe after a lost acknowledgement; a different file
+    // with the same name must never silently replace an Office working document.
+    public static void Write(string root, string name, byte[] bytes)
+    {
+        Validate(name, false);
+        if (name.Contains("/") || bytes.Length <= 0 || bytes.Length > Limit) throw new ArgumentException("Nom ou taille de procedure invalide.");
+        SeaPilotDrive.CheckWithinRoot(root, root);
+        string path = Path.Combine(root, name);
+        if (File.Exists(path)) {
+            if (Hash(Read(root, name)) == Hash(bytes)) return;
+            throw new IOException("Un fichier de ce nom existe deja. Modifiez la version ou le numero ; le fichier existant est conserve.");
+        }
+        using (var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { file.Write(bytes, 0, bytes.Length); file.Flush(true); }
+        if (Hash(Read(root, name)) != Hash(bytes)) throw new IOException("Verification de la copie impossible.");
+    }
+    public static object Execute(string baseRoot, Dictionary<string, object> data, Func<string, string, object> remote,
+        Func<string, byte[]> exportPdf, Action<string> open)
+    {
+        string action = Text(data, "action");
+        if (action != "write" && action != "read" && action != "open" && action != "publish") throw new ArgumentException("Action de procedure inconnue.");
+        var json = new JavaScriptSerializer();
+        var scope = remote("rpc/procedure_drive_scope", json.Serialize(new { target_action = action, target_procedure = Id(data, "procedureId"), target_publication = Id(data, "publicationId") })) as Dictionary<string, object>;
+        if (scope == null) throw new UnauthorizedAccessException("Acces a la procedure refuse.");
+        string directory = Text(scope, "directory");
+        if (directory != "Procedures" && !(directory == "Procedures PDF" && action == "read")) throw new UnauthorizedAccessException("Dossier de procedure refuse.");
+        string root = Path.Combine(baseRoot, directory);
+        if (action == "write") {
+            string name = Text(data, "path"); Validate(name, false);
+            byte[] bytes = Convert.FromBase64String(Text(data, "base64"));
+            SeaPilotDriveBridge.EnsureDirectory(baseRoot, directory);
+            Write(root, name, bytes);
+            return new { path = name, bytes = bytes.Length, sha256 = Hash(bytes) };
+        }
+        SeaPilotDrive.CheckWithinRoot(baseRoot, root);
+        string relative = Text(scope, "path"); Validate(relative, directory == "Procedures PDF");
+        string fullPath = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+        SeaPilotDrive.CheckWithinRoot(root, fullPath);
+        if (action == "open") { open(fullPath); return new { opened = true }; }
+        if (action == "publish") {
+            string name = Text(scope, "pdfName"); Validate(name, true);
+            string pdfRoot = SeaPilotDriveBridge.EnsureDirectory(baseRoot, "Procedures PDF");
+            string sourceHash = Hash(Read(root, relative));
+            // Keep the receipt on this PC so a lost database acknowledgement can
+            // be retried without re-exporting Office's changing PDF timestamps.
+            string cacheRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SeaPilotDrive", "PublicationReceipts");
+            Directory.CreateDirectory(cacheRoot);
+            string cachePath = Path.Combine(cacheRoot, Hash(Encoding.UTF8.GetBytes(fullPath.ToLowerInvariant() + "\n" + name.ToLowerInvariant())) + ".json");
+            if (File.Exists(cachePath) && new FileInfo(cachePath).Length < 4096 && File.Exists(Path.Combine(pdfRoot, name))) {
+                Dictionary<string, object> cached = null;
+                try { cached = json.Deserialize<Dictionary<string, object>>(File.ReadAllText(cachePath)); } catch (ArgumentException) { }
+                if (cached != null && Text(cached, "sourceHash") == sourceHash) {
+                    byte[] previousPdf = Read(pdfRoot, name);
+                    if (Pdf(previousPdf) && Hash(previousPdf) == Text(cached, "pdfHash"))
+                        return new { path = name, bytes = previousPdf.Length, sha256 = Hash(previousPdf) };
+                }
+            }
+            byte[] pdf = exportPdf(fullPath);
+            if (!Pdf(pdf) || pdf.Length > Limit) throw new IOException("Le fichier converti n'est pas un PDF valide de moins de 25 Mo.");
+            if (Hash(Read(root, relative)) != sourceHash) throw new IOException("Le document a ete modifie pendant la conversion. Enregistrez-le puis relancez la publication.");
+            Write(pdfRoot, name, pdf);
+            File.WriteAllText(cachePath, json.Serialize(new { sourceHash = sourceHash, pdfHash = Hash(pdf) }));
+            return new { path = name, bytes = pdf.Length, sha256 = Hash(pdf) };
+        }
+        byte[] content = Read(root, relative);
+        string hash = Hash(content);
+        if (directory == "Procedures PDF" && (!Pdf(content) || Text(scope, "sha256") != hash || Id(scope, "bytes") != content.Length))
+            throw new IOException("Le PDF a change depuis sa publication. Contactez Administration.");
+        return new { path = relative, bytes = content.Length, sha256 = hash, base64 = Convert.ToBase64String(content) };
+    }
+    public static byte[] ExportPdf(string source)
+    {
+        byte[] savedSource = Read(Path.GetDirectoryName(source), Path.GetFileName(source));
+        if (String.Equals(Path.GetExtension(source), ".pdf", StringComparison.OrdinalIgnoreCase)) return savedSource;
+        // Export a saved snapshot. The worker gets its own Office instance and is
+        // bounded in time; the launcher never closes the user's working document.
+        string temp = Path.Combine(Path.GetTempPath(), "seapilot-pdf-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temp);
+        string snapshot = Path.Combine(temp, "source" + Path.GetExtension(source));
+        string pdf = Path.Combine(temp, "publication.pdf");
+        try {
+            File.WriteAllBytes(snapshot, savedSource);
+            string exe = System.Reflection.Assembly.GetExecutingAssembly().Location;
+            var start = new System.Diagnostics.ProcessStartInfo(exe, "--procedure-pdf-worker \"" + snapshot + "\" \"" + pdf + "\"") { UseShellExecute = false, CreateNoWindow = true, WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden };
+            using (var process = System.Diagnostics.Process.Start(start)) {
+                if (!process.WaitForExit(60000)) { process.Kill(); throw new IOException("La conversion a depasse une minute. Fermez les dialogues Office puis reessayez."); }
+                if (process.ExitCode != 0 || !File.Exists(pdf)) throw new IOException("Conversion PDF impossible. Verifiez que Word, Excel ou PowerPoint est installe et que le document est enregistre sans mot de passe.");
+            }
+            return Read(temp, "publication.pdf");
+        } finally {
+            // Delete only the known files in our uniquely allocated temp folder.
+            foreach (string file in new[] { snapshot, pdf }) { try { if (File.Exists(file)) File.Delete(file); } catch (IOException) { } }
+            try { Directory.Delete(temp, false); } catch (IOException) { }
+        }
+    }
+    static object Call(object instance, string member, params object[] args) { return instance.GetType().InvokeMember(member, System.Reflection.BindingFlags.InvokeMethod | System.Reflection.BindingFlags.OptionalParamBinding, null, instance, args, CultureInfo.InvariantCulture); }
+    static object Get(object instance, string member) { return instance.GetType().InvokeMember(member, System.Reflection.BindingFlags.GetProperty, null, instance, null, CultureInfo.InvariantCulture); }
+    static void Set(object instance, string member, object value) { instance.GetType().InvokeMember(member, System.Reflection.BindingFlags.SetProperty, null, instance, new[] { value }, CultureInfo.InvariantCulture); }
+    static void Release(object value) { if (value != null && System.Runtime.InteropServices.Marshal.IsComObject(value)) System.Runtime.InteropServices.Marshal.FinalReleaseComObject(value); }
+    public static void ConvertOfficeToPdf(string source, string pdf)
+    {
+        string ext = Path.GetExtension(source).ToLowerInvariant();
+        bool excel = Regex.IsMatch(ext, @"\A\.(xlsx?|ods)\z"), ppt = Regex.IsMatch(ext, @"\A\.(pptx?|odp)\z");
+        if (!excel && !ppt && !Regex.IsMatch(ext, @"\A\.(docx?|odt|txt)\z")) throw new ArgumentException("Format Office non pris en charge.");
+        object app = null, documents = null, document = null, oldSecurity = null, oldAlerts = null;
+        try {
+            Type type = Type.GetTypeFromProgID(excel ? "Excel.Application" : ppt ? "PowerPoint.Application" : "Word.Application", true);
+            app = Activator.CreateInstance(type);
+            oldSecurity = Get(app, "AutomationSecurity"); oldAlerts = Get(app, "DisplayAlerts");
+            Set(app, "AutomationSecurity", 3); // msoAutomationSecurityForceDisable
+            Set(app, "DisplayAlerts", ppt ? 1 : 0);
+            if (!ppt) Set(app, "Visible", false);
+            if (excel) { Set(app, "EnableEvents", false); Set(app, "AskToUpdateLinks", false); }
+            documents = Get(app, excel ? "Workbooks" : ppt ? "Presentations" : "Documents");
+            document = excel ? Call(documents, "Open", source, 0, true)
+                : ppt ? Call(documents, "Open", source, -1, 0, 0)
+                : Call(documents, "Open", source, false, true, false);
+            if (ppt) Call(document, "SaveAs", pdf, 32);
+            else if (excel) Call(document, "ExportAsFixedFormat", 0, pdf);
+            else Call(document, "ExportAsFixedFormat", pdf, 17);
+        } finally {
+            if (document != null) { try { if (ppt) Call(document, "Close"); else Call(document, "Close", false); } catch { } Release(document); }
+            if (app != null) { try { if (oldSecurity != null) Set(app, "AutomationSecurity", oldSecurity); if (oldAlerts != null) Set(app, "DisplayAlerts", oldAlerts); } catch { } }
+            if (app != null) { try { if (documents == null || Convert.ToInt32(Get(documents, "Count")) == 0) Call(app, "Quit"); } catch { } }
+            Release(documents); Release(app);
+        }
     }
 }
