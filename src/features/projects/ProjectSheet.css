@@ -1,0 +1,161 @@
+.project-contract-workspace:has(.project-dossier) {
+  grid-template-columns: 240px minmax(0, 1fr);
+  overflow: visible;
+}
+
+.project-contract-workspace .project-detail.project-contract-sheet.project-dossier {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  align-content: start;
+  gap: 0;
+  padding: 0;
+  background: #fff;
+  container-type: inline-size;
+}
+
+.project-contract-sheet.project-dossier .project-sheet-sidebar {
+  min-width: 0;
+  background: #f2f6fb;
+  border-right: 1px solid #dce5ef;
+}
+
+.project-sheet-reference {
+  display: grid;
+  gap: 8px;
+  padding: 26px 18px 24px;
+  overflow-wrap: anywhere;
+}
+
+.project-sheet-reference > span:first-child,
+.project-sheet-eyebrow {
+  color: #647994;
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.project-sheet-reference > strong {
+  color: #122540;
+  font-size: 1.55rem;
+  line-height: 1.1;
+}
+
+.project-sheet-reference > b { font-size: 0.85rem; line-height: 1.45; }
+.project-sheet-reference .project-status-chip { justify-self: start; margin-top: 2px; }
+
+.project-contract-sheet.project-dossier .project-detail-tabs {
+  gap: 4px;
+  padding: 8px 10px 24px;
+  border: 0;
+  background: transparent;
+}
+
+.project-contract-sheet.project-dossier .project-detail-tabs button {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 10px;
+  min-height: 50px;
+  padding: 12px 10px;
+  font-size: 0.81rem;
+  font-weight: 650;
+  text-align: left;
+}
+
+.project-contract-sheet.project-dossier .project-detail-tabs button > span { flex: 1; }
+.project-sheet-tab-count { padding: 3px 6px; border-radius: 12px; background: #e4ebf5; color: #284768; font-size: 0.7rem; }
+.project-sheet-main { min-width: 0; padding: 28px 30px 32px; }
+.project-sheet-header { padding-bottom: 25px; border-bottom: 2px solid #2163b4; }
+.project-sheet-title-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.project-sheet-title-row > div { min-width: 0; }
+.project-contract-sheet.project-dossier .project-sheet-header h2 { margin: 9px 0 0; font-size: clamp(1.35rem, 2.1vw, 2rem); line-height: 1.2; color: #122540; overflow-wrap: anywhere; }
+.project-sheet-edit { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; gap: 8px; padding: 11px 17px; border: 1px solid #215ca5; border-radius: 6px; background: #215ca5; color: #fff; font-size: 0.85rem; font-weight: 700; }
+.project-sheet-edit:hover { background: #17497f; }
+.project-sheet-summary { display: grid; grid-template-columns: 0.65fr 1fr 1.2fr 1.45fr; gap: 18px; margin: 25px 0 0; }
+.project-contract-sheet.project-dossier .project-detail-field { min-height: 0; min-width: 0; padding: 0; background: transparent; border: 0; border-radius: 0; }
+.project-contract-sheet.project-dossier .project-detail-field dt { margin-bottom: 8px; color: #637a94; font-size: 0.71rem; font-weight: 700; line-height: 1.4; letter-spacing: 0.035em; }
+.project-contract-sheet.project-dossier .project-detail-field dd { color: #182c47; font-size: 0.89rem; line-height: 1.6; font-weight: 650; }
+.project-contract-sheet.project-dossier .project-sheet-summary .project-detail-field + .project-detail-field { border-left: 1px solid #dae3ee; padding-left: 16px; }
+.project-contract-sheet.project-dossier .project-sheet-summary dt { text-transform: none; letter-spacing: 0; font-size: 0.78rem; }
+
+.project-contract-sheet.project-dossier .project-detail-tabs-shell { display: block; overflow: visible; border: 0; border-radius: 0; background: transparent; }
+.project-contract-sheet.project-dossier .project-detail-tab-panel { min-height: 460px; padding: 0; }
+.project-contract-sheet.project-dossier .project-detail-tab-panel:focus-visible { outline: 2px solid #2163b4; outline-offset: 6px; }
+.project-contract-sheet.project-dossier .project-detail-section { padding: 26px 0 0; border: 0; }
+.project-contract-sheet.project-dossier .project-sheet-identification { display: grid; gap: 28px; }
+.project-contract-sheet.project-dossier .project-sheet-group { padding-bottom: 26px; border-bottom: 1px solid #dce5ef; }
+.project-contract-sheet.project-dossier .project-sheet-group h3,
+.project-contract-sheet.project-dossier .project-sheet-conditions h3 { display: flex; align-items: center; gap: 12px; margin: 0 0 24px; color: #142a47; font-size: 1.2rem; }
+.project-sheet-group h3 svg, .project-sheet-conditions h3 svg { color: #215ca5; flex: 0 0 auto; }
+.project-sheet-parties { display: grid; grid-template-columns: 1.15fr 1fr; gap: 24px 32px; margin: 0; }
+.project-sheet-parties > .project-detail-field:nth-child(2) { padding-left: 28px; border-left: 1px solid #dce5ef; }
+.project-sheet-parties .is-wide { grid-column: 1 / -1; }
+.project-sheet-vessels { display: grid; grid-template-columns: 1.2fr 0.85fr 1fr; gap: 22px; margin: 0; }
+.project-sheet-conditions { padding: 22px; background: #f0f5fb; border-radius: 7px; }
+.project-sheet-conditions dl { display: grid; grid-template-columns: 1.35fr 1fr 1fr; gap: 24px; margin: 0; }
+.project-contract-sheet.project-dossier .project-sheet-conditions .project-detail-field:first-child dd { color: #185ca7; font-size: 1.28rem; font-weight: 800; }
+.project-contract-sheet.project-dossier .project-sheet-conditions .project-detail-field + .project-detail-field { border-left: 1px solid #d7e2ef; padding-left: 20px; }
+
+.project-contract-sheet.project-dossier .project-context-heading { margin-bottom: 22px; padding-bottom: 16px; }
+.project-contract-sheet.project-dossier .project-context-heading h3 { font-size: 1.25rem; }
+.project-contract-sheet.project-dossier .project-contract-information .project-detail-grid { gap: 0; }
+.project-contract-sheet.project-dossier .project-contract-information .project-detail-field { display: grid; grid-template-columns: minmax(150px, 0.75fr) minmax(0, 1.75fr); gap: 24px; padding: 17px 0; border-bottom: 1px solid #e5ebf2; }
+.project-contract-sheet.project-dossier .project-contract-information .project-detail-field dt { margin: 0; font-size: 0.8rem; text-transform: none; }
+.project-contract-sheet.project-dossier .project-contract-information .project-detail-field dd { font-weight: 500; }
+.project-contract-sheet.project-dossier .project-offer-document-row { padding: 18px 0; background: transparent; }
+.project-contract-sheet.project-dossier .project-contract-selector { margin-block: 24px; }
+.project-contract-sheet.project-dossier .project-contract-selector label { min-height: 50px; padding-block: 12px; }
+.project-sheet-contract-index { margin-top: 28px; }
+.project-contract-sheet.project-dossier .project-sheet-contract-index h4 { margin: 0 0 10px; color: #215ca5; }
+.project-sheet-contract-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; }
+.project-sheet-contract-links button { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 15px 2px; border: 0; border-bottom: 1px solid #dde6f1; background: transparent; color: #193e6b; text-align: left; font-size: 0.83rem; line-height: 1.45; }
+.project-sheet-contract-links button > span { flex: 1; }
+.project-sheet-contract-links button svg { flex-shrink: 0; }
+.project-sheet-contract-links button:hover, .project-sheet-contract-links button[aria-current] { background: #eef4fd; color: #145abb; }
+.project-sheet-contract-navigation { padding-top: 20px; }
+.project-contract-sheet.project-dossier .project-offer-contract-panel { display: block; }
+.project-contract-sheet.project-dossier .project-offer-document-row { margin-bottom: 0; }
+.project-contract-sheet.project-dossier .project-contract-selector { margin-block: 22px; }
+.project-contract-sheet.project-dossier .project-contract-next-step { margin-top: 0; }
+.project-sheet-back { display: inline-flex; align-items: center; gap: 4px; padding: 8px 0; border: 0; background: transparent; color: #215ca5; font-size: 0.82rem; font-weight: 700; }
+.project-contract-sheet.project-dossier button:focus-visible { outline: 2px solid #2163b4; outline-offset: 3px; }
+
+@container (max-width: 850px) {
+  .project-sheet-main { padding: 24px 22px; }
+  .project-sheet-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .project-contract-sheet.project-dossier .project-sheet-summary .project-detail-field:nth-child(3) { border: 0; padding-left: 0; }
+  .project-sheet-vessels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .project-sheet-vessels > .project-detail-field:last-child { grid-column: 1 / -1; }
+}
+
+@media (max-width: 1400px) {
+  .project-contract-workspace:has(.project-dossier) { grid-template-columns: 1fr; }
+  .project-contract-workspace:has(.project-dossier) .project-list-panel { border-right: 0; border-bottom: 1px solid #d8e0ea; }
+  .project-contract-workspace:has(.project-dossier) .project-catalog-list { display: flex; max-height: 160px; overflow: auto; }
+  .project-contract-workspace:has(.project-dossier) .project-catalog-list > li { min-width: 220px; flex: 1 0 220px; }
+  .project-contract-workspace:has(.project-dossier) .project-contract-list-heading { grid-template-columns: 1fr 1fr; align-items: center; padding-block: 12px; }
+}
+
+@media (max-width: 760px) {
+  .project-contract-workspace .project-detail.project-contract-sheet.project-dossier { grid-template-columns: 1fr; }
+  .project-contract-sheet.project-dossier .project-sheet-sidebar { border-right: 0; border-bottom: 1px solid #dce5ef; }
+  .project-sheet-reference { grid-template-columns: auto 1fr; align-items: center; padding: 18px; gap: 8px 12px; }
+  .project-sheet-reference > span:first-child { grid-column: 1 / -1; }
+  .project-sheet-reference .project-status-chip { grid-column: 1 / -1; }
+  .project-contract-sheet.project-dossier .project-detail-tabs { flex-direction: row; overflow-x: auto; padding: 6px 10px 12px; }
+  .project-contract-sheet.project-dossier .project-detail-tabs button { min-width: auto; white-space: nowrap; font-size: 0.8rem; }
+  .project-sheet-main { padding: 22px 18px; }
+  .project-sheet-title-row { align-items: flex-start; }
+  .project-contract-sheet.project-dossier .project-sheet-header h2 { font-size: 1.35rem; }
+  .project-sheet-edit { padding: 10px 12px; }
+  .project-contract-sheet.project-dossier .project-sheet-parties, .project-sheet-vessels, .project-sheet-conditions dl, .project-sheet-contract-links { grid-template-columns: 1fr; }
+  .project-contract-sheet.project-dossier .project-sheet-parties > .project-detail-field:nth-child(2), .project-contract-sheet.project-dossier .project-sheet-conditions .project-detail-field + .project-detail-field { padding: 0; border: 0; }
+  .project-contract-sheet.project-dossier .project-contract-information .project-detail-field { grid-template-columns: 1fr; gap: 6px; }
+  .project-contract-workspace:has(.project-dossier) .project-contract-list-heading { grid-template-columns: 1fr; }
+}
+
+.project-contract-workspace:has(.project-dossier) .project-contract-list-title { flex-wrap: wrap; }
+.project-contract-workspace:has(.project-dossier) .project-contract-list-title strong { min-width: 0; overflow-wrap: anywhere; }
+.project-contract-workspace:has(.project-dossier) .project-contract-list-row > span { min-width: 0; }
+.project-contract-workspace:has(.project-dossier) .project-contract-list-title strong { white-space: normal; }
+.project-contract-workspace:has(.project-dossier) .project-contract-list-meta { flex-wrap: wrap; }

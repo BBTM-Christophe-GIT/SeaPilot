@@ -399,16 +399,11 @@ describe('ProjectsPage', () => {
 
     expect(projectButton).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('tablist', { name: 'Sections du projet' })).toBeInTheDocument();
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+    expect(screen.getAllByRole('tab').map((tab) => tab.getAttribute('aria-label'))).toEqual([
       'Identité',
       'Opérations',
       'Facturation',
       'Offre & contrat',
-      'Cases 1–12',
-      'Cases 13–21',
-      'Cases 22–34',
-      'Signatures',
-      'Annexes',
       'Documents',
     ]);
     expect(screen.queryByRole('tab', { name: 'Document contractuel' })).not.toBeInTheDocument();
@@ -417,7 +412,8 @@ describe('ProjectsPage', () => {
     expect(screen.getByText('Rotation 1')).toBeInTheDocument();
     expect(screen.getAllByText(/12.000 EUR \/ jour/).length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('tab', { name: 'Cases 22–34' }));
+    await user.click(screen.getByRole('tab', { name: 'Offre & contrat' }));
+    await user.click(screen.getByRole('button', { name: 'Clauses & responsabilités' }));
     expect(screen.getByText('Clauses particulières Atlantique')).toBeInTheDocument();
     expect(screen.queryByText('Données structurées consultées dans Supabase')).not.toBeInTheDocument();
     expect(screen.queryByText('Source structurée · Supabase')).not.toBeInTheDocument();
@@ -615,13 +611,50 @@ describe('ProjectsPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Offre & contrat' }));
     await user.click(screen.getByRole('radio', { name: 'Contrat de remorquage' }));
 
-    expect(screen.getByRole('tab', { name: 'Parties & convoi' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Itinéraire & délais' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Parties & convoi' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Itinéraire & délais' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Cases 1–12' })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('tab', { name: 'Parties & convoi' }));
+    await user.click(screen.getByRole('button', { name: 'Parties & convoi' }));
     expect(screen.getByRole('heading', { name: 'Parties & convoi' })).toBeInTheDocument();
     expect(screen.getAllByText('Armateur BBTM, Brest').length).toBeGreaterThan(0);
+  });
+
+  it('keeps every explicit P144 field accessible through business sections', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({
+      projects: { data: [{ ...atlantiqueProjectRow, id: 144, project_code: 'P144', title: 'EMDT - GOURY', contract_type: 'BIMCO' }], error: null },
+      project_contracts: { data: [{ ...atlantiqueContractRow, project_id: 144, supplytime_data: {
+        p144_box02_owners: 'Armateur P144 enregistré',
+        p144_box14_termination_notice: 'Préavis P144 de 21 jours',
+        p144_box18_specialist_operations: 'Intervention ROV P144',
+        p144_box20_charter_hire: 'Tarifs P144 par période\nStand-by spécifique',
+        p144_box34_additional_clauses: 'Clause P144 conservée',
+        p144_signature_owners: 'Signataire P144',
+        p144_annexes: 'Annexe P144 conservée',
+      } }], error: null },
+    });
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: 'P144 – EMDT - GOURY' });
+    expect(screen.getByRole('heading', { name: 'Client' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Navires & affectation' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Offre & contrat' }));
+    expect(screen.queryByText(/Cases \d/)).not.toBeInTheDocument();
+    for (const [section, value] of [
+      ['Parties & navire', 'Armateur P144 enregistré'],
+      ['Période & livraison', 'Préavis P144 de 21 jours'],
+      ['Exploitation', 'Intervention ROV P144'],
+      ['Tarifs & paiement', /Tarifs P144 par période/],
+      ['Clauses & responsabilités', 'Clause P144 conservée'],
+      ['Signatures & annexes', 'Annexe P144 conservée'],
+    ] as const) {
+      await user.click(screen.getByRole('button', { name: section }));
+      expect(screen.getByRole('heading', { name: section })).toBeInTheDocument();
+      expect(screen.getByText(value)).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Offre & contrat' })).toHaveAttribute('aria-selected', 'true');
+    }
+    await user.click(screen.getByRole('tab', { name: 'Identité' }));
+    expect(screen.queryByText('Annexe P144 conservée')).not.toBeInTheDocument();
   });
 
   it('opens a migrated contractual document from private Supabase Storage', async () => {
