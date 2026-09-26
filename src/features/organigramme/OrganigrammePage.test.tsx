@@ -56,7 +56,7 @@ describe('OrganigrammePage', () => {
     expect(await screen.findByRole('checkbox', { name: 'LE ROZEL' })).toBeChecked();
     expect(decodeURIComponent(screen.getByRole('img').getAttribute('src')!)).toContain('LE ROZEL');
   });
-  it('edits a hierarchy rank independently from display order and renders the saved level', async () => {
+  it('keeps hierarchy ranks editable without showing their labels in the diagram', async () => {
     let data = ORG_DEMO;
     const rpc = setup(['direction'], vi.fn().mockImplementation(async (name, args) => {
       if (name === 'save_organigramme_responsibility') data = { ...data, support: data.support.map((entry) => entry.id === args.p_id ? { ...entry, rank: args.p_rank } : entry) };
@@ -67,7 +67,8 @@ describe('OrganigrammePage', () => {
     fireEvent.change(screen.getByLabelText('Rang hiérarchique'), { target: { value: '4' } });
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('save_organigramme_responsibility', expect.objectContaining({ p_rank: '4', p_position: 1 })));
-    await waitFor(() => expect(decodeURIComponent(screen.getByRole('img').getAttribute('src')!)).toContain('Rang 4'));
+    await screen.findByText('Directeur QHSE / Chef de Projet · Rang 4');
+    expect(decodeURIComponent(screen.getByRole('img').getAttribute('src')!)).not.toMatch(/Rang|Support/);
   });
   it('keeps independent contact selections when switching documents and blocks their exports on refresh failure', async () => {
     const rpc = setup(); await screen.findByRole('img');

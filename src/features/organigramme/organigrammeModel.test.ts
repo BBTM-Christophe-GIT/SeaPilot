@@ -105,10 +105,11 @@ describe('organigramme', () => {
     expect(second.y + second.height).toBeLessThan(fourth.y);
     for (const name of ['Louise FAURE', 'Alexis DUPONT']) {
       const support = card(name);
-      expect(support.lines.some((line) => line.text === 'Support')).toBe(true);
+      expect(support.tone).toBe('support');
       expect(support.x + support.width < second.x || support.x > card('Morgan LEROY').x + 248).toBe(true);
     }
     diagram.boxes.forEach((box, index) => diagram.boxes.slice(index + 1).forEach((other) => expect(box.x >= other.x + other.width || other.x >= box.x + box.width || box.y >= other.y + other.height || other.y >= box.y + box.height).toBe(true)));
+    expect(organigrammeSvg(diagram)).not.toMatch(/Rang|Support/);
   });
   it('retains simultaneous vessels but deduplicates people in the function view', () => {
     const data = { ...ORG_DEMO, memberships: [...ORG_DEMO.memberships, { ...ORG_DEMO.memberships[0], vesselId: 2 }] };

@@ -1,6 +1,6 @@
 # Organigramme RH
 
-Version 3.57.3. Le module `Ressources Humaines → Organigramme`, à côté de RH / Brevets,
+Version 3.57.4. Le module `Ressources Humaines → Organigramme`, à côté de RH / Brevets,
 est réservé aux profils Administrateur et Direction, y compris par URL directe.
 Appliquer `20260926060139_organigramme.sql`,
 `20260926122325_organigramme_categories_links.sql`,
@@ -62,8 +62,11 @@ les responsabilités. Les noms et missions libres restent à maintenir manuellem
 Le champ `hierarchy_rank` est distinct de l'ordre d'affichage. Les rangs numériques
 forment des niveaux verticaux : rang 1 en haut, puis 2, etc. Le statut **Support**
 place les personnes sur les côtés, en gris avec des branches en pointillés.
-Les responsabilités sans rang restent identifiées Rang à définir. L'ordre départage
-les personnes de même rang. La RPC `save_organigramme_responsibility` enregistre
+Les mentions « Rang 1 », « Rang 2 », « Rang à définir » et « Support » restent
+visibles uniquement dans l'éditeur de structure. Elles ne sont pas dessinées sur
+les cartes de l'organigramme ni dans les exports PDF, PNG ou SVG. Les rangs continuent
+de déterminer les niveaux, les positions latérales et les couleurs des cartes.
+L'ordre départage les personnes de même rang. La RPC `save_organigramme_responsibility` enregistre
 ces informations ; l'ancienne RPC reste compatible avec les clients précédents.
 
 La migration initialise, pour BBTM uniquement, Benjamin BON au rang 1,
