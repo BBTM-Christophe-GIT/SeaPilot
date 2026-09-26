@@ -1,5 +1,13 @@
 # SeaPilot Vercel Production Notes
 
+Version **3.59.0** : cartes et portraits homogènes dans l’organigramme, six choix
+de contenu dans les trois documents, liste du personnel sur une page A4, liste
+d’urgence par défaut partagée, et distinction entre fonction à bord et intitulé
+de bureau. Le PDF du diagramme rejoint les exports d’images. Une note de mise à
+jour présente ces nouveautés aux profils Administrateur et Direction.
+La migration additive `20260926220402_organigramme_emergency_defaults.sql` a été
+appliquée au projet lié avant le client. Voir [Organigramme RH](./organigramme.md).
+
 RH / Brevets ajoute **Attestation de droits** et **Carte Vitale**, et utilise le
 lanceur Windows **2.4.0** pour les pièces dans Google Drive, classées par
 collaborateur. Appliquer `hr_documents_google_drive` puis

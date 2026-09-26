@@ -1,4 +1,5 @@
-import { Download, Eye, Image, Network, Settings2, Ship, Users } from 'lucide-react';
+import { Download, Eye, FileDown, Image, Network, Settings2, Ship, Users } from 'lucide-react';
+import { OrgExportFields } from './OrgExportFields';
 import { orgCategoryLabel, orgPopulatedVessels, type OrgData, type OrgOptions } from './organigrammeModel';
 import { fleetIllustration } from '../fleet/fleetDisplay';
 
@@ -13,10 +14,11 @@ interface Props {
   imageFormat: 'png' | 'svg';
   onImageFormatChange: (format: 'png' | 'svg') => void;
   onExportImage: () => void;
+  onExportPdf: () => void;
   onEdit: (editor: 'watches' | 'structure') => void;
 }
 
-export function OrgChartSettings({ data, options, onChange, asOf, onDateChange, disabled, canExport, imageFormat, onImageFormatChange, onExportImage, onEdit }: Props) {
+export function OrgChartSettings({ data, options, onChange, asOf, onDateChange, disabled, canExport, imageFormat, onImageFormatChange, onExportImage, onExportPdf, onEdit }: Props) {
   const vessels = data ? orgPopulatedVessels(data) : [];
   const count = vessels.filter((vessel) => options.vesselIds === null || options.vesselIds.includes(vessel.id)).length;
   return <aside className="org-inspector" aria-label="Réglages de l’organigramme">
@@ -51,19 +53,10 @@ export function OrgChartSettings({ data, options, onChange, asOf, onDateChange, 
     </section>
     <section className="org-inspector-section" aria-label="Exports">
       <h3><Image size={16} aria-hidden="true" />Exports</h3>
-      <fieldset className="org-export-fields">
-        <legend>Informations à inclure</legend>
-        {([
-          { key: 'showPhotos', label: 'Photos', accessible: 'Inclure les photos dans les exports', checked: options.showPhotos !== false },
-          { key: 'showEmails', label: 'E-mails', accessible: 'Inclure les e-mails dans les exports', checked: !!options.showEmails },
-          { key: 'showPhones', label: 'Téléphones', accessible: 'Inclure les téléphones dans les exports', checked: !!options.showPhones },
-          { key: 'showFunctions', label: 'Fonctions', accessible: 'Inclure les fonctions dans les exports', checked: options.showFunctions !== false },
-          { key: 'showVessels', label: 'Navires', accessible: 'Inclure les navires dans les exports', checked: options.showVessels },
-          { key: 'showWatches', label: 'Bordées', accessible: 'Inclure les bordées dans les exports', checked: options.showWatches !== false },
-        ] as const).map(({ key, label, accessible, checked }) => <label key={key}><input type="checkbox" aria-label={accessible} checked={checked} onChange={(event) => onChange({ ...options, [key]: event.target.checked })} />{label}</label>)}
-      </fieldset>
+      <OrgExportFields options={options} onChange={(key, value) => onChange({ ...options, [key]: value })} />
       <p className="org-export-help">L’aperçu reflète le contenu des exports PDF, PNG et SVG. Les noms restent toujours visibles.</p>
       <div className="org-image-export"><select aria-label="Format image" value={imageFormat} onChange={(event) => onImageFormatChange(event.target.value as 'png' | 'svg')}><option value="png">PNG</option><option value="svg">SVG</option></select><button type="button" className="org-primary" disabled={!canExport} onClick={onExportImage}><Download size={16} aria-hidden="true" />Exporter l’image</button></div>
+      <button type="button" className="org-primary org-pdf-export" disabled={!canExport} onClick={onExportPdf}><FileDown size={16} aria-hidden="true" />Exporter le PDF</button>
     </section>
   </aside>;
 }

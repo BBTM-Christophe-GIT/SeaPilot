@@ -1,6 +1,6 @@
 # Organigramme RH
 
-Version 3.58.0. Le module `Ressources Humaines → Organigramme`, à côté de RH / Brevets,
+Version 3.59.0. Le module `Ressources Humaines → Organigramme`, à côté de RH / Brevets,
 est réservé aux profils Administrateur et Direction, y compris par URL directe.
 Appliquer `20260926060139_organigramme.sql`,
 `20260926122325_organigramme_categories_links.sql`,
@@ -8,7 +8,8 @@ Appliquer `20260926060139_organigramme.sql`,
 `20260926184326_organigramme_hierarchy_default_watches.sql` et
 `20260926185333_organigramme_watch_function_inheritance.sql` puis
 `20260926191457_organigramme_personnel_names.sql` puis
-`20260926202417_hr_portraits_and_organigramme_media.sql` avant de déployer le client.
+`20260926202417_hr_portraits_and_organigramme_media.sql` puis
+`20260926220402_organigramme_emergency_defaults.sql` avant de déployer le client.
 
 
 ## Interface et photos
@@ -226,16 +227,21 @@ leurs titres de groupe et les contextes correspondants des liens.
 Ces choix restent conservés pendant les changements de présentation, d’onglet et
 les actualisations, jusqu’au rechargement de la page. Le choix Navires est commun
 à l’affichage et aux exports. Ils concernent le diagramme ; les listes de personnel
-et d’urgence gardent leur contenu et leurs sélections propres. Une photo indisponible
+et d’urgence proposent les mêmes six cases avec des réglages indépendants. Une photo indisponible
 bloque les exports avec photos ; décocher Photos permet de poursuivre.
 
-Aucune migration, nouvelle dépendance ou modification des droits n’est nécessaire.
+L’export PDF est placé dans le même bloc **Exports** que les images PNG/SVG.
+Les cartes et leurs options ne nécessitent aucune nouvelle dépendance.
 Le module reste réservé aux comptes Administrateur et Direction.
 
 ## Liste du personnel et numéros d'urgence
 
 Deux vues supplémentaires préparent des listes nominatives avec fonction, nom,
-email et téléphone. Les deux listes commencent par la fonction Président, puis
+email et téléphone, ainsi que photos rondes, navires et bordées en option. Les six
+cases **Informations à inclure** sont propres à chaque document et pilotent aussi
+les colonnes de l’aperçu. Les noms restent visibles. Par défaut, fonctions, emails
+et téléphones sont inclus ; photos, navires et bordées sont décochés.
+Les deux listes commencent par la fonction Président, puis
 Julien LECOCQ, Christophe MINASSIAN et Sophie HAMEL lorsqu'ils sont sélectionnés.
 Les autres personnes sont regroupées selon le classement habituel des fonctions,
 puis par nom de famille et prénom (collation française). Les stagiaires sont toujours
@@ -252,24 +258,42 @@ doivent être dans les effectifs à la date de situation ; les responsabilités
 libres des intervenants externes ne sont pas des fiches du personnel.
 
 La liste du personnel sélectionne initialement tous les effectifs. La liste des
-numéros d'urgence sélectionne initialement les sédentaires. Chaque liste dispose
+numéros d'urgence reprend la liste par défaut enregistrée pour l’entreprise, ou
+les sédentaires lorsqu’aucune liste n’a été enregistrée. Chaque liste dispose
 d'une sélection indépendante, par fonction entière ou par personne. La recherche
 filtre uniquement l'affichage, sans modifier le contenu sélectionné pour le PDF.
 Une sélection vide désactive l'export. Les téléphones manquants sont signalés.
 Les coordonnées se modifient dans RH / Brevets.
 
 Les sélections sont conservées entre les vues et pendant les actualisations tant
-que le module reste ouvert. Elles ne sont pas enregistrées après rechargement ou
-fermeture de la page. Une personne absente du nouvel instantané n'est plus exportée.
-Rétablir les sédentaires réactive la sélection par défaut des urgences.
+que le module reste ouvert. Les réglages de contenu restent temporaires.
+Pour les urgences, modifier les cases puis **Enregistrer comme liste par défaut**
+mémorise les identifiants en base dans `organigramme_emergency_defaults`, par société.
+Cette liste est partagée entre Administrateur et Direction et relue à la prochaine
+connexion, y compris sur un autre poste. **Charger la liste par défaut** annule les
+choix temporaires. **Rétablir les sédentaires** prépare une nouvelle sélection sans
+écraser la sauvegarde tant que l’utilisateur n’enregistre pas. Une liste vide est
+mémorisable et ne réactive jamais automatiquement les sédentaires.
+Une personne absente du nouvel instantané n’est plus exportée. Les coordonnées
+restent issues des fiches RH, sans copie dans la table de préférences.
+La RPC `save_organigramme_emergency_default` et les politiques RLS limitent lecture
+et écriture aux profils autorisés de la société et refusent les contacts étrangers.
 
-Chaque liste s'exporte en PDF A4 portrait, avec logo BBTM, date, en-têtes répétés
-et pagination si nécessaire pour garder les coordonnées lisibles. L'export des
-deux listes commence toujours les numéros d'urgence sur une nouvelle page.
+Les responsabilités de Direction & Armement restent distinctes des fonctions à
+bord : la fonction RH est conservée dans l’instantané, puis la fonction de la bordée
+la remplace uniquement si elle est renseignée. Les listes de contacts reprennent
+l’intitulé de bureau pour les personnes ayant une responsabilité de bureau.
+
+Chaque liste s’exporte en PDF A4 portrait, avec logo BBTM et date. Le personnel
+tient sur **une seule page**, en adaptant l’échelle du tableau vectoriel à son
+contenu sans supprimer de personnes. Une sélection très longue réduit la taille
+du texte. Les urgences conservent des caractères de taille fixe et des en-têtes
+répétés, avec pagination si nécessaire. L’export des deux listes commence toujours
+les numéros d’urgence sur la deuxième page, avec une pagination globale.
 La liste d'urgence utilise un thème rouge bordeaux, des lignes rose pâle et les
 téléphones en gras, à l'écran comme dans le PDF. Le logo BBTM est incorporé depuis
 son image d'origine, sans recoloration. La liste du personnel garde le thème bleu.
-La contrainte d'une seule page paysage concerne le diagramme, pas ces tableaux.
+Le diagramme reste sur une seule page paysage ; le personnel est sur une page portrait.
 Les mêmes droits Administrateur/Direction s'appliquent à ces coordonnées et exports.
 
 ## Validation et retour arrière
@@ -281,6 +305,7 @@ terminé par ROLLBACK, couvrant aussi l'isolation par société, les sélections
 le remplacement atomique et l'indépendance du Planning. Contrôler aussi les PDF et
 PNG générés dans un navigateur. La préversion permet des compositions et rangs
 fictifs en mémoire ; ils sont réinitialisés au rechargement complet de la page.
+Seule sa liste d’urgence par défaut est mémorisée localement dans le navigateur.
 Pour masquer le module, désactiver ses permissions Admin/Direction. Un retour du
 client à la version précédente peut conserver la migration additive et les saisies.
 Ne pas supprimer la table de responsabilités sans exporter ces données.

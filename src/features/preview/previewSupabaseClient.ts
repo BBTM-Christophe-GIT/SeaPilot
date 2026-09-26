@@ -8,6 +8,11 @@ const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
 };
 const previewOrgData = structuredClone(ORG_HIERARCHY_DEMO);
+const PREVIEW_EMERGENCY_KEY = 'seapilot:preview:organigramme-emergency-default';
+try {
+  const saved: unknown = JSON.parse(localStorage.getItem(PREVIEW_EMERGENCY_KEY) || 'null');
+  if (Array.isArray(saved) && saved.every((id) => Number.isSafeInteger(id) && id > 0)) previewOrgData.emergencyDefaultIds = saved;
+} catch { /* Storage can be unavailable in a restricted browser. */ }
 
 const PREVIEW_SIGNATURE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
@@ -1811,6 +1816,13 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
   if (functionName === 'organigramme_snapshot_v2') return createPreviewQuery({ data: { ...previewOrgData, asOf: args.p_as_of }, error: null });
+  if (functionName === 'save_organigramme_emergency_default') {
+    const ids = args.p_person_ids as number[];
+    try { localStorage.setItem(PREVIEW_EMERGENCY_KEY, JSON.stringify(ids)); }
+    catch { return createPreviewQuery({ data: null, error: { message: 'Le navigateur ne permet pas de mémoriser cette sélection de démonstration.' } }); }
+    previewOrgData.emergencyDefaultIds = [...ids];
+    return createPreviewQuery({ data: null, error: null });
+  }
   if (functionName === 'save_organigramme_responsibility') {
     const id = args.p_id ? Number(args.p_id) : Math.max(0, ...previewOrgData.support.map((item) => item.id)) + 1;
     const entry: OrgSupport = { id, personId: args.p_person_id ? Number(args.p_person_id) : null, name: String(args.p_name), functionLabel: String(args.p_function_label), category: args.p_category as OrgSupport['category'], position: Number(args.p_position), rank: args.p_rank as OrgRank };

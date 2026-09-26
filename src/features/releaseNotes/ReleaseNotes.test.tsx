@@ -21,13 +21,23 @@ function memoryStore(initial: ReleaseNoteState[] = []) {
 }
 
 describe('ReleaseNotes', () => {
-  it.each<RoleKey>(['admin', 'direction', 'armement'])('shows the Planning update first to the %s profile', async (role) => {
+  it.each<RoleKey>(['admin', 'direction', 'armement'])('shows the latest relevant update first to the %s profile', async (role) => {
     const store = memoryStore();
     render(<ReleaseNotes client={{} as never} roles={[role]} storeOverride={store} />);
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getAllByRole('heading', { level: 3 })[0]).toHaveTextContent('Préparez vos bordées');
+    expect(within(dialog).getAllByRole('heading', { level: 3 })[0]).toHaveTextContent(role === 'armement' ? 'Préparez vos bordées' : 'Personnalisez vos organigrammes');
+    if (role === 'armement') expect(within(dialog).queryByText('Personnalisez vos organigrammes et vos listes de contacts')).not.toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Ok' }));
     expect(store.save).toHaveBeenCalledWith(expect.arrayContaining(['3.56.0-planning-generic-crew']), true);
+  });
+  it.each<RoleKey>(['marin', 'capitaine'])('excludes the organigramme note from the %s profile', async (role) => {
+    const note = RELEASE_NOTES.find((item) => item.id === '3.59.0-organigramme-exports-contacts')!;
+    const store = memoryStore();
+    render(<ReleaseNotes client={{} as never} roles={[role]} notes={[note, older]} storeOverride={store} />);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByText(note.title)).not.toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Ok' }));
+    expect(store.save).toHaveBeenCalledWith([older.id], true);
   });
 
   it.each<RoleKey>(['marin', 'capitaine'])('excludes the Planning note from the %s profile, its badge and acknowledgements', async (role) => {

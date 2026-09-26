@@ -162,3 +162,11 @@
 .org-export-fields label { display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; }
 .org-export-fields input { margin: 0; accent-color: #167c83; flex-shrink: 0; }
 .org-export-help { color: #607887; font-size: 11px; line-height: 1.6; margin: 12px 0; }
+.org-page .org-pdf-export { width: 100%; margin-top: 8px; }
+.org-contact-export-settings { display: flex; align-items: center; flex-wrap: wrap; gap: 16px 30px; padding: 16px; margin: 16px 0; border: 1px solid #dbe5ea; border-radius: 8px; background: #f8fbfc; }
+.org-contact-export-settings .org-export-fields { grid-template-columns: repeat(3, minmax(95px, 1fr)); }
+.org-contact-export-settings .org-export-help { max-width: 360px; }
+.org-emergency-default { background: #fcf3f4; border: 1px solid #e8ccd1; border-radius: 8px; padding: 14px; margin-bottom: 16px; font-size: 12px; line-height: 1.5; }
+.org-emergency-default p { margin: 0 0 10px; }
+.org-contact-portrait { display: block; width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }
+@media (max-width: 700px) { .org-contact-export-settings .org-export-fields { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); } }

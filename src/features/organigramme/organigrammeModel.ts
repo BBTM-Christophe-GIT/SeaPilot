@@ -19,7 +19,7 @@ export interface OrgMembership { personId: number; vesselId: number; watchGroup:
 export interface OrgWatch { id: number; vesselId: number; name: string }
 export interface OrgSupport { id: number; personId: number | null; name: string; functionLabel: string; category: 'office' | 'external'; position: number; rank?: OrgRank | null }
 export type OrgSupportDraft = Omit<OrgSupport, 'id'> & { id?: number };
-export interface OrgData { people: OrgPerson[]; vessels: OrgVessel[]; memberships: OrgMembership[]; support: OrgSupport[]; watches?: OrgWatch[]; asOf: string; categoryLabels?: Partial<Record<OrgCategory, string>>; links?: OrgLink[] }
+export interface OrgData { people: OrgPerson[]; vessels: OrgVessel[]; memberships: OrgMembership[]; support: OrgSupport[]; watches?: OrgWatch[]; asOf: string; categoryLabels?: Partial<Record<OrgCategory, string>>; links?: OrgLink[]; emergencyDefaultIds?: number[] | null }
 export interface OrgMember { photoUrl?: string; email?: string; phone?: string; id: number; name: string; functionLabel: string; detail: string; rank?: OrgRank | null }
 export interface OrgColumn { key: string; label: string; members: OrgMember[]; vesselId?: number }
 export interface OrgSection { iconDataUrl?: string; key: string; label: string; kind: 'vessel' | 'office' | 'external' | 'unassigned' | 'functions' | 'relations'; columns: OrgColumn[] }

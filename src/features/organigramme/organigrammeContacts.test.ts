@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupOrgContacts, selectedOrgContacts, toggleOrgContacts } from './organigrammeContacts';
+import { groupOrgContacts, orgContactPeople, selectedOrgContacts, toggleOrgContacts } from './organigrammeContacts';
 import { ORG_DEMO } from './organigrammeFixtures';
 
 describe('personnel and emergency selections', () => {
@@ -34,5 +34,22 @@ describe('personnel and emergency selections', () => {
     expect([...selected]).toEqual([1, 2, 6, 8]);
     const current = ORG_DEMO.people.filter((person) => person.id !== 8);
     expect(selectedOrgContacts(current, next, 'personnel').map((person) => person.id).sort()).toEqual([1, 2]);
+  });
+  it('uses saved emergency defaults including an empty list, while explicit edits take priority', () => {
+    expect(selectedOrgContacts(ORG_DEMO.people, null, 'emergency', [2, 999]).map((person) => person.id)).toEqual([2]);
+    expect(selectedOrgContacts(ORG_DEMO.people, null, 'emergency', [])).toEqual([]);
+    expect(selectedOrgContacts(ORG_DEMO.people, new Set([1]), 'emergency', [2]).map((person) => person.id)).toEqual([1]);
+    expect(selectedOrgContacts(ORG_DEMO.people, null, 'personnel', [])).toHaveLength(12);
+  });
+  it('adds only saved vessel and watch assignments, ordered from longest vessel to shortest', () => {
+    const data = { ...ORG_DEMO, memberships: [
+      { personId: 2, vesselId: 2, watchGroup: 'Bordée 2', functionLabel: '', source: 'manual' as const },
+      { personId: 2, vesselId: 1, watchGroup: 'Bordée 1', functionLabel: '', source: 'manual' as const },
+      { personId: 2, vesselId: 1, watchGroup: 'Planning privé', functionLabel: '', source: 'board' as const },
+    ] };
+    const contact = orgContactPeople(data).find((person) => person.id === 2)!;
+    expect(contact.vesselLabel).toBe('GOURY / LE ROZEL');
+    expect(contact.watchLabel).toBe('Bordée 1 / Bordée 2');
+    expect(data.people[1]).not.toHaveProperty('vesselLabel');
   });
 });

@@ -1,8 +1,26 @@
 import { compareHrFunctionLabels, normalizeHrFunctionLabel } from '../humanResources/peopleQueries';
-import type { OrgPerson } from './organigrammeModel';
+import { resolveMemberships, type OrgData, type OrgPerson } from './organigrammeModel';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
+import type { OrgExportContent } from './OrgExportFields';
 
 export type OrgContactDocument = 'personnel' | 'emergency';
-export interface OrgContactGroup { key: string; functionLabel: string; people: OrgPerson[] }
+export interface OrgContactPerson extends OrgPerson { vesselLabel?: string; watchLabel?: string }
+export interface OrgContactGroup { key: string; functionLabel: string; people: OrgContactPerson[] }
+export const ORG_CONTACT_CONTENT: OrgExportContent = { showPhotos: false, showFunctions: true, showEmails: true, showPhones: true, showVessels: false, showWatches: false };
+
+/** Office labels belong to personnel lists, never to the underlying vessel role. */
+export function orgContactPeople(data: OrgData): OrgContactPerson[] {
+  const memberships = resolveMemberships(data);
+  const vessels = [...data.vessels].sort(compareFleetAssets);
+  return data.people.map((person) => {
+    const rows = memberships.filter((row) => row.personId === person.id).sort((a, b) => vessels.findIndex((vessel) => vessel.id === a.vesselId) - vessels.findIndex((vessel) => vessel.id === b.vesselId) || a.watchGroup.localeCompare(b.watchGroup, 'fr', { numeric: true }));
+    return { ...person,
+      functionLabel: data.support.find((entry) => entry.personId === person.id && entry.category === 'office')?.functionLabel || person.functionLabel,
+      vesselLabel: [...new Set(rows.map((row) => vessels.find((vessel) => vessel.id === row.vesselId)?.name).filter(Boolean))].join(' / '),
+      watchLabel: [...new Set(rows.map((row) => row.watchGroup))].join(' / '),
+    };
+  });
+}
 const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr').replace(/\s+/g, ' ').trim();
 const french = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
 const namedPriorities = new Map([['julien lecocq', 1], ['christophe minassian', 2], ['sophie hamel', 3]]);
@@ -25,7 +43,7 @@ function priority(person: OrgPerson) {
   return namedPriorities.get(name) ?? 4;
 }
 
-export function groupOrgContacts(people: OrgPerson[]): OrgContactGroup[] {
+export function groupOrgContacts(people: OrgContactPerson[]): OrgContactGroup[] {
   const groups = new Map<string, OrgContactGroup>();
   for (const person of people) {
     const functionLabel = normalizeHrFunctionLabel(person.functionLabel) || 'Fonction non renseignée';
@@ -41,8 +59,9 @@ export function groupOrgContacts(people: OrgPerson[]): OrgContactGroup[] {
 }
 
 /** null means the live default; an explicit empty set means nobody is selected. */
-export function selectedOrgContacts(people: OrgPerson[], selection: Set<number> | null, kind: OrgContactDocument): OrgPerson[] {
-  return groupOrgContacts(people).flatMap((group) => group.people).filter((person) => selection ? selection.has(person.id) : kind === 'personnel' || person.population === 'sedentary');
+export function selectedOrgContacts(people: OrgContactPerson[], selection: Set<number> | null, kind: OrgContactDocument, emergencyDefaultIds?: number[] | null): OrgContactPerson[] {
+  const effective = selection ?? (kind === 'emergency' && emergencyDefaultIds != null ? new Set(emergencyDefaultIds) : null);
+  return groupOrgContacts(people).flatMap((group) => group.people).filter((person) => effective ? effective.has(person.id) : kind === 'personnel' || person.population === 'sedentary');
 }
 
 export function toggleOrgContacts(selected: Set<number>, ids: number[], checked: boolean): Set<number> {

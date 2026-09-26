@@ -9,9 +9,14 @@ export async function fetchOrganigramme(client: SupabaseClient, asOf: string): P
   if (!data || !Array.isArray(data.people) || !Array.isArray(data.vessels) || !Array.isArray(data.memberships) || !Array.isArray(data.support) || !Array.isArray(data.watches)) throw new Error('Les données de l’organigramme sont indisponibles.');
   const snapshot = { ...data, asOf } as OrgData;
   const [people, vessels] = await Promise.all([loadPeoplePortraits(client, snapshot.people), loadOrgVesselIcons(snapshot.vessels)]);
-  // Contact documents use the configured office responsibility, including its
-  // editable display function, without changing the underlying HR qualification.
-  return { ...snapshot, vessels, people: people.map((person) => ({ ...person, functionLabel: snapshot.support.find((entry) => entry.personId === person.id && entry.category === 'office')?.functionLabel || person.functionLabel })) };
+  // Keep the HR function intact for inherited vessel roles. Office responsibilities
+  // are resolved only where they are displayed, including the contact lists.
+  return { ...snapshot, vessels, people };
+}
+
+export async function saveOrgEmergencyDefault(client: SupabaseClient, ids: number[]): Promise<void> {
+  const { error } = await client.rpc('save_organigramme_emergency_default', { p_person_ids: ids });
+  if (error) throw new Error('Impossible d’enregistrer la liste d’urgence par défaut. Réessayez.', { cause: error });
 }
 
 export async function saveOrgSupport(client: SupabaseClient, entry: OrgSupportDraft): Promise<void> {

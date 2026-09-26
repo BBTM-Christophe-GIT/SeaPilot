@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { FileDown, Maximize2, Minimize2, Network, RefreshCw } from 'lucide-react';
+import { Maximize2, Minimize2, Network, RefreshCw } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { buildOrganigramme, ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, ORG_VIEW_LABELS, orgLocalDate, type OrgData, type OrgOptions } from './organigrammeModel';
 import { OrgChartSettings } from './OrgChartSettings';
 import { layoutOrganigramme, organigrammeSvg } from './organigrammeDiagram';
-import { fetchOrganigramme } from './organigrammeQueries';
+import { fetchOrganigramme, saveOrgEmergencyDefault } from './organigrammeQueries';
 import { OrgSupportEditor } from './OrgSupportEditor';
 import { OrgStructureEditor } from './OrgStructureEditor';
 import { OrgWatchEditor } from './OrgWatchEditor';
@@ -87,7 +87,7 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
   }
   return <div className="org-page">
     <header className="org-header"><div><h1><Network size={26} aria-hidden="true" />Organigramme</h1><p>Les équipes BBTM et leurs bordées.</p></div>
-      <div className="org-actions"><button type="button" onClick={refresh} disabled={loading}><RefreshCw size={16} aria-hidden="true" />Actualiser</button>{activeDocument === 'chart' && <button type="button" className="org-primary" onClick={() => void exportChart('pdf')} disabled={!canExport}><FileDown size={16} aria-hidden="true" />Exporter le PDF</button>}</div>
+      <div className="org-actions"><button type="button" onClick={refresh} disabled={loading}><RefreshCw size={16} aria-hidden="true" />Actualiser</button></div>
     </header>
     <div className="org-document-toolbar"><div className="org-document-tabs" role="group" aria-label="Document à préparer">{([{ key: 'chart', label: 'Organigramme' }, { key: 'personnel', label: 'Liste du personnel' }, { key: 'emergency', label: 'Numéros d’urgence' }] as const).map(({ key, label }) => <button type="button" key={key} aria-pressed={activeDocument === key} onClick={() => setDocument(key)}>{label}</button>)}</div>
       {activeDocument !== 'chart' && <label>Situation au<input type="date" aria-label="Date de situation" value={asOf} onChange={(event) => { if (/^\d{4}-\d{2}-\d{2}$/.test(event.target.value)) setAsOf(event.target.value); }} /></label>}
@@ -107,10 +107,13 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
           {download && <p className="org-download" role="status">Dernier export prêt : <a href={download.url} download={download.name}>Télécharger le fichier {download.format}</a></p>}
           <footer className="org-footer"><span>Actualisé à {updatedAt || '—'}</span><span>PDF sur une page · {ORGANIGRAMME_REFERENCE}</span><p>Référence : {ORGANIGRAMME_SOURCE}. Bordées composées dans ce module, indépendamment du planning.</p></footer>
         </div>
-        {!expanded && <OrgChartSettings data={currentData} options={options} onChange={setOptions} asOf={asOf} onDateChange={setAsOf} disabled={loading || !!error} canExport={canExport} imageFormat={imageFormat} onImageFormatChange={setImageFormat} onExportImage={() => void exportChart(imageFormat)} onEdit={setEditor} />}
+        {!expanded && <OrgChartSettings data={currentData} options={options} onChange={setOptions} asOf={asOf} onDateChange={setAsOf} disabled={loading || !!error} canExport={canExport} imageFormat={imageFormat} onImageFormatChange={setImageFormat} onExportImage={() => void exportChart(imageFormat)} onExportPdf={() => void exportChart('pdf')} onEdit={setEditor} />}
       </div>
     </>}
-    <div hidden={activeDocument === 'chart'}>{data ? <OrgPersonnelPanel data={data} kind={activeDocument === 'emergency' ? 'emergency' : 'personnel'} disabled={loading || !!error || !currentData} /> : !error && <p role="status">Chargement des coordonnées du personnel…</p>}</div>
+    <div hidden={activeDocument === 'chart'}>{data ? <OrgPersonnelPanel data={data} kind={activeDocument === 'emergency' ? 'emergency' : 'personnel'} disabled={loading || !!error || !currentData} previewMode={previewMode} onSaveDefault={async (ids) => {
+      await saveOrgEmergencyDefault(client, ids);
+      setData((previous) => previous ? { ...previous, emergencyDefaultIds: ids } : previous);
+    }} /> : !error && <p role="status">Chargement des coordonnées du personnel…</p>}</div>
     {editor && currentData && <AppDialog title={editor === 'watches' ? 'Composer les bordées' : 'Modifier la structure'} description={editor === 'watches' ? 'Préparez les équipages de chaque navire.' : 'Organisez les catégories, les responsabilités et leurs liens.'} variant="drawer" onClose={() => setEditor(null)}>
       {editor === 'watches' ? <OrgWatchEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} disabled={loading || !!error} /> : <><OrgStructureEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} /><OrgSupportEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} /></>}
     </AppDialog>}
