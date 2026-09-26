@@ -2,15 +2,18 @@
 
 Version 3.57.0. Le module `Ressources Humaines → Organigramme`, à côté de RH / Brevets,
 est réservé aux profils Administrateur et Direction, y compris par URL directe.
-Appliquer `20260926060139_organigramme.sql` puis
-`20260926122325_organigramme_categories_links.sql` avant de déployer le client.
+Appliquer `20260926060139_organigramme.sql`,
+`20260926122325_organigramme_categories_links.sql` puis
+`20260926125755_organigramme_personnel_contacts.sql` avant de déployer le client.
 
 ## Données et actualisation
 
-La RPC `organigramme_snapshot` renvoie uniquement les noms, fonctions, navires,
-bordées et responsabilités de la société active. Elle utilise les droits de
+La RPC `organigramme_snapshot` renvoie les noms, fonctions, emails, téléphones,
+navires, bordées et responsabilités de la société active. Elle utilise les droits de
 l'appelant (SECURITY INVOKER), vérifie le profil, l'appartenance à la société et
-la permission du module. Aucune copie de dossier RH n'est créée.
+la permission du module. Les coordonnées proviennent de `people.email` et
+`people.phone` ; les contacts d'urgence familiaux et les autres données privées
+du dossier RH ne sont pas renvoyés. Aucune copie de dossier RH n'est créée.
 
 À la date choisie, les journées du Planning ont priorité sur les affectations,
 puis les périodes importées, puis les bordées permanentes. La priorité s'applique
@@ -89,9 +92,35 @@ est courante et partagée par société, pas historisée à la date du Planning.
   côte à côte sur une seule rangée, avec leurs bordées en dessous. Les autres
   catégories sont centrées au-dessus et au-dessous de la flotte.
 
+## Liste du personnel et numéros d'urgence
+
+Deux vues supplémentaires préparent des listes nominatives avec fonction, nom,
+email et téléphone. Le personnel est regroupé selon le classement habituel des
+fonctions (Capitaine en premier), puis par ordre alphabétique. Les personnes
+doivent être dans les effectifs à la date de situation ; les responsabilités
+libres des intervenants externes ne sont pas des fiches du personnel.
+
+La liste du personnel sélectionne initialement tous les effectifs. La liste des
+numéros d'urgence sélectionne initialement les sédentaires. Chaque liste dispose
+d'une sélection indépendante, par fonction entière ou par personne. La recherche
+filtre uniquement l'affichage, sans modifier le contenu sélectionné pour le PDF.
+Une sélection vide désactive l'export. Les téléphones manquants sont signalés.
+Les coordonnées se modifient dans RH / Brevets.
+
+Les sélections sont conservées entre les vues et pendant les actualisations tant
+que le module reste ouvert. Elles ne sont pas enregistrées après rechargement ou
+fermeture de la page. Une personne absente du nouvel instantané n'est plus exportée.
+Rétablir les sédentaires réactive la sélection par défaut des urgences.
+
+Chaque liste s'exporte en PDF A4 portrait, avec logo BBTM, date, en-têtes répétés
+et pagination si nécessaire pour garder les coordonnées lisibles. L'export des
+deux listes commence toujours les numéros d'urgence sur une nouvelle page.
+La contrainte d'une seule page paysage concerne le diagramme, pas ces tableaux.
+Les mêmes droits Administrateur/Direction s'appliquent à ces coordonnées et exports.
+
 ## Validation et retour arrière
 
-Tests Vitest du modèle, du diagramme, des profils et de l'écran ; test SQL transactionnel
+Tests Vitest du modèle, du diagramme, des profils, des sélections et des PDF ; test SQL transactionnel
 `supabase/tests/organigramme_access_test.sql` sur de vrais rôles authentifiés,
 terminé par ROLLBACK. Contrôler aussi les PDF et PNG générés dans un navigateur.
 Pour masquer le module, désactiver ses permissions Admin/Direction. Un retour du

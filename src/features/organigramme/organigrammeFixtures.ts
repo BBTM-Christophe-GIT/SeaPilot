@@ -16,7 +16,7 @@ export const ORG_DEMO: OrgData = {
     { id: 10, name: 'Chloé GARCIA', functionLabel: 'Matelot polyvalent', population: 'offshore' },
     { id: 11, name: 'Jules ROUX', functionLabel: 'Directeur QHSE / Chef de Projet', population: 'sedentary' },
     { id: 12, name: 'Louise FAURE', functionLabel: 'Directrice Administrative et Financière', population: 'sedentary' },
-  ],
+  ].map((person) => ({ ...person, email: `personne.${person.id}@example.invalid`, phone: `00 00 00 00 ${String(person.id).padStart(2, '0')}` })),
   vessels: [{ id: 1, name: 'GOURY', lengthOverall: 30.62 }, { id: 2, name: 'LE ROZEL', lengthOverall: 19.2 }],
   memberships: [
     { personId: 2, vesselId: 1, watchGroup: 'Bordée 1', functionLabel: 'Capitaine', source: 'assignment' },

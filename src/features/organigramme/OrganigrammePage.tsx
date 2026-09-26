@@ -8,6 +8,7 @@ import { layoutOrganigramme, organigrammeSvg } from './organigrammeDiagram';
 import { fetchOrganigramme } from './organigrammeQueries';
 import { OrgSupportEditor } from './OrgSupportEditor';
 import { OrgStructureEditor } from './OrgStructureEditor';
+import { OrgPersonnelPanel } from './OrgPersonnelPanel';
 import './organigramme.css';
 
 export function OrganigrammePage() {
@@ -18,6 +19,7 @@ export function OrganigrammePage() {
 
 function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
   const [asOf, setAsOf] = useState(orgLocalDate);
+  const [activeDocument, setDocument] = useState<'chart' | 'personnel' | 'emergency'>('chart');
   const [data, setData] = useState<OrgData | null>(null);
   const [error, setError] = useState('');
   const [exportError, setExportError] = useState('');
@@ -68,12 +70,16 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
   }
   return <div className="org-page">
     <header className="org-header"><div><h1><Network size={26} />Organigramme</h1><p>Les équipes BBTM, leurs bordées et leurs fonctions.</p></div>
-      <div className="org-actions"><button type="button" onClick={refresh} disabled={loading}><RefreshCw size={16} />Actualiser</button><button type="button" className="org-primary" onClick={() => void exportChart('pdf')} disabled={!canExport}><FileDown size={16} />Exporter le PDF</button></div>
+      <div className="org-actions"><button type="button" onClick={refresh} disabled={loading}><RefreshCw size={16} />Actualiser</button>{activeDocument === 'chart' && <button type="button" className="org-primary" onClick={() => void exportChart('pdf')} disabled={!canExport}><FileDown size={16} />Exporter le PDF</button>}</div>
     </header>
     {previewMode && <p className="org-notice">Préversion avec des données de démonstration.</p>}
+    <div className="org-document-toolbar"><div className="org-tabs" role="group" aria-label="Document à préparer">{([{ key: 'chart', label: 'Organigramme' }, { key: 'personnel', label: 'Liste du personnel' }, { key: 'emergency', label: 'Numéros d’urgence' }] as const).map(({ key, label }) => <button type="button" key={key} aria-pressed={activeDocument === key} onClick={() => setDocument(key)}>{label}</button>)}</div>
+      <label>Situation au<input type="date" aria-label="Date de situation" value={asOf} onChange={(event) => { if (/^\d{4}-\d{2}-\d{2}$/.test(event.target.value)) setAsOf(event.target.value); }} /></label>
+    </div>
+    {error && <div className="org-error" role="alert">{error} <button type="button" onClick={refresh}>Réessayer</button></div>}
+    <div hidden={activeDocument !== 'chart'}>
     <section className="org-controls" aria-label="Configuration de l’organigramme">
       <div className="org-toolbar"><div className="org-tabs" role="group" aria-label="Présentation"><button type="button" aria-pressed={options.view === 'vessels'} onClick={() => setOptions({ ...options, view: 'vessels' })}><Ship size={16} />Par navire et bordée</button><button type="button" aria-pressed={options.view === 'functions'} onClick={() => setOptions({ ...options, view: 'functions' })}><Users size={16} />Par fonction</button></div>
-        <label>Situation au<input type="date" aria-label="Date de situation" value={asOf} onChange={(event) => { if (/^\d{4}-\d{2}-\d{2}$/.test(event.target.value)) setAsOf(event.target.value); }} /></label>
         <label>Navire<select aria-label="Navire" value={options.vesselIds[0] ?? ''} onChange={(event) => setOptions({ ...options, vesselIds: event.target.value ? [Number(event.target.value)] : [] })}><option value="">Tous les navires</option>{[...(data?.vessels || [])].sort(compareFleetAssets).map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label>
       </div>
       <div className="org-options">{([{ key: 'includeOffice', label: orgCategoryLabel(data || {}, 'office') }, { key: 'includeExternal', label: orgCategoryLabel(data || {}, 'external') }, { key: 'includeUnassigned', label: orgCategoryLabel(data || {}, 'unassigned') }, { key: 'showVessels', label: 'Afficher les navires' }] as const).map(({ key, label }) => <label key={key}><input type="checkbox" checked={options[key]} disabled={key === 'includeUnassigned' && options.vesselIds.length > 0} onChange={(event) => setOptions({ ...options, [key]: event.target.checked })} />{label}</label>)}
@@ -82,7 +88,6 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
     </section>
     {editorOpen && currentData && <><OrgStructureEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} /><OrgSupportEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} /></>}
     {hiddenLinks > 0 && <p className="org-notice">{hiddenLinks} lien(s) enregistré(s) non affiché(s) : leur catégorie ou leur cible est absente de la date, de la vue ou des filtres choisis.</p>}
-    {error && <div className="org-error" role="alert">{error} <button type="button" onClick={refresh}>Réessayer</button></div>}
     {exportError && <p className="org-error" role="alert">{exportError}</p>}
     {download && <p className="org-download" role="status">Dernier export prêt : <a href={download.url} download={download.name}>Télécharger le fichier {download.format}</a></p>}
     <section className="org-canvas-panel" aria-label="Aperçu de l’organigramme">
@@ -91,5 +96,7 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
       {exporting && <p className="org-export-status" role="status">Préparation de l’export…</p>}
     </section>
     <footer className="org-footer"><p>Affectations datées en priorité, puis bordées permanentes. Les repos et congés ne retirent pas une personne de son équipe. Mise à jour automatique chaque minute et au retour sur la page.</p><p>PDF sur une seule page paysage, de taille adaptée au contenu, avec logo BBTM · {ORGANIGRAMME_REFERENCE} · Référence : {ORGANIGRAMME_SOURCE}. Tous les navires sont côte à côte. L’image contient uniquement le diagramme.</p></footer>
+    </div>
+    <div hidden={activeDocument === 'chart'}>{data ? <OrgPersonnelPanel data={data} kind={activeDocument === 'emergency' ? 'emergency' : 'personnel'} disabled={loading || !!error || !currentData} /> : !error && <p role="status">Chargement des coordonnées du personnel…</p>}</div>
   </div>;
 }

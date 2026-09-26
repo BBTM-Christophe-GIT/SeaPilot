@@ -10,7 +10,7 @@ export interface OrgLink { id: number; sourceCategory: OrgCategory; targetKind: 
 export interface OrgTarget { kind: OrgLink['targetKind']; key: string; section: string; name: string; context: string }
 export const orgTargetValue = (target: OrgTarget) => JSON.stringify([target.kind, target.section, target.key]);
 export const orgCategoryLabel = (data: Pick<OrgData, 'categoryLabels'>, key: OrgCategory) => data.categoryLabels?.[key] || ORG_CATEGORY_LABELS[key];
-export interface OrgPerson { id: number; name: string; functionLabel: string; population: string }
+export interface OrgPerson { id: number; name: string; functionLabel: string; population: string; email?: string | null; phone?: string | null }
 export interface OrgVessel { id: number; name: string; lengthOverall: string | number | null }
 export interface OrgMembership { personId: number; vesselId: number; watchGroup: string; functionLabel: string; source: 'board' | 'assignment' | 'period' | 'day' }
 export interface OrgSupport { id: number; personId: number | null; name: string; functionLabel: string; category: 'office' | 'external'; position: number }

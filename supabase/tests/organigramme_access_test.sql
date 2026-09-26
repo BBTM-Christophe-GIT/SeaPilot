@@ -16,6 +16,7 @@ begin
     insert into public.user_roles(user_id,company_id,role_key) values(actor,company,role_name);
   end loop;
   insert into public.people(company_id,first_name,last_name,function_label,hired_on,active) values(company,'Org','ACTIVE','Capitaine',current_date-365,true) returning id into person;
+  update public.people set email='org-fixture@example.invalid',phone='00 00 00 00 01',emergency_contact_phone='PRIVATE FAMILY PHONE' where id=person;
   insert into public.people(company_id,first_name,last_name,function_label,hired_on,departed_on,active) values(company,'Org','DEPARTED','Capitaine',current_date-365,current_date,false) returning id into departed;
   insert into public.people(company_id,first_name,last_name,function_label,hired_on,active) values(company,'Org','FUTURE','Capitaine',current_date+10,true) returning id into future_person;
   insert into public.people(company_id,first_name,last_name,function_label,hired_on,active) values(other_company,'Org','OTHER','Capitaine',current_date-365,true) returning id into other_person;
@@ -35,7 +36,8 @@ begin
       assert exists(select 1 from jsonb_array_elements(snapshot->'people') p where (p->>'id')::bigint=person), 'Active person missing';
       assert not exists(select 1 from jsonb_array_elements(snapshot->'people') p where (p->>'id')::bigint in (departed,future_person,other_person)), 'Date/company scope leaked';
       assert exists(select 1 from jsonb_array_elements(snapshot->'memberships') m where (m->>'personId')::bigint=person and (m->>'vesselId')::bigint=ship), 'Permanent watch missing';
-      assert not exists(select 1 from jsonb_array_elements(snapshot->'people') p where p ? 'email' or p ? 'birth_date' or p ? 'sailor_number'), 'Private HR fields leaked';
+      assert not exists(select 1 from jsonb_array_elements(snapshot->'people') p where p ? 'emergency_contact_phone' or p ? 'emergency_contact_name' or p ? 'birth_date' or p ? 'sailor_number'), 'Private HR fields leaked';
+      assert exists(select 1 from jsonb_array_elements(snapshot->'people') p where (p->>'id')::bigint=person and p->>'email'='org-fixture@example.invalid' and p->>'phone'='00 00 00 00 01'), 'Requested personnel contacts missing';
       saved:=public.save_organigramme_support(null,person,'Fixture','Responsabilité','office',1);
       perform public.save_organigramme_support(saved,person,'Fixture','Responsabilité mise à jour','office',2);
       assert exists(select 1 from public.organigramme_support where id=saved and position=2), 'Authorized update failed';

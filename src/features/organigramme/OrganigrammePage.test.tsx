@@ -10,6 +10,25 @@ function setup(roles: RoleKey[] = ['direction'], rpc = vi.fn().mockResolvedValue
   return rpc;
 }
 describe('OrganigrammePage', () => {
+  it('keeps independent contact selections when switching documents and blocks their exports on refresh failure', async () => {
+    const rpc = setup(); await screen.findByRole('img');
+    fireEvent.click(screen.getByRole('button', { name: 'Liste du personnel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tout désélectionner' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Inclure Alice LAURENT' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Numéros d’urgence' }));
+    expect(screen.getByRole('checkbox', { name: 'Inclure Camille DUMONT' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Inclure Alice LAURENT' })).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Organigramme' }));
+    expect(screen.getByRole('img')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Liste du personnel' }));
+    expect(screen.getByRole('checkbox', { name: 'Inclure Alice LAURENT' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Inclure Camille DUMONT' })).not.toBeChecked();
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'denied' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Actualiser' }));
+    await screen.findByRole('alert');
+    expect(screen.getByRole('button', { name: 'Exporter le personnel en PDF' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Exporter les deux listes' })).toBeDisabled();
+  });
   it('persists a renamed category and updates its controls and diagram after reloading', async () => {
     let data = ORG_LINKS_DEMO;
     const rpc = setup(['direction'], vi.fn().mockImplementation(async (name, args) => {

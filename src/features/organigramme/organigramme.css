@@ -15,6 +15,7 @@
 .org-tabs { display: flex; gap: 4px; background: #f0f5f7; padding: 4px; border-radius: 8px; }
 .org-tabs button { border: 0; background: transparent; }
 .org-tabs button[aria-pressed=true] { color: white; background: #12364b; }
+.org-page .org-tabs button[aria-pressed=true]:hover:not(:disabled) { background: #205571; }
 .org-options { margin-top: 17px; padding-top: 13px; border-top: 1px solid #edf1f4; gap: 18px; font-size: 12px; }
 .org-options label { display: flex; align-items: center; gap: 7px; }
 .org-options input { accent-color: #167c83; width: 15px; height: 15px; }
@@ -43,5 +44,24 @@
 .org-editor label { min-width: 0; }
 .org-editor select { width: 100%; text-overflow: ellipsis; }
 .org-editor strong { overflow-wrap: anywhere; }
+.org-document-toolbar, .org-contact-heading, .org-contact-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 18px; }
+.org-document-toolbar > label, .org-contact-toolbar > label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; }
+.org-document-toolbar .org-tabs { flex-wrap: wrap; }
+.org-contact-heading h2 { font-size: 20px; margin: 0 0 8px; }
+.org-contact-heading p, .org-contact-help { font-size: 13px; color: #526978; line-height: 1.6; }
+.org-contact-toolbar { justify-content: flex-start; padding-top: 10px; }
+.org-contact-toolbar > label { flex: 1 1 260px; }
+.org-contact-selection { border: 0; padding: 0; margin: 0; min-width: 0; }
+.org-contact-group { margin-top: 20px; border: 1px solid #dbe5ea; border-radius: 8px; overflow: hidden; }
+.org-contact-group h3 { background: #e5f2f2; font-size: 14px; margin: 0; padding: 12px 14px; }
+.org-contact-group label { display: flex; align-items: center; gap: 10px; }
+.org-contact-group input { accent-color: #167c83; flex-shrink: 0; }
+.org-contact-group h3 span { margin-left: auto; color: #526978; font-size: 12px; white-space: nowrap; }
+.org-contact-table-wrap { overflow-x: auto; }
+.org-contact-group table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; min-width: 570px; }
+.org-contact-group th, .org-contact-group td { padding: 11px 14px; text-align: left; border-bottom: 1px solid #edf1f4; overflow-wrap: anywhere; }
+.org-contact-group th { color: #526978; font-weight: 500; font-size: 12px; }
+.org-contact-group th:last-child { width: 24%; }
+.org-contact-group tr:last-child td { border-bottom: 0; }
 .org-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 @media (max-width: 700px) { .org-page { padding: 18px 12px; } .org-header { gap: 16px; } .org-toolbar { gap: 14px; } .org-tabs { flex-basis: 100%; } .org-tabs button { flex: 1; padding: 9px; } .org-canvas-toolbar { gap: 15px; } .org-canvas-toolbar > div { gap: 10px; } .org-options button { margin-left: 0; } .org-canvas { padding: 12px; } .org-support-list > div { flex-wrap: wrap; } .org-support-list span { flex-basis: 100%; } }
