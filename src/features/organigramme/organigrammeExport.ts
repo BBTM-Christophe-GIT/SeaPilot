@@ -1,4 +1,4 @@
-import { layoutOrganigramme, ORG_COLORS, ORG_SHIP_LINES, orgBoxMedia, orgBoxTextX, orgImageSource, orgBoxTextColor, organigrammeSvg, type OrgDiagram } from './organigrammeDiagram';
+import { layoutOrganigramme, ORG_COLORS, ORG_SHIP_LINES, orgBoxMedia, orgBoxTextX, orgBoxTextTop, orgImageSource, orgBoxTextColor, organigrammeSvg, type OrgDiagram } from './organigrammeDiagram';
 import { ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, ORG_VIEW_LABELS, type OrgSection, type OrganigrammeView } from './organigrammeModel';
 
 export function downloadOrgBlob(blob: Blob, name: string) {
@@ -58,12 +58,25 @@ export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, 
       pdf.roundedRect(offsetX + box.x * scale, offsetY + box.y * scale, box.width * scale, box.height * scale, 2, 2, 'FD');
       const media = orgBoxMedia(box);
       const source = orgImageSource(box.image);
-      if (source) pdf.addImage(source, source.startsWith('data:image/png') ? 'PNG' : 'JPEG', offsetX + media.x * scale, offsetY + media.y * scale, media.width * scale, media.height * scale);
+      if (source) {
+        const portrait = box.mediaKind === 'portrait';
+        const properties = pdf.getImageProperties(source);
+        const imageScale = (portrait ? Math.max : Math.min)(media.width / properties.width, media.height / properties.height);
+        const imageWidth = properties.width * imageScale;
+        const imageHeight = properties.height * imageScale;
+        pdf.saveGraphicsState();
+        if (portrait) {
+          pdf.circle(offsetX + (media.x + media.width / 2) * scale, offsetY + (media.y + media.height / 2) * scale, media.width * scale / 2, null);
+          pdf.clip(); pdf.discardPath();
+        }
+        pdf.addImage(source, source.startsWith('data:image/png') ? 'PNG' : 'JPEG', offsetX + (media.x + (media.width - imageWidth) / 2) * scale, offsetY + (media.y + (media.height - imageHeight) / 2) * scale, imageWidth * scale, imageHeight * scale);
+        pdf.restoreGraphicsState();
+      }
       else if (box.mediaKind === 'vessel') {
         pdf.setDrawColor('#ffffff'); pdf.setLineWidth(.5 * scale);
         ORG_SHIP_LINES.forEach(([x1,y1,x2,y2]) => pdf.line(offsetX + (media.x + 14 + x1 * 1.5) * scale, offsetY + (media.y + 3 + y1 * 1.5) * scale, offsetX + (media.x + 14 + x2 * 1.5) * scale, offsetY + (media.y + 3 + y2 * 1.5) * scale));
       }
-      let baseline = box.y + 14;
+      let baseline = orgBoxTextTop(box);
       box.lines.forEach((line) => {
         baseline += line.size + 5;
         pdf.setFont('helvetica', line.bold ? 'bold' : 'normal');

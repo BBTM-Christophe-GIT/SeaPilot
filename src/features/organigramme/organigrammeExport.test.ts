@@ -29,11 +29,37 @@ describe('organigramme exports', () => {
         const pdf = await task.promise; expect(pdf.numPages).toBe(1);
         const operators = await (await pdf.getPage(1)).getOperatorList();
         imageCounts.push(operators.fnArray.filter((fn) => fn === OPS.paintImageXObject).length);
+        expect(operators.fnArray.filter((fn) => fn === OPS.clip).length).toBe(showPhotos ? 12 : 0);
       } finally { await task.destroy(); }
     }
     expect(imageCounts[0]).toBeGreaterThan(imageCounts[1]);
     const noShips = buildOrganigramme(data, { ...options, showVessels: false });
     expect(layoutOrganigramme(noShips, false).boxes.some((box) => box.mediaKind === 'vessel')).toBe(false);
+  });
+  it.each(['vessels', 'functions'] as const)('includes only selected contact and organization fields in %s PDF and SVG exports', async (view) => {
+    const data = { ...ORG_LINKS_DEMO, support: [...ORG_LINKS_DEMO.support, { id: 90, personId: 2, name: 'Référente externe', functionLabel: 'Conseil', category: 'external' as const, position: 4 }] };
+    const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));
+    for (const included of [true, false]) {
+      const selected = { ...options, view, showEmails: included, showPhones: included, showFunctions: included, showVessels: included, showWatches: included };
+      const sections = buildOrganigramme(data, selected);
+      const external = sections.find((section) => section.kind === 'external')!.columns.flatMap((column) => column.members);
+      expect(external.find((person) => person.name === 'Référente externe')?.email).toBe(included ? 'personne.2@example.invalid' : undefined);
+      expect(external.find((person) => person.name.includes('Cabinet comptable'))?.email).toBeUndefined();
+      const svg = await (await buildOrgImage(sections, included, 'svg')).text();
+      const blob = await buildOrgPdf(sections, included, data.asOf, view, logo);
+      const task = getDocument({ data: new Uint8Array(await blob.arrayBuffer()) });
+      try {
+        const content = await (await (await task.promise).getPage(1)).getTextContent();
+        const text = content.items.map((item) => 'str' in item ? item.str : '').join(' ');
+        for (const exported of [text, svg]) {
+          expect(exported).toContain('Élodie MARTIN');
+          for (const field of ['personne.2@example.invalid', '00 00 00 00 02', 'Capitaine', 'GOURY', 'Bordée 1']) {
+            if (included) expect(exported).toContain(field);
+            else expect(exported).not.toContain(field);
+          }
+        }
+      } finally { await task.destroy(); }
+    }
   });
   it('exports the selected populated ships in both PDF and SVG, without empty or excluded ships', async () => {
     const sections = buildOrganigramme(ORG_VESSEL_FILTER_DEMO, { ...options, vesselIds: [2, 4, 1] });

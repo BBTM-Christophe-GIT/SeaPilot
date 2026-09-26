@@ -1,4 +1,5 @@
-import { Download, Eye, Image, Network, Settings2, Ship, Users } from 'lucide-react';
+import { Download, Eye, FileDown, Image, Network, Settings2, Ship, Users } from 'lucide-react';
+import { OrgExportFields } from './OrgExportFields';
 import { orgCategoryLabel, orgPopulatedVessels, type OrgData, type OrgOptions } from './organigrammeModel';
 import { fleetIllustration } from '../fleet/fleetDisplay';
 
@@ -13,12 +14,11 @@ interface Props {
   imageFormat: 'png' | 'svg';
   onImageFormatChange: (format: 'png' | 'svg') => void;
   onExportImage: () => void;
+  onExportPdf: () => void;
   onEdit: (editor: 'watches' | 'structure') => void;
-  exportPhotos: boolean;
-  onExportPhotosChange: (value: boolean) => void;
 }
 
-export function OrgChartSettings({ data, options, onChange, asOf, onDateChange, disabled, canExport, imageFormat, onImageFormatChange, onExportImage, onEdit, exportPhotos, onExportPhotosChange }: Props) {
+export function OrgChartSettings({ data, options, onChange, asOf, onDateChange, disabled, canExport, imageFormat, onImageFormatChange, onExportImage, onExportPdf, onEdit }: Props) {
   const vessels = data ? orgPopulatedVessels(data) : [];
   const count = vessels.filter((vessel) => options.vesselIds === null || options.vesselIds.includes(vessel.id)).length;
   return <aside className="org-inspector" aria-label="Réglages de l’organigramme">
@@ -51,10 +51,12 @@ export function OrgChartSettings({ data, options, onChange, asOf, onDateChange, 
         <button type="button" disabled={!data} onClick={() => onEdit('structure')}><Settings2 size={16} aria-hidden="true" />Modifier la structure</button>
       </div>
     </section>
-    <section className="org-inspector-section" aria-label="Export image">
+    <section className="org-inspector-section" aria-label="Exports">
       <h3><Image size={16} aria-hidden="true" />Exports</h3>
-      <label className="org-export-photos"><input type="checkbox" checked={exportPhotos} onChange={(event) => onExportPhotosChange(event.target.checked)} />Inclure les photos dans les exports</label>
+      <OrgExportFields options={options} onChange={(key, value) => onChange({ ...options, [key]: value })} />
+      <p className="org-export-help">L’aperçu reflète le contenu des exports PDF, PNG et SVG. Les noms restent toujours visibles.</p>
       <div className="org-image-export"><select aria-label="Format image" value={imageFormat} onChange={(event) => onImageFormatChange(event.target.value as 'png' | 'svg')}><option value="png">PNG</option><option value="svg">SVG</option></select><button type="button" className="org-primary" disabled={!canExport} onClick={onExportImage}><Download size={16} aria-hidden="true" />Exporter l’image</button></div>
+      <button type="button" className="org-primary org-pdf-export" disabled={!canExport} onClick={onExportPdf}><FileDown size={16} aria-hidden="true" />Exporter le PDF</button>
     </section>
   </aside>;
 }

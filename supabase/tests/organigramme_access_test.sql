@@ -6,6 +6,8 @@ declare
   other_person bigint; ship bigint; actor uuid; role_name text; n integer:=0;
   snapshot jsonb; saved bigint; link_id bigint; other_ship bigint; saved_watch_id bigint; foreign_watch bigint;
 begin
+  assert not has_table_privilege('authenticated','public.organigramme_emergency_defaults','TRUNCATE'), 'Authenticated profile can truncate defaults';
+  assert not has_table_privilege('anon','public.organigramme_emergency_defaults','SELECT'), 'Anonymous table grant';
   select id into strict company from public.companies where code='bbtm';
   insert into public.companies(code,name) values('org-fixture-other','Organigramme fixture') returning id into other_company;
   foreach role_name in array array['admin','direction','armement','capitaine','marin'] loop
@@ -20,6 +22,7 @@ begin
   insert into public.people(company_id,first_name,last_name,function_label,hired_on,departed_on,active) values(company,'Org','DEPARTED','Capitaine',current_date-365,current_date,false) returning id into departed;
   insert into public.people(company_id,first_name,last_name,function_label,hired_on,active) values(company,'Org','FUTURE','Capitaine',current_date+10,true) returning id into future_person;
   insert into public.people(company_id,first_name,last_name,function_label,hired_on,active) values(other_company,'Org','OTHER','Capitaine',current_date-365,true) returning id into other_person;
+  insert into public.organigramme_emergency_defaults(company_id,person_ids) values(other_company,array[other_person]);
   insert into public.vessels(company_id,name,asset_kind,active) values(company,'ORG FIXTURE','vessel',true) returning id into ship;
   insert into public.vessels(company_id,name,asset_kind,active) values(other_company,'OTHER FIXTURE','vessel',true) returning id into other_ship;
   insert into public.organigramme_categories(company_id,key,label) values(other_company,'external','Other tenant');
@@ -33,6 +36,29 @@ begin
     perform set_config('request.jwt.claims',json_build_object('sub',actor,'role','authenticated')::text,true);
     execute 'set local role authenticated';
     if role_name in ('admin','direction') then
+      perform public.save_organigramme_emergency_default(array[person,person]);
+      snapshot:=public.organigramme_snapshot_v2(current_date);
+      assert snapshot->'emergencyDefaultIds'=to_jsonb(array[person]), 'Saved emergency default missing or duplicated';
+      assert not exists(select 1 from public.organigramme_emergency_defaults where company_id=other_company), 'Foreign emergency default leaked';
+      begin
+        perform public.save_organigramme_emergency_default(array[other_person]);
+        raise exception 'Foreign emergency contact accepted';
+      exception when insufficient_privilege then null; end;
+      begin
+        update public.organigramme_emergency_defaults set person_ids=array[other_person] where company_id=company;
+        raise exception 'Direct foreign emergency contact accepted';
+      exception when insufficient_privilege then null; end;
+      begin
+        perform public.save_organigramme_emergency_default(array[-1::bigint]);
+        raise exception 'Missing emergency contact accepted';
+      exception when insufficient_privilege then null; end;
+      begin
+        perform public.save_organigramme_emergency_default(array[null::bigint]);
+        raise exception 'Null emergency contact accepted';
+      exception when insufficient_privilege then null; end;
+      assert (public.organigramme_snapshot_v2(current_date))->'emergencyDefaultIds'=to_jsonb(array[person]), 'Rejected save changed the default';
+      perform public.save_organigramme_emergency_default(array[]::bigint[]);
+      assert (public.organigramme_snapshot_v2(current_date))->'emergencyDefaultIds'='[]'::jsonb, 'Empty default fell back to sedentary staff';
       snapshot:=public.organigramme_snapshot_v2(current_date);
       assert exists(select 1 from jsonb_array_elements(snapshot->'people') p where (p->>'id')::bigint=person), 'Active person missing';
       assert exists(select 1 from jsonb_array_elements(snapshot->'people') p where (p->>'id')::bigint=person and p->>'firstName'='Org' and p->>'lastName'='ACTIVE'), 'Structured personnel names missing';
@@ -118,6 +144,15 @@ begin
       snapshot:=public.organigramme_snapshot_v2(current_date-1);
       assert exists(select 1 from jsonb_array_elements(snapshot->'people') p where (p->>'id')::bigint=departed), 'Historical employee missing';
     else
+      assert (select count(*)=0 from public.organigramme_emergency_defaults), 'Emergency defaults leaked to forbidden profile';
+      begin
+        perform public.save_organigramme_emergency_default(array[person]);
+        raise exception 'Forbidden profile could save emergency default';
+      exception when insufficient_privilege then null; end;
+      begin
+        insert into public.organigramme_emergency_defaults(company_id,person_ids) values(company,array[person]);
+        raise exception 'Forbidden profile could insert emergency default directly';
+      exception when insufficient_privilege then null; end;
       begin
         perform public.organigramme_snapshot_v2(current_date);
         raise exception 'Forbidden profile could read organigramme';
@@ -164,6 +199,10 @@ begin
     raise exception 'Forbidden navigation grant accepted';
   exception when check_violation then null; end;
   execute 'set local role anon';
+  begin
+    perform public.save_organigramme_emergency_default(array[person]);
+    raise exception 'Anonymous emergency save accepted';
+  exception when insufficient_privilege then null; end;
   begin
     perform public.organigramme_snapshot_v2(current_date);
     raise exception 'Anonymous access accepted';

@@ -71,6 +71,20 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       'Les notes de mise à jour sont désormais présentées de la plus récente à la plus ancienne.',
     ],
   },
+  {
+    id: '3.59.0-organigramme-exports-contacts',
+    version: '3.59.0',
+    publishedOn: '2026-09-27',
+    title: 'Personnalisez vos organigrammes et vos listes de contacts',
+    roles: ['admin', 'direction'],
+    changes: [
+      'Les cartes ont la même taille au sein de chaque catégorie. Les photos sont rondes et agrandies selon l’espace disponible.',
+      'Pour l’organigramme, la liste du personnel et les numéros d’urgence, choisissez les informations à inclure : photos, fonctions, e-mails, téléphones, navires et bordées. Chaque document garde ses propres réglages.',
+      'La liste du personnel tient sur une page A4. L’export PDF de l’organigramme se trouve désormais dans les Réglages, à côté des exports d’images.',
+      'Modifiez la sélection des contacts d’urgence, puis cliquez sur Enregistrer comme liste par défaut pour la retrouver lors des prochaines ouvertures. Cette liste est partagée au sein de l’entreprise.',
+      'La fonction affichée à bord suit la fonction RH ou celle définie dans la bordée. L’intitulé de Direction & Armement est conservé séparément.',
+    ],
+  },
 ];
 
 export function chronologicalNotes(notes: readonly ReleaseNote[]): ReleaseNote[] {
