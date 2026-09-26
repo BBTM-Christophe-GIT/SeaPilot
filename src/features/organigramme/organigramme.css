@@ -63,5 +63,12 @@
 .org-contact-group th { color: #526978; font-weight: 500; font-size: 12px; }
 .org-contact-group th:last-child { width: 24%; }
 .org-contact-group tr:last-child td { border-bottom: 0; }
+.org-contacts--emergency { border-top: 3px solid #8e2d3e; }
+.org-contacts--emergency .org-contact-heading h2, .org-contacts--emergency .org-contact-group td:last-child { color: #8e2d3e; font-weight: 700; }
+.org-contacts--emergency .org-contact-group { border-color: #e8ccd1; }
+.org-contacts--emergency .org-contact-group h3 { background: #fcf3f4; color: #8e2d3e; }
+.org-contacts--emergency .org-contact-group input { accent-color: #8e2d3e; }
+.org-page .org-contacts--emergency button.org-primary { background: #8e2d3e; border-color: #8e2d3e; }
+.org-page .org-contacts--emergency button.org-primary:hover:not(:disabled) { background: #732437; }
 .org-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 @media (max-width: 700px) { .org-page { padding: 18px 12px; } .org-header { gap: 16px; } .org-toolbar { gap: 14px; } .org-tabs { flex-basis: 100%; } .org-tabs button { flex: 1; padding: 9px; } .org-canvas-toolbar { gap: 15px; } .org-canvas-toolbar > div { gap: 10px; } .org-options button { margin-left: 0; } .org-canvas { padding: 12px; } .org-support-list > div { flex-wrap: wrap; } .org-support-list span { flex-basis: 100%; } }

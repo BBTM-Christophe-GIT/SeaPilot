@@ -13,7 +13,6 @@ export async function buildOrgContactsPdf(documents: OrgContactsSheet[], asOf: s
   }
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
   pdf.setProperties({ title: documents.length > 1 ? 'BBTM - Personnel et numéros d’urgence' : documents[0].kind === 'personnel' ? 'BBTM - Liste du personnel' : 'BBTM - Numéros d’urgence', subject: `Situation au ${asOf}`, creator: 'SeaPilot' });
-  const navy: [number, number, number] = [18, 54, 75];
   const logo = pdf.getImageProperties(logoBytes);
   const logoScale = Math.min(22 / logo.width, 16 / logo.height);
   documents.forEach((document, index) => {
@@ -21,23 +20,30 @@ export async function buildOrgContactsPdf(documents: OrgContactsSheet[], asOf: s
     if (index) pdf.addPage();
     const people = groupOrgContacts(document.people).flatMap((group) => group.people);
     const title = document.kind === 'personnel' ? 'Liste du personnel' : 'Numéros d’urgence';
+    const isEmergency = document.kind === 'emergency';
+    const heading: [number, number, number] = isEmergency ? [142, 45, 62] : [18, 54, 75];
+    const text: [number, number, number] = isEmergency ? [59, 47, 51] : [18, 54, 75];
+    const border: [number, number, number] = isEmergency ? [232, 204, 209] : [215, 227, 232];
+    const stripe: [number, number, number] = isEmergency ? [252, 243, 244] : [243, 248, 249];
+    const accent: [number, number, number] = isEmergency ? [180, 77, 93] : [27, 136, 140];
     autoTable(pdf, {
       startY: 43, margin: { top: 43, left: 12, right: 12, bottom: 18 },
       head: [['Fonction', 'Nom / prénom', 'Email', 'Téléphone']],
       body: people.map((person) => [person.functionLabel, person.name, person.email || 'Non renseigné', person.phone || 'Non renseigné']),
       theme: 'grid', rowPageBreak: 'avoid', showHead: 'everyPage',
-      styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 2.5, textColor: navy, lineColor: [215, 227, 232], lineWidth: 0.15, overflow: 'linebreak', valign: 'middle' },
-      headStyles: { fillColor: navy, textColor: 255, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [243, 248, 249] },
-      columnStyles: { 0: { cellWidth: 38 }, 1: { cellWidth: 43 }, 2: { cellWidth: 68 }, 3: { cellWidth: 37, fontStyle: document.kind === 'emergency' ? 'bold' : 'normal' } },
+      styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 2.5, textColor: text, lineColor: border, lineWidth: 0.15, overflow: 'linebreak', valign: 'middle' },
+      headStyles: { fillColor: heading, textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: stripe },
+      columnStyles: { 0: { cellWidth: 38 }, 1: { cellWidth: 43 }, 2: { cellWidth: 68 }, 3: { cellWidth: 37, textColor: heading, fontStyle: isEmergency ? 'bold' : 'normal' } },
       didDrawPage: () => {
-        pdf.setFillColor(...navy); pdf.rect(0, 0, 210, 3, 'F');
+        pdf.setFillColor(...heading); pdf.rect(0, 0, 210, 3, 'F');
+        // Embed the original BBTM asset without applying the document's color theme to it.
         pdf.addImage(logoBytes!, 'PNG', 12, 8, logo.width * logoScale, logo.height * logoScale);
-        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(17); pdf.setTextColor(...navy); pdf.text(title, 41, 17);
-        pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(17); pdf.setTextColor(...heading); pdf.text(title, 41, 17);
+        pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); pdf.setTextColor(...text);
         pdf.text(`BBTM · Situation au ${asOf.split('-').reverse().join('/')}`, 41, 24);
         pdf.setFontSize(8); pdf.text(`${people.length} personne(s) · Classement par fonction`, 12, 34);
-        pdf.setDrawColor(27, 136, 140); pdf.line(12, 38, 198, 38);
+        pdf.setDrawColor(...accent); pdf.line(12, 38, 198, 38);
       },
     });
   });

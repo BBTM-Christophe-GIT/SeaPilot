@@ -115,6 +115,9 @@ Rétablir les sédentaires réactive la sélection par défaut des urgences.
 Chaque liste s'exporte en PDF A4 portrait, avec logo BBTM, date, en-têtes répétés
 et pagination si nécessaire pour garder les coordonnées lisibles. L'export des
 deux listes commence toujours les numéros d'urgence sur une nouvelle page.
+La liste d'urgence utilise un thème rouge bordeaux, des lignes rose pâle et les
+téléphones en gras, à l'écran comme dans le PDF. Le logo BBTM est incorporé depuis
+son image d'origine, sans recoloration. La liste du personnel garde le thème bleu.
 La contrainte d'une seule page paysage concerne le diagramme, pas ces tableaux.
 Les mêmes droits Administrateur/Direction s'appliquent à ces coordonnées et exports.
 

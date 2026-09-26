@@ -35,7 +35,7 @@ export function OrgPersonnelPanel({ data, kind, disabled }: { data: OrgData; kin
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Export impossible.'); }
     finally { setExporting(false); }
   }
-  return <section className="org-contacts org-controls" aria-label={kind === 'personnel' ? 'Liste du personnel' : 'Numéros d’urgence'}>
+  return <section className={`org-contacts org-controls${kind === 'emergency' ? ' org-contacts--emergency' : ''}`} aria-label={kind === 'personnel' ? 'Liste du personnel' : 'Numéros d’urgence'}>
     <div className="org-contact-heading"><div><h2>{kind === 'personnel' ? 'Liste du personnel' : 'Numéros d’urgence'}</h2><p>{kind === 'personnel' ? 'Classement par fonction. Cochez une fonction entière ou choisissez les personnes individuellement.' : 'Les sédentaires sont présélectionnés. Ajoutez ou retirez les personnes à joindre en cas d’urgence.'}</p></div>
       <div className="org-actions"><button type="button" className="org-primary" disabled={locked || !selected.length} onClick={() => void exportPdf(false)}><FileDown size={16} />{kind === 'personnel' ? 'Exporter le personnel en PDF' : 'Exporter les urgences en PDF'}</button><button type="button" disabled={locked || !personnel.length || !emergency.length} onClick={() => void exportPdf(true)}>Exporter les deux listes</button></div>
     </div>
