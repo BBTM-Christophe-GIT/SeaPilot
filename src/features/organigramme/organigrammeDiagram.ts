@@ -17,58 +17,84 @@ export function wrapOrgText(text: string, max = 27): string[] {
   return lines;
 }
 
-export function layoutOrganigramme(sections: OrgSection[], showVessels = true): OrgDiagram {
+function layoutSection(section: OrgSection, showVessels: boolean, sharedHeadingHeight?: number): OrgDiagram {
   const diagram: OrgDiagram = { width: 320, height: 40, boxes: [], lines: [] };
   let y = 24;
   const columnWidth = 270;
-  for (const section of sections) {
-    const firstLine = diagram.lines.length;
-    const columns = section.columns.length ? section.columns : [{ key: 'empty', label: 'Aucune bordée', members: [] }];
-    const sectionWidth = columns.length * columnWidth - 22;
-    diagram.width = Math.max(diagram.width, sectionWidth + 48);
-    const hasHeading = section.kind !== 'vessel' || showVessels;
-    if (hasHeading) {
-      const headingWidth = Math.min(sectionWidth, 440);
-      const headingLines = wrapOrgText(section.label, 26).map((text) => ({ text, size: 16, bold: true }));
-      const headingHeight = 24 + headingLines.length * 20;
-      diagram.boxes.push({ x: 24 + (sectionWidth - headingWidth) / 2, y, width: headingWidth, height: headingHeight, tone: 'navy', lines: headingLines });
-      const middle = 24 + sectionWidth / 2;
-      diagram.lines.push({ x1: middle, y1: y + headingHeight, x2: middle, y2: y + headingHeight + 16 });
-      y += headingHeight + 32;
-      diagram.lines.push({ x1: 24 + 124, y1: y - 16, x2: 24 + sectionWidth - 124, y2: y - 16 });
-    }
-    let bottom = y;
-    const headerLines = columns.map((column) => wrapOrgText(column.label, 26));
-    const showColumnHeaders = columns.some((column) => column.label);
-    const headerHeight = showColumnHeaders ? 24 + Math.max(...headerLines.map((lines) => lines.length)) * 17 : 0;
-    columns.forEach((column, index) => {
-      const x = 24 + index * columnWidth;
-      const center = x + 124;
-      if (hasHeading) diagram.lines.push({ x1: center, y1: y - 16, x2: center, y2: y });
-      if (showColumnHeaders) diagram.boxes.push({ x, y, width: 248, height: headerHeight, tone: 'teal', lines: headerLines[index].map((text) => ({ text, size: 13, bold: true })) });
-      let cardY = y + headerHeight + (showColumnHeaders ? 18 : 0);
-      const members = column.members.length ? column.members : [{ id: -1, name: 'Aucun marin affecté', functionLabel: '', detail: '' }];
-      members.forEach((person) => {
-        const lines = [
-          ...wrapOrgText(person.name).map((text) => ({ text, size: 13, bold: true })),
-          ...wrapOrgText(person.functionLabel, 32).filter(Boolean).map((text) => ({ text, size: 11, bold: false })),
-          ...wrapOrgText(person.detail, 32).filter(Boolean).map((text) => ({ text, size: 10, bold: false })),
-        ];
-        const height = 24 + lines.reduce((total, line) => total + line.size + 5, 0);
-        // A side rail denotes ordered members of a bordée, not invented reporting lines.
-        if (showColumnHeaders) {
-          diagram.lines.push({ x1: x - 9, y1: y + headerHeight / 2, x2: x - 9, y2: cardY + height / 2 });
-          diagram.lines.push({ x1: x - 9, y1: cardY + height / 2, x2: x, y2: cardY + height / 2 });
-        }
-        diagram.boxes.push({ x, y: cardY, width: 248, height, tone: 'white', lines });
-        cardY += height + 12;
-      });
-      if (showColumnHeaders) diagram.lines.push({ x1: x - 9, y1: y + headerHeight / 2, x2: x, y2: y + headerHeight / 2 });
-      bottom = Math.max(bottom, cardY);
-    });
-    y = bottom + 32;
-    if (section.kind === 'relations') diagram.lines.slice(firstLine).forEach((line) => { line.dashed = true; });
+  const columns = section.columns.length ? section.columns : [{ key: 'empty', label: 'Aucune bordée', members: [] }];
+  const sectionWidth = columns.length * columnWidth - 22;
+  diagram.width = Math.max(diagram.width, sectionWidth + 48);
+  const hasHeading = section.kind !== 'vessel' || showVessels;
+  if (hasHeading) {
+    const headingWidth = Math.min(sectionWidth, 440);
+    const headingLines = wrapOrgText(section.label, 26).map((text) => ({ text, size: 16, bold: true }));
+    const headingHeight = sharedHeadingHeight ?? 24 + headingLines.length * 20;
+    diagram.boxes.push({ x: 24 + (sectionWidth - headingWidth) / 2, y, width: headingWidth, height: headingHeight, tone: 'navy', lines: headingLines });
+    const middle = 24 + sectionWidth / 2;
+    diagram.lines.push({ x1: middle, y1: y + headingHeight, x2: middle, y2: y + headingHeight + 16 });
+    y += headingHeight + 32;
+    diagram.lines.push({ x1: 24 + 124, y1: y - 16, x2: 24 + sectionWidth - 124, y2: y - 16 });
   }
+  let bottom = y;
+  const headerLines = columns.map((column) => wrapOrgText(column.label, 26));
+  const showColumnHeaders = columns.some((column) => column.label);
+  const headerHeight = showColumnHeaders ? 24 + Math.max(...headerLines.map((lines) => lines.length)) * 17 : 0;
+  columns.forEach((column, index) => {
+    const x = 24 + index * columnWidth;
+    const center = x + 124;
+    if (hasHeading) diagram.lines.push({ x1: center, y1: y - 16, x2: center, y2: y });
+    if (showColumnHeaders) diagram.boxes.push({ x, y, width: 248, height: headerHeight, tone: 'teal', lines: headerLines[index].map((text) => ({ text, size: 13, bold: true })) });
+    let cardY = y + headerHeight + (showColumnHeaders ? 18 : 0);
+    const members = column.members.length ? column.members : [{ id: -1, name: 'Aucun marin affecté', functionLabel: '', detail: '' }];
+    members.forEach((person) => {
+      const lines = [
+        ...wrapOrgText(person.name).map((text) => ({ text, size: 13, bold: true })),
+        ...wrapOrgText(person.functionLabel, 32).filter(Boolean).map((text) => ({ text, size: 11, bold: false })),
+        ...wrapOrgText(person.detail, 32).filter(Boolean).map((text) => ({ text, size: 10, bold: false })),
+      ];
+      const height = 24 + lines.reduce((total, line) => total + line.size + 5, 0);
+      // A side rail denotes ordered members of a bordée, not invented reporting lines.
+      if (showColumnHeaders) {
+        diagram.lines.push({ x1: x - 9, y1: y + headerHeight / 2, x2: x - 9, y2: cardY + height / 2 });
+        diagram.lines.push({ x1: x - 9, y1: cardY + height / 2, x2: x, y2: cardY + height / 2 });
+      }
+      diagram.boxes.push({ x, y: cardY, width: 248, height, tone: 'white', lines });
+      cardY += height + 12;
+    });
+    if (showColumnHeaders) diagram.lines.push({ x1: x - 9, y1: y + headerHeight / 2, x2: x, y2: y + headerHeight / 2 });
+    bottom = Math.max(bottom, cardY);
+  });
+  y = bottom + 32;
+  if (section.kind === 'relations') diagram.lines.forEach((line) => { line.dashed = true; });
+  diagram.height = Math.max(80, y);
+  return diagram;
+}
+
+/** All vessels occupy one horizontal row; the other sections stay centered above/below. */
+export function layoutOrganigramme(sections: OrgSection[], showVessels = true): OrgDiagram {
+  const vessels = sections.filter((section) => section.kind === 'vessel');
+  const headingHeight = Math.max(44, ...vessels.map((section) => 24 + wrapOrgText(section.label, 26).length * 20));
+  const rows: OrgDiagram[][] = [];
+  let fleetPlaced = false;
+  for (const section of sections) {
+    if (section.kind === 'vessel') {
+      if (!fleetPlaced) rows.push(vessels.map((vessel) => layoutSection(vessel, showVessels, headingHeight)));
+      fleetPlaced = true;
+    } else rows.push([layoutSection(section, showVessels)]);
+  }
+  const gap = 24;
+  const rowWidths = rows.map((row) => row.reduce((width, section) => width + section.width, 0) + (row.length - 1) * gap);
+  const diagram: OrgDiagram = { width: Math.max(320, ...rowWidths), height: 80, boxes: [], lines: [] };
+  let y = 0;
+  rows.forEach((row, index) => {
+    let x = (diagram.width - rowWidths[index]) / 2;
+    row.forEach((section) => {
+      diagram.boxes.push(...section.boxes.map((box) => ({ ...box, x: box.x + x, y: box.y + y })));
+      diagram.lines.push(...section.lines.map((line) => ({ ...line, x1: line.x1 + x, x2: line.x2 + x, y1: line.y1 + y, y2: line.y2 + y })));
+      x += section.width + gap;
+    });
+    y += Math.max(...row.map((section) => section.height));
+  });
   diagram.height = Math.max(80, y);
   return diagram;
 }
@@ -82,29 +108,4 @@ export function organigrammeSvg(diagram: OrgDiagram): string {
       return `<text x="${box.x + box.width / 2}" y="${baseline - 5}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${line.size}" font-weight="${line.bold ? 700 : 400}" fill="${box.tone === 'navy' ? '#ffffff' : line.bold ? ORG_COLORS.ink : ORG_COLORS.muted}">${escapeXml(line.text)}</text>`;
     }).join('')}`;
   }).join('')}</svg>`;
-}
-
-/** Repeat headings on continuation pages. Never cut a person card between pages. */
-export function paginateOrganigramme(sections: OrgSection[], showVessels: boolean): OrgDiagram[] {
-  const pages: OrgDiagram[] = [];
-  for (const section of sections) {
-    const columns = section.columns.length ? section.columns : [{ key: 'empty', label: 'Aucune bordée', members: [] }];
-    for (let col = 0; col < columns.length; col += 3) {
-      const group = columns.slice(col, col + 3);
-      const offsets = group.map(() => 0);
-      do {
-        const pageColumns = group.map((column) => ({ ...column, members: [] as typeof column.members }));
-        group.forEach((column, index) => {
-          while (offsets[index] < column.members.length) {
-            pageColumns[index].members.push(column.members[offsets[index]]);
-            const trial = layoutOrganigramme([{ ...section, columns: pageColumns }], showVessels);
-            if (trial.height > 520 && pageColumns[index].members.length > 1) { pageColumns[index].members.pop(); break; }
-            offsets[index]++;
-          }
-        });
-        pages.push(layoutOrganigramme([{ ...section, columns: pageColumns }], showVessels));
-      } while (group.some((column, index) => offsets[index] < column.members.length));
-    }
-  }
-  return pages;
 }

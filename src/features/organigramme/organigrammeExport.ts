@@ -1,4 +1,4 @@
-import { layoutOrganigramme, ORG_COLORS, organigrammeSvg, paginateOrganigramme, type OrgDiagram } from './organigrammeDiagram';
+import { layoutOrganigramme, ORG_COLORS, organigrammeSvg, type OrgDiagram } from './organigrammeDiagram';
 import { ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, type OrgSection, type OrganigrammeView } from './organigrammeModel';
 
 export function downloadOrgBlob(blob: Blob, name: string) {
@@ -27,20 +27,29 @@ export async function buildOrgImage(sections: OrgSection[], showVessels: boolean
   } finally { URL.revokeObjectURL(url); }
 }
 
+/** One landscape sheet, at least A3, sized to retain readable vector text for the whole chart. */
+export function orgPdfGeometry(diagram: OrgDiagram) {
+  const naturalScale = 0.28;
+  // Stay below the PDF/jsPDF 14,400-point page limit, even for exceptional rosters.
+  const height = Math.min(3500, Math.ceil(Math.max(297, diagram.height * naturalScale + 55)));
+  const width = Math.min(5000, Math.ceil(Math.max(420, diagram.width * naturalScale + 24, height * Math.SQRT2)));
+  const scale = Math.min(naturalScale, (width - 24) / diagram.width, (height - 55) / diagram.height);
+  return { width, height, scale, offsetX: (width - diagram.width * scale) / 2, offsetY: 35 + (height - 55 - diagram.height * scale) / 2 };
+}
+
 export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, asOf: string, view: OrganigrammeView, logoBytes?: Uint8Array): Promise<Blob> {
+  if (!sections.length) throw new Error('Aucun organigramme à exporter.');
   const { jsPDF } = await import('jspdf');
   if (!logoBytes) {
     const response = await fetch('/bbtm-report-logo.png');
     if (!response.ok) throw new Error('Impossible de charger le logo BBTM.');
     logoBytes = new Uint8Array(await response.arrayBuffer());
   }
-  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
+  const diagram = layoutOrganigramme(sections, showVessels);
+  const { width, height, scale, offsetX, offsetY } = orgPdfGeometry(diagram);
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [width, height], compress: true });
   pdf.setProperties({ title: `Organigramme BBTM — ${ORGANIGRAMME_REFERENCE}`, subject: `Situation au ${asOf}`, creator: 'SeaPilot' });
-  const pages = paginateOrganigramme(sections, showVessels);
-  const draw = (diagram: OrgDiagram) => {
-    const scale = Math.min(0.31, 277 / diagram.width, 158 / diagram.height);
-    const offsetX = (297 - diagram.width * scale) / 2;
-    const offsetY = 35;
+  const draw = () => {
     pdf.setLineWidth(0.35); pdf.setDrawColor(ORG_COLORS.line);
     diagram.lines.forEach((line) => { pdf.setLineDashPattern(line.dashed ? [1.5, 1.2] : [], 0); pdf.line(offsetX + line.x1 * scale, offsetY + line.y1 * scale, offsetX + line.x2 * scale, offsetY + line.y2 * scale); });
     pdf.setLineDashPattern([], 0);
@@ -57,24 +66,20 @@ export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, 
       });
     });
   };
-  pages.forEach((diagram, index) => {
-    if (index) pdf.addPage();
-    pdf.setFillColor(ORG_COLORS.navy); pdf.rect(0, 0, 297, 4, 'F');
-    const logo = pdf.getImageProperties(logoBytes!);
-    const logoScale = Math.min(29 / logo.width, 19 / logo.height);
-    pdf.addImage(logoBytes!, 'PNG', 12, 8, logo.width * logoScale, logo.height * logoScale);
-    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(19); pdf.setTextColor(ORG_COLORS.navy);
-    pdf.text('Organigramme BBTM', 49, 17);
-    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10);
-    pdf.text(`${view === 'vessels' ? 'Par navire et bordée' : 'Par fonction'} · Situation au ${asOf.split('-').reverse().join('/')}`, 49, 25);
-    pdf.setFontSize(9); pdf.text(ORGANIGRAMME_REFERENCE, 285, 16, { align: 'right' });
-    pdf.setDrawColor('#1b888c'); pdf.line(12, 31, 285, 31);
-    draw(diagram);
-    pdf.setDrawColor(ORG_COLORS.border); pdf.line(12, 198, 285, 198);
-    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7.5); pdf.setTextColor(ORG_COLORS.muted);
-    pdf.text(`Référence : ${ORGANIGRAMME_SOURCE} · ${ORGANIGRAMME_REFERENCE}`, 12, 204);
-    pdf.text(`${index + 1} / ${pages.length}`, 285, 204, { align: 'right' });
-  });
-  if (!pages.length) throw new Error('Aucun organigramme à exporter.');
+  pdf.setFillColor(ORG_COLORS.navy); pdf.rect(0, 0, width, 4, 'F');
+  const logo = pdf.getImageProperties(logoBytes!);
+  const logoScale = Math.min(29 / logo.width, 19 / logo.height);
+  pdf.addImage(logoBytes!, 'PNG', 12, 8, logo.width * logoScale, logo.height * logoScale);
+  pdf.setFont('helvetica', 'bold'); pdf.setFontSize(19); pdf.setTextColor(ORG_COLORS.navy);
+  pdf.text('Organigramme BBTM', 49, 17);
+  pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10);
+  pdf.text(`${view === 'vessels' ? 'Par navire et bordée' : 'Par fonction'} · Situation au ${asOf.split('-').reverse().join('/')}`, 49, 25);
+  pdf.setFontSize(9); pdf.text(ORGANIGRAMME_REFERENCE, width - 12, 16, { align: 'right' });
+  pdf.setDrawColor('#1b888c'); pdf.line(12, 31, width - 12, 31);
+  draw();
+  pdf.setDrawColor(ORG_COLORS.border); pdf.line(12, height - 12, width - 12, height - 12);
+  pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7.5); pdf.setTextColor(ORG_COLORS.muted);
+  pdf.text(`Référence : ${ORGANIGRAMME_SOURCE} · ${ORGANIGRAMME_REFERENCE}`, 12, height - 6);
+  pdf.text('1 / 1', width - 12, height - 6, { align: 'right' });
   return pdf.output('blob');
 }

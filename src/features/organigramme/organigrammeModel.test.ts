@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildOrganigramme, orgLocalDate, resolveMemberships, type OrgOptions } from './organigrammeModel';
-import { layoutOrganigramme, organigrammeSvg, paginateOrganigramme, wrapOrgText } from './organigrammeDiagram';
+import { layoutOrganigramme, organigrammeSvg, wrapOrgText } from './organigrammeDiagram';
 import { ORG_DEMO, ORG_LINKS_DEMO } from './organigrammeFixtures';
 import { canAccessModule } from '../permissions/moduleAccess';
 import { getVisibleModulesForPermissions } from '../permissions/navigationPermissions';
@@ -14,7 +14,7 @@ describe('organigramme', () => {
     expect(relations.label).toBe('Partenaires · Liens');
     expect(relations.columns.map((column) => column.members[0].name)).toEqual(['Gouvernance', 'Bordée 1', 'Élodie MARTIN']);
     expect(organigrammeSvg(layoutOrganigramme(sections))).toContain('stroke-dasharray');
-    expect(paginateOrganigramme(sections, true).at(-1)?.boxes.flatMap((box) => box.lines.map((line) => line.text))).toContain('Référente opérationnelle');
+    expect(layoutOrganigramme(sections).boxes.flatMap((box) => box.lines.map((line) => line.text))).toContain('Référente opérationnelle');
   });
   it('follows a linked person after a name change and vessel transfer without changing the saved link', () => {
     const data = { ...ORG_LINKS_DEMO, people: ORG_DEMO.people.map((person) => person.id === 2 ? { ...person, name: 'Nouveau nom' } : person), memberships: ORG_DEMO.memberships.map((row) => row.personId === 2 ? { ...row, vesselId: 2 } : row) };
@@ -77,14 +77,41 @@ describe('organigramme', () => {
     expect(svg).not.toContain('<script>'); expect(svg).toContain('&lt;script&gt;');
     expect(wrapOrgText('A'.repeat(100)).every((line) => line.length <= 27)).toBe(true);
   });
-  it('paginates large rosters without losing, truncating or duplicating person cards', () => {
+  it('places the entire fleet on one row, with watches below and no overlapping sections', () => {
+    const sections = buildOrganigramme(ORG_LINKS_DEMO, options);
+    const vessel = sections.find((section) => section.kind === 'vessel')!;
+    const fleet = Array.from({ length: 8 }, (_, index) => ({ ...vessel, key: `ship-${index}`, label: `Navire ${index}`, columns: index % 2 ? vessel.columns : vessel.columns.slice(0, 1) }));
+    const diagram = layoutOrganigramme([sections[0], ...fleet, ...sections.filter((section) => section.kind === 'external' || section.kind === 'relations')]);
+    const headings = diagram.boxes.filter((box) => box.tone === 'navy' && box.lines[0].text.startsWith('Navire '));
+    expect(headings).toHaveLength(8);
+    expect(new Set(headings.map((box) => box.y)).size).toBe(1);
+    headings.slice(1).forEach((box, index) => expect(box.x).toBeGreaterThan(headings[index].x + headings[index].width));
+    const otherHeadings = diagram.boxes.filter((box) => box.tone === 'navy' && !box.lines[0].text.startsWith('Navire '));
+    expect(otherHeadings[0].y).toBeLessThan(headings[0].y);
+    expect(otherHeadings[1].y).toBeGreaterThan(headings[0].y);
+    // Every card fits in the sheet and all blocks are disjoint, including the shortest crew.
+    diagram.boxes.forEach((box, index) => {
+      expect(box.x + box.width).toBeLessThanOrEqual(diagram.width);
+      expect(box.y + box.height).toBeLessThanOrEqual(diagram.height);
+      diagram.boxes.slice(index + 1).forEach((other) => expect(box.x >= other.x + other.width || other.x >= box.x + box.width || box.y >= other.y + other.height || other.y >= box.y + box.height).toBe(true));
+    });
+  });
+  it('keeps watch headings aligned even with wrapped vessel names, including when ships are hidden', () => {
+    const vessels = buildOrganigramme(ORG_DEMO, options).filter((section) => section.kind === 'vessel');
+    vessels[1].label = 'Navire avec un nom particulièrement long';
+    for (const show of [true, false]) {
+      const diagram = layoutOrganigramme(vessels, show);
+      const watches = diagram.boxes.filter((box) => box.tone === 'teal');
+      expect(new Set(watches.map((box) => box.y)).size).toBe(1);
+      if (!show) expect(diagram.boxes.some((box) => box.tone === 'navy')).toBe(false);
+    }
+  });
+  it('keeps large rosters complete without losing, truncating or duplicating person cards', () => {
     const members = Array.from({ length: 45 }, (_, index) => ({ id: index, name: `Marin ${index}`, functionLabel: 'Matelot polyvalent', detail: 'Navire avec un nom très long · Bordée 1' }));
-    const pages = paginateOrganigramme([{ key: 'test', kind: 'vessel', label: 'Navire de test', columns: [{ key: 'watch', label: 'Bordée 1', members }] }], true);
-    expect(pages.length).toBeGreaterThan(1);
-    expect(pages.every((page) => page.height <= 520)).toBe(true);
-    const names = pages.flatMap((page) => page.boxes.flatMap((box) => box.lines.map((line) => line.text))).filter((text) => text.startsWith('Marin '));
+    const diagram = layoutOrganigramme([{ key: 'test', kind: 'vessel', label: 'Navire de test', columns: [{ key: 'watch', label: 'Bordée 1', members }] }], true);
+    const names = diagram.boxes.flatMap((box) => box.lines.map((line) => line.text)).filter((text) => text.startsWith('Marin '));
     expect(names).toEqual(members.map((person) => person.name));
-    pages.forEach((page) => page.boxes.forEach((box) => { expect(box.x + box.width).toBeLessThanOrEqual(page.width); expect(box.y + box.height).toBeLessThanOrEqual(page.height); }));
+    diagram.boxes.forEach((box) => { expect(box.x + box.width).toBeLessThanOrEqual(diagram.width); expect(box.y + box.height).toBeLessThanOrEqual(diagram.height); });
   });
   it('uses Paris calendar dates around midnight', () => { expect(orgLocalDate(new Date('2026-09-25T23:30:00Z'))).toBe('2026-09-26'); });
   it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as const)('protects %s even against a stale navigation grant', (role) => {

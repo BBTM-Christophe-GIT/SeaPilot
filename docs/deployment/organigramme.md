@@ -53,8 +53,8 @@ Chaque catégorie peut porter plusieurs liens, avec un libellé facultatif, vers
 autre catégorie (y compris un navire), un groupe (bordée ou fonction) ou une personne
 (fiche RH ou intervenant libre). Les liens peuvent être modifiés ou supprimés ; les
 doublons et les liens d'une catégorie vers elle-même sont refusés. Le diagramme
-regroupe ces relations dans des branches en pointillés sous les équipes ; les pages
-PDF reprennent les mêmes branches pour éviter les traits entre pages.
+regroupe ces relations dans des branches en pointillés sous les équipes ; le PDF
+reprend les mêmes branches sur la page unique.
 
 Les personnes sont référencées par identifiant, les bordées par navire et nom de bordée,
 et les fonctions par libellé normalisé. Renommer une catégorie ou muter une personne
@@ -72,15 +72,22 @@ est courante et partagée par société, pas historisée à la date du Planning.
 
 ## Exports
 
-- PDF A4 paysage vectoriel : logo BBTM, date, présentation, référence REP 03-B,
-  fichier d'origine et pagination. Trois colonnes au maximum par page ; titres
-  répétés et cartes entières lors des continuations.
+- PDF vectoriel sur **une seule page paysage**, contenant toutes les catégories,
+  tous les navires, les bordées, les personnes et les liens de la sélection.
+  Logo BBTM, date, présentation et référence REP 03-B / fichier d'origine conservés.
+  Le format commence à A3 et s'agrandit automatiquement selon le contenu pour garder
+  les noms lisibles. Les dimensions extrêmes sont plafonnées sous la limite PDF de
+  14 400 points, puis le diagramme est réduit uniformément sans couper de carte ni
+  créer de page supplémentaire. À l'impression, choisir Ajuster à la feuille pour
+  utiliser un format de papier plus petit.
 - PNG haute résolution ou SVG vectoriel : uniquement le diagramme, sans en-tête
   ni pied de page. L'option Afficher les navires retire aussi leurs mentions dans
   la vue par fonction. Le PNG limite sa résolution pour respecter la mémoire du
   navigateur ; le SVG garde la précision intégrale.
 - Les filtres (navire, direction, externes, non-affectés) s'appliquent à l'aperçu
-  comme aux exports. Les navires sont classés du plus long au plus court.
+  comme aux exports. Les navires sont classés du plus long au plus court et affichés
+  côte à côte sur une seule rangée, avec leurs bordées en dessous. Les autres
+  catégories sont centrées au-dessus et au-dessous de la flotte.
 
 ## Validation et retour arrière
 
