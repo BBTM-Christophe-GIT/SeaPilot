@@ -1,11 +1,13 @@
 import { ACTION_PLAN_FLEET_PREVIEW, ACTION_PLAN_PREVIEW_VESSELS } from './actionPlanFleetPreview';
-import { ORG_LINKS_DEMO } from '../organigramme/organigrammeFixtures';
+import { ORG_HIERARCHY_DEMO } from '../organigramme/organigrammeFixtures';
+import type { OrgRank, OrgSupport } from '../organigramme/organigrammeModel';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { PREVIEW_LINK_CATEGORIES, PREVIEW_USEFUL_LINKS } from '../usefulLinks/usefulLinksPreview';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
 };
+const previewOrgData = structuredClone(ORG_HIERARCHY_DEMO);
 
 const PREVIEW_SIGNATURE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
@@ -1808,7 +1810,22 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
-  if (functionName === 'organigramme_snapshot') return createPreviewQuery({ data: { ...ORG_LINKS_DEMO, asOf: args.p_as_of }, error: null });
+  if (functionName === 'organigramme_snapshot_v2') return createPreviewQuery({ data: { ...previewOrgData, asOf: args.p_as_of }, error: null });
+  if (functionName === 'save_organigramme_responsibility') {
+    const id = args.p_id ? Number(args.p_id) : Math.max(0, ...previewOrgData.support.map((item) => item.id)) + 1;
+    const entry: OrgSupport = { id, personId: args.p_person_id ? Number(args.p_person_id) : null, name: String(args.p_name), functionLabel: String(args.p_function_label), category: args.p_category as OrgSupport['category'], position: Number(args.p_position), rank: args.p_rank as OrgRank };
+    previewOrgData.support = [...previewOrgData.support.filter((item) => item.id !== id), entry];
+    return createPreviewQuery({ data: id, error: null });
+  }
+  if (functionName === 'save_organigramme_watch') {
+    const id = args.p_id ? Number(args.p_id) : Math.max(0, ...(previewOrgData.watches || []).map((item) => item.id)) + 1;
+    const vesselId = Number(args.p_vessel_id); const name = String(args.p_name).trim();
+    const existing = previewOrgData.watches?.find((watch) => watch.id === id);
+    if (previewOrgData.watches?.some((watch) => watch.id !== id && watch.vesselId === vesselId && watch.name.toLowerCase() === name.toLowerCase())) return createPreviewQuery({ data: null, error: { message: 'Nom de bordée déjà utilisé.' } });
+    previewOrgData.watches = [...(previewOrgData.watches || []).filter((watch) => watch.id !== id), { id, vesselId, name }];
+    previewOrgData.memberships = [...previewOrgData.memberships.filter((row) => !(existing && row.vesselId === existing.vesselId && row.watchGroup === existing.name)), ...(args.p_members as Array<{ personId: number; functionLabel: string }>).map((member) => ({ personId: member.personId, vesselId, watchGroup: name, functionLabel: member.functionLabel || '', source: 'manual' as const }))];
+    return createPreviewQuery({ data: id, error: null });
+  }
   if (functionName === 'planning_save_personal_display_settings') {
     const row = { active_filter_enabled: args.p_active_filter_enabled === true };
     PREVIEW_ROWS.planning_personal_display_settings = [row];

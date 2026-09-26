@@ -4,7 +4,7 @@ do $$
 declare
   company bigint; other_company bigint; person bigint; departed bigint; future_person bigint;
   other_person bigint; ship bigint; actor uuid; role_name text; n integer:=0;
-  snapshot jsonb; saved bigint; link_id bigint; other_ship bigint;
+  snapshot jsonb; saved bigint; link_id bigint; other_ship bigint; saved_watch_id bigint; foreign_watch bigint;
 begin
   select id into strict company from public.companies where code='bbtm';
   insert into public.companies(code,name) values('org-fixture-other','Organigramme fixture') returning id into other_company;
@@ -25,6 +25,7 @@ begin
   insert into public.organigramme_categories(company_id,key,label) values(other_company,'external','Other tenant');
   insert into public.organigramme_links(company_id,source_category,target_kind,target_key) values(other_company,'external','category','office');
   insert into public.planning_board_rows(company_id,vessel_id,person_id,watch_group,function_label,created_by) values(company,ship,person,'Bordée 1','Capitaine','a9570000-0000-4000-8000-000000000101');
+  insert into public.organigramme_watches(company_id,vessel_id,name) values(other_company,other_ship,'Foreign watch') returning id into foreign_watch;
   n:=0;
   foreach role_name in array array['admin','direction','armement','capitaine','marin'] loop
     n:=n+1; actor:=('a9570000-0000-4000-8000-00000000010'||n)::uuid;
@@ -32,20 +33,57 @@ begin
     perform set_config('request.jwt.claims',json_build_object('sub',actor,'role','authenticated')::text,true);
     execute 'set local role authenticated';
     if role_name in ('admin','direction') then
-      snapshot:=public.organigramme_snapshot(current_date);
+      snapshot:=public.organigramme_snapshot_v2(current_date);
       assert exists(select 1 from jsonb_array_elements(snapshot->'people') p where (p->>'id')::bigint=person), 'Active person missing';
       assert not exists(select 1 from jsonb_array_elements(snapshot->'people') p where (p->>'id')::bigint in (departed,future_person,other_person)), 'Date/company scope leaked';
-      assert exists(select 1 from jsonb_array_elements(snapshot->'memberships') m where (m->>'personId')::bigint=person and (m->>'vesselId')::bigint=ship), 'Permanent watch missing';
+      assert not exists(select 1 from jsonb_array_elements(snapshot->'memberships') m where (m->>'personId')::bigint=person), 'Planning leaked into default composition';
       assert not exists(select 1 from jsonb_array_elements(snapshot->'people') p where p ? 'emergency_contact_phone' or p ? 'emergency_contact_name' or p ? 'birth_date' or p ? 'sailor_number'), 'Private HR fields leaked';
       assert exists(select 1 from jsonb_array_elements(snapshot->'people') p where (p->>'id')::bigint=person and p->>'email'='org-fixture@example.invalid' and p->>'phone'='00 00 00 00 01'), 'Requested personnel contacts missing';
+      saved_watch_id:=public.save_organigramme_watch(null,ship,'ORG DEFAULT',jsonb_build_array(jsonb_build_object('personId',person,'functionLabel','')));
+      snapshot:=public.organigramme_snapshot_v2(current_date);
+      assert exists(select 1 from jsonb_array_elements(snapshot->'memberships') m where (m->>'personId')::bigint=person and m->>'source'='manual'), 'Manual composition missing';
+      assert exists(select 1 from jsonb_array_elements(snapshot->'memberships') m where (m->>'personId')::bigint=person and m->>'functionLabel'=''), 'Inherited function became a fixed override';
+      assert exists(select 1 from jsonb_array_elements(snapshot->'watches') w where (w->>'id')::bigint=saved_watch_id), 'Watch missing';
+      assert not exists(select 1 from public.organigramme_watches where company_id=other_company), 'Foreign watch leaked';
+      begin
+        perform public.save_organigramme_watch(saved_watch_id,ship,'MUST ROLLBACK',jsonb_build_array(jsonb_build_object('personId',other_person)));
+        raise exception 'Cross-company crew accepted';
+      exception when insufficient_privilege then null; end;
+      assert exists(select 1 from public.organigramme_watches where id=saved_watch_id and name='ORG DEFAULT'), 'Invalid save changed watch';
+      assert exists(select 1 from public.organigramme_watch_members where watch_id=saved_watch_id and person_id=person), 'Invalid save removed crew';
+      begin
+        insert into public.organigramme_watch_members(company_id,watch_id,person_id) values(company,saved_watch_id,other_person);
+        raise exception 'Direct foreign crew accepted';
+      exception when insufficient_privilege then null; end;
+      begin
+        perform public.save_organigramme_watch(null,other_ship,'Denied','[]'::jsonb);
+        raise exception 'Foreign vessel accepted';
+      exception when insufficient_privilege then null; end;
+      begin
+        perform public.save_organigramme_watch(foreign_watch,ship,'Denied','[]'::jsonb);
+        raise exception 'Foreign watch changed';
+      exception when no_data_found then null; end;
+      begin
+        perform public.save_organigramme_watch(null,ship,'org default','[]'::jsonb);
+        raise exception 'Duplicate watch name accepted';
+      exception when unique_violation then null; end;
+      perform public.save_organigramme_watch(saved_watch_id,ship,'ORG RENAMED','[]'::jsonb);
+      snapshot:=public.organigramme_snapshot_v2(current_date);
+      assert not exists(select 1 from jsonb_array_elements(snapshot->'memberships') m where (m->>'personId')::bigint=person), 'Empty manual watch fell back to Planning';
+      assert exists(select 1 from public.planning_board_rows where person_id=person), 'Planning was modified';
+      delete from public.organigramme_watches w where w.id=saved_watch_id;
       saved:=public.save_organigramme_support(null,person,'Fixture','Responsabilité','office',1);
-      perform public.save_organigramme_support(saved,person,'Fixture','Responsabilité mise à jour','office',2);
+      perform public.save_organigramme_responsibility(saved,person,'Fixture','Responsabilité mise à jour','office',2,'support');
+      assert exists(select 1 from public.organigramme_support where id=saved and hierarchy_rank='support'), 'Support rank missing';
+      perform public.save_organigramme_responsibility(saved,person,'Fixture','Responsabilité mise à jour','office',2,'4');
+      snapshot:=public.organigramme_snapshot_v2(current_date);
+      assert exists(select 1 from jsonb_array_elements(snapshot->'support') s where (s->>'id')::bigint=saved and s->>'rank'='4'), 'Rank 4 missing from snapshot';
       assert exists(select 1 from public.organigramme_support where id=saved and position=2), 'Authorized update failed';
       perform public.save_organigramme_category('external','Partenaires fixture');
       perform public.save_organigramme_category('external','Conseils fixture');
       link_id:=public.save_organigramme_link(null,'external','category','office','','Conseil');
       perform public.save_organigramme_link(link_id,'external','person',person::text,'','Référent');
-      snapshot:=public.organigramme_snapshot(current_date);
+      snapshot:=public.organigramme_snapshot_v2(current_date);
       assert snapshot->'categoryLabels'->>'external'='Conseils fixture', 'Category rename did not persist';
       assert exists(select 1 from jsonb_array_elements(snapshot->'links') l where (l->>'id')::bigint=link_id and l->>'targetKey'=person::text), 'Link update missing in snapshot';
       assert not exists(select 1 from public.organigramme_categories where company_id=other_company), 'Cross-company category leaked';
@@ -76,12 +114,18 @@ begin
         raise exception 'Cross-company person accepted';
       exception when insufficient_privilege then null; end;
       delete from public.organigramme_support where id=saved;
-      snapshot:=public.organigramme_snapshot(current_date-1);
+      snapshot:=public.organigramme_snapshot_v2(current_date-1);
       assert exists(select 1 from jsonb_array_elements(snapshot->'people') p where (p->>'id')::bigint=departed), 'Historical employee missing';
     else
       begin
-        perform public.organigramme_snapshot(current_date);
+        perform public.organigramme_snapshot_v2(current_date);
         raise exception 'Forbidden profile could read organigramme';
+      exception when insufficient_privilege then null; end;
+      assert (select count(*)=0 from public.organigramme_watches), 'Watches leaked';
+      assert (select count(*)=0 from public.organigramme_watch_members), 'Crew leaked';
+      begin
+        perform public.save_organigramme_watch(null,ship,'Forbidden','[]'::jsonb);
+        raise exception 'Forbidden profile could compose';
       exception when insufficient_privilege then null; end;
       assert (select count(*)=0 from public.organigramme_support), 'Support data leaked';
       assert (select count(*)=0 from public.organigramme_categories), 'Category data leaked';
@@ -110,7 +154,7 @@ begin
   perform set_config('request.jwt.claim.sub','a9570000-0000-4000-8000-000000000102',true);
   execute 'set local role authenticated';
   begin
-    perform public.organigramme_snapshot(current_date);
+    perform public.organigramme_snapshot_v2(current_date);
     raise exception 'Revoked permission still allows reads';
   exception when insufficient_privilege then null; end;
   execute 'reset role';
@@ -120,7 +164,7 @@ begin
   exception when check_violation then null; end;
   execute 'set local role anon';
   begin
-    perform public.organigramme_snapshot(current_date);
+    perform public.organigramme_snapshot_v2(current_date);
     raise exception 'Anonymous access accepted';
   exception when insufficient_privilege then null; end;
   execute 'reset role';

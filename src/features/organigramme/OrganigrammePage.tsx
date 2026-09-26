@@ -3,11 +3,12 @@ import { useOutletContext } from 'react-router-dom';
 import { Download, FileDown, Network, RefreshCw, Settings2, Ship, Users } from 'lucide-react';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
-import { buildOrganigramme, ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, orgCategoryLabel, orgLocalDate, type OrgData, type OrgOptions } from './organigrammeModel';
+import { buildOrganigramme, ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, ORG_VIEW_LABELS, orgCategoryLabel, orgLocalDate, type OrgData, type OrgOptions } from './organigrammeModel';
 import { layoutOrganigramme, organigrammeSvg } from './organigrammeDiagram';
 import { fetchOrganigramme } from './organigrammeQueries';
 import { OrgSupportEditor } from './OrgSupportEditor';
 import { OrgStructureEditor } from './OrgStructureEditor';
+import { OrgWatchEditor } from './OrgWatchEditor';
 import { OrgPersonnelPanel } from './OrgPersonnelPanel';
 import './organigramme.css';
 
@@ -29,8 +30,9 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
   const [download, setDownload] = useState<{ url: string; name: string; format: string } | null>(null);
   const [updatedAt, setUpdatedAt] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
+  const [watchEditorOpen, setWatchEditorOpen] = useState(false);
   const [imageFormat, setImageFormat] = useState<'png' | 'svg'>('png');
-  const [zoom, setZoom] = useState(90);
+  const [zoom, setZoom] = useState(0);
   const [options, setOptions] = useState<OrgOptions>({ view: 'vessels', vesselIds: [], includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true });
   const refresh = () => setRevision((value) => value + 1);
   useEffect(() => () => { if (download) URL.revokeObjectURL(download.url); }, [download]);
@@ -62,7 +64,7 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
     try {
       const { buildOrgImage, buildOrgPdf, downloadOrgBlob } = await import('./organigrammeExport');
       const blob = format === 'pdf' ? await buildOrgPdf(sections, options.showVessels, asOf, options.view) : await buildOrgImage(sections, options.showVessels, format);
-      const name = `BBTM_Organigramme_${asOf}_${options.view === 'vessels' ? 'navires' : 'fonctions'}${options.showVessels ? '' : '_sans-navires'}.${format}`;
+      const name = `BBTM_Organigramme_${asOf}_${options.view === 'vessels' ? 'navires' : options.view === 'watches' ? 'bordees' : 'fonctions'}${options.showVessels ? '' : '_sans-navires'}.${format}`;
       setDownload({ url: URL.createObjectURL(blob), name, format: format.toUpperCase() });
       downloadOrgBlob(blob, name);
     } catch (reason) { setExportError(reason instanceof Error ? reason.message : 'Export impossible.'); }
@@ -79,23 +81,24 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
     {error && <div className="org-error" role="alert">{error} <button type="button" onClick={refresh}>Réessayer</button></div>}
     <div hidden={activeDocument !== 'chart'}>
     <section className="org-controls" aria-label="Configuration de l’organigramme">
-      <div className="org-toolbar"><div className="org-tabs" role="group" aria-label="Présentation"><button type="button" aria-pressed={options.view === 'vessels'} onClick={() => setOptions({ ...options, view: 'vessels' })}><Ship size={16} />Par navire et bordée</button><button type="button" aria-pressed={options.view === 'functions'} onClick={() => setOptions({ ...options, view: 'functions' })}><Users size={16} />Par fonction</button></div>
+      <div className="org-toolbar"><div className="org-tabs" role="group" aria-label="Présentation"><button type="button" aria-pressed={options.view === 'vessels'} onClick={() => setOptions({ ...options, view: 'vessels' })}><Ship size={16} />Par navire et bordée</button><button type="button" aria-pressed={options.view === 'watches'} onClick={() => setOptions({ ...options, view: 'watches' })}><Users size={16} />Par bordée</button><button type="button" aria-pressed={options.view === 'functions'} onClick={() => setOptions({ ...options, view: 'functions' })}><Users size={16} />Par fonction</button></div>
         <label>Navire<select aria-label="Navire" value={options.vesselIds[0] ?? ''} onChange={(event) => setOptions({ ...options, vesselIds: event.target.value ? [Number(event.target.value)] : [] })}><option value="">Tous les navires</option>{[...(data?.vessels || [])].sort(compareFleetAssets).map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label>
       </div>
       <div className="org-options">{([{ key: 'includeOffice', label: orgCategoryLabel(data || {}, 'office') }, { key: 'includeExternal', label: orgCategoryLabel(data || {}, 'external') }, { key: 'includeUnassigned', label: orgCategoryLabel(data || {}, 'unassigned') }, { key: 'showVessels', label: 'Afficher les navires' }] as const).map(({ key, label }) => <label key={key}><input type="checkbox" checked={options[key]} disabled={key === 'includeUnassigned' && options.vesselIds.length > 0} onChange={(event) => setOptions({ ...options, [key]: event.target.checked })} />{label}</label>)}
-        <button type="button" aria-expanded={editorOpen} onClick={() => setEditorOpen(!editorOpen)}><Settings2 size={15} />Modifier la structure</button>
+        <button type="button" aria-expanded={watchEditorOpen} onClick={() => setWatchEditorOpen(!watchEditorOpen)}><Users size={15} />Composer les bordées</button><button type="button" aria-expanded={editorOpen} onClick={() => setEditorOpen(!editorOpen)}><Settings2 size={15} />Modifier la structure</button>
       </div>
     </section>
+    {watchEditorOpen && currentData && <OrgWatchEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} disabled={loading || !!error} />}
     {editorOpen && currentData && <><OrgStructureEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} /><OrgSupportEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} /></>}
     {hiddenLinks > 0 && <p className="org-notice">{hiddenLinks} lien(s) enregistré(s) non affiché(s) : leur catégorie ou leur cible est absente de la date, de la vue ou des filtres choisis.</p>}
     {exportError && <p className="org-error" role="alert">{exportError}</p>}
     {download && <p className="org-download" role="status">Dernier export prêt : <a href={download.url} download={download.name}>Télécharger le fichier {download.format}</a></p>}
     <section className="org-canvas-panel" aria-label="Aperçu de l’organigramme">
-      <div className="org-canvas-toolbar"><span>{loading ? 'Actualisation…' : `${count} personnes et intervenants · Actualisé à ${updatedAt}`}</span><div><label>Zoom<select aria-label="Zoom" value={zoom} onChange={(event) => setZoom(Number(event.target.value))}>{[50, 70, 90, 100, 125].map((value) => <option key={value} value={value}>{value} %</option>)}</select></label><label className="org-format">Format image<select aria-label="Format image" value={imageFormat} onChange={(event) => setImageFormat(event.target.value as 'png' | 'svg')}><option value="png">PNG</option><option value="svg">SVG vectoriel</option></select></label><button type="button" disabled={!canExport} onClick={() => void exportChart(imageFormat)}><Download size={16} />Exporter l’image</button></div></div>
-      {loading && !currentData ? <div className="admin-state" role="status">Chargement de l’organigramme…</div> : !error && !sections.length ? <div className="admin-state">Aucun effectif dans cette sélection. Modifiez les filtres ou les affectations du Planning.</div> : currentData && !error ? <div className="org-canvas" tabIndex={0} aria-label="Diagramme défilant"><img src={diagramUrl} width={diagram.width * zoom / 100} height={diagram.height * zoom / 100} alt={`Organigramme ${options.view === 'vessels' ? 'par navire et bordée' : 'par fonction'}${options.showVessels ? '' : ', sans navires'}`} /></div> : null}
+      <div className="org-canvas-toolbar"><span>{loading ? 'Actualisation…' : `${count} personnes et intervenants · Actualisé à ${updatedAt}`}</span><div><label>Zoom<select aria-label="Zoom" value={zoom} onChange={(event) => setZoom(Number(event.target.value))}><option value={0}>Ajuster</option>{[50, 70, 90, 100, 125].map((value) => <option key={value} value={value}>{value} %</option>)}</select></label><label className="org-format">Format image<select aria-label="Format image" value={imageFormat} onChange={(event) => setImageFormat(event.target.value as 'png' | 'svg')}><option value="png">PNG</option><option value="svg">SVG vectoriel</option></select></label><button type="button" disabled={!canExport} onClick={() => void exportChart(imageFormat)}><Download size={16} />Exporter l’image</button></div></div>
+      {loading && !currentData ? <div className="admin-state" role="status">Chargement de l’organigramme…</div> : !error && !sections.length ? <div className="admin-state">Aucun effectif dans cette sélection. Modifiez les filtres ou composez les bordées.</div> : currentData && !error ? <div className="org-canvas" tabIndex={0} aria-label="Diagramme défilant"><img src={diagramUrl} width={diagram.width * (zoom || 100) / 100} height={diagram.height * (zoom || 100) / 100} style={zoom === 0 ? { width: '100%', height: 'auto', maxWidth: '100%' } : undefined} alt={`Organigramme ${ORG_VIEW_LABELS[options.view].toLocaleLowerCase('fr')}${options.showVessels ? '' : ', sans navires'}`} /></div> : null}
       {exporting && <p className="org-export-status" role="status">Préparation de l’export…</p>}
     </section>
-    <footer className="org-footer"><p>Affectations datées en priorité, puis bordées permanentes. Les repos et congés ne retirent pas une personne de son équipe. Mise à jour automatique chaque minute et au retour sur la page.</p><p>PDF sur une seule page paysage, de taille adaptée au contenu, avec logo BBTM · {ORGANIGRAMME_REFERENCE} · Référence : {ORGANIGRAMME_SOURCE}. Tous les navires sont côte à côte. L’image contient uniquement le diagramme.</p></footer>
+    <footer className="org-footer"><p>Hiérarchie par rang, fonctions Support sur les côtés. Les bordées sont composées par défaut dans ce module, indépendamment du planning. La date filtre les effectifs et les navires ; les compositions restent courantes.</p><p>PDF sur une seule page paysage, de taille adaptée au contenu, avec logo BBTM · {ORGANIGRAMME_REFERENCE} · Référence : {ORGANIGRAMME_SOURCE}. Tous les navires sont côte à côte. L’image contient uniquement le diagramme.</p></footer>
     </div>
     <div hidden={activeDocument === 'chart'}>{data ? <OrgPersonnelPanel data={data} kind={activeDocument === 'emergency' ? 'emergency' : 'personnel'} disabled={loading || !!error || !currentData} /> : !error && <p role="status">Chargement des coordonnées du personnel…</p>}</div>
   </div>;
