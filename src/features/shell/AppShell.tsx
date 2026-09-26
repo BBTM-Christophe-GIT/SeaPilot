@@ -588,7 +588,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
         </nav>
 
         <div className="sidebar-footer">
-          <ReleaseNotes key={previewMode ? 'preview' : sessionUserId} client={client} userId={sessionUserId} previewMode={previewMode} />
+          <ReleaseNotes key={`${previewMode ? 'preview' : sessionUserId}-${roles.join(',')}`} client={client} userId={sessionUserId} previewMode={previewMode} roles={roles} />
           <button
             aria-label={isSidebarCollapsed ? 'Agrandir le menu' : 'Réduire le menu'}
             className="sidebar-collapse-button"

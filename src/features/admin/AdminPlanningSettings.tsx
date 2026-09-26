@@ -28,7 +28,7 @@ export function AdminPlanningSettings({ client }: { client: SupabaseClient }) {
       <div>
         <p className="module-family">Planning</p>
         <h2>Réglages d’affichage</h2>
-        <p className="admin-section-description">Ce réglage s’applique au planning de votre société.</p>
+        <p className="admin-section-description">Réglage par défaut du planning de votre société. Chaque utilisateur peut adapter son filtre actif depuis le planning.</p>
       </div>
       <div className="admin-summary" aria-hidden="true"><CalendarDays size={18} /></div>
     </div>

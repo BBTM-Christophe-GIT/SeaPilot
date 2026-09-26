@@ -7,16 +7,20 @@ import { APP_BUILD_VERSION, APP_VERSION_LABEL } from '../../config/appVersion';
 import { chronologicalNotes, RELEASE_NOTES, type ReleaseNote } from './releaseNotesCatalog';
 import { createPreviewReleaseNoteStore, createReleaseNoteStore, type ReleaseNoteState, type ReleaseNoteStore } from './releaseNoteQueries';
 import './releaseNotes.css';
+import type { RoleKey } from '../permissions/roles';
+
+const NO_ROLES: readonly RoleKey[] = [];
 
 interface Props {
   client: SupabaseClient;
   userId?: string;
   previewMode?: boolean;
   notes?: readonly ReleaseNote[];
+  roles?: readonly RoleKey[];
   storeOverride?: ReleaseNoteStore;
 }
 
-export function ReleaseNotes({ client, userId, previewMode = false, notes = RELEASE_NOTES, storeOverride }: Props) {
+export function ReleaseNotes({ client, userId, previewMode = false, notes = RELEASE_NOTES, roles = NO_ROLES, storeOverride }: Props) {
   const store = useMemo(() => storeOverride || (previewMode ? createPreviewReleaseNoteStore() : userId ? createReleaseNoteStore(client, userId) : null), [client, userId, previewMode, storeOverride]);
   const [states, setStates] = useState<ReleaseNoteState[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -25,7 +29,8 @@ export function ReleaseNotes({ client, userId, previewMode = false, notes = RELE
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const requestId = useRef(0);
-  const ordered = useMemo(() => chronologicalNotes(notes), [notes]);
+  const ordered = useMemo(() => chronologicalNotes(notes.filter((note) => !note.roles || note.roles.some((role) => roles.includes(role)))), [notes, roles]);
+  const visibleOpenedNotes = openedNotes?.filter((note) => ordered.some((visible) => visible.id === note.id));
   const unread = ordered.filter((note) => !states.some((state) => state.note_id === note.id && state.read_at));
 
   useEffect(() => {
@@ -71,7 +76,7 @@ export function ReleaseNotes({ client, userId, previewMode = false, notes = RELE
     requestId.current += 1;
     pending.current = true; setBusy(true); setError('');
     try {
-      const ids = openedNotes.map((note) => note.id);
+      const ids = (visibleOpenedNotes || []).map((note) => note.id);
       await store.save(ids, read);
       setStates((current) => {
         const merged = new Map(current.map((row) => [row.note_id, row]));
@@ -94,14 +99,14 @@ export function ReleaseNotes({ client, userId, previewMode = false, notes = RELE
       {error && !openedNotes && <span className="release-notes-retry">Réessayer</span>}
     </button>
     {openedNotes && createPortal(<AppDialog title="Note de mise à jour" eyebrow="SeaPilot" icon={<Megaphone size={21} aria-hidden="true" />} size="lg" isBusy={busy} onClose={() => void dismiss(false)}
-      description="Retrouvez les nouveautés de la plus ancienne à la plus récente."
+      description="Retrouvez les nouveautés de la plus récente à la plus ancienne."
       footer={<div className="app-dialog__actions">
         <button type="button" className="is-secondary" disabled={busy} onClick={() => void dismiss(false)}>Lire plus tard</button>
-        {openedNotes.length ? <button type="button" className="is-primary" disabled={busy} onClick={() => void dismiss(true)}>{busy ? 'Enregistrement…' : 'Ok'}</button>
+        {visibleOpenedNotes?.length ? <button type="button" className="is-primary" disabled={busy} onClick={() => void dismiss(true)}>{busy ? 'Enregistrement…' : 'Ok'}</button>
           : <button type="button" className="is-primary" disabled={busy} onClick={() => void openNotes()}>Réessayer</button>}
       </div>}>
       {error && <p role="alert" className="release-notes-error">{error}</p>}
-      <div className="release-notes-list">{openedNotes.map((note) => <article className="release-note" key={note.id}>
+      <div className="release-notes-list">{visibleOpenedNotes?.map((note) => <article className="release-note" key={note.id}>
         <div className="release-note-meta"><strong>v{note.version}</strong><time dateTime={note.publishedOn}>{new Intl.DateTimeFormat('fr-FR', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${note.publishedOn}T12:00:00Z`))}</time></div>
         <h3>{note.title}</h3><ul>{note.changes.map((change) => <li key={change}>{change}</li>)}</ul>
       </article>)}</div>

@@ -7,18 +7,24 @@ export interface PlanningDisplaySettings {
 
 const DEFAULT_SETTINGS: PlanningDisplaySettings = { activeFilterEnabled: false };
 
-export async function fetchPlanningDisplaySettings(client: SupabaseClient): Promise<PlanningDisplaySettings> {
+export async function fetchPlanningDisplaySettings(client: SupabaseClient, personal = false): Promise<PlanningDisplaySettings> {
   const { data, error } = await client.from('planning_display_settings')
     .select('active_filter_enabled').maybeSingle();
   if (error) throw error;
+  if (personal) {
+    const result = await client.from('planning_personal_display_settings').select('active_filter_enabled').maybeSingle();
+    if (result.error) throw result.error;
+    if (typeof result.data?.active_filter_enabled === 'boolean') return { activeFilterEnabled: result.data.active_filter_enabled };
+  }
   return { activeFilterEnabled: data?.active_filter_enabled === true };
 }
 
 export async function savePlanningDisplaySettings(
   client: SupabaseClient,
   settings: PlanningDisplaySettings,
+  personal = false,
 ): Promise<PlanningDisplaySettings> {
-  const { data, error } = await client.rpc('planning_save_display_settings', {
+  const { data, error } = await client.rpc(personal ? 'planning_save_personal_display_settings' : 'planning_save_display_settings', {
     p_active_filter_enabled: settings.activeFilterEnabled,
   });
   if (error) throw error;
@@ -27,13 +33,13 @@ export async function savePlanningDisplaySettings(
   return { activeFilterEnabled: row.active_filter_enabled };
 }
 
-export function usePlanningDisplaySettings(client: SupabaseClient, enabled = true) {
+export function usePlanningDisplaySettings(client: SupabaseClient, enabled = true, personal = false) {
   const [result, setResult] = useState<{ client: SupabaseClient; settings: PlanningDisplaySettings; error: string } | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
     let mounted = true;
-    fetchPlanningDisplaySettings(client).then(
+    fetchPlanningDisplaySettings(client, personal).then(
       (settings) => { if (mounted) setResult({ client, settings, error: '' }); },
       () => {
         if (!mounted) return;
@@ -42,7 +48,7 @@ export function usePlanningDisplaySettings(client: SupabaseClient, enabled = tru
       },
     );
     return () => { mounted = false; };
-  }, [client, enabled]);
+  }, [client, enabled, personal]);
 
   const current = result?.client === client ? result : null;
   return {

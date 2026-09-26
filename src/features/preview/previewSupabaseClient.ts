@@ -218,6 +218,8 @@ function createPreviewFleetFindingEvents(): unknown[] {
 }
 
 const PREVIEW_ROWS: Record<string, unknown[]> = {
+  planning_personal_display_settings: [],
+  planning_generic_crew_rows: [],
   planning_crew_display_preferences: [],
   useful_links: PREVIEW_USEFUL_LINKS,
   useful_link_categories: PREVIEW_LINK_CATEGORIES,
@@ -1805,6 +1807,22 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'planning_save_personal_display_settings') {
+    const row = { active_filter_enabled: args.p_active_filter_enabled === true };
+    PREVIEW_ROWS.planning_personal_display_settings = [row];
+    return createPreviewQuery({ data: row, error: null });
+  }
+  if (functionName === 'planning_save_generic_crew_row') {
+    const existing = previewRows('planning_generic_crew_rows').find((row) => row.id === args.p_row_id);
+    const row = { id: args.p_row_id || Date.now(), vessel_id: args.p_vessel_id, watch_group: args.p_watch_group,
+      function_label: args.p_function_label, periods: args.p_periods, revision: Number(existing?.revision || 0) + 1 };
+    PREVIEW_ROWS.planning_generic_crew_rows = [...previewRows('planning_generic_crew_rows').filter((item) => item.id !== row.id), row];
+    return createPreviewQuery({ data: row, error: null });
+  }
+  if (functionName === 'planning_resolve_generic_crew_row') {
+    PREVIEW_ROWS.planning_generic_crew_rows = previewRows('planning_generic_crew_rows').filter((row) => row.id !== args.p_row_id);
+    return createPreviewQuery({ data: args.p_person_id ? Date.now() : null, error: null });
+  }
   if (functionName === 'planning_save_crew_display_preferences') {
     const row = { name_format: args.p_name_format, sort_order: args.p_sort_order };
     PREVIEW_ROWS.planning_crew_display_preferences = [row];

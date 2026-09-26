@@ -621,6 +621,7 @@ function PlanningCrewTimelineRowContent({
   onMoveAbsence,
   onRequestAbsence,
   onDeleteEmptyRow,
+  onReplacePerson,
   isDeletingEmptyRow = false,
   balances,
   balanceLoading = false,
@@ -651,6 +652,7 @@ function PlanningCrewTimelineRowContent({
   onMoveAbsence?: (absence: PlanningAbsenceRecord, startsOn: string) => void;
   onRequestAbsence?: () => void;
   onDeleteEmptyRow?: () => void;
+  onReplacePerson?: () => void;
   isDeletingEmptyRow?: boolean;
   balances?: PlanningCrewBalanceDays;
   balanceLoading?: boolean;
@@ -739,7 +741,8 @@ function PlanningCrewTimelineRowContent({
     <div className={`planning-calendar-grid planning-timeline-row is-crew${hierarchy ? ' is-fleet-person' : ''}${balances ? ' has-crew-balances' : ''}${temporarySegments.length ? ' has-temporary-functions' : ''}`}>
       <div className={`planning-row-label${onDeleteEmptyRow ? ' has-empty-row-action' : ''}`}>
         <span>
-          <strong>{lane.label}</strong>
+          {onReplacePerson ? <button className="planning-generic-person" type="button" onClick={onReplacePerson} aria-label={`Remplacer ${lane.label} par un marin`}>{lane.label}</button> : <strong>{lane.label}</strong>}
+          {onReplacePerson ? <small>Poste à pourvoir</small> : null}
           <small>{hierarchy ? (lane.functionLabel || 'Fonction non renseignée') : (lane.detail || 'Sans détail')}</small>
           {temporaryFunctions.length ? <small className="planning-temporary-function-summary">Temp. : {temporaryFunctions.join(' / ')}</small> : null}
         </span>

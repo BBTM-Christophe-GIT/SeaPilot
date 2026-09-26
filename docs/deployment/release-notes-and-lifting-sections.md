@@ -14,12 +14,14 @@ L'ancien lien `/modules/lifting` redirige vers les apparaux. Les trois routes h�
 
 À la demande explicite de l'utilisateur, ajouter une note au catalogue `src/features/releaseNotes/releaseNotesCatalog.ts`. Ne pas produire automatiquement une note à chaque changement. La première note décrit cette version.
 
-Après connexion, une nouvelle note ouvre la fenêtre « Note de mise à jour ». Toutes les notes non lues s'y succèdent par date croissante, puis par version croissante pour une même date.
+Après connexion, une nouvelle note ouvre la fenêtre « Note de mise à jour ». Toutes les notes non lues s'y succèdent de la plus récente à la plus ancienne : date décroissante, puis version décroissante pour une même date. Cet ordre s'applique aussi à l'historique.
+
+Une note peut préciser `roles` pour cibler certains profils. Elle n'entre dans la fenêtre, le compteur ou les accusés de lecture que si le compte possède au moins un de ces rôles. Les notes sans ciblage restent visibles à tous les comptes. La note Planning 3.56.0 vise Administrateur, Direction et Armement.
 
 - **Ok** marque les notes affichées comme lues et ferme la fenêtre. Elles ne se rouvrent pas automatiquement.
 - **Lire plus tard**, la croix, Échap ou un clic hors de la fenêtre enregistrent le report et ferment la fenêtre. Elle ne se rouvre pas pour les mêmes notes au prochain lancement.
 - Une pastille rouge près de la version affiche le nombre exact de notes non lues. Cliquer sur la version permet de les consulter. Quand tout est lu, ce bouton ouvre l'historique.
-- Une nouvelle note déclenche à nouveau l'ouverture automatique, avec les notes précédemment reportées avant elle.
+- Une nouvelle note déclenche à nouveau l'ouverture automatique, avec les notes précédemment reportées après elle.
 - Les choix sont privés et persistés par compte dans `user_release_note_states`, y compris entre appareils. Le retour dans l'onglet revalide cet état. Un report concurrent ne peut pas effacer une lecture enregistrée ailleurs.
 - En cas d'échec d'enregistrement, la fenêtre reste ouverte avec une erreur et permet de réessayer. Aucun succès n'est simulé.
 - La démonstration utilise uniquement un stockage local séparé, sans écrire en production.

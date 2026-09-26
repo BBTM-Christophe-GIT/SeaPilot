@@ -6,7 +6,9 @@ import { buildPlanningCrewBalanceDays, type PlanningCrewBalanceCheckpoint } from
 import { fetchPlanningCrewBalances, savePlanningCrewBalance } from './planningCrewBalanceQueries';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { PlanningColumnHighlights } from './PlanningColumnHighlights';
-import { usePlanningDisplaySettings } from './planningDisplaySettings';
+import { PlanningGenericCrewTimelineRow } from './PlanningGenericCrewTimelineRow';
+import { resolveGenericCrewRow, saveGenericCrewRow, type GenericCrewRow } from './planningGenericCrew';
+import { savePlanningDisplaySettings, usePlanningDisplaySettings } from './planningDisplaySettings';
 import './planningProjectView.css';
 import './planningCrewPreferences.css';
 import { displayBrandName } from '../../lib/branding';
@@ -260,6 +262,7 @@ interface PlanningEligiblePeopleDialogState {
   vesselId: number;
   vesselName: string;
   watchGroup: string;
+  replacing?: GenericCrewRow;
 }
 
 interface PlanningGridConflictForm {
@@ -530,7 +533,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     isHistoryLoading,
   } = usePlanningOverview(effectiveClient, readPermissions.canRead, previewOverview, !usesLivePlanning && !previewMode);
   const planningData = usePlanningCoreOverview(overview);
-  const { settings: displaySettings, error: displaySettingsError } = usePlanningDisplaySettings(effectiveClient, readPermissions.canRead);
+  const { settings: displaySettings, setSettings: setDisplaySettings, isLoading: displaySettingsLoading, error: displaySettingsError } = usePlanningDisplaySettings(effectiveClient, readPermissions.canRead, true);
+  const [savingDisplaySettings, setSavingDisplaySettings] = useState(false);
   const [anchorDate, setAnchorDate] = useState(initialAnchorDate);
   const [requestedPerspective, setPerspective] = useState<PlanningPerspective>('fleet');
   const perspective = requestedPerspective === 'crew' && !readPermissions.canViewCrewPlanning ? 'fleet' : requestedPerspective;
@@ -866,7 +870,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       if (row.type !== 'person') return;
       [row.vesselKey, row.boardKey].forEach((key) => {
         const people = peopleByNode.get(key) || new Set<string>();
-        people.add(row.label);
+        people.add(row.genericRow ? row.key : row.label);
         peopleByNode.set(key, people);
       });
     });
@@ -1527,13 +1531,51 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setEligiblePeopleDialog({ vesselId, vesselName: vessel.name, watchGroup });
   }
 
+  async function togglePersonalActiveFilter() {
+    setSavingDisplaySettings(true);
+    try {
+      setDisplaySettings(await savePlanningDisplaySettings(effectiveClient, { activeFilterEnabled: !displaySettings.activeFilterEnabled }, true));
+    } catch {
+      setErrorMessage('Impossible d’enregistrer votre filtre actif. Réessayez.');
+    } finally { setSavingDisplaySettings(false); }
+  }
+
+  function updateGenericRow(id: number, saved: GenericCrewRow | null) {
+    updateOverview((current) => ({ ...current, genericCrewRows: [
+      ...(current.genericCrewRows || []).filter((row) => row.id !== id), ...(saved ? [saved] : []),
+    ] }));
+  }
+
+  async function addGenericPersonToBoard(functionLabel: string) {
+    if (!eligiblePeopleDialog || isSaving) return;
+    setIsSaving(true); setErrorMessage(null);
+    try {
+      const saved = await saveGenericCrewRow(effectiveClient, { ...eligiblePeopleDialog, functionLabel });
+      updateGenericRow(saved.id, saved);
+      setCollapsedFleetNodes((current) => new Set([...current].filter((key) => !fleetRows.some((row) => row.key === key && row.vesselId === saved.vesselId && (row.type === 'vessel' || row.board === saved.watchGroup)))));
+      setEligiblePeopleDialog(null);
+      setStatusMessage(`Poste ${functionLabel} ajouté à ${saved.watchGroup}. Double-cliquez sur une journée pour préparer sa période.`);
+    } catch (error) { setErrorMessage(planningErrorMessage(error, 'Impossible de créer ce poste fictif.')); }
+    finally { setIsSaving(false); }
+  }
+
   async function addEligiblePersonToBoard(person: PlanningPerson) {
     if (!eligiblePeopleDialog) return;
+    const replacement = eligiblePeopleDialog.replacing;
+    if (replacement) {
+      const controls = replacement.periods.flatMap((period) => evaluatePlanningAssignment(overview, {
+        id: `generic-${replacement.id}-${period.id}`, personId: person.id, person: formatPlanningPerson(person),
+        vessel: eligiblePeopleDialog.vesselName, functionLabel: replacement.functionLabel, status: period.status,
+        startsOn: period.startsOn, endsOn: period.endsOn,
+      }, allPlanningCrewEvents));
+      if (hasBlockingPlanningControls(controls)) { setErrorMessage(blockingControlMessage(controls)); return; }
+    }
     setIsSaving(true);
     setPendingMutationId(`departed-person-${person.id}`);
     setErrorMessage(null);
     try {
-      const boardRowId = await addPlanningBoardRow(effectiveClient, {
+      const replacing = eligiblePeopleDialog.replacing;
+      const boardRowId = replacing ? (await resolveGenericCrewRow(effectiveClient, replacing, person.id, referenceMonthRange.start))! : await addPlanningBoardRow(effectiveClient, {
         vesselId: eligiblePeopleDialog.vesselId,
         watchGroup: eligiblePeopleDialog.watchGroup,
         personId: person.id,
@@ -1557,9 +1599,21 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         });
         return expanded;
       });
-      await loadPlanning();
+      if (previewMode && replacing) {
+        const assignments = mapPlanningAssignmentRows(replacing.periods.map((period, index) => ({
+          id: Date.now() + index, vessel_id: replacing.vesselId, captain_person_id: null, crew_person_id: person.id,
+          starts_on: period.startsOn, ends_on: period.endsOn, starts_at: null, ends_at: null,
+          assignment_role: replacing.functionLabel, status_label: period.status, confirmation_status: 'confirmed',
+          watch_group: replacing.watchGroup, comments: period.comments, source_label: 'seapilot',
+        })), overview.people, overview.vessels);
+        updateOverview((current) => ({ ...current, assignments: [...current.assignments, ...assignments],
+          genericCrewRows: (current.genericCrewRows || []).filter((row) => row.id !== replacing.id),
+          boardRows: [...(current.boardRows || []), { id: boardRowId, vesselId: replacing.vesselId, personId: person.id,
+            watchGroup: replacing.watchGroup, functionLabel: replacing.functionLabel, createdAt: new Date().toISOString() }],
+        }));
+      } else await loadPlanning();
       setEligiblePeopleDialog(null);
-      setStatusMessage(`${formatPlanningPerson(person)} a été ajouté comme ligne vide à ${eligiblePeopleDialog.watchGroup}.`);
+      setStatusMessage(replacing ? `${replacing.functionLabel} a été remplacé par ${formatPlanningPerson(person)}. Le planning préparé a été transféré.` : `${formatPlanningPerson(person)} a été ajouté comme ligne vide à ${eligiblePeopleDialog.watchGroup}.`);
     } catch (error) {
       setErrorMessage(planningErrorMessage(error, 'Impossible d’ajouter ce marin à la bordée.'));
     } finally {
@@ -2644,6 +2698,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               <button aria-busy={isRefreshing} className="planning-filter-toggle planning-refresh-button" disabled={isRefreshing} onClick={() => { setBalanceRevision((value) => value + 1); void Promise.all([loadPlanning(), loadAbsences()]); }} type="button">
                 <RefreshCw aria-hidden="true" size={17} />{isRefreshing ? 'Actualisation…' : 'Actualiser'}
               </button>
+              {perspective !== 'projects' ? <button type="button" aria-pressed={displaySettings.activeFilterEnabled} className={`planning-filter-toggle${displaySettings.activeFilterEnabled ? ' is-active' : ''}`} disabled={displaySettingsLoading || savingDisplaySettings || Boolean(displaySettingsError)} onClick={() => void togglePersonalActiveFilter()} title="Préférence personnelle du filtre actif">Filtre actif</button> : null}
               <div className="planning-toolbar-spacer" />
               {perspective === 'crew' && balanceLoadError ? <span role="alert">{balanceLoadError} <button type="button" onClick={() => setBalanceRevision((value) => value + 1)}>Réessayer</button></span> : null}
               {perspective === 'crew' ? <div className="planning-grouping-switch" aria-label="Regrouper les équipages"><button className={crewGrouping === 'people' ? 'is-active' : ''} onClick={() => setCrewGrouping('people')} type="button">Marins</button><button className={crewGrouping === 'teams' ? 'is-active' : ''} onClick={() => setCrewGrouping('teams')} type="button">Équipes</button></div> : null}
@@ -2741,6 +2796,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                     />
                   );
                 }
+                if (row.genericRow) return <PlanningGenericCrewTimelineRow key={row.key} client={effectiveClient} row={row.genericRow} vessel={row.vessel}
+                  days={days} dayWidth={effectiveDayWidth} onChange={(saved) => updateGenericRow(row.genericRow!.id, saved)}
+                  onReplace={() => { setErrorMessage(null); setEligiblePeopleDialog({ vesselId: row.genericRow!.vesselId, vesselName: row.vessel, watchGroup: row.board, replacing: row.genericRow }); }} />;
                 const lane: PlanningCrewLane = {
                   key: row.key,
                   label: row.label,
@@ -2848,7 +2906,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           setStatusMessage('Solde enregistré en fin de journée. Le calcul commence le lendemain.');
         }} /> : null}
       {gridConflictForm ? <PlanningGridConflictDialog form={gridConflictForm} isSaving={isSaving} onClose={() => setGridConflictForm(null)} onResolve={(event) => void resolvePlanningGridConflict(event)} /> : null}
-      {eligiblePeopleDialog ? <PlanningEligiblePeopleDialog isSaving={isSaving} onAdd={(person) => void addEligiblePersonToBoard(person)} onClose={() => setEligiblePeopleDialog(null)} pendingId={pendingMutationId} people={eligibleBoardPeople} referenceMonthLabel={referenceMonthLabel} state={eligiblePeopleDialog} /> : null}
+      {eligiblePeopleDialog ? <PlanningEligiblePeopleDialog error={errorMessage} isSaving={isSaving} onAdd={(person) => void addEligiblePersonToBoard(person)} onAddGeneric={(label) => void addGenericPersonToBoard(label)} onClose={() => setEligiblePeopleDialog(null)} pendingId={pendingMutationId} people={eligibleBoardPeople} referenceMonthLabel={referenceMonthLabel} state={eligiblePeopleDialog} /> : null}
       {touchPersonDrag ? <div aria-hidden="true" className="planning-touch-drag-ghost" style={{ left: touchPersonDrag.x + 14, top: touchPersonDrag.y + 14 }}><GripVertical size={16} /><span>{formatPlanningPerson(touchPersonDrag.person)}</span></div> : null}
 
       {isAssignmentOpen ? (
@@ -3098,15 +3156,24 @@ function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onDelete, o
   </div>;
 }
 
-function PlanningEligiblePeopleDialog({ state, people, referenceMonthLabel, isSaving, pendingId, onAdd, onClose }: {
+function PlanningEligiblePeopleDialog({ state, people, referenceMonthLabel, isSaving, pendingId, onAdd, onAddGeneric, onClose, error }: {
   state: PlanningEligiblePeopleDialogState;
   people: PlanningPerson[];
   referenceMonthLabel: string;
   isSaving: boolean;
   pendingId: string | null;
   onAdd: (person: PlanningPerson) => void;
+  onAddGeneric: (functionLabel: string) => void;
+  error: string | null;
   onClose: () => void;
 }) {
+  const genericFunctions = useMemo(() => {
+    const usual = [...PLANNING_ASSIGNMENT_FUNCTIONS];
+    const additional = [...new Set(people.map((person) => planningAssignmentFunction(person.functionLabel) || person.functionLabel.trim()))]
+      .filter((label) => label && !usual.some((known) => normalizePlanningText(known) === normalizePlanningText(label)))
+      .sort(comparePlanningPersonnelFunctions);
+    return [...usual, ...additional];
+  }, [people]);
   const peopleByFunction = useMemo(() => {
     const groups = new Map<string, PlanningPerson[]>();
     people.forEach((person) => {
@@ -3127,7 +3194,12 @@ function PlanningEligiblePeopleDialog({ state, people, referenceMonthLabel, isSa
   return <div className="planning-dialog-backdrop" role="presentation">
     <section aria-label={`Ajouter un marin à ${state.watchGroup}`} aria-modal="true" className="planning-dialog planning-departed-people-dialog" role="dialog">
       <header><div><UserRoundPlus aria-hidden="true" size={20} /><span><small>{state.vesselName} · {state.watchGroup}</small><h2>Ajouter un marin</h2></span></div><button aria-label="Fermer" onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button></header>
-      <p className="planning-dialog-intro">Marins dont la période d’emploi recouvre le mois de référence <strong>{referenceMonthLabel}</strong>. Tous peuvent être ajoutés, même s’ils sont déjà présents dans cette bordée.</p>
+      <p className="planning-dialog-intro">{state.replacing ? <>Remplacer <strong>{state.replacing.functionLabel}</strong> par un marin et lui transférer les dates, statuts et annotations préparés. </> : null}Marins dont la période d’emploi recouvre le mois de référence <strong>{referenceMonthLabel}</strong>. Tous peuvent être ajoutés, même s’ils sont déjà présents dans cette bordée.</p>
+      {error ? <p role="alert" className="form-error">{error}</p> : null}
+      {!state.replacing ? <section className="planning-departed-people-group planning-generic-category" aria-label="Bordée Générique">
+        <header><h3>Bordée Générique</h3><span>Postes à pourvoir</span></header>
+        <div>{genericFunctions.map((label) => <article key={label}><strong>{label}</strong><button type="button" disabled={isSaving} aria-label={`Ajouter le poste fictif ${label}`} onClick={() => onAddGeneric(label)}>Ajouter</button></article>)}</div>
+      </section> : null}
       {peopleByFunction.length ? <div className="planning-departed-people-groups">{peopleByFunction.map((group, groupIndex) => {
         const densityClass = group.people.length > 12 ? ' is-expanded' : group.people.length > 6 ? ' is-wide' : '';
         const headingId = `planning-people-function-${groupIndex}`;

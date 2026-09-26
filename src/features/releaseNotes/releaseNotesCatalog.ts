@@ -1,9 +1,12 @@
+import type { RoleKey } from '../permissions/roles';
+
 export interface ReleaseNote {
   id: string;
   version: string;
   publishedOn: string;
   title: string;
   changes: readonly string[];
+  roles?: readonly RoleKey[];
 }
 
 // Add a note only when the user requests one. Published IDs and notes remain stable.
@@ -55,9 +58,22 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       'Utilisez dès maintenant le module « Notes de Frais » de SeaPilot pour le suivi de vos notes de frais.',
     ],
   },
+  {
+    id: '3.56.0-planning-generic-crew',
+    version: '3.56.0',
+    publishedOn: '2026-09-26',
+    title: 'Préparez vos bordées et repérez les journées du Planning',
+    roles: ['admin', 'direction', 'armement'],
+    changes: [
+      'Le filtre actif masque les collaborateurs sans affectation à partir d’aujourd’hui sur la période affichée. Il se règle dans Administration > Planning.',
+      'Dans Ajouter un marin, la catégorie Bordée Générique propose les fonctions habituelles pour créer des postes à pourvoir. Préparez leurs dates, statuts et annotations, puis cliquez sur le nom de la fonction dans le planning pour choisir un marin : toute la préparation lui est transférée.',
+      'Cliquez sur les jours du calendrier pour surligner leurs colonnes en bleu léger. Vous pouvez sélectionner plusieurs jours, même séparés, et cliquer à nouveau pour les désélectionner. Ce repérage reste temporaire.',
+      'Les notes de mise à jour sont désormais présentées de la plus récente à la plus ancienne.',
+    ],
+  },
 ];
 
 export function chronologicalNotes(notes: readonly ReleaseNote[]): ReleaseNote[] {
-  return [...notes].sort((a, b) => a.publishedOn.localeCompare(b.publishedOn)
-    || a.version.localeCompare(b.version, 'en', { numeric: true }) || a.id.localeCompare(b.id));
+  return [...notes].sort((a, b) => b.publishedOn.localeCompare(a.publishedOn)
+    || b.version.localeCompare(a.version, 'en', { numeric: true }) || b.id.localeCompare(a.id));
 }

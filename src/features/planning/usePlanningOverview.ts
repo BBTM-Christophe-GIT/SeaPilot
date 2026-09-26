@@ -28,12 +28,12 @@ type PlanningLoadPhase = 'idle' | 'loading' | 'ready' | 'refreshing' | 'error';
 // Audit/version metadata changes independently of the operational data. Keep
 // the latter stable so a completed history request does not rebuild every lane.
 export function usePlanningCoreOverview(overview: PlanningOverview): PlanningOverview {
-  const { vessels, people, boardRows, assignments, days, periods, projects, certificates,
+  const { vessels, people, boardRows, genericCrewRows, assignments, days, periods, projects, certificates,
     hrDocuments, annualReviews, rules, handovers, derogations, derogationHistory, publications } = overview;
   return useMemo(() => ({
-    ...EMPTY_PLANNING_OVERVIEW, vessels, people, boardRows, assignments, days, periods, projects,
+    ...EMPTY_PLANNING_OVERVIEW, vessels, people, boardRows, genericCrewRows, assignments, days, periods, projects,
     certificates, hrDocuments, annualReviews, rules, handovers, derogations, derogationHistory, publications,
-  }), [vessels, people, boardRows, assignments, days, periods, projects, certificates,
+  }), [vessels, people, boardRows, genericCrewRows, assignments, days, periods, projects, certificates,
     hrDocuments, annualReviews, rules, handovers, derogations, derogationHistory, publications]);
 }
 

@@ -217,6 +217,10 @@ export function buildPlanningFleetLanes(
   ));
   const vesselNames = new Set(
     [
+      ...(!filters.personName ? (overview.genericCrewRows || []).flatMap((row) => {
+        const vessel = overview.vessels.find((item) => item.id === row.vesselId);
+        return vessel && (!filters.vesselName || vessel.name === filters.vesselName) ? [vessel.name] : [];
+      }) : []),
       ...(includeEmptyVessels && !filters.personName ? overview.vessels
         .filter((vessel) => vessel.active && (!filters.vesselName || vessel.name === filters.vesselName))
         .map((vessel) => vessel.name) : []),
