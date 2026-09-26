@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrgPersonnelPanel } from './OrgPersonnelPanel';
 import { ORG_DEMO } from './organigrammeFixtures';
@@ -11,6 +11,15 @@ beforeEach(() => { vi.clearAllMocks(); vi.stubGlobal('URL', { createObjectURL: v
 afterEach(() => vi.unstubAllGlobals());
 
 describe('OrgPersonnelPanel', () => {
+  it.each(['personnel', 'emergency'] as const)('renders the %s hierarchy with the President first and Prénom NOM column headings', (kind) => {
+    const people = [...ORG_DEMO.people, { id: 100, name: 'Adam DEBORDEAUX', firstName: 'Adam', lastName: 'DEBORDEAUX', functionLabel: 'Stagiaire', population: 'sedentary' }];
+    render(<OrgPersonnelPanel data={{ ...ORG_DEMO, people }} kind={kind} disabled={false} />);
+    const groups = screen.getAllByRole('heading', { level: 3 });
+    expect(groups[0]).toHaveTextContent('Président');
+    expect(groups.at(-1)).toHaveTextContent('Stagiaire');
+    expect(screen.getAllByRole('columnheader', { name: 'Prénom NOM' })).toHaveLength(groups.length);
+    expect(within(screen.getByRole('region', { name: 'Stagiaire' })).getByLabelText('Inclure Adam DEBORDEAUX')).toBeChecked();
+  });
   it('selects a function, permits individual exceptions, and exports exactly that set', async () => {
     render(<OrgPersonnelPanel data={ORG_DEMO} kind="personnel" disabled={false} />);
     fireEvent.click(screen.getByRole('button', { name: 'Tout désélectionner' }));

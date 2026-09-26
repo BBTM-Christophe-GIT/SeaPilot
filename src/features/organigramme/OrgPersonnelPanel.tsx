@@ -36,9 +36,10 @@ export function OrgPersonnelPanel({ data, kind, disabled }: { data: OrgData; kin
     finally { setExporting(false); }
   }
   return <section className={`org-contacts org-controls${kind === 'emergency' ? ' org-contacts--emergency' : ''}`} aria-label={kind === 'personnel' ? 'Liste du personnel' : 'Numéros d’urgence'}>
-    <div className="org-contact-heading"><div><h2>{kind === 'personnel' ? 'Liste du personnel' : 'Numéros d’urgence'}</h2><p>{kind === 'personnel' ? 'Classement par fonction. Cochez une fonction entière ou choisissez les personnes individuellement.' : 'Les sédentaires sont présélectionnés. Ajoutez ou retirez les personnes à joindre en cas d’urgence.'}</p></div>
+    <div className="org-contact-heading"><div><h2>{kind === 'personnel' ? 'Liste du personnel' : 'Numéros d’urgence'}</h2><p>{kind === 'personnel' ? 'Classement par fonction et nom de famille. Cochez un groupe de fonction ou choisissez les personnes individuellement.' : 'Les sédentaires sont présélectionnés. Ajoutez ou retirez les personnes à joindre en cas d’urgence.'}</p></div>
       <div className="org-actions"><button type="button" className="org-primary" disabled={locked || !selected.length} onClick={() => void exportPdf(false)}><FileDown size={16} />{kind === 'personnel' ? 'Exporter le personnel en PDF' : 'Exporter les urgences en PDF'}</button><button type="button" disabled={locked || !personnel.length || !emergency.length} onClick={() => void exportPdf(true)}>Exporter les deux listes</button></div>
     </div>
+    <p className="org-contact-help">Président, Julien LECOCQ, Christophe MINASSIAN et Sophie HAMEL en tête ; stagiaires en dernier.</p>
     <p className="org-contact-help">Coordonnées issues des fiches RH. Chaque liste a sa propre sélection. Dans l’export regroupé, les urgences commencent sur une nouvelle page.</p>
     <div className="org-contact-toolbar"><label>Rechercher une personne ou une fonction<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
       <button type="button" disabled={locked} onClick={() => setIds(new Set(data.people.map((person) => person.id)))}>Tout sélectionner</button><button type="button" disabled={locked} onClick={() => setIds(new Set())}>Tout désélectionner</button>
@@ -52,9 +53,9 @@ export function OrgPersonnelPanel({ data, kind, disabled }: { data: OrgData; kin
     <fieldset disabled={locked} className="org-contact-selection"><legend className="org-sr-only">Personnes à inclure dans le PDF</legend>
       {visibleGroups.map((group) => {
         const count = group.people.filter((person) => ids.has(person.id)).length;
-        return <section className="org-contact-group" key={group.functionLabel} aria-label={group.functionLabel}>
+        return <section className="org-contact-group" key={group.key} aria-label={group.functionLabel}>
           <h3><label><input type="checkbox" checked={count === group.people.length} ref={(node) => { if (node) node.indeterminate = count > 0 && count < group.people.length; }} onChange={(event) => update(group.people.map((person) => person.id), event.target.checked)} aria-label={`Inclure la fonction ${group.functionLabel}`} />{group.functionLabel} <span>{count} / {group.people.length}</span></label></h3>
-          <div className="org-contact-table-wrap"><table><thead><tr><th scope="col">Personne</th><th scope="col">Email</th><th scope="col">Téléphone</th></tr></thead><tbody>{group.visible.map((person) => <tr key={person.id}><td><label><input type="checkbox" checked={ids.has(person.id)} onChange={(event) => update([person.id], event.target.checked)} aria-label={`Inclure ${person.name}`} />{person.name}</label></td><td>{person.email || 'Non renseigné'}</td><td>{person.phone || 'Non renseigné'}</td></tr>)}</tbody></table></div>
+          <div className="org-contact-table-wrap"><table><thead><tr><th scope="col">Prénom NOM</th><th scope="col">Email</th><th scope="col">Téléphone</th></tr></thead><tbody>{group.visible.map((person) => <tr key={person.id}><td><label><input type="checkbox" checked={ids.has(person.id)} onChange={(event) => update([person.id], event.target.checked)} aria-label={`Inclure ${person.name}`} />{person.name}</label></td><td>{person.email || 'Non renseigné'}</td><td>{person.phone || 'Non renseigné'}</td></tr>)}</tbody></table></div>
         </section>;
       })}
       {!visibleGroups.length && <p>Aucune personne ne correspond à cette recherche.</p>}

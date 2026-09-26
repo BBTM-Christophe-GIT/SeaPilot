@@ -6,16 +6,38 @@ import { describe, expect, it } from 'vitest';
 import { buildOrgContactsPdf } from './organigrammeContactsPdf';
 import { selectedOrgContacts } from './organigrammeContacts';
 import { ORG_DEMO } from './organigrammeFixtures';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+
+async function pdfText(bytes: Uint8Array) {
+  const task = getDocument({ data: bytes.slice(), useSystemFonts: true });
+  const document = await task.promise;
+  const pages: string[] = [];
+  for (let page = 1; page <= document.numPages; page++) {
+    const content = await (await document.getPage(page)).getTextContent();
+    pages.push(content.items.map((item) => 'str' in item ? item.str : '').join(' '));
+  }
+  await task.destroy(); return pages;
+}
 
 describe('contact PDF sheets', () => {
+  it.each(['personnel', 'emergency'] as const)('prints the exact priorities, surname order and function hierarchy in the %s PDF', async (kind) => {
+    const names = [['Alice','Zola','Capitaine'],['Julien','LECOCQ','Chef Mécanicien'],['Adam','DEBORDEAUX','Stagiaire'],['Zoé','Albert','Capitaine'],['Sophie','Hamel','Administration'],['Christophe','Minassian','Direction'],['Benjamin','Bon','Président']];
+    const people = names.map(([firstName,lastName,functionLabel],id) => ({ id,firstName,lastName,functionLabel,name:`${firstName} ${lastName}`,population:'sedentary' }));
+    const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));
+    const text = (await pdfText(new Uint8Array(await (await buildOrgContactsPdf([{ kind,people }],ORG_DEMO.asOf,logo)).arrayBuffer()))).join(' ');
+    const ordered = ['Benjamin BON','Julien LECOCQ','Christophe MINASSIAN','Sophie HAMEL','Zoé ALBERT','Alice ZOLA','Adam DEBORDEAUX'];
+    ordered.forEach((name,index) => { expect(text).toContain(name); if (index) expect(text.indexOf(name)).toBeGreaterThan(text.indexOf(ordered[index-1])); });
+    expect(text).toContain('Prénom NOM'); expect(text).not.toContain('Nom / prénom');
+    expect(text.indexOf('Capitaine')).toBeLessThan(text.indexOf('Zoé ALBERT'));
+  });
   it('exports each list separately and starts emergencies on their own page in the combined PDF', async () => {
     const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));
     const personnel = { kind: 'personnel' as const, people: selectedOrgContacts(ORG_DEMO.people, null, 'personnel') };
     const emergency = { kind: 'emergency' as const, people: selectedOrgContacts(ORG_DEMO.people, null, 'emergency') };
     for (const [name, documents, pages] of [
-      ['BBTM_Liste_du_personnel', [personnel], 1],
+      ['BBTM_Liste_du_personnel', [personnel], 2],
       ['BBTM_Numeros_urgence', [emergency], 1],
-      ['BBTM_Personnel_et_urgences', [personnel, emergency], 2],
+      ['BBTM_Personnel_et_urgences', [personnel, emergency], 3],
     ] as const) {
       const bytes = new Uint8Array(await (await buildOrgContactsPdf([...documents], ORG_DEMO.asOf, logo)).arrayBuffer());
       const pdf = await PDFDocument.load(bytes);
@@ -29,6 +51,9 @@ describe('contact PDF sheets', () => {
     const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));
     const personnel = { kind: 'personnel' as const, people };
     const standalone = await PDFDocument.load(await (await buildOrgContactsPdf([personnel], ORG_DEMO.asOf, logo)).arrayBuffer());
+    const pageText = await pdfText(new Uint8Array(await (await buildOrgContactsPdf([personnel], ORG_DEMO.asOf, logo)).arrayBuffer()));
+    expect(pageText[0]).toContain('PERSONNEL 1');
+    expect(pageText.every((text) => text.includes('Président') && text.includes('Prénom NOM') && /PERSONNEL \d/.test(text))).toBe(true);
     const bytes = await (await buildOrgContactsPdf([personnel, { kind: 'emergency', people: [ORG_DEMO.people[0]] }], ORG_DEMO.asOf, logo)).arrayBuffer();
     const combined = await PDFDocument.load(bytes);
     expect(standalone.getPageCount()).toBeGreaterThan(1);

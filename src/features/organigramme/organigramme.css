@@ -66,6 +66,7 @@
 .org-contact-group input { accent-color: #167c83; flex-shrink: 0; }
 .org-contact-group h3 span { margin-left: auto; color: #526978; font-size: 12px; white-space: nowrap; }
 .org-contact-table-wrap { overflow-x: auto; }
+.org-contact-group .org-contact-table-wrap { margin-left: 16px; border-left: 2px solid #b9d8dc; }
 .org-contact-group table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; min-width: 570px; }
 .org-contact-group th, .org-contact-group td { padding: 11px 14px; text-align: left; border-bottom: 1px solid #edf1f4; overflow-wrap: anywhere; }
 .org-contact-group th { color: #526978; font-weight: 500; font-size: 12px; }
@@ -74,6 +75,7 @@
 .org-contacts--emergency { border-top: 3px solid #8e2d3e; }
 .org-contacts--emergency .org-contact-heading h2, .org-contacts--emergency .org-contact-group td:last-child { color: #8e2d3e; font-weight: 700; }
 .org-contacts--emergency .org-contact-group { border-color: #e8ccd1; }
+.org-contacts--emergency .org-contact-table-wrap { border-left-color: #e8ccd1; }
 .org-contacts--emergency .org-contact-group h3 { background: #fcf3f4; color: #8e2d3e; }
 .org-contacts--emergency .org-contact-group input { accent-color: #8e2d3e; }
 .org-page .org-contacts--emergency button.org-primary { background: #8e2d3e; border-color: #8e2d3e; }

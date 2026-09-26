@@ -1,12 +1,13 @@
 # Organigramme RH
 
-Version 3.57.1. Le module `Ressources Humaines → Organigramme`, à côté de RH / Brevets,
+Version 3.57.2. Le module `Ressources Humaines → Organigramme`, à côté de RH / Brevets,
 est réservé aux profils Administrateur et Direction, y compris par URL directe.
 Appliquer `20260926060139_organigramme.sql`,
 `20260926122325_organigramme_categories_links.sql`,
 `20260926125755_organigramme_personnel_contacts.sql` puis
 `20260926184326_organigramme_hierarchy_default_watches.sql` et
-`20260926185333_organigramme_watch_function_inheritance.sql` avant de déployer le client.
+`20260926185333_organigramme_watch_function_inheritance.sql` puis
+`20260926191457_organigramme_personnel_names.sql` avant de déployer le client.
 
 ## Données et actualisation
 
@@ -126,8 +127,19 @@ est courante et partagée par société, pas historisée à la date du Planning.
 ## Liste du personnel et numéros d'urgence
 
 Deux vues supplémentaires préparent des listes nominatives avec fonction, nom,
-email et téléphone. Le personnel est regroupé selon le classement habituel des
-fonctions (Capitaine en premier), puis par ordre alphabétique. Les personnes
+email et téléphone. Les deux listes commencent par la fonction Président, puis
+Julien LECOCQ, Christophe MINASSIAN et Sophie HAMEL lorsqu'ils sont sélectionnés.
+Les autres personnes sont regroupées selon le classement habituel des fonctions,
+puis par nom de famille et prénom (collation française). Les stagiaires sont toujours
+en dernier. Les priorités nominatives sont des exceptions au regroupement général :
+si leur fonction est partagée, elle apparaît dans un bloc prioritaire puis dans le
+groupe des autres membres, sans modifier la fonction RH ni dupliquer une personne.
+
+L'arborescence présente un en-tête par groupe de fonction, puis ses personnes
+indentées sous la colonne **Prénom NOM**, à l'écran et dans les PDF. Les noms de
+famille s'affichent en majuscules. La RPC renvoie les champs RH `firstName` et
+`lastName` séparément afin de trier correctement les noms/prénoms composés.
+Le regroupement ne change ni la sélection ni les coordonnées. Les personnes
 doivent être dans les effectifs à la date de situation ; les responsabilités
 libres des intervenants externes ne sont pas des fiches du personnel.
 
