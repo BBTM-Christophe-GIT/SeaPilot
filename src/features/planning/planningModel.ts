@@ -1,4 +1,5 @@
 import { comparePlanningRevision } from './planningSourcePriority';
+import { genericCrewEvents, type GenericCrewRow } from './planningGenericCrew';
 import {
   PLANNING_ASSIGNMENT_NOTE_SOURCE,
   PLANNING_VESSEL_LOCATION_SOURCE,
@@ -75,6 +76,7 @@ export interface PlanningCrewEvent {
 }
 
 export interface PlanningCrewRow {
+  genericRow?: GenericCrewRow;
   key: string;
   type: 'vessel' | 'board' | 'person';
   personId: number | null;
@@ -137,6 +139,7 @@ function crewEventFromAnnualReview(review: PlanningAnnualReviewRecord): Planning
 
 export interface PlanningCrewRowOptions {
   employmentRange?: PlanningDateRange;
+  activeFrom?: string;
   includeEmptyVessels?: boolean;
   pendingBoardRowIds?: ReadonlySet<number>;
 }
@@ -589,6 +592,10 @@ export function buildPlanningCrewRows(
   const vesselNames = new Set([
     ...events.map((event) => event.vessel),
     ...boardRows.map((entry) => entry.vessel.name),
+    ...(overview.genericCrewRows || []).flatMap((row) => {
+      const vessel = vesselsById.get(row.vesselId);
+      return vessel && !filters.personName && (!filters.vesselName || filters.vesselName === vessel.name) ? [vessel.name] : [];
+    }),
     ...(options.includeEmptyVessels && !filters.personName ? overview.vessels
       .filter((vessel) => vessel.active && (!filters.vesselName || vessel.name === filters.vesselName))
       .map((vessel) => vessel.name) : []),
@@ -636,6 +643,10 @@ export function buildPlanningCrewRows(
         const current = boards.get(entry.boardRow.watchGroup) || { events: [], rows: [] };
         boards.set(entry.boardRow.watchGroup, { ...current, rows: [...current.rows, entry] });
       });
+      const genericRows = !filters.personName ? (overview.genericCrewRows || []).filter((row) => row.vesselId === vesselRecord?.id) : [];
+      genericRows.forEach((row) => {
+        if (!boards.has(row.watchGroup)) boards.set(row.watchGroup, { events: [], rows: [] });
+      });
       [...boards.entries()]
         .sort(([left], [right]) => left.localeCompare(right, 'fr', { numeric: true }))
         .forEach(([board, boardContent]) => {
@@ -657,6 +668,14 @@ export function buildPlanningCrewRows(
             events: [],
             projects: [],
           });
+          genericRows.filter((row) => row.watchGroup === board)
+            .sort((a, b) => comparePlanningPersonnelFunctions(a.functionLabel, b.functionLabel) || a.id - b.id)
+            .forEach((genericRow) => rows.push({
+              key: `${boardKey}-generic-${genericRow.id}`, type: 'person', personId: null,
+              vesselId: genericRow.vesselId, label: genericRow.functionLabel, vessel, board,
+              functionLabel: genericRow.functionLabel, boardRowId: null, hasAnyRecords: genericRow.periods.length > 0,
+              vesselKey, boardKey, events: genericCrewEvents(genericRow, vessel), projects: [], genericRow,
+            }));
           const people = new Map<string, PlanningCrewEvent[]>();
           boardEvents.forEach((event) => {
             const personEvents = people.get(event.person);
@@ -681,6 +700,10 @@ export function buildPlanningCrewRows(
               const personId = eventPersonId || linkedPerson?.id || null;
               if (linkedPerson && !isPlanningPersonEmployedDuring(linkedPerson, employmentRange)) return;
               if (!personEvents.length && (!boardRow || !options.pendingBoardRowIds?.has(boardRow.id))) return;
+              // Preserve a newly added empty row while the user creates its first assignment.
+              const activeFrom = options.activeFrom;
+              if (activeFrom && range.end >= activeFrom && personEvents.length
+                && !personEvents.some((event) => event.endsOn >= activeFrom)) return;
               const recordPrefix = `${vessel}|${board}|`;
               const hasAnyRecords = (
                 (personId !== null && allEventRecordKeys.has(`${recordPrefix}id:${personId}`))

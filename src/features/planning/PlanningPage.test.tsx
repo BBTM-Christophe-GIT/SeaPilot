@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { PlanningPage } from './PlanningPage';
 import { formatPlanningDate, startOfPlanningWeek, todayPlanningDate } from './planningDates';
 import { buildPlanningTimeline, timelineRange } from './planningModel';
+import type { GenericCrewRowData } from './planningGenericCrew';
 
 vi.mock('./planningDates', async (importOriginal) => ({
   ...await importOriginal(),
@@ -264,6 +265,7 @@ const publicationRow = {
 };
 
 function createClient(options: {
+  activeFilterEnabled?: boolean;
   crewPreferences?: { name_format: string; sort_order: string };
   vessels?: unknown[];
   people?: unknown[];
@@ -293,6 +295,7 @@ function createClient(options: {
   matrices?: unknown[];
   manningRequirements?: unknown[];
   createdBoardRow?: unknown;
+  genericCrewRows?: GenericCrewRowData[];
   vesselResponses?: Array<{ data: unknown[] | null; error: unknown }>;
 } = {}) {
   const insertAssignment = vi.fn().mockReturnValue({
@@ -312,6 +315,15 @@ function createClient(options: {
   options.vesselResponses?.forEach((response) => vesselOrder.mockResolvedValueOnce(response));
   vesselOrder.mockResolvedValue({ data: options.vessels ?? [vesselRow], error: null });
   const from = vi.fn().mockImplementation((table: string) => {
+    if (table === 'planning_personal_display_settings') {
+      return { select: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) };
+    }
+    if (table === 'planning_generic_crew_rows') {
+      return { select: () => ({ order: () => ({ range: async () => ({ data: options.genericCrewRows || [], error: null }) }) }) };
+    }
+    if (table === 'planning_display_settings') {
+      return { select: () => ({ maybeSingle: async () => ({ data: { active_filter_enabled: options.activeFilterEnabled ?? false }, error: null }) }) };
+    }
     if (table === 'planning_crew_display_preferences') {
       return { select: () => ({ maybeSingle: async () => ({ data: options.crewPreferences ?? null, error: null }) }) };
     }
@@ -412,7 +424,25 @@ function createClient(options: {
     if (table === 'planning_assignments') return { insert: insertAssignment, update: updateAssignment };
     throw new Error(`Unexpected table ${table}`);
   });
-  const rpc = vi.fn().mockImplementation((functionName: string) => {
+  const rpc = vi.fn().mockImplementation((functionName: string, args: Record<string, unknown> = {}) => {
+    if (functionName === 'planning_save_generic_crew_row') {
+      const row: GenericCrewRowData = { id: Number(args.p_row_id || 991), vessel_id: Number(args.p_vessel_id),
+        watch_group: String(args.p_watch_group), function_label: String(args.p_function_label),
+        periods: args.p_periods as GenericCrewRowData['periods'], revision: Number(args.p_expected_revision || 0) + 1 };
+      if (options.genericCrewRows) options.genericCrewRows.splice(0, options.genericCrewRows.length, row);
+      return Promise.resolve({ data: row, error: null });
+    }
+    if (functionName === 'planning_resolve_generic_crew_row') {
+      const row = options.genericCrewRows?.find((item) => item.id === args.p_row_id);
+      if (row) {
+        options.assignments?.push(...row.periods.map((period, index) => ({ ...assignmentOverviewRow, id: 1991 + index,
+          crew_person_id: args.p_person_id, crew_name: 'Jean MARTIN', assignment_role: row.function_label,
+          starts_on: period.startsOn, ends_on: period.endsOn, status_label: period.status, comments: period.comments,
+        })));
+        options.genericCrewRows?.splice(0);
+      }
+      return Promise.resolve({ data: 991, error: null });
+    }
     if (functionName === 'read_planning_periods') {
       return Promise.resolve({ data: { revision: 'fixture-periods', periods: options.periods ?? [] }, error: null });
     }
@@ -524,6 +554,61 @@ function createClient(options: {
 }
 
 describe('PlanningPage cockpit', () => {
+  it('prepares a generic position and replaces it with a real sailor while transferring its dates and status', async () => {
+    const user = userEvent.setup();
+    const genericCrewRows: GenericCrewRowData[] = [];
+    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], genericCrewRows, activeFilterEnabled: true });
+    render(<PlanningPage client={client as never} roles={['armement']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('button', { name: 'Ajouter un marin à Affectation de COTENTIN' }));
+    let dialog = await screen.findByRole('dialog', { name: 'Ajouter un marin à Affectation' });
+    const category = within(dialog).getByRole('region', { name: 'Bordée Générique' });
+    expect(within(category).getAllByRole('button').slice(0, 4).map((node) => node.getAttribute('aria-label'))).toEqual([
+      'Ajouter le poste fictif Capitaine', 'Ajouter le poste fictif Chef Mécanicien', 'Ajouter le poste fictif 2nd Capitaine', 'Ajouter le poste fictif 2nd Mécanicien',
+    ]);
+    await user.click(within(category).getByRole('button', { name: 'Ajouter le poste fictif Capitaine' }));
+    await screen.findByRole('button', { name: 'Remplacer Capitaine par un marin' });
+    await user.dblClick(screen.getAllByRole('button', { name: /^Case vide de Capitaine le/ })[0]);
+    dialog = await screen.findByRole('dialog', { name: 'Préparer le planning · Capitaine' });
+    fireEvent.change(within(dialog).getByLabelText('Fin'), { target: { value: '2026-06-30' } });
+    await user.selectOptions(within(dialog).getByLabelText('Statut'), 'Repos');
+    await user.type(within(dialog).getByLabelText('Annotation'), 'Relève préparée');
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(genericCrewRows[0].periods[0]).toMatchObject({ startsOn: '2026-06-29', endsOn: '2026-06-30', status: 'Repos', comments: 'Relève préparée' });
+    await user.click(screen.getByRole('button', { name: 'Remplacer Capitaine par un marin' }));
+    dialog = await screen.findByRole('dialog', { name: 'Ajouter un marin à Affectation' });
+    expect(within(dialog).queryByRole('region', { name: 'Bordée Générique' })).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Ajouter Jean MARTIN' }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('planning_resolve_generic_crew_row', {
+      p_row_id: 991, p_expected_revision: 2, p_person_id: 10, p_reference_month: '2026-06-01',
+    }));
+    await screen.findByText('Capitaine a été remplacé par Jean MARTIN. Le planning préparé a été transféré.');
+    expect(screen.queryByRole('button', { name: 'Remplacer Capitaine par un marin' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button').map((node) => node.getAttribute('aria-label')).filter((name) => name?.startsWith('Jean MARTIN')))
+      .toEqual(expect.arrayContaining([expect.stringMatching(/^Jean MARTIN, Repos,/)]));
+  });
+
+  it.each([false, true])('applies the persisted active filter (%s) to the visible crew rows', async (enabled) => {
+    const { client } = createClient({
+      activeFilterEnabled: enabled,
+      people: [captainRow, crewRow, secondCrewRow],
+      assignments: [
+        { ...assignmentOverviewRow, starts_on: '2026-06-29', ends_on: '2026-06-29' },
+        { ...assignmentOverviewRow, id: 101, crew_person_id: secondCrewRow.id, crew_name: 'Luc MOREL',
+          starts_on: '2026-06-22', ends_on: '2026-06-28' },
+      ],
+    });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-07' } });
+    fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-06' } });
+    expect(container.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-range-start', '2026-06-01');
+    await waitFor(() => expect(container.querySelector('.planning-calendar-body')).toHaveTextContent('Paul DURAND'));
+    if (enabled) expect(container.querySelector('.planning-calendar-body')).not.toHaveTextContent('Luc MOREL');
+    else expect(container.querySelector('.planning-calendar-body')).toHaveTextContent('Luc MOREL');
+  });
+
   it('restores saved crew preferences and switches sorting without changing the person filter identity', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ crewPreferences: { name_format: 'last_first', sort_order: 'function' } });
@@ -1571,7 +1656,7 @@ describe('PlanningPage cockpit', () => {
     expect(within(dialog).getByText('Alain ANCIEN')).toBeInTheDocument();
     expect(within(dialog).getByText('Camille FUTURE')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Ajouter Paul DURAND' })).toBeEnabled();
-    expect(within(dialog).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual(['Capitaine', 'Matelot']);
+    expect(within(dialog).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual(['Bordée Générique', 'Capitaine', 'Matelot']);
     const captainGroup = within(dialog).getByRole('region', { name: 'Capitaine' });
     const sailorGroup = within(dialog).getByRole('region', { name: 'Matelot' });
     expect(within(captainGroup).getByText('Jean MARTIN')).toBeInTheDocument();
@@ -1614,6 +1699,7 @@ describe('PlanningPage cockpit', () => {
     await user.click(screen.getByRole('button', { name: 'Ajouter un marin à Affectation de COTENTIN' }));
     const dialog = await screen.findByRole('dialog', { name: 'Ajouter un marin à Affectation' });
     expect(within(dialog).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
+      'Bordée Générique',
       'Président',
       'Capitaine',
       'Chef Mécanicien',

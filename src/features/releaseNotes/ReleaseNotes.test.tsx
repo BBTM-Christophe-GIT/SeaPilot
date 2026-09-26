@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ReleaseNotes } from './ReleaseNotes';
 import { RELEASE_NOTES, type ReleaseNote } from './releaseNotesCatalog';
 import { createReleaseNoteStore, type ReleaseNoteState } from './releaseNoteQueries';
+import type { RoleKey } from '../permissions/roles';
 
 const older: ReleaseNote = { id: 'older', version: '3.9.0', publishedOn: '2026-09-01', title: 'Ancienne nouveauté', changes: ['Premier changement.'] };
 const newer: ReleaseNote = { id: 'newer', version: '3.10.0', publishedOn: '2026-09-01', title: 'Nouvelle fonctionnalité', changes: ['Deuxième changement.'] };
@@ -20,13 +21,35 @@ function memoryStore(initial: ReleaseNoteState[] = []) {
 }
 
 describe('ReleaseNotes', () => {
-  it('shows missed updates oldest first, defers without reopening, then acknowledges them permanently', async () => {
+  it.each<RoleKey>(['admin', 'direction', 'armement'])('shows the Planning update first to the %s profile', async (role) => {
+    const store = memoryStore();
+    render(<ReleaseNotes client={{} as never} roles={[role]} storeOverride={store} />);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getAllByRole('heading', { level: 3 })[0]).toHaveTextContent('Préparez vos bordées');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Ok' }));
+    expect(store.save).toHaveBeenCalledWith(expect.arrayContaining(['3.56.0-planning-generic-crew']), true);
+  });
+
+  it.each<RoleKey>(['marin', 'capitaine'])('excludes the Planning note from the %s profile, its badge and acknowledgements', async (role) => {
+    const note = RELEASE_NOTES.find((item) => item.id === '3.56.0-planning-generic-crew')!;
+    const store = memoryStore();
+    render(<ReleaseNotes client={{} as never} roles={[role]} notes={[note, older]} storeOverride={store} />);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByText(note.title)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('1 mise à jour non lue')).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Ok' }));
+    expect(store.save).toHaveBeenCalledWith([older.id], true);
+    await userEvent.click(screen.getByRole('button', { name: /Notes de mise à jour/ }));
+    expect(within(await screen.findByRole('dialog')).queryByText(note.title)).not.toBeInTheDocument();
+  });
+
+  it('shows missed updates newest first, defers without reopening, then acknowledges them permanently', async () => {
     const user = userEvent.setup();
     const store = memoryStore();
     const props = { client: {} as never, userId: 'alice', notes: [newer, older], storeOverride: store };
     const view = render(<ReleaseNotes {...props} />);
     let dialog = await screen.findByRole('dialog', { name: 'Note de mise à jour' });
-    expect(within(dialog).getAllByRole('heading', { level: 3 }).map((node) => node.textContent)).toEqual([older.title, newer.title]);
+    expect(within(dialog).getAllByRole('heading', { level: 3 }).map((node) => node.textContent)).toEqual([newer.title, older.title]);
     await user.click(within(dialog).getByRole('button', { name: 'Lire plus tard' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(screen.getByLabelText('2 mises à jour non lues')).toHaveTextContent('2');

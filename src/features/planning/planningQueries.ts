@@ -1,4 +1,5 @@
 import { compareFleetAssets } from '../fleet/fleetDisplay';
+import { fetchGenericCrewRows, type GenericCrewRow } from './planningGenericCrew';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeProjectStatus, type ProjectStatus } from '../projects/projectStatus';
 import { projectDescriptionToPlainText } from '../projects/projectDescription';
@@ -658,6 +659,7 @@ export interface PlanningOverview {
   vessels: PlanningVessel[];
   people: PlanningPerson[];
   boardRows?: PlanningBoardRowRecord[];
+  genericCrewRows?: GenericCrewRow[];
   assignments: PlanningAssignmentRecord[];
   days: PlanningDayRecord[];
   periods: PlanningPeriodRecord[];
@@ -1547,7 +1549,7 @@ export async function fetchPlanningOverview(
     };
   }
 
-  const [vessels, people, boardRows, assignmentRows, days, periods, projects, certificates, hrDocuments, annualReviews, rules, versions, history, handovers] = await Promise.all([
+  const [vessels, people, boardRows, assignmentRows, days, periods, projects, certificates, hrDocuments, annualReviews, rules, versions, history, handovers, genericCrewRows] = await Promise.all([
     fetchVessels(client),
     fetchPlanningPeople(client),
     fetchPlanningBoardRows(client),
@@ -1562,6 +1564,7 @@ export async function fetchPlanningOverview(
     fetchPlanningVersions(client),
     options.includeHistory === false ? Promise.resolve([]) : fetchPlanningHistory(client),
     fetchPlanningHandovers(client),
+    fetchGenericCrewRows(client),
   ]);
 
   return {
@@ -1569,6 +1572,7 @@ export async function fetchPlanningOverview(
     people,
     boardRows,
     assignments: mapPlanningAssignmentOverviewRows(assignmentRows),
+    genericCrewRows,
     days,
     periods,
     projects,

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { ClipboardCheck, Database, FolderSync, MailPlus, PanelLeft, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react';
+import { CalendarDays, ClipboardCheck, Database, FolderSync, MailPlus, PanelLeft, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
@@ -33,6 +33,7 @@ import {
 } from './adminCollaborators';
 import './adminSections.css';
 import { AdminCrewPreferences } from './AdminCrewPreferences';
+import { AdminPlanningSettings } from './AdminPlanningSettings';
 
 const ADMIN_SECTIONS = [
   { key: 'users', label: 'Utilisateurs', icon: Users },
@@ -40,6 +41,7 @@ const ADMIN_SECTIONS = [
   { key: 'documents', label: 'Documents et Google Drive', icon: FolderSync },
   { key: 'action-plan', label: 'Plan d’action', icon: ClipboardCheck },
   { key: 'crew', label: 'Équipages', icon: Users },
+  { key: 'planning', label: 'Planning', icon: CalendarDays },
   { key: 'imports', label: 'Imports et migration', icon: Database },
 ] as const;
 
@@ -469,6 +471,7 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
       </section>
 
       {activeSection === 'documents' ? <AdminGoogleDriveSetup client={client} previewMode={previewMode} /> : null}
+      {activeSection === 'planning' ? <AdminPlanningSettings client={client} /> : null}
 
       <section className="admin-panel admin-action-plan-settings" hidden={activeSection !== 'action-plan' || isLoading} aria-label="Réglages du Plan d'action">
         <div className="admin-header admin-section-header">

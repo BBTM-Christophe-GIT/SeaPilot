@@ -457,6 +457,9 @@ describe('fetchPlanningOverview', () => {
       if (table === 'planning_board_rows') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
+      if (table === 'planning_generic_crew_rows') {
+        return { select: () => ({ order: () => ({ range: async () => ({ data: [], error: null }) }) }) };
+      }
 
       if (table === 'planning_operations_view') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
@@ -496,6 +499,7 @@ describe('fetchPlanningOverview', () => {
       vessels: mapVesselRows([vesselRow]),
       people: mapPlanningPeopleRows([captainRow, crewRow]),
       boardRows: [],
+      genericCrewRows: [],
       assignments: mapPlanningAssignmentOverviewRows([assignmentOverviewRow]),
       days: mapPlanningDayRows([planningDayRow]),
       periods: mapPlanningPeriodRows([planningPeriodRow]),
@@ -600,6 +604,9 @@ describe('fetchPlanningOverview', () => {
       if (table === 'planning_board_rows') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
+      if (table === 'planning_generic_crew_rows') {
+        return { select: () => ({ order: () => ({ range: async () => ({ data: [], error: null }) }) }) };
+      }
 
       if (table === 'planning_operations_view') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
@@ -639,6 +646,7 @@ describe('fetchPlanningOverview', () => {
       vessels: mapVesselRows([vesselRow]),
       people: mapPlanningPeopleRows([captainRow]),
       boardRows: [],
+      genericCrewRows: [],
       assignments: [
         expect.objectContaining({
           captainName: 'Jean MARTIN',

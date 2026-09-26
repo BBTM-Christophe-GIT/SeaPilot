@@ -1,0 +1,9 @@
+.planning-generic-person { border: 0; background: transparent; color: #17639d; font: inherit; font-weight: 700; padding: 0; text-align: left; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.planning-generic-person:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+.planning-generic-category { margin: 0 20px 18px; }
+.planning-generic-category > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px; }
+.planning-dialog-form .planning-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
+.planning-dialog-form label { display: grid; gap: 6px; font-weight: 600; }
+.planning-dialog-form .is-wide { grid-column: 1 / -1; }
+.planning-dialog-form input, .planning-dialog-form select, .planning-dialog-form textarea { width: 100%; padding: 9px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+@media (max-width: 600px) { .planning-dialog-form .planning-form-grid { grid-template-columns: 1fr; } }
