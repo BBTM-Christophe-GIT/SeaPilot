@@ -34,3 +34,9 @@ export const ORG_DEMO: OrgData = {
     { id: 3, personId: null, name: 'Cabinet juridique · Démo', functionLabel: 'Accompagnement légal et contrats', category: 'external', position: 3 },
   ],
 };
+
+export const ORG_LINKS_DEMO: OrgData = { ...ORG_DEMO, links: [
+  { id: 1, sourceCategory: 'external', targetKind: 'category', targetKey: 'office', targetSection: '', label: 'Conseil et accompagnement' },
+  { id: 2, sourceCategory: 'external', targetKind: 'group', targetKey: '1-Bordée 1', targetSection: 'vessel-1', label: 'Assistance technique' },
+  { id: 3, sourceCategory: 'external', targetKind: 'person', targetKey: '2', targetSection: '', label: 'Référente opérationnelle' },
+] };

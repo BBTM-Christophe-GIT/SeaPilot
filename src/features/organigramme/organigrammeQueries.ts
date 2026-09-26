@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { OrgData, OrgSupport } from './organigrammeModel';
+import type { OrgCategory, OrgData, OrgLink, OrgSupport } from './organigrammeModel';
 
 export async function fetchOrganigramme(client: SupabaseClient, asOf: string): Promise<OrgData> {
   const { data, error } = await client.rpc('organigramme_snapshot', { p_as_of: asOf });
@@ -15,4 +15,17 @@ export async function saveOrgSupport(client: SupabaseClient, entry: Omit<OrgSupp
 export async function deleteOrgSupport(client: SupabaseClient, id: number): Promise<void> {
   const { error } = await client.from('organigramme_support').delete().eq('id', id);
   if (error) throw new Error('Impossible de supprimer cet intervenant.', { cause: error });
+}
+
+export async function saveOrgCategory(client: SupabaseClient, key: OrgCategory, label: string): Promise<void> {
+  const { error } = await client.rpc('save_organigramme_category', { p_key: key, p_label: label.trim() });
+  if (error) throw new Error('Impossible de renommer cette catégorie.', { cause: error });
+}
+export async function saveOrgLink(client: SupabaseClient, link: Omit<OrgLink, 'id'> & { id?: number }): Promise<void> {
+  const { error } = await client.rpc('save_organigramme_link', { p_id: link.id ?? null, p_source: link.sourceCategory, p_kind: link.targetKind, p_key: link.targetKey, p_section: link.targetSection, p_label: link.label.trim() });
+  if (error) throw new Error('Impossible d’enregistrer ce lien. Vérifiez la cible et les éventuels doublons.', { cause: error });
+}
+export async function deleteOrgLink(client: SupabaseClient, id: number): Promise<void> {
+  const { error } = await client.from('organigramme_links').delete().eq('id', id);
+  if (error) throw new Error('Impossible de supprimer ce lien.', { cause: error });
 }

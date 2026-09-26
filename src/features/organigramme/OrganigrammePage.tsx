@@ -3,10 +3,11 @@ import { useOutletContext } from 'react-router-dom';
 import { Download, FileDown, Network, RefreshCw, Settings2, Ship, Users } from 'lucide-react';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
-import { buildOrganigramme, ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, orgLocalDate, type OrgData, type OrgOptions } from './organigrammeModel';
+import { buildOrganigramme, ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, orgCategoryLabel, orgLocalDate, type OrgData, type OrgOptions } from './organigrammeModel';
 import { layoutOrganigramme, organigrammeSvg } from './organigrammeDiagram';
 import { fetchOrganigramme } from './organigrammeQueries';
 import { OrgSupportEditor } from './OrgSupportEditor';
+import { OrgStructureEditor } from './OrgStructureEditor';
 import './organigramme.css';
 
 export function OrganigrammePage() {
@@ -49,7 +50,9 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
   const sections = useMemo(() => currentData ? buildOrganigramme(currentData, options) : [], [currentData, options]);
   const diagram = useMemo(() => layoutOrganigramme(sections, options.showVessels), [sections, options.showVessels]);
   const diagramUrl = useMemo(() => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(organigrammeSvg(diagram))}`, [diagram]);
-  const count = new Set(sections.flatMap((section) => section.columns.flatMap((column) => column.members.map((member) => member.id)))).size;
+  const count = new Set(sections.filter((section) => section.kind !== 'relations').flatMap((section) => section.columns.flatMap((column) => column.members.map((member) => member.id)))).size;
+  const shownLinks = sections.filter((section) => section.kind === 'relations').reduce((total, section) => total + section.columns.length, 0);
+  const hiddenLinks = (currentData?.links?.length || 0) - shownLinks;
   const canExport = Boolean(currentData && sections.length && !loading && !error && !exporting);
   async function exportChart(format: 'pdf' | 'png' | 'svg') {
     if (!canExport || !currentData) return;
@@ -73,11 +76,12 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
         <label>Situation au<input type="date" aria-label="Date de situation" value={asOf} onChange={(event) => { if (/^\d{4}-\d{2}-\d{2}$/.test(event.target.value)) setAsOf(event.target.value); }} /></label>
         <label>Navire<select aria-label="Navire" value={options.vesselIds[0] ?? ''} onChange={(event) => setOptions({ ...options, vesselIds: event.target.value ? [Number(event.target.value)] : [] })}><option value="">Tous les navires</option>{[...(data?.vessels || [])].sort(compareFleetAssets).map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label>
       </div>
-      <div className="org-options">{([{ key: 'includeOffice', label: 'Direction & Administration' }, { key: 'includeExternal', label: 'Intervenants externes' }, { key: 'includeUnassigned', label: 'Sans affectation' }, { key: 'showVessels', label: 'Afficher les navires' }] as const).map(({ key, label }) => <label key={key}><input type="checkbox" checked={options[key]} disabled={key === 'includeUnassigned' && options.vesselIds.length > 0} onChange={(event) => setOptions({ ...options, [key]: event.target.checked })} />{label}</label>)}
+      <div className="org-options">{([{ key: 'includeOffice', label: orgCategoryLabel(data || {}, 'office') }, { key: 'includeExternal', label: orgCategoryLabel(data || {}, 'external') }, { key: 'includeUnassigned', label: orgCategoryLabel(data || {}, 'unassigned') }, { key: 'showVessels', label: 'Afficher les navires' }] as const).map(({ key, label }) => <label key={key}><input type="checkbox" checked={options[key]} disabled={key === 'includeUnassigned' && options.vesselIds.length > 0} onChange={(event) => setOptions({ ...options, [key]: event.target.checked })} />{label}</label>)}
         <button type="button" aria-expanded={editorOpen} onClick={() => setEditorOpen(!editorOpen)}><Settings2 size={15} />Modifier la structure</button>
       </div>
     </section>
-    {editorOpen && currentData && <OrgSupportEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} />}
+    {editorOpen && currentData && <><OrgStructureEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} /><OrgSupportEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} /></>}
+    {hiddenLinks > 0 && <p className="org-notice">{hiddenLinks} lien(s) enregistré(s) non affiché(s) : leur catégorie ou leur cible est absente de la date, de la vue ou des filtres choisis.</p>}
     {error && <div className="org-error" role="alert">{error} <button type="button" onClick={refresh}>Réessayer</button></div>}
     {exportError && <p className="org-error" role="alert">{exportError}</p>}
     {download && <p className="org-download" role="status">Dernier export prêt : <a href={download.url} download={download.name}>Télécharger le fichier {download.format}</a></p>}

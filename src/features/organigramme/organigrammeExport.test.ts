@@ -5,13 +5,13 @@ import { describe, expect, it } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
 import { buildOrgImage, buildOrgPdf } from './organigrammeExport';
 import { buildOrganigramme, type OrgOptions } from './organigrammeModel';
-import { ORG_DEMO } from './organigrammeFixtures';
+import { ORG_DEMO, ORG_LINKS_DEMO } from './organigrammeFixtures';
 import { paginateOrganigramme } from './organigrammeDiagram';
 
 const options: OrgOptions = { view: 'vessels', vesselIds: [], includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
 describe('organigramme exports', () => {
   it('builds a landscape, paginated PDF with the BBTM logo and document reference', async () => {
-    const sections = buildOrganigramme(ORG_DEMO, options);
+    const sections = buildOrganigramme(ORG_LINKS_DEMO, options);
     const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));
     const blob = await buildOrgPdf(sections, true, ORG_DEMO.asOf, 'vessels', logo);
     const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -26,12 +26,13 @@ describe('organigramme exports', () => {
     }
   });
   it('exports only diagram content in SVG with no vessels or PDF letterhead when disabled', async () => {
-    const sections = buildOrganigramme(ORG_DEMO, { ...options, view: 'functions', showVessels: false });
+    const sections = buildOrganigramme(ORG_LINKS_DEMO, { ...options, view: 'functions', showVessels: false });
     const blob = await buildOrgImage(sections, false, 'svg');
     const svg = await blob.text();
     expect(blob.type).toContain('image/svg+xml');
     expect(svg).toContain('Élodie MARTIN'); expect(svg).toContain('Cabinet comptable');
     expect(svg).not.toContain('GOURY'); expect(svg).not.toContain('LE ROZEL');
+    expect(svg).toContain('Référente opérationnelle'); expect(svg).toContain('Liens');
     expect(svg).not.toContain('REP 03-B'); expect(svg).not.toContain('87-Organigramme.docx');
     if (process.env.ORG_EXPORT_QA_DIR) await writeFile(join(process.env.ORG_EXPORT_QA_DIR, 'BBTM_Organigramme_sans_navires.svg'), svg);
   });

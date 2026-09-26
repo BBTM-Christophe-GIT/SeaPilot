@@ -1,12 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import { buildOrganigramme, orgLocalDate, resolveMemberships, type OrgOptions } from './organigrammeModel';
 import { layoutOrganigramme, organigrammeSvg, paginateOrganigramme, wrapOrgText } from './organigrammeDiagram';
-import { ORG_DEMO } from './organigrammeFixtures';
+import { ORG_DEMO, ORG_LINKS_DEMO } from './organigrammeFixtures';
 import { canAccessModule } from '../permissions/moduleAccess';
 import { getVisibleModulesForPermissions } from '../permissions/navigationPermissions';
 
 const options: OrgOptions = { view: 'vessels', vesselIds: [], includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
 describe('organigramme', () => {
+  it('keeps category, group and person links after renaming their source and target categories', () => {
+    const data = { ...ORG_LINKS_DEMO, categoryLabels: { external: 'Partenaires', office: 'Gouvernance' } };
+    const sections = buildOrganigramme(data, options);
+    const relations = sections.find((section) => section.key === 'relations-external')!;
+    expect(relations.label).toBe('Partenaires · Liens');
+    expect(relations.columns.map((column) => column.members[0].name)).toEqual(['Gouvernance', 'Bordée 1', 'Élodie MARTIN']);
+    expect(organigrammeSvg(layoutOrganigramme(sections))).toContain('stroke-dasharray');
+    expect(paginateOrganigramme(sections, true).at(-1)?.boxes.flatMap((box) => box.lines.map((line) => line.text))).toContain('Référente opérationnelle');
+  });
+  it('follows a linked person after a name change and vessel transfer without changing the saved link', () => {
+    const data = { ...ORG_LINKS_DEMO, people: ORG_DEMO.people.map((person) => person.id === 2 ? { ...person, name: 'Nouveau nom' } : person), memberships: ORG_DEMO.memberships.map((row) => row.personId === 2 ? { ...row, vesselId: 2 } : row) };
+    const target = buildOrganigramme(data, options).find((section) => section.kind === 'relations')!.columns.find((column) => column.key === 'link-3')!.members[0];
+    expect(target.name).toBe('Nouveau nom'); expect(target.detail).toContain('LE ROZEL'); expect(target.detail).not.toContain('GOURY');
+  });
+  it('hides filtered or unavailable link endpoints and excludes vessel names from relations in both views', () => {
+    const data = { ...ORG_LINKS_DEMO, links: [...ORG_LINKS_DEMO.links!, { id: 4, sourceCategory: 'external' as const, targetKind: 'category' as const, targetKey: 'vessel-1', targetSection: '', label: 'Navire' }] };
+    for (const view of ['vessels', 'functions'] as const) {
+      const svg = organigrammeSvg(layoutOrganigramme(buildOrganigramme(data, { ...options, view, showVessels: false }), false));
+      expect(svg).not.toContain('GOURY'); expect(svg).not.toContain('LE ROZEL'); expect(svg).toContain('Référente opérationnelle');
+    }
+    expect(buildOrganigramme(data, { ...options, includeExternal: false }).some((section) => section.kind === 'relations')).toBe(false);
+    const filtered = buildOrganigramme(data, { ...options, vesselIds: [2], includeOffice: false });
+    expect(filtered.some((section) => section.kind === 'relations')).toBe(false);
+    expect(data.links).toHaveLength(4);
+  });
   it('keeps ship, watch and HR function ordering, with captain first', () => {
     const sections = buildOrganigramme({ ...ORG_DEMO, memberships: [...ORG_DEMO.memberships].reverse(), vessels: [...ORG_DEMO.vessels].reverse() }, options);
     expect(sections.map((section) => section.label)).toEqual(['Direction & Administration', 'GOURY', 'LE ROZEL', 'Sans affectation', 'Intervenants externes']);

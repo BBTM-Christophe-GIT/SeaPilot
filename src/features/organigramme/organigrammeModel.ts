@@ -4,14 +4,20 @@ import { compareHrFunctionLabels, normalizeHrFunctionLabel } from '../humanResou
 export const ORGANIGRAMME_REFERENCE = 'REP 03-B';
 export const ORGANIGRAMME_SOURCE = '87-Organigramme.docx';
 export type OrganigrammeView = 'vessels' | 'functions';
+export const ORG_CATEGORY_LABELS = { office: 'Direction & Administration', external: 'Intervenants externes', functions: 'Équipages par fonction', unassigned: 'Sans affectation' };
+export type OrgCategory = keyof typeof ORG_CATEGORY_LABELS;
+export interface OrgLink { id: number; sourceCategory: OrgCategory; targetKind: 'category' | 'group' | 'person'; targetKey: string; targetSection: string; label: string }
+export interface OrgTarget { kind: OrgLink['targetKind']; key: string; section: string; name: string; context: string }
+export const orgTargetValue = (target: OrgTarget) => JSON.stringify([target.kind, target.section, target.key]);
+export const orgCategoryLabel = (data: Pick<OrgData, 'categoryLabels'>, key: OrgCategory) => data.categoryLabels?.[key] || ORG_CATEGORY_LABELS[key];
 export interface OrgPerson { id: number; name: string; functionLabel: string; population: string }
 export interface OrgVessel { id: number; name: string; lengthOverall: string | number | null }
 export interface OrgMembership { personId: number; vesselId: number; watchGroup: string; functionLabel: string; source: 'board' | 'assignment' | 'period' | 'day' }
 export interface OrgSupport { id: number; personId: number | null; name: string; functionLabel: string; category: 'office' | 'external'; position: number }
-export interface OrgData { people: OrgPerson[]; vessels: OrgVessel[]; memberships: OrgMembership[]; support: OrgSupport[]; asOf: string }
+export interface OrgData { people: OrgPerson[]; vessels: OrgVessel[]; memberships: OrgMembership[]; support: OrgSupport[]; asOf: string; categoryLabels?: Partial<Record<OrgCategory, string>>; links?: OrgLink[] }
 export interface OrgMember { id: number; name: string; functionLabel: string; detail: string }
 export interface OrgColumn { key: string; label: string; members: OrgMember[] }
-export interface OrgSection { key: string; label: string; kind: 'vessel' | 'office' | 'external' | 'unassigned' | 'functions'; columns: OrgColumn[] }
+export interface OrgSection { key: string; label: string; kind: 'vessel' | 'office' | 'external' | 'unassigned' | 'functions' | 'relations'; columns: OrgColumn[] }
 export interface OrgOptions { view: OrganigrammeView; vesselIds: number[]; includeOffice: boolean; includeExternal: boolean; includeUnassigned: boolean; showVessels: boolean }
 
 const sourceOrder = { day: 0, assignment: 1, period: 2, board: 3 };
@@ -46,7 +52,7 @@ export function buildOrganigramme(data: OrgData, options: OrgOptions): OrgSectio
     const support = data.support.filter((entry) => entry.category === 'office').sort((a, b) => a.position - b.position);
     const replaced = new Set(support.flatMap((entry) => entry.personId === null ? [] : [entry.personId]));
     const members = [...office.filter((person) => !replaced.has(person.id)).map((person) => member(person)), ...support.map((entry) => ({ id: entry.personId ?? -entry.id, name: people.get(entry.personId ?? -1)?.name || entry.name, functionLabel: entry.functionLabel, detail: '' }))].sort((a, b) => Number(b.functionLabel.startsWith('Président')) - Number(a.functionLabel.startsWith('Président')));
-    if (members.length) sections.push({ key: 'office', label: 'Direction & Administration', kind: 'office', columns: members.map((person, index) => ({ key: `office-${index}`, label: '', members: [person] })) });
+    if (members.length) sections.push({ key: 'office', label: 'Direction & Administration', kind: 'office', columns: members.map((person) => ({ key: `office-${person.id}`, label: '', members: [person] })) });
   }
   if (options.view === 'vessels') {
     vessels.forEach((vessel) => {
@@ -82,7 +88,51 @@ export function buildOrganigramme(data: OrgData, options: OrgOptions): OrgSectio
     const members = data.support.filter((entry) => entry.category === 'external').sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, 'fr')).map((entry) => ({ id: -entry.id, name: entry.name, functionLabel: entry.functionLabel, detail: '' }));
     if (members.length) sections.push({ key: 'external', label: 'Intervenants externes', kind: 'external', columns: members.map((person) => ({ key: `external-${person.id}`, label: '', members: [person] })) });
   }
-  return sections;
+  sections.forEach((section) => {
+    if (section.key in ORG_CATEGORY_LABELS) section.label = orgCategoryLabel(data, section.key as OrgCategory);
+  });
+  const targets = orgTargetsFromSections(sections, options.showVessels);
+  const relations: OrgSection[] = [];
+  for (const source of sections) {
+    const columns = (data.links || []).filter((link) => link.sourceCategory === source.key).flatMap((link): OrgColumn[] => {
+      const target = targets.find((item) => item.kind === link.targetKind && item.key === link.targetKey && item.section === link.targetSection);
+      if (!target) return [];
+      return [{ key: `link-${link.id}`, label: link.label || 'En lien avec', members: [{ id: 0, name: target.name, functionLabel: { category: 'Grande catégorie', group: 'Groupe', person: 'Personne / intervenant' }[target.kind], detail: target.context }] }];
+    });
+    if (columns.length) relations.push({ key: `relations-${source.key}`, label: `${source.label} · Liens`, kind: 'relations', columns });
+  }
+  return [...sections, ...relations];
+}
+
+/** Node identities never depend on display names or the position of a person in a bordée. */
+export function orgTargetsFromSections(sections: OrgSection[], showVessels = true): OrgTarget[] {
+  const targets = new Map<string, OrgTarget>();
+  const add = (target: OrgTarget) => {
+    const key = orgTargetValue(target);
+    const previous = targets.get(key);
+    targets.set(key, previous ? { ...target, context: [...new Set([previous.context, target.context])].filter(Boolean).join(' / ') } : target);
+  };
+  sections.filter((section) => section.kind !== 'relations').forEach((section) => {
+    const context = section.kind === 'vessel' && !showVessels ? '' : section.label;
+    if (context) add({ kind: 'category', key: section.key, section: '', name: context, context: '' });
+    section.columns.forEach((column) => {
+      if (column.label) add({ kind: 'group', key: column.key, section: section.key, name: column.label, context });
+      column.members.forEach((person) => add({ kind: 'person', key: String(person.id), section: '', name: person.name, context: [context, column.label].filter(Boolean).join(' · ') }));
+    });
+  });
+  return [...targets.values()];
+}
+
+export function orgAllTargets(data: OrgData): OrgTarget[] {
+  const options: OrgOptions = { view: 'vessels', vesselIds: [], includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
+  const sections = buildOrganigramme({ ...data, links: [] }, options);
+  const functions = buildOrganigramme({ ...data, links: [] }, { ...options, view: 'functions' }).filter((section) => section.kind === 'functions');
+  const targets = orgTargetsFromSections([...sections, ...functions]);
+  // Empty categories remain available for future links.
+  (Object.keys(ORG_CATEGORY_LABELS) as OrgCategory[]).forEach((key) => {
+    if (!targets.some((target) => target.kind === 'category' && target.key === key)) targets.push({ kind: 'category', key, section: '', name: orgCategoryLabel(data, key), context: '' });
+  });
+  return targets;
 }
 
 export function orgLocalDate(now = new Date()): string {

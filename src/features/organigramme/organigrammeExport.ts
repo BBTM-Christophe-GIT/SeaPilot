@@ -42,7 +42,8 @@ export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, 
     const offsetX = (297 - diagram.width * scale) / 2;
     const offsetY = 35;
     pdf.setLineWidth(0.35); pdf.setDrawColor(ORG_COLORS.line);
-    diagram.lines.forEach((line) => pdf.line(offsetX + line.x1 * scale, offsetY + line.y1 * scale, offsetX + line.x2 * scale, offsetY + line.y2 * scale));
+    diagram.lines.forEach((line) => { pdf.setLineDashPattern(line.dashed ? [1.5, 1.2] : [], 0); pdf.line(offsetX + line.x1 * scale, offsetY + line.y1 * scale, offsetX + line.x2 * scale, offsetY + line.y2 * scale); });
+    pdf.setLineDashPattern([], 0);
     diagram.boxes.forEach((box) => {
       pdf.setFillColor(ORG_COLORS[box.tone]); pdf.setDrawColor(box.tone === 'white' ? ORG_COLORS.border : ORG_COLORS[box.tone]);
       pdf.roundedRect(offsetX + box.x * scale, offsetY + box.y * scale, box.width * scale, box.height * scale, 2, 2, 'FD');

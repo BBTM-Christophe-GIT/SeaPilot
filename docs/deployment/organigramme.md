@@ -2,7 +2,8 @@
 
 Version 3.57.0. Le module `Ressources Humaines → Organigramme`, à côté de RH / Brevets,
 est réservé aux profils Administrateur et Direction, y compris par URL directe.
-Appliquer `20260926060139_organigramme.sql` avant de déployer le client.
+Appliquer `20260926060139_organigramme.sql` puis
+`20260926122325_organigramme_categories_links.sql` avant de déployer le client.
 
 ## Données et actualisation
 
@@ -40,6 +41,34 @@ ensuite les fiches RH et les personnes sorties disparaissent du diagramme.
 La rubrique Modifier la structure permet d'ajouter, modifier, ordonner et supprimer
 les responsabilités. Les noms et missions libres restent à maintenir manuellement.
 Ces entrées décrivent des responsabilités ; elles n'inventent pas de liens hiérarchiques.
+
+## Catégories et liens personnalisés
+
+Dans Modifier la structure, les quatre grandes catégories (Direction & Administration,
+Intervenants externes, Équipages par fonction, Sans affectation) peuvent être renommées.
+Les noms des navires restent gérés dans le module Flotte. Les libellés personnalisés
+s'appliquent aux filtres, aux sélecteurs, au diagramme et aux exports.
+
+Chaque catégorie peut porter plusieurs liens, avec un libellé facultatif, vers une
+autre catégorie (y compris un navire), un groupe (bordée ou fonction) ou une personne
+(fiche RH ou intervenant libre). Les liens peuvent être modifiés ou supprimés ; les
+doublons et les liens d'une catégorie vers elle-même sont refusés. Le diagramme
+regroupe ces relations dans des branches en pointillés sous les équipes ; les pages
+PDF reprennent les mêmes branches pour éviter les traits entre pages.
+
+Les personnes sont référencées par identifiant, les bordées par navire et nom de bordée,
+et les fonctions par libellé normalisé. Renommer une catégorie ou muter une personne
+ne rompt pas le lien. Renommer une bordée ou une fonction demande de modifier sa cible.
+Une cible sortie des effectifs ou absente de la vue/des filtres n'est pas exportée :
+un compteur signale les liens non affichés, qui restent enregistrés. L'option sans
+navires retire aussi leurs mentions dans les relations et masque les liens ciblant
+directement une catégorie navire. Les libellés libres saisis par l'utilisateur sont conservés.
+
+Les tables `organigramme_categories` et `organigramme_links` sont protégées par RLS
+et les mêmes restrictions Admin/Direction que les responsabilités. Les RPC d'écriture
+utilisent SECURITY INVOKER ; les cibles RH, intervenants et navires sont vérifiées
+dans la société active, même pour une écriture directe via PostgREST. La configuration
+est courante et partagée par société, pas historisée à la date du Planning.
 
 ## Exports
 

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { OrganigrammePage } from './OrganigrammePage';
-import { ORG_DEMO } from './organigrammeFixtures';
+import { ORG_DEMO, ORG_LINKS_DEMO } from './organigrammeFixtures';
 import type { RoleKey } from '../permissions/roles';
 
 function setup(roles: RoleKey[] = ['direction'], rpc = vi.fn().mockResolvedValue({ data: ORG_DEMO, error: null })) {
@@ -10,6 +10,48 @@ function setup(roles: RoleKey[] = ['direction'], rpc = vi.fn().mockResolvedValue
   return rpc;
 }
 describe('OrganigrammePage', () => {
+  it('persists a renamed category and updates its controls and diagram after reloading', async () => {
+    let data = ORG_LINKS_DEMO;
+    const rpc = setup(['direction'], vi.fn().mockImplementation(async (name, args) => {
+      if (name === 'save_organigramme_category') data = { ...data, categoryLabels: { external: args.p_label } };
+      return { data, error: null };
+    }));
+    await screen.findByRole('img'); fireEvent.click(screen.getByRole('button', { name: 'Modifier la structure' }));
+    fireEvent.change(screen.getByLabelText('Nouveau nom'), { target: { value: 'Partenaires' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le nom' }));
+    await screen.findByRole('checkbox', { name: 'Partenaires' });
+    expect(rpc).toHaveBeenCalledWith('save_organigramme_category', { p_key: 'external', p_label: 'Partenaires' });
+    expect(decodeURIComponent(screen.getByRole('img').getAttribute('src')!)).toContain('Partenaires');
+  });
+  it.each([
+    ['category', '', 'office'], ['group', 'vessel-1', '1-Bordée 1'], ['person', '', '2'],
+  ])('saves a %s link with stable identity and displays it after refresh', async (kind, section, key) => {
+    let data = ORG_DEMO;
+    const rpc = setup(['admin'], vi.fn().mockImplementation(async (name, args) => {
+      if (name === 'save_organigramme_link') data = { ...data, links: [{ id: 99, sourceCategory: args.p_source, targetKind: args.p_kind, targetKey: args.p_key, targetSection: args.p_section, label: args.p_label }] };
+      return { data, error: null };
+    }));
+    await screen.findByRole('img'); fireEvent.click(screen.getByRole('button', { name: 'Modifier la structure' }));
+    fireEvent.change(screen.getByLabelText('Type de cible'), { target: { value: kind } });
+    fireEvent.change(screen.getByLabelText('Cible du lien'), { target: { value: JSON.stringify([kind, section, key]) } });
+    fireEvent.change(screen.getByLabelText('Libellé du lien (facultatif)'), { target: { value: 'Accompagnement' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter le lien' }));
+    await screen.findByRole('button', { name: /^Modifier le lien vers/ });
+    expect(rpc).toHaveBeenCalledWith('save_organigramme_link', { p_id: null, p_source: 'external', p_kind: kind, p_key: key, p_section: section, p_label: 'Accompagnement' });
+    expect(decodeURIComponent(screen.getByRole('img').getAttribute('src')!)).toContain('Accompagnement');
+    fireEvent.click(screen.getByRole('button', { name: /^Modifier le lien vers/ }));
+    fireEvent.change(screen.getByLabelText('Libellé du lien (facultatif)'), { target: { value: 'Conseil' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le lien' }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('save_organigramme_link', expect.objectContaining({ p_id: 99, p_label: 'Conseil' })));
+  });
+  it('retains the draft and shows a save error without reporting success', async () => {
+    setup(['direction'], vi.fn().mockImplementation(async (name) => name === 'organigramme_snapshot' ? { data: ORG_DEMO, error: null } : { data: null, error: { message: 'denied' } }));
+    await screen.findByRole('img'); fireEvent.click(screen.getByRole('button', { name: 'Modifier la structure' }));
+    fireEvent.change(screen.getByLabelText('Nouveau nom'), { target: { value: 'Partenaires' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le nom' }));
+    await screen.findByRole('alert'); expect(screen.getByLabelText('Nouveau nom')).toHaveValue('Partenaires');
+    expect(screen.queryByText('Nom de catégorie enregistré.')).not.toBeInTheDocument();
+  });
   it.each(['armement', 'capitaine', 'marin'] as const)('never requests data for an actual %s role fixture', (role) => {
     const rpc = setup([role]); expect(screen.getByRole('alert')).toHaveTextContent('réservé'); expect(rpc).not.toHaveBeenCalled();
   });

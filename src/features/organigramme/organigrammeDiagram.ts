@@ -1,7 +1,7 @@
 import type { OrgSection } from './organigrammeModel';
 
 export interface OrgBox { x: number; y: number; width: number; height: number; tone: 'navy' | 'teal' | 'white'; lines: Array<{ text: string; size: number; bold: boolean }> }
-export interface OrgLine { x1: number; y1: number; x2: number; y2: number }
+export interface OrgLine { x1: number; y1: number; x2: number; y2: number; dashed?: boolean }
 export interface OrgDiagram { width: number; height: number; boxes: OrgBox[]; lines: OrgLine[] }
 export const ORG_COLORS = { navy: '#12364b', teal: '#e5f2f2', white: '#ffffff', ink: '#18394c', muted: '#526978', line: '#9bb7c2', border: '#ccdce3' };
 
@@ -22,6 +22,7 @@ export function layoutOrganigramme(sections: OrgSection[], showVessels = true): 
   let y = 24;
   const columnWidth = 270;
   for (const section of sections) {
+    const firstLine = diagram.lines.length;
     const columns = section.columns.length ? section.columns : [{ key: 'empty', label: 'Aucune bordée', members: [] }];
     const sectionWidth = columns.length * columnWidth - 22;
     diagram.width = Math.max(diagram.width, sectionWidth + 48);
@@ -66,6 +67,7 @@ export function layoutOrganigramme(sections: OrgSection[], showVessels = true): 
       bottom = Math.max(bottom, cardY);
     });
     y = bottom + 32;
+    if (section.kind === 'relations') diagram.lines.slice(firstLine).forEach((line) => { line.dashed = true; });
   }
   diagram.height = Math.max(80, y);
   return diagram;
@@ -73,7 +75,7 @@ export function layoutOrganigramme(sections: OrgSection[], showVessels = true): 
 
 const escapeXml = (text: string) => text.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character]!);
 export function organigrammeSvg(diagram: OrgDiagram): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${diagram.width}" height="${diagram.height}" viewBox="0 0 ${diagram.width} ${diagram.height}" role="img" aria-label="Organigramme"><rect width="100%" height="100%" fill="white"/>${diagram.lines.map((line) => `<line x1="${line.x1}" y1="${line.y1}" x2="${line.x2}" y2="${line.y2}" stroke="${ORG_COLORS.line}" stroke-width="1.5"/>`).join('')}${diagram.boxes.map((box) => {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${diagram.width}" height="${diagram.height}" viewBox="0 0 ${diagram.width} ${diagram.height}" role="img" aria-label="Organigramme"><rect width="100%" height="100%" fill="white"/>${diagram.lines.map((line) => `<line x1="${line.x1}" y1="${line.y1}" x2="${line.x2}" y2="${line.y2}" stroke="${ORG_COLORS.line}" stroke-width="1.5"${line.dashed ? ' stroke-dasharray="5 4"' : ''}/>`).join('')}${diagram.boxes.map((box) => {
     let baseline = box.y + 14;
     return `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="7" fill="${ORG_COLORS[box.tone]}" stroke="${box.tone === 'white' ? ORG_COLORS.border : ORG_COLORS[box.tone]}"/>${box.lines.map((line) => {
       baseline += line.size + 5;
