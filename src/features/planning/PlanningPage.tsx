@@ -5,6 +5,8 @@ import { PlanningCrewBalanceDialog } from './PlanningCrewBalanceDialog';
 import { buildPlanningCrewBalanceDays, type PlanningCrewBalanceCheckpoint } from './planningCrewBalance';
 import { fetchPlanningCrewBalances, savePlanningCrewBalance } from './planningCrewBalanceQueries';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { PlanningColumnHighlights } from './PlanningColumnHighlights';
+import { usePlanningDisplaySettings } from './planningDisplaySettings';
 import './planningProjectView.css';
 import './planningCrewPreferences.css';
 import { displayBrandName } from '../../lib/branding';
@@ -354,7 +356,6 @@ const EMPTY_PROJECT_FORM: ProjectFormState = {
 const PLANNING_STATUSES = ['En Mer', 'A Terre', 'Extra', 'Repos', 'Vacance', 'Arrêt Maladie', 'Arrêt de travail', 'Formation'];
 const FLEET_EVENT_TYPES: PlanningFleetEventType[] = ['operation', 'transit', 'maintenance', 'unavailability'];
 
-const WEEKDAY_LABELS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 const SIDE_TABS: Array<{ key: SideTab; label: string }> = [
   { key: 'conflicts', label: 'Conflits' },
   { key: 'handovers', label: 'Relèves' },
@@ -529,6 +530,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     isHistoryLoading,
   } = usePlanningOverview(effectiveClient, readPermissions.canRead, previewOverview, !usesLivePlanning && !previewMode);
   const planningData = usePlanningCoreOverview(overview);
+  const { settings: displaySettings, error: displaySettingsError } = usePlanningDisplaySettings(effectiveClient, readPermissions.canRead);
   const [anchorDate, setAnchorDate] = useState(initialAnchorDate);
   const [requestedPerspective, setPerspective] = useState<PlanningPerspective>('fleet');
   const perspective = requestedPerspective === 'crew' && !readPermissions.canViewCrewPlanning ? 'fleet' : requestedPerspective;
@@ -819,6 +821,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const canEditPlanning = permissions.canEditEvents;
   const latestRelease = overview.versions[0] || null;
   const todayDate = todayPlanningDate();
+  const activeFrom = displaySettings.activeFilterEnabled ? todayDate : undefined;
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const effectiveDayWidth = Math.round(52 * zoomLevel / 100);
 
@@ -834,11 +837,12 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const fleetRows = useMemo(
     () => buildPlanningCrewRows(planningData, timelineDays, filters, allPlanningCrewEvents, {
       employmentRange: referenceMonthRange,
+      activeFrom,
       includeEmptyVessels: isPersonalPlanningView,
       pendingBoardRowIds: canEditPlanning && pendingBoardRows.rangeStart === range.start && pendingBoardRows.rangeEnd === range.end
         ? pendingBoardRows.ids : undefined,
     }),
-    [allPlanningCrewEvents, canEditPlanning, filters, isPersonalPlanningView, pendingBoardRows, planningData, range, referenceMonthRange, timelineDays],
+    [activeFrom, allPlanningCrewEvents, canEditPlanning, filters, isPersonalPlanningView, pendingBoardRows, planningData, range, referenceMonthRange, timelineDays],
   );
   // Retire the editing exception when its first visible assignment arrives,
   // so removing that assignment later cannot bring an empty row back.
@@ -885,8 +889,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     buildPlanningCrewBalanceDays(person, planningData, absences, balancesLoaded || previewMode ? balanceCheckpoints : [], range),
   ])), [planningData, absences, balanceCheckpoints, balancesLoaded, previewMode, range, readPermissions.canViewCrewPlanning]);
   const crewLanes = useMemo(
-    () => readPermissions.canViewCrewPlanning ? buildPlanningCrewLanes(planningData, range, filters, crewGrouping, allPlanningCrewEvents, crewDisplay) : [],
-    [allPlanningCrewEvents, crewDisplay, crewGrouping, filters, planningData, range, readPermissions.canViewCrewPlanning],
+    () => readPermissions.canViewCrewPlanning ? buildPlanningCrewLanes(planningData, range, filters, crewGrouping, allPlanningCrewEvents, crewDisplay, activeFrom) : [],
+    [activeFrom, allPlanningCrewEvents, crewDisplay, crewGrouping, filters, planningData, range, readPermissions.canViewCrewPlanning],
   );
   const certificateAlerts = useMemo(() => buildPlanningCertificateAlerts(planningData, todayDate), [planningData, todayDate]);
   const hrAlerts = useMemo(() => buildPlanningHrAlerts(planningData, todayDate), [planningData, todayDate]);
@@ -2557,12 +2561,13 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         </div>
       </header>
 
-      {statusMessage || errorMessage || loadErrorMessage || isRefreshing ? (
+      {statusMessage || errorMessage || loadErrorMessage || displaySettingsError || isRefreshing ? (
         <div className="planning-notices" aria-live="polite">
           {isRefreshing ? <p className="admin-state">Actualisation du planning...</p> : null}
           {statusMessage ? <p className="admin-success">{statusMessage}</p> : null}
           {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
           {loadErrorMessage ? <p className="form-error" role="alert">{loadErrorMessage}</p> : null}
+          {displaySettingsError ? <p className="form-error" role="alert">{displaySettingsError}</p> : null}
         </div>
       ) : null}
 
@@ -2700,12 +2705,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                 return <div className="planning-week-segment" key={`${day.date}-${day.week}`} style={{ gridColumn: `${index + 2} / span ${span === -1 ? days.length - index : span}` }}>S{day.week}</div>;
               })}
             </div>
-            <div className="planning-calendar-grid planning-calendar-days">
-              <div className="planning-calendar-corner planning-calendar-label-heading">{perspective === 'projects' ? 'Navires · Projets' : perspective === 'fleet' ? 'Navires · Bordées · Marins' : crewGrouping === 'teams' ? 'Équipes' : 'Marins'}</div>
-              {days.map((day) => <div className={`planning-day-heading${day.isWeekend ? ' is-weekend' : ''}${day.date === todayDate ? ' is-today' : ''}`} key={day.date}><span>{WEEKDAY_LABELS[day.weekday]}</span><strong>{day.day}</strong></div>)}
-            </div>
-
-            <div className="planning-calendar-body">
+            <PlanningColumnHighlights
+              days={days}
+              today={todayDate}
+              label={perspective === 'projects' ? 'Navires · Projets' : perspective === 'fleet' ? 'Navires · Bordées · Marins' : crewGrouping === 'teams' ? 'Équipes' : 'Marins'}
+            >
               {perspective === 'projects' ? projectLanes.map((lane) => renderFleetLane(lane, lane.key, true)) : null}
               {perspective === 'projects' && !projectLanes.length ? <div className="planning-calendar-empty"><p>Aucun navire ne correspond à ces filtres.</p></div> : null}
               {perspective === 'fleet' && fleetRows.length ? fleetRows.map((row) => {
@@ -2814,7 +2818,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               )) : null}
               {perspective === 'fleet' && !fleetRows.length ? <div className="planning-calendar-empty"><p>Aucun navire avec marin affecté ne correspond à cette période.</p></div> : null}
               {perspective === 'crew' && !crewLanes.length ? <div className="planning-calendar-empty"><p>Aucune affectation ne correspond à ces filtres.</p></div> : null}
-            </div>
+            </PlanningColumnHighlights>
           </div>
         </section>
 

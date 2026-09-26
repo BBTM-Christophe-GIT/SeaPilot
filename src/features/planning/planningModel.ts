@@ -137,6 +137,7 @@ function crewEventFromAnnualReview(review: PlanningAnnualReviewRecord): Planning
 
 export interface PlanningCrewRowOptions {
   employmentRange?: PlanningDateRange;
+  activeFrom?: string;
   includeEmptyVessels?: boolean;
   pendingBoardRowIds?: ReadonlySet<number>;
 }
@@ -681,6 +682,10 @@ export function buildPlanningCrewRows(
               const personId = eventPersonId || linkedPerson?.id || null;
               if (linkedPerson && !isPlanningPersonEmployedDuring(linkedPerson, employmentRange)) return;
               if (!personEvents.length && (!boardRow || !options.pendingBoardRowIds?.has(boardRow.id))) return;
+              // Preserve a newly added empty row while the user creates its first assignment.
+              const activeFrom = options.activeFrom;
+              if (activeFrom && range.end >= activeFrom && personEvents.length
+                && !personEvents.some((event) => event.endsOn >= activeFrom)) return;
               const recordPrefix = `${vessel}|${board}|`;
               const hasAnyRecords = (
                 (personId !== null && allEventRecordKeys.has(`${recordPrefix}id:${personId}`))

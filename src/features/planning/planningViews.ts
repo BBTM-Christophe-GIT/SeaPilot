@@ -262,6 +262,7 @@ export function buildPlanningCrewLanes(
   grouping: PlanningCrewGrouping,
   eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
   preferences: CrewDisplayPreferences = DEFAULT_CREW_PREFERENCES,
+  activeFrom?: string,
 ): PlanningCrewLane[] {
   const peopleById = new Map(overview.people.map((person) => [person.id, person]));
   const vesselsByName = new Map(overview.vessels.map((vessel) => [vessel.name, vessel.id]));
@@ -293,7 +294,8 @@ export function buildPlanningCrewLanes(
     });
   }
   const periodsByLane = new Map([...groups.values()].map((lane) => [lane.key, planningCrewPeriod(lane.events, range)]));
-  return [...groups.values()].map((lane) => ({ ...lane,
+  return [...groups.values()].filter((lane) => !activeFrom || range.end < activeFrom
+    || lane.events.some((event) => event.endsOn >= activeFrom)).map((lane) => ({ ...lane,
     detail: [grouping === 'teams' ? lane.watchGroup || 'Sans équipe' : lane.functionLabel,
       ...new Set(lane.events.map((event) => event.vessel).filter(Boolean))].filter(Boolean).join(' · '),
   })).sort((left, right) => (preferences.sortOrder === 'period'

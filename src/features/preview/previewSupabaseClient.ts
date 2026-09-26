@@ -1387,6 +1387,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       created_at: '2026-07-19T13:15:00Z',
     },
   ],
+  planning_display_settings: [{ company_id: 1, active_filter_enabled: false }],
   action_plan_settings: [{ company_id: 1, edit_button_enabled: true, updated_at: '2026-09-06T18:00:00Z' }],
   action_documents: [
     {
@@ -1936,6 +1937,11 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     settings.edit_button_enabled = args.p_edit_button_enabled !== false;
     settings.updated_at = new Date().toISOString();
     if (!previewRows('action_plan_settings').length) PREVIEW_ROWS.action_plan_settings.push(settings);
+    return createPreviewQuery({ data: settings, error: null });
+  }
+  if (functionName === 'planning_save_display_settings') {
+    const settings = previewRows('planning_display_settings')[0];
+    settings.active_filter_enabled = args.p_active_filter_enabled === true;
     return createPreviewQuery({ data: settings, error: null });
   }
   if (functionName === 'action_item_admin_update') {

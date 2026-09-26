@@ -264,6 +264,7 @@ const publicationRow = {
 };
 
 function createClient(options: {
+  activeFilterEnabled?: boolean;
   crewPreferences?: { name_format: string; sort_order: string };
   vessels?: unknown[];
   people?: unknown[];
@@ -312,6 +313,9 @@ function createClient(options: {
   options.vesselResponses?.forEach((response) => vesselOrder.mockResolvedValueOnce(response));
   vesselOrder.mockResolvedValue({ data: options.vessels ?? [vesselRow], error: null });
   const from = vi.fn().mockImplementation((table: string) => {
+    if (table === 'planning_display_settings') {
+      return { select: () => ({ maybeSingle: async () => ({ data: { active_filter_enabled: options.activeFilterEnabled ?? false }, error: null }) }) };
+    }
     if (table === 'planning_crew_display_preferences') {
       return { select: () => ({ maybeSingle: async () => ({ data: options.crewPreferences ?? null, error: null }) }) };
     }
@@ -524,6 +528,26 @@ function createClient(options: {
 }
 
 describe('PlanningPage cockpit', () => {
+  it.each([false, true])('applies the persisted active filter (%s) to the visible crew rows', async (enabled) => {
+    const { client } = createClient({
+      activeFilterEnabled: enabled,
+      people: [captainRow, crewRow, secondCrewRow],
+      assignments: [
+        { ...assignmentOverviewRow, starts_on: '2026-06-29', ends_on: '2026-06-29' },
+        { ...assignmentOverviewRow, id: 101, crew_person_id: secondCrewRow.id, crew_name: 'Luc MOREL',
+          starts_on: '2026-06-22', ends_on: '2026-06-28' },
+      ],
+    });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-07' } });
+    fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-06' } });
+    expect(container.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-range-start', '2026-06-01');
+    await waitFor(() => expect(container.querySelector('.planning-calendar-body')).toHaveTextContent('Paul DURAND'));
+    if (enabled) expect(container.querySelector('.planning-calendar-body')).not.toHaveTextContent('Luc MOREL');
+    else expect(container.querySelector('.planning-calendar-body')).toHaveTextContent('Luc MOREL');
+  });
+
   it('restores saved crew preferences and switches sorting without changing the person filter identity', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ crewPreferences: { name_format: 'last_first', sort_order: 'function' } });
