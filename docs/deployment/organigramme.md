@@ -9,7 +9,8 @@ Appliquer `20260926060139_organigramme.sql`,
 `20260926185333_organigramme_watch_function_inheritance.sql` puis
 `20260926191457_organigramme_personnel_names.sql` puis
 `20260926202417_hr_portraits_and_organigramme_media.sql` puis
-`20260926220402_organigramme_emergency_defaults.sql` avant de déployer le client.
+`20260926220402_organigramme_emergency_defaults.sql` et
+`20260926221451_organigramme_emergency_default_grants.sql` avant de déployer le client.
 
 
 ## Interface et photos

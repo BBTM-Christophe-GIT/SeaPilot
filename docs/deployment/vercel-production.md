@@ -5,8 +5,9 @@ de contenu dans les trois documents, liste du personnel sur une page A4, liste
 d’urgence par défaut partagée, et distinction entre fonction à bord et intitulé
 de bureau. Le PDF du diagramme rejoint les exports d’images. Une note de mise à
 jour présente ces nouveautés aux profils Administrateur et Direction.
-La migration additive `20260926220402_organigramme_emergency_defaults.sql` a été
-appliquée au projet lié avant le client. Voir [Organigramme RH](./organigramme.md).
+Les migrations `20260926220402_organigramme_emergency_defaults.sql` et
+`20260926221451_organigramme_emergency_default_grants.sql` ont été appliquées au
+projet lié avant le client. Voir [Organigramme RH](./organigramme.md).
 
 RH / Brevets ajoute **Attestation de droits** et **Carte Vitale**, et utilise le
 lanceur Windows **2.4.0** pour les pièces dans Google Drive, classées par

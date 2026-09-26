@@ -6,6 +6,8 @@ declare
   other_person bigint; ship bigint; actor uuid; role_name text; n integer:=0;
   snapshot jsonb; saved bigint; link_id bigint; other_ship bigint; saved_watch_id bigint; foreign_watch bigint;
 begin
+  assert not has_table_privilege('authenticated','public.organigramme_emergency_defaults','TRUNCATE'), 'Authenticated profile can truncate defaults';
+  assert not has_table_privilege('anon','public.organigramme_emergency_defaults','SELECT'), 'Anonymous table grant';
   select id into strict company from public.companies where code='bbtm';
   insert into public.companies(code,name) values('org-fixture-other','Organigramme fixture') returning id into other_company;
   foreach role_name in array array['admin','direction','armement','capitaine','marin'] loop
