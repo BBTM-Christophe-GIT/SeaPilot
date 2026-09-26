@@ -14,11 +14,9 @@ interface Props {
   onImageFormatChange: (format: 'png' | 'svg') => void;
   onExportImage: () => void;
   onEdit: (editor: 'watches' | 'structure') => void;
-  exportPhotos: boolean;
-  onExportPhotosChange: (value: boolean) => void;
 }
 
-export function OrgChartSettings({ data, options, onChange, asOf, onDateChange, disabled, canExport, imageFormat, onImageFormatChange, onExportImage, onEdit, exportPhotos, onExportPhotosChange }: Props) {
+export function OrgChartSettings({ data, options, onChange, asOf, onDateChange, disabled, canExport, imageFormat, onImageFormatChange, onExportImage, onEdit }: Props) {
   const vessels = data ? orgPopulatedVessels(data) : [];
   const count = vessels.filter((vessel) => options.vesselIds === null || options.vesselIds.includes(vessel.id)).length;
   return <aside className="org-inspector" aria-label="Réglages de l’organigramme">
@@ -51,9 +49,20 @@ export function OrgChartSettings({ data, options, onChange, asOf, onDateChange, 
         <button type="button" disabled={!data} onClick={() => onEdit('structure')}><Settings2 size={16} aria-hidden="true" />Modifier la structure</button>
       </div>
     </section>
-    <section className="org-inspector-section" aria-label="Export image">
+    <section className="org-inspector-section" aria-label="Exports">
       <h3><Image size={16} aria-hidden="true" />Exports</h3>
-      <label className="org-export-photos"><input type="checkbox" checked={exportPhotos} onChange={(event) => onExportPhotosChange(event.target.checked)} />Inclure les photos dans les exports</label>
+      <fieldset className="org-export-fields">
+        <legend>Informations à inclure</legend>
+        {([
+          { key: 'showPhotos', label: 'Photos', accessible: 'Inclure les photos dans les exports', checked: options.showPhotos !== false },
+          { key: 'showEmails', label: 'E-mails', accessible: 'Inclure les e-mails dans les exports', checked: !!options.showEmails },
+          { key: 'showPhones', label: 'Téléphones', accessible: 'Inclure les téléphones dans les exports', checked: !!options.showPhones },
+          { key: 'showFunctions', label: 'Fonctions', accessible: 'Inclure les fonctions dans les exports', checked: options.showFunctions !== false },
+          { key: 'showVessels', label: 'Navires', accessible: 'Inclure les navires dans les exports', checked: options.showVessels },
+          { key: 'showWatches', label: 'Bordées', accessible: 'Inclure les bordées dans les exports', checked: options.showWatches !== false },
+        ] as const).map(({ key, label, accessible, checked }) => <label key={key}><input type="checkbox" aria-label={accessible} checked={checked} onChange={(event) => onChange({ ...options, [key]: event.target.checked })} />{label}</label>)}
+      </fieldset>
+      <p className="org-export-help">L’aperçu reflète le contenu des exports PDF, PNG et SVG. Les noms restent toujours visibles.</p>
       <div className="org-image-export"><select aria-label="Format image" value={imageFormat} onChange={(event) => onImageFormatChange(event.target.value as 'png' | 'svg')}><option value="png">PNG</option><option value="svg">SVG</option></select><button type="button" className="org-primary" disabled={!canExport} onClick={onExportImage}><Download size={16} aria-hidden="true" />Exporter l’image</button></div>
     </section>
   </aside>;

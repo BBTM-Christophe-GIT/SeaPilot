@@ -205,6 +205,33 @@ autres bordées, même vides. Tous les navires restent disponibles dans **Compos
 bordées** et dans l'éditeur des liens. Les liens vers un navire masqué restent
 enregistrés mais ne sont pas dessinés. Aucune migration supplémentaire n'est nécessaire.
 
+## Cartes et contenu des exports de l’organigramme
+
+Les cartes de personnes partagent la même largeur et la même hauteur dans chaque
+catégorie, y compris les rangs et supports de Direction & Armement (ou son nom
+personnalisé). Les équipages partagent également une taille commune entre navires.
+La hauteur s’adapte au contenu le plus long ; aucun nom ni renseignement n’est tronqué.
+Les portraits sont circulaires, centrés et recadrés sans déformation. Leur diamètre
+commun par catégorie utilise l’espace disponible, de 64 à 80 px au lieu de 48 px.
+Les illustrations des navires conservent leurs proportions.
+
+Dans **Réglages → Exports → Informations à inclure**, six cases contrôlent les
+photos, e-mails, téléphones, fonctions, navires et bordées pour les PDF, PNG et SVG.
+L’aperçu montre exactement cette sélection. Les noms restent visibles. Les e-mails
+et téléphones sont décochés au départ ; les autres informations sont incluses.
+Les coordonnées proviennent des fiches RH liées, sans inventer de coordonnées pour
+les intervenants libres. Décocher les fonctions ou les bordées masque également
+leurs titres de groupe et les contextes correspondants des liens.
+
+Ces choix restent conservés pendant les changements de présentation, d’onglet et
+les actualisations, jusqu’au rechargement de la page. Le choix Navires est commun
+à l’affichage et aux exports. Ils concernent le diagramme ; les listes de personnel
+et d’urgence gardent leur contenu et leurs sélections propres. Une photo indisponible
+bloque les exports avec photos ; décocher Photos permet de poursuivre.
+
+Aucune migration, nouvelle dépendance ou modification des droits n’est nécessaire.
+Le module reste réservé aux comptes Administrateur et Direction.
+
 ## Liste du personnel et numéros d'urgence
 
 Deux vues supplémentaires préparent des listes nominatives avec fonction, nom,

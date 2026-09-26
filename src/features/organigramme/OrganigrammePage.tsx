@@ -33,7 +33,6 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
   const [editor, setEditor] = useState<'watches' | 'structure' | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [imageFormat, setImageFormat] = useState<'png' | 'svg'>('png');
-  const [exportPhotos, setExportPhotos] = useState(true);
   const [zoom, setZoom] = useState(90);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [options, setOptions] = useState<OrgOptions>({ view: 'vessels', vesselIds: null, includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true });
@@ -73,14 +72,13 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
   const shownLinks = sections.filter((section) => section.kind === 'relations').reduce((total, section) => total + section.columns.length, 0);
   const hiddenLinks = (currentData?.links?.length || 0) - shownLinks;
   const photoErrors = currentData?.people.filter((person) => person.photoUnavailable && (sections.some((section) => section.columns.some((column) => column.members.some((member) => member.id === person.id))) || (options.includeExternal && currentData.support.some((entry) => entry.category === 'external' && entry.personId === person.id)))).length || 0;
-  const canExport = Boolean(currentData && sections.length && !loading && !error && !exporting && (!exportPhotos || !photoErrors));
+  const canExport = Boolean(currentData && sections.length && !loading && !error && !exporting && (options.showPhotos === false || !photoErrors));
   async function exportChart(format: 'pdf' | 'png' | 'svg') {
     if (!canExport || !currentData) return;
     setExporting(true); setExportError('');
     try {
       const { buildOrgImage, buildOrgPdf, downloadOrgBlob } = await import('./organigrammeExport');
-      const exportSections = exportPhotos ? sections : buildOrganigramme(currentData, { ...options, showPhotos: false });
-      const blob = format === 'pdf' ? await buildOrgPdf(exportSections, options.showVessels, asOf, options.view) : await buildOrgImage(exportSections, options.showVessels, format);
+      const blob = format === 'pdf' ? await buildOrgPdf(sections, options.showVessels, asOf, options.view) : await buildOrgImage(sections, options.showVessels, format);
       const name = `BBTM_Organigramme_${asOf}_${options.view === 'vessels' ? 'navires' : 'fonctions'}${options.showVessels ? '' : '_sans-navires'}.${format}`;
       setDownload({ url: URL.createObjectURL(blob), name, format: format.toUpperCase() });
       downloadOrgBlob(blob, name);
@@ -109,7 +107,7 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
           {download && <p className="org-download" role="status">Dernier export prêt : <a href={download.url} download={download.name}>Télécharger le fichier {download.format}</a></p>}
           <footer className="org-footer"><span>Actualisé à {updatedAt || '—'}</span><span>PDF sur une page · {ORGANIGRAMME_REFERENCE}</span><p>Référence : {ORGANIGRAMME_SOURCE}. Bordées composées dans ce module, indépendamment du planning.</p></footer>
         </div>
-        {!expanded && <OrgChartSettings data={currentData} options={options} onChange={setOptions} asOf={asOf} onDateChange={setAsOf} disabled={loading || !!error} canExport={canExport} imageFormat={imageFormat} onImageFormatChange={setImageFormat} onExportImage={() => void exportChart(imageFormat)} onEdit={setEditor} exportPhotos={exportPhotos} onExportPhotosChange={setExportPhotos} />}
+        {!expanded && <OrgChartSettings data={currentData} options={options} onChange={setOptions} asOf={asOf} onDateChange={setAsOf} disabled={loading || !!error} canExport={canExport} imageFormat={imageFormat} onImageFormatChange={setImageFormat} onExportImage={() => void exportChart(imageFormat)} onEdit={setEditor} />}
       </div>
     </>}
     <div hidden={activeDocument === 'chart'}>{data ? <OrgPersonnelPanel data={data} kind={activeDocument === 'emergency' ? 'emergency' : 'personnel'} disabled={loading || !!error || !currentData} /> : !error && <p role="status">Chargement des coordonnées du personnel…</p>}</div>

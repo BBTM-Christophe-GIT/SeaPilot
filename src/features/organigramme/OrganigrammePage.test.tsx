@@ -11,6 +11,33 @@ function setup(roles: RoleKey[] = ['direction'], rpc = vi.fn().mockResolvedValue
   return rpc;
 }
 describe('OrganigrammePage', () => {
+  it('previews selectable export fields and retains choices between presentations, documents and refreshes', async () => {
+    const rpc = setup(); await screen.findByRole('img');
+    const svg = () => decodeURIComponent(screen.getByRole('img').getAttribute('src')!);
+    expect(svg()).not.toContain('personne.2@example.invalid');
+    expect(svg()).not.toContain('00 00 00 00 02');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Inclure les e-mails dans les exports' }));
+    expect(svg()).toContain('personne.2@example.invalid');
+    expect(svg()).not.toContain('00 00 00 00 02');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Inclure les téléphones dans les exports' }));
+    expect(svg()).toContain('00 00 00 00 02');
+    for (const label of ['fonctions', 'navires', 'bordées']) fireEvent.click(screen.getByRole('checkbox', { name: `Inclure les ${label} dans les exports` }));
+    for (const view of ['Par navire', 'Par fonction']) {
+      fireEvent.click(screen.getByRole('button', { name: view }));
+      expect(svg()).not.toMatch(/Capitaine|GOURY|Bordée 1/);
+      expect(svg()).toContain('Élodie MARTIN');
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Liste du personnel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Organigramme' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Actualiser' }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Exporter le PDF' })).toBeEnabled());
+    expect(screen.getByRole('checkbox', { name: 'Inclure les e-mails dans les exports' })).toBeChecked();
+    expect(svg()).not.toMatch(/Capitaine|GOURY|Bordée 1/);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Inclure les e-mails dans les exports' }));
+    expect(svg()).not.toContain('@example.invalid');
+    expect(svg()).toContain('00 00 00 00 02');
+  });
   it('blocks an incomplete portrait export but permits an explicit export without photos', async () => {
     setup(['direction'], vi.fn().mockResolvedValue({ data: { ...ORG_DEMO, people: ORG_DEMO.people.map((person) => person.id === 2 ? { ...person, photoPath: '2/unavailable.jpg' } : person) }, error: null }));
     await screen.findByRole('img');
