@@ -3,13 +3,37 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { buildOrgImage, buildOrgPdf, orgPdfGeometry } from './organigrammeExport';
 import { buildOrganigramme, type OrgOptions } from './organigrammeModel';
-import { ORG_DEMO, ORG_LINKS_DEMO, ORG_HIERARCHY_DEMO } from './organigrammeFixtures';
+import { ORG_DEMO, ORG_LINKS_DEMO, ORG_HIERARCHY_DEMO, ORG_VESSEL_FILTER_DEMO } from './organigrammeFixtures';
 import { layoutOrganigramme } from './organigrammeDiagram';
 
-const options: OrgOptions = { view: 'vessels', vesselIds: [], includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
+const options: OrgOptions = { view: 'vessels', vesselIds: null, includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
 describe('organigramme exports', () => {
+  it('exports the selected populated ships in both PDF and SVG, without empty or excluded ships', async () => {
+    const sections = buildOrganigramme(ORG_VESSEL_FILTER_DEMO, { ...options, vesselIds: [2, 4, 1] });
+    const blob = await buildOrgPdf(sections, true, ORG_DEMO.asOf, 'vessels', new Uint8Array(await readFile('public/bbtm-report-logo.png')));
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const task = getDocument({ data: bytes.slice() });
+    try {
+      const pdf = await task.promise;
+      expect(pdf.numPages).toBe(1);
+      const content = await (await pdf.getPage(1)).getTextContent();
+      const text = content.items.map((item) => 'str' in item ? item.str : '').join(' ');
+      const svg = await (await buildOrgImage(sections, true, 'svg')).text();
+      for (const exported of [text, svg]) {
+        expect(exported).toContain('GOURY'); expect(exported).toContain('LE ROZEL');
+        expect(exported).toContain('Élodie MARTIN'); expect(exported).toContain('Alice LAURENT');
+        expect(exported).not.toContain('NAVIRE VIDE'); expect(exported).not.toContain('NAVIRE CÔTIER');
+        expect(exported).not.toContain('Chloé GARCIA');
+      }
+      if (process.env.ORG_EXPORT_QA_DIR) {
+        await mkdir(process.env.ORG_EXPORT_QA_DIR, { recursive: true });
+        await writeFile(join(process.env.ORG_EXPORT_QA_DIR, 'BBTM_Organigramme_selection_navires.pdf'), bytes);
+      }
+    } finally { await task.destroy(); }
+  });
   it.each(['vessels', 'watches', 'functions'] as const)('exports the complete %s chart on exactly one landscape page', async (view) => {
     const sections = buildOrganigramme(ORG_HIERARCHY_DEMO, { ...options, view });
     const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));

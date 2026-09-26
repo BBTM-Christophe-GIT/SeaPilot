@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Download, FileDown, Network, RefreshCw, Settings2, Ship, Users } from 'lucide-react';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { compareFleetAssets } from '../fleet/fleetDisplay';
-import { buildOrganigramme, ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, ORG_VIEW_LABELS, orgCategoryLabel, orgLocalDate, type OrgData, type OrgOptions } from './organigrammeModel';
+import { buildOrganigramme, ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, ORG_VIEW_LABELS, orgCategoryLabel, orgLocalDate, orgPopulatedVessels, type OrgData, type OrgOptions } from './organigrammeModel';
 import { layoutOrganigramme, organigrammeSvg } from './organigrammeDiagram';
 import { fetchOrganigramme } from './organigrammeQueries';
 import { OrgSupportEditor } from './OrgSupportEditor';
@@ -33,7 +32,7 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
   const [watchEditorOpen, setWatchEditorOpen] = useState(false);
   const [imageFormat, setImageFormat] = useState<'png' | 'svg'>('png');
   const [zoom, setZoom] = useState(0);
-  const [options, setOptions] = useState<OrgOptions>({ view: 'vessels', vesselIds: [], includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true });
+  const [options, setOptions] = useState<OrgOptions>({ view: 'vessels', vesselIds: null, includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true });
   const refresh = () => setRevision((value) => value + 1);
   useEffect(() => () => { if (download) URL.revokeObjectURL(download.url); }, [download]);
   useEffect(() => {
@@ -51,6 +50,8 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
     return () => { current = false; };
   }, [client, asOf, revision]);
   const currentData = data?.asOf === asOf ? data : null;
+  const vesselChoices = useMemo(() => currentData ? orgPopulatedVessels(currentData) : [], [currentData]);
+  const selectedVesselCount = vesselChoices.filter((vessel) => options.vesselIds === null || options.vesselIds.includes(vessel.id)).length;
   const sections = useMemo(() => currentData ? buildOrganigramme(currentData, options) : [], [currentData, options]);
   const diagram = useMemo(() => layoutOrganigramme(sections, options.showVessels), [sections, options.showVessels]);
   const diagramUrl = useMemo(() => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(organigrammeSvg(diagram))}`, [diagram]);
@@ -82,9 +83,23 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
     <div hidden={activeDocument !== 'chart'}>
     <section className="org-controls" aria-label="Configuration de l’organigramme">
       <div className="org-toolbar"><div className="org-tabs" role="group" aria-label="Présentation"><button type="button" aria-pressed={options.view === 'vessels'} onClick={() => setOptions({ ...options, view: 'vessels' })}><Ship size={16} />Par navire et bordée</button><button type="button" aria-pressed={options.view === 'watches'} onClick={() => setOptions({ ...options, view: 'watches' })}><Users size={16} />Par bordée</button><button type="button" aria-pressed={options.view === 'functions'} onClick={() => setOptions({ ...options, view: 'functions' })}><Users size={16} />Par fonction</button></div>
-        <label>Navire<select aria-label="Navire" value={options.vesselIds[0] ?? ''} onChange={(event) => setOptions({ ...options, vesselIds: event.target.value ? [Number(event.target.value)] : [] })}><option value="">Tous les navires</option>{[...(data?.vessels || [])].sort(compareFleetAssets).map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label>
       </div>
-      <div className="org-options">{([{ key: 'includeOffice', label: orgCategoryLabel(data || {}, 'office') }, { key: 'includeExternal', label: orgCategoryLabel(data || {}, 'external') }, { key: 'includeUnassigned', label: orgCategoryLabel(data || {}, 'unassigned') }, { key: 'showVessels', label: 'Afficher les navires' }] as const).map(({ key, label }) => <label key={key}><input type="checkbox" checked={options[key]} disabled={key === 'includeUnassigned' && options.vesselIds.length > 0} onChange={(event) => setOptions({ ...options, [key]: event.target.checked })} />{label}</label>)}
+      <fieldset className="org-vessel-filter" disabled={loading || !!error} aria-describedby="org-vessel-help">
+        <legend>Navires à afficher <span>({selectedVesselCount} / {vesselChoices.length})</span></legend>
+        <div className="org-vessel-choices">
+          <button type="button" aria-pressed={options.vesselIds === null} onClick={() => setOptions((previous) => ({ ...previous, vesselIds: null }))}>Tous les navires</button>
+          <button type="button" aria-pressed={options.vesselIds?.length === 0} onClick={() => setOptions((previous) => ({ ...previous, vesselIds: [] }))}>Aucun navire</button>
+          {vesselChoices.map((vessel) => <label key={vessel.id}><input type="checkbox" checked={options.vesselIds === null || options.vesselIds.includes(vessel.id)} onChange={(event) => {
+            const checked = event.target.checked;
+            setOptions((previous) => {
+              const ids = previous.vesselIds ?? vesselChoices.map((choice) => choice.id);
+              return { ...previous, vesselIds: checked ? [...ids, vessel.id] : ids.filter((id) => id !== vessel.id) };
+            });
+          }} />{vessel.name}</label>)}
+        </div>
+        <p id="org-vessel-help">Les navires sans équipage sont masqués. Utilisez « Composer les bordées » pour les compléter.</p>
+      </fieldset>
+      <div className="org-options">{([{ key: 'includeOffice', label: orgCategoryLabel(data || {}, 'office') }, { key: 'includeExternal', label: orgCategoryLabel(data || {}, 'external') }, { key: 'includeUnassigned', label: orgCategoryLabel(data || {}, 'unassigned') }, { key: 'showVessels', label: 'Afficher les navires' }] as const).map(({ key, label }) => <label key={key}><input type="checkbox" checked={options[key]} disabled={key === 'includeUnassigned' && options.vesselIds !== null} onChange={(event) => setOptions({ ...options, [key]: event.target.checked })} />{label}</label>)}
         <button type="button" aria-expanded={watchEditorOpen} onClick={() => setWatchEditorOpen(!watchEditorOpen)}><Users size={15} />Composer les bordées</button><button type="button" aria-expanded={editorOpen} onClick={() => setEditorOpen(!editorOpen)}><Settings2 size={15} />Modifier la structure</button>
       </div>
     </section>

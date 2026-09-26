@@ -1,12 +1,37 @@
 import { describe, expect, it } from 'vitest';
-import { buildOrganigramme, orgLocalDate, resolveMemberships, type OrgOptions } from './organigrammeModel';
+import { buildOrganigramme, orgAllTargets, orgLocalDate, orgPopulatedVessels, resolveMemberships, type OrgOptions } from './organigrammeModel';
 import { layoutOrganigramme, organigrammeSvg, wrapOrgText } from './organigrammeDiagram';
-import { ORG_DEMO, ORG_LINKS_DEMO, ORG_HIERARCHY_DEMO } from './organigrammeFixtures';
+import { ORG_DEMO, ORG_LINKS_DEMO, ORG_HIERARCHY_DEMO, ORG_VESSEL_FILTER_DEMO } from './organigrammeFixtures';
 import { canAccessModule } from '../permissions/moduleAccess';
 import { getVisibleModulesForPermissions } from '../permissions/navigationPermissions';
 
-const options: OrgOptions = { view: 'vessels', vesselIds: [], includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
+const options: OrgOptions = { view: 'vessels', vesselIds: null, includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
 describe('organigramme', () => {
+  it.each(['vessels', 'watches', 'functions'] as const)('filters multiple vessels and hides empty ships in the %s view', (view) => {
+    const data = ORG_VESSEL_FILTER_DEMO;
+    expect(orgPopulatedVessels(data).map((vessel) => vessel.name)).toEqual(['GOURY', 'NAVIRE CÔTIER', 'LE ROZEL']);
+    const selected = { ...options, view, vesselIds: [2, 1, 4], includeOffice: false, includeExternal: false };
+    const sections = buildOrganigramme(data, selected);
+    const svg = organigrammeSvg(layoutOrganigramme(sections));
+    expect(svg).toContain('GOURY'); expect(svg).toContain('LE ROZEL');
+    expect(svg).not.toContain('NAVIRE CÔTIER'); expect(svg).not.toContain('NAVIRE VIDE');
+    expect(svg).not.toContain('Bordée vide'); expect(svg).not.toContain('Chloé GARCIA');
+    expect(sections.some((section) => section.kind === 'unassigned')).toBe(false);
+    if (view === 'vessels') expect(sections.map((section) => section.label)).toEqual(['GOURY', 'LE ROZEL']);
+    expect(buildOrganigramme(data, { ...selected, vesselIds: [] })).toEqual([]);
+    expect(buildOrganigramme(data, { ...selected, vesselIds: [4] })).toEqual([]);
+    const all = organigrammeSvg(layoutOrganigramme(buildOrganigramme(data, { ...selected, vesselIds: null })));
+    expect(all).toContain('NAVIRE CÔTIER'); expect(all).not.toContain('NAVIRE VIDE');
+  });
+  it('hides links to empty vessels but keeps their categories and watches available in the editor', () => {
+    const data = { ...ORG_VESSEL_FILTER_DEMO, links: [{ id: 40, sourceCategory: 'external' as const, targetKind: 'category' as const, targetKey: 'vessel-4', targetSection: '', label: 'Lien vers le navire vide' }] };
+    const sections = buildOrganigramme(data, options);
+    expect(sections.some((section) => section.kind === 'relations')).toBe(false);
+    const targets = orgAllTargets(data);
+    expect(targets.some((target) => target.kind === 'category' && target.key === 'vessel-4')).toBe(true);
+    expect(targets.some((target) => target.kind === 'group' && target.section === 'vessel-4' && target.key === '4-Bordée vide')).toBe(true);
+    expect(data.links).toHaveLength(1);
+  });
   it('keeps category, group and person links after renaming their source and target categories', () => {
     const data = { ...ORG_LINKS_DEMO, categoryLabels: { external: 'Partenaires', office: 'Gouvernance' } };
     const sections = buildOrganigramme(data, options);

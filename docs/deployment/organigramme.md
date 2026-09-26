@@ -1,6 +1,6 @@
 # Organigramme RH
 
-Version 3.57.2. Le module `Ressources Humaines → Organigramme`, à côté de RH / Brevets,
+Version 3.57.3. Le module `Ressources Humaines → Organigramme`, à côté de RH / Brevets,
 est réservé aux profils Administrateur et Direction, y compris par URL directe.
 Appliquer `20260926060139_organigramme.sql`,
 `20260926122325_organigramme_categories_links.sql`,
@@ -118,11 +118,26 @@ est courante et partagée par société, pas historisée à la date du Planning.
   ni pied de page. L'option Afficher les navires retire aussi leurs mentions dans
   toutes les vues. Le PNG limite sa résolution pour respecter la mémoire du
   navigateur ; le SVG garde la précision intégrale.
-- Les filtres (navire, direction, externes, non-affectés) s'appliquent à l'aperçu
+- Les filtres (navires, direction, externes, non-affectés) s'appliquent à l'aperçu
   comme aux exports. Les navires sont classés du plus long au plus court et affichés
   côte à côte sur une seule rangée, avec leurs bordées en dessous. Les autres
   catégories occupent le dessus et le dessous de la flotte ; les supports sont
   latéraux et les intervenants externes restent à gauche de la direction.
+
+Le filtre **Navires à afficher** permet de cocher plusieurs navires, avec un compteur,
+**Tous les navires** et **Aucun navire**. Tous est le choix initial et inclut les
+navires nouvellement composés après actualisation. Une sélection explicite, y compris
+vide, reste conservée entre les trois vues et les actualisations tant que le module
+reste ouvert. Les personnes sans affectation ne sont affichées qu'en mode Tous.
+Les listes du personnel et d'urgence gardent leurs propres sélections.
+
+Un navire sans aucun membre disponible dans ses compositions manuelles est masqué
+dans le filtre, le diagramme et les exports PDF/PNG/SVG, même s'il a des bordées vides
+enregistrées. Les lignes du Planning ou les personnes absentes de l'instantané ne
+le rendent pas visible. Un navire ayant au moins une bordée composée conserve ses
+autres bordées, même vides. Tous les navires restent disponibles dans **Composer les
+bordées** et dans l'éditeur des liens. Les liens vers un navire masqué restent
+enregistrés mais ne sont pas dessinés. Aucune migration supplémentaire n'est nécessaire.
 
 ## Liste du personnel et numéros d'urgence
 
