@@ -1,3 +1,5 @@
+import { PersonAvatar } from './PersonAvatar';
+import { PersonPhotoField, type PersonPhotoChanged } from './PersonPhotoField';
 import { connectHrDrive } from './hrDocumentDrive';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
@@ -382,9 +384,7 @@ function formatDateForDisplay(value: string): string {
   return `${dateParts[3]}/${dateParts[2]}/${dateParts[1]}`;
 }
 
-function getPersonInitials(person: PersonRecord): string {
-  return `${person.firstName.charAt(0)}${person.lastName.charAt(0)}`.toUpperCase() || 'RH';
-}
+
 
 function ProfileTabIcon({ tabKey }: { tabKey: HrDetailsSectionKey }) {
   switch (tabKey) {
@@ -1573,6 +1573,10 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
             isManager
             || (isRestrictedHrView && selectedPerson && selectedPerson.id === ownPersonId)
           )}
+          onPhotoChanged={(id, photo, document) => {
+            setPeople((previous) => previous.map((person) => person.id === id ? { ...person, ...photo, photoUnavailable: false } : person));
+            if (document) setDocuments((previous) => [...previous, document]);
+          }}
           canManageSignature={Boolean(selectedPerson && (
             selectedPerson.id === ownPersonId
             || effectiveRoles.includes('admin')
@@ -1993,7 +1997,7 @@ function PersonRow({ isSelected, onSelect, person }: { isSelected: boolean; onSe
       onClick={onSelect}
       type="button"
     >
-      <span className="hr-person-mini-avatar">{getPersonInitials(person)}</span>
+      <PersonAvatar className="hr-person-mini-avatar" person={person} />
       <span className="hr-person-compact-name">
         <strong>{formatPersonName(person)}</strong>
       </span>
@@ -2015,6 +2019,7 @@ function PersonProfileCard({
   canDelete,
   canEdit,
   canManageSignature,
+  onPhotoChanged,
   canEditAnnualReviewDueDate,
   canClose = true,
   client,
@@ -2038,6 +2043,7 @@ function PersonProfileCard({
   canDelete: boolean;
   canEdit: boolean;
   canManageSignature: boolean;
+  onPhotoChanged: PersonPhotoChanged;
   canEditAnnualReviewDueDate: boolean;
   canClose?: boolean;
   client: SupabaseClient;
@@ -2084,6 +2090,7 @@ function PersonProfileCard({
         canClose={canClose}
         canDelete={canDelete}
         canEdit={canEdit}
+        onPhotoChanged={onPhotoChanged}
         canManageSignature={canManageSignature}
         canEditAnnualReviewDueDate={canEditAnnualReviewDueDate}
         client={client}
@@ -2835,6 +2842,7 @@ function PersonDetailsPanel({
   canDelete,
   canEdit,
   canManageSignature,
+  onPhotoChanged,
   canEditAnnualReviewDueDate,
   client,
   documents,
@@ -2861,6 +2869,7 @@ function PersonDetailsPanel({
   canDelete: boolean;
   canEdit: boolean;
   canManageSignature: boolean;
+  onPhotoChanged: PersonPhotoChanged;
   canEditAnnualReviewDueDate: boolean;
   client: SupabaseClient;
   documents: HrDocumentRecord[];
@@ -2958,6 +2967,7 @@ function PersonDetailsPanel({
       case 'identity':
         return (
           <section className="hr-profile-identity-section">
+            {isManager && <PersonPhotoField key={person.id} client={client} person={person} onChanged={onPhotoChanged} />}
             <div className="hr-profile-field-group is-card">
               <h4>Identification interne</h4>
               <DetailsGrid isEditing={isEditing}>
@@ -3291,7 +3301,7 @@ function PersonDetailsPanel({
   return (
     <form className="hr-profile-editor" onSubmit={handleSubmit}>
       <header className="hr-profile-header">
-        <span className="hr-profile-avatar">{getPersonInitials(person)}</span>
+        <PersonAvatar className="hr-profile-avatar" person={person} />
         <div className="hr-profile-identity">
           <div className="hr-profile-name-row">
             <h2>{formatPersonName(person)}</h2>

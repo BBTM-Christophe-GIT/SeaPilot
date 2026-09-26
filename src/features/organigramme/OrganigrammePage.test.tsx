@@ -1,3 +1,4 @@
+vi.mock('./organigrammeMedia', () => ({ loadOrgVesselIcons: async (vessels: unknown[]) => vessels }));
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -10,6 +11,31 @@ function setup(roles: RoleKey[] = ['direction'], rpc = vi.fn().mockResolvedValue
   return rpc;
 }
 describe('OrganigrammePage', () => {
+  it('blocks an incomplete portrait export but permits an explicit export without photos', async () => {
+    setup(['direction'], vi.fn().mockResolvedValue({ data: { ...ORG_DEMO, people: ORG_DEMO.people.map((person) => person.id === 2 ? { ...person, photoPath: '2/unavailable.jpg' } : person) }, error: null }));
+    await screen.findByRole('img');
+    expect(screen.getByText(/1 photo\(s\) indisponible/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Exporter le PDF' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Inclure les photos dans les exports' }));
+    expect(screen.getByRole('button', { name: 'Exporter le PDF' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Exporter l’image' })).toBeEnabled();
+  });
+  it('keeps the chart first, opens a drawer, removes the watch view and expands the canvas', async () => {
+    setup(); await screen.findByRole('img');
+    const chart = screen.getByRole('region', { name: 'Aperçu de l’organigramme' });
+    const settings = screen.getByRole('complementary', { name: 'Réglages de l’organigramme' });
+    expect(chart.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Par bordée' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Composer les bordées' }));
+    expect(screen.getByRole('dialog', { name: 'Composer les bordées' })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Agrandir l’organigramme' }));
+    expect(screen.queryByRole('complementary', { name: 'Réglages de l’organigramme' })).not.toBeInTheDocument();
+    expect(chart).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher les réglages' }));
+    expect(screen.getByRole('checkbox', { name: 'Inclure les photos dans les exports' })).toBeChecked();
+  });
   it('selects several ships, retains the selection across views and refreshes, and distinguishes none from all', async () => {
     const rpc = setup(['direction'], vi.fn().mockResolvedValue({ data: ORG_VESSEL_FILTER_DEMO, error: null }));
     await screen.findByRole('img');
@@ -21,7 +47,7 @@ describe('OrganigrammePage', () => {
     expect(filter.getAllByRole('checkbox').every((input) => !(input as HTMLInputElement).checked)).toBe(true);
     fireEvent.click(filter.getByRole('checkbox', { name: 'GOURY' }));
     fireEvent.click(filter.getByRole('checkbox', { name: 'LE ROZEL' }));
-    for (const view of ['Par navire et bordée', 'Par bordée', 'Par fonction']) {
+    for (const view of ['Par navire', 'Par fonction']) {
       fireEvent.click(screen.getByRole('button', { name: view }));
       expect(svg()).toContain('GOURY'); expect(svg()).toContain('LE ROZEL'); expect(svg()).not.toContain('NAVIRE CÔTIER');
     }
@@ -51,6 +77,7 @@ describe('OrganigrammePage', () => {
     expect(decodeURIComponent(screen.getByRole('img').getAttribute('src')!)).not.toContain('LE ROZEL');
     fireEvent.click(screen.getByRole('button', { name: 'Composer les bordées' }));
     expect(within(screen.getByRole('combobox', { name: 'Navire de la bordée' })).getByRole('option', { name: 'LE ROZEL' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Fermer' }));
     rpc.mockResolvedValue({ data: ORG_DEMO, error: null });
     fireEvent.click(screen.getByRole('button', { name: 'Actualiser' }));
     expect(await screen.findByRole('checkbox', { name: 'LE ROZEL' })).toBeChecked();

@@ -7,7 +7,7 @@ import { getVisibleModulesForPermissions } from '../permissions/navigationPermis
 
 const options: OrgOptions = { view: 'vessels', vesselIds: null, includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
 describe('organigramme', () => {
-  it.each(['vessels', 'watches', 'functions'] as const)('filters multiple vessels and hides empty ships in the %s view', (view) => {
+  it.each(['vessels', 'functions'] as const)('filters multiple vessels and hides empty ships in the %s view', (view) => {
     const data = ORG_VESSEL_FILTER_DEMO;
     expect(orgPopulatedVessels(data).map((vessel) => vessel.name)).toEqual(['GOURY', 'NAVIRE CÔTIER', 'LE ROZEL']);
     const selected = { ...options, view, vesselIds: [2, 1, 4], includeOffice: false, includeExternal: false };
@@ -85,17 +85,7 @@ describe('organigramme', () => {
     expect(section.columns[0].label).toBe('Capitaine');
     expect(section.columns.flatMap((column) => column.members)).toHaveLength(ORG_DEMO.people.filter((person) => person.population !== 'sedentary').length);
   });
-  it('groups the same watch across ships, ordered by vessel length and captain first', () => {
-    const sections = buildOrganigramme(ORG_DEMO, { ...options, view: 'watches' });
-    const watches = sections.filter((section) => section.kind === 'watch');
-    expect(watches.map((section) => section.label)).toEqual(['Bordée 1', 'Bordée 2']);
-    expect(watches[0].columns.map((column) => column.label)).toEqual(['GOURY', 'LE ROZEL']);
-    expect(watches[0].columns[0].members[0].functionLabel).toBe('Capitaine');
-    expect(watches[1].columns[1].members).toEqual([]);
-    const hidden = organigrammeSvg(layoutOrganigramme(buildOrganigramme(ORG_LINKS_DEMO, { ...options, view: 'watches', showVessels: false }), false));
-    expect(hidden).not.toContain('GOURY'); expect(hidden).not.toContain('LE ROZEL');
-    expect(hidden).toContain('Bordée 1'); expect(hidden).toContain('Assistance technique');
-  });
+
   it('places rank 1 above rank 2 and rank 4, with Support on separate lateral branches', () => {
     const diagram = layoutOrganigramme(buildOrganigramme(ORG_HIERARCHY_DEMO, options));
     const card = (name: string) => diagram.boxes.find((box) => box.lines.some((line) => line.text === name))!;

@@ -1,0 +1,13 @@
+.hr-person-mini-avatar, .hr-profile-avatar { overflow: hidden; flex-shrink: 0; }
+.hr-person-mini-avatar img, .hr-profile-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hr-photo-field { border: 1px solid #dfe8ed; padding: 16px; border-radius: 10px; margin-bottom: 18px; background: #f7fafb; }
+.hr-photo-heading { display: flex; align-items: flex-start; gap: 10px; color: #167c83; }
+.hr-photo-heading h4 { margin: 0 0 5px; color: #12364b; font-size: 14px; }
+.hr-photo-heading p, .hr-photo-field > p { font-size: 12px; line-height: 1.6; margin: 0; color: #607887; }
+.hr-photo-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
+.hr-photo-picker { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; background: white; border: 1px solid #cbdde3; border-radius: 7px; padding: 10px 12px; position: relative; font-size: 12px; font-weight: 600; color: #12364b; }
+.hr-photo-picker input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.hr-photo-picker:focus-within { outline: 3px solid #249da6; outline-offset: 2px; }
+.hr-photo-preview { width: 60px; height: 60px; object-fit: cover; border-radius: 50%; }
+.hr-photo-field > p { margin-top: 12px; }
+.hr-photo-field .hr-photo-error { color: #9b2335; }

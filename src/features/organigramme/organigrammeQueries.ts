@@ -1,11 +1,17 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrgCategory, OrgData, OrgLink, OrgSupportDraft } from './organigrammeModel';
+import { loadPeoplePortraits } from '../humanResources/portraitMedia';
+import { loadOrgVesselIcons } from './organigrammeMedia';
 
 export async function fetchOrganigramme(client: SupabaseClient, asOf: string): Promise<OrgData> {
   const { data, error } = await client.rpc('organigramme_snapshot_v2', { p_as_of: asOf });
   if (error) throw new Error('Impossible de charger l’organigramme. Vérifiez vos droits et réessayez.', { cause: error });
   if (!data || !Array.isArray(data.people) || !Array.isArray(data.vessels) || !Array.isArray(data.memberships) || !Array.isArray(data.support) || !Array.isArray(data.watches)) throw new Error('Les données de l’organigramme sont indisponibles.');
-  return { ...data, asOf } as OrgData;
+  const snapshot = { ...data, asOf } as OrgData;
+  const [people, vessels] = await Promise.all([loadPeoplePortraits(client, snapshot.people), loadOrgVesselIcons(snapshot.vessels)]);
+  // Contact documents use the configured office responsibility, including its
+  // editable display function, without changing the underlying HR qualification.
+  return { ...snapshot, vessels, people: people.map((person) => ({ ...person, functionLabel: snapshot.support.find((entry) => entry.personId === person.id && entry.category === 'office')?.functionLabel || person.functionLabel })) };
 }
 
 export async function saveOrgSupport(client: SupabaseClient, entry: OrgSupportDraft): Promise<void> {

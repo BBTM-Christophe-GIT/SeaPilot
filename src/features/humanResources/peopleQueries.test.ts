@@ -103,6 +103,7 @@ describe('mapPersonRows', () => {
     expect(mapPersonRows([personRow])).toEqual([
       {
         id: 1,
+        photoDocumentId: null,
         userId: 'user-1',
         firstName: 'Jean',
         lastName: 'MARTIN',
@@ -198,6 +199,7 @@ describe('mapPersonRows', () => {
     ).toEqual([
       {
         id: 1,
+        photoDocumentId: null,
         userId: null,
         firstName: 'Jean',
         lastName: 'MARTIN',
@@ -987,6 +989,7 @@ describe('fetchPeople', () => {
     await expect(fetchPeople({ from } as never)).resolves.toEqual([
       {
         id: 1,
+        photoDocumentId: null,
         userId: 'user-1',
         firstName: 'Jean',
         lastName: 'MARTIN',
@@ -1033,7 +1036,7 @@ describe('fetchPeople', () => {
     ]);
     expect(from).toHaveBeenCalledWith('people');
     expect(select).toHaveBeenCalledWith(
-      'id, user_id, first_name, last_name, email, function_label, enim_function_code, enim_category, grade_label, role_label, register_label, sex, sailor_number, employee_number, phone, postal_address, birth_date, birth_place, identity_document_number, identity_document_type, contract_type, hired_on, departed_on, departure_reason, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, emergency_contact_address, waist_size, chest_size, full_height_size, inseam_size, hip_size, weight_kg, shoe_size, coverall_size, pants_size, jacket_size, deck_certificate_label, engine_certificate_label, crane_training_on, crane_induction_on, active',
+      'id, user_id, photo_document_id, photo_storage_path, first_name, last_name, email, function_label, enim_function_code, enim_category, grade_label, role_label, register_label, sex, sailor_number, employee_number, phone, postal_address, birth_date, birth_place, identity_document_number, identity_document_type, contract_type, hired_on, departed_on, departure_reason, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, emergency_contact_address, waist_size, chest_size, full_height_size, inseam_size, hip_size, weight_kg, shoe_size, coverall_size, pants_size, jacket_size, deck_certificate_label, engine_certificate_label, crane_training_on, crane_induction_on, active',
     );
     expect(orderByLastName).toHaveBeenCalledWith('last_name', { ascending: true });
     expect(orderByFirstName).toHaveBeenCalledWith('first_name', { ascending: true });

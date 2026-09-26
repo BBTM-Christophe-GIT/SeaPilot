@@ -1,13 +1,72 @@
 # Organigramme RH
 
-Version 3.57.4. Le module `Ressources Humaines → Organigramme`, à côté de RH / Brevets,
+Version 3.58.0. Le module `Ressources Humaines → Organigramme`, à côté de RH / Brevets,
 est réservé aux profils Administrateur et Direction, y compris par URL directe.
 Appliquer `20260926060139_organigramme.sql`,
 `20260926122325_organigramme_categories_links.sql`,
 `20260926125755_organigramme_personnel_contacts.sql` puis
 `20260926184326_organigramme_hierarchy_default_watches.sql` et
 `20260926185333_organigramme_watch_function_inheritance.sql` puis
-`20260926191457_organigramme_personnel_names.sql` avant de déployer le client.
+`20260926191457_organigramme_personnel_names.sql` puis
+`20260926202417_hr_portraits_and_organigramme_media.sql` avant de déployer le client.
+
+
+## Interface et photos
+
+Le diagramme est le premier contenu, à gauche du panneau **Réglages** sur bureau.
+Les éditeurs de bordées et de structure s’ouvrent dans un tiroir avec fermeture
+Échap et retour du focus. Sur écran étroit, les réglages passent après le diagramme.
+La sélection des documents conserve les choix indépendants du personnel et des urgences.
+Les illustrations des navires reprennent `illustration_thumbnail_url`, avec le
+catalogue de flotte puis un pictogramme générique en repli. Elles sont intégrées
+aux fichiers exportés, sans dépendance réseau après téléchargement.
+
+Dans **RH / Brevets → fiche → Identité**, Administrateur, Direction et Armement
+peuvent ajouter, remplacer ou retirer une photo JPEG/PNG (5 Mo maximum). L’original
+est écrit et vérifié par le lanceur Drive 2.4 dans **Ressources Humaines/<dossier du
+collaborateur>**, puis enregistré comme document administratif. Le chemin réutilise
+le dossier RH existant. Une copie carrée de 320 px, sans métadonnées, est stockée dans
+le bucket **privé** `hr-portraits` pour l’affichage automatique. Les références
+`people.photo_document_id` / `photo_storage_path` sont validées ensemble : bon
+collaborateur, même société, document Drive image et objet réellement présent.
+Les lectures suivent les RLS RH existantes (Marin : soi ; Capitaine : périmètre RH).
+Aucune URL publique de portrait n’est créée. Pas de nouvelle version du lanceur.
+
+La photo remplace les initiales dans la liste RH et l’en-tête de fiche, et apparaît
+dans les cartes de l’organigramme. Sans photo, les initiales RH restent affichées.
+**Inclure les photos dans les exports** contrôle PDF/PNG/SVG, indépendamment de
+l’affichage à l’écran. Les images sont embarquées dans les fichiers. Si une photo
+référencée ne peut pas être chargée, une alerte propose Actualiser ou l’export sans
+photos ; aucun export « avec photos » incomplet n’est présenté comme réussi.
+Retirer/remplacer la photo conserve l’original dans les documents RH et supprime
+uniquement l’ancienne miniature devenue inutilisée. Le document utilisé comme
+photo ne peut pas être supprimé avant retrait de la photo du profil.
+
+La responsabilité d’affichage de Julien LECOCQ devient **Capitaine d’Armement -
+Superintendant Technique**, au même rang. Les listes de contacts reprennent les
+fonctions définies dans les responsabilités liées aux personnes. La qualification
+RH source n’est pas modifiée par cette personnalisation de l’organigramme.
+
+Validation : tests des avatars, téléversement/erreurs/archivage, filtrage des
+bordées, deux présentations, présence/absence des images et PDF d’une page ;
+`supabase/tests/hr_portraits_test.sql` valide les rôles réels et les références
+forgées dans une transaction annulée. Compléter avec les tests SQL Organigramme et
+Drive RH. La préversion garde les photos ajoutées uniquement en mémoire locale.
+
+Contrôle visuel du 26 septembre 2026, sur données fictives :
+
+| Point du concept | Résultat vérifié dans le navigateur |
+| --- | --- |
+| Diagramme prioritaire | Premier panneau, réglages de 300 px à droite sur bureau. |
+| Hiérarchie des actions | Onglets soulignés, PDF dans l’en-tête, image dans les réglages. |
+| Palette | Marine, sarcelle et gris clair ; logo et navigation SeaPilot existants conservés. |
+| Édition | Tiroirs bordées/structure avec Échap ; personnes déjà affectées exclues. |
+| Lisibilité | Zoom initial 90 %, centrage du dirigeant, vue Ajuster et agrandissement disponibles. |
+| Écran étroit | Vérifié à 390 px : aucun débordement de page, réglages après le diagramme. |
+| Fichiers | PDF d’une page et PNG téléchargés puis inspectés, icônes navires incorporées. |
+
+Les données, fonctions et liens réels du module sont conservés : les noms, avatars
+et compteurs fictifs du concept graphique ne constituent pas une source métier.
 
 ## Données et actualisation
 
@@ -24,7 +83,11 @@ crée deux bordées **vides** par navire actif (Bordée 1 et Bordée 2), sans im
 les équipes du Planning. Composer les bordées permet de créer, renommer, supprimer
 une bordée, sélectionner ses membres et préciser leur fonction à bord. Une fonction
 laissée vide suit la fiche RH. Une sélection vide reste vide après actualisation.
-La recherche ne retire pas les personnes déjà sélectionnées.
+La recherche ne retire pas les personnes déjà sélectionnées. Le sélecteur masque
+les collaborateurs déjà présents dans une autre composition manuelle, même sur le
+même navire. L’édition conserve les membres de la bordée ouverte, y compris après
+renommage ou décochage. Les doublons historiques sont conservés, sans suppression
+silencieuse ; il n’y a pas de nouvelle contrainte d’unicité en base.
 
 Les tables `organigramme_watches` et `organigramme_watch_members` conservent ces
 compositions par société ; la RPC `save_organigramme_watch` les remplace atomiquement
@@ -105,10 +168,10 @@ est courante et partagée par société, pas historisée à la date du Planning.
 
 ## Exports
 
-- Trois présentations : Par navire et bordée, Par bordée (même nom de bordée
-  regroupé entre navires), Par fonction. Le Capitaine est toujours classé en premier
-  au sein d'une bordée. L'aperçu s'ajuste initialement à la largeur disponible ;
-  les pourcentages de zoom permettent ensuite de lire les détails.
+- Deux présentations : **Par navire** (avec les bordées sous chaque navire) et
+  **Par fonction**. La vue autonome Par bordée est supprimée. Le Capitaine reste
+  premier au sein d’une bordée. L’aperçu commence à 90 %, centré sur le dirigeant ;
+  Ajuster donne une vue d’ensemble. Le bouton Agrandir masque les réglages.
 - PDF vectoriel sur **une seule page paysage**, contenant toutes les catégories,
   tous les navires, les bordées, les personnes et les liens de la sélection.
   Logo BBTM, date, présentation et référence REP 03-B / fichier d'origine conservés.
@@ -130,7 +193,7 @@ est courante et partagée par société, pas historisée à la date du Planning.
 Le filtre **Navires à afficher** permet de cocher plusieurs navires, avec un compteur,
 **Tous les navires** et **Aucun navire**. Tous est le choix initial et inclut les
 navires nouvellement composés après actualisation. Une sélection explicite, y compris
-vide, reste conservée entre les trois vues et les actualisations tant que le module
+vide, reste conservée entre les deux vues et les actualisations tant que le module
 reste ouvert. Les personnes sans affectation ne sont affichées qu'en mode Tous.
 Les listes du personnel et d'urgence gardent leurs propres sélections.
 
@@ -185,7 +248,7 @@ Les mêmes droits Administrateur/Direction s'appliquent à ces coordonnées et e
 ## Validation et retour arrière
 
 Tests Vitest du modèle, des rangs, du diagramme, des profils, du compositeur de bordées,
-des sélections et des trois PDF d'une page ; test SQL transactionnel
+des sélections et des deux PDF d'une page ; test SQL transactionnel
 `supabase/tests/organigramme_access_test.sql` sur de vrais rôles authentifiés,
 terminé par ROLLBACK, couvrant aussi l'isolation par société, les sélections vides,
 le remplacement atomique et l'indépendance du Planning. Contrôler aussi les PDF et
