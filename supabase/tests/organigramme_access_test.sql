@@ -35,6 +35,7 @@ begin
     if role_name in ('admin','direction') then
       snapshot:=public.organigramme_snapshot_v2(current_date);
       assert exists(select 1 from jsonb_array_elements(snapshot->'people') p where (p->>'id')::bigint=person), 'Active person missing';
+      assert exists(select 1 from jsonb_array_elements(snapshot->'people') p where (p->>'id')::bigint=person and p->>'firstName'='Org' and p->>'lastName'='ACTIVE'), 'Structured personnel names missing';
       assert not exists(select 1 from jsonb_array_elements(snapshot->'people') p where (p->>'id')::bigint in (departed,future_person,other_person)), 'Date/company scope leaked';
       assert not exists(select 1 from jsonb_array_elements(snapshot->'memberships') m where (m->>'personId')::bigint=person), 'Planning leaked into default composition';
       assert not exists(select 1 from jsonb_array_elements(snapshot->'people') p where p ? 'emergency_contact_phone' or p ? 'emergency_contact_name' or p ? 'birth_date' or p ? 'sailor_number'), 'Private HR fields leaked';

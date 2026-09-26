@@ -18,7 +18,8 @@ export async function buildOrgContactsPdf(documents: OrgContactsSheet[], asOf: s
   documents.forEach((document, index) => {
     // A separate sheet is mandatory even if the preceding list leaves space on its last page.
     if (index) pdf.addPage();
-    const people = groupOrgContacts(document.people).flatMap((group) => group.people);
+    const groups = groupOrgContacts(document.people);
+    const people = groups.flatMap((group) => group.people);
     const title = document.kind === 'personnel' ? 'Liste du personnel' : 'Numéros d’urgence';
     const isEmergency = document.kind === 'emergency';
     const heading: [number, number, number] = isEmergency ? [142, 45, 62] : [18, 54, 75];
@@ -26,25 +27,43 @@ export async function buildOrgContactsPdf(documents: OrgContactsSheet[], asOf: s
     const border: [number, number, number] = isEmergency ? [232, 204, 209] : [215, 227, 232];
     const stripe: [number, number, number] = isEmergency ? [252, 243, 244] : [243, 248, 249];
     const accent: [number, number, number] = isEmergency ? [180, 77, 93] : [27, 136, 140];
-    autoTable(pdf, {
-      startY: 43, margin: { top: 43, left: 12, right: 12, bottom: 18 },
-      head: [['Fonction', 'Nom / prénom', 'Email', 'Téléphone']],
-      body: people.map((person) => [person.functionLabel, person.name, person.email || 'Non renseigné', person.phone || 'Non renseigné']),
-      theme: 'grid', rowPageBreak: 'avoid', showHead: 'everyPage',
-      styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 2.5, textColor: text, lineColor: border, lineWidth: 0.15, overflow: 'linebreak', valign: 'middle' },
-      headStyles: { fillColor: heading, textColor: 255, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: stripe },
-      columnStyles: { 0: { cellWidth: 38 }, 1: { cellWidth: 43 }, 2: { cellWidth: 68 }, 3: { cellWidth: 37, textColor: heading, fontStyle: isEmergency ? 'bold' : 'normal' } },
-      didDrawPage: () => {
-        pdf.setFillColor(...heading); pdf.rect(0, 0, 210, 3, 'F');
-        // Embed the original BBTM asset without applying the document's color theme to it.
-        pdf.addImage(logoBytes!, 'PNG', 12, 8, logo.width * logoScale, logo.height * logoScale);
-        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(17); pdf.setTextColor(...heading); pdf.text(title, 41, 17);
-        pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); pdf.setTextColor(...text);
-        pdf.text(`BBTM · Situation au ${asOf.split('-').reverse().join('/')}`, 41, 24);
-        pdf.setFontSize(8); pdf.text(`${people.length} personne(s) · Classement par fonction`, 12, 34);
-        pdf.setDrawColor(...accent); pdf.line(12, 38, 198, 38);
-      },
+    let nextY = 43;
+    const decoratedPages = new Set<number>();
+    groups.forEach((group) => {
+      autoTable(pdf, {
+        startY: nextY, margin: { top: 43, left: 12, right: 12, bottom: 18 },
+        head: [[{ content: group.functionLabel, colSpan: 3 }], ['Prénom NOM', 'Email', 'Téléphone']],
+        body: group.people.map((person) => [person.name, person.email || 'Non renseigné', person.phone || 'Non renseigné']),
+        theme: 'grid', rowPageBreak: 'avoid', showHead: 'everyPage',
+        styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 2, textColor: text, lineColor: border, lineWidth: 0.15, overflow: 'linebreak', valign: 'middle' },
+        headStyles: { fillColor: heading, textColor: 255, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: stripe },
+        columnStyles: { 0: { cellWidth: 62, cellPadding: { top: 2, bottom: 2, left: 6, right: 2 } }, 1: { cellWidth: 84 }, 2: { cellWidth: 40, textColor: heading, fontStyle: isEmergency ? 'bold' : 'normal' } },
+        didParseCell: (cell) => {
+          if (cell.section === 'head' && cell.row.index === 0) cell.cell.styles.fontSize = 10;
+          if (cell.section === 'head' && cell.row.index === 1) { cell.cell.styles.fillColor = stripe; cell.cell.styles.textColor = heading; }
+        },
+        willDrawPage: ({ table, cursor }) => {
+          // Keep a function heading with its first person, without an empty leading page for large groups.
+          if (cursor && cursor.y > 43 && cursor.y + table.getHeadHeight(table.columns) + (table.body[0]?.height || 0) > 279) {
+            pdf.addPage(); cursor.y = 43;
+          }
+        },
+        didDrawPage: () => {
+          const page = pdf.getCurrentPageInfo().pageNumber;
+          if (decoratedPages.has(page)) return;
+          decoratedPages.add(page);
+          pdf.setFillColor(...heading); pdf.rect(0, 0, 210, 3, 'F');
+          // Embed the original BBTM asset without applying the document's color theme to it.
+          pdf.addImage(logoBytes!, 'PNG', 12, 8, logo.width * logoScale, logo.height * logoScale);
+          pdf.setFont('helvetica', 'bold'); pdf.setFontSize(17); pdf.setTextColor(...heading); pdf.text(title, 41, 17);
+          pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); pdf.setTextColor(...text);
+          pdf.text(`BBTM · Situation au ${asOf.split('-').reverse().join('/')}`, 41, 24);
+          pdf.setFontSize(8); pdf.text(`${people.length} personne(s) · Par fonction, puis par nom de famille`, 12, 34);
+          pdf.setDrawColor(...accent); pdf.line(12, 38, 198, 38);
+        },
+        didDrawCell: ({ section, cell }) => { if (section === 'body') nextY = cell.y + cell.height + 4; },
+      });
     });
   });
   for (let page = 1; page <= pdf.getNumberOfPages(); page++) {
