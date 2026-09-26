@@ -66,7 +66,7 @@ export function getVisibleModulesForPermissions(
     permissions
       .filter((permission) => permission.isVisible && roles.includes(permission.roleKey)
         && (permission.moduleKey !== 'admin' || permission.roleKey === 'admin')
-        && (permission.moduleKey !== 'disciplinary' || ['admin', 'direction'].includes(permission.roleKey)))
+        && (!['disciplinary', 'organigramme'].includes(permission.moduleKey) || ['admin', 'direction'].includes(permission.roleKey)))
       .map((permission) => permission.moduleKey),
   );
 
@@ -122,6 +122,9 @@ export async function setNavigationPermission(
   }
   if (moduleKey === 'disciplinary' && isVisible && !['admin', 'direction'].includes(roleKey)) {
     throw new Error('Les sanctions disciplinaires sont réservées à Administration et Direction.');
+  }
+  if (moduleKey === 'organigramme' && isVisible && !['admin', 'direction'].includes(roleKey)) {
+    throw new Error('L’organigramme est réservé à Administrateur et Direction.');
   }
   const { error } = await client.from('role_module_permissions').upsert(
     {

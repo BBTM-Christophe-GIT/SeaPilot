@@ -51,6 +51,7 @@ describe('module access', () => {
       ['Achats', 'Notes de frais', 'submenu'],
       ['Planning', 'Planning', 'direct'],
       ['Ressources Humaines', 'RH / Brevets', 'submenu'],
+      ['Ressources Humaines', 'Organigramme', 'submenu'],
       ['Ressources Humaines', 'Entretien Professionnel et d’Evaluation', 'submenu'],
       ['Ressources Humaines', 'Suivi du Temps de travail', 'submenu'],
       ['Ressources Humaines', 'Sanctions Disciplinaires', 'submenu'],

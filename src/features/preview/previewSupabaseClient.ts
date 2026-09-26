@@ -1,4 +1,5 @@
 import { ACTION_PLAN_FLEET_PREVIEW, ACTION_PLAN_PREVIEW_VESSELS } from './actionPlanFleetPreview';
+import { ORG_DEMO } from '../organigramme/organigrammeFixtures';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { PREVIEW_LINK_CATEGORIES, PREVIEW_USEFUL_LINKS } from '../usefulLinks/usefulLinksPreview';
 
@@ -1807,6 +1808,7 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'organigramme_snapshot') return createPreviewQuery({ data: { ...ORG_DEMO, asOf: args.p_as_of }, error: null });
   if (functionName === 'planning_save_personal_display_settings') {
     const row = { active_filter_enabled: args.p_active_filter_enabled === true };
     PREVIEW_ROWS.planning_personal_display_settings = [row];
