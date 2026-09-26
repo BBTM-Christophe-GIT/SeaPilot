@@ -5,13 +5,13 @@ import { describe, expect, it } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
 import { buildOrgImage, buildOrgPdf, orgPdfGeometry } from './organigrammeExport';
 import { buildOrganigramme, type OrgOptions } from './organigrammeModel';
-import { ORG_DEMO, ORG_LINKS_DEMO } from './organigrammeFixtures';
+import { ORG_DEMO, ORG_LINKS_DEMO, ORG_HIERARCHY_DEMO } from './organigrammeFixtures';
 import { layoutOrganigramme } from './organigrammeDiagram';
 
 const options: OrgOptions = { view: 'vessels', vesselIds: [], includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
 describe('organigramme exports', () => {
-  it.each(['vessels', 'functions'] as const)('exports the complete %s chart on exactly one landscape page', async (view) => {
-    const sections = buildOrganigramme(ORG_LINKS_DEMO, { ...options, view });
+  it.each(['vessels', 'watches', 'functions'] as const)('exports the complete %s chart on exactly one landscape page', async (view) => {
+    const sections = buildOrganigramme(ORG_HIERARCHY_DEMO, { ...options, view });
     const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));
     const blob = await buildOrgPdf(sections, true, ORG_DEMO.asOf, view, logo);
     const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -20,9 +20,9 @@ describe('organigramme exports', () => {
     expect(pdf.getPageCount()).toBe(1);
     expect(pdf.getPages().every((page) => page.getWidth() > page.getHeight())).toBe(true);
     expect(bytes.byteLength).toBeGreaterThan(10000);
-    if (process.env.ORG_EXPORT_QA_DIR && view === 'vessels') {
+    if (process.env.ORG_EXPORT_QA_DIR) {
       await mkdir(process.env.ORG_EXPORT_QA_DIR, { recursive: true });
-      await writeFile(join(process.env.ORG_EXPORT_QA_DIR, 'BBTM_Organigramme_exemple.pdf'), bytes);
+      await writeFile(join(process.env.ORG_EXPORT_QA_DIR, `BBTM_Organigramme_${view}.pdf`), bytes);
     }
   });
   it('keeps a wide fleet on one page and fits every card between header and footer', async () => {

@@ -1,5 +1,5 @@
-import { layoutOrganigramme, ORG_COLORS, organigrammeSvg, type OrgDiagram } from './organigrammeDiagram';
-import { ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, type OrgSection, type OrganigrammeView } from './organigrammeModel';
+import { layoutOrganigramme, ORG_COLORS, orgBoxTextColor, organigrammeSvg, type OrgDiagram } from './organigrammeDiagram';
+import { ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, ORG_VIEW_LABELS, type OrgSection, type OrganigrammeView } from './organigrammeModel';
 
 export function downloadOrgBlob(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
@@ -61,7 +61,7 @@ export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, 
         baseline += line.size + 5;
         pdf.setFont('helvetica', line.bold ? 'bold' : 'normal');
         pdf.setFontSize(line.size * scale * 72 / 25.4);
-        pdf.setTextColor(box.tone === 'navy' ? '#ffffff' : line.bold ? ORG_COLORS.ink : ORG_COLORS.muted);
+        pdf.setTextColor(orgBoxTextColor(box, line.bold));
         pdf.text(line.text, offsetX + (box.x + box.width / 2) * scale, offsetY + (baseline - 5) * scale, { align: 'center' });
       });
     });
@@ -73,7 +73,7 @@ export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, 
   pdf.setFont('helvetica', 'bold'); pdf.setFontSize(19); pdf.setTextColor(ORG_COLORS.navy);
   pdf.text('Organigramme BBTM', 49, 17);
   pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10);
-  pdf.text(`${view === 'vessels' ? 'Par navire et bordée' : 'Par fonction'} · Situation au ${asOf.split('-').reverse().join('/')}`, 49, 25);
+  pdf.text(`${ORG_VIEW_LABELS[view]} · Situation au ${asOf.split('-').reverse().join('/')}`, 49, 25);
   pdf.setFontSize(9); pdf.text(ORGANIGRAMME_REFERENCE, width - 12, 16, { align: 'right' });
   pdf.setDrawColor('#1b888c'); pdf.line(12, 31, width - 12, 31);
   draw();

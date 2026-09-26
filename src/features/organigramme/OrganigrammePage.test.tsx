@@ -10,6 +10,19 @@ function setup(roles: RoleKey[] = ['direction'], rpc = vi.fn().mockResolvedValue
   return rpc;
 }
 describe('OrganigrammePage', () => {
+  it('edits a hierarchy rank independently from display order and renders the saved level', async () => {
+    let data = ORG_DEMO;
+    const rpc = setup(['direction'], vi.fn().mockImplementation(async (name, args) => {
+      if (name === 'save_organigramme_responsibility') data = { ...data, support: data.support.map((entry) => entry.id === args.p_id ? { ...entry, rank: args.p_rank } : entry) };
+      return { data, error: null };
+    }));
+    await screen.findByRole('img'); fireEvent.click(screen.getByRole('button', { name: 'Modifier la structure' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier Jules ROUX' }));
+    fireEvent.change(screen.getByLabelText('Rang hiérarchique'), { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('save_organigramme_responsibility', expect.objectContaining({ p_rank: '4', p_position: 1 })));
+    await waitFor(() => expect(decodeURIComponent(screen.getByRole('img').getAttribute('src')!)).toContain('Rang 4'));
+  });
   it('keeps independent contact selections when switching documents and blocks their exports on refresh failure', async () => {
     const rpc = setup(); await screen.findByRole('img');
     fireEvent.click(screen.getByRole('button', { name: 'Liste du personnel' }));
@@ -64,7 +77,7 @@ describe('OrganigrammePage', () => {
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('save_organigramme_link', expect.objectContaining({ p_id: 99, p_label: 'Conseil' })));
   });
   it('retains the draft and shows a save error without reporting success', async () => {
-    setup(['direction'], vi.fn().mockImplementation(async (name) => name === 'organigramme_snapshot' ? { data: ORG_DEMO, error: null } : { data: null, error: { message: 'denied' } }));
+    setup(['direction'], vi.fn().mockImplementation(async (name) => name === 'organigramme_snapshot_v2' ? { data: ORG_DEMO, error: null } : { data: null, error: { message: 'denied' } }));
     await screen.findByRole('img'); fireEvent.click(screen.getByRole('button', { name: 'Modifier la structure' }));
     fireEvent.change(screen.getByLabelText('Nouveau nom'), { target: { value: 'Partenaires' } });
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le nom' }));
@@ -93,7 +106,7 @@ describe('OrganigrammePage', () => {
   it('reloads on date changes and when returning to the page', async () => {
     const rpc = setup(); await screen.findByRole('img');
     fireEvent.change(screen.getByLabelText('Date de situation'), { target: { value: '2026-08-01' } });
-    await waitFor(() => expect(rpc).toHaveBeenLastCalledWith('organigramme_snapshot', { p_as_of: '2026-08-01' }));
+    await waitFor(() => expect(rpc).toHaveBeenLastCalledWith('organigramme_snapshot_v2', { p_as_of: '2026-08-01' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Exporter le PDF' })).toBeEnabled());
     fireEvent(window, new Event('focus'));
     await waitFor(() => expect(rpc).toHaveBeenCalledTimes(3));
@@ -104,6 +117,6 @@ describe('OrganigrammePage', () => {
     fireEvent.change(screen.getByLabelText('Nom'), { target: { value: 'Cabinet test' } });
     fireEvent.change(screen.getByLabelText('Fonction ou accompagnement'), { target: { value: 'Assistance technique' } });
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
-    await waitFor(() => expect(rpc).toHaveBeenCalledWith('save_organigramme_support', expect.objectContaining({ p_name: 'Cabinet test', p_function_label: 'Assistance technique', p_category: 'external' })));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('save_organigramme_responsibility', expect.objectContaining({ p_name: 'Cabinet test', p_function_label: 'Assistance technique', p_category: 'external' })));
   });
 });

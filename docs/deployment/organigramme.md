@@ -1,30 +1,44 @@
 # Organigramme RH
 
-Version 3.57.0. Le module `Ressources Humaines → Organigramme`, à côté de RH / Brevets,
+Version 3.57.1. Le module `Ressources Humaines → Organigramme`, à côté de RH / Brevets,
 est réservé aux profils Administrateur et Direction, y compris par URL directe.
 Appliquer `20260926060139_organigramme.sql`,
-`20260926122325_organigramme_categories_links.sql` puis
-`20260926125755_organigramme_personnel_contacts.sql` avant de déployer le client.
+`20260926122325_organigramme_categories_links.sql`,
+`20260926125755_organigramme_personnel_contacts.sql` puis
+`20260926184326_organigramme_hierarchy_default_watches.sql` et
+`20260926185333_organigramme_watch_function_inheritance.sql` avant de déployer le client.
 
 ## Données et actualisation
 
-La RPC `organigramme_snapshot` renvoie les noms, fonctions, emails, téléphones,
+La RPC `organigramme_snapshot_v2` renvoie les noms, fonctions, emails, téléphones,
 navires, bordées et responsabilités de la société active. Elle utilise les droits de
 l'appelant (SECURITY INVOKER), vérifie le profil, l'appartenance à la société et
 la permission du module. Les coordonnées proviennent de `people.email` et
 `people.phone` ; les contacts d'urgence familiaux et les autres données privées
 du dossier RH ne sont pas renvoyés. Aucune copie de dossier RH n'est créée.
 
-À la date choisie, les journées du Planning ont priorité sur les affectations,
-puis les périodes importées, puis les bordées permanentes. La priorité s'applique
-par personne, pour éviter de conserver un ancien rattachement après une mutation.
-Les affectations annulées, les personnes sorties et les navires sortis sont exclus.
-Les affectations provisoires restent incluses : il s'agit d'une structure d'équipe,
-pas d'une crew list attestant des embarquements. Repos et congés ne retirent pas
-une personne de son équipe. Les rattachements simultanés sont conservés ; la vue
-par fonction regroupe leurs indications sur une seule carte par marin et fonction.
-Les bordées permanentes ne sont pas historisées : elles servent de complément à la
-date choisie, sans prétendre reconstituer un organigramme historique certifié.
+Les compositions sont désormais propres à l'organigramme : aucune lecture ni
+écriture des affectations, journées, périodes ou bordées du Planning. La migration
+crée deux bordées **vides** par navire actif (Bordée 1 et Bordée 2), sans importer
+les équipes du Planning. Composer les bordées permet de créer, renommer, supprimer
+une bordée, sélectionner ses membres et préciser leur fonction à bord. Une fonction
+laissée vide suit la fiche RH. Une sélection vide reste vide après actualisation.
+La recherche ne retire pas les personnes déjà sélectionnées.
+
+Les tables `organigramme_watches` et `organigramme_watch_members` conservent ces
+compositions par société ; la RPC `save_organigramme_watch` les remplace atomiquement
+après contrôle des personnes et du navire. RLS et RPC imposent les mêmes droits
+Administrateur/Direction et refusent les données d'une autre société. La suppression
+d'une bordée supprime uniquement ses membres dans l'organigramme.
+
+La date filtre les personnes et navires présents, mais les compositions sont
+courantes, sans historique. Leur édition est disponible à la date du jour.
+Les personnes sorties et les navires sortis sont exclus. Un marin peut figurer
+dans plusieurs bordées ; la vue par fonction regroupe ces indications sur une carte
+par marin et fonction. Les marins sans bordée apparaissent dans Sans affectation,
+regroupés par fonction pour éviter une colonne excessivement longue avant composition.
+L'ancienne RPC `organigramme_snapshot` reste disponible pour les clients déjà
+ouverts avant la livraison ; le nouveau client utilise exclusivement la v2.
 
 Actualisation à l'ouverture, toutes les 60 secondes lorsque la page est visible,
 au retour sur la fenêtre et via Actualiser. Les exports sont désactivés pendant le
@@ -32,7 +46,8 @@ chargement et en cas d'erreur. Aucun repli silencieux vers des données fictives
 
 ## Structure complémentaire et référence
 
-Référence conservée : **87-Organigramme.docx**, pied de page **REP 03-B**.
+Référence du modèle actuel : **87-Organigramme.pdf**, pied de page **REP 03-B**.
+Le document initial **87-Organigramme.docx** reste la référence de provenance.
 L'original fourni reste hors des assets publics. Les noms et adresses du document
 ne sont pas copiés dans la préversion publique, qui utilise des données fictives.
 
@@ -43,7 +58,18 @@ fiches RH quand la correspondance prénom/nom est unique et active. Les noms sui
 ensuite les fiches RH et les personnes sorties disparaissent du diagramme.
 La rubrique Modifier la structure permet d'ajouter, modifier, ordonner et supprimer
 les responsabilités. Les noms et missions libres restent à maintenir manuellement.
-Ces entrées décrivent des responsabilités ; elles n'inventent pas de liens hiérarchiques.
+Le champ `hierarchy_rank` est distinct de l'ordre d'affichage. Les rangs numériques
+forment des niveaux verticaux : rang 1 en haut, puis 2, etc. Le statut **Support**
+place les personnes sur les côtés, en gris avec des branches en pointillés.
+Les responsabilités sans rang restent identifiées Rang à définir. L'ordre départage
+les personnes de même rang. La RPC `save_organigramme_responsibility` enregistre
+ces informations ; l'ancienne RPC reste compatible avec les clients précédents.
+
+La migration initialise, pour BBTM uniquement, Benjamin BON au rang 1,
+Christophe MINASSIAN et Julien LECOCQ au rang 2, Adam DEBORDEAUX au rang 4,
+Sophie HAMEL et Antoine MONCEAUX en Support. Les intervenants externes sont à gauche
+de la hiérarchie. Ces niveaux ne définissent pas de rattachement individuel entre
+deux personnes. Tous les rangs restent modifiables dans Modifier la structure.
 
 ## Catégories et liens personnalisés
 
@@ -75,6 +101,10 @@ est courante et partagée par société, pas historisée à la date du Planning.
 
 ## Exports
 
+- Trois présentations : Par navire et bordée, Par bordée (même nom de bordée
+  regroupé entre navires), Par fonction. Le Capitaine est toujours classé en premier
+  au sein d'une bordée. L'aperçu s'ajuste initialement à la largeur disponible ;
+  les pourcentages de zoom permettent ensuite de lire les détails.
 - PDF vectoriel sur **une seule page paysage**, contenant toutes les catégories,
   tous les navires, les bordées, les personnes et les liens de la sélection.
   Logo BBTM, date, présentation et référence REP 03-B / fichier d'origine conservés.
@@ -85,12 +115,13 @@ est courante et partagée par société, pas historisée à la date du Planning.
   utiliser un format de papier plus petit.
 - PNG haute résolution ou SVG vectoriel : uniquement le diagramme, sans en-tête
   ni pied de page. L'option Afficher les navires retire aussi leurs mentions dans
-  la vue par fonction. Le PNG limite sa résolution pour respecter la mémoire du
+  toutes les vues. Le PNG limite sa résolution pour respecter la mémoire du
   navigateur ; le SVG garde la précision intégrale.
 - Les filtres (navire, direction, externes, non-affectés) s'appliquent à l'aperçu
   comme aux exports. Les navires sont classés du plus long au plus court et affichés
   côte à côte sur une seule rangée, avec leurs bordées en dessous. Les autres
-  catégories sont centrées au-dessus et au-dessous de la flotte.
+  catégories occupent le dessus et le dessous de la flotte ; les supports sont
+  latéraux et les intervenants externes restent à gauche de la direction.
 
 ## Liste du personnel et numéros d'urgence
 
@@ -123,9 +154,13 @@ Les mêmes droits Administrateur/Direction s'appliquent à ces coordonnées et e
 
 ## Validation et retour arrière
 
-Tests Vitest du modèle, du diagramme, des profils, des sélections et des PDF ; test SQL transactionnel
+Tests Vitest du modèle, des rangs, du diagramme, des profils, du compositeur de bordées,
+des sélections et des trois PDF d'une page ; test SQL transactionnel
 `supabase/tests/organigramme_access_test.sql` sur de vrais rôles authentifiés,
-terminé par ROLLBACK. Contrôler aussi les PDF et PNG générés dans un navigateur.
+terminé par ROLLBACK, couvrant aussi l'isolation par société, les sélections vides,
+le remplacement atomique et l'indépendance du Planning. Contrôler aussi les PDF et
+PNG générés dans un navigateur. La préversion permet des compositions et rangs
+fictifs en mémoire ; ils sont réinitialisés au rechargement complet de la page.
 Pour masquer le module, désactiver ses permissions Admin/Direction. Un retour du
 client à la version précédente peut conserver la migration additive et les saisies.
 Ne pas supprimer la table de responsabilités sans exporter ces données.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildOrganigramme, orgLocalDate, resolveMemberships, type OrgOptions } from './organigrammeModel';
 import { layoutOrganigramme, organigrammeSvg, wrapOrgText } from './organigrammeDiagram';
-import { ORG_DEMO, ORG_LINKS_DEMO } from './organigrammeFixtures';
+import { ORG_DEMO, ORG_LINKS_DEMO, ORG_HIERARCHY_DEMO } from './organigrammeFixtures';
 import { canAccessModule } from '../permissions/moduleAccess';
 import { getVisibleModulesForPermissions } from '../permissions/navigationPermissions';
 
@@ -38,15 +38,52 @@ describe('organigramme', () => {
     expect(sections[1].columns[0].members.map((person) => person.functionLabel)).toEqual(['Capitaine', 'Chef Mécanicien', '2nd Capitaine', 'Matelot polyvalent']);
     expect(sections[1].columns.map((column) => column.label)).toEqual(['Bordée 1', 'Bordée 2']);
   });
-  it('replaces stale permanent rows when a sailor moves to a dated assignment', () => {
-    const data = { ...ORG_DEMO, memberships: [...ORG_DEMO.memberships, { personId: 2, vesselId: 2, watchGroup: 'Bordée 2', functionLabel: 'Capitaine', source: 'board' as const }] };
-    expect(resolveMemberships(data).filter((row) => row.personId === 2)).toHaveLength(1);
-    expect(resolveMemberships(data).find((row) => row.personId === 2)?.vesselId).toBe(1);
-  });
-  it('uses day then assignment then period then board, without duplicated memberships', () => {
+  it('ignores every Planning source and deduplicates only manually saved compositions', () => {
     const row = ORG_DEMO.memberships[0];
-    const resolved = resolveMemberships({ ...ORG_DEMO, memberships: [row, row, { ...row, source: 'period' }, { ...row, source: 'day', vesselId: 2 }] });
-    expect(resolved).toEqual([{ ...row, source: 'day', vesselId: 2 }]);
+    const resolved = resolveMemberships({ ...ORG_DEMO, memberships: [row, row,
+      ...(['board','day','assignment','period'] as const).map((source) => ({ ...row, source, vesselId: 2 })),
+    ] });
+    expect(resolved).toEqual([row]);
+    expect(resolveMemberships({ ...ORG_DEMO, memberships: [{ ...row, source: 'board' }] })).toEqual([]);
+  });
+  it('follows the current HR function when a watch member has no override', () => {
+    const data = { ...ORG_DEMO, memberships: [{ ...ORG_DEMO.memberships[0], functionLabel: '' }] };
+    const first = buildOrganigramme(data, options).find((section) => section.kind === 'vessel')!.columns[0].members[0];
+    const changed = { ...data, people: data.people.map((person) => person.id === first.id ? { ...person, functionLabel: 'Chef Mécanicien' } : person) };
+    expect(first.functionLabel).toBe('Capitaine');
+    expect(buildOrganigramme(changed, options).find((section) => section.kind === 'vessel')!.columns[0].members[0].functionLabel).toBe('Chef Mécanicien');
+    expect(data.memberships[0].functionLabel).toBe('');
+  });
+  it('groups people awaiting composition by function instead of one long column', () => {
+    const section = buildOrganigramme({ ...ORG_DEMO, memberships: [] }, options).find((item) => item.kind === 'unassigned')!;
+    expect(section.columns.length).toBeGreaterThan(1);
+    expect(section.columns[0].label).toBe('Capitaine');
+    expect(section.columns.flatMap((column) => column.members)).toHaveLength(ORG_DEMO.people.filter((person) => person.population !== 'sedentary').length);
+  });
+  it('groups the same watch across ships, ordered by vessel length and captain first', () => {
+    const sections = buildOrganigramme(ORG_DEMO, { ...options, view: 'watches' });
+    const watches = sections.filter((section) => section.kind === 'watch');
+    expect(watches.map((section) => section.label)).toEqual(['Bordée 1', 'Bordée 2']);
+    expect(watches[0].columns.map((column) => column.label)).toEqual(['GOURY', 'LE ROZEL']);
+    expect(watches[0].columns[0].members[0].functionLabel).toBe('Capitaine');
+    expect(watches[1].columns[1].members).toEqual([]);
+    const hidden = organigrammeSvg(layoutOrganigramme(buildOrganigramme(ORG_LINKS_DEMO, { ...options, view: 'watches', showVessels: false }), false));
+    expect(hidden).not.toContain('GOURY'); expect(hidden).not.toContain('LE ROZEL');
+    expect(hidden).toContain('Bordée 1'); expect(hidden).toContain('Assistance technique');
+  });
+  it('places rank 1 above rank 2 and rank 4, with Support on separate lateral branches', () => {
+    const diagram = layoutOrganigramme(buildOrganigramme(ORG_HIERARCHY_DEMO, options));
+    const card = (name: string) => diagram.boxes.find((box) => box.lines.some((line) => line.text === name))!;
+    const head = card('Camille DUMONT'); const second = card('Jules ROUX'); const fourth = card('Noé THOMAS');
+    expect(head.y + head.height).toBeLessThan(second.y);
+    expect(second.y).toBe(card('Morgan LEROY').y);
+    expect(second.y + second.height).toBeLessThan(fourth.y);
+    for (const name of ['Louise FAURE', 'Alexis DUPONT']) {
+      const support = card(name);
+      expect(support.lines.some((line) => line.text === 'Support')).toBe(true);
+      expect(support.x + support.width < second.x || support.x > card('Morgan LEROY').x + 248).toBe(true);
+    }
+    diagram.boxes.forEach((box, index) => diagram.boxes.slice(index + 1).forEach((other) => expect(box.x >= other.x + other.width || other.x >= box.x + box.width || box.y >= other.y + other.height || other.y >= box.y + box.height).toBe(true)));
   });
   it('retains simultaneous vessels but deduplicates people in the function view', () => {
     const data = { ...ORG_DEMO, memberships: [...ORG_DEMO.memberships, { ...ORG_DEMO.memberships[0], vesselId: 2 }] };
@@ -88,7 +125,7 @@ describe('organigramme', () => {
     headings.slice(1).forEach((box, index) => expect(box.x).toBeGreaterThan(headings[index].x + headings[index].width));
     const otherHeadings = diagram.boxes.filter((box) => box.tone === 'navy' && !box.lines[0].text.startsWith('Navire '));
     expect(otherHeadings[0].y).toBeLessThan(headings[0].y);
-    expect(otherHeadings[1].y).toBeGreaterThan(headings[0].y);
+    expect(otherHeadings[1].y).toBeLessThan(headings[0].y);
     // Every card fits in the sheet and all blocks are disjoint, including the shortest crew.
     diagram.boxes.forEach((box, index) => {
       expect(box.x + box.width).toBeLessThanOrEqual(diagram.width);

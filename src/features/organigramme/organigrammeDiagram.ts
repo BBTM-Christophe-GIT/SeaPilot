@@ -1,9 +1,10 @@
-import type { OrgSection } from './organigrammeModel';
+import { orgRankLabel, type OrgMember, type OrgSection } from './organigrammeModel';
 
-export interface OrgBox { x: number; y: number; width: number; height: number; tone: 'navy' | 'teal' | 'white'; lines: Array<{ text: string; size: number; bold: boolean }> }
+export interface OrgBox { x: number; y: number; width: number; height: number; tone: 'navy' | 'teal' | 'white' | 'leader' | 'support'; lines: Array<{ text: string; size: number; bold: boolean }> }
 export interface OrgLine { x1: number; y1: number; x2: number; y2: number; dashed?: boolean }
 export interface OrgDiagram { width: number; height: number; boxes: OrgBox[]; lines: OrgLine[] }
-export const ORG_COLORS = { navy: '#12364b', teal: '#e5f2f2', white: '#ffffff', ink: '#18394c', muted: '#526978', line: '#9bb7c2', border: '#ccdce3' };
+export const ORG_COLORS = { navy: '#12364b', teal: '#e5f2f2', white: '#ffffff', leader: '#dc640c', support: '#edf0f3', ink: '#18394c', muted: '#526978', line: '#9bb7c2', border: '#ccdce3' };
+export const orgBoxTextColor = (box: OrgBox, bold: boolean) => box.tone === 'navy' || box.tone === 'leader' ? '#ffffff' : bold ? ORG_COLORS.ink : ORG_COLORS.muted;
 
 // Conservative character budget keeps SVG, PNG and PDF text inside the same boxes.
 export function wrapOrgText(text: string, max = 27): string[] {
@@ -45,7 +46,7 @@ function layoutSection(section: OrgSection, showVessels: boolean, sharedHeadingH
     if (hasHeading) diagram.lines.push({ x1: center, y1: y - 16, x2: center, y2: y });
     if (showColumnHeaders) diagram.boxes.push({ x, y, width: 248, height: headerHeight, tone: 'teal', lines: headerLines[index].map((text) => ({ text, size: 13, bold: true })) });
     let cardY = y + headerHeight + (showColumnHeaders ? 18 : 0);
-    const members = column.members.length ? column.members : [{ id: -1, name: 'Aucun marin affecté', functionLabel: '', detail: '' }];
+    const members = column.members.length ? column.members : [{ id: -1, name: 'Bordée à composer', functionLabel: '', detail: '' }];
     members.forEach((person) => {
       const lines = [
         ...wrapOrgText(person.name).map((text) => ({ text, size: 13, bold: true })),
@@ -70,14 +71,87 @@ function layoutSection(section: OrgSection, showVessels: boolean, sharedHeadingH
   return diagram;
 }
 
-/** All vessels occupy one horizontal row; the other sections stay centered above/below. */
+function officeCard(person: OrgMember, x: number, y: number): OrgBox {
+  const lines = [
+    ...wrapOrgText(person.name).map((text) => ({ text, size: 14, bold: true })),
+    ...wrapOrgText(person.functionLabel, 32).filter(Boolean).map((text) => ({ text, size: 11, bold: false })),
+    { text: orgRankLabel(person.rank), size: 10, bold: true },
+  ];
+  return { x, y, width: 248, height: 24 + lines.reduce((total, line) => total + line.size + 5, 0), tone: person.rank === '1' ? 'leader' : person.rank === 'support' ? 'support' : 'white', lines };
+}
+
+/** Ranks form vertical tiers; Support remains on lateral branches, outside the reporting tiers. */
+function layoutOffice(section: OrgSection): OrgDiagram {
+  const members = section.columns.flatMap((column) => column.members);
+  const supports = members.filter((person) => person.rank === 'support');
+  const tiers = new Map<string, OrgMember[]>();
+  members.filter((person) => person.rank !== 'support').forEach((person) => {
+    const key = person.rank || '';
+    tiers.set(key, [...(tiers.get(key) || []), person]);
+  });
+  const rows = [...tiers].sort(([a], [b]) => (Number(a) || 99) - (Number(b) || 99));
+  const centerWidth = Math.max(518, ...rows.map(([, people]) => people.length * 270 - 22));
+  const sideWidth = supports.length ? 294 : 0;
+  const width = centerWidth + sideWidth * 2 + 48;
+  const middle = width / 2;
+  const headingLines = wrapOrgText(section.label, 35).map((text) => ({ text, size: 16, bold: true }));
+  const headingHeight = 24 + headingLines.length * 20;
+  const diagram: OrgDiagram = { width, height: 80, boxes: [{ x: middle - 220, y: 24, width: 440, height: headingHeight, tone: 'navy', lines: headingLines }], lines: [] };
+  let y = 24 + headingHeight + 32;
+  let previous: OrgBox[] = [];
+  let supportY = y;
+  rows.forEach(([rank, people], index) => {
+    const rowWidth = people.length * 270 - 22;
+    const cards = people.map((person, position) => officeCard(person, middle - rowWidth / 2 + position * 270, y));
+    if (previous.length && rank) {
+      const fromY = Math.max(...previous.map((box) => box.y + box.height)) + 16;
+      previous.forEach((box) => diagram.lines.push({ x1: box.x + 124, y1: box.y + box.height, x2: box.x + 124, y2: fromY }));
+      diagram.lines.push({ x1: previous[0].x + 124, y1: fromY, x2: previous.at(-1)!.x + 124, y2: fromY });
+      diagram.lines.push({ x1: middle, y1: fromY, x2: middle, y2: y - 16 });
+      diagram.lines.push({ x1: cards[0].x + 124, y1: y - 16, x2: cards.at(-1)!.x + 124, y2: y - 16 });
+      cards.forEach((box) => diagram.lines.push({ x1: box.x + 124, y1: y - 16, x2: box.x + 124, y2: y }));
+    }
+    diagram.boxes.push(...cards);
+    const bottom = y + Math.max(...cards.map((box) => box.height));
+    if (index === 0) supportY = bottom + 38;
+    previous = rank ? cards : [];
+    y = bottom + 56;
+  });
+  const sides = [supports.filter((_, index) => index % 2 === 0), supports.filter((_, index) => index % 2 === 1)];
+  let supportBottom = supportY;
+  sides.forEach((people, side) => {
+    const x = side === 0 ? 24 : width - 272;
+    const railX = side === 0 ? x + 262 : x - 14;
+    let cardY = supportY;
+    people.forEach((person) => {
+      const box = officeCard(person, x, cardY);
+      diagram.boxes.push(box);
+      diagram.lines.push({ x1: railX, y1: supportY - 24, x2: railX, y2: cardY + box.height / 2, dashed: true });
+      diagram.lines.push({ x1: railX, y1: cardY + box.height / 2, x2: side === 0 ? x + 248 : x, y2: cardY + box.height / 2, dashed: true });
+      cardY += box.height + 18;
+    });
+    if (people.length) diagram.lines.push({ x1: middle, y1: supportY - 24, x2: railX, y2: supportY - 24, dashed: true });
+    supportBottom = Math.max(supportBottom, cardY);
+  });
+  diagram.height = Math.max(y, supportBottom + 24);
+  return diagram;
+}
+
+/** All vessels occupy one horizontal row. External advisers sit alongside the office hierarchy. */
 export function layoutOrganigramme(sections: OrgSection[], showVessels = true): OrgDiagram {
   const vessels = sections.filter((section) => section.kind === 'vessel');
   const headingHeight = Math.max(44, ...vessels.map((section) => 24 + wrapOrgText(section.label, 26).length * 20));
   const rows: OrgDiagram[][] = [];
+  const office = sections.find((section) => section.kind === 'office');
+  const external = sections.find((section) => section.kind === 'external');
   let fleetPlaced = false;
   for (const section of sections) {
-    if (section.kind === 'vessel') {
+    if (section.kind === 'office') {
+      const hierarchy = layoutOffice(section);
+      const advisers = external ? layoutSection({ ...external, columns: [{ key: 'external', label: '', members: external.columns.flatMap((column) => column.members) }] }, showVessels) : null;
+      rows.push(advisers ? [advisers, hierarchy] : [hierarchy]);
+    } else if (section.kind === 'external' && office) continue;
+    else if (section.kind === 'vessel') {
       if (!fleetPlaced) rows.push(vessels.map((vessel) => layoutSection(vessel, showVessels, headingHeight)));
       fleetPlaced = true;
     } else rows.push([layoutSection(section, showVessels)]);
@@ -105,7 +179,7 @@ export function organigrammeSvg(diagram: OrgDiagram): string {
     let baseline = box.y + 14;
     return `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="7" fill="${ORG_COLORS[box.tone]}" stroke="${box.tone === 'white' ? ORG_COLORS.border : ORG_COLORS[box.tone]}"/>${box.lines.map((line) => {
       baseline += line.size + 5;
-      return `<text x="${box.x + box.width / 2}" y="${baseline - 5}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${line.size}" font-weight="${line.bold ? 700 : 400}" fill="${box.tone === 'navy' ? '#ffffff' : line.bold ? ORG_COLORS.ink : ORG_COLORS.muted}">${escapeXml(line.text)}</text>`;
+      return `<text x="${box.x + box.width / 2}" y="${baseline - 5}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${line.size}" font-weight="${line.bold ? 700 : 400}" fill="${orgBoxTextColor(box, line.bold)}">${escapeXml(line.text)}</text>`;
     }).join('')}`;
   }).join('')}</svg>`;
 }
