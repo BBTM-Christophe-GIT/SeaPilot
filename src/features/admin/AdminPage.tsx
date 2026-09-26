@@ -448,8 +448,8 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
                         <label className="role-toggle">
                           <input
                             aria-label={`${module.label} visible pour ${ROLE_LABELS[role]}`}
-                            checked={(module.key === 'admin' && role !== 'admin') || (module.key === 'disciplinary' && !['admin', 'direction'].includes(role)) ? false : permission?.isVisible || false}
-                            disabled={savingNavigationKey !== null || (module.key === 'admin' && role !== 'admin') || (module.key === 'disciplinary' && !['admin', 'direction'].includes(role))}
+                            checked={(module.key === 'admin' && role !== 'admin') || (['disciplinary', 'organigramme'].includes(module.key) && !['admin', 'direction'].includes(role)) ? false : permission?.isVisible || false}
+                            disabled={savingNavigationKey !== null || (module.key === 'admin' && role !== 'admin') || (['disciplinary', 'organigramme'].includes(module.key) && !['admin', 'direction'].includes(role))}
                             onChange={(event) =>
                               void handleNavigationPermissionChange(role, module.key, event.target.checked)
                             }

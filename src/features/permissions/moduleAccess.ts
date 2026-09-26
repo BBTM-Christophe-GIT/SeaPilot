@@ -19,6 +19,7 @@ export type ModuleKey =
   | 'planning'
   | 'fleet'
   | 'humanResources'
+  | 'organigramme'
   | 'annualReviews'
   | 'disciplinary'
   | 'workingTime'
@@ -136,6 +137,13 @@ export const APP_MODULES: AppModule[] = [
     family: 'Ressources Humaines',
     navigationKind: 'submenu',
     allowedRoles: ALL_ROLES,
+  },
+  {
+    key: 'organigramme',
+    label: 'Organigramme',
+    family: 'Ressources Humaines',
+    navigationKind: 'submenu',
+    allowedRoles: ['admin', 'direction'],
   },
   {
     key: 'annualReviews',

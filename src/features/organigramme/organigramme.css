@@ -1,0 +1,74 @@
+.org-page { max-width: 1600px; margin: 0 auto; padding: 26px 30px; color: #18394c; }
+.org-header, .org-actions, .org-toolbar, .org-options, .org-canvas-toolbar, .org-canvas-toolbar > div { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.org-header { justify-content: space-between; margin-bottom: 24px; }
+.org-header h1 { display: flex; gap: 12px; align-items: center; font-size: 27px; margin: 0 0 8px; }
+.org-header p, .org-editor > p { margin: 0; color: #526978; line-height: 1.6; }
+.org-page button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 13px; border: 1px solid #ccdce3; border-radius: 7px; background: #fff; color: #18394c; font-size: 13px; font-weight: 600; }
+.org-page button:hover:not(:disabled) { background: #e5f2f2; }
+.org-page button.org-primary { background: #12364b; color: white; border-color: #12364b; }
+.org-page button.org-primary:hover:not(:disabled) { background: #205571; }
+.org-page button:focus-visible, .org-page input:focus-visible, .org-page select:focus-visible, .org-canvas:focus-visible { outline: 3px solid #249da6; outline-offset: 2px; }
+.org-controls, .org-editor { background: #fff; border: 1px solid #dbe5ea; border-radius: 10px; margin-bottom: 18px; padding: 18px; }
+.org-toolbar { gap: 24px; }
+.org-toolbar > label, .org-editor label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; }
+.org-page input:not([type=checkbox]), .org-page select { min-height: 36px; min-width: 0; border: 1px solid #ccdce3; border-radius: 6px; padding: 6px 10px; background: #fff; color: #18394c; font-size: 13px; }
+.org-tabs { display: flex; gap: 4px; background: #f0f5f7; padding: 4px; border-radius: 8px; }
+.org-tabs button { border: 0; background: transparent; }
+.org-tabs button[aria-pressed=true] { color: white; background: #12364b; }
+.org-page .org-tabs button[aria-pressed=true]:hover:not(:disabled) { background: #205571; }
+.org-options { margin-top: 17px; padding-top: 13px; border-top: 1px solid #edf1f4; gap: 18px; font-size: 12px; }
+.org-options label { display: flex; align-items: center; gap: 7px; }
+.org-options input { accent-color: #167c83; width: 15px; height: 15px; }
+.org-options button { margin-left: auto; }
+.org-canvas-panel { border: 1px solid #dbe5ea; border-radius: 10px; background: white; overflow: hidden; }
+.org-canvas-toolbar { justify-content: space-between; padding: 12px 18px; border-bottom: 1px solid #e3ebef; font-size: 12px; color: #526978; }
+.org-canvas-toolbar label { display: flex; gap: 7px; align-items: center; }
+.org-canvas { overflow: auto; max-height: 72vh; min-height: 330px; padding: 24px; background-color: #f7fafb; background-image: radial-gradient(#d3e0e6 .8px, transparent .8px); background-size: 16px 16px; }
+.org-canvas img { display: block; max-width: none; margin: 0 auto; box-shadow: 0 4px 24px #12364b0a; }
+.org-footer { font-size: 12px; color: #607887; line-height: 1.6; }
+.org-footer p { margin: 12px 0 0; }
+.org-error, .org-notice { border-radius: 7px; padding: 12px 16px; background: #fff1e6; color: #793b16; }
+.org-export-status { padding: 0 18px; }
+.org-download { font-size: 13px; padding: 10px 16px; background: #e5f2f2; border-radius: 7px; }
+.org-download a { font-weight: 600; text-underline-offset: 3px; }
+.org-editor h2 { margin-top: 0; font-size: 18px; }
+.org-editor > p { font-size: 13px; }
+.org-support-list { margin: 14px 0; }
+.org-support-list > div { display: flex; gap: 8px; align-items: center; padding: 9px 0; border-bottom: 1px solid #edf1f4; }
+.org-support-list span { flex: 1; min-width: 0; font-size: 13px; }
+.org-support-list small { display: block; color: #607887; margin-top: 4px; }
+.org-editor fieldset { border: 0; padding: 8px 0 0; display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+.org-editor legend { font-size: 14px; font-weight: 600; }
+.org-editor label { flex: 1 1 170px; }
+.org-editor form + form { margin-top: 20px; }
+.org-editor label { min-width: 0; }
+.org-editor select { width: 100%; text-overflow: ellipsis; }
+.org-editor strong { overflow-wrap: anywhere; }
+.org-document-toolbar, .org-contact-heading, .org-contact-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 18px; }
+.org-document-toolbar > label, .org-contact-toolbar > label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; }
+.org-document-toolbar .org-tabs { flex-wrap: wrap; }
+.org-contact-heading h2 { font-size: 20px; margin: 0 0 8px; }
+.org-contact-heading p, .org-contact-help { font-size: 13px; color: #526978; line-height: 1.6; }
+.org-contact-toolbar { justify-content: flex-start; padding-top: 10px; }
+.org-contact-toolbar > label { flex: 1 1 260px; }
+.org-contact-selection { border: 0; padding: 0; margin: 0; min-width: 0; }
+.org-contact-group { margin-top: 20px; border: 1px solid #dbe5ea; border-radius: 8px; overflow: hidden; }
+.org-contact-group h3 { background: #e5f2f2; font-size: 14px; margin: 0; padding: 12px 14px; }
+.org-contact-group label { display: flex; align-items: center; gap: 10px; }
+.org-contact-group input { accent-color: #167c83; flex-shrink: 0; }
+.org-contact-group h3 span { margin-left: auto; color: #526978; font-size: 12px; white-space: nowrap; }
+.org-contact-table-wrap { overflow-x: auto; }
+.org-contact-group table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; min-width: 570px; }
+.org-contact-group th, .org-contact-group td { padding: 11px 14px; text-align: left; border-bottom: 1px solid #edf1f4; overflow-wrap: anywhere; }
+.org-contact-group th { color: #526978; font-weight: 500; font-size: 12px; }
+.org-contact-group th:last-child { width: 24%; }
+.org-contact-group tr:last-child td { border-bottom: 0; }
+.org-contacts--emergency { border-top: 3px solid #8e2d3e; }
+.org-contacts--emergency .org-contact-heading h2, .org-contacts--emergency .org-contact-group td:last-child { color: #8e2d3e; font-weight: 700; }
+.org-contacts--emergency .org-contact-group { border-color: #e8ccd1; }
+.org-contacts--emergency .org-contact-group h3 { background: #fcf3f4; color: #8e2d3e; }
+.org-contacts--emergency .org-contact-group input { accent-color: #8e2d3e; }
+.org-page .org-contacts--emergency button.org-primary { background: #8e2d3e; border-color: #8e2d3e; }
+.org-page .org-contacts--emergency button.org-primary:hover:not(:disabled) { background: #732437; }
+.org-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media (max-width: 700px) { .org-page { padding: 18px 12px; } .org-header { gap: 16px; } .org-toolbar { gap: 14px; } .org-tabs { flex-basis: 100%; } .org-tabs button { flex: 1; padding: 9px; } .org-canvas-toolbar { gap: 15px; } .org-canvas-toolbar > div { gap: 10px; } .org-options button { margin-left: 0; } .org-canvas { padding: 12px; } .org-support-list > div { flex-wrap: wrap; } .org-support-list span { flex-basis: 100%; } }

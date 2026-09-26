@@ -23,6 +23,7 @@ import { AppShell } from './features/shell/AppShell';
 import type { RoleKey } from './features/permissions/roles';
 import { LIFTING_SECTIONS } from './features/lifting/liftingSections';
 
+const OrganigrammePage = lazy(() => import('./features/organigramme/OrganigrammePage').then((module) => ({ default: module.OrganigrammePage })));
 const UsefulLinksPage = lazy(() => import('./features/usefulLinks/UsefulLinksPage').then((module) => ({ default: module.UsefulLinksPage })));
 const WorkingTimePage = lazy(() => import('./features/workingTime/WorkingTimePage').then((module) => ({ default: module.WorkingTimePage })));
 const ExpenseNotesPage = lazy(() => import('./features/expenseNotes/ExpenseNotesPage').then((module) => ({ default: module.ExpenseNotesPage })));
@@ -95,6 +96,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <FleetPage />
                 ) : module.key === 'humanResources' ? (
                   <HumanResourcesPage />
+                ) : module.key === 'organigramme' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement de l’organigramme…</div>}><OrganigrammePage /></Suspense>
                 ) : module.key === 'annualReviews' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des entretiens…</div>}><AnnualReviewsPage /></Suspense>
                 ) : module.key === 'disciplinary' ? (
