@@ -23,7 +23,8 @@ export interface OrgData { people: OrgPerson[]; vessels: OrgVessel[]; membership
 export interface OrgMember { id: number; name: string; functionLabel: string; detail: string; rank?: OrgRank | null }
 export interface OrgColumn { key: string; label: string; members: OrgMember[]; vesselId?: number }
 export interface OrgSection { key: string; label: string; kind: 'vessel' | 'watch' | 'office' | 'external' | 'unassigned' | 'functions' | 'relations'; columns: OrgColumn[] }
-export interface OrgOptions { view: OrganigrammeView; vesselIds: number[]; includeOffice: boolean; includeExternal: boolean; includeUnassigned: boolean; showVessels: boolean }
+// null selects the whole fleet; an empty array explicitly selects no vessels.
+export interface OrgOptions { view: OrganigrammeView; vesselIds: number[] | null; includeOffice: boolean; includeExternal: boolean; includeUnassigned: boolean; showVessels: boolean }
 
 const compareMembers = (a: OrgMember, b: OrgMember) => compareHrFunctionLabels(a.functionLabel, b.functionLabel) || a.name.localeCompare(b.name, 'fr');
 
@@ -40,6 +41,12 @@ export function resolveMemberships(data: OrgData): OrgMembership[] {
   return [...unique.values()];
 }
 
+/** Empty saved watches and unavailable people do not make a vessel populated. */
+export function orgPopulatedVessels(data: OrgData, memberships = resolveMemberships(data)): OrgVessel[] {
+  const populated = new Set(memberships.map((row) => row.vesselId));
+  return [...data.vessels].filter((vessel) => populated.has(vessel.id)).sort(compareFleetAssets);
+}
+
 /** Also expose sedentary people without a configured responsibility so their rank can be edited. */
 export function orgOfficeResponsibilities(data: OrgData): OrgSupportDraft[] {
   const configured = data.support.filter((entry) => entry.category === 'office');
@@ -50,9 +57,9 @@ export function orgOfficeResponsibilities(data: OrgData): OrgSupportDraft[] {
 
 export function buildOrganigramme(data: OrgData, options: OrgOptions): OrgSection[] {
   const people = new Map(data.people.map((person) => [person.id, person]));
-  const vessels = [...data.vessels].sort(compareFleetAssets).filter((vessel) => !options.vesselIds.length || options.vesselIds.includes(vessel.id));
-  const vesselById = new Map(vessels.map((vessel) => [vessel.id, vessel]));
   const memberships = resolveMemberships(data);
+  const vessels = orgPopulatedVessels(data, memberships).filter((vessel) => options.vesselIds === null || options.vesselIds.includes(vessel.id));
+  const vesselById = new Map(vessels.map((vessel) => [vessel.id, vessel]));
   const rows = memberships.filter((row) => vesselById.has(row.vesselId));
   const member = (person: OrgPerson, role = person.functionLabel, detail = ''): OrgMember => ({ id: person.id, name: person.name, functionLabel: normalizeHrFunctionLabel(role || person.functionLabel) || 'Fonction non renseignée', detail });
   const sections: OrgSection[] = [];
@@ -95,7 +102,7 @@ export function buildOrganigramme(data: OrgData, options: OrgOptions): OrgSectio
     });
     if (byFunction.size) sections.push({ key: 'functions', label: 'Équipages par fonction', kind: 'functions', columns: [...byFunction].sort(([a], [b]) => compareHrFunctionLabels(a, b)).map(([label, members]) => ({ key: label, label, members: [...members.values()].sort(compareMembers) })) });
   }
-  if (options.includeUnassigned && !options.vesselIds.length) {
+  if (options.includeUnassigned && options.vesselIds === null) {
     const assigned = new Set(memberships.map((row) => row.personId));
     const remaining = data.people.filter((person) => person.population !== 'sedentary' && !assigned.has(person.id));
     const groups = new Map<string, OrgMember[]>();
@@ -148,10 +155,15 @@ export function orgTargetsFromSections(sections: OrgSection[], showVessels = tru
 }
 
 export function orgAllTargets(data: OrgData): OrgTarget[] {
-  const options: OrgOptions = { view: 'vessels', vesselIds: [], includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
+  const options: OrgOptions = { view: 'vessels', vesselIds: null, includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
   const sections = buildOrganigramme({ ...data, links: [] }, options);
   const functions = buildOrganigramme({ ...data, links: [] }, { ...options, view: 'functions' }).filter((section) => section.kind === 'functions');
-  const targets = orgTargetsFromSections([...sections, ...functions]);
+  // Editing links must still allow targets whose crews have not been composed yet.
+  const vessels: OrgSection[] = [...data.vessels].sort(compareFleetAssets).map((vessel) => sections.find((section) => section.key === `vessel-${vessel.id}`) || {
+    key: `vessel-${vessel.id}`, label: vessel.name, kind: 'vessel',
+    columns: (data.watches || []).filter((watch) => watch.vesselId === vessel.id).sort((a, b) => a.name.localeCompare(b.name, 'fr', { numeric: true })).map((watch) => ({ key: `${vessel.id}-${watch.name}`, label: watch.name, members: [] })),
+  });
+  const targets = orgTargetsFromSections([...sections.filter((section) => section.kind !== 'vessel'), ...vessels, ...functions]);
   // Empty categories remain available for future links.
   (Object.keys(ORG_CATEGORY_LABELS) as OrgCategory[]).forEach((key) => {
     if (!targets.some((target) => target.kind === 'category' && target.key === key)) targets.push({ kind: 'category', key, section: '', name: orgCategoryLabel(data, key), context: '' });

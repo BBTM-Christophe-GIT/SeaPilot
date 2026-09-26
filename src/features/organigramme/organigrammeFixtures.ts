@@ -45,6 +45,20 @@ export const ORG_LINKS_DEMO: OrgData = { ...ORG_DEMO, links: [
   { id: 3, sourceCategory: 'external', targetKind: 'person', targetKey: '2', targetSection: '', label: 'Référente opérationnelle' },
 ] };
 
+// A larger fleet exercises subsets and empty ships without changing the public preview.
+export const ORG_VESSEL_FILTER_DEMO: OrgData = { ...ORG_DEMO,
+  vessels: [...ORG_DEMO.vessels,
+    { id: 3, name: 'NAVIRE CÔTIER', lengthOverall: 25 },
+    { id: 4, name: 'NAVIRE VIDE', lengthOverall: 40 },
+  ],
+  watches: [...ORG_DEMO.watches!, { id: 5, vesselId: 3, name: 'Bordée 1' }, { id: 6, vesselId: 4, name: 'Bordée vide' }],
+  memberships: [...ORG_DEMO.memberships,
+    { personId: 10, vesselId: 3, watchGroup: 'Bordée 1', functionLabel: '', source: 'manual' },
+    { personId: 999, vesselId: 4, watchGroup: 'Bordée vide', functionLabel: '', source: 'manual' },
+    { personId: 2, vesselId: 4, watchGroup: 'Bordée vide', functionLabel: '', source: 'board' },
+  ],
+};
+
 export const ORG_HIERARCHY_DEMO: OrgData = { ...ORG_LINKS_DEMO,
   people: [...ORG_DEMO.people,
     { id: 13, name: 'Morgan LEROY', functionLabel: 'Responsable maintenance', population: 'sedentary' },

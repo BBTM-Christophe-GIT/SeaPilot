@@ -1,8 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { OrganigrammePage } from './OrganigrammePage';
-import { ORG_DEMO, ORG_LINKS_DEMO } from './organigrammeFixtures';
+import { ORG_DEMO, ORG_LINKS_DEMO, ORG_VESSEL_FILTER_DEMO } from './organigrammeFixtures';
 import type { RoleKey } from '../permissions/roles';
 
 function setup(roles: RoleKey[] = ['direction'], rpc = vi.fn().mockResolvedValue({ data: ORG_DEMO, error: null })) {
@@ -10,6 +10,52 @@ function setup(roles: RoleKey[] = ['direction'], rpc = vi.fn().mockResolvedValue
   return rpc;
 }
 describe('OrganigrammePage', () => {
+  it('selects several ships, retains the selection across views and refreshes, and distinguishes none from all', async () => {
+    const rpc = setup(['direction'], vi.fn().mockResolvedValue({ data: ORG_VESSEL_FILTER_DEMO, error: null }));
+    await screen.findByRole('img');
+    const filter = within(screen.getByRole('group', { name: /Navires à afficher/ }));
+    expect(filter.getAllByRole('checkbox').map((input) => input.closest('label')!.textContent)).toEqual(['GOURY', 'NAVIRE CÔTIER', 'LE ROZEL']);
+    const svg = () => decodeURIComponent(screen.getByRole('img').getAttribute('src')!);
+    expect(svg()).not.toContain('NAVIRE VIDE');
+    fireEvent.click(filter.getByRole('button', { name: 'Aucun navire' }));
+    expect(filter.getAllByRole('checkbox').every((input) => !(input as HTMLInputElement).checked)).toBe(true);
+    fireEvent.click(filter.getByRole('checkbox', { name: 'GOURY' }));
+    fireEvent.click(filter.getByRole('checkbox', { name: 'LE ROZEL' }));
+    for (const view of ['Par navire et bordée', 'Par bordée', 'Par fonction']) {
+      fireEvent.click(screen.getByRole('button', { name: view }));
+      expect(svg()).toContain('GOURY'); expect(svg()).toContain('LE ROZEL'); expect(svg()).not.toContain('NAVIRE CÔTIER');
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Actualiser' }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(filter.getByRole('checkbox', { name: 'GOURY' })).toBeEnabled());
+    expect(filter.getByRole('checkbox', { name: 'GOURY' })).toBeChecked();
+    expect(filter.getByRole('checkbox', { name: 'LE ROZEL' })).toBeChecked();
+    expect(filter.getByRole('checkbox', { name: 'NAVIRE CÔTIER' })).not.toBeChecked();
+    fireEvent.click(filter.getByRole('checkbox', { name: 'GOURY' }));
+    fireEvent.click(filter.getByRole('checkbox', { name: 'LE ROZEL' }));
+    expect(svg()).not.toContain('GOURY'); expect(svg()).not.toContain('LE ROZEL');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Direction & Administration' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Intervenants externes' }));
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Exporter le PDF' })).toBeDisabled();
+    fireEvent.click(filter.getByRole('button', { name: 'Tous les navires' }));
+    expect(svg()).toContain('NAVIRE CÔTIER'); expect(svg()).not.toContain('NAVIRE VIDE');
+    expect(screen.getByRole('checkbox', { name: 'Sans affectation' })).toBeEnabled();
+  });
+  it('removes an emptied ship on refresh and lets its crew be composed again', async () => {
+    const rpc = setup(); await screen.findByRole('img');
+    const emptied = { ...ORG_DEMO, memberships: ORG_DEMO.memberships.filter((row) => row.vesselId !== 2) };
+    rpc.mockResolvedValue({ data: emptied, error: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Actualiser' }));
+    await waitFor(() => expect(screen.queryByRole('checkbox', { name: 'LE ROZEL' })).not.toBeInTheDocument());
+    expect(decodeURIComponent(screen.getByRole('img').getAttribute('src')!)).not.toContain('LE ROZEL');
+    fireEvent.click(screen.getByRole('button', { name: 'Composer les bordées' }));
+    expect(within(screen.getByRole('combobox', { name: 'Navire de la bordée' })).getByRole('option', { name: 'LE ROZEL' })).toBeInTheDocument();
+    rpc.mockResolvedValue({ data: ORG_DEMO, error: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Actualiser' }));
+    expect(await screen.findByRole('checkbox', { name: 'LE ROZEL' })).toBeChecked();
+    expect(decodeURIComponent(screen.getByRole('img').getAttribute('src')!)).toContain('LE ROZEL');
+  });
   it('edits a hierarchy rank independently from display order and renders the saved level', async () => {
     let data = ORG_DEMO;
     const rpc = setup(['direction'], vi.fn().mockImplementation(async (name, args) => {
