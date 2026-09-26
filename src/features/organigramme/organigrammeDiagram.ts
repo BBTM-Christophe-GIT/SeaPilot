@@ -1,4 +1,4 @@
-import { orgRankLabel, type OrgMember, type OrgSection } from './organigrammeModel';
+import type { OrgMember, OrgSection } from './organigrammeModel';
 
 export interface OrgBox { x: number; y: number; width: number; height: number; tone: 'navy' | 'teal' | 'white' | 'leader' | 'support'; lines: Array<{ text: string; size: number; bold: boolean }> }
 export interface OrgLine { x1: number; y1: number; x2: number; y2: number; dashed?: boolean }
@@ -75,7 +75,6 @@ function officeCard(person: OrgMember, x: number, y: number): OrgBox {
   const lines = [
     ...wrapOrgText(person.name).map((text) => ({ text, size: 14, bold: true })),
     ...wrapOrgText(person.functionLabel, 32).filter(Boolean).map((text) => ({ text, size: 11, bold: false })),
-    { text: orgRankLabel(person.rank), size: 10, bold: true },
   ];
   return { x, y, width: 248, height: 24 + lines.reduce((total, line) => total + line.size + 5, 0), tone: person.rank === '1' ? 'leader' : person.rank === 'support' ? 'support' : 'white', lines };
 }

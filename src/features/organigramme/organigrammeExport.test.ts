@@ -44,6 +44,18 @@ describe('organigramme exports', () => {
     expect(pdf.getPageCount()).toBe(1);
     expect(pdf.getPages().every((page) => page.getWidth() > page.getHeight())).toBe(true);
     expect(bytes.byteLength).toBeGreaterThan(10000);
+    const task = getDocument({ data: bytes.slice() });
+    try {
+      const document = await task.promise;
+      const content = await (await document.getPage(1)).getTextContent();
+      const text = content.items.map((item) => 'str' in item ? item.str : '').join(' ');
+      const svg = await (await buildOrgImage(sections, true, 'svg')).text();
+      for (const exported of [text, svg]) {
+        expect(exported).toContain('Camille DUMONT'); expect(exported).toContain('Président');
+        expect(exported).toContain('Louise FAURE'); expect(exported).toContain('Noé THOMAS');
+        expect(exported).not.toMatch(/Rang|Support/);
+      }
+    } finally { await task.destroy(); }
     if (process.env.ORG_EXPORT_QA_DIR) {
       await mkdir(process.env.ORG_EXPORT_QA_DIR, { recursive: true });
       await writeFile(join(process.env.ORG_EXPORT_QA_DIR, `BBTM_Organigramme_${view}.pdf`), bytes);
