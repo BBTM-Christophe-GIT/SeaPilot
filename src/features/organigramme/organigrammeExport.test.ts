@@ -3,7 +3,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { buildOrgImage, buildOrgPdf, orgPdfGeometry } from './organigrammeExport';
 import { buildOrganigramme, type OrgOptions } from './organigrammeModel';
 import { ORG_DEMO, ORG_LINKS_DEMO, ORG_HIERARCHY_DEMO, ORG_VESSEL_FILTER_DEMO } from './organigrammeFixtures';
@@ -11,6 +11,30 @@ import { layoutOrganigramme } from './organigrammeDiagram';
 
 const options: OrgOptions = { view: 'vessels', vesselIds: null, includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
 describe('organigramme exports', () => {
+  it('embeds portraits in PDF/SVG, omits them on request, and retains vessel illustrations', async () => {
+    const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));
+    const image = `data:image/png;base64,${Buffer.from(logo).toString('base64')}`;
+    const data = { ...ORG_DEMO, people: ORG_DEMO.people.map((person) => ({ ...person, photoUrl: image })), vessels: ORG_DEMO.vessels.map((vessel) => ({ ...vessel, iconDataUrl: image })) };
+    const imageCounts: number[] = [];
+    for (const showPhotos of [true, false]) {
+      const sections = buildOrganigramme(data, { ...options, showPhotos });
+      const diagram = layoutOrganigramme(sections);
+      expect(diagram.boxes.filter((box) => box.mediaKind === 'portrait')).toHaveLength(showPhotos ? 12 : 0);
+      expect(diagram.boxes.filter((box) => box.mediaKind === 'vessel' && box.image)).toHaveLength(2);
+      const svg = await (await buildOrgImage(sections, true, 'svg')).text();
+      expect((svg.match(/<image /g) || []).length).toBe(showPhotos ? 14 : 2);
+      const blob = await buildOrgPdf(sections, true, data.asOf, 'vessels', logo);
+      const task = getDocument({ data: new Uint8Array(await blob.arrayBuffer()) });
+      try {
+        const pdf = await task.promise; expect(pdf.numPages).toBe(1);
+        const operators = await (await pdf.getPage(1)).getOperatorList();
+        imageCounts.push(operators.fnArray.filter((fn) => fn === OPS.paintImageXObject).length);
+      } finally { await task.destroy(); }
+    }
+    expect(imageCounts[0]).toBeGreaterThan(imageCounts[1]);
+    const noShips = buildOrganigramme(data, { ...options, showVessels: false });
+    expect(layoutOrganigramme(noShips, false).boxes.some((box) => box.mediaKind === 'vessel')).toBe(false);
+  });
   it('exports the selected populated ships in both PDF and SVG, without empty or excluded ships', async () => {
     const sections = buildOrganigramme(ORG_VESSEL_FILTER_DEMO, { ...options, vesselIds: [2, 4, 1] });
     const blob = await buildOrgPdf(sections, true, ORG_DEMO.asOf, 'vessels', new Uint8Array(await readFile('public/bbtm-report-logo.png')));
@@ -34,7 +58,7 @@ describe('organigramme exports', () => {
       }
     } finally { await task.destroy(); }
   });
-  it.each(['vessels', 'watches', 'functions'] as const)('exports the complete %s chart on exactly one landscape page', async (view) => {
+  it.each(['vessels', 'functions'] as const)('exports the complete %s chart on exactly one landscape page', async (view) => {
     const sections = buildOrganigramme(ORG_HIERARCHY_DEMO, { ...options, view });
     const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));
     const blob = await buildOrgPdf(sections, true, ORG_DEMO.asOf, view, logo);

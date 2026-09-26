@@ -1,6 +1,6 @@
 import type { OrgMember, OrgSection } from './organigrammeModel';
 
-export interface OrgBox { x: number; y: number; width: number; height: number; tone: 'navy' | 'teal' | 'white' | 'leader' | 'support'; lines: Array<{ text: string; size: number; bold: boolean }> }
+export interface OrgBox { image?: string; mediaKind?: 'portrait' | 'vessel'; x: number; y: number; width: number; height: number; tone: 'navy' | 'teal' | 'white' | 'leader' | 'support'; lines: Array<{ text: string; size: number; bold: boolean }> }
 export interface OrgLine { x1: number; y1: number; x2: number; y2: number; dashed?: boolean }
 export interface OrgDiagram { width: number; height: number; boxes: OrgBox[]; lines: OrgLine[] }
 export const ORG_COLORS = { navy: '#12364b', teal: '#e5f2f2', white: '#ffffff', leader: '#dc640c', support: '#edf0f3', ink: '#18394c', muted: '#526978', line: '#9bb7c2', border: '#ccdce3' };
@@ -28,9 +28,9 @@ function layoutSection(section: OrgSection, showVessels: boolean, sharedHeadingH
   const hasHeading = section.kind !== 'vessel' || showVessels;
   if (hasHeading) {
     const headingWidth = Math.min(sectionWidth, 440);
-    const headingLines = wrapOrgText(section.label, 26).map((text) => ({ text, size: 16, bold: true }));
-    const headingHeight = sharedHeadingHeight ?? 24 + headingLines.length * 20;
-    diagram.boxes.push({ x: 24 + (sectionWidth - headingWidth) / 2, y, width: headingWidth, height: headingHeight, tone: 'navy', lines: headingLines });
+    const headingLines = wrapOrgText(section.label, section.kind === 'vessel' ? 20 : 26).map((text) => ({ text, size: 16, bold: true }));
+    const headingHeight = sharedHeadingHeight ?? Math.max(section.kind === 'vessel' ? 64 : 0, 24 + headingLines.length * 20);
+    diagram.boxes.push({ x: 24 + (sectionWidth - headingWidth) / 2, y, width: headingWidth, height: headingHeight, tone: 'navy', lines: headingLines, ...(section.kind === 'vessel' ? { image: section.iconDataUrl, mediaKind: 'vessel' as const } : {}) });
     const middle = 24 + sectionWidth / 2;
     diagram.lines.push({ x1: middle, y1: y + headingHeight, x2: middle, y2: y + headingHeight + 16 });
     y += headingHeight + 32;
@@ -49,17 +49,17 @@ function layoutSection(section: OrgSection, showVessels: boolean, sharedHeadingH
     const members = column.members.length ? column.members : [{ id: -1, name: 'Bordée à composer', functionLabel: '', detail: '' }];
     members.forEach((person) => {
       const lines = [
-        ...wrapOrgText(person.name).map((text) => ({ text, size: 13, bold: true })),
-        ...wrapOrgText(person.functionLabel, 32).filter(Boolean).map((text) => ({ text, size: 11, bold: false })),
-        ...wrapOrgText(person.detail, 32).filter(Boolean).map((text) => ({ text, size: 10, bold: false })),
+        ...wrapOrgText(person.name, person.photoUrl ? 18 : 27).map((text) => ({ text, size: 13, bold: true })),
+        ...wrapOrgText(person.functionLabel, person.photoUrl ? 23 : 32).filter(Boolean).map((text) => ({ text, size: 11, bold: false })),
+        ...wrapOrgText(person.detail, person.photoUrl ? 23 : 32).filter(Boolean).map((text) => ({ text, size: 10, bold: false })),
       ];
-      const height = 24 + lines.reduce((total, line) => total + line.size + 5, 0);
+      const height = Math.max(person.photoUrl ? 80 : 0, 24 + lines.reduce((total, line) => total + line.size + 5, 0));
       // A side rail denotes ordered members of a bordée, not invented reporting lines.
       if (showColumnHeaders) {
         diagram.lines.push({ x1: x - 9, y1: y + headerHeight / 2, x2: x - 9, y2: cardY + height / 2 });
         diagram.lines.push({ x1: x - 9, y1: cardY + height / 2, x2: x, y2: cardY + height / 2 });
       }
-      diagram.boxes.push({ x, y: cardY, width: 248, height, tone: 'white', lines });
+      diagram.boxes.push({ x, y: cardY, width: 248, height, tone: 'white', lines, ...(person.photoUrl ? { image: person.photoUrl, mediaKind: 'portrait' as const } : {}) });
       cardY += height + 12;
     });
     if (showColumnHeaders) diagram.lines.push({ x1: x - 9, y1: y + headerHeight / 2, x2: x, y2: y + headerHeight / 2 });
@@ -73,10 +73,10 @@ function layoutSection(section: OrgSection, showVessels: boolean, sharedHeadingH
 
 function officeCard(person: OrgMember, x: number, y: number): OrgBox {
   const lines = [
-    ...wrapOrgText(person.name).map((text) => ({ text, size: 14, bold: true })),
-    ...wrapOrgText(person.functionLabel, 32).filter(Boolean).map((text) => ({ text, size: 11, bold: false })),
+    ...wrapOrgText(person.name, person.photoUrl ? 18 : 27).map((text) => ({ text, size: 14, bold: true })),
+    ...wrapOrgText(person.functionLabel, person.photoUrl ? 23 : 32).filter(Boolean).map((text) => ({ text, size: 11, bold: false })),
   ];
-  return { x, y, width: 248, height: 24 + lines.reduce((total, line) => total + line.size + 5, 0), tone: person.rank === '1' ? 'leader' : person.rank === 'support' ? 'support' : 'white', lines };
+  return { x, y, width: 248, height: Math.max(person.photoUrl ? 80 : 0, 24 + lines.reduce((total, line) => total + line.size + 5, 0)), ...(person.photoUrl ? { image: person.photoUrl, mediaKind: 'portrait' as const } : {}), tone: person.rank === '1' ? 'leader' : person.rank === 'support' ? 'support' : 'white', lines };
 }
 
 /** Ranks form vertical tiers; Support remains on lateral branches, outside the reporting tiers. */
@@ -139,7 +139,7 @@ function layoutOffice(section: OrgSection): OrgDiagram {
 /** All vessels occupy one horizontal row. External advisers sit alongside the office hierarchy. */
 export function layoutOrganigramme(sections: OrgSection[], showVessels = true): OrgDiagram {
   const vessels = sections.filter((section) => section.kind === 'vessel');
-  const headingHeight = Math.max(44, ...vessels.map((section) => 24 + wrapOrgText(section.label, 26).length * 20));
+  const headingHeight = Math.max(64, ...vessels.map((section) => 24 + wrapOrgText(section.label, 20).length * 20));
   const rows: OrgDiagram[][] = [];
   const office = sections.find((section) => section.kind === 'office');
   const external = sections.find((section) => section.kind === 'external');
@@ -172,13 +172,24 @@ export function layoutOrganigramme(sections: OrgSection[], showVessels = true): 
   return diagram;
 }
 
+export function orgBoxMedia(box: OrgBox) {
+  const vessel = box.mediaKind === 'vessel';
+  return { x: box.x + 12, y: box.y + (vessel ? (box.height - 42) / 2 : 14), width: vessel ? 64 : 48, height: vessel ? 42 : 48 };
+}
+export const orgBoxTextX = (box: OrgBox) => box.x + (box.width + (box.mediaKind === 'vessel' ? 80 : box.mediaKind === 'portrait' ? 62 : 0)) / 2;
+export const orgImageSource = (source?: string) => source && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(source) ? source : '';
+// Shared tiny ship outline for vessels without a catalog illustration.
+export const ORG_SHIP_LINES = [[5,12,12,9],[12,9,19,12],[5,12,7,18],[19,12,17,18],[7,18,17,18],[8,10,8,5],[8,5,16,5],[16,5,16,10],[12,5,12,2],[4,21,8,20],[8,20,12,21],[12,21,16,20],[16,20,20,21]];
 const escapeXml = (text: string) => text.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character]!);
 export function organigrammeSvg(diagram: OrgDiagram): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${diagram.width}" height="${diagram.height}" viewBox="0 0 ${diagram.width} ${diagram.height}" role="img" aria-label="Organigramme"><rect width="100%" height="100%" fill="white"/>${diagram.lines.map((line) => `<line x1="${line.x1}" y1="${line.y1}" x2="${line.x2}" y2="${line.y2}" stroke="${ORG_COLORS.line}" stroke-width="1.5"${line.dashed ? ' stroke-dasharray="5 4"' : ''}/>`).join('')}${diagram.boxes.map((box) => {
     let baseline = box.y + 14;
-    return `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="7" fill="${ORG_COLORS[box.tone]}" stroke="${box.tone === 'white' ? ORG_COLORS.border : ORG_COLORS[box.tone]}"/>${box.lines.map((line) => {
+    const media = orgBoxMedia(box);
+    const source = orgImageSource(box.image);
+    const picture = source ? `<image href="${source}" x="${media.x}" y="${media.y}" width="${media.width}" height="${media.height}" preserveAspectRatio="xMidYMid meet"/>` : box.mediaKind === 'vessel' ? `<g transform="translate(${media.x + 14} ${media.y + 3}) scale(1.5)" stroke="white" stroke-width="1.5" fill="none">${ORG_SHIP_LINES.map(([x1,y1,x2,y2]) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`).join('')}</g>` : '';
+    return `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="7" fill="${ORG_COLORS[box.tone]}" stroke="${box.tone === 'white' ? ORG_COLORS.border : ORG_COLORS[box.tone]}"/>${picture}${box.lines.map((line) => {
       baseline += line.size + 5;
-      return `<text x="${box.x + box.width / 2}" y="${baseline - 5}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${line.size}" font-weight="${line.bold ? 700 : 400}" fill="${orgBoxTextColor(box, line.bold)}">${escapeXml(line.text)}</text>`;
+      return `<text x="${orgBoxTextX(box)}" y="${baseline - 5}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${line.size}" font-weight="${line.bold ? 700 : 400}" fill="${orgBoxTextColor(box, line.bold)}">${escapeXml(line.text)}</text>`;
     }).join('')}`;
   }).join('')}</svg>`;
 }

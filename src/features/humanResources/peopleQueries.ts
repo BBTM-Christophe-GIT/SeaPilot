@@ -1,3 +1,4 @@
+import { loadPeoplePortraits } from './portraitMedia';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { readHrDriveFile, writeHrDriveFile } from './hrDocumentDrive';
 import type { RoleKey } from '../permissions/roles';
@@ -5,6 +6,8 @@ import type { RoleKey } from '../permissions/roles';
 const PEOPLE_SELECT = [
   'id',
   'user_id',
+  'photo_document_id',
+  'photo_storage_path',
   'first_name',
   'last_name',
   'email',
@@ -133,6 +136,8 @@ interface HrVisibilityRuleRow {
 type HrDocumentStatus = 'valid' | 'renew_due' | 'expired' | 'missing' | 'pending_validation';
 
 interface PersonRow {
+  photo_document_id?: number | null;
+  photo_storage_path?: string | null;
   id: number;
   user_id: string | null;
   first_name: string;
@@ -213,6 +218,10 @@ interface HrDocumentTypeRow {
 }
 
 export interface PersonRecord {
+  photoDocumentId?: number | null;
+  photoPath?: string;
+  photoUrl?: string;
+  photoUnavailable?: boolean;
   id: number;
   userId: string | null;
   firstName: string;
@@ -810,6 +819,8 @@ export function mapPersonRows(rows: PersonRow[]): PersonRecord[] {
   return rows.map((row) => ({
     id: row.id,
     userId: row.user_id,
+    photoDocumentId: row.photo_document_id ?? null,
+    photoPath: row.photo_storage_path || undefined,
     firstName: row.first_name,
     lastName: row.last_name,
     email: nullableText(row.email),
@@ -1264,7 +1275,7 @@ export async function fetchPeople(client: SupabaseClient, personId?: number | nu
     throw error;
   }
 
-  return mapPersonRows((data || []) as unknown as PersonRow[]);
+  return loadPeoplePortraits(client, mapPersonRows((data || []) as unknown as PersonRow[]));
 }
 
 export async function fetchHrDocuments(client: SupabaseClient, personId?: number | null): Promise<HrDocumentRecord[]> {
@@ -1373,7 +1384,7 @@ export async function createPerson(client: SupabaseClient, input: CreatePersonIn
     throw error;
   }
 
-  return mapPersonRows([data as unknown as PersonRow])[0];
+  return (await loadPeoplePortraits(client, mapPersonRows([data as unknown as PersonRow])))[0];
 }
 
 export async function deletePerson(client: SupabaseClient, personId: number): Promise<void> {
@@ -1395,7 +1406,7 @@ export async function updatePersonActive(
     throw error;
   }
 
-  return mapPersonRows([data as unknown as PersonRow])[0];
+  return (await loadPeoplePortraits(client, mapPersonRows([data as unknown as PersonRow])))[0];
 }
 
 export async function createHrDocument(
@@ -1547,6 +1558,9 @@ export async function deleteHrDocument(client: SupabaseClient, documentId: numbe
 
   const { error: deleteError } = await client.from('hr_documents').delete().eq('id', documentId).select('id').single();
   if (deleteError) {
+    if (deleteError.code === '23503' && deleteError.message.includes('people_photo_document_id')) {
+      throw new Error('Retirez d’abord cette photo du profil du collaborateur, puis supprimez son document.');
+    }
     throw new Error(hasStoredFile
       ? 'Le fichier a été supprimé, mais sa fiche reste présente. Réessayez la suppression pour la terminer.'
       : deleteError.message || 'Impossible de supprimer le document.');
@@ -1635,7 +1649,7 @@ export async function updatePersonDetails(
     }
 
     const row = Array.isArray(data) ? data[0] : data;
-    return mapPersonRows([row as unknown as PersonRow])[0];
+    return (await loadPeoplePortraits(client, mapPersonRows([row as unknown as PersonRow])))[0];
   }
 
   const { data, error } = await client.from('people').update(payload).eq('id', personId).select(PEOPLE_SELECT).single();
@@ -1644,7 +1658,7 @@ export async function updatePersonDetails(
     throw error;
   }
 
-  return mapPersonRows([data as unknown as PersonRow])[0];
+  return (await loadPeoplePortraits(client, mapPersonRows([data as unknown as PersonRow])))[0];
 }
 
 function buildPersonDetailsPayload(input: CreatePersonInput | UpdatePersonDetailsInput) {

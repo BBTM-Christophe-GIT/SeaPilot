@@ -1,4 +1,4 @@
-import { layoutOrganigramme, ORG_COLORS, orgBoxTextColor, organigrammeSvg, type OrgDiagram } from './organigrammeDiagram';
+import { layoutOrganigramme, ORG_COLORS, ORG_SHIP_LINES, orgBoxMedia, orgBoxTextX, orgImageSource, orgBoxTextColor, organigrammeSvg, type OrgDiagram } from './organigrammeDiagram';
 import { ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, ORG_VIEW_LABELS, type OrgSection, type OrganigrammeView } from './organigrammeModel';
 
 export function downloadOrgBlob(blob: Blob, name: string) {
@@ -56,13 +56,20 @@ export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, 
     diagram.boxes.forEach((box) => {
       pdf.setFillColor(ORG_COLORS[box.tone]); pdf.setDrawColor(box.tone === 'white' ? ORG_COLORS.border : ORG_COLORS[box.tone]);
       pdf.roundedRect(offsetX + box.x * scale, offsetY + box.y * scale, box.width * scale, box.height * scale, 2, 2, 'FD');
+      const media = orgBoxMedia(box);
+      const source = orgImageSource(box.image);
+      if (source) pdf.addImage(source, source.startsWith('data:image/png') ? 'PNG' : 'JPEG', offsetX + media.x * scale, offsetY + media.y * scale, media.width * scale, media.height * scale);
+      else if (box.mediaKind === 'vessel') {
+        pdf.setDrawColor('#ffffff'); pdf.setLineWidth(.5 * scale);
+        ORG_SHIP_LINES.forEach(([x1,y1,x2,y2]) => pdf.line(offsetX + (media.x + 14 + x1 * 1.5) * scale, offsetY + (media.y + 3 + y1 * 1.5) * scale, offsetX + (media.x + 14 + x2 * 1.5) * scale, offsetY + (media.y + 3 + y2 * 1.5) * scale));
+      }
       let baseline = box.y + 14;
       box.lines.forEach((line) => {
         baseline += line.size + 5;
         pdf.setFont('helvetica', line.bold ? 'bold' : 'normal');
         pdf.setFontSize(line.size * scale * 72 / 25.4);
         pdf.setTextColor(orgBoxTextColor(box, line.bold));
-        pdf.text(line.text, offsetX + (box.x + box.width / 2) * scale, offsetY + (baseline - 5) * scale, { align: 'center' });
+        pdf.text(line.text, offsetX + orgBoxTextX(box) * scale, offsetY + (baseline - 5) * scale, { align: 'center' });
       });
     });
   };
