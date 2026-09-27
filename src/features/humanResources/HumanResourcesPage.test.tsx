@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { HumanResourcesPage } from './HumanResourcesPage';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
+import { HumanResourcesPage, HumanResourcesRoute } from './HumanResourcesPage';
 import { connectHrDrive, readHrDriveFile, writeHrDriveFile } from './hrDocumentDrive';
 vi.mock('./hrDocumentDrive', () => ({ connectHrDrive: vi.fn(), writeHrDriveFile: vi.fn(async (_client, id, name) => ({ drive_path: `person-${id}/${name}`, drive_sha256: 'a'.repeat(64) })), readHrDriveFile: vi.fn() }));
 import { openTrainingPlanReport } from './trainingPlanReport';
@@ -215,6 +216,56 @@ function createClient(people: Array<Record<string, unknown>> = [activePerson, fo
 }
 
 describe('HumanResourcesPage', () => {
+  it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as const)('opens the connected person’s record by default for the %s profile', async (role) => {
+    const ownPerson = { ...activePerson, id: 3, user_id: 'own-user', first_name: 'Lea', last_name: 'ZULU' };
+    // The Marin fixture contains only the person allowed by the real read scope.
+    const people = role === 'marin' ? [ownPerson] : [activePerson, ownPerson];
+    render(<HumanResourcesPage client={createClient(people, []) as never} currentPersonId={3} roles={[role]} />);
+    expect(await screen.findByRole('complementary', { name: 'Fiche RH de Lea ZULU' })).toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Fiche RH de Jean MARTIN' })).not.toBeInTheDocument();
+    if (role !== 'marin') expect(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).toBeInTheDocument();
+  });
+
+  it('switches the automatic default when the connected identity arrives after the roster', async () => {
+    const client = createClient([activePerson, yardManagerPerson]);
+    const view = render(<HumanResourcesPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    view.rerender(<HumanResourcesPage client={client as never} currentPersonId={3} roles={['admin']} />);
+    expect(await screen.findByRole('complementary', { name: 'Fiche RH de Lea BUREAU' })).toBeInTheDocument();
+  });
+
+  it.each(['select', 'close'] as const)('preserves an explicit %s when the connected identity loads late', async (action) => {
+    const client = createClient([activePerson, yardManagerPerson]);
+    const view = render(<HumanResourcesPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    fireEvent.click(screen.getByRole('button', { name: action === 'select' ? 'Afficher la fiche de Jean MARTIN' : 'Fermer la fiche RH' }));
+    view.rerender(<HumanResourcesPage client={client as never} currentPersonId={3} roles={['admin']} />);
+    expect(await screen.findByRole('complementary', { name: action === 'select' ? 'Fiche RH de Jean MARTIN' : 'Fiche RH' })).toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Fiche RH de Lea BUREAU' })).not.toBeInTheDocument();
+  });
+
+  it.each([null, 999, 2])('keeps the visible roster fallback when the connected record is unavailable (%s)', async (currentPersonId) => {
+    render(<HumanResourcesPage client={createClient() as never} currentPersonId={currentPersonId} roles={['admin']} />);
+    expect(await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' })).toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Fiche RH de Paul DURAND' })).not.toBeInTheDocument();
+  });
+
+  it('returns to the connected record on each RH navigation and still allows other records afterwards', async () => {
+    const client = createClient([activePerson, yardManagerPerson]);
+    render(<MemoryRouter initialEntries={['/modules/humanResources']}><Link to="/modules/humanResources">RH / Brevets</Link><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={client as never} currentPersonId={3} roles={['admin']} />} /></Routes></MemoryRouter>);
+    await screen.findByRole('complementary', { name: 'Fiche RH de Lea BUREAU' });
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' }));
+    expect(screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('link', { name: 'RH / Brevets' }));
+    await screen.findByRole('complementary', { name: 'Fiche RH de Lea BUREAU' });
+    fireEvent.click(screen.getByRole('button', { name: 'Fermer la fiche RH' }));
+    expect(screen.getByRole('complementary', { name: 'Fiche RH' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('link', { name: 'RH / Brevets' }));
+    await screen.findByRole('complementary', { name: 'Fiche RH de Lea BUREAU' });
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' }));
+    expect(screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' })).toBeInTheDocument();
+  });
+
   it('shows the person deletion action only to Administrators', async () => {
     const user = userEvent.setup();
     const adminView = render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);

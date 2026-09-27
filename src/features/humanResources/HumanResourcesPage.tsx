@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useLocation, useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
@@ -717,6 +717,12 @@ function buildPersonDetailsForm(person: PersonRecord): UpdatePersonDetailsInput 
   };
 }
 
+export function HumanResourcesRoute(props: HumanResourcesPageProps) {
+  const location = useLocation();
+  // A fresh navigation, including a click on the active RH link, starts on oneself.
+  return <HumanResourcesPage key={location.key} {...props} />;
+}
+
 export function HumanResourcesPage({ client, currentPersonId, roles }: HumanResourcesPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
@@ -741,7 +747,8 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
   const [filters, setFilters] = useState<HrFilterState>(EMPTY_FILTERS);
   const [form, setForm] = useState<PersonFormState>(EMPTY_FORM);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
+  // undefined follows the connected person's default; null is an explicit close.
+  const [selectedPersonId, setSelectedPersonId] = useState<number | null | undefined>(undefined);
   const [documentCreationPersonId, setDocumentCreationPersonId] = useState<number | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(() => new Set());
   const [renewalDocumentId, setRenewalDocumentId] = useState<number | null>(null);
@@ -767,15 +774,6 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
           setDocuments(loadedData.documents);
           setDocumentTypes(loadedData.documentTypes);
           setVisibilityRules(loadedData.visibilityRules);
-          setSelectedPersonId(
-            (currentId) =>
-              currentId ??
-              buildHumanResourcesDashboard(
-                sortedPeople.filter((person) => matchesRosterPopulation(person, 'current')),
-                loadedData.documents,
-              ).groups[0]?.people[0]?.id ??
-              null,
-          );
         }
       })
       .catch(() => {
@@ -972,8 +970,11 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     trailingWorkforceMetrics,
   ]);
   const selectedPerson = useMemo(
-    () => visiblePeople.find((person) => person.id === selectedPersonId) || null,
-    [selectedPersonId, visiblePeople],
+    () => selectedPersonId === undefined
+      ? visiblePeople.find((person) => person.id === ownPersonId)
+        || visiblePeople.find((person) => person.id === dashboard.groups[0]?.people[0]?.id) || null
+      : visiblePeople.find((person) => person.id === selectedPersonId) || null,
+    [dashboard.groups, ownPersonId, selectedPersonId, visiblePeople],
   );
   const selectedPersonDocuments = useMemo(
     () => (selectedPerson ? roleVisibleDocuments.filter((document) => document.personId === selectedPerson.id) : []),
@@ -1005,7 +1006,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     [effectiveRoles, visibilityRules],
   );
   useEffect(() => {
-    if (selectedPersonId !== null && !visiblePeople.some((person) => person.id === selectedPersonId)) {
+    if (selectedPersonId != null && !visiblePeople.some((person) => person.id === selectedPersonId)) {
       setSelectedPersonId(visiblePeople[0]?.id ?? null);
     }
   }, [selectedPersonId, visiblePeople]);
@@ -1111,7 +1112,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     setRosterPopulation(value);
     setFilters((currentFilters) => ({ ...currentFilters, collaboratorId: '' }));
     setSelectedPersonId((currentPersonId) =>
-      currentPersonId !== null && nextPopulationPeople.some((person) => person.id === currentPersonId)
+      currentPersonId === undefined || (currentPersonId !== null && nextPopulationPeople.some((person) => person.id === currentPersonId))
         ? currentPersonId
         : nextPopulationPeople[0]?.id ?? null,
     );
@@ -1560,7 +1561,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
                 group={group}
                 key={group.label}
                 onPersonSelect={setSelectedPersonId}
-                selectedPersonId={selectedPersonId}
+                selectedPersonId={selectedPerson?.id ?? null}
               />
             ))}
           </div>

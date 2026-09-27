@@ -8,7 +8,7 @@ import { RequireAuth } from './features/auth/RequireAuth';
 import { DprPage } from './features/dpr/DprPage';
 import { FleetCertificatesPage } from './features/fleetCertificates/FleetCertificatesPage';
 import { FleetPage } from './features/fleet/FleetPage';
-import { HumanResourcesPage } from './features/humanResources/HumanResourcesPage';
+import { HumanResourcesRoute } from './features/humanResources/HumanResourcesPage';
 import { ModulePage } from './features/modules/ModulePage';
 import { APP_MODULES } from './features/permissions/moduleAccess';
 import { isSeaPilotPreviewDeployment } from './features/preview/previewMode';
@@ -95,7 +95,7 @@ export default function App({ previewModeOverride }: AppProps) {
                 ) : module.key === 'fleet' ? (
                   <FleetPage />
                 ) : module.key === 'humanResources' ? (
-                  <HumanResourcesPage />
+                  <HumanResourcesRoute />
                 ) : module.key === 'organigramme' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement de l’organigramme…</div>}><OrganigrammePage /></Suspense>
                 ) : module.key === 'annualReviews' ? (
