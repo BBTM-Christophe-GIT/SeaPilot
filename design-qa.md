@@ -1229,4 +1229,3 @@ Les preuves locales sont conservées dans le répertoire d’artefacts de ce cha
 P3 : quelques différences de graisse, de taille des pictogrammes et de forme des badges par rapport à l’image générée. Le pied de navigation indique volontairement la démonstration et permet sa réinitialisation. Aucun point P0, P1 ou P2 restant dans le périmètre de prévisualisation.
 
 Cette validation concerne une interface avec données fictives. Les modèles contractuels complets, les règles DPR, les profils réels et les autorisations de production restent à raccorder et à vérifier lors de l’intégration définitive.
-
