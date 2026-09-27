@@ -1187,3 +1187,46 @@ visuel restant n'a été relevé lors de la comparaison finale.
 - [x] Tests ciblés, lint et build réussis.
 
 final result: passed
+
+---
+
+# Design QA — prévisualisation Projet
+
+final result: passed
+
+## Périmètre et référence
+
+Une seule direction : le dossier Projet, avec identité persistante, six rubriques et vue d’ensemble orientée vers les prochaines actions. Référence : image `exec-f633be72-5dba-4afc-a68a-191f10e97ca4.png` retenue après l’audit du module existant.
+
+Comparaison visuelle effectuée avec la référence et le rendu côte à côte, même dossier P901 non modifié, même fenêtre de 1487 × 1058. Contrôles complémentaires à 1440 × 1024, 768 × 1024 et 390 × 844.
+
+Les preuves locales sont conservées dans le répertoire d’artefacts de ce chat, sous `projets-preview` : `comparison.png`, `01-overview-desktop.png`, `02-contract-desktop.png`, `03-billing-desktop.png`, `04-portfolio-desktop.png`, `05-mobile-overview.png`, `06-mobile-operation.png`, `07-tablet-contract.png`.
+
+## Contrôle des cinq surfaces
+
+| Surface | Résultat |
+| --- | --- |
+| Structure et hiérarchie | Navigation marine, en-tête du dossier, six rubriques, alerte prioritaire, grille opérations / activité et accès contrat / documents présents. Espacements verticaux corrigés après comparaison. |
+| Typographie et lisibilité | Hiérarchie titre / contexte / données conservée. Taille du tableau et de l’activité augmentée après le premier contrôle. Police Inter avec repli système. |
+| Couleurs et composants | Bleu d’action, fond marine, surfaces claires, alerte ambre, statuts distincts et sélection soulignée conformes à la direction. |
+| Images et icônes | Logo existant réutilisé ; fond noir intégré au panneau par mélange CSS. Icônes Lucide cohérentes avec la référence et le produit. Aucun visuel de substitution généré. |
+| Interactions et adaptation | Navigation, filtres, archives, formulaires, exports et historique utilisables. Sélecteur de rubriques sur mobile, panneaux empilés et défilement contenu des tableaux. |
+
+## Corrections et vérifications
+
+- Correction d’un débordement mobile causé par le libellé masqué de la colonne Actions ; largeur du document inférieure ou égale à la fenêtre après correction.
+- Navigation latérale fermée rendue invisible aux interactions sur mobile.
+- Fermeture du dialogue avec Échap vérifiée ; formulaire d’opération utilisable à 390 px.
+- Contrat complété et enregistré, PDF illustratif émis et retrouvé dans les documents.
+- Relevé recalculé après exclusion de la mobilisation : 110 300 € → 95 300 € ; export ZIP avec pièces déclenché avec succès.
+- Portefeuille filtré jusqu’à l’état vide, puis consultation du projet archivé.
+- Opération Rotation 03 ajoutée sur mobile et retrouvée dans l’historique avec les événements antérieurs.
+- Quatre tests automatisés passent : contrat local et conservation des pièces, archivage/restauration, ajout/filtrage des fichiers sans requête réseau, calcul de facturation avec centimes.
+- ESLint ciblé et compilation de production réussis. Aucune erreur JavaScript relevée pendant les parcours contrôlés. Les avertissements de taille de bundles concernent l’application existante.
+
+## Écarts conservés
+
+P3 : quelques différences de graisse, de taille des pictogrammes et de forme des badges par rapport à l’image générée. Le pied de navigation indique volontairement la démonstration et permet sa réinitialisation. Aucun point P0, P1 ou P2 restant dans le périmètre de prévisualisation.
+
+Cette validation concerne une interface avec données fictives. Les modèles contractuels complets, les règles DPR, les profils réels et les autorisations de production restent à raccorder et à vérifier lors de l’intégration définitive.
+

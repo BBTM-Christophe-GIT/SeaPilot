@@ -13,6 +13,14 @@
   ],
   "rewrites": [
     {
+      "source": "/previews/projects",
+      "destination": "/previews/projects.html"
+    },
+    {
+      "source": "/previews/projects.html",
+      "destination": "/previews/projects.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
