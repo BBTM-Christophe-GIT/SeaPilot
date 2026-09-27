@@ -278,7 +278,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     setIsMobileNavigationOpen(false);
     setIsUserMenuOpen(false);
     setIsNotificationsOpen(false);
-  }, [location.pathname]);
+  }, [location.key, location.pathname]);
 
   useEffect(() => {
     if (previewMode) {

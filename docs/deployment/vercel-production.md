@@ -1,5 +1,13 @@
 # SeaPilot Vercel Production Notes
 
+Version **3.59.1** : à chaque clic sur **RH / Brevets**, même depuis le module
+déjà ouvert sur un autre collaborateur, la fiche liée au compte
+connecté est sélectionnée en priorité parmi les collaborateurs autorisés et
+visibles. Une identité chargée après le personnel est également prise en compte.
+La sélection manuelle d’un autre collaborateur et la fermeture de la fiche restent
+respectées. En l’absence de fiche liée visible, la sélection initiale habituelle
+est conservée. Aucun changement de permissions ni migration n’est nécessaire.
+
 Version **3.59.0** : cartes et portraits homogènes dans l’organigramme, six choix
 de contenu dans les trois documents, liste du personnel sur une page A4, liste
 d’urgence par défaut partagée, et distinction entre fonction à bord et intitulé
