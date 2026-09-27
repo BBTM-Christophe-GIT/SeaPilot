@@ -24,7 +24,6 @@ import {
   History,
   House,
   LayoutGrid,
-  ListFilter,
   Menu,
   Pencil,
   Plus,
@@ -42,7 +41,6 @@ import { AppDialog } from "../../components/AppDialog";
 import { compareFleetAssets } from "../fleet/fleetDisplay";
 import {
   addPreviewEvent,
-  billingTotal,
   buildPreviewPdf,
   createPreviewProjects,
   dateLabel,
@@ -54,13 +52,20 @@ import {
   periodLabel,
   PREVIEW_CONTRACTS,
   PREVIEW_DATE,
-  type PreviewBillingLine,
   type PreviewDocument,
   type PreviewOperation,
   type PreviewProject,
   type PreviewStatus,
   type PreviewTab,
 } from "./previewModel";
+
+import { PreviewPortfolio, type CatalogSection } from "./PreviewPortfolio";
+import { PreviewBillingWorkspace } from "./PreviewBillingWorkspace";
+import {
+  OPERATION_TYPES,
+  projectOperationType,
+  type OperationType,
+} from "./portfolioModel";
 
 const TABS: { id: PreviewTab; name: string; icon: LucideIcon }[] = [
   { id: "overview", name: "Vue d’ensemble", icon: ClipboardList },
@@ -80,13 +85,14 @@ type Modal =
   | { kind: "project"; project: PreviewProject; isNew?: boolean }
   | { kind: "operation"; operation?: PreviewOperation }
   | { kind: "document"; document: PreviewDocument }
-  | { kind: "archive" | "billing-line" | "catalog" | "help" | "notifications" }
+  | { kind: "catalog"; section: CatalogSection }
+  | { kind: "archive" | "help" | "notifications" }
   | null;
 
 function currentRoute(): Route {
   const [id, tab] = window.location.hash.slice(1).split("/");
-  return id === "portfolio"
-    ? { id }
+  return !id || id === "portfolio"
+    ? { id: "portfolio" }
     : {
         id: /^P\d+$/.test(id || "") ? id : "P901",
         tab: TABS.some((item) => item.id === tab)
@@ -307,7 +313,9 @@ export function ProjectsWorkspacePreview() {
             <CalendarDays />
             Planning
           </button>
-          <button onClick={() => setModal({ kind: "catalog" })}>
+          <button
+            onClick={() => setModal({ kind: "catalog", section: "Navires" })}
+          >
             <Ship />
             Navires
           </button>
@@ -379,17 +387,18 @@ export function ProjectsWorkspacePreview() {
             <strong>{portfolio ? "Portefeuille" : project.id}</strong>
           </div>
           {portfolio ? (
-            <Portfolio
+            <PreviewPortfolio
               projects={projects}
               onOpen={(id) => navigate(id)}
-              onCreate={() =>
+              onNew={() =>
                 setModal({
                   kind: "project",
                   project: newPreviewProject(projects),
                   isNew: true,
                 })
               }
-              onCatalog={() => setModal({ kind: "catalog" })}
+              onCatalog={(section) => setModal({ kind: "catalog", section })}
+              onBilling={(id) => navigate(id, "billing")}
             />
           ) : (
             <article className="pp-dossier">
@@ -669,65 +678,41 @@ export function ProjectsWorkspacePreview() {
                   </>
                 ) : null}
                 {activeTab === "billing" ? (
-                  <Billing
+                  <PreviewBillingWorkspace
+                    key={project.id}
                     project={project}
-                    busy={busy}
-                    onAdd={() => setModal({ kind: "billing-line" })}
-                    onChange={(lines) =>
-                      update(
-                        project.id,
-                        (item) => ({ ...item, billing: lines }),
-                        "Facturation modifiée",
-                        "Sélection des éléments du relevé",
+                    onChange={(period, event) =>
+                      setProjects((items) =>
+                        items.map((item) => {
+                          if (item.id !== project.id) return item;
+                          const updated = {
+                            ...item,
+                            billingMonths: {
+                              ...item.billingMonths,
+                              [period.month]: period,
+                            },
+                          };
+                          return event
+                            ? addPreviewEvent(updated, event, period.month)
+                            : updated;
+                        }),
                       )
                     }
-                    onExport={async (format) => {
-                      setBusy(true);
-                      try {
-                        const blob = await buildPreviewPdf(
-                          project,
-                          "Relevé de facturation — septembre 2026",
-                          [
-                            ...project.billing
-                              .filter((line) => line.included)
-                              .map(
-                                (line) =>
-                                  `${line.label} : ${line.quantity} x ${money(line.price)} = ${money(line.quantity * line.price)}`,
-                              ),
-                            "",
-                            `TOTAL HT : ${money(billingTotal(project.billing))}`,
-                          ],
-                        );
-                        if (format === "zip") {
-                          const { default: JSZip } = await import("jszip");
-                          const zip = new JSZip();
-                          zip.file("DEMO-releve.pdf", blob);
-                          for (const document of project.documents)
-                            zip.file(
-                              `pieces/${document.id}-${document.name}`,
-                              document.file ||
-                                (await buildPreviewPdf(project, document.name, [
-                                  "Pièce illustrative de démonstration.",
-                                ])),
-                            );
-                          downloadPreviewBlob(
-                            await zip.generateAsync({ type: "blob" }),
-                            `DEMO-${project.id}-facturation.zip`,
-                          );
-                        } else
-                          downloadPreviewBlob(
-                            blob,
-                            `DEMO-${project.id}-facturation.pdf`,
-                          );
-                        setToast(
-                          "Le relevé de démonstration a été téléchargé.",
-                        );
-                      } catch {
-                        setToast("L’export a échoué. Réessaie.");
-                      } finally {
-                        setBusy(false);
-                      }
-                    }}
+                    onDocuments={(documents) =>
+                      update(
+                        project.id,
+                        (item) => ({
+                          ...item,
+                          documents: [...documents, ...item.documents],
+                        }),
+                        "Justificatif ajouté",
+                        documents.map((item) => item.name).join(", "),
+                      )
+                    }
+                    onOpenDocument={(document) =>
+                      setModal({ kind: "document", document })
+                    }
+                    onToast={setToast}
                   />
                 ) : null}
                 {activeTab === "documents" ? (
@@ -889,8 +874,10 @@ export function ProjectsWorkspacePreview() {
           }
         >
           <p>
-            Le dossier quittera le portefeuille actif. Ses documents, ses
-            opérations et son historique seront conservés dans cette session.
+            Le dossier sera marqué « archivé » et restera visible dans « Tous
+            les dossiers ». Ses documents, ses opérations et son historique
+            seront conservés. L’archivage ne change pas les indicateurs
+            historiques.
           </p>
         </AppDialog>
       ) : null}
@@ -903,23 +890,12 @@ export function ProjectsWorkspacePreview() {
           busy={busy}
         />
       ) : null}
-      {modal?.kind === "billing-line" ? (
-        <BillingLineForm
-          onClose={() => setModal(null)}
-          onSave={(line) => {
-            update(
-              project.id,
-              (item) => ({ ...item, billing: [...item.billing, line] }),
-              "Élément de facturation ajouté",
-              line.label,
-            );
-            setModal(null);
-            setToast("Élément ajouté au relevé de démonstration.");
-          }}
-        />
-      ) : null}
       {modal?.kind === "catalog" ? (
-        <Catalog projects={projects} onClose={() => setModal(null)} />
+        <Catalog
+          initialSection={modal.section}
+          projects={projects}
+          onClose={() => setModal(null)}
+        />
       ) : null}
       {modal?.kind === "help" ? (
         <AppDialog
@@ -990,176 +966,6 @@ export function ProjectsWorkspacePreview() {
         </AppDialog>
       ) : null}
     </div>
-  );
-}
-
-function Portfolio({
-  projects,
-  onOpen,
-  onCreate,
-  onCatalog,
-}: {
-  projects: PreviewProject[];
-  onOpen: (id: string) => void;
-  onCreate: () => void;
-  onCatalog: () => void;
-}) {
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
-  const [archived, setArchived] = useState(false);
-  const [vessel, setVessel] = useState("");
-  const visible = projects.filter(
-    (project) =>
-      project.archived === archived &&
-      (!status || project.status === status) &&
-      (!vessel || project.vessel === vessel) &&
-      `${project.id} ${project.title} ${project.client} ${project.vessel}`
-        .toLocaleLowerCase("fr")
-        .includes(search.toLocaleLowerCase("fr")),
-  );
-  return (
-    <section className="pp-dossier pp-portfolio">
-      <div className="pp-section-heading">
-        <div>
-          <span className="pp-eyebrow">VOTRE PORTEFEUILLE</span>
-          <h1>Les projets, en perspective.</h1>
-          <p>
-            Du premier échange au dernier document, chaque dossier au même
-            endroit.
-          </p>
-        </div>
-        <Button primary icon={Plus} onClick={onCreate}>
-          Nouveau projet
-        </Button>
-      </div>
-      <div className="pp-portfolio-switch">
-        <div className="pp-segmented">
-          <button aria-pressed={!archived} onClick={() => setArchived(false)}>
-            Projets actifs{" "}
-            <span>{projects.filter((item) => !item.archived).length}</span>
-          </button>
-          <button aria-pressed={archived} onClick={() => setArchived(true)}>
-            Archives{" "}
-            <span>{projects.filter((item) => item.archived).length}</span>
-          </button>
-        </div>
-        <Button icon={LayoutGrid} onClick={onCatalog}>
-          Référentiels
-        </Button>
-      </div>
-      <div className="pp-filters">
-        <label className="pp-search">
-          <Search size={18} />
-          <input
-            aria-label="Rechercher un projet"
-            placeholder="Rechercher un projet, un client, un navire…"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </label>
-        <label className="pp-filter-select">
-          <ListFilter size={17} />
-          <select
-            aria-label="Filtrer par statut"
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
-          >
-            <option value="">Tous les statuts</option>
-            {["Non validé", "Validé", "Facturé"].map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </select>
-        </label>
-        <select
-          aria-label="Filtrer par navire"
-          value={vessel}
-          onChange={(event) => setVessel(event.target.value)}
-        >
-          <option value="">Tous les navires</option>
-          {VESSELS.map((item) => (
-            <option key={item.name}>{item.name}</option>
-          ))}
-        </select>
-      </div>
-      <div className="pp-table-wrap">
-        <table className="pp-table pp-portfolio-table">
-          <thead>
-            <tr>
-              <th>Projet / client</th>
-              <th>Navire</th>
-              <th>Période</th>
-              <th>Statut</th>
-              <th>À suivre</th>
-              <th>
-                <span className="pp-sr-only">Ouvrir</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((project) => (
-              <tr key={project.id}>
-                <td>
-                  <button
-                    className="pp-project-link"
-                    onClick={() => onOpen(project.id)}
-                  >
-                    <small>{project.id}</small>
-                    <strong>{project.title}</strong>
-                  </button>
-                  <span className="pp-muted">{project.client}</span>
-                </td>
-                <td>{project.vessel}</td>
-                <td>{periodLabel(project.start, project.end)}</td>
-                <td>
-                  <Status status={project.status} />
-                </td>
-                <td>
-                  {project.archived ? (
-                    "Dossier conservé"
-                  ) : missingContractFields(project).length ? (
-                    <span className="pp-pending">
-                      <TriangleAlert size={14} />
-                      Contrat à compléter
-                    </span>
-                  ) : (
-                    `${project.operations.length} opération(s)`
-                  )}
-                </td>
-                <td>
-                  <button
-                    className="pp-icon-button"
-                    aria-label={`Ouvrir ${project.id}`}
-                    onClick={() => onOpen(project.id)}
-                  >
-                    <ArrowRight size={18} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!visible.length ? (
-          <Empty>
-            Aucun projet ne correspond à cette recherche.
-            <br />
-            <button
-              className="pp-text-button"
-              onClick={() => {
-                setSearch("");
-                setStatus("");
-                setVessel("");
-              }}
-            >
-              Réinitialiser les filtres
-            </button>
-          </Empty>
-        ) : null}
-      </div>
-      <p className="pp-footnote">
-        {visible.length} projet(s) · Les archives conservent l’ensemble des
-        documents et opérations de la démonstration.
-      </p>
-    </section>
   );
 }
 
@@ -1517,140 +1323,6 @@ function Contract({
   );
 }
 
-function Billing({
-  project,
-  busy,
-  onChange,
-  onAdd,
-  onExport,
-}: {
-  project: PreviewProject;
-  busy: boolean;
-  onChange: (lines: PreviewBillingLine[]) => void;
-  onAdd: () => void;
-  onExport: (format: string) => void;
-}) {
-  const [format, setFormat] = useState("pdf");
-  return (
-    <>
-      <div className="pp-section-heading">
-        <div>
-          <h2>Préparer le relevé de facturation</h2>
-          <p>Contrôlez les éléments à inclure avant de générer le document.</p>
-        </div>
-        <span className="pp-period-badge">
-          <CalendarDays size={17} />
-          Septembre 2026
-        </span>
-      </div>
-      <div className="pp-billing-summary">
-        <div>
-          <small>TOTAL SÉLECTIONNÉ HT</small>
-          <strong>{money(billingTotal(project.billing))}</strong>
-          <span>
-            {project.billing.filter((line) => line.included).length} éléments
-            inclus
-          </span>
-        </div>
-        <div>
-          <small>LOYERS, PRESTATIONS ET FRAIS</small>
-          <p>
-            Les montants de cette démonstration sont fictifs.
-            <br />
-            Le calcul final conservera les règles et DPR existants.
-          </p>
-        </div>
-      </div>
-      <section className="pp-panel">
-        <div className="pp-panel-title">
-          <h3>Éléments du relevé</h3>
-          <Button icon={Plus} disabled={project.archived} onClick={onAdd}>
-            Ajouter un élément
-          </Button>
-        </div>
-        <div className="pp-table-wrap">
-          <table className="pp-table pp-billing-table">
-            <thead>
-              <tr>
-                <th>Inclure</th>
-                <th>Désignation</th>
-                <th>Quantité</th>
-                <th>Prix HT</th>
-                <th>Total HT</th>
-              </tr>
-            </thead>
-            <tbody>
-              {project.billing.map((line) => (
-                <tr
-                  key={line.id}
-                  className={line.included ? "" : "is-excluded"}
-                >
-                  <td>
-                    <input
-                      type="checkbox"
-                      aria-label={`Inclure ${line.label}`}
-                      checked={line.included}
-                      disabled={project.archived}
-                      onChange={() =>
-                        onChange(
-                          project.billing.map((item) =>
-                            item.id === line.id
-                              ? { ...item, included: !item.included }
-                              : item,
-                          ),
-                        )
-                      }
-                    />
-                  </td>
-                  <td>
-                    <strong>{line.label}</strong>
-                    <small>{line.category}</small>
-                  </td>
-                  <td>{line.quantity}</td>
-                  <td>{money(line.price)}</td>
-                  <td>
-                    <strong>{money(line.quantity * line.price)}</strong>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!project.billing.length ? (
-            <Empty>
-              Aucun élément dans le relevé de démonstration de ce projet.
-            </Empty>
-          ) : null}
-        </div>
-      </section>
-      <div className="pp-export-bar">
-        <div>
-          <h3>Votre dossier de facturation</h3>
-          <p>Un PDF de démonstration, avec les pièces si nécessaire.</p>
-        </div>
-        <label className="pp-sr-only" htmlFor="pp-export-format">
-          Format de l’export
-        </label>
-        <select
-          id="pp-export-format"
-          value={format}
-          onChange={(event) => setFormat(event.target.value)}
-        >
-          <option value="pdf">PDF du relevé</option>
-          <option value="zip">ZIP · relevé et pièces</option>
-        </select>
-        <Button
-          primary
-          icon={Download}
-          disabled={busy || !project.billing.some((line) => line.included)}
-          onClick={() => onExport(format)}
-        >
-          {busy ? "Préparation…" : "Exporter le relevé"}
-        </Button>
-      </div>
-    </>
-  );
-}
-
 function Documents({
   project,
   onOpen,
@@ -1797,6 +1469,7 @@ function ProjectForm({
     const values = {
       ...project,
       title: String(data.get("title")).trim(),
+      operationType: String(data.get("operationType")) as OperationType,
       client: String(data.get("client")).trim(),
       vessel: String(data.get("vessel")),
       start: String(data.get("start")),
@@ -1833,6 +1506,16 @@ function ProjectForm({
       <div className="pp-form-grid">
         <Field label="Nom du projet *" wide>
           <input name="title" required defaultValue={project.title} />
+        </Field>
+        <Field label="Type d’opération" wide>
+          <select
+            name="operationType"
+            defaultValue={projectOperationType(project)}
+          >
+            {OPERATION_TYPES.map((type) => (
+              <option key={type}>{type}</option>
+            ))}
+          </select>
         </Field>
         <Field label="Client / affréteur *" wide>
           <input name="client" required defaultValue={project.client} />
@@ -1901,6 +1584,10 @@ function OperationForm({
     const value: PreviewOperation = {
       id: operation?.id || Date.now(),
       name: String(data.get("name")).trim(),
+      type: String(data.get("operationType")) as OperationType,
+      dailyRateOverride: data.get("dailyRateOverride")
+        ? Number(data.get("dailyRateOverride"))
+        : undefined,
       vessel: String(data.get("vessel")),
       start: String(data.get("start")),
       end: String(data.get("end")),
@@ -1941,6 +1628,26 @@ function OperationForm({
             placeholder="Ex. Rotation 03"
           />
         </Field>
+        <Field label="Type d’opération" wide>
+          <select
+            name="operationType"
+            defaultValue={operation?.type || projectOperationType(project)}
+          >
+            {OPERATION_TYPES.map((type) => (
+              <option key={type}>{type}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Tarif spécifique de l’opération (€/jour)">
+          <input
+            name="dailyRateOverride"
+            type="number"
+            min="0"
+            step="0.01"
+            defaultValue={operation?.dailyRateOverride}
+            placeholder="Tarif du contrat par défaut"
+          />
+        </Field>
         <Field label="Navire" wide>
           <select
             name="vessel"
@@ -1978,86 +1685,6 @@ function OperationForm({
             <option>Non validé</option>
             <option>Validé</option>
           </select>
-        </Field>
-      </div>
-      {error ? (
-        <p role="alert" className="pp-error">
-          {error}
-        </p>
-      ) : null}
-    </AppDialog>
-  );
-}
-
-function BillingLineForm({
-  onClose,
-  onSave,
-}: {
-  onClose: () => void;
-  onSave: (line: PreviewBillingLine) => void;
-}) {
-  const [error, setError] = useState("");
-  return (
-    <AppDialog
-      title="Ajouter un élément de facturation"
-      onClose={onClose}
-      onSubmit={(event) => {
-        event.preventDefault();
-        const data = new FormData(event.currentTarget);
-        const label = String(data.get("label")).trim();
-        const quantity = Number(data.get("quantity"));
-        const price = Number(data.get("price"));
-        if (
-          !label ||
-          !Number.isFinite(quantity) ||
-          quantity <= 0 ||
-          !Number.isFinite(price) ||
-          price < 0
-        ) {
-          setError("Vérifie la désignation, la quantité et le montant.");
-          return;
-        }
-        onSave({
-          id: Date.now(),
-          label,
-          category: String(data.get("category")),
-          quantity,
-          price,
-          included: true,
-        });
-      }}
-      footer={
-        <>
-          <Button onClick={onClose}>Annuler</Button>
-          <Button primary type="submit">
-            Ajouter au relevé
-          </Button>
-        </>
-      }
-    >
-      <div className="pp-form-grid">
-        <Field label="Désignation *" wide>
-          <input name="label" required />
-        </Field>
-        <Field label="Catégorie" wide>
-          <select name="category">
-            <option>Prestation BBTM</option>
-            <option>Frais refacturable</option>
-            <option>Loyer</option>
-          </select>
-        </Field>
-        <Field label="Quantité *">
-          <input
-            type="number"
-            name="quantity"
-            required
-            min="0.01"
-            step="0.01"
-            defaultValue="1"
-          />
-        </Field>
-        <Field label="Prix unitaire HT (€) *">
-          <input type="number" name="price" required min="0" step="0.01" />
         </Field>
       </div>
       {error ? (
@@ -2144,13 +1771,15 @@ function DocumentDialog({
 }
 
 function Catalog({
+  initialSection,
   projects,
   onClose,
 }: {
+  initialSection: CatalogSection;
   projects: PreviewProject[];
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState("Clients");
+  const [tab, setTab] = useState<string>(initialSection);
   const [search, setSearch] = useState("");
   const items =
     tab === "Clients"
@@ -2166,7 +1795,17 @@ function Catalog({
               "Spread antipollution",
             ];
   return (
-    <AppDialog title="Référentiels du projet" onClose={onClose} size="lg">
+    <AppDialog
+      title={
+        initialSection === "Clients"
+          ? "Clients & affréteurs"
+          : initialSection === "Navires"
+            ? "Navires & remorqués"
+            : "Catalogue de prestations"
+      }
+      onClose={onClose}
+      size="lg"
+    >
       <div className="pp-segmented">
         {["Clients", "Navires", "Remorqués", "Prestations"].map((name) => (
           <button
@@ -2184,7 +1823,7 @@ function Catalog({
       <label className="pp-search pp-catalog-search">
         <Search size={18} />
         <input
-          aria-label="Rechercher dans le référentiel"
+          aria-label="Rechercher dans le catalogue"
           value={search}
           placeholder={`Rechercher · ${tab.toLowerCase()}`}
           onChange={(event) => setSearch(event.target.value)}

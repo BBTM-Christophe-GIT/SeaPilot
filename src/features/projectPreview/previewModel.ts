@@ -1,3 +1,6 @@
+import { extraPreviewProjects, type OperationType } from "./portfolioModel";
+import type { PreviewBillingMonth } from "./previewBillingModel";
+
 export type PreviewTab =
   | "overview"
   | "contract"
@@ -14,6 +17,8 @@ export interface PreviewOperation {
   end: string;
   status: PreviewStatus;
   port: string;
+  type?: OperationType;
+  dailyRateOverride?: number;
 }
 export interface PreviewDocument {
   id: number;
@@ -55,6 +60,8 @@ export interface PreviewProject {
   documents: PreviewDocument[];
   events: PreviewEvent[];
   billing: PreviewBillingLine[];
+  operationType?: OperationType;
+  billingMonths?: Record<string, PreviewBillingMonth>;
 }
 
 export const PREVIEW_DATE = "2026-09-27";
@@ -79,10 +86,15 @@ export const money = (value: number) =>
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value);
-export const dateLabel = (value: string) =>
-  new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short" }).format(
-    new Date(`${value}T12:00:00`),
-  );
+export const dateLabel = (value: string) => {
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isFinite(date.getTime())
+    ? new Intl.DateTimeFormat("fr-FR", {
+        day: "numeric",
+        month: "short",
+      }).format(date)
+    : "—";
+};
 export const periodLabel = (start: string, end: string) =>
   `${dateLabel(start)} – ${dateLabel(end)} ${end.slice(0, 4)}`;
 export const billingTotal = (lines: PreviewBillingLine[]) =>
@@ -221,6 +233,7 @@ export function createPreviewProjects(): PreviewProject[] {
     {
       id: "P902",
       title: "Inspection côtière",
+      operationType: "Travaux sous-marins",
       client: "Client Littoral Démonstration",
       vessel: "Support Démonstration",
       start: "2026-10-05",
@@ -307,6 +320,7 @@ export function createPreviewProjects(): PreviewProject[] {
       ],
       billing: [],
     },
+    ...extraPreviewProjects(),
   ];
 }
 

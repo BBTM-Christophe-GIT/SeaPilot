@@ -1229,3 +1229,46 @@ Les preuves locales sont conservées dans le répertoire d’artefacts de ce cha
 P3 : quelques différences de graisse, de taille des pictogrammes et de forme des badges par rapport à l’image générée. Le pied de navigation indique volontairement la démonstration et permet sa réinitialisation. Aucun point P0, P1 ou P2 restant dans le périmètre de prévisualisation.
 
 Cette validation concerne une interface avec données fictives. Les modèles contractuels complets, les règles DPR, les profils réels et les autorisations de production restent à raccorder et à vérifier lors de l’intégration définitive.
+
+---
+
+# Design QA — Projet : pilotage de flotte et facturation mensuelle
+
+## Périmètre
+
+Révision de la prévisualisation indépendante à la demande de l’utilisateur : deux mesures d’utilisation (prévu et réalisé), répartition des activités avant la liste, accès aux catalogues explicites, distinction entre avancement et archivage, et facturation complétée à partir de l’audit du module existant. La direction graphique du dossier est conservée.
+
+## Contrôle des cinq surfaces
+
+| Surface | Vérification |
+| --- | --- |
+| Structure | Indicateurs au-dessus des dossiers ; deux panneaux sur bureau, empilement sur téléphone. Dossier à six rubriques conservé, facturation à quatre sous-rubriques avec récapitulatif et exports. |
+| Typographie | Titres, libellés, valeurs et unités hiérarchisés. Nombre de jours et bases de calcul visibles ; états vides et périodes futures explicites. |
+| Couleurs | Bleu pour le prévu, vert pour le réalisé ; palette distincte pour les activités ; valeurs et textes redondants avec les couleurs. Fond marine et surfaces claires conservés. |
+| Graphiques et icônes | Barres calculées par navire, anneau calculé par nombre de missions. Logo existant et icônes Lucide ; aucun actif décoratif ajouté. |
+| Interactions et adaptation | Filtres, classement, navigation mensuelle, formulaires, archivage, pièces et exports vérifiés. Dialogue utilisable à 390 × 844 ; tableaux défilants dans leur conteneur. |
+
+## Corrections réalisées
+
+- Séparation du style du récapitulatif mensuel et de celui de l’ancienne synthèse pour éviter une grille parasite.
+- Rendu des octets PDF via PDF.js : le lecteur natif du navigateur intégré restait vide. Aperçu et pagination visibles après correction.
+- Libellé du fournisseur isolé de sa liste de suggestions pour conserver un nom accessible exact.
+- Réduction du graphique en anneau sur mobile sans recouvrement de sa légende.
+- Traitement des dates de relevé vides sans plantage ; génération bloquée tant que la période est invalide ou non enregistrée.
+- ZIP alimenté par des buffers pour un comportement identique dans le navigateur et les tests Node.
+
+## Vérifications
+
+- Bureau 1487 × 1058 et mobile 390 × 844, inspection des vues portefeuille, frais, aperçu PDF et formulaire fournisseur. Largeur document mobile mesurée ≤ 390 px, sans débordement global ; le tableau conserve son défilement local.
+- Filtrage par Antipollution : seul P904 ressort sur septembre. Changement de mois au clavier vers une période future : réalisé indisponible, aucun jour fictivement réalisé.
+- Ajout d’un frais sur mobile et retour au portefeuille ; fermeture des dialogues avec Échap.
+- 11 tests automatisés : conservation contrat/documents/historique, archive/restauration, ajout local de fichier, facturation indépendante par mois, frais avec pièce conservée après retrait, filtres et utilisation, chevauchements, archives historiques, période future, tarifs et compléments, devises, vrais PDF/fusion et contenu ZIP.
+- Lint ciblé et compilation de production réussis. La génération PDF réelle a été inspectée dans le navigateur intégré.
+
+Preuves dans le dossier d’artefacts `projets-preview` du chat : `09-portfolio-v2.png`, `10-billing-expenses-v2.png`, `12-billing-pdf-v2.png`, `13-mobile-expense-v2.png`, `14-mobile-portfolio-v2.png`.
+
+## Limites conservées
+
+Prévisualisation avec données fictives, modifications temporaires et catalogues en consultation. La parité des règles et générateurs de production, les données historiques réelles, les catalogues persistants et les droits réels par profil restent à raccorder lors de l’intégration définitive. Le périmètre fonctionnel et les écarts de la maquette sont décrits dans `docs/design/projects-workspace-preview.md`. Aucun écran de rôle simulé n’a servi de validation des comptes Marin/Capitaine.
+
+final result: passed

@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ProjectsWorkspacePreview } from "./ProjectsWorkspacePreview";
-import { billingTotal, createPreviewProjects, money } from "./previewModel";
+import { money } from "./previewModel";
 
 beforeEach(() => {
   window.history.replaceState(
@@ -147,20 +147,134 @@ describe("project workspace preview", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("recalculates the billing selection and preserves cents", async () => {
+  it("saves monthly billing selections and restores the September draft after switching months", async () => {
     window.history.replaceState(
       null,
       "",
       "/previews/projects.html#P901/billing",
     );
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
     const user = userEvent.setup();
     render(<ProjectsWorkspacePreview />);
-    expect(screen.getByText(/110\s*300\s*€/)).toBeInTheDocument();
+    expect(screen.getByText(/79\s*250\s*€/)).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: /Prestations BBTM 2/ }),
+    );
     await user.click(
       screen.getByRole("checkbox", { name: "Inclure Mobilisation du navire" }),
     );
-    expect(screen.getByText(/95\s*300\s*€/)).toBeInTheDocument();
+    expect(screen.getByText(/64\s*250\s*€/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Relevé PDF" })).toBeDisabled();
+    await user.click(
+      screen.getByRole("button", { name: "Enregistrer le mois" }),
+    );
+    expect(screen.getByRole("button", { name: "Relevé PDF" })).toBeEnabled();
+    fireEvent.change(screen.getByLabelText("Mois de facturation"), {
+      target: { value: "2026-10" },
+    });
+    expect(
+      screen.getByText("Aucune prestation pour ce mois."),
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Mois de facturation"), {
+      target: { value: "2026-09" },
+    });
+    expect(
+      screen.getByRole("checkbox", { name: "Inclure Mobilisation du navire" }),
+    ).not.toBeChecked();
     expect(money(1.25)).toMatch(/1,25/);
-    expect(billingTotal(createPreviewProjects()[0].billing)).toBe(110300);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("adds an expense with a local attachment, edits it and preserves its document after removing the expense", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/previews/projects.html#P901/billing",
+    );
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const user = userEvent.setup();
+    render(<ProjectsWorkspacePreview />);
+    await user.click(
+      screen.getByRole("button", { name: /Frais refacturables 2/ }),
+    );
+    await user.click(screen.getByRole("button", { name: "Ajouter un frais" }));
+    await user.type(screen.getByLabelText("Fournisseur *"), "Fournisseur test");
+    await user.type(
+      screen.getByLabelText("Numéro de facture fournisseur *"),
+      "TEST-001",
+    );
+    await user.type(screen.getByLabelText("Total HT *"), "123.45");
+    fireEvent.change(screen.getByLabelText("Justificatifs du frais"), {
+      target: {
+        files: [
+          new File(["annexe"], "justificatif.txt", { type: "text/plain" }),
+        ],
+      },
+    });
+    await user.click(
+      screen.getByRole("button", { name: "Enregistrer le frais" }),
+    );
+    expect(screen.getByText("Fournisseur test")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Modifier le frais TEST-001" }),
+    );
+    await user.clear(screen.getByLabelText("Total HT *"));
+    await user.type(screen.getByLabelText("Total HT *"), "150.55");
+    await user.click(
+      screen.getByRole("button", { name: "Enregistrer le frais" }),
+    );
+    expect(screen.getAllByText(/150,55/).length).toBeGreaterThan(0);
+    await user.click(
+      screen.getByRole("button", { name: "Retirer le frais TEST-001" }),
+    );
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Retirer le frais",
+      }),
+    );
+    expect(screen.queryByText("Fournisseur test")).not.toBeInTheDocument();
+    await user.click(
+      within(
+        screen.getByRole("navigation", { name: "Rubriques du projet" }),
+      ).getByRole("button", { name: "Documents" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "justificatif.txt" }),
+    ).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("shows both utilization metrics and treats archives as a storage filter", async () => {
+    window.history.replaceState(null, "", "/previews/projects.html");
+    const user = userEvent.setup();
+    render(<ProjectsWorkspacePreview />);
+    expect(
+      screen.getByRole("img", { name: /M\/V Démonstration : prévu 77/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: /M\/V Démonstration : réalisé 59/ }),
+    ).toBeInTheDocument();
+    await user.selectOptions(
+      screen.getByLabelText("Rangement des dossiers"),
+      "archived",
+    );
+    expect(
+      screen.getByRole("button", { name: "Ouvrir P898" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Ouvrir P901" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: /M\/V Démonstration : prévu 77/ }),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Catalogue de prestations" }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Catalogue de prestations" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Mobilisation")).toBeInTheDocument();
   });
 });
