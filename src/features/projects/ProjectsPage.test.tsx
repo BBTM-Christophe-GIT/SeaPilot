@@ -904,7 +904,7 @@ describe('ProjectsPage', () => {
       .toHaveTextContent('Port des Goudes');
     await user.type(redeliveryPort, 'Cherbourg');
     await user.click(screen.getByRole('option', { name: /^Port de CherbourgCherbourg-en-Cotentin – FR CER$/ }));
-    await user.click(screen.getByRole('button', { name: /Facturation/ }));
+    await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
     await user.selectOptions(screen.getByLabelText('Navire principal *'), '12');
     await user.click(screen.getByRole('button', { name: 'Créer le projet' }));
 
@@ -966,7 +966,7 @@ describe('ProjectsPage', () => {
     await user.click(screen.getByRole('button', { name: /Opérations/ }));
     fireEvent.input(screen.getByLabelText('Début du projet'), { target: { value: '2026-09-04' } });
     fireEvent.input(screen.getByLabelText('Fin du projet'), { target: { value: '2026-09-11' } });
-    await user.click(screen.getByRole('button', { name: /Facturation/ }));
+    await user.click(screen.getByRole('button', { name: /Offre Commerciale/ }));
     await user.selectOptions(screen.getByLabelText('Navire principal *'), '12');
     await user.click(screen.getByRole('button', { name: 'Créer le projet' }));
 

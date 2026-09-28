@@ -610,8 +610,12 @@ export function ProjectEditor({
   }, [client, form.primaryVesselId, isBareboat]);
 
   useEffect(() => {
-    if (activeStep === 'offer' || activeStep === 'bimco') setActiveStep(contractStep);
-  }, [contractStep]);
+    setActiveStep((current) => (
+      current === 'offer' || current === 'bimco' || (isCommercialOffer && current === 'billing')
+        ? contractStep
+        : current
+    ));
+  }, [contractStep, isCommercialOffer]);
 
   function update<K extends keyof ProjectWriteInput>(key: K, value: ProjectWriteInput[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -830,6 +834,32 @@ export function ProjectEditor({
     setClientEditorOpen(false);
   }
 
+  const vesselFields = (
+    <>
+      <Field label={isTowage ? '5. Remorqueur · Navire principal *' : isBareboat ? '4. Navire affrété *' : 'Navire principal *'} wide={isTowage || isBareboat}>
+        <select onChange={(event) => update('primaryVesselId', optionalNumber(event.target.value))} value={form.primaryVesselId ?? ''}>
+          <option value="">Non renseigné</option>
+          {eligibleVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>)}
+        </select>
+      </Field>
+      {!isTowage && !isBareboat ? (
+        <Field label="Navire secondaire">
+          <select onChange={(event) => update('secondaryVesselId', optionalNumber(event.target.value))} value={form.secondaryVesselId ?? ''}>
+            <option value="">Non renseigné</option>
+            {eligibleVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>)}
+          </select>
+        </Field>
+      ) : null}
+    </>
+  );
+  const operationSupportFields = (
+    <>
+      <Field label="Zone d’opération" wide><textarea onChange={(event) => update('operationArea', event.target.value)} value={form.operationArea} /></Field>
+      <label className="project-editor-check"><input checked={form.isRovSupport} onChange={(event) => update('isRovSupport', event.target.checked)} type="checkbox" /> Support ROV</label>
+      <label className="project-editor-check"><input checked={form.isDivingSupport} onChange={(event) => update('isDivingSupport', event.target.checked)} type="checkbox" /> Support plongée</label>
+    </>
+  );
+
   return (
     <div className="project-editor-backdrop">
       <section aria-label={project ? 'Modifier le projet' : 'Créer un projet'} aria-modal="true" className="project-editor is-project-assistant" role="dialog">
@@ -873,7 +903,7 @@ export function ProjectEditor({
                   {PROJECT_CONTRACT_TYPES.map((value) => <option key={value} value={value}>{value}</option>)}
                 </select>
               </label>
-              {assistantSteps.map((step, index) => {
+              {assistantSteps.filter((step) => !isCommercialOffer || step.id !== 'billing').map((step, index) => {
                 const Icon = step.icon;
                 const isActive = activeStep === step.id;
                 return (
@@ -963,7 +993,7 @@ export function ProjectEditor({
                 <section className="project-initial-operation is-wide" aria-label="Première opération">
                   <div className="project-initial-operation-heading">
                     <strong>Première opération</strong>
-                    <small>Les dates et navires seront repris depuis Livraison, Restitution et Mission et facturation.</small>
+                    <small>Les dates et navires seront repris depuis les informations du projet.</small>
                   </div>
                   <div className="project-editor-grid">
                     <Field label="Description / mission" wide>
@@ -1333,6 +1363,7 @@ export function ProjectEditor({
                   </div>
                 </section>
               ) : null}
+              {isCommercialOffer ? vesselFields : null}
               {(isCommercialOffer && commercialConditionsMode === 'structured') || isTowage || isBareboat ? (
                 <Field label={isTowage ? '12. Tarif forfaitaire HT · Loyer d’affrètement' : isBareboat ? '13. Loyer journalier' : 'Loyer d’affrètement'} wide>
                   <span className="project-commercial-hire-input">
@@ -1467,30 +1498,15 @@ export function ProjectEditor({
             </div>
           </fieldset>
 
-          <fieldset hidden={activeStep !== 'billing'} id="project-step-billing">
-            <legend><span>4</span> Facturation</legend>
-            <div className="project-editor-grid">
-              <Field label={isTowage ? '5. Remorqueur · Navire principal *' : isBareboat ? '4. Navire affrété *' : 'Navire principal *'} wide={isTowage || isBareboat}>
-                <select onChange={(event) => update('primaryVesselId', optionalNumber(event.target.value))} value={form.primaryVesselId ?? ''}>
-                  <option value="">Non renseigné</option>
-                  {eligibleVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>)}
-                </select>
-              </Field>
-              {!isTowage && !isBareboat ? (
-                <>
-              <Field label="Navire secondaire">
-                <select onChange={(event) => update('secondaryVesselId', optionalNumber(event.target.value))} value={form.secondaryVesselId ?? ''}>
-                  <option value="">Non renseigné</option>
-                  {eligibleVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>)}
-                </select>
-              </Field>
-              <Field label="Zone d’opération" wide><textarea onChange={(event) => update('operationArea', event.target.value)} value={form.operationArea} /></Field>
-              <label className="project-editor-check"><input checked={form.isRovSupport} onChange={(event) => update('isRovSupport', event.target.checked)} type="checkbox" /> Support ROV</label>
-              <label className="project-editor-check"><input checked={form.isDivingSupport} onChange={(event) => update('isDivingSupport', event.target.checked)} type="checkbox" /> Support plongée</label>
-                </>
-              ) : null}
-            </div>
-          </fieldset>
+          {!isCommercialOffer ? (
+            <fieldset hidden={activeStep !== 'billing'} id="project-step-billing">
+              <legend><span>4</span> Facturation</legend>
+              <div className="project-editor-grid">
+                {vesselFields}
+                {!isTowage && !isBareboat ? operationSupportFields : null}
+              </div>
+            </fieldset>
+          ) : null}
 
           <fieldset hidden={activeStep !== 'bimco'} id="project-step-bimco">
             <legend><span>2</span> BIMCO</legend>
@@ -1521,7 +1537,7 @@ export function ProjectEditor({
           </fieldset>
 
           <fieldset hidden={activeStep !== 'documents'} id="project-step-documents">
-            <legend><span>5</span> Documents</legend>
+            <legend><span>{isCommercialOffer ? 4 : 5}</span> Documents</legend>
             <section className="project-document-library" aria-label="Pièces jointes du projet">
               <div className="project-document-library-heading">
                 <div>
