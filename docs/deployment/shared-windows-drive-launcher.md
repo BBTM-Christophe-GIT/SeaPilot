@@ -1,4 +1,8 @@
-# Lanceur Windows commun — API 2.2.0
+# Lanceur Windows commun — API 2.5.0
+
+La version actuelle 2.5 prend en charge les documents Projets sous **SeaPilot / Projet / P144 – GUARD VESSEL EMDT**, puis Contrat, HSE, Facturation, Operations ou Offres. Le serveur fournit le dossier autorisé pour chaque projet ; le lanceur contrôle le chemin, la taille et l’empreinte SHA-256 lors de l’écriture et de la lecture. Ce module accepte jusqu’à 50 Mio, sans modifier les limites des autres modules. Les références des fichiers et les liens historiques restent conservés.
+
+La version installée 2.5.0 reste compatible avec les dossiers renommés par numéro et nom du projet. Il n’est pas nécessaire de la réinstaller si **Vérifier ce PC** confirme cette version. La notice et l’archive distribuée ont été actualisées le 28 septembre 2026 pour décrire ce classement.
 
 La version 2.2 ajoute l'écriture et la lecture des FDS dans **Produits Chimiques**.
 Installer l'archive actualisée sur chaque PC ; la racine existante est conservée.
