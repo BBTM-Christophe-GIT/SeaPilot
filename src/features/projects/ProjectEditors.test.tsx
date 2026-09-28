@@ -99,6 +99,13 @@ describe('ProjectEditor contract hire periods', () => {
     expect(screen.queryByLabelText('Loyer en prolongation')).not.toBeInTheDocument();
     expect(screen.getByRole('spinbutton', { name: /Loyer d’affrètement/ })).toBeInTheDocument();
     expect(screen.getByText('€ / jour')).toBeInTheDocument();
+    const offer = within(screen.getByRole('group', { name: '2 Offre Commerciale' }));
+    expect(offer.getByRole('combobox', { name: 'Navire principal *' })).toBeVisible();
+    expect(offer.getByRole('combobox', { name: 'Navire secondaire' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Facturation/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Zone d’opération')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Support ROV')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Support plongée')).not.toBeInTheDocument();
   });
 
   it('separates BIMCO from the categorized document library and accepts several expiring files', async () => {
@@ -377,7 +384,7 @@ describe('ProjectEditor contract hire periods', () => {
       editor.innerHTML = value;
       fireEvent.input(editor);
     });
-    await user.click(screen.getByRole('button', { name: /Facturation/ }));
+    expect(screen.queryByRole('button', { name: /Facturation/ })).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText('Navire principal *'), '1');
     await user.selectOptions(screen.getByLabelText('Navire secondaire'), '2');
     await user.click(screen.getByRole('button', { name: 'Créer le projet' }));
@@ -568,6 +575,8 @@ describe('ProjectEditor contract hire periods', () => {
     await user.click(screen.getByRole('radio', { name: /Description libre et annexes/ }));
 
     expect(screen.queryByRole('spinbutton', { name: /Loyer d’affrètement/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Navire principal *' })).toBeVisible();
+    expect(screen.getByRole('combobox', { name: 'Navire secondaire' })).toBeVisible();
     const editor = screen.getByRole('textbox', { name: 'Description des conditions' });
     editor.innerHTML = '<p><strong>Forfait global</strong> incluant le transit.</p>';
     fireEvent.input(editor);
