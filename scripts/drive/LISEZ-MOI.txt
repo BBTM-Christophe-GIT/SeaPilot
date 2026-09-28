@@ -1,4 +1,4 @@
-SEAPILOT - LANCEUR WINDOWS COMMUN 2.5.0
+SEAPILOT - LANCEUR WINDOWS COMMUN 2.6.0
 PROCEDURES, PDF ET DOSSIERS AUTOMATIQUES - 28/09/2026
 
 Une installation pour Procedures, Procedures PDF, Sanctions Disciplinaires, Produits Chimiques, Ressources Humaines, Projets et les futurs modules.
@@ -6,14 +6,14 @@ Une installation pour Procedures, Procedures PDF, Sanctions Disciplinaires, Prod
 1. Installez Google Drive pour ordinateur et connectez votre compte autorise.
 2. Verifiez que SeaPilot est visible dans l'Explorateur. Les sous-dossiers des modules sont crees automatiquement. Procedures et Sanctions Disciplinaires doivent etre reserves a Administration et Direction dans les partages Google Drive.
 3. Extrayez entierement cette archive puis executez Installer.cmd une fois. Word et Excel doivent etre installes pour modifier leurs documents.
-4. Ouvrez Administration > Documents et Google Drive dans SeaPilot. Renseignez la racine (exemple G:\Mon Drive\SeaPilot) et enregistrez-la : les dossiers des collaborateurs en poste sont prepares.
+4. Ouvrez Administration > Documents et Google Drive dans SeaPilot. Le dossier deja configure est verifie automatiquement ; sinon G:\Mon Drive\SeaPilot est detecte et prepare s'il existe. Le message Google Drive est bien configure confirme que le dossier est accessible. S'il est absent, cliquez sur Selectionner le dossier dans Windows et choisissez votre dossier SeaPilot synchronise : il est enregistre puis verifie automatiquement.
 5. Autorisez l'ouverture du lanceur et la connexion locale si le navigateur le demande.
 
 Le chemin est memorise par utilisateur Windows sur ce PC. Aucun chemin par module n'est a configurer. Une nouvelle installation est inutile pour ajouter un sous-dossier de module.
 Les anciens reglages de modules sont conserves pendant la mise a jour. Le reglage commun SeaPilotRoot devient prioritaire.
 En cas d'erreur CS0016 avec une ancienne archive, telechargez la nouvelle archive et relancez Installer.cmd. L'installation compile maintenant un fichier distinct puis met a jour le raccourci commun : aucun fichier utilise n'est ecrase et les transferts en cours peuvent se terminer. Les anciens executables restent dans le dossier d'installation.
 La version 2.1 contourne automatiquement les ports Windows reserves ou occupes (erreur de socket 10013/10048). Si le lanceur est deja installe, relancez Installer.cmd depuis cette nouvelle archive : la racine Drive est conservee, sans refaire sa configuration.
-Apres installation, rechargez la page SeaPilot, puis cliquez sur Verifier ce PC dans Administration > Documents et Google Drive. Si la connexion reste impossible, autorisez l'ouverture du lanceur et la connexion locale pour SeaPilot dans votre navigateur. Le chemin deja enregistre est conserve.
+Apres installation, rechargez la page SeaPilot et ouvrez Administration > Documents et Google Drive : la verification se lance automatiquement. Si la connexion reste impossible, autorisez l'ouverture du lanceur et la connexion locale pour SeaPilot dans votre navigateur, puis utilisez Relancer le lanceur. Le chemin deja enregistre est conserve s'il reste accessible. Aucun dossier racine manquant n'est cree automatiquement ; une selection annulee ou invalide conserve le reglage precedent.
 
 Classement : SeaPilot / Sanctions Disciplinaires / Prenom NOM - c<entreprise>-p<collaborateur> / AAAA-MM-JJ / fichier.
 Le dossier est retrouve par son identifiant stable si le nom RH change. Aucun fichier existant n'est ecrase. Taille maximale : 25 Mo. Executables, documents a macros, traversees de chemins et jonctions sortantes refuses.
@@ -35,4 +35,4 @@ Procedures (2.3) : Nouveau document cree une copie Word ou importe un fichier da
 
 RH : les ajouts et renouvellements sont classes sous Ressources Humaines / Prenom NOM - c<entreprise>-p<collaborateur>. Les lectures verifient les droits du document, sa taille et son empreinte. Une suppression de fiche conserve le fichier Drive.
 
-Projets (2.5) : SeaPilot / Projet / <numero> – <nom du projet> / Contrat, HSE, Facturation, Operations, Offres. Exemple : P144 – GUARD VESSEL EMDT. SeaPilot fournit le dossier autorise pour chaque projet et conserve les references de ses fichiers. Les nouveaux fichiers sont verifies par taille et SHA-256 avant enregistrement. Maximum 50 Mio pour ce module. Les anciens fichiers et liens sont conserves. Installer cette version sur chaque PC qui ajoute des documents ou assemble les pieces PDF. Si Verifier ce PC indique deja 2.5.0, aucune reinstallation n'est necessaire. Les autres modules gardent leurs limites et reglages.
+Projets (2.5) : SeaPilot / Projet / <numero> – <nom du projet> / Contrat, HSE, Facturation, Operations, Offres. Exemple : P144 – GUARD VESSEL EMDT. SeaPilot fournit le dossier autorise pour chaque projet et conserve les references de ses fichiers. Les nouveaux fichiers sont verifies par taille et SHA-256 avant enregistrement. Maximum 50 Mio pour ce module. Les anciens fichiers et liens sont conserves. Installer cette version sur chaque PC qui ajoute des documents ou assemble les pieces PDF. La version 2.6 ajoute la detection automatique du dossier et sa selection dans Windows. Les autres modules gardent leurs limites et reglages.

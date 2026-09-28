@@ -54,6 +54,17 @@ describe('common Windows launcher', () => {
     const session = await connectLocalDrive();
     expect(session.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/[a-f0-9]{32}$/);
   });
+  it('detects the current launcher and discards an old cached connection after an update', async () => {
+    vi.resetModules();
+    const { connectLocalDrive } = await import('./localDriveLauncher');
+    let nonce = '', version = '2.5.0';
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { nonce = new URL(this.href).pathname.split('/')[2]; });
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => ({ ok: true, json: async () => ({ version, nonce }) })));
+    expect((await connectLocalDrive()).version).toBe('2.5.0');
+    version = '2.6.0';
+    expect((await connectLocalDrive({ fresh: true })).version).toBe('2.6.0');
+    expect(click).toHaveBeenCalledTimes(2);
+  });
   it.each([['procedures', 'Procedures'], ['disciplinary', 'Sanctions Disciplinaires'], ['chemicals', 'Produits Chimiques']] as const)('uses the root protocol for %s', (module, directory) => {
     const uri = launcherOpenUri(module, 'Équipe/Courrier.docx');
     expect(uri).toMatch(/^seapilot-drive:\/\/root\/open\/[A-Za-z0-9_-]+$/);

@@ -53,6 +53,64 @@ Write-Output 'PASS: bounded port discovery, wraparound and fully blocked ports.'
 # canonical full paths, as the launcher does, instead of short/long spellings.
 $testRoot = [IO.Path]::GetFullPath((Join-Path $env:TEMP ('seapilot-drive-test-' + [guid]::NewGuid())))
 New-Item -ItemType Directory -Path $testRoot | Out-Null
+Add-Type -TypeDefinition @'
+using System;
+public class DriveSetupFixture {
+    public string Root, Selection;
+    public bool Admin = true, FailPreparation;
+    public int Saves, Picks, Inspections;
+    public Func<string> GetRoot { get { return () => { Inspections++; return Root; }; } }
+    public Action<string> Save { get { return root => { Saves++; Root = root; }; } }
+    public Func<string,string> Pick { get { return initial => { Picks++; return Selection; }; } }
+    public Func<string,string,object> Remote { get { return (resource,body) => {
+        if (resource == "rpc/has_role" || resource == "rpc/disciplinary_has_access") return Admin;
+        if (resource == "rpc/current_planning_company_id") return 1L;
+        if (resource.StartsWith("people?")) {
+            if (FailPreparation) throw new System.IO.IOException("Preparation fixture failure");
+            return new object[0];
+        }
+        throw new Exception("Unexpected setup authority");
+    }; } }
+}
+'@
+$setupDefault = Join-Path $testRoot 'default\SeaPilot'
+$setupCustom = Join-Path $testRoot 'custom\SeaPilot'
+$setupMissing = Join-Path $testRoot 'missing\SeaPilot'
+New-Item -ItemType Directory -Path $setupDefault,$setupCustom | Out-Null
+$setupData = [Collections.Generic.Dictionary[string,object]]::new()
+$setupData['action']='status'
+$setupFixture = New-Object DriveSetupFixture
+$setupResult = [SeaPilotDriveBridge]::ExecuteSetup($setupData,$setupFixture.Remote,$setupFixture.GetRoot,$setupFixture.Save,$setupFixture.Pick,$setupDefault)
+if (!$setupResult.exists -or $setupResult.root -ne $setupDefault -or $setupFixture.Saves -ne 1 -or $setupFixture.Picks -ne 0) { throw 'Default root was not configured automatically.' }
+[SeaPilotDriveBridge]::ExecuteSetup($setupData,$setupFixture.Remote,$setupFixture.GetRoot,$setupFixture.Save,$setupFixture.Pick,$setupDefault) | Out-Null
+if ($setupFixture.Saves -ne 1) { throw 'Status rewrote an already valid root.' }
+$setupFixture.Root=$setupCustom
+$setupResult = [SeaPilotDriveBridge]::ExecuteSetup($setupData,$setupFixture.Remote,$setupFixture.GetRoot,$setupFixture.Save,$setupFixture.Pick,$setupDefault)
+if ($setupResult.root -ne $setupCustom) { throw 'Existing custom root was replaced.' }
+$setupFixture.Root=$setupMissing
+$setupResult = [SeaPilotDriveBridge]::ExecuteSetup($setupData,$setupFixture.Remote,$setupFixture.GetRoot,$setupFixture.Save,$setupFixture.Pick,$setupMissing)
+if ($setupResult.exists -or $setupResult.root -or (Test-Path -LiteralPath $setupMissing)) { throw 'Missing folder was accepted or created.' }
+$setupData['action']='select-root'
+$setupResult = [SeaPilotDriveBridge]::ExecuteSetup($setupData,$setupFixture.Remote,$setupFixture.GetRoot,$setupFixture.Save,$setupFixture.Pick,$setupMissing)
+if (!$setupResult.cancelled -or $setupFixture.Root -ne $setupMissing -or $setupFixture.Saves -ne 1) { throw 'Cancellation changed the previous root.' }
+$setupFixture.Selection=$testRoot
+$setupRejected=$false
+try { [SeaPilotDriveBridge]::ExecuteSetup($setupData,$setupFixture.Remote,$setupFixture.GetRoot,$setupFixture.Save,$setupFixture.Pick,$setupMissing) | Out-Null } catch { $setupRejected=$true }
+if (!$setupRejected -or $setupFixture.Saves -ne 1) { throw 'A folder not named SeaPilot was saved.' }
+$setupFixture.Selection=$setupCustom
+$setupFixture.FailPreparation=$true
+$setupRejected=$false
+try { [SeaPilotDriveBridge]::ExecuteSetup($setupData,$setupFixture.Remote,$setupFixture.GetRoot,$setupFixture.Save,$setupFixture.Pick,$setupMissing) | Out-Null } catch { $setupRejected=$true }
+if (!$setupRejected -or $setupFixture.Root -ne $setupMissing) { throw 'Preparation failure replaced the previous root.' }
+$setupFixture.FailPreparation=$false
+$setupResult = [SeaPilotDriveBridge]::ExecuteSetup($setupData,$setupFixture.Remote,$setupFixture.GetRoot,$setupFixture.Save,$setupFixture.Pick,$setupMissing)
+if (!$setupResult.exists -or $setupFixture.Root -ne $setupCustom -or $setupFixture.Saves -ne 2) { throw 'Folder selection did not configure and verify the root.' }
+$setupFixture.Admin=$false
+$inspections=$setupFixture.Inspections; $picks=$setupFixture.Picks
+$setupRejected=$false
+try { [SeaPilotDriveBridge]::ExecuteSetup($setupData,$setupFixture.Remote,$setupFixture.GetRoot,$setupFixture.Save,$setupFixture.Pick,$setupMissing) | Out-Null } catch { $setupRejected=$true }
+if (!$setupRejected -or $setupFixture.Inspections -ne $inspections -or $setupFixture.Picks -ne $picks) { throw 'Unauthorized setup inspected the PC or opened the picker.' }
+Write-Output 'PASS: automatic root detection, custom root preservation, missing paths, picker cancellation, invalid folders, preparation failure and authentication before inspection.'
 $testPath = Join-Path $testRoot 'procedure.docx'
 Set-Content -LiteralPath $testPath -Value 'fixture'
 function Make-Uri([string]$Path) {
@@ -351,7 +409,7 @@ try {
     for ($attempt = 0; $attempt -lt 20; $attempt++) {
         try { $health = Invoke-RestMethod -Uri "$endpoint/health" -Headers $allowedHeaders -TimeoutSec 2; $ready = $true; break } catch { $healthError = $_.Exception.Message; Start-Sleep -Milliseconds 150 }
     }
-    if (!$ready -or $health.version -ne '2.5.0' -or $health.nonce -ne $nonce) { throw "Native bridge failed to start (process exited: $($nativeProcess.HasExited)): $healthError" }
+    if (!$ready -or $health.version -ne '2.6.0' -or $health.nonce -ne $nonce) { throw "Native bridge failed to start (process exited: $($nativeProcess.HasExited)): $healthError" }
     foreach ($testUri in @("http://127.0.0.1:$port/wrong/health", "$endpoint/request")) {
         $denied = $false
         try { Invoke-RestMethod -Uri $testUri -Method Post -ContentType 'application/json' -Body '{}' -Headers $allowedHeaders -TimeoutSec 5 | Out-Null } catch { $denied = $true }
@@ -383,7 +441,7 @@ try {
             if (!$ready) { throw 'Installed launcher did not start.' }
             $replacement = Install-SeaPilotDriveBinary -InstallFolder $installTestFolder -Compiler $compiler -Sources $sources
             if ($replacement -eq $published -or !(Test-Path -LiteralPath $replacement)) { throw 'Update did not publish a separate executable.' }
-            if ((Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2).version -ne '2.5.0') { throw 'Update interrupted the running launcher.' }
+            if ((Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2).version -ne '2.6.0') { throw 'Update interrupted the running launcher.' }
             $invalidSource = Join-Path $testRoot 'invalid.cs'
             Set-Content -LiteralPath $invalidSource -Value 'This is an intentionally invalid compiler fixture'
             $failed = $false

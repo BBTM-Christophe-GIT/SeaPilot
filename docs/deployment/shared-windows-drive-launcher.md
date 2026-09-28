@@ -1,8 +1,20 @@
-# Lanceur Windows commun — API 2.5.0
+# Lanceur Windows commun — API 2.6.0
 
-La version actuelle 2.5 prend en charge les documents Projets sous **SeaPilot / Projet / P144 – GUARD VESSEL EMDT**, puis Contrat, HSE, Facturation, Operations ou Offres. Le serveur fournit le dossier autorisé pour chaque projet ; le lanceur contrôle le chemin, la taille et l’empreinte SHA-256 lors de l’écriture et de la lecture. Ce module accepte jusqu’à 50 Mio, sans modifier les limites des autres modules. Les références des fichiers et les liens historiques restent conservés.
+## Configuration automatique (2.6)
 
-La version installée 2.5.0 reste compatible avec les dossiers renommés par numéro et nom du projet. Il n’est pas nécessaire de la réinstaller si **Vérifier ce PC** confirme cette version. La notice et l’archive distribuée ont été actualisées le 28 septembre 2026 pour décrire ce classement.
+À l’ouverture de Administration → Documents et Google Drive, le lanceur vérifie réellement l’existence du dossier déjà configuré. S’il est absent, il recherche `G:\Mon Drive\SeaPilot`. Un dossier détecté est préparé et enregistré avant d’afficher **Google Drive est bien configuré**. Un chemin personnalisé encore valide est conservé en priorité.
+
+Si aucun dossier valide n’est trouvé, **Sélectionner le dossier dans Windows** ouvre le sélecteur natif de dossiers. La sélection est validée, les dossiers habituels sont préparés, puis le PC est revérifié automatiquement. Les champs de saisie, Enregistrer la racine et Vérifier ce PC sont retirés. Une annulation, une erreur ou un ancien chemin absent ne produit aucun faux message de succès. Les erreurs proposent Relancer le lanceur, notamment lorsque le navigateur nécessite une nouvelle action utilisateur pour autoriser le protocole local.
+
+L’API 2.6 est nécessaire pour cette détection fiable et le sélecteur natif. Installer la nouvelle archive sur les PC encore en 2.5 ou antérieur ; le chemin existant est conservé. La préversion ne contacte jamais le lanceur réel. L’authentification et le rôle Administration sont contrôlés avant toute inspection du PC ou ouverture du sélecteur. Les autres modules restent compatibles avec les anciennes versions du lanceur selon leurs fonctions existantes.
+
+Validation : détection par défaut, priorité d’un chemin personnalisé, dossier absent, annulation, nom invalide, échec de préparation et refus d’accès testés avec des dossiers temporaires ; parcours frontend automatique et nouvelle connexion après mise à jour couverts par Vitest. Les tests Windows de transferts et d’installation restent inchangés et exécutés avec la version 2.6.
+
+## Fonctions des modules
+
+Depuis la version 2.5, le lanceur prend en charge les documents Projets sous **SeaPilot / Projet / P144 – GUARD VESSEL EMDT**, puis Contrat, HSE, Facturation, Operations ou Offres. Le serveur fournit le dossier autorisé pour chaque projet ; le lanceur contrôle le chemin, la taille et l’empreinte SHA-256 lors de l’écriture et de la lecture. Ce module accepte jusqu’à 50 Mio, sans modifier les limites des autres modules. Les références des fichiers et les liens historiques restent conservés.
+
+La version 2.5 reste compatible avec les dossiers renommés par numéro et nom du projet ; la 2.6 ajoute la configuration automatique décrite ci-dessus.
 
 La version 2.2 ajoute l'écriture et la lecture des FDS dans **Produits Chimiques**.
 Installer l'archive actualisée sur chaque PC ; la racine existante est conservée.
@@ -23,7 +35,7 @@ Depuis v3.42.1, chaque installation compile un `SeaPilotDrive-<identifiant>.exe`
 
 L’API 2.1.0 corrige l’échec de connexion après configuration lorsque Windows refuse le port choisi (socket 10013 : accès interdit, ou 10048 : port occupé). Le lanceur essaie jusqu’à 16 ports répartis dans la plage dynamique, au lieu de quitter dès le premier refus. Le navigateur découvre le port effectivement ouvert avec le même nonce, sans transmettre de jeton pendant cette recherche. L’ancien lanceur 2.0.0 reste compatible si son premier port est disponible ; installer l’archive 2.1.0 est nécessaire pour bénéficier du contournement. Aucun réglage de pare-feu ni réservation Windows n’est modifié.
 
-Après cette mise à jour, recharger SeaPilot puis cliquer sur **Vérifier ce PC**. Le chemin enregistré est conservé. Une connexion encore refusée doit être vérifiée dans les autorisations du navigateur pour l’ouverture du protocole et la connexion locale.
+Après cette mise à jour, recharger SeaPilot puis ouvrir **Documents et Google Drive** : la vérification se lance automatiquement. Le chemin enregistré est conservé. Une connexion encore refusée doit être vérifiée dans les autorisations du navigateur pour l’ouverture du protocole et la connexion locale.
 
 Reconstruire l’archive après toute modification des fichiers distribués :
 
