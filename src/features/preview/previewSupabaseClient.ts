@@ -8,6 +8,12 @@ const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
 };
 const previewOrgData = structuredClone(ORG_HIERARCHY_DEMO);
+const PREVIEW_FAVORITES_KEY = 'seapilot:preview:project-favorites:v1';
+let previewFavoriteIds: number[] = [];
+try {
+  const saved: unknown = JSON.parse(localStorage.getItem(PREVIEW_FAVORITES_KEY) || '[]');
+  if (Array.isArray(saved) && saved.every((id) => Number.isSafeInteger(id) && id > 0)) previewFavoriteIds = saved;
+} catch { /* Preview preferences stay local to this browser. */ }
 const PREVIEW_EMERGENCY_KEY = 'seapilot:preview:organigramme-emergency-default';
 try {
   const saved: unknown = JSON.parse(localStorage.getItem(PREVIEW_EMERGENCY_KEY) || 'null');
@@ -226,6 +232,7 @@ function createPreviewFleetFindingEvents(): unknown[] {
 }
 
 const PREVIEW_ROWS: Record<string, unknown[]> = {
+  project_favorites: previewFavoriteIds.map((project_id) => ({ project_id })),
   project_drive_files: [],
   project_change_log: [],
   project_billing_client_references: [
@@ -996,6 +1003,11 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     { id: 9972, purchase_request_id: 9951, event_type: 'information_requested', status_label: 'Envoyée pour approbation', actor_name: 'Julien LECOCQ', comment: null, effective_on: '2026-07-29', created_at: '2026-07-29T17:40:00Z' },
   ],
   dpr_reports: [
+    ...[
+      { id: 9911, dpr_number: 1063, report_date: '2026-09-10', project_id: null, unlisted_project_name: 'Navire à quai' },
+      { id: 9912, dpr_number: 1064, report_date: '2026-09-11', project_id: null, unlisted_project_name: 'Navire en transit' },
+      { id: 9913, dpr_number: 1065, report_date: '2026-09-12', project_id: 9001, unlisted_project_name: null },
+    ].map((report) => ({ ...report, vessel_id: 1, status: 'validated', issuer_name_snapshot: 'Arthur DEMO', description: 'Activité de démonstration pour le portefeuille projet.', qhse_note: 'RAS', created_by: 'preview-user', updated_at: `${report.report_date}T18:00:00Z`, deleted_at: null })),
     {
       id: 9908, dpr_number: 1062, status: 'validated', report_date: '2026-08-01',
       project_id: 9002, unlisted_project_name: null, vessel_id: 9202,
@@ -1821,6 +1833,15 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'projects_set_favorite') {
+    const projectId = Number(args.target_project);
+    const next = previewRows('project_favorites').filter((row) => row.project_id !== projectId).map((row) => Number(row.project_id));
+    if (args.favorite) next.push(projectId);
+    try { localStorage.setItem(PREVIEW_FAVORITES_KEY, JSON.stringify(next)); }
+    catch { return createPreviewQuery({ data: null, error: { message: 'Préférence de démonstration indisponible.' } }); }
+    PREVIEW_ROWS.project_favorites = next.map((project_id) => ({ project_id }));
+    return createPreviewQuery({ data: Boolean(args.favorite), error: null });
+  }
   if (functionName === 'organigramme_snapshot_v2') return createPreviewQuery({ data: { ...previewOrgData, asOf: args.p_as_of }, error: null });
   if (functionName === 'save_organigramme_emergency_default') {
     const ids = args.p_person_ids as number[];

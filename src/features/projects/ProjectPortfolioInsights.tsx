@@ -3,11 +3,12 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ProjectsData } from './projectQueries';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
-import { isPortfolioKpiVessel, localCalendarDate, operationType, summarizeUtilization, utilization, type UtilizationDpr } from './projectPortfolioMetrics';
+import { isPortfolioKpiVessel, localCalendarDate, operationType, realizedOperationTypes, summarizeUtilization, utilization, type UtilizationDpr } from './projectPortfolioMetrics';
 
 export function ProjectPortfolioInsights({ client, data }: { client: SupabaseClient; data: ProjectsData }) {
   const [month, setMonth] = useState(() => localCalendarDate().slice(0, 7));
   const [expanded, setExpanded] = useState(false);
+  const [distributionSource, setDistributionSource] = useState<'realized' | 'planned'>('realized');
   const detailsId = useId();
   const [dprs, setDprs] = useState<UtilizationDpr[]>([]);
   const [error, setError] = useState('');
@@ -19,7 +20,7 @@ export function ProjectPortfolioInsights({ client, data }: { client: SupabaseCli
     void (async () => {
       const rows: UtilizationDpr[] = [];
       for (let offset = 0; ; offset += 500) {
-        const result = await client.from('dpr_reports').select('id,report_date,vessel_id,project_id').gte('report_date', `${year}-01-01`).lte('report_date', `${year}-12-31`).is('deleted_at', null).in('status', ['submitted', 'validated']).order('id').range(offset, offset + 499);
+        const result = await client.from('dpr_reports').select('id,report_date,vessel_id,project_id,unlisted_project_name').gte('report_date', `${year}-01-01`).lte('report_date', `${year}-12-31`).is('deleted_at', null).in('status', ['submitted', 'validated']).order('id').range(offset, offset + 499);
         if (result.error) throw result.error;
         if (cancelled) return;
         rows.push(...result.data);
@@ -33,13 +34,13 @@ export function ProjectPortfolioInsights({ client, data }: { client: SupabaseCli
   const today = localCalendarDate();
   const vessels = useMemo(() => data.vessels.filter((vessel) => isPortfolioKpiVessel(vessel, today)).sort(compareFleetAssets), [data.vessels, today]);
   const vesselMetrics = useMemo(() => vessels.map((vessel) => ({ vessel, periods: [
-    utilization(vessel, `${month}-01`, end, data.planningOccurrences, dprs),
-    utilization(vessel, `${year}-01-01`, `${year}-12-31`, data.planningOccurrences, dprs),
-  ] })), [vessels, month, end, year, data.planningOccurrences, dprs]);
+    utilization(vessel, `${month}-01`, end, data.planningOccurrences, dprs, data.projects),
+    utilization(vessel, `${year}-01-01`, `${year}-12-31`, data.planningOccurrences, dprs, data.projects),
+  ] })), [vessels, month, end, year, data.planningOccurrences, data.projects, dprs]);
   const summaries = [0, 1].map((index) => summarizeUtilization(vesselMetrics.map(({ periods }) => periods[index])));
   const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleDateString('fr-FR', { month: 'long' });
   const realizedLabel = (rate: number) => loading ? '…' : error || !vessels.length ? '—' : `${rate} %`;
-  const distribution = useMemo(() => {
+  const plannedDistribution = useMemo(() => {
     const counts = new Map<string, number>();
     const vesselIds = new Set(vessels.map((vessel) => vessel.id));
     data.planningOccurrences.filter((operation) => {
@@ -52,13 +53,17 @@ export function ProjectPortfolioInsights({ client, data }: { client: SupabaseCli
     });
     return [...counts].sort((a, b) => b[1] - a[1]);
   }, [data.planningOccurrences, data.projects, month, end, vessels]);
+  const realizedDistribution = useMemo(() => realizedOperationTypes(dprs, data.projects, new Set(vessels.map((vessel) => vessel.id)), `${month}-01`, end), [dprs, data.projects, vessels, month, end]);
+  const distribution = distributionSource === 'realized' ? realizedDistribution : plannedDistribution;
   const total = distribution.reduce((sum, [, count]) => sum + count, 0);
+  const plannedTotal = plannedDistribution.reduce((sum, [, count]) => sum + count, 0);
+  const distributionUnavailable = distributionSource === 'realized' && (loading || Boolean(error));
   return <section className="project-insights" aria-label="Activité de la flotte">
     <header>
       <div className="project-insights-title"><h2>Activité de la flotte</h2><p>{vessels.length} navire{vessels.length > 1 ? 's' : ''} suivi{vessels.length > 1 ? 's' : ''}</p></div>
       <dl className="project-insights-summary" aria-label="Synthèse de l’activité">
         {summaries.map((metric, index) => <div key={index}><dt>{index ? `Année ${year}` : monthLabel}</dt><dd><strong>{vessels.length ? `${metric.plannedRate} %` : '—'}</strong> prévu <span>·</span> <strong>{realizedLabel(metric.realizedRate)}</strong> réalisé</dd></div>)}
-        <div><dt>Opérations du mois</dt><dd><strong>{total}</strong> planifiée{total > 1 ? 's' : ''}</dd></div>
+        <div><dt>Opérations du mois</dt><dd><strong>{plannedTotal}</strong> planifiée{plannedTotal > 1 ? 's' : ''}</dd></div>
       </dl>
       <div className="project-insights-controls"><label>Période<input type="month" value={month} onChange={(event) => { if (/^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value)) setMonth(event.target.value); }} /></label>
         <button type="button" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)}>{expanded ? 'Réduire' : 'Voir les détails'}{expanded ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}</button>
@@ -75,8 +80,16 @@ export function ProjectPortfolioInsights({ client, data }: { client: SupabaseCli
         </div>;
       })}</div>)}
       {!vessels.length ? <p>Aucun navire actif dans le périmètre des indicateurs.</p> : null}
-      <small>Base : jours calendaires du mois et de l’année entière, pour la flotte suivie aujourd’hui. La synthèse additionne les jours/navires ; un même jour/navire n’est compté qu’une fois.</small>
-    </article><article><h3>Types d’opérations</h3><p>{total} opération(s) planifiée(s) sur le mois</p><div className="project-distribution">{distribution.map(([label, count], index) => <div key={label}><span>{label}<b>{count}</b></span><div><i style={{ width: `${count / total * 100}%`, background: ['#167e90', '#1f3f69', '#8daac2', '#df9c4c', '#6a819d', '#bbc8d3'][index % 6] }} /></div></div>)}{!total ? <p>Aucune opération sur cette période.</p> : null}</div><small>Opérations de la flotte suivie ou sans navire affecté, classées à partir du contrat et de l’intitulé du projet. Une opération correspond à une ligne du planning.</small></article></div> : null}
+      <small>Base : jours calendaires du mois et de l’année entière, pour la flotte suivie aujourd’hui. Un même jour/navire n’est compté qu’une fois. Les DPR « Navire à quai » et « Navire en transit » sont exclus de l’utilisation réalisée.</small>
+    </article><article><h3>Types d’opérations</h3>
+      <div className="project-distribution-sources" aria-label="Source des types d’opérations">
+        <button type="button" aria-pressed={distributionSource === 'realized'} onClick={() => setDistributionSource('realized')}>Réalisé · DPR</button>
+        <button type="button" aria-pressed={distributionSource === 'planned'} onClick={() => setDistributionSource('planned')}>Prévu · planning</button>
+      </div>
+      <p>{distributionUnavailable ? (loading ? 'Chargement des DPR…' : 'Répartition réalisée indisponible.') : `${total} ${distributionSource === 'realized' ? 'DPR soumis ou validés' : 'opération(s) planifiée(s)'} sur le mois`}</p>
+      <div className="project-distribution">{!distributionUnavailable ? distribution.map(([label, count], index) => <div key={label}><span>{label}<b>{count}</b></span><div><i style={{ width: `${count / total * 100}%`, background: ['#167e90', '#1f3f69', '#8daac2', '#df9c4c', '#6a819d', '#bbc8d3'][index % 6] }} /></div></div>) : null}{!distributionUnavailable && !total ? <p>Aucune activité sur cette période.</p> : null}</div>
+      <small>{distributionSource === 'realized' ? 'DPR de la flotte suivie, classés par projet. Inclut Navire à quai et Navire en transit ; chaque DPR est compté une fois.' : 'Opérations de la flotte suivie ou sans navire affecté, classées par contrat et projet. Une opération correspond à une ligne du planning.'}</small>
+    </article></div> : null}
     </div>
   </section>;
 }

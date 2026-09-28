@@ -1,10 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { billingReferenceScope, billingReferenceScopeLabel } from './projectBillingReferences';
-import { utilization, calendarDays, isPortfolioKpiVessel, localCalendarDate, operationType, summarizeUtilization } from './projectPortfolioMetrics';
+import { utilization, calendarDays, isPortfolioKpiVessel, localCalendarDate, nonOperationalProject, operationType, realizedOperationTypes, summarizeUtilization } from './projectPortfolioMetrics';
 import { countDailyOperations, type ProjectBillingDpr } from './projectBilling';
 import type { ProjectPlanningOccurrenceRecord, ProjectRecord, VesselRecord } from './projectQueries';
 
 describe('project workspace business rules', () => {
+  it('excludes berth and transit projects from realized utilization while retaining a real operation on the same day', () => {
+    const projects = [{ id: 1, title: 'Navire à quai' }, { id: 2, title: 'Navire en transit' }, { id: 3, title: 'Bouées SOMME' }] as ProjectRecord[];
+    const report = (id: number, date: string, project_id: number | null, unlisted_project_name?: string) => ({ id, report_date: date, vessel_id: 12, project_id, unlisted_project_name });
+    const dprs = [report(1, '2026-07-01', 1), report(2, '2026-07-02', 2), report(3, '2026-07-02', 3), report(4, '2026-07-03', null, 'Navire à quai'), report(5, '2026-07-04', null, 'Navire en transit')];
+    const vessel = { id: 12, fleetExitOn: '' } as VesselRecord;
+    expect(utilization(vessel, '2026-07-01', '2026-07-31', [], dprs, projects).realized).toBe(1);
+    expect(utilization(vessel, '2026-01-01', '2026-12-31', [], dprs, projects).realized).toBe(1);
+    expect(realizedOperationTypes([...dprs, dprs[0], { ...dprs[0], id: 6, vessel_id: 99 }, { ...dprs[0], id: 7, report_date: '2026-08-01' }], projects, new Set([12]), '2026-07-01', '2026-07-31')).toEqual([
+      ['Navire à quai', 2], ['Navire en transit', 2], ['Bouées', 1],
+    ]);
+    expect(nonOperationalProject('  NAVIRE A QUAI  ')).toBe('Navire à quai');
+    expect(nonOperationalProject('Navire en   transit')).toBe('Navire en transit');
+    expect(nonOperationalProject('Remorquage navire en transit')).toBeNull();
+  });
   it('limits KPI vessels to the fleet active today and keeps the requested exclusions across name variants', () => {
     const vessel = { active: true, assetKind: 'vessel', fleetExitOn: '' } as VesselRecord;
     for (const name of ['BBTM 2710', 'bbtm-2710', 'TAMARIS', 'Écréhouel']) {
