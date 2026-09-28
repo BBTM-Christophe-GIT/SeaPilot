@@ -6,13 +6,15 @@ La proposition est intégrée aux composants de production depuis la version 3.6
 
 Nouveau projet, Clients, Navires, Remorqués et Catalogue de prestations sont regroupés. Chacun ouvre sa gestion dédiée. Le portefeuille présente les indicateurs avant la liste ; un projet ouvre son dossier complet (Identité, Opérations, Facturation, Offre & contrat, Documents, Historique). Le retour à la liste conserve les filtres.
 
-Les vues « Dossiers courants », « Archives » et « Tous les projets » distinguent le rangement du statut métier. Un projet terminé reste suivi tant qu’il n’a pas été archivé explicitement. L’historique des archives reste inclus dans les indicateurs.
+Depuis la version 3.60.1, « Projets actuels » (vue par défaut) retient les projets dont la période ou une opération non annulée recoupe le mois civil en cours ou une période future. La fin du projet utilise la restitution, puis la fin d’affrètement, puis la date de fin ; à défaut, sa date de début. « Tous les projets » inclut aussi les projets passés, archivés et sans date. Ces vues ne modifient pas l’archivage et sont indépendantes du mois choisi pour les KPI.
 
 ## Indicateurs
 
-Le mois sélectionné définit aussi l’année. Pour chaque navire, deux groupes de barres montrent le prévu et le réalisé, sur le mois et sur l’année entière. Base : jours calendaires, journées/navires dédupliquées, opérations annulées exclues, date de sortie de flotte prise en compte. Le réalisé provient des DPR soumis ou validés non supprimés. Un défaut de chargement est distingué d’un taux nul. Un DPR manquant n’atteste pas une absence d’activité.
+Le bandeau est replié par défaut : utilisation globale prévue/réalisée du mois et de l’année, nombre d’opérations du mois, choix de période et bouton « Voir les détails ». La synthèse pondère les taux par les jours/navires disponibles. Les graphiques se déplient au besoin.
 
-La répartition compte les lignes de planning recoupant le mois, classées depuis le contrat et l’intitulé : antipollution, affrètement coque nue, bouées, remorquage, affrètement avec équipage ou autres opérations. Ce classement déduit n’est pas un nouveau champ métier.
+Le mois sélectionné définit aussi l’année. Pour chaque navire, deux groupes de barres montrent le prévu et le réalisé, sur le mois et sur l’année entière. Le périmètre est la flotte active aujourd’hui, hors BBTM 2710, TAMARIS et ECREHOUEL, même en consultant une année antérieure. Ces exclusions concernent uniquement les KPI ; les navires, projets et historiques restent conservés. Base : jours calendaires, journées/navires dédupliquées, opérations annulées exclues, date de sortie de flotte prise en compte. Le réalisé provient des DPR soumis ou validés non supprimés. Un défaut de chargement est distingué d’un taux nul. Un DPR manquant n’atteste pas une absence d’activité.
+
+La répartition compte les lignes de planning recoupant le mois, affectées à un navire du périmètre ou sans affectation, classées depuis le contrat et l’intitulé : antipollution, affrètement coque nue, bouées, remorquage, affrètement avec équipage ou autres opérations. Ce classement déduit n’est pas un nouveau champ métier.
 
 ## Facturation et documents
 

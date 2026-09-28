@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { ProjectContractRecord, ProjectRecord } from './projectQueries';
+import type { ProjectContractRecord, ProjectPlanningOccurrenceRecord, ProjectRecord } from './projectQueries';
 import {
   buildSupplytimePreview,
   EMPTY_PROJECT_FILTERS,
+  isCurrentProject,
   projectMatchesFilters,
   resolveSelectedProject,
   sortProjects,
@@ -80,6 +81,23 @@ function makeContract(overrides: Partial<ProjectContractRecord> = {}): ProjectCo
 }
 
 describe('projectReadModel', () => {
+  it('includes the whole current month and future periods regardless of archive or business status', () => {
+    const project = makeProject({ deliveryAt: '', redeliveryAt: '', startsOn: '2026-08-10', endsOn: '2026-09-01', status: 'Terminé' });
+    expect(isCurrentProject(project, [], '2026-09-01')).toBe(true);
+    expect(isCurrentProject({ ...project, endsOn: '2026-08-31' }, [], '2026-09-01')).toBe(false);
+    expect(isCurrentProject({ ...project, startsOn: '2027-01-10', endsOn: '2027-01-15', archivedAt: '2026-09-01' }, [], '2026-09-01')).toBe(true);
+    expect(isCurrentProject({ ...project, startsOn: '', endsOn: '' }, [], '2026-09-01')).toBe(false);
+    expect(isCurrentProject({ ...project, startsOn: '2026-10-01', endsOn: '' }, [], '2026-09-01')).toBe(true);
+  });
+  it('includes future operations on older projects but ignores cancelled or unrelated operations', () => {
+    const project = makeProject();
+    const occurrence = { projectId: project.id, startsOn: '2026-10-01', endsOn: '2026-10-02', status: 'Confirmé' } as ProjectPlanningOccurrenceRecord;
+    expect(isCurrentProject(project, [occurrence], '2026-09-01')).toBe(true);
+    expect(isCurrentProject(project, [{ ...occurrence, status: 'Annulé' }], '2026-09-01')).toBe(false);
+    expect(isCurrentProject(project, [{ ...occurrence, projectId: 999 }], '2026-09-01')).toBe(false);
+    expect(isCurrentProject({ ...project, redeliveryAt: '2026-09-01T08:00:00+02:00' }, [], '2026-09-01')).toBe(true);
+    expect(isCurrentProject(project, [occurrence], '2027-01-01')).toBe(false);
+  });
   it('sorts the portfolio by descending project number across prefixes', () => {
     const projects = [
       makeProject({ id: 1, projectCode: 'SP-52', title: 'Hors Projet' }),

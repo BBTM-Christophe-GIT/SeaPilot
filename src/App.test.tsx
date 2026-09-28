@@ -583,6 +583,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Projets' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Tous les projets/ }));
     expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent(/1\s*actifs/);
     expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent(/1\s*contrats/);
     expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent(/1\s*documents projets/);
