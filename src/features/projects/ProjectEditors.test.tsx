@@ -126,11 +126,11 @@ describe('ProjectEditor contract hire periods', () => {
     ]);
     const contractType = screen.getByLabelText('Type de contrat');
     await user.selectOptions(contractType, 'Contrat de Remorquage');
-    expect(screen.getByText('1 / 6')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'CONTRAT DE REMORQUAGE, page 1' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Page suivante' }));
-    expect(screen.getByText('2 / 6')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'CONTRAT DE REMORQUAGE, page 2' })).toBeInTheDocument();
     await user.selectOptions(contractType, "Contrat d'Affrètement");
-    expect(screen.getByText('1 / 4')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'CONTRAT D’AFFRÈTEMENT, page 1' })).toBeInTheDocument();
     expect(screen.getByLabelText('1. Lieu de signature')).toHaveValue('Cherbourg-En-Cotentin');
     expect(screen.getByLabelText('1. Date de signature')).toHaveValue(localTodayIso());
     expect(screen.getByLabelText('14. Indemnité de fin de contrat anticipé')).toHaveValue('50% de la durée ferme restante');
@@ -151,7 +151,7 @@ describe('ProjectEditor contract hire periods', () => {
     expect(screen.queryByLabelText('Début d’affrètement')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Contrat d'Affrètement/ }));
     await user.click(screen.getByRole('button', { name: 'Page suivante' }));
-    expect(screen.getByText('2 / 4')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'CONTRAT D’AFFRÈTEMENT, page 2' })).toBeInTheDocument();
     await user.selectOptions(contractType, 'BIMCO');
     expect(screen.getByText('1 / 29')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Page suivante' }));

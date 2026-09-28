@@ -1087,7 +1087,7 @@ export function ProjectEditor({
           <fieldset hidden={activeStep !== 'offer' && !(isBimco && activeStep === 'billing')} id="project-step-offer">
             <legend><span>{isBimco ? 4 : 2}</span> {isBimco ? 'Conditions tarifaires' : normalizedContractType}</legend>
             <div className="project-editor-grid">
-              <label className={`project-owner-identity${isCommercialOffer ? ' is-wide' : ''}`}>
+              <label className="project-owner-identity is-wide">
                 <span>{isTowage ? '3. Armateur · Identité armateur' : isBareboat ? '3. Propriétaire · Identité contractuelle' : 'Identité armateur'}</span>
                 <textarea onChange={(event) => update('ownerIdentity', event.target.value)} rows={3} value={form.ownerIdentity} />
               </label>
@@ -1136,7 +1136,7 @@ export function ProjectEditor({
                 </section>
               ) : null}
               {isTowage ? (
-                <section className="project-towage-contract-fields is-wide" aria-label="Conditions du contrat de remorquage">
+                <section className="project-contract-form-section is-wide" aria-label="Conditions du contrat de remorquage">
                   <h3>Conditions financières et particulières</h3>
                   <div className="project-editor-grid">
                     {[
@@ -1156,70 +1156,92 @@ export function ProjectEditor({
                 </section>
               ) : null}
               {isBareboat ? (
-                <section className="project-towage-contract-fields is-wide" aria-label="Cases du contrat d'affrètement">
-                  <h3>Cases du contrat d’affrètement coque nue</h3>
-                  <div className="project-editor-grid">
-                    <Field label="1. Lieu de signature">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_contract_place: event.target.value })} value={form.supplytimeData.bareboat_contract_place || ''} />
-                    </Field>
-                    <Field label="1. Date de signature">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_contract_date: event.target.value })} type="date" value={form.supplytimeData.bareboat_contract_date || ''} />
-                    </Field>
-                    <Field label="2. Affréteur · Identité contractuelle (facultatif)" wide>
-                      <textarea
-                        onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_charterer_identity: event.target.value })}
-                        placeholder="Reprise automatique de la fiche client"
-                        rows={4}
-                        value={form.supplytimeData.bareboat_charterer_identity || ''}
-                      />
-                    </Field>
-                    <Field label="4. Refit / complément à l’année de construction">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_refit_details: event.target.value })} placeholder="Ex. Refit 2023" value={form.supplytimeData.bareboat_refit_details || ''} />
-                    </Field>
-                    <Field label="4. Limites d’exploitation">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_operating_limits: event.target.value })} placeholder="Reprise automatique de la fiche navire" value={form.supplytimeData.bareboat_operating_limits || ''} />
-                    </Field>
-                    <Field label="5. Dernière visite administrative">
-                      <input readOnly type="date" value={bareboatCertificateFields?.lastAdminVisitIso || ''} />
-                    </Field>
-                    <Field label="6. Permis de navigation">
-                      <input readOnly value={bareboatCertificateFields?.navigationPermitLabel || ''} />
-                    </Field>
-                    <Field label="6. Permis d’armement">
-                      <input readOnly value={bareboatCertificateFields?.manningPermitLabel || ''} />
-                    </Field>
-                    {certificateLoadError ? <p className="form-error is-wide" role="status">{certificateLoadError}</p> : null}
-                    <Field label="11. Durée minimale (facultatif)">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_minimum_duration: event.target.value })} placeholder="Calculée depuis les dates si vide" value={form.supplytimeData.bareboat_minimum_duration || ''} />
-                    </Field>
-                    <Field label="12. Options de prolongation" wide>
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_extension_options: event.target.value })} value={form.supplytimeData.bareboat_extension_options || ''} />
-                    </Field>
-                    <Field label="14. Indemnité de fin de contrat anticipé" wide>
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_early_termination_indemnity: event.target.value })} value={form.supplytimeData.bareboat_early_termination_indemnity || ''} />
-                    </Field>
-                    <Field label="15. Valeur à assurer (Si applicable)">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_insured_value: event.target.value })} placeholder="Ex. 40 000 € HT" value={form.supplytimeData.bareboat_insured_value || ''} />
-                    </Field>
-                    <Field label="16. Assurance à la charge de">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_insurance_payer: event.target.value })} value={form.supplytimeData.bareboat_insurance_payer || ''} />
-                    </Field>
-                    <Field label="17. Loi applicable">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_applicable_law: event.target.value })} value={form.supplytimeData.bareboat_applicable_law || ''} />
-                    </Field>
-                    <Field label="18. Juridiction compétente">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_jurisdiction: event.target.value })} value={form.supplytimeData.bareboat_jurisdiction || ''} />
-                    </Field>
-                    <Field label="19. Signataire de l’affréteur">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_charterer_signatory: event.target.value })} placeholder="Représentant du client" value={form.supplytimeData.bareboat_charterer_signatory || ''} />
-                    </Field>
-                    <Field label="20. Signataire du propriétaire">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_owner_signatory: event.target.value })} placeholder="Émetteur connecté" value={form.supplytimeData.bareboat_owner_signatory || ''} />
-                    </Field>
-                    <Field label="20. Fonction du signataire propriétaire">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_owner_signatory_function: event.target.value })} placeholder="Fonction de l’émetteur" value={form.supplytimeData.bareboat_owner_signatory_function || ''} />
-                    </Field>
-                  </div>
+                <section className="project-contract-form-sections is-wide" aria-label="Cases du contrat d'affrètement">
+                  <section className="project-contract-form-section">
+                    <h3>Parties et lieu de signature</h3>
+                    <div className="project-editor-grid">
+                      <Field label="1. Lieu de signature">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_contract_place: event.target.value })} value={form.supplytimeData.bareboat_contract_place || ''} />
+                      </Field>
+                      <Field label="1. Date de signature">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_contract_date: event.target.value })} type="date" value={form.supplytimeData.bareboat_contract_date || ''} />
+                      </Field>
+                      <Field label="2. Affréteur · Identité contractuelle (facultatif)" wide>
+                        <textarea
+                          onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_charterer_identity: event.target.value })}
+                          placeholder="Reprise automatique de la fiche client"
+                          rows={4}
+                          value={form.supplytimeData.bareboat_charterer_identity || ''}
+                        />
+                      </Field>
+                    </div>
+                  </section>
+                  <section className="project-contract-form-section">
+                    <h3>Navire et titres de navigation</h3>
+                    <div className="project-editor-grid">
+                      <Field label="4. Refit / complément à l’année de construction">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_refit_details: event.target.value })} placeholder="Ex. Refit 2023" value={form.supplytimeData.bareboat_refit_details || ''} />
+                      </Field>
+                      <Field label="4. Limites d’exploitation">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_operating_limits: event.target.value })} placeholder="Reprise automatique de la fiche navire" value={form.supplytimeData.bareboat_operating_limits || ''} />
+                      </Field>
+                      <Field label="5. Dernière visite administrative">
+                        <input readOnly type="date" value={bareboatCertificateFields?.lastAdminVisitIso || ''} />
+                      </Field>
+                      <Field label="6. Permis de navigation">
+                        <input readOnly value={bareboatCertificateFields?.navigationPermitLabel || ''} />
+                      </Field>
+                      <Field label="6. Permis d’armement">
+                        <input readOnly value={bareboatCertificateFields?.manningPermitLabel || ''} />
+                      </Field>
+                      {certificateLoadError ? <p className="form-error is-wide" role="status">{certificateLoadError}</p> : null}
+                    </div>
+                  </section>
+                  <section className="project-contract-form-section">
+                    <h3>Durée et prolongations</h3>
+                    <div className="project-editor-grid">
+                      <Field label="11. Durée minimale (facultatif)">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_minimum_duration: event.target.value })} placeholder="Calculée depuis les dates si vide" value={form.supplytimeData.bareboat_minimum_duration || ''} />
+                      </Field>
+                      <Field label="12. Options de prolongation" wide>
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_extension_options: event.target.value })} value={form.supplytimeData.bareboat_extension_options || ''} />
+                      </Field>
+                      <Field label="14. Indemnité de fin de contrat anticipé" wide>
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_early_termination_indemnity: event.target.value })} value={form.supplytimeData.bareboat_early_termination_indemnity || ''} />
+                      </Field>
+                    </div>
+                  </section>
+                  <section className="project-contract-form-section">
+                    <h3>Assurance et droit applicable</h3>
+                    <div className="project-editor-grid">
+                      <Field label="15. Valeur à assurer (Si applicable)">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_insured_value: event.target.value })} placeholder="Ex. 40 000 € HT" value={form.supplytimeData.bareboat_insured_value || ''} />
+                      </Field>
+                      <Field label="16. Assurance à la charge de">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_insurance_payer: event.target.value })} value={form.supplytimeData.bareboat_insurance_payer || ''} />
+                      </Field>
+                      <Field label="17. Loi applicable">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_applicable_law: event.target.value })} value={form.supplytimeData.bareboat_applicable_law || ''} />
+                      </Field>
+                      <Field label="18. Juridiction compétente">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_jurisdiction: event.target.value })} value={form.supplytimeData.bareboat_jurisdiction || ''} />
+                      </Field>
+                    </div>
+                  </section>
+                  <section className="project-contract-form-section">
+                    <h3>Signataires du contrat</h3>
+                    <div className="project-editor-grid">
+                      <Field label="19. Signataire de l’affréteur">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_charterer_signatory: event.target.value })} placeholder="Représentant du client" value={form.supplytimeData.bareboat_charterer_signatory || ''} />
+                      </Field>
+                      <Field label="20. Signataire du propriétaire">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_owner_signatory: event.target.value })} placeholder="Émetteur connecté" value={form.supplytimeData.bareboat_owner_signatory || ''} />
+                      </Field>
+                      <Field label="20. Fonction du signataire propriétaire">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_owner_signatory_function: event.target.value })} placeholder="Fonction de l’émetteur" value={form.supplytimeData.bareboat_owner_signatory_function || ''} />
+                      </Field>
+                    </div>
+                  </section>
                 </section>
               ) : null}
               {isCommercialOffer ? (
