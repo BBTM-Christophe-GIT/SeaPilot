@@ -1,3 +1,4 @@
+import { projectDriveStorage } from './projectDriveStorage';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ProjectContractRecord,
@@ -488,7 +489,7 @@ export async function uploadProjectBillingDocument(
     input.expenseId ? `expenses/${input.expenseId}` : input.kind,
     `${crypto.randomUUID()}-${safeFileName(input.file.name)}`,
   ].join('/');
-  const { error: uploadError } = await client.storage.from('project-files').upload(objectPath, input.file, {
+  const { error: uploadError } = await projectDriveStorage(client, 'project-files').upload(objectPath, input.file, {
     cacheControl: '3600',
     contentType: input.file.type || 'application/octet-stream',
     upsert: false,
@@ -507,7 +508,7 @@ export async function uploadProjectBillingDocument(
     file_size_bytes: input.file.size,
   }).select('*').single();
   if (error) {
-    await client.storage.from('project-files').remove([objectPath]);
+    await projectDriveStorage(client, 'project-files').remove([objectPath]);
     throw error;
   }
   return mapDocument(data as Record<string, unknown>);
@@ -517,7 +518,7 @@ export async function signedProjectBillingDocumentUrl(
   client: SupabaseClient,
   document: ProjectBillingDocument,
 ): Promise<string> {
-  const { data, error } = await client.storage.from(document.bucketName).createSignedUrl(document.objectPath, 120);
+  const { data, error } = await projectDriveStorage(client, document.bucketName).createSignedUrl(document.objectPath, 120);
   if (error) throw error;
   return data.signedUrl;
 }
@@ -605,7 +606,8 @@ export function completeBillingDprs(
 }
 
 export function countDailyOperations(dprs: ProjectBillingDpr[]): number {
-  return dprs.filter((dpr) => dpr.operation.trim().toUpperCase() === '24/24 OPERATION').length;
+  return new Set(dprs.filter((dpr) => /^(24\/24 )?(OPERATION|CREW CHANGE)$/.test(dpr.operation.trim().replace(/\s+/g, ' ').toUpperCase()))
+    .map((dpr) => `${dpr.vesselId ?? dpr.vesselName}|${dpr.reportDate}`)).size;
 }
 
 export function billingServicesTotal(services: ProjectBillingService[]): number {
@@ -1223,10 +1225,12 @@ export async function generateBillingExportPackage(
   format: BillingExportFormat,
 ): Promise<{ blob: Blob; extension: 'pdf' | 'zip' }> {
   const summary = await generateBillingPdf(input);
-  if (format === 'pdf' || documents.length === 0) return { blob: summary, extension: 'pdf' };
+  if (format === 'pdf') return { blob: summary, extension: 'pdf' };
 
-  const attachments = await Promise.all(documents.map(async (document) => {
-    const { data, error } = await client.storage.from(document.bucketName).download(document.objectPath);
+  const includedExpenses = new Set(input.expenses.filter((expense) => expense.includeInPdf !== false).map((expense) => expense.id));
+  const includedDocuments = input.period.includeExpensesInPdf === false ? [] : documents.filter((document) => document.chargeableExpenseId !== null && includedExpenses.has(document.chargeableExpenseId));
+  const attachments = await Promise.all(includedDocuments.map(async (document) => {
+    const { data, error } = await projectDriveStorage(client, document.bucketName).download(document.objectPath);
     if (error) throw error;
     return { document, blob: data };
   }));

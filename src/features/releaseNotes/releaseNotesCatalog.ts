@@ -12,6 +12,21 @@ export interface ReleaseNote {
 // Add a note only when the user requests one. Published IDs and notes remain stable.
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    id: '3.60.0-project-workspace',
+    version: '3.60.0',
+    publishedOn: '2026-09-28',
+    title: 'Un portefeuille Projets plus clair, de la flotte à la facturation',
+    roles: ['admin', 'direction'],
+    changes: [
+      'Nouveau projet, Clients, Navires, Remorqués et Catalogue de prestations sont regroupés. Chaque gestion ouvre sa propre fenêtre. Un clic sur un projet ouvre son dossier complet ; le retour au portefeuille conserve les filtres.',
+      'Les graphiques présentent, pour chaque navire, le prévu et le réalisé du mois et de l’année sélectionnés, ainsi que les types d’opérations du mois. Les archives restent consultables et participent aux historiques.',
+      'Les PDF conservent leur mise en page habituelle. Les choix Loyers, Frais et pièces, Prestations BBTM et Référence client sont réunis dans l’export. Enregistrez une référence par combinaison de contenu : elle est reprise au même endroit dans le PDF.',
+      'Les nouvelles prestations proposent automatiquement la quantité issue des DPR 24/24 Operation et Crew Change. Vous pouvez modifier les quantités avant export. Le suivi des factures, des échéances, des règlements et les fichiers exportés restent dans le dossier.',
+      'Les nouveaux fichiers sont classés dans Google Drive, sous SeaPilot / Projet, avec un dossier par projet et des rubriques HSE, Contrat, Facturation, Opérations et Offres. Installez le lanceur Windows 2.5 depuis Administration sur les autres PC ; le dossier déjà configuré est conservé.',
+      'Les données et événements historiques sont conservés. Les copies documentaires sont vérifiées avant leur activation dans Google Drive et les sources historiques restent disponibles.',
+    ],
+  },
+  {
     id: '3.54.1-temporary-captain-rights',
     version: '3.54.1',
     publishedOn: '2026-09-23',

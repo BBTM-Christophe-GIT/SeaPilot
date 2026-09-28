@@ -1,3 +1,4 @@
+import { projectDriveStorage } from './projectDriveStorage';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { GeneratedProjectDocument } from './projectDocumentGeneration';
 import type { ProjectGeneratedDocumentKind } from './projectDocumentTypes';
@@ -86,8 +87,7 @@ export async function createProjectDocumentBundle(
     if (!attachment.storageBucket || !attachment.storagePath) {
       throw new Error(`La pièce jointe ${attachment.fileName} n’est pas disponible dans l’espace privé BBTM.`);
     }
-    const { data, error } = await client.storage
-      .from(attachment.storageBucket)
+    const { data, error } = await projectDriveStorage(client, attachment.storageBucket)
       .download(attachment.storagePath);
     if (error || !data) {
       throw new Error(error?.message || `Impossible de télécharger la pièce jointe ${attachment.fileName}.`);
@@ -120,14 +120,16 @@ export async function createProjectDocumentAccessUrl(
   },
 ): Promise<string> {
   if (document.storageBucket && document.storagePath) {
-    const { data, error } = await client.storage
-      .from(document.storageBucket)
+    const { data, error } = await projectDriveStorage(client, document.storageBucket)
       .createSignedUrl(document.storagePath, 300);
     if (error) throw new Error(error.message || 'Impossible de préparer l’accès au document Supabase.');
     if (!data?.signedUrl) throw new Error('Supabase n’a pas retourné de lien sécurisé pour ce document.');
     return data.signedUrl;
   }
-  if (document.sharePointWebUrl) return document.sharePointWebUrl;
+  if (document.sharePointWebUrl) {
+    const { data } = await projectDriveStorage(client, 'sharepoint').createSignedUrl(document.sharePointWebUrl, 300);
+    return data!.signedUrl;
+  }
   throw new Error('Ce document ne possède aucun emplacement de stockage exploitable.');
 }
 
@@ -152,7 +154,7 @@ export async function storeGeneratedProjectDocument(
     `r${input.revision || 1}`,
     `${crypto.randomUUID()}-${fileName}`,
   ].join('/');
-  const storage = client.storage.from(PROJECT_FILES_BUCKET);
+  const storage = projectDriveStorage(client, PROJECT_FILES_BUCKET);
   const { error: uploadError } = await storage.upload(storagePath, input.document.blob, {
     cacheControl: '3600',
     contentType: input.document.mimeType,
@@ -211,7 +213,7 @@ export async function storeOperationDocument(
     String(input.planningOccurrenceId),
     `${crypto.randomUUID()}-${fileName}`,
   ].join('/');
-  const storage = client.storage.from(PROJECT_FILES_BUCKET);
+  const storage = projectDriveStorage(client, PROJECT_FILES_BUCKET);
   const { error: uploadError } = await storage.upload(storagePath, input.file, {
     cacheControl: '3600',
     contentType: mimeType,
@@ -297,7 +299,7 @@ export async function storeProjectAttachment(
     `${crypto.randomUUID()}-${fileName}`,
   ].join('/');
 
-  const storage = client.storage.from(PROJECT_FILES_BUCKET);
+  const storage = projectDriveStorage(client, PROJECT_FILES_BUCKET);
   const { error: uploadError } = await storage.upload(storagePath, input.draft.file, {
     cacheControl: '3600',
     contentType: mimeType,

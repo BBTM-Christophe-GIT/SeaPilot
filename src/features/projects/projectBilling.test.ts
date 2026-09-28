@@ -454,7 +454,7 @@ describe('monthly billing completion', () => {
       operation: '24/24 Operation',
       amountHt: 4227.5,
     });
-    expect(countDailyOperations(completed)).toBe(2);
+    expect(countDailyOperations(completed)).toBe(3);
   });
 
   it('calculates the BBTM subtotal from editable unit amounts and quantities', () => {

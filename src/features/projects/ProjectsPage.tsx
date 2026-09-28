@@ -1,3 +1,7 @@
+import { ProjectPortfolioInsights } from './ProjectPortfolioInsights';
+import { ProjectHistory } from './ProjectHistory';
+import { FleetPage } from '../fleet/FleetPage';
+import './ProjectWorkspace.css';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetNames } from '../fleet/fleetDisplay';
 import {
@@ -18,7 +22,6 @@ import {
   Plus,
   RefreshCw,
   ReceiptText,
-  RotateCcw,
   Share2,
   Ship,
   Trash2,
@@ -96,7 +99,7 @@ const EMPTY_PROJECTS_DATA: ProjectsData = {
 };
 
 const PROJECTS_PER_PAGE = 40;
-const PROJECT_DOCUMENTS_SHAREPOINT_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets';
+const PROJECT_DOCUMENTS_LEGACY_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets';
 
 type ProjectDocumentDownloadMode = 'document' | 'bundle';
 
@@ -221,15 +224,6 @@ function canManageProjects(roles: RoleKey[]): boolean {
   return roles.includes('admin') || roles.includes('direction');
 }
 
-function ProjectRibbonGroup({ children, label }: { children: React.ReactNode; label: string }) {
-  return (
-    <div aria-label={label} className="project-ribbon-group" role="group">
-      <div className="project-ribbon-actions">{children}</div>
-      <span className="project-ribbon-group-label">{label}</span>
-    </div>
-  );
-}
-
 function ProjectRibbonButton({
   icon,
   label,
@@ -258,6 +252,7 @@ type ProjectDetailTab =
   | 'operations'
   | 'billing'
   | 'offer-contract'
+  | 'history'
   | 'documents'
   | 'towage-parties'
   | 'towage-route'
@@ -340,6 +335,7 @@ function projectDetailTabs(variant: ProjectContractVariant | null): ProjectDetai
     ...PROJECT_BASE_TABS,
     ...(variant ? PROJECT_CONTRACT_TABS[variant] : []),
     { icon: Files, id: 'documents', label: 'Documents' },
+    { icon: ClipboardList, id: 'history', label: 'Historique' },
   ];
 }
 
@@ -463,8 +459,7 @@ function ProjectDocuments({
   return (
     <>
       <p className="project-document-help">
-        BBTM ouvre en priorité la copie privée Supabase. Les documents non encore migrés utilisent leur lien SharePoint
-        d’origine et peuvent demander une authentification Microsoft 365.
+        Les fichiers sont classés dans SeaPilot / Projet / un dossier par projet. Le lanceur ouvre la copie Google Drive vérifiée ; les sources historiques restent conservées.
       </p>
       <ul className="project-document-list">
         {documents.map((document) => {
@@ -474,7 +469,7 @@ function ProjectDocuments({
             document.fileExtension || document.mimeType,
             formatFileSize(document.fileSizeBytes),
             document.sourceModifiedAt ? `modifié le ${formatDate(document.sourceModifiedAt)}` : '',
-            document.storageBucket && document.storagePath ? 'Stockage Supabase' : 'Source SharePoint',
+            'Document du projet',
           ].filter(Boolean);
 
           return (
@@ -499,10 +494,7 @@ function ProjectDocuments({
                   }}
                 />
               ) : linkState.status === 'available' ? (
-                <a href={linkState.href} rel="noreferrer" target="_blank">
-                  Ouvrir dans SharePoint
-                  <span className="sr-only"> : {document.fileName || document.title}</span>
-                </a>
+                <ProjectStoredDocumentLink client={client} document={{ fileName: document.fileName || document.title, sharePointWebUrl: linkState.href }} />
               ) : (
                 <span className="project-missing-link">
                   {linkState.status === 'missing' ? 'URL SharePoint absente' : 'URL SharePoint invalide ou non autorisée'}
@@ -944,9 +936,9 @@ function ProjectDetail({
         <div className="project-section-heading">
           <div>
             <strong>Documents contractuels et modèles</strong>
-            <span>Consultez les pièces jointes privées du projet et les documents historiques SharePoint.</span>
+            <span>Pièces du projet classées par catégorie : HSE, Contrat, Facturation et Opérations. Les versions historiques sont conservées.</span>
           </div>
-          <a href={PROJECT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
+          <a href={PROJECT_DOCUMENTS_LEGACY_URL} rel="noreferrer" target="_blank">
             <ExternalLink aria-hidden="true" size={15} /> Ouvrir SharePoint
           </a>
         </div>
@@ -974,7 +966,7 @@ function ProjectDetail({
             <strong>Calendrier des opérations</strong>
             <span>Un contrat peut regrouper plusieurs opérations indépendantes dans le Planning.</span>
           </div>
-          <a href={PROJECT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
+          <a href={PROJECT_DOCUMENTS_LEGACY_URL} rel="noreferrer" target="_blank">
             <ExternalLink aria-hidden="true" size={15} /> Documents Projets
           </a>
         </div>
@@ -1063,6 +1055,7 @@ function ProjectDetail({
       </section>
       ) : null}
 
+      {activeTab === 'history' ? <ProjectHistory client={supabaseClient} projectId={project.id} /> : null}
       {activeTab === 'billing' ? (
         <ProjectBillingPanel
           client={supabaseClient}
@@ -1281,6 +1274,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   }, []);
   const [projectsData, setProjectsData] = useState<ProjectsData>(EMPTY_PROJECTS_DATA);
   const [filters, setFilters] = useState<ProjectFilterState>(EMPTY_PROJECT_FILTERS);
+  const [dossierOpen, setDossierOpen] = useState(false);
+  const [archiveScope, setArchiveScope] = useState<'current' | 'archived' | 'all'>('current');
+  const [fleetCatalogOpen, setFleetCatalogOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -1358,8 +1354,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     [projectsData.contractDocuments],
   );
   const filteredProjects = useMemo(
-    () => projectsData.projects.filter((project) => projectMatchesFilters(project, effectiveFilters)),
-    [effectiveFilters, projectsData.projects],
+    () => projectsData.projects.filter((project) => projectMatchesFilters(project, effectiveFilters) && (archiveScope === 'all' || (archiveScope === 'archived' ? Boolean(project.archivedAt) : !project.archivedAt))),
+    [effectiveFilters, projectsData.projects, archiveScope],
   );
   const filteredProjectDocuments = useMemo(
     () => filterDocumentsForProjects(projectDocumentSet.documents, filteredProjects),
@@ -1489,6 +1485,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     try {
       await archiveProject(effectiveClient, selectedProject.id);
       setSelectedProjectId(null);
+      setDossierOpen(false);
       setMutationMessage('Projet archivé dans Supabase.');
       setLoadAttempt((attempt) => attempt + 1);
     } catch (error) {
@@ -1672,39 +1669,29 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         </div>
       </header>
 
-      <nav aria-label="Commandes du module Projets" className="project-command-ribbon">
-        <ProjectRibbonGroup label="Portefeuille">
-          <ProjectRibbonButton disabled={!isManager} icon={<Plus aria-hidden="true" size={20} />} label="Nouveau projet" onClick={() => openProjectEditor()} />
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<Pencil aria-hidden="true" size={20} />} label="Modifier le projet" onClick={() => selectedProject && openProjectEditor(selectedProject)} />
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || isArchiving} icon={<Archive aria-hidden="true" size={20} />} label="Archiver" onClick={archiveSelectedProject} />
-          <ProjectRibbonButton icon={<RefreshCw aria-hidden="true" size={20} />} label="Actualiser" onClick={() => setLoadAttempt((attempt) => attempt + 1)} />
-        </ProjectRibbonGroup>
-        <ProjectRibbonGroup label="Référentiels & opérations">
-          <ProjectRibbonButton disabled={!isManager} icon={<Users aria-hidden="true" size={20} />} label="Liste des clients" onClick={() => setClientCatalogOpen(true)} />
-          <ProjectRibbonButton disabled={!isManager} icon={<Ship aria-hidden="true" size={20} />} label="Liste des remorqués" onClick={() => setTowedAssetCatalogOpen(true)} />
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus aria-hidden="true" size={20} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
-        </ProjectRibbonGroup>
-        <ProjectRibbonGroup label="Documents">
-          <ProjectRibbonButton
-            disabled={!isManager || !selectedProject || generatingDocument !== null}
-            icon={<FileText aria-hidden="true" size={20} />}
-            label="Émettre le document"
-            onClick={() => openProjectDocumentEmission(
-              selectedGeneratedDocumentKind,
-              selectedGeneratedDocumentKind === 'offer' ? null : selectedPlanningOccurrences[0]?.id ?? null,
-            )}
-          />
-          <ProjectRibbonButton icon={<Share2 aria-hidden="true" size={20} />} label="Ouvrir SharePoint" onClick={() => window.open(PROJECT_DOCUMENTS_SHAREPOINT_URL, '_blank', 'noopener,noreferrer')} />
-        </ProjectRibbonGroup>
-        <ProjectRibbonGroup label="Facturation">
-          <ProjectRibbonLink icon={<ReceiptText aria-hidden="true" size={20} />} label="Éléments de facturation" to={billingElementsUrl()} />
-          <ProjectRibbonButton disabled={!isManager} icon={<PackageCheck aria-hidden="true" size={20} />} label="Liste des prestations" onClick={() => setServiceCatalogOpen(true)} />
-        </ProjectRibbonGroup>
-        <ProjectRibbonGroup label="Affichage">
-          <ProjectRibbonButton aria-pressed={filtersOpen} icon={<Filter aria-hidden="true" size={20} />} label="Filtres" onClick={() => setFiltersOpen((open) => !open)} />
-          <ProjectRibbonButton disabled={!hasActiveFilters} icon={<RotateCcw aria-hidden="true" size={20} />} label="Réinitialiser" onClick={resetFilters} />
-        </ProjectRibbonGroup>
+      <nav aria-label="Commandes du module Projets" className="project-workspace-actions">
+        <ProjectRibbonButton disabled={!isManager} icon={<Plus size={18} />} label="Nouveau projet" onClick={() => openProjectEditor()} />
+        <ProjectRibbonButton disabled={!isManager} icon={<Users size={18} />} label="Clients" onClick={() => setClientCatalogOpen(true)} />
+        <ProjectRibbonButton disabled={!isManager} icon={<Ship size={18} />} label="Navires" onClick={() => setFleetCatalogOpen(true)} />
+        <ProjectRibbonButton disabled={!isManager} icon={<Ship size={18} />} label="Remorqués" onClick={() => setTowedAssetCatalogOpen(true)} />
+        <ProjectRibbonButton disabled={!isManager} icon={<PackageCheck size={18} />} label="Catalogue de prestations" onClick={() => setServiceCatalogOpen(true)} />
+        <ProjectRibbonLink icon={<ReceiptText size={18} />} label="Éléments de facturation" to={billingElementsUrl()} />
+        <ProjectRibbonButton icon={<Filter size={18} />} label="Filtres" aria-pressed={filtersOpen} onClick={() => setFiltersOpen((open) => !open)} />
+        <ProjectRibbonButton icon={<RefreshCw size={18} />} label="Actualiser" onClick={() => setLoadAttempt((attempt) => attempt + 1)} />
       </nav>
+      {!dossierOpen ? <ProjectPortfolioInsights client={effectiveClient} data={projectsData} /> : <nav className="project-workspace-actions" aria-label="Actions du dossier">
+        <button type="button" onClick={() => setDossierOpen(false)}><ChevronLeft size={16} /> Tous les projets</button>
+        <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<Pencil size={18} />} label="Modifier le projet" onClick={() => selectedProject && openProjectEditor(selectedProject)} />
+        <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || isArchiving} icon={<Archive size={18} />} label="Archiver" onClick={archiveSelectedProject} />
+        <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus size={18} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
+        <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<FileText size={18} />} label="Émettre le document" onClick={() => openProjectDocumentEmission(selectedGeneratedDocumentKind, selectedGeneratedDocumentKind === 'offer' ? null : selectedPlanningOccurrences[0]?.id ?? null)} />
+        <ProjectRibbonButton icon={<Share2 size={18} />} label="Dossiers Google Drive" onClick={() => window.open('https://drive.google.com/drive/folders/1H5kB4ppiKQAm4hqhYjMHcP4pRZaTncj_', '_blank', 'noopener,noreferrer')} />
+        <a href={PROJECT_DOCUMENTS_LEGACY_URL} target="_blank" rel="noreferrer">Sources SharePoint historiques</a>
+      </nav>}
+      {!dossierOpen ? <div className="project-portfolio-scopes" aria-label="Classement des projets">
+        {([['current', 'Dossiers courants'], ['archived', 'Archives'], ['all', 'Tous les projets']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={archiveScope === value} onClick={() => { setArchiveScope(value); setCurrentPage(0); }}>{label} <b>{projectsData.projects.filter((project) => value === 'all' || (value === 'archived' ? Boolean(project.archivedAt) : !project.archivedAt)).length}</b></button>)}
+        <p>Les dossiers courants comprennent les projets à préparer, en cours et terminés. L’archivage les range à part ; leurs données et documents restent consultables.</p>
+      </div> : null}
 
       {projectsData.warnings.length > 0 ? (
         <div className="project-partial-state" role="status">
@@ -1808,8 +1795,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           </div>
         </div>
       ) : (
-        <div className="projects-read-layout project-contract-workspace is-compact">
-          <section className="projects-panel project-list-panel" aria-labelledby="projects-list-title">
+        <div className={`projects-read-layout project-contract-workspace project-workspace-v2 ${dossierOpen ? 'is-dossier' : 'is-portfolio'}`}>
+          {!dossierOpen ? <section className="projects-panel project-list-panel" aria-labelledby="projects-list-title">
             <div className="project-contract-list-heading">
               <div>
                 <h2 id="projects-list-title">Portefeuille projet</h2>
@@ -1835,7 +1822,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                       aria-label={`${project.projectCode || ''} ${project.title}`}
                       aria-pressed={isSelected}
                       className="project-select-button project-contract-list-row"
-                      onClick={() => setSelectedProjectId(project.id)}
+                      onClick={() => { setSelectedProjectId(project.id); setDossierOpen(true); }}
                       type="button"
                     >
                       <span className="project-contract-list-title">
@@ -1864,9 +1851,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                 </button>
               </nav>
             ) : null}
-          </section>
+          </section> : null}
 
-          {selectedProject ? (
+          {dossierOpen && selectedProject ? (
             <ProjectDetail
               client={selectedClient}
               supabaseClient={effectiveClient}
@@ -1922,6 +1909,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           onSaved={(result) => {
             setProjectEditorOpen(false);
             setSelectedProjectId(result.id);
+            setDossierOpen(true);
             setMutationMessage(`${result.projectCode || result.title} enregistré dans Supabase.`);
             setLoadAttempt((attempt) => attempt + 1);
           }}
@@ -1934,6 +1922,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           vessels={projectsData.vessels}
         />
       ) : null}
+      {fleetCatalogOpen ? <AppDialog title="Gestion des navires" size="xl" onClose={() => setFleetCatalogOpen(false)}><FleetPage client={effectiveClient} roles={effectiveRoles} /></AppDialog> : null}
       {clientCatalogOpen ? (
         <ClientCatalogDialog
           canManage={isManager}

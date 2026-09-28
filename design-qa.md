@@ -1187,3 +1187,98 @@ visuel restant n'a été relevé lors de la comparaison finale.
 - [x] Tests ciblés, lint et build réussis.
 
 final result: passed
+
+---
+
+# Design QA — prévisualisation Projet
+
+final result: passed
+
+## Périmètre et référence
+
+Une seule direction : le dossier Projet, avec identité persistante, six rubriques et vue d’ensemble orientée vers les prochaines actions. Référence : image `exec-f633be72-5dba-4afc-a68a-191f10e97ca4.png` retenue après l’audit du module existant.
+
+Comparaison visuelle effectuée avec la référence et le rendu côte à côte, même dossier P901 non modifié, même fenêtre de 1487 × 1058. Contrôles complémentaires à 1440 × 1024, 768 × 1024 et 390 × 844.
+
+Les preuves locales sont conservées dans le répertoire d’artefacts de ce chat, sous `projets-preview` : `comparison.png`, `01-overview-desktop.png`, `02-contract-desktop.png`, `03-billing-desktop.png`, `04-portfolio-desktop.png`, `05-mobile-overview.png`, `06-mobile-operation.png`, `07-tablet-contract.png`.
+
+## Contrôle des cinq surfaces
+
+| Surface | Résultat |
+| --- | --- |
+| Structure et hiérarchie | Navigation marine, en-tête du dossier, six rubriques, alerte prioritaire, grille opérations / activité et accès contrat / documents présents. Espacements verticaux corrigés après comparaison. |
+| Typographie et lisibilité | Hiérarchie titre / contexte / données conservée. Taille du tableau et de l’activité augmentée après le premier contrôle. Police Inter avec repli système. |
+| Couleurs et composants | Bleu d’action, fond marine, surfaces claires, alerte ambre, statuts distincts et sélection soulignée conformes à la direction. |
+| Images et icônes | Logo existant réutilisé ; fond noir intégré au panneau par mélange CSS. Icônes Lucide cohérentes avec la référence et le produit. Aucun visuel de substitution généré. |
+| Interactions et adaptation | Navigation, filtres, archives, formulaires, exports et historique utilisables. Sélecteur de rubriques sur mobile, panneaux empilés et défilement contenu des tableaux. |
+
+## Corrections et vérifications
+
+- Correction d’un débordement mobile causé par le libellé masqué de la colonne Actions ; largeur du document inférieure ou égale à la fenêtre après correction.
+- Navigation latérale fermée rendue invisible aux interactions sur mobile.
+- Fermeture du dialogue avec Échap vérifiée ; formulaire d’opération utilisable à 390 px.
+- Contrat complété et enregistré, PDF illustratif émis et retrouvé dans les documents.
+- Relevé recalculé après exclusion de la mobilisation : 110 300 € → 95 300 € ; export ZIP avec pièces déclenché avec succès.
+- Portefeuille filtré jusqu’à l’état vide, puis consultation du projet archivé.
+- Opération Rotation 03 ajoutée sur mobile et retrouvée dans l’historique avec les événements antérieurs.
+- Quatre tests automatisés passent : contrat local et conservation des pièces, archivage/restauration, ajout/filtrage des fichiers sans requête réseau, calcul de facturation avec centimes.
+- ESLint ciblé et compilation de production réussis. Aucune erreur JavaScript relevée pendant les parcours contrôlés. Les avertissements de taille de bundles concernent l’application existante.
+
+## Écarts conservés
+
+P3 : quelques différences de graisse, de taille des pictogrammes et de forme des badges par rapport à l’image générée. Le pied de navigation indique volontairement la démonstration et permet sa réinitialisation. Aucun point P0, P1 ou P2 restant dans le périmètre de prévisualisation.
+
+Cette validation concerne une interface avec données fictives. Les modèles contractuels complets, les règles DPR, les profils réels et les autorisations de production restent à raccorder et à vérifier lors de l’intégration définitive.
+
+---
+
+# Design QA — Projet : pilotage de flotte et facturation mensuelle
+
+## Périmètre
+
+Révision de la prévisualisation indépendante à la demande de l’utilisateur : deux mesures d’utilisation (prévu et réalisé), répartition des activités avant la liste, accès aux catalogues explicites, distinction entre avancement et archivage, et facturation complétée à partir de l’audit du module existant. La direction graphique du dossier est conservée.
+
+## Contrôle des cinq surfaces
+
+| Surface | Vérification |
+| --- | --- |
+| Structure | Indicateurs au-dessus des dossiers ; deux panneaux sur bureau, empilement sur téléphone. Dossier à six rubriques conservé, facturation à quatre sous-rubriques avec récapitulatif et exports. |
+| Typographie | Titres, libellés, valeurs et unités hiérarchisés. Nombre de jours et bases de calcul visibles ; états vides et périodes futures explicites. |
+| Couleurs | Bleu pour le prévu, vert pour le réalisé ; palette distincte pour les activités ; valeurs et textes redondants avec les couleurs. Fond marine et surfaces claires conservés. |
+| Graphiques et icônes | Barres calculées par navire, anneau calculé par nombre de missions. Logo existant et icônes Lucide ; aucun actif décoratif ajouté. |
+| Interactions et adaptation | Filtres, classement, navigation mensuelle, formulaires, archivage, pièces et exports vérifiés. Dialogue utilisable à 390 × 844 ; tableaux défilants dans leur conteneur. |
+
+## Corrections réalisées
+
+- Séparation du style du récapitulatif mensuel et de celui de l’ancienne synthèse pour éviter une grille parasite.
+- Rendu des octets PDF via PDF.js : le lecteur natif du navigateur intégré restait vide. Aperçu et pagination visibles après correction.
+- Libellé du fournisseur isolé de sa liste de suggestions pour conserver un nom accessible exact.
+- Réduction du graphique en anneau sur mobile sans recouvrement de sa légende.
+- Traitement des dates de relevé vides sans plantage ; génération bloquée tant que la période est invalide ou non enregistrée.
+- ZIP alimenté par des buffers pour un comportement identique dans le navigateur et les tests Node.
+
+## Vérifications
+
+- Bureau 1487 × 1058 et mobile 390 × 844, inspection des vues portefeuille, frais, aperçu PDF et formulaire fournisseur. Largeur document mobile mesurée ≤ 390 px, sans débordement global ; le tableau conserve son défilement local.
+- Filtrage par Antipollution : seul P904 ressort sur septembre. Changement de mois au clavier vers une période future : réalisé indisponible, aucun jour fictivement réalisé.
+- Ajout d’un frais sur mobile et retour au portefeuille ; fermeture des dialogues avec Échap.
+- 11 tests automatisés : conservation contrat/documents/historique, archive/restauration, ajout local de fichier, facturation indépendante par mois, frais avec pièce conservée après retrait, filtres et utilisation, chevauchements, archives historiques, période future, tarifs et compléments, devises, vrais PDF/fusion et contenu ZIP.
+- Lint ciblé et compilation de production réussis. La génération PDF réelle a été inspectée dans le navigateur intégré.
+
+Preuves dans le dossier d’artefacts `projets-preview` du chat : `09-portfolio-v2.png`, `10-billing-expenses-v2.png`, `12-billing-pdf-v2.png`, `13-mobile-expense-v2.png`, `14-mobile-portfolio-v2.png`.
+
+## Limites conservées
+
+Prévisualisation avec données fictives, modifications temporaires et catalogues en consultation. La parité des règles et générateurs de production, les données historiques réelles, les catalogues persistants et les droits réels par profil restent à raccorder lors de l’intégration définitive. Le périmètre fonctionnel et les écarts de la maquette sont décrits dans `docs/design/projects-workspace-preview.md`. Aucun écran de rôle simulé n’a servi de validation des comptes Marin/Capitaine.
+
+final result: passed
+
+## 2026-09-28 — Projet, intégration v3.60.0
+
+- Contrôle des composants de production via `/modules/projects?preview=1` : Clients, Navires, Remorqués et Catalogue ouvrent chacun leur propre gestion ; retour au portefeuille et conservation des filtres.
+- Facturation : modèle PDF existant rendu par PDF.js et inspecté visuellement, référence Loyers + Frais puis référence Prestations seules, quantité manuelle zéro préservée et nouvelle ligne initialisée automatiquement.
+- Portefeuille contrôlé en 1280 px et 390 px : graphiques mois/année avant la liste, commandes regroupées, absence de débordement horizontal de page à 390 px. Émulation restaurée après contrôle.
+- Les données de démonstration ne prouvent pas les autorisations : 17 assertions SQL exécutées avec profils Admin, Direction, Capitaine et Marin, localement puis sur la base déployée en transaction annulée. Aucun élargissement des partages Drive.
+- Conservation : comparaison exacte des lignes des 13 tables sauvegardées ; aucune ligne historique manquante ou modifiée. 45 projets, 69 opérations, 415 événements, 1 159 DPR ; 46 documents liés et une pièce sans rattachement sauvegardés et relus depuis Drive, taille/SHA-256/MD5 concordants. Originaux conservés.
+- Vérifications : 249 tests ciblés (les attentes de note de version ont été adaptées ; un test de contrat coque nue dépassant le délai local a réussi avec 20 s), suite Windows Drive réussie. Contrôles complémentaires de l’ouverture Drive web, lint et build de production avant livraison.
+- Preuve visuelle privée hors dépôt : `project-release-20260928/projects-desktop.png` dans le répertoire d’artefacts du chat. Les archives et manifestes privés ne sont pas commis.

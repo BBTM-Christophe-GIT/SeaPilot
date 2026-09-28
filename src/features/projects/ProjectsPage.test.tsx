@@ -276,6 +276,9 @@ function createClient(
     query.select = vi.fn(() => query);
     query.eq = vi.fn(() => query);
     query.is = vi.fn(() => query);
+    query.gte = vi.fn(() => query);
+    query.in = vi.fn(() => query);
+    query.range = vi.fn(() => query);
     query.lte = vi.fn(() => query);
     query.or = vi.fn(() => query);
     query.order = vi.fn(() => query);
@@ -356,14 +359,14 @@ describe('ProjectsPage', () => {
     await screen.findByRole('heading', { name: 'Projets' });
     expect(screen.getByRole('link', { name: 'Éléments de facturation' }))
       .toHaveAttribute('href', '/modules/billingElements');
-    expect(screen.getByRole('button', { name: 'Liste des prestations' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Catalogue de prestations' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nouveau client' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier le client' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Liste des clients' }));
+    await user.click(screen.getByRole('button', { name: 'Clients' }));
     expect(screen.getByRole('dialog', { name: 'Liste des clients' })).toBeInTheDocument();
     expect(screen.getByRole('searchbox', { name: 'Rechercher un client' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Fermer' }));
-    expect(screen.getByRole('button', { name: 'Liste des remorqués' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remorqués' })).toBeInTheDocument();
   });
 
   it('selects a project and exposes contract-aware read-only sections as accessible tabs', async () => {
@@ -397,7 +400,7 @@ describe('ProjectsPage', () => {
     const projectButton = screen.getByRole('button', { name: /P1086 Campagne Atlantique 2026/ });
     await user.click(projectButton);
 
-    expect(projectButton).toHaveAttribute('aria-pressed', 'true');
+    expect(projectButton).not.toBeInTheDocument();
     expect(screen.getByRole('tablist', { name: 'Sections du projet' })).toBeInTheDocument();
     expect(screen.getAllByRole('tab').map((tab) => tab.getAttribute('aria-label'))).toEqual([
       'Identité',
@@ -405,6 +408,7 @@ describe('ProjectsPage', () => {
       'Facturation',
       'Offre & contrat',
       'Documents',
+      'Historique',
     ]);
     expect(screen.queryByRole('tab', { name: 'Document contractuel' })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Identité' })).toHaveAttribute('aria-selected', 'true');
@@ -426,23 +430,18 @@ describe('ProjectsPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Documents' }));
     expect(screen.getByText('Attestation Expert BV.pdf')).toBeInTheDocument();
     expect(screen.getByText(/Toilette de Mer · Attestation Expert\/BV/)).toBeInTheDocument();
-    expect(await screen.findByRole('link', { name: /Ouvrir le document.*Attestation Expert BV.pdf/ })).toHaveAttribute(
-      'href',
-      'https://storage.example/project-attachment-signed',
-    );
-    expect(createSignedUrl).toHaveBeenCalledWith('projects/880/attachments/toilette_de_mer/attestation.pdf', 300);
-    expect(screen.getByRole('link', { name: /Ouvrir dans SharePoint.*Plan projet Atlantique.pdf/ })).toHaveAttribute(
-      'href',
-      'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P1086/plan-atlantique.pdf',
-    );
+    await user.click(screen.getByRole('button', { name: /Ouvrir le document.*Attestation Expert BV.pdf/ }));
+    await waitFor(() => expect(createSignedUrl).toHaveBeenCalledWith('projects/880/attachments/toilette_de_mer/attestation.pdf', 300));
+    expect(screen.getByRole('button', { name: /Ouvrir le document.*Plan projet Atlantique.pdf/ })).toBeInTheDocument();
     screen.getByRole('tab', { name: 'Opérations' }).focus();
     await user.keyboard('{ArrowRight}');
     expect(screen.getByRole('tab', { name: 'Facturation' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByLabelText('Inclure les services refacturables dans le PDF')).toBeInTheDocument();
-    expect(screen.getByLabelText('Inclure les prestations BBTM dans le PDF')).toBeInTheDocument();
-    expect(within(screen.getByText('Prestation BBTM').closest('article')!).getAllByRole('checkbox')).toHaveLength(1);
+    expect(screen.getByLabelText('Inclure les frais et leurs pièces dans l’export')).toBeInTheDocument();
+    expect(screen.getByLabelText('Inclure les prestations BBTM')).toBeInTheDocument();
+    expect(within(screen.getByText('Prestation BBTM').closest('article')!).queryAllByRole('checkbox')).toHaveLength(0);
+    expect(within(screen.getByRole('group', { name: 'Contenu du PDF' })).getAllByRole('checkbox')).toHaveLength(3);
     expect(screen.queryByLabelText('Inclure cette prestation dans le PDF')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Inclure les loyers dans le PDF')).toBeInTheDocument();
+    expect(screen.getByLabelText('Inclure les loyers')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Affich.*PDF/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Ajouter projet/i })).not.toBeInTheDocument();
     await waitFor(() => {
@@ -566,6 +565,7 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} />);
 
     expect(await screen.findByText(/Consultation partielle/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
     expect(screen.getByRole('tab', { name: 'Identité' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText(/informations contractuelles et BIMCO sont temporairement indisponibles/)).toBeInTheDocument();
   });
@@ -598,7 +598,7 @@ describe('ProjectsPage', () => {
     expect(screen.queryByRole('link', { name: /Plan projet Atlantique.pdf/ })).not.toBeInTheDocument();
 
     expect(screen.getByText('URL SharePoint absente')).toBeInTheDocument();
-    expect(screen.getAllByText(/authentification Microsoft 365/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/sources historiques restent conservées/).length).toBeGreaterThan(0);
   });
 
   it('changes the contextual navigation when another contract family is selected', async () => {
@@ -635,6 +635,7 @@ describe('ProjectsPage', () => {
       } }], error: null },
     });
     render(<ProjectsPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: 'P144 EMDT - GOURY' }));
     await screen.findByRole('heading', { name: 'P144 – EMDT - GOURY' });
     expect(screen.getByRole('heading', { name: 'Client' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Navires & affectation' })).toBeInTheDocument();
@@ -665,11 +666,13 @@ describe('ProjectsPage', () => {
 
     await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
     await user.click(screen.getByRole('tab', { name: 'Documents' }));
-    const link = await screen.findByRole('link', { name: /Contrat Atlantique signé.pdf/ });
+    const link = await screen.findByRole('button', { name: /Contrat Atlantique signé.pdf/ });
+    await user.click(link);
+    await waitFor(() => expect(createSignedUrl).toHaveBeenCalled());
 
-    expect(link).toHaveAttribute('href', 'https://storage.example/project-attachment-signed');
+    expect(link).toBeEnabled();
     expect(link).toHaveTextContent('Ouvrir le document');
-    expect(screen.getByText(/Stockage Supabase/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Document du projet/).length).toBeGreaterThan(0);
     expect(createSignedUrl).toHaveBeenCalledWith(
       'projects/880/contract-documents/884-Contrat-Atlantique-signe.pdf',
       300,
