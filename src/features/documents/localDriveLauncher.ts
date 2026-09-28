@@ -4,7 +4,7 @@ import { loadAppEnv } from '../../lib/env';
 export const DRIVE_MODULES = { procedures: 'Procedures', procedurePdfs: 'Procedures PDF', disciplinary: 'Sanctions Disciplinaires', chemicals: 'Produits Chimiques', humanResources: 'Ressources Humaines', projects: 'Projet' } as const;
 export type DriveModule = keyof typeof DRIVE_MODULES;
 export interface LocalDriveConnection { url: string; expiresAt: number; version?: string }
-export interface LocalDriveStatus { root: string | null; version: string; collaborators?: number }
+export interface LocalDriveStatus { root: string | null; version: string; collaborators?: number; exists?: boolean; cancelled?: boolean }
 let connection: LocalDriveConnection | null = null;
 let connecting: Promise<LocalDriveConnection> | null = null;
 
@@ -26,7 +26,7 @@ async function findLocalDrive(firstPort: number, nonce: string): Promise<{ url: 
       const health = await response.json();
       // Older launchers can still connect on the original port while the update
       // is installed. New launchers also prove which random session they serve.
-      if ((['2.1.0', '2.2.0', '2.3.0', '2.4.0', '2.5.0'].includes(health.version) && health.nonce === nonce) || (health.version === '2.0.0' && index === 0)) return { url, version: health.version };
+      if ((['2.1.0', '2.2.0', '2.3.0', '2.4.0', '2.5.0', '2.6.0'].includes(health.version) && health.nonce === nonce) || (health.version === '2.0.0' && index === 0)) return { url, version: health.version };
       throw new Error('Session locale incompatible');
     }));
   } finally { controller.abort(); }
@@ -38,7 +38,8 @@ export function launcherOpenUri(module: DriveModule, relativePath: string): stri
 }
 
 /** Call directly from the button action, before awaiting other work, to preserve the user gesture. */
-export function connectLocalDrive(): Promise<LocalDriveConnection> {
+export function connectLocalDrive(options: { fresh?: boolean } = {}): Promise<LocalDriveConnection> {
+  if (options.fresh) connection = null;
   if (connection && connection.expiresAt > Date.now()) return Promise.resolve(connection);
   if (connecting) return connecting;
   const port = 49152 + crypto.getRandomValues(new Uint16Array(1))[0] % 16384;
@@ -67,10 +68,11 @@ export async function localDriveRequest<T>(client: SupabaseClient, session: Loca
   try {
     response = await fetch(`${session.url}/request`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.session.access_token}`, 'X-SeaPilot-Key': env.supabaseAnonKey },
-      body: JSON.stringify(data), signal: AbortSignal.timeout(90_000),
+      body: JSON.stringify(data), signal: AbortSignal.timeout(data.action === 'select-root' ? 180_000 : 90_000),
     });
   } catch {
     connection = null;
+    if (['status', 'configure', 'select-root'].includes(String(data.action))) throw new Error('La connexion au lanceur a été interrompue. Relancez-le pour vérifier automatiquement la configuration du dossier.');
     throw new Error('La connexion au lanceur a été interrompue. Vérifiez le dossier avant de réessayer : un fichier peut avoir été écrit.');
   }
   const result = await response.json();

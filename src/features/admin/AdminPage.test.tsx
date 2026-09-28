@@ -85,7 +85,7 @@ function createAdminClient(options: { profiles?: unknown[]; sources?: unknown[];
 function renderAdminPage(client: unknown, section = 'users') {
   return render(
     <MemoryRouter initialEntries={[`/modules/admin?preview=1&section=${section}`]}>
-      <AdminPage client={client as never} />
+      <AdminPage client={client as never} previewMode />
     </MemoryRouter>,
   );
 }
@@ -170,9 +170,9 @@ describe('AdminPage', () => {
     expect(documentsLink).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('heading', { name: 'Un seul dossier SeaPilot pour ce PC' })).toBeVisible();
     expect(screen.queryByRole('heading', { name: 'Gestion des utilisateurs' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Installer le lanceur Windows' })).toHaveAttribute('href', '/connectors/seapilot-drive-windows.zip?v=2.5.0');
+    expect(screen.getByRole('link', { name: 'Installer le lanceur Windows' })).toHaveAttribute('href', '/connectors/seapilot-drive-windows.zip?v=2.6.0');
     expect(screen.getByRole('link', { name: 'Installer le lanceur Windows' })).toHaveAttribute('download');
-    expect(screen.getByLabelText('Chemin du dossier SeaPilot sur ce PC')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sélectionner le dossier dans Windows' })).toBeDisabled();
     expect(screen.queryByRole('link', { name: 'Configurer le dossier disciplinaire sur ce PC' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Utilisateurs' }));
@@ -189,7 +189,7 @@ describe('AdminPage', () => {
     };
     renderAdminPage(client, 'documents');
 
-    expect(screen.getByRole('button', { name: 'Vérifier ce PC' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Sélectionner le dossier dans Windows' })).toBeVisible();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
