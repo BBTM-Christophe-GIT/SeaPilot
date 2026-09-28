@@ -38,8 +38,10 @@ describe('project workspace business rules', () => {
     expect(summarizeUtilization([]).plannedRate).toBe(0);
     expect(localCalendarDate(new Date(2026, 8, 1, 0, 15))).toBe('2026-09-01');
   });
-  it('classifies historical bareboat labels consistently with the contract editor', () => {
-    expect(operationType({ contractType: "Contrat d'Affrètement", title: 'Location de navire' } as ProjectRecord)).toBe('Affrètement coque nue');
+  it('classifies the renamed charter and the new bareboat variant consistently with the editor', () => {
+    expect(operationType({ contractType: "Contrat d'Affrètement", title: 'Location de navire' } as ProjectRecord)).toBe('Affrètement à temps');
+    expect(operationType({ contractType: "Contrat d'Affrètement à Temps", title: 'Location de navire' } as ProjectRecord)).toBe('Affrètement à temps');
+    expect(operationType({ contractType: "Contrat d'Affrètement Coque Nue", title: 'Location de navire' } as ProjectRecord)).toBe('Affrètement coque nue');
     expect(operationType({ contractType: 'Offre Commerciale', title: 'Oil spill response' } as ProjectRecord)).toBe('Antipollution');
   });
   it('assigns a distinct client reference slot to every export combination', () => {

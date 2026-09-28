@@ -10,6 +10,7 @@ import type {
 import type { ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import { buildSupplytimePreview } from './projectReadModel';
 import {
+  charterContractLabel,
   DEFAULT_BAREBOAT_CONTRACT_FIELDS,
   DEFAULT_BAREBOAT_OWNER_IDENTITY,
   DEFAULT_PROJECT_FUEL_TERMS,
@@ -433,7 +434,7 @@ export function buildGeneratedDocumentFileName(
     offer: language === 'en' ? 'Commercial Offer - R1.pdf' : 'Offre - R1.pdf',
     bimco_supplytime: 'BIMCO - R1.pdf',
     towage_contract: 'Contrat de remorquage - R1.pdf',
-    bareboat_charter: "Contrat d'affretement - R1.pdf",
+    bareboat_charter: `${charterContractLabel(project.contractType).normalize('NFD').replace(/[\u0300-\u036f]/g, '')} - R1.pdf`,
     intellectual_service: 'Contrat prestation intellectuelle - R1.docx',
   };
   return `${reference} - ${suffixes[kind]}`;
@@ -1006,7 +1007,7 @@ async function generateStyledContractDocument(
     values.SIGNATURE_STATEMENT = `Fait à ${values.CONTRACT_PLACE}, le ${values.CONTRACT_DATE_LONG}`;
   }
   const fileName = buildGeneratedDocumentFileName(kind, input.project);
-  const layout = buildStyledContract(isTowage ? 'towage' : 'bareboat', values, input.project.title, Boolean(input.emitter?.signatureUrl));
+  const layout = buildStyledContract(isTowage ? 'towage' : 'bareboat', values, input.project.title, Boolean(input.emitter?.signatureUrl), input.project.contractType);
   const { renderStyledContractPdf } = await import('./projectStyledContractPdf');
   const blob = await renderStyledContractPdf(layout, fileName, projectReference(input.project), input.emitter?.signatureUrl, input.emitter?.signatureMimeType);
   return { blob, fileName, mimeType: 'application/pdf' };

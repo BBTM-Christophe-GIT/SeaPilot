@@ -1,5 +1,6 @@
 import metrics from './assets/contract-previews/helvetica-metrics.json';
 import terms from './assets/contract-previews/contract-terms.json';
+import { charterContractLabel } from './projectContractOptions';
 
 export type StyledContractKind = 'towage' | 'bareboat';
 type Weight = 'regular' | 'bold';
@@ -144,8 +145,9 @@ export function buildStyledContract(
   fields: Record<string, string>,
   projectTitle: string,
   hasSignature: boolean,
+  contractType?: string,
 ): StyledContractDocument {
-  const title = kind === 'towage' ? 'CONTRAT DE REMORQUAGE' : 'CONTRAT D’AFFRÈTEMENT';
+  const title = kind === 'towage' ? 'CONTRAT DE REMORQUAGE' : charterContractLabel(contractType).replace("'", '’').toLocaleUpperCase('fr-FR');
   const pages: ContractDrawing[][] = [];
   let page: ContractDrawing[] = [];
   let y = 0;
@@ -163,7 +165,7 @@ export function buildStyledContract(
     rect(0, 0, CONTRACT_PAGE_SIZE.width, 83, '#091f32');
     page.push({ type: 'image', source: 'logo', x: 40, y: 14, width: 57, height: 57 });
     text(title, 110, 30, 342, 15, 'bold', '#ffffff');
-    text(kind === 'bareboat' ? 'COQUE NUE' : 'BBTM', 110, 55, 270, 8, 'bold', '#cfdae6');
+    text('BBTM', 110, 55, 270, 8, 'bold', '#cfdae6');
     text(fields.PROJECT_CODE || 'PROJET', 464, 30, 90, 11, 'bold', '#ffffff');
     text(fields.CONTRACT_DATE_SHORT || '', 464, 52, 90, 8, 'regular', '#cfdae6');
     text(subtitle, 42, 99, 511, 9, 'bold', MUTED);

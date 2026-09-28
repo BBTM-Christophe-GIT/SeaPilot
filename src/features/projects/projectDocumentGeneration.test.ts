@@ -195,7 +195,10 @@ describe('projectDocumentGeneration', () => {
       'Campagne - Atlantique - BIMCO - R1.pdf',
     );
     expect(buildGeneratedDocumentFileName('bareboat_charter', project)).toBe(
-      "P1107 - Contrat d'affretement - R1.pdf",
+      "P1107 - Contrat d'Affretement Coque Nue - R1.pdf",
+    );
+    expect(buildGeneratedDocumentFileName('bareboat_charter', { ...project, contractType: "Contrat d'Affrètement" })).toBe(
+      "P1107 - Contrat d'Affretement a Temps - R1.pdf",
     );
   });
 
@@ -417,7 +420,10 @@ describe('projectDocumentGeneration', () => {
     }
   });
 
-  it('generates the styled bareboat charter preserving the sanitized model fields', async () => {
+  it.each([
+    ["Contrat d'Affrètement à Temps", "P1107 - Contrat d'Affretement a Temps - R1.pdf"],
+    ["Contrat d'Affrètement Coque Nue", "P1107 - Contrat d'Affretement Coque Nue - R1.pdf"],
+  ])('generates %s preserving the shared model fields', async (contractType, expectedFileName) => {
     const [template, editableTemplate] = await Promise.all([
       readFile(resolve('public/bbtm-report-logo.png')),
       readFile(resolve('public/templates/contrat-affretement-bbtm.docx')),
@@ -464,7 +470,7 @@ describe('projectDocumentGeneration', () => {
         signatureMimeType: '',
         signatureUrl: '',
       },
-      project: { ...project, contractType: "Contrat d'Affrètement" },
+      project: { ...project, contractType },
       vesselCertificates: [
         {
           id: 127,
@@ -519,7 +525,7 @@ describe('projectDocumentGeneration', () => {
       const bytes = new Uint8Array(await generated.blob.arrayBuffer());
       const document = await PDFDocument.load(bytes);
 
-      expect(generated.fileName).toBe("P1107 - Contrat d'affretement - R1.pdf");
+      expect(generated.fileName).toBe(expectedFileName);
       expect(generated.mimeType).toBe('application/pdf');
       expect(document.getPageCount()).toBeGreaterThan(2);
       expect(fields.CHARTERER).toContain('Ifremer');

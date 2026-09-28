@@ -124,11 +124,12 @@ describe('ProjectEditor contract hire periods', () => {
     );
 
     expect(screen.getAllByRole('option').filter((option) => (
-      ['Offre Commerciale', 'Contrat de Remorquage', "Contrat d'Affrètement", 'BIMCO'].includes(option.textContent || '')
+      ['Offre Commerciale', 'Contrat de Remorquage', "Contrat d'Affrètement à Temps", "Contrat d'Affrètement Coque Nue", 'BIMCO'].includes(option.textContent || '')
     )).map((option) => option.textContent)).toEqual([
       'Offre Commerciale',
       'Contrat de Remorquage',
-      "Contrat d'Affrètement",
+      "Contrat d'Affrètement à Temps",
+      "Contrat d'Affrètement Coque Nue",
       'BIMCO',
     ]);
     const contractType = screen.getByLabelText('Type de contrat');
@@ -136,8 +137,8 @@ describe('ProjectEditor contract hire periods', () => {
     expect(screen.getByRole('img', { name: 'CONTRAT DE REMORQUAGE, page 1' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Page suivante' }));
     expect(screen.getByRole('img', { name: 'CONTRAT DE REMORQUAGE, page 2' })).toBeInTheDocument();
-    await user.selectOptions(contractType, "Contrat d'Affrètement");
-    expect(screen.getByRole('img', { name: 'CONTRAT D’AFFRÈTEMENT, page 1' })).toBeInTheDocument();
+    await user.selectOptions(contractType, "Contrat d'Affrètement à Temps");
+    expect(screen.getByRole('img', { name: 'CONTRAT D’AFFRÈTEMENT À TEMPS, page 1' })).toBeInTheDocument();
     expect(screen.getByLabelText('1. Lieu de signature')).toHaveValue('Cherbourg-En-Cotentin');
     expect(screen.getByLabelText('1. Date de signature')).toHaveValue(localTodayIso());
     expect(screen.getByLabelText('14. Indemnité de fin de contrat anticipé')).toHaveValue('50% de la durée ferme restante');
@@ -158,7 +159,31 @@ describe('ProjectEditor contract hire periods', () => {
     expect(screen.queryByLabelText('Début d’affrètement')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Contrat d'Affrètement/ }));
     await user.click(screen.getByRole('button', { name: 'Page suivante' }));
-    expect(screen.getByRole('img', { name: 'CONTRAT D’AFFRÈTEMENT, page 2' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'CONTRAT D’AFFRÈTEMENT À TEMPS, page 2' })).toBeInTheDocument();
+    await user.type(screen.getByLabelText('12. Options de prolongation'), 'Deux périodes de cinq jours');
+    const charterSection = screen.getByRole('region', { name: "Cases du contrat d'affrètement" });
+    const timeCharterFields = Array.from(charterSection.querySelectorAll('label')).map((label) => label.textContent);
+    await user.selectOptions(contractType, "Contrat d'Affrètement Coque Nue");
+    expect(Array.from(charterSection.querySelectorAll('label')).map((label) => label.textContent)).toEqual(timeCharterFields);
+    expect(screen.getByLabelText('12. Options de prolongation')).toHaveValue('Deux périodes de cinq jours');
+    expect(screen.getByRole('img', { name: 'CONTRAT D’AFFRÈTEMENT COQUE NUE, page 1' })).toBeInTheDocument();
+    for (const [type, vesselLabel] of [
+      ['Contrat de Remorquage', '5. Remorqueur · Navire principal *'],
+      ["Contrat d'Affrètement à Temps", '4. Navire affrété *'],
+      ["Contrat d'Affrètement Coque Nue", '4. Navire affrété *'],
+    ]) {
+      await user.selectOptions(contractType, 'BIMCO');
+      await user.click(screen.getByRole('button', { name: /Facturation/ }));
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Navire principal *' }), '1');
+      await user.selectOptions(contractType, type);
+      const vessel = screen.getByRole('combobox', { name: vesselLabel });
+      expect(vessel).toBeVisible();
+      expect(vessel).toHaveValue('1');
+      expect(vessel.closest('fieldset')).toHaveAttribute('id', 'project-step-offer');
+      expect(screen.queryByRole('button', { name: /Facturation/ })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: /Documents/ }));
+      expect(screen.getByRole('group', { name: '4 Documents' })).toBeVisible();
+    }
     await user.selectOptions(contractType, 'BIMCO');
     expect(screen.getByText('1 / 29')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Page suivante' }));
@@ -477,6 +502,11 @@ describe('ProjectEditor contract hire periods', () => {
 
     const contractType = screen.getByLabelText('Type de contrat');
     await user.selectOptions(contractType, 'Contrat de Remorquage');
+    const tugCard = screen.getByRole('region', { name: 'Remorqueur' });
+    expect(within(tugCard).getByRole('heading', { name: '5. Remorqueur · Navire principal *' })).toBeVisible();
+    expect(within(tugCard).getByRole('combobox', { name: '5. Remorqueur · Navire principal *' })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Remorqué' }).nextElementSibling).toBe(tugCard);
+    expect(screen.queryByRole('button', { name: /Facturation/ })).not.toBeInTheDocument();
     expect(screen.getByLabelText('6. Conditions du remorqué')).toHaveValue(
       'Bonne condition de partance assurée par l’affréteur.',
     );
