@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectsPage } from './ProjectsPage';
 
 const documentGenerationMocks = vi.hoisted(() => ({
@@ -308,6 +308,8 @@ function createClient(
 
 describe('ProjectsPage', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-07-15T12:00:00Z'));
     vi.clearAllMocks();
     documentGenerationMocks.generateProjectDocument.mockResolvedValue({
       blob: new Blob(['pdf'], { type: 'application/pdf' }),
@@ -328,6 +330,49 @@ describe('ProjectsPage', () => {
       mimeType: 'application/zip',
     });
     documentStorageMocks.storeOperationDocuments.mockResolvedValue({ failed: [], stored: [] });
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it('starts with a compact fleet summary and expands only the eligible vessels', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ vessels: { data: ['COTENTIN', 'BBTM 2710', 'TAMARIS', 'ECREHOUEL'].map((name, index) => ({ id: index + 12, name, active: true, asset_kind: 'vessel' })), error: null } });
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    const insights = within(await screen.findByRole('region', { name: 'Activité de la flotte' }));
+    await waitFor(() => expect(insights.getByText('1 navire suivi')).toBeInTheDocument());
+    expect(insights.getByRole('button', { name: 'Voir les détails' })).toHaveAttribute('aria-expanded', 'false');
+    expect(insights.queryByRole('heading', { name: 'Utilisation par navire' })).not.toBeInTheDocument();
+    await user.click(insights.getByRole('button', { name: 'Voir les détails' }));
+    expect(insights.getByRole('heading', { name: 'Utilisation par navire' })).toBeVisible();
+    expect(insights.getByText('COTENTIN')).toBeVisible();
+    for (const name of ['BBTM 2710', 'TAMARIS', 'ECREHOUEL']) expect(insights.queryByText(name)).not.toBeInTheDocument();
+    fireEvent.change(insights.getByLabelText('Période'), { target: { value: '2024-02' } });
+    expect(insights.getAllByText('Année 2024')).toHaveLength(2);
+    expect(insights.queryByText('BBTM 2710')).not.toBeInTheDocument();
+    await user.click(insights.getByRole('button', { name: 'Réduire' }));
+    expect(insights.queryByRole('heading', { name: 'Utilisation par navire' })).not.toBeInTheDocument();
+    expect(insights.getByLabelText('Période')).toHaveValue('2024-02');
+  });
+
+  it('switches between current-month/future projects and the complete history independently of the KPI period', async () => {
+    vi.setSystemTime(new Date('2026-09-28T12:00:00Z'));
+    const dated = (id: number, start: string, end: string) => ({ ...atlantiqueProjectRow, id, project_code: `P${id}`, title: `Projet ${id}`, delivery_at: null, redelivery_at: null, charter_starts_at: null, charter_ends_at: null, starts_on: start || null, ends_on: end || null });
+    const { client } = createClient({ projects: { data: [dated(1, '2026-08-01', '2026-08-31'), dated(2, '2026-08-30', '2026-09-01'), { ...dated(3, '2027-01-01', '2027-01-15'), archived_at: '2026-09-01' }, dated(4, '', '')], error: null } });
+    const user = userEvent.setup();
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    expect(await screen.findByRole('button', { name: /P2 Projet 2/ })).toBeVisible();
+    expect(screen.getByRole('button', { name: /Projets actuels 2/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /P3 Projet 3/ })).toBeVisible();
+    expect(screen.queryByRole('button', { name: /P1 Projet 1/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Archives/ })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Période'), { target: { value: '2026-08' } });
+    expect(screen.queryByRole('button', { name: /P1 Projet 1/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Tous les projets 4/ }));
+    expect(screen.getByRole('button', { name: /P1 Projet 1/ })).toBeVisible();
+    expect(screen.getByRole('button', { name: /P4 Projet 4/ })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: /P3 Projet 3/ }));
+    await user.click(screen.getByRole('button', { name: 'Liste des projets' }));
+    expect(screen.getByRole('button', { name: /Tous les projets 4/ })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('filters projects and associated indicators by status, client, vessel, period and search', async () => {
@@ -472,7 +517,7 @@ describe('ProjectsPage', () => {
           id: 501,
           company_id: 1,
           project_id: 880,
-          period_month: '2026-09-01',
+          period_month: '2026-07-01',
           amount_ht: 0,
           include_operations_in_pdf: true,
           include_expenses_in_pdf: true,

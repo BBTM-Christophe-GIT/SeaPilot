@@ -1,4 +1,5 @@
 import { ProjectPortfolioInsights } from './ProjectPortfolioInsights';
+import { localCalendarDate } from './projectPortfolioMetrics';
 import { ProjectHistory } from './ProjectHistory';
 import { FleetPage } from '../fleet/FleetPage';
 import './ProjectWorkspace.css';
@@ -72,6 +73,7 @@ import {
   EMPTY_PROJECT_FILTERS,
   filterDocumentsForProjects,
   getProjectVesselNames,
+  isCurrentProject,
   projectMatchesFilters,
   resolveSelectedProject,
   sortProjects,
@@ -1275,7 +1277,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [projectsData, setProjectsData] = useState<ProjectsData>(EMPTY_PROJECTS_DATA);
   const [filters, setFilters] = useState<ProjectFilterState>(EMPTY_PROJECT_FILTERS);
   const [dossierOpen, setDossierOpen] = useState(false);
-  const [archiveScope, setArchiveScope] = useState<'current' | 'archived' | 'all'>('current');
+  const [projectScope, setProjectScope] = useState<'current' | 'all'>('current');
   const [fleetCatalogOpen, setFleetCatalogOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
@@ -1353,9 +1355,14 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     () => deduplicateProjectDocuments(projectsData.contractDocuments),
     [projectsData.contractDocuments],
   );
+  const currentMonthStart = `${localCalendarDate().slice(0, 7)}-01`;
+  const currentProjects = useMemo(
+    () => projectsData.projects.filter((project) => isCurrentProject(project, projectsData.planningOccurrences, currentMonthStart)),
+    [projectsData.projects, projectsData.planningOccurrences, currentMonthStart],
+  );
   const filteredProjects = useMemo(
-    () => projectsData.projects.filter((project) => projectMatchesFilters(project, effectiveFilters) && (archiveScope === 'all' || (archiveScope === 'archived' ? Boolean(project.archivedAt) : !project.archivedAt))),
-    [effectiveFilters, projectsData.projects, archiveScope],
+    () => (projectScope === 'current' ? currentProjects : projectsData.projects).filter((project) => projectMatchesFilters(project, effectiveFilters)),
+    [effectiveFilters, projectsData.projects, currentProjects, projectScope],
   );
   const filteredProjectDocuments = useMemo(
     () => filterDocumentsForProjects(projectDocumentSet.documents, filteredProjects),
@@ -1680,7 +1687,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         <ProjectRibbonButton icon={<RefreshCw size={18} />} label="Actualiser" onClick={() => setLoadAttempt((attempt) => attempt + 1)} />
       </nav>
       {!dossierOpen ? <ProjectPortfolioInsights client={effectiveClient} data={projectsData} /> : <nav className="project-workspace-actions" aria-label="Actions du dossier">
-        <button type="button" onClick={() => setDossierOpen(false)}><ChevronLeft size={16} /> Tous les projets</button>
+        <button type="button" onClick={() => setDossierOpen(false)}><ChevronLeft size={16} /> Liste des projets</button>
         <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<Pencil size={18} />} label="Modifier le projet" onClick={() => selectedProject && openProjectEditor(selectedProject)} />
         <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || isArchiving} icon={<Archive size={18} />} label="Archiver" onClick={archiveSelectedProject} />
         <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus size={18} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
@@ -1689,8 +1696,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         <a href={PROJECT_DOCUMENTS_LEGACY_URL} target="_blank" rel="noreferrer">Sources SharePoint historiques</a>
       </nav>}
       {!dossierOpen ? <div className="project-portfolio-scopes" aria-label="Classement des projets">
-        {([['current', 'Dossiers courants'], ['archived', 'Archives'], ['all', 'Tous les projets']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={archiveScope === value} onClick={() => { setArchiveScope(value); setCurrentPage(0); }}>{label} <b>{projectsData.projects.filter((project) => value === 'all' || (value === 'archived' ? Boolean(project.archivedAt) : !project.archivedAt)).length}</b></button>)}
-        <p>Les dossiers courants comprennent les projets à préparer, en cours et terminés. L’archivage les range à part ; leurs données et documents restent consultables.</p>
+        {([['current', 'Projets actuels'], ['all', 'Tous les projets']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={projectScope === value} onClick={() => { setProjectScope(value); setCurrentPage(0); }}>{label} <b>{value === 'current' ? currentProjects.length : projectsData.projects.length}</b></button>)}
+        <p>{projectScope === 'current' ? 'Projets et opérations du mois en cours ou à venir.' : 'Tous les projets, y compris les projets passés, archivés et sans date.'}</p>
       </div> : null}
 
       {projectsData.warnings.length > 0 ? (

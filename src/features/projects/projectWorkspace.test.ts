@@ -1,10 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { billingReferenceScope, billingReferenceScopeLabel } from './projectBillingReferences';
-import { utilization, calendarDays, operationType } from './projectPortfolioMetrics';
+import { utilization, calendarDays, isPortfolioKpiVessel, localCalendarDate, operationType, summarizeUtilization } from './projectPortfolioMetrics';
 import { countDailyOperations, type ProjectBillingDpr } from './projectBilling';
 import type { ProjectPlanningOccurrenceRecord, ProjectRecord, VesselRecord } from './projectQueries';
 
 describe('project workspace business rules', () => {
+  it('limits KPI vessels to the fleet active today and keeps the requested exclusions across name variants', () => {
+    const vessel = { active: true, assetKind: 'vessel', fleetExitOn: '' } as VesselRecord;
+    for (const name of ['BBTM 2710', 'bbtm-2710', 'TAMARIS', 'Écréhouel']) {
+      expect(isPortfolioKpiVessel({ ...vessel, name }, '2026-09-28')).toBe(false);
+    }
+    expect(isPortfolioKpiVessel({ ...vessel, name: 'GOURY' }, '2026-09-28')).toBe(true);
+    expect(isPortfolioKpiVessel({ ...vessel, name: 'GOURY', active: false }, '2026-09-28')).toBe(false);
+    expect(isPortfolioKpiVessel({ ...vessel, name: 'GOURY', fleetExitOn: '2026-09-01' }, '2026-09-28')).toBe(false);
+    expect(isPortfolioKpiVessel({ ...vessel, name: 'Bureau', assetKind: 'office' }, '2026-09-28')).toBe(false);
+    expect(isPortfolioKpiVessel({ ...vessel, name: 'GOURY', fleetExitOn: '2026-10-01' }, '2026-09-28')).toBe(true);
+  });
+  it('weights the fleet summary by available vessel-days rather than averaging rounded percentages', () => {
+    expect(summarizeUtilization([
+      { days: 30, planned: 30, realized: 15, plannedRate: 100, realizedRate: 50 },
+      { days: 10, planned: 0, realized: 0, plannedRate: 0, realizedRate: 0 },
+    ])).toEqual({ days: 40, planned: 30, realized: 15, plannedRate: 75, realizedRate: 38 });
+    expect(summarizeUtilization([]).plannedRate).toBe(0);
+    expect(localCalendarDate(new Date(2026, 8, 1, 0, 15))).toBe('2026-09-01');
+  });
   it('classifies historical bareboat labels consistently with the contract editor', () => {
     expect(operationType({ contractType: "Contrat d'Affrètement", title: 'Location de navire' } as ProjectRecord)).toBe('Affrètement coque nue');
     expect(operationType({ contractType: 'Offre Commerciale', title: 'Oil spill response' } as ProjectRecord)).toBe('Antipollution');
