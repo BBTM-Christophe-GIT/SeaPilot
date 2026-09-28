@@ -35,6 +35,8 @@ import {
   billingExpenseAttachmentName,
   billingExpenseSpecialtyLabel,
   billingOperationKey,
+  billingApplicableHire,
+  contractHireModeForOperation,
   billingServicesTotal,
   completeBillingDprs,
   countDailyOperations,
@@ -172,6 +174,7 @@ export function ProjectBillingPanel({
   project,
   showMonthSelector = true,
   visibleSections = ALL_BILLING_SECTIONS,
+  workspace = false,
 }: {
   client: SupabaseClient;
   contract?: ProjectContractRecord;
@@ -181,7 +184,9 @@ export function ProjectBillingPanel({
   project: ProjectRecord;
   showMonthSelector?: boolean;
   visibleSections?: ProjectBillingSectionVisibility;
+  workspace?: boolean;
 }) {
+  const [billingView, setBillingView] = useState<'hire' | 'expenses' | 'services' | 'followup'>('hire');
   const defaultMonth = initialMonth?.slice(0, 7) || currentMonth();
   const [data, setData] = useState<ProjectBillingData>(EMPTY_DATA);
   const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
@@ -723,14 +728,36 @@ export function ProjectBillingPanel({
     }
   }
 
+  const hireDays = [...exportDprs].filter((dpr) => dpr.reportDate >= exportRange.start && dpr.reportDate <= exportRange.end)
+    .sort((left, right) => left.reportDate.localeCompare(right.reportDate) || left.id - right.id);
+  const dayAmount = (dpr: ProjectBillingDpr) => dpr.amountHt ?? billingApplicableHire(operations, contract, dpr.reportDate, dpr.vesselName || selectedVesselName, contractHireModeForOperation(dpr.operation)) ?? 0;
+  const includedHireTotal = selectedPeriod?.includeOperationsInPdf === false ? 0 : hireDays.filter((dpr) => !(selectedPeriod?.excludedOperationKeys || []).includes(billingOperationKey(dpr))).reduce((sum, dpr) => sum + dayAmount(dpr), 0);
+  const includedExpenses = selectedPeriod?.includeExpensesInPdf === false ? [] : periodExpenses.filter((expense) => expense.includeInPdf !== false);
+  const includedServiceTotal = selectedPeriod?.includeBbtmInPdf === false ? 0 : billingServicesTotal(serviceForExport);
+  const expenseByCurrency = new Map<string, number>();
+  includedExpenses.forEach((expense) => expenseByCurrency.set(expense.currency, (expenseByCurrency.get(expense.currency) || 0) + expense.amountHt));
+  const totalsByCurrency = new Map(expenseByCurrency);
+  const hireCurrency = contract?.hireCurrency || 'EUR';
+  totalsByCurrency.set(hireCurrency, (totalsByCurrency.get(hireCurrency) || 0) + includedHireTotal);
+  if (includedServiceTotal) totalsByCurrency.set('EUR', (totalsByCurrency.get('EUR') || 0) + includedServiceTotal);
+  const periodControls = <>
+    <label>Période<select onChange={(event) => setPeriodMode(event.target.value as BillingPeriodMode)} value={periodMode}><option value="calendar-month">Mois calendaire</option><option value="custom">Période personnalisée</option></select></label>
+    {periodMode === 'custom' ? <><label>Début<input onChange={(event) => setCustomStart(event.target.value)} type="date" value={customStart} /></label><label>Fin<input onChange={(event) => setCustomEnd(event.target.value)} type="date" value={customEnd} /></label></> : null}
+    <label>Navire<select onChange={(event) => setVesselFilter(event.target.value)} value={vesselFilter}><option value="">Navire de l’opération</option>{vesselOptions.map((vessel) => <option key={vessel}>{vessel}</option>)}</select></label>
+  </>;
+  const missingDayControl = missingDates.length ? <label className="project-billing-completion">
+    <input checked={completeMissingDays} onChange={(event) => setCompleteMissingDays(event.target.checked)} type="checkbox" />
+    <span>Compléter les {missingDates.length} jour{missingDates.length > 1 ? 's' : ''} sans DPR avec « 24/24 Operation » au tarif contractuel applicable à chaque journée.</span>
+  </label> : <p className="project-billing-range-complete">Tous les jours de la période disposent d’un DPR.</p>;
+
   return (
-    <section aria-label="Facturation mensuelle" className="project-billing">
+    <section aria-label="Facturation mensuelle" className={`project-billing ${workspace ? 'is-workspace' : ''}`}>
       <div className="project-section-heading">
         <div>
-          <strong>Facturation mensuelle</strong>
-          <span>Une fiche indépendante par contrat et par mois. Le statut global du projet reste inchangé.</span>
+          <strong>{workspace ? 'Préparer la facturation' : 'Facturation mensuelle'}</strong>
+          <span>{workspace ? 'Un dossier mensuel, du DPR aux justificatifs, jusqu’au suivi de paiement.' : 'Une fiche indépendante par contrat et par mois. Le statut global du projet reste inchangé.'}</span>
         </div>
-        {showMonthSelector ? (
+        {showMonthSelector && !workspace ? (
           <label className="project-billing-month">
             Mois
             <input onChange={(event) => selectMonth(event.target.value)} type="month" value={selectedMonth} />
@@ -740,8 +767,30 @@ export function ProjectBillingPanel({
 
       {message ? <p className="project-billing-message" role="status">{message}</p> : null}
       {error ? <p className="project-billing-error" role="alert">{error}</p> : null}
-
-      {visibleSections.billingElements ? <article className="project-billing-card">
+      {workspace ? <div className="project-billing-period-bar">
+        {showMonthSelector ? <label>Mois de facturation<input onChange={(event) => selectMonth(event.target.value)} type="month" value={selectedMonth} /></label> : null}
+        {periodControls}
+      </div> : null}
+      <div className={workspace ? 'project-billing-workspace-layout' : 'project-billing-stack'}>
+      <div className="project-billing-workspace-main">
+      {workspace ? <>
+        <nav className="project-billing-workspace-tabs" aria-label="Rubriques de facturation">
+          {([['hire', 'Loyers & DPR', hireDays.length], ['expenses', 'Frais refacturables', periodExpenses.length], ['services', 'Prestations BBTM', serviceDrafts.length], ['followup', 'Suivi & pièces', periodDocuments.filter((document) => document.documentKind !== 'chargeable_expense').length]] as const).map(([id, label, count]) => <button key={id} type="button" aria-pressed={billingView === id} aria-controls={`billing-view-${id}`} onClick={() => setBillingView(id)}>{label}<span>{count}</span></button>)}
+        </nav>
+        <article id="billing-view-hire" className="project-billing-card" hidden={billingView !== 'hire'}>
+          <header><CalendarRange size={20} aria-hidden="true" /><div><strong>Loyers & DPR</strong><small>Journées, opérations et tarifs contractuels.</small></div></header>
+          <div className="project-billing-hire-completion">{missingDayControl}</div>
+          <div className="project-billing-table-scroll"><table className="project-billing-hire-table"><thead><tr><th>PDF</th><th>Date</th><th>Navire</th><th>Opération</th><th>Montant HT</th></tr></thead><tbody>
+            {hireDays.map((dpr) => {
+              const key = billingOperationKey(dpr);
+              const included = !(selectedPeriod?.excludedOperationKeys || []).includes(key);
+              return <tr key={key}><td><input aria-label={`Inclure le ${dpr.reportDate} ${dpr.vesselName}`} checked={included} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ excludedOperationKeys: included ? [...(selectedPeriod?.excludedOperationKeys || []), key] : (selectedPeriod?.excludedOperationKeys || []).filter((item) => item !== key) })} type="checkbox" /></td><td>{new Date(`${dpr.reportDate}T12:00:00`).toLocaleDateString('fr-FR')}</td><td>{dpr.vesselName || selectedVesselName}</td><td>{dpr.operation || '24/24 Operation'}</td><td>{money(dayAmount(dpr), hireCurrency)}</td></tr>;
+            })}
+            {!hireDays.length ? <tr><td colSpan={5} className="project-billing-empty">{dprsLoading ? 'Chargement des DPR…' : 'Aucun DPR pour cette période.'}</td></tr> : null}
+          </tbody></table></div>
+        </article>
+      </> : null}
+      {visibleSections.billingElements ? <article id="billing-view-followup" className="project-billing-card" hidden={workspace && billingView !== 'followup'}>
         <header><ReceiptText size={20} /><strong>Suivi de la facture du mois</strong></header>
         <div className="project-billing-export-controls">
           <label>Numéro de facture<input disabled={!isManager} value={periodDraft.invoiceNumber} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, invoiceNumber: event.target.value }))} /></label>
@@ -764,7 +813,7 @@ export function ProjectBillingPanel({
         </div>
       </article> : null}
 
-      {visibleSections.services ? <article className="project-billing-card">
+      {visibleSections.services ? <article id="billing-view-expenses" className="project-billing-card" hidden={workspace && billingView !== 'expenses'}>
         <header className="project-billing-card-heading">
           <div><Fuel aria-hidden="true" size={20} /><span><strong>Services refacturables</strong><small>{money(expenseTotal)} HT sur la période</small></span></div>
           <div className="project-billing-card-actions">
@@ -772,7 +821,7 @@ export function ProjectBillingPanel({
           </div>
         </header>
         <div className="project-billing-table-scroll">
-          <table>
+          <table className={workspace ? 'project-billing-expense-cards' : undefined}>
             <thead><tr><th>Fournisseur</th><th>Spécialités</th><th>PDF</th><th>Date</th><th>Facture</th><th>Montant HT</th><th>État</th><th>Pièces</th><th>Actions</th></tr></thead>
             <tbody>
               {periodExpenses.map((expense) => {
@@ -831,7 +880,7 @@ export function ProjectBillingPanel({
         </div>
       </article> : null}
 
-      {visibleSections.bbtm ? <article className="project-billing-card">
+      {visibleSections.bbtm ? <article id="billing-view-services" className="project-billing-card" hidden={workspace && billingView !== 'services'}>
         <header className="project-billing-card-heading">
           <div>
             <PackageCheck aria-hidden="true" size={20} />
@@ -880,8 +929,13 @@ export function ProjectBillingPanel({
         </div>
       </article> : null}
 
-      {visibleSections.billingElements ? <article className="project-billing-card project-billing-export">
-        <header><CalendarRange aria-hidden="true" size={20} /><div><strong>Éléments de facturation</strong><span>Le tableau Opérations reste toujours visible ; cette sélection concerne uniquement les loyers.</span></div></header>
+      </div>
+      {visibleSections.billingElements ? <article className="project-billing-card project-billing-export" aria-label="Export du relevé mensuel">
+        <header><CalendarRange aria-hidden="true" size={20} /><div><strong>{workspace ? 'Relevé du mois' : 'Éléments de facturation'}</strong><span>{workspace ? new Date(`${selectedMonth}-01T12:00:00`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : 'Le tableau Opérations reste toujours visible ; cette sélection concerne uniquement les loyers.'}</span></div></header>
+        {workspace ? <div className="project-billing-summary" aria-label="Totaux sélectionnés pour l’export">
+          <dl><div><dt>Loyers & DPR</dt><dd>{dprsLoading ? '…' : money(includedHireTotal, hireCurrency)}</dd></div><div><dt>Frais refacturables</dt><dd>{expenseByCurrency.size ? [...expenseByCurrency].map(([currency, total]) => <span key={currency}>{money(total, currency)}</span>) : money(0)}</dd></div><div><dt>Prestations BBTM</dt><dd>{money(includedServiceTotal)}</dd></div></dl>
+          <div className="project-billing-summary-total"><span>Total sélectionné HT</span>{[...totalsByCurrency].map(([currency, total]) => <strong key={currency}>{dprsLoading ? '…' : money(total, currency)}</strong>)}</div>
+        </div> : null}
         <fieldset className="project-export-selection"><legend>Contenu du PDF</legend>
           <label><input type="checkbox" checked={selectedPeriod?.includeOperationsInPdf !== false} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeOperationsInPdf: selectedPeriod?.includeOperationsInPdf === false })} /> Inclure les loyers</label>
           <label><input type="checkbox" checked={selectedPeriod?.includeExpensesInPdf !== false} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeExpensesInPdf: selectedPeriod?.includeExpensesInPdf === false })} /> Inclure les frais et leurs pièces dans l’export</label>
@@ -890,31 +944,14 @@ export function ProjectBillingPanel({
         <div className="project-export-reference">
           <label>Référence client<input disabled={!isManager} onChange={(event) => setReferenceDrafts((current) => ({ ...current, [referenceScope]: event.target.value }))} value={exportReference} maxLength={200} /></label>
           <span>{billingReferenceScopeLabel(referenceScope)} · Même emplacement dans le PDF.</span>
-          {isManager ? <button type="button" disabled={Boolean(busy) || !exportReference.trim()} onClick={() => void storeReference()}>Enregistrer cette référence pour ce contenu</button> : null}
+          {isManager ? <button type="button" disabled={Boolean(busy) || !exportReference.trim()} onClick={() => void storeReference()}>{workspace ? 'Enregistrer la référence' : 'Enregistrer cette référence pour ce contenu'}</button> : null}
           {references.length > 0 ? <details><summary>{references.length} référence(s) du projet</summary>{references.map((reference) => <p key={reference.id}><strong>{billingReferenceScopeLabel(reference.scope)}</strong> : {reference.reference}</p>)}</details> : <small>La référence historique du mois est proposée tant qu’aucune référence n’est enregistrée pour ce contenu.</small>}
         </div>
         <div className="project-billing-export-controls">
-          <label>Période<select onChange={(event) => setPeriodMode(event.target.value as BillingPeriodMode)} value={periodMode}><option value="calendar-month">Mois calendaire</option><option value="custom">Période personnalisée</option></select></label>
-          {periodMode === 'custom' ? <><label>Début<input onChange={(event) => setCustomStart(event.target.value)} type="date" value={customStart} /></label><label>Fin<input onChange={(event) => setCustomEnd(event.target.value)} type="date" value={customEnd} /></label></> : null}
-          <label>Navire<select onChange={(event) => setVesselFilter(event.target.value)} value={vesselFilter}><option value="">Navire de l’opération</option>{vesselOptions.map((vessel) => <option key={vessel}>{vessel}</option>)}</select></label>
+          {!workspace ? periodControls : null}
           <label>Fichier<select onChange={(event) => setExportFormat(event.target.value as BillingExportFormat)} value={exportFormat}><option value="pdf">PDF standard</option><option value="merged-pdf">PDF + annexes PDF</option><option value="zip">ZIP + toutes les pièces</option></select></label>
-          <label>Projet<input disabled value={`${project.projectCode} - ${project.title}`} /></label>
-
-          <label>Navire exporté<input disabled value={selectedVesselName || 'Non renseigné'} /></label>
-          {missingDates.length ? (
-            <label className="project-billing-completion">
-              <input
-                checked={completeMissingDays}
-                onChange={(event) => setCompleteMissingDays(event.target.checked)}
-                type="checkbox"
-              />
-              <span>
-                Compléter les {missingDates.length} jour{missingDates.length > 1 ? 's' : ''} sans DPR avec
-                « 24/24 Operation » au tarif contractuel applicable à chaque journée.
-              </span>
-            </label>
-          ) : <p className="project-billing-range-complete">Tous les jours de la période disposent d’un DPR.</p>}
-          {selectedPeriod && exportDprs.length ? (
+          {!workspace ? <><label>Projet<input disabled value={`${project.projectCode} - ${project.title}`} /></label><label>Navire exporté<input disabled value={selectedVesselName || 'Non renseigné'} /></label>{missingDayControl}</> : null}
+          {!workspace && selectedPeriod && exportDprs.length ? (
             <fieldset className="project-billing-operation-selection">
               <legend>Journées et opérations incluses dans le PDF</legend>
               {exportDprs.filter((dpr) => dpr.reportDate >= exportRange.start && dpr.reportDate <= exportRange.end).map((dpr) => {
@@ -926,12 +963,14 @@ export function ProjectBillingPanel({
           ) : null}
           <div className="project-billing-export-actions">
             {isManager ? <button disabled={Boolean(busy)} onClick={() => void savePeriod()} type="button"><Save aria-hidden="true" size={16} /> Enregistrer les paramètres</button> : null}
-            <button disabled={Boolean(busy) || dprsLoading || !selectedPeriod} onClick={() => void createExport('preview')} type="button">Actualiser l’aperçu</button>
+            <button disabled={Boolean(busy) || dprsLoading || !selectedPeriod} onClick={() => void createExport('preview')} type="button">{workspace ? 'Prévisualiser le PDF' : 'Actualiser l’aperçu'}</button>
             <button disabled={Boolean(busy) || dprsLoading || !selectedPeriod} onClick={() => void createExport('download')} type="button"><Download aria-hidden="true" size={16} /> Exporter le PDF</button>
           </div>
         </div>
-        {previewBlob ? <ProjectPdfPreview key={`${project.id}-${selectedMonth}`} blob={previewBlob} /> : <p className="project-section-empty">Générez l’aperçu pour contrôler le document avant export.</p>}
+        {!workspace ? previewBlob ? <ProjectPdfPreview key={`${project.id}-${selectedMonth}`} blob={previewBlob} /> : <p className="project-section-empty">Générez l’aperçu pour contrôler le document avant export.</p> : null}
       </article> : null}
+      </div>
+      {workspace && previewBlob ? <AppDialog size="xl" variant="preview" title="Aperçu du relevé PDF" onClose={() => setPreviewBlob(null)}><ProjectPdfPreview key={`${project.id}-${selectedMonth}`} blob={previewBlob} /></AppDialog> : null}
 
       {expenseEditor ? (
         <AppDialog

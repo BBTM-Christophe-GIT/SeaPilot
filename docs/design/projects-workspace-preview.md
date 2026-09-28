@@ -24,6 +24,25 @@ Les périodes mensuelles, frais, fournisseurs, devises, pièces, sélection des 
 
 ## Prévisualisation et vérification
 
+### Fidélité à la maquette — version 3.60.2
+
+La présentation du dossier retrouve la structure de la proposition validée (`10-billing-expenses-v2.png` et `01-overview-desktop.png`), en s’appuyant sur les composants de production.
+
+| Repère de la maquette | Interface intégrée |
+| --- | --- |
+| Commandes horizontales lisibles | Fin des tuiles verticales et des libellés minuscules ; toutes les gestions dédiées restent accessibles. |
+| Dossier blanc, code bleu, titre et contexte client/navire | En-tête unique, période/statut/contrat et bouton Modifier ; suppression du doublon de titre dans la barre latérale. |
+| Navigation horizontale du dossier | Identité, Opérations, Facturation, Offre & contrat, Documents, Historique ; compteurs et navigation clavier conservés. |
+| Préparation mensuelle de facturation | Mois, période personnalisée et navire regroupés au-dessus des rubriques. |
+| Rubriques de facturation séparées | Loyers & DPR, Frais refacturables, Prestations BBTM, Suivi & pièces. Les formulaires restent montés pour conserver les saisies lors des changements de rubrique. |
+| Récapitulatif et exports à droite | Totaux des éléments sélectionnés par devise, contenu du PDF, références client et trois formats existants. L’aperçu utilise le PDF de production dans une fenêtre dédiée. |
+| Frais présentés comme une liste lisible | Fournisseur, spécialités, date, numéro, montant/devise, inclusion PDF, documents, modification et suppression conservés. |
+| Adaptation mobile | Rubriques défilantes, contrôles et récapitulatif sur une colonne ; tableaux contenus dans leur propre zone de défilement. |
+
+Écarts intentionnels : navigation globale SeaPilot conservée pour garder tous les modules ; inclusion PDF et références regroupées à l’export conformément aux demandes postérieures à la maquette ; onglet Identité conservant tous les champs métier. Les KPI compacts et les filtres de la version 3.60.1 restent inchangés. Le sélecteur de dossier permet de changer de projet sans effacer la recherche du portefeuille.
+
+Cette version ne modifie aucune table, migration, règle de droits, fonction d’écriture, fonction de génération PDF ni chemin de stockage. Les tests de conservation couvrent notamment les champs BIMCO P144, les documents, les actions métier, les brouillons de facturation entre rubriques et les filtres du portefeuille. La page autonome Éléments de facturation garde son mode d’affichage complet.
+
 Les données de `preview=1` sont fictives ; elles ne constituent pas une preuve des droits réels ni une connexion à Google Drive. Certains transferts nécessitent le compte authentifié et le lanceur Windows. Les contrôles Marin/Capitaine sont réalisés dans les règles RLS/RPC et les fixtures propres à chaque profil.
 
 - Développement : `corepack pnpm@10.34.5 dev`.
