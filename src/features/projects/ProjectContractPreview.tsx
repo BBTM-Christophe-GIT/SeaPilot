@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ProjectTowedAssetWriteInput, ProjectWriteInput } from './projectMutations';
 import type { ClientRecord, ProjectVesselCertificateRecord, VesselRecord } from './projectQueries';
 import {
-  BAREBOAT_CONTRACT_TYPE,
+  isCharterContractType,
   BIMCO_CONTRACT_TYPE,
   COMMERCIAL_OFFER_CONTRACT_TYPE,
   DEFAULT_BAREBOAT_CONTRACT_FIELDS,
@@ -434,9 +434,9 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
   const towageValues = useMemo(() => buildTowageValues(props), [props]);
   const bareboatValues = useMemo(() => buildBareboatValues(props), [props]);
   const styledDocument = useMemo(() => {
-    if (contractType !== TOWAGE_CONTRACT_TYPE && contractType !== BAREBOAT_CONTRACT_TYPE) return null;
+    if (contractType !== TOWAGE_CONTRACT_TYPE && !isCharterContractType(contractType)) return null;
     const kind = contractType === TOWAGE_CONTRACT_TYPE ? 'towage' : 'bareboat';
-    return buildStyledContract(kind, contractPreviewFields(kind, kind === 'towage' ? towageValues : bareboatValues), props.form.title, Boolean(props.emitter?.signatureUrl));
+    return buildStyledContract(kind, contractPreviewFields(kind, kind === 'towage' ? towageValues : bareboatValues), props.form.title, Boolean(props.emitter?.signatureUrl), contractType);
   }, [contractType, towageValues, bareboatValues, props.form.title, props.emitter?.signatureUrl]);
   const pageCount = contractType === BIMCO_CONTRACT_TYPE ? 29 : styledDocument?.pages.length || 1;
   const [page, setPage] = useState(1);
@@ -449,7 +449,7 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
     ? Math.round((completedBimcoFields / 34) * 100)
     : contractType === TOWAGE_CONTRACT_TYPE
       ? Math.round(((basicCompletion + Object.values(towageValues).filter((value) => String(value).trim()).length) / 27) * 100)
-      : contractType === BAREBOAT_CONTRACT_TYPE
+      : isCharterContractType(contractType)
         ? Math.round((Object.values(bareboatValues).filter((value) => String(value).trim()).length / Object.keys(bareboatValues).length) * 100)
       : Math.round(((basicCompletion + [projectDescriptionHasContent(props.form.description), props.form.charterHire, props.form.mobilisationFee, props.form.supplytimeData.box23_payment].filter(Boolean).length) / 9) * 100);
   const safeCompletion = Math.max(0, Math.min(100, completion));
@@ -467,7 +467,7 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
           { label: 'Conditions particulières', complete: Boolean(props.form.supplytimeData.special_conditions) },
           { label: 'Signatures', complete: Boolean(towageValues.ownerSignatory && towageValues.chartererSignatory) },
         ]
-      : contractType === BAREBOAT_CONTRACT_TYPE
+      : isCharterContractType(contractType)
         ? [
             { label: 'Parties', complete: Boolean(props.form.clientId && props.form.ownerIdentity) },
             { label: 'Navire & titres', complete: Boolean(props.form.primaryVesselId && bareboatValues.lastAdminVisit && bareboatValues.navigationTitles) },

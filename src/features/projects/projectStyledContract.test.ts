@@ -5,6 +5,7 @@ import JSZip from 'jszip';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 import terms from './assets/contract-previews/contract-terms.json';
+import { BAREBOAT_CONTRACT_TYPE, TIME_CHARTER_CONTRACT_TYPE } from './projectContractOptions';
 import {
   buildStyledContract,
   contractPreviewFields,
@@ -16,6 +17,19 @@ import {
 
 const textOf = (pages: ContractDrawing[][]) => pages.flatMap((page) => page.flatMap((item) => item.type === 'text' ? item.lines : [])).join(' ');
 const normalized = (value: string) => value.replace(/\s+/g, ' ').trim();
+
+it('keeps the time and bareboat charter PDFs identical apart from the document title', () => {
+  const time = buildStyledContract('bareboat', { PROJECT_CODE: 'P279' }, 'Projet de contrôle', false, TIME_CHARTER_CONTRACT_TYPE);
+  const bareboat = buildStyledContract('bareboat', { PROJECT_CODE: 'P279' }, 'Projet de contrôle', false, BAREBOAT_CONTRACT_TYPE);
+  expect(time.title).toBe('CONTRAT D’AFFRÈTEMENT À TEMPS');
+  expect(bareboat.title).toBe('CONTRAT D’AFFRÈTEMENT COQUE NUE');
+  const withoutTitle = (pages: ContractDrawing[][]) => pages.map((page) => page.filter((item) => !(item.type === 'text' && item.x === 110 && item.y === 30)));
+  expect(withoutTitle(time.pages)).toEqual(withoutTitle(bareboat.pages));
+  for (const layout of [time, bareboat]) {
+    const title = layout.pages[0].find((item) => item.type === 'text' && item.x === 110 && item.y === 30);
+    expect(title?.type === 'text' && title.lines).toHaveLength(1);
+  }
+});
 
 describe.each(['towage', 'bareboat'] as const)('%s contract layout', (kind) => {
   it('preserves every numbered field in the preview and printable layout', () => {

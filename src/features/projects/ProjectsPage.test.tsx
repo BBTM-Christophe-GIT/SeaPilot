@@ -1083,11 +1083,15 @@ describe('ProjectsPage', () => {
     ));
   });
 
-  it('maps a bareboat charter project to the dedicated generated document type', async () => {
+  it.each([
+    ["Contrat d'Affrètement", "Contrat d'Affrètement à Temps"],
+    ["Contrat d'Affrètement à Temps", "Contrat d'Affrètement à Temps"],
+    ["Contrat d'Affrètement Coque Nue", "Contrat d'Affrètement Coque Nue"],
+  ])('emits %s with the shared charter model and its own title', async (contractType, expectedLabel) => {
     const user = userEvent.setup();
     const { client } = createClient({
       projects: {
-        data: [{ ...atlantiqueProjectRow, contract_type: "Contrat d'Affrètement" }],
+        data: [{ ...atlantiqueProjectRow, contract_type: contractType }],
         error: null,
       },
       fleet_certificates: {
@@ -1108,14 +1112,16 @@ describe('ProjectsPage', () => {
 
     await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
     await user.click(screen.getByRole('tab', { name: 'Offre & contrat' }));
-    expect(screen.getByRole('radio', { name: 'Affrètement coque nue' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: expectedLabel })).toBeChecked();
     await user.click(screen.getByRole('button', { name: 'Émettre le contrat' }));
+    expect(screen.getByRole('heading', { name: `Émettre : ${expectedLabel}` })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Émettre et télécharger' }));
 
     await waitFor(() => expect(documentGenerationMocks.generateProjectDocument).toHaveBeenCalledWith(
       'bareboat_charter',
       expect.objectContaining({
         contract: expect.objectContaining({ projectId: 880 }),
+        project: expect.objectContaining({ contractType: expectedLabel }),
         vesselCertificates: [expect.objectContaining({
           documentTitle: 'Certificat de Classification',
           issuedOn: '2026-08-12',

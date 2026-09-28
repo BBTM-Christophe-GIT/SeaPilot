@@ -54,7 +54,7 @@ import {
   type ProjectDocumentCategory,
 } from './projectDocumentCategories';
 import {
-  BAREBOAT_CONTRACT_TYPE,
+  isCharterContractType,
   COMMERCIAL_OFFER_CONTRACT_TYPE,
   BIMCO_CONTRACT_TYPE,
   DEFAULT_BAREBOAT_OWNER_IDENTITY,
@@ -251,7 +251,7 @@ export function projectToWriteInput(
     isRovSupport: project.isRovSupport,
     isDivingSupport: project.isDivingSupport,
     ownerIdentity: contract?.ownerIdentity
-      || (contractType === BAREBOAT_CONTRACT_TYPE ? DEFAULT_BAREBOAT_OWNER_IDENTITY : DEFAULT_PROJECT_OWNER_IDENTITY),
+      || (isCharterContractType(contractType) ? DEFAULT_BAREBOAT_OWNER_IDENTITY : DEFAULT_PROJECT_OWNER_IDENTITY),
     vesselAssignmentLimit: contract?.vesselAssignmentLimit || '',
     extensionCount: contract?.extensionCount ?? null,
     extensionDuration: contract?.extensionDuration ?? null,
@@ -268,7 +268,7 @@ export function projectToWriteInput(
     maxAuditPeriod: contract?.maxAuditPeriod || '',
     supplytimeData: contractType === TOWAGE_CONTRACT_TYPE
       ? withTowageContractDefaults(savedContractData)
-      : contractType === BAREBOAT_CONTRACT_TYPE
+      : isCharterContractType(contractType)
         ? withBareboatContractDefaults(savedContractData)
         : savedContractData,
     expectedUpdatedAt: project.updatedAt,
@@ -508,7 +508,7 @@ export function ProjectEditor({
   const normalizedContractType = normalizeProjectContractType(form.contractType);
   const isCommercialOffer = normalizedContractType === COMMERCIAL_OFFER_CONTRACT_TYPE;
   const isTowage = normalizedContractType === TOWAGE_CONTRACT_TYPE;
-  const isBareboat = normalizedContractType === BAREBOAT_CONTRACT_TYPE;
+  const isCharter = isCharterContractType(normalizedContractType);
   const isBimco = normalizedContractType === BIMCO_CONTRACT_TYPE;
   const commercialConditionsMode = getCommercialConditionsMode(form.supplytimeData);
   const commercialConditionAttachmentDrafts = projectAttachmentDrafts.filter((draft) => (
@@ -581,7 +581,7 @@ export function ProjectEditor({
   }, [client]);
 
   useEffect(() => {
-    if (!isBareboat) {
+    if (!isCharter) {
       setVesselCertificates(undefined);
       setCertificateLoadError('');
       return;
@@ -607,15 +607,15 @@ export function ProjectEditor({
         if (active) setCertificateLoadError('Impossible de charger les titres administratifs du navire.');
       });
     return () => { active = false; };
-  }, [client, form.primaryVesselId, isBareboat]);
+  }, [client, form.primaryVesselId, isCharter]);
 
   useEffect(() => {
     setActiveStep((current) => (
-      current === 'offer' || current === 'bimco' || (isCommercialOffer && current === 'billing')
+      current === 'offer' || current === 'bimco' || (!isBimco && current === 'billing')
         ? contractStep
         : current
     ));
-  }, [contractStep, isCommercialOffer]);
+  }, [contractStep, isBimco]);
 
   function update<K extends keyof ProjectWriteInput>(key: K, value: ProjectWriteInput[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -711,8 +711,8 @@ export function ProjectEditor({
     try {
       const isCommercialOffer = normalizeProjectContractType(form.contractType) === COMMERCIAL_OFFER_CONTRACT_TYPE;
       const isTowageContract = normalizeProjectContractType(form.contractType) === TOWAGE_CONTRACT_TYPE;
-      const isBareboatContract = normalizeProjectContractType(form.contractType) === BAREBOAT_CONTRACT_TYPE;
-      const usesDirectHire = isCommercialOffer || isTowageContract || isBareboatContract;
+      const isCharterContract = isCharterContractType(form.contractType);
+      const usesDirectHire = isCommercialOffer || isTowageContract || isCharterContract;
       const effectiveHirePeriods = usesDirectHire ? [] : hirePeriods;
       const firstHirePeriod = [...effectiveHirePeriods].sort((left, right) => left.startsOn.localeCompare(right.startsOn))[0];
       const projectCoreChanged = !project
@@ -730,7 +730,7 @@ export function ProjectEditor({
       } : usesDirectHire ? {
         ...submittedForm,
         hireCurrency: 'EUR',
-        hireUnit: isCommercialOffer || isBareboatContract ? 'jour' : '',
+        hireUnit: isCommercialOffer || isCharterContract ? 'jour' : '',
       } : submittedForm;
       const result = projectCoreChanged
         ? await saveProject(client, formWithEffectiveHire)
@@ -834,15 +834,18 @@ export function ProjectEditor({
     setClientEditorOpen(false);
   }
 
+  const primaryVesselSelect = (
+    <select id="project-primary-vessel" onChange={(event) => update('primaryVesselId', optionalNumber(event.target.value))} value={form.primaryVesselId ?? ''}>
+      <option value="">Non renseigné</option>
+      {eligibleVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>)}
+    </select>
+  );
   const vesselFields = (
     <>
-      <Field label={isTowage ? '5. Remorqueur · Navire principal *' : isBareboat ? '4. Navire affrété *' : 'Navire principal *'} wide={isTowage || isBareboat}>
-        <select onChange={(event) => update('primaryVesselId', optionalNumber(event.target.value))} value={form.primaryVesselId ?? ''}>
-          <option value="">Non renseigné</option>
-          {eligibleVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>)}
-        </select>
+      <Field label={isCharter ? '4. Navire affrété *' : 'Navire principal *'} wide={isCharter}>
+        {primaryVesselSelect}
       </Field>
-      {!isTowage && !isBareboat ? (
+      {!isTowage && !isCharter ? (
         <Field label="Navire secondaire">
           <select onChange={(event) => update('secondaryVesselId', optionalNumber(event.target.value))} value={form.secondaryVesselId ?? ''}>
             <option value="">Non renseigné</option>
@@ -887,13 +890,13 @@ export function ProjectEditor({
                     setForm((current) => ({
                       ...current,
                       contractType,
-                      ownerIdentity: normalizeProjectContractType(contractType) === BAREBOAT_CONTRACT_TYPE
+                      ownerIdentity: isCharterContractType(contractType)
                         && (!current.ownerIdentity || current.ownerIdentity === DEFAULT_PROJECT_OWNER_IDENTITY)
                         ? DEFAULT_BAREBOAT_OWNER_IDENTITY
                         : current.ownerIdentity,
                       supplytimeData: normalizeProjectContractType(contractType) === TOWAGE_CONTRACT_TYPE
                         ? withTowageContractDefaults(current.supplytimeData)
-                        : normalizeProjectContractType(contractType) === BAREBOAT_CONTRACT_TYPE
+                        : isCharterContractType(contractType)
                           ? withBareboatContractDefaults(current.supplytimeData)
                           : current.supplytimeData,
                     }));
@@ -903,7 +906,7 @@ export function ProjectEditor({
                   {PROJECT_CONTRACT_TYPES.map((value) => <option key={value} value={value}>{value}</option>)}
                 </select>
               </label>
-              {assistantSteps.filter((step) => !isCommercialOffer || step.id !== 'billing').map((step, index) => {
+              {assistantSteps.filter((step) => isBimco || step.id !== 'billing').map((step, index) => {
                 const Icon = step.icon;
                 const isActive = activeStep === step.id;
                 return (
@@ -936,7 +939,7 @@ export function ProjectEditor({
               </Field>
               <div className="project-editor-client-field">
                 <div className="project-editor-field-label">
-                  <span>{isTowage || isBareboat ? '2. Client / affréteur' : 'Client / affréteur'}</span>
+                  <span>{isTowage || isCharter ? '2. Client / affréteur' : 'Client / affréteur'}</span>
                   <button aria-label="Ajouter un client ou affréteur" onClick={() => setClientEditorOpen(true)} type="button">
                     <Plus aria-hidden="true" size={15} />
                     Ajouter
@@ -949,7 +952,7 @@ export function ProjectEditor({
                   ))}
                 </select>
               </div>
-              {!isBareboat ? (
+              {!isCharter ? (
                 <>
                   <Field label="Statut">
                     <select onChange={(event) => update('status', event.target.value)} value={form.status}>
@@ -989,7 +992,7 @@ export function ProjectEditor({
             <legend><span>3</span> Opérations</legend>
             {!project ? <p>Les dates sont facultatives. Une opération sera ajoutée au planning à la création uniquement si le navire principal, la livraison et la restitution sont renseignés.</p> : null}
             <div className="project-editor-grid">
-              {initialOperation && initialOperationForm && !isBareboat ? (
+              {initialOperation && initialOperationForm && !isCharter ? (
                 <section className="project-initial-operation is-wide" aria-label="Première opération">
                   <div className="project-initial-operation-heading">
                     <strong>Première opération</strong>
@@ -1013,7 +1016,7 @@ export function ProjectEditor({
                   </div>
                 </section>
               ) : null}
-              {!isBareboat ? (
+              {!isCharter ? (
                 <>
                   <Field label="Début du projet"><input onInput={(event) => {
                     const value = event.currentTarget.value;
@@ -1025,17 +1028,17 @@ export function ProjectEditor({
                   }} type="date" value={form.endsOn} /></Field>
                 </>
               ) : null}
-              <Field label={isBareboat ? '7. Date de livraison' : 'Livraison'}><input onChange={(event) => update('deliveryAt', event.target.value)} type="datetime-local" value={form.deliveryAt} /></Field>
-              <Field label={isBareboat ? '9. Date de restitution' : 'Restitution'}><input onChange={(event) => update('redeliveryAt', event.target.value)} type="datetime-local" value={form.redeliveryAt} /></Field>
-              {!isTowage && !isBareboat ? (
+              <Field label={isCharter ? '7. Date de livraison' : 'Livraison'}><input onChange={(event) => update('deliveryAt', event.target.value)} type="datetime-local" value={form.deliveryAt} /></Field>
+              <Field label={isCharter ? '9. Date de restitution' : 'Restitution'}><input onChange={(event) => update('redeliveryAt', event.target.value)} type="datetime-local" value={form.redeliveryAt} /></Field>
+              {!isTowage && !isCharter ? (
                 <>
                   <Field label="Début d’affrètement"><input onChange={(event) => update('charterStartsAt', event.target.value)} type="datetime-local" value={form.charterStartsAt} /></Field>
                   <Field label="Fin d’affrètement"><input onChange={(event) => update('charterEndsAt', event.target.value)} type="datetime-local" value={form.charterEndsAt} /></Field>
                 </>
               ) : null}
-              <PortSelect label={isTowage ? '7. Lieu de prise en charge · Port de livraison' : isBareboat ? '7. Port de livraison' : 'Port de livraison'} onChange={(value) => update('deliveryPort', value)} value={form.deliveryPort} />
-              <PortSelect label={isTowage ? '9. Lieu de destination · Port de restitution' : isBareboat ? '9. Port de restitution' : 'Port de restitution'} onChange={(value) => update('redeliveryPort', value)} value={form.redeliveryPort} />
-              {isBareboat ? (
+              <PortSelect label={isTowage ? '7. Lieu de prise en charge · Port de livraison' : isCharter ? '7. Port de livraison' : 'Port de livraison'} onChange={(value) => update('deliveryPort', value)} value={form.deliveryPort} />
+              <PortSelect label={isTowage ? '9. Lieu de destination · Port de restitution' : isCharter ? '9. Port de restitution' : 'Port de restitution'} onChange={(value) => update('redeliveryPort', value)} value={form.redeliveryPort} />
+              {isCharter ? (
                 <label className="project-editor-check is-wide">
                   <input
                     checked={form.supplytimeData.bareboat_delivery_by_truck === 'true'}
@@ -1118,7 +1121,7 @@ export function ProjectEditor({
             <legend><span>{isBimco ? 4 : 2}</span> {isBimco ? 'Conditions tarifaires' : normalizedContractType}</legend>
             <div className="project-editor-grid">
               <label className="project-owner-identity is-wide">
-                <span>{isTowage ? '3. Armateur · Identité armateur' : isBareboat ? '3. Propriétaire · Identité contractuelle' : 'Identité armateur'}</span>
+                <span>{isTowage ? '3. Armateur · Identité armateur' : isCharter ? '3. Propriétaire · Identité contractuelle' : 'Identité armateur'}</span>
                 <textarea onChange={(event) => update('ownerIdentity', event.target.value)} rows={3} value={form.ownerIdentity} />
               </label>
               {isTowage ? (
@@ -1166,6 +1169,12 @@ export function ProjectEditor({
                 </section>
               ) : null}
               {isTowage ? (
+                <section className="project-contract-form-section is-wide" aria-label="Remorqueur">
+                  <h3><label htmlFor="project-primary-vessel">5. Remorqueur · Navire principal *</label></h3>
+                  {primaryVesselSelect}
+                </section>
+              ) : null}
+              {isTowage ? (
                 <section className="project-contract-form-section is-wide" aria-label="Conditions du contrat de remorquage">
                   <h3>Conditions financières et particulières</h3>
                   <div className="project-editor-grid">
@@ -1185,7 +1194,7 @@ export function ProjectEditor({
                   </div>
                 </section>
               ) : null}
-              {isBareboat ? (
+              {isCharter ? (
                 <section className="project-contract-form-sections is-wide" aria-label="Cases du contrat d'affrètement">
                   <section className="project-contract-form-section">
                     <h3>Parties et lieu de signature</h3>
@@ -1209,6 +1218,7 @@ export function ProjectEditor({
                   <section className="project-contract-form-section">
                     <h3>Navire et titres de navigation</h3>
                     <div className="project-editor-grid">
+                      {vesselFields}
                       <Field label="4. Refit / complément à l’année de construction">
                         <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_refit_details: event.target.value })} placeholder="Ex. Refit 2023" value={form.supplytimeData.bareboat_refit_details || ''} />
                       </Field>
@@ -1364,8 +1374,8 @@ export function ProjectEditor({
                 </section>
               ) : null}
               {isCommercialOffer ? vesselFields : null}
-              {(isCommercialOffer && commercialConditionsMode === 'structured') || isTowage || isBareboat ? (
-                <Field label={isTowage ? '12. Tarif forfaitaire HT · Loyer d’affrètement' : isBareboat ? '13. Loyer journalier' : 'Loyer d’affrètement'} wide>
+              {(isCommercialOffer && commercialConditionsMode === 'structured') || isTowage || isCharter ? (
+                <Field label={isTowage ? '12. Tarif forfaitaire HT · Loyer d’affrètement' : isCharter ? '13. Loyer journalier' : 'Loyer d’affrètement'} wide>
                   <span className="project-commercial-hire-input">
                     <input
                       min="0"
@@ -1379,7 +1389,7 @@ export function ProjectEditor({
                       type="number"
                       value={form.charterHire ?? ''}
                     />
-                    <strong>{isTowage ? '€ HT' : isBareboat ? '€ HT / jour' : '€ / jour'}</strong>
+                    <strong>{isTowage ? '€ HT' : isCharter ? '€ HT / jour' : '€ / jour'}</strong>
                   </span>
                 </Field>
               ) : null}
@@ -1402,7 +1412,7 @@ export function ProjectEditor({
               {!isTowage ? (
               <>
               {!isCommercialOffer || commercialConditionsMode === 'structured' ? (
-                <Field label={isBareboat ? '8. Forfait de mobilisation · Frais de mobilisation' : 'Frais de mobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('mobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.mobilisationFee ?? ''} /></Field>
+                <Field label={isCharter ? '8. Forfait de mobilisation · Frais de mobilisation' : 'Frais de mobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('mobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.mobilisationFee ?? ''} /></Field>
               ) : null}
               {isCommercialOffer && commercialConditionsMode === 'structured' ? (
                 <RichField label="Description de la prestation incluse dans les frais de mobilisation">
@@ -1421,7 +1431,7 @@ export function ProjectEditor({
                 </RichField>
               ) : null}
               {!isCommercialOffer || commercialConditionsMode === 'structured' ? (
-                <Field label={isBareboat ? '10. Forfait de démobilisation · Frais de démobilisation' : 'Frais de démobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('demobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.demobilisationFee ?? ''} /></Field>
+                <Field label={isCharter ? '10. Forfait de démobilisation · Frais de démobilisation' : 'Frais de démobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('demobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.demobilisationFee ?? ''} /></Field>
               ) : null}
               {isCommercialOffer && commercialConditionsMode === 'structured' ? (
                 <RichField label="Description de la prestation incluse dans les frais de démobilisation">
@@ -1449,10 +1459,10 @@ export function ProjectEditor({
                   </select>
                 </Field>
               ) : null}
-              {!isCommercialOffer && !isBareboat ? (
+              {!isCommercialOffer && !isCharter ? (
                 <Field label="Loyer en prolongation"><input min="0" onChange={(event) => update('extensionHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.extensionHire ?? ''} /></Field>
               ) : null}
-              {!isBareboat ? (
+              {!isCharter ? (
               <Field label="Fuel" wide>
                 <input
                   onChange={(event) => update('supplytimeData', { ...form.supplytimeData, box19_special_fuel: event.target.value })}
@@ -1461,7 +1471,7 @@ export function ProjectEditor({
                 />
               </Field>
               ) : null}
-              {!isCommercialOffer && !isBareboat ? (
+              {!isCommercialOffer && !isCharter ? (
               <section className="project-hire-periods is-wide" aria-label="Barème des loyers d’affrètement">
                 <div className="project-hire-periods-heading">
                   <div><strong>Barème des loyers d’affrètement</strong><small>Le tarif applicable est déterminé automatiquement pour chaque date d’opération.</small></div>
@@ -1498,12 +1508,12 @@ export function ProjectEditor({
             </div>
           </fieldset>
 
-          {!isCommercialOffer ? (
+          {isBimco ? (
             <fieldset hidden={activeStep !== 'billing'} id="project-step-billing">
               <legend><span>4</span> Facturation</legend>
               <div className="project-editor-grid">
                 {vesselFields}
-                {!isTowage && !isBareboat ? operationSupportFields : null}
+                {operationSupportFields}
               </div>
             </fieldset>
           ) : null}
@@ -1537,7 +1547,7 @@ export function ProjectEditor({
           </fieldset>
 
           <fieldset hidden={activeStep !== 'documents'} id="project-step-documents">
-            <legend><span>{isCommercialOffer ? 4 : 5}</span> Documents</legend>
+            <legend><span>{isBimco ? 5 : 4}</span> Documents</legend>
             <section className="project-document-library" aria-label="Pièces jointes du projet">
               <div className="project-document-library-heading">
                 <div>

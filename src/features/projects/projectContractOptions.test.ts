@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   BAREBOAT_CONTRACT_TYPE,
+  TIME_CHARTER_CONTRACT_TYPE,
+  isCharterContractType,
   DEFAULT_BAREBOAT_CONTRACT_FIELDS,
   DEFAULT_TOWAGE_OPTIONAL_COSTS,
   normalizeProjectContractType,
@@ -32,10 +34,14 @@ describe('towage contract defaults', () => {
 });
 
 describe('bareboat charter contract defaults', () => {
-  it('normalizes the attached bareboat wording without changing time charters', () => {
-    expect(normalizeProjectContractType("Contrat d'Affrètement")).toBe(BAREBOAT_CONTRACT_TYPE);
+  it('renames the former charter and distinguishes both variants from legacy BIMCO', () => {
+    expect(normalizeProjectContractType("Contrat d'Affrètement")).toBe(TIME_CHARTER_CONTRACT_TYPE);
+    expect(normalizeProjectContractType('Contrat d’affrètement à temps')).toBe(TIME_CHARTER_CONTRACT_TYPE);
     expect(normalizeProjectContractType('Contrat d’affrètement coque nue')).toBe(BAREBOAT_CONTRACT_TYPE);
     expect(normalizeProjectContractType('Affrètement à temps')).toBe('BIMCO');
+    expect(isCharterContractType(TIME_CHARTER_CONTRACT_TYPE)).toBe(true);
+    expect(isCharterContractType(BAREBOAT_CONTRACT_TYPE)).toBe(true);
+    expect(isCharterContractType('BIMCO')).toBe(false);
   });
 
   it('applies the legal defaults while preserving project-specific values', () => {

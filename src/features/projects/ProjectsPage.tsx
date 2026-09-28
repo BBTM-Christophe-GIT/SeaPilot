@@ -44,9 +44,12 @@ import { ProjectBillingPanel } from './ProjectBillingPanel';
 import {
   BAREBOAT_CONTRACT_TYPE,
   BIMCO_CONTRACT_TYPE,
+  charterContractLabel,
+  isCharterContractType,
   normalizeProjectContractType,
   PROJECT_CONTRACT_TYPES,
   TOWAGE_CONTRACT_TYPE,
+  TIME_CHARTER_CONTRACT_TYPE,
 } from './projectContractOptions';
 import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import type { ProjectDocumentLanguage } from './projectDocumentGeneration';
@@ -108,6 +111,7 @@ const PROJECT_DOCUMENTS_LEGACY_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/
 type ProjectDocumentDownloadMode = 'document' | 'bundle';
 
 interface ProjectDocumentEmissionRequest {
+  contractType?: string;
   kind: ProjectGeneratedDocumentKind;
   planningOccurrenceId: number | null;
 }
@@ -116,7 +120,7 @@ function generatedDocumentKindForContract(contractType?: string | null): Project
   const normalized = normalizeProjectContractType(contractType);
   if (normalized === BIMCO_CONTRACT_TYPE) return 'bimco_supplytime';
   if (normalized === TOWAGE_CONTRACT_TYPE) return 'towage_contract';
-  if (normalized === BAREBOAT_CONTRACT_TYPE) return 'bareboat_charter';
+  if (isCharterContractType(normalized)) return 'bareboat_charter';
   return 'offer';
 }
 
@@ -266,10 +270,6 @@ type ProjectDetailTab =
   | 'bareboat-duration'
   | 'bareboat-terms'
   | 'bareboat-signatures'
-  | 'time-charter-vessel'
-  | 'time-charter-operations'
-  | 'time-charter-rates'
-  | 'time-charter-clauses'
   | BimcoProjectSectionId;
 
 interface ProjectDetailTabDefinition {
@@ -281,14 +281,15 @@ interface ProjectDetailTabDefinition {
 }
 
 const PROJECT_CONTRACT_VARIANTS: ReadonlyArray<{
+  contractType: string;
   documentKind: ProjectGeneratedDocumentKind;
   id: ProjectContractVariant;
   label: string;
 }> = [
-  { documentKind: 'towage_contract', id: 'towage', label: 'Contrat de remorquage' },
-  { documentKind: 'bareboat_charter', id: 'bareboat', label: 'Affrètement coque nue' },
-  { documentKind: 'bimco_supplytime', id: 'time-charter', label: 'Affrètement à temps' },
-  { documentKind: 'bimco_supplytime', id: 'bimco', label: 'BIMCO' },
+  { contractType: TOWAGE_CONTRACT_TYPE, documentKind: 'towage_contract', id: 'towage', label: 'Contrat de remorquage' },
+  { contractType: TIME_CHARTER_CONTRACT_TYPE, documentKind: 'bareboat_charter', id: 'time-charter', label: TIME_CHARTER_CONTRACT_TYPE },
+  { contractType: BAREBOAT_CONTRACT_TYPE, documentKind: 'bareboat_charter', id: 'bareboat', label: BAREBOAT_CONTRACT_TYPE },
+  { contractType: BIMCO_CONTRACT_TYPE, documentKind: 'bimco_supplytime', id: 'bimco', label: 'BIMCO' },
 ];
 
 const PROJECT_BASE_TABS: ProjectDetailTabDefinition[] = [
@@ -312,10 +313,10 @@ const PROJECT_CONTRACT_TABS: Record<ProjectContractVariant, ProjectDetailTabDefi
     { group: 'Affrètement coque nue', icon: PackageCheck, id: 'bareboat-signatures', label: 'Signatures' },
   ],
   'time-charter': [
-    { group: 'Affrètement à temps', icon: Ship, id: 'time-charter-vessel', label: 'Navire & période' },
-    { group: 'Affrètement à temps', icon: CalendarDays, id: 'time-charter-operations', label: 'Exploitation' },
-    { group: 'Affrètement à temps', icon: ReceiptText, id: 'time-charter-rates', label: 'Conditions tarifaires' },
-    { group: 'Affrètement à temps', icon: PackageCheck, id: 'time-charter-clauses', label: 'Clauses & signatures' },
+    { group: 'Affrètement à temps', icon: Ship, id: 'bareboat-vessel', label: 'Navire & livraison' },
+    { group: 'Affrètement à temps', icon: CalendarDays, id: 'bareboat-duration', label: 'Durée & loyers' },
+    { group: 'Affrètement à temps', icon: Info, id: 'bareboat-terms', label: 'Assurance & droit' },
+    { group: 'Affrètement à temps', icon: PackageCheck, id: 'bareboat-signatures', label: 'Signatures' },
   ],
   bimco: BIMCO_PROJECT_SECTIONS.map((section) => ({
     group: 'BIMCO', icon: section.id === 'bimco-pricing' ? ReceiptText : section.id === 'bimco-operations' ? Ship : FileText,
@@ -324,13 +325,11 @@ const PROJECT_CONTRACT_TABS: Record<ProjectContractVariant, ProjectDetailTabDefi
 };
 
 function projectContractVariant(contractType?: string | null): ProjectContractVariant | null {
-  const lowered = contractType?.trim().toLocaleLowerCase('fr-FR') || '';
-  if (lowered.includes('remorquage')) return 'towage';
-  if (lowered.includes('affrètement à temps')) return 'time-charter';
-  if (lowered.includes('coque nue') || lowered.includes("contrat d'affrètement") || lowered.includes('contrat d’affrètement')) {
-    return 'bareboat';
-  }
-  if (lowered.includes('bimco') || lowered.includes('supplytime')) return 'bimco';
+  const type = normalizeProjectContractType(contractType);
+  if (type === TOWAGE_CONTRACT_TYPE) return 'towage';
+  if (type === TIME_CHARTER_CONTRACT_TYPE) return 'time-charter';
+  if (type === BAREBOAT_CONTRACT_TYPE) return 'bareboat';
+  if (type === BIMCO_CONTRACT_TYPE) return 'bimco';
   return null;
 }
 
@@ -716,7 +715,7 @@ function ProjectDetail({
   deletingOccurrenceId: number | null;
   onDeleteOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   onEditOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
-  onGenerateDocument: (kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) => void;
+  onGenerateDocument: (kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null, contractType?: string) => void;
   onEditProject: () => void;
   onOpenPlanning: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   operationDocuments: ProjectOperationDocumentRecord[];
@@ -786,7 +785,7 @@ function ProjectDetail({
         <dl className="project-sheet-summary">
           <DetailField label="Période" value={formatPeriod(projectStart, projectEnd)} />
           <DetailField label="Statut" value={project.archivedAt ? 'Archivé' : displayText(project.status)} />
-          <DetailField label="Type de contrat" value={displayText(project.contractType)} />
+          <DetailField label="Type de contrat" value={displayText(isCharterContractType(project.contractType) ? normalizeProjectContractType(project.contractType) : project.contractType)} />
         </dl>
       </header>
       <ProjectDetailTabs activeTab={primaryTab} counts={{ operations: planningOccurrences.length, documents: documentCount }} onChange={setActiveTab} tabs={projectDetailTabs(null)} />
@@ -912,7 +911,7 @@ function ProjectDetail({
           {isManager ? (
             <button
               disabled={!selectedContractKind || generatingDocument !== null}
-              onClick={() => selectedContractKind && onGenerateDocument(selectedContractKind, selectedOccurrenceId)}
+              onClick={() => selectedContractKind && onGenerateDocument(selectedContractKind, selectedOccurrenceId, selectedContractDefinition?.contractType)}
               type="button"
             >
               <Download aria-hidden="true" size={15} />
@@ -1136,7 +1135,7 @@ function ProjectDetail({
 
       {activeTab === 'bareboat-duration' ? (
         <ProjectContractInformation
-          description="Les dates, la durée et les montants contractuels de l’affrètement coque nue."
+          description="Les dates, la durée et les montants contractuels de l’affrètement."
           fields={[
             { label: 'Lieu de signature', value: supplytime.bareboat_contract_place },
             { label: 'Date de signature', value: supplytime.bareboat_contract_date },
@@ -1168,73 +1167,13 @@ function ProjectDetail({
 
       {activeTab === 'bareboat-signatures' ? (
         <ProjectContractInformation
-          description="Les représentants qui signeront le contrat d’affrètement coque nue."
+          description="Les représentants qui signeront le contrat d’affrètement."
           fields={[
             { label: 'Signataire de l’affréteur', value: supplytime.bareboat_charterer_signatory || client?.representedBy },
             { label: 'Signataire du propriétaire', value: supplytime.bareboat_owner_signatory },
             { label: 'Fonction du signataire propriétaire', value: supplytime.bareboat_owner_signatory_function },
           ]}
           title="Signatures"
-        />
-      ) : null}
-
-      {activeTab === 'time-charter-vessel' ? (
-        <ProjectContractInformation
-          description="Le navire, les parties et la période retenue pour l’affrètement à temps."
-          fields={[
-            { label: 'Armateur', value: contract?.ownerIdentity, wide: true },
-            { label: 'Affréteur / client', value: project.clientName },
-            { label: 'Navire principal', value: project.primaryVesselName },
-            { label: 'Second navire', value: project.secondaryVesselName },
-            { label: 'Début d’affrètement', value: formatDate(projectStart) },
-            { label: 'Fin d’affrètement', value: formatDate(projectEnd) },
-          ]}
-          title="Navire & période"
-        />
-      ) : null}
-
-      {activeTab === 'time-charter-operations' ? (
-        <ProjectContractInformation
-          description="Le périmètre d’emploi et les capacités opérationnelles enregistrées pour le navire."
-          fields={[
-            { label: 'Zone d’opération', value: project.operationArea, wide: true },
-            { label: 'Affectation du navire limitée à', value: contract?.vesselAssignmentLimit, wide: true },
-            { label: 'Support ROV', value: project.isRovSupport ? 'Oui' : 'Non' },
-            { label: 'Support plongée', value: project.isDivingSupport ? 'Oui' : 'Non' },
-            { label: 'Fuel', value: supplytime.box19_special_fuel, wide: true },
-          ]}
-          title="Exploitation"
-        />
-      ) : null}
-
-      {activeTab === 'time-charter-rates' ? (
-        <ProjectContractInformation
-          description="Les montants et modalités tarifaires applicables à l’affrètement à temps."
-          fields={[
-            { label: 'Mobilisation', value: formatMoney(contract?.mobilisationFee ?? null, contract?.feeCurrency || 'EUR') },
-            { label: 'Démobilisation', value: formatMoney(contract?.demobilisationFee ?? null, contract?.feeCurrency || 'EUR') },
-            { label: 'Loyer d’affrètement', value: formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || 'EUR', contract?.hireUnit) },
-            { label: 'Loyer en prolongation', value: formatMoney(contract?.extensionHire ?? null, contract?.hireCurrency || 'EUR', contract?.hireUnit) },
-            { label: 'Modalités de paiement', value: supplytime.box23_payment, wide: true },
-          ]}
-          title="Conditions tarifaires"
-        />
-      ) : null}
-
-      {activeTab === 'time-charter-clauses' ? (
-        <ProjectContractInformation
-          description="Les prolongations, audits, clauses particulières et signatures enregistrés."
-          fields={[
-            { label: 'Nombre de prolongations', value: contract?.extensionCount },
-            { label: 'Durée de prolongation', value: [contract?.extensionDuration, contract?.extensionUnit].filter(Boolean).join(' ') },
-            { label: 'Période de reconduction', value: contract?.autoExtensionPeriod },
-            { label: 'Maximum de jours', value: contract?.maxExtensionDays },
-            { label: 'Période maximale d’audit', value: contract?.maxAuditPeriod },
-            { label: 'Clauses additionnelles', value: supplytime.box34_additional_clauses, wide: true },
-            { label: 'Signature armateur', value: supplytime.signature_owners },
-            { label: 'Signature affréteur', value: supplytime.signature_charterers },
-          ]}
-          title="Clauses & signatures"
         />
       ) : null}
 
@@ -1436,6 +1375,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const documentEmissionDefinition = documentEmissionRequest
     ? PROJECT_DOCUMENT_TYPES.find((definition) => definition.kind === documentEmissionRequest.kind)
     : undefined;
+  const namedDocumentEmissionDefinition = documentEmissionDefinition?.kind === 'bareboat_charter'
+    ? { ...documentEmissionDefinition, label: charterContractLabel(documentEmissionRequest?.contractType || selectedProject?.contractType) }
+    : documentEmissionDefinition;
   const unresolvedDocumentCount = [...projectDocumentSet.documents, ...contractDocumentSet.documents].filter(
     (document) => document.projectId === null,
   ).length;
@@ -1474,11 +1416,11 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     setPlanningEditorOpen(true);
   }
 
-  function openProjectDocumentEmission(kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) {
+  function openProjectDocumentEmission(kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null, contractType?: string) {
     setMutationError('');
     setDocumentDownloadMode('document');
     setDocumentLanguage('fr');
-    setDocumentEmissionRequest({ kind, planningOccurrenceId });
+    setDocumentEmissionRequest({ kind, planningOccurrenceId, contractType });
   }
 
   async function deletePlanningOccurrence(occurrence: ProjectPlanningOccurrenceRecord) {
@@ -1524,6 +1466,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     planningOccurrenceId: number | null,
     downloadMode: ProjectDocumentDownloadMode,
     language: ProjectDocumentLanguage,
+    contractType?: string,
   ) {
     if (!selectedProject) return;
     setMutationError('');
@@ -1548,7 +1491,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         contract: selectedContract,
         emitter,
         occurrence,
-        project: selectedProject,
+        project: contractType ? { ...selectedProject, contractType } : selectedProject,
         language,
         towedAsset: projectsData.towedAssets.find((asset) => asset.id === selectedContract?.towedAssetId),
         vessel: projectsData.vessels.find((vessel) => vessel.id === selectedProject.primaryVesselId),
@@ -1870,10 +1813,10 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         </div>
       )}
 
-      {documentEmissionRequest && documentEmissionDefinition ? (
+      {documentEmissionRequest && namedDocumentEmissionDefinition ? (
         <ProjectDocumentEmissionDialog
           attachmentCount={selectedProjectAttachments.length}
-          definition={documentEmissionDefinition}
+          definition={namedDocumentEmissionDefinition}
           isBusy={generatingDocument !== null}
           language={documentLanguage}
           mode={documentDownloadMode}
@@ -1883,6 +1826,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
             documentEmissionRequest.planningOccurrenceId,
             documentDownloadMode,
             documentLanguage,
+            documentEmissionRequest.contractType,
           )}
           onLanguageChange={setDocumentLanguage}
           onModeChange={setDocumentDownloadMode}
