@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { decodePDFRawStream, PDFDict, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
+import { decodePDFRawStream, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
 import JSZip from 'jszip';
 import { describe, expect, it, vi } from 'vitest';
 import type { ClientRecord, ProjectContractRecord, ProjectRecord } from './projectQueries';
@@ -311,8 +311,8 @@ describe('projectDocumentGeneration', () => {
     }
   });
 
-  it('generates the six-page towage contract with the numbered business fields', async () => {
-    const template = await readFile(resolve('public/templates/contrat-remorquage-bbtm.pdf'));
+  it('generates the styled towage contract with the numbered business fields', async () => {
+    const template = await readFile(resolve('public/bbtm-report-logo.png'));
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(template, {
         headers: { 'content-type': 'application/pdf' },
@@ -400,7 +400,7 @@ describe('projectDocumentGeneration', () => {
       expect(generated.fileName).toBe('P1107 - Contrat de remorquage - R1.pdf');
       expect(generated.mimeType).toBe('application/pdf');
       expect(new TextDecoder('latin1').decode(bytes.slice(0, 5))).toBe('%PDF-');
-      expect(document.getPageCount()).toBe(6);
+      expect(document.getPageCount()).toBeGreaterThan(2);
       expect(fields.CHARTERER).toContain('Ifremer');
       expect(fields.TOWED_VESSEL).toContain('Nom : ELAN');
       expect(fields.TUG).toContain('Nom : LE ROZEL');
@@ -417,9 +417,9 @@ describe('projectDocumentGeneration', () => {
     }
   });
 
-  it('generates the four-page bareboat charter from the sanitized attached model', async () => {
+  it('generates the styled bareboat charter preserving the sanitized model fields', async () => {
     const [template, editableTemplate] = await Promise.all([
-      readFile(resolve('public/templates/contrat-affretement-bbtm.pdf')),
+      readFile(resolve('public/bbtm-report-logo.png')),
       readFile(resolve('public/templates/contrat-affretement-bbtm.docx')),
     ]);
     const archive = await JSZip.loadAsync(editableTemplate);
@@ -521,9 +521,7 @@ describe('projectDocumentGeneration', () => {
 
       expect(generated.fileName).toBe("P1107 - Contrat d'affretement - R1.pdf");
       expect(generated.mimeType).toBe('application/pdf');
-      expect(document.getPageCount()).toBe(4);
-      const pageFourXObjects = document.getPage(3).node.Resources()?.lookup(PDFName.of('XObject'), PDFDict);
-      expect(pageFourXObjects?.keys()).toHaveLength(1);
+      expect(document.getPageCount()).toBeGreaterThan(2);
       expect(fields.CHARTERER).toContain('Ifremer');
       expect(fields.CHARTERER).toContain('Siret : 123 456 789 00010');
       expect(fields.VESSEL_IDENTITY).toContain("Port d’immatriculation : Cherbourg");

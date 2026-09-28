@@ -5787,6 +5787,7 @@ button:disabled {
 
 .project-assistant-layout > main {
   display: grid;
+  align-content: start;
   gap: 18px;
   padding: 18px 20px 40px;
   overflow-y: auto;
@@ -5843,53 +5844,45 @@ button:disabled {
   background: #fff;
 }
 
-.project-contract-choice {
+.project-assistant-summary {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 16px;
-  align-items: end;
-  padding: 15px 16px;
+  align-self: start;
+  padding: 12px 16px;
   border: 1px solid #dce5f2;
   border-radius: 12px;
   background: linear-gradient(145deg, #f8fbff, #eef4ff);
 }
 
-.project-contract-choice label,
-.project-contract-choice p {
+.project-assistant-contract-type,
+.project-assistant-summary p {
   display: grid;
   gap: 5px;
 }
 
-.project-contract-choice label > span {
-  color: #53657b;
+.project-assistant-contract-type {
+  min-width: 0;
+  margin-bottom: 10px;
+}
+
+.project-assistant-contract-type > span {
+  color: #c7d1df;
   font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
-.project-contract-choice select {
+.project-editor .project-assistant-contract-type select {
+  width: 100%;
+  min-width: 0;
   min-height: 46px;
   border-color: #91afea;
   color: #12366f;
   font-weight: 800;
 }
 
-.project-contract-choice p strong { color: #15243a; font-size: 0.95rem; }
-.project-contract-choice p span { color: #68778d; font-size: 0.78rem; }
-
-.project-towage-contract-fields {
-  display: grid;
-  grid-column: 1 / -1;
-  gap: 12px;
-  min-width: 0;
-  padding: 16px;
-  border: 1px solid #dce5ee;
-  border-radius: 10px;
-  background: #f8fafc;
-}
-
-.project-towage-contract-fields h3 { color: #143b65; font-size: 0.92rem; }
+.project-assistant-summary p strong { color: #15243a; font-size: 0.95rem; }
+.project-assistant-summary p span { color: #68778d; font-size: 0.78rem; }
 
 .project-contract-preview-shell {
   display: grid;
@@ -5959,11 +5952,19 @@ button:disabled {
   box-shadow: 0 4px 18px rgba(25, 43, 68, 0.18);
 }
 
+/* The preview uses the same vector layout and page breaks as the exported PDF. */
+.project-styled-contract-document {
+  display: block;
+  width: min(100%, 565px);
+  height: auto;
+  margin: 0 auto;
+  background: #fff;
+  box-shadow: 0 4px 18px rgba(25, 43, 68, 0.18);
+}
+
 .project-contract-page > img { display: block; width: 100%; height: 100%; object-fit: contain; }
 
-.bimco-overlay,
-.towage-overlay,
-.bareboat-overlay {
+.bimco-overlay {
   position: absolute;
   overflow: hidden;
   color: #0c253f;
@@ -5971,111 +5972,6 @@ button:disabled {
   font-size: clamp(4px, 0.5vw, 7px);
   line-height: 1.22;
   white-space: pre-wrap;
-}
-
-.bareboat-overlay.project-code,
-.bareboat-overlay.header-date,
-.bareboat-overlay.vessel-name {
-  display: grid;
-  place-items: center;
-  color: #315b9b;
-  font-weight: 700;
-  text-align: center;
-}
-
-.bareboat-overlay.project-code { left: 28.9%; top: 5.91%; width: 13%; height: 4.2%; font-size: clamp(6px, 0.8vw, 12px); }
-.bareboat-overlay.header-date { left: 55.1%; top: 4.27%; width: 12.9%; height: 1.57%; }
-.bareboat-overlay.vessel-name { left: 42%; top: 7.98%; width: 52%; height: 2.14%; }
-.bareboat-overlay.contract-date { left: 6.04%; top: 13.6%; width: 88%; height: 1.71%; }
-.bareboat-overlay.charterer { left: 6.04%; top: 16.95%; width: 42.8%; height: 9.83%; }
-.bareboat-overlay.owner { left: 48.94%; top: 16.95%; width: 45.1%; height: 9.83%; }
-.bareboat-overlay.vessel-identity { left: 6.04%; top: 28.42%; width: 42.8%; height: 8.12%; }
-.bareboat-overlay.vessel-details { left: 48.94%; top: 28.42%; width: 45.1%; height: 8.12%; }
-.bareboat-overlay.last-admin-visit { left: 6.04%; top: 38.18%; width: 42.8%; height: 3.35%; }
-.bareboat-overlay.navigation-titles { left: 48.94%; top: 38.18%; width: 45.1%; height: 3.35%; }
-.bareboat-overlay.delivery { left: 6.04%; top: 43.16%; width: 42.8%; height: 4.91%; }
-.bareboat-overlay.mobilisation { left: 48.94%; top: 43.16%; width: 45.1%; height: 4.91%; }
-.bareboat-overlay.redelivery { left: 6.04%; top: 49.72%; width: 42.8%; height: 1.71%; }
-.bareboat-overlay.demobilisation { left: 48.94%; top: 49.72%; width: 45.1%; height: 1.71%; }
-.bareboat-overlay.minimum-duration { left: 6.04%; top: 53.06%; width: 42.8%; height: 1.64%; }
-.bareboat-overlay.extensions { left: 48.94%; top: 53.06%; width: 45.1%; height: 1.64%; }
-.bareboat-overlay.charter-hire { left: 6.04%; top: 56.34%; width: 42.8%; height: 1.64%; }
-.bareboat-overlay.early-termination { left: 48.94%; top: 56.34%; width: 45.1%; height: 1.64%; }
-.bareboat-overlay.insured-value { left: 6.04%; top: 59.69%; width: 42.8%; height: 1.64%; }
-.bareboat-overlay.insurance-payer { left: 48.94%; top: 59.69%; width: 45.1%; height: 1.64%; }
-.bareboat-overlay.applicable-law { left: 6.04%; top: 62.96%; width: 42.8%; height: 1.64%; }
-.bareboat-overlay.jurisdiction { left: 48.94%; top: 62.96%; width: 45.1%; height: 1.64%; }
-.bareboat-overlay.page-one-charterer-signatory { left: 6.04%; top: 66.24%; width: 42.8%; height: 10.9%; }
-.bareboat-overlay.page-one-owner-signatory { left: 48.94%; top: 66.24%; width: 45.1%; height: 10.9%; }
-.bareboat-overlay.signature-statement { left: 6.04%; top: 11.75%; width: 88%; height: 2.35%; font-weight: 700; }
-.bareboat-overlay.page-four-charterer-signatory { left: 6.04%; top: 18.73%; width: 43.9%; height: 12.25%; }
-.bareboat-overlay.page-four-owner-signatory { left: 50.05%; top: 18.73%; width: 43.99%; height: 12.25%; }
-
-.bareboat-signature {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  font-style: italic;
-}
-
-.bareboat-signature img {
-  width: auto;
-  max-width: 42%;
-  height: auto;
-  max-height: 62%;
-  object-fit: contain;
-}
-
-.towage-overlay.document-code,
-.towage-overlay.project-code,
-.towage-overlay.header-date {
-  display: grid;
-  place-items: center;
-  color: #315b9b;
-  font-weight: 700;
-  text-align: center;
-}
-
-.towage-overlay.document-code { left: 23.8%; top: 7%; width: 11.1%; height: 4.4%; }
-.towage-overlay.project-code { left: 35.1%; top: 7%; width: 11.4%; height: 4.4%; font-size: clamp(6px, 0.8vw, 12px); }
-.towage-overlay.header-date { left: 75.8%; top: 4.25%; width: 12.2%; height: 2.4%; }
-.towage-overlay.contract-date { left: 50%; top: 14.75%; width: 38%; height: 1.55%; }
-.towage-overlay.charterer { left: 12.8%; top: 18%; width: 36.5%; height: 5.5%; }
-.towage-overlay.owner { left: 50.8%; top: 18%; width: 36.5%; height: 5.5%; }
-.towage-overlay.towed { left: 12.8%; top: 25.25%; width: 36.5%; height: 19.9%; font-size: clamp(4px, 0.45vw, 6.2px); }
-.towage-overlay.tug { left: 50.8%; top: 25.25%; width: 36.5%; height: 19.9%; font-size: clamp(4px, 0.45vw, 6.2px); }
-.towage-overlay.conditions { left: 12.8%; top: 47.2%; width: 74.5%; height: 2.6%; }
-.towage-overlay.pickup { left: 12.8%; top: 51.7%; width: 36.5%; height: 1.35%; }
-.towage-overlay.departure { left: 50.8%; top: 51.7%; width: 36.5%; height: 1.35%; }
-.towage-overlay.destination { left: 12.8%; top: 54.65%; width: 36.5%; height: 1.35%; }
-.towage-overlay.arrival { left: 50.8%; top: 54.65%; width: 36.5%; height: 1.35%; }
-.towage-overlay.connection { left: 12.8%; top: 59.05%; width: 36.5%; height: 1.35%; }
-.towage-overlay.disconnection { left: 50.8%; top: 59.05%; width: 36.5%; height: 1.35%; }
-.towage-overlay.fixed-price { left: 12.8%; top: 62%; width: 36.5%; height: 2.75%; }
-.towage-overlay.optional-costs { left: 50.8%; top: 62%; width: 36.5%; height: 2.75%; }
-.towage-overlay.payment { left: 12.8%; top: 66.5%; width: 36.5%; height: 4.2%; }
-.towage-overlay.additional { left: 50.8%; top: 66.5%; width: 36.5%; height: 4.2%; }
-.towage-overlay.special { left: 12.8%; top: 72.4%; width: 74.5%; height: 3.8%; }
-.towage-overlay.charterer-signatory { left: 12.8%; top: 78.05%; width: 36.5%; height: 10.9%; }
-.towage-overlay.owner-signatory { left: 50.8%; top: 78.05%; width: 36.5%; height: 10.9%; }
-.towage-overlay.page-six-owner-signatory { left: 12.8%; top: 31.55%; width: 36.5%; height: 14.4%; }
-.towage-overlay.page-six-charterer-signatory { left: 50.8%; top: 31.55%; width: 36.5%; height: 14.4%; }
-
-.towage-signature {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  font-style: italic;
-}
-
-.towage-signature img {
-  width: auto;
-  max-width: 42%;
-  height: auto;
-  max-height: 62%;
-  object-fit: contain;
 }
 
 .project-contract-pdf-continuation {
@@ -6210,7 +6106,9 @@ button:disabled {
 
   .project-assistant-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: max-content max-content minmax(760px, auto);
     height: auto;
+    overflow-y: auto;
   }
 
   .project-assistant-layout > aside {
@@ -6226,6 +6124,11 @@ button:disabled {
   .project-assistant-layout > aside > span,
   .project-assistant-layout > aside > strong {
     display: none;
+  }
+
+  .project-assistant-contract-type {
+    min-width: 0;
+    margin-bottom: 0;
   }
 
   .project-assistant-layout > aside button {
@@ -14572,6 +14475,7 @@ button.planning-p12-conflict-card {
   white-space: nowrap;
 }
 
+.project-contract-form-section,
 .project-commercial-conditions-mode,
 .project-commercial-conditions-free {
   display: grid;
@@ -14581,6 +14485,27 @@ button.planning-p12-conflict-card {
   border: 1px solid #cbd9f4;
   border-radius: 10px;
   background: #f6f9ff;
+}
+
+.project-contract-form-sections {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 16px;
+  min-width: 0;
+}
+
+.project-contract-form-section {
+  min-width: 0;
+  align-content: start;
+}
+
+.project-contract-form-section > h3 {
+  color: #173b69;
+  font-size: .86rem;
+}
+
+.project-contract-form-section .project-editor-grid {
+  margin: 0;
 }
 
 .project-commercial-conditions-mode > div:first-child,

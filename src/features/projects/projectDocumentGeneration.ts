@@ -20,7 +20,7 @@ import {
 } from './projectContractOptions';
 import { formatProjectOfferPort } from './projectPorts';
 import { BIMCO_P144_FIELDS } from './projectContractModels';
-import type { PDFFont, PDFImage, PDFPage } from 'pdf-lib';
+import { buildStyledContract } from './projectStyledContract';
 import {
   buildCommercialReserves,
   COMMERCIAL_RESERVE_AVAILABILITY,
@@ -454,11 +454,11 @@ export async function generateProjectDocument(
   }
 
   if (kind === 'towage_contract') {
-    return generateTowageContract(input);
+    return generateStyledContractDocument('towage_contract', input);
   }
 
   if (kind === 'bareboat_charter') {
-    return generateBareboatCharter(input);
+    return generateStyledContractDocument('bareboat_charter', input);
   }
 
   const { jsPDF } = await import('jspdf');
@@ -995,252 +995,21 @@ export function buildBareboatTemplateFields({
   };
 }
 
-interface TowagePdfBox {
-  bottom: number;
-  left: number;
-  right: number;
-  top: number;
-}
-
-const TOWAGE_SOURCE_WIDTH = 993;
-const TOWAGE_SOURCE_HEIGHT = 1404;
-
-function towagePdfBox(page: PDFPage, box: TowagePdfBox) {
-  const { width, height } = page.getSize();
-  return {
-    height: ((box.bottom - box.top) / TOWAGE_SOURCE_HEIGHT) * height,
-    width: ((box.right - box.left) / TOWAGE_SOURCE_WIDTH) * width,
-    x: (box.left / TOWAGE_SOURCE_WIDTH) * width,
-    y: height - (box.bottom / TOWAGE_SOURCE_HEIGHT) * height,
-  };
-}
-
-function towagePdfText(value: string): string {
-  return value
-    .replace(/[\u00a0\u202f]/g, ' ')
-    .replace(/[\u2010\u2011\u2012\u2013\u2014]/g, '-')
-    .trim();
-}
-
-function wrapTowagePdfText(font: PDFFont, value: string, size: number, maxWidth: number): string[] {
-  return towagePdfText(value).split('\n').flatMap((paragraph) => {
-    if (!paragraph.trim()) return [];
-    const lines: string[] = [];
-    let line = '';
-    paragraph.trim().split(/\s+/).forEach((word) => {
-      const candidate = line ? `${line} ${word}` : word;
-      if (!line || font.widthOfTextAtSize(candidate, size) <= maxWidth) {
-        line = candidate;
-      } else {
-        lines.push(line);
-        line = word;
-      }
-    });
-    if (line) lines.push(line);
-    return lines;
-  });
-}
-
-function drawTowagePdfText(
-  page: PDFPage,
-  font: PDFFont,
-  value: string,
-  box: TowagePdfBox,
-  requestedSize = 8,
-  align: 'left' | 'center' = 'left',
-) {
-  if (!value.trim()) return;
-  const bounds = towagePdfBox(page, box);
-  const padding = 4;
-  let size = requestedSize;
-  let lines = wrapTowagePdfText(font, value, size, bounds.width - padding * 2);
-  while (size > 5 && lines.length * size * 1.18 > bounds.height - padding * 2) {
-    size -= 0.25;
-    lines = wrapTowagePdfText(font, value, size, bounds.width - padding * 2);
+async function generateStyledContractDocument(
+  kind: 'towage_contract' | 'bareboat_charter',
+  input: ProjectDocumentGenerationInput,
+): Promise<GeneratedProjectDocument> {
+  const isTowage = kind === 'towage_contract';
+  const values = isTowage ? buildTowageTemplateFields(input) : buildBareboatTemplateFields(input);
+  if (!isTowage) {
+    values.CONTRACT_PLACE_AND_DATE = `${values.CONTRACT_PLACE}, le ${values.CONTRACT_DATE_LONG}`;
+    values.SIGNATURE_STATEMENT = `Fait à ${values.CONTRACT_PLACE}, le ${values.CONTRACT_DATE_LONG}`;
   }
-  const lineHeight = size * 1.18;
-  lines.slice(0, Math.max(1, Math.floor((bounds.height - padding * 2) / lineHeight))).forEach((line, index) => {
-    const lineWidth = font.widthOfTextAtSize(line, size);
-    page.drawText(line, {
-      x: align === 'center' ? bounds.x + (bounds.width - lineWidth) / 2 : bounds.x + padding,
-      y: bounds.y + bounds.height - padding - size - index * lineHeight,
-      size,
-      font,
-    });
-  });
-}
-
-function drawTowageSignature(
-  page: PDFPage,
-  font: PDFFont,
-  name: string,
-  date: string,
-  signature: PDFImage | null,
-  box: TowagePdfBox,
-) {
-  const bounds = towagePdfBox(page, box);
-  drawTowagePdfText(page, font, [name, date].filter(Boolean).join('\n'), box, 8.5);
-  if (!signature) return;
-  const natural = signature.scale(1);
-  const maximumWidth = bounds.width * 0.42;
-  const maximumHeight = bounds.height * 0.55;
-  const ratio = Math.min(maximumWidth / natural.width, maximumHeight / natural.height, 1);
-  page.drawImage(signature, {
-    x: bounds.x + 6,
-    y: bounds.y + 8,
-    width: natural.width * ratio,
-    height: natural.height * ratio,
-  });
-}
-
-async function generateTowageContract(input: ProjectDocumentGenerationInput): Promise<GeneratedProjectDocument> {
-  const { PDFDocument, StandardFonts } = await import('pdf-lib');
-  const [templateBytes, signatureBytes] = await Promise.all([
-    loadAssetBytes('/templates/contrat-remorquage-bbtm.pdf'),
-    input.emitter?.signatureUrl
-      ? loadAssetBytes(input.emitter.signatureUrl).catch(() => null)
-      : Promise.resolve(null),
-  ]);
-  const document = await PDFDocument.load(templateBytes);
-  const regular = await document.embedFont(StandardFonts.Helvetica);
-  const bold = await document.embedFont(StandardFonts.HelveticaBold);
-  let signature: PDFImage | null = null;
-  if (signatureBytes) {
-    try {
-      signature = input.emitter?.signatureMimeType === 'image/jpeg'
-        ? await document.embedJpg(signatureBytes)
-        : await document.embedPng(signatureBytes);
-    } catch {
-      signature = null;
-    }
-  }
-  const values = buildTowageTemplateFields(input);
-  const pages = document.getPages();
-  pages.forEach((page) => {
-    drawTowagePdfText(page, bold, values.DOCUMENT_CODE, { left: 236, top: 96, right: 346, bottom: 160 }, 8, 'center');
-    drawTowagePdfText(page, bold, values.PROJECT_CODE, { left: 349, top: 96, right: 461, bottom: 160 }, 15, 'center');
-    drawTowagePdfText(page, bold, values.CONTRACT_DATE_SHORT, { left: 752, top: 60, right: 873, bottom: 93 }, 8.5, 'center');
-  });
-
-  const firstPage = pages[0];
-  drawTowagePdfText(firstPage, regular, values.CONTRACT_DATE_LONG, { left: 496, top: 207, right: 872, bottom: 228 }, 8.5);
-  drawTowagePdfText(firstPage, regular, values.CHARTERER, { left: 120, top: 250, right: 494, bottom: 331 }, 8.5);
-  drawTowagePdfText(firstPage, regular, values.OWNER, { left: 496, top: 250, right: 872, bottom: 331 }, 8.5);
-  drawTowagePdfText(firstPage, regular, values.TOWED_VESSEL, { left: 120, top: 353, right: 494, bottom: 638 }, 7.5);
-  drawTowagePdfText(firstPage, regular, values.TUG, { left: 496, top: 353, right: 872, bottom: 638 }, 7.5);
-  drawTowagePdfText(firstPage, regular, values.TOWED_CONDITIONS, { left: 120, top: 660, right: 872, bottom: 701 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.PICKUP_PLACE, { left: 120, top: 723, right: 494, bottom: 743 }, 8);
-  drawTowagePdfText(firstPage, regular, values.DEPARTURE_WINDOW, { left: 496, top: 723, right: 872, bottom: 743 }, 8);
-  drawTowagePdfText(firstPage, regular, values.DESTINATION_PLACE, { left: 120, top: 765, right: 494, bottom: 785 }, 8);
-  drawTowagePdfText(firstPage, regular, values.ARRIVAL_WINDOW, { left: 496, top: 765, right: 872, bottom: 785 }, 8);
-  drawTowagePdfText(firstPage, regular, values.CONNECTION_TIME, { left: 120, top: 828, right: 494, bottom: 848 }, 8);
-  drawTowagePdfText(firstPage, regular, values.DISCONNECTION_TIME, { left: 496, top: 828, right: 872, bottom: 848 }, 8);
-  drawTowagePdfText(firstPage, regular, values.FIXED_PRICE, { left: 120, top: 870, right: 494, bottom: 911 }, 8);
-  drawTowagePdfText(firstPage, regular, values.OPTIONAL_COSTS, { left: 496, top: 870, right: 872, bottom: 911 }, 7.5);
-  drawTowagePdfText(firstPage, regular, values.PAYMENT_TERMS, { left: 120, top: 933, right: 494, bottom: 994 }, 7.5);
-  drawTowagePdfText(firstPage, regular, values.ADDITIONAL_CHARGES, { left: 496, top: 933, right: 872, bottom: 994 }, 7.5);
-  drawTowagePdfText(firstPage, regular, values.SPECIAL_CONDITIONS, { left: 120, top: 1016, right: 872, bottom: 1073 }, 8);
-  drawTowageSignature(firstPage, regular, values.CHARTERER_SIGNATORY, '', null, { left: 120, top: 1095, right: 494, bottom: 1251 });
-  drawTowageSignature(firstPage, regular, values.OWNER_SIGNATORY, values.SIGNATURE_DATE, signature, { left: 496, top: 1095, right: 872, bottom: 1251 });
-
-  if (pages[5]) {
-    drawTowageSignature(pages[5], regular, values.OWNER_SIGNATORY, values.SIGNATURE_DATE, signature, { left: 120, top: 442, right: 494, bottom: 647 });
-    drawTowageSignature(pages[5], regular, values.CHARTERER_SIGNATORY, '', null, { left: 496, top: 442, right: 872, bottom: 647 });
-  }
-
-  document.setTitle(buildGeneratedDocumentFileName('towage_contract', input.project));
-  document.setSubject(projectReference(input.project));
-  document.setCreator('BBTM');
-  const bytes = await document.save({ useObjectStreams: false });
-  return {
-    blob: new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' }),
-    fileName: buildGeneratedDocumentFileName('towage_contract', input.project),
-    mimeType: 'application/pdf',
-  };
-}
-
-async function generateBareboatCharter(input: ProjectDocumentGenerationInput): Promise<GeneratedProjectDocument> {
-  const { PDFDocument, StandardFonts } = await import('pdf-lib');
-  const [templateBytes, signatureBytes] = await Promise.all([
-    loadAssetBytes('/templates/contrat-affretement-bbtm.pdf'),
-    input.emitter?.signatureUrl
-      ? loadAssetBytes(input.emitter.signatureUrl).catch(() => null)
-      : Promise.resolve(null),
-  ]);
-  const templateDocument = await PDFDocument.load(templateBytes);
-  const document = await PDFDocument.create();
-  // Word leaves the fourth source page with a graphics state that clips later operators.
-  // Embedding every template page as an isolated form keeps the background vectorial and resets that state.
-  const templatePages = await document.embedPdf(templateDocument, templateDocument.getPageIndices());
-  templatePages.forEach((templatePage) => {
-    const page = document.addPage([templatePage.width, templatePage.height]);
-    page.drawPage(templatePage, {
-      height: templatePage.height,
-      width: templatePage.width,
-      x: 0,
-      y: 0,
-    });
-  });
-  const regular = await document.embedFont(StandardFonts.Helvetica);
-  const bold = await document.embedFont(StandardFonts.HelveticaBold);
-  let signature: PDFImage | null = null;
-  if (signatureBytes) {
-    try {
-      signature = input.emitter?.signatureMimeType === 'image/jpeg'
-        ? await document.embedJpg(signatureBytes)
-        : await document.embedPng(signatureBytes);
-    } catch {
-      signature = null;
-    }
-  }
-
-  const values = buildBareboatTemplateFields(input);
-  const pages = document.getPages();
-  pages.forEach((page) => {
-    drawTowagePdfText(page, bold, values.PROJECT_CODE, { left: 287, top: 83, right: 416, bottom: 142 }, 11, 'center');
-    drawTowagePdfText(page, regular, values.CONTRACT_DATE_SHORT, { left: 547, top: 60, right: 675, bottom: 82 }, 8.5, 'center');
-    drawTowagePdfText(page, regular, values.VESSEL_NAME, { left: 417, top: 112, right: 934, bottom: 142 }, 9, 'center');
-  });
-
-  const firstPage = pages[0];
-  drawTowagePdfText(firstPage, regular, `${values.CONTRACT_PLACE}, le ${values.CONTRACT_DATE_LONG}`, { left: 60, top: 191, right: 934, bottom: 215 }, 8.5);
-  drawTowagePdfText(firstPage, regular, values.CHARTERER, { left: 60, top: 238, right: 485, bottom: 376 }, 8.5);
-  drawTowagePdfText(firstPage, regular, values.OWNER, { left: 486, top: 238, right: 934, bottom: 376 }, 8.5);
-  drawTowagePdfText(firstPage, regular, values.VESSEL_IDENTITY, { left: 60, top: 399, right: 485, bottom: 513 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.VESSEL_DETAILS, { left: 486, top: 399, right: 934, bottom: 513 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.LAST_ADMIN_VISIT, { left: 60, top: 536, right: 485, bottom: 583 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.NAVIGATION_TITLES, { left: 486, top: 536, right: 934, bottom: 583 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.DELIVERY, { left: 60, top: 606, right: 485, bottom: 675 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.MOBILISATION, { left: 486, top: 606, right: 934, bottom: 675 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.REDELIVERY, { left: 60, top: 698, right: 485, bottom: 722 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.DEMOBILISATION, { left: 486, top: 698, right: 934, bottom: 722 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.MINIMUM_DURATION, { left: 60, top: 745, right: 485, bottom: 768 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.EXTENSIONS, { left: 486, top: 745, right: 934, bottom: 768 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.CHARTER_HIRE, { left: 60, top: 791, right: 485, bottom: 814 }, 7.75);
-  drawTowagePdfText(firstPage, regular, values.EARLY_TERMINATION, { left: 486, top: 791, right: 934, bottom: 814 }, 7.75);
-  drawTowagePdfText(firstPage, regular, values.INSURED_VALUE, { left: 60, top: 838, right: 485, bottom: 861 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.INSURANCE_PAYER, { left: 486, top: 838, right: 934, bottom: 861 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.APPLICABLE_LAW, { left: 60, top: 884, right: 485, bottom: 907 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.JURISDICTION, { left: 486, top: 884, right: 934, bottom: 907 }, 8.25);
-  drawTowageSignature(firstPage, regular, values.CHARTERER_SIGNATORY, '', null, { left: 60, top: 930, right: 485, bottom: 1083 });
-  drawTowageSignature(firstPage, regular, [values.OWNER_SIGNATORY, values.OWNER_SIGNATORY_FUNCTION].filter(Boolean).join('\n'), '', signature, { left: 486, top: 930, right: 934, bottom: 1083 });
-
-  const signaturePage = pages[3];
-  if (signaturePage) {
-    drawTowagePdfText(signaturePage, bold, `Fait à ${values.CONTRACT_PLACE}, le ${values.CONTRACT_DATE_LONG}`, { left: 60, top: 165, right: 934, bottom: 198 }, 9);
-    drawTowageSignature(signaturePage, regular, values.CHARTERER_SIGNATORY, '', null, { left: 60, top: 263, right: 496, bottom: 435 });
-    drawTowageSignature(signaturePage, regular, [values.OWNER_SIGNATORY, values.OWNER_SIGNATORY_FUNCTION].filter(Boolean).join('\n'), '', signature, { left: 497, top: 263, right: 934, bottom: 435 });
-  }
-
-  document.setTitle(buildGeneratedDocumentFileName('bareboat_charter', input.project));
-  document.setSubject(projectReference(input.project));
-  document.setCreator('BBTM');
-  const bytes = await document.save({ useObjectStreams: false });
-  return {
-    blob: new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' }),
-    fileName: buildGeneratedDocumentFileName('bareboat_charter', input.project),
-    mimeType: 'application/pdf',
-  };
+  const fileName = buildGeneratedDocumentFileName(kind, input.project);
+  const layout = buildStyledContract(isTowage ? 'towage' : 'bareboat', values, input.project.title, Boolean(input.emitter?.signatureUrl));
+  const { renderStyledContractPdf } = await import('./projectStyledContractPdf');
+  const blob = await renderStyledContractPdf(layout, fileName, projectReference(input.project), input.emitter?.signatureUrl, input.emitter?.signatureMimeType);
+  return { blob, fileName, mimeType: 'application/pdf' };
 }
 
 export function downloadGeneratedProjectDocument(document: GeneratedProjectDocument): void {
