@@ -1,7 +1,7 @@
 SEAPILOT - LANCEUR WINDOWS COMMUN 2.5.0
-PROCEDURES, PDF ET DOSSIERS AUTOMATIQUES - 25/09/2026
+PROCEDURES, PDF ET DOSSIERS AUTOMATIQUES - 28/09/2026
 
-Une installation pour Procedures, Procedures PDF, Sanctions Disciplinaires, Produits Chimiques, Ressources Humaines et les futurs modules.
+Une installation pour Procedures, Procedures PDF, Sanctions Disciplinaires, Produits Chimiques, Ressources Humaines, Projets et les futurs modules.
 
 1. Installez Google Drive pour ordinateur et connectez votre compte autorise.
 2. Verifiez que SeaPilot est visible dans l'Explorateur. Les sous-dossiers des modules sont crees automatiquement. Procedures et Sanctions Disciplinaires doivent etre reserves a Administration et Direction dans les partages Google Drive.
@@ -35,4 +35,4 @@ Procedures (2.3) : Nouveau document cree une copie Word ou importe un fichier da
 
 RH : les ajouts et renouvellements sont classes sous Ressources Humaines / Prenom NOM - c<entreprise>-p<collaborateur>. Les lectures verifient les droits du document, sa taille et son empreinte. Une suppression de fiche conserve le fichier Drive.
 
-Projets (2.5) : SeaPilot / Projet / Projet-<identifiant stable> / Contrat, HSE, Facturation, Operations, Offres. Les nouveaux fichiers sont verifies par taille et SHA-256 avant enregistrement. Maximum 50 Mio pour ce module. Les anciens fichiers et liens sont conserves. Installer cette version sur chaque PC qui ajoute des documents ou assemble les pieces PDF. Les autres modules gardent leurs limites et reglages.
+Projets (2.5) : SeaPilot / Projet / <numero> – <nom du projet> / Contrat, HSE, Facturation, Operations, Offres. Exemple : P144 – GUARD VESSEL EMDT. SeaPilot fournit le dossier autorise pour chaque projet et conserve les references de ses fichiers. Les nouveaux fichiers sont verifies par taille et SHA-256 avant enregistrement. Maximum 50 Mio pour ce module. Les anciens fichiers et liens sont conserves. Installer cette version sur chaque PC qui ajoute des documents ou assemble les pieces PDF. Si Verifier ce PC indique deja 2.5.0, aucune reinstallation n'est necessaire. Les autres modules gardent leurs limites et reglages.

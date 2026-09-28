@@ -8,7 +8,6 @@ import './ProjectDesign.css';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetNames } from '../fleet/fleetDisplay';
 import {
-  Archive,
   CalendarDays,
   CalendarPlus,
   ChevronLeft,
@@ -51,7 +50,7 @@ import {
 } from './projectContractOptions';
 import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import type { ProjectDocumentLanguage } from './projectDocumentGeneration';
-import { archiveProject, deleteProjectPlanningOccurrence } from './projectMutations';
+import { deleteProjectPlanningOccurrence } from './projectMutations';
 import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
 import { fetchProjectDocumentEmitter } from './projectCommercialOffer';
 import {
@@ -1292,7 +1291,6 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [mutationMessage, setMutationMessage] = useState('');
   const [mutationError, setMutationError] = useState('');
   const [lastStoredDocument, setLastStoredDocument] = useState<StoredProjectDocument | null>(null);
-  const [isArchiving, setIsArchiving] = useState(false);
   const [deletingOccurrenceId, setDeletingOccurrenceId] = useState<number | null>(null);
   const [generatingDocument, setGeneratingDocument] = useState<ProjectGeneratedDocumentKind | null>(null);
   const [documentEmissionRequest, setDocumentEmissionRequest] = useState<ProjectDocumentEmissionRequest | null>(null);
@@ -1483,24 +1481,6 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     setDocumentEmissionRequest({ kind, planningOccurrenceId });
   }
 
-  async function archiveSelectedProject() {
-    if (!selectedProject || !window.confirm(`Archiver ${selectedProject.projectCode || selectedProject.title} ?`)) return;
-    setMutationError('');
-    setMutationMessage('');
-    setIsArchiving(true);
-    try {
-      await archiveProject(effectiveClient, selectedProject.id);
-      setSelectedProjectId(null);
-      setDossierOpen(false);
-      setMutationMessage('Projet archivé dans Supabase.');
-      setLoadAttempt((attempt) => attempt + 1);
-    } catch (error) {
-      setMutationError(error instanceof Error ? error.message : "Impossible d’archiver le projet.");
-    } finally {
-      setIsArchiving(false);
-    }
-  }
-
   async function deletePlanningOccurrence(occurrence: ProjectPlanningOccurrenceRecord) {
     if (!selectedProject) return;
     const operationLabel = occurrence.description || `Occurrence #${occurrence.id}`;
@@ -1686,11 +1666,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       </nav>
       {!dossierOpen ? <ProjectPortfolioInsights client={effectiveClient} data={projectsData} /> : <nav className="project-workspace-actions project-dossier-actions" aria-label="Actions du dossier">
         <button type="button" onClick={() => setDossierOpen(false)}><ChevronLeft size={16} /> Liste des projets</button>
-        <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || isArchiving} icon={<Archive size={18} />} label="Archiver" onClick={archiveSelectedProject} />
         <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus size={18} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
         <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<FileText size={18} />} label="Émettre le document" onClick={() => openProjectDocumentEmission(selectedGeneratedDocumentKind, selectedGeneratedDocumentKind === 'offer' ? null : selectedPlanningOccurrences[0]?.id ?? null)} />
         <ProjectRibbonButton icon={<Share2 size={18} />} label="Dossiers Google Drive" onClick={() => window.open('https://drive.google.com/drive/folders/1H5kB4ppiKQAm4hqhYjMHcP4pRZaTncj_', '_blank', 'noopener,noreferrer')} />
-        <a href={PROJECT_DOCUMENTS_LEGACY_URL} target="_blank" rel="noreferrer">Sources SharePoint historiques</a>
         <label className="project-dossier-switcher">Projet<select aria-label="Changer de projet" value={selectedProject?.id || ''} onChange={(event) => setSelectedProjectId(Number(event.target.value))}>{projectsData.projects.map((project) => <option key={project.id} value={project.id}>{project.projectCode} – {project.title}</option>)}</select></label>
       </nav>}
       {!dossierOpen ? <div className="project-portfolio-scopes" aria-label="Classement des projets">
