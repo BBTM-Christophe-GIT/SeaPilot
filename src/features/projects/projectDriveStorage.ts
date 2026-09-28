@@ -42,13 +42,17 @@ export function projectDriveStorage(client: SupabaseClient, bucket: string) {
         const projectId = Number(/^projects\/(\d+)\//.exec(path)?.[1]);
         if (!projectId || bucket !== 'project-files' || options.upsert) throw new Error('Emplacement de projet invalide.');
         const session = await connection();
-        const { data: project, error } = await client.from('projects').select('company_id').eq('id', projectId).single();
+        const { data: scope, error } = await client.rpc('projects_drive_scope', { target_project: projectId });
         if (error) throw error;
-        const drivePath = `Projet-${projectId}/${projectDriveCategory(path)}/${path.split('/').at(-1)}`;
+        if (scope?.directory !== 'Projet' || typeof scope.folder !== 'string' || !scope.folder
+          || /[\\/:<>"|?*]/.test(scope.folder) || /[. ]$/.test(scope.folder) || !scope.company_id) {
+          throw new Error('Le dossier Google Drive du projet est invalide.');
+        }
+        const drivePath = `${scope.folder}/${projectDriveCategory(path)}/${path.split('/').at(-1)}`;
         const hash = await sha256(blob);
         const receipt = await localDriveRequest<DriveReceipt>(client, session, { action: 'write', module: 'projects', projectId, path: drivePath, base64: await blobBase64(blob) });
         if (receipt.path !== drivePath || receipt.bytes !== blob.size || receipt.sha256 !== hash) throw new Error('La copie Google Drive n’a pas été confirmée.');
-        const saved = await client.from('project_drive_files').insert({ project_id: projectId, company_id: project.company_id, source_bucket: bucket, source_path: path, path: drivePath, bytes: blob.size, sha256: hash, mime_type: options.contentType || blob.type || 'application/octet-stream' });
+        const saved = await client.from('project_drive_files').insert({ project_id: projectId, company_id: scope.company_id, source_bucket: bucket, source_path: path, path: drivePath, bytes: blob.size, sha256: hash, mime_type: options.contentType || blob.type || 'application/octet-stream' });
         if (saved.error) throw saved.error;
         return { error: null };
       } catch (error) { return { error: error instanceof Error ? error : new Error((error as { message?: string })?.message || 'Classement Google Drive impossible.') }; }

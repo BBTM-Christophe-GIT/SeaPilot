@@ -12,7 +12,8 @@ function fixture(mapping: unknown = null) {
   query.insert = insert;
   const download = vi.fn().mockResolvedValue({ data: new Blob(['legacy']), error: null });
   const storage = { from: vi.fn(() => ({ download, remove: vi.fn() })) };
-  const client = { from: vi.fn(() => query), storage };
+  const rpc = vi.fn().mockResolvedValue({ data: { directory: 'Projet', folder: 'P144 – GUARD VESSEL EMDT', company_id: 1 }, error: null });
+  const client = { from: vi.fn(() => query), rpc, storage };
   return { client, insert, download };
 }
 beforeEach(() => { vi.mocked(connectLocalDrive).mockResolvedValue({ url: 'http://localhost', expiresAt: 1, version: '2.5.0' }); });
@@ -20,10 +21,11 @@ describe('project Drive routing', () => {
   it('writes a verified copy and its receipt without uploading another Storage object', async () => {
     const blob = new Blob(['pdf'], { type: 'application/pdf' });
     const sha256 = await hash(blob);
-    vi.mocked(localDriveRequest).mockResolvedValue({ path: 'Projet-12/Contrat/file.pdf', bytes: 3, sha256 });
+    vi.mocked(localDriveRequest).mockResolvedValue({ path: 'P144 – GUARD VESSEL EMDT/Contrat/file.pdf', bytes: 3, sha256 });
     const { client, insert } = fixture();
     expect(await projectDriveStorage(client as never, 'project-files').upload('projects/12/generated/towage_contract/file.pdf', blob, {})).toEqual({ error: null });
-    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ project_id: 12, path: 'Projet-12/Contrat/file.pdf', sha256, bytes: 3 }));
+    expect(client.rpc).toHaveBeenCalledWith('projects_drive_scope', { target_project: 12 });
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ project_id: 12, path: 'P144 – GUARD VESSEL EMDT/Contrat/file.pdf', source_path: 'projects/12/generated/towage_contract/file.pdf', sha256, bytes: 3 }));
     expect(client.storage.from).not.toHaveBeenCalled();
   });
   it('does not register an incomplete transfer', async () => {
@@ -38,9 +40,22 @@ describe('project Drive routing', () => {
     await projectDriveStorage(client as never, 'project-files').download('old.pdf');
     expect(download).toHaveBeenCalledWith('old.pdf');
   });
+  it.each([
+    { data: null, error: { message: 'Projet inaccessible' } },
+    { data: { directory: 'Projet', folder: '../other', company_id: 1 }, error: null },
+  ])('refuses a failed or unsafe folder authorization without writing elsewhere', async (scope) => {
+    const { client, insert } = fixture();
+    client.rpc.mockResolvedValue(scope as never);
+    vi.mocked(localDriveRequest).mockClear();
+    const result = await projectDriveStorage(client as never, 'project-files').upload('projects/12/generated/offer/file.pdf', new Blob(['pdf']), {});
+    expect(result.error).toBeInstanceOf(Error);
+    expect(localDriveRequest).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(client.storage.from).not.toHaveBeenCalled();
+  });
   it('reads Drive bytes and rejects corruption without silently reverting to an old version', async () => {
     const sha256 = await hash(new Blob(['pdf']));
-    const mapping = { path: 'Projet-12/Contrat/file.pdf', bytes: 3, sha256, mime_type: 'application/pdf' };
+    const mapping = { path: 'P144 – GUARD VESSEL EMDT/Contrat/file.pdf', bytes: 3, sha256, mime_type: 'application/pdf' };
     const { client, download } = fixture(mapping);
     vi.mocked(localDriveRequest).mockResolvedValue({ ...mapping, base64: 'cGRm' });
     expect((await projectDriveStorage(client as never, 'project-files').download('old.pdf')).data?.size).toBe(3);
