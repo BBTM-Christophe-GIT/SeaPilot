@@ -509,6 +509,56 @@ describe('ProjectsPage', () => {
     });
   });
 
+  it('preserves billing drafts between workspaces and keeps export options together', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({
+      project_billing_periods: { data: [{ id: 501, project_id: 880, period_month: '2026-07-01', invoice_number: 'F-2026-07', include_operations_in_pdf: true, include_expenses_in_pdf: true, include_bbtm_in_pdf: true }], error: null },
+      project_billing_services: { data: [{ id: 601, project_id: 880, billing_period_id: 501, category: 'Assistance', unit_amount_ht: 250, quantity: 3 }], error: null },
+    });
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Facturation' }));
+    expect(screen.getByRole('button', { name: /^Loyers & DPR/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Ajouter un frais' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^Suivi & pièces/ }));
+    await waitFor(() => expect(screen.getByLabelText('Numéro de facture')).toHaveValue('F-2026-07'));
+    await user.clear(screen.getByLabelText('Numéro de facture'));
+    await user.type(screen.getByLabelText('Numéro de facture'), 'F-2026-07-CORR');
+    await user.click(screen.getByRole('button', { name: /^Prestations BBTM/ }));
+    const quantity = screen.getByLabelText('Nombre d’unités');
+    fireEvent.change(quantity, { target: { value: '7' } });
+    expect(quantity).toHaveValue(7);
+    expect(screen.getByLabelText('Totaux sélectionnés pour l’export')).toHaveTextContent(/1\s?750,00/);
+    const exportPanel = screen.getByRole('article', { name: 'Export du relevé mensuel' });
+    expect(within(exportPanel).getAllByRole('checkbox')).toHaveLength(3);
+    await user.clear(within(exportPanel).getByLabelText('Référence client'));
+    await user.type(within(exportPanel).getByLabelText('Référence client'), 'COMMANDE-007');
+    await user.selectOptions(within(exportPanel).getByLabelText('Fichier'), 'zip');
+    await user.click(screen.getByRole('button', { name: /^Frais refacturables/ }));
+    expect(screen.getByRole('button', { name: 'Ajouter un frais' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: /^Suivi & pièces/ }));
+    expect(screen.getByLabelText('Numéro de facture')).toHaveValue('F-2026-07-CORR');
+    await user.click(screen.getByRole('button', { name: /^Prestations BBTM/ }));
+    expect(screen.getByLabelText('Nombre d’unités')).toHaveValue(7);
+    expect(within(exportPanel).getByLabelText('Référence client')).toHaveValue('COMMANDE-007');
+    expect(within(exportPanel).getByLabelText('Fichier')).toHaveValue('zip');
+  });
+
+  it('opens a different project without losing the portfolio search', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ });
+    await user.type(screen.getByRole('searchbox', { name: 'Rechercher un contrat' }), 'Atlantique');
+    await user.click(screen.getByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.selectOptions(screen.getByLabelText('Changer de projet'), '881');
+    expect(screen.getByRole('heading', { name: 'Campagne Manche 2026' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Documents' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Liste des projets' }));
+    expect(screen.getByRole('searchbox', { name: 'Rechercher un contrat' })).toHaveValue('Atlantique');
+    expect(screen.queryByRole('button', { name: /P1087 Campagne Manche/ })).not.toBeInTheDocument();
+  });
+
   it('searches suppliers by specialty and opens the Supabase company dialog', async () => {
     const user = userEvent.setup();
     const { client } = createClient({
@@ -555,6 +605,7 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} roles={['direction']} />);
     await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
     await user.click(screen.getByRole('tab', { name: 'Facturation' }));
+    await user.click(screen.getByRole('button', { name: /^Frais refacturables/ }));
     const addExpenseButton = await screen.findByRole('button', { name: 'Ajouter un frais' });
     await waitFor(() => expect(addExpenseButton).toBeEnabled());
     await user.click(addExpenseButton);
@@ -681,7 +732,8 @@ describe('ProjectsPage', () => {
     });
     render(<ProjectsPage client={client as never} roles={['direction']} />);
     await user.click(await screen.findByRole('button', { name: 'P144 EMDT - GOURY' }));
-    await screen.findByRole('heading', { name: 'P144 – EMDT - GOURY' });
+    await screen.findByRole('heading', { name: 'EMDT - GOURY' });
+    expect(screen.getByRole('article', { name: 'Détails du contrat P144' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Client' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Navires & affectation' })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Offre & contrat' }));

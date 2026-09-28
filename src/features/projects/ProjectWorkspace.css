@@ -1,3 +1,5 @@
+.project-billing-stack,.project-billing-stack>.project-billing-workspace-main{display:grid;gap:16px}
+.project-billing-card[hidden]{display:none!important}
 .projects-page .project-workspace-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:18px 0}
 .projects-page .project-workspace-actions button,.projects-page .project-workspace-actions>a{display:inline-flex;align-items:center;gap:8px;min-height:42px;padding:10px 14px;border:1px solid #d7e2eb;background:white;border-radius:8px;color:#13314c;font-size:13px;text-decoration:none;cursor:pointer}
 .projects-page .project-workspace-actions>button:first-child{background:#173b56;color:white;border-color:#173b56}

@@ -3,6 +3,7 @@ import { localCalendarDate } from './projectPortfolioMetrics';
 import { ProjectHistory } from './ProjectHistory';
 import { FleetPage } from '../fleet/FleetPage';
 import './ProjectWorkspace.css';
+import './ProjectDesign.css';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetNames } from '../fleet/fleetDisplay';
 import {
@@ -771,31 +772,23 @@ function ProjectDetail({
   );
   return (
     <article className="project-detail project-contract-sheet project-dossier" aria-label={`Détails du contrat ${project.projectCode || project.title}`}>
-      <aside className="project-sheet-sidebar">
-        <div className="project-sheet-reference">
-          <span>Fiche projet</span>
-          <strong>{project.projectCode || project.title}</strong>
-          {project.projectCode ? <b>{project.title}</b> : null}
-          <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
-        </div>
-        <ProjectDetailTabs activeTab={primaryTab} counts={{ operations: planningOccurrences.length, documents: documentCount }} onChange={setActiveTab} tabs={projectDetailTabs(null)} />
-      </aside>
       <div className="project-sheet-main">
       <header className="project-sheet-header">
         <div className="project-sheet-title-row">
           <div>
-            <span className="project-sheet-eyebrow">Fiche projet</span>
-            <h2>{project.projectCode ? `${project.projectCode} – ` : ''}{project.title}</h2>
+            <span className="project-sheet-eyebrow">{project.projectCode || 'Projet'}</span>
+            <h2>{project.title}</h2>
+            <p className="project-sheet-context">{project.clientName || 'Client à renseigner'}<span>·</span>{getProjectVesselNames(project).join(' · ') || 'Navire à renseigner'}</p>
           </div>
           {isManager && !project.archivedAt ? <button className="project-sheet-edit" onClick={onEditProject} type="button"><Pencil aria-hidden="true" size={17} /> Modifier</button> : null}
         </div>
         <dl className="project-sheet-summary">
-          <DetailField label="Numéro" value={displayText(project.projectCode)} />
+          <DetailField label="Période" value={formatPeriod(projectStart, projectEnd)} />
           <DetailField label="Statut" value={project.archivedAt ? 'Archivé' : displayText(project.status)} />
           <DetailField label="Type de contrat" value={displayText(project.contractType)} />
-          <DetailField label="Période" value={formatPeriod(projectStart, projectEnd)} />
         </dl>
       </header>
+      <ProjectDetailTabs activeTab={primaryTab} counts={{ operations: planningOccurrences.length, documents: documentCount }} onChange={setActiveTab} tabs={projectDetailTabs(null)} />
       {contractUnavailable ? (
         <p className="project-partial-state" role="status">
           Les informations contractuelles et BIMCO sont temporairement indisponibles. Les autres sections restent consultables.
@@ -1060,6 +1053,7 @@ function ProjectDetail({
       {activeTab === 'history' ? <ProjectHistory client={supabaseClient} projectId={project.id} /> : null}
       {activeTab === 'billing' ? (
         <ProjectBillingPanel
+          workspace
           client={supabaseClient}
           contract={contract}
           isManager={isManager}
@@ -1408,7 +1402,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     () => uniqueSorted(projectsData.projects.flatMap((project) => getProjectVesselNames(project))).sort(compareFleetNames),
     [projectsData.projects],
   );
-  const selectedProject = resolveSelectedProject(filteredProjects, selectedProjectId);
+  const selectedProject = (dossierOpen ? projectsData.projects.find((project) => project.id === selectedProjectId) : undefined)
+    || resolveSelectedProject(filteredProjects, selectedProjectId);
   const selectedContract = selectedProject
     ? projectsData.projectContracts.find((contract) => contract.projectId === selectedProject.id && !contract.archivedAt)
     : undefined;
@@ -1661,7 +1656,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   }
 
   return (
-    <section className="projects-page">
+    <section className={`projects-page project-design ${dossierOpen ? 'is-dossier' : 'is-portfolio'}`}>
       <header className="project-module-header">
         <div>
           <p className="module-family">MODULE</p>
@@ -1686,14 +1681,14 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         <ProjectRibbonButton icon={<Filter size={18} />} label="Filtres" aria-pressed={filtersOpen} onClick={() => setFiltersOpen((open) => !open)} />
         <ProjectRibbonButton icon={<RefreshCw size={18} />} label="Actualiser" onClick={() => setLoadAttempt((attempt) => attempt + 1)} />
       </nav>
-      {!dossierOpen ? <ProjectPortfolioInsights client={effectiveClient} data={projectsData} /> : <nav className="project-workspace-actions" aria-label="Actions du dossier">
+      {!dossierOpen ? <ProjectPortfolioInsights client={effectiveClient} data={projectsData} /> : <nav className="project-workspace-actions project-dossier-actions" aria-label="Actions du dossier">
         <button type="button" onClick={() => setDossierOpen(false)}><ChevronLeft size={16} /> Liste des projets</button>
-        <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<Pencil size={18} />} label="Modifier le projet" onClick={() => selectedProject && openProjectEditor(selectedProject)} />
         <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || isArchiving} icon={<Archive size={18} />} label="Archiver" onClick={archiveSelectedProject} />
         <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus size={18} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
         <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<FileText size={18} />} label="Émettre le document" onClick={() => openProjectDocumentEmission(selectedGeneratedDocumentKind, selectedGeneratedDocumentKind === 'offer' ? null : selectedPlanningOccurrences[0]?.id ?? null)} />
         <ProjectRibbonButton icon={<Share2 size={18} />} label="Dossiers Google Drive" onClick={() => window.open('https://drive.google.com/drive/folders/1H5kB4ppiKQAm4hqhYjMHcP4pRZaTncj_', '_blank', 'noopener,noreferrer')} />
         <a href={PROJECT_DOCUMENTS_LEGACY_URL} target="_blank" rel="noreferrer">Sources SharePoint historiques</a>
+        <label className="project-dossier-switcher">Projet<select aria-label="Changer de projet" value={selectedProject?.id || ''} onChange={(event) => setSelectedProjectId(Number(event.target.value))}>{projectsData.projects.map((project) => <option key={project.id} value={project.id}>{project.projectCode} – {project.title}</option>)}</select></label>
       </nav>}
       {!dossierOpen ? <div className="project-portfolio-scopes" aria-label="Classement des projets">
         {([['current', 'Projets actuels'], ['all', 'Tous les projets']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={projectScope === value} onClick={() => { setProjectScope(value); setCurrentPage(0); }}>{label} <b>{value === 'current' ? currentProjects.length : projectsData.projects.length}</b></button>)}
