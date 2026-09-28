@@ -1,4 +1,5 @@
 import type { ProjectPlanningOccurrenceRecord, ProjectRecord, VesselRecord } from './projectQueries';
+import { BAREBOAT_CONTRACT_TYPE, normalizeProjectContractType } from './projectContractOptions';
 export interface UtilizationDpr { id: number; report_date: string; vessel_id: number | null; project_id: number | null }
 const DAY = 86_400_000;
 export function calendarDays(start: string, end: string): string[] {
@@ -16,8 +17,8 @@ export function utilization(vessel: VesselRecord, start: string, end: string, op
 }
 export function operationType(project?: ProjectRecord): string {
   const value = `${project?.contractType || ''} ${project?.title || ''} ${project?.description || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (/pollution/.test(value)) return 'Antipollution';
-  if (/coque nue|bareboat/.test(value)) return 'Affrètement coque nue';
+  if (/pollution|oil spill/.test(value)) return 'Antipollution';
+  if (normalizeProjectContractType(project?.contractType) === BAREBOAT_CONTRACT_TYPE || /coque nue|bareboat/.test(value)) return 'Affrètement coque nue';
   if (/bouee|balisage/.test(value)) return 'Bouées';
   if (/remorqu|towage/.test(value)) return 'Remorquage';
   if (/affret|supplytime|bimco/.test(value)) return 'Affrètement à temps';

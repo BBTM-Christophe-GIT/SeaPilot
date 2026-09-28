@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { billingReferenceScope, billingReferenceScopeLabel } from './projectBillingReferences';
-import { utilization, calendarDays } from './projectPortfolioMetrics';
+import { utilization, calendarDays, operationType } from './projectPortfolioMetrics';
 import { countDailyOperations, type ProjectBillingDpr } from './projectBilling';
-import type { ProjectPlanningOccurrenceRecord, VesselRecord } from './projectQueries';
+import type { ProjectPlanningOccurrenceRecord, ProjectRecord, VesselRecord } from './projectQueries';
 
 describe('project workspace business rules', () => {
+  it('classifies historical bareboat labels consistently with the contract editor', () => {
+    expect(operationType({ contractType: "Contrat d'Affrètement", title: 'Location de navire' } as ProjectRecord)).toBe('Affrètement coque nue');
+    expect(operationType({ contractType: 'Offre Commerciale', title: 'Oil spill response' } as ProjectRecord)).toBe('Antipollution');
+  });
   it('assigns a distinct client reference slot to every export combination', () => {
     const scopes = [];
     for (const hire of [false, true]) for (const expenses of [false, true]) for (const bbtm of [false, true]) scopes.push(billingReferenceScope({ includeOperationsInPdf: hire, includeExpensesInPdf: expenses, includeBbtmInPdf: bbtm }));
