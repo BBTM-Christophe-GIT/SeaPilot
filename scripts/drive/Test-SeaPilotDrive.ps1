@@ -137,7 +137,7 @@ $hrDenied=$false
 try { [SeaPilotDriveBridge]::ExecuteHr($moduleRoot,$hrData,$hrRemote) | Out-Null } catch { $hrDenied=$true }
 if (!$hrDenied) { throw 'Cross-person RH write accepted.' }
 Write-Output 'PASS: RH write/read integrity, server-selected path, corrupt content and cross-person denial.'
-$projectFolder = 'Projet-5'
+$projectFolder = 'P144 ' + [char]0x2013 + ' GUARD VESSEL EMDT'
 $projectData = [Collections.Generic.Dictionary[string,object]]::new()
 $projectData['action']='write'; $projectData['projectId']=5; $projectData['path']=$projectFolder+'/HSE/fixture.pdf'
 $projectData['base64']=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('HR fixture'))

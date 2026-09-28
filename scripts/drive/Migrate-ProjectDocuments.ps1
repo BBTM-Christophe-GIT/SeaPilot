@@ -50,8 +50,13 @@ if ($Activate) {
   exit
 }
 $projects = ReadProjectJson (Invoke-RestMethod -Uri "$api/rest/v1/projects?select=id,company_id,project_code,title&order=id" -Headers $headers)
+$driveFolders = ReadProjectJson (Invoke-RestMethod -Uri "$api/rest/v1/project_drive_folders?select=project_id,folder_name&limit=1000" -Headers $headers)
+$folderNames = @{}
+foreach ($entry in $driveFolders) { $folderNames[[string]$entry.project_id] = $entry.folder_name }
 foreach ($project in $projects) {
-  foreach ($category in @('Contrat','HSE','Facturation','Operations','Offres')) { $null = SafeFolder "Projet/Projet-$($project.id)/$category" }
+  $projectFolder = $folderNames[[string]$project.id]
+  if (!$projectFolder) { throw "Register the project's Drive folder before migration: $($project.id)." }
+  foreach ($category in @('Contrat','HSE','Facturation','Operations','Offres')) { $null = SafeFolder "Projet/$projectFolder/$category" }
 }
 $graph = az account get-access-token --resource-type ms-graph -o json | ConvertFrom-Json
 if (!$graph.accessToken) { throw 'Authorized Microsoft Graph session required for legacy contracts.' }
@@ -92,8 +97,9 @@ foreach ($table in @('contract_documents','project_generated_documents','project
     if ($expected -and $expected -ne $sha) { throw 'Original document hash mismatch.' }
     $category = if ($table -eq 'project_billing_documents') {'Facturation'} elseif ($row.document_type -eq 'operation_attachment') {'Operations'} elseif ($row.category_key -like 'hse*') {'HSE'} elseif ($row.document_type -eq 'offer') {'Offres'} else {'Contrat'}
     $safeName = ($name -replace '[<>:"/\\|?*\x00-\x1f]','-').TrimEnd('.',' ')
-    $path = "Projet-$($row.project_id)/$category/$table-$($row.id)-$safeName"
-    $folder = SafeFolder "Projet/Projet-$($row.project_id)/$category"
+    $projectFolder = $folderNames[[string]$row.project_id]
+    $path = "$projectFolder/$category/$table-$($row.id)-$safeName"
+    $folder = SafeFolder "Projet/$projectFolder/$category"
     $destination = Join-Path $folder "$table-$($row.id)-$safeName"
     if (Test-Path -LiteralPath $destination) {
       if ((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sha) { throw 'An existing destination differs; nothing overwritten.' }
