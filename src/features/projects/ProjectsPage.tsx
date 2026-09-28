@@ -1,5 +1,6 @@
 import { ProjectPortfolioInsights } from './ProjectPortfolioInsights';
 import { localCalendarDate } from './projectPortfolioMetrics';
+import { useProjectFavorites } from './useProjectFavorites';
 import { ProjectHistory } from './ProjectHistory';
 import { FleetPage } from '../fleet/FleetPage';
 import './ProjectWorkspace.css';
@@ -23,6 +24,7 @@ import {
   PackageCheck,
   Plus,
   RefreshCw,
+  Star,
   ReceiptText,
   Share2,
   Ship,
@@ -1271,7 +1273,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [projectsData, setProjectsData] = useState<ProjectsData>(EMPTY_PROJECTS_DATA);
   const [filters, setFilters] = useState<ProjectFilterState>(EMPTY_PROJECT_FILTERS);
   const [dossierOpen, setDossierOpen] = useState(false);
-  const [projectScope, setProjectScope] = useState<'current' | 'all'>('current');
+  const [projectScope, setProjectScope] = useState<'current' | 'all' | 'favorites'>('current');
+  const favorites = useProjectFavorites(effectiveClient);
   const [fleetCatalogOpen, setFleetCatalogOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
@@ -1355,8 +1358,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     [projectsData.projects, projectsData.planningOccurrences, currentMonthStart],
   );
   const filteredProjects = useMemo(
-    () => (projectScope === 'current' ? currentProjects : projectsData.projects).filter((project) => projectMatchesFilters(project, effectiveFilters)),
-    [effectiveFilters, projectsData.projects, currentProjects, projectScope],
+    () => (projectScope === 'current' ? currentProjects : projectsData.projects).filter((project) =>
+      (projectScope !== 'favorites' || favorites.ids.has(project.id)) && projectMatchesFilters(project, effectiveFilters)),
+    [effectiveFilters, projectsData.projects, currentProjects, projectScope, favorites.ids],
   );
   const filteredProjectDocuments = useMemo(
     () => filterDocumentsForProjects(projectDocumentSet.documents, filteredProjects),
@@ -1671,7 +1675,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         </div>
       </header>
 
-      <nav aria-label="Commandes du module Projets" className="project-workspace-actions">
+      <nav aria-label="Commandes du module Projets" className="project-workspace-actions project-primary-commands">
         <ProjectRibbonButton disabled={!isManager} icon={<Plus size={18} />} label="Nouveau projet" onClick={() => openProjectEditor()} />
         <ProjectRibbonButton disabled={!isManager} icon={<Users size={18} />} label="Clients" onClick={() => setClientCatalogOpen(true)} />
         <ProjectRibbonButton disabled={!isManager} icon={<Ship size={18} />} label="Navires" onClick={() => setFleetCatalogOpen(true)} />
@@ -1679,7 +1683,6 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         <ProjectRibbonButton disabled={!isManager} icon={<PackageCheck size={18} />} label="Catalogue de prestations" onClick={() => setServiceCatalogOpen(true)} />
         <ProjectRibbonLink icon={<ReceiptText size={18} />} label="Éléments de facturation" to={billingElementsUrl()} />
         <ProjectRibbonButton icon={<Filter size={18} />} label="Filtres" aria-pressed={filtersOpen} onClick={() => setFiltersOpen((open) => !open)} />
-        <ProjectRibbonButton icon={<RefreshCw size={18} />} label="Actualiser" onClick={() => setLoadAttempt((attempt) => attempt + 1)} />
       </nav>
       {!dossierOpen ? <ProjectPortfolioInsights client={effectiveClient} data={projectsData} /> : <nav className="project-workspace-actions project-dossier-actions" aria-label="Actions du dossier">
         <button type="button" onClick={() => setDossierOpen(false)}><ChevronLeft size={16} /> Liste des projets</button>
@@ -1692,8 +1695,10 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       </nav>}
       {!dossierOpen ? <div className="project-portfolio-scopes" aria-label="Classement des projets">
         {([['current', 'Projets actuels'], ['all', 'Tous les projets']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={projectScope === value} onClick={() => { setProjectScope(value); setCurrentPage(0); }}>{label} <b>{value === 'current' ? currentProjects.length : projectsData.projects.length}</b></button>)}
-        <p>{projectScope === 'current' ? 'Projets et opérations du mois en cours ou à venir.' : 'Tous les projets, y compris les projets passés, archivés et sans date.'}</p>
+        <button type="button" aria-pressed={projectScope === 'favorites'} onClick={() => { setProjectScope('favorites'); setCurrentPage(0); }}><Star size={14} aria-hidden="true" /> Mes favoris <b>{favorites.loading ? '…' : projectsData.projects.filter((project) => favorites.ids.has(project.id)).length}</b></button>
+        <p>{projectScope === 'favorites' ? 'Vos projets favoris, personnels et accessibles depuis votre compte.' : projectScope === 'current' ? 'Projets et opérations du mois en cours ou à venir.' : 'Tous les projets, y compris les projets passés, archivés et sans date.'}</p>
       </div> : null}
+      {favorites.error ? <p role="alert" className="project-favorites-error">{favorites.error} <button type="button" onClick={favorites.retry}>Réessayer les favoris</button></p> : null}
 
       {projectsData.warnings.length > 0 ? (
         <div className="project-partial-state" role="status">
@@ -1790,9 +1795,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       ) : filteredProjects.length === 0 ? (
         <div className="admin-state">
           <div>
-            <strong>Aucun projet ne correspond aux filtres.</strong>
-            <button className="project-inline-action" onClick={resetFilters} type="button">
-              Réinitialiser les filtres
+            <strong>{projectScope === 'favorites' && !favorites.ids.size ? (favorites.loading ? 'Chargement de vos favoris…' : 'Aucun projet favori. Utilisez l’étoile à côté d’un projet pour le retrouver ici.') : 'Aucun projet ne correspond aux filtres.'}</strong>
+            <button className="project-inline-action" onClick={() => { resetFilters(); if (projectScope === 'favorites') setProjectScope('all'); }} type="button">
+              {projectScope === 'favorites' ? 'Afficher tous les projets' : 'Réinitialiser les filtres'}
             </button>
           </div>
         </div>
@@ -1819,7 +1824,13 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                 const isSelected = selectedProject?.id === project.id;
                 const occurrences = projectsData.planningOccurrences.filter((occurrence) => occurrence.projectId === project.id);
                 return (
-                  <li className={isSelected ? 'is-selected' : undefined} key={project.id}>
+                  <li className={`project-portfolio-row${isSelected ? ' is-selected' : ''}`} key={project.id}>
+                    <button type="button" className="project-favorite-button" aria-pressed={favorites.ids.has(project.id)}
+                      aria-label={`${favorites.ids.has(project.id) ? 'Retirer des favoris' : 'Ajouter aux favoris'} : ${project.projectCode || project.title}`}
+                      title={favorites.ids.has(project.id) ? 'Retirer de mes favoris' : 'Ajouter à mes favoris'}
+                      disabled={favorites.loading || favorites.pending.has(project.id) || Boolean(favorites.error)} onClick={() => void favorites.toggle(project.id)}>
+                      <Star aria-hidden="true" size={19} fill={favorites.ids.has(project.id) ? 'currentColor' : 'none'} />
+                    </button>
                     <button
                       aria-label={`${project.projectCode || ''} ${project.title}`}
                       aria-pressed={isSelected}

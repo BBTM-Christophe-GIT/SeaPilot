@@ -354,6 +354,63 @@ describe('ProjectsPage', () => {
     expect(insights.getByLabelText('Période')).toHaveValue('2024-02');
   });
 
+  it('shows berth and transit DPRs under operation types without adding utilization days', async () => {
+    const { client } = createClient({ dpr_reports: { data: [
+      { id: 1, report_date: '2026-07-01', vessel_id: 12, project_id: null, unlisted_project_name: 'Navire à quai' },
+      { id: 2, report_date: '2026-07-02', vessel_id: 12, project_id: null, unlisted_project_name: 'Navire en transit' },
+      { id: 3, report_date: '2026-07-03', vessel_id: 12, project_id: 880, unlisted_project_name: null },
+    ], error: null } });
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    const insights = within(await screen.findByRole('region', { name: 'Activité de la flotte' }));
+    fireEvent.click(insights.getByRole('button', { name: 'Voir les détails' }));
+    expect(await insights.findByText('3 DPR soumis ou validés sur le mois')).toBeVisible();
+    expect(insights.getByText('Navire à quai')).toBeVisible();
+    expect(insights.getByText('Navire en transit')).toBeVisible();
+    expect(insights.getByLabelText('COTENTIN, 2026-07 : prévu 19 %, réalisé 3 %')).toBeVisible();
+    fireEvent.click(insights.getByRole('button', { name: 'Prévu · planning' }));
+    expect(insights.getByText('2 opération(s) planifiée(s) sur le mois')).toBeVisible();
+    expect(insights.queryByText('Navire à quai')).not.toBeInTheDocument();
+  });
+
+  it('adds and removes a personal favorite without opening its dossier, and restores it on reload', async () => {
+    const stored: { project_id: number }[] = [];
+    const { client, rpc } = createClient({ project_favorites: { data: stored, error: null } });
+    rpc.mockImplementation(async (_name: string, args?: { target_project: number; favorite: boolean }) => {
+      if (_name === 'projects_set_favorite' && args) {
+        if (args.favorite) stored.push({ project_id: args.target_project }); else stored.splice(0);
+      }
+      return { data: true, error: null };
+    });
+    const view = render(<ProjectsPage client={client as never} roles={['direction']} />);
+    const star = await screen.findByRole('button', { name: 'Ajouter aux favoris : P1086' });
+    await waitFor(() => expect(star).toBeEnabled());
+    fireEvent.click(star);
+    await screen.findByRole('button', { name: 'Retirer des favoris : P1086' });
+    expect(screen.getByRole('heading', { name: 'Portefeuille projet' })).toBeVisible();
+    expect(rpc).toHaveBeenCalledWith('projects_set_favorite', { target_project: 880, favorite: true });
+    view.unmount();
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    await screen.findByRole('button', { name: 'Retirer des favoris : P1086' });
+    fireEvent.click(screen.getByRole('button', { name: /Mes favoris 1/ }));
+    expect(screen.getByRole('button', { name: 'P1086 Campagne Atlantique 2026' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'P1087 Campagne Manche 2026' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retirer des favoris : P1086' }));
+    expect(await screen.findByText(/Aucun projet favori/)).toBeVisible();
+    expect(stored).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher tous les projets' }));
+    expect(screen.getByRole('button', { name: 'P1087 Campagne Manche 2026' })).toBeVisible();
+  });
+
+  it('keeps the existing favorite when saving is rejected', async () => {
+    const { client, rpc } = createClient({ project_favorites: { data: [{ project_id: 880 }], error: null } });
+    rpc.mockResolvedValue({ data: null, error: { message: 'denied' } });
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    const star = await screen.findByRole('button', { name: 'Retirer des favoris : P1086' });
+    fireEvent.click(star);
+    expect(await screen.findByText(/Le favori n’a pas pu être enregistré/)).toBeVisible();
+    expect(star).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('switches between current-month/future projects and the complete history independently of the KPI period', async () => {
     vi.setSystemTime(new Date('2026-09-28T12:00:00Z'));
     const dated = (id: number, start: string, end: string) => ({ ...atlantiqueProjectRow, id, project_code: `P${id}`, title: `Projet ${id}`, delivery_at: null, redelivery_at: null, charter_starts_at: null, charter_ends_at: null, starts_on: start || null, ends_on: end || null });
@@ -405,6 +462,7 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('link', { name: 'Éléments de facturation' }))
       .toHaveAttribute('href', '/modules/billingElements');
     expect(screen.getByRole('button', { name: 'Catalogue de prestations' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Actualiser' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nouveau client' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier le client' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Clients' }));
