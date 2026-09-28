@@ -1,0 +1,54 @@
+.projects-page .project-workspace-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:18px 0}
+.projects-page .project-workspace-actions button,.projects-page .project-workspace-actions>a{display:inline-flex;align-items:center;gap:8px;min-height:42px;padding:10px 14px;border:1px solid #d7e2eb;background:white;border-radius:8px;color:#13314c;font-size:13px;text-decoration:none;cursor:pointer}
+.projects-page .project-workspace-actions>button:first-child{background:#173b56;color:white;border-color:#173b56}
+.projects-page .project-workspace-actions button:disabled{opacity:.5;cursor:default}
+.projects-page .project-insights{background:#f3f7fa;border:1px solid #dce6ee;border-radius:14px;padding:24px;margin:24px 0}
+.projects-page .project-insights>header{display:flex;justify-content:space-between;gap:20px;align-items:center;margin-bottom:22px}
+.projects-page .project-insights h2{font-size:21px;margin:0 0 5px;color:#15344f}
+.projects-page .project-insights h3{font-size:16px;margin:0 0 8px}
+.projects-page .project-insights p,.projects-page .project-insights small{color:#61748a;font-size:12px;line-height:1.6;margin:0}
+.projects-page .project-insights header label{display:grid;gap:5px;font-size:12px}
+.projects-page .project-insights input{padding:9px;border:1px solid #ccdbe6;border-radius:6px;background:#fff}
+.projects-page .project-insights-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:30px}
+.projects-page .project-insights-grid>article{min-width:0}
+.projects-page .project-chart-legend{display:flex;align-items:center;gap:6px;margin-bottom:15px}
+.projects-page .project-chart-legend i{width:8px;height:8px;background:#9cbbcf;display:inline-block;border-radius:2px}
+.projects-page .project-chart-legend i:nth-child(2){background:#16899a;margin-left:10px}
+.projects-page .project-util-row,.projects-page .project-util-heading{display:grid;grid-template-columns:100px 1fr 1fr;gap:20px;align-items:center;padding:10px 0;border-bottom:1px solid #e1e9ef;font-size:12px}
+.projects-page .project-util-heading{color:#677b8f;font-weight:600}
+.projects-page .project-util-pair>div{display:flex;gap:8px;align-items:center;margin:3px 0}
+.projects-page .project-util-pair span{background:#e0e8ef;height:6px;flex:1;border-radius:8px;overflow:hidden}
+.projects-page .project-util-pair i{display:block;height:100%;background:#9cbbcf;border-radius:8px}
+.projects-page .project-util-pair>div:nth-child(2) i{background:#16899a}
+.projects-page .project-util-pair b{width:40px;text-align:right;font-size:11px;font-variant-numeric:tabular-nums}
+.projects-page .project-insights-grid small{display:block;margin-top:14px;font-size:11px}
+.projects-page .project-distribution{display:grid;gap:17px;margin-top:22px}
+.projects-page .project-distribution span{display:flex;justify-content:space-between;margin-bottom:7px;font-size:12px}
+.projects-page .project-distribution>div>div{height:8px;background:#e0e8ef;border-radius:5px;overflow:hidden}
+.projects-page .project-distribution i{display:block;height:100%;border-radius:5px}
+.projects-page .project-portfolio-scopes{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:25px 0 16px}
+.projects-page .project-portfolio-scopes button{padding:10px 13px;background:white;border:1px solid #dce5ed;border-radius:7px;color:#4a637b;cursor:pointer}
+.projects-page .project-portfolio-scopes button[aria-pressed=true]{background:#e4f1f2;color:#146775;border-color:#86b7bf}
+.projects-page .project-portfolio-scopes b{margin-left:8px}
+.projects-page .project-portfolio-scopes p{width:100%;font-size:12px;color:#60748a;margin:5px 0}
+.projects-page .project-workspace-v2{display:block!important}
+.projects-page .project-workspace-v2 .project-list-panel{width:100%;max-height:none;border-radius:12px;overflow:hidden}
+.projects-page .project-workspace-v2 .project-catalog-list{max-height:none}
+.projects-page .project-workspace-v2 .project-contract-list-row{padding:18px 22px;display:grid;grid-template-columns:1.3fr 1fr;gap:25px}
+.projects-page .project-workspace-v2 .project-contract-list-title,.projects-page .project-workspace-v2 .project-contract-list-meta{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.projects-page .project-workspace-v2 .project-contract-list-row:hover{background:#f1f7fa}
+.projects-page .project-workspace-v2 .project-dossier{min-width:0}
+.projects-page .project-history details{padding:14px 0;border-bottom:1px solid #dce5ed;font-size:13px}
+.projects-page .project-history summary{cursor:pointer;line-height:1.6}
+.projects-page .project-history-diff p{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;overflow-wrap:anywhere;font-size:12px;padding:8px;background:#f5f8fa}
+.project-billing .project-export-selection{display:flex;gap:18px;flex-wrap:wrap;border:1px solid #d5e2eb;border-radius:9px;margin:18px;padding:15px}
+.project-billing .project-export-selection label{display:flex;gap:7px;align-items:center;font-size:13px}
+.project-billing .project-export-reference{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:18px;padding:16px;background:#f1f7fa;border-radius:8px}
+.project-billing .project-export-reference>label{display:grid;gap:6px;font-weight:600}
+.project-billing .project-export-reference input{padding:9px;border:1px solid #cbdbe7;border-radius:5px;min-width:220px}
+.project-billing .project-export-reference>span,.project-billing .project-export-reference small{font-size:12px;color:#57718a}
+.project-billing .project-export-reference details{width:100%;font-size:12px}
+.project-billing .project-billing-auto-quantity{padding:5px 20px;color:#527281;font-size:12px;line-height:1.6}
+@media(max-width:800px){.projects-page .project-insights-grid{grid-template-columns:1fr}.projects-page .project-insights{padding:16px}.projects-page .project-insights>header{align-items:flex-start;flex-direction:column}.projects-page .project-util-row,.projects-page .project-util-heading{grid-template-columns:75px 1fr 1fr;gap:9px}.projects-page .project-workspace-v2 .project-contract-list-row{display:flex;flex-direction:column;gap:10px}.projects-page .project-workspace-v2 .project-contract-list-title,.projects-page .project-workspace-v2 .project-contract-list-meta{width:100%}.projects-page .project-workspace-actions{gap:5px}.projects-page .project-workspace-actions button,.projects-page .project-workspace-actions>a{font-size:12px;padding:9px}.projects-page .project-history-diff p{grid-template-columns:1fr}.project-billing .project-export-selection{flex-direction:column}}
+
+.project-pdf-document{margin:16px;background:#e9eef3;padding:16px;border-radius:8px}.project-pdf-pagination{display:flex;justify-content:center;gap:18px;align-items:center;margin-bottom:12px;font-size:13px}.project-pdf-canvas canvas{display:block;max-width:100%;height:auto;margin:auto;box-shadow:0 5px 20px #0b244520}.project-pdf-canvas{min-height:160px}

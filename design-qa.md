@@ -1272,3 +1272,13 @@ Preuves dans le dossier d’artefacts `projets-preview` du chat : `09-portfolio-
 Prévisualisation avec données fictives, modifications temporaires et catalogues en consultation. La parité des règles et générateurs de production, les données historiques réelles, les catalogues persistants et les droits réels par profil restent à raccorder lors de l’intégration définitive. Le périmètre fonctionnel et les écarts de la maquette sont décrits dans `docs/design/projects-workspace-preview.md`. Aucun écran de rôle simulé n’a servi de validation des comptes Marin/Capitaine.
 
 final result: passed
+
+## 2026-09-28 — Projet, intégration v3.60.0
+
+- Contrôle des composants de production via `/modules/projects?preview=1` : Clients, Navires, Remorqués et Catalogue ouvrent chacun leur propre gestion ; retour au portefeuille et conservation des filtres.
+- Facturation : modèle PDF existant rendu par PDF.js et inspecté visuellement, référence Loyers + Frais puis référence Prestations seules, quantité manuelle zéro préservée et nouvelle ligne initialisée automatiquement.
+- Portefeuille contrôlé en 1280 px et 390 px : graphiques mois/année avant la liste, commandes regroupées, absence de débordement horizontal de page à 390 px. Émulation restaurée après contrôle.
+- Les données de démonstration ne prouvent pas les autorisations : 17 assertions SQL exécutées avec profils Admin, Direction, Capitaine et Marin, localement puis sur la base déployée en transaction annulée. Aucun élargissement des partages Drive.
+- Conservation : comparaison exacte des lignes des 13 tables sauvegardées ; aucune ligne historique manquante ou modifiée. 45 projets, 69 opérations, 415 événements, 1 159 DPR ; 46 documents liés et une pièce sans rattachement sauvegardés et relus depuis Drive, taille/SHA-256/MD5 concordants. Originaux conservés.
+- Vérifications : 249 tests ciblés (les attentes de note de version ont été adaptées ; un test de contrat coque nue dépassant le délai local a réussi avec 20 s), suite Windows Drive réussie. Contrôles complémentaires de l’ouverture Drive web, lint et build de production avant livraison.
+- Preuve visuelle privée hors dépôt : `project-release-20260928/projects-desktop.png` dans le répertoire d’artefacts du chat. Les archives et manifestes privés ne sont pas commis.

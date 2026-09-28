@@ -1,52 +1,29 @@
-# Prévisualisation du module Projet
+# Module Projet — interface intégrée et prévisualisation
 
-Une seule proposition interactive de refonte, accessible à `/previews/projects.html` (ou `/previews/projects`). L’entrée ouvre le portefeuille et ses indicateurs. Les liens `#P901/overview` et `#P901/billing` donnent directement accès au dossier et à sa facturation.
+La proposition est intégrée aux composants de production depuis la version 3.60.0. `/previews/projects.html` redirige vers `/modules/projects?preview=1`, avec le client de démonstration existant. La route normale `/modules/projects` utilise le compte et les droits réels. Les anciennes sources de la maquette restent conservées dans `src/features/projectPreview` ; elles ne remplacent plus les PDF de production.
 
-La page utilise une entrée Vite dédiée, sans fournisseur d’authentification ni requêtes applicatives. Elle fonctionne sans configuration Supabase et sans connexion. L’application principale, ses autorisations, ses données et les fonctionnalités de production restent inchangées.
+## Organisation
 
-## Portefeuille et indicateurs
+Nouveau projet, Clients, Navires, Remorqués et Catalogue de prestations sont regroupés. Chacun ouvre sa gestion dédiée. Le portefeuille présente les indicateurs avant la liste ; un projet ouvre son dossier complet (Identité, Opérations, Facturation, Offre & contrat, Documents, Historique). Le retour à la liste conserve les filtres.
 
-- Utilisation par navire : deux barres **prévu / réalisé**, nombres de jours et dénominateurs visibles. Le prévu compte les jours couverts par les opérations sur tous les jours calendaires du mois. Le réalisé compte les jours avec DPR sur les jours écoulés de ce mois, jusqu’à la date de démonstration du 27 septembre 2026. Un mois futur affiche « — » pour le réalisé. Les jours sont dédupliqués par navire, y compris entre projets. Un DPR manquant ne prouve pas une absence d’activité.
-- Répartition des opérations : nombre de missions recoupant le mois, classées par activité métier (antipollution, coque nue, bouées, remorquage, assistance offshore, travaux sous-marins). Cette classification est modifiable et distincte du modèle contractuel.
-- Le mois et le navire pilotent les indicateurs. La liste peut couvrir toutes les périodes ou seulement le mois sélectionné. Recherche, avancement et rangement filtrent uniquement la liste. Cliquer une catégorie du graphique filtre les projets du mois.
-- Avancement calculé depuis les dates : À venir / En cours / Terminé. La validation reste une colonne distincte. L’archivage est un rangement réversible, indépendant de l’avancement, qui conserve documents, opérations et événements. Les archives continuent de contribuer aux indicateurs historiques.
-- Accès explicites : Clients, Navires & remorqués, Catalogue de prestations. Ces catalogues sont en consultation dans la maquette. Chaque ligne propose aussi un accès direct à sa facturation.
+Les vues « Dossiers courants », « Archives » et « Tous les projets » distinguent le rangement du statut métier. Un projet terminé reste suivi tant qu’il n’a pas été archivé explicitement. L’historique des archives reste inclus dans les indicateurs.
 
-## Dossier Projet
+## Indicateurs
 
-Les six rubriques demeurent : vue d’ensemble, offre et contrat, opérations, facturation, documents, historique. Création et modification des projets/opérations, champs contractuels essentiels, PDF illustratifs, ajout et consultation de documents et archivage/restauration restent disponibles. Les événements initiaux sont conservés lorsque la session ajoute une modification.
+Le mois sélectionné définit aussi l’année. Pour chaque navire, deux groupes de barres montrent le prévu et le réalisé, sur le mois et sur l’année entière. Base : jours calendaires, journées/navires dédupliquées, opérations annulées exclues, date de sortie de flotte prise en compte. Le réalisé provient des DPR soumis ou validés non supprimés. Un défaut de chargement est distingué d’un taux nul. Un DPR manquant n’atteste pas une absence d’activité.
 
-## Facturation mensuelle
+La répartition compte les lignes de planning recoupant le mois, classées depuis le contrat et l’intitulé : antipollution, affrètement coque nue, bouées, remorquage, affrètement avec équipage ou autres opérations. Ce classement déduit n’est pas un nouveau champ métier.
 
-L’audit de `ProjectBillingPanel.tsx`, `projectBilling.ts` et `BillingElementsPage.tsx` a servi à compléter les parcours de la prévisualisation.
+## Facturation et documents
 
-| Fonction existante     | Présentation dans la proposition                                                                                                                                                   |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Périodes et paramètres | Dossiers indépendants par mois, référence client, plage de loyers personnalisée, filtre navire, sauvegarde explicite avant export.                                                 |
-| Loyers et DPR          | Sélection quotidienne, détail du DPR, jours absents et futurs visibles, complément explicite sans création de DPR. Tarifs opération / stand-by / météo et surcharge par opération. |
-| Frais refacturables    | Ajout, modification, retrait, fournisseur libre ou suggéré, spécialité, numéro/date de facture, HT/TTC, devise, quantité/unité, commentaire et DPR lié.                            |
-| Justificatifs          | Ajout local de plusieurs fichiers, consultation, détachement, conservation dans la bibliothèque après retrait du frais.                                                            |
-| Prestations BBTM       | Choix dans le catalogue, libellé/description/prix/quantité modifiables, prestation personnalisée, quantité reprise des DPR en 24/24 Operation.                                     |
-| Composition du relevé  | Inclusion par rubrique et par élément, totaux HT distincts par devise, aucun taux de conversion implicite.                                                                         |
-| Suivi                  | Numéro de facture, dates d’émission/envoi/échéance/paiement et commentaire par mois ; statut de suivi déduit. Aucun envoi réel.                                                    |
-| Exports                | PDF du relevé, PDF fusionné avec les annexes PDF sélectionnées, ZIP avec toutes les pièces sélectionnées. Aperçu paginé des octets du PDF, rendu localement par PDF.js.            |
+Les modèles PDF existants et tous les formulaires contractuels sont conservés. Les inclusions Loyers, Frais et pièces, Prestations BBTM et la référence client sont regroupées dans l’export. Une référence par combinaison est conservée pour chaque projet. Les quantités proposées aux nouvelles prestations incluent Operation et Crew Change ; les quantités restent modifiables.
 
-Les dates personnalisées et le navire limitent les loyers ; frais et prestations restent rattachés au mois. Les frais exclus n’ajoutent ni montant ni pièce à l’export. Le PDF fusionné accepte les annexes PDF ; les autres formats sont conservés dans le ZIP. Un PDF protégé ou illisible produit une erreur explicite. La quantité des dépenses est informative : le montant HT saisi est le total de facture.
+Les périodes mensuelles, frais, fournisseurs, devises, pièces, sélection des journées, tarifs, compléments sans DPR, exports PDF/annexes/ZIP et suivi des factures restent accessibles. Les documents et événements historiques proviennent des tables existantes. Voir `docs/deployment/project-documents-google-drive.md` pour le stockage, la migration, les droits et le contrôle de conservation.
 
-## Données et limites
+## Prévisualisation et vérification
 
-Sept projets, navires, fournisseurs, DPR et montants sont fictifs. Les DPR sont des fixtures déterministes avec des lacunes et aucune date future, destinées à tester les états de l’interface. Les modifications et fichiers restent en mémoire et disparaissent au rechargement ; aucun ajout n’est transmis à un service.
+Les données de `preview=1` sont fictives ; elles ne constituent pas une preuve des droits réels ni une connexion à Google Drive. Certains transferts nécessitent le compte authentifié et le lanceur Windows. Les contrôles Marin/Capitaine sont réalisés dans les règles RLS/RPC et les fixtures propres à chaque profil.
 
-Les PDF sont marqués « démonstration » ; ils ne remplacent ni les modèles contractuels complets ni les générateurs comptables existants. Les règles financières du prototype illustrent la priorité DPR → tarif de l’opération → tarif du mode contractuel. Les échéanciers contractuels et les particularités des DPR réels doivent rester ceux des fonctions de production lors du raccordement. Les catalogues et la création de fournisseurs persistants, l’édition riche des prestations, les modèles de documents et les droits réels ne sont pas reproduits entièrement dans cette maquette. Aucune migration n’est nécessaire pour la prévisualisation.
-
-L’intégration définitive doit conserver toutes les clauses, annexes et données historiques, raccorder les requêtes et générateurs existants et vérifier les droits réels Marin/Capitaine. Les vues de profil simulées ne constituent pas cette validation.
-
-## Validation
-
-Utiliser pnpm 10.34.5 : `corepack pnpm@10.34.5 dev`, puis `/previews/projects.html`.
-
-- Tests : `corepack pnpm@10.34.5 test src/features/projectPreview --maxWorkers=1 --pool=forks` (worker unique utile sur l’environnement Windows local).
-- Lint : `corepack pnpm@10.34.5 exec eslint src/features/projectPreview vite.config.ts`.
-- Compilation : `corepack pnpm@10.34.5 build` ; sorties `dist/index.html` et `dist/previews/projects.html`.
-
-Les tests couvrent les métriques, archives, périodes futures, tarifs et compléments, sélections, devises, génération et fusion PDF, contenu ZIP, édition des frais avec pièces, navigation mensuelle et conservation de l’historique/documents sans appel réseau.
+- Développement : `corepack pnpm@10.34.5 dev`.
+- Tests : `corepack pnpm@10.34.5 test src/features/projects --maxWorkers=1 --pool=forks`.
+- Compilation : `corepack pnpm@10.34.5 build`.

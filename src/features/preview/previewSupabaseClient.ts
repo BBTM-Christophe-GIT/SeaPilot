@@ -226,6 +226,12 @@ function createPreviewFleetFindingEvents(): unknown[] {
 }
 
 const PREVIEW_ROWS: Record<string, unknown[]> = {
+  project_drive_files: [],
+  project_change_log: [],
+  project_billing_client_references: [
+    { id: 1, project_id: 9001, company_id: 1, scope: 3, reference: 'COMMANDE-AFFRETEMENT-2026' },
+    { id: 2, project_id: 9001, company_id: 1, scope: 4, reference: 'PRESTATIONS-BBTM-2026' },
+  ],
   planning_personal_display_settings: [],
   planning_generic_crew_rows: [],
   planning_crew_display_preferences: [],

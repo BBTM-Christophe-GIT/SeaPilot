@@ -15,7 +15,7 @@ public static class SeaPilotDrive
     // Known legacy routes. New modules use root/open and need no launcher update.
     public static readonly Dictionary<string, string> ModuleFolders = new Dictionary<string, string> {
         { "procedures", "Procedures" }, { "procedurePdfs", "Procedures PDF" },
-        { "disciplinary", "Sanctions Disciplinaires" }, { "chemicals", "Produits Chimiques" }, { "humanResources", "Ressources Humaines" }
+        { "disciplinary", "Sanctions Disciplinaires" }, { "chemicals", "Produits Chimiques" }, { "humanResources", "Ressources Humaines" }, { "projects", "Projet" }
     };
 
     public static string ConfiguredRoot()

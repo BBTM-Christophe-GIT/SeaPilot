@@ -1,4 +1,4 @@
-SEAPILOT - LANCEUR WINDOWS COMMUN 2.4.0
+SEAPILOT - LANCEUR WINDOWS COMMUN 2.5.0
 PROCEDURES, PDF ET DOSSIERS AUTOMATIQUES - 25/09/2026
 
 Une installation pour Procedures, Procedures PDF, Sanctions Disciplinaires, Produits Chimiques, Ressources Humaines et les futurs modules.
@@ -34,3 +34,5 @@ Partagez Produits Chimiques avec les profils concernes dans Google Drive. Attend
 Procedures (2.3) : Nouveau document cree une copie Word ou importe un fichier dans SeaPilot/Procedures. Le nom est Theme Numero Version - Titre. Ouvrir cree la fiche, ferme la fenetre puis lance le document. Publier convertit la version enregistree dans Office en PDF dans SeaPilot/Procedures PDF. Word, Excel ou PowerPoint doit etre installe pour les formats correspondants. 25 Mo maximum. Un nom deja utilise par un contenu different est refuse : incrementez la version. Les PDFs sont verifies par empreinte avant lecture et restent accessibles uniquement aux profils autorises. Le lanceur ne modifie jamais les permissions Google Drive.
 
 RH : les ajouts et renouvellements sont classes sous Ressources Humaines / Prenom NOM - c<entreprise>-p<collaborateur>. Les lectures verifient les droits du document, sa taille et son empreinte. Une suppression de fiche conserve le fichier Drive.
+
+Projets (2.5) : SeaPilot / Projet / Projet-<identifiant stable> / Contrat, HSE, Facturation, Operations, Offres. Les nouveaux fichiers sont verifies par taille et SHA-256 avant enregistrement. Maximum 50 Mio pour ce module. Les anciens fichiers et liens sont conserves. Installer cette version sur chaque PC qui ajoute des documents ou assemble les pieces PDF. Les autres modules gardent leurs limites et reglages.

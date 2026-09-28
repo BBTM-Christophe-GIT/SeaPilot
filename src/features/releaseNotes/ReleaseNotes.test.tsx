@@ -25,7 +25,7 @@ describe('ReleaseNotes', () => {
     const store = memoryStore();
     render(<ReleaseNotes client={{} as never} roles={[role]} storeOverride={store} />);
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getAllByRole('heading', { level: 3 })[0]).toHaveTextContent(role === 'armement' ? 'Préparez vos bordées' : 'Personnalisez vos organigrammes');
+    expect(within(dialog).getAllByRole('heading', { level: 3 })[0]).toHaveTextContent(role === 'armement' ? 'Préparez vos bordées' : 'Un portefeuille Projets plus clair');
     if (role === 'armement') expect(within(dialog).queryByText('Personnalisez vos organigrammes et vos listes de contacts')).not.toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Ok' }));
     expect(store.save).toHaveBeenCalledWith(expect.arrayContaining(['3.56.0-planning-generic-crew']), true);
