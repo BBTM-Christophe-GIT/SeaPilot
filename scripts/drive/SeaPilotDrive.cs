@@ -11,6 +11,7 @@ using Microsoft.Win32.SafeHandles;
 
 public static class SeaPilotDrive
 {
+    public const string DefaultRoot = @"G:\Mon Drive\SeaPilot";
     const string SettingsKey = @"Software\SeaPilot\Drive";
     // Known legacy routes. New modules use root/open and need no launcher update.
     public static readonly Dictionary<string, string> ModuleFolders = new Dictionary<string, string> {
@@ -38,6 +39,25 @@ public static class SeaPilotDrive
         EnsureModuleDirectories(full);
         using (var key = Registry.CurrentUser.CreateSubKey(SettingsKey)) key.SetValue("SeaPilotRoot", full);
         return full;
+    }
+    public static string DetectRoot(string configured, string fallback)
+    {
+        foreach (string candidate in new[] { configured, fallback })
+        {
+            try { return ValidateRoot(candidate); }
+            catch (IOException) { }
+        }
+        return null;
+    }
+    public static string SelectRoot(string initial)
+    {
+        using (var dialog = new FolderBrowserDialog())
+        {
+            dialog.Description = "Selectionnez le dossier SeaPilot synchronise avec Google Drive.";
+            dialog.ShowNewFolderButton = false;
+            if (Directory.Exists(initial)) dialog.SelectedPath = initial;
+            return dialog.ShowDialog() == DialogResult.OK ? dialog.SelectedPath : null;
+        }
     }
     public static void EnsureModuleDirectories(string root)
     {
@@ -117,14 +137,10 @@ public static class SeaPilotDrive
 
     static void Configure()
     {
-        using (var dialog = new FolderBrowserDialog())
-        {
-            dialog.Description = "Selectionnez le dossier SeaPilot synchronise. Il sera utilise pour tous les modules.";
-            dialog.ShowNewFolderButton = false;
-            if (dialog.ShowDialog() != DialogResult.OK) return;
-            ConfigureRoot(dialog.SelectedPath);
-            MessageBox.Show("Dossier SeaPilot configure :\n" + dialog.SelectedPath, "SeaPilot Drive");
-        }
+        string root = DetectRoot(ConfiguredRoot(), DefaultRoot) ?? SelectRoot(DefaultRoot);
+        if (String.IsNullOrEmpty(root)) return;
+        ConfigureRoot(root);
+        MessageBox.Show("Google Drive est bien configure :\n" + root, "SeaPilot Drive");
     }
 
     [STAThread]

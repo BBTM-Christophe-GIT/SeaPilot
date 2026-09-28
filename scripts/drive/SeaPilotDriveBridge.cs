@@ -14,7 +14,7 @@ using System.Web.Script.Serialization;
 // No remote listener, startup service, saved login token, or arbitrary file reads.
 public static class SeaPilotDriveBridge
 {
-    public const string Version = "2.5.0";
+    public const string Version = "2.6.0";
     public const int ConnectionPortCount = 16;
     const int MaxBody = 72 * 1024 * 1024;
     const string Api = "https://szlvyrrmvdvhzixilymh.supabase.co";
@@ -119,24 +119,37 @@ public static class SeaPilotDriveBridge
             if (rows.Length < 500) return count;
         }
     }
+    public static object ExecuteSetup(Dictionary<string, object> data, Func<string, string, object> remote,
+        Func<string> configuredRoot, Action<string> saveRoot, Func<string, string> selectRoot, string defaultRoot)
+    {
+        string action = Text(data, "action");
+        if (action != "configure" && action != "status" && action != "select-root") throw new ArgumentException("Action inconnue.");
+        // Authenticate before inspecting the PC or opening a Windows folder picker.
+        RequireAccess("status", 0, remote);
+        string previous = configuredRoot();
+        string detected = SeaPilotDrive.DetectRoot(previous, defaultRoot);
+        if (action == "status" && detected == null) return new { root = (string)null, version = Version, exists = false };
+        if (action == "status" && String.Equals(detected, previous, StringComparison.OrdinalIgnoreCase))
+            return new { root = detected, version = Version, exists = true };
+        string selected = action == "select-root" ? selectRoot(detected ?? defaultRoot) : action == "configure" ? Text(data, "root") : detected;
+        if (action == "select-root" && String.IsNullOrEmpty(selected)) return new { root = (string)null, version = Version, exists = false, cancelled = true };
+        string root = SeaPilotDrive.ValidateRoot(selected);
+        string disciplinary = Path.Combine(root, SeaPilotDrive.ModuleFolders["disciplinary"]);
+        SeaPilotDrive.EnsureModuleDirectories(root);
+        SeaPilotDrive.CheckWithinRoot(root, disciplinary);
+        int count = SyncPeople(disciplinary, remote);
+        // Publish the setting only after preparation succeeds; errors keep the old setting.
+        saveRoot(root);
+        return new { root = SeaPilotDrive.ValidateRoot(root), version = Version, exists = true, collaborators = count };
+    }
     static object Execute(Dictionary<string, object> data, string token, string apiKey)
     {
         string action = Text(data, "action");
-        if (action != "configure" && action != "status" && action != "ensure-person" && action != "write" && action != "read" && action != "publish" && action != "open") throw new ArgumentException("Action inconnue.");
+        if (action != "configure" && action != "status" && action != "select-root" && action != "ensure-person" && action != "write" && action != "read" && action != "publish" && action != "open") throw new ArgumentException("Action inconnue.");
         long company = data.ContainsKey("companyId") ? Number(data, "companyId") : 0;
         Func<string, string, object> remote = (resource, body) => Remote(resource, body, token, apiKey);
-        if (action == "configure" || action == "status") RequireAccess(action, company, remote);
-        if (action == "configure")
-        {
-            string root = SeaPilotDrive.ValidateRoot(Text(data, "root"));
-            string disciplinary = Path.Combine(root, SeaPilotDrive.ModuleFolders["disciplinary"]);
-            SeaPilotDrive.EnsureModuleDirectories(root);
-            SeaPilotDrive.CheckWithinRoot(root, disciplinary);
-            int count = SyncPeople(disciplinary, remote);
-            SeaPilotDrive.ConfigureRoot(root);
-            return new { root = root, version = Version, collaborators = count };
-        }
-        if (action == "status") return new { root = SeaPilotDrive.ConfiguredRoot(), version = Version };
+        if (action == "configure" || action == "status" || action == "select-root")
+            return ExecuteSetup(data, remote, SeaPilotDrive.ConfiguredRoot, root => { SeaPilotDrive.ConfigureRoot(root); }, SeaPilotDrive.SelectRoot, SeaPilotDrive.DefaultRoot);
         string baseRoot = SeaPilotDrive.ConfiguredRoot();
         if (String.IsNullOrEmpty(baseRoot)) throw new IOException("Ce PC doit etre configure dans Administration > Documents et Google Drive.");
         string module = Text(data, "module");
