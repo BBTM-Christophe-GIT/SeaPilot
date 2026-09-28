@@ -5843,9 +5843,8 @@ button:disabled {
   background: #fff;
 }
 
-.project-contract-choice {
+.project-assistant-summary {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
   align-items: end;
   padding: 15px 16px;
@@ -5854,29 +5853,36 @@ button:disabled {
   background: linear-gradient(145deg, #f8fbff, #eef4ff);
 }
 
-.project-contract-choice label,
-.project-contract-choice p {
+.project-assistant-contract-type,
+.project-assistant-summary p {
   display: grid;
   gap: 5px;
 }
 
-.project-contract-choice label > span {
-  color: #53657b;
+.project-assistant-contract-type {
+  min-width: 0;
+  margin-bottom: 10px;
+}
+
+.project-assistant-contract-type > span {
+  color: #c7d1df;
   font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
-.project-contract-choice select {
+.project-editor .project-assistant-contract-type select {
+  width: 100%;
+  min-width: 0;
   min-height: 46px;
   border-color: #91afea;
   color: #12366f;
   font-weight: 800;
 }
 
-.project-contract-choice p strong { color: #15243a; font-size: 0.95rem; }
-.project-contract-choice p span { color: #68778d; font-size: 0.78rem; }
+.project-assistant-summary p strong { color: #15243a; font-size: 0.95rem; }
+.project-assistant-summary p span { color: #68778d; font-size: 0.78rem; }
 
 .project-towage-contract-fields {
   display: grid;
@@ -6210,7 +6216,9 @@ button:disabled {
 
   .project-assistant-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: max-content max-content minmax(760px, auto);
     height: auto;
+    overflow-y: auto;
   }
 
   .project-assistant-layout > aside {
@@ -6226,6 +6234,11 @@ button:disabled {
   .project-assistant-layout > aside > span,
   .project-assistant-layout > aside > strong {
     display: none;
+  }
+
+  .project-assistant-contract-type {
+    min-width: 0;
+    margin-bottom: 0;
   }
 
   .project-assistant-layout > aside button {

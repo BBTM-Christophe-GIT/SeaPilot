@@ -27,3 +27,7 @@ Chaque rubrique restitue les valeurs déjà conservées dans la fiche projet et 
 ## Périmètre de la prévisualisation
 
 Le choix des familles de contrat dans la prévisualisation pilote immédiatement la navigation contextuelle. La persistance définitive du changement de type continue de passer par le formulaire de modification du projet, afin de ne pas modifier le workflow existant pendant la phase de validation du design.
+
+## Formulaire de création et de modification
+
+Le champ « Type de contrat » se situe dans la colonne « Parcours projet », directement sous le numéro du projet et avant les étapes. Il reste accessible pendant toute la saisie et continue de piloter les champs et l’aperçu du contrat. Sur petit écran, il apparaît en premier dans le bandeau horizontal des étapes.

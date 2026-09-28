@@ -848,6 +848,31 @@ export function ProjectEditor({
             <aside aria-label="Étapes de création du projet">
               <span>PARCOURS PROJET</span>
               <strong>{nextProjectCode}</strong>
+              <label className="project-assistant-contract-type">
+                <span>Type de contrat</span>
+                <select
+                  aria-label="Type de contrat"
+                  onChange={(event) => {
+                    const contractType = event.target.value;
+                    setForm((current) => ({
+                      ...current,
+                      contractType,
+                      ownerIdentity: normalizeProjectContractType(contractType) === BAREBOAT_CONTRACT_TYPE
+                        && (!current.ownerIdentity || current.ownerIdentity === DEFAULT_PROJECT_OWNER_IDENTITY)
+                        ? DEFAULT_BAREBOAT_OWNER_IDENTITY
+                        : current.ownerIdentity,
+                      supplytimeData: normalizeProjectContractType(contractType) === TOWAGE_CONTRACT_TYPE
+                        ? withTowageContractDefaults(current.supplytimeData)
+                        : normalizeProjectContractType(contractType) === BAREBOAT_CONTRACT_TYPE
+                          ? withBareboatContractDefaults(current.supplytimeData)
+                          : current.supplytimeData,
+                    }));
+                  }}
+                  value={normalizedContractType}
+                >
+                  {PROJECT_CONTRACT_TYPES.map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </label>
               {assistantSteps.map((step, index) => {
                 const Icon = step.icon;
                 const isActive = activeStep === step.id;
@@ -868,32 +893,7 @@ export function ProjectEditor({
               })}
             </aside>
             <main>
-          <section className="project-contract-choice" aria-label="Choix du type de contrat">
-            <label>
-              <span>Type de contrat</span>
-              <select
-                aria-label="Type de contrat"
-                onChange={(event) => {
-                  const contractType = event.target.value;
-                  setForm((current) => ({
-                    ...current,
-                    contractType,
-                    ownerIdentity: normalizeProjectContractType(contractType) === BAREBOAT_CONTRACT_TYPE
-                      && (!current.ownerIdentity || current.ownerIdentity === DEFAULT_PROJECT_OWNER_IDENTITY)
-                      ? DEFAULT_BAREBOAT_OWNER_IDENTITY
-                      : current.ownerIdentity,
-                    supplytimeData: normalizeProjectContractType(contractType) === TOWAGE_CONTRACT_TYPE
-                      ? withTowageContractDefaults(current.supplytimeData)
-                      : normalizeProjectContractType(contractType) === BAREBOAT_CONTRACT_TYPE
-                        ? withBareboatContractDefaults(current.supplytimeData)
-                        : current.supplytimeData,
-                  }));
-                }}
-                value={normalizedContractType}
-              >
-                {PROJECT_CONTRACT_TYPES.map((value) => <option key={value} value={value}>{value}</option>)}
-              </select>
-            </label>
+          <section className="project-assistant-summary" aria-label="Résumé du projet">
             <p><strong>{form.title || 'Projet sans titre'}</strong><span>{availableClients.find((item) => item.id === form.clientId)?.name || 'Client à renseigner'}</span></p>
           </section>
           <fieldset hidden={activeStep !== 'identification'} id="project-step-identification">
