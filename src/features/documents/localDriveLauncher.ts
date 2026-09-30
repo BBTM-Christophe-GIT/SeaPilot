@@ -3,10 +3,21 @@ import { loadAppEnv } from '../../lib/env';
 
 export const DRIVE_MODULES = { procedures: 'Procedures', procedurePdfs: 'Procedures PDF', disciplinary: 'Sanctions Disciplinaires', chemicals: 'Produits Chimiques', humanResources: 'Ressources Humaines', projects: 'Projet' } as const;
 export type DriveModule = keyof typeof DRIVE_MODULES;
+export const LOCAL_DRIVE_DOWNLOAD_VERSION = '2.6.0';
 export interface LocalDriveConnection { url: string; expiresAt: number; version?: string }
 export interface LocalDriveStatus { root: string | null; version: string; collaborators?: number; exists?: boolean; cancelled?: boolean }
 let connection: LocalDriveConnection | null = null;
 let connecting: Promise<LocalDriveConnection> | null = null;
+
+/** Compatible updates keep the same major API and provide at least the required features. */
+export function supportsLocalDriveVersion(version: unknown, minimum: string): boolean {
+  const installed = typeof version === 'string' ? /^(\d+)\.(\d+)\.(\d+)$/.exec(version) : null;
+  const required = /^(\d+)\.(\d+)\.(\d+)$/.exec(minimum);
+  if (!installed || !required) return false;
+  const [major, minor, patch] = installed.slice(1).map(Number);
+  const [requiredMajor, requiredMinor, requiredPatch] = required.slice(1).map(Number);
+  return major === requiredMajor && (minor > requiredMinor || (minor === requiredMinor && patch >= requiredPatch));
+}
 
 // Matches SeaPilotDriveBridge.ConnectionPort. Spreading the candidates avoids
 // Windows reservations that cover whole consecutive port ranges.
@@ -26,7 +37,7 @@ async function findLocalDrive(firstPort: number, nonce: string): Promise<{ url: 
       const health = await response.json();
       // Older launchers can still connect on the original port while the update
       // is installed. New launchers also prove which random session they serve.
-      if ((['2.1.0', '2.2.0', '2.3.0', '2.4.0', '2.5.0', '2.6.0'].includes(health.version) && health.nonce === nonce) || (health.version === '2.0.0' && index === 0)) return { url, version: health.version };
+      if ((supportsLocalDriveVersion(health.version, '2.1.0') && health.nonce === nonce) || (health.version === '2.0.0' && index === 0)) return { url, version: health.version };
       throw new Error('Session locale incompatible');
     }));
   } finally { controller.abort(); }

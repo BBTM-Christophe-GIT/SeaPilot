@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { projectDriveCategory, projectDriveStorage } from './projectDriveStorage';
 import { connectLocalDrive, localDriveRequest } from '../documents/localDriveLauncher';
-vi.mock('../documents/localDriveLauncher', () => ({ connectLocalDrive: vi.fn(), localDriveRequest: vi.fn(), blobBase64: vi.fn().mockResolvedValue('cGRm') }));
+vi.mock('../documents/localDriveLauncher', async original => ({ ...await original<typeof import('../documents/localDriveLauncher')>(), connectLocalDrive: vi.fn(), localDriveRequest: vi.fn(), blobBase64: vi.fn().mockResolvedValue('cGRm') }));
 const hash = async (blob: Blob) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())), (byte) => byte.toString(16).padStart(2, '0')).join('');
 function fixture(mapping: unknown = null) {
   const insert = vi.fn().mockResolvedValue({ error: null });
@@ -18,6 +18,27 @@ function fixture(mapping: unknown = null) {
 }
 beforeEach(() => { vi.mocked(connectLocalDrive).mockResolvedValue({ url: 'http://localhost', expiresAt: 1, version: '2.5.0' }); });
 describe('project Drive routing', () => {
+  it.each(['2.5.0', '2.6.0', '2.6.1', '2.10.0'])('exports P144 billing with compatible launcher %s', async version => {
+    vi.mocked(connectLocalDrive).mockResolvedValue({ url: 'http://localhost', expiresAt: 1, version });
+    const blob = new Blob(['pdf'], { type: 'application/pdf' });
+    const sha256 = await hash(blob);
+    const path = 'P144 – GUARD VESSEL EMDT/Facturation/releve.pdf';
+    vi.mocked(localDriveRequest).mockResolvedValue({ path, bytes: blob.size, sha256 });
+    const { client, insert } = fixture();
+    expect(await projectDriveStorage(client as never, 'project-files').upload('projects/12/9/export/releve.pdf', blob, {})).toEqual({ error: null });
+    expect(localDriveRequest).toHaveBeenLastCalledWith(client, expect.objectContaining({ version }), expect.objectContaining({ action: 'write', module: 'projects', path }));
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ path, sha256 }));
+  });
+  it.each(['2.4.0', '3.0.0', undefined])('refuses unsupported launcher %s before authorizing or writing a billing export', async version => {
+    vi.mocked(connectLocalDrive).mockResolvedValue({ url: 'http://localhost', expiresAt: 1, version });
+    vi.mocked(localDriveRequest).mockClear();
+    const { client, insert } = fixture();
+    const result = await projectDriveStorage(client as never, 'project-files').upload('projects/12/9/export/releve.pdf', new Blob(['pdf']), {});
+    expect(result.error?.message).toContain('2.5 ou ultérieur');
+    expect(client.rpc).not.toHaveBeenCalled();
+    expect(localDriveRequest).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
   it('writes a verified copy and its receipt without uploading another Storage object', async () => {
     const blob = new Blob(['pdf'], { type: 'application/pdf' });
     const sha256 = await hash(blob);

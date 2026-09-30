@@ -11,12 +11,14 @@ SeaPilot conserve les métadonnées, la taille et l'empreinte SHA-256. La lectur
 utilise toujours la référence Drive quand elle existe, même si une référence
 historique Supabase ou SharePoint reste présente comme sauvegarde.
 
-Les téléchargements individuels et ZIP passent par le lanceur Windows **2.4.0**,
+Les téléchargements individuels et ZIP passent par le lanceur Windows **2.4.0 ou ultérieur de l’API 2**,
 qui vérifie les droits RH du document avec le serveur, puis sa taille et son
 empreinte. Le serveur fournit le chemin à lire : le navigateur ne peut pas
 choisir un autre fichier. Les téléchargements ZIP sont séquentiels pour ne pas
 saturer le serveur local du lanceur. Les erreurs précisent le fichier ou la
 connexion à vérifier, et la sélection reste présente après un échec.
+
+Depuis v3.61.3, le lanceur 2.6.0 est accepté pour l’ajout et le renouvellement des brevets, les documents administratifs et l’enregistrement de la photo du collaborateur. Administration → Documents et Google Drive affiche la version réellement détectée sur le PC et permet de la revérifier après installation ; le dossier déjà configuré est conservé.
 
 Les fenêtres de création, modification et renouvellement des documents gardent
 leurs boutons de validation visibles. Seuls les champs défilent lorsque le

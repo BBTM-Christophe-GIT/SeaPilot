@@ -6,7 +6,8 @@ import { chemicalFileHash, createChemicalDrive } from './chemicalDrive';
 import { blankChemical, type ChemicalAttachment, type ChemicalProduct } from './chemicalModel';
 import { addChemicalAttachment, fetchChemicalWorkspace } from './chemicalQueries';
 
-vi.mock('../documents/localDriveLauncher', () => ({
+vi.mock('../documents/localDriveLauncher', async original => ({
+  ...await original<typeof import('../documents/localDriveLauncher')>(),
   connectLocalDrive: vi.fn(), localDriveRequest: vi.fn(),
   blobBase64: async (file: Blob) => Buffer.from(await file.arrayBuffer()).toString('base64'),
 }));
@@ -22,6 +23,10 @@ beforeEach(() => {
   rpc.mockResolvedValue({data:{directory:'Produits Chimiques',folder},error:null});
 });
 describe('chemical Google Drive files', () => {
+  it.each(['2.6.0', '2.10.0'])('keeps chemical files available with launcher %s', async version => {
+    vi.mocked(connectLocalDrive).mockResolvedValueOnce({ ...connection, version });
+    await expect(createChemicalDrive(client).connect()).resolves.toBeUndefined();
+  });
   it('writes in the authorized product folder and verifies the receipt before saving metadata', async () => {
     const file = new File(['FDS'], 'FDS été.PDF', {type:'application/pdf'});
     const path = `${folder}/${id}-FDS_ete.pdf`;

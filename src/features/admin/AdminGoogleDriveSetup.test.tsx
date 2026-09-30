@@ -20,6 +20,8 @@ describe('automatic PC Drive setup', () => {
     const client = {} as never;
     render(<StrictMode><AdminGoogleDriveSetup client={client} /></StrictMode>);
     expect(await screen.findByText('Google Drive est bien configuré')).toBeVisible();
+    expect(screen.getByText('Version installée sur ce PC :')).toHaveTextContent('2.6.0');
+    expect(screen.getByText('Version proposée au téléchargement :')).toHaveTextContent('2.6.0');
     expect(screen.getByText('42 dossier(s) de collaborateurs en poste préparé(s).')).toBeVisible();
     expect(localDriveRequest).toHaveBeenCalledTimes(1);
     expect(localDriveRequest).toHaveBeenCalledWith(client, connection, { action: 'status' });
@@ -59,15 +61,18 @@ describe('automatic PC Drive setup', () => {
     vi.mocked(localDriveRequest).mockResolvedValue(configured);
     render(<AdminGoogleDriveSetup client={{} as never} />);
     expect(await screen.findByRole('alert')).toHaveTextContent('Installez le lanceur Windows 2.6');
+    expect(screen.getByText('Version installée sur ce PC :')).toHaveTextContent('2.5.0');
     expect(localDriveRequest).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Relancer le lanceur' }));
     expect(await screen.findByText('Google Drive est bien configuré')).toBeVisible();
+    expect(screen.getByText('Version installée sur ce PC :')).toHaveTextContent('2.6.0');
     expect(connectLocalDrive).toHaveBeenLastCalledWith({ fresh: true });
   });
   it('shows authentication or connection errors without a success message', async () => {
     vi.mocked(localDriveRequest).mockRejectedValue(new Error('Accès refusé'));
     render(<AdminGoogleDriveSetup client={{} as never} />);
     expect(await screen.findByRole('alert')).toHaveTextContent('Accès refusé');
+    expect(screen.getByText('Version installée sur ce PC :')).toHaveTextContent('2.6.0');
     expect(screen.queryByText('Google Drive est bien configuré')).not.toBeInTheDocument();
   });
   it('ignores a result received after leaving the setup screen', async () => {
@@ -81,6 +86,26 @@ describe('automatic PC Drive setup', () => {
   it('keeps preview data away from the real PC configuration', () => {
     render(<AdminGoogleDriveSetup client={{} as never} previewMode />);
     expect(screen.getByRole('button', { name: 'Sélectionner le dossier dans Windows' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Vérifier la version installée' })).toBeDisabled();
+    expect(screen.getByText('Version installée sur ce PC :')).toHaveTextContent('indisponible en préversion');
     expect(connectLocalDrive).not.toHaveBeenCalled();
+  });
+  it('refreshes the actual installed version after an update even when the folder is already configured', async () => {
+    const user = userEvent.setup();
+    vi.mocked(localDriveRequest).mockResolvedValueOnce(configured).mockResolvedValueOnce({ ...configured, version: '2.6.1' });
+    render(<AdminGoogleDriveSetup client={{} as never} />);
+    await screen.findByText('Google Drive est bien configuré');
+    vi.mocked(connectLocalDrive).mockResolvedValue({ ...connection, version: '2.6.1' });
+    await user.click(screen.getByRole('button', { name: 'Vérifier la version installée' }));
+    await screen.findByText('Google Drive est bien configuré');
+    expect(screen.getByText('Version installée sur ce PC :')).toHaveTextContent('2.6.1');
+    expect(connectLocalDrive).toHaveBeenLastCalledWith({ fresh: true });
+  });
+  it('shows a connection failure as an undetected version instead of the downloadable version', async () => {
+    vi.mocked(connectLocalDrive).mockRejectedValue(new Error('Connexion indisponible'));
+    render(<AdminGoogleDriveSetup client={{} as never} />);
+    await screen.findByRole('alert');
+    expect(screen.getByText('Version installée sur ce PC :')).toHaveTextContent('non détectée');
+    expect(screen.getByText('Version installée sur ce PC :')).not.toHaveTextContent('2.6.0');
   });
 });

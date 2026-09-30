@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { blobBase64, connectLocalDrive, localDriveRequest } from '../documents/localDriveLauncher';
+import { blobBase64, connectLocalDrive, localDriveRequest, supportsLocalDriveVersion } from '../documents/localDriveLauncher';
 
 export const HR_DRIVE_LIMIT = 25 * 1024 * 1024;
 export const HR_DRIVE_EXTENSIONS = /\.(pdf|png|jpe?g|docx?|xlsx?|pptx?|odt|ods|odp|txt)$/i;
@@ -11,7 +11,7 @@ async function hash(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
 
 export async function connectHrDrive() {
   const connection = await connectLocalDrive();
-  if (!['2.4.0', '2.5.0'].includes(connection.version || '')) throw new Error('Installez le lanceur SeaPilot 2.4 depuis Administration → Documents et Google Drive. Votre dossier configuré sera conservé.');
+  if (!supportsLocalDriveVersion(connection.version, '2.4.0')) throw new Error('Installez le lanceur SeaPilot 2.4 ou ultérieur depuis Administration → Documents et Google Drive. Votre dossier configuré sera conservé.');
   return connection;
 }
 
