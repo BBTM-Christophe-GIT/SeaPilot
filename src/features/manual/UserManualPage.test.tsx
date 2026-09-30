@@ -104,7 +104,38 @@ describe('Manuel d’utilisation', () => {
     expect(screen.getByText('Aucune notice ne correspond à votre recherche.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Effacer la recherche' }));
     expect(input).toHaveValue('');
-    expect(screen.getByRole('status')).toHaveTextContent('21 notices disponibles');
+    expect(screen.getByRole('status')).toHaveTextContent(`${getManualModules(APP_MODULES.filter((module) => module.allowedRoles.includes('marin'))).length} notices disponibles`);
+  });
+
+  it.each(['marin', 'capitaine'] as const)('documents the internal audit workflow and its actual restrictions for an authenticated %s', async (role) => {
+    renderManual({ role, route: '/manual/internalAudits' });
+    const navigation = await screen.findByRole('navigation', { name: 'Modules du manuel' });
+    expect(within(navigation).getByRole('heading', { name: 'Audits' })).toBeInTheDocument();
+    for (const label of ['eCMID', 'Audit ISM Externe', 'Audit ISM Interne', 'Audit Client']) {
+      expect(within(navigation).getByRole('link', { name: label })).toBeInTheDocument();
+    }
+    const article = screen.getByRole('article');
+    expect(within(article).getByRole('heading', { name: 'Audit ISM Interne', level: 2 })).toBeInTheDocument();
+    expect(within(article).getByRole('link', { name: 'Ouvrir le module' })).toHaveAttribute('href', '/modules/internalAudits');
+    for (const detail of ['61 questions', '3 points par question', '± 3 mois calendaires', 'N/A retire entièrement le barème', 'Grille LE ROZEL', 'Capitaines LE ROZEL', 'Chefs Mécaniciens LE ROZEL', 'Équipage LE ROZEL', 'délai de traitement', 'figés et conservés', 'année N−1', 'même site ou navire']) {
+      expect(article).toHaveTextContent(detail);
+    }
+    expect(article).toHaveTextContent('Marin et Capitaine consultent les audits de leur périmètre');
+    expect(article).toHaveTextContent('affectés à leur personne ou à une fonction qu’ils exercent');
+    expect(article).toHaveTextContent('La clôture est réservée aux responsables habilités');
+    expect(article).toHaveTextContent('Chaque enregistrement reste dans l’historique');
+    expect(article).toHaveTextContent('La finalisation fige la grille ; elle ne clôture pas automatiquement les écarts.');
+  });
+
+  it.each([
+    ['ecmid', 'eCMID'], ['externalIsmAudits', 'Audit ISM Externe'], ['clientAudits', 'Audit Client'],
+  ] as const)('identifies the %s audit space as being in preparation', async (moduleKey, label) => {
+    renderManual({ route: `/manual/${moduleKey}` });
+    const article = await screen.findByRole('article');
+    expect(within(article).getByRole('heading', { name: label, level: 2 })).toBeInTheDocument();
+    expect(article).toHaveTextContent('en préparation');
+    expect(article).toHaveTextContent('circuit habituel');
+    expect(within(article).getByRole('link', { name: 'Ouvrir le module' })).toHaveAttribute('href', `/modules/${moduleKey}`);
   });
 
   it.each(['/manual/dpr', '/manual/unknown'])('refuses a hidden or unknown direct notice at %s', async (route) => {

@@ -2,6 +2,8 @@
 
 Le menu **Audits** regroupe eCMID, Audit ISM Externe, Audit ISM Interne et Audit Client. Le module interne comporte le planning, les grilles, la synthèse des écarts et le graphique comparant les résultats annuels par site et chapitre ISM.
 
+Le manuel d’utilisation comprend une notice pour chacune des quatre entrées, avec les étapes et les droits du module interne. eCMID, Audit ISM Externe et Audit Client sont des espaces en préparation.
+
 ## Référence et notation
 
 La grille initiale reprend les 61 questions et les consignes de vérification de l’onglet **Grille d’audit** du fichier `Grille d'audit BBTM.xlsx`. Les deux barèmes absents, références **10.4** et **11.2.3**, ont été confirmés à **3 points** par l’utilisateur. La grille complète comporte donc **183 points** avant exclusion des réponses N/A. Le classeur ne contient pas de réponses, de constats ou de scores historiques renseignés. Le graphique reprend les chapitres ISM et les résultats réellement enregistrés, avec un résultat N-1 absent lorsque cet audit n’existe pas.

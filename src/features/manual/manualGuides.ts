@@ -9,6 +9,48 @@ export interface ManualGuide {
 
 // Notices du profil Marin. Les noms, l’ordre et les accès viennent de la navigation.
 export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
+  ecmid: {
+    purpose: 'Identifier l’espace prévu pour les audits eCMID.',
+    access: 'Ce module est en préparation. Aucun questionnaire, planning ou suivi d’audit eCMID n’y est encore disponible.',
+    steps: [
+      { title: 'Ouvrir l’espace eCMID', detail: 'Dans le menu Audits, choisissez eCMID. Cet espace est réservé au futur module.' },
+      { title: 'Poursuivre le circuit habituel', detail: 'Pour préparer, réaliser ou suivre un audit eCMID, contactez votre responsable et utilisez les documents et le circuit habituels.' },
+    ],
+    reminders: ['Aucun audit eCMID ne peut être enregistré depuis cet écran pour le moment.'],
+  },
+  externalIsmAudits: {
+    purpose: 'Identifier l’espace prévu pour les audits ISM externes.',
+    access: 'Ce module est en préparation. Aucun planning, questionnaire ou suivi d’audit ISM externe n’y est encore disponible.',
+    steps: [
+      { title: 'Ouvrir l’espace des audits externes', detail: 'Dans le menu Audits, choisissez Audit ISM Externe. Le message affiché indique l’état de préparation du module.' },
+      { title: 'Obtenir le dossier de l’audit', detail: 'Demandez les rapports et les actions à suivre à votre responsable QHSE et poursuivez le circuit habituel des audits externes.' },
+    ],
+    reminders: ['La préparation et le suivi des audits ISM externes restent dans votre circuit habituel.'],
+  },
+  internalAudits: {
+    purpose: 'Planifier les audits ISM internes annuels, conserver leurs réponses notées et suivre le traitement des non conformités et des remarques.',
+    access: 'Administration, Direction et Armement peuvent planifier les audits, adapter les grilles, saisir les réponses et émettre les écarts. Marin et Capitaine consultent les audits de leur périmètre et peuvent traiter les écarts affectés à leur personne ou à une fonction qu’ils exercent sur le navire désigné. La clôture est réservée aux responsables habilités après vérification du traitement.',
+    steps: [
+      { title: 'Ouvrir le module et choisir un audit', detail: 'Dans le menu Audits, choisissez Audit ISM Interne. Les onglets Planning, Grilles, Grille d’audit, Synthèse et Graphique donnent accès aux étapes du suivi. Dans les trois derniers onglets, choisissez le site, le navire et l’année avec Audit sélectionné.' },
+      { title: 'Planifier la campagne annuelle', detail: 'Les responsables utilisent Planning pour Armement - CHERBOURG, Yard - LE HAVRE, GOURY, LE ROZEL, LANDEMER, SUROIT, KROKDUR et HIRONDELLE DE LA MANCHE. Choisissez l’année, définissez la date anniversaire de référence et cliquez sur Planifier. La périodicité est de 1 an, avec une fenêtre de ± 3 mois calendaires autour de la date anniversaire. Choisissez la grille de référence, la date planifiée dans cette fenêtre et l’auditeur. Un seul audit est prévu par site et par année. La date planifiée peut être ajustée tant que l’audit reste planifié ; ce déplacement ne change pas la référence annuelle.' },
+      { title: 'Adapter une grille au navire', detail: 'Dans Grilles, la grille BBTM issue du fichier de référence comporte 61 questions, avec un barème initial de 3 points par question. Les responsables peuvent créer une grille personnalisée, par exemple Grille LE ROZEL, en copiant une grille existante et en choisissant le navire. Ajoutez, modifiez ou supprimez des lignes ; renseignez le chapitre, la référence, la question, le barème maximum et les éléments à vérifier, puis cliquez sur Enregistrer la grille. Chaque nouvel audit reçoit une copie de la grille et de sa version.' },
+      { title: 'Renseigner et enregistrer les réponses', detail: 'Dans Grille d’audit, les responsables répondent à chaque question : Conforme attribue le maximum du barème, Incomplet sa moitié, Non Conforme 0 point. N/A retire entièrement le barème de cette question du calcul. Complétez les observations et les preuves, puis cliquez sur Enregistrer les réponses. Pendant la préparation, les questions de cette copie peuvent aussi être adaptées et de nouvelles lignes ajoutées. Une ligne liée à un écart doit être conservée. Enregistrez ou annulez vos modifications avant de changer d’audit, de grille ou d’onglet.' },
+      { title: 'Émettre et affecter un écart', detail: 'Depuis une ligne, les responsables utilisent Émettre un écart. Choisissez Non conformité majeure, Non conformité mineure ou Remarque, décrivez le constat, désignez le responsable de traitement et fixez un délai de traitement. L’affectation peut viser une personne ou une fonction sur un navire, par exemple Capitaines LE ROZEL, Chefs Mécaniciens LE ROZEL ou Équipage LE ROZEL. Plusieurs écarts peuvent être émis pour la même ligne. La réponse Non Conforme et l’émission d’un écart sont deux actions distinctes : utilisez ce bouton pour créer le suivi.' },
+      { title: 'Suivre le traitement dans la synthèse', detail: 'Synthèse compile toutes les non conformités majeures, mineures et remarques de l’audit sélectionné, avec le responsable, l’échéance et le statut. Les responsables habilités et la personne ou la fonction affectée ouvrent Suivre le traitement, décrivent l’action menée et ses preuves, puis enregistrent le traitement. L’écart peut passer de Ouvert à En traitement, puis Traité · à valider. Le responsable habilité vérifie le traitement avant de le passer à Clôturé. Chaque enregistrement reste dans l’historique avec son auteur et sa date.' },
+      { title: 'Finaliser et conserver l’audit', detail: 'Les responsables renseignent la date de réalisation et l’auditeur, répondent à toutes les questions, puis utilisent Finaliser l’audit et Confirmer la réalisation. Les questions, barèmes, réponses et observations sont alors figés et conservés dans la grille d’audit. Le traitement des écarts reste disponible dans Synthèse après la réalisation ; des écarts peuvent encore être émis depuis les lignes conservées.' },
+      { title: 'Comparer les scores avec l’année précédente', detail: 'Après la réalisation, Graphique compare le score global et les scores par chapitre avec l’audit réalisé du même site ou navire en année N−1. L’évolution est exprimée en points de pourcentage. Les N/A restent exclus du calcul de chaque audit. Si aucun audit réalisé n’existe pour cette année précédente, le graphique le signale et laisse le score précédent absent.' },
+    ],
+    reminders: ['La date anniversaire annuelle reste la référence de la fenêtre, même si la date planifiée change.', 'Modifier une grille de référence ne remplace pas les questions et les réponses déjà copiées dans un audit.', 'Un barème personnalisé remplace les 3 points initiaux de la ligne concernée. Si toutes les questions sont N/A, aucun pourcentage de conformité n’est calculé.', 'Un écart doit toujours avoir un responsable de traitement et une échéance. Vérifiez les écarts en retard dans Synthèse.', 'La finalisation fige la grille ; elle ne clôture pas automatiquement les écarts.'],
+  },
+  clientAudits: {
+    purpose: 'Identifier l’espace prévu pour les audits clients.',
+    access: 'Ce module est en préparation. Aucun questionnaire, planning ou suivi d’audit client n’y est encore disponible.',
+    steps: [
+      { title: 'Ouvrir l’espace des audits clients', detail: 'Dans le menu Audits, choisissez Audit Client. Cet espace est réservé au futur module.' },
+      { title: 'Poursuivre le suivi avec le responsable', detail: 'Demandez le dossier et les actions attendues à votre responsable et utilisez le circuit habituel convenu pour cet audit client.' },
+    ],
+    reminders: ['Aucun audit client ne peut être enregistré depuis cet écran pour le moment.'],
+  },
   lsa: {
     purpose: 'Retrouver les équipements de sauvetage et leurs documents dans le Registre LSA.',
     access: 'Marin et Capitaine consultent les données de leur périmètre autorisé. Administration, Direction et Armement peuvent ajouter et modifier les fiches de leur société.',
