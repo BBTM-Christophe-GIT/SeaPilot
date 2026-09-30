@@ -32,6 +32,7 @@ import {
 import type { ProjectContractRecord, ProjectPlanningOccurrenceRecord, ProjectRecord } from './projectQueries';
 import { ServiceCatalogDialog } from './ProjectCatalogDialogs';
 import {
+  automaticBillingServiceQuantity,
   billingExpenseAttachmentName,
   billingExpenseSpecialtyLabel,
   billingOperationKey,
@@ -292,6 +293,11 @@ export function ProjectBillingPanel({
   const exportRange = periodMode === 'calendar-month'
     ? monthRange(selectedMonth)
     : { start: customStart, end: customEnd };
+  const calendarRange = monthRange(selectedMonth);
+  const dprRange = project.projectCode.trim().toUpperCase() === 'P144' ? {
+    start: exportRange.start < calendarRange.start ? exportRange.start : calendarRange.start,
+    end: exportRange.end > calendarRange.end ? exportRange.end : calendarRange.end,
+  } : exportRange;
   const selectedOperation = operations.find((operation) => (
     (!vesselFilter || operation.primaryVesselName === vesselFilter)
     && operation.startsOn <= exportRange.end
@@ -301,14 +307,19 @@ export function ProjectBillingPanel({
     || selectedOperation?.primaryVesselName
     || project.primaryVesselName
     || '';
-  const missingDates = missingBillingDates(dprs, exportRange.start, exportRange.end);
+  const periodDprs = dprs.filter((dpr) => dpr.reportDate >= exportRange.start && dpr.reportDate <= exportRange.end);
+  const missingDates = missingBillingDates(periodDprs, exportRange.start, exportRange.end);
   const exportDprs = completeMissingDays
-    ? completeBillingDprs(dprs, exportRange.start, exportRange.end, {
+    ? completeBillingDprs(periodDprs, exportRange.start, exportRange.end, {
       vesselName: selectedVesselName,
       amountHt: null,
     })
-    : dprs;
-  const defaultServiceQuantity = countDailyOperations(dprs.filter((dpr) => !(selectedPeriod?.excludedOperationKeys || []).includes(billingOperationKey(dpr))));
+    : periodDprs;
+  const defaultServiceQuantity = countDailyOperations(periodDprs.filter((dpr) => !(selectedPeriod?.excludedOperationKeys || []).includes(billingOperationKey(dpr))));
+  const calculatedServiceDrafts = serviceDrafts.map((service) => ({
+    ...service,
+    quantity: automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) ?? service.quantity,
+  }));
   const referenceScope = billingReferenceScope(selectedPeriod || periodDraft);
   const savedReference = references.find((reference) => reference.scope === referenceScope);
   const exportReference = referenceDrafts[referenceScope] ?? savedReference?.reference ?? (legacyReferenceScope === referenceScope || legacyReferenceScope === null ? periodDraft.clientReference : '');
@@ -322,7 +333,7 @@ export function ProjectBillingPanel({
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer la référence.'); }
     finally { setBusy(''); }
   }
-  const serviceForExport: ProjectBillingService[] = serviceDrafts
+  const serviceForExport: ProjectBillingService[] = calculatedServiceDrafts
     .filter((service) => service.category.trim())
     .map((service) => ({
       id: service.id || 0,
@@ -345,7 +356,7 @@ export function ProjectBillingPanel({
     setBusy((current) => current || 'dprs');
     setDprsLoading(true);
     setDprs([]);
-    void fetchProjectBillingDprs(client, project.id, exportRange.start, exportRange.end, vesselFilter)
+    void fetchProjectBillingDprs(client, project.id, dprRange.start, dprRange.end, vesselFilter)
       .then((rows) => {
         if (!cancelled) setDprs(rows);
       })
@@ -359,7 +370,7 @@ export function ProjectBillingPanel({
         }
       });
     return () => { cancelled = true; };
-  }, [client, project.id, exportRange.start, exportRange.end, vesselFilter]);
+  }, [client, project.id, exportRange.start, exportRange.end, dprRange.start, dprRange.end, vesselFilter]);
 
   useEffect(() => {
     const key = `${project.id}/${selectedMonth}/${selectedPeriod?.id || 'new'}`;
@@ -705,6 +716,7 @@ export function ProjectBillingPanel({
         services: serviceForExport,
         includeBbtmService: selectedPeriod.includeBbtmInPdf !== false,
         dprs: exportDprs,
+        monthlyDprs: dprs,
         selectedVesselName,
         startDate: exportRange.start,
         endDate: exportRange.end,
@@ -896,9 +908,11 @@ export function ProjectBillingPanel({
             ) : null}
           </div>
         </header>
-        <p className="project-billing-auto-quantity">Quantité proposée automatiquement : {defaultServiceQuantity} journée(s) de DPR 24/24 Operation et Crew Change. Chaque quantité reste modifiable avant export ; les journées sans DPR ne sont pas comptées.</p>
+        {project.projectCode.trim().toUpperCase() === 'P144' && calculatedServiceDrafts.some((service) => automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) !== null)
+          ? <p className="project-billing-auto-quantity">Spread Antipollution · P144 : jours du mois − jours 24/24 Weather Stand-by. La quantité est calculée automatiquement, y compris pour les journées sans DPR.</p>
+          : <p className="project-billing-auto-quantity">Quantité proposée automatiquement : {defaultServiceQuantity} journée(s) de DPR 24/24 Operation et Crew Change. Chaque quantité reste modifiable avant export ; les journées sans DPR ne sont pas comptées.</p>}
         <div className="project-billing-service-list">
-          {serviceDrafts.map((service, index) => (
+          {calculatedServiceDrafts.map((service, index) => (
             <div className="project-billing-service-grid" key={service.key}>
               <label className="project-billing-service-category">
                 Catégorie
@@ -916,7 +930,7 @@ export function ProjectBillingPanel({
               </label>
               <label>
                 Nombre d’unités
-                <input disabled={!isManager} min="0" onChange={(event) => updateServiceDraft(service.key, { quantity: Number(event.target.value) })} step="0.001" type="number" value={service.quantity} />
+                <input disabled={!isManager} readOnly={automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) !== null} min="0" onChange={(event) => updateServiceDraft(service.key, { quantity: Number(event.target.value) })} step="0.001" type="number" value={service.quantity} />
               </label>
               <label>Montant total HT<input disabled value={money(service.unitAmountHt * service.quantity)} /></label>
               {isManager ? <div className="project-billing-service-actions">
