@@ -1,12 +1,28 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { launcherOpenUri, localDrivePorts, localDriveRequest } from './localDriveLauncher';
+import { launcherOpenUri, localDrivePorts, localDriveRequest, supportsLocalDriveVersion } from './localDriveLauncher';
 
 vi.mock('../../lib/env', () => ({ loadAppEnv: () => ({ supabaseUrl: 'https://szlvyrrmvdvhzixilymh.supabase.co', supabaseAnonKey: 'public-test-key' }) }));
 const connection = { url: 'http://127.0.0.1:50000/session', expiresAt: Date.now() + 100000 };
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('common Windows launcher', () => {
+  it.each([
+    ['2.5.0', '2.5.0', true], ['2.5.1', '2.5.0', true], ['2.6.0', '2.5.0', true],
+    ['2.10.0', '2.6.0', true], ['2.4.9', '2.5.0', false], ['2.5.0', '2.5.1', false],
+    ['3.0.0', '2.5.0', false], ['1.9.0', '2.5.0', false], ['2.6.0-beta', '2.5.0', false],
+    ['2.6', '2.5.0', false], [undefined, '2.5.0', false], [260, '2.5.0', false],
+  ])('checks API compatibility for %s requiring %s', (version, minimum, supported) => {
+    expect(supportsLocalDriveVersion(version, minimum)).toBe(supported);
+  });
+  it.each(['2.6.1', '2.10.0'])('discovers compatible updates %s using the matching nonce', async version => {
+    vi.resetModules();
+    const { connectLocalDrive } = await import('./localDriveLauncher');
+    let nonce = '';
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { nonce = new URL(this.href).pathname.split('/')[2]; });
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => ({ ok: true, json: async () => ({ version, nonce }) })));
+    expect((await connectLocalDrive()).version).toBe(version);
+  });
   it('spreads discovery across bounded distinct ports, including wraparound', () => {
     for (const first of [49152, 50000, 65535]) {
       const ports = localDrivePorts(first);
@@ -37,11 +53,12 @@ describe('common Windows launcher', () => {
     expect(click).toHaveBeenCalledTimes(1);
     expect(fetcher.mock.calls.every(([, options]) => !options.method && !options.headers)).toBe(true);
   });
-  it('does not accept a mismatched session or send credentials during discovery', async () => {
+  it.each([{ version: '2.6.0', nonce: 'wrong-session' }, { version: '3.0.0' }])('refuses an incompatible or mismatched health response %j', async health => {
     vi.useFakeTimers(); vi.resetModules();
     const { connectLocalDrive } = await import('./localDriveLauncher');
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ version: '2.1.0', nonce: 'wrong-session' }) }));
+    let nonce = '';
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { nonce = new URL(this.href).pathname.split('/')[2]; });
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => ({ ok: true, json: async () => ({ nonce, ...health }) })));
     const result = expect(connectLocalDrive()).rejects.toThrow('le dossier déjà configuré sera conservé');
     await vi.runAllTimersAsync();
     await result;

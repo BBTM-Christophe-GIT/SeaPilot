@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { blobBase64, connectLocalDrive, localDriveRequest } from '../documents/localDriveLauncher';
+import { blobBase64, connectLocalDrive, localDriveRequest, supportsLocalDriveVersion } from '../documents/localDriveLauncher';
 import { attachmentMime, type ChemicalAttachment, type ChemicalProduct } from './chemicalModel';
 
 export interface ChemicalFileStore {
@@ -18,7 +18,7 @@ export function chemicalDriveFilename(id: string, filename: string) {
 export function createChemicalDrive(client: SupabaseClient): ChemicalFileStore {
   async function session() {
     const connection = await connectLocalDrive();
-    if (!['2.2.0', '2.3.0', '2.4.0', '2.5.0'].includes(connection.version || '')) throw new Error('Installez le lanceur SeaPilot depuis Administration → Documents et Google Drive pour utiliser les pièces jointes chimiques. Le dossier déjà configuré sera conservé.');
+    if (!supportsLocalDriveVersion(connection.version, '2.2.0')) throw new Error('Installez le lanceur SeaPilot depuis Administration → Documents et Google Drive pour utiliser les pièces jointes chimiques. Le dossier déjà configuré sera conservé.');
     return connection;
   }
   return {

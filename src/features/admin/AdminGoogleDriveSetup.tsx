@@ -1,35 +1,37 @@
 import { CheckCircle2, Download, ExternalLink, FolderOpen, Monitor } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { connectLocalDrive, DRIVE_MODULES, localDriveRequest, type LocalDriveStatus } from '../documents/localDriveLauncher';
+import { connectLocalDrive, DRIVE_MODULES, LOCAL_DRIVE_DOWNLOAD_VERSION, localDriveRequest, supportsLocalDriveVersion, type LocalDriveStatus } from '../documents/localDriveLauncher';
 
 export function AdminGoogleDriveSetup({ client, previewMode = false }: { client: SupabaseClient; previewMode?: boolean }) {
   const [busy, setBusy] = useState(!previewMode);
   const [status, setStatus] = useState<LocalDriveStatus | null>(null);
+  const [installedVersion, setInstalledVersion] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [cancelled, setCancelled] = useState(false);
   const request = useRef(0);
   const configure = useCallback(async (action: 'status' | 'select-root', fresh = false) => {
     if (previewMode) return;
     const current = ++request.current;
-    setBusy(true); setError(''); setStatus(null); setCancelled(false);
+    setBusy(true); setError(''); setStatus(null); setCancelled(false); setInstalledVersion(null);
     try {
       const connection = await connectLocalDrive({ fresh });
       if (current !== request.current) return;
-      if (connection.version !== '2.6.0') throw new Error('Installez le lanceur Windows 2.6 depuis l’archive ci-dessus, puis relancez le lanceur. Votre dossier existant sera conservé.');
+      setInstalledVersion(connection.version || null);
+      if (!supportsLocalDriveVersion(connection.version, '2.6.0')) throw new Error('Installez le lanceur Windows 2.6 ou ultérieur depuis l’archive ci-dessus, puis relancez le lanceur. Votre dossier existant sera conservé.');
       const result = await localDriveRequest<LocalDriveStatus>(client, connection, { action });
       if (current !== request.current) return;
       if (result.cancelled) { setCancelled(true); return; }
       // The picker prepares the folder; confirm its availability automatically afterwards.
       const verified = action === 'select-root' ? await localDriveRequest<LocalDriveStatus>(client, await connectLocalDrive(), { action: 'status' }) : result;
       if (current !== request.current) return;
-      if (verified.version !== '2.6.0' || typeof verified.exists !== 'boolean') throw new Error('Le lanceur n’a pas confirmé la disponibilité du dossier SeaPilot.');
+      if (!supportsLocalDriveVersion(verified.version, '2.6.0') || typeof verified.exists !== 'boolean') throw new Error('Le lanceur n’a pas confirmé la disponibilité du dossier SeaPilot.');
       setStatus({ ...verified, collaborators: result.collaborators ?? verified.collaborators });
     } catch (e) { if (current === request.current) setError(e instanceof Error ? e.message : 'Configuration impossible.'); }
     finally { if (current === request.current) setBusy(false); }
   }, [client, previewMode]);
   useEffect(() => {
-    void configure('status');
+    void configure('status', true);
     return () => { request.current += 1; };
   }, [configure]);
   const configured = Boolean(status?.exists && status.root);
@@ -37,7 +39,11 @@ export function AdminGoogleDriveSetup({ client, previewMode = false }: { client:
     <div className="admin-header"><div><p className="module-family">Documents et Google Drive</p><h2 id="admin-drive-title">Un seul dossier SeaPilot pour ce PC</h2><p className="admin-section-description">Configurez une fois la racine synchronisée. Tous les modules utilisent ensuite le même lanceur Windows.</p></div><span className="admin-platform-badge"><Monitor aria-hidden="true" size={16} />Windows</span></div>
     <ol className="admin-setup-steps">
       <li><div><h3>Connecter Google Drive</h3><p>Le dossier SeaPilot doit être disponible dans l’Explorateur de fichiers de ce PC.</p><a className="admin-secondary-button" href="https://support.google.com/drive/answer/10838124?hl=fr" target="_blank" rel="noreferrer"><ExternalLink size={16} />Installer Google Drive</a></div></li>
-      <li><div><h3>Installer le lanceur unique</h3><p>Extrayez l’archive puis exécutez <strong>Installer.cmd</strong> sur chaque PC. La version 2.6 détecte le dossier SeaPilot et permet de le sélectionner dans Windows. Elle conserve toutes les fonctions de classement, d’ouverture et d’export PDF. Une mise à jour conserve le dossier déjà configuré.</p><a className="admin-primary-button" href="/connectors/seapilot-drive-windows.zip?v=2.6.0" download><Download size={16} />Installer le lanceur Windows</a></div></li>
+      <li><div><h3>Installer le lanceur unique</h3><p>Extrayez l’archive puis exécutez <strong>Installer.cmd</strong> sur chaque PC. La version 2.6 détecte le dossier SeaPilot et permet de le sélectionner dans Windows. Elle conserve toutes les fonctions de classement, d’ouverture et d’export PDF. Une mise à jour conserve le dossier déjà configuré.</p>
+        <p>Version proposée au téléchargement : <strong>{LOCAL_DRIVE_DOWNLOAD_VERSION}</strong></p>
+        <p role="status">Version installée sur ce PC : <strong>{installedVersion || (previewMode ? 'indisponible en préversion' : busy ? 'détection en cours…' : 'non détectée')}</strong></p>
+        <div className="admin-root-actions"><a className="admin-primary-button" href={`/connectors/seapilot-drive-windows.zip?v=${LOCAL_DRIVE_DOWNLOAD_VERSION}`} download><Download size={16} />Installer le lanceur Windows</a><button className="admin-secondary-button" disabled={busy || previewMode} onClick={() => void configure('status', true)}>Vérifier la version installée</button></div>
+      </div></li>
       <li><div><h3>{configured ? 'Google Drive est bien configuré' : busy ? 'Vérification automatique de Google Drive…' : 'Sélectionner le dossier SeaPilot'}</h3>
         {configured ? <div role="status"><p><CheckCircle2 size={18} aria-hidden="true" /> Le dossier SeaPilot est accessible sur ce PC.</p><p className="admin-drive-path">{status?.root}</p>{status?.collaborators !== undefined ? <p>{status.collaborators} dossier(s) de collaborateurs en poste préparé(s).</p> : null}</div> : <>
           <p>SeaPilot recherche automatiquement <strong>G:\Mon Drive\SeaPilot</strong> ou votre dossier déjà configuré. S’il est introuvable, sélectionnez le dossier SeaPilot synchronisé dans la fenêtre Windows.</p>

@@ -190,7 +190,8 @@ describe('AdminPage', () => {
     renderAdminPage(client, 'documents');
 
     expect(screen.getByRole('button', { name: 'Sélectionner le dossier dans Windows' })).toBeVisible();
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Version installée sur ce PC : indisponible en préversion');
+    expect(screen.getByRole('button', { name: 'Vérifier la version installée' })).toBeDisabled();
   });
 
   it('falls back to the users section for an unknown section URL', async () => {

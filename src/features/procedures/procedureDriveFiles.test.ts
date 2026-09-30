@@ -16,6 +16,10 @@ beforeEach(() => { vi.stubGlobal('crypto', webcrypto); bridge.connect.mockReset(
 afterEach(() => vi.unstubAllGlobals());
 
 describe('synchronized procedure files', () => {
+  it.each(['2.6.0', '2.10.0'])('keeps procedure operations available with launcher %s', async version => {
+    bridge.connect.mockResolvedValueOnce({ ...session, version });
+    expect((await createProcedureFileStore(client).connect()).version).toBe(version);
+  });
   it('uses the requested filename and validates each identity field', () => {
     expect(procedureDriveFilename(input)).toBe('URG 01 A - Essai - sécurité.docx');
     expect(procedureDriveFilename(input, '.XLSX')).toBe('URG 01 A - Essai - sécurité.xlsx');
