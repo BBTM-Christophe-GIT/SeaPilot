@@ -39,6 +39,8 @@ const DisciplinaryPage = lazy(() => import('./features/disciplinary/Disciplinary
 const LiftingPage = lazy(() => import('./features/lifting/LiftingPage').then((module) => ({ default: module.LiftingPage })));
 const LsaPage = lazy(() => import('./features/lsa/LsaPage').then((module) => ({ default: module.LsaPage })));
 
+const InternalAuditsPage = lazy(() => import('./features/internalAudits/InternalAuditsPage').then((module) => ({ default: module.InternalAuditsPage })));
+
 interface AppProps {
   previewModeOverride?: boolean;
 }
@@ -86,6 +88,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des produits chimiques…</div>}><ChemicalsPage /></Suspense>
                 ) : module.key === 'actionPlan' ? (
                   <ActionPlanPage />
+                ) : module.key === 'internalAudits' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement des audits ISM internes…</div>}><InternalAuditsPage /></Suspense>
                 ) : module.key === 'dpr' ? (
                   <DprPage />
                 ) : module.key === 'certificates' ? (

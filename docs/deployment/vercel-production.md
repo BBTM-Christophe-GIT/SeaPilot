@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.62.0` ajoute **Audits → Audit ISM Interne** : planning annuel pour huit sites avec fenêtre de ± 3 mois calendaires, grille BBTM de 61 questions personnalisable par navire, notation avec exclusion des N/A, écarts affectés et suivi historisé, puis synthèse et comparaison des scores avec N-1. Les entrées eCMID, Audit ISM Externe et Audit Client sont présentes dans le nouveau menu. La migration `20260930214840_internal_audits.sql` a été appliquée au projet SeaPilot avant le client. Voir [internal-audits.md](./internal-audits.md) pour les dates initiales, les permissions et la recette.
+
 Version **3.59.1** : à chaque clic sur **RH / Brevets**, même depuis le module
 déjà ouvert sur un autre collaborateur, la fiche liée au compte
 connecté est sélectionnée en priorité parmi les collaborateurs autorisés et
