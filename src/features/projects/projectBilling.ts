@@ -532,6 +532,8 @@ export interface BillingExportInput {
   services: ProjectBillingService[];
   includeBbtmService?: boolean;
   dprs: ProjectBillingDpr[];
+  /** Full-month DPRs when the visible/exported range is shorter than the billing month. */
+  monthlyDprs?: ProjectBillingDpr[];
   selectedVesselName: string;
   startDate: string;
   endDate: string;
@@ -608,6 +610,34 @@ export function completeBillingDprs(
 export function countDailyOperations(dprs: ProjectBillingDpr[]): number {
   return new Set(dprs.filter((dpr) => /^(24\/24 )?(OPERATION|CREW CHANGE)$/.test(dpr.operation.trim().replace(/\s+/g, ' ').toUpperCase()))
     .map((dpr) => `${dpr.vesselId ?? dpr.vesselName}|${dpr.reportDate}`)).size;
+}
+
+export function automaticBillingServiceQuantity(
+  project: Pick<ProjectRecord, 'projectCode'>,
+  category: string,
+  periodMonth: string,
+  dprs: Pick<ProjectBillingDpr, 'reportDate' | 'operation'>[],
+): number | null {
+  const normalizedCategory = category.trim().replace(/[_\s]+/g, ' ').toUpperCase();
+  if (project.projectCode.trim().toUpperCase() !== 'P144' || normalizedCategory !== 'SPREAD ANTIPOLLUTION') return null;
+  const month = periodMonth.slice(0, 7);
+  const [year, monthNumber] = month.split('-').map(Number);
+  if (!/^\d{4}-\d{2}$/.test(month) || monthNumber < 1 || monthNumber > 12) throw new Error('Le mois de facturation est invalide.');
+  const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const lastDate = `${month}-${String(daysInMonth).padStart(2, '0')}`;
+  const weatherStandbyDays = new Set(dprs.filter((dpr) => (
+    dpr.reportDate >= `${month}-01` && dpr.reportDate <= lastDate
+    && dpr.operation.trim().replace(/\s+/g, ' ').toUpperCase() === '24/24 WEATHER STAND-BY'
+  )).map((dpr) => dpr.reportDate));
+  return daysInMonth - weatherStandbyDays.size;
+}
+
+export function billingExportServices(input: BillingExportInput): ProjectBillingService[] {
+  if (input.period.includeBbtmInPdf === false || input.includeBbtmService === false) return [];
+  return input.services.filter((service) => service.includeInPdf !== false).map((service) => ({
+    ...service,
+    quantity: automaticBillingServiceQuantity(input.project, service.category, input.period.periodMonth, input.monthlyDprs ?? input.dprs) ?? service.quantity,
+  }));
 }
 
 export function billingServicesTotal(services: ProjectBillingService[]): number {
@@ -902,7 +932,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
     : input.expenses.filter((expense) => expense.includeInPdf !== false);
   const expenseTotal = expenses.reduce((sum, expense) => sum + expense.amountHt, 0);
   const includeBbtmService = input.period.includeBbtmInPdf !== false && input.includeBbtmService !== false;
-  const services = includeBbtmService ? input.services.filter((service) => service.includeInPdf !== false) : [];
+  const services = billingExportServices(input);
   const serviceTotal = includeBbtmService ? billingServicesTotal(services) : 0;
   const invoiceTotal = billingInvoiceTotal(hiresTotal, expenseTotal, services, includeBbtmService);
 

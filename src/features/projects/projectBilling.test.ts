@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  automaticBillingServiceQuantity,
+  billingExportServices,
   billingExpenseAttachmentName,
   billingExpenseSpecialtyLabel,
   billingInvoiceTotal,
@@ -434,6 +436,38 @@ describe('billing operation export', () => {
 });
 
 describe('monthly billing completion', () => {
+  it('uses 30 calendar days minus one weather standby for P144 even when a DPR is missing', () => {
+    const dprs = Array.from({ length: 29 }, (_, index) => ({ ...input.dprs[0], id: index + 1, reportDate: `2026-09-${String(index + 1).padStart(2, '0')}`, operation: index === 0 ? '24/24 Weather Stand-by' : index === 7 || index === 21 ? '24/24 Crew Change' : '24/24 Operation' }));
+    expect(countDailyOperations(dprs)).toBe(28);
+    expect(automaticBillingServiceQuantity(input.project, 'Spread Antipollution', '2026-09-01', dprs)).toBe(29);
+    const services = billingExportServices({ ...input, period: { ...input.period, periodMonth: '2026-09-01', includeOperationsInPdf: false, excludedOperationKeys: ['dpr:1'] }, dprs, services: [{ id: 1, billingPeriodId: 1, serviceCatalogId: 7, category: 'Spread Antipollution', descriptionHtml: '', unitAmountHt: 92.58, quantity: 28 }] });
+    expect(services[0].quantity).toBe(29);
+    expect(billingServicesTotal(services)).toBeCloseTo(2684.82, 2);
+  });
+  it.each([['2026-01', 31], ['2026-02', 28], ['2028-02', 29], ['2026-09', 30]])('uses the calendar length of %s', (month, days) => {
+    expect(automaticBillingServiceQuantity(input.project, 'Spread Antipollution', month, [])).toBe(days);
+  });
+  it('subtracts only distinct weather dates of the billing month, retaining all other days', () => {
+    const dprs = [
+      { reportDate: '2026-08-31', operation: '24/24 Weather Stand-by' },
+      { reportDate: '2026-09-01', operation: '24/24 Weather Stand-by' },
+      { reportDate: '2026-09-01', operation: ' 24/24  weather stand-by ' },
+      { reportDate: '2026-09-02', operation: '24/24 Crew Change' },
+      { reportDate: '2026-09-03', operation: 'Contractual Maintenance Day' },
+      { reportDate: '2026-09-04', operation: '24/24 Stand-by' },
+      { reportDate: '2026-10-01', operation: '24/24 Weather Stand-by' },
+    ];
+    expect(automaticBillingServiceQuantity(input.project, 'spread_antipollution', '2026-09-01', dprs)).toBe(29);
+    expect(automaticBillingServiceQuantity(input.project, 'Spread Antipollution', '2026-09', Array.from({ length: 30 }, (_, index) => ({ reportDate: `2026-09-${String(index + 1).padStart(2, '0')}`, operation: '24/24 Weather Stand-by' })))).toBe(0);
+  });
+  it('keeps the monthly rule for a shorter export and preserves manual quantities on other services and projects', () => {
+    const service = { id: 1, billingPeriodId: 1, serviceCatalogId: 7, category: 'Spread Antipollution', descriptionHtml: '', unitAmountHt: 92.58, quantity: 28 };
+    const exportInput = { ...input, period: { ...input.period, periodMonth: '2026-09-01' }, startDate: '2026-09-15', endDate: '2026-09-30', dprs: [], monthlyDprs: [{ ...input.dprs[0], reportDate: '2026-09-01', operation: '24/24 Weather Stand-by' }], services: [service, { ...service, id: 2, category: 'Assistance', quantity: 3 }] };
+    expect(billingExportServices(exportInput).map((row) => row.quantity)).toEqual([29, 3]);
+    expect(billingExportServices({ ...exportInput, project: { ...input.project, projectCode: 'P145' } }).map((row) => row.quantity)).toEqual([28, 3]);
+    expect(billingExportServices({ ...exportInput, period: { ...exportInput.period, includeBbtmInPdf: false } })).toEqual([]);
+    expect(billingExportServices({ ...exportInput, services: [{ ...service, includeInPdf: false }] })).toEqual([]);
+  });
   it('uses the P144 client reference by default', () => {
     expect(defaultProjectClientReference(input.project)).toBe('TRE-PO-000503');
   });
