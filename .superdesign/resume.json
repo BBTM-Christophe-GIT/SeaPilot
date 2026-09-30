@@ -366,6 +366,38 @@
       },
       "targetKind": "new-ui",
       "updatedAt": "2026-09-15T09:04:42.4321947Z"
+    },
+    "/modules/internalAudits": {
+      "targetKind": "existing-ui",
+      "projectId": "136c3f34-b063-4755-a59c-3a422abf9fab",
+      "activeDraftId": "6491e7e9-12fb-477c-a447-c3bd07c261b1",
+      "designSystemPath": ".superdesign/audit-design-system.md",
+      "referenceIds": [],
+      "contextFiles": [
+        ".superdesign/audit-design-system.md",
+        "src/features/internalAudits/InternalAuditsPage.tsx:67:73",
+        "src/features/internalAudits/InternalAuditsPage.tsx:282:375",
+        "src/features/internalAudits/internalAudits.css",
+        "src/components/AppDialog.tsx",
+        "src/styles/index.css:1:95"
+      ],
+      "fingerprints": {
+        ".superdesign/audit-design-system.md": "ad477a0336362caea3341041cd1328c779855f5f75b5dc7c02f0619e77aaaad7",
+        "src/components/AppDialog.tsx": "ad276ebb1259f6112ac5dcb0ee7be62ea320d03c15d18a31084e9fcb4b93d42c",
+        "src/features/internalAudits/InternalAuditsPage.tsx": "6f45dfefbdbb4b0d790d7bcb7500eac9e1ea58b3f881180c943422644f5c7a45",
+        "src/features/internalAudits/internalAudits.css": "b2df4a0f1eee5c5902c9b9cbe2f326f71b156e3dc6d3f6df3d291e9c049ee55a",
+        "src/styles/index.css": "1fb55e00d6113b6778779b844921c1caef856e944b8c030cf64200737c922b6d"
+      },
+      "components": [],
+      "drafts": {
+        "6491e7e9-12fb-477c-a447-c3bd07c261b1": {
+          "title": "Audit ISM Interne — grille sur une ligne",
+          "visualDirection": "Contenu du module SeaPilot : tableau compact, consignes visibles avec lecture intégrale au focus, réponses/observations/actions sur une ligne, écart par délai et photos facultatives. Shell externe conservé hors cadre.",
+          "currentVersion": 3
+        }
+      },
+      "workflowNote": "Version importée directement après mauvaise cible générée depuis un ancien contexte et rejet de payload supérieur à 50 000 caractères. Version 1 ne constitue pas une référence fidèle. Version 3 reprend le tableau strictement compact demandé. Source contrôlée et QA application effectuée séparément.",
+      "updatedAt": "2026-09-30T23:41:05.240105+00:00"
     }
   }
 }

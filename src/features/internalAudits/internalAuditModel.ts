@@ -3,6 +3,16 @@ export type AuditStatus = 'planned' | 'in_progress' | 'completed';
 export type AuditFindingSeverity = 'major' | 'minor' | 'remark';
 export type AuditFindingStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 export type AuditAssigneeRole = 'captain' | 'chief_engineer' | 'crew';
+export type AuditDeadlineUnit = 'days' | 'weeks' | 'months';
+export interface AuditDeadlineDuration { amount: number; unit: AuditDeadlineUnit }
+export interface AuditPhoto {
+  id: string;
+  fileName: string;
+  storagePath: string;
+  mimeType: string;
+  sizeBytes: number;
+  url: string;
+}
 
 export interface AuditSite {
   id: string;
@@ -65,11 +75,15 @@ export interface AuditFinding {
   assigneeRole: AuditAssigneeRole | null;
   assigneeVesselId: number | null;
   assigneeLabel: string;
-  dueOn: string;
+  openedOn: string;
+  dueOn: string | null;
+  treatmentDelayValue: number | null;
+  treatmentDelayUnit: AuditDeadlineUnit | null;
   status: AuditFindingStatus;
   treatment: string;
   resolvedAt: string | null;
   closedAt: string | null;
+  photos?: AuditPhoto[];
 }
 
 export interface AuditFindingEvent {
@@ -80,6 +94,7 @@ export interface AuditFindingEvent {
   createdAt: string;
   status: AuditFindingStatus;
   treatment: string;
+  photos?: AuditPhoto[];
 }
 
 export const AUDIT_ANSWER_LABELS: Record<AuditAnswerValue, string> = {
@@ -163,6 +178,23 @@ export function addAuditMonths(value: string, months: number): string {
   const lastDay = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
   first.setUTCDate(Math.min(day, lastDay));
   return first.toISOString().slice(0, 10);
+}
+
+export function defaultFindingDuration(severity: AuditFindingSeverity): AuditDeadlineDuration | null {
+  return severity === 'major' ? { amount: 1, unit: 'weeks' } : severity === 'minor' ? { amount: 1, unit: 'months' } : null;
+}
+
+export function auditDueOnFromDuration(openedOn: string, duration: AuditDeadlineDuration | null): string | null {
+  if (!duration || !isAuditDate(openedOn) || !Number.isInteger(duration.amount) || duration.amount < 1 || duration.amount > 3650) return null;
+  if (duration.unit === 'months') return addAuditMonths(openedOn, duration.amount) || null;
+  if (!['days', 'weeks'].includes(duration.unit)) return null;
+  const [year, month, day] = openedOn.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + duration.amount * (duration.unit === 'weeks' ? 7 : 1)));
+  return date.toISOString().slice(0, 10);
+}
+
+export function defaultFindingDueOn(severity: AuditFindingSeverity, openedOn = todayAuditParis()): string | null {
+  return auditDueOnFromDuration(openedOn, defaultFindingDuration(severity));
 }
 
 export function nextAnnualDate(performedOn: string): string {
@@ -306,7 +338,15 @@ export function completionIssues(audit: InternalAudit): string[] {
 export function findingIssues(finding: AuditFinding): string[] {
   const issues: string[] = [];
   if (!finding.description.trim()) issues.push('Décrivez l’écart constaté.');
-  if (!isAuditDate(finding.dueOn)) issues.push('Renseignez un délai de traitement valide.');
+  if (finding.severity !== 'remark') {
+    const duration = finding.treatmentDelayValue !== null && finding.treatmentDelayUnit !== null
+      ? { amount: finding.treatmentDelayValue, unit: finding.treatmentDelayUnit } : null;
+    if (!auditDueOnFromDuration(finding.openedOn, duration) || !finding.dueOn || !isAuditDate(finding.dueOn)) {
+      issues.push('Renseignez un délai de traitement valide.');
+    }
+  } else if (finding.dueOn !== null || finding.treatmentDelayValue !== null || finding.treatmentDelayUnit !== null) {
+    issues.push('Une remarque ne comporte pas de délai de traitement.');
+  }
   const person = Number.isInteger(finding.assigneePersonId) && (finding.assigneePersonId ?? 0) > 0;
   const role = finding.assigneeRole !== null && Object.hasOwn(ASSIGNEE_ROLE_LABELS, finding.assigneeRole);
   if (person === role || (role && !(Number.isInteger(finding.assigneeVesselId) && (finding.assigneeVesselId ?? 0) > 0))
@@ -320,5 +360,5 @@ export function findingIssues(finding: AuditFinding): string[] {
 }
 
 export function findingOverdue(finding: AuditFinding, today = todayAuditParis()): boolean {
-  return finding.status !== 'closed' && finding.status !== 'resolved' && isAuditDate(finding.dueOn) && finding.dueOn < today;
+  return finding.status !== 'closed' && finding.status !== 'resolved' && Boolean(finding.dueOn && isAuditDate(finding.dueOn) && finding.dueOn < today);
 }

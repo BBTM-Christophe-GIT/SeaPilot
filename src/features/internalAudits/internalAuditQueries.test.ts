@@ -13,6 +13,7 @@ const audit: InternalAudit = {
 const finding: AuditFinding = {
   id: 'finding', companyId: 1, auditId: 'audit', questionId: 'q1', reference: '1.2', severity: 'major', description: 'Document absent',
   assigneePersonId: 42, assigneeRole: null, assigneeVesselId: null, assigneeLabel: 'Personne', dueOn: '2026-10-30', status: 'open', treatment: '', resolvedAt: null, closedAt: null,
+  openedOn: '2026-09-30', treatmentDelayValue: 1, treatmentDelayUnit: 'weeks', photos: [],
 };
 
 function mockClient(data: unknown = {}, error: unknown = null) {
@@ -78,7 +79,7 @@ describe('internal audit queries', () => {
   it('records treatment through the atomic workflow with no client actor or timestamps', async () => {
     const { client, rpc } = mockClient({ id: 'event', finding_id: 'finding', actor_id: 'real-user', actor_name: 'Vrai Marin', created_at: '2026-10-01T10:00:00Z', status: 'resolved', treatment: 'Réparation terminée' });
     const event = await addAuditFindingTreatment(client, 'finding', 'resolved', '  Réparation terminée  ');
-    expect(rpc).toHaveBeenCalledWith('internal_audit_add_treatment', { p_finding_id: 'finding', p_status: 'resolved', p_treatment: 'Réparation terminée' });
+    expect(rpc).toHaveBeenCalledWith('internal_audit_add_treatment', { p_finding_id: 'finding', p_status: 'resolved', p_treatment: 'Réparation terminée', p_photos: [] });
     expect(event).toMatchObject({ actorId: 'real-user', actorName: 'Vrai Marin', status: 'resolved' });
   });
 });

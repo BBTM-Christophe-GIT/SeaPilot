@@ -30,8 +30,9 @@ export function createInternalAuditPreviewData(): InternalAuditData {
     questionId: current.rows[2].id, reference: current.rows[2].reference, severity: 'minor' as const,
     description: 'Compléter la vérification et conserver la preuve du contrôle.',
     assigneePersonId: null, assigneeRole: 'captain' as const, assigneeVesselId: sites[3].vesselId,
-    assigneeLabel: 'Capitaines LE ROZEL', dueOn: '2026-10-15', status: 'open' as const,
-    treatment: '', resolvedAt: null, closedAt: null,
+    assigneeLabel: 'Capitaines LE ROZEL', openedOn: '2026-09-15', dueOn: '2026-10-15', status: 'open' as const,
+    treatmentDelayValue: 1, treatmentDelayUnit: 'months' as const,
+    treatment: '', resolvedAt: null, closedAt: null, photos: [],
   };
   return {
     companyId: 1, sites, templates: [common, rozel], audits: [current, completed], findings: [finding], events: [],

@@ -5,12 +5,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { InternalAuditsPage } from './InternalAuditsPage';
-import type { AuditFinding, AuditFindingStatus, AuditTemplate, InternalAudit } from './internalAuditModel';
+import { auditDueOnFromDuration, todayAuditParis, type AuditFinding, type AuditFindingStatus, type AuditTemplate, type InternalAudit } from './internalAuditModel';
 import type { InternalAuditData } from './internalAuditQueries';
 import { createInternalAuditPreviewData } from './internalAuditPreview';
 
 const queries = vi.hoisted(() => ({ fetchInternalAuditData: vi.fn(), saveAuditTemplate: vi.fn(), saveInternalAudit: vi.fn(), saveAuditFinding: vi.fn(), saveAuditSite: vi.fn(), addAuditFindingTreatment: vi.fn() }));
+const reportExports = vi.hoisted(() => ({ pdf: vi.fn(), workbook: vi.fn() }));
 vi.mock('./internalAuditQueries', () => queries);
+vi.mock('./internalAuditReport', () => ({ downloadInternalAuditReport: reportExports.pdf }));
+vi.mock('./internalAuditWorkbook', () => ({ downloadInternalAuditWorkbook: reportExports.workbook }));
 
 let fixture: InternalAuditData;
 function renderPage(roles: RoleKey[] = ['armement']) {
@@ -24,6 +27,8 @@ function renderPage(roles: RoleKey[] = ['armement']) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  Object.defineProperty(URL, 'createObjectURL', { configurable: true, writable: true, value: vi.fn(() => 'blob:photo-test') });
+  Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, writable: true, value: vi.fn() });
   fixture = createInternalAuditPreviewData();
   fixture.audits.sort((a, b) => a.year - b.year);
   fixture.templates = fixture.templates.map((template) => ({ ...template, rows: template.rows.slice(0, 2) }));
@@ -56,8 +61,7 @@ describe('InternalAuditsPage', () => {
     renderPage();
     expect(await screen.findByRole('heading', { name: 'Audit ISM Interne' })).toBeInTheDocument();
     for (const site of fixture.sites) expect(screen.getByText(site.name, { exact: true })).toBeInTheDocument();
-    await user.clear(screen.getByRole('spinbutton', { name: 'Année du planning' }));
-    await user.type(screen.getByRole('spinbutton', { name: 'Année du planning' }), '2030');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Année du planning' }), '2030');
     const row = screen.getByText('LE ROZEL', { exact: true }).closest('article')!;
     expect(within(row).getByText('15 juin 2030')).toBeInTheDocument();
     expect(within(row).getByText('À venir')).toBeInTheDocument();
@@ -91,24 +95,28 @@ describe('InternalAuditsPage', () => {
     renderPage();
     await screen.findByRole('heading', { name: 'Audit ISM Interne' });
     await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
-    const first = screen.getAllByRole('group', { name: /^Réponse / })[0];
-    await user.click(within(first).getByRole('radio', { name: /N\/A/ }));
+    const first = screen.getAllByRole('combobox', { name: /^Réponse / })[0];
+    await user.selectOptions(first, 'na');
     expect(screen.getByText('100 %', { exact: true })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Ajouter une ligne à l’audit' }));
     await user.type(screen.getAllByRole('textbox', { name: 'Question' }).at(-1)!, 'Contrôle ajouté');
+    await user.click(screen.getByRole('button', { name: 'Ajouter la question' }));
     await user.click(screen.getByRole('button', { name: 'Émettre un écart Contrôle ajouté' }));
     const modal = screen.getByRole('dialog');
     await user.selectOptions(within(modal).getByRole('combobox', { name: 'Type d’écart' }), 'major');
     await user.type(within(modal).getByRole('textbox', { name: 'Description du constat' }), 'Essai à réaliser sur le dispositif');
     await user.selectOptions(within(modal).getByRole('combobox', { name: 'Responsable de traitement' }), `role:chief_engineer:${fixture.sites[3].vesselId}`);
-    await user.type(within(modal).getByLabelText('Délai de traitement'), '2026-10-15');
+    expect(within(modal).getByRole('spinbutton', { name: 'Délai de traitement' })).toHaveValue(1);
+    expect(within(modal).getByRole('combobox', { name: 'Unité du délai' })).toHaveValue('weeks');
+    await user.clear(within(modal).getByRole('spinbutton', { name: 'Délai de traitement' }));
+    await user.type(within(modal).getByRole('spinbutton', { name: 'Délai de traitement' }), '2');
     await user.click(within(modal).getByRole('button', { name: 'Enregistrer l’écart' }));
     await waitFor(() => expect(queries.saveAuditFinding).toHaveBeenCalledOnce());
     expect(queries.saveInternalAudit.mock.invocationCallOrder[0]).toBeLessThan(queries.saveAuditFinding.mock.invocationCallOrder[0]);
     const savedAudit = queries.saveInternalAudit.mock.calls[0][1] as InternalAudit;
     const savedFinding = queries.saveAuditFinding.mock.calls[0][1] as AuditFinding;
     expect(savedAudit.rows).toHaveLength(3);
-    expect(savedFinding).toMatchObject({ questionId: savedAudit.rows[2].id, severity: 'major', assigneeRole: 'chief_engineer', assigneeVesselId: fixture.sites[3].vesselId, assigneePersonId: null, dueOn: '2026-10-15' });
+    expect(savedFinding).toMatchObject({ questionId: savedAudit.rows[2].id, severity: 'major', assigneeRole: 'chief_engineer', assigneeVesselId: fixture.sites[3].vesselId, assigneePersonId: null, openedOn: todayAuditParis(), treatmentDelayValue: 2, treatmentDelayUnit: 'weeks', dueOn: auditDueOnFromDuration(todayAuditParis(), { amount: 2, unit: 'weeks' }) });
     await user.click(screen.getByRole('button', { name: /^Synthèse/ }));
     expect(await screen.findByText('Essai à réaliser sur le dispositif')).toBeInTheDocument();
     expect(screen.getByText('Chefs Mécaniciens LE ROZEL')).toBeInTheDocument();
@@ -133,7 +141,7 @@ describe('InternalAuditsPage', () => {
     await screen.findByRole('heading', { name: 'Audit ISM Interne' });
     expect(screen.queryByRole('button', { name: /^Planifier / })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
-    for (const radio of screen.getAllByRole('radio')) expect(radio).toBeDisabled();
+    for (const answer of screen.getAllByRole('combobox', { name: /^Réponse / })) expect(answer).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Enregistrer les réponses' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Émettre un écart / })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^Synthèse/ }));
@@ -142,7 +150,7 @@ describe('InternalAuditsPage', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Avancement' }), 'resolved');
     await user.type(screen.getByRole('textbox', { name: 'Traitement / preuve de correction' }), 'Essai réalisé et rapport conservé à bord.');
     await user.click(screen.getByRole('button', { name: 'Enregistrer le traitement' }));
-    await waitFor(() => expect(queries.addAuditFindingTreatment).toHaveBeenCalledWith(expect.anything(), fixture.findings[0].id, 'resolved', 'Essai réalisé et rapport conservé à bord.'));
+    await waitFor(() => expect(queries.addAuditFindingTreatment).toHaveBeenCalledWith(expect.anything(), fixture.findings[0].id, 'resolved', 'Essai réalisé et rapport conservé à bord.', []));
     expect((await screen.findAllByText('Essai réalisé et rapport conservé à bord.')).length).toBeGreaterThan(0);
     expect(screen.getByText('Historique du traitement (1)')).toBeInTheDocument();
   });
@@ -164,15 +172,15 @@ describe('InternalAuditsPage', () => {
     renderPage();
     await screen.findByRole('heading', { name: 'Audit ISM Interne' });
     await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
-    const firstAnswer = screen.getAllByRole('group', { name: /^Réponse / })[0];
-    await user.click(within(firstAnswer).getByRole('radio', { name: /N\/A/ }));
+    const firstAnswer = screen.getAllByRole('combobox', { name: /^Réponse / })[0];
+    await user.selectOptions(firstAnswer, 'na');
 
     expect(screen.getByText(/^Réponses non enregistrées :/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Planning' })).toBeDisabled();
     expect(screen.getByRole('combobox', { name: 'Audit sélectionné' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /1 écart émis/ })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Planning' }));
-    expect(within(firstAnswer).getByRole('radio', { name: /N\/A/ })).toBeChecked();
+    expect(firstAnswer).toHaveValue('na');
     expect(screen.queryByRole('button', { name: 'Ouvrir' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Planifier / })).not.toBeInTheDocument();
 
@@ -182,7 +190,7 @@ describe('InternalAuditsPage', () => {
     expect(screen.getByRole('button', { name: 'Ouvrir' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Planifier LE ROZEL' })).toBeEnabled();
     await user.click(screen.getByRole('button', { name: 'Ouvrir' }));
-    expect(within(screen.getAllByRole('group', { name: /^Réponse / })[0]).getByRole('radio', { name: /N\/A/ })).toBeChecked();
+    expect(screen.getAllByRole('combobox', { name: /^Réponse / })[0]).toHaveValue('na');
   });
 
   it('protects a modified reference grid from selection and tab changes until cancellation', async () => {
@@ -220,10 +228,177 @@ describe('InternalAuditsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
     expect(screen.getByText(/Réponses conservées/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Finaliser l’audit' })).not.toBeInTheDocument();
-    for (const radio of screen.getAllByRole('radio')) expect(radio).toBeDisabled();
+    for (const answer of screen.getAllByRole('combobox', { name: /^Réponse / })) expect(answer).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Graphique' }));
     expect(screen.getAllByText('0 %', { exact: true }).length).toBeGreaterThan(1);
     expect(screen.queryByText('Absent', { exact: true })).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Scores par chapitre : audit 2026 et année 2025' })).toBeInTheDocument();
+  });
+
+  it('starts a planned audit with the Paris date and displays guidance in the compact question row', async () => {
+    const user = userEvent.setup();
+    fixture.audits[1] = { ...fixture.audits[1], status: 'planned', performedOn: null, rows: fixture.audits[1].rows.map((row) => ({ ...row, answer: null, observation: '' })) };
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
+    expect(screen.getByLabelText('Date de réalisation')).toHaveValue('');
+    const table = screen.getByRole('table', { name: 'Grille d’audit LE ROZEL 2026' });
+    const guidance = table.querySelector('.ia-guidance-cell .ia-cell-preview')!;
+    expect(guidance.querySelector('.ia-cell-line')).toHaveTextContent(fixture.audits[1].rows[0].guidance.replace(/\s+/g, ' '));
+    expect(within(table).queryByRole('tooltip')).not.toBeInTheDocument();
+    await user.click(guidance);
+    expect(within(table).getByRole('tooltip')).toHaveTextContent(fixture.audits[1].rows[0].guidance.replace(/\s+/g, ' '));
+    expect(table.querySelector('details')).toBeNull();
+    expect(document.querySelector('.ia-question-editor')).toBeNull();
+    await user.selectOptions(within(table).getAllByRole('combobox', { name: /^Réponse / })[0], 'conforme');
+    expect(screen.getByLabelText('Date de réalisation')).toHaveValue(todayAuditParis());
+    await user.click(screen.getByRole('button', { name: 'Enregistrer les réponses' }));
+    await waitFor(() => expect(queries.saveInternalAudit).toHaveBeenCalledOnce());
+    expect(queries.saveInternalAudit.mock.calls[0][1]).toMatchObject({ status: 'in_progress', performedOn: todayAuditParis() });
+  });
+
+  it('resets proposed durations when severity changes and emits a remark without a deadline or photos', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
+    await user.click(screen.getAllByRole('button', { name: /^Émettre un écart / })[0]);
+    const modal = screen.getByRole('dialog');
+    const severity = within(modal).getByRole('combobox', { name: 'Type d’écart' });
+    expect(within(modal).getByRole('combobox', { name: 'Unité du délai' })).toHaveValue('months');
+    expect(within(modal).getByText('Échéance calculée')).toBeInTheDocument();
+    expect(modal.querySelector('input[type="date"]')).toBeNull();
+    await user.clear(within(modal).getByRole('spinbutton', { name: 'Délai de traitement' }));
+    await user.type(within(modal).getByRole('spinbutton', { name: 'Délai de traitement' }), '4');
+    await user.selectOptions(severity, 'major');
+    expect(within(modal).getByRole('spinbutton', { name: 'Délai de traitement' })).toHaveValue(1);
+    expect(within(modal).getByRole('combobox', { name: 'Unité du délai' })).toHaveValue('weeks');
+    await user.selectOptions(severity, 'minor');
+    expect(within(modal).getByRole('spinbutton', { name: 'Délai de traitement' })).toHaveValue(1);
+    expect(within(modal).getByRole('combobox', { name: 'Unité du délai' })).toHaveValue('months');
+    await user.selectOptions(severity, 'remark');
+    expect(within(modal).queryByRole('spinbutton', { name: 'Délai de traitement' })).not.toBeInTheDocument();
+    expect(within(modal).getByText(/clôture restent facultatifs/)).toBeInTheDocument();
+    await user.type(within(modal).getByRole('textbox', { name: 'Description du constat' }), 'Suggestion de rangement');
+    await user.selectOptions(within(modal).getByRole('combobox', { name: 'Responsable de traitement' }), 'person:9301');
+    await user.click(within(modal).getByRole('button', { name: 'Enregistrer l’écart' }));
+    await waitFor(() => expect(queries.saveAuditFinding).toHaveBeenCalledOnce());
+    expect(queries.saveAuditFinding.mock.calls[0][1]).toMatchObject({ severity: 'remark', openedOn: todayAuditParis(), dueOn: null, treatmentDelayValue: null, treatmentDelayUnit: null, assigneePersonId: 9301 });
+    expect(queries.saveAuditFinding.mock.calls[0][2]).toEqual([]);
+  });
+
+  it('passes optional finding photos and rejects an unsupported upload before saving', async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
+    await user.click(screen.getAllByRole('button', { name: /^Émettre un écart / })[0]);
+    const modal = screen.getByRole('dialog');
+    const input = within(modal).getByLabelText('Photos du constat (facultatif)');
+    await user.upload(input, new File(['document'], 'document.pdf', { type: 'application/pdf' }));
+    expect(within(modal).getByRole('alert')).toHaveTextContent('JPEG, PNG ou WebP');
+    expect(queries.saveAuditFinding).not.toHaveBeenCalled();
+    const photo = new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], 'constat.png', { type: 'image/png' });
+    await user.upload(input, photo);
+    expect(within(modal).getByRole('img', { name: 'Aperçu constat.png' })).toBeInTheDocument();
+    await user.type(within(modal).getByRole('textbox', { name: 'Description du constat' }), 'Dispositif photographié');
+    await user.selectOptions(within(modal).getByRole('combobox', { name: 'Responsable de traitement' }), 'person:9301');
+    await user.click(within(modal).getByRole('button', { name: 'Enregistrer l’écart' }));
+    await waitFor(() => expect(queries.saveAuditFinding).toHaveBeenCalledOnce());
+    expect(queries.saveAuditFinding.mock.calls[0][2]).toEqual([photo]);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:photo-test');
+  });
+
+  it('allows a real assigned Capitaine to document treatment with a photo alone', async () => {
+    const user = userEvent.setup();
+    fixture.permissions = { canManage: false, treatableFindingIds: [fixture.findings[0].id] };
+    renderPage(['capitaine']);
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: /^Synthèse/ }));
+    await user.click(screen.getByRole('button', { name: 'Suivre le traitement' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Avancement' }), 'resolved');
+    const photo = new File([new Uint8Array([255, 216, 255, 224])], 'correction.jpg', { type: 'image/jpeg' });
+    await user.upload(screen.getByLabelText('Photos du traitement (facultatif)'), photo);
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le traitement' }));
+    await waitFor(() => expect(queries.addAuditFindingTreatment).toHaveBeenCalledWith(expect.anything(), fixture.findings[0].id, 'resolved', '', [photo]));
+  });
+
+  it('offers a manager optional direct closure of a remark without a closure calendar, note or photo', async () => {
+    const user = userEvent.setup();
+    fixture.findings[0] = { ...fixture.findings[0], severity: 'remark', dueOn: null, treatmentDelayValue: null, treatmentDelayUnit: null };
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: /^Synthèse/ }));
+    expect(screen.getByText('Sans échéance')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Suivre le traitement' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Avancement' }), 'closed');
+    expect(screen.getByLabelText('Photos de clôture (facultatif)')).toBeInTheDocument();
+    expect(screen.getByRole('dialog').querySelector('input[type="date"]')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le traitement' }));
+    await waitFor(() => expect(queries.addAuditFindingTreatment).toHaveBeenCalledWith(expect.anything(), fixture.findings[0].id, 'closed', 'Écart clôturé.', []));
+  });
+
+  it('exports the saved report in PDF and Excel and blocks export while answers are unsaved', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
+    await user.click(screen.getByRole('button', { name: 'Exporter le rapport' }));
+    await waitFor(() => expect(reportExports.pdf).toHaveBeenCalledOnce());
+    expect(reportExports.pdf.mock.calls[0][0]).toMatchObject({ audit: { id: fixture.audits[1].id }, site: { name: 'LE ROZEL' }, findings: fixture.findings, loadPhoto: expect.any(Function) });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Format du rapport' }), 'xlsx');
+    await user.click(screen.getByRole('button', { name: 'Exporter le rapport' }));
+    await waitFor(() => expect(reportExports.workbook).toHaveBeenCalledOnce());
+    await user.selectOptions(screen.getAllByRole('combobox', { name: /^Réponse / })[0], 'na');
+    expect(screen.getByRole('button', { name: 'Exporter le rapport' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Exporter le rapport' }));
+    expect(reportExports.workbook).toHaveBeenCalledOnce();
+  });
+
+  it('closes a committed finding form when refresh fails so its photos and finding cannot be submitted twice', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    queries.fetchInternalAuditData.mockRejectedValueOnce(new Error('Connexion indisponible'));
+    await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
+    await user.click(screen.getAllByRole('button', { name: /^Émettre un écart / })[0]);
+    await user.type(screen.getByRole('textbox', { name: 'Description du constat' }), 'Constat conservé malgré une connexion interrompue');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Responsable de traitement' }), 'person:9301');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer l’écart' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(queries.saveAuditFinding).toHaveBeenCalledOnce();
+    expect(screen.getByRole('alert')).toHaveTextContent('L’enregistrement a réussi');
+    await user.click(screen.getByRole('button', { name: /^Synthèse/ }));
+    expect(screen.getByText('Constat conservé malgré une connexion interrompue')).toBeInTheDocument();
+  });
+
+  it('retains a committed treatment locally and closes its form when the subsequent refresh fails', async () => {
+    const user = userEvent.setup();
+    fixture.permissions = { canManage: false, treatableFindingIds: [fixture.findings[0].id] };
+    renderPage(['capitaine']);
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    queries.fetchInternalAuditData.mockRejectedValueOnce(new Error('Connexion indisponible'));
+    await user.click(screen.getByRole('button', { name: /^Synthèse/ }));
+    await user.click(screen.getByRole('button', { name: 'Suivre le traitement' }));
+    await user.type(screen.getByRole('textbox', { name: 'Traitement / preuve de correction' }), 'Correction conservée');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le traitement' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(queries.addAuditFindingTreatment).toHaveBeenCalledOnce();
+    expect(screen.getByRole('alert')).toHaveTextContent('L’enregistrement a réussi');
+    expect(screen.getAllByText('Correction conservée').length).toBeGreaterThan(0);
+    expect(screen.getByText('Historique du traitement (1)')).toBeInTheDocument();
+  });
+
+  it('displays treatment timestamps after 23:00 UTC on the following Paris calendar day', async () => {
+    const user = userEvent.setup();
+    fixture.permissions = { canManage: false, treatableFindingIds: [fixture.findings[0].id] };
+    fixture.events.push({ id: 'event-paris', findingId: fixture.findings[0].id, actorId: 'captain-user', actorName: 'Capitaine LE ROZEL', createdAt: '2026-09-30T23:30:00Z', status: 'in_progress', treatment: 'Contrôle réalisé après minuit à Paris', photos: [] });
+    renderPage(['capitaine']);
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: /^Synthèse/ }));
+    await user.click(screen.getByText('Historique du traitement (1)'));
+    expect(screen.getByText('01 oct. 2026 · En traitement')).toBeVisible();
+    expect(screen.queryByText('30 sept. 2026 · En traitement')).not.toBeInTheDocument();
+    expect(screen.getByText('15 oct. 2026')).toBeVisible();
   });
 });
