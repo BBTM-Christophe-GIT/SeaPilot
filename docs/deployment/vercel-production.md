@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.43.0` ajoute **Audits → Audit ISM Interne** : planning annuel pour huit sites avec fenêtre de ± 3 mois calendaires, grille BBTM de 61 questions personnalisable par navire, notation avec exclusion des N/A, écarts affectés et suivi historisé, puis synthèse et comparaison des scores avec N-1. Les entrées eCMID, Audit ISM Externe et Audit Client sont présentes dans le nouveau menu. La migration `20260930214840_internal_audits.sql` a été appliquée au projet SeaPilot avant le client. Voir [internal-audits.md](./internal-audits.md) pour les dates initiales, les permissions et la recette.
+
 Version `3.41.0` centralise le lanceur Windows et la racine Google Drive dans Administration. Procédures et Sanctions Disciplinaires utilisent le même protocole ; les dossiers des collaborateurs sont créés automatiquement. Appliquer `20260915115648_desktop_drive_scope.sql` (déjà appliquée au projet lié), puis mettre à jour une fois le lanceur Windows avec l’archive fournie. Voir [la configuration commune](./shared-windows-drive-launcher.md).
 
 Version `3.40.0` ajoute **Ressources Humaines → Sanctions Disciplinaires** pour Administration et Direction :

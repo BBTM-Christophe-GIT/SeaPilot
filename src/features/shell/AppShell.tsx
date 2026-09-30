@@ -72,6 +72,7 @@ export interface AppShellOutletContext {
 const NAVIGATION_FAMILIES: AppModule['family'][] = [
   'Accueil',
   'QHSE',
+  'Audits',
   'Opérations',
   'Achats',
   'Facturation',
@@ -85,6 +86,7 @@ const NAVIGATION_FAMILIES: AppModule['family'][] = [
 const FAMILY_ICONS: Record<AppModule['family'], LucideIcon> = {
   Accueil: Home,
   QHSE: ShieldCheck,
+  Audits: ClipboardCheck,
   Opérations: Gauge,
   Achats: ShoppingCart,
   Facturation: ReceiptText,
@@ -98,6 +100,7 @@ const FAMILY_ICONS: Record<AppModule['family'], LucideIcon> = {
 const FAMILY_THEME_KEYS: Record<AppModule['family'], string> = {
   Accueil: 'home',
   QHSE: 'qhse',
+  Audits: 'qhse',
   Opérations: 'operations',
   Achats: 'purchasing',
   Facturation: 'billing',
@@ -116,6 +119,10 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   procedures: FileText,
   serviceNotes: Mail,
   actionPlan: ClipboardCheck,
+  ecmid: FileCheck2,
+  externalIsmAudits: ShieldCheck,
+  internalAudits: ClipboardCheck,
+  clientAudits: FileCheck2,
   dpr: Gauge,
   purchaseRequests: ShoppingCart,
   serviceProviders: Store,
