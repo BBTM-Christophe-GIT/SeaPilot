@@ -385,7 +385,7 @@
         ".superdesign/audit-design-system.md": "ad477a0336362caea3341041cd1328c779855f5f75b5dc7c02f0619e77aaaad7",
         "src/components/AppDialog.tsx": "ad276ebb1259f6112ac5dcb0ee7be62ea320d03c15d18a31084e9fcb4b93d42c",
         "src/features/internalAudits/InternalAuditsPage.tsx": "6f45dfefbdbb4b0d790d7bcb7500eac9e1ea58b3f881180c943422644f5c7a45",
-        "src/features/internalAudits/internalAudits.css": "b2df4a0f1eee5c5902c9b9cbe2f326f71b156e3dc6d3f6df3d291e9c049ee55a",
+        "src/features/internalAudits/internalAudits.css": "0e1f2804b18293dd178c3e523e88dbe6c91037d929dace37cc57b8424897aa6d",
         "src/styles/index.css": "1fb55e00d6113b6778779b844921c1caef856e944b8c030cf64200737c922b6d"
       },
       "components": [],
