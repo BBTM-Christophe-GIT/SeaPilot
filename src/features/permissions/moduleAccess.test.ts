@@ -43,6 +43,7 @@ describe('module access', () => {
       ['QHSE', 'Procédures QHSE', 'submenu'],
       ['QHSE', 'Notes de Service', 'submenu'],
       ['QHSE', "Plan d'Action", 'submenu'],
+      ['Audits', 'OVID', 'submenu'],
       ['Audits', 'eCMID', 'submenu'],
       ['Audits', 'Audit ISM Externe', 'submenu'],
       ['Audits', 'Audit ISM Interne', 'submenu'],

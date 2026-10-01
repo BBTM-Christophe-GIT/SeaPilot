@@ -10,9 +10,9 @@ import type { InternalAuditData } from './internalAuditQueries';
 import { createInternalAuditPreviewData } from './internalAuditPreview';
 
 const queries = vi.hoisted(() => ({ fetchInternalAuditData: vi.fn(), saveAuditTemplate: vi.fn(), saveInternalAudit: vi.fn(), saveAuditFinding: vi.fn(), saveAuditSite: vi.fn(), addAuditFindingTreatment: vi.fn() }));
-const reportExports = vi.hoisted(() => ({ pdf: vi.fn(), workbook: vi.fn() }));
+const reportExports = vi.hoisted(() => ({ pdf: vi.fn(), workbook: vi.fn(), print: vi.fn() }));
 vi.mock('./internalAuditQueries', () => queries);
-vi.mock('./internalAuditReport', () => ({ downloadInternalAuditReport: reportExports.pdf }));
+vi.mock('./internalAuditReport', () => ({ downloadInternalAuditReport: reportExports.pdf, openInternalAuditGridPrintPreview: reportExports.print }));
 vi.mock('./internalAuditWorkbook', () => ({ downloadInternalAuditWorkbook: reportExports.workbook }));
 
 let fixture: InternalAuditData;
@@ -66,6 +66,91 @@ describe('InternalAuditsPage', () => {
     expect(within(row).getByText('15 juin 2030')).toBeInTheDocument();
     expect(within(row).getByText('À venir')).toBeInTheDocument();
     expect(within(row).queryByText('En retard')).not.toBeInTheDocument();
+  });
+
+  it('shows the twelve-month planning with existing fleet illustrations and a window crossing New Year', async () => {
+    const user = userEvent.setup();
+    fixture.sites[3].anniversaryOn = '2026-01-31';
+    renderPage();
+    await screen.findByRole('heading', { name: 'Planning annuel d’audit' });
+    expect(screen.getByText('Janv.', { exact: true })).toBeInTheDocument();
+    expect(screen.getByText('Déc.', { exact: true })).toBeInTheDocument();
+    expect(document.querySelectorAll('.ia-year-row')).toHaveLength(8);
+    expect([...document.querySelectorAll('.ia-year-row .ia-site-name strong')].map((element) => element.textContent))
+      .toEqual(['GOURY', 'LANDEMER', 'LE ROZEL', 'SUROIT', 'KROKDUR', 'HIRONDELLE DE LA MANCHE', 'Yard - LE HAVRE', 'Armement - CHERBOURG']);
+    const row = screen.getByText('LE ROZEL', { exact: true }).closest('article')!;
+    expect(row.querySelector('img')?.getAttribute('src')).toContain('/vessels/bbtm/le-rozel-');
+    expect(within(row).getByText('31 oct. 2025 → 30 avr. 2026')).toBeInTheDocument();
+    expect(within(row).getByRole('img', { name: /Calendrier 2026 de LE ROZEL/ })).toHaveAccessibleName(/31 oct. 2025/);
+    expect(row.querySelector<HTMLElement>('.ia-year-window')?.style.left).toBe('0%');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Année du planning' }), '2030');
+    expect(within(row).getByText('31 oct. 2029 → 30 avr. 2030')).toBeInTheDocument();
+    expect(screen.queryByText('Aujourd’hui', { exact: true })).not.toBeInTheDocument();
+  });
+
+  it('opens a printable grid from the persisted audit and requires saving edited answers first', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
+    await user.click(screen.getByRole('button', { name: 'Imprimer la grille' }));
+    await waitFor(() => expect(reportExports.print).toHaveBeenCalledOnce());
+    expect(reportExports.print.mock.calls[0][0]).toMatchObject({ audit: fixture.audits[1], site: fixture.sites[3], findings: [], events: [] });
+    expect(reportExports.pdf).not.toHaveBeenCalled();
+    await user.selectOptions(screen.getAllByRole('combobox', { name: /^Réponse / })[0], 'na');
+    expect(screen.getByRole('button', { name: 'Imprimer la grille' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Imprimer la grille' }));
+    expect(reportExports.print).toHaveBeenCalledOnce();
+  });
+
+  it('plots actual zero scores while leaving N/A and a missing chapter absent from the radar', async () => {
+    const user = userEvent.setup();
+    const base = fixture.audits[1].rows[0];
+    fixture.audits[1] = { ...fixture.audits[1], status: 'completed', rows: [
+      { ...base, id: 'zero', section: '1. Généralités', answer: 'non_conforme' },
+      { ...base, id: 'full', section: '2. Politique', answer: 'conforme' },
+      { ...base, id: 'excluded', section: '3. Responsabilité', answer: 'na' },
+    ] };
+    fixture.audits[0].rows = [{ ...base, section: '1. Généralités', answer: 'non_conforme' }, { ...base, section: '2. Politique', answer: 'incomplet' }];
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Graphique' }));
+    const radar = screen.getByRole('img', { name: 'Scores par chapitre : audit 2026 et année 2025' });
+    expect(radar.querySelectorAll('.is-current circle')).toHaveLength(2);
+    expect(radar.querySelectorAll('.is-previous circle')).toHaveLength(2);
+    expect(radar.querySelectorAll('circle[data-score="0"]')).toHaveLength(2);
+    expect(radar.querySelector('.is-current polygon')).toBeNull();
+    const excluded = screen.getByRole('row', { name: /3\. Responsabilité/ });
+    expect(within(excluded).getByRole('cell', { name: 'N/A' })).toBeInTheDocument();
+    expect(within(excluded).getByRole('cell', { name: 'Absent' })).toBeInTheDocument();
+    const zero = screen.getByRole('row', { name: /1\. Généralités/ });
+    expect(within(zero).getAllByRole('cell', { name: '0 %' })).toHaveLength(2);
+  });
+
+  it('compares every stored ISM chapter and switches to the exact previous calendar year', async () => {
+    const user = userEvent.setup();
+    fixture = createInternalAuditPreviewData();
+    const current = fixture.audits.find((audit) => audit.year === 2026)!;
+    current.status = 'completed';
+    current.completedAt = '2026-06-16T16:00:00Z';
+    renderPage();
+    await screen.findByRole('heading', { name: 'Planning annuel d’audit' });
+    const planningHtml = document.querySelector('.internal-audits-page')!.outerHTML;
+    await user.click(screen.getByRole('button', { name: 'Graphique' }));
+    const table = screen.getByRole('table', { name: 'Scores par chapitre · campagnes 2026 et 2025' });
+    expect(within(table).getAllByRole('row')).toHaveLength(new Set(current.rows.map((row) => row.section)).size + 1);
+    expect(screen.getByRole('img', { name: 'Scores par chapitre : audit 2026 et année 2025' }).querySelector('.is-current polygon')).not.toBeNull();
+    if (process.env.INTERNAL_AUDIT_DESIGN_OUTPUT) {
+      const { mkdir, writeFile } = await import('node:fs/promises');
+      const { join } = await import('node:path');
+      await mkdir(process.env.INTERNAL_AUDIT_DESIGN_OUTPUT, { recursive: true });
+      await writeFile(join(process.env.INTERNAL_AUDIT_DESIGN_OUTPUT, 'planning-fragment.html'), planningHtml);
+      await writeFile(join(process.env.INTERNAL_AUDIT_DESIGN_OUTPUT, 'radar-fragment.html'), document.querySelector('.internal-audits-page')!.outerHTML);
+    }
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Audit sélectionné' }), fixture.audits.find((audit) => audit.year === 2025)!.id);
+    expect(screen.getByRole('table', { name: 'Scores par chapitre · campagnes 2025 et 2024' })).toBeInTheDocument();
+    expect(screen.getByText(/Aucun audit réalisé pour LE ROZEL en 2024/)).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Scores par chapitre : audit 2025 et année 2024' }).querySelectorAll('.is-previous circle')).toHaveLength(0);
   });
 
   it('adds template questions, preserves the expected version on save, and creates a vessel-specific grid', async () => {

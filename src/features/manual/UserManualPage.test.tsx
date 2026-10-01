@@ -111,7 +111,7 @@ describe('Manuel d’utilisation', () => {
     renderManual({ role, route: '/manual/internalAudits' });
     const navigation = await screen.findByRole('navigation', { name: 'Modules du manuel' });
     expect(within(navigation).getByRole('heading', { name: 'Audits' })).toBeInTheDocument();
-    for (const label of ['eCMID', 'Audit ISM Externe', 'Audit ISM Interne', 'Audit Client']) {
+    for (const label of ['OVID', 'eCMID', 'Audit ISM Externe', 'Audit ISM Interne', 'Audit Client']) {
       expect(within(navigation).getByRole('link', { name: label })).toBeInTheDocument();
     }
     const article = screen.getByRole('article');
@@ -128,13 +128,15 @@ describe('Manuel d’utilisation', () => {
   });
 
   it.each([
-    ['ecmid', 'eCMID'], ['externalIsmAudits', 'Audit ISM Externe'], ['clientAudits', 'Audit Client'],
-  ] as const)('identifies the %s audit space as being in preparation', async (moduleKey, label) => {
+    ['ovid', 'OVID'], ['ecmid', 'eCMID'], ['externalIsmAudits', 'Audit ISM Externe'], ['clientAudits', 'Audit Client'],
+  ] as const)('documents the common annual documentary audit workflow in %s', async (moduleKey, label) => {
     renderManual({ route: `/manual/${moduleKey}` });
     const article = await screen.findByRole('article');
     expect(within(article).getByRole('heading', { name: label, level: 2 })).toBeInTheDocument();
-    expect(article).toHaveTextContent('en préparation');
-    expect(article).toHaveTextContent('circuit habituel');
+    expect(article).toHaveTextContent('année et le navire');
+    expect(article).toHaveTextContent('Findings');
+    expect(article).toHaveTextContent('un seul écart');
+    expect(article).toHaveTextContent('fonction réellement exercée');
     expect(within(article).getByRole('link', { name: 'Ouvrir le module' })).toHaveAttribute('href', `/modules/${moduleKey}`);
   });
 

@@ -1,9 +1,9 @@
-import { AlertTriangle, BarChart3, CalendarDays, Camera, CheckCircle2, ClipboardCheck, Copy, Download, FileText, ListChecks, LockKeyhole, Pencil, Plus, RotateCcw, Save, Search, Ship, Trash2, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarDays, Camera, CheckCircle2, ClipboardCheck, Copy, Download, FileText, ListChecks, LockKeyhole, Pencil, Plus, Printer, RotateCcw, Save, Search, Ship, Trash2, X } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { AppDialog } from '../../components/AppDialog';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { compareFleetAssets } from '../fleet/fleetDisplay';
+import { compareFleetAssets, fleetIllustration } from '../fleet/fleetDisplay';
 import {
   annualAuditWindow, auditDueOnFromDuration, blankAuditAnswers, compareAuditScores, completionIssues, defaultFindingDuration, findingIssues, plannedAuditDateIssues, planningStatus, scoreAudit,
   type AuditAnswer, type AuditAnswerValue, type AuditAssigneeRole, type AuditDeadlineUnit, type AuditFinding, type AuditFindingSeverity, type AuditPhoto,
@@ -15,7 +15,7 @@ import {
 } from './internalAuditQueries';
 import { createInternalAuditPreviewData } from './internalAuditPreview';
 import { downloadAuditPhoto } from './internalAuditPhotos';
-import { downloadInternalAuditReport } from './internalAuditReport';
+import { downloadInternalAuditReport, openInternalAuditGridPrintPreview } from './internalAuditReport';
 import { downloadInternalAuditWorkbook } from './internalAuditWorkbook';
 import './internalAudits.css';
 
@@ -190,6 +190,12 @@ export function InternalAuditsPage() {
       if (exportFormat === 'pdf') await downloadInternalAuditReport(input); else await downloadInternalAuditWorkbook(input);
     }, `Rapport ${exportFormat === 'pdf' ? 'PDF' : 'Excel'} exporté.`);
   }
+  async function printGrid() {
+    if (!data || !selectedAudit || !currentSite || hasUnsavedChanges) return;
+    await mutate(async () => {
+      await openInternalAuditGridPrintPreview({ audit: selectedAudit, site: currentSite, audits: data.audits, findings: [], events: [] });
+    }, 'Grille ouverte dans un aperçu PDF. Utilisez la commande Imprimer de votre navigateur.');
+  }
   function editTemplate(patch: Partial<AuditTemplate>) { setDraftTemplate((current) => current ? { ...current, ...patch } : null); setTemplateDirty(true); }
   function openNewAudit(site: AuditSite) {
     if (!data || hasUnsavedChanges || busy) return;
@@ -286,17 +292,25 @@ export function InternalAuditsPage() {
     {hasUnsavedChanges ? <p className="ia-unsaved-notice" role="status"><Save aria-hidden="true" size={17} />{templateDirty ? 'Grille non enregistrée : enregistrez-la ou annulez les modifications avant de changer de grille ou d’onglet.' : 'Réponses non enregistrées : enregistrez-les ou annulez les modifications avant de changer d’audit ou d’onglet.'}</p> : null}
     <nav className="ia-tabs" aria-label="Onglets des audits internes">{TABS.map(({ id, label, icon: Icon }) => <button aria-current={tab === id ? 'page' : undefined} className={tab === id ? 'is-active' : ''} disabled={busy || (hasUnsavedChanges && tab !== id)} key={id} onClick={() => setTab(id)} type="button"><Icon size={17} />{label}{id === 'findings' && pendingCount ? <span>{pendingCount}</span> : null}</button>)}</nav>
 
-    {tab === 'planning' ? <section className="ia-panel"><header className="ia-panel-header"><div><h2>Planning d’audit</h2><p>Une campagne par site et par année. La fenêtre suit la date anniversaire.</p></div><label className="ia-compact-field">Année<select aria-label="Année du planning" onChange={(event) => setYear(Number(event.target.value))} value={year}>{planningYears.map((value) => <option key={value} value={value}>{value}</option>)}</select></label></header><div className="ia-planning-list"><div className="ia-planning-labels" aria-hidden="true"><span>Site / Navire</span><span>Date cible</span><span>Fenêtre autorisée</span><span>Avancement</span><span>Action</span></div>{sortedSites.map((site) => {
+    {tab === 'planning' ? <section className="ia-panel"><header className="ia-panel-header"><div><h2>Planning annuel d’audit</h2><p>Une campagne par site et par année. La fenêtre suit la date anniversaire.</p></div><label className="ia-compact-field">Année<select aria-label="Année du planning" onChange={(event) => setYear(Number(event.target.value))} value={year}>{planningYears.map((value) => <option key={value} value={value}>{value}</option>)}</select></label></header>
+      <div className="ia-year-legend"><span><i className="ia-key-window" />Fenêtre autorisée ± 3 mois</span><span><i className="ia-key-target" />Date cible</span><span><i className="ia-key-audit" />Audit planifié / réalisé</span>{year === Number(today().slice(0, 4)) ? <span><i className="ia-key-today" />Aujourd’hui</span> : null}</div>
+      <div className="ia-year-scroll" tabIndex={0} aria-label={`Planning annuel ${year}, défilement horizontal disponible`}><div className="ia-year-planning">
+        <div className="ia-year-header" aria-hidden="true"><strong>Site / Navire</strong><div className="ia-year-months">{PLANNING_MONTHS.map((month, index) => <span key={month} style={{ left: `${yearPosition(year, `${year}-${String(index + 1).padStart(2, '0')}-15`)}%` }}>{month}</span>)}</div><span>Actions</span></div>{sortedSites.map((site) => {
       const annualAudit = data.audits.find((audit) => audit.siteId === site.id && audit.year === year);
       const fallbackDate = data.audits.find((audit) => audit.siteId === site.id)?.plannedOn || '';
       const window = annualAuditWindow(site, year, annualAudit?.plannedOn || fallbackDate);
       const status = annualAudit?.status === 'completed' ? 'completed' : !window.targetOn ? 'unscheduled' : today() > window.closesOn ? 'overdue' : annualAudit?.status === 'in_progress' ? 'in_progress' : today() >= window.opensOn ? 'window' : 'upcoming';
-      return <article className="ia-planning-row" key={site.id}><div className="ia-site-name"><span className="ia-site-icon">{site.kind === 'vessel' ? <Ship size={18} /> : <CalendarDays size={18} />}</span><span><strong>{site.name}</strong><small>{site.kind === 'vessel' ? 'Navire' : 'Site à terre'}{annualAudit ? ` · Audit ${annualAudit.year}` : ''}</small></span></div><div><small className="ia-mobile-label">Date cible</small><strong>{dateLabel(window.targetOn)}</strong>{canManage ? <button aria-label={`Modifier la date anniversaire de ${site.name}`} className="ia-icon-button" onClick={() => setSiteEditor({ ...site, anniversaryOn: site.anniversaryOn || window.targetOn || '' })} title="Date anniversaire annuelle" type="button"><Pencil size={13} /></button> : null}</div><div><small className="ia-mobile-label">Fenêtre autorisée</small><span>{window.opensOn && window.closesOn ? `${dateLabel(window.opensOn)} → ${dateLabel(window.closesOn)}` : 'Définir la date anniversaire'}</span></div><div><span className={`ia-badge is-${status}`}>{PLANNING_STATUSES[status]}</span>{annualAudit ? <small>{scoreAudit(annualAudit.rows).answeredCount} / {annualAudit.rows.length} réponses</small> : <small>Aucun audit {year}</small>}</div><div className="ia-row-actions">{annualAudit ? <button className="is-secondary" disabled={busy || hasUnsavedChanges} onClick={() => { setAuditId(annualAudit.id); setTab('grid'); }} type="button">Ouvrir</button> : null}{canManage ? <button aria-label={`Planifier ${site.name}`} className={annualAudit ? 'ia-icon-button' : 'is-secondary'} disabled={busy || hasUnsavedChanges} onClick={() => openNewAudit(site)} type="button"><Plus size={15} />{annualAudit ? '' : 'Planifier'}</button> : null}</div></article>;
-    })}</div></section> : null}
+      const illustration = fleetIllustration(site);
+      return <article className="ia-year-row" key={site.id}>
+        <div className="ia-year-site"><div className="ia-site-name"><span className="ia-year-illustration">{illustration ? <img alt="" loading="lazy" src={illustration} /> : site.kind === 'vessel' ? <Ship size={22} /> : <CalendarDays size={22} />}</span><span><strong>{site.name}</strong><small>{site.kind === 'vessel' ? 'Navire' : 'Site à terre'}{annualAudit ? ` · Audit ${annualAudit.year}` : ''}</small></span></div><div className="ia-year-status"><span className={`ia-badge is-${status}`}>{PLANNING_STATUSES[status]}</span><small>{annualAudit ? `${scoreAudit(annualAudit.rows).answeredCount} / ${annualAudit.rows.length} réponses` : `Aucun audit ${year}`}</small></div></div>
+        <div className="ia-year-calendar"><AnnualAuditTimeline year={year} site={site} window={window} audit={annualAudit} /><div className="ia-year-dates"><span><small>Date cible</small><strong>{dateLabel(window.targetOn)}</strong>{canManage ? <button aria-label={`Modifier la date anniversaire de ${site.name}`} className="ia-icon-button" onClick={() => setSiteEditor({ ...site, anniversaryOn: site.anniversaryOn || window.targetOn || '' })} title="Date anniversaire annuelle" type="button"><Pencil size={13} /></button> : null}</span><span><small>Fenêtre autorisée</small>{window.opensOn && window.closesOn ? `${dateLabel(window.opensOn)} → ${dateLabel(window.closesOn)}` : 'Définir la date anniversaire'}</span>{annualAudit ? <span><small>{annualAudit.status === 'completed' ? 'Réalisé le' : 'Planifié le'}</small>{dateLabel(annualAudit.status === 'completed' ? annualAudit.performedOn : annualAudit.plannedOn)}</span> : null}</div></div>
+        <div className="ia-row-actions">{annualAudit ? <button className="is-secondary" disabled={busy || hasUnsavedChanges} onClick={() => { setAuditId(annualAudit.id); setTab('grid'); }} type="button">Ouvrir</button> : null}{canManage ? <button aria-label={`Planifier ${site.name}`} className={annualAudit ? 'ia-icon-button' : 'is-secondary'} disabled={busy || hasUnsavedChanges} onClick={() => openNewAudit(site)} type="button"><Plus size={15} />{annualAudit ? '' : 'Planifier'}</button> : null}</div>
+      </article>;
+    })}</div></div></section> : null}
 
     {tab === 'templates' ? <section className="ia-panel"><header className="ia-panel-header"><div><h2>Grilles de référence</h2><p>Adaptez les questions par navire. Chaque audit conserve sa propre copie.</p></div>{canManage && draftTemplate ? <button className="is-secondary" disabled={busy || templateDirty} onClick={() => { setDuplicateForm({ name: '', siteId: '' }); setDuplicateOpen(true); }} type="button"><Copy size={16} />Créer une grille personnalisée</button> : null}</header><div className="ia-template-layout"><aside className="ia-template-list" aria-label="Grilles disponibles">{data.templates.filter((item) => item.active).map((template) => <button aria-pressed={templateId === template.id} disabled={hasUnsavedChanges || busy} key={template.id} onClick={() => setTemplateId(template.id)} type="button"><FileText size={17} /><span><strong>{template.name}</strong><small>{data.sites.find((site) => site.id === template.siteId)?.name || 'Commune à tous les sites'} · {template.rows.length} questions</small></span></button>)}</aside>{draftTemplate ? <form className="ia-template-workspace" onSubmit={(event) => void saveTemplate(event)}><div className="ia-template-metadata"><label>Nom de la grille<input disabled={!canManage || busy} required onChange={(event) => editTemplate({ name: event.target.value })} value={draftTemplate.name} /></label><span className="ia-badge">Version {draftTemplate.version}</span></div><div className="ia-question-list">{draftTemplate.rows.map((row) => <QuestionEditor disabled={!canManage || busy} key={row.id} onChange={(edited) => editTemplate({ rows: draftTemplate.rows.map((item) => item.id === row.id ? edited : item) })} onRemove={() => editTemplate({ rows: draftTemplate.rows.filter((item) => item.id !== row.id) })} row={row} />)}</div>{canManage ? <footer className="ia-save-actions"><button className="is-secondary" disabled={busy} onClick={() => editTemplate({ rows: [...draftTemplate.rows, newQuestion(draftTemplate.rows.at(-1)?.section)] })} type="button"><Plus size={16} />Ajouter une ligne à la grille</button>{templateDirty ? <button className="is-secondary" disabled={busy} onClick={() => { setDraftTemplate(selectedTemplate ? structuredClone(selectedTemplate) : null); setTemplateDirty(false); }} type="button"><RotateCcw size={15} />Annuler les modifications</button> : null}<button disabled={!templateDirty || busy} type="submit"><Save size={16} />{busy ? 'Enregistrement…' : 'Enregistrer la grille'}</button></footer> : null}</form> : <EmptyState label="Aucune grille disponible" />}</div></section> : null}
 
-    {(['grid', 'findings', 'chart'] as Tab[]).includes(tab) ? <div className="ia-audit-selector"><label>Audit sélectionné<select disabled={hasUnsavedChanges || busy} onChange={(event) => setAuditId(event.target.value)} value={auditId}>{!data.audits.length ? <option value="">Aucun audit</option> : null}{[...data.audits].sort((a, b) => b.year - a.year || a.plannedOn.localeCompare(b.plannedOn)).map((audit) => <option key={audit.id} value={audit.id}>{data.sites.find((site) => site.id === audit.siteId)?.name} · {audit.year} · {AUDIT_STATUSES[audit.status]}</option>)}</select></label>{draftAudit ? <span className={`ia-badge is-${draftAudit.status}`}>{AUDIT_STATUSES[draftAudit.status]}</span> : null}{auditDirty ? <span className="ia-unsaved">Modifications non enregistrées</span> : null}{selectedAudit ? <div className="ia-export-actions"><label className="ia-sr-only" htmlFor="audit-export-format">Format du rapport</label><select id="audit-export-format" disabled={busy} value={exportFormat} onChange={(event) => setExportFormat(event.target.value as 'pdf' | 'xlsx')}><option value="pdf">PDF</option><option value="xlsx">Excel (.xlsx)</option></select><button className="is-secondary" disabled={busy || hasUnsavedChanges} title={hasUnsavedChanges ? 'Enregistrez les modifications avant d’exporter le rapport.' : 'Grille, synthèse des écarts et comparaison annuelle'} onClick={() => void exportReport()} type="button"><Download size={16} />Exporter le rapport</button></div> : null}</div> : null}
+    {(['grid', 'findings', 'chart'] as Tab[]).includes(tab) ? <div className="ia-audit-selector"><label>Audit sélectionné<select disabled={hasUnsavedChanges || busy} onChange={(event) => setAuditId(event.target.value)} value={auditId}>{!data.audits.length ? <option value="">Aucun audit</option> : null}{[...data.audits].sort((a, b) => b.year - a.year || a.plannedOn.localeCompare(b.plannedOn)).map((audit) => <option key={audit.id} value={audit.id}>{data.sites.find((site) => site.id === audit.siteId)?.name} · {audit.year} · {AUDIT_STATUSES[audit.status]}</option>)}</select></label>{draftAudit ? <span className={`ia-badge is-${draftAudit.status}`}>{AUDIT_STATUSES[draftAudit.status]}</span> : null}{auditDirty ? <span className="ia-unsaved">Modifications non enregistrées</span> : null}{selectedAudit ? <div className="ia-export-actions"><button className="is-secondary" disabled={busy || hasUnsavedChanges} title={hasUnsavedChanges ? 'Enregistrez les modifications avant d’imprimer la grille.' : 'Ouvrir la grille seule dans un aperçu PDF imprimable'} onClick={() => void printGrid()} type="button"><Printer size={16} />Imprimer la grille</button><label className="ia-sr-only" htmlFor="audit-export-format">Format du rapport</label><select id="audit-export-format" disabled={busy} value={exportFormat} onChange={(event) => setExportFormat(event.target.value as 'pdf' | 'xlsx')}><option value="pdf">PDF</option><option value="xlsx">Excel (.xlsx)</option></select><button className="is-secondary" disabled={busy || hasUnsavedChanges} title={hasUnsavedChanges ? 'Enregistrez les modifications avant d’exporter le rapport.' : 'Grille, synthèse des écarts et comparaison annuelle'} onClick={() => void exportReport()} type="button"><Download size={16} />Exporter le rapport</button></div> : null}</div> : null}
 
     {tab === 'grid' ? draftAudit ? <section className="ia-panel">
       <header className="ia-audit-header"><div><h2>{currentSite?.name} · {draftAudit.year}</h2><p>{draftAudit.templateName} · Version {draftAudit.templateVersion}</p>{draftAudit.status === 'completed' ? <span className="ia-locked"><LockKeyhole size={14} />Réponses conservées · audit réalisé le {dateLabel(draftAudit.performedOn)}</span> : null}</div><div className="ia-score-summary"><strong>{percent(score.percentage)}</strong><span>{score.earnedPoints} / {score.maxPoints} points · {score.answeredCount} / {score.totalCount} réponses</span><div className="ia-progress-track"><span style={{ width: `${score.percentage || 0}%` }} /></div></div></header>
@@ -330,9 +344,7 @@ export function InternalAuditsPage() {
     {tab === 'chart' ? <section className="ia-panel"><header className="ia-panel-header"><div><h2>Évolution des scores</h2><p>Comparaison avec l’audit réalisé du même site l’année précédente.</p></div></header>{draftAudit?.status === 'completed' && comparison ? <div className="ia-chart-content">
       <div className="ia-chart-summary"><div><small>Audit {draftAudit.year}</small><strong>{percent(comparison.current.percentage)}</strong><span>{comparison.current.earnedPoints} / {comparison.current.maxPoints} points applicables</span></div><div><small>Audit {draftAudit.year - 1}</small><strong>{comparison.previous ? percent(comparison.previous.percentage) : '—'}</strong><span>{comparison.previousAudit ? `Réalisé le ${dateLabel(comparison.previousAudit.performedOn)}` : 'Aucun audit réalisé cette année-là'}</span></div><div><small>Évolution globale</small><strong className={comparison.delta !== null && comparison.delta < 0 ? 'is-negative' : 'is-positive'}>{deltaLabel(comparison.delta)}</strong><span>Points de pourcentage · même site</span></div></div>
       {!comparison.previousAudit ? <p className="ia-chart-notice">Aucun audit réalisé pour {currentSite?.name} en {draftAudit.year - 1}. Le score précédent reste absent de la comparaison.</p> : null}
-      <div className="ia-chart-legend"><span><i />Audit {draftAudit.year}</span><span><i />Audit {draftAudit.year - 1}</span></div>
-      <div className="ia-global-chart"><h3>Conformité globale · {currentSite?.name}</h3><ScoreBars current={comparison.current.percentage} previous={comparison.previous?.percentage ?? null} previousExists={Boolean(comparison.previousAudit)} /></div>
-      <div className="ia-section-chart" role="img" aria-label={`Scores par chapitre : audit ${draftAudit.year} et année ${draftAudit.year - 1}`}><div className="ia-chart-table-head"><strong>Chapitre ISM</strong><span>Conformité · 0 à 100 %</span><span>Évolution</span></div>{comparison.sections.map((item) => <div className="ia-chart-row" key={item.section}><strong>{item.section}</strong><ScoreBars current={item.current} previous={item.previous} previousExists={Boolean(comparison.previousAudit)} /><output className={item.delta !== null && item.delta < 0 ? 'is-negative' : 'is-positive'}>{deltaLabel(item.delta)}</output></div>)}</div>
+      <ChapterRadar audit={draftAudit} comparison={comparison} />
       <p className="ia-chart-footnote">Les N/A sont exclus du barème. Chaque score est calculé sur les questions applicables de l’audit concerné.</p>
     </div> : <EmptyState label="Le graphique est disponible après la réalisation de l’audit" description="Finalisez la grille pour conserver les réponses et comparer les scores annuels." />}</section> : null}
 
@@ -350,8 +362,72 @@ function EmptyState({ label, description }: { label: string; description?: strin
 
 function DialogError({ error }: { error: string }) { return error ? <p className="ia-alert is-error" role="alert">{error}</p> : null; }
 
-function ScoreBars({ current, previous, previousExists }: { current: number | null; previous: number | null; previousExists: boolean }) {
-  return <div className="ia-chart-bars"><div><span className="ia-chart-bar" style={{ width: `${current || 0}%` }} /><output>{percent(current)}</output></div><div><span className="ia-chart-bar is-previous" style={{ width: `${previous || 0}%` }} /><output>{previous !== null ? percent(previous) : previousExists ? 'N/A' : 'Absent'}</output></div></div>;
+const PLANNING_MONTHS = ['Janv.', 'Févr.', 'Mars', 'Avr.', 'Mai', 'Juin', 'Juil.', 'Août', 'Sept.', 'Oct.', 'Nov.', 'Déc.'];
+
+/** Calendar-day positions avoid local DST offsets, including a window crossing New Year. */
+function yearPosition(year: number, date: string): number {
+  const start = Date.UTC(year, 0, 1);
+  return (Date.parse(`${date}T00:00:00Z`) - start) / (Date.UTC(year + 1, 0, 1) - start) * 100;
+}
+
+function AnnualAuditTimeline({ year, site, window, audit }: { year: number; site: AuditSite; window: ReturnType<typeof annualAuditWindow>; audit?: InternalAudit }) {
+  const start = window.opensOn ? Math.max(0, yearPosition(year, window.opensOn)) : 0;
+  const end = window.closesOn ? Math.min(100, yearPosition(year, window.closesOn) + 100 / (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 366 : 365)) : 0;
+  const target = window.targetOn ? yearPosition(year, window.targetOn) : null;
+  const auditDate = audit?.status === 'completed' ? audit.performedOn : audit?.plannedOn;
+  const auditPosition = auditDate ? yearPosition(year, auditDate) : null;
+  const now = today();
+  const description = window.targetOn ? `Date cible ${dateLabel(window.targetOn)}. Fenêtre du ${dateLabel(window.opensOn)} au ${dateLabel(window.closesOn)}.` : 'Date anniversaire à définir.';
+  return <div className="ia-year-track" role="img" aria-label={`Calendrier ${year} de ${site.name}. ${description}${auditDate ? ` Audit ${audit?.status === 'completed' ? 'réalisé' : 'planifié'} le ${dateLabel(auditDate)}.` : ''}`}>
+    {PLANNING_MONTHS.map((month, index) => <i aria-hidden="true" className="ia-year-gridline" key={month} style={{ left: `${yearPosition(year, `${year}-${String(index + 1).padStart(2, '0')}-01`)}%` }} />)}
+    {window.targetOn && end > start ? <span aria-hidden="true" className="ia-year-window" style={{ left: `${start}%`, width: `${end - start}%` }} /> : null}
+    {target !== null ? <span aria-hidden="true" className="ia-year-target" style={{ left: `${target}%` }} title={`Date cible : ${dateLabel(window.targetOn)}`} /> : null}
+    {now.startsWith(String(year)) ? <span aria-hidden="true" className="ia-year-today" style={{ left: `${yearPosition(year, now)}%` }} title={`Aujourd’hui : ${dateLabel(now)}`} /> : null}
+    {auditPosition !== null ? <span aria-hidden="true" className={`ia-year-audit${audit?.status === 'completed' ? ' is-completed' : ''}${auditPosition < 0 || auditPosition >= 100 ? ' is-outside' : ''}`} style={{ left: `${Math.max(1, Math.min(99, auditPosition))}%` }} title={`${audit?.status === 'completed' ? 'Réalisé' : 'Planifié'} le ${dateLabel(auditDate ?? null)}${auditPosition < 0 || auditPosition >= 100 ? ' · hors de l’année affichée' : ''}`}>{auditPosition < 0 ? '←' : auditPosition >= 100 ? '→' : audit?.status === 'completed' ? '✓' : ''}</span> : null}
+    {!window.targetOn ? <span className="ia-year-unplanned">Date anniversaire à définir</span> : null}
+  </div>;
+}
+
+function chapterScoreLabel(value: number | null, audit: InternalAudit | null, section: string): string {
+  return value !== null ? percent(value) : audit?.rows.some((row) => row.section === section) ? 'N/A' : 'Absent';
+}
+
+function ChapterRadar({ audit, comparison }: { audit: InternalAudit; comparison: ReturnType<typeof compareAuditScores> }) {
+  const chapters = comparison.sections;
+  const center = 240;
+  const radius = 160;
+  const point = (index: number, value: number, distance = radius) => {
+    const angle = index * 2 * Math.PI / Math.max(1, chapters.length) - Math.PI / 2;
+    return { x: center + Math.cos(angle) * distance * value / 100, y: center + Math.sin(angle) * distance * value / 100 };
+  };
+  function series(name: 'current' | 'previous') {
+    const points = chapters.map((row, index) => row[name] === null ? null : point(index, row[name]));
+    const complete = points.length >= 3 && points.every((value) => value !== null);
+    return <g className={`ia-radar-series is-${name}`}>
+      {complete ? <polygon points={points.map((value) => `${value!.x},${value!.y}`).join(' ')} /> : points.map((value, index) => {
+        const next = points[(index + 1) % points.length];
+        return value && next && points.length > 1 ? <line key={`edge-${index}`} x1={value.x} y1={value.y} x2={next.x} y2={next.y} /> : null;
+      })}
+      {points.map((value, index) => value ? <circle key={chapters[index].section} cx={value.x} cy={value.y} r={name === 'previous' ? 5.5 : 3.8} data-score={chapters[index][name]}><title>{`${chapters[index].section} · ${name === 'current' ? audit.year : audit.year - 1} : ${percent(chapters[index][name])}`}</title></circle> : null)}
+    </g>;
+  }
+  return <section className="ia-radar-panel" aria-labelledby="audit-radar-heading">
+    <header><div><h3 id="audit-radar-heading">Conformité par chapitre ISM</h3><p>Une même échelle de 0 à 100 % pour comparer les deux campagnes.</p></div><div className="ia-radar-legend"><span><i />Audit {audit.year}</span><span><i className="is-previous" />Audit {audit.year - 1}</span></div></header>
+    <div className="ia-radar-layout"><div className="ia-radar-visual">
+      <svg className="ia-radar" viewBox="0 0 480 480" role="img" aria-label={`Scores par chapitre : audit ${audit.year} et année ${audit.year - 1}`}>
+        <desc>Un point au centre représente un score de zéro. Les chapitres sans score ne sont pas tracés. Les valeurs détaillées figurent dans le tableau adjacent.</desc>
+        {[25, 50, 75, 100].map((value) => <g className="ia-radar-ring" key={value}><circle cx={center} cy={center} r={radius * value / 100} /><text x={center + 7} y={center - radius * value / 100 + 12}>{value} %</text></g>)}
+        {chapters.map((row, index) => {
+          const axis = point(index, 100);
+          const label = point(index, 100, radius + 29);
+          const chapterNumber = row.section.match(/^(\d+)\./)?.[1];
+          return <g className="ia-radar-axis" key={row.section}><line x1={center} y1={center} x2={axis.x} y2={axis.y} /><text x={label.x} y={label.y + 4} textAnchor="middle"><title>{row.section}</title>{chapterNumber ? `ISM ${chapterNumber}` : `C${index + 1}`}</text></g>;
+        })}
+        <text className="ia-radar-zero" x={center + 9} y={center + 17}>0 %</text>
+        {series('previous')}{series('current')}
+      </svg><p className="ia-radar-help">0 % est un score réel. N/A ou Absent : aucun point tracé ; la ligne s’interrompt.</p>
+    </div><div className="ia-radar-table-scroll"><table className="ia-radar-table"><caption>Scores par chapitre · campagnes {audit.year} et {audit.year - 1}</caption><thead><tr><th scope="col">Chapitre ISM</th><th scope="col">{audit.year}</th><th scope="col">{audit.year - 1}</th><th scope="col">Évolution</th></tr></thead><tbody>{chapters.map((row) => <tr key={row.section}><th scope="row">{row.section}</th><td>{chapterScoreLabel(row.current, audit, row.section)}</td><td>{chapterScoreLabel(row.previous, comparison.previousAudit, row.section)}</td><td className={row.delta !== null && row.delta < 0 ? 'is-negative' : 'is-positive'}>{deltaLabel(row.delta)}</td></tr>)}</tbody></table><p className="ia-radar-help">N/A : aucune question applicable. Absent : chapitre ou audit non disponible pour cette année.</p></div></div>
+  </section>;
 }
 
 function PhotoGallery({ photos = [], label }: { photos?: AuditPhoto[]; label: string }) {

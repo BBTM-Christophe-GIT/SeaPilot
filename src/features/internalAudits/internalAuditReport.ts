@@ -131,10 +131,10 @@ function cleanText(value: string): string {
 
 export interface InternalAuditGeneratedReport { blob: Blob; filename: string; pageCount: number }
 
-export async function buildInternalAuditReport(input: InternalAuditReportInput): Promise<InternalAuditGeneratedReport> {
+async function buildAuditPdf(input: InternalAuditReportInput, gridOnly: boolean): Promise<InternalAuditGeneratedReport> {
   const data = internalAuditReportData(input);
   const photoReferences = new Map<string, AuditPhoto>();
-  for (const entry of data.findings) {
+  for (const entry of gridOnly ? [] : data.findings) {
     for (const photo of [...(entry.finding.photos ?? []), ...entry.events.flatMap((event) => event.photos ?? [])]) {
       photoReferences.set(photo.storagePath || photo.id, photo);
     }
@@ -143,7 +143,7 @@ export async function buildInternalAuditReport(input: InternalAuditReportInput):
   for (const [key, photo] of photoReferences) loadedPhotos.set(key, await resolveInternalAuditReportPhoto(input, photo));
   const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
-  pdf.setProperties({ title: `Audit ISM Interne - ${input.site.name} - ${input.audit.year}`, subject: 'Grille d’audit, synthèse et évolution annuelle', author: input.audit.auditorName || 'SeaPilot', creator: 'SeaPilot' });
+  pdf.setProperties({ title: `${gridOnly ? 'Grille - ' : ''}Audit ISM Interne - ${input.site.name} - ${input.audit.year}`, subject: gridOnly ? 'Grille d’audit seule - aperçu imprimable' : 'Grille d’audit, synthèse et évolution annuelle', author: input.audit.auditorName || 'SeaPilot', creator: 'SeaPilot' });
   const width = 297;
   const height = 210;
   const margin = 12;
@@ -161,7 +161,7 @@ export async function buildInternalAuditReport(input: InternalAuditReportInput):
     pdf.setTextColor(255, 255, 255);
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(16);
-    pdf.text('Audit ISM Interne', margin, 11);
+    pdf.text(gridOnly ? 'Grille d’audit ISM Interne' : 'Audit ISM Interne', margin, 11);
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(8);
     pdf.text(cleanText(`BBTM - ${input.site.name} - Campagne ${input.audit.year}`), margin, 18);
@@ -214,12 +214,13 @@ export async function buildInternalAuditReport(input: InternalAuditReportInput):
     const values = [
       ['Score de l’audit', auditReportPercent(data.score.percentage), `${auditReportNumber(data.score.earnedPoints)} / ${auditReportNumber(data.score.maxPoints)} points applicables`],
       ['Réponses conservées', `${data.score.answeredCount} / ${data.score.totalCount}`, `${data.score.excludedCount} réponse(s) N/A - hors calcul`],
-      ['Écarts émis', String(data.findings.length), `${data.findings.filter(({ finding }) => finding.severity === 'major').length} majeure(s), ${data.findings.filter(({ finding }) => finding.severity === 'minor').length} mineure(s), ${data.findings.filter(({ finding }) => finding.severity === 'remark').length} remarque(s)`],
+      ...(!gridOnly ? [['Écarts émis', String(data.findings.length), `${data.findings.filter(({ finding }) => finding.severity === 'major').length} majeure(s), ${data.findings.filter(({ finding }) => finding.severity === 'minor').length} mineure(s), ${data.findings.filter(({ finding }) => finding.severity === 'remark').length} remarque(s)`]] : []),
     ];
+    const cardWidth = (usableWidth - (values.length - 1) * 6) / values.length;
     values.forEach(([label, value, description], index) => {
-      const x = margin + index * 93;
+      const x = margin + index * (cardWidth + 6);
       pdf.setFillColor(...pale);
-      pdf.roundedRect(x, cursor - 2, 87, 22, 1.5, 1.5, 'F');
+      pdf.roundedRect(x, cursor - 2, cardWidth, 22, 1.5, 1.5, 'F');
       pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7.8); pdf.setTextColor(...muted);
       pdf.text(cleanText(label), x + 3, cursor + 3);
       pdf.setFont('helvetica', 'bold'); pdf.setFontSize(13); pdf.setTextColor(...navy);
@@ -274,6 +275,7 @@ export async function buildInternalAuditReport(input: InternalAuditReportInput):
   }
   table(gridRows, ['Référence', 'Question / Éléments à vérifier', 'Notation', 'Observations'], [22, 124, 35, 92]);
 
+  if (gridOnly) return finishPdf();
   beginSection('02 - Synthèse');
   paragraph('Non conformités majeures, non conformités mineures et remarques émises pour l’audit sélectionné.', { color: muted });
   if (!data.findings.length) {
@@ -336,16 +338,50 @@ export async function buildInternalAuditReport(input: InternalAuditReportInput):
     cleanText(row.section), auditReportPercent(row.current), row.previous === null && !comparison.previousAudit ? 'Absent' : auditReportPercent(row.previous),
     row.delta === null ? '-' : `${row.delta > 0 ? '+' : ''}${auditReportNumber(row.delta)}`,
   ]), ['Chapitre', `Audit ${input.audit.year}`, `Audit ${input.audit.year - 1}`, 'Évolution (points)'], [165, 35, 35, 38]);
+  return finishPdf();
 
-  const pageCount = pdf.getNumberOfPages();
-  for (let page = 1; page <= pageCount; page += 1) {
-    pdf.setPage(page); pdf.setDrawColor(210, 223, 229); pdf.setLineWidth(0.25); pdf.line(margin, height - 13, width - margin, height - 13);
-    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(...muted);
-    pdf.text(cleanText(`SeaPilot - ${input.site.name} - Audit ${input.audit.year}${data.draft ? ' - Brouillon' : ''}`), margin, height - 8);
-    pdf.text(`Export du ${formatAuditDate(todayAuditParis(input.generatedAt ?? new Date()))}`, width / 2, height - 8, { align: 'center' });
-    pdf.text(`${page} / ${pageCount}`, width - margin, height - 8, { align: 'right' });
+  function finishPdf(): InternalAuditGeneratedReport {
+    const pageCount = pdf.getNumberOfPages();
+    for (let page = 1; page <= pageCount; page += 1) {
+      pdf.setPage(page); pdf.setDrawColor(210, 223, 229); pdf.setLineWidth(0.25); pdf.line(margin, height - 13, width - margin, height - 13);
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(...muted);
+      pdf.text(cleanText(`SeaPilot - ${input.site.name} - Audit ${input.audit.year}${data.draft ? ' - Brouillon' : ''}`), margin, height - 8);
+      pdf.text(`Export du ${formatAuditDate(todayAuditParis(input.generatedAt ?? new Date()))}`, width / 2, height - 8, { align: 'center' });
+      pdf.text(`${page} / ${pageCount}`, width - margin, height - 8, { align: 'right' });
+    }
+    return { blob: pdf.output('blob'), filename: `${gridOnly ? 'Grille_' : ''}${data.filename}`, pageCount };
   }
-  return { blob: pdf.output('blob'), filename: data.filename, pageCount };
+}
+
+export function buildInternalAuditReport(input: InternalAuditReportInput): Promise<InternalAuditGeneratedReport> {
+  return buildAuditPdf(input, false);
+}
+
+/** Print the persisted audit snapshot without findings, comparison or private-photo requests. */
+export function buildInternalAuditGridReport(input: InternalAuditReportInput): Promise<InternalAuditGeneratedReport> {
+  return buildAuditPdf(input, true);
+}
+
+/** Reserve the tab during the click gesture, then let the user choose the PDF viewer's print action. */
+export async function openInternalAuditGridPrintPreview(input: InternalAuditReportInput): Promise<void> {
+  const preview = window.open('', '_blank');
+  if (!preview) throw new Error('L’aperçu a été bloqué. Autorisez les fenêtres de SeaPilot, puis cliquez à nouveau sur Imprimer la grille.');
+  preview.opener = null;
+  preview.document.title = 'Grille d’audit · aperçu imprimable';
+  preview.document.body.textContent = 'Préparation de la grille d’audit…';
+  let url: string | null = null;
+  try {
+    const report = await buildInternalAuditGridReport(input);
+    if (preview.closed) return;
+    url = URL.createObjectURL(report.blob);
+    preview.location.replace(url);
+    const previewUrl = url;
+    window.setTimeout(() => URL.revokeObjectURL(previewUrl), 600_000);
+  } catch (cause) {
+    if (url) URL.revokeObjectURL(url);
+    preview.close();
+    throw cause;
+  }
 }
 
 export async function downloadInternalAuditReport(input: InternalAuditReportInput): Promise<void> {

@@ -1,8 +1,8 @@
 # Audit ISM Interne
 
-Le menu **Audits** regroupe eCMID, Audit ISM Externe, Audit ISM Interne et Audit Client. Le module interne comporte le planning, les grilles, la synthèse des écarts et le graphique comparant les résultats annuels par site et chapitre ISM.
+Le menu **Audits** regroupe OVID, eCMID, Audit ISM Externe, Audit ISM Interne et Audit Client. Le module interne comporte le planning, les grilles, la synthèse des écarts et le graphique comparant les résultats annuels par site et chapitre ISM.
 
-Le manuel d’utilisation comprend une notice pour chacune des quatre entrées, avec les étapes et les droits du module interne. eCMID, Audit ISM Externe et Audit Client sont des espaces en préparation.
+Le manuel d’utilisation comprend une notice pour chacune des cinq entrées. OVID, eCMID, Audit ISM Externe et Audit Client utilisent les [dossiers documentaires](./documentary-audits.md) et leur suivi des écarts.
 
 ## Référence et notation
 
@@ -32,7 +32,7 @@ Le planning utilise une liste déroulante d’années. La grille d’audit est u
 
 Le graphique présente le score global et la comparaison par chapitre avec le même site en année N−1. Un score absent reste absent ; un résultat nul est affiché comme zéro. L’export porte sur la version enregistrée de l’audit sélectionné et reste bloqué en présence de modifications non enregistrées. Le PDF comprend les trois sections **Grille d’audit**, **Synthèse** et **Graphique**. Le classeur Excel contient les trois onglets correspondants, un graphique Excel natif et les photos intégrées sans dépendre de leurs URL temporaires. Les rapports reprennent toutes les questions, les réponses, les consignes, les observations, les points, les écarts et leur historique. Les audits non finalisés sont identifiés comme brouillons. Un échec de chargement d’une photo bloque l’export complet avec un message explicite.
 
-Les droits de navigation sont enregistrés pour les cinq profils sur les quatre entrées du menu Audits. Ils ne remplacent pas les règles de données : l’accès au module interne reste limité aux audits et écarts autorisés par le serveur.
+Les droits de navigation sont enregistrés pour les cinq profils sur les cinq entrées du menu Audits. Ils ne remplacent pas les règles de données : l’accès au module interne reste limité aux audits et écarts autorisés par le serveur.
 
 ## Déploiement et vérification
 
@@ -59,3 +59,11 @@ Après intégration avec le dernier `main`, les 111 tests Vitest du module, des 
 La migration `20260930233050_internal_audit_photos_deadlines.sql` est appliquée au projet SeaPilot. Le contrôle distant confirme un bucket privé de 10 Mo limité aux JPEG/PNG/WebP, trois politiques de stockage et les colonnes de photos et de durée. Aucun constat fictif n’est créé en production. Les conseillers de sécurité ne signalent aucun objet du module.
 
 Les 111 contrôles SQL passent : 60 de la suite initiale et 51 pour les délais, les photos, les autorisations et l’immuabilité des preuves. Les tests des exports chargent réellement le PDF et les fichiers XML du classeur ; le classeur a aussi été ouvert avec openpyxl, qui confirme trois onglets, un graphique natif à deux séries et deux photos intégrées. Les PDF ont été rendus et inspectés pour les questions longues, la synthèse, les preuves photographiques et les sauts de page.
+
+## Compléments de la version 3.64.0
+
+Le planning conserve le classement par année et affiche une ligne par site, avec les illustrations existantes des navires et douze colonnes mensuelles. La fenêtre autorisée est visible sur le calendrier ; les dates réelles restent conservées même lorsqu’elles débordent l’année civile affichée.
+
+L’onglet Graphique présente un radar des chapitres ISM pour les années N et N−1 du même site. Le pourcentage exclut les N/A ; un chapitre absent ne devient jamais un score nul. Un tableau accessible affiche les mêmes valeurs. Les exports complets PDF et Excel gardent leurs trois sections et la comparaison annuelle.
+
+Le bouton **Imprimer la grille** ouvre un PDF consacré aux questions, consignes, réponses, observations et points de l’audit enregistré. Il permet l’impression depuis le lecteur PDF sans lancer automatiquement une impression physique. Les modifications doivent être enregistrées ou annulées avant impression. Aucun fichier de preuve n’est chargé pour cette grille seule.

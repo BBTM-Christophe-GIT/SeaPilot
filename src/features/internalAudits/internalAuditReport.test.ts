@@ -6,8 +6,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { BBTM_AUDIT_QUESTIONS } from './internalAuditSeed';
 import type { AuditAnswer, AuditFinding, AuditFindingEvent, AuditPhoto, AuditSite, InternalAudit } from './internalAuditModel';
 import {
-  auditReportPercent, auditReportTimestampDay, buildInternalAuditReport, internalAuditReportData, internalAuditReportFilename,
-  resolveInternalAuditReportPhoto, type InternalAuditReportInput,
+  auditReportPercent, auditReportTimestampDay, buildInternalAuditGridReport, buildInternalAuditReport, internalAuditReportData, internalAuditReportFilename,
+  openInternalAuditGridPrintPreview, resolveInternalAuditReportPhoto, type InternalAuditReportInput,
 } from './internalAuditReport';
 
 const site: AuditSite = { id: 'site-rozel', companyId: 1, name: 'LE ROZEL', kind: 'vessel', vesselId: 12, anniversaryOn: '2026-10-01' };
@@ -84,6 +84,41 @@ describe('internal audit report data', () => {
 });
 
 describe('internal audit PDF export', () => {
+  it('builds an entire printable grid without synthesis, graph or private-photo downloads', async () => {
+    const loadPhoto = vi.fn(async () => { throw new Error('Private photo unavailable'); });
+    const report = await buildInternalAuditGridReport(input({ audit: { ...audit, status: 'in_progress' }, findings: [{ ...finding, photos: [photo] }], loadPhoto }));
+    const proof = await pdfProof(report.blob);
+    expect(report.filename).toBe('Grille_Audit_ISM_Interne_LE_ROZEL_2026_Brouillon.pdf');
+    expect(proof.content).toContain('TRACE_LAST_QUESTION');
+    expect(proof.content).toContain('BROUILLON');
+    expect(proof.content).not.toContain('TRACE_TREATMENT');
+    expect(proof.content).not.toContain('02 - Synth');
+    expect(proof.content).not.toContain('03 - Graphique');
+    expect(loadPhoto).not.toHaveBeenCalled();
+    expect(proof.images).toHaveLength(0);
+    expect(report.pageCount).toBeGreaterThan(3);
+    if (process.env.AUDIT_REPORT_QA_OUTPUT) await writeFile(join(process.env.AUDIT_REPORT_QA_OUTPUT, 'audit-grid-only.pdf'), new Uint8Array(await report.blob.arrayBuffer()));
+  });
+  it('reserves a preview during the click and never invokes physical printing', async () => {
+    const preview = { opener: {}, document: { title: '', body: { textContent: '' } }, location: { replace: vi.fn() }, close: vi.fn(), closed: false, print: vi.fn() };
+    const open = vi.fn(() => preview);
+    const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:grid-preview');
+    vi.stubGlobal('window', { open, setTimeout: vi.fn() });
+    try {
+      const promise = openInternalAuditGridPrintPreview(input());
+      expect(open).toHaveBeenCalledWith('', '_blank');
+      expect(preview.opener).toBeNull();
+      await promise;
+      expect(preview.location.replace).toHaveBeenCalledWith('blob:grid-preview');
+      expect(preview.print).not.toHaveBeenCalled();
+      expect(preview.close).not.toHaveBeenCalled();
+    } finally { createUrl.mockRestore(); vi.unstubAllGlobals(); }
+  });
+  it('reports a blocked preview explicitly before generating a document', async () => {
+    vi.stubGlobal('window', { open: () => null });
+    try { await expect(openInternalAuditGridPrintPreview(input())).rejects.toThrow('aperçu a été bloqué'); }
+    finally { vi.unstubAllGlobals(); }
+  });
   it('generates a real multipage landscape PDF containing the full grid, treatment and comparison', async () => {
     const report = await buildInternalAuditReport(input());
     const proof = await pdfProof(report.blob);

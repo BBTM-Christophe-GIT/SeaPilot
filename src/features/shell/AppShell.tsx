@@ -134,6 +134,7 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   procedures: FileText,
   serviceNotes: Mail,
   actionPlan: ClipboardCheck,
+  ovid: FileCheck2,
   ecmid: FileCheck2,
   externalIsmAudits: ShieldCheck,
   internalAudits: ClipboardCheck,

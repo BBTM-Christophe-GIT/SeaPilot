@@ -5,7 +5,7 @@ import { AuthProvider } from '../auth/AuthProvider';
 import { AppShell } from './AppShell';
 
 describe('Audits navigation', () => {
-  it('groups the four requested audit modules in a dedicated menu', async () => {
+  it('groups the five audit modules including OVID in a dedicated menu', async () => {
     const client = {
       auth: {
         getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'audit-manager' } } }, error: null }),
@@ -22,6 +22,7 @@ describe('Audits navigation', () => {
     </Routes></MemoryRouter></AuthProvider>);
     const menu = await screen.findByRole('button', { name: 'Audits' });
     const section = within(menu.closest('section')!);
+    expect(section.getByRole('link', { name: 'OVID' })).toHaveAttribute('href', '/modules/ovid');
     expect(section.getByRole('link', { name: 'eCMID' })).toHaveAttribute('href', '/modules/ecmid');
     expect(section.getByRole('link', { name: 'Audit ISM Externe' })).toHaveAttribute('href', '/modules/externalIsmAudits');
     expect(section.getByRole('link', { name: 'Audit ISM Interne' })).toHaveAttribute('href', '/modules/internalAudits');
