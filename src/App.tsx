@@ -38,6 +38,7 @@ const AnnualReviewsPage = lazy(() => import('./features/annualReviews/AnnualRevi
 const DisciplinaryPage = lazy(() => import('./features/disciplinary/DisciplinaryPage').then((module) => ({ default: module.DisciplinaryPage })));
 const LiftingPage = lazy(() => import('./features/lifting/LiftingPage').then((module) => ({ default: module.LiftingPage })));
 const LsaPage = lazy(() => import('./features/lsa/LsaPage').then((module) => ({ default: module.LsaPage })));
+const RegulatoryLibraryPage = lazy(() => import('./features/regulatoryLibrary/RegulatoryLibraryPage').then((module) => ({ default: module.RegulatoryLibraryPage })));
 
 const InternalAuditsPage = lazy(() => import('./features/internalAudits/InternalAuditsPage').then((module) => ({ default: module.InternalAuditsPage })));
 const DocumentaryAuditsPage = lazy(() => import('./features/documentaryAudits/DocumentaryAuditsPage').then((module) => ({ default: module.DocumentaryAuditsPage })));
@@ -75,7 +76,9 @@ export default function App({ previewModeOverride }: AppProps) {
               key={module.key}
               path={`modules/${module.key}`}
               element={
-                module.key === 'usefulLinks' ? (
+                module.key === 'regulatoryLibrary' || module.key === 'regulatorySafety' || module.key === 'regulatoryTransport' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement de la bibliothèque réglementaire…</div>}><RegulatoryLibraryPage key={module.key} category={module.key === 'regulatorySafety' ? 'safety' : module.key === 'regulatoryTransport' ? 'transport' : undefined} /></Suspense>
+                ) : module.key === 'usefulLinks' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des liens utiles…</div>}><UsefulLinksPage /></Suspense>
                 ) : module.key === 'admin' ? (
                   <AdminPage client={previewMode ? previewSupabaseClient : undefined} previewMode={previewMode} />

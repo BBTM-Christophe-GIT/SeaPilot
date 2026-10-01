@@ -6,6 +6,7 @@ import {
   BarChart3,
   Bell,
   BookOpenCheck,
+  BookOpen,
   CalendarDays,
   Check,
   ChevronDown,
@@ -32,6 +33,7 @@ import {
   ShoppingCart,
   Store,
   ReceiptText,
+  Scale,
   Ship,
   Users,
   Wrench,
@@ -43,6 +45,7 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { ReleaseNotes } from '../releaseNotes/ReleaseNotes';
 import { LIFTING_SECTIONS } from '../lifting/liftingSections';
 import './liftingNavigationLinks.css';
+import './regulatoryNavigation.css';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../auth/AuthProvider';
 import {
@@ -92,6 +95,7 @@ const NAVIGATION_FAMILIES: AppModule['family'][] = [
   'Planning',
   'Ressources Humaines',
   'Maintenance',
+  'Bibliothèque Réglementaire',
   'Administration',
 ];
 
@@ -106,6 +110,7 @@ const FAMILY_ICONS: Record<AppModule['family'], LucideIcon> = {
   Planning: CalendarDays,
   'Ressources Humaines': Users,
   Maintenance: Wrench,
+  'Bibliothèque Réglementaire': BookOpen,
   Administration: Settings,
 };
 
@@ -120,6 +125,7 @@ const FAMILY_THEME_KEYS: Record<AppModule['family'], string> = {
   Planning: 'planning',
   'Ressources Humaines': 'human-resources',
   Maintenance: 'maintenance',
+  'Bibliothèque Réglementaire': 'regulatory',
   Administration: 'administration',
 };
 
@@ -155,6 +161,9 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   marad: Wrench,
   technicalDocuments: BookOpenCheck,
   lifting: LiftingOperationsIcon,
+  regulatoryLibrary: BookOpen,
+  regulatorySafety: ShieldCheck,
+  regulatoryTransport: Scale,
   admin: Settings,
   usefulLinks: Link2,
 };
@@ -421,18 +430,22 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const liftingSection = requestedModule?.key === 'lifting' ? LIFTING_SECTIONS.find((section) => location.pathname.replace(/\/+$/, '').endsWith(`/${section.path}`)) : undefined;
   const isManualPage = location.pathname === '/manual' || location.pathname.startsWith('/manual/');
   const activeVisibleModules = visibleModules;
+  const canOpenRegulatoryLibrary = activeVisibleModules.some((module) => module.key === 'regulatoryLibrary');
   const isRequestedModuleDenied = requestedModule
     ? !activeVisibleModules.some((module) => module.key === requestedModule.key)
+      || (requestedModule.family === 'Bibliothèque Réglementaire' && !canOpenRegulatoryLibrary)
     : false;
   const groupedModules = useMemo(
     () =>
       NAVIGATION_FAMILIES.map((family) => ({
         family,
         modules: activeVisibleModules.filter(
-          (module) => module.family === family && module.navigationKind !== 'hidden',
+          (module) => module.family === family && module.navigationKind !== 'hidden' && module.key !== 'regulatoryLibrary',
         ),
-      })).filter((group) => group.modules.length > 0),
-    [activeVisibleModules],
+      })).filter((group) => (
+        group.family === 'Bibliothèque Réglementaire' ? canOpenRegulatoryLibrary : group.modules.length > 0
+      )),
+    [activeVisibleModules, canOpenRegulatoryLibrary],
   );
   const userMetadata = (session?.user.user_metadata || {}) as Record<string, unknown>;
   const userEmail = previewMode ? 'preview@bbtm.local' : session?.user.email || 'utilisateur@bbtm.fr';
@@ -543,6 +556,8 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
             const isExpanded = expandedFamilies.has(family);
             const directModule =
               modules.length === 1 && modules[0]?.navigationKind === 'direct' ? modules[0] : undefined;
+            const isRegulatoryFamily = family === 'Bibliothèque Réglementaire';
+            const canOpenRegulatoryOverview = isRegulatoryFamily && canOpenRegulatoryLibrary;
 
             if (directModule) {
               return (
@@ -569,26 +584,48 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
             }
 
             return (
-              <section className="navigation-family" data-family-theme={FAMILY_THEME_KEYS[family]} key={family}>
-                <button
-                  aria-expanded={isExpanded}
-                  className="navigation-family-button"
-                  onClick={() => toggleFamily(family)}
-                  title={family}
-                  type="button"
-                >
-                  <span className="navigation-icon-tile">
-                    <FamilyIcon aria-hidden="true" size={20} />
-                  </span>
-                  <span className="navigation-label">{family}</span>
-                  {isExpanded ? (
-                    <ChevronDown aria-hidden="true" className="navigation-chevron" size={15} />
-                  ) : (
-                    <ChevronRight aria-hidden="true" className="navigation-chevron" size={15} />
-                  )}
-                </button>
+              <section className={`navigation-family${isRegulatoryFamily ? ' navigation-regulatory-family' : ''}`} data-family-theme={FAMILY_THEME_KEYS[family]} key={family}>
+                {canOpenRegulatoryOverview ? (
+                  <div className="navigation-regulatory-header">
+                    <NavLink aria-label={family} className="navigation-direct-link" end title={family} to="/modules/regulatoryLibrary">
+                      <span className="navigation-icon-tile"><FamilyIcon aria-hidden="true" size={20} /></span>
+                      <span className="navigation-link-label">{family}</span>
+                    </NavLink>
+                    {modules.length > 0 ? (
+                      <button
+                        aria-controls="regulatory-navigation-links"
+                        aria-expanded={isExpanded}
+                        aria-label={`${isExpanded ? 'Replier' : 'Déplier'} ${family}`}
+                        className="navigation-regulatory-toggle"
+                        onClick={() => toggleFamily(family)}
+                        title={`${isExpanded ? 'Replier' : 'Déplier'} ${family}`}
+                        type="button"
+                      >
+                        {isExpanded ? <ChevronDown aria-hidden="true" size={15} /> : <ChevronRight aria-hidden="true" size={15} />}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <button
+                    aria-expanded={isExpanded}
+                    className="navigation-family-button"
+                    onClick={() => toggleFamily(family)}
+                    title={family}
+                    type="button"
+                  >
+                    <span className="navigation-icon-tile">
+                      <FamilyIcon aria-hidden="true" size={20} />
+                    </span>
+                    <span className="navigation-label">{family}</span>
+                    {isExpanded ? (
+                      <ChevronDown aria-hidden="true" className="navigation-chevron" size={15} />
+                    ) : (
+                      <ChevronRight aria-hidden="true" className="navigation-chevron" size={15} />
+                    )}
+                  </button>
+                )}
                 {isExpanded ? (
-                  <div className="navigation-family-links">
+                  <div className="navigation-family-links" id={isRegulatoryFamily ? 'regulatory-navigation-links' : undefined}>
                     {modules.map((module) => {
                       const ModuleIcon = MODULE_ICONS[module.key];
                       if (module.key === 'lifting') return LIFTING_SECTIONS.map((section) => (

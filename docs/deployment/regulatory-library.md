@@ -1,0 +1,39 @@
+# Bibliothèque Réglementaire
+
+The `regulatoryLibrary` navigation module has two category modules: `regulatorySafety` (Sécurité Maritime) and `regulatoryTransport` (Code des Transports). Each is visible by default to Admin, Direction, Armement, Capitaine and Marin; Administration can change this matrix. Database access requires both the parent and the corresponding category to be visible through the roles held in the active company, plus active company membership. Parent, category and manager rights accumulate independently across these company roles, matching the navigation permission matrix; roles held only in another company cannot grant rights here.
+
+Admin, Direction and Armement can add or edit HTTPS references and record manual reviews. Capitaine and Marin read references and review history. These rights are enforced in RLS for actual authenticated accounts, independently of the application's profile preview.
+
+## Migration and rollout
+
+Apply `supabase/migrations/20261001123711_regulatory_library.sql` and `supabase/migrations/20261001124152_regulatory_review_reference_index.sql` before deploying the frontend. The first creates company-scoped `regulatory_texts` and `regulatory_reviews`, explicit authenticated column grants, category RLS, immutable review guards and the module defaults. It seeds the supplied maritime source, Divisions 160/213/214/222 and the supplied Légifrance source for each existing company. The BBTM seed UUIDs match the preview reference catalog; other companies receive different UUIDs. New companies can add their references through the editor. The second covers the composite reference/company foreign key used by immutable reviews.
+
+Run `supabase/tests/regulatory_library_access_test.sql` against the migrated database. The transaction creates independent Auth/profile/company-membership fixtures for all five roles and rolls back every fixture. It tests category and parent revocation, actual Marin/Capitaine read-only access, cross-company isolation, server-stamped attribution, immutable history, and unsafe links. No role is simulated through the administrator's UI session.
+
+The new tables have RLS and explicit column grants even when the project's Data API setting does not grant newly created tables automatically. No anonymous or service-role credential is used in the frontend; existing Supabase configuration is sufficient.
+
+## What a review means
+
+A reviewer opens the official source and records either no change observed or a list of observed updates. Supabase stamps the current server time and authenticated reviewer's display name. Browser-supplied dates, identities, company IDs and source snapshots are not writable. Each entry retains the original title and URL, so editing a link does not rewrite past observations. Replacing a URL requires a fresh review of the new source; the previous source's entries remain in history. Application clients cannot update or delete existing reviews; corrections are new entries.
+
+Imported references have **no pre-filled review** or fabricated update history. Dates embedded in supplied PDF names are not treated as a review date or certification that the PDF is the current legal text. The feature records manual regulatory monitoring, and does not scrape websites or automatically interpret legal changes.
+
+The alert starts at one calendar month after the latest review, using Europe/Paris calendar time and the last valid day for shorter months (31 January → 28/29 February). Missing reviews remain visibly unreviewed. Invalid or future review dates never appear as up to date. This is an in-app alert, evaluated when the library is viewed; no email reminder or background schedule is created.
+
+The ministry landing page and Légifrance send `X-Frame-Options: SAMEORIGIN`; they open through visible official-source links instead of a blocked iframe. Légifrance may also display an access challenge. The four supplied PDF URLs returned PDF content without a framing prohibition on 1 October 2026. Their direct links appear above the ministry source, with an optional embedded reader and external fallback. Supplied PDF links are not mirrored or replaced by generated documents.
+
+The local preview begins with the six supplied references and an empty history. Preview edits are local demonstration state and are clearly distinguished from shared Supabase records. Production load failures are surfaced and are not replaced with fabricated reviews.
+
+## Verification and rollback
+
+Run `pnpm test src/features/regulatoryLibrary`, `pnpm build`, and the SQL fixture before release. Review Supabase advisors after applying the migration, then verify the GitHub commit's Vercel deployment.
+
+Verified on 1 October 2026: the library migration was applied to the SeaPilot Supabase project and the real-account SQL fixture passed and rolled back. A follow-up read confirmed six BBTM references, zero recorded reviews and zero leftover fixture Auth users. The model/query suites passed 26 automated tests, including calendar-month/DST boundaries, replaced-source status, shared history pagination and actual role management gates. Security advisors reported no finding for the new objects; the composite foreign-key index migration addresses the new performance finding.
+
+Both migration filenames match the versions recorded by the production migration service. The consolidated feature/routing/permissions/administration batch passed 109 tests, and the manual/shell/calendar regression batch passed 73 tests (including 20 model cases already counted in the first batch). ESLint on changed TypeScript files and the production build passed. Existing unrelated Vite bundle-size warnings remain.
+
+The built-in browser verified the overview at 1536 × 1024 and maritime references at 390 × 844: meaningful page content, correct title/route, no framework overlay, no relevant console warnings/errors, custom link addition, review validation, status/date/update-list changes and historical source access. Real crew authorization is covered by the independent Auth fixtures and SQL tests, rather than the administrator preview.
+
+The implementation was compared to the full-screen concept for five points: heading/subtitle copy, two category panels and navigation, navy/teal/lavender palette, outlined ship/scales/book/compass icons, and the five-column watch table. The six official references and actions remain readable; the banner and action widths were tightened to avoid extra wrapping. Intentional adaptations are the existing SeaPilot sidebar/topbar, accurate official source titles, edit/history controls and clearly labelled demo state. Mobile stacks category/direct-source panels and keeps the table horizontally scrollable within its own container. The site's layout does not overflow horizontally.
+
+For a frontend rollback, keep the new tables and review records intact and restore the prior application release. If removing the database feature later, first export the review history and source references. Do not drop persisted reviews during an application rollback.

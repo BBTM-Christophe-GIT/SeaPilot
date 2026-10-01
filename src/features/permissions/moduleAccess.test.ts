@@ -63,12 +63,25 @@ describe('module access', () => {
       ['Maintenance', 'Marad', 'submenu'],
       ['Maintenance', 'Documents Techniques', 'submenu'],
       ['Registres', 'Levage', 'submenu'],
+      ['Bibliothèque Réglementaire', 'Bibliothèque Réglementaire', 'submenu'],
+      ['Bibliothèque Réglementaire', 'Sécurité Maritime', 'submenu'],
+      ['Bibliothèque Réglementaire', 'Code des Transports', 'submenu'],
       ['Accueil', 'Liens utiles', 'direct'],
       ['Administration', 'Administration', 'direct'],
     ]);
     expect(NAVIGATION_MODULES.map((module) => module.key)).not.toContain('billingElements');
     expect(canAccessModule(['direction'], 'billingElements')).toBe(true);
   });
+
+  it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as const)(
+    'allows the %s profile to read every regulatory library module by default',
+    (role) => {
+      for (const key of ['regulatoryLibrary', 'regulatorySafety', 'regulatoryTransport'] as const) {
+        expect(canAccessModule([role], key)).toBe(true);
+        expect(getVisibleModules([role]).map((module) => module.key)).toContain(key);
+      }
+    },
+  );
 
   it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as const)(
     'allows the %s profile to open published QHSE service notes',

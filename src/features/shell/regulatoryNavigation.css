@@ -1,0 +1,56 @@
+.navigation-family.navigation-regulatory-family {
+  --navigation-accent: #38bdf8;
+  --navigation-accent-rgb: 56, 189, 248;
+}
+
+.navigation-regulatory-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+}
+
+.navigation-regulatory-family .navigation-regulatory-header .navigation-direct-link {
+  grid-template-columns: 20px minmax(0, 1fr);
+}
+
+.navigation-regulatory-family .navigation-link-label,
+.navigation-regulatory-family .navigation-label {
+  white-space: normal;
+  text-overflow: clip;
+  line-height: 1.35;
+}
+
+.navigation-regulatory-toggle {
+  display: inline-flex;
+  min-width: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  padding: 6px;
+  color: #94a3b8;
+  background: transparent;
+}
+
+.navigation-regulatory-toggle:hover {
+  color: #ffffff;
+  background: rgba(var(--navigation-accent-rgb), 0.15);
+}
+
+.sidebar-is-collapsed .navigation-regulatory-header {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sidebar-is-collapsed .navigation-regulatory-toggle {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .sidebar-is-collapsed .navigation-regulatory-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .sidebar-is-collapsed .navigation-regulatory-toggle {
+    display: inline-flex;
+  }
+}

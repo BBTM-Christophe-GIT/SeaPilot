@@ -140,6 +140,30 @@ describe('Manuel d’utilisation', () => {
     expect(within(article).getByRole('link', { name: 'Ouvrir le module' })).toHaveAttribute('href', `/modules/${moduleKey}`);
   });
 
+  it.each((['marin', 'capitaine'] as const).flatMap((role) => [
+    { role, moduleKey: 'regulatoryLibrary', label: 'Bibliothèque Réglementaire', details: ['un mois calendaire', 'Historique', 'Ajouter un lien', 'HTTPS', 'changer son adresse impose une nouvelle revue', 'elles ne sont pas détectées automatiquement'] },
+    { role, moduleKey: 'regulatorySafety', label: 'Sécurité Maritime', details: ['Division 160', 'Division 213', 'Division 214', 'Division 222', 'Lire le PDF dans SeaPilot', 'le site du ministère bloque son affichage intégré'] },
+    { role, moduleKey: 'regulatoryTransport', label: 'Code des Transports', details: ['Légifrance bloque son affichage intégré', 'un nouvel onglet', 'Valider la revue', 'suivi mensuel'] },
+  ]))('documents $moduleKey and the real $role read-only access', async ({ role, moduleKey, label, details }) => {
+    renderManual({ role, route: `/manual/${moduleKey}` });
+    const article = await screen.findByRole('article');
+    expect(within(article).getByRole('heading', { name: label, level: 2 })).toBeInTheDocument();
+    expect(within(article).getByRole('link', { name: 'Ouvrir le module' })).toHaveAttribute('href', `/modules/${moduleKey}`);
+    expect(article).toHaveTextContent('Marin et Capitaine consultent les textes');
+    expect(article).toHaveTextContent('Administration, Direction et Armement peuvent ajouter ou modifier les liens et enregistrer les revues de leur société.');
+    for (const detail of details) expect(article).toHaveTextContent(detail);
+  });
+
+  it.each(['marin', 'capitaine'] as const)('hides all regulatory notices from %s when the parent library permission is denied', async (role) => {
+    renderManual({ role, route: '/manual/regulatorySafety', hidden: ['regulatoryLibrary'] });
+    expect(await screen.findByRole('heading', { name: 'Notice indisponible' })).toBeInTheDocument();
+    const navigation = within(screen.getByRole('navigation', { name: 'Modules du manuel' }));
+    for (const label of ['Bibliothèque Réglementaire', 'Sécurité Maritime', 'Code des Transports']) {
+      expect(navigation.queryByRole('link', { name: label })).not.toBeInTheDocument();
+    }
+    expect(screen.queryByRole('link', { name: 'Ouvrir le module' })).not.toBeInTheDocument();
+  });
+
   it.each(['/manual/dpr', '/manual/unknown'])('refuses a hidden or unknown direct notice at %s', async (route) => {
     renderManual({ route, hidden: ['dpr'] });
     expect(await screen.findByRole('heading', { name: 'Notice indisponible' })).toBeInTheDocument();
