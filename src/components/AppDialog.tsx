@@ -52,8 +52,13 @@ export function AppDialog({
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const dialog = dialogRef.current;
     const first = dialog ? focusableElements(dialog)[0] : null;
-    window.requestAnimationFrame(() => (first || dialog)?.focus());
-    return () => previousFocus?.focus();
+    const focusFrame = window.requestAnimationFrame(() => {
+      if (dialog?.isConnected && !dialog.contains(document.activeElement)) (first || dialog).focus();
+    });
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      previousFocus?.focus();
+    };
   }, []);
 
   function handleKeyDown(event: KeyboardEvent<HTMLElement>) {

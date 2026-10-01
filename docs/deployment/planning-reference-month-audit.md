@@ -16,6 +16,12 @@ Les demandes initiales et les actualisations des absences, visites/prestataires 
 
 Aucune modification du design ou retrait de fonctionnalité. Aucun changement de schéma, de droit, de variable d’environnement ou de dépendance.
 
+## Focus des dialogues — v3.64.6
+
+La validation complète a révélé une course dans `AppDialog`, également utilisé par le Planning. Son focus initial différé pouvait arriver après le début d'une saisie, déplacer le focus du champ vers le bouton Fermer, puis laisser l'espace suivant activer ce bouton. Les tests documentaires retrouvaient alors une ancienne référence à un dialogue détaché, ce qui provoquait l'erreur de recherche du champ Responsable de traitement.
+
+La séquence a été reproduite avec une animation contrôlée sur le vrai composant. Le focus initial s'applique maintenant seulement si le dialogue est encore connecté et si aucun élément du dialogue n'a déjà reçu le focus. Le démontage annule l'animation en attente. L'autofocus habituel, la navigation clavier et la fermeture volontaire restent disponibles, sans modifier le design. Les tests de validation des pièces jointes et de prévention des doubles envois restent inchangés.
+
 ## Recette
 
 - Le 1er octobre, ouvrir septembre avec le filtre actif activé : Gary sur LE ROZEL Bordée 1, Mathieu sur LE ROZEL Bordée 2 et ses autres affectations de septembre ; conserver ces lignes après Actualiser, changement de vue et filtre navire.
@@ -23,5 +29,6 @@ Aucune modification du design ou retrait de fonctionnalité. Aucun changement de
 - Vérifier les soldes affichés, leur saisie, leur maintien lors d’un aller-retour entre vues et leur recalcul après changement de mois ou de données.
 - Retarder une demande initiale puis actualiser : absences, visites, prestataires et audits récents ne sont pas remplacés par la réponse ancienne ; une erreur récente reste visible.
 - Vérifier les interactions existantes : zoom, défilement, repli de bordées, cellules quotidiennes, formulaire complet, déplacements, redimensionnement et exports.
+- Dans un dialogue, commencer une saisie avant le focus initial : l'arrivée tardive de l'animation ne doit ni déplacer le focus ni fermer la fenêtre. Fermer le dialogue avant l'animation doit annuler celle-ci ; vérifier aussi le focus initial normal et la navigation clavier.
 
 Déployer le frontend avec les données existantes. Retour arrière : redéployer la version précédente ; aucune migration nécessaire.
