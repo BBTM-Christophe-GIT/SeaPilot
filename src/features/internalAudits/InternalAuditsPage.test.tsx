@@ -27,7 +27,8 @@ function renderPage(roles: RoleKey[] = ['armement'], initialEntry = '/', linkedA
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // Clear queued one-shot responses as well as calls so a failed scenario cannot poison the next load.
+  vi.resetAllMocks();
   Object.defineProperty(URL, 'createObjectURL', { configurable: true, writable: true, value: vi.fn(() => 'blob:photo-test') });
   Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, writable: true, value: vi.fn() });
   fixture = createInternalAuditPreviewData();
@@ -548,12 +549,15 @@ describe('InternalAuditsPage', () => {
     queries.fetchInternalAuditData.mockRejectedValueOnce(new Error('Connexion indisponible'));
     await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
     await user.click(screen.getAllByRole('button', { name: /^Émettre un écart / })[0]);
+    const modal = screen.getByRole('dialog');
+    await waitFor(() => expect(within(modal).getByRole('button', { name: 'Fermer' })).toHaveFocus());
     await user.type(screen.getByRole('textbox', { name: 'Description du constat' }), 'Constat conservé malgré une connexion interrompue');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Responsable de traitement' }), 'person:9301');
     await user.click(screen.getByRole('button', { name: 'Enregistrer l’écart' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(queries.saveAuditFinding).toHaveBeenCalledOnce();
-    expect(screen.getByRole('alert')).toHaveTextContent('L’enregistrement a réussi');
+    expect(await screen.findByRole('alert')).toHaveTextContent('L’enregistrement a réussi');
+    expect(queries.fetchInternalAuditData).toHaveBeenCalledTimes(2);
     await user.click(screen.getByRole('button', { name: /^Synthèse/ }));
     expect(screen.getByText('Constat conservé malgré une connexion interrompue')).toBeInTheDocument();
   });
@@ -566,11 +570,15 @@ describe('InternalAuditsPage', () => {
     queries.fetchInternalAuditData.mockRejectedValueOnce(new Error('Connexion indisponible'));
     await user.click(screen.getByRole('button', { name: /^Synthèse/ }));
     await user.click(screen.getByRole('button', { name: 'Suivre le traitement' }));
+    const modal = screen.getByRole('dialog');
+    // AppDialog focuses its close button on the next frame; wait before typing spaces into the textarea.
+    await waitFor(() => expect(within(modal).getByRole('button', { name: 'Fermer' })).toHaveFocus());
     await user.type(screen.getByRole('textbox', { name: 'Traitement / preuve de correction' }), 'Correction conservée');
     await user.click(screen.getByRole('button', { name: 'Enregistrer le traitement' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(queries.addAuditFindingTreatment).toHaveBeenCalledOnce();
-    expect(screen.getByRole('alert')).toHaveTextContent('L’enregistrement a réussi');
+    expect(await screen.findByRole('alert')).toHaveTextContent('L’enregistrement a réussi');
+    expect(queries.fetchInternalAuditData).toHaveBeenCalledTimes(2);
     expect(screen.getAllByText('Correction conservée').length).toBeGreaterThan(0);
     expect(screen.getByText('Historique du traitement (1)')).toBeInTheDocument();
   });
