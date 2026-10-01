@@ -139,6 +139,7 @@ function crewEventFromAnnualReview(review: PlanningAnnualReviewRecord): Planning
 
 export interface PlanningCrewRowOptions {
   employmentRange?: PlanningDateRange;
+  referenceRange?: PlanningDateRange;
   activeFrom?: string;
   includeEmptyVessels?: boolean;
   pendingBoardRowIds?: ReadonlySet<number>;
@@ -250,6 +251,11 @@ export function timelineRange(days: PlanningTimelineDay[]): PlanningDateRange {
 export function planningReferenceMonthRange(anchorDate: string): PlanningDateRange {
   const start = `${anchorDate.slice(0, 7)}-01`;
   return { start, end: addPlanningDays(shiftPlanningMonths(start, 1), -1) };
+}
+
+export function planningActiveFromForRange(activeFrom: string | undefined, referenceRange: PlanningDateRange): string | undefined {
+  // The grid extends beyond the selected month; its extra days must not hide history.
+  return activeFrom && referenceRange.end >= activeFrom ? activeFrom : undefined;
 }
 
 export function planningReferenceMonthLabel(anchorDate: string): string {
@@ -554,6 +560,7 @@ export function buildPlanningCrewRows(
 ): PlanningCrewRow[] {
   const range = timelineRange(days);
   const employmentRange = options.employmentRange || range;
+  const activeFrom = planningActiveFromForRange(options.activeFrom, options.referenceRange || range);
   const allEvents = eventPool;
   const events = allEvents.filter(
     (event) =>
@@ -702,8 +709,7 @@ export function buildPlanningCrewRows(
               const isPendingBoardRow = Boolean(boardRow && options.pendingBoardRowIds?.has(boardRow.id));
               if (!personEvents.length && !isPendingBoardRow) return;
               // An explicitly added row remains editable even if it already has past events.
-              const activeFrom = options.activeFrom;
-              if (!isPendingBoardRow && activeFrom && range.end >= activeFrom && personEvents.length
+              if (!isPendingBoardRow && activeFrom && personEvents.length
                 && !personEvents.some((event) => event.endsOn >= activeFrom)) return;
               const recordPrefix = `${vessel}|${board}|`;
               const hasAnyRecords = (

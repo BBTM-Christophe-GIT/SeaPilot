@@ -77,6 +77,7 @@ import {
   isPlanningPersonEmployedDuring,
   isSedentaryPlanningFunction,
   normalizePlanningText,
+  planningActiveFromForRange,
   planningReferenceMonthLabel,
   planningReferenceMonthRange,
   planningStatusDisplayLabel,
@@ -734,21 +735,29 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     if (suppressCalendarClickTimeoutRef.current !== null) window.clearTimeout(suppressCalendarClickTimeoutRef.current);
   }, []);
 
+  const absenceRequestId = useRef(0);
+  const vesselVisitRequestId = useRef(0);
+  const planningAuditRequestId = useRef(0);
   const loadAbsences = useCallback(async (): Promise<boolean> => {
+    const requestId = ++absenceRequestId.current;
     if (!readPermissions.canRead || previewMode) {
       setAbsences(previewMode ? previewAbsences : []);
       return true;
     }
     try {
-      setAbsences(await fetchPlanningAbsences(effectiveClient, isPersonalPlanningView ? currentPersonId : undefined));
+      const result = await fetchPlanningAbsences(effectiveClient, isPersonalPlanningView ? currentPersonId : undefined);
+      if (requestId !== absenceRequestId.current) return false;
+      setAbsences(result);
       return true;
     } catch (error) {
+      if (requestId !== absenceRequestId.current) return false;
       setErrorMessage(planningErrorMessage(error, 'Impossible de charger les demandes de congés.'));
       return false;
     }
   }, [currentPersonId, effectiveClient, isPersonalPlanningView, previewAbsences, previewMode, readPermissions.canRead]);
 
   const loadVesselVisits = useCallback(async (): Promise<boolean> => {
+    const requestId = ++vesselVisitRequestId.current;
     if (!readPermissions.canRead || previewMode) {
       setServiceProviders(previewMode ? previewVisitData.providers : []);
       setVesselVisits(previewMode ? previewVisitData.visits : []);
@@ -759,68 +768,52 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         fetchPlanningServiceProviders(effectiveClient),
         fetchPlanningVesselVisits(effectiveClient),
       ]);
+      if (requestId !== vesselVisitRequestId.current) return false;
       setServiceProviders(providers);
       setVesselVisits(visits);
       return true;
     } catch (error) {
+      if (requestId !== vesselVisitRequestId.current) return false;
       setErrorMessage(planningErrorMessage(error, 'Impossible de charger les visites, audits et prestataires.'));
       return false;
     }
   }, [effectiveClient, previewMode, previewVisitData, readPermissions.canRead]);
 
   const loadPlanningAudits = useCallback(async (): Promise<boolean> => {
+    const requestId = ++planningAuditRequestId.current;
     if (!readPermissions.canRead || previewMode) {
       setPlanningAudits(previewMode ? previewAuditData : []);
       return true;
     }
-    try { setPlanningAudits(await fetchPlanningAudits(effectiveClient)); return true; }
-    catch (error) { setErrorMessage(planningErrorMessage(error, 'Impossible de charger les audits planifiés.')); return false; }
-  }, [effectiveClient, previewMode, previewAuditData, readPermissions.canRead]);
-
-  useEffect(() => {
-    let active = true;
-    if (!readPermissions.canRead || previewMode) {
-      return undefined;
+    try {
+      const audits = await fetchPlanningAudits(effectiveClient);
+      if (requestId !== planningAuditRequestId.current) return false;
+      setPlanningAudits(audits);
+      return true;
+    } catch (error) {
+      if (requestId !== planningAuditRequestId.current) return false;
+      setErrorMessage(planningErrorMessage(error, 'Impossible de charger les audits planifiés.'));
+      return false;
     }
-    void fetchPlanningAudits(effectiveClient).then((audits) => { if (active) setPlanningAudits(audits); })
-      .catch((error) => { if (active) setErrorMessage(planningErrorMessage(error, 'Impossible de charger les audits planifiés.')); });
-    return () => { active = false; };
   }, [effectiveClient, previewMode, previewAuditData, readPermissions.canRead]);
 
   useEffect(() => {
-    if (!readPermissions.canRead || previewMode) return undefined;
     let active = true;
-    void Promise.all([
-      fetchPlanningServiceProviders(effectiveClient),
-      fetchPlanningVesselVisits(effectiveClient),
-    ])
-      .then(([providers, visits]) => {
-        if (!active) return;
-        setServiceProviders(providers);
-        setVesselVisits(visits);
-      })
-      .catch((error) => {
-        if (active) setErrorMessage(planningErrorMessage(error, 'Impossible de charger les visites, audits et prestataires.'));
-      });
-    return () => {
-      active = false;
-    };
-  }, [effectiveClient, previewMode, readPermissions.canRead]);
+    queueMicrotask(() => { if (active && readPermissions.canRead && !previewMode) void loadPlanningAudits(); });
+    return () => { active = false; planningAuditRequestId.current += 1; };
+  }, [loadPlanningAudits, previewMode, readPermissions.canRead]);
 
   useEffect(() => {
-    if (!readPermissions.canRead || previewMode) return undefined;
     let active = true;
-    void fetchPlanningAbsences(effectiveClient, isPersonalPlanningView ? currentPersonId : undefined)
-      .then((result) => {
-        if (active) setAbsences(result);
-      })
-      .catch((error) => {
-        if (active) setErrorMessage(planningErrorMessage(error, 'Impossible de charger les demandes de congés.'));
-      });
-    return () => {
-      active = false;
-    };
-  }, [currentPersonId, effectiveClient, isPersonalPlanningView, previewMode, readPermissions.canRead]);
+    queueMicrotask(() => { if (active && readPermissions.canRead && !previewMode) void loadVesselVisits(); });
+    return () => { active = false; vesselVisitRequestId.current += 1; };
+  }, [loadVesselVisits, previewMode, readPermissions.canRead]);
+
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => { if (active && readPermissions.canRead && !previewMode) void loadAbsences(); });
+    return () => { active = false; absenceRequestId.current += 1; };
+  }, [loadAbsences, previewMode, readPermissions.canRead]);
 
   const timelineDays = useMemo(() => buildPlanningTimeline(anchorDate, PLANNING_VIEW_MODE), [anchorDate]);
   const days = timelineDays;
@@ -852,7 +845,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const canEditPlanning = permissions.canEditEvents;
   const latestRelease = overview.versions[0] || null;
   const todayDate = todayPlanningDate();
-  const activeFrom = displaySettings.activeFilterEnabled ? todayDate : undefined;
+  const activeFrom = planningActiveFromForRange(displaySettings.activeFilterEnabled ? todayDate : undefined, referenceMonthRange);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const effectiveDayWidth = Math.round(52 * zoomLevel / 100);
 
@@ -870,6 +863,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const baseFleetRows = useMemo(
     () => buildPlanningCrewRows(planningData, timelineDays, filters, allPlanningCrewEvents, {
       employmentRange: referenceMonthRange,
+      referenceRange: referenceMonthRange,
       activeFrom,
       includeEmptyVessels: isPersonalPlanningView,
       pendingBoardRowIds,
@@ -929,12 +923,20 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     });
     return indexed;
   }, [vesselVisits]);
-  const crewBalances = useMemo(() => new Map((readPermissions.canViewCrewPlanning ? planningData.people : []).map((person) => [person.id,
-    buildPlanningCrewBalanceDays(person, planningData, absences, balancesLoaded || previewMode ? balanceCheckpoints : [], range),
-  ])), [planningData, absences, balanceCheckpoints, balancesLoaded, previewMode, range, readPermissions.canViewCrewPlanning]);
+  const getCrewBalance = useMemo(() => {
+    const people = new Map((readPermissions.canViewCrewPlanning ? planningData.people : []).map((person) => [person.id, person]));
+    const cached = new Map<number, ReturnType<typeof buildPlanningCrewBalanceDays>>();
+    return (personId: number) => {
+      const person = people.get(personId);
+      if (!person) return undefined;
+      if (!cached.has(personId)) cached.set(personId,
+        buildPlanningCrewBalanceDays(person, planningData, absences, balancesLoaded || previewMode ? balanceCheckpoints : [], range));
+      return cached.get(personId);
+    };
+  }, [planningData, absences, balanceCheckpoints, balancesLoaded, previewMode, range, readPermissions.canViewCrewPlanning]);
   const crewLanes = useMemo(
-    () => readPermissions.canViewCrewPlanning ? buildPlanningCrewLanes(planningData, range, filters, crewGrouping, allPlanningCrewEvents, crewDisplay, activeFrom) : [],
-    [activeFrom, allPlanningCrewEvents, crewDisplay, crewGrouping, filters, planningData, range, readPermissions.canViewCrewPlanning],
+    () => readPermissions.canViewCrewPlanning ? buildPlanningCrewLanes(planningData, range, filters, crewGrouping, allPlanningCrewEvents, crewDisplay, activeFrom, referenceMonthRange) : [],
+    [activeFrom, allPlanningCrewEvents, crewDisplay, crewGrouping, filters, planningData, range, readPermissions.canViewCrewPlanning, referenceMonthRange],
   );
   const certificateAlerts = useMemo(() => buildPlanningCertificateAlerts(planningData, todayDate), [planningData, todayDate]);
   const hrAlerts = useMemo(() => buildPlanningHrAlerts(planningData, todayDate), [planningData, todayDate]);
@@ -2895,7 +2897,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               }) : null}
               {perspective === 'crew' && crewLanes.length ? crewLanes.map((lane) => (
                 <PlanningCrewTimelineRow
-                  balances={lane.personId === null ? undefined : crewBalances.get(lane.personId)}
+                  balances={lane.personId === null ? undefined : getCrewBalance(lane.personId)}
                   balanceLoading={!previewMode && !balancesLoaded}
                   onEmptyGridCellDoubleClick={(cell) => void colorPlanningGridCell(cell)}
                   onInitializeBalance={canEditPlanning && (balancesLoaded || previewMode) && lane.personId !== null ? () => setBalancePerson({ id: lane.personId!, name: lane.label }) : undefined}

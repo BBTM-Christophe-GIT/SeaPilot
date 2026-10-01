@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route, Outlet } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -264,6 +264,15 @@ const publicationRow = {
   updated_by_name: 'Direction BBTM',
 };
 
+type AuxiliaryResource = 'absences' | 'providers' | 'visits' | 'audits';
+type AuxiliaryResponse = { data: unknown[] | null; error: unknown };
+function deferredAuxiliaryResponse() {
+  let resolve!: (response: AuxiliaryResponse) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<AuxiliaryResponse>((accept, fail) => { resolve = accept; reject = fail; });
+  return { promise, resolve, reject };
+}
+
 function createClient(options: {
   activeFilterEnabled?: boolean;
   crewPreferences?: { name_format: string; sort_order: string };
@@ -298,7 +307,10 @@ function createClient(options: {
   genericCrewRows?: GenericCrewRowData[];
   planningAudits?: unknown[];
   vesselResponses?: Array<{ data: unknown[] | null; error: unknown }>;
+  auxiliaryResponses?: Partial<Record<AuxiliaryResource, Array<AuxiliaryResponse | Promise<AuxiliaryResponse>>>>;
 } = {}) {
+  const nextAuxiliaryResponse = (resource: AuxiliaryResource, data: unknown[] = []) =>
+    Promise.resolve(options.auxiliaryResponses?.[resource]?.shift() ?? { data, error: null });
   const insertAssignment = vi.fn().mockReturnValue({
     select: vi.fn().mockReturnValue({
       single: vi.fn().mockResolvedValue({ data: options.createdAssignment || assignmentRow, error: null }),
@@ -397,7 +409,16 @@ function createClient(options: {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.derogations ?? [], error: null }) }) };
     }
     if (table === 'planning_absences') {
-      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: options.absences ?? [], error: null }) }) };
+      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockImplementation(() => {
+        const response = nextAuxiliaryResponse('absences', options.absences);
+        return Object.assign(response, { eq: () => response });
+      }) }) };
+    }
+    if (table === 'service_providers') {
+      return { select: () => ({ eq: () => ({ order: () => nextAuxiliaryResponse('providers') }) }) };
+    }
+    if (table === 'vessel_visits') {
+      return { select: () => ({ order: () => nextAuxiliaryResponse('visits') }) };
     }
     if (table === 'planning_conflict_cases' || table === 'planning_conflict_case_history') {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
@@ -452,7 +473,7 @@ function createClient(options: {
       return Promise.resolve({ data: 1, error: null });
     }
     if (functionName === 'planning_audits_overview') {
-      return Promise.resolve({ data: options.planningAudits ?? [], error: null });
+      return nextAuxiliaryResponse('audits', options.planningAudits);
     }
     if (functionName === 'planning_assignment_overview_with_revisions') {
       return Promise.resolve({ data: options.assignments ?? [assignmentOverviewRow], error: null });
@@ -645,6 +666,79 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(container.querySelector('.planning-calendar-body')).toHaveTextContent('Paul DURAND'));
     if (enabled) expect(container.querySelector('.planning-calendar-body')).not.toHaveTextContent('Luc MOREL');
     else expect(container.querySelector('.planning-calendar-body')).toHaveTextContent('Luc MOREL');
+  });
+
+  it('keeps Gary and Mathieu on their September vessels when the active filter sees October in the grid', async () => {
+    const dateSpy = vi.spyOn(await import('./planningDates'), 'todayPlanningDate').mockReturnValue('2026-10-01');
+    try {
+      const user = userEvent.setup();
+      const gary = { ...crewRow, id: 28, first_name: 'Gary', last_name: 'LEFEVRE' };
+      const mathieu = { ...crewRow, id: 17, first_name: 'Mathieu', last_name: 'QUESNOT' };
+      const rozel = { ...vesselRow, id: 2, name: 'LE ROZEL', acronym: 'RZL' };
+      const landemer = { ...vesselRow, id: 11, name: 'LANDEMER', acronym: 'LDM' };
+      const suroit = { ...secondVesselRow, id: 4 };
+      const assignment = (id: number, person: typeof gary, vessel: typeof rozel, starts: string, ends: string, board: string) => ({
+        ...assignmentOverviewRow, id, crew_person_id: person.id, crew_name: `${person.first_name} ${person.last_name}`,
+        vessel_id: vessel.id, vessel_name: vessel.name, starts_on: starts, ends_on: ends,
+        watch_group: board, status_label: 'En Mer', confirmation_status: 'confirmed',
+      });
+      const { client, rpc } = createClient({
+        activeFilterEnabled: true, people: [captainRow, gary, mathieu], vessels: [rozel, landemer, suroit],
+        periods: [], days: [], projects: [],
+        assignments: [
+          assignment(894, gary, rozel, '2026-09-16', '2026-09-25', 'Bordée 1'),
+          assignment(867, gary, landemer, '2026-10-12', '2026-10-26', 'Bordée 2'),
+          assignment(638, mathieu, rozel, '2026-09-13', '2026-09-16', 'Bordée 2'),
+          assignment(639, mathieu, landemer, '2026-09-30', '2026-10-12', 'Bordée 1'),
+          assignment(637, mathieu, suroit, '2026-09-28', '2026-09-29', 'Bordée 1'),
+        ],
+      });
+      const { container } = render(<PlanningPage client={client as never} roles={['armement']} />);
+      await screen.findByRole('button', { name: 'Replier LANDEMER' });
+      fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-09' } });
+      const names = () => [...container.querySelectorAll('.is-fleet-person .planning-row-label strong')].map((node) => node.textContent);
+      await waitFor(() => expect(names().filter((name) => name === 'Gary LEFEVRE')).toHaveLength(2));
+      expect(names().filter((name) => name === 'Mathieu QUESNOT')).toHaveLength(3);
+      expect(screen.getByRole('button', { name: 'Filtre actif' })).toHaveAttribute('aria-pressed', 'true');
+      await user.click(screen.getByRole('button', { name: 'Actualiser' }));
+      await waitFor(() => expect(names().filter((name) => name === 'Gary LEFEVRE')).toHaveLength(2));
+      await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+      expect(container.querySelector('.planning-calendar-body')).toHaveTextContent('Gary LEFEVRE');
+      expect(container.querySelector('.planning-calendar-body')).toHaveTextContent('Mathieu QUESNOT');
+      await user.click(screen.getByRole('tab', { name: 'Flotte' }));
+      await user.click(screen.getByRole('button', { name: 'Filtres' }));
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Filtre navire' }), 'LE ROZEL');
+      expect(names()).toEqual(expect.arrayContaining(['Gary LEFEVRE', 'Mathieu QUESNOT']));
+      expect(names()).toHaveLength(2);
+      expect(rpc).not.toHaveBeenCalledWith('save_planning_personal_display_settings', expect.anything());
+    } finally { dateSpy.mockRestore(); }
+  }, 20_000);
+
+  it('calculates crew balances on demand and reuses them when switching perspectives', async () => {
+    const balanceSpy = vi.spyOn(await import('./planningCrewBalance'), 'buildPlanningCrewBalanceDays');
+    try {
+      const user = userEvent.setup();
+      const { client } = createClient({ assignments: [assignmentOverviewRow], periods: [], days: [],
+        people: [captainRow, crewRow, { ...crewRow, id: 99, active: false, departed_on: '2026-05-31' }],
+      });
+      render(<PlanningPage client={client as never} roles={['admin']} />);
+      await screen.findByRole('button', { name: 'Replier COTENTIN' });
+      expect(balanceSpy).not.toHaveBeenCalled();
+      await user.click(screen.getByRole('tab', { name: 'Projet' }));
+      expect(balanceSpy).not.toHaveBeenCalled();
+      await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+      await screen.findByRole('button', { name: 'Saisir le solde de Paul DURAND' });
+      expect(balanceSpy).toHaveBeenCalled();
+      expect(balanceSpy.mock.calls.every(([person]) => person.id !== 99)).toBe(true);
+      const computed = balanceSpy.mock.calls.length;
+      const balanceText = screen.getByLabelText('Paul DURAND, solde au 01/07/2026 : Solde à initialiser').textContent;
+      await user.click(screen.getByRole('tab', { name: 'Flotte' }));
+      await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+      expect(balanceSpy).toHaveBeenCalledTimes(computed);
+      expect(screen.getByLabelText('Paul DURAND, solde au 01/07/2026 : Solde à initialiser')).toHaveTextContent(balanceText!);
+      fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-07' } });
+      expect(balanceSpy.mock.calls.length).toBeGreaterThan(computed);
+    } finally { balanceSpy.mockRestore(); }
   });
 
   it('restores saved crew preferences and switches sorting without changing the person filter identity', async () => {
@@ -2444,5 +2538,81 @@ describe('PlanningPage cockpit', () => {
 
     await waitFor(() => expect(container.querySelector('.planning-move-preview.is-crew')).toBeInTheDocument());
     expect(bar).toHaveClass('is-dragging');
+  });
+
+  it('keeps refreshed absences, visits, providers and audits when the initial requests finish later', async () => {
+    const user = userEvent.setup();
+    const initialAbsences = deferredAuxiliaryResponse();
+    const initialProviders = deferredAuxiliaryResponse();
+    const initialVisits = deferredAuxiliaryResponse();
+    const initialAudits = deferredAuxiliaryResponse();
+    const provider = { id: 91, name: 'Atelier récent', service_type: 'Maintenance' };
+    const visit = { id: 801, vessel_id: 1, visit_type: 'technical_stop', provider_id: 91, provider,
+      comments: '', created_at: '2026-07-01T08:00:00Z', updated_at: '2026-07-01T08:00:00Z', attachments: [],
+      occurrences: [{ id: 1, scheduled_at: '2026-07-10T08:00:00Z' }, { id: 2, scheduled_at: '2026-07-12T08:00:00Z' }] };
+    const audit = { id: 'audit-recent', kind: 'ovid', siteId: '1', siteName: 'COTENTIN', vesselId: 1,
+      plannedOn: '2026-07-09', performedOn: null, title: 'Dossier récent', status: 'planned', canOpen: false };
+    const { client } = createClient({ auxiliaryResponses: {
+      absences: [initialAbsences.promise, { data: [approvedLeaveRow], error: null }],
+      providers: [initialProviders.promise, { data: [provider], error: null }],
+      visits: [initialVisits.promise, { data: [visit], error: null }],
+      audits: [initialAudits.promise, { data: [audit], error: null }],
+    } });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('button', { name: 'Actualiser' }));
+    await screen.findByRole('button', { name: 'OVID · COTENTIN, 09/07/2026' });
+    await screen.findByRole('button', { name: /Congés validés du 06\/07\/2026 au 09\/07\/2026/ });
+    await screen.findByRole('button', { name: 'Arrêt Technique avec Atelier récent, du 10/07/2026 au 12/07/2026' });
+
+    await act(async () => {
+      initialAbsences.resolve({ data: [], error: null });
+      initialProviders.resolve({ data: [{ ...provider, name: 'Atelier ancien' }], error: null });
+      initialVisits.resolve({ data: [], error: null });
+      initialAudits.resolve({ data: [{ ...audit, plannedOn: '2026-06-30' }], error: null });
+    });
+    expect(screen.getByRole('button', { name: 'OVID · COTENTIN, 09/07/2026' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'OVID · COTENTIN, 30/06/2026' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Congés validés du 06\/07\/2026 au 09\/07\/2026/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Arrêt Technique avec Atelier récent/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Ajouter une visite ou un audit à COTENTIN' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('combobox', { name: 'Prestataire' }));
+    expect(screen.getByRole('option', { name: /Atelier récent/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Atelier ancien/ })).not.toBeInTheDocument();
+  });
+
+  it.each(['absences', 'visits', 'audits'] as const)('ignores an obsolete %s error but still reports the latest failure', async (resource) => {
+    const user = userEvent.setup();
+    const initial = deferredAuxiliaryResponse();
+    const latest = deferredAuxiliaryResponse();
+    const { client } = createClient({ auxiliaryResponses: {
+      [resource]: [initial.promise, { data: [], error: null }, latest.promise],
+    } });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('button', { name: 'Actualiser' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Actualiser' })).toBeEnabled());
+    await act(async () => { initial.reject(new Error(`Ancienne erreur ${resource}`)); });
+    expect(screen.queryByText(`Ancienne erreur ${resource}`)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Actualiser' }));
+    await act(async () => { latest.reject(new Error(`Dernière erreur ${resource}`)); });
+    expect(await screen.findByText(`Dernière erreur ${resource}`)).toBeInTheDocument();
+    expect(screen.queryByText(`Ancienne erreur ${resource}`)).not.toBeInTheDocument();
+  });
+
+  it('invalidates pending auxiliary requests when the authenticated client changes', async () => {
+    const initial = deferredAuxiliaryResponse();
+    const audit = { id: 'old-client-audit', kind: 'ovid', siteId: '1', siteName: 'COTENTIN', vesselId: 1,
+      plannedOn: '2026-06-30', performedOn: null, title: 'Ancien compte', status: 'planned', canOpen: false };
+    const first = createClient({ auxiliaryResponses: { audits: [initial.promise] } });
+    const next = createClient({ planningAudits: [{ ...audit, id: 'new-client-audit', plannedOn: '2026-07-09' }] });
+    const view = render(<PlanningPage client={first.client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    view.rerender(<PlanningPage client={next.client as never} roles={['admin']} />);
+    await screen.findByRole('button', { name: 'OVID · COTENTIN, 09/07/2026' });
+    await act(async () => { initial.resolve({ data: [audit], error: null }); });
+    expect(screen.getByRole('button', { name: 'OVID · COTENTIN, 09/07/2026' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'OVID · COTENTIN, 30/06/2026' })).not.toBeInTheDocument();
   });
 });
