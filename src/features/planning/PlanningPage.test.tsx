@@ -2244,11 +2244,17 @@ describe('PlanningPage cockpit', () => {
     nativeConfirm.mockRestore();
   });
 
-  it('lets only administrators drag approved vacations to a new date', async () => {
-    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], absences: [approvedLeaveRow], periods: [] });
+  it.each([
+    ['leave', '2026-07-09T16:00:00Z', '09', '2026-07-19T16:00:00.000Z'],
+    ['rtt', '2026-07-09T16:00:00Z', '09', '2026-07-19T16:00:00.000Z'],
+    ['leave', '2026-07-09T22:00:00Z', '09', '2026-07-19T22:00:00.000Z'],
+    ['rtt', '2026-07-09T22:00:00Z', '09', '2026-07-19T22:00:00.000Z'],
+    ['rtt', '2026-07-06T22:00:00Z', '06', '2026-07-16T22:00:00.000Z'],
+  ])('lets administrators drag approved %s ending at %s while preserving its exclusive end', async (type, end, lastDay, movedEnd) => {
+    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], absences: [{ ...approvedLeaveRow, absence_type: type, ends_at: end }], periods: [] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
-    const vacation = await screen.findByRole('button', { name: /Congés validés du 06\/07\/2026 au 09\/07\/2026/ });
+    const vacation = await screen.findByRole('button', { name: `${type === 'rtt' ? 'RTT' : 'Congés'} validés du 06/07/2026 au ${lastDay}/07/2026` });
     expect(vacation).toHaveAttribute('draggable', 'true');
     const values = new Map<string, string>();
     const dataTransfer = {
@@ -2269,7 +2275,7 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('move_planning_approved_absence', {
       p_absence_id: 701,
       p_starts_at: '2026-07-16T06:00:00.000Z',
-      p_ends_at: '2026-07-19T16:00:00.000Z',
+      p_ends_at: movedEnd,
     }));
   });
 

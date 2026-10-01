@@ -2030,13 +2030,15 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   async function moveApprovedAbsence(absence: PlanningAbsenceRecord, startsOn: string) {
     if (!permissions.canMoveApprovedAbsences || absence.status !== 'approved' || !['leave', 'rtt'].includes(absence.absenceType)) return;
     const endsOn = addPlanningDays(startsOn, daysBetween(absence.startsOn, absence.endsOn));
+    const localEnd = utcToPlanningLocalDateTime(absence.endsAt);
+    const shiftedEndDate = addPlanningDays(localEnd.slice(0, 10), daysBetween(absence.startsOn, startsOn));
     setPendingMutationId(`absence-${absence.id}`);
     setErrorMessage(null);
     try {
       await movePlanningApprovedAbsence(effectiveClient, {
         absenceId: absence.id,
         startsAt: localDateTime(startsOn, utcToPlanningLocalDateTime(absence.startsAt).slice(11)),
-        endsAt: localDateTime(endsOn, utcToPlanningLocalDateTime(absence.endsAt).slice(11)),
+        endsAt: localDateTime(shiftedEndDate, localEnd.slice(11)),
       });
       await loadAbsences();
       setStatusMessage(`${absence.absenceType === 'rtt' ? 'RTT' : 'Congés'} validés déplacés du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}.`);
