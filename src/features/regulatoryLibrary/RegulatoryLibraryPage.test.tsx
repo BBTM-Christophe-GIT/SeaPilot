@@ -11,7 +11,7 @@ import type { RoleKey } from '../permissions/roles';
 import { fetchCurrentUserRoles } from '../profiles/profileQueries';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { RegulatoryLibraryPage } from './RegulatoryLibraryPage';
-import { REGULATORY_REFERENCE_TEXTS, type RegulatoryCategory, type RegulatoryReview, type RegulatoryText } from './regulatoryModel';
+import { REGULATORY_REFERENCE_TEXTS, RegulatorySourceChangedError, type RegulatoryCategory, type RegulatoryReview, type RegulatoryText } from './regulatoryModel';
 import { fetchRegulatoryLibrary, recordRegulatoryReview, saveRegulatoryText } from './regulatoryQueries';
 
 vi.mock('./regulatoryQueries', () => ({
@@ -34,13 +34,13 @@ function reviewFor(text: RegulatoryText, overrides: Partial<RegulatoryReview> = 
 
 // Load roles from each authenticated account's user_roles fixture, like AppShell.
 // No session role simulation or rolesOverride is used for the crew profiles.
-function ProfileOutlet({ client, visibleModules }: { client: SupabaseClient; visibleModules: AppModule[] }) {
+function ProfileOutlet({ client, visibleModules, previewMode }: { client: SupabaseClient; visibleModules: AppModule[]; previewMode: boolean }) {
   const [roles, setRoles] = useState<RoleKey[] | null>(null);
   useEffect(() => { void fetchCurrentUserRoles(client).then(setRoles); }, [client]);
-  return roles ? <Outlet context={{ roles, client, visibleModules, previewMode: false, currentPerson: null } satisfies AppShellOutletContext} /> : <p>Chargement du profil…</p>;
+  return roles ? <Outlet context={{ roles, client, visibleModules, previewMode, currentPerson: null } satisfies AppShellOutletContext} /> : <p>Chargement du profil…</p>;
 }
 
-function renderProfile(role: RoleKey = 'armement', category?: RegulatoryCategory, visibleModules = regulatoryModules) {
+function renderProfile(role: RoleKey = 'armement', category?: RegulatoryCategory, visibleModules = regulatoryModules, previewMode = false) {
   const user = { id: `${role}-regulatory-page-fixture`, email: `${role}@example.test` };
   const client = {
     auth: {
@@ -53,7 +53,7 @@ function renderProfile(role: RoleKey = 'armement', category?: RegulatoryCategory
     }),
   };
   render(<AuthProvider client={client as never}><MemoryRouter initialEntries={['/library']}><Routes>
-    <Route element={<RequireAuth />}><Route element={<ProfileOutlet client={client as never} visibleModules={visibleModules} />}>
+    <Route element={<RequireAuth />}><Route element={<ProfileOutlet client={client as never} visibleModules={visibleModules} previewMode={previewMode} />}>
       <Route path="library" element={<RegulatoryLibraryPage category={category} />} />
     </Route></Route>
   </Routes></MemoryRouter></AuthProvider>);
@@ -184,6 +184,36 @@ describe('regulatory library page', () => {
     expect(history.getByText('Modification de la source précédente.')).toBeVisible();
   });
 
+  it('keeps the reviewed title and URL in preview history and requires a new review after editing its source', async () => {
+    renderProfile('armement', undefined, regulatoryModules, true);
+    await watchTable();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: `Faire la revue de ${division160.title}` }));
+    await user.click(screen.getByRole('button', { name: 'Valider la revue' }));
+    expect(await screen.findByText('Revue ajoutée à cette démonstration. Elle ne sera pas enregistrée en production.')).toBeVisible();
+    expect(within(rowFor(division160)).getByText('À jour')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: `Modifier le lien ${division160.title}` }));
+    const changed = { ...division160, title: 'Division 160 - Nouvelle référence', url: 'https://example.org/division-160-nouvelle-version.pdf' };
+    await user.clear(screen.getByLabelText('Titre du texte'));
+    await user.type(screen.getByLabelText('Titre du texte'), changed.title);
+    await user.clear(screen.getByLabelText('Adresse du lien'));
+    await user.type(screen.getByLabelText('Adresse du lien'), changed.url);
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le lien' }));
+    expect(await screen.findByText('Lien ajouté à cette démonstration. Il ne sera pas enregistré en production.')).toBeVisible();
+    const row = within(rowFor(changed));
+    expect(row.getByText('À revoir')).toBeVisible();
+    expect(row.getByText('Aucune revue enregistrée')).toBeVisible();
+    expect(screen.getByText('6 revues à réaliser')).toBeVisible();
+    await user.click(row.getByRole('button', { name: 'Historique (1)' }));
+    const history = within(screen.getByRole('dialog', { name: 'Historique des revues' }));
+    expect(history.getByRole('link', { name: division160.title })).toHaveAttribute('href', division160.url);
+    expect(history.getByText('Aucune mise à jour constatée')).toBeVisible();
+    expect(history.queryByRole('link', { name: changed.title })).not.toBeInTheDocument();
+    expect(fetchRegulatoryLibrary).not.toHaveBeenCalled();
+    expect(recordRegulatoryReview).not.toHaveBeenCalled();
+    expect(saveRegulatoryText).not.toHaveBeenCalled();
+  });
+
   it('records changed text updates, clears its alarm and preserves the previous review in history', async () => {
     const previous = reviewFor(division160, { id: 'previous-review', reviewed_at: '2026-08-30T10:00:00.000Z', has_updates: true, updates: 'Ancienne modification.' });
     vi.mocked(fetchRegulatoryLibrary).mockResolvedValue({ texts: [division160], reviews: [previous] });
@@ -198,7 +228,7 @@ describe('regulatory library page', () => {
     vi.mocked(recordRegulatoryReview).mockResolvedValue(reviewFor(division160, { id: 'current-review', reviewed_at: NOW, reviewer_name: 'Claire Armement', has_updates: true, updates: 'Article 5 : nouvelle fréquence de contrôle.' }));
     await user.click(screen.getByRole('button', { name: 'Valider la revue' }));
     expect(await screen.findByText('Revue enregistrée. La prochaine revue est prévue dans un mois.')).toBeVisible();
-    expect(recordRegulatoryReview).toHaveBeenCalledWith(client, division160.id, { has_updates: true, updates: 'Article 5 : nouvelle fréquence de contrôle.' });
+    expect(recordRegulatoryReview).toHaveBeenCalledWith(client, division160.id, { has_updates: true, updates: 'Article 5 : nouvelle fréquence de contrôle.' }, division160.url);
     expect(within(rowFor(division160)).getByText('À jour')).toBeVisible();
     expect(within(rowFor(division160)).getByText('01/10/2026')).toBeVisible();
     expect(within(rowFor(division160)).getByText('À renouveler le 01/11/2026')).toBeVisible();
@@ -222,7 +252,7 @@ describe('regulatory library page', () => {
     vi.mocked(recordRegulatoryReview).mockResolvedValue(reviewFor(division160, { reviewed_at: NOW }));
     await user.click(screen.getByRole('button', { name: 'Valider la revue' }));
     await screen.findByText('Revue enregistrée. La prochaine revue est prévue dans un mois.');
-    expect(recordRegulatoryReview).toHaveBeenCalledWith(client, division160.id, { has_updates: false, updates: '' });
+    expect(recordRegulatoryReview).toHaveBeenCalledWith(client, division160.id, { has_updates: false, updates: '' }, division160.url);
     expect(within(rowFor(division160)).getByText('Aucune mise à jour constatée')).toBeVisible();
     expect(within(rowFor(division160)).getByText('À jour')).toBeVisible();
   });
@@ -242,6 +272,42 @@ describe('regulatory library page', () => {
     expect(screen.getByLabelText('Mises à jour constatées')).toHaveValue('Modification à conserver.');
     expect(within(rowFor(division160)).getByText('À revoir')).toBeVisible();
     expect(screen.getByText('1 revue à réaliser')).toBeVisible();
+  });
+
+  it('reloads a changed source after a rejected stale review and validates only its new URL', async () => {
+    const changed = { ...division160, url: 'https://example.org/division-160-mise-a-jour.pdf' };
+    const previous = reviewFor(division160);
+    vi.mocked(fetchRegulatoryLibrary)
+      .mockResolvedValueOnce({ texts: [division160], reviews: [previous] })
+      .mockResolvedValueOnce({ texts: [changed], reviews: [previous] });
+    const client = renderProfile();
+    await watchTable();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: `Faire la revue de ${division160.title}` }));
+    expect(screen.getByRole('link', { name: 'Consulter la source avant la revue' })).toHaveAttribute('href', division160.url);
+    await user.click(screen.getByRole('radio', { name: 'Des mises à jour ont été constatées' }));
+    await user.type(screen.getByLabelText('Mises à jour constatées'), 'Observation de la source précédente.');
+    const changedError = new RegulatorySourceChangedError();
+    vi.mocked(recordRegulatoryReview).mockRejectedValueOnce(changedError);
+    await user.click(screen.getByRole('button', { name: 'Valider la revue' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(changedError.message);
+    expect(recordRegulatoryReview).toHaveBeenCalledWith(client, division160.id, { has_updates: true, updates: 'Observation de la source précédente.' }, division160.url);
+    expect(screen.getByRole('dialog', { name: 'Faire la revue' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Valider la revue' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Recharger la bibliothèque' }));
+    await waitFor(() => expect(within(rowFor(changed)).getByRole('link', { name: `${changed.title} (nouvel onglet)` })).toHaveAttribute('href', changed.url));
+    expect(fetchRegulatoryLibrary).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(within(rowFor(changed)).getByText('À revoir')).toBeVisible();
+    expect(screen.getByText('1 revue à réaliser')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: `Faire la revue de ${changed.title}` }));
+    expect(screen.getByRole('link', { name: 'Consulter la source avant la revue' })).toHaveAttribute('href', changed.url);
+    expect(screen.getByRole('radio', { name: 'Aucune mise à jour constatée' })).toBeChecked();
+    vi.mocked(recordRegulatoryReview).mockResolvedValueOnce(reviewFor(changed, { id: 'new-source-review', reviewed_at: NOW }));
+    await user.click(screen.getByRole('button', { name: 'Valider la revue' }));
+    await screen.findByText('Revue enregistrée. La prochaine revue est prévue dans un mois.');
+    expect(recordRegulatoryReview).toHaveBeenLastCalledWith(client, changed.id, { has_updates: false, updates: '' }, changed.url);
+    expect(within(rowFor(changed)).getByText('À jour')).toBeVisible();
   });
 
   it('filters by accent-insensitive search and due status, with a no-results message', async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { fetchRegulatoryLibrary, recordRegulatoryReview, saveRegulatoryText } from './regulatoryQueries';
+import { fetchRegulatoryLibrary, recordRegulatoryReview, RegulatorySourceChangedError, saveRegulatoryText } from './regulatoryQueries';
 import { REGULATORY_REFERENCE_TEXTS } from './regulatoryModel';
 
 function clientFixture(result: { data: unknown; error: { message?: string; code?: string } | null }) {
@@ -47,14 +47,33 @@ describe('regulatory library queries', () => {
 
   it('records the observation without accepting a browser timestamp or reviewer identity', async () => {
     const { client, query } = clientFixture({ data: { id: 'review' }, error: null });
-    await recordRegulatoryReview(client, 'text', { has_updates: true, updates: ' Article modifié ' });
-    expect(query.insert).toHaveBeenCalledWith({ text_id: 'text', has_updates: true, updates: 'Article modifié' });
+    await recordRegulatoryReview(client, 'text', { has_updates: true, updates: ' Article modifié ' }, 'https://example.org/observed');
+    expect(query.insert).toHaveBeenCalledWith({ text_id: 'text', has_updates: true, updates: 'Article modifié', url_snapshot: 'https://example.org/observed' });
   });
 
   it('rejects incomplete reviews before sending them and displays permission failures', async () => {
     const { client, query } = clientFixture({ data: null, error: { code: '42501' } });
-    await expect(recordRegulatoryReview(client, 'text', { has_updates: true, updates: '' })).rejects.toThrow('Décrivez');
+    await expect(recordRegulatoryReview(client, 'text', { has_updates: true, updates: '' }, 'https://example.org/')).rejects.toThrow('Décrivez');
     expect(query.insert).not.toHaveBeenCalled();
-    await expect(recordRegulatoryReview(client, 'text', { has_updates: false, updates: '' })).rejects.toThrow('Votre profil');
+    await expect(recordRegulatoryReview(client, 'text', { has_updates: false, updates: '' }, 'https://example.org/')).rejects.toThrow('Votre profil');
+  });
+
+  it('maps a concurrent source replacement to a dedicated reopen-and-review error', async () => {
+    const { client } = clientFixture({ data: null, error: { code: '40001', message: 'REGULATORY_SOURCE_CHANGED' } });
+    await expect(recordRegulatoryReview(client, 'text', { has_updates: false, updates: '' }, 'https://example.org/old'))
+      .rejects.toBeInstanceOf(RegulatorySourceChangedError);
+    await expect(recordRegulatoryReview(client, 'text', { has_updates: false, updates: '' }, 'https://example.org/old'))
+      .rejects.toThrow('Rouvrez la revue');
+  });
+
+  it('requires the exact expected HTTPS source before sending a review', async () => {
+    const { client, query } = clientFixture({ data: { id: 'review' }, error: null });
+    await expect(recordRegulatoryReview(client, 'text', { has_updates: false, updates: '' }, ''))
+      .rejects.toBeInstanceOf(RegulatorySourceChangedError);
+    await expect(recordRegulatoryReview(client, 'text', { has_updates: false, updates: '' }, 'javascript:alert(1)'))
+      .rejects.toThrow('HTTPS');
+    expect(query.insert).not.toHaveBeenCalled();
+    await recordRegulatoryReview(client, 'text', { has_updates: false, updates: '' }, 'https://example.org');
+    expect(query.insert).toHaveBeenCalledWith({ text_id: 'text', has_updates: false, updates: '', url_snapshot: 'https://example.org' });
   });
 });

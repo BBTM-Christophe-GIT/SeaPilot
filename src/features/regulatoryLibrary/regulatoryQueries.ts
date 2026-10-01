@@ -1,8 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RegulatoryReview, RegulatoryReviewDraft, RegulatoryText, RegulatoryTextDraft } from './regulatoryModel';
-import { validateRegulatoryReviewDraft, validateRegulatoryTextDraft } from './regulatoryModel';
+import { normalizeRegulatoryUrl, RegulatorySourceChangedError, validateRegulatoryReviewDraft, validateRegulatoryTextDraft } from './regulatoryModel';
 
 export type { RegulatoryCategory, RegulatoryReview, RegulatoryReviewDraft, RegulatoryText, RegulatoryTextDraft } from './regulatoryModel';
+export { RegulatorySourceChangedError } from './regulatoryModel';
 
 export interface RegulatoryLibraryData {
   texts: RegulatoryText[];
@@ -50,11 +51,15 @@ export async function saveRegulatoryText(client: SupabaseClient, draft: Regulato
   return data as RegulatoryText;
 }
 
-export async function recordRegulatoryReview(client: SupabaseClient, textId: string, draft: RegulatoryReviewDraft): Promise<RegulatoryReview> {
+export async function recordRegulatoryReview(client: SupabaseClient, textId: string, draft: RegulatoryReviewDraft, expectedUrl: string): Promise<RegulatoryReview> {
   const payload = validateRegulatoryReviewDraft(draft);
-  // The database sets the timestamp, identity, company and original source snapshots.
+  if (typeof expectedUrl !== 'string' || !expectedUrl) throw new RegulatorySourceChangedError();
+  normalizeRegulatoryUrl(expectedUrl);
+  // Preserve the exact displayed URL as a concurrency token. The database verifies it
+  // while locking the source, then fills the timestamp, identity and source snapshots.
   const { data, error } = await client.from('regulatory_reviews')
-    .insert({ text_id: textId, ...payload }).select(REVIEW_SELECT).single();
+    .insert({ text_id: textId, ...payload, url_snapshot: expectedUrl }).select(REVIEW_SELECT).single();
+  if (error?.code === '40001') throw new RegulatorySourceChangedError();
   assertResult(error, 'Impossible d’enregistrer cette revue.');
   if (!data) throw new Error('La revue n’a pas été enregistrée.');
   return data as RegulatoryReview;

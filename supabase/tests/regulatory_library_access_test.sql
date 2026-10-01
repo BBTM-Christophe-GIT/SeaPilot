@@ -34,23 +34,42 @@ begin
       get diagnostics affected=row_count; assert affected=1, 'Manager cannot edit reference';
       select title into original_title from public.regulatory_texts where id=safety_text;
       review_started:=clock_timestamp();
-      insert into public.regulatory_reviews(text_id,has_updates,updates) values(safety_text,true,'Recorded observation '||role_name) returning id into review_id;
+      insert into public.regulatory_reviews(text_id,has_updates,updates,url_snapshot) values(safety_text,true,'Recorded observation '||role_name,'https://example.invalid/safety') returning id into review_id;
       assert (select reviewer_id=actor and reviewer_name='Regulatory '||role_name and reviewed_at>=review_started
         and title_snapshot=original_title and url_snapshot='https://example.invalid/safety' from public.regulatory_reviews where id=review_id), 'Server review identity/date/source snapshot incorrect';
       update public.regulatory_texts set title='After review '||role_name where id=safety_text;
       assert (select title_snapshot=original_title from public.regulatory_reviews where id=review_id), 'Historical source snapshot was changed';
-      insert into public.regulatory_reviews(text_id,has_updates,updates) values(transport_text,false,'');
+      insert into public.regulatory_reviews(text_id,has_updates,updates,url_snapshot) values(transport_text,false,'','https://example.invalid/transport');
+      -- Another manager replaced URL A while this reviewer still has A open.
+      update public.regulatory_texts set url='https://example.invalid/replaced-'||role_name where id=created_text;
+      begin
+        insert into public.regulatory_reviews(text_id,has_updates,updates,url_snapshot)
+        values(created_text,false,'','https://example.invalid/new-'||role_name);
+        raise exception 'Review of old source certified the replacement URL';
+      exception when serialization_failure then
+        assert sqlerrm='REGULATORY_SOURCE_CHANGED', 'Stale source did not return the dedicated error';
+      end;
+      assert not exists(select 1 from public.regulatory_reviews where text_id=created_text), 'Rejected stale-source review was persisted';
+      begin
+        insert into public.regulatory_reviews(text_id,has_updates,updates) values(created_text,false,'');
+        raise exception 'Review without an expected source URL accepted';
+      exception when serialization_failure then
+        assert sqlerrm='REGULATORY_SOURCE_CHANGED', 'Missing source URL did not return the dedicated error';
+      end;
+      insert into public.regulatory_reviews(text_id,has_updates,updates,url_snapshot)
+      values(created_text,false,'','https://example.invalid/replaced-'||role_name) returning id into review_id;
+      assert (select url_snapshot='https://example.invalid/replaced-'||role_name and reviewer_id=actor from public.regulatory_reviews where id=review_id), 'Fresh review did not certify the reopened source';
       begin
         insert into public.regulatory_reviews(text_id,has_updates,updates,reviewed_at,reviewer_name)
         values(safety_text,false,'','2099-01-01','Forged identity');
         raise exception 'Client supplied review date/reviewer accepted';
       exception when insufficient_privilege then null; end;
       begin
-        insert into public.regulatory_reviews(text_id,has_updates,updates) values(safety_text,true,'');
+        insert into public.regulatory_reviews(text_id,has_updates,updates,url_snapshot) values(safety_text,true,'','https://example.invalid/safety');
         raise exception 'Empty update list accepted';
       exception when check_violation then null; end;
       begin
-        insert into public.regulatory_reviews(text_id,has_updates,updates) values(foreign_text,false,'');
+        insert into public.regulatory_reviews(text_id,has_updates,updates,url_snapshot) values(foreign_text,false,'','https://example.invalid/foreign');
         raise exception 'Foreign review accepted';
       exception when insufficient_privilege then null; end;
       begin
@@ -77,7 +96,7 @@ begin
         raise exception 'Reader inserted a reference';
       exception when insufficient_privilege then null; end;
       begin
-        insert into public.regulatory_reviews(text_id,has_updates,updates) values(safety_text,false,'');
+        insert into public.regulatory_reviews(text_id,has_updates,updates,url_snapshot) values(safety_text,false,'','https://example.invalid/safety');
         raise exception 'Reader recorded a review';
       exception when insufficient_privilege then null; end;
     end if;
@@ -98,7 +117,7 @@ begin
     assert not exists(select 1 from public.regulatory_reviews where text_id=safety_text), 'Hidden category review history leaked';
     assert exists(select 1 from public.regulatory_reviews where text_id=transport_text), 'Transport history unavailable';
     begin
-      insert into public.regulatory_reviews(text_id,has_updates,updates) values(safety_text,false,'');
+      insert into public.regulatory_reviews(text_id,has_updates,updates,url_snapshot) values(safety_text,false,'','https://example.invalid/safety');
       raise exception 'Hidden category review allowed';
     exception when insufficient_privilege then null; end;
     execute 'reset role';
@@ -123,7 +142,7 @@ begin
   execute 'set local role authenticated';
   assert public.regulatory_library_has_access('safety'), 'Parent and category grants do not accumulate across company roles';
   assert public.regulatory_library_has_access('safety',true), 'Manager role does not accumulate with visible company module grants';
-  insert into public.regulatory_reviews(text_id,has_updates,updates) values(safety_text,false,'');
+  insert into public.regulatory_reviews(text_id,has_updates,updates,url_snapshot) values(safety_text,false,'','https://example.invalid/safety');
   execute 'reset role';
   update public.role_module_permissions set is_visible=false where role_key='marin' and module_key='regulatorySafety';
   execute 'set local role authenticated';
@@ -153,5 +172,5 @@ begin
   exception when insufficient_privilege then null; end;
   execute 'reset role';
 end $test$;
-select 'PASS: real Admin/Direction/Armement management and Marin/Capitaine read-only; cumulative company roles; category/parent visibility; tenant isolation; immutable server-stamped reviews; HTTPS guards' as result;
+select 'PASS: real Admin/Direction/Armement management and Marin/Capitaine read-only; cumulative company roles; category/parent visibility; tenant isolation; immutable server-stamped reviews; stale-source rejection and fresh-source validation; HTTPS guards' as result;
 rollback;

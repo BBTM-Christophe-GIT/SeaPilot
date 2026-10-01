@@ -35,6 +35,13 @@ export interface RegulatoryReviewDraft {
   updates: string;
 }
 
+export class RegulatorySourceChangedError extends Error {
+  constructor() {
+    super('La source de ce texte a changé depuis l’ouverture de la revue. Rouvrez la revue et vérifiez le nouveau lien.');
+    this.name = 'RegulatorySourceChangedError';
+  }
+}
+
 export const REGULATORY_REFERENCE_TEXTS: RegulatoryText[] = [
   { id: 'd1600000-0000-4000-8000-000000000001', category: 'safety', title: 'Pôle réglementation de la sécurité maritime', url: 'https://www.mer.gouv.fr/pole-reglementation-de-la-securite-maritime', is_primary: true, sort_order: 0 },
   { id: 'd1600000-0000-4000-8000-000000000002', category: 'safety', title: 'Division 160 - Gestion de la Sécurité', url: 'https://www.mer.gouv.fr/sites/default/files/2026-08/d160-20-06-26.pdf', is_primary: false, sort_order: 160 },

@@ -5,7 +5,7 @@ import { Link, useOutletContext } from 'react-router-dom';
 import { AppDialog } from '../../components/AppDialog';
 import { supabase } from '../../lib/supabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { canManageRegulatoryLibrary, getRegulatoryReviewStatus, latestRegulatoryReview, validateRegulatoryTextDraft, REGULATORY_REFERENCE_TEXTS, regulatoryReviewDueAt, type RegulatoryCategory, type RegulatoryReview, type RegulatoryText, type RegulatoryTextDraft } from './regulatoryModel';
+import { canManageRegulatoryLibrary, getRegulatoryReviewStatus, latestRegulatoryReview, validateRegulatoryTextDraft, REGULATORY_REFERENCE_TEXTS, RegulatorySourceChangedError, regulatoryReviewDueAt, type RegulatoryCategory, type RegulatoryReview, type RegulatoryText, type RegulatoryTextDraft } from './regulatoryModel';
 import { fetchRegulatoryLibrary, recordRegulatoryReview, saveRegulatoryText } from './regulatoryQueries';
 import './regulatoryLibrary.css';
 
@@ -34,6 +34,7 @@ export function RegulatoryLibraryPage({ category, client }: { category?: Regulat
   const [now, setNow] = useState(() => new Date());
   const [editor, setEditor] = useState<{ id?: string; draft: RegulatoryTextDraft } | null>(null);
   const [reviewText, setReviewText] = useState<RegulatoryText | null>(null);
+  const [sourceChanged, setSourceChanged] = useState(false);
   const [hasUpdates, setHasUpdates] = useState(false);
   const [updates, setUpdates] = useState('');
   const [historyText, setHistoryText] = useState<RegulatoryText | null>(null);
@@ -59,7 +60,7 @@ export function RegulatoryLibraryPage({ category, client }: { category?: Regulat
   const selectedDocument = documents.find((text) => text.id === selectedDocumentId);
   const history = historyText ? library.reviews.filter((review) => review.text_id === historyText.id).sort((a, b) => b.reviewed_at.localeCompare(a.reviewed_at)) : [];
 
-  function openReview(text: RegulatoryText) { setError(''); setMessage(''); setHasUpdates(false); setUpdates(''); setReviewText(text); }
+  function openReview(text: RegulatoryText) { setError(''); setMessage(''); setSourceChanged(false); setHasUpdates(false); setUpdates(''); setReviewText(text); }
   function openEditor(text?: RegulatoryText) { setError(''); setMessage(''); setEditor(text ? { id: text.id, draft: { title: text.title, url: text.url, category: text.category, is_primary: text.is_primary, sort_order: text.sort_order } } : { draft: { ...EMPTY_DRAFT, category: category || accessibleCategories[0] || 'safety' } }); }
 
   async function submitLink(event: FormEvent) {
@@ -77,14 +78,14 @@ export function RegulatoryLibraryPage({ category, client }: { category?: Regulat
 
   async function submitReview(event: FormEvent) {
     event.preventDefault();
-    if (!reviewText || busy || !canManage) return;
+    if (!reviewText || busy || sourceChanged || !canManage) return;
     setBusy(true); setError('');
     try {
       if (hasUpdates && !updates.trim()) throw new Error('Décrivez les mises à jour constatées.');
-      const review: RegulatoryReview = previewMode ? { id: crypto.randomUUID(), text_id: reviewText.id, reviewed_at: new Date().toISOString(), reviewer_name: 'Démonstration', has_updates: hasUpdates, updates: hasUpdates ? updates.trim() : '' } : await recordRegulatoryReview(effectiveClient, reviewText.id, { has_updates: hasUpdates, updates: hasUpdates ? updates.trim() : '' });
+      const review: RegulatoryReview = previewMode ? { id: crypto.randomUUID(), text_id: reviewText.id, reviewed_at: new Date().toISOString(), reviewer_name: 'Démonstration', title_snapshot: reviewText.title, url_snapshot: reviewText.url, has_updates: hasUpdates, updates: hasUpdates ? updates.trim() : '' } : await recordRegulatoryReview(effectiveClient, reviewText.id, { has_updates: hasUpdates, updates: hasUpdates ? updates.trim() : '' }, reviewText.url);
       setLibrary((value) => ({ ...value, reviews: [review, ...value.reviews] })); setNow(new Date()); setReviewText(null);
       setMessage(previewMode ? 'Revue ajoutée à cette démonstration. Elle ne sera pas enregistrée en production.' : 'Revue enregistrée. La prochaine revue est prévue dans un mois.');
-    } catch (caught) { setError(errorMessage(caught)); } finally { setBusy(false); }
+    } catch (caught) { setError(errorMessage(caught)); setSourceChanged(caught instanceof RegulatorySourceChangedError); } finally { setBusy(false); }
   }
 
   return <section className="reg-library">
@@ -116,7 +117,7 @@ export function RegulatoryLibraryPage({ category, client }: { category?: Regulat
       </section>
     </>}
     {editor ? <AppDialog title={editor.id ? 'Modifier le lien' : 'Ajouter un lien'} icon={<Link2 size={21} />} isBusy={busy} onClose={() => setEditor(null)} onSubmit={submitLink} footer={<div className="app-dialog__actions"><button type="button" disabled={busy} onClick={() => setEditor(null)}>Annuler</button><button type="submit" disabled={busy} className="is-primary">{busy ? 'Enregistrement…' : 'Enregistrer le lien'}</button></div>}><div className="reg-library__form"><label>Titre du texte<input required maxLength={240} value={editor.draft.title} onChange={(event) => setEditor({ ...editor, draft: { ...editor.draft, title: event.target.value } })} placeholder="Ex. Nouvelle division réglementaire" /></label><label>Adresse du lien<input required type="url" maxLength={8000} value={editor.draft.url} onChange={(event) => setEditor({ ...editor, draft: { ...editor.draft, url: event.target.value } })} placeholder="https://…" /></label><label>Rubrique<select value={editor.draft.category} onChange={(event) => setEditor({ ...editor, draft: { ...editor.draft, category: event.target.value as RegulatoryCategory } })}>{accessibleCategories.map((key) => <option key={key} value={key}>{CATEGORY_LABELS[key]}</option>)}</select></label><p>Ce lien sera suivi dans le carnet de veille, avec une revue à réaliser chaque mois.</p>{error ? <p role="alert" className="reg-library__error">{error}</p> : null}</div></AppDialog> : null}
-    {reviewText ? <AppDialog title="Faire la revue" icon={<ClipboardCheck size={21} />} isBusy={busy} onClose={() => setReviewText(null)} onSubmit={submitReview} footer={<div className="app-dialog__actions"><button type="button" disabled={busy} onClick={() => setReviewText(null)}>Annuler</button><button type="submit" disabled={busy} className="is-primary">{busy ? 'Enregistrement…' : 'Valider la revue'}</button></div>}><div className="reg-library__form"><h3>{reviewText.title}</h3><a className="reg-library__text-button" href={reviewText.url} target="_blank" rel="noopener noreferrer">Consulter la source avant la revue <ExternalLink size={16} aria-hidden="true" /></a><fieldset><legend>Résultat de votre vérification</legend><label className="reg-library__radio"><input type="radio" name="review-result" checked={!hasUpdates} onChange={() => setHasUpdates(false)} />Aucune mise à jour constatée</label><label className="reg-library__radio"><input type="radio" name="review-result" checked={hasUpdates} onChange={() => setHasUpdates(true)} />Des mises à jour ont été constatées</label></fieldset>{hasUpdates ? <label>Mises à jour constatées<textarea required maxLength={10000} rows={5} value={updates} onChange={(event) => setUpdates(event.target.value)} placeholder="Listez les évolutions, les articles concernés et les actions à prévoir…" /></label> : null}<p>La date et l’auteur sont enregistrés lors de la validation. Les revues précédentes restent dans l’historique.</p>{error ? <p role="alert" className="reg-library__error">{error}</p> : null}</div></AppDialog> : null}
+    {reviewText ? <AppDialog title="Faire la revue" icon={<ClipboardCheck size={21} />} isBusy={busy} onClose={() => setReviewText(null)} onSubmit={submitReview} footer={<div className="app-dialog__actions"><button type="button" disabled={busy} onClick={() => setReviewText(null)}>Annuler</button>{sourceChanged ? <button type="button" className="is-primary" onClick={() => { setReviewText(null); setReloadKey((key) => key + 1); }}>Recharger la bibliothèque</button> : <button type="submit" disabled={busy} className="is-primary">{busy ? 'Enregistrement…' : 'Valider la revue'}</button>}</div>}><div className="reg-library__form"><h3>{reviewText.title}</h3><a className="reg-library__text-button" href={reviewText.url} target="_blank" rel="noopener noreferrer">Consulter la source avant la revue <ExternalLink size={16} aria-hidden="true" /></a><fieldset><legend>Résultat de votre vérification</legend><label className="reg-library__radio"><input type="radio" name="review-result" checked={!hasUpdates} onChange={() => setHasUpdates(false)} />Aucune mise à jour constatée</label><label className="reg-library__radio"><input type="radio" name="review-result" checked={hasUpdates} onChange={() => setHasUpdates(true)} />Des mises à jour ont été constatées</label></fieldset>{hasUpdates ? <label>Mises à jour constatées<textarea required maxLength={10000} rows={5} value={updates} onChange={(event) => setUpdates(event.target.value)} placeholder="Listez les évolutions, les articles concernés et les actions à prévoir…" /></label> : null}<p>La date et l’auteur sont enregistrés lors de la validation. Les revues précédentes restent dans l’historique.</p>{error ? <p role="alert" className="reg-library__error">{error}</p> : null}</div></AppDialog> : null}
     {historyText ? <AppDialog title="Historique des revues" icon={<History size={21} />} onClose={() => setHistoryText(null)} size="lg"><h3 className="reg-library__history-title">{historyText.title}</h3><ol className="reg-library__history">{history.map((review) => <li key={review.id}><div><strong>{displayDate(review.reviewed_at)}</strong><span>{review.reviewer_name}</span></div><a className="reg-library__text-button" href={review.url_snapshot || historyText.url} target="_blank" rel="noopener noreferrer">{review.title_snapshot || historyText.title}<ExternalLink size={14} aria-hidden="true" /></a><span className={`reg-library__history-result${review.has_updates ? ' has-updates' : ''}`}>{review.has_updates ? 'Mises à jour constatées' : 'Aucune mise à jour constatée'}</span>{review.has_updates ? <p>{review.updates}</p> : null}</li>)}</ol></AppDialog> : null}
   </section>;
 }
