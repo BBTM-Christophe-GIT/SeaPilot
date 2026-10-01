@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.64.0` ajoute **OVID** et les dossiers annuels communs à OVID, eCMID, Audit ISM Externe et Audit Client : plusieurs documents par navire, quatre catégories d’écarts, suivi et preuves privés, rapports PDF complets ou individuels avec photos visibles, PDF annexés et originaux attachés. Audit ISM Interne dispose d’un planning annuel illustré, d’un radar N/N−1 et de l’impression de la grille seule. Appliquer la migration `20261001060641_documentary_audits.sql` après les migrations internes avant de déployer le client. Voir [documentary-audits.md](./documentary-audits.md) et [internal-audits.md](./internal-audits.md).
+
+Version `3.63.0` complète Audit ISM Interne : photos privées du constat, du traitement et de la clôture, délais proposés d’une semaine pour les majeures et d’un mois pour les mineures, remarques sans échéance ni clôture obligatoire, grille compacte avec consignes toujours visibles, date de réalisation automatique, sélection annuelle, graphique annuel revu et rapports PDF / Excel à trois onglets avec preuves intégrées. La migration additive `internal_audit_photos_deadlines` doit être appliquée après la migration initiale et avant le client. Voir [internal-audits.md](./internal-audits.md).
+
+Version `3.62.0` ajoute **Audits → Audit ISM Interne** : planning annuel pour huit sites avec fenêtre de ± 3 mois calendaires, grille BBTM de 61 questions personnalisable par navire, notation avec exclusion des N/A, écarts affectés et suivi historisé, puis synthèse et comparaison des scores avec N-1. Les entrées eCMID, Audit ISM Externe et Audit Client sont présentes dans le nouveau menu. La migration `20260930214840_internal_audits.sql` a été appliquée au projet SeaPilot avant le client. Voir [internal-audits.md](./internal-audits.md) pour les dates initiales, les permissions et la recette.
+
 Version **3.59.1** : à chaque clic sur **RH / Brevets**, même depuis le module
 déjà ouvert sur un autre collaborateur, la fiche liée au compte
 connecté est sélectionnée en priorité parmi les collaborateurs autorisés et

@@ -11,6 +11,11 @@ export type ModuleKey =
   | 'procedures'
   | 'serviceNotes'
   | 'actionPlan'
+  | 'ovid'
+  | 'ecmid'
+  | 'externalIsmAudits'
+  | 'internalAudits'
+  | 'clientAudits'
   | 'dpr'
   | 'purchaseRequests'
   | 'expenseNotes'
@@ -34,6 +39,7 @@ export type ModuleFamily =
   | 'Accueil'
   | 'QHSE'
   | 'Registres'
+  | 'Audits'
   | 'Opérations'
   | 'Achats'
   | 'Facturation'
@@ -93,6 +99,11 @@ export const APP_MODULES: AppModule[] = [
     navigationKind: 'hidden',
     allowedRoles: ALL_ROLES,
   },
+  { key: 'ovid', label: 'OVID', family: 'Audits', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'ecmid', label: 'eCMID', family: 'Audits', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'externalIsmAudits', label: 'Audit ISM Externe', family: 'Audits', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'internalAudits', label: 'Audit ISM Interne', family: 'Audits', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'clientAudits', label: 'Audit Client', family: 'Audits', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   {
     key: 'dpr',
     label: 'Daily Progress Report',
