@@ -1,6 +1,6 @@
 import { AlertTriangle, BarChart3, CalendarDays, Camera, CheckCircle2, ClipboardCheck, Copy, Download, FileText, ListChecks, LockKeyhole, Pencil, Plus, Printer, RotateCcw, Save, Search, Ship, Trash2, X } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { AppDialog } from '../../components/AppDialog';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { compareFleetAssets, fleetIllustration } from '../fleet/fleetDisplay';
@@ -74,6 +74,10 @@ function QuestionEditor({ row, onChange, onRemove, disabled = false, removeDisab
 
 export function InternalAuditsPage() {
   const context = useOutletContext<AppShellOutletContext>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedAudit = searchParams.get('audit');
+  const [handledAuditLink, setHandledAuditLink] = useState<string | null>(null);
+  const [auditLinkBlocked, setAuditLinkBlocked] = useState(false);
   const [data, setData] = useState<InternalAuditData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -124,6 +128,35 @@ export function InternalAuditsPage() {
   const selectedTemplate = data?.templates.find((template) => template.id === templateId) || null;
   useEffect(() => { setDraftAudit(selectedAudit ? structuredClone(selectedAudit) : null); setAuditDirty(false); setSection(''); }, [selectedAudit]);
   useEffect(() => { setDraftTemplate(selectedTemplate ? structuredClone(selectedTemplate) : null); setTemplateDirty(false); }, [selectedTemplate]);
+  useEffect(() => {
+    if (requestedAudit === null) {
+      setHandledAuditLink(null);
+      if (auditLinkBlocked) {
+        setAuditLinkBlocked(false);
+        setAuditId([...(data?.audits || [])].sort((a, b) => b.year - a.year)[0]?.id || '');
+        setTab('planning');
+        setError('');
+      }
+      return;
+    }
+    if (!data || busy || hasUnsavedChanges || handledAuditLink === requestedAudit) return;
+    setHandledAuditLink(requestedAudit);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestedAudit);
+    const linkedAudit = isUuid ? data.audits.find((audit) => audit.id.toLowerCase() === requestedAudit.toLowerCase() && audit.companyId === data.companyId && data.sites.some((site) => site.id === audit.siteId && site.companyId === data.companyId)) : undefined;
+    if (!linkedAudit) {
+      setAuditLinkBlocked(true);
+      setAuditId(''); setDraftAudit(null);
+      setError('Cet audit n’est pas disponible dans votre accès.');
+      setTab('planning');
+      return;
+    }
+    setAuditId(linkedAudit.id);
+    setAuditLinkBlocked(false);
+    setDraftAudit(structuredClone(linkedAudit));
+    setYear(linkedAudit.year);
+    setTab('grid');
+    setSection(''); setSearch(''); setFindingFilter(''); setError('');
+  }, [requestedAudit, data, busy, hasUnsavedChanges, handledAuditLink, auditLinkBlocked]);
   const currentSite = data?.sites.find((site) => site.id === draftAudit?.siteId) || null;
   const score = scoreAudit(draftAudit?.rows || []);
   const sections = [...new Set(draftAudit?.rows.map((row) => row.section) || [])];
@@ -138,6 +171,19 @@ export function InternalAuditsPage() {
   const delayAmount = Number(findingForm.delayValue);
   const findingDuration = findingForm.severity !== 'remark' && Number.isInteger(delayAmount) && delayAmount > 0 ? { amount: delayAmount, unit: findingForm.delayUnit } : null;
   const findingDueOn = auditDueOnFromDuration(findingForm.openedOn, findingDuration);
+
+  function clearAuditLink() {
+    if (requestedAudit === null) return;
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('audit');
+    setSearchParams(nextParams, { replace: true });
+    if (auditLinkBlocked) {
+      setAuditLinkBlocked(false);
+      setAuditId([...(data?.audits || [])].sort((a, b) => b.year - a.year)[0]?.id || '');
+      setTab('planning');
+    }
+    if (error === 'Cet audit n’est pas disponible dans votre accès.') setError('');
+  }
 
   async function mutate(action: () => Promise<void>, success: string) {
     setBusy(true); setError(''); setMessage('');
@@ -212,7 +258,7 @@ export function InternalAuditsPage() {
     if (!data || !template || !newAuditSite) return;
     if (data.audits.some((audit) => audit.siteId === newAuditSite.id && audit.year === Number(newAuditForm.year))) { setError('Un audit existe déjà pour ce site et cette année.'); return; }
     const audit: InternalAudit = { id: crypto.randomUUID(), companyId: data.companyId, siteId: newAuditSite.id, templateId: template.id, templateName: template.name, templateVersion: template.version, year: Number(newAuditForm.year), plannedOn: newAuditForm.plannedOn, performedOn: null, auditorName: newAuditForm.auditorName.trim(), status: 'planned', rows: blankAuditAnswers(template.rows), completedAt: null };
-    await mutate(async () => { await persistAudit(audit); setAuditId(audit.id); setNewAuditSite(null); setTab('grid'); }, 'Audit planifié. Sa grille est prête à être renseignée.');
+    await mutate(async () => { await persistAudit(audit); setAuditId(audit.id); clearAuditLink(); setNewAuditSite(null); setTab('grid'); }, 'Audit planifié. Sa grille est prête à être renseignée.');
   }
   async function saveTemplate(event?: FormEvent) {
     event?.preventDefault();
@@ -284,6 +330,7 @@ export function InternalAuditsPage() {
 
   if (loading) return <div className="ia-state" role="status">Chargement des audits internes…</div>;
   if (!data) return <div className="ia-state"><p role="alert">{error || 'Les audits ne sont pas disponibles.'}</p><button onClick={() => void load()} type="button">Réessayer</button></div>;
+  if (auditLinkBlocked) return <section className="internal-audits-page"><div className="ia-state"><h1>Audit ISM Interne</h1><p className="ia-alert is-error" role="alert">Cet audit n’est pas disponible dans votre accès.</p><button onClick={clearAuditLink} type="button">Retour au planning des audits</button></div></section>;
 
   return <section className="internal-audits-page">
     <header className="ia-page-header"><div><p className="ia-eyebrow">Audits</p><h1>Audit ISM Interne</h1><p>Planifier les audits, évaluer la conformité et suivre chaque écart.</p></div><div className="ia-header-note"><CalendarDays size={20} /><span><strong>Périodicité annuelle</strong>Fenêtre de ± 3 mois calendaires</span></div></header>
@@ -292,7 +339,7 @@ export function InternalAuditsPage() {
     {hasUnsavedChanges ? <p className="ia-unsaved-notice" role="status"><Save aria-hidden="true" size={17} />{templateDirty ? 'Grille non enregistrée : enregistrez-la ou annulez les modifications avant de changer de grille ou d’onglet.' : 'Réponses non enregistrées : enregistrez-les ou annulez les modifications avant de changer d’audit ou d’onglet.'}</p> : null}
     <nav className="ia-tabs" aria-label="Onglets des audits internes">{TABS.map(({ id, label, icon: Icon }) => <button aria-current={tab === id ? 'page' : undefined} className={tab === id ? 'is-active' : ''} disabled={busy || (hasUnsavedChanges && tab !== id)} key={id} onClick={() => setTab(id)} type="button"><Icon size={17} />{label}{id === 'findings' && pendingCount ? <span>{pendingCount}</span> : null}</button>)}</nav>
 
-    {tab === 'planning' ? <section className="ia-panel"><header className="ia-panel-header"><div><h2>Planning annuel d’audit</h2><p>Une campagne par site et par année. La fenêtre suit la date anniversaire.</p></div><label className="ia-compact-field">Année<select aria-label="Année du planning" onChange={(event) => setYear(Number(event.target.value))} value={year}>{planningYears.map((value) => <option key={value} value={value}>{value}</option>)}</select></label></header>
+    {tab === 'planning' ? <section className="ia-panel"><header className="ia-panel-header"><div><h2>Planning annuel d’audit</h2><p>Une campagne par site et par année. La fenêtre suit la date anniversaire.</p></div><label className="ia-compact-field">Année<select aria-label="Année du planning" onChange={(event) => { setYear(Number(event.target.value)); clearAuditLink(); }} value={year}>{planningYears.map((value) => <option key={value} value={value}>{value}</option>)}</select></label></header>
       <div className="ia-year-legend"><span><i className="ia-key-window" />Fenêtre autorisée ± 3 mois</span><span><i className="ia-key-target" />Date cible</span><span><i className="ia-key-audit" />Audit planifié / réalisé</span>{year === Number(today().slice(0, 4)) ? <span><i className="ia-key-today" />Aujourd’hui</span> : null}</div>
       <div className="ia-year-scroll" tabIndex={0} aria-label={`Planning annuel ${year}, défilement horizontal disponible`}><div className="ia-year-planning">
         <div className="ia-year-header" aria-hidden="true"><strong>Site / Navire</strong><div className="ia-year-months">{PLANNING_MONTHS.map((month, index) => <span key={month} style={{ left: `${yearPosition(year, `${year}-${String(index + 1).padStart(2, '0')}-15`)}%` }}>{month}</span>)}</div><span>Actions</span></div>{sortedSites.map((site) => {
@@ -304,13 +351,13 @@ export function InternalAuditsPage() {
       return <article className="ia-year-row" key={site.id}>
         <div className="ia-year-site"><div className="ia-site-name"><span className="ia-year-illustration">{illustration ? <img alt="" loading="lazy" src={illustration} /> : site.kind === 'vessel' ? <Ship size={22} /> : <CalendarDays size={22} />}</span><span><strong>{site.name}</strong><small>{site.kind === 'vessel' ? 'Navire' : 'Site à terre'}{annualAudit ? ` · Audit ${annualAudit.year}` : ''}</small></span></div><div className="ia-year-status"><span className={`ia-badge is-${status}`}>{PLANNING_STATUSES[status]}</span><small>{annualAudit ? `${scoreAudit(annualAudit.rows).answeredCount} / ${annualAudit.rows.length} réponses` : `Aucun audit ${year}`}</small></div></div>
         <div className="ia-year-calendar"><AnnualAuditTimeline year={year} site={site} window={window} audit={annualAudit} /><div className="ia-year-dates"><span><small>Date cible</small><strong>{dateLabel(window.targetOn)}</strong>{canManage ? <button aria-label={`Modifier la date anniversaire de ${site.name}`} className="ia-icon-button" onClick={() => setSiteEditor({ ...site, anniversaryOn: site.anniversaryOn || window.targetOn || '' })} title="Date anniversaire annuelle" type="button"><Pencil size={13} /></button> : null}</span><span><small>Fenêtre autorisée</small>{window.opensOn && window.closesOn ? `${dateLabel(window.opensOn)} → ${dateLabel(window.closesOn)}` : 'Définir la date anniversaire'}</span>{annualAudit ? <span><small>{annualAudit.status === 'completed' ? 'Réalisé le' : 'Planifié le'}</small>{dateLabel(annualAudit.status === 'completed' ? annualAudit.performedOn : annualAudit.plannedOn)}</span> : null}</div></div>
-        <div className="ia-row-actions">{annualAudit ? <button className="is-secondary" disabled={busy || hasUnsavedChanges} onClick={() => { setAuditId(annualAudit.id); setTab('grid'); }} type="button">Ouvrir</button> : null}{canManage ? <button aria-label={`Planifier ${site.name}`} className={annualAudit ? 'ia-icon-button' : 'is-secondary'} disabled={busy || hasUnsavedChanges} onClick={() => openNewAudit(site)} type="button"><Plus size={15} />{annualAudit ? '' : 'Planifier'}</button> : null}</div>
+        <div className="ia-row-actions">{annualAudit ? <button className="is-secondary" disabled={busy || hasUnsavedChanges} onClick={() => { setAuditId(annualAudit.id); clearAuditLink(); setTab('grid'); }} type="button">Ouvrir</button> : null}{canManage ? <button aria-label={`Planifier ${site.name}`} className={annualAudit ? 'ia-icon-button' : 'is-secondary'} disabled={busy || hasUnsavedChanges} onClick={() => openNewAudit(site)} type="button"><Plus size={15} />{annualAudit ? '' : 'Planifier'}</button> : null}</div>
       </article>;
     })}</div></div></section> : null}
 
     {tab === 'templates' ? <section className="ia-panel"><header className="ia-panel-header"><div><h2>Grilles de référence</h2><p>Adaptez les questions par navire. Chaque audit conserve sa propre copie.</p></div>{canManage && draftTemplate ? <button className="is-secondary" disabled={busy || templateDirty} onClick={() => { setDuplicateForm({ name: '', siteId: '' }); setDuplicateOpen(true); }} type="button"><Copy size={16} />Créer une grille personnalisée</button> : null}</header><div className="ia-template-layout"><aside className="ia-template-list" aria-label="Grilles disponibles">{data.templates.filter((item) => item.active).map((template) => <button aria-pressed={templateId === template.id} disabled={hasUnsavedChanges || busy} key={template.id} onClick={() => setTemplateId(template.id)} type="button"><FileText size={17} /><span><strong>{template.name}</strong><small>{data.sites.find((site) => site.id === template.siteId)?.name || 'Commune à tous les sites'} · {template.rows.length} questions</small></span></button>)}</aside>{draftTemplate ? <form className="ia-template-workspace" onSubmit={(event) => void saveTemplate(event)}><div className="ia-template-metadata"><label>Nom de la grille<input disabled={!canManage || busy} required onChange={(event) => editTemplate({ name: event.target.value })} value={draftTemplate.name} /></label><span className="ia-badge">Version {draftTemplate.version}</span></div><div className="ia-question-list">{draftTemplate.rows.map((row) => <QuestionEditor disabled={!canManage || busy} key={row.id} onChange={(edited) => editTemplate({ rows: draftTemplate.rows.map((item) => item.id === row.id ? edited : item) })} onRemove={() => editTemplate({ rows: draftTemplate.rows.filter((item) => item.id !== row.id) })} row={row} />)}</div>{canManage ? <footer className="ia-save-actions"><button className="is-secondary" disabled={busy} onClick={() => editTemplate({ rows: [...draftTemplate.rows, newQuestion(draftTemplate.rows.at(-1)?.section)] })} type="button"><Plus size={16} />Ajouter une ligne à la grille</button>{templateDirty ? <button className="is-secondary" disabled={busy} onClick={() => { setDraftTemplate(selectedTemplate ? structuredClone(selectedTemplate) : null); setTemplateDirty(false); }} type="button"><RotateCcw size={15} />Annuler les modifications</button> : null}<button disabled={!templateDirty || busy} type="submit"><Save size={16} />{busy ? 'Enregistrement…' : 'Enregistrer la grille'}</button></footer> : null}</form> : <EmptyState label="Aucune grille disponible" />}</div></section> : null}
 
-    {(['grid', 'findings', 'chart'] as Tab[]).includes(tab) ? <div className="ia-audit-selector"><label>Audit sélectionné<select disabled={hasUnsavedChanges || busy} onChange={(event) => setAuditId(event.target.value)} value={auditId}>{!data.audits.length ? <option value="">Aucun audit</option> : null}{[...data.audits].sort((a, b) => b.year - a.year || a.plannedOn.localeCompare(b.plannedOn)).map((audit) => <option key={audit.id} value={audit.id}>{data.sites.find((site) => site.id === audit.siteId)?.name} · {audit.year} · {AUDIT_STATUSES[audit.status]}</option>)}</select></label>{draftAudit ? <span className={`ia-badge is-${draftAudit.status}`}>{AUDIT_STATUSES[draftAudit.status]}</span> : null}{auditDirty ? <span className="ia-unsaved">Modifications non enregistrées</span> : null}{selectedAudit ? <div className="ia-export-actions"><button className="is-secondary" disabled={busy || hasUnsavedChanges} title={hasUnsavedChanges ? 'Enregistrez les modifications avant d’imprimer la grille.' : 'Ouvrir la grille seule dans un aperçu PDF imprimable'} onClick={() => void printGrid()} type="button"><Printer size={16} />Imprimer la grille</button><label className="ia-sr-only" htmlFor="audit-export-format">Format du rapport</label><select id="audit-export-format" disabled={busy} value={exportFormat} onChange={(event) => setExportFormat(event.target.value as 'pdf' | 'xlsx')}><option value="pdf">PDF</option><option value="xlsx">Excel (.xlsx)</option></select><button className="is-secondary" disabled={busy || hasUnsavedChanges} title={hasUnsavedChanges ? 'Enregistrez les modifications avant d’exporter le rapport.' : 'Grille, synthèse des écarts et comparaison annuelle'} onClick={() => void exportReport()} type="button"><Download size={16} />Exporter le rapport</button></div> : null}</div> : null}
+    {(['grid', 'findings', 'chart'] as Tab[]).includes(tab) ? <div className="ia-audit-selector"><label>Audit sélectionné<select disabled={hasUnsavedChanges || busy} onChange={(event) => { setAuditId(event.target.value); clearAuditLink(); }} value={auditId}>{!data.audits.length ? <option value="">Aucun audit</option> : null}{[...data.audits].sort((a, b) => b.year - a.year || a.plannedOn.localeCompare(b.plannedOn)).map((audit) => <option key={audit.id} value={audit.id}>{data.sites.find((site) => site.id === audit.siteId)?.name} · {audit.year} · {AUDIT_STATUSES[audit.status]}</option>)}</select></label>{draftAudit ? <span className={`ia-badge is-${draftAudit.status}`}>{AUDIT_STATUSES[draftAudit.status]}</span> : null}{auditDirty ? <span className="ia-unsaved">Modifications non enregistrées</span> : null}{selectedAudit ? <div className="ia-export-actions"><button className="is-secondary" disabled={busy || hasUnsavedChanges} title={hasUnsavedChanges ? 'Enregistrez les modifications avant d’imprimer la grille.' : 'Ouvrir la grille seule dans un aperçu PDF imprimable'} onClick={() => void printGrid()} type="button"><Printer size={16} />Imprimer la grille</button><label className="ia-sr-only" htmlFor="audit-export-format">Format du rapport</label><select id="audit-export-format" disabled={busy} value={exportFormat} onChange={(event) => setExportFormat(event.target.value as 'pdf' | 'xlsx')}><option value="pdf">PDF</option><option value="xlsx">Excel (.xlsx)</option></select><button className="is-secondary" disabled={busy || hasUnsavedChanges} title={hasUnsavedChanges ? 'Enregistrez les modifications avant d’exporter le rapport.' : 'Grille, synthèse des écarts et comparaison annuelle'} onClick={() => void exportReport()} type="button"><Download size={16} />Exporter le rapport</button></div> : null}</div> : null}
 
     {tab === 'grid' ? draftAudit ? <section className="ia-panel">
       <header className="ia-audit-header"><div><h2>{currentSite?.name} · {draftAudit.year}</h2><p>{draftAudit.templateName} · Version {draftAudit.templateVersion}</p>{draftAudit.status === 'completed' ? <span className="ia-locked"><LockKeyhole size={14} />Réponses conservées · audit réalisé le {dateLabel(draftAudit.performedOn)}</span> : null}</div><div className="ia-score-summary"><strong>{percent(score.percentage)}</strong><span>{score.earnedPoints} / {score.maxPoints} points · {score.answeredCount} / {score.totalCount} réponses</span><div className="ia-progress-track"><span style={{ width: `${score.percentage || 0}%` }} /></div></div></header>

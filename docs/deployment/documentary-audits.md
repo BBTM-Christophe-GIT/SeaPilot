@@ -1,8 +1,16 @@
 # Audits documentaires
 
-Les entrées **OVID**, **eCMID**, **Audit ISM Externe** et **Audit Client** utilisent un module commun. Chaque société conserve un seul dossier par type, année de campagne et navire. Les sélecteurs reprennent les vrais navires actifs de la flotte ; aucun site, planning ou audit ISM interne n’est créé ou modifié pour ce module.
+Les entrées **OVID**, **eCMID**, **Audit ISM Externe** et **Audit Client** utilisent un module commun. Chaque société conserve un seul dossier par type, année de campagne et navire. Les sélecteurs reprennent les vrais navires actifs de la flotte ; aucun site de flotte ni audit ISM interne n’est créé ou modifié pour ce module.
 
-Le dossier contient un titre, une date d’audit facultative, le nom de l’auditeur et plusieurs rapports ou pièces jointes. Après création, le type, le navire et l’année restent conservés ; le titre, la date et l’auditeur peuvent être corrigés par un gestionnaire. Plusieurs écarts peuvent être enregistrés sur chaque dossier, avec une référence, une description et des pièces justificatives.
+Le dossier contient un titre, une **date prévue** facultative, une **date de réalisation** facultative, le nom de l’auditeur et plusieurs rapports ou pièces jointes. Après création, le type, le navire et l’année restent conservés ; le titre, les dates et l’auditeur peuvent être corrigés par un gestionnaire. Plusieurs écarts peuvent être enregistrés sur chaque dossier, avec une référence, une description et des pièces justificatives.
+
+## Dates prévues et Planning global
+
+La date prévue (`plannedOn` / colonne `planned_on`) est indépendante de la date réelle d’audit (`auditedOn` / `audited_on`). Elle se renseigne ou se corrige dans **Créer le dossier** ou **Modifier le dossier** et rend le rendez-vous visible dans le module **Planning**, sur la ligne du navire et le jour prévu, avec le même affichage que les visites. Effacer cette date retire le rendez-vous du calendrier sans supprimer le dossier, ses rapports ou ses écarts. L’année de campagne reste celle du dossier ; le calendrier utilise la date civile prévue. Une date réelle déjà renseignée ne sert jamais à inventer une date prévue : les dossiers existants restent sans rendez-vous jusqu’à sa saisie explicite.
+
+Le clic sur un rendez-vous montre ses métadonnées. Le bouton **Ouvrir l’audit**, proposé selon `canOpen` calculé par le serveur, ouvre directement le dossier du type, du navire et de l’année concernés avec `?audit=<UUID>`. Le module documentaire vérifie cet identifiant dans son overview autorisé et refuse les identifiants invalides, d’un autre type ou inaccessibles sans dévoiler leur contenu. Changer manuellement le navire ou l’année retire le paramètre de lien pour conserver les filtres choisis.
+
+La RPC `planning_audits_overview()` vérifie la société active et les permissions Planning existantes sur le navire et le jour prévu. Ses métadonnées ne contiennent ni constat, ni historique, ni fichiers ou URL privées. `canOpen` provient séparément des autorisations documentaires : un rendez-vous visible au Planning n’accorde aucun accès supplémentaire au dossier ou à ses preuves. Les vrais comptes Capitaine et Marin restent soumis aux affectations et règles RLS décrites ci-dessous. Les dates enregistrées se rechargent au retour vers le Planning ou par son bouton d’actualisation.
 
 ## Écarts et traitement
 
@@ -39,7 +47,7 @@ Administrateur, Direction et Armement gèrent les dossiers et écarts de leur so
 Les cinq RPC publiques utilisent `SECURITY INVOKER` et sont interdites aux anonymes :
 
 - `documentary_audits_overview(p_kind)` retourne société, navires actifs, personnes assignables pour les gestionnaires, dossiers, écarts, événements et permissions serveur.
-- `documentary_audit_save(p_payload)` crée le dossier ou corrige son titre, sa date, son auditeur et ajoute ses rapports.
+- `documentary_audit_save(p_payload)` crée le dossier ou corrige son titre, sa date prévue, sa date de réalisation, son auditeur et ajoute ses rapports.
 - `documentary_audit_save_finding(p_payload)` crée ou modifie le constat, son responsable et sa durée sans modifier son état.
 - `documentary_audit_add_treatment(p_finding_id,p_status,p_treatment,p_files)` ajoute un événement et actualise l’état contrôlé.
 - `documentary_audit_upload_scope(p_audit_id,p_finding_id,p_kind)` vérifie les droits avant téléversement et retourne les identifiants de société et de dossier.
@@ -49,6 +57,8 @@ Les types serveur sont `ovid`, `ecmid`, `external_ism` et `client`. Le contrat c
 ## Déploiement et recette
 
 Appliquer `supabase/migrations/20261001060641_documentary_audits.sql` après les deux migrations du module interne. Déployer le client seulement une fois les tables, RPC, bucket et politiques vérifiés. Les migrations ISM internes déjà publiées restent inchangées.
+
+Pour l’affichage des audits dans le Planning, appliquer ensuite `supabase/migrations/20261001071713_audits_global_planning.sql`. Elle ajoute `planned_on` nullable et son index, actualise la sauvegarde documentaire et ajoute la RPC publique invoker `planning_audits_overview()` interdite aux anonymes, avec sa fonction contrôlée dans le schéma privé. Les dates historiques ne sont pas recopiées dans ce champ. Vérifier la création, le déplacement et le retrait d’un rendez-vous, la conservation des pièces jointes, les liens directs des quatre types et les scopes de société/navire/date avec des comptes réels distincts.
 
 La suite `supabase/tests/documentary_audits_test.sql` passe localement avec **121 contrôles pgTAP** et des comptes distincts Armement, Capitaine, Marin, Chef Mécanicien, responsable personnel, affectation provisoire et administrateur d’une autre société. Elle couvre les quatre types, la clé annuelle unique, les données falsifiées, les délais, la clôture automatique, l’immuabilité des pièces et du journal, les limites de taille et de lot, les chemins, MIME, propriété, le scope de téléversement depuis un écart et les refus de lecture et d’écriture. Les créations concurrentes avec le même UUID sont rejetées avant de pouvoir écraser des preuves. Les fixtures et leurs métadonnées de stockage sont intégralement annulées par `ROLLBACK`. Leurs éventuels rétablissements de droits manquants dans une ancienne base locale ne constituent aucune modification de production.
 

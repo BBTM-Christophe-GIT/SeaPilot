@@ -18,6 +18,7 @@ import {
 } from './planningModel';
 import type { PlanningHrDocumentRecord, PlanningProjectRecord } from './planningQueries';
 import { planningVesselVisitDateRange, planningVisitTypeLabel, type PlanningVesselVisit } from './planningVisitQueries';
+import { PLANNING_AUDIT_LABELS, planningAuditKey, type PlanningAudit } from './planningAudits';
 import { planningAbsenceTypeLabel, type PlanningAbsenceRecord } from './planningP12';
 import {
   planningGridCellKey,
@@ -63,6 +64,7 @@ const EMPTY_CONFLICT_DATES: ReadonlySet<string> = new Set();
 const EMPTY_ABSENCES: PlanningAbsenceRecord[] = [];
 const EMPTY_HR_DOCUMENTS: PlanningHrDocumentRecord[] = [];
 const EMPTY_STAFFING_ALERT_KEYS: ReadonlySet<string> = new Set();
+const EMPTY_AUDITS: readonly PlanningAudit[] = [];
 
 function expiredDocumentsLabel(documents: readonly PlanningHrDocumentRecord[]): string {
   const prefix = documents.length > 1 ? `${documents.length} documents échus` : 'Document échu';
@@ -146,6 +148,8 @@ function PlanningFleetTimelineRowContent({
   onAddBoard,
   onOpenVessel,
   visits,
+  audits = EMPTY_AUDITS,
+  onOpenAudit,
   onCreateVisit,
   onOpenVisit,
   onMoveVisit,
@@ -170,6 +174,8 @@ function PlanningFleetTimelineRowContent({
   onAddBoard: (lane: PlanningFleetLane) => void;
   onOpenVessel: (lane: PlanningFleetLane) => void;
   visits: PlanningVesselVisit[];
+  audits?: readonly PlanningAudit[];
+  onOpenAudit?: (audit: PlanningAudit) => void;
   onCreateVisit: (lane: PlanningFleetLane) => void;
   onOpenVisit: (visit: PlanningVesselVisit) => void;
   onMoveVisit: (visitId: number, lane: PlanningFleetLane, startsOn: string) => void;
@@ -217,7 +223,10 @@ function PlanningFleetTimelineRowContent({
       endsOn: occurrence.scheduledOn,
     }));
   });
-  const visitStack = buildPlanningVisitStack(visitTimelineItems, days);
+  const auditTimelineItems = projectsOnly ? [] : audits.map((audit) => ({
+    key: planningAuditKey(audit), audit, startsOn: audit.plannedOn, endsOn: audit.plannedOn,
+  }));
+  const visitStack = buildPlanningVisitStack([...visitTimelineItems, ...auditTimelineItems], days);
   const maxVisitStack = visitStack.count;
   const additionalProjectStacks = Math.max(0, projectStack.count - 1);
   const rowMinHeight = projectsOnly ? 38 + additionalProjectStacks * 27 : maxVisitStack
@@ -331,7 +340,7 @@ function PlanningFleetTimelineRowContent({
         onDragOver={canDropPerson ? (event) => { if (event.dataTransfer.types.includes('application/x-seapilot-planning')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } } : undefined}
         onDrop={dropPerson}
       >
-        {projectsOnly ? <span className="planning-project-vessel-name" title={lane.label}><strong>{lane.label}</strong><small>{lane.detail}</small></span> : <button aria-expanded={expanded} aria-label={`${expanded ? 'Replier' : 'Déplier'} ${lane.label}`} className="planning-tree-toggle" onClick={onToggle} type="button">
+        {projectsOnly || lane.vesselId === null && audits.length > 0 ? <span className="planning-project-vessel-name" title={lane.label}><strong>{lane.label}</strong><small>{lane.detail}</small></span> : <button aria-expanded={expanded} aria-label={`${expanded ? 'Replier' : 'Déplier'} ${lane.label}`} className="planning-tree-toggle" onClick={onToggle} type="button">
           <span><strong>{lane.label}</strong><small>{lane.detail}</small></span>
           <em>{crewCount}</em>
           {expanded ? <ChevronDown aria-hidden="true" size={16} /> : <ChevronRight aria-hidden="true" size={16} />}
@@ -519,6 +528,20 @@ function PlanningFleetTimelineRowContent({
             {isTechnicalStop && editable ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(event) => beginVisitResize(event, visit, 'end')} /> : null}
           </button>
         );
+      })}
+      {auditTimelineItems.map(({ key, audit, startsOn }) => {
+        const placement = dateGridPlacement(startsOn, startsOn, days);
+        if (!placement) return null;
+        const label = PLANNING_AUDIT_LABELS[audit.kind];
+        const status = { planned: 'Planifié', in_progress: 'En cours', completed: 'Réalisé' }[audit.status];
+        return <button key={key} type="button" className="planning-visit-bar" data-audit-id={audit.id}
+          aria-label={`${label} · ${audit.siteName}, ${formatPlanningDate(startsOn)}`}
+          title={`${label}\n${audit.siteName}\n${formatPlanningDate(startsOn)} · ${status}${audit.title ? `\n${audit.title}` : ''}`}
+          onClick={() => onOpenAudit?.(audit)}
+          style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1,
+            marginTop: 35 + additionalProjectStacks * 27 + (visitStack.stackByKey.get(key) || 0) * 25 }}>
+          <CalendarCheck2 aria-hidden="true" size={12} /><span>{label}</span>
+        </button>;
       })}
     </div>
   );

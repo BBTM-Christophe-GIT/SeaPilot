@@ -51,7 +51,8 @@ import {
 } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ButtonHTMLAttributes, FormEvent, ReactNode } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
+import { createPlanningAuditPreview, fetchPlanningAudits, PLANNING_AUDIT_LABELS, planningAuditUrl, withPlanningAuditLanes, type PlanningAudit } from './planningAudits';
 import { AppConfirmDialog, AppDialog } from '../../components/AppDialog';
 import { AppContextMenu, AppContextMenuItem, type AppContextMenuPosition } from '../../components/AppContextMenu';
 import { supabase } from '../../lib/supabaseClient';
@@ -199,6 +200,7 @@ import { usePlanningCoreOverview, usePlanningOverview } from './usePlanningOverv
 import { usePlanningAssistantAccess } from './usePlanningAssistantAccess';
 
 const EMPTY_VESSEL_VISITS: PlanningVesselVisit[] = [];
+const EMPTY_PLANNING_AUDITS: PlanningAudit[] = [];
 
 interface PlanningPageProps {
   client?: SupabaseClient;
@@ -639,6 +641,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [absences, setAbsences] = useState<PlanningAbsenceRecord[]>(() => previewMode ? previewAbsences : []);
   const [serviceProviders, setServiceProviders] = useState<PlanningServiceProvider[]>(() => previewMode ? previewVisitData.providers : []);
   const [vesselVisits, setVesselVisits] = useState<PlanningVesselVisit[]>(() => previewMode ? previewVisitData.visits : []);
+  const previewAuditData = useMemo(() => previewOverview ? createPlanningAuditPreview(previewOverview.vessels) : EMPTY_PLANNING_AUDITS, [previewOverview]);
+  const [planningAudits, setPlanningAudits] = useState<PlanningAudit[]>(() => previewAuditData);
+  const visiblePlanningAudits = previewMode ? previewAuditData : planningAudits;
+  const [auditDialog, setAuditDialog] = useState<PlanningAudit | null>(null);
   const [visitDialog, setVisitDialog] = useState<{ vessel: PlanningVessel; visit: PlanningVesselVisit | null } | null>(null);
   const touchDropTargetRef = useRef<{ vesselId: number; watchGroup: string } | null>(null);
   const calendarPanCleanupRef = useRef<(() => void) | null>(null);
@@ -760,6 +766,25 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     }
   }, [effectiveClient, previewMode, previewVisitData, readPermissions.canRead]);
 
+  const loadPlanningAudits = useCallback(async (): Promise<boolean> => {
+    if (!readPermissions.canRead || previewMode) {
+      setPlanningAudits(previewMode ? previewAuditData : []);
+      return true;
+    }
+    try { setPlanningAudits(await fetchPlanningAudits(effectiveClient)); return true; }
+    catch (error) { setErrorMessage(planningErrorMessage(error, 'Impossible de charger les audits planifiés.')); return false; }
+  }, [effectiveClient, previewMode, previewAuditData, readPermissions.canRead]);
+
+  useEffect(() => {
+    let active = true;
+    if (!readPermissions.canRead || previewMode) {
+      return undefined;
+    }
+    void fetchPlanningAudits(effectiveClient).then((audits) => { if (active) setPlanningAudits(audits); })
+      .catch((error) => { if (active) setErrorMessage(planningErrorMessage(error, 'Impossible de charger les audits planifiés.')); });
+    return () => { active = false; };
+  }, [effectiveClient, previewMode, previewAuditData, readPermissions.canRead]);
+
   useEffect(() => {
     if (!readPermissions.canRead || previewMode) return undefined;
     let active = true;
@@ -830,7 +855,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const effectiveDayWidth = Math.round(52 * zoomLevel / 100);
 
   const allPlanningCrewEvents = useMemo(() => getAllPlanningCrewEvents(planningData), [planningData]);
-  const fleetLanes = useMemo(
+  const baseFleetLanes = useMemo(
     () => buildPlanningFleetLanes(planningData, range, filters, allPlanningCrewEvents, isPersonalPlanningView),
     [allPlanningCrewEvents, filters, isPersonalPlanningView, planningData, range],
   );
@@ -838,7 +863,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     () => perspective === 'projects' ? buildPlanningProjectLanes(planningData, range, filters) : [],
     [filters, perspective, planningData, range],
   );
-  const fleetRows = useMemo(
+  const baseFleetRows = useMemo(
     () => buildPlanningCrewRows(planningData, timelineDays, filters, allPlanningCrewEvents, {
       employmentRange: referenceMonthRange,
       activeFrom,
@@ -848,6 +873,13 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     }),
     [activeFrom, allPlanningCrewEvents, canEditPlanning, filters, isPersonalPlanningView, pendingBoardRows, planningData, range, referenceMonthRange, timelineDays],
   );
+  const { lanes: fleetLanes, rows: fleetRows } = useMemo(() => withPlanningAuditLanes(baseFleetLanes, baseFleetRows, visiblePlanningAudits, range, filters),
+    [baseFleetLanes, baseFleetRows, visiblePlanningAudits, range, filters]);
+  const auditsBySite = useMemo(() => {
+    const index = new Map<string, PlanningAudit[]>();
+    visiblePlanningAudits.forEach((audit) => { const group = index.get(audit.siteName) ?? []; group.push(audit); index.set(audit.siteName, group); });
+    return index;
+  }, [visiblePlanningAudits]);
   // Retire the editing exception when its first visible assignment arrives,
   // so removing that assignment later cannot bring an empty row back.
   if (pendingBoardRows.ids.size) {
@@ -2569,7 +2601,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         crewCount={fleetTreeCounts.get(rowKey) || 0}
         dayWidth={effectiveDayWidth}
         days={days}
-        editable={canEditPlanning}
+        editable={canEditPlanning && lane.vesselId !== null}
         expanded={!collapsedFleetNodes.has(rowKey)}
         hasBoards={lane.vesselId !== null && fleetVesselIdsWithBoards.has(lane.vesselId)}
         key={rowKey}
@@ -2592,6 +2624,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         selectedId={selectedTimelineId}
         touchDropTarget={touchDropTarget}
         visits={projectsOnly || lane.vesselId === null ? EMPTY_VESSEL_VISITS : vesselVisitsByVessel.get(lane.vesselId) || EMPTY_VESSEL_VISITS}
+        audits={projectsOnly ? EMPTY_PLANNING_AUDITS : auditsBySite.get(lane.vessel) || EMPTY_PLANNING_AUDITS}
+        onOpenAudit={setAuditDialog}
       />
     );
   }
@@ -2695,7 +2729,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               <button aria-expanded={isFiltersOpen} className={`planning-filter-toggle${isFiltersOpen ? ' is-active' : ''}`} onClick={() => setIsFiltersOpen((value) => !value)} type="button">
                 <SlidersHorizontal aria-hidden="true" size={17} />Filtres{activeFilterCount ? <span>{activeFilterCount}</span> : null}
               </button>
-              <button aria-busy={isRefreshing} className="planning-filter-toggle planning-refresh-button" disabled={isRefreshing} onClick={() => { setBalanceRevision((value) => value + 1); void Promise.all([loadPlanning(), loadAbsences()]); }} type="button">
+              <button aria-busy={isRefreshing} className="planning-filter-toggle planning-refresh-button" disabled={isRefreshing} onClick={() => { setBalanceRevision((value) => value + 1); void Promise.all([loadPlanning(), loadAbsences(), loadVesselVisits(), loadPlanningAudits()]); }} type="button">
                 <RefreshCw aria-hidden="true" size={17} />{isRefreshing ? 'Actualisation…' : 'Actualiser'}
               </button>
               {perspective !== 'projects' ? <button type="button" aria-pressed={displaySettings.activeFilterEnabled} className={`planning-filter-toggle${displaySettings.activeFilterEnabled ? ' is-active' : ''}`} disabled={displaySettingsLoading || savingDisplaySettings || Boolean(displaySettingsError)} onClick={() => void togglePersonalActiveFilter()} title="Préférence personnelle du filtre actif">Filtre actif</button> : null}
@@ -2874,7 +2908,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                   selectedId={selectedTimelineId}
                 />
               )) : null}
-              {perspective === 'fleet' && !fleetRows.length ? <div className="planning-calendar-empty"><p>Aucun navire avec marin affecté ne correspond à cette période.</p></div> : null}
+              {perspective === 'fleet' && !fleetRows.length ? <div className="planning-calendar-empty"><p>Aucune affectation ni aucun audit planifié ne correspond à cette période.</p></div> : null}
               {perspective === 'crew' && !crewLanes.length ? <div className="planning-calendar-empty"><p>Aucune affectation ne correspond à ces filtres.</p></div> : null}
             </PlanningColumnHighlights>
           </div>
@@ -2934,6 +2968,16 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {isAbsenceRequestOpen ? <Suspense fallback={<div className="app-dialog-backdrop"><div className="admin-state" role="status">Chargement de la demande de congés…</div></div>}><PlanningAbsenceRequestDialog client={effectiveClient} currentPerson={outletContext?.currentPerson ?? null} onClose={() => setIsAbsenceRequestOpen(false)} onSaved={async () => { await handleP12AuditChange(); setStatusMessage('Demande de congés envoyée.'); }} people={overview.people} personalOnly={isPersonalPlanningView} range={range} /></Suspense> : null}
       {isP12Open ? <Suspense fallback={<div className="app-dialog-backdrop"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canDeleteAbsences={permissions.canDeleteAbsences} canManageConflictCases={permissions.canManageConflictCases} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} overview={overview} personalOnly={isPersonalPlanningView} personalPersonId={currentPersonId} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
       {visitDialog ? <PlanningVisitsPanel canDelete={permissions.canDeleteAbsences} canEdit={canEditPlanning} canManageProviders={effectiveRoles.includes('admin') || effectiveRoles.includes('direction')} client={effectiveClient} onClose={() => setVisitDialog(null)} onSaved={async () => { await loadVesselVisits(); if (permissions.canViewHistory) { const history = await fetchPlanningHistory(effectiveClient); updateOverview((current) => ({ ...current, history })); } }} providers={serviceProviders} vessel={visitDialog.vessel} visit={visitDialog.visit} /> : null}
+      {auditDialog ? <AppDialog title={PLANNING_AUDIT_LABELS[auditDialog.kind]} eyebrow={auditDialog.siteName} size="sm"
+        onClose={() => setAuditDialog(null)} icon={<CalendarDays size={20} />} footer={<>
+          <button className="is-secondary" type="button" onClick={() => setAuditDialog(null)}>Fermer</button>
+          {auditDialog.canOpen ? <Link className="planning-audit-open" to={`${planningAuditUrl(auditDialog)}${previewMode ? '&preview=1' : ''}`}>Ouvrir l’audit</Link> : null}
+        </>}>
+        <p><strong>{auditDialog.title || PLANNING_AUDIT_LABELS[auditDialog.kind]}</strong></p>
+        <p>Date prévue : <strong>{formatPlanningDate(auditDialog.plannedOn)}</strong></p>
+        <p>Statut : {{ planned: 'Planifié', in_progress: 'En cours', completed: 'Réalisé' }[auditDialog.status]}</p>
+        {auditDialog.performedOn ? <p>Date de réalisation : {formatPlanningDate(auditDialog.performedOn)}</p> : null}
+      </AppDialog> : null}
       {isP13Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du cockpit métier…</div></div>}><PlanningP13Panel canManageDependencies={permissions.canManageDependencies} canManageWorkRestPolicies={permissions.canManageWorkRestPolicies} canRefreshNotifications={permissions.canRefreshNotifications} canViewDashboard={permissions.canViewDashboard} canViewNotifications={permissions.canViewNotifications} canViewWorkRest={permissions.canViewWorkRest} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP13Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP21Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement de l’assistant Planning…</div></div>}><PlanningP21Panel access={assistantAccess} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP21Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP22Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement des prévisions…</div></div>}><PlanningP22Panel access={assistantAccess} client={effectiveClient} onClose={() => setIsP22Open(false)} overview={overview} range={range} /></Suspense> : null}

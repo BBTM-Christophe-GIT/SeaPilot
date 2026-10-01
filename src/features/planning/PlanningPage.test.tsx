@@ -296,6 +296,7 @@ function createClient(options: {
   manningRequirements?: unknown[];
   createdBoardRow?: unknown;
   genericCrewRows?: GenericCrewRowData[];
+  planningAudits?: unknown[];
   vesselResponses?: Array<{ data: unknown[] | null; error: unknown }>;
 } = {}) {
   const insertAssignment = vi.fn().mockReturnValue({
@@ -450,6 +451,9 @@ function createClient(options: {
     if (functionName === 'save_planning_assignment_day_states' || functionName === 'save_planning_assignment_day_details_range') {
       return Promise.resolve({ data: 1, error: null });
     }
+    if (functionName === 'planning_audits_overview') {
+      return Promise.resolve({ data: options.planningAudits ?? [], error: null });
+    }
     if (functionName === 'planning_assignment_overview_with_revisions') {
       return Promise.resolve({ data: options.assignments ?? [assignmentOverviewRow], error: null });
     }
@@ -554,6 +558,40 @@ function createClient(options: {
 }
 
 describe('PlanningPage cockpit', () => {
+  it('shows all audit kinds for a vessel with no crew and refreshes rescheduled dates without duplicates', async () => {
+    const user = userEvent.setup();
+    const planningAudits = ['internal_ism', 'ovid', 'ecmid', 'external_ism', 'client'].map((kind) => ({
+      id: `${kind}-1`, kind, siteId: '1', siteName: 'COTENTIN', vesselId: 1, plannedOn: '2026-06-30',
+      performedOn: null, title: `Dossier ${kind}`, status: 'planned', canOpen: true,
+    }));
+    const { client, rpc } = createClient({ planningAudits, assignments: [], boardRows: [], days: [], periods: [], projects: [], people: [] });
+    render(<MemoryRouter><PlanningPage client={client as never} roles={['admin']} /></MemoryRouter>);
+    const button = await screen.findByRole('button', { name: 'OVID · COTENTIN, 30/06/2026' });
+    for (const label of ['Audit ISM Interne', 'eCMID', 'Audit ISM Externe', 'Audit Client']) {
+      expect(screen.getByRole('button', { name: `${label} · COTENTIN, 30/06/2026` })).toBeInTheDocument();
+    }
+    await user.click(button);
+    const dialog = screen.getByRole('dialog', { name: 'OVID' });
+    expect(within(dialog).getByRole('link', { name: 'Ouvrir l’audit' })).toHaveAttribute('href', '/modules/ovid?audit=ovid-1');
+    await user.click(within(dialog).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
+    planningAudits[1].plannedOn = '2026-07-02';
+    await user.click(screen.getByRole('button', { name: 'Actualiser' }));
+    await screen.findByRole('button', { name: 'OVID · COTENTIN, 02/07/2026' });
+    expect(screen.queryByRole('button', { name: 'OVID · COTENTIN, 30/06/2026' })).not.toBeInTheDocument();
+    expect(rpc.mock.calls.filter(([name]) => name === 'planning_audits_overview')).toHaveLength(2);
+  });
+
+  it('shows permitted audit metadata without exposing a content link', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ planningAudits: [{ id: 'audit-metadata', kind: 'client', siteId: '1', siteName: 'COTENTIN', vesselId: 1,
+      plannedOn: '2026-06-30', performedOn: null, title: 'Audit Client 2026', status: 'planned', canOpen: false }] });
+    render(<PlanningPage client={client as never} roles={['armement']} />);
+    await user.click(await screen.findByRole('button', { name: 'Audit Client · COTENTIN, 30/06/2026' }));
+    const dialog = screen.getByRole('dialog', { name: 'Audit Client' });
+    expect(within(dialog).getByText('30/06/2026')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('link', { name: 'Ouvrir l’audit' })).not.toBeInTheDocument();
+  });
+
   it('prepares a generic position and replaces it with a real sailor while transferring its dates and status', async () => {
     const user = userEvent.setup();
     const genericCrewRows: GenericCrewRowData[] = [];

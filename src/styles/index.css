@@ -21537,6 +21537,19 @@ button.planning-p12-conflict-card {
   color: #fff;
 }
 
+.app-dialog__footer .planning-audit-open {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid #1267d5;
+  border-radius: 9px;
+  background: #1267d5;
+  color: #fff;
+  font-weight: 750;
+  text-decoration: none;
+}
+
 .app-dialog__footer button.is-danger {
   border-color: #dc2626;
   background: #dc2626;
