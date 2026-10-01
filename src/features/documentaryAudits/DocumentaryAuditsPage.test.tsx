@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
@@ -20,9 +20,14 @@ let fixture: DocumentaryAuditData;
 function attachments(files: File[]): AuditAttachment[] {
   return files.map((file, index) => ({ id: `new-file-${index}`, fileName: file.name, storagePath: `test/${file.name}`, mimeType: file.type, sizeBytes: file.size, url: `https://example.test/${file.name}` }));
 }
-function mount(kind: DocumentaryAuditKind = 'ovid', roles: RoleKey[] = ['armement'], previewMode = false) {
+function LocationProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return <><output aria-label="Adresse actuelle">{location.pathname}{location.search}</output><button type="button" onClick={() => navigate('/modules/ovid?audit=00000000-0000-4000-8000-000000000102')}>Ouvrir le deuxième audit</button></>;
+}
+function mount(kind: DocumentaryAuditKind = 'ovid', roles: RoleKey[] = ['armement'], previewMode = false, address = `/modules/${kind}`) {
   const context: AppShellOutletContext = { roles, client: {} as never, previewMode, currentPerson: { id: 9301, firstName: 'Arthur', lastName: 'AUDITEUR', functionLabel: roles.includes('capitaine') ? 'Capitaine' : 'Armement', gradeLabel: '', active: true, hiredOn: '2020-01-01', departedOn: '' } };
-  const page = (selectedKind: DocumentaryAuditKind) => <MemoryRouter><Routes><Route element={<Outlet context={context} />}><Route path="*" element={<DocumentaryAuditsPage kind={selectedKind} />} /></Route></Routes></MemoryRouter>;
+  const page = (selectedKind: DocumentaryAuditKind) => <MemoryRouter initialEntries={[address]}><LocationProbe /><Routes><Route element={<Outlet context={context} />}><Route path="*" element={<DocumentaryAuditsPage kind={selectedKind} />} /></Route></Routes></MemoryRouter>;
   const result = render(page(kind));
   return { ...result, changeKind: (selectedKind: DocumentaryAuditKind) => result.rerender(page(selectedKind)) };
 }
@@ -82,10 +87,11 @@ describe('DocumentaryAuditsPage', () => {
     await user.click(screen.getByRole('button', { name: /^LE ROZEL/ }));
     await user.click(screen.getByRole('button', { name: 'Créer le dossier' }));
     const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Date prévue (facultative)'), { target: { value: '2030-06-12' } });
     fireEvent.change(within(dialog).getByLabelText('Date de l’audit'), { target: { value: '2030-06-15' } });
     await user.click(within(dialog).getByRole('button', { name: 'Enregistrer le dossier' }));
     await screen.findByRole('button', { name: 'Ajouter des documents' });
-    expect(queries.saveDocumentaryAudit.mock.calls[0][1]).toMatchObject({ kind: 'ovid', year: 2030, siteId: fixture.sites[1].id, auditedOn: '2030-06-15', files: [] });
+    expect(queries.saveDocumentaryAudit.mock.calls[0][1]).toMatchObject({ kind: 'ovid', year: 2030, siteId: fixture.sites[1].id, plannedOn: '2030-06-12', auditedOn: '2030-06-15', files: [] });
     expect(queries.saveDocumentaryAudit.mock.calls[0][2]).toBeUndefined();
     await user.click(screen.getByRole('button', { name: 'Ajouter des documents' }));
     const selected = [new File(['%PDF-1.4'], 'rapport.pdf', { type: 'application/pdf' }), new File(['controle;conforme'], 'controle.csv', { type: 'text/csv' })];
@@ -96,6 +102,92 @@ describe('DocumentaryAuditsPage', () => {
     expect(queries.saveDocumentaryAudit.mock.calls[1][1].id).toBe(queries.saveDocumentaryAudit.mock.calls[0][1].id);
     expect(queries.saveDocumentaryAudit.mock.calls[1][2]).toEqual(selected);
     expect(await screen.findByRole('button', { name: 'Télécharger rapport.pdf' })).toBeInTheDocument();
+  });
+
+  it('creates an unplanned dossier when the optional planned date is empty', async () => {
+    const user = userEvent.setup(); mount();
+    await screen.findByRole('button', { name: 'Ajouter des documents' });
+    await user.click(screen.getByRole('button', { name: /^LE ROZEL/ }));
+    await user.click(screen.getByRole('button', { name: 'Créer le dossier' }));
+    expect(screen.getByLabelText('Date prévue (facultative)')).toHaveValue('');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le dossier' }));
+    await screen.findByText('Non planifié');
+    expect(queries.saveDocumentaryAudit.mock.calls[0][1]).toMatchObject({ plannedOn: null, auditedOn: null });
+  });
+
+  it('reschedules and unplans a dossier while preserving its actual date, documents and findings', async () => {
+    fixture.audits[0].plannedOn = '2026-10-12';
+    fixture.audits[0].auditedOn = '2026-10-15';
+    const original = structuredClone(fixture.audits[0]);
+    const findings = structuredClone(fixture.findings);
+    const user = userEvent.setup(); mount();
+    await user.click(await screen.findByRole('button', { name: 'Modifier le dossier' }));
+    fireEvent.change(screen.getByLabelText('Date prévue (facultative)'), { target: { value: '2026-10-13' } });
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le dossier' }));
+    await screen.findByText('13 octobre 2026');
+    expect(screen.getByText('Réalisé le : 15 octobre 2026')).toBeInTheDocument();
+    expect(queries.saveDocumentaryAudit.mock.calls[0][1]).toMatchObject({ id: original.id, plannedOn: '2026-10-13', auditedOn: original.auditedOn, files: original.files });
+    await user.click(screen.getByRole('button', { name: 'Modifier le dossier' }));
+    fireEvent.change(screen.getByLabelText('Date prévue (facultative)'), { target: { value: '' } });
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le dossier' }));
+    await screen.findByText('Non planifié');
+    expect(queries.saveDocumentaryAudit.mock.calls[1][1]).toMatchObject({ id: original.id, plannedOn: null, auditedOn: original.auditedOn, files: original.files });
+    expect(fixture.findings).toEqual(findings);
+    expect(queries.saveDocumentaryFinding).not.toHaveBeenCalled();
+  });
+
+  it('opens an accessible planning link on the matching year and vessel, then permits manual filters', async () => {
+    const id = '00000000-0000-4000-8000-000000000101';
+    fixture.audits.push({ ...fixture.audits[0], id, siteId: fixture.sites[1].id, year: 2023, title: 'Audit lié LE ROZEL 2023', plannedOn: '2023-06-11', auditedOn: '2023-06-15', files: [] });
+    fixture.permissions = { canManage: false, treatableFindingIds: [] };
+    const user = userEvent.setup(); mount('ovid', ['capitaine'], false, `/modules/ovid?audit=${id}&source=planning`);
+    await screen.findByRole('heading', { name: 'Audit lié LE ROZEL 2023' });
+    expect(screen.getByRole('combobox', { name: 'Année des audits' })).toHaveValue('2023');
+    expect(screen.getByRole('button', { name: /^LE ROZEL/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('11 juin 2023')).toBeInTheDocument();
+    expect(screen.getByText('Réalisé le : 15 juin 2023')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modifier le dossier' })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Année des audits' }), '2030');
+    expect(screen.getByRole('combobox', { name: 'Année des audits' })).toHaveValue('2030');
+    expect(screen.getByRole('button', { name: /^LE ROZEL/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('Adresse actuelle')).toHaveTextContent('/modules/ovid?source=planning');
+    expect(screen.queryByRole('heading', { name: 'Audit lié LE ROZEL 2023' })).not.toBeInTheDocument();
+  });
+
+  it('follows a different audit query on the same page without fetching another scope', async () => {
+    const firstId = '00000000-0000-4000-8000-000000000101';
+    const secondId = '00000000-0000-4000-8000-000000000102';
+    fixture.audits.push({ ...fixture.audits[0], id: firstId, siteId: fixture.sites[1].id, year: 2023, title: 'Premier dossier lié', files: [] }, { ...fixture.audits[0], id: secondId, siteId: fixture.sites[2].id, year: 2024, title: 'Deuxième dossier lié', files: [] });
+    const user = userEvent.setup(); mount('ovid', ['armement'], false, `/modules/ovid?audit=${firstId}`);
+    await screen.findByRole('heading', { name: 'Premier dossier lié' });
+    await user.click(screen.getByRole('button', { name: 'Ouvrir le deuxième audit' }));
+    await screen.findByRole('heading', { name: 'Deuxième dossier lié' });
+    expect(screen.getByRole('combobox', { name: 'Année des audits' })).toHaveValue('2024');
+    expect(screen.getByRole('button', { name: /^LANDEMER/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(queries.fetchDocumentaryAuditData).toHaveBeenCalledOnce();
+  });
+
+  it.each(['missing', 'empty', 'wrong_kind', 'other_company', 'inaccessible_vessel'] as const)('rejects a %s audit link without presenting another accessible dossier', async (reason) => {
+    const id = '00000000-0000-4000-8000-000000000109';
+    if (reason !== 'missing' && reason !== 'empty') fixture.audits.push({ ...fixture.audits[0], id, title: 'Dossier hors périmètre', year: 2090, kind: reason === 'wrong_kind' ? 'ecmid' : 'ovid', companyId: reason === 'other_company' ? 99 : fixture.companyId, siteId: reason === 'inaccessible_vessel' ? 'hidden-vessel' : fixture.sites[0].id, files: [] });
+    const user = userEvent.setup();
+    mount('ovid', ['armement'], false, `/modules/ovid?audit=${reason === 'empty' ? '' : id}&source=planning`);
+    expect(await screen.findByRole('alert')).toHaveTextContent('n’est pas accessible');
+    expect(screen.queryByRole('heading', { name: 'Dossier hors périmètre' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: fixture.audits[0].title })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modifier le dossier' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Écarts/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(fixture.findings[0].description)).not.toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Navires' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '2090' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Année des audits' })).not.toBeInTheDocument();
+    expect(queries.fetchDocumentaryAuditData).toHaveBeenCalledWith(expect.anything(), 'ovid');
+    expect(queries.saveDocumentaryAudit).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Retour aux dossiers' }));
+    expect(await screen.findByRole('heading', { name: fixture.audits[0].title })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Modifier le dossier' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Adresse actuelle')).toHaveTextContent('/modules/ovid?source=planning');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('edits only dossier metadata without changing its annual vessel identity or files', async () => {

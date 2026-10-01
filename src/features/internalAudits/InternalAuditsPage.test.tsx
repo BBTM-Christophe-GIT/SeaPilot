@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
@@ -16,20 +16,23 @@ vi.mock('./internalAuditReport', () => ({ downloadInternalAuditReport: reportExp
 vi.mock('./internalAuditWorkbook', () => ({ downloadInternalAuditWorkbook: reportExports.workbook }));
 
 let fixture: InternalAuditData;
-function renderPage(roles: RoleKey[] = ['armement']) {
+function AuditLocationProbe() { const location = useLocation(); return <output aria-label="Adresse de la recette">{location.search}</output>; }
+function renderPage(roles: RoleKey[] = ['armement'], initialEntry = '/', linkedAuditId?: string) {
   const currentPerson = { id: 9301, firstName: 'Test', lastName: 'AUDITEUR', functionLabel: 'Armement', gradeLabel: '', active: true, hiredOn: '2020-01-01', departedOn: '' };
   const context: AppShellOutletContext = {
     roles, client: {} as never, previewMode: false,
     currentPerson,
   };
-  return render(<MemoryRouter><Routes><Route element={<Outlet context={context} />}><Route path="*" element={<InternalAuditsPage />} /></Route></Routes></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={[initialEntry]}><Routes><Route element={<><Outlet context={context} />{linkedAuditId ? <><Link to={`?audit=${linkedAuditId}`}>Lien audit du Planning</Link><AuditLocationProbe /></> : null}</>}><Route path="*" element={<InternalAuditsPage />} /></Route></Routes></MemoryRouter>);
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // Clear queued one-shot responses as well as calls so a failed scenario cannot poison the next load.
+  vi.resetAllMocks();
   Object.defineProperty(URL, 'createObjectURL', { configurable: true, writable: true, value: vi.fn(() => 'blob:photo-test') });
   Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, writable: true, value: vi.fn() });
   fixture = createInternalAuditPreviewData();
+  fixture.audits = fixture.audits.filter((audit) => audit.siteId === fixture.sites[3].id);
   fixture.audits.sort((a, b) => a.year - b.year);
   fixture.templates = fixture.templates.map((template) => ({ ...template, rows: template.rows.slice(0, 2) }));
   fixture.audits = fixture.audits.map((audit) => ({ ...audit, rows: audit.rows.slice(0, 2) }));
@@ -56,6 +59,105 @@ beforeEach(() => {
 });
 
 describe('InternalAuditsPage', () => {
+  it('opens the upcoming LANDEMER demonstration audit with its unanswered reference grid', async () => {
+    fixture = createInternalAuditPreviewData();
+    const planned = fixture.audits.find((audit) => audit.id === '00000000-0000-4000-8000-000000000202')!;
+    expect(planned).toMatchObject({ status: 'planned', performedOn: null, completedAt: null, plannedOn: auditDueOnFromDuration(todayAuditParis(), { amount: 3, unit: 'days' }) });
+    expect(planned.rows).toHaveLength(61);
+    expect(planned.rows.every((row) => row.answer === null && row.observation === '')).toBe(true);
+    // Verify the full seed above, then keep this navigation test focused on representative unanswered rows.
+    fixture.audits = fixture.audits.map((audit) => ({ ...audit, rows: audit.rows.slice(0, 2) }));
+    fixture.templates = fixture.templates.map((template) => ({ ...template, rows: template.rows.slice(0, 2) }));
+    renderPage(['armement'], `/?audit=${planned.id}`);
+    await waitFor(() => expect(document.querySelector('.ia-audit-header h2')).toHaveTextContent(`LANDEMER · ${planned.year}`));
+    expect(document.querySelector('.ia-audit-selector select')).toHaveValue(planned.id);
+    expect(screen.getByLabelText('Date de réalisation')).toHaveValue('');
+    expect(screen.getByText('Démarrer l’audit', { exact: true })).toBeEnabled();
+    const answers = document.querySelectorAll<HTMLSelectElement>('.ia-answer-select');
+    expect(answers).toHaveLength(2);
+    expect([...answers].every((answer) => answer.value === '')).toBe(true);
+  });
+
+  it('opens the authorized audit linked from global Planning and aligns its annual site context', async () => {
+    const user = userEvent.setup();
+    const linked = fixture.audits[0];
+    renderPage(['armement'], `/?audit=${linked.id.toUpperCase()}`);
+    const selector = await screen.findByRole('combobox', { name: 'Audit sélectionné' });
+    expect(selector).toHaveValue(linked.id);
+    expect(screen.getByRole('heading', { name: 'LE ROZEL · 2025' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Grille d’audit' })).toHaveAttribute('aria-current', 'page');
+    for (const answer of screen.getAllByRole('combobox', { name: /^Réponse / })) expect(answer).toBeDisabled();
+    expect(queries.fetchInternalAuditData).toHaveBeenCalledOnce();
+    expect(queries.fetchInternalAuditData.mock.calls[0]).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Planning' }));
+    expect(screen.getByRole('combobox', { name: 'Année du planning' })).toHaveValue('2025');
+  });
+
+  it.each(['', 'invalid-id', '00000000-0000-4000-8000-999999999999'])('reports an unavailable audit link without querying or exposing its identifier (%s)', async (id) => {
+    const user = userEvent.setup();
+    renderPage(['armement'], `/?audit=${encodeURIComponent(id)}`);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cet audit n’est pas disponible dans votre accès.');
+    expect(screen.queryByRole('heading', { name: 'Planning annuel d’audit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Audit sélectionné' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Grille d’audit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /^Réponse / })).not.toBeInTheDocument();
+    expect(queries.fetchInternalAuditData).toHaveBeenCalledOnce();
+    expect(queries.fetchInternalAuditData.mock.calls[0]).toHaveLength(1);
+    if (id) expect(screen.getByRole('alert')).not.toHaveTextContent(id);
+    await user.click(screen.getByRole('button', { name: 'Retour au planning des audits' }));
+    expect(await screen.findByRole('heading', { name: 'Planning annuel d’audit' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
+    expect(screen.getByRole('combobox', { name: 'Audit sélectionné' })).toHaveValue(fixture.audits[1].id);
+    expect(screen.getAllByRole('combobox', { name: /^Réponse / })[0]).toBeEnabled();
+    expect(queries.fetchInternalAuditData).toHaveBeenCalledOnce();
+  });
+
+  it('uses the real profile overview for a linked audit instead of loading an inaccessible audit', async () => {
+    const unavailableId = fixture.audits[0].id;
+    fixture.audits = [fixture.audits[1]];
+    fixture.permissions = { canManage: false, treatableFindingIds: [fixture.findings[0].id] };
+    renderPage(['capitaine'], `/?audit=${unavailableId}`);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cet audit n’est pas disponible dans votre accès.');
+    expect(screen.queryByText('LE ROZEL · 2025')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Planifier / })).not.toBeInTheDocument();
+    expect(queries.fetchInternalAuditData).toHaveBeenCalledOnce();
+  });
+
+  it('defers an incoming audit link until unsaved answers are saved or cancelled', async () => {
+    const user = userEvent.setup();
+    const current = fixture.audits[1];
+    const target = fixture.audits[0];
+    renderPage(['armement'], `/?audit=${current.id}`, target.id);
+    await screen.findByRole('combobox', { name: 'Audit sélectionné' });
+    await user.selectOptions(screen.getAllByRole('combobox', { name: /^Réponse / })[0], 'na');
+    await user.click(screen.getByRole('link', { name: 'Lien audit du Planning' }));
+    expect(screen.getByRole('combobox', { name: 'Audit sélectionné' })).toHaveValue(current.id);
+    expect(screen.getAllByRole('combobox', { name: /^Réponse / })[0]).toHaveValue('na');
+    expect(screen.getByText(/^Réponses non enregistrées :/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Annuler' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Audit sélectionné' })).toHaveValue(target.id));
+    expect(screen.getByRole('heading', { name: 'LE ROZEL · 2025' })).toBeInTheDocument();
+    expect(queries.saveInternalAudit).not.toHaveBeenCalled();
+  });
+
+  it('clears a consumed audit link when the user chooses another audit or planning year', async () => {
+    const user = userEvent.setup();
+    const current = fixture.audits[1];
+    const target = fixture.audits[0];
+    renderPage(['armement'], `/?audit=${target.id}&source=planning`, target.id);
+    await screen.findByRole('combobox', { name: 'Audit sélectionné' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Audit sélectionné' }), current.id);
+    expect(screen.getByLabelText('Adresse de la recette')).toHaveTextContent('?source=planning');
+    expect(screen.getByLabelText('Adresse de la recette')).not.toHaveTextContent('audit=');
+    await user.click(screen.getByRole('link', { name: 'Lien audit du Planning' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Audit sélectionné' })).toHaveValue(target.id));
+    await user.click(screen.getByRole('button', { name: 'Planning' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Année du planning' }), '2030');
+    expect(screen.getByLabelText('Adresse de la recette')).not.toHaveTextContent('audit=');
+    expect(screen.getByRole('combobox', { name: 'Année du planning' })).toHaveValue('2030');
+  });
+
   it('shows all eight requested sites and projects the chosen planning year from the fixed anniversary', async () => {
     const user = userEvent.setup();
     renderPage();
@@ -447,12 +549,15 @@ describe('InternalAuditsPage', () => {
     queries.fetchInternalAuditData.mockRejectedValueOnce(new Error('Connexion indisponible'));
     await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
     await user.click(screen.getAllByRole('button', { name: /^Émettre un écart / })[0]);
+    const modal = screen.getByRole('dialog');
+    await waitFor(() => expect(within(modal).getByRole('button', { name: 'Fermer' })).toHaveFocus());
     await user.type(screen.getByRole('textbox', { name: 'Description du constat' }), 'Constat conservé malgré une connexion interrompue');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Responsable de traitement' }), 'person:9301');
     await user.click(screen.getByRole('button', { name: 'Enregistrer l’écart' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(queries.saveAuditFinding).toHaveBeenCalledOnce();
-    expect(screen.getByRole('alert')).toHaveTextContent('L’enregistrement a réussi');
+    expect(await screen.findByRole('alert')).toHaveTextContent('L’enregistrement a réussi');
+    expect(queries.fetchInternalAuditData).toHaveBeenCalledTimes(2);
     await user.click(screen.getByRole('button', { name: /^Synthèse/ }));
     expect(screen.getByText('Constat conservé malgré une connexion interrompue')).toBeInTheDocument();
   });
@@ -465,11 +570,15 @@ describe('InternalAuditsPage', () => {
     queries.fetchInternalAuditData.mockRejectedValueOnce(new Error('Connexion indisponible'));
     await user.click(screen.getByRole('button', { name: /^Synthèse/ }));
     await user.click(screen.getByRole('button', { name: 'Suivre le traitement' }));
+    const modal = screen.getByRole('dialog');
+    // AppDialog focuses its close button on the next frame; wait before typing spaces into the textarea.
+    await waitFor(() => expect(within(modal).getByRole('button', { name: 'Fermer' })).toHaveFocus());
     await user.type(screen.getByRole('textbox', { name: 'Traitement / preuve de correction' }), 'Correction conservée');
     await user.click(screen.getByRole('button', { name: 'Enregistrer le traitement' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(queries.addAuditFindingTreatment).toHaveBeenCalledOnce();
-    expect(screen.getByRole('alert')).toHaveTextContent('L’enregistrement a réussi');
+    expect(await screen.findByRole('alert')).toHaveTextContent('L’enregistrement a réussi');
+    expect(queries.fetchInternalAuditData).toHaveBeenCalledTimes(2);
     expect(screen.getAllByText('Correction conservée').length).toBeGreaterThan(0);
     expect(screen.getByText('Historique du traitement (1)')).toBeInTheDocument();
   });

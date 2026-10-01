@@ -38,6 +38,8 @@
 .da-audit-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 16px; border-bottom: 1px solid #e2eaee; }
 .da-audit-header h2 { font-size: 1rem; line-height: 1.5; overflow-wrap: anywhere; }
 .da-audit-header p { color: #748b95; font-size: .72rem; line-height: 1.6; margin-top: 4px; }
+.da-audit-header .da-audit-dates { display: flex; flex-wrap: wrap; gap: 3px 14px; }
+.da-audit-dates strong { color: #386b77; font-weight: 650; }
 .da-audit-header .da-audit-label { color: #0d7b83; font-size: .67rem; margin-bottom: 3px; font-weight: 750; }
 .da-header-actions, .da-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 .da-header-actions { flex-shrink: 0; }

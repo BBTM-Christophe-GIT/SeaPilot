@@ -4,9 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { auditDueOnFromDuration } from '../internalAudits/internalAuditModel';
 import { defaultDocumentaryDuration, documentaryFindingIssues, documentaryFindingOverdue, type DocumentaryAudit, type DocumentaryFinding } from './documentaryAuditModel';
 import { discardDocumentaryUploads, documentaryFileMime, documentaryFileReferences, hydrateDocumentaryFiles, uploadDocumentaryFiles, validateDocumentaryFiles } from './documentaryAuditFiles';
-import { addDocumentaryTreatment, fetchDocumentaryAuditData, saveDocumentaryAudit, saveDocumentaryFinding } from './documentaryAuditQueries';
+import { addDocumentaryTreatment, fetchDocumentaryAuditData, mapDocumentaryAudit, saveDocumentaryAudit, saveDocumentaryFinding } from './documentaryAuditQueries';
 
-const audit: DocumentaryAudit = { id: 'audit', companyId: 7, siteId: '12', kind: 'ovid', year: 2026, title: 'OVID 2026', auditedOn: null, auditorName: '', files: [], createdAt: '', updatedAt: '' };
+const audit: DocumentaryAudit = { id: 'audit', companyId: 7, siteId: '12', kind: 'ovid', year: 2026, title: 'OVID 2026', plannedOn: null, auditedOn: null, auditorName: '', files: [], createdAt: '', updatedAt: '' };
 const finding: DocumentaryFinding = { id: 'finding', companyId: 7, auditId: audit.id, reference: 'F1', category: 'major', description: 'Contrôle requis', assigneePersonId: 42, assigneeRole: null, assigneeVesselId: null, assigneeLabel: 'Responsable', openedOn: '2026-10-01', dueOn: '2026-10-08', treatmentDelayValue: 1, treatmentDelayUnit: 'weeks', status: 'open', treatment: '', resolvedAt: null, closedAt: null, files: [] };
 const pdf = () => new File(['%PDF-1.7\n'], 'audit.pdf', { type: 'application/pdf' });
 function mockClient() {
@@ -64,6 +64,29 @@ describe('documentary file storage', () => {
   });
 });
 describe('documentary RPC contracts', () => {
+  it('maps planned and actual dates independently and treats legacy planned fields as absent', () => {
+    const row = { id: 'audit', company_id: 7, kind: 'ovid', site_id: 12, year: 2026, title: 'OVID', planned_on: '2026-10-05', audited_on: '2026-10-09' };
+    expect(mapDocumentaryAudit(row)).toMatchObject({ plannedOn: '2026-10-05', auditedOn: '2026-10-09', siteId: '12' });
+    expect(mapDocumentaryAudit({ ...row, planned_on: null }).plannedOn).toBeNull();
+    expect(mapDocumentaryAudit({ audited_on: '2026-10-09' }).plannedOn).toBeNull();
+  });
+  it('saves and clears planned dates explicitly while retaining the separate actual date', async () => {
+    const mock = mockClient();
+    mock.rpc.mockResolvedValue({ data: { id: audit.id, company_id: 7, kind: 'ovid', site_id: 12, year: 2026, title: 'OVID', planned_on: '2026-02-28', audited_on: '2026-03-02' }, error: null });
+    expect(await saveDocumentaryAudit(mock.client, { ...audit, plannedOn: '2026-02-28', auditedOn: '2026-03-02' })).toMatchObject({ plannedOn: '2026-02-28', auditedOn: '2026-03-02' });
+    expect(mock.rpc).toHaveBeenLastCalledWith('documentary_audit_save', expect.objectContaining({ p_payload: expect.objectContaining({ plannedOn: '2026-02-28', auditedOn: '2026-03-02' }) }));
+    await saveDocumentaryAudit(mock.client, { ...audit, plannedOn: null, auditedOn: '2026-03-02' });
+    expect(mock.rpc).toHaveBeenLastCalledWith('documentary_audit_save', expect.objectContaining({ p_payload: expect.objectContaining({ plannedOn: null, auditedOn: '2026-03-02' }) }));
+  });
+  it('rejects impossible and non-date planning values before uploading files or calling the server', async () => {
+    const mock = mockClient();
+    for (const plannedOn of ['2026-02-30', '2026-13-01', '2026-10-01T08:00:00Z', '']) {
+      await expect(saveDocumentaryAudit(mock.client, { ...audit, plannedOn }, [pdf()])).rejects.toThrow('date prévue valide');
+    }
+    expect(mock.upload).not.toHaveBeenCalled();
+    expect(mock.getUser).not.toHaveBeenCalled();
+    expect(mock.rpc).not.toHaveBeenCalled();
+  });
   it('passes the selected audit family and trusts only server treatment permissions', async () => {
     const mock = mockClient(); mock.rpc.mockResolvedValue({ data: { company_id: 7, sites: [{ id: 12, company_id: 7, name: 'LE ROZEL', kind: 'vessel', vessel_id: 12 }], audits: [], findings: [], events: [], people: [], permissions: { canManage: false, treatableFindingIds: ['f1'] } }, error: null });
     const data = await fetchDocumentaryAuditData(mock.client, 'external_ism'); expect(data.sites[0].id).toBe('12'); expect(data.permissions).toEqual({ canManage: false, treatableFindingIds: ['f1'] });

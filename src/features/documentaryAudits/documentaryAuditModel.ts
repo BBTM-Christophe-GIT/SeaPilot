@@ -6,7 +6,7 @@ export type DocumentaryFindingCategory = 'finding' | 'major' | 'minor' | 'remark
 export interface AuditAttachment { id: string; fileName: string; storagePath: string; mimeType: string; sizeBytes: number; url: string }
 export interface DocumentaryAudit {
   id: string; companyId: number; kind: DocumentaryAuditKind; siteId: string; year: number;
-  title: string; auditedOn: string | null; auditorName: string; files: AuditAttachment[];
+  title: string; plannedOn: string | null; auditedOn: string | null; auditorName: string; files: AuditAttachment[];
   createdAt: string; updatedAt: string;
 }
 export interface DocumentaryFinding {

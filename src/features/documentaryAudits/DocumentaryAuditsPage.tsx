@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { AlertCircle, CheckCircle2, Download, FilePlus2, FileText, FolderOpen, Pencil, Plus, Ship, Upload, X } from 'lucide-react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { AppDialog } from '../../components/AppDialog';
 import { compareFleetAssets, fleetIllustration } from '../fleet/fleetDisplay';
 import { auditDueOnFromDuration, todayAuditParis, type AuditAssigneeRole, type AuditDeadlineUnit, type AuditFindingStatus } from '../internalAudits/internalAuditModel';
@@ -68,12 +68,13 @@ export function DocumentaryAuditsPage({ kind }: { kind: DocumentaryAuditKind }) 
 }
 
 function DocumentaryWorkspace({ kind, context }: { kind: DocumentaryAuditKind; context: AppShellOutletContext }) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState<DocumentaryAuditData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [year, setYear] = useState(Number(todayAuditParis().slice(0, 4)));
+  const [selectedYear, setYear] = useState(Number(todayAuditParis().slice(0, 4)));
   const [siteId, setSiteId] = useState('');
   const [tab, setTab] = useState<'documents' | 'findings'>('documents');
   const [filter, setFilter] = useState('all');
@@ -96,16 +97,30 @@ function DocumentaryWorkspace({ kind, context }: { kind: DocumentaryAuditKind; c
     return () => { active = false; };
   }, [context.client, context.previewMode, kind, previewCanManage]);
 
-  const vessels = useMemo(() => (data?.sites || []).filter((site) => site.kind === 'vessel').sort(compareFleetAssets), [data?.sites]);
-  const site = vessels.find((vessel) => vessel.id === siteId) || vessels[0];
-  const audit = data?.audits.find((item) => item.kind === kind && item.siteId === site?.id && item.year === year);
+  const vessels = useMemo(() => (data?.sites || []).filter((site) => site.kind === 'vessel' && site.companyId === data?.companyId).sort(compareFleetAssets), [data?.sites, data?.companyId]);
+  const scopedAudits = (data?.audits || []).filter((item) => item.kind === kind && item.companyId === data?.companyId && vessels.some((vessel) => vessel.id === item.siteId));
+  const hasAuditLink = searchParams.has('audit');
+  const requestedAuditId = searchParams.get('audit');
+  const linkedAudit = requestedAuditId ? scopedAudits.find((item) => item.id === requestedAuditId) : undefined;
+  const year = linkedAudit?.year ?? selectedYear;
+  const site = vessels.find((vessel) => vessel.id === (linkedAudit?.siteId || siteId)) || vessels[0];
+  const audit = hasAuditLink ? linkedAudit : scopedAudits.find((item) => item.siteId === site?.id && item.year === year);
   const auditFindings = data?.findings.filter((item) => item.auditId === audit?.id) || [];
   const displayedFindings = auditFindings.filter((item) => filter === 'all' || (filter === 'pending' ? item.status !== 'closed' : item.category === filter));
   const canManage = Boolean(data?.permissions.canManage);
-  const years = [...new Set([year, ...(data?.audits.map((item) => item.year) || []), ...Array.from({ length: 9 }, (_, i) => Number(todayAuditParis().slice(0, 4)) - 3 + i)])].sort((a, b) => b - a);
+  const years = [...new Set([year, ...scopedAudits.map((item) => item.year), ...Array.from({ length: 9 }, (_, i) => Number(todayAuditParis().slice(0, 4)) - 3 + i)])].sort((a, b) => b - a);
   const openedOn = findingForm?.openedOn || todayAuditParis();
   const duration = findingForm?.delayEnabled && findingForm.category !== 'remark' ? { amount: Number(findingForm.amount), unit: findingForm.unit } : null;
   const dueOn = auditDueOnFromDuration(openedOn, duration);
+
+  function changeSelection(nextYear: number, nextSiteId: string) {
+    setYear(nextYear); setSiteId(nextSiteId); setFilter('all');
+    if (hasAuditLink) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('audit');
+      setSearchParams(nextParams, { replace: true });
+    }
+  }
 
   async function refreshAfterSave(success: string) {
     setMessage(success);
@@ -121,7 +136,7 @@ function DocumentaryWorkspace({ kind, context }: { kind: DocumentaryAuditKind; c
   function startAuditEditor(existing?: DocumentaryAudit) {
     if (!data || !site || !canManage) return;
     setError(''); setMessage('');
-    setAuditEditor(existing ? { ...existing } : { id: crypto.randomUUID(), companyId: data.companyId, kind, siteId: site.id, year, title: `${DOCUMENTARY_AUDIT_LABELS[kind]} · ${site.name} · ${year}`, auditedOn: null, auditorName: context.currentPerson ? `${context.currentPerson.firstName} ${context.currentPerson.lastName}`.trim() : '', files: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    setAuditEditor(existing ? { ...existing } : { id: crypto.randomUUID(), companyId: data.companyId, kind, siteId: site.id, year, title: `${DOCUMENTARY_AUDIT_LABELS[kind]} · ${site.name} · ${year}`, plannedOn: null, auditedOn: null, auditorName: context.currentPerson ? `${context.currentPerson.firstName} ${context.currentPerson.lastName}`.trim() : '', files: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   }
   async function submitAudit(event: FormEvent) {
     event.preventDefault();
@@ -222,18 +237,26 @@ function DocumentaryWorkspace({ kind, context }: { kind: DocumentaryAuditKind; c
   const dialogFooter = (close: () => void, label: string, disabled = false) => <div className="da-dialog-actions"><button type="button" className="is-secondary" disabled={busy || filesValidating} onClick={close}>Annuler</button><button type="submit" disabled={busy || filesValidating || disabled}>{busy ? 'Enregistrement…' : filesValidating ? 'Vérification des fichiers…' : label}</button></div>;
   const dialogError = error ? <p className="da-alert is-error" role="alert">{error}</p> : null;
 
+  if (!loading && data && hasAuditLink && !linkedAudit) return <div className="documentary-audits-page">
+    <header className="da-header"><div><p className="da-eyebrow">Audits</p><h1>{DOCUMENTARY_AUDIT_LABELS[kind]}</h1></div></header>
+    <section className="da-empty"><FolderOpen size={38} /><p role="alert">L’audit demandé n’est pas accessible dans cette rubrique.</p><button type="button" disabled={busy || filesValidating} onClick={() => {
+      setAuditEditor(null); setUploadAudit(null); setFindingForm(null); setTreatmentFinding(null); setFiles([]); setFilter('all'); setError(''); setMessage('');
+      const nextParams = new URLSearchParams(searchParams); nextParams.delete('audit'); setSearchParams(nextParams, { replace: true });
+    }}>Retour aux dossiers</button></section>
+  </div>;
+
   return <div className="documentary-audits-page">
-    <header className="da-header"><div><p className="da-eyebrow">Audits</p><h1>{DOCUMENTARY_AUDIT_LABELS[kind]}</h1><p>Documents et suivi des écarts, par navire et par année.</p></div><label className="da-year">Année<select aria-label="Année des audits" value={year} disabled={busy} onChange={(event) => setYear(Number(event.target.value))}>{years.map((item) => <option key={item} value={item}>{item}</option>)}</select></label></header>
+    <header className="da-header"><div><p className="da-eyebrow">Audits</p><h1>{DOCUMENTARY_AUDIT_LABELS[kind]}</h1><p>Documents et suivi des écarts, par navire et par année.</p></div><label className="da-year">Année<select aria-label="Année des audits" value={year} disabled={busy} onChange={(event) => changeSelection(Number(event.target.value), site?.id || '')}>{years.map((item) => <option key={item} value={item}>{item}</option>)}</select></label></header>
     {error && !auditEditor && !uploadAudit && !findingForm && !treatmentFinding && <p className="da-alert is-error" role="alert"><AlertCircle size={16} />{error}</p>}
     {message && <p className="da-alert is-success" role="status"><CheckCircle2 size={16} />{message}</p>}
     {loading ? <p className="da-loading" role="status">Chargement des dossiers d’audit…</p> : !vessels.length ? <section className="da-empty"><Ship size={35} /><h2>Aucun navire disponible</h2><p>Les dossiers apparaîtront ici pour les navires auxquels vous avez accès.</p></section> : <div className="da-workspace">
       <aside className="da-vessels" aria-label="Navires"><header><h2>Navires</h2><span>{vessels.length}</span></header><div className="da-vessel-list">{vessels.map((vessel) => {
-        const folder = data?.audits.find((item) => item.kind === kind && item.siteId === vessel.id && item.year === year);
+        const folder = scopedAudits.find((item) => item.siteId === vessel.id && item.year === year);
         const image = fleetIllustration(vessel);
-        return <button type="button" className="da-vessel-button" key={vessel.id} aria-pressed={vessel.id === site?.id} disabled={busy} onClick={() => { setSiteId(vessel.id); setFilter('all'); }}><span className="da-vessel-image">{image ? <img src={image} alt="" /> : <Ship size={21} />}</span><span><strong>{vessel.name}</strong><small>{folder ? `${folder.files.length} document${folder.files.length > 1 ? 's' : ''} · ${data?.findings.filter((finding) => finding.auditId === folder.id).length || 0} écart(s)` : 'Dossier à créer'}</small></span></button>;
+        return <button type="button" className="da-vessel-button" key={vessel.id} aria-pressed={vessel.id === site?.id} disabled={busy} onClick={() => changeSelection(year, vessel.id)}><span className="da-vessel-image">{image ? <img src={image} alt="" /> : <Ship size={21} />}</span><span><strong>{vessel.name}</strong><small>{folder ? `${folder.files.length} document${folder.files.length > 1 ? 's' : ''} · ${data?.findings.filter((finding) => finding.auditId === folder.id).length || 0} écart(s)` : 'Dossier à créer'}</small></span></button>;
       })}</div></aside>
       <section className="da-detail">{audit ? <>
-        <header className="da-audit-header"><div><p className="da-audit-label">{site?.name} · {year}</p><h2>{audit.title}</h2><p>Audit : {dateLabel(audit.auditedOn)} · Auditeur : {audit.auditorName || 'Non renseigné'}</p></div><div className="da-header-actions">{canManage && <button type="button" className="is-secondary da-icon-button" aria-label="Modifier le dossier" title="Modifier le dossier" disabled={busy} onClick={() => startAuditEditor(audit)}><Pencil size={16} /></button>}<button type="button" className="is-secondary" disabled={busy} onClick={() => exportReport()}><Download size={15} />Exporter le rapport PDF</button></div></header>
+        <header className="da-audit-header"><div><p className="da-audit-label">{site?.name} · {year}</p><h2>{audit.title}</h2><p className="da-audit-dates"><span>Date prévue : <strong>{audit.plannedOn ? dateLabel(audit.plannedOn) : 'Non planifié'}</strong></span><span>Réalisé le : {dateLabel(audit.auditedOn)}</span><span>Auditeur : {audit.auditorName || 'Non renseigné'}</span></p></div><div className="da-header-actions">{canManage && <button type="button" className="is-secondary da-icon-button" aria-label="Modifier le dossier" title="Modifier le dossier" disabled={busy} onClick={() => startAuditEditor(audit)}><Pencil size={16} /></button>}<button type="button" className="is-secondary" disabled={busy} onClick={() => exportReport()}><Download size={15} />Exporter le rapport PDF</button></div></header>
         <nav className="da-tabs" aria-label="Contenu du dossier"><button type="button" aria-current={tab === 'documents' ? 'page' : undefined} onClick={() => setTab('documents')}>Documents <span>{audit.files.length}</span></button><button type="button" aria-current={tab === 'findings' ? 'page' : undefined} onClick={() => setTab('findings')}>Écarts <span>{auditFindings.length}</span></button></nav>
         {tab === 'documents' ? <section className="da-section"><div className="da-section-toolbar"><p>Les documents réunis dans ce dossier constituent l’audit.</p>{canManage && <button type="button" disabled={busy} onClick={() => { setError(''); setFiles([]); setUploadAudit(audit); }}><FilePlus2 size={16} />Ajouter des documents</button>}</div>{audit.files.length ? <FileList files={audit.files} busy={busy} onDownload={download} /> : <div className="da-empty"><FolderOpen size={31} /><h3>Aucun document pour cet audit</h3><p>Ajoutez le rapport et ses pièces complémentaires dans ce dossier annuel.</p></div>}</section> : <section className="da-section"><div className="da-section-toolbar"><label><span className="da-sr-only">Filtrer les écarts</span><select aria-label="Filtrer les écarts" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">Tous les écarts</option><option value="pending">Non clôturés</option>{categories.map((category) => <option key={category} value={category}>{DOCUMENTARY_FINDING_LABELS[category]}</option>)}</select></label>{canManage && <button type="button" disabled={busy} onClick={() => startFinding()}><Plus size={16} />Créer un écart</button>}</div>
           {displayedFindings.length ? <div className="da-finding-list">{displayedFindings.map((finding) => {
@@ -250,7 +273,12 @@ function DocumentaryWorkspace({ kind, context }: { kind: DocumentaryAuditKind; c
       </> : <section className="da-empty"><FolderOpen size={38} /><h2>{site?.name} · {year}</h2><h3>Aucun dossier d’audit pour cette année</h3><p>{canManage ? 'Créez le dossier, puis ajoutez les documents et les éventuels écarts de cet audit.' : 'Le dossier sera disponible dès sa création par un gestionnaire.'}</p>{canManage && <button type="button" disabled={busy} onClick={() => startAuditEditor()}><Plus size={16} />Créer le dossier</button>}</section>}</section>
     </div>}
     {auditEditor && <AppDialog title={data?.audits.some((item) => item.id === auditEditor.id) ? 'Modifier le dossier d’audit' : 'Créer le dossier d’audit'} description={`${DOCUMENTARY_AUDIT_LABELS[kind]} · ${vessels.find((item) => item.id === auditEditor.siteId)?.name} · ${auditEditor.year}`} isBusy={busy} onClose={() => setAuditEditor(null)} onSubmit={submitAudit} footer={dialogFooter(() => setAuditEditor(null), 'Enregistrer le dossier')}>
-      {dialogError}<div className="da-form-grid"><label className="da-full">Titre du dossier<input value={auditEditor.title} required maxLength={200} disabled={busy} onChange={(event) => setAuditEditor({ ...auditEditor, title: event.target.value })} /></label><label>Date de l’audit<input type="date" value={auditEditor.auditedOn || ''} disabled={busy} onChange={(event) => setAuditEditor({ ...auditEditor, auditedOn: event.target.value || null })} /></label><label>Auditeur<input value={auditEditor.auditorName} maxLength={200} disabled={busy} onChange={(event) => setAuditEditor({ ...auditEditor, auditorName: event.target.value })} /></label></div><p className="da-form-help">Le navire, l’année et le type d’audit identifient ce dossier. Les documents s’ajoutent une fois le dossier créé.</p>
+      {dialogError}<div className="da-form-grid">
+        <label className="da-full">Titre du dossier<input value={auditEditor.title} required maxLength={200} disabled={busy} onChange={(event) => setAuditEditor({ ...auditEditor, title: event.target.value })} /></label>
+        <label>Date prévue (facultative)<input type="date" value={auditEditor.plannedOn || ''} disabled={busy} onChange={(event) => setAuditEditor({ ...auditEditor, plannedOn: event.target.value || null })} /></label>
+        <label>Date de l’audit<input type="date" value={auditEditor.auditedOn || ''} disabled={busy} onChange={(event) => setAuditEditor({ ...auditEditor, auditedOn: event.target.value || null })} /></label>
+        <label className="da-full">Auditeur<input value={auditEditor.auditorName} maxLength={200} disabled={busy} onChange={(event) => setAuditEditor({ ...auditEditor, auditorName: event.target.value })} /></label>
+      </div><p className="da-form-help">Le navire, l’année et le type d’audit identifient ce dossier. Les documents s’ajoutent une fois le dossier créé. La date prévue inscrit l’audit dans le planning global ; laissez-la vide pour ne pas le planifier.</p>
     </AppDialog>}
     {uploadAudit && <AppDialog title="Ajouter des documents au dossier" description={uploadAudit.title} isBusy={busy || filesValidating} onClose={() => { setUploadAudit(null); setFiles([]); }} onSubmit={submitDocuments} footer={dialogFooter(() => { setUploadAudit(null); setFiles([]); }, 'Ajouter les documents', !files.length)}>{dialogError}<FilePicker files={files} onChange={setFiles} onError={setError} onValidatingChange={setFilesValidating} busy={busy} label="Documents de l’audit" /></AppDialog>}
     {findingForm && <AppDialog title={findingForm.existing ? 'Modifier le constat' : 'Créer un écart'} description={audit?.title} size="lg" isBusy={busy || filesValidating} onClose={() => { setFindingForm(null); setFiles([]); }} onSubmit={submitFinding} footer={dialogFooter(() => { setFindingForm(null); setFiles([]); }, 'Enregistrer l’écart')}>
