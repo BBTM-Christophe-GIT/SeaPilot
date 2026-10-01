@@ -3,7 +3,7 @@ import { loadAppEnv } from '../../lib/env';
 
 export const DRIVE_MODULES = { procedures: 'Procedures', procedurePdfs: 'Procedures PDF', disciplinary: 'Sanctions Disciplinaires', chemicals: 'Produits Chimiques', humanResources: 'Ressources Humaines', projects: 'Projet' } as const;
 export type DriveModule = keyof typeof DRIVE_MODULES;
-export const LOCAL_DRIVE_DOWNLOAD_VERSION = '2.6.0';
+export const LOCAL_DRIVE_DOWNLOAD_VERSION = '2.7.0';
 export interface LocalDriveConnection { url: string; expiresAt: number; version?: string }
 export interface LocalDriveStatus { root: string | null; version: string; collaborators?: number; exists?: boolean; cancelled?: boolean }
 let connection: LocalDriveConnection | null = null;

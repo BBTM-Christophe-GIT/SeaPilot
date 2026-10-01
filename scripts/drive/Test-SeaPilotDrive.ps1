@@ -77,6 +77,55 @@ $setupDefault = Join-Path $testRoot 'default\SeaPilot'
 $setupCustom = Join-Path $testRoot 'custom\SeaPilot'
 $setupMissing = Join-Path $testRoot 'missing\SeaPilot'
 New-Item -ItemType Directory -Path $setupDefault,$setupCustom | Out-Null
+# Drive for desktop exposes shared-folder shortcuts as .lnk files. Their
+# target IDs and mount letters differ per account; read the real Shell target.
+$shortcutHome = Join-Path $testRoot 'shared-account'
+$mirroredHome = Join-Path $testRoot 'mirrored-account'
+New-Item -ItemType Directory -Path $shortcutHome,$mirroredHome | Out-Null
+function Make-FolderShortcut([string]$Path, [string]$Target, [string]$Arguments = '') {
+    $shortcutShell = New-Object -ComObject WScript.Shell
+    $shortcutLink = $null
+    try {
+        $shortcutLink = $shortcutShell.CreateShortcut($Path)
+        $shortcutLink.TargetPath = $Target
+        $shortcutLink.Arguments = $Arguments
+        $shortcutLink.Save()
+    } finally {
+        if ($shortcutLink) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcutLink) | Out-Null }
+        [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcutShell) | Out-Null
+    }
+}
+$sharedShortcut = Join-Path $shortcutHome 'SeaPilot.lnk'
+Make-FolderShortcut $sharedShortcut $setupCustom
+if ([SeaPilotDrive]::ValidateRoot($sharedShortcut) -ne $setupCustom -or [SeaPilotDrive]::ValidateRoot((Join-Path $shortcutHome 'SeaPilot')) -ne $setupCustom) { throw 'Shared Drive root shortcut did not resolve.' }
+Make-FolderShortcut (Join-Path $mirroredHome 'Mon Drive.lnk') $shortcutHome
+Make-FolderShortcut (Join-Path $mirroredHome 'My Drive.lnk') $shortcutHome
+foreach ($driveName in @('Mon Drive', 'My Drive')) {
+    if ([SeaPilotDrive]::DetectRoot($null, (Join-Path $mirroredHome ($driveName + '\SeaPilot'))) -ne $setupCustom) { throw 'Mirrored Drive parent shortcut did not resolve.' }
+}
+$badShortcutHome = Join-Path $testRoot 'bad-shortcuts'
+$fileTargetHome = Join-Path $testRoot 'file-target'
+New-Item -ItemType Directory -Path $badShortcutHome,$fileTargetHome | Out-Null
+$fileTarget = Join-Path $fileTargetHome 'SeaPilot'
+[IO.File]::WriteAllText($fileTarget, 'A file is not a Drive folder.')
+$badShortcut = Join-Path $badShortcutHome 'SeaPilot.lnk'
+foreach ($target in @($setupMissing, $testRoot, $fileTarget, '\\untrusted-server\SeaPilot')) {
+    Make-FolderShortcut $badShortcut $target
+    $shortcutRejected = $false
+    try { [SeaPilotDrive]::ValidateRoot($badShortcut) | Out-Null } catch { $shortcutRejected = $true }
+    if (!$shortcutRejected) { throw "Invalid shared folder target was accepted: $target" }
+}
+Make-FolderShortcut $badShortcut $setupCustom '--unexpected-argument'
+$shortcutRejected = $false
+try { [SeaPilotDrive]::ValidateRoot($badShortcut) | Out-Null } catch { $shortcutRejected = $true }
+if (!$shortcutRejected) { throw 'A Shell shortcut with command arguments was accepted.' }
+$cyclicShortcut = Join-Path $badShortcutHome 'cycle.lnk'
+Make-FolderShortcut $badShortcut $cyclicShortcut
+Make-FolderShortcut $cyclicShortcut $badShortcut
+$shortcutRejected = $false
+try { [SeaPilotDrive]::ValidateRoot($badShortcut) | Out-Null } catch { $shortcutRejected = $true }
+if (!$shortcutRejected) { throw 'A cyclic Shell shortcut was accepted.' }
+Write-Output 'PASS: real shared-folder Shell shortcuts, Mon Drive/My Drive parent shortcuts, missing targets, wrong folders, remote paths, arguments and cycles.'
 $setupData = [Collections.Generic.Dictionary[string,object]]::new()
 $setupData['action']='status'
 $setupFixture = New-Object DriveSetupFixture
@@ -105,6 +154,9 @@ if (!$setupRejected -or $setupFixture.Root -ne $setupMissing) { throw 'Preparati
 $setupFixture.FailPreparation=$false
 $setupResult = [SeaPilotDriveBridge]::ExecuteSetup($setupData,$setupFixture.Remote,$setupFixture.GetRoot,$setupFixture.Save,$setupFixture.Pick,$setupMissing)
 if (!$setupResult.exists -or $setupFixture.Root -ne $setupCustom -or $setupFixture.Saves -ne 2) { throw 'Folder selection did not configure and verify the root.' }
+$setupFixture.Selection = $sharedShortcut
+$setupResult = [SeaPilotDriveBridge]::ExecuteSetup($setupData,$setupFixture.Remote,$setupFixture.GetRoot,$setupFixture.Save,$setupFixture.Pick,$setupMissing)
+if (!$setupResult.exists -or $setupFixture.Root -ne $setupCustom -or $setupResult.root -ne $setupCustom -or $setupFixture.Saves -ne 3) { throw 'Shared folder selection did not save the resolved local folder.' }
 $setupFixture.Admin=$false
 $inspections=$setupFixture.Inspections; $picks=$setupFixture.Picks
 $setupRejected=$false
@@ -409,7 +461,7 @@ try {
     for ($attempt = 0; $attempt -lt 20; $attempt++) {
         try { $health = Invoke-RestMethod -Uri "$endpoint/health" -Headers $allowedHeaders -TimeoutSec 2; $ready = $true; break } catch { $healthError = $_.Exception.Message; Start-Sleep -Milliseconds 150 }
     }
-    if (!$ready -or $health.version -ne '2.6.0' -or $health.nonce -ne $nonce) { throw "Native bridge failed to start (process exited: $($nativeProcess.HasExited)): $healthError" }
+    if (!$ready -or $health.version -ne '2.7.0' -or $health.nonce -ne $nonce) { throw "Native bridge failed to start (process exited: $($nativeProcess.HasExited)): $healthError" }
     foreach ($testUri in @("http://127.0.0.1:$port/wrong/health", "$endpoint/request")) {
         $denied = $false
         try { Invoke-RestMethod -Uri $testUri -Method Post -ContentType 'application/json' -Body '{}' -Headers $allowedHeaders -TimeoutSec 5 | Out-Null } catch { $denied = $true }
@@ -441,7 +493,7 @@ try {
             if (!$ready) { throw 'Installed launcher did not start.' }
             $replacement = Install-SeaPilotDriveBinary -InstallFolder $installTestFolder -Compiler $compiler -Sources $sources
             if ($replacement -eq $published -or !(Test-Path -LiteralPath $replacement)) { throw 'Update did not publish a separate executable.' }
-            if ((Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2).version -ne '2.6.0') { throw 'Update interrupted the running launcher.' }
+            if ((Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2).version -ne '2.7.0') { throw 'Update interrupted the running launcher.' }
             $invalidSource = Join-Path $testRoot 'invalid.cs'
             Set-Content -LiteralPath $invalidSource -Value 'This is an intentionally invalid compiler fixture'
             $failed = $false

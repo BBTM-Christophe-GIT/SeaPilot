@@ -56,4 +56,18 @@ describe('Planning active display filter', () => {
     expect(buildPlanningCrewRows(data, days, filters, events, { ...options, pendingBoardRowIds: new Set([10]) })
       .some((row) => row.personId === 6)).toBe(true);
   });
+
+  it('reveals only the explicitly added board when its existing events are all past', () => {
+    const data = { ...overview, boardRows: [{ id: 10, vesselId: 1, personId: 1,
+      watchGroup: 'Bordée 1', functionLabel: 'Matelot', createdAt: '2026-09-26T10:00:00Z' }] };
+    const history = [event(1, '2026-09-21', '2026-09-25'),
+      { ...event(1, '2026-09-21', '2026-09-25'), board: 'Bordée 2' }];
+    const options = { activeFrom: '2026-09-26', pendingBoardRowIds: new Set([10]) };
+    const rows = buildPlanningCrewRows(data, days, filters, history, options).filter((row) => row.personId === 1);
+    expect(rows).toEqual([expect.objectContaining({ board: 'Bordée 1', events: [history[0]] })]);
+    expect(buildPlanningCrewRows(data, days, { ...filters, personName: 'Marin 2 TEST' }, history, options)
+      .some((row) => row.personId === 1)).toBe(false);
+    expect(buildPlanningCrewRows({ ...data, people: [{ ...data.people[0], departedOn: '2026-08-31' }] },
+      days, filters, history, options).some((row) => row.personId === 1)).toBe(false);
+  });
 });

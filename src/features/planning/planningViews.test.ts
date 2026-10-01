@@ -68,6 +68,19 @@ describe('planning P0.2 views', () => {
       .map((lane) => lane.label)).toEqual(['SUROIT']);
   });
 
+  it('keeps the vessel header for a pending board row without any visible event', () => {
+    const data = { ...overview, assignments: [], periods: [], projects: [], boardRows: [{
+      id: 901, vesselId: 2, personId: 10, watchGroup: 'Bordée 1', functionLabel: 'Matelot', createdAt: '',
+    }] };
+    const pending = new Set([901]);
+    expect(buildPlanningFleetLanes(data, range, emptyFilters, []).map((lane) => lane.label)).toEqual([]);
+    expect(buildPlanningFleetLanes(data, range, emptyFilters, [], false, pending))
+      .toEqual([expect.objectContaining({ vesselId: 2, label: 'SUROIT', assignments: [], projects: [] })]);
+    for (const filters of [{ vesselName: 'COTENTIN' }, { personName: 'Autre MARIN' }, { status: 'En Mer' }]) {
+      expect(buildPlanningFleetLanes(data, range, { ...emptyFilters, ...filters }, [], false, pending)).toEqual([]);
+    }
+  });
+
   it('filters multi-vessel projects to the selected vessel and retains historical project lanes', () => {
     const source = { ...overview, projects: [{ ...overview.projects[0], vesselIds: [1, 2, 99], vesselNames: ['COTENTIN', 'SUROIT', 'HISTORIQUE'] }] };
     const lanes = buildPlanningProjectLanes(source, range, { ...emptyFilters, vesselName: 'SUROIT' });
