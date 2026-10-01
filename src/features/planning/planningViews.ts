@@ -116,6 +116,7 @@ export function planningCrewEventType(event: Pick<PlanningCrewEvent, 'status' | 
   const status = normalizePlanningStatus(event.status);
   if (status === 'Repos') return 'rest';
   if (status === 'Vacance') return 'leave';
+  if (status === 'RTT') return 'rtt';
   if (status === 'Formation') return 'training';
   if (status === 'Arrêt de travail') return 'unavailability';
   return 'assignment';
@@ -126,6 +127,7 @@ export function planningCrewEventTypeLabel(type: string): string {
     assignment: 'Embarquement / affectation',
     rest: 'Repos',
     leave: 'Congés',
+    rtt: 'RTT',
     training: 'Formation',
     unavailability: 'Indisponibilité',
     annual_review: 'Entretien professionnel',

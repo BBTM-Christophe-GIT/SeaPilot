@@ -12,7 +12,7 @@ export interface PlanningAbsenceFormValue {
 }
 
 type AbsencePerson = Pick<PlanningPerson, 'id' | 'firstName' | 'lastName' | 'functionLabel'>;
-const ABSENCE_TYPES: PlanningAbsenceType[] = ['leave', 'illness', 'training', 'medical_visit', 'recovery'];
+const ABSENCE_TYPES: PlanningAbsenceType[] = ['leave', 'rtt', 'illness', 'training', 'medical_visit', 'recovery'];
 
 export function PlanningAbsenceFormFields({ value, people, personalOnly, isSaving, onChange }: {
   value: PlanningAbsenceFormValue;

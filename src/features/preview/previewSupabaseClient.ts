@@ -3,6 +3,8 @@ import { ORG_HIERARCHY_DEMO } from '../organigramme/organigrammeFixtures';
 import type { OrgRank, OrgSupport } from '../organigramme/organigrammeModel';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { PREVIEW_LINK_CATEGORIES, PREVIEW_USEFUL_LINKS } from '../usefulLinks/usefulLinksPreview';
+import { createPlanningPreviewOverview } from '../planning/planningPreviewData';
+import { todayPlanningDate } from '../planning/planningDates';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
@@ -1833,6 +1835,16 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'get_planning_absence_balance_context') {
+    const planningPerson = createPlanningPreviewOverview(todayPlanningDate()).people.find((person) => person.id === Number(args.p_person_id));
+    const person = planningPerson ? { id: planningPerson.id, first_name: planningPerson.firstName, last_name: planningPerson.lastName, hired_on: planningPerson.hiredOn, departed_on: planningPerson.departedOn, active: planningPerson.active } : previewRows('people').find((row) => Number(row.id) === Number(args.p_person_id));
+    if (!person) return createPreviewQuery({ data: null, error: { message: 'Personne de démonstration introuvable.' } });
+    return createPreviewQuery({ data: {
+      kind: ['Christophe MINASSIAN', 'Sophie HAMEL'].includes(`${person.first_name} ${person.last_name}`) ? 'leave_rtt' : 'crew',
+      person: { id: person.id, first_name: person.first_name, last_name: person.last_name, hired_on: person.hired_on, departed_on: person.departed_on, active: person.active },
+      counter_periods: [], absences: [], crew_checkpoints: [], crew_sources: { assignments: [], periods: [], days: [] },
+    }, error: null });
+  }
   if (functionName === 'projects_set_favorite') {
     const projectId = Number(args.target_project);
     const next = previewRows('project_favorites').filter((row) => row.project_id !== projectId).map((row) => Number(row.project_id));

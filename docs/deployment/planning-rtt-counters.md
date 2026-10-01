@@ -1,0 +1,35 @@
+# Planning — demandes RTT et droits par période
+
+Le type **RTT** rejoint les demandes d’absences. Il suit les mêmes règles de demande, de validation, de conflit et d’annulation que les congés. Le déplacement d’une absence approuvée reste réservé à l’Admin et concerne désormais les congés et les RTT. Les décisions RTT créent les notifications personnelles « RTT acceptés » ou « RTT refusés », avec les règles de destinataire et de déduplication existantes.
+
+Christophe MINASSIAN et Sophie HAMEL disposent chacun de deux compteurs indépendants : **Congés** et **RTT**. La migration retrouve leurs dossiers dans la société BBTM par leur prénom et leur nom ; aucun identifiant de personne n’est codé en dur. Elle ajoute leur éligibilité aux compteurs, sans créer de droits ni de solde initial fictif.
+
+## Droits et décompte
+
+Pour chaque compteur, la valeur saisie représente le **total de droits d’une période**, avec ses dates de début et de fin inclusives. Le solde disponible correspond à ces droits moins toutes les journées d’absences approuvées du même type dans cette période. Les jours posés sont les dates locales distinctes du lundi au vendredi, hors jours fériés nationaux du cas général. La fin d’une absence est exclusive ; une fin à minuit ne compte donc pas la journée suivante. Les demandes en attente servent à la projection et ne diminuent pas le solde validé. Un solde négatif déclenche un avertissement sans bloquer la demande.
+
+Les droits acceptent deux décimales, de 0 inclus à 100 000 exclus. Les dates vont du 1er janvier 1900 au 31 décembre 2100 et une période couvre au maximum 3 660 journées. Deux périodes d’un même compteur et d’une même personne ne peuvent pas se chevaucher, y compris sur leur journée commune de frontière. Les périodes Congés et RTT peuvent partager les mêmes dates. La modification conserve les bornes, le type et la personne ; enregistrer à nouveau les mêmes bornes remplace uniquement le total de droits. Aucune suppression par le client n’est accordée.
+
+Les journées et soldes calculés restent dérivés dans `planningAbsenceBalance.ts`. Les tables ne stockent pas un second décompte susceptible de diverger des demandes approuvées. Les autres personnes utilisent le calcul équipage existant, à partir de leur dernière référence de fin de journée passée. Le formulaire affiche leur solde d’aujourd’hui, même lors de la modification d’une demande historique. Sans référence passée, le solde reste à initialiser.
+
+Une journée ouvrée partiellement couverte compte pour une journée entière ; aucun décompte par demi-journée n’est configuré. Le calendrier exclut les onze jours fériés nationaux du [cas général publié par Service Public](https://www.service-public.gouv.fr/particuliers/vosdroits/F2405), sans jours locaux supplémentaires. Une annulation, une suppression ou une reclassification de demande recalcule automatiquement les compteurs à la prochaine ouverture.
+
+## Base de données et accès
+
+Migration : `20261001140235_planning_rtt_and_leave_counter_periods.sql`, appliquée à Supabase avant le déploiement du frontend.
+
+`planning_leave_counter_people` désigne les personnes concernées. `planning_leave_counter_periods` conserve les droits, les bornes et l’auteur de la dernière saisie. Les deux tables utilisent RLS. Admin, Direction et Armement peuvent gérer les droits de leur société active. Marin et Capitaine peuvent lire uniquement leurs propres compteurs, sans pouvoir modifier les droits par RPC ou par accès direct. Toute lecture exige une appartenance active à la société, un rôle autorisé à lire le Planning et un rôle rendant le module Planning visible. Les autorisations de plusieurs rôles se cumulent dans la même société.
+
+`save_planning_leave_counter_period(p_person_id, p_counter_type, p_starts_on, p_ends_on, p_entitlement)` est une RPC `SECURITY INVOKER`. Un verrou transactionnel par société/personne/type sérialise les écritures ; le trigger interdit les chevauchements et les modifications des bornes même par écriture directe. Le serveur définit l’auteur et la date de modification. Les erreurs `23P01` indiquent un chevauchement, `22023` une saisie invalide et `42501` un refus d’accès.
+
+`get_planning_absence_balance_context(p_person_id)` renvoie un objet JSON limité à la personne sélectionnée : identité d’affichage et bornes d’emploi, périodes de droits, types/dates/statuts/révisions de ses absences, puis références et sources minimales du calcul équipage si nécessaire. Cette RPC `SECURITY DEFINER` possède un contrôle explicite d’authentification, de société active, de droits Planning et de gestionnaire ou propriétaire. Aucun rôle anonyme ne peut l’appeler. Elle n’inclut aucun motif, commentaire, identité de demandeur ou validateur, donnée d’identité administrative ou document RH. Pour les deux compteurs Congés/RTT, les listes équipage sont vides.
+
+Pour l’équipage, les sources sont limitées à la période de la dernière référence passée jusqu’à aujourd’hui ; une référence future ne supprime pas les sources du solde courant. Les périodes et journées historiques sans identifiant de personne sont rapprochées uniquement par nom complet normalisé exact, dans l’ordre prénom/nom ou nom/prénom et dans la même société. Les journées de localisation navire sont exclues. Les tableaux JSON sont agrégés côté serveur et ne subissent pas la limite de pagination des lectures de tables.
+
+## Vérification
+
+`supabase/tests/planning_leave_counter_periods_test.sql` utilise des sujets Auth indépendants pour les cinq profils réels et une seconde société. Le script vérifie les deux types de droits, la précision, la mise à jour à bornes identiques, les chevauchements, les restrictions de propriétaire/société/module, le cumul de rôles, les références et sources équipage minimales, l’absence de droits fictifs pour les autres personnes, les demandes RTT, les notifications et les déplacements approuvés réservés à l’Admin. Il exécute toutes ses données dans `BEGIN … ROLLBACK` et ne laisse aucun dossier ni solde de test.
+
+Le frontend couvre séparément les jours ouvrés et jours fériés, les frontières de périodes, les dates locales et fins exclusives, la déduplication, les demandes validées/en attente, le calcul équipage existant et l’intégration des profils.
+
+La fixture SQL a passé sur Supabase le 1er octobre 2026. Le contrôle après rollback confirme deux personnes éligibles, aucune période initialisée et aucun résidu Auth, personne ou société de test. Les advisors confirment la RLS des nouvelles tables. Le [signalement des RPC `SECURITY DEFINER` accessibles aux utilisateurs connectés](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable) concerne ici la lecture minimale intentionnelle, protégée par les contrôles et fixtures ci-dessus. L’index de l’auteur, qui couvre sa clé étrangère, est signalé comme encore inutilisé immédiatement après création.

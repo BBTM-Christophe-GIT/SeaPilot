@@ -3,6 +3,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { AppDialog } from '../../components/AppDialog';
 import type { CurrentPersonSummary } from '../profiles/profileQueries';
 import { PlanningAbsenceFormFields, type PlanningAbsenceFormValue } from './PlanningAbsenceForm';
+import { PlanningAbsenceBalances } from './PlanningAbsenceBalances';
 import { todayPlanningDate } from './planningDates';
 import { planningErrorMessage } from './planningErrors';
 import { isPlanningPersonEmployedOn } from './planningModel';
@@ -10,7 +11,7 @@ import type { PlanningDateRange } from './planningP12';
 import { savePlanningAbsence } from './planningP12Queries';
 import type { PlanningPerson } from './planningQueries';
 
-export function PlanningAbsenceRequestDialog({ client, people, currentPerson, personalOnly, range, onClose, onSaved }: {
+export function PlanningAbsenceRequestDialog({ client, people, currentPerson, personalOnly, range, onClose, onSaved, canManageBalances = false }: {
   client: SupabaseClient;
   people: PlanningPerson[];
   currentPerson: CurrentPersonSummary | null;
@@ -18,6 +19,7 @@ export function PlanningAbsenceRequestDialog({ client, people, currentPerson, pe
   range: PlanningDateRange;
   onClose: () => void;
   onSaved: () => Promise<void>;
+  canManageBalances?: boolean;
 }) {
   const [form, setForm] = useState<PlanningAbsenceFormValue>(() => ({
     personId: '', absenceType: 'leave',
@@ -26,6 +28,7 @@ export function PlanningAbsenceRequestDialog({ client, people, currentPerson, pe
     reason: '',
   }));
   const [isSaving, setIsSaving] = useState(false);
+  const [isEditingBalances, setIsEditingBalances] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const today = todayPlanningDate();
   const options = useMemo(() => {
@@ -39,7 +42,7 @@ export function PlanningAbsenceRequestDialog({ client, people, currentPerson, pe
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isSaving || !effectiveForm.personId) return;
+    if (isSaving || isEditingBalances || !effectiveForm.personId) return;
     setIsSaving(true);
     setError(null);
     try {
@@ -55,8 +58,8 @@ export function PlanningAbsenceRequestDialog({ client, people, currentPerson, pe
 
   return <div className="planning-absence-request">
     <AppDialog
-      description="Les dates sont affichées en heure locale et conservées en UTC."
-      isBusy={isSaving}
+      description="Consultez le solde de la personne et choisissez les dates de sa demande."
+      isBusy={isSaving || isEditingBalances}
       onClose={onClose}
       onSubmit={(event) => void submit(event)}
       size="lg"
@@ -65,10 +68,11 @@ export function PlanningAbsenceRequestDialog({ client, people, currentPerson, pe
       <div className="planning-p12-section">
         {error ? <p className="form-error" role="alert">{error}</p> : null}
         <div className="planning-p12-form">
-          <PlanningAbsenceFormFields isSaving={isSaving} onChange={setForm} people={options} personalOnly={personalOnly} value={effectiveForm} />
+          <PlanningAbsenceFormFields isSaving={isSaving || isEditingBalances} onChange={setForm} people={options} personalOnly={personalOnly} value={effectiveForm} />
+          <PlanningAbsenceBalances client={client} personId={effectiveForm.personId ? Number(effectiveForm.personId) : null} absenceType={effectiveForm.absenceType} startsAt={effectiveForm.startsAt} endsAt={effectiveForm.endsAt} absenceId={effectiveForm.id} canManage={canManageBalances && !personalOnly && !isSaving} onEditingChange={setIsEditingBalances} />
           <footer>
-            <button className="is-secondary" disabled={isSaving} onClick={onClose} type="button">Annuler</button>
-            <button disabled={isSaving || !effectiveForm.personId} type="submit">{isSaving ? 'Envoi en cours…' : 'Envoyer la demande'}</button>
+            <button className="is-secondary" disabled={isSaving || isEditingBalances} onClick={onClose} type="button">Annuler</button>
+            <button disabled={isSaving || isEditingBalances || !effectiveForm.personId} type="submit">{isSaving ? 'Envoi en cours…' : 'Envoyer la demande'}</button>
           </footer>
         </div>
       </div>

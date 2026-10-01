@@ -3,10 +3,13 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlanningAbsenceRequestDialog } from './PlanningAbsenceRequestDialog';
+import type { PlanningAbsenceBalanceContext } from './planningAbsenceBalance';
+import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveCounterPeriod } from './planningAbsenceBalanceQueries';
 import { savePlanningAbsence } from './planningP12Queries';
 import type { PlanningPerson } from './planningQueries';
 
 vi.mock('./planningP12Queries', () => ({ savePlanningAbsence: vi.fn() }));
+vi.mock('./planningAbsenceBalanceQueries', () => ({ fetchPlanningAbsenceBalanceContext: vi.fn(), savePlanningLeaveCounterPeriod: vi.fn() }));
 vi.mock('./planningDates', async (importOriginal) => ({
   ...await importOriginal<typeof import('./planningDates')>(),
   todayPlanningDate: () => '2026-09-10',
@@ -15,6 +18,16 @@ const people: PlanningPerson[] = [
   { id: 10, firstName: 'Anne', lastName: 'MARTIN', functionLabel: 'Capitaine', gradeLabel: '', roleLabel: '', contractType: 'CDI', hiredOn: '', departedOn: '', active: true },
   { id: 11, firstName: 'Paul', lastName: 'DURAND', functionLabel: 'Matelot', gradeLabel: '', roleLabel: '', contractType: 'CDI', hiredOn: '', departedOn: '', active: true },
 ];
+function balanceContext(personId: number, staff = false): PlanningAbsenceBalanceContext {
+  return {
+    kind: staff ? 'leave_rtt' : 'crew', person: people.find((person) => person.id === personId)!,
+    counterPeriods: staff ? [
+      { id: 1, counterType: 'leave', startsOn: '2026-01-01', endsOn: '2026-12-31', entitlement: 25 },
+      { id: 2, counterType: 'rtt', startsOn: '2026-01-01', endsOn: '2026-12-31', entitlement: 8 },
+    ] : [],
+    absences: [], crewCheckpoints: [], crewSources: { assignments: [], periods: [], days: [] },
+  };
+}
 function props() {
   return {
     client: {} as SupabaseClient,
@@ -25,7 +38,12 @@ function props() {
 }
 
 describe('dedicated leave request dialog', () => {
-  beforeEach(() => { vi.clearAllMocks(); vi.mocked(savePlanningAbsence).mockResolvedValue(21); });
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(savePlanningAbsence).mockResolvedValue(21);
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockImplementation(async (_client, personId) => balanceContext(personId));
+    vi.mocked(savePlanningLeaveCounterPeriod).mockResolvedValue(undefined);
+  });
 
   it.each(['admin', 'marin', 'capitaine'])('defaults to the connected %s and sends only the request form', async (role) => {
     const user = userEvent.setup();
@@ -54,9 +72,12 @@ describe('dedicated leave request dialog', () => {
     const { rerender } = render(<PlanningAbsenceRequestDialog {...input} people={[]} currentPerson={null} />);
     expect(screen.getByLabelText('Marin')).toHaveValue('');
     expect(screen.getByRole('button', { name: 'Envoyer la demande' })).toBeDisabled();
+    expect(screen.queryByRole('region', { name: 'Soldes et droits' })).not.toBeInTheDocument();
+    expect(fetchPlanningAbsenceBalanceContext).not.toHaveBeenCalled();
     rerender(<PlanningAbsenceRequestDialog {...input} people={[]} />);
     expect(screen.getByLabelText('Marin')).toHaveValue('11');
     expect(screen.getByRole('option', { name: /Paul DURAND/ })).toBeInTheDocument();
+    await waitFor(() => expect(fetchPlanningAbsenceBalanceContext).toHaveBeenCalledWith(input.client, 11));
   });
 
   it('preserves an explicit manager selection after a profile refresh', async () => {
@@ -132,5 +153,88 @@ describe('dedicated leave request dialog', () => {
     await user.click(screen.getByRole('button', { name: 'Annuler' }));
     expect(input.onClose).toHaveBeenCalledOnce();
     expect(savePlanningAbsence).not.toHaveBeenCalled();
+  });
+
+  it('shows both balances and sends a RTT request for the selected person', async () => {
+    const user = userEvent.setup();
+    const input = props();
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValue(balanceContext(11, true));
+    render(<PlanningAbsenceRequestDialog {...input} />);
+    await screen.findByLabelText('Compteur Congés');
+    await user.selectOptions(screen.getByLabelText('Type'), 'rtt');
+    const rtt = screen.getByLabelText('Compteur RTT');
+    const remaining = within(rtt).getByText('Après validation', { selector: 'dt' }).nextElementSibling;
+    expect(remaining).toHaveTextContent('7 j');
+    expect(screen.queryByRole('button', { name: /les droits/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Envoyer la demande' }));
+    await waitFor(() => expect(input.onClose).toHaveBeenCalledOnce());
+    expect(savePlanningAbsence).toHaveBeenCalledWith(input.client, expect.objectContaining({ personId: 11, absenceType: 'rtt' }));
+  });
+
+  it('edits rights without sending or dismissing the absence request and reloads the saved balance', async () => {
+    const user = userEvent.setup();
+    const input = props();
+    const context = balanceContext(11, true);
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValue(context);
+    render(<PlanningAbsenceRequestDialog {...input} canManageBalances />);
+    await screen.findByRole('button', { name: 'Modifier les droits RTT' });
+    await user.click(screen.getByRole('button', { name: 'Modifier les droits RTT' }));
+    expect(screen.getByRole('button', { name: 'Envoyer la demande' })).toBeDisabled();
+    expect(screen.getByLabelText('Marin')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Fermer' })).toBeDisabled();
+    const amount = screen.getByLabelText('Total des droits (jours)');
+    await user.clear(amount);
+    await user.type(amount, '12{Enter}');
+    expect(savePlanningAbsence).not.toHaveBeenCalled();
+    expect(savePlanningLeaveCounterPeriod).not.toHaveBeenCalled();
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValue({ ...context, counterPeriods: context.counterPeriods.map((period) => period.counterType === 'rtt' ? { ...period, entitlement: 12 } : period) });
+    await user.click(screen.getByRole('button', { name: 'Enregistrer les droits' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Envoyer la demande' })).toBeEnabled());
+    expect(savePlanningLeaveCounterPeriod).toHaveBeenCalledWith(input.client, { personId: 11, counterType: 'rtt', startsOn: '2026-01-01', endsOn: '2026-12-31', entitlement: 12 });
+    await waitFor(() => expect(within(screen.getByLabelText('Compteur RTT')).getByText('Droits', { selector: 'dt' }).nextElementSibling).toHaveTextContent('12 j'));
+    expect(fetchPlanningAbsenceBalanceContext).toHaveBeenCalledTimes(2);
+    expect(savePlanningAbsence).not.toHaveBeenCalled();
+    expect(input.onClose).not.toHaveBeenCalled();
+    expect(input.onSaved).not.toHaveBeenCalled();
+  });
+
+  it('keeps failed rights edits visible and Escape cancels only the rights editor', async () => {
+    const user = userEvent.setup();
+    const input = props();
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValue(balanceContext(11, true));
+    vi.mocked(savePlanningLeaveCounterPeriod).mockRejectedValue(new Error('Droits non enregistrés'));
+    render(<PlanningAbsenceRequestDialog {...input} canManageBalances />);
+    await screen.findByRole('button', { name: 'Modifier les droits Congés' });
+    await user.click(screen.getByRole('button', { name: 'Modifier les droits Congés' }));
+    const amount = screen.getByLabelText('Total des droits (jours)');
+    await user.clear(amount);
+    await user.type(amount, '30');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer les droits' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Droits non enregistrés');
+    expect(amount).toHaveValue('30');
+    expect(screen.getByRole('button', { name: 'Envoyer la demande' })).toBeDisabled();
+    await user.click(amount);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByLabelText('Total des droits (jours)')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Envoyer la demande' })).toBeEnabled();
+    expect(input.onClose).not.toHaveBeenCalled();
+    expect(savePlanningAbsence).not.toHaveBeenCalled();
+  });
+
+  it('prevents starting a rights edit while the absence request is saving', async () => {
+    const user = userEvent.setup();
+    const input = props();
+    let finishSave!: (id: number) => void;
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValue(balanceContext(11, true));
+    vi.mocked(savePlanningAbsence).mockReturnValue(new Promise((resolve) => { finishSave = resolve; }));
+    render(<PlanningAbsenceRequestDialog {...input} canManageBalances />);
+    await screen.findByRole('button', { name: 'Modifier les droits RTT' });
+    await user.click(screen.getByRole('button', { name: 'Envoyer la demande' }));
+    expect(screen.queryByRole('button', { name: /les droits/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ajouter une période de droits' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fermer' })).toBeDisabled();
+    finishSave(21);
+    await waitFor(() => expect(input.onClose).toHaveBeenCalledOnce());
+    expect(savePlanningLeaveCounterPeriod).not.toHaveBeenCalled();
   });
 });

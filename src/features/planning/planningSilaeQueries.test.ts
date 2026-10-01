@@ -23,6 +23,17 @@ function mockClient(rows: Record<string, Record<string, unknown>[]>, failing = '
 }
 
 describe('SILAE authenticated data reads', () => {
+  it('retains RTT as an approved absence source and ignores other decision states', async () => {
+    const { client } = mockClient({
+      hr_people: [{ id: 1, first_name: 'Pierre', last_name: 'AUGUIN', hired_on: '2020-01-01' }],
+      planning_absences: ['approved', 'requested', 'rejected', 'cancelled'].map((status, index) => ({
+        id: index + 1, person_id: 1, absence_type: 'rtt', starts_at: '2026-09-10T22:00:00Z', ends_at: '2026-09-12T22:00:00Z', status,
+      })),
+    });
+    const result = await fetchPlanningSilaeData(client, '2026-09');
+    expect(result.sources).toEqual([expect.objectContaining({ personId: 1, startsOn: '2026-09-11', endsOn: '2026-09-12', status: 'RTT', priority: 4 })]);
+  });
+
   it('exports a daily second-captain function between captain periods from persisted records', async () => {
     const { client } = mockClient({
       people: [{ id: 1, first_name: 'Pierre', last_name: 'TEST', employee_number: '00004', function_label: 'Capitaine', enim_function_code: 'AA01A', enim_category: '15', active: true }],

@@ -7,6 +7,7 @@ import {
   buildPlanningProjectLanes,
   patchPlanningEvent,
   planningCrewEventType,
+  planningCrewEventTypeLabel,
   removePlanningEvent,
   replacePlanningProject,
 } from './planningViews';
@@ -105,6 +106,14 @@ describe('planning P0.2 views', () => {
     expect(teams).toEqual([expect.objectContaining({ label: 'Paul DURAND', personId: 10, detail: 'Bordée 1 · COTENTIN' })]);
     expect(getAllPlanningCrewEvents(overview).some((event) => event.id === 'day-400')).toBe(false);
     expect(planningCrewEventType(getAllPlanningCrewEvents(overview).find((event) => event.kind === 'period')!)).toBe('rest');
+  });
+
+  it('keeps RTT distinct from paid leave in personnel filters', () => {
+    const source = { ...overview, periods: overview.periods.map((period) => ({ ...period, sailorStatus: 'rtt' })) };
+    const lanes = buildPlanningCrewLanes(source, range, { ...emptyFilters, eventType: 'rtt' }, 'people');
+    expect(lanes.flatMap((lane) => lane.events).map((event) => event.status)).toEqual(['RTT']);
+    expect(planningCrewEventTypeLabel('rtt')).toBe('RTT');
+    expect(buildPlanningCrewLanes(source, range, { ...emptyFilters, eventType: 'leave' }, 'people').flatMap((lane) => lane.events)).toEqual([]);
   });
 
   it('uses the linked HR function in the personnel view when an assignment keeps an older role', () => {

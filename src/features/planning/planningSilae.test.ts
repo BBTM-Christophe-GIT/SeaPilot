@@ -135,6 +135,24 @@ describe('SILAE monthly service lines', () => {
     expect(buildSilaeEmployee(inputs, person, '2026-09').issues.join()).toContain('contradictoire');
   });
 
+  it('exports approved RTT as rest while retaining its source label and dated ship', () => {
+    const inputs = data([
+      source('2026-09-01', '2026-09-30', 'En Mer'),
+      source('2026-09-10', '2026-09-11', 'RTT', { priority: 4, vesselId: null }),
+    ]);
+    const employee = buildSilaeEmployee(inputs, person, '2026-09');
+    expect(employee.issues).toEqual([]);
+    expect(employee.periods.map((period) => [period.startsOn, period.endsOn, period.state])).toEqual([
+      ['2026-09-01', '2026-09-09', 'sea'], ['2026-09-10', '2026-09-11', 'rest'], ['2026-09-12', '2026-09-30', 'sea'],
+    ]);
+    expect(employee.periods[1]).toMatchObject({ registrationNumber: '937905', seaDays: 0, embarkedDays: 2 });
+    const [headers, row] = buildSilaeRows([employee]);
+    expect(row[headers.indexOf('Position 2')]).toBe('57');
+    expect(row[headers.indexOf('JrsMer 2')]).toBe('');
+    expect(employee.periods.reduce((sum, period) => sum + period.seaDays, 0)).toBe(28);
+    expect(inputs.sources[1].status).toBe('RTT');
+  });
+
   it.each([
     ['2026-08', 'En Mer', '31 jours sans repos'], ['2026-02', 'Repos', 'Février sans travail'],
     ['2028-02', 'En Mer', '29 jours'], ['2026-09', 'Arrêt Maladie', 'Statut à préciser'],
