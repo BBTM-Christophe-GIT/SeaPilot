@@ -38,7 +38,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { ReleaseNotes } from '../releaseNotes/ReleaseNotes';
 import { LIFTING_SECTIONS } from '../lifting/liftingSections';
@@ -204,6 +204,9 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const [liftingVesselId, setLiftingVesselId] = useState(0);
   const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState('');
+  const signOutPending = useRef(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [serviceNoteNotifications, setServiceNoteNotifications] = useState<ServiceNoteNotification[]>([]);
   const [hrDocumentNotifications, setHrDocumentNotifications] = useState<HrDocumentExpiryNotification[]>([]);
@@ -462,6 +465,22 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     void markActionPlanNotificationRead(client, notification.id).catch(() => undefined);
   }
 
+  async function handleSignOut() {
+    if (signOutPending.current) return;
+    signOutPending.current = true;
+    setIsSigningOut(true);
+    setSignOutError('');
+
+    try {
+      await signOut();
+    } catch {
+      setSignOutError('Déconnexion impossible. Vérifiez votre connexion puis réessayez.');
+    } finally {
+      signOutPending.current = false;
+      setIsSigningOut(false);
+    }
+  }
+
   function toggleFamily(family: AppModule['family']) {
     setExpandedFamilies((currentFamilies) => {
       const nextFamilies = new Set(currentFamilies);
@@ -484,10 +503,11 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     return (
       <div className="auth-loading">
         <p>Impossible de charger vos droits d'acces.</p>
-        <button onClick={() => void signOut()} type="button">
+        <button disabled={isSigningOut} onClick={() => void handleSignOut()} type="button">
           <LogOut aria-hidden="true" size={16} />
-          Deconnexion
+          {isSigningOut ? 'Déconnexion en cours…' : 'Deconnexion'}
         </button>
+        {signOutError ? <p className="form-error" role="alert">{signOutError}</p> : null}
       </div>
     );
   }
@@ -683,10 +703,13 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                   {previewMode ? (
                     <span className="preview-mode-menu-note">Aucune donnée de production n’est utilisée.</span>
                   ) : (
-                    <button onClick={() => void signOut()} role="menuitem" type="button">
-                      <LogOut aria-hidden="true" size={16} />
-                      Deconnexion
-                    </button>
+                    <>
+                      <button disabled={isSigningOut} onClick={() => void handleSignOut()} role="menuitem" type="button">
+                        <LogOut aria-hidden="true" size={16} />
+                        {isSigningOut ? 'Déconnexion en cours…' : 'Deconnexion'}
+                      </button>
+                      {signOutError ? <p className="form-error" role="alert">{signOutError}</p> : null}
+                    </>
                   )}
                 </div>
               ) : null}

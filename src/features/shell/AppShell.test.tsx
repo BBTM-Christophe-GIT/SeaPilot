@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useOutletContext } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { APP_VERSION_LABEL } from '../../config/appVersion';
-import { AuthProvider } from '../auth/AuthProvider';
+import { AuthProvider, useAuth } from '../auth/AuthProvider';
 import { ModulePage } from '../modules/ModulePage';
 import { APP_MODULES } from '../permissions/moduleAccess';
 import { AppShell, type AppShellOutletContext } from './AppShell';
@@ -11,6 +11,11 @@ import { AppShell, type AppShellOutletContext } from './AppShell';
 function RoleProbe() {
   const { roles } = useOutletContext<AppShellOutletContext>();
   return <div data-testid="effective-roles">{roles.join(',')}</div>;
+}
+
+function SessionProbe() {
+  const { session } = useAuth();
+  return <div data-testid="session-user">{session?.user.id || 'signed-out'}</div>;
 }
 
 describe('AppShell', () => {
@@ -460,6 +465,72 @@ describe('AppShell', () => {
     expect(screen.queryByText('Aucun module autorise pour ce compte.')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Deconnexion/i })).toBeInTheDocument();
   });
+
+  it.each(['user-menu', 'role-load-error'] as const)(
+    'keeps the session and allows retry after a sign-out failure in %s',
+    async (surface) => {
+      const user = userEvent.setup();
+      let failSignOut: ((error: Error) => void) | undefined;
+      const signOut = vi.fn()
+        .mockImplementationOnce(() => new Promise<{ error: Error | null }>((resolve, reject) => {
+          failSignOut = surface === 'user-menu' ? reject : (error) => resolve({ error });
+        }))
+        .mockResolvedValueOnce({ error: null });
+      const authClient = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: { session: { user: { id: 'user-1', email: 'mobile@example.test' } } }, error: null,
+          }),
+          onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
+          signInWithPassword: vi.fn(),
+          signOut,
+        },
+      };
+      const appClient = {
+        auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }) },
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockResolvedValue({ data: null, error: new Error('RLS denied') }),
+        }),
+      };
+
+      render(
+        <AuthProvider client={authClient as never}>
+          <SessionProbe />
+          <MemoryRouter>
+            <Routes>
+              <Route element={<AppShell client={appClient as never} rolesOverride={surface === 'user-menu' ? ['admin'] : undefined} />}>
+                <Route index element={<div>Accueil prive</div>} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>,
+      );
+
+      if (surface === 'user-menu') {
+        await user.click(await screen.findByRole('button', { name: /mobile.*Admin/ }));
+      } else {
+        await screen.findByText("Impossible de charger vos droits d'acces.");
+      }
+      const buttonRole = surface === 'user-menu' ? 'menuitem' : 'button';
+      const button = screen.getByRole(buttonRole, { name: 'Deconnexion' });
+      await user.dblClick(button);
+
+      expect(signOut).toHaveBeenCalledTimes(1);
+      expect(button).toBeDisabled();
+      expect(button).toHaveTextContent('Déconnexion en cours…');
+      await act(async () => failSignOut?.(new Error('Network request failed')));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Déconnexion impossible. Vérifiez votre connexion puis réessayez.');
+      expect(screen.getByTestId('session-user')).toHaveTextContent('user-1');
+      expect(button).toBeEnabled();
+      if (surface === 'user-menu') expect(screen.getByText('Accueil prive')).toBeInTheDocument();
+
+      await user.click(button);
+      expect(signOut).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(button).toBeEnabled();
+    },
+  );
 
   it('reloads roles when the authenticated user changes', async () => {
     let authStateChange: ((session: { user: { id: string } }) => void) | undefined;

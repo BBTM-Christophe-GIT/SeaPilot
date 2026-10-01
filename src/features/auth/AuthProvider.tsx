@@ -1,12 +1,15 @@
 import { SeaPilotLogo } from '../../components/SeaPilotLogo';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { getSupabaseClient } from '../../lib/supabaseClient';
+import { clearPasswordUpdateIntent, passwordUpdateIntentState, preparePasswordUpdateIntent, recordPasswordUpdateAuthEvent } from '../../lib/passwordUpdateIntent';
 
 interface AuthContextValue {
   session: Session | null;
   isLoading: boolean;
+  passwordUpdateRequested: boolean;
+  passwordUpdateLinkAttempted: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   sendPasswordReset: (email: string, redirectTo: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
@@ -63,22 +66,36 @@ export function AuthProvider({ children, client }: AuthProviderProps) {
 function ResolvedAuthProvider({ children, client }: Required<AuthProviderProps>) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [passwordIntent, setPasswordIntent] = useState({ requested: false, linkAttempted: false });
+  const sessionRef = useRef<Session | null>(null);
+  preparePasswordUpdateIntent(client);
 
   useEffect(() => {
     let isMounted = true;
-
-    client.auth.getSession().then(({ data }) => {
-      if (isMounted) {
-        setSession(data.session);
-        setIsLoading(false);
-      }
-    });
+    let authRevision = 0;
+    const applySession = (nextSession: Session | null) => {
+      sessionRef.current = nextSession;
+      setSession(nextSession);
+      setPasswordIntent(passwordUpdateIntentState(client, nextSession));
+      setIsLoading(false);
+    };
+    const initialRevision = authRevision;
 
     const {
       data: { subscription },
-    } = client.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      setIsLoading(false);
+    } = client.auth.onAuthStateChange((event, nextSession) => {
+      if (!isMounted) return;
+      authRevision += 1;
+      recordPasswordUpdateAuthEvent(client, event, nextSession);
+      applySession(nextSession);
+    });
+    client.auth.getSession().then(({ data }) => {
+      if (isMounted && authRevision === initialRevision) {
+        recordPasswordUpdateAuthEvent(client, 'INITIAL_SESSION', data.session);
+        applySession(data.session);
+      }
+    }).catch(() => {
+      if (isMounted && authRevision === initialRevision) applySession(null);
     });
 
     return () => {
@@ -91,12 +108,16 @@ function ResolvedAuthProvider({ children, client }: Required<AuthProviderProps>)
     () => ({
       session,
       isLoading,
+      passwordUpdateRequested: passwordIntent.requested,
+      passwordUpdateLinkAttempted: passwordIntent.linkAttempted,
       signIn: async (email: string, password: string) => {
         const { error } = await client.auth.signInWithPassword({ email, password });
 
         if (error) {
           throw error;
         }
+        clearPasswordUpdateIntent(client);
+        setPasswordIntent({ requested: false, linkAttempted: false });
       },
       sendPasswordReset: async (email: string, redirectTo: string) => {
         const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo });
@@ -106,11 +127,15 @@ function ResolvedAuthProvider({ children, client }: Required<AuthProviderProps>)
         }
       },
       updatePassword: async (password: string) => {
+        const updatingUserId = sessionRef.current?.user.id;
         const { error } = await client.auth.updateUser({ password });
 
         if (error) {
           throw error;
         }
+        if (sessionRef.current?.user.id !== updatingUserId) throw new Error('La session a changé pendant l’enregistrement.');
+        clearPasswordUpdateIntent(client, sessionRef.current);
+        setPasswordIntent({ requested: false, linkAttempted: false });
       },
       signOut: async () => {
         const { error } = await client.auth.signOut();
@@ -118,9 +143,11 @@ function ResolvedAuthProvider({ children, client }: Required<AuthProviderProps>)
         if (error) {
           throw error;
         }
+        clearPasswordUpdateIntent(client, session);
+        setPasswordIntent({ requested: false, linkAttempted: false });
       },
     }),
-    [client, isLoading, session],
+    [client, isLoading, passwordIntent, session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
