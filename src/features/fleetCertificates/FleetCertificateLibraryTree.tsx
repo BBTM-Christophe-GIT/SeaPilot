@@ -246,9 +246,11 @@ export function FleetCertificateLibraryTree({
             <ChevronRight className={vesselOpen ? 'is-open' : ''} size={17} />
             <span className="fcx-tree-icon vessel"><Ship size={17} /></span>
             <strong>{vessel.name}</strong>
-            {vessel.actionCount > 0 && <em className="fcx-action-count">{vessel.actionCount} à traiter</em>}
-            {vessel.expiredCount > 0 && <em>{vessel.expiredCount} échu{vessel.expiredCount > 1 ? 's' : ''}</em>}
-            <small>{vessel.documentCount} document{vessel.documentCount > 1 ? 's' : ''}</small>
+            <span className="fcx-tree-vessel-stats">
+              {vessel.actionCount > 0 && <em className="fcx-action-count">{vessel.actionCount} à traiter</em>}
+              {vessel.expiredCount > 0 && <em>{vessel.expiredCount} échu{vessel.expiredCount > 1 ? 's' : ''}</em>}
+              <small>{vessel.documentCount} document{vessel.documentCount > 1 ? 's' : ''}</small>
+            </span>
           </button>
           {vesselOpen && <div className="fcx-tree-children" role="group">
             {vessel.categories.map((category) => {
