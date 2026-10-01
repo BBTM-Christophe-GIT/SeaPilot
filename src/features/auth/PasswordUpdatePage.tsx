@@ -1,13 +1,18 @@
 import { SeaPilotLogo } from '../../components/SeaPilotLogo';
 import type { FormEvent } from 'react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 
 const MINIMUM_PASSWORD_LENGTH = 12;
 
 export function PasswordUpdatePage() {
-  const { isLoading, session, updatePassword } = useAuth();
+  const auth = useAuth();
+  return <PasswordUpdateContent auth={auth} key={auth.session?.user.id || 'signed-out'} />;
+}
+
+function PasswordUpdateContent({ auth }: { auth: ReturnType<typeof useAuth> }) {
+  const { isLoading, passwordUpdateRequested, passwordUpdateLinkAttempted, session, updatePassword } = auth;
   const navigate = useNavigate();
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -17,6 +22,7 @@ export function PasswordUpdatePage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSubmitting || !passwordUpdateRequested || !session) return;
     setErrorMessage(null);
 
     if (password.length < MINIMUM_PASSWORD_LENGTH) {
@@ -45,6 +51,11 @@ export function PasswordUpdatePage() {
     return <main className="auth-loading">Vérification du lien sécurisé…</main>;
   }
 
+  // A mobile shortcut may retain this URL long after account activation.
+  if (!passwordUpdateRequested && !passwordUpdateLinkAttempted && !isUpdated && !isSubmitting) {
+    return <Navigate to={session ? '/' : '/login'} replace />;
+  }
+
   return (
     <main className="login-page">
       <section className="login-panel">
@@ -53,10 +64,11 @@ export function PasswordUpdatePage() {
         </div>
         <h1>Choisir mon mot de passe</h1>
 
-        {!session ? (
+        {!session || (!passwordUpdateRequested && !isUpdated && !isSubmitting) ? (
           <>
             <p className="form-error">Ce lien est invalide ou expiré.</p>
             <button onClick={() => navigate('/login')} type="button">Demander un nouveau lien</button>
+            {session ? <button onClick={() => navigate('/', { replace: true })} type="button">Accéder à SeaPilot</button> : null}
           </>
         ) : isUpdated ? (
           <>

@@ -80,7 +80,9 @@ button:disabled {
 
 .login-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   width: min(100%, 420px);
+  min-width: 0;
   gap: 18px;
   padding: 28px;
   border: 1px solid #d8e0ea;
@@ -129,6 +131,7 @@ button:disabled {
 
 .login-panel input {
   width: 100%;
+  min-width: 0;
   border: 1px solid #c7d2df;
   border-radius: 6px;
   padding: 11px 12px;
@@ -212,7 +215,28 @@ button:disabled {
 
 .password-update-form {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 16px;
+}
+
+@media (max-width: 600px) {
+  .login-page {
+    min-height: 100dvh;
+    padding: 16px;
+  }
+
+  .login-panel {
+    padding: 24px 20px;
+  }
+
+  .login-panel input {
+    font-size: 16px;
+  }
+
+  .login-panel .login-link-button {
+    min-height: 44px;
+  }
 }
 
 .form-error {
