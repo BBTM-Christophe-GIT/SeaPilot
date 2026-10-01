@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildPlanningCrewRows, buildPlanningTimeline, type PlanningCrewEvent } from './planningModel';
+import { buildPlanningCrewRows, buildPlanningTimeline, getAllPlanningCrewEvents, planningReferenceMonthRange, timelineRange, type PlanningCrewEvent } from './planningModel';
 import { buildPlanningCrewLanes } from './planningViews';
+import type { PlanningAssignmentRecord, PlanningOverview } from './planningQueries';
 import { EMPTY_PLANNING_OVERVIEW } from './usePlanningOverview';
 
 const days = buildPlanningTimeline('2026-09-21', 'month').slice(0, 7);
@@ -22,6 +23,50 @@ const event = (personId: number, startsOn: string, endsOn: string, status = 'con
 const events = [event(1, '2026-09-21', '2026-09-25'), event(2, '2026-09-21', '2026-09-26'),
   event(3, '2026-09-27', '2026-09-30'), event(4, '2026-09-26', '2026-09-27', 'cancelled'),
   event(5, '2026-09-28', '2026-09-30')];
+
+// Posting dates, ships and watches from the September records reported as missing.
+const septemberOverview: PlanningOverview = {
+  ...EMPTY_PLANNING_OVERVIEW,
+  vessels: [
+    { id: 2, name: 'LE ROZEL', acronym: 'RZL', active: true },
+    { id: 4, name: 'SUROIT', acronym: 'SRT', active: true },
+    { id: 6, name: 'HIRONDELLE DE LA MANCHE', acronym: 'HDM', active: true },
+    { id: 11, name: 'LANDEMER', acronym: 'LDM', active: true },
+    { id: 3, name: 'KROKDUR', acronym: 'KRD', active: true },
+  ],
+  people: [
+    { ...overview.people[0], id: 28, firstName: 'Gary', lastName: 'LEFEVRE', functionLabel: '2nd Capitaine', hiredOn: '2026-06-15' },
+    { ...overview.people[0], id: 17, firstName: 'Mathieu', lastName: 'QUESNOT', functionLabel: 'Capitaine' },
+  ],
+  assignments: [],
+};
+function septemberAssignment(id: number, personId: number, vesselId: number, startsOn: string, endsOn: string,
+  watchGroup = 'Bordée 1', statusLabel = 'En Mer', confirmationStatus: PlanningAssignmentRecord['confirmationStatus'] = 'confirmed'): PlanningAssignmentRecord {
+  const person = septemberOverview.people.find((item) => item.id === personId)!;
+  return { id, vesselId, vesselName: septemberOverview.vessels.find((item) => item.id === vesselId)!.name,
+    captainPersonId: null, captainName: '', crewPersonId: personId, crewName: `${person.firstName} ${person.lastName}`,
+    startsOn, endsOn, watchGroup, assignmentRole: person.functionLabel, statusLabel, confirmationStatus,
+    comments: '', sourceLabel: 'seapilot' };
+}
+septemberOverview.assignments = [
+  septemberAssignment(183, 28, 2, '2026-08-28', '2026-09-05'),
+  septemberAssignment(705, 28, 2, '2026-09-15', '2026-09-15', 'Bordée 1', 'Vacance'),
+  ...[248, 892, 894].map((id) => septemberAssignment(id, 28, 2, '2026-09-16', '2026-09-25')),
+  septemberAssignment(898, 28, 2, '2026-09-13', '2026-09-13', 'Bordée 1', 'En Mer', 'cancelled'),
+  septemberAssignment(867, 28, 11, '2026-10-12', '2026-10-26', 'Bordée 2'),
+  septemberAssignment(636, 17, 4, '2026-09-07', '2026-09-07'),
+  septemberAssignment(810, 17, 4, '2026-09-22', '2026-09-26'),
+  septemberAssignment(869, 17, 4, '2026-09-28', '2026-09-29'),
+  septemberAssignment(704, 17, 6, '2026-09-08', '2026-09-10'),
+  septemberAssignment(748, 17, 2, '2026-09-13', '2026-09-16', 'Bordée 2'),
+  septemberAssignment(639, 17, 11, '2026-09-30', '2026-10-12'),
+  septemberAssignment(747, 17, 3, '2026-09-17', '2026-09-18', 'Bordée 1', 'En Mer', 'cancelled'),
+];
+const septemberDays = buildPlanningTimeline('2026-09-01', 'month');
+const septemberReference = planningReferenceMonthRange('2026-09-01');
+const septemberEvents = getAllPlanningCrewEvents(septemberOverview);
+const fleetPostings = (rows: ReturnType<typeof buildPlanningCrewRows>) => rows.filter((row) => row.type === 'person')
+  .map((row) => `${row.personId}:${row.vessel}:${row.board}`).sort();
 
 describe('Planning active display filter', () => {
   it('preserves the existing fleet rows when disabled and includes today when enabled', () => {
@@ -69,5 +114,59 @@ describe('Planning active display filter', () => {
       .some((row) => row.personId === 1)).toBe(false);
     expect(buildPlanningCrewRows({ ...data, people: [{ ...data.people[0], departedOn: '2026-08-31' }] },
       days, filters, history, options).some((row) => row.personId === 1)).toBe(false);
+  });
+
+  it('keeps Gary and all Mathieu September postings when the historical month grid extends into October', () => {
+    expect(timelineRange(septemberDays)).toEqual({ start: '2026-08-31', end: '2026-10-18' });
+    // Trailing October postings previously kept only the two LANDEMER rows.
+    expect(fleetPostings(buildPlanningCrewRows(septemberOverview, septemberDays, filters, septemberEvents,
+      { activeFrom: '2026-10-01' }))).toEqual(['17:LANDEMER:Bordée 1', '28:LANDEMER:Bordée 2']);
+
+    const rows = buildPlanningCrewRows(septemberOverview, septemberDays, filters, septemberEvents, {
+      activeFrom: '2026-10-01', referenceRange: septemberReference, employmentRange: septemberReference,
+    });
+    expect(fleetPostings(rows)).toEqual([
+      '17:HIRONDELLE DE LA MANCHE:Bordée 1', '17:LANDEMER:Bordée 1', '17:LE ROZEL:Bordée 2',
+      '17:SUROIT:Bordée 1', '28:LANDEMER:Bordée 2', '28:LE ROZEL:Bordée 1',
+    ]);
+    expect(rows.find((row) => row.personId === 28 && row.vessel === 'LE ROZEL')?.events.map((item) => item.assignmentId)).toEqual([183, 705, 894]);
+    expect(rows).toEqual(buildPlanningCrewRows(septemberOverview, septemberDays, filters, septemberEvents,
+      { employmentRange: septemberReference }));
+  });
+
+  it.each(['people', 'teams'] as const)('preserves the same historical September events in %s without relying on October postings', (grouping) => {
+    const septemberOnly = septemberEvents.filter((item) => item.endsOn < '2026-10-01');
+    const original = buildPlanningCrewLanes(septemberOverview, timelineRange(septemberDays), filters, grouping, septemberOnly);
+    const historical = buildPlanningCrewLanes(septemberOverview, timelineRange(septemberDays), filters, grouping,
+      septemberOnly, undefined, '2026-10-01', septemberReference);
+    expect(historical).toEqual(original);
+    expect(historical.map((lane) => lane.personId)).toEqual([28, 17]);
+    expect(historical.flatMap((lane) => lane.events).some((item) => item.confirmationStatus === 'cancelled')).toBe(false);
+  });
+
+  it.each([
+    ['2026-09-26', ['17:LANDEMER:Bordée 1', '17:SUROIT:Bordée 1', '28:LANDEMER:Bordée 2'], [17, 28]],
+    ['2026-08-20', ['17:HIRONDELLE DE LA MANCHE:Bordée 1', '17:LANDEMER:Bordée 1', '17:LE ROZEL:Bordée 2', '17:SUROIT:Bordée 1', '28:LANDEMER:Bordée 2', '28:LE ROZEL:Bordée 1'], [17, 28]],
+  ] as const)('retains the existing active cutoff for a current or future reference month on %s', (activeFrom, postings, personIds) => {
+    const rows = buildPlanningCrewRows(septemberOverview, septemberDays, filters, septemberEvents,
+      { activeFrom, referenceRange: septemberReference });
+    expect(fleetPostings(rows)).toEqual(postings);
+    const lanes = buildPlanningCrewLanes(septemberOverview, timelineRange(septemberDays), filters, 'people',
+      septemberEvents, undefined, activeFrom, septemberReference);
+    expect(lanes.map((lane) => lane.personId)).toEqual(personIds);
+    expect(lanes).toEqual(buildPlanningCrewLanes(septemberOverview, timelineRange(septemberDays), filters, 'people',
+      septemberEvents, undefined, activeFrom));
+  });
+
+  it('keeps explicit vessel/person filters and reference-month employment restrictions on historical rows', () => {
+    const selected = { vesselName: 'LE ROZEL', personName: 'Gary LEFEVRE' };
+    const options = { activeFrom: '2026-10-01', referenceRange: septemberReference, employmentRange: septemberReference };
+    expect(fleetPostings(buildPlanningCrewRows(septemberOverview, septemberDays, selected, septemberEvents, options)))
+      .toEqual(['28:LE ROZEL:Bordée 1']);
+    expect(buildPlanningCrewLanes(septemberOverview, timelineRange(septemberDays), selected, 'people',
+      septemberEvents, undefined, options.activeFrom, septemberReference).map((lane) => lane.personId)).toEqual([28]);
+    const employment = { ...septemberOverview, people: septemberOverview.people.map((person) => person.id === 28
+      ? { ...person, departedOn: '2026-08-31' } : person) };
+    expect(fleetPostings(buildPlanningCrewRows(employment, septemberDays, selected, septemberEvents, options))).toEqual([]);
   });
 });
