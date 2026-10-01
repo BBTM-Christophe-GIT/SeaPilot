@@ -18,14 +18,14 @@ export function AdminGoogleDriveSetup({ client, previewMode = false }: { client:
       const connection = await connectLocalDrive({ fresh });
       if (current !== request.current) return;
       setInstalledVersion(connection.version || null);
-      if (!supportsLocalDriveVersion(connection.version, '2.6.0')) throw new Error('Installez le lanceur Windows 2.6 ou ultérieur depuis l’archive ci-dessus, puis relancez le lanceur. Votre dossier existant sera conservé.');
+      if (!supportsLocalDriveVersion(connection.version, '2.7.0')) throw new Error('Installez le lanceur Windows 2.7 ou ultérieur depuis l’archive ci-dessus, puis relancez le lanceur. Votre dossier existant sera conservé.');
       const result = await localDriveRequest<LocalDriveStatus>(client, connection, { action });
       if (current !== request.current) return;
       if (result.cancelled) { setCancelled(true); return; }
       // The picker prepares the folder; confirm its availability automatically afterwards.
       const verified = action === 'select-root' ? await localDriveRequest<LocalDriveStatus>(client, await connectLocalDrive(), { action: 'status' }) : result;
       if (current !== request.current) return;
-      if (!supportsLocalDriveVersion(verified.version, '2.6.0') || typeof verified.exists !== 'boolean') throw new Error('Le lanceur n’a pas confirmé la disponibilité du dossier SeaPilot.');
+      if (!supportsLocalDriveVersion(verified.version, '2.7.0') || typeof verified.exists !== 'boolean') throw new Error('Le lanceur n’a pas confirmé la disponibilité du dossier SeaPilot.');
       setStatus({ ...verified, collaborators: result.collaborators ?? verified.collaborators });
     } catch (e) { if (current === request.current) setError(e instanceof Error ? e.message : 'Configuration impossible.'); }
     finally { if (current === request.current) setBusy(false); }
@@ -38,15 +38,15 @@ export function AdminGoogleDriveSetup({ client, previewMode = false }: { client:
   return <section className="admin-panel admin-drive-setup" aria-labelledby="admin-drive-title">
     <div className="admin-header"><div><p className="module-family">Documents et Google Drive</p><h2 id="admin-drive-title">Un seul dossier SeaPilot pour ce PC</h2><p className="admin-section-description">Configurez une fois la racine synchronisée. Tous les modules utilisent ensuite le même lanceur Windows.</p></div><span className="admin-platform-badge"><Monitor aria-hidden="true" size={16} />Windows</span></div>
     <ol className="admin-setup-steps">
-      <li><div><h3>Connecter Google Drive</h3><p>Le dossier SeaPilot doit être disponible dans l’Explorateur de fichiers de ce PC.</p><a className="admin-secondary-button" href="https://support.google.com/drive/answer/10838124?hl=fr" target="_blank" rel="noreferrer"><ExternalLink size={16} />Installer Google Drive</a></div></li>
-      <li><div><h3>Installer le lanceur unique</h3><p>Extrayez l’archive puis exécutez <strong>Installer.cmd</strong> sur chaque PC. La version 2.6 détecte le dossier SeaPilot et permet de le sélectionner dans Windows. Elle conserve toutes les fonctions de classement, d’ouverture et d’export PDF. Une mise à jour conserve le dossier déjà configuré.</p>
+      <li><div><h3>Connecter Google Drive</h3><p>Le dossier SeaPilot doit être disponible dans l’Explorateur de fichiers de ce PC. S’il est dans « Partagés avec moi », ouvrez Google Drive sur le Web, puis choisissez Organiser → Ajouter un raccourci dans Mon Drive sur le dossier SeaPilot. Attendez sa synchronisation dans Google Drive pour ordinateur.</p><a className="admin-secondary-button" href="https://support.google.com/drive/answer/10838124?hl=fr" target="_blank" rel="noreferrer"><ExternalLink size={16} />Installer Google Drive</a><a className="admin-secondary-button" href="https://support.google.com/drive/answer/2375057?hl=fr" target="_blank" rel="noreferrer"><ExternalLink size={16} />Ajouter le dossier partagé à Mon Drive</a></div></li>
+      <li><div><h3>Installer le lanceur unique</h3><p>Extrayez l’archive puis exécutez <strong>Installer.cmd</strong> sur chaque PC. La version 2.7 accepte le dossier SeaPilot et les raccourcis Google Drive Windows (.lnk). Elle conserve toutes les fonctions de classement, d’ouverture et d’export PDF. Une mise à jour conserve le dossier déjà configuré.</p>
         <p>Version proposée au téléchargement : <strong>{LOCAL_DRIVE_DOWNLOAD_VERSION}</strong></p>
         <p role="status">Version installée sur ce PC : <strong>{installedVersion || (previewMode ? 'indisponible en préversion' : busy ? 'détection en cours…' : 'non détectée')}</strong></p>
         <div className="admin-root-actions"><a className="admin-primary-button" href={`/connectors/seapilot-drive-windows.zip?v=${LOCAL_DRIVE_DOWNLOAD_VERSION}`} download><Download size={16} />Installer le lanceur Windows</a><button className="admin-secondary-button" disabled={busy || previewMode} onClick={() => void configure('status', true)}>Vérifier la version installée</button></div>
       </div></li>
       <li><div><h3>{configured ? 'Google Drive est bien configuré' : busy ? 'Vérification automatique de Google Drive…' : 'Sélectionner le dossier SeaPilot'}</h3>
         {configured ? <div role="status"><p><CheckCircle2 size={18} aria-hidden="true" /> Le dossier SeaPilot est accessible sur ce PC.</p><p className="admin-drive-path">{status?.root}</p>{status?.collaborators !== undefined ? <p>{status.collaborators} dossier(s) de collaborateurs en poste préparé(s).</p> : null}</div> : <>
-          <p>SeaPilot recherche automatiquement <strong>G:\Mon Drive\SeaPilot</strong> ou votre dossier déjà configuré. S’il est introuvable, sélectionnez le dossier SeaPilot synchronisé dans la fenêtre Windows.</p>
+          <p>SeaPilot recherche automatiquement <strong>G:\Mon Drive\SeaPilot</strong> ou votre dossier déjà configuré. S’il est introuvable, sélectionnez le dossier SeaPilot ou son raccourci <strong>SeaPilot.lnk</strong> dans la fenêtre Windows. La lettre du lecteur et le nom Mon Drive / My Drive peuvent varier selon le PC.</p>
           {status && !status.exists ? <p role="status">Le dossier SeaPilot est introuvable ou inaccessible sur ce PC.</p> : null}
           {cancelled ? <p role="status">Sélection annulée. Aucun réglage n’a été modifié.</p> : null}
           <div className="admin-root-actions">{error ? <button className="admin-secondary-button" disabled={busy || previewMode} onClick={() => void configure('status', true)}>Relancer le lanceur</button> : <button className="admin-primary-button" disabled={busy || previewMode} onClick={() => void configure('select-root')}><FolderOpen size={16} />Sélectionner le dossier dans Windows</button>}</div>

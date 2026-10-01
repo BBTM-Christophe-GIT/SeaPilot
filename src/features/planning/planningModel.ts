@@ -699,10 +699,11 @@ export function buildPlanningCrewRows(
               const boardRow = boardContent.rows.find((entry) => entry.person.id === linkedPerson?.id)?.boardRow;
               const personId = eventPersonId || linkedPerson?.id || null;
               if (linkedPerson && !isPlanningPersonEmployedDuring(linkedPerson, employmentRange)) return;
-              if (!personEvents.length && (!boardRow || !options.pendingBoardRowIds?.has(boardRow.id))) return;
-              // Preserve a newly added empty row while the user creates its first assignment.
+              const isPendingBoardRow = Boolean(boardRow && options.pendingBoardRowIds?.has(boardRow.id));
+              if (!personEvents.length && !isPendingBoardRow) return;
+              // An explicitly added row remains editable even if it already has past events.
               const activeFrom = options.activeFrom;
-              if (activeFrom && range.end >= activeFrom && personEvents.length
+              if (!isPendingBoardRow && activeFrom && range.end >= activeFrom && personEvents.length
                 && !personEvents.some((event) => event.endsOn >= activeFrom)) return;
               const recordPrefix = `${vessel}|${board}|`;
               const hasAnyRecords = (

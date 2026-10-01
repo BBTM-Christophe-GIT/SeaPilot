@@ -190,6 +190,7 @@ export function buildPlanningFleetLanes(
   filters: PlanningFilters,
   eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
   includeEmptyVessels = false,
+  pendingBoardRowIds?: ReadonlySet<number>,
 ): PlanningFleetLane[] {
   const uniqueProjects = [...new Map(overview.projects.map((project) => [
     `${project.id}:${(project.vesselIds || [project.primaryVesselId, project.secondaryVesselId]).join(',')}:${project.startsOn}:${project.endsOn}`,
@@ -217,6 +218,13 @@ export function buildPlanningFleetLanes(
   ));
   const vesselNames = new Set(
     [
+      ...(!filters.eventType && !filters.status && !filters.responsible ? (overview.boardRows || []).flatMap((row) => {
+        if (!pendingBoardRowIds?.has(row.id)) return [];
+        const vessel = overview.vessels.find((item) => item.id === row.vesselId);
+        const person = overview.people.find((item) => item.id === row.personId);
+        return vessel && person && (!filters.vesselName || vessel.name === filters.vesselName)
+          && (!filters.personName || formatPlanningPerson(person) === filters.personName) ? [vessel.name] : [];
+      }) : []),
       ...(!filters.personName ? (overview.genericCrewRows || []).flatMap((row) => {
         const vessel = overview.vessels.find((item) => item.id === row.vesselId);
         return vessel && (!filters.vesselName || vessel.name === filters.vesselName) ? [vessel.name] : [];

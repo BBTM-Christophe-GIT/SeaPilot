@@ -212,7 +212,7 @@ export function FleetCertificateLibraryTree({
             <button aria-label={`Télécharger ${certificate.documentTitle}`} disabled={!hasFile} onClick={() => onDownload(certificate)} title={hasFile ? 'Télécharger' : 'Aucun fichier à télécharger'} type="button"><Download size={15} /></button>
           </div>
           <button aria-label={`Prévisualiser ${certificate.documentTitle}`} className="fcx-library-row" onClick={() => onSelect(certificate)} type="button">
-            <span><FileText size={17} /><span><b>{certificate.documentTitle}</b><small>{certificate.fileName || 'Aucun fichier joint'}</small><small className="fcx-mobile-doc-meta">{formatDate(certificate.expiresOn)} · {getFleetCertificateStatusLabel(state)}</small></span>{actionCount > 0 && <i className="fcx-action-count">{actionCount} à traiter</i>}</span>
+            <span><FileText size={17} /><span><b>{certificate.documentTitle}</b><small>{certificate.fileName || (certificate.status === 'pending_validation' ? 'Document reçu · À valider' : 'Aucun fichier joint')}</small><small className="fcx-mobile-doc-meta">{formatDate(certificate.expiresOn)} · {getFleetCertificateStatusLabel(state)}</small></span>{actionCount > 0 && <i className="fcx-action-count">{actionCount} à traiter</i>}</span>
             <span>{formatDate(certificate.expiresOn)}</span>
             <em className={state}>{getFleetCertificateStatusLabel(state)}</em>
           </button>

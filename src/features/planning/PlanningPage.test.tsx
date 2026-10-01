@@ -445,7 +445,7 @@ function createClient(options: {
       return Promise.resolve({ data: 991, error: null });
     }
     if (functionName === 'read_planning_periods') {
-      return Promise.resolve({ data: { revision: 'fixture-periods', periods: options.periods ?? [] }, error: null });
+      return Promise.resolve({ data: { revision: JSON.stringify(options.periods ?? []), periods: options.periods ?? [] }, error: null });
     }
     if (functionName === 'save_planning_crew_balance') return Promise.resolve({ data: null, error: null });
     if (functionName === 'save_planning_assignment_day_states' || functionName === 'save_planning_assignment_day_details_range') {
@@ -1929,6 +1929,59 @@ describe('PlanningPage cockpit', () => {
     expect(screen.queryByRole('button', { name: 'Modifier le statut et le commentaire du 15/07/2026 pour Alain ANCIEN' })).not.toBeInTheDocument();
     expect(rpc).not.toHaveBeenCalledWith('delete_planning_board_row', expect.anything());
   });
+
+  it.each([true, false])('keeps Gary editable after adding him with past events and active filter=%s', async (activeFilterEnabled) => {
+    const user = userEvent.setup();
+    const gary = { ...crewRow, id: 17, first_name: 'Gary', last_name: 'LEFEVRE' };
+    const currentAssignment = { ...assignmentOverviewRow, vessel_name: 'LE ROZEL', watch_group: 'Bordée 1' };
+    const oldAssignment = { ...currentAssignment, id: 101, crew_person_id: gary.id, crew_name: 'Gary LEFEVRE',
+      starts_on: '2026-06-01', ends_on: '2026-06-10' };
+    const assignments = activeFilterEnabled ? [currentAssignment, oldAssignment] : [currentAssignment];
+    // Imported historical periods can identify their vessel/person only by name.
+    const periods = activeFilterEnabled ? [] : [{ ...planningPeriodRow, id: 101, vessel_id: null, person_id: null,
+      vessel_name: 'LE ROZEL', crew_name: 'Gary LEFEVRE', starts_on: '2026-06-01', ends_on: '2026-06-10' }];
+    const { client, rpc } = createClient({ activeFilterEnabled, assignments, projects: [],
+      vessels: [{ ...vesselRow, name: 'LE ROZEL' }], people: [captainRow, crewRow, gary],
+      boardRows: [{ ...emptyBoardRow, id: 901, person_id: gary.id, watch_group: 'Bordée 1' }],
+      periods,
+    });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-06' } });
+    await user.click(screen.getByRole('button', { name: 'Filtres' }));
+    await user.selectOptions(screen.getByLabelText('Filtre navire'), 'LE ROZEL');
+    const emptyCellName = /Case vide de Gary LEFEVRE le 30\/06\/2026/;
+    if (activeFilterEnabled) expect(screen.queryByRole('button', { name: emptyCellName })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Ajouter un marin à Bordée 1 de LE ROZEL' }));
+    await user.click(within(await screen.findByRole('dialog', { name: 'Ajouter un marin à Bordée 1' }))
+      .getByRole('button', { name: 'Ajouter Gary LEFEVRE' }));
+    expect(await screen.findByText('Gary LEFEVRE a été ajouté comme ligne vide à Bordée 1.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: emptyCellName })).toBeInTheDocument();
+    expect(screen.getByLabelText('Filtre navire')).toHaveValue('LE ROZEL');
+    expect(screen.getByRole('button', { name: 'Filtre actif' })).toHaveAttribute('aria-pressed', String(activeFilterEnabled));
+
+    await user.click(screen.getByRole('button', { name: 'Actualiser' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Actualiser' })).not.toBeDisabled());
+    expect(screen.getByRole('button', { name: emptyCellName })).toBeInTheDocument();
+    assignments.splice(1);
+    periods.splice(0);
+    await user.click(screen.getByRole('button', { name: 'Actualiser' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Actualiser' })).not.toBeDisabled());
+    expect(screen.getByRole('button', { name: emptyCellName })).toBeInTheDocument();
+    assignments.push({ ...oldAssignment, id: 102, starts_on: '2026-06-30', ends_on: '2026-06-30' });
+    await user.dblClick(screen.getByRole('button', { name: emptyCellName }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('apply_planning_grid_cells', {
+      p_cells: [expect.objectContaining({ personId: gary.id, vesselId: 1, watchGroup: 'Bordée 1', workDate: '2026-06-30', status: 'En Mer' })],
+    }));
+    await screen.findByRole('button', { name: 'Modifier le statut et le commentaire du 30/06/2026 pour Gary LEFEVRE' });
+
+    assignments.splice(1);
+    periods.splice(0);
+    await user.click(screen.getByRole('button', { name: 'Actualiser' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: emptyCellName })).not.toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Modifier le statut et le commentaire du 30/06/2026 pour Gary LEFEVRE' })).not.toBeInTheDocument();
+  }, 20_000);
 
   it('colors an empty fleet cell only on double-click without opening the full form', async () => {
     const user = userEvent.setup();

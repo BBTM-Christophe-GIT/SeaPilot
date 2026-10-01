@@ -588,8 +588,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [vesselForm, setVesselForm] = useState<VesselFormState | null>(null);
   const [dayStateForm, setDayStateForm] = useState<PlanningDayStateForm | null>(null);
   const [eligiblePeopleDialog, setEligiblePeopleDialog] = useState<PlanningEligiblePeopleDialogState | null>(null);
-  const [pendingBoardRows, setPendingBoardRows] = useState<{ rangeStart: string; rangeEnd: string; ids: Set<number> }>(
-    () => ({ rangeStart: '', rangeEnd: '', ids: new Set() }),
+  const [pendingBoardRows, setPendingBoardRows] = useState<{
+    rangeStart: string; rangeEnd: string; ids: Set<number>; existingEvents: Map<number, Set<string>>;
+  }>(
+    () => ({ rangeStart: '', rangeEnd: '', ids: new Set(), existingEvents: new Map() }),
   );
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isBoardingCertificateOpen, setIsBoardingCertificateOpen] = useState(false);
@@ -855,9 +857,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const effectiveDayWidth = Math.round(52 * zoomLevel / 100);
 
   const allPlanningCrewEvents = useMemo(() => getAllPlanningCrewEvents(planningData), [planningData]);
+  const pendingBoardRowIds = canEditPlanning && pendingBoardRows.rangeStart === range.start && pendingBoardRows.rangeEnd === range.end
+    ? pendingBoardRows.ids : undefined;
   const baseFleetLanes = useMemo(
-    () => buildPlanningFleetLanes(planningData, range, filters, allPlanningCrewEvents, isPersonalPlanningView),
-    [allPlanningCrewEvents, filters, isPersonalPlanningView, planningData, range],
+    () => buildPlanningFleetLanes(planningData, range, filters, allPlanningCrewEvents, isPersonalPlanningView, pendingBoardRowIds),
+    [allPlanningCrewEvents, filters, isPersonalPlanningView, pendingBoardRowIds, planningData, range],
   );
   const projectLanes = useMemo(
     () => perspective === 'projects' ? buildPlanningProjectLanes(planningData, range, filters) : [],
@@ -868,10 +872,9 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       employmentRange: referenceMonthRange,
       activeFrom,
       includeEmptyVessels: isPersonalPlanningView,
-      pendingBoardRowIds: canEditPlanning && pendingBoardRows.rangeStart === range.start && pendingBoardRows.rangeEnd === range.end
-        ? pendingBoardRows.ids : undefined,
+      pendingBoardRowIds,
     }),
-    [activeFrom, allPlanningCrewEvents, canEditPlanning, filters, isPersonalPlanningView, pendingBoardRows, planningData, range, referenceMonthRange, timelineDays],
+    [activeFrom, allPlanningCrewEvents, filters, isPersonalPlanningView, pendingBoardRowIds, planningData, referenceMonthRange, timelineDays],
   );
   const { lanes: fleetLanes, rows: fleetRows } = useMemo(() => withPlanningAuditLanes(baseFleetLanes, baseFleetRows, visiblePlanningAudits, range, filters),
     [baseFleetLanes, baseFleetRows, visiblePlanningAudits, range, filters]);
@@ -880,14 +883,19 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     visiblePlanningAudits.forEach((audit) => { const group = index.get(audit.siteName) ?? []; group.push(audit); index.set(audit.siteName, group); });
     return index;
   }, [visiblePlanningAudits]);
-  // Retire the editing exception when its first visible assignment arrives,
-  // so removing that assignment later cannot bring an empty row back.
+  // Retire the editing exception after a new visible assignment arrives. Past
+  // events present before the add must not immediately consume the exception.
   if (pendingBoardRows.ids.size) {
     const assignedRowIds = new Set(fleetRows
-      .filter((row) => row.boardRowId !== null && row.events.length > 0)
+      .filter((row) => row.boardRowId !== null && pendingBoardRowIds?.has(row.boardRowId)
+        && row.events.some((event) => (!activeFrom || range.end < activeFrom || event.endsOn >= activeFrom)
+          && !pendingBoardRows.existingEvents.get(row.boardRowId!)?.has(`${event.id}:${event.startsOn}:${event.endsOn}`)))
       .map((row) => row.boardRowId!));
     if ([...pendingBoardRows.ids].some((id) => assignedRowIds.has(id))) {
-      setPendingBoardRows((current) => ({ ...current, ids: new Set([...current.ids].filter((id) => !assignedRowIds.has(id))) }));
+      setPendingBoardRows((current) => ({ ...current,
+        ids: new Set([...current.ids].filter((id) => !assignedRowIds.has(id))),
+        existingEvents: new Map([...current.existingEvents].filter(([id]) => !assignedRowIds.has(id))),
+      }));
     }
   }
   const fleetLanesByVessel = useMemo(
@@ -1619,6 +1627,14 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         ids: new Set([
           ...(current.rangeStart === range.start && current.rangeEnd === range.end ? current.ids : []),
           boardRowId,
+        ]),
+        existingEvents: new Map([
+          ...(current.rangeStart === range.start && current.rangeEnd === range.end ? current.existingEvents : []),
+          [boardRowId, new Set(allPlanningCrewEvents.filter((event) => event.confirmationStatus !== 'cancelled'
+            && (event.vesselId === eligiblePeopleDialog.vesselId || (event.vesselId === null && event.vessel === eligiblePeopleDialog.vesselName))
+            && (event.board || (normalizePlanningText(event.vessel).includes('ARMEMENT') ? 'Armement' : 'Bordée')) === eligiblePeopleDialog.watchGroup
+            && (event.personId === person.id || (event.personId === null && event.person === formatPlanningPerson(person))))
+            .map((event) => `${event.id}:${event.startsOn}:${event.endsOn}`))],
         ]),
       }));
       setCollapsedFleetNodes((current) => {

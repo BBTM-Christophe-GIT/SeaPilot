@@ -14,7 +14,7 @@ using System.Web.Script.Serialization;
 // No remote listener, startup service, saved login token, or arbitrary file reads.
 public static class SeaPilotDriveBridge
 {
-    public const string Version = "2.6.0";
+    public const string Version = "2.7.0";
     public const int ConnectionPortCount = 16;
     const int MaxBody = 72 * 1024 * 1024;
     const string Api = "https://szlvyrrmvdvhzixilymh.supabase.co";
@@ -152,6 +152,7 @@ public static class SeaPilotDriveBridge
             return ExecuteSetup(data, remote, SeaPilotDrive.ConfiguredRoot, root => { SeaPilotDrive.ConfigureRoot(root); }, SeaPilotDrive.SelectRoot, SeaPilotDrive.DefaultRoot);
         string baseRoot = SeaPilotDrive.ConfiguredRoot();
         if (String.IsNullOrEmpty(baseRoot)) throw new IOException("Ce PC doit etre configure dans Administration > Documents et Google Drive.");
+        baseRoot = SeaPilotDrive.ValidateRoot(baseRoot);
         string module = Text(data, "module");
         if (String.IsNullOrEmpty(module)) module = "disciplinary";
         if (module == "chemicals") return ExecuteChemical(baseRoot, data, remote);
