@@ -22,8 +22,44 @@ function documentaryAuditGuide(label: string): ManualGuide {
   };
 }
 
+const REGULATORY_LIBRARY_ACCESS = 'Marin et Capitaine consultent les textes, les dernières revues et leur historique. Administration, Direction et Armement peuvent ajouter ou modifier les liens et enregistrer les revues de leur société. La bibliothèque et chaque rubrique doivent être autorisées pour votre compte.';
+
 // Notices du profil Marin. Les noms, l’ordre et les accès viennent de la navigation.
 export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
+  regulatoryLibrary: {
+    purpose: 'Retrouver les textes de référence et suivre la revue mensuelle de leurs mises à jour dans le carnet de veille partagé de votre société.',
+    access: REGULATORY_LIBRARY_ACCESS,
+    steps: [
+      { title: 'Ouvrir la bibliothèque', detail: 'Cliquez sur Bibliothèque Réglementaire dans le menu principal pour afficher la vue d’ensemble. Les cartes Sécurité Maritime et Code des Transports ouvrent les rubriques. La flèche à côté du menu replie ou déplie les sous-menus sans quitter la page.' },
+      { title: 'Lire le carnet de veille', detail: 'Le tableau présente chaque texte, la date de sa dernière revue, son auteur, les mises à jour constatées et son état. Recherchez un titre ou utilisez Revues à réaliser pour afficher les textes sans revue ou dont la revue doit être renouvelée.' },
+      { title: 'Effectuer la revue mensuelle', detail: 'Administration, Direction et Armement utilisent Faire la revue après consultation de la source officielle. Choisissez Aucune mise à jour constatée ou Des mises à jour ont été constatées ; dans ce dernier cas, décrivez les évolutions et les articles concernés. Valider la revue enregistre automatiquement la date et l’auteur. L’échéance suivante intervient un mois calendaire après la revue.' },
+      { title: 'Consulter l’historique', detail: 'Ouvrez Historique sur la ligne d’un texte pour retrouver toutes les revues enregistrées, leurs auteurs, leurs dates et les mises à jour relevées. Les revues précédentes sont conservées, avec le titre et le lien consultés au moment de chaque vérification.' },
+      { title: 'Ajouter une référence', detail: 'Administration, Direction et Armement utilisent Ajouter un lien. Renseignez le Titre du texte, une Adresse du lien HTTPS sans identifiant ni mot de passe, puis la Rubrique Sécurité Maritime ou Code des Transports. Enregistrer le lien l’ajoute au carnet de veille. Le crayon permet de modifier une référence ajoutée ; changer son adresse impose une nouvelle revue.' },
+    ],
+    reminders: ['Un texte sans revue enregistrée affiche À revoir. Après un mois calendaire sans nouvelle revue, il affiche En retard.', 'La date d’une version du document officiel ne remplace pas la date de revue dans SeaPilot. Les mises à jour sont renseignées après vérification de la source ; elles ne sont pas détectées automatiquement.', 'Marin et Capitaine disposent de la consultation ; demandez à un responsable habilité de compléter une revue ou un lien.'],
+  },
+  regulatorySafety: {
+    purpose: 'Consulter les références officielles de sécurité maritime et les divisions applicables, puis retrouver leur suivi de revue.',
+    access: REGULATORY_LIBRARY_ACCESS,
+    steps: [
+      { title: 'Ouvrir Sécurité Maritime', detail: 'Dans Bibliothèque Réglementaire, choisissez Sécurité Maritime. Les Liens directs sont affichés au-dessus de l’accès au Pôle réglementation de la sécurité maritime sur mer.gouv.fr.' },
+      { title: 'Choisir une division', detail: 'Les références initiales sont Division 160 - Gestion de la Sécurité, Division 213 - Prévention de la Pollution, Division 214 - Protection des travailleurs et appareils de levage et Division 222 - Conception et Exploitation des navires de charge de jauge brute inférieure à 500.' },
+      { title: 'Lire un PDF ou ouvrir la source officielle', detail: 'Le titre d’une division ouvre son PDF dans un nouvel onglet. Lire le PDF dans SeaPilot affiche le lecteur intégré. Si le lecteur reste vide, utilisez Ouvrir le PDF. Ouvrir le site officiel donne accès au Pôle réglementation ; le site du ministère bloque son affichage intégré et se consulte dans un nouvel onglet.' },
+      { title: 'Consulter le suivi de la rubrique', detail: 'Le Carnet de veille reprend les dernières revues et les mises à jour constatées pour chaque texte. Historique conserve les vérifications précédentes. Administration, Direction et Armement réalisent les revues et peuvent ajouter d’autres références avec un titre, une adresse HTTPS et la rubrique Sécurité Maritime.' },
+    ],
+    reminders: ['Les quatre PDF sont les références enregistrées dans la bibliothèque ; vérifiez les versions disponibles sur la source officielle avant de valider une revue.', 'Une alerte apparaît après un mois calendaire sans revue ; consulter un PDF ne valide pas la revue.', 'Les accès externes dépendent de la disponibilité du site officiel.'],
+  },
+  regulatoryTransport: {
+    purpose: 'Ouvrir la référence Code des Transports sur Légifrance et consulter les revues et les mises à jour relevées.',
+    access: REGULATORY_LIBRARY_ACCESS,
+    steps: [
+      { title: 'Ouvrir Code des Transports', detail: 'Dans Bibliothèque Réglementaire, choisissez Code des Transports. Le bouton Ouvrir le site officiel ouvre la référence Légifrance dans un nouvel onglet.' },
+      { title: 'Consulter Légifrance', detail: 'Légifrance bloque son affichage intégré. Consultez le texte sur le site officiel et suivez sa vérification d’accès si elle apparaît. Le carnet de veille SeaPilot reste disponible pour suivre les vérifications du texte.' },
+      { title: 'Lire les revues et les mises à jour', detail: 'Dans le Carnet de veille, consultez la Dernière revue, les Mises à jour et l’État du texte. Historique reprend les revues conservées. Administration, Direction et Armement utilisent Faire la revue après consultation de Légifrance, décrivent les évolutions constatées si nécessaire, puis choisissent Valider la revue.' },
+      { title: 'Compléter les références', detail: 'Administration, Direction et Armement peuvent utiliser Ajouter un lien pour enregistrer un autre texte. Renseignez son titre, une adresse HTTPS sans identifiant ni mot de passe et la rubrique Code des Transports. Chaque référence dispose ensuite de son propre suivi mensuel.' },
+    ],
+    reminders: ['L’ouverture de Légifrance ne valide pas automatiquement une revue.', 'Un texte sans revue est À revoir ; après un mois calendaire sans nouvelle revue, l’alerte En retard apparaît.', 'Marin et Capitaine consultent les références et l’historique ; la saisie des liens et des revues est réservée aux responsables habilités.'],
+  },
   ovid: documentaryAuditGuide('OVID'),
   ecmid: documentaryAuditGuide('eCMID'),
   externalIsmAudits: documentaryAuditGuide('Audit ISM Externe'),
@@ -269,7 +305,9 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
 };
 
 export function getManualModules(visibleModules: AppModule[]): AppModule[] {
-  return visibleModules.filter((module) => MANUAL_GUIDES[module.key]);
+  const canOpenRegulatoryLibrary = visibleModules.some((module) => module.key === 'regulatoryLibrary');
+  return visibleModules.filter((module) => MANUAL_GUIDES[module.key]
+    && (module.family !== 'Bibliothèque Réglementaire' || canOpenRegulatoryLibrary));
 }
 
 export function normalizeManualSearch(value: string): string {

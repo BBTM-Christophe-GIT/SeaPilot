@@ -32,6 +32,9 @@ export type ModuleKey =
   | 'marad'
   | 'technicalDocuments'
   | 'lifting'
+  | 'regulatoryLibrary'
+  | 'regulatorySafety'
+  | 'regulatoryTransport'
   | 'usefulLinks'
   | 'admin';
 
@@ -46,6 +49,7 @@ export type ModuleFamily =
   | 'Planning'
   | 'Ressources Humaines'
   | 'Maintenance'
+  | 'Bibliothèque Réglementaire'
   | 'Administration';
 
 export interface AppModule {
@@ -189,6 +193,9 @@ export const APP_MODULES: AppModule[] = [
     allowedRoles: ALL_ROLES,
   },
   { key: 'lifting', label: 'Levage', family: 'Registres', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'regulatoryLibrary', label: 'Bibliothèque Réglementaire', family: 'Bibliothèque Réglementaire', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'regulatorySafety', label: 'Sécurité Maritime', family: 'Bibliothèque Réglementaire', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'regulatoryTransport', label: 'Code des Transports', family: 'Bibliothèque Réglementaire', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   { key: 'usefulLinks', label: 'Liens utiles', family: 'Accueil', navigationKind: 'direct', allowedRoles: ALL_ROLES },
   {
     key: 'admin',
