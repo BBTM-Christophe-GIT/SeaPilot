@@ -1,5 +1,7 @@
 # Certificats flotte — fichiers reçus en attente de validation
 
+Depuis `3.64.4`, les lignes de navire dans la bibliothèque passent le nom sur une ligne distincte des compteurs sur mobile. Les noms restent lisibles à 320 et 390 px, même avec des documents à traiter et échus ; aucun compteur, document ou droit n’est masqué ou modifié.
+
 L’ajout d’un fichier à une ligne sans document utilise le même workflow qu’un renouvellement : le fichier est téléversé dans le bucket privé `fleet-certificates`, puis `submit_fleet_certificate_renewal` enregistre une version `pending_validation`. Cette version n’est pas encore le document courant. La fiche peut donc conserver un `storage_path` vide ou celui de sa version précédente jusqu’à validation.
 
 L’interface ne chargeait pas ces versions et ne proposait pas la validation existante. Elle annonçait un ajout réussi tout en affichant « Aucun fichier joint » pour une première pièce. Une lecture des journaux et de la fiche en production a confirmé un téléversement et une soumission réussis, avec une première version reçue sans version actuelle. Aucun fichier ni enregistrement de production n’a été modifié pendant le diagnostic.

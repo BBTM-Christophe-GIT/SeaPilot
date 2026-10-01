@@ -15665,6 +15665,49 @@ button.planning-p12-conflict-card {
   opacity: .45;
 }
 
+.fcx-tree-vessel-stats {
+  display: contents;
+}
+
+@media (max-width: 720px) {
+  .fcx-tree-vessel-row {
+    display: grid;
+    grid-template-columns: 17px 30px minmax(0, 1fr);
+    column-gap: 7px;
+    row-gap: 6px;
+  }
+
+  .fcx-tree-vessel-row > svg,
+  .fcx-tree-vessel-row > .fcx-tree-icon {
+    margin-right: 0;
+  }
+
+  .fcx-tree-vessel-row > strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .fcx-tree-vessel-stats {
+    display: flex;
+    grid-column: 2 / -1;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .fcx-tree-vessel-stats > em {
+    flex: 0 0 auto;
+    margin-left: 0;
+    white-space: nowrap;
+  }
+
+  .fcx-tree-vessel-stats > small {
+    margin-left: auto;
+    padding-left: 0;
+  }
+}
+
 .fcx-tree-vessel-row.is-scope-selected,
 .fcx-tree-category-row.is-scope-selected {
   color: #075faa;
