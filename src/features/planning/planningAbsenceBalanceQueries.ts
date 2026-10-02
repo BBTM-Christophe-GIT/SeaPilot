@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { planningDateFromTimestamp } from './planningDates';
-import { validatePlanningLeaveCounterPeriod, type PlanningAbsenceBalanceContext, type PlanningLeaveCounterPeriodDraft } from './planningAbsenceBalance';
+import { validatePlanningLeaveCounterPeriod, validatePlanningLeaveRightsPeriod, type PlanningAbsenceBalanceContext, type PlanningLeaveCounterPeriodDraft, type PlanningLeaveRightsPeriodDraft } from './planningAbsenceBalance';
 import type { PlanningAbsenceRecord, PlanningAbsenceType } from './planningP12';
 import { mapPlanningAssignmentOverviewRows, mapPlanningDayRows, mapPlanningPeriodRows } from './planningQueries';
 
@@ -64,4 +64,16 @@ export async function savePlanningLeaveCounterPeriod(client: SupabaseClient, dra
   });
   if (error) throw new Error(error.code === '23P01' ? 'Cette période chevauche une période de droits déjà enregistrée pour ce compteur.'
     : error.code === '42501' ? 'Votre profil ne peut pas modifier ces droits.' : 'Les droits n’ont pas été enregistrés. Réessayez.', { cause: error });
+}
+
+export async function savePlanningLeaveRightsPeriod(client: SupabaseClient, draft: PlanningLeaveRightsPeriodDraft): Promise<void> {
+  const value = validatePlanningLeaveRightsPeriod(draft);
+  const { error } = await client.rpc('save_planning_leave_rights_period', {
+    p_person_id: value.personId, p_starts_on: value.startsOn, p_ends_on: value.endsOn,
+    p_leave_entitlement: value.leaveEntitlement, p_rtt_entitlement: value.rttEntitlement,
+  });
+  if (error) throw new Error(error.code === '23P01' ? 'Cette période chevauche des droits déjà enregistrés. Ajustez la période existante.'
+    : error.code === '42501' ? 'Votre profil ne peut pas modifier ces droits.'
+      : error.code === '22023' ? 'Renseignez les droits Congés et RTT du 1er juin au 31 mai de l’année suivante.'
+        : 'Les droits n’ont pas été enregistrés. Réessayez.', { cause: error });
 }

@@ -1282,3 +1282,57 @@ final result: passed
 - Conservation : comparaison exacte des lignes des 13 tables sauvegardées ; aucune ligne historique manquante ou modifiée. 45 projets, 69 opérations, 415 événements, 1 159 DPR ; 46 documents liés et une pièce sans rattachement sauvegardés et relus depuis Drive, taille/SHA-256/MD5 concordants. Originaux conservés.
 - Vérifications : 249 tests ciblés (les attentes de note de version ont été adaptées ; un test de contrat coque nue dépassant le délai local a réussi avec 20 s), suite Windows Drive réussie. Contrôles complémentaires de l’ouverture Drive web, lint et build de production avant livraison.
 - Preuve visuelle privée hors dépôt : `project-release-20260928/projects-desktop.png` dans le répertoire d’artefacts du chat. Les archives et manifestes privés ne sont pas commis.
+
+
+---
+
+# Design QA — Planning / demande de congés
+
+- Source visual truth: C:/Users/chris/AppData/Local/Temp/codex-clipboard-3fecfa2e-c98d-4d22-85de-17f85edd4c06.png
+- Implementation: http://127.0.0.1:5181/modules/planning?preview=1
+- Desktop viewport: 1440 × 1080 CSS px; devicePixelRatio 1.
+- Source: 2482 × 1333 pixels, normalized to 1231 × 661 for comparison.
+- Implementation region: 1231 × 626 pixels; full window: 1440 × 1080 pixels. No density scaling on final CDP captures.
+- State: Congés request for 28/09/2026, June 2026–May 2027 rights, demonstration totals 20 Congés / 0 RTT, approved 0, pending 0, request 1, projection 19. Demo data only; production totals remain unset.
+- Mobile viewport: 390 × 844 CSS px; devicePixelRatio 1.
+
+## Evidence
+
+Files are outside the repository at C:/Users/chris/.codex/visualizations/2026/10/02/01a0fb40-cf39-7e20-bb01-b0869a6cba25/:
+
+- planning-design-comparison.png: first normalized source/implementation pair.
+- planning-design-comparison-final.png: final normalized full-view comparison, reference above implementation.
+- planning-design-detail-comparison.png: focused Congés card, reference left / implementation right; labels, icon alignment, dates, gauge and values checked.
+- planning-balances-design-desktop-final.png and planning-request-design-desktop-final.png: final browser captures.
+- planning-request-design-mobile-final.png and planning-balances-design-mobile-final.png: final mobile header, management button, stacked card and gauge.
+
+## Comparison history
+
+1. P2: Recharts default margin clipped the right/bottom of the gauge. Fixed zero chart margins; final gauge is circular and fully contained.
+2. P2: Existing form button styles overrode the reference-size management button. Fixed scoped specificity, 16px text / 58px desktop target; mobile wraps into a 71px-high accessible target without overflow.
+3. P2: Gauge and decorative illustrations were visibly smaller than the reference. Fixed desktop gauge 200px, illustration slot 160×107 with reserved header space; mobile sizes remain contained.
+4. Final comparison confirms all preceding P2s resolved. No remaining actionable P0/P1/P2 findings.
+
+## Required fidelity surfaces
+
+- Typography: native Inter/system stack, navy 28px heading / 27px card titles, 14–16px labels and dates, 40px gauge values. Hierarchy and labels match. Browser capture softness affects the screenshot appearance, not computed font sizes. Mobile text wraps naturally.
+- Layout: white/light-blue container, two equal desktop cards, round icon badges, left gauge, right metrics, pending/request/projection dividers and full-width information strip. Container-based stacking protects the narrower P12 panel and mobile. DOM scrollWidth equals clientWidth for the mobile block and both cards.
+- Colors: turquoise Congés and violet RTT, navy headings, muted blue labels, orange pending and green approved icons, pale blue information strip. Solid data arcs retain truthful remaining/total proportions; the mock's decorative multitone arc is intentionally simplified.
+- Assets: two generated transparent PNG illustrations, 360×240 each, loaded at naturalWidth360, with clean alpha. Standard Lucide icons provide the closest existing icon family; the palm glyph is outlined rather than the mock's filled glyph (P3).
+- Copy/content: heading, subtitle, management action, period dates, all metrics and information text reproduce the reference. Null rights retain “À initialiser”; zero and negative amounts remain distinct.
+
+## Interaction and accessibility checks
+
+- Open request → choose Christophe → open separate rights window → save 20/0 demonstration totals → close → counters20/0, request1 and projection19.
+- Existing prior verification enrolled Adam with20/0 independently, leaving the selected request unchanged.
+- Mobile opens and closes the separate rights window; original request stays open. Cards scroll and controls remain reachable without horizontal overflow.
+- Charts are decorative to assistive technology; live meter exposes actual remaining/total text, including negative values, and null rights use status. Numeric dt/dd metrics are retained.
+- Real Marin/Capitaine auth fixtures verify own-account balances and no management actions; role simulation was not used as profile truth.
+- Browser console errors/warnings: none after fresh reload of final assets.
+- UI tests: 53 passed. Broader Planning suite: 640 passed plus two unrelated timeout cases passed on isolated rerun. SQL fixtures passed remotely and rolled back.
+
+## Follow-up polish
+
+P3 only: slight icon-fill differences and a simpler solid gauge arc. These preserve the provided composition and avoid misleading decorative percentages. Mobile has no reference mock; adaptation verified at390px.
+
+final result: passed

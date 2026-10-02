@@ -12,6 +12,13 @@ export interface PlanningLeaveCounterPeriod {
   entitlement: number;
 }
 export interface PlanningLeaveCounterPeriodDraft extends Omit<PlanningLeaveCounterPeriod, 'id'> { personId: number }
+export interface PlanningLeaveRightsPeriodDraft {
+  personId: number;
+  startsOn: string;
+  endsOn: string;
+  leaveEntitlement: number;
+  rttEntitlement: number;
+}
 export interface PlanningAbsenceBalanceContext {
   kind: 'leave_rtt' | 'crew';
   person: PlanningPerson;
@@ -95,6 +102,12 @@ function requestInstants(request: PlanningCounterRequest): { startsAt: string; e
   } catch { return null; }
 }
 
+export function getPlanningLeaveRightsRange(anchor: string): PlanningDateRange {
+  if (!isPlanningDate(anchor)) throw new Error('Choisissez une date valide pour la période de droits.');
+  const year = Number(anchor.slice(0, 4)) - (anchor.slice(5) < '06-01' ? 1 : 0);
+  return { start: `${year}-06-01`, end: `${year + 1}-05-31` };
+}
+
 export function buildPlanningLeaveCounterSummaries(context: PlanningAbsenceBalanceContext, request: PlanningCounterRequest, today: string): PlanningLeaveCounterSummary[] {
   const instants = requestInstants(request);
   const anchor = instants ? request.startsAt.slice(0, 10) : today;
@@ -112,7 +125,7 @@ export function buildPlanningLeaveCounterSummaries(context: PlanningAbsenceBalan
     }));
     const uncoveredRequestDays = request.absenceType === counterType && requestDates ? requestDates.size - covered.size : 0;
     for (const period of relevant.length ? relevant : [null]) {
-      const range = { start: period?.startsOn || `${anchor.slice(0, 4)}-01-01`, end: period?.endsOn || `${anchor.slice(0, 4)}-12-31` };
+      const range = period ? { start: period.startsOn, end: period.endsOn } : getPlanningLeaveRightsRange(anchor);
       const approved = new Set<string>();
       const pending = new Set<string>();
       context.absences.filter((absence) => absence.absenceType === counterType && absence.id !== request.absenceId && ['approved', 'requested'].includes(absence.status))
@@ -145,6 +158,16 @@ export function validatePlanningLeaveCounterPeriod(draft: PlanningLeaveCounterPe
     || !Number.isFinite(draft.entitlement) || draft.entitlement < 0 || draft.entitlement >= 100000
     || Math.abs(draft.entitlement * 100 - Math.round(draft.entitlement * 100)) > 1e-6) {
     throw new Error('Renseignez une période valide et un total de droits positif ou nul, avec deux décimales au maximum.');
+  }
+  return draft;
+}
+
+export function validatePlanningLeaveRightsPeriod(draft: PlanningLeaveRightsPeriodDraft): PlanningLeaveRightsPeriodDraft {
+  validatePlanningLeaveCounterPeriod({ personId: draft.personId, counterType: 'leave', startsOn: draft.startsOn, endsOn: draft.endsOn, entitlement: draft.leaveEntitlement });
+  validatePlanningLeaveCounterPeriod({ personId: draft.personId, counterType: 'rtt', startsOn: draft.startsOn, endsOn: draft.endsOn, entitlement: draft.rttEntitlement });
+  const range = getPlanningLeaveRightsRange(draft.startsOn);
+  if (draft.startsOn !== range.start || draft.endsOn !== range.end) {
+    throw new Error('La période de droits doit aller du 1er juin au 31 mai de l’année suivante.');
   }
   return draft;
 }

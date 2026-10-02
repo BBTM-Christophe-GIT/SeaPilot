@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { PREVIEW_LINK_CATEGORIES, PREVIEW_USEFUL_LINKS } from '../usefulLinks/usefulLinksPreview';
 import { createPlanningPreviewOverview } from '../planning/planningPreviewData';
 import { todayPlanningDate } from '../planning/planningDates';
+import { validatePlanningLeaveCounterPeriod, validatePlanningLeaveRightsPeriod } from '../planning/planningAbsenceBalance';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
@@ -41,7 +42,7 @@ function previewStorageAssetUrl(bucket: string, path: string): string {
   return '';
 }
 
-type PreviewResult = { data: unknown; error: typeof PREVIEW_WRITE_ERROR | null };
+type PreviewResult = { data: unknown; error: (typeof PREVIEW_WRITE_ERROR & { code?: string }) | null };
 
 const PREVIEW_STCW_SHORT_FILE_NAMES: Partial<Record<number, string>> = {
   15: 'CRO',
@@ -1123,6 +1124,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   planning_rotation_occurrences: [],
   planning_templates: [],
   planning_absences: [],
+  planning_leave_counter_people: [{ person_id: 111 }, { person_id: 112 }],
+  planning_leave_counter_periods: [],
   planning_conflict_cases: [],
   planning_conflict_case_history: [],
   planning_manning_matrices: [{
@@ -1834,14 +1837,52 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'save_planning_leave_rights_period' || functionName === 'save_planning_leave_counter_period') {
+    const personId = Number(args.p_person_id);
+    const personExists = createPlanningPreviewOverview(todayPlanningDate()).people.some((person) => person.id === personId)
+      || previewRows('people').some((person) => Number(person.id) === personId);
+    if (!personExists) return createPreviewQuery({ data: null, error: { code: '42501', message: 'Personne de démonstration introuvable.' } });
+    const annual = functionName === 'save_planning_leave_rights_period';
+    const startsOn = String(args.p_starts_on || '');
+    const endsOn = String(args.p_ends_on || '');
+    const enrolled = previewRows('planning_leave_counter_people').some((person) => Number(person.person_id) === personId);
+    if (!annual && !enrolled) return createPreviewQuery({ data: null, error: { code: '22023', message: 'Activez les droits Congés et RTT pour cette personne.' } });
+    const entitlement = (value: unknown) => value === null || value === undefined || value === '' ? NaN : Number(value);
+    const drafts = annual ? [
+      { personId, counterType: 'leave' as const, startsOn, endsOn, entitlement: entitlement(args.p_leave_entitlement) },
+      { personId, counterType: 'rtt' as const, startsOn, endsOn, entitlement: entitlement(args.p_rtt_entitlement) },
+    ] : [{ personId, counterType: args.p_counter_type as 'leave' | 'rtt', startsOn, endsOn, entitlement: entitlement(args.p_entitlement) }];
+    try {
+      if (annual) validatePlanningLeaveRightsPeriod({ personId, startsOn, endsOn, leaveEntitlement: drafts[0].entitlement, rttEntitlement: drafts[1].entitlement });
+      else validatePlanningLeaveCounterPeriod(drafts[0]);
+    } catch (error) {
+      return createPreviewQuery({ data: null, error: { code: '22023', message: error instanceof Error ? error.message : 'Droits invalides.' } });
+    }
+    const periods = previewRows('planning_leave_counter_periods');
+    if (drafts.some((draft) => periods.some((period) => Number(period.person_id) === personId && period.counter_type === draft.counterType
+      && String(period.starts_on) <= endsOn && String(period.ends_on) >= startsOn
+      && (period.starts_on !== startsOn || period.ends_on !== endsOn)))) {
+      return createPreviewQuery({ data: null, error: { code: '23P01', message: 'Cette période chevauche des droits existants.' } });
+    }
+    if (!enrolled) previewRows('planning_leave_counter_people').push({ person_id: personId });
+    let savedId = 0;
+    drafts.forEach((draft) => {
+      const existing = periods.find((period) => Number(period.person_id) === personId && period.counter_type === draft.counterType && period.starts_on === startsOn && period.ends_on === endsOn);
+      savedId = Number(existing?.id) || nextPreviewId('planning_leave_counter_periods', 0);
+      const row = { id: savedId, person_id: personId, counter_type: draft.counterType, starts_on: startsOn, ends_on: endsOn, entitlement: draft.entitlement, updated_at: new Date().toISOString() };
+      if (existing) Object.assign(existing, row); else periods.push(row);
+    });
+    return createPreviewQuery({ data: annual ? null : savedId, error: null });
+  }
   if (functionName === 'get_planning_absence_balance_context') {
     const planningPerson = createPlanningPreviewOverview(todayPlanningDate()).people.find((person) => person.id === Number(args.p_person_id));
     const person = planningPerson ? { id: planningPerson.id, first_name: planningPerson.firstName, last_name: planningPerson.lastName, hired_on: planningPerson.hiredOn, departed_on: planningPerson.departedOn, active: planningPerson.active } : previewRows('people').find((row) => Number(row.id) === Number(args.p_person_id));
     if (!person) return createPreviewQuery({ data: null, error: { message: 'Personne de démonstration introuvable.' } });
     return createPreviewQuery({ data: {
-      kind: ['Christophe MINASSIAN', 'Sophie HAMEL'].includes(`${person.first_name} ${person.last_name}`) ? 'leave_rtt' : 'crew',
+      kind: previewRows('planning_leave_counter_people').some((row) => Number(row.person_id) === Number(person.id)) ? 'leave_rtt' : 'crew',
       person: { id: person.id, first_name: person.first_name, last_name: person.last_name, hired_on: person.hired_on, departed_on: person.departed_on, active: person.active },
-      counter_periods: [], absences: [], crew_checkpoints: [], crew_sources: { assignments: [], periods: [], days: [] },
+      counter_periods: structuredClone(previewRows('planning_leave_counter_periods').filter((row) => Number(row.person_id) === Number(person.id))),
+      absences: [], crew_checkpoints: [], crew_sources: { assignments: [], periods: [], days: [] },
     }, error: null });
   }
   if (functionName === 'projects_set_favorite') {

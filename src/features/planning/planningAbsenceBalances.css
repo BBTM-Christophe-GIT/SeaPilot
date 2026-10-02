@@ -1,24 +1,56 @@
-.planning-absence-balances { grid-column:1/-1; display:grid; gap:12px; min-width:0; padding:16px; border:1px solid #cfdfe7; border-radius:12px; background:#f6fafc; color:#18394c; }
+.planning-absence-request .app-dialog.app-dialog--lg { --dialog-width:1320px; }
+.planning-absence-balances { container:planning-balances / inline-size; grid-column:1/-1; display:grid; gap:24px; min-width:0; padding:26px; border:1px solid #e2edf8; border-radius:20px; background:#fbfdff; color:#0c1a3b; box-shadow:0 5px 24px rgb(93 151 200 / 5%); }
 .planning-absence-balances :is(h3,h4,p,dl,dd) { margin:0; }
-.planning-absence-balances__heading { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-.planning-absence-balances__heading h3 { display:flex; align-items:center; gap:8px; font-size:16px; }
-.planning-absence-balances button { --p12-button-border:#c4d6df; --p12-button-background:white; --p12-button-color:#22536a; --p12-button-hover:#eef6f9; display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:40px; padding:8px 10px; border:1px solid #c4d6df; border-radius:7px; color:#22536a; background:white; font:inherit; font-size:12px; cursor:pointer; }
+.planning-absence-balances__heading { display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; }
+.planning-absence-balances__identity { display:flex; align-items:center; gap:20px; min-width:0; }
+.planning-absence-balances__heading-icon { display:grid; place-items:center; flex:0 0 70px; height:70px; border-radius:22px; background:#e8f7f9; color:#08788b; }
+.planning-absence-balances__heading h3 { color:#0b193b; font-size:28px; font-weight:750; line-height:1.2; letter-spacing:-.025em; }
+.planning-absence-balances__identity p { margin-top:7px; color:#5d7897; font-size:16px; line-height:1.45; }
+.planning-absence-balances button { --p12-button-border:#d1e4ff; --p12-button-background:#f4f9ff; --p12-button-color:#153b86; --p12-button-hover:#eaf3ff; display:inline-flex; align-items:center; justify-content:center; gap:10px; min-height:46px; padding:11px 14px; border:1px solid #d1e4ff; border-radius:13px; color:#153b86; background:#f4f9ff; font:inherit; font-size:14px; font-weight:650; cursor:pointer; }
+.planning-absence-balances button:hover:not(:disabled) { background:#eaf3ff; }
+.planning-absence-balances .planning-absence-balances__manage,.planning-p12-form .planning-absence-balances .planning-absence-balances__manage { flex:0 0 auto; min-height:58px; gap:12px; padding:14px 17px; font-size:16px; box-shadow:0 4px 12px rgb(55 107 170 / 5%); }
+.planning-absence-balances__manage svg { flex-shrink:0; }
 .planning-absence-balances button:disabled { cursor:wait; opacity:.6; }
 .planning-absence-balances :is(button,input,select):focus-visible { outline:3px solid #2988ac; outline-offset:2px; }
-.planning-absence-balances__cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
-.planning-absence-balances__card { min-width:0; border:1px solid #d1e4e6; border-radius:10px; background:#fff; padding:14px; border-top:3px solid #0e7c86; }
-.planning-absence-balances__card.is-rtt { border-top-color:#6750ac; }
-.planning-absence-balances__card h4 { font-size:17px; color:#075f68; }
-.planning-absence-balances__card.is-rtt h4 { color:#594299; }
-.planning-absence-balances__period { display:flex; align-items:center; gap:5px; margin-top:5px!important; font-size:11px; color:#587180; }
-.planning-absence-balances__metrics { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:13px!important; }
+.planning-absence-balances__cards { display:grid; grid-template-columns:minmax(0,1fr); gap:18px; }
+.planning-absence-balances__card { --counter-accent:#0c8793; --counter-soft:#e7f8f9; min-width:0; border:1px solid #e4edf5; border-top:4px solid #51b5b3; border-radius:20px; background:#fff; padding:25px 20px 24px; box-shadow:0 5px 13px rgb(78 125 173 / 5%); }
+.planning-absence-balances__card.is-rtt { --counter-accent:#854bc4; --counter-soft:#f1ecfd; border-top-color:#a677e2; }
+.planning-absence-balances__card-heading { position:relative; display:flex; align-items:center; gap:18px; min-height:84px; padding-right:105px; }
+.planning-absence-balances__card-icon { display:grid; place-items:center; flex:0 0 76px; height:76px; border-radius:50%; background:var(--counter-soft); color:var(--counter-accent); }
+.planning-absence-balances__card-heading > div { z-index:1; min-width:0; }
+.planning-absence-balances__card h4 { color:#0b193b; font-size:27px; font-weight:750; line-height:1.2; letter-spacing:-.02em; }
+.planning-absence-balances__period { display:flex; align-items:flex-start; gap:8px; margin-top:9px!important; font-size:15px; line-height:1.4; color:#5b7899; }
+.planning-absence-balances__period svg { flex:0 0 auto; margin-top:1px; }
+.planning-absence-balances__illustration { position:absolute; top:-5px; right:-4px; width:160px; height:107px; object-fit:contain; opacity:.82; pointer-events:none; }
+.planning-absence-balances__metrics { display:grid; grid-template-columns:200px repeat(2,minmax(0,1fr)); grid-auto-rows:minmax(60px,auto); column-gap:12px; row-gap:18px; align-items:center; min-height:234px; margin-top:24px!important; }
 .planning-absence-balances__metrics > div { min-width:0; }
-.planning-absence-balances__metrics dt { color:#536d7b; font-size:11px; }
-.planning-absence-balances__metrics dd { margin-top:3px; font-size:14px; font-weight:600; overflow-wrap:anywhere; }
-.planning-absence-balances__available dd { color:#076775; font-size:20px; }
-.planning-absence-balances__metrics .is-negative dd { color:#a33149; }
-.planning-absence-balances__edit { margin-top:12px; }
-.planning-absence-balances__help,.planning-absence-balances__notice { font-size:12px; line-height:1.5; color:#55707e; }
+.planning-absence-balances__metric { position:relative; padding-left:49px; }
+.planning-absence-balances__metric dt { color:#5b7899; font-size:14px; line-height:1.25; }
+.planning-absence-balances__metric dd { margin-top:6px; color:#0c1a3b; font-size:24px; font-weight:750; line-height:1.1; overflow-wrap:anywhere; }
+.planning-absence-balances__metric-icon { position:absolute; left:0; top:0; display:grid; place-items:center; width:40px; height:40px; border-radius:50%; background:#edf7ff; color:#3299df; }
+.planning-absence-balances__metric.is-entitlement { grid-column:2; grid-row:1; }
+.planning-absence-balances__card.is-rtt .is-entitlement .planning-absence-balances__metric-icon { color:#854bc4; background:#f4efff; }
+.planning-absence-balances__metric.is-approved { grid-column:3; grid-row:1; border-left:1px solid #e1ebf6; padding-left:55px; }
+.planning-absence-balances__metric.is-approved .planning-absence-balances__metric-icon { left:8px; background:#ecfaf5; color:#20a583; }
+.planning-absence-balances__metric.is-pending { grid-column:2 / 4; grid-row:2; }
+.planning-absence-balances__metric.is-pending .planning-absence-balances__metric-icon { background:#fff5e9; color:#f69a22; }
+.planning-absence-balances__metric.is-request { grid-column:2; grid-row:3; border-top:1px solid #e1ebf6; padding-top:20px; }
+.planning-absence-balances__metric.is-projected { grid-column:3; grid-row:3; border-top:1px solid #e1ebf6; border-left:1px solid #e1ebf6; padding:20px 0 0 55px; }
+.planning-absence-balances__metric.is-request .planning-absence-balances__metric-icon { top:20px; background:#f1f6ff; color:#5799ed; }
+.planning-absence-balances__metric.is-projected .planning-absence-balances__metric-icon { top:20px; left:8px; background:#edfaf9; color:#32b7b4; }
+.planning-absence-balances__available { position:relative; grid-column:1; grid-row:1 / 4; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; width:200px; height:200px; padding:25px; text-align:center; }
+.planning-absence-balances__ring { position:absolute; inset:0; pointer-events:none; }
+.planning-absence-balances__ring :is(.recharts-wrapper,.recharts-surface) { width:100%!important; height:100%!important; }
+.planning-absence-balances__available dt,.planning-absence-balances__gauge-total { position:relative; color:#5b7899; font-size:13px; line-height:1.2; }
+.planning-absence-balances__available dd { position:relative; color:var(--counter-accent); font-size:40px; line-height:1.1; font-weight:750; letter-spacing:-.03em; overflow-wrap:anywhere; }
+.planning-absence-balances__available.is-uninitialized dd { font-size:21px; letter-spacing:0; }
+.planning-absence-balances__metrics:not(.has-request) .planning-absence-balances__available { grid-row:1 / 3; }
+.planning-absence-balances__metrics:not(.has-request) .is-pending { border-top:1px solid #e1ebf6; padding-top:25px; }
+.planning-absence-balances__metrics:not(.has-request) .is-pending .planning-absence-balances__metric-icon { top:25px; }
+.planning-absence-balances__metrics .is-negative dd { color:#b33653; }
+.planning-absence-balances__help { display:flex; align-items:center; gap:15px; padding:17px 20px; border:1px solid #e1edfc; border-radius:16px; background:#f1f7fe; color:#5b7899; font-size:14px; line-height:1.5; }
+.planning-absence-balances__help svg { flex:0 0 auto; color:#7695b6; }
+.planning-absence-balances__notice { font-size:12px; line-height:1.5; color:#55707e; }
 .planning-absence-balances__notice { padding:10px; border-radius:7px; background:#fff3d9; color:#785016; }
 .planning-absence-balances__crew { display:grid; gap:8px; padding:14px; border:1px solid #d1e4e6; border-radius:10px; background:white; }
 .planning-absence-balances__crew > div { display:flex; gap:14px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
@@ -29,13 +61,59 @@
 .planning-absence-balances__error { background:#fff0f2; color:#a33149; }
 .planning-absence-balances__error button { margin-top:8px; }
 .planning-absence-balances__success { background:#e7f7f0; color:#176346; }
-.planning-absence-balances__editor { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:0; padding:14px; border:1px solid #9ebfce; border-radius:9px; background:white; }
-.planning-absence-balances__editor legend { padding:0 6px; font-size:14px; font-weight:600; }
-.planning-absence-balances__editor label { display:grid; gap:6px; font-size:12px; }
-.planning-absence-balances__editor :is(input,select) { width:100%; min-height:42px; padding:8px 10px; border:1px solid #c4d6df; border-radius:7px; background:white; color:#18394c; font:inherit; }
-.planning-absence-balances__editor :is(input,select):disabled { background:#eef4f7; color:#55707e; }
-.planning-absence-balances__editor .is-wide { grid-column:1/-1; }
-.planning-absence-balances__editor p { font-size:12px; color:#55707e; line-height:1.5; }
-.planning-absence-balances__editor-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
-.planning-absence-balances__editor-actions button:last-child { --p12-button-border:#0b6c7a; --p12-button-background:#0b6c7a; --p12-button-color:white; --p12-button-hover:#075b67; color:white; background:#0b6c7a; border-color:#0b6c7a; }
-@media (max-width:600px) { .planning-absence-balances { padding:12px; } .planning-absence-balances__cards,.planning-absence-balances__editor { grid-template-columns:1fr; } .planning-absence-balances button,.planning-p12-form .planning-absence-balances button { min-height:44px; } }
+@container planning-balances (min-width:1000px) { .planning-absence-balances__cards { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@container planning-balances (max-width:600px) {
+  .planning-absence-balances__identity { gap:14px; }
+  .planning-absence-balances__heading-icon { flex-basis:58px; height:58px; border-radius:18px; }
+  .planning-absence-balances__heading h3 { font-size:25px; }
+  .planning-absence-balances__identity p { font-size:14px; }
+  .planning-absence-balances__manage { width:100%; }
+  .planning-absence-balances__metrics { grid-template-columns:170px repeat(2,minmax(0,1fr)); }
+  .planning-absence-balances__available { width:170px; height:170px; }
+}
+@container planning-balances (max-width:440px) {
+  .planning-absence-balances__card { padding:19px 16px; }
+  .planning-absence-balances__card-heading { gap:12px; min-height:74px; padding-right:0; }
+  .planning-absence-balances__card-icon { flex-basis:58px; height:58px; }
+  .planning-absence-balances__card-icon svg { width:31px; height:31px; }
+  .planning-absence-balances__card h4 { font-size:23px; }
+  .planning-absence-balances__period { gap:6px; font-size:12px; }
+  .planning-absence-balances__period svg { width:15px; height:15px; }
+  .planning-absence-balances__illustration { top:-13px; right:-3px; width:72px; height:48px; opacity:.5; }
+  .planning-absence-balances__metrics { grid-template-columns:repeat(2,minmax(0,1fr)); row-gap:18px; column-gap:14px; margin-top:17px!important; }
+  .planning-absence-balances__available,.planning-absence-balances__metrics:not(.has-request) .planning-absence-balances__available { grid-column:1 / 3; grid-row:1; justify-self:center; width:180px; height:180px; }
+  .planning-absence-balances__metric.is-entitlement { grid-column:1; grid-row:2; }
+  .planning-absence-balances__metric.is-approved { grid-column:2; grid-row:2; }
+  .planning-absence-balances__metric.is-pending { grid-column:1 / 3; grid-row:3; }
+  .planning-absence-balances__metric.is-request { grid-column:1; grid-row:4; }
+  .planning-absence-balances__metric.is-projected { grid-column:2; grid-row:4; }
+  .planning-absence-balances__metric { padding-left:42px; }
+  .planning-absence-balances__metric-icon { width:34px; height:34px; }
+  .planning-absence-balances__metric-icon svg { width:20px; height:20px; }
+  .planning-absence-balances__metric.is-approved,.planning-absence-balances__metric.is-projected { padding-left:46px; }
+  .planning-absence-balances__metric.is-approved .planning-absence-balances__metric-icon,.planning-absence-balances__metric.is-projected .planning-absence-balances__metric-icon { left:5px; }
+  .planning-absence-balances__metric dt { font-size:12px; }
+  .planning-absence-balances__metric dd { font-size:22px; }
+  .planning-absence-balances__help { gap:10px; padding:13px 14px; font-size:12px; }
+}
+.planning-leave-rights-overlay .app-dialog-backdrop { z-index:2200; }
+.planning-leave-rights { display:grid; gap:18px; color:#18394c; }
+.planning-leave-rights label { display:grid; gap:7px; font-size:13px; font-weight:600; }
+.planning-leave-rights :is(input,select) { width:100%; min-width:0; min-height:44px; padding:10px 12px; border:1px solid #c4d6df; border-radius:8px; background:white; color:#18394c; font:inherit; font-weight:400; }
+.planning-leave-rights input[readonly] { background:#eef4f7; color:#55707e; }
+.planning-leave-rights :is(button,input,select):focus-visible { outline:3px solid #2988ac; outline-offset:2px; }
+.planning-leave-rights__form { display:grid; gap:14px; }
+.planning-leave-rights__form fieldset { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin:0; padding:16px; border:1px solid #cfdfe7; border-radius:12px; background:#f6fafc; }
+.planning-leave-rights__form .is-wide { grid-column:1/-1; }
+.planning-leave-rights__form p { margin:0; font-size:13px; line-height:1.5; color:#55707e; }
+.planning-leave-rights__actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:10px; }
+.planning-leave-rights button { min-height:44px; padding:10px 14px; border:1px solid #c4d6df; border-radius:8px; background:white; color:#22536a; font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+.planning-leave-rights button.is-primary { border-color:#0b6c7a; background:#0b6c7a; color:white; }
+.planning-leave-rights button:disabled { opacity:.6; cursor:wait; }
+@media (max-width:600px) {
+  .planning-absence-balances { padding:12px; }
+  .planning-absence-balances__cards,.planning-leave-rights__form fieldset { grid-template-columns:1fr; }
+  .planning-absence-balances button,.planning-p12-form .planning-absence-balances button { min-height:44px; }
+  .planning-leave-rights-overlay .app-dialog-backdrop { padding:10px; place-items:center; }
+  .planning-leave-rights-overlay .app-dialog { max-height:calc(100dvh - 20px); border-radius:14px; }
+}

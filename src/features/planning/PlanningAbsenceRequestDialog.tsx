@@ -69,7 +69,7 @@ export function PlanningAbsenceRequestDialog({ client, people, currentPerson, pe
         {error ? <p className="form-error" role="alert">{error}</p> : null}
         <div className="planning-p12-form">
           <PlanningAbsenceFormFields isSaving={isSaving || isEditingBalances} onChange={setForm} people={options} personalOnly={personalOnly} value={effectiveForm} />
-          <PlanningAbsenceBalances client={client} personId={effectiveForm.personId ? Number(effectiveForm.personId) : null} absenceType={effectiveForm.absenceType} startsAt={effectiveForm.startsAt} endsAt={effectiveForm.endsAt} absenceId={effectiveForm.id} canManage={canManageBalances && !personalOnly && !isSaving} onEditingChange={setIsEditingBalances} />
+          <PlanningAbsenceBalances client={client} people={options} personId={effectiveForm.personId ? Number(effectiveForm.personId) : null} absenceType={effectiveForm.absenceType} startsAt={effectiveForm.startsAt} endsAt={effectiveForm.endsAt} absenceId={effectiveForm.id} canManage={canManageBalances && !personalOnly && !isSaving} onEditingChange={setIsEditingBalances} />
           <footer>
             <button className="is-secondary" disabled={isSaving || isEditingBalances} onClick={onClose} type="button">Annuler</button>
             <button disabled={isSaving || isEditingBalances || !effectiveForm.personId} type="submit">{isSaving ? 'Envoi en cours…' : 'Envoyer la demande'}</button>
