@@ -7,13 +7,13 @@ import { resolveGenericCrewRow, type GenericCrewRow } from './planningGenericCre
 const draft: GenericCrewRow = { id: 1, revision: 3, vesselId: 10, watchGroup: 'Bordée 2', functionLabel: 'Capitaine', periods: [] };
 
 describe('generic crew positions', () => {
-  it('keeps distinct empty positions and their vessel visible with the active filter, in function order', () => {
+  it('keeps distinct empty positions and their vessel visible in function order', () => {
     const overview = { ...EMPTY_PLANNING_OVERVIEW, vessels: [{ id: 10, name: 'GOURY', acronym: 'GY', active: true }],
       genericCrewRows: [{ ...draft, id: 2, functionLabel: 'Chef Mécanicien' }, draft, { ...draft, id: 3 }],
     };
     const days = buildPlanningTimeline('2026-09-26', 'month');
     const filters = { vesselName: '', personName: '' };
-    const rows = buildPlanningCrewRows(overview, days, filters, [], { activeFrom: '2026-09-26' });
+    const rows = buildPlanningCrewRows(overview, days, filters, []);
     expect(rows.filter((row) => row.genericRow).map((row) => row.label)).toEqual(['Capitaine', 'Capitaine', 'Chef Mécanicien']);
     expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
     expect(buildPlanningFleetLanes(overview, { start: days[0].date, end: days.at(-1)!.date }, filters)[0].vesselId).toBe(10);

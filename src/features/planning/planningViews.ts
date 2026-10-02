@@ -8,7 +8,6 @@ import {
   formatPlanningPerson,
   normalizePlanningStatus,
   normalizePlanningText,
-  planningActiveFromForRange,
   type PlanningCrewEvent,
   type PlanningDateRange,
   type PlanningFilters,
@@ -277,10 +276,7 @@ export function buildPlanningCrewLanes(
   grouping: PlanningCrewGrouping,
   eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
   preferences: CrewDisplayPreferences = DEFAULT_CREW_PREFERENCES,
-  activeFrom?: string,
-  referenceRange: PlanningDateRange = range,
 ): PlanningCrewLane[] {
-  const effectiveActiveFrom = planningActiveFromForRange(activeFrom, referenceRange);
   const peopleById = new Map(overview.people.map((person) => [person.id, person]));
   const vesselsByName = new Map(overview.vessels.map((vessel) => [vessel.name, vessel.id]));
   const events = eventPool.filter((event) => event.confirmationStatus !== 'cancelled'
@@ -311,8 +307,7 @@ export function buildPlanningCrewLanes(
     });
   }
   const periodsByLane = new Map([...groups.values()].map((lane) => [lane.key, planningCrewPeriod(lane.events, range)]));
-  return [...groups.values()].filter((lane) => !effectiveActiveFrom
-    || lane.events.some((event) => event.endsOn >= effectiveActiveFrom)).map((lane) => ({ ...lane,
+  return [...groups.values()].map((lane) => ({ ...lane,
     detail: [grouping === 'teams' ? lane.watchGroup || 'Sans équipe' : lane.functionLabel,
       ...new Set(lane.events.map((event) => event.vessel).filter(Boolean))].filter(Boolean).join(' · '),
   })).sort((left, right) => (preferences.sortOrder === 'period'
