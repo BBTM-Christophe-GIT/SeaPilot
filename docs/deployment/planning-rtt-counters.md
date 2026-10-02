@@ -30,7 +30,7 @@ Une journée ouvrée partiellement couverte compte pour une journée entière ; 
 
 ## Base de données et accès
 
-Migrations à appliquer à Supabase avant le frontend : `20261001140235_planning_rtt_and_leave_counter_periods.sql`, puis `20261002062026_planning_annual_leave_rights_management.sql`.
+Migrations à appliquer à Supabase avant le frontend : `20261001140235_planning_rtt_and_leave_counter_periods.sql`, puis `20261002062949_planning_annual_leave_rights_management.sql`.
 
 `planning_leave_counter_people` désigne les personnes concernées. `planning_leave_counter_periods` conserve les droits, les bornes et l’auteur de la dernière saisie. Les deux tables utilisent RLS. Admin, Direction et Armement peuvent gérer les droits de leur société active. Marin et Capitaine peuvent lire uniquement leurs propres compteurs, sans pouvoir modifier les droits par RPC ou par accès direct. Toute lecture exige une appartenance active à la société, un rôle autorisé à lire le Planning et un rôle rendant le module Planning visible. Les autorisations de plusieurs rôles se cumulent dans la même société.
 
@@ -52,4 +52,4 @@ La recette de la fenêtre distincte couvre le choix d’une période juin–mai,
 
 La fixture SQL a passé sur Supabase le 1er octobre 2026. Le contrôle après rollback confirme deux personnes éligibles, aucune période initialisée et aucun résidu Auth, personne ou société de test. Les advisors confirment la RLS des nouvelles tables. Le [signalement des RPC `SECURITY DEFINER` accessibles aux utilisateurs connectés](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable) concerne ici la lecture minimale intentionnelle, protégée par les contrôles et fixtures ci-dessus. L’index de l’auteur, qui couvre sa clé étrangère, est signalé comme encore inutilisé immédiatement après création.
 
-Le 2 octobre 2026, la migration `20261002062026_planning_annual_leave_rights_management.sql` a été appliquée au projet Supabase SeaPilot. `supabase/tests/planning_annual_leave_rights_test.sql` et la fixture existante `supabase/tests/planning_leave_counter_periods_test.sql` ont toutes deux passé sur le serveur. Le contrôle après rollback confirme deux personnes éligibles, zéro période enregistrée et aucun utilisateur Auth ou collaborateur de test résiduel. Aucun droit ni solde fictif n’a été initialisé pour Christophe, Sophie ou un autre collaborateur.
+Le 2 octobre 2026, la migration `20261002062949_planning_annual_leave_rights_management.sql` a été appliquée au projet Supabase SeaPilot. `supabase/tests/planning_annual_leave_rights_test.sql` et la fixture existante `supabase/tests/planning_leave_counter_periods_test.sql` ont toutes deux passé sur le serveur. Le contrôle après rollback confirme deux personnes éligibles, zéro période enregistrée et aucun utilisateur Auth ou collaborateur de test résiduel. Aucun droit ni solde fictif n’a été initialisé pour Christophe, Sophie ou un autre collaborateur.
