@@ -51,6 +51,61 @@ describe('ephemeral QHSE policy preview', () => {
     await expect(queries.saveQhsePolicyProcess(client, { id, name: 'Ancienne saisie', expectedRevision: 1 })).rejects.toThrow('modifié entre-temps');
     expect(await queries.fetchQhsePolicySnapshot(client)).toEqual(before);
   });
+  it('persists chosen icons and keeps them for legacy edits, with explicit general overriding name inference', async () => {
+    const id = await queries.saveQhsePolicyProcess(client, { name: 'Santé démonstration', iconKey: 'health' });
+    await queries.saveQhsePolicyProcess(client, { id, name: 'Santé actualisée', expectedRevision: 1 });
+    expect((await queries.fetchQhsePolicySnapshot(client)).processes.find((axis) => axis.id === id)?.iconKey).toBe('health');
+    await queries.saveQhsePolicyProcess(client, { id, name: 'Santé actualisée', iconKey: 'general', expectedRevision: 2 });
+    const before = await queries.fetchQhsePolicySnapshot(client);
+    expect(before.processes.find((axis) => axis.id === id)?.iconKey).toBe('general');
+    const invalid = await client.rpc('qhse_policy_save_process', { p_id: id, p_name: 'Santé actualisée', p_description: '', p_position: 0, p_expected_revision: 3, p_icon_key: 'script' });
+    expect(invalid.error?.code).toBe('22023');
+    expect(await queries.fetchQhsePolicySnapshot(client)).toEqual(before);
+  });
+  it('reorders every axis including archives atomically and rejects incomplete, duplicate and stale lists', async () => {
+    const id = await createProcess();
+    await queries.setQhsePolicyProcessArchived(client, id, true, 1);
+    const before = await queries.fetchQhsePolicySnapshot(client);
+    const desired = [...before.processes].reverse();
+    await queries.reorderQhsePolicyProcesses(client, desired);
+    const after = await queries.fetchQhsePolicySnapshot(client);
+    expect(after.processes.map((axis) => axis.id)).toEqual(desired.map((axis) => axis.id));
+    expect(after.processes.map((axis) => axis.position)).toEqual([0, 1, 2, 3]);
+    expect(after.processes.map((axis) => axis.revision)).toEqual(desired.map((axis) => axis.revision + 1));
+    await expect(queries.reorderQhsePolicyProcesses(client, desired)).rejects.toThrow('modifié entre-temps');
+    await expect(queries.reorderQhsePolicyProcesses(client, after.processes.slice(1))).rejects.toThrow('liste complète');
+    await expect(queries.reorderQhsePolicyProcesses(client, [...after.processes, after.processes[0]])).rejects.toThrow('une seule fois');
+    expect(await queries.fetchQhsePolicySnapshot(client)).toEqual(after);
+  });
+  it('deletes empty axes and transfers active/archived objectives without changing history or original evidence', async () => {
+    const sourceId = await createProcess('Axe source démonstration');
+    const targetId = await createProcess('Axe cible démonstration');
+    const emptyId = await createProcess('Axe vide démonstration');
+    const activeId = await createObjective(sourceId);
+    const archivedId = await createObjective(sourceId, 80);
+    await queries.setQhsePolicyObjectiveArchived(client, archivedId, true, 1);
+    const attachments = await import('../qhsePolicy/qhsePolicyAttachments');
+    const file = new File(['%PDF proof'], 'preuve.pdf', { type: 'application/pdf' });
+    await attachments.saveQhsePolicyObjectiveUpdateWithAttachments(client, { objectiveId: activeId, progress: 55, occurredOn: '2026-10-02', note: 'Avant transfert', expectedRevision: 1 }, [file]);
+    const before = await queries.fetchQhsePolicySnapshot(client);
+    const source = before.processes.find((axis) => axis.id === sourceId)!;
+    const target = before.processes.find((axis) => axis.id === targetId)!;
+    await expect(queries.deleteQhsePolicyProcess(client, source)).rejects.toThrow('axe cible');
+    await expect(queries.deleteQhsePolicyProcess(client, source, { ...target, revision: target.revision + 1 })).rejects.toThrow('modifié entre-temps');
+    expect(await queries.fetchQhsePolicySnapshot(client)).toEqual(before);
+    await queries.deleteQhsePolicyProcess(client, source, target);
+    const after = await queries.fetchQhsePolicySnapshot(client);
+    expect(after.processes.some((axis) => axis.id === sourceId)).toBe(false);
+    expect(after.processes.find((axis) => axis.id === targetId)?.revision).toBe(target.revision + 1);
+    expect(after.objectives.find((objective) => objective.id === activeId)).toMatchObject({ processId: targetId, progress: 55, archived: false, revision: 3 });
+    expect(after.objectives.find((objective) => objective.id === archivedId)).toMatchObject({ processId: targetId, progress: 80, archived: true, revision: 3 });
+    expect(after.updates).toEqual(before.updates);
+    expect(after.attachments).toEqual(before.attachments);
+    expect(await attachments.readQhsePolicyAttachment(client, after.attachments[0])).toBe(file);
+    await expect(queries.addQhsePolicyObjectiveUpdate(client, { objectiveId: activeId, progress: 99, occurredOn: '2026-10-02', note: 'Révision périmée après transfert', expectedRevision: 2 })).rejects.toThrow('modifié entre-temps');
+    await queries.deleteQhsePolicyProcess(client, before.processes.find((axis) => axis.id === emptyId)!);
+    expect((await queries.fetchQhsePolicySnapshot(client)).processes.some((axis) => axis.id === emptyId)).toBe(false);
+  });
 
   it('keeps progress updates in immutable history and edits objective metadata without rewriting progress', async () => {
     const processId = await createProcess();

@@ -7,7 +7,8 @@ import { createPlanningPreviewOverview } from '../planning/planningPreviewData';
 import { isPlanningDate, todayPlanningDate } from '../planning/planningDates';
 import { validatePlanningLeaveCounterPeriod, validatePlanningLeaveRightsPeriod } from '../planning/planningAbsenceBalance';
 import { QHSE_POLICY_ATTACHMENT_MIME_TYPES } from '../qhsePolicy/qhsePolicyAttachments';
-import type { QhsePolicyOwnerKind } from '../qhsePolicy/qhsePolicyModel';
+import { isQhsePolicyId, type QhsePolicyOwnerKind } from '../qhsePolicy/qhsePolicyModel';
+import { normalizeQhsePolicyAxisIconKey, resolveQhsePolicyAxisIcon } from '../qhsePolicy/qhsePolicyIcons';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
@@ -63,7 +64,7 @@ const QHSE_DEMO_OBJECTIVE_IDS = [
 const previewQhsePolicy = {
   settings: { publication_id: 8202 as number | null, document_url: '', revision: 1, updated_at: '2026-09-30T09:00:00Z' },
   processes: ['Qualité', 'Sécurité', 'Environnement'].map((name, index) => ({
-    id: QHSE_DEMO_PROCESS_IDS[index], name, description: 'Processus de démonstration, sans donnée de production.',
+    id: QHSE_DEMO_PROCESS_IDS[index], name, description: 'Axe stratégique de démonstration, sans donnée de production.', icon_key: resolveQhsePolicyAxisIcon({ name }),
     position: index, archived: false, revision: 1, updated_at: '2026-09-30T09:00:00Z',
   })),
   objectives: [
@@ -1910,7 +1911,7 @@ function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown
   };
   const process = (id: unknown) => {
     const result = previewQhsePolicy.processes.find((row) => row.id === id);
-    if (!result) qhsePreviewFailure('42501', 'Processus de démonstration introuvable.');
+    if (!result) qhsePreviewFailure('42501', 'Axe stratégique de démonstration introuvable.');
     return result;
   };
   const objective = (id: unknown) => {
@@ -1925,7 +1926,7 @@ function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown
   const now = new Date().toISOString();
   try {
     if (functionName === 'qhse_policy_snapshot') {
-      return { data: structuredClone({ ...previewQhsePolicy, can_edit: true }), error: null };
+      return { data: structuredClone({ ...previewQhsePolicy, processes: [...previewQhsePolicy.processes].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, 'fr') || a.id.localeCompare(b.id)), can_edit: true }), error: null };
     }
     if (functionName === 'qhse_policy_owner_options') {
       return { data: {
@@ -1953,21 +1954,55 @@ function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown
       const existing = args.p_id == null ? null : process(args.p_id);
       if (existing) expectedRevision(existing.revision);
       else if (args.p_expected_revision != null) qhsePreviewFailure('40001', 'Les données ont changé. Actualisez avant de réessayer.');
-      if (existing?.archived) qhsePreviewFailure('22023', 'Un processus archivé ne peut pas être modifié.');
+      if (existing?.archived) qhsePreviewFailure('22023', 'Un axe stratégique archivé ne peut pas être modifié.');
       const name = text(args.p_name, 200, true);
       const description = text(args.p_description, 5000);
       const position = Number(args.p_position);
-      if (args.p_position == null || !Number.isInteger(position) || position < 0 || position > 100000) qhsePreviewFailure('22023', 'Position du processus invalide.');
-      if (!existing?.archived && previewQhsePolicy.processes.some((row) => row.id !== existing?.id && !row.archived && row.name.toLocaleLowerCase('fr') === name.toLocaleLowerCase('fr'))) qhsePreviewFailure('23505', 'Un processus actif porte déjà ce nom.');
-      if (existing) Object.assign(existing, { name, description, position, revision: existing.revision + 1, updated_at: now });
-      else previewQhsePolicy.processes.push({ id: crypto.randomUUID(), name, description, position, archived: false, revision: 1, updated_at: now });
+      if (args.p_position == null || !Number.isInteger(position) || position < 0 || position > 100000) qhsePreviewFailure('22023', 'Position de l’axe stratégique invalide.');
+      const iconKey = args.p_icon_key == null ? existing?.icon_key ?? 'general' : normalizeQhsePolicyAxisIconKey(args.p_icon_key);
+      if (args.p_icon_key != null && iconKey !== args.p_icon_key) qhsePreviewFailure('22023', 'Icône de l’axe stratégique invalide.');
+      if (!existing?.archived && previewQhsePolicy.processes.some((row) => row.id !== existing?.id && !row.archived && row.name.toLocaleLowerCase('fr') === name.toLocaleLowerCase('fr'))) qhsePreviewFailure('23505', 'Un axe stratégique actif porte déjà ce nom.');
+      if (existing) Object.assign(existing, { name, description, position, icon_key: iconKey, revision: existing.revision + 1, updated_at: now });
+      else previewQhsePolicy.processes.push({ id: crypto.randomUUID(), name, description, position, icon_key: iconKey, archived: false, revision: 1, updated_at: now });
       return { data: existing?.id ?? previewQhsePolicy.processes.at(-1)!.id, error: null };
+    }
+    if (functionName === 'qhse_policy_reorder_processes') {
+      if (!Array.isArray(args.p_processes) || args.p_processes.length > 100001) qhsePreviewFailure('22023', 'Liste complète des axes invalide.');
+      const seen = new Set<string>();
+      const requested = args.p_processes.map((item: unknown) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) qhsePreviewFailure('22023', 'Ordre des axes invalide.');
+        const row = item as Record<string, unknown>;
+        if (!isQhsePolicyId(row.id) || seen.has(row.id.toLowerCase()) || typeof row.revision !== 'number' || !Number.isSafeInteger(row.revision) || row.revision < 1 || row.revision > 2147483647) qhsePreviewFailure('22023', 'Ordre des axes invalide.');
+        seen.add(row.id.toLowerCase());
+        const existing = process(row.id);
+        return { existing, revision: row.revision };
+      });
+      if (requested.length !== previewQhsePolicy.processes.length) qhsePreviewFailure('22023', 'Incluez tous les axes, y compris les archives.');
+      if (requested.some((row) => row.revision !== row.existing.revision)) qhsePreviewFailure('40001', 'Les données ont changé. Actualisez avant de réessayer.');
+      requested.forEach(({ existing }, position) => Object.assign(existing, { position, revision: existing.revision + 1, updated_at: now }));
+      return { data: null, error: null };
+    }
+    if (functionName === 'qhse_policy_delete_process') {
+      const source = process(args.p_id);
+      expectedRevision(source.revision);
+      const objectives = previewQhsePolicy.objectives.filter((row) => row.process_id === source.id);
+      if ((objectives.length && args.p_transfer_to == null) || (args.p_transfer_to == null && args.p_transfer_expected_revision != null)
+        || args.p_transfer_to === source.id) qhsePreviewFailure('22023', 'Transférez les objectifs vers un autre axe actif.');
+      const destination = args.p_transfer_to == null ? null : process(args.p_transfer_to);
+      if (destination && destination.revision !== args.p_transfer_expected_revision) qhsePreviewFailure('40001', 'Les données ont changé. Actualisez avant de réessayer.');
+      if (destination?.archived) qhsePreviewFailure('22023', 'La destination doit être active.');
+      if (objectives.length && destination) {
+        objectives.forEach((row) => Object.assign(row, { process_id: destination.id, revision: row.revision + 1, updated_at: now }));
+        Object.assign(destination, { revision: destination.revision + 1, updated_at: now });
+      }
+      previewQhsePolicy.processes = previewQhsePolicy.processes.filter((row) => row.id !== source.id);
+      return { data: null, error: null };
     }
     if (functionName === 'qhse_policy_archive_process') {
       const existing = process(args.p_id);
       expectedRevision(existing.revision);
       const archived = archiveFlag();
-      if (!archived && previewQhsePolicy.processes.some((row) => row.id !== existing.id && !row.archived && row.name.toLocaleLowerCase('fr') === existing.name.toLocaleLowerCase('fr'))) qhsePreviewFailure('23505', 'Un processus actif porte déjà ce nom.');
+      if (!archived && previewQhsePolicy.processes.some((row) => row.id !== existing.id && !row.archived && row.name.toLocaleLowerCase('fr') === existing.name.toLocaleLowerCase('fr'))) qhsePreviewFailure('23505', 'Un axe stratégique actif porte déjà ce nom.');
       Object.assign(existing, { archived, revision: existing.revision + 1, updated_at: now });
       return { data: null, error: null };
     }
@@ -1976,7 +2011,7 @@ function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown
       if (existing) expectedRevision(existing.revision);
       else if (args.p_expected_revision != null) qhsePreviewFailure('40001', 'Les données ont changé. Actualisez avant de réessayer.');
       const selectedProcess = process(args.p_process_id);
-      if (selectedProcess.archived || existing?.archived) qhsePreviewFailure('22023', 'Un processus ou objectif archivé ne peut pas être modifié.');
+      if (selectedProcess.archived || existing?.archived) qhsePreviewFailure('22023', 'Un axe stratégique ou objectif archivé ne peut pas être modifié.');
       if (existing && args.p_initial_progress != null) qhsePreviewFailure('22023', 'La progression se modifie uniquement dans l’historique.');
       const title = text(args.p_title, 250, true);
       const description = text(args.p_description, 10000);

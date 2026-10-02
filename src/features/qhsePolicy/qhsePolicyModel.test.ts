@@ -1,12 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { validateQhsePolicyObjectiveDraft, validateQhsePolicyObjectiveUpdateDraft, validateQhsePolicyProcessDraft, validateQhsePolicyProgress, validateQhsePolicySettingsDraft } from './qhsePolicyModel';
+import { validateQhsePolicyObjectiveDraft, validateQhsePolicyObjectiveUpdateDraft, validateQhsePolicyProcessDraft, validateQhsePolicyProgress, validateQhsePolicySettingsDraft, validateQhsePolicyProcessOrder, validateQhsePolicyProcessDeletion, type QhsePolicyAxisIconKey, type QhsePolicyProcess } from './qhsePolicyModel';
 const processId = 'a02c0000-0000-4000-8000-000000000001';
 const objectiveId = 'a02c0000-0000-4000-8000-000000000002';
+const axis: QhsePolicyProcess = { id: processId, name: 'Sécurité', description: '', position: 0, archived: false, revision: 1, updatedAt: '' };
 
 describe('policy objectives validation', () => {
   it('normalizes optional metadata without inventing policy text or rights', () => {
-    expect(validateQhsePolicyProcessDraft({ name: '  Sécurité  ' })).toMatchObject({ id: null, name: 'Sécurité', description: '', position: 0, expectedRevision: null });
+    expect(validateQhsePolicyProcessDraft({ name: '  Sécurité  ' })).toMatchObject({ id: null, name: 'Sécurité', description: '', position: 0, expectedRevision: null, iconKey: 'general' });
     expect(validateQhsePolicyObjectiveDraft({ processId, title: '  Réduire les accidents  ', ownerKind: 'office', ownerLabel: ' Armement - Cherbourg ' })).toMatchObject({ title: 'Réduire les accidents', ownerLabel: 'Armement - Cherbourg', dueOn: null, initialProgress: 0 });
+  });
+  it.each(['safety', 'ethics', 'health', 'environment', 'customer', 'cybersecurity', 'general'] as const)('accepts the explicit %s axis icon', (iconKey) => {
+    expect(validateQhsePolicyProcessDraft({ name: 'Sécurité', iconKey }).iconKey).toBe(iconKey);
+  });
+  it('refuses arbitrary icon values and accepts complete ordering with archived axes', () => {
+    expect(() => validateQhsePolicyProcessDraft({ name: 'Sécurité', iconKey: 'unsafe' as QhsePolicyAxisIconKey })).toThrow('icône');
+    expect(validateQhsePolicyProcessDraft({ id: processId, expectedRevision: 1, name: 'Sécurité' }).iconKey).toBeNull();
+    expect(validateQhsePolicyProcessOrder([{ ...axis, archived: true }, { ...axis, id: objectiveId, revision: 3 }])).toEqual([{ id: processId, revision: 1 }, { id: objectiveId, revision: 3 }]);
+    expect(validateQhsePolicyProcessOrder([])).toEqual([]);
+    expect(() => validateQhsePolicyProcessOrder([axis, axis])).toThrow('une seule fois');
+    expect(() => validateQhsePolicyProcessOrder([{ ...axis, revision: NaN }])).toThrow('Actualisez');
+  });
+  it('requires a distinct active transfer target and preserves the source/target concurrency tokens', () => {
+    expect(validateQhsePolicyProcessDeletion(axis)).toEqual({ id: processId, expectedRevision: 1, transferTo: null, transferExpectedRevision: null });
+    expect(validateQhsePolicyProcessDeletion({ ...axis, archived: true }, { ...axis, id: objectiveId, revision: 2 })).toEqual({ id: processId, expectedRevision: 1, transferTo: objectiveId, transferExpectedRevision: 2 });
+    expect(() => validateQhsePolicyProcessDeletion(axis, axis)).toThrow('autre axe');
+    expect(() => validateQhsePolicyProcessDeletion(axis, { ...axis, id: objectiveId, archived: true })).toThrow('actif');
   });
   it.each([0, 100, 42.25])('accepts valid percentage %s', (value) => expect(validateQhsePolicyProgress(value)).toBe(value));
   it.each([-1, 101, 20.123, NaN, Infinity])('rejects invalid percentage %s', (value) => expect(() => validateQhsePolicyProgress(value)).toThrow('pourcentage'));
