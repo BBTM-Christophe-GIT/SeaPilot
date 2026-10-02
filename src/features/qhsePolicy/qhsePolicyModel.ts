@@ -4,19 +4,25 @@ export interface QhsePolicySettings { publicationId: number | null; documentUrl:
 export interface QhsePolicyProcess { id: string; name: string; description: string; position: number; archived: boolean; revision: number; updatedAt: string }
 export interface QhsePolicyObjective {
   id: string; processId: string; title: string; description: string; ownerLabel: string; dueOn: string | null;
+  ownerKind: QhsePolicyOwnerKind; ownerPersonId: number | null; ownerVesselId: number | null;
   progress: number; archived: boolean; revision: number; createdAt: string; updatedAt: string;
 }
 export interface QhsePolicyObjectiveUpdate {
   id: string; objectiveId: string; kind: 'initial' | 'progress'; progress: number; occurredOn: string;
   note: string; actorName: string; createdAt: string;
+  ownerLabel: string;
 }
+export type QhsePolicyOwnerKind = 'person' | 'vessel' | 'office' | null;
+export interface QhsePolicyOwnerOptions { people: Array<{ id: number; label: string }>; vessels: Array<{ id: number; label: string; lengthOverall?: string | number | null }> }
+export interface QhsePolicyAttachment { id: string; objectiveId: string; updateId: string; fileName: string; mimeType: string; sizeBytes: number; storageBucket: string; storagePath: string; createdAt: string }
 export interface QhsePolicySnapshot {
   settings: QhsePolicySettings | null; processes: QhsePolicyProcess[]; objectives: QhsePolicyObjective[];
-  updates: QhsePolicyObjectiveUpdate[]; canEdit: boolean;
+  updates: QhsePolicyObjectiveUpdate[]; attachments: QhsePolicyAttachment[]; canEdit: boolean;
 }
 export interface QhsePolicyProcessDraft { id?: string | null; name: string; description?: string; position?: number; expectedRevision?: number | null }
 export interface QhsePolicyObjectiveDraft {
   id?: string | null; processId: string; title: string; description?: string; ownerLabel?: string;
+  ownerKind?: QhsePolicyOwnerKind; ownerPersonId?: number | null; ownerVesselId?: number | null;
   dueOn?: string | null; initialProgress?: number | null; expectedRevision?: number | null;
 }
 export interface QhsePolicyObjectiveUpdateDraft { objectiveId: string; progress: number; occurredOn: string; note: string; expectedRevision: number }
@@ -57,7 +63,16 @@ export function validateQhsePolicyObjectiveDraft(draft: QhsePolicyObjectiveDraft
   if (dueOn && (!isPlanningDate(dueOn) || dueOn < '1900-01-01' || dueOn > '2100-12-31')) throw new Error('La date d’échéance est invalide.');
   if (id && draft.initialProgress != null) throw new Error('Modifiez le pourcentage en ajoutant un suivi à l’historique.');
   const initialProgress = id ? null : validateQhsePolicyProgress(draft.initialProgress ?? 0);
-  return { id, processId: draft.processId, title: field(draft.title, 250, true), description: field(draft.description, 10000), ownerLabel: field(draft.ownerLabel, 200), dueOn, initialProgress, expectedRevision: draft.expectedRevision ?? null };
+  const ownerKind = draft.ownerKind ?? null;
+  const ownerPersonId = draft.ownerPersonId ?? null;
+  const ownerVesselId = draft.ownerVesselId ?? null;
+  const ownerLabel = field(draft.ownerLabel, 200, ownerKind === 'office');
+  const positiveId = (value: number | null) => value !== null && Number.isSafeInteger(value) && value > 0;
+  if ((!id && !ownerKind) || ![null, 'person', 'vessel', 'office'].includes(ownerKind)
+    || (ownerKind === 'person' && (!positiveId(ownerPersonId) || ownerVesselId !== null))
+    || (ownerKind === 'vessel' && (!positiveId(ownerVesselId) || ownerPersonId !== null))
+    || ((ownerKind === null || ownerKind === 'office') && (ownerPersonId !== null || ownerVesselId !== null))) throw new Error('Choisissez un responsable parmi le personnel en poste, les navires ou un bureau.');
+  return { id, processId: draft.processId, title: field(draft.title, 250, true), description: field(draft.description, 10000), ownerLabel, ownerKind, ownerPersonId, ownerVesselId, dueOn, initialProgress, expectedRevision: draft.expectedRevision ?? null };
 }
 export function validateQhsePolicyObjectiveUpdateDraft(draft: QhsePolicyObjectiveUpdateDraft, today = todayQhsePolicyDate()) {
   if (!isQhsePolicyId(draft.objectiveId)) throw new Error('Objectif invalide.');
@@ -68,8 +83,7 @@ export function validateQhsePolicyObjectiveUpdateDraft(draft: QhsePolicyObjectiv
 export function validateQhsePolicySettingsDraft(draft: QhsePolicySettingsDraft) {
   const documentUrl = (draft.documentUrl || '').trim();
   if (draft.publicationId !== null && (!Number.isSafeInteger(draft.publicationId) || draft.publicationId <= 0)) throw new Error('Publication invalide.');
-  if (documentUrl && !/^https:\/\/drive\.google\.com\/file\/d\/[A-Za-z0-9_-]{10,200}\/view$/.test(documentUrl)) throw new Error('Utilisez un lien PDF Google Drive de la forme https://drive.google.com/file/d/identifiant/view.');
-  if (draft.publicationId !== null && documentUrl) throw new Error('Choisissez une publication ou un lien Google Drive.');
+  if (documentUrl) throw new Error('Choisissez un fichier PDF publié dans Procédures.');
   revision(draft.expectedRevision, false);
   return { publicationId: draft.publicationId, documentUrl, expectedRevision: draft.expectedRevision ?? null };
 }

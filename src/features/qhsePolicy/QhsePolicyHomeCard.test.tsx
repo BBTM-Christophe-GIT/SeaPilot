@@ -11,8 +11,8 @@ vi.mock('./qhsePolicyQueries', () => ({ fetchQhsePolicySnapshot: vi.fn() }));
 const client = {} as SupabaseClient;
 function data(): QhsePolicySnapshot {
   const process = { id: 'process', name: 'Qualité', description: '', position: 0, archived: false, revision: 1, updatedAt: '' };
-  const objective = { id: 'objective', processId: process.id, title: 'Objectif', description: '', ownerLabel: '', dueOn: null, progress: 60, archived: false, revision: 1, createdAt: '', updatedAt: '' };
-  return { settings: null, processes: [process, { ...process, id: 'archived-process', archived: true }], objectives: [objective, { ...objective, id: 'complete', progress: 100 }, { ...objective, id: 'archived', progress: 0, archived: true }, { ...objective, id: 'archived-process-objective', processId: 'archived-process', progress: 0 }], updates: [], canEdit: false };
+  const objective = { id: 'objective', processId: process.id, title: 'Objectif', description: '', ownerKind: null, ownerPersonId: null, ownerVesselId: null, ownerLabel: '', dueOn: null, progress: 60, archived: false, revision: 1, createdAt: '', updatedAt: '' };
+  return { settings: null, processes: [process, { ...process, id: 'archived-process', archived: true }], objectives: [objective, { ...objective, id: 'complete', progress: 100 }, { ...objective, id: 'archived', progress: 0, archived: true }, { ...objective, id: 'archived-process-objective', processId: 'archived-process', progress: 0 }], updates: [], attachments: [], canEdit: false };
 }
 beforeEach(() => { vi.resetAllMocks(); vi.mocked(fetchQhsePolicySnapshot).mockResolvedValue(data()); });
 

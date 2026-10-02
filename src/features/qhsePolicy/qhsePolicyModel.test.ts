@@ -6,7 +6,7 @@ const objectiveId = 'a02c0000-0000-4000-8000-000000000002';
 describe('policy objectives validation', () => {
   it('normalizes optional metadata without inventing policy text or rights', () => {
     expect(validateQhsePolicyProcessDraft({ name: '  Sécurité  ' })).toMatchObject({ id: null, name: 'Sécurité', description: '', position: 0, expectedRevision: null });
-    expect(validateQhsePolicyObjectiveDraft({ processId, title: '  Réduire les accidents  ' })).toMatchObject({ title: 'Réduire les accidents', ownerLabel: '', dueOn: null, initialProgress: 0 });
+    expect(validateQhsePolicyObjectiveDraft({ processId, title: '  Réduire les accidents  ', ownerKind: 'office', ownerLabel: ' Armement - Cherbourg ' })).toMatchObject({ title: 'Réduire les accidents', ownerLabel: 'Armement - Cherbourg', dueOn: null, initialProgress: 0 });
   });
   it.each([0, 100, 42.25])('accepts valid percentage %s', (value) => expect(validateQhsePolicyProgress(value)).toBe(value));
   it.each([-1, 101, 20.123, NaN, Infinity])('rejects invalid percentage %s', (value) => expect(() => validateQhsePolicyProgress(value)).toThrow('pourcentage'));
@@ -25,8 +25,13 @@ describe('policy objectives validation', () => {
   });
   it('accepts one documentary source and rejects unsafe or mixed sources', () => {
     expect(validateQhsePolicySettingsDraft({ publicationId: 46 })).toMatchObject({ publicationId: 46, documentUrl: '' });
-    expect(validateQhsePolicySettingsDraft({ publicationId: null, documentUrl: 'https://drive.google.com/file/d/1234567890abcdef/view' }).publicationId).toBeNull();
-    for (const documentUrl of ['javascript:alert(1)', 'https://evil.example/file.pdf', 'https://drive.google.com.evil.example/file/d/1234567890/view', 'https://drive.google.com/file/d/1234567890/view?credential=secret']) expect(() => validateQhsePolicySettingsDraft({ publicationId: null, documentUrl })).toThrow('Google Drive');
-    expect(() => validateQhsePolicySettingsDraft({ publicationId: 46, documentUrl: 'https://drive.google.com/file/d/1234567890abcdef/view' })).toThrow('publication ou');
+    for (const documentUrl of ['javascript:alert(1)', 'https://evil.example/file.pdf', 'https://drive.google.com/file/d/1234567890abcdef/view']) expect(() => validateQhsePolicySettingsDraft({ publicationId: null, documentUrl })).toThrow('PDF publié');
+  });
+  it('requires a structured owner on creation and rejects mixed references', () => {
+    expect(() => validateQhsePolicyObjectiveDraft({ processId, title: 'Sécurité' })).toThrow('responsable');
+    expect(() => validateQhsePolicyObjectiveDraft({ processId, title: 'Sécurité', ownerKind: 'office', ownerLabel: ' ' })).toThrow();
+    expect(() => validateQhsePolicyObjectiveDraft({ processId, title: 'Sécurité', ownerKind: 'person', ownerPersonId: 1, ownerVesselId: 2 })).toThrow();
+    expect(validateQhsePolicyObjectiveDraft({ processId, title: 'Sécurité', ownerKind: 'person', ownerPersonId: 1 })).toMatchObject({ ownerKind: 'person', ownerPersonId: 1, ownerVesselId: null });
+    expect(validateQhsePolicyObjectiveDraft({ processId, title: 'Sécurité', ownerKind: 'vessel', ownerVesselId: 2 })).toMatchObject({ ownerKind: 'vessel', ownerPersonId: null, ownerVesselId: 2 });
   });
 });

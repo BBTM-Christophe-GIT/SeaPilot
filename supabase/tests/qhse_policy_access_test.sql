@@ -99,15 +99,18 @@ begin
       perform public.qhse_policy_save_settings(valid_publication,'',settings_revision);
       assert (select publication_id=valid_publication and document_url='' and updated_by=actor from public.qhse_policy_settings where company_id=company), 'Valid published chapter 02 was not linked';
       select revision into settings_revision from public.qhse_policy_settings where company_id=company;
-      begin
-        perform public.qhse_policy_save_settings(invalid_publication,'',settings_revision);
-        raise exception 'Publication outside chapter 02 accepted';
-      exception when invalid_parameter_value then null; end;
+      perform public.qhse_policy_save_settings(invalid_publication,'',settings_revision);
+      assert (select publication_id=invalid_publication from public.qhse_policy_settings where company_id=company), 'Safe published alternate chapter rejected';
+      select revision into settings_revision from public.qhse_policy_settings where company_id=company;
       begin
         perform public.qhse_policy_save_settings(null,'javascript:alert(1)',settings_revision);
         raise exception 'Unsafe documentary source accepted';
       exception when invalid_parameter_value then null; end;
-      perform public.qhse_policy_save_settings(null,'https://drive.google.com/file/d/1234567890abcdef/view',settings_revision);
+      begin
+        perform public.qhse_policy_save_settings(null,'https://drive.google.com/file/d/1234567890abcdef/view',settings_revision);
+        raise exception 'New free documentary URL accepted';
+      exception when invalid_parameter_value then null; end;
+      perform public.qhse_policy_save_settings(valid_publication,'',settings_revision);
       begin
         perform public.qhse_policy_save_settings(valid_publication,'',settings_revision);
         raise exception 'Stale settings overwrite accepted';

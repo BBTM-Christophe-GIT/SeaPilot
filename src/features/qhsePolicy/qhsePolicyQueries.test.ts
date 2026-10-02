@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
-import { addQhsePolicyObjectiveUpdate, fetchQhsePolicySnapshot, saveQhsePolicyObjective, saveQhsePolicyProcess, saveQhsePolicySettings, setQhsePolicyObjectiveArchived } from './qhsePolicyQueries';
+import { addQhsePolicyObjectiveUpdate, fetchQhsePolicySnapshot, fetchQhsePolicyOwnerOptions, saveQhsePolicyObjective, saveQhsePolicyProcess, saveQhsePolicySettings, setQhsePolicyObjectiveArchived } from './qhsePolicyQueries';
 const processId = 'a02c0000-0000-4000-8000-000000000001';
 const objectiveId = 'a02c0000-0000-4000-8000-000000000002';
 const updateId = 'a02c0000-0000-4000-8000-000000000003';
@@ -20,8 +20,8 @@ describe('QHSE policy queries', () => {
     await saveQhsePolicyProcess(process.client, { name: ' Sécurité ' });
     expect(process.rpc).toHaveBeenCalledWith('qhse_policy_save_process', { p_id: null, p_name: 'Sécurité', p_description: '', p_position: 0, p_expected_revision: null });
     const objective = client(objectiveId);
-    await saveQhsePolicyObjective(objective.client, { processId, title: 'Formation', initialProgress: 12.25 });
-    expect(objective.rpc).toHaveBeenCalledWith('qhse_policy_save_objective', { p_id: null, p_process_id: processId, p_title: 'Formation', p_description: '', p_owner_label: '', p_due_on: null, p_initial_progress: 12.25, p_expected_revision: null });
+    await saveQhsePolicyObjective(objective.client, { processId, title: 'Formation', initialProgress: 12.25, ownerKind: 'vessel', ownerVesselId: 1 });
+    expect(objective.rpc).toHaveBeenCalledWith('qhse_policy_save_objective', { p_id: null, p_process_id: processId, p_title: 'Formation', p_description: '', p_owner_label: '', p_owner_kind: 'vessel', p_owner_person_id: null, p_owner_vessel_id: 1, p_due_on: null, p_initial_progress: 12.25, p_expected_revision: null });
   });
   it('adds progress and historical entry in one RPC with optimistic concurrency', async () => {
     const { client: db, rpc } = client(updateId);
@@ -42,4 +42,14 @@ describe('QHSE policy queries', () => {
     expect(rpc).not.toHaveBeenCalled();
   });
   it.each([['40001', 'Actualisez'], ['42501', 'Admin et Direction'], ['23505', 'existe déjà'], ['network', 'Réessayez']])('reports mutation failure %s without claiming success', async (code, message) => await expect(saveQhsePolicyProcess(client(null, { code }).client, { name: 'Sécurité' })).rejects.toThrow(message));
+  it('maps only the minimal manager owner catalog and does not query HR tables', async () => {
+    const mock = client({ people: [{ id: 7, label: 'Sophie Hamel' }], vessels: [{ id: 1, label: 'GOURY' }] });
+    expect(await fetchQhsePolicyOwnerOptions(mock.client)).toEqual({ people: [{ id: 7, label: 'Sophie Hamel' }], vessels: [{ id: 1, label: 'GOURY', lengthOverall: null }] });
+    expect(mock.rpc).toHaveBeenCalledWith('qhse_policy_owner_options');
+    await expect(fetchQhsePolicyOwnerOptions(client(null, { code: '42501' }).client)).rejects.toThrow('Admin et Direction');
+  });
+  it('orders vessel owners from longest to shortest using actual dimensions and catalog fallback', async () => {
+    const mock = client({ people: [], vessels: [{ id: 1, label: 'LANDEMER' }, { id: 2, label: 'GOURY' }, { id: 3, label: 'Other', length_overall: '35 m' }, { id: 4, label: 'Unknown' }] });
+    expect((await fetchQhsePolicyOwnerOptions(mock.client)).vessels.map((vessel) => vessel.label)).toEqual(['Other', 'GOURY', 'LANDEMER', 'Unknown']);
+  });
 });

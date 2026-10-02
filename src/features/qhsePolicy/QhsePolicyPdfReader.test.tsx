@@ -37,6 +37,13 @@ afterEach(() => {
 });
 
 describe('QHSE policy PDF reader', () => {
+  it('renders a compact first-page preview without pagination or nested buttons', async () => {
+    const pdf = fakeDocument(); pdfjs.getDocument.mockReturnValue(pdf.loading);
+    render(<QhsePolicyPdfReader url="https://example.invalid/preview.pdf" title="Politique" compact label="Aperçu" />);
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Aperçu · page 1' })).toBeVisible());
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(pdf.getPage).toHaveBeenCalledWith(1);
+  });
   it('renders actual bytes responsively, exposes accessible text and changes pages', async () => {
     const pdf = fakeDocument();
     pdfjs.getDocument.mockReturnValue(pdf.loading);

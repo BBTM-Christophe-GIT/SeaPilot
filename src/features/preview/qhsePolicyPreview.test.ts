@@ -17,7 +17,7 @@ async function createProcess(name = 'Processus de test démonstration') {
   return queries.saveQhsePolicyProcess(client, { name, description: 'Éphémère, sans donnée de production.', position: 10 });
 }
 async function createObjective(processId: string, initialProgress = 12.5) {
-  return queries.saveQhsePolicyObjective(client, { processId, title: 'Objectif de test démonstration', ownerLabel: 'Responsable Démonstration', dueOn: '2026-12-31', initialProgress });
+  return queries.saveQhsePolicyObjective(client, { processId, title: 'Objectif de test démonstration', ownerKind: 'office', ownerLabel: 'Responsable Démonstration', dueOn: '2026-12-31', initialProgress });
 }
 
 describe('ephemeral QHSE policy preview', () => {
@@ -55,7 +55,7 @@ describe('ephemeral QHSE policy preview', () => {
   it('keeps progress updates in immutable history and edits objective metadata without rewriting progress', async () => {
     const processId = await createProcess();
     const objectiveId = await createObjective(processId);
-    await queries.saveQhsePolicyObjective(client, { id: objectiveId, processId, title: 'Objectif actualisé démonstration', ownerLabel: 'Direction Démonstration', expectedRevision: 1 });
+    await queries.saveQhsePolicyObjective(client, { id: objectiveId, processId, title: 'Objectif actualisé démonstration', ownerKind: 'office', ownerLabel: 'Direction Démonstration', expectedRevision: 1 });
     const updateId = await queries.addQhsePolicyObjectiveUpdate(client, { objectiveId, progress: 75.25, occurredOn: '2026-10-02', note: 'Nouvel avancement de démonstration', expectedRevision: 2 });
     const snapshot = await queries.fetchQhsePolicySnapshot(client);
     expect(snapshot.objectives.find((objective) => objective.id === objectiveId)).toMatchObject({ title: 'Objectif actualisé démonstration', progress: 75.25, revision: 3 });
@@ -115,16 +115,15 @@ describe('ephemeral QHSE policy preview', () => {
     expect(await queries.fetchQhsePolicySnapshot(client)).toEqual(before);
   });
 
-  it('rejects future progress dates and non-policy publications, and accepts canonical Drive links', async () => {
+  it('rejects future progress dates and free URLs, and accepts all safe published PDFs', async () => {
     const objectiveId = await createObjective(await createProcess());
     const before = await queries.fetchQhsePolicySnapshot(client);
     const future = await client.rpc('qhse_policy_add_objective_update', { p_objective_id: objectiveId, p_progress: 50, p_occurred_on: '2026-10-03', p_note: 'Suivi futur', p_expected_revision: 1 });
-    const wrongChapter = await client.rpc('qhse_policy_save_settings', { p_publication_id: 8201, p_document_url: '', p_expected_revision: 1 });
     expect(future.error?.code).toBe('22023');
-    expect(wrongChapter.error?.code).toBe('22023');
     expect(await queries.fetchQhsePolicySnapshot(client)).toEqual(before);
-    await queries.saveQhsePolicySettings(client, { publicationId: null, documentUrl: 'https://drive.google.com/file/d/demoPolicyPDF123/view', expectedRevision: 1 });
-    expect((await queries.fetchQhsePolicySnapshot(client)).settings).toMatchObject({ publicationId: null, documentUrl: 'https://drive.google.com/file/d/demoPolicyPDF123/view', revision: 2 });
+    await expect(queries.saveQhsePolicySettings(client, { publicationId: null, documentUrl: 'https://drive.google.com/file/d/demoPolicyPDF123/view', expectedRevision: 1 })).rejects.toThrow('PDF publié');
+    await queries.saveQhsePolicySettings(client, { publicationId: 8201, expectedRevision: 1 });
+    expect((await queries.fetchQhsePolicySnapshot(client)).settings).toMatchObject({ publicationId: 8201, documentUrl: '', revision: 2 });
     await expect(queries.saveQhsePolicySettings(client, { publicationId: 8202, expectedRevision: 1 })).rejects.toThrow('modifié entre-temps');
   });
 
@@ -139,5 +138,37 @@ describe('ephemeral QHSE policy preview', () => {
     expect((await freshQueries.fetchQhsePolicySnapshot(freshClient)).objectives).toHaveLength(3);
     expect(storageWrite).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
+  });
+  it('selects eligible personnel and vessel owners and preserves legacy responsibility on metadata edits', async () => {
+    const owners = await queries.fetchQhsePolicyOwnerOptions(client);
+    expect(owners.people.some((person) => person.label === 'Camille DURAND')).toBe(true);
+    const processId = await createProcess();
+    const personId = owners.people[0].id;
+    const id = await queries.saveQhsePolicyObjective(client, { processId, title: 'Personnel responsable', ownerKind: 'person', ownerPersonId: personId });
+    expect((await queries.fetchQhsePolicySnapshot(client)).objectives.find((objective) => objective.id === id)?.ownerLabel).toBe(owners.people[0].label);
+    await queries.saveQhsePolicyObjective(client, { id, processId, title: 'Affectation navire', ownerKind: 'vessel', ownerVesselId: owners.vessels[0].id, expectedRevision: 1 });
+    const before = (await queries.fetchQhsePolicySnapshot(client)).objectives.find((objective) => objective.id === id)!;
+    expect(before.ownerLabel).toBe(`Équipages ${owners.vessels[0].label}`);
+    await queries.saveQhsePolicyObjective(client, { id, processId, title: 'Métadonnées seules', expectedRevision: 2 });
+    expect((await queries.fetchQhsePolicySnapshot(client)).objectives.find((objective) => objective.id === id)).toMatchObject({ ownerKind: before.ownerKind, ownerVesselId: before.ownerVesselId, ownerLabel: before.ownerLabel });
+  });
+  it('commits uploaded original bytes with history, refuses replacement/deletion and cleans a stale follow-up', async () => {
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(() => 'blob:preview-proof'); static revokeObjectURL = vi.fn(); });
+    const attachments = await import('../qhsePolicy/qhsePolicyAttachments');
+    const id = await createObjective(await createProcess());
+    const file = new File(['%PDF proof'], 'preuve.pdf', { type: 'application/pdf' });
+    const updateId = await attachments.saveQhsePolicyObjectiveUpdateWithAttachments(client, { objectiveId: id, progress: 50, occurredOn: '2026-10-02', note: 'Preuve jointe', expectedRevision: 1 }, [file]);
+    const snapshot = await queries.fetchQhsePolicySnapshot(client);
+    const attachment = snapshot.attachments[0];
+    expect(attachment).toMatchObject({ updateId, objectiveId: id, fileName: 'preuve.pdf', sizeBytes: file.size });
+    expect(await attachments.readQhsePolicyAttachment(client, attachment)).toBe(file);
+    expect(await attachments.getQhsePolicyAttachmentUrl(client, attachment)).toBe('blob:preview-proof');
+    expect((await client.storage.from(attachment.storageBucket).remove([attachment.storagePath])).error).toBeTruthy();
+    expect((await client.storage.from(attachment.storageBucket).upload(attachment.storagePath, file, { contentType: file.type, upsert: true })).error).toBeTruthy();
+    const remove = vi.spyOn(client.storage, 'from');
+    await expect(attachments.saveQhsePolicyObjectiveUpdateWithAttachments(client, { objectiveId: id, progress: 60, occurredOn: '2026-10-02', note: 'Concurrence', expectedRevision: 1 }, [file])).rejects.toThrow('modifié entre-temps');
+    expect(remove).toHaveBeenCalled();
+    expect(await queries.fetchQhsePolicySnapshot(client)).toEqual(snapshot);
+    vi.unstubAllGlobals();
   });
 });

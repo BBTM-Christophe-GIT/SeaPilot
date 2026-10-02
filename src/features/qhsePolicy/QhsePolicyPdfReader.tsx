@@ -1,12 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 
-export interface QhsePolicyPdfReaderProps { url: string; title: string }
+export interface QhsePolicyPdfReaderProps { url: string; title: string; compact?: boolean; label?: string }
 interface LoadedSource { url: string; document: PDFDocumentProxy | null; error: string }
 interface RenderedPage { key: string; ready: boolean; error: string; text: string }
 
 /** Read real PDF bytes without depending on the browser's native PDF viewer. */
-export default function QhsePolicyPdfReader({ url, title }: QhsePolicyPdfReaderProps) {
+export default function QhsePolicyPdfReader({ url, title, compact = false, label = 'Politique QHSE' }: QhsePolicyPdfReaderProps) {
   const container = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const textId = useId();
@@ -96,17 +96,17 @@ export default function QhsePolicyPdfReader({ url, title }: QhsePolicyPdfReaderP
     return () => { active = false; task?.cancel(); };
   }, [document, width, currentPage, renderKey]);
 
-  return <section className="qhse-policy-pdf-reader" aria-label={`Lecteur PDF · ${title}`}>
-    <div className="qhse-policy-pdf-pagination">
+  return <section className={`qhse-policy-pdf-reader${compact ? ' is-compact' : ''}`} aria-label={`Lecteur PDF · ${title}`}>
+    {!compact ? <div className="qhse-policy-pdf-pagination">
       <button type="button" disabled={!document || currentPage <= 1} onClick={() => setPage((value) => value - 1)}>Précédente</button>
       <span aria-live="polite">Page {currentPage} sur {document?.numPages || '…'}</span>
       <button type="button" disabled={!document || currentPage >= document.numPages} onClick={() => setPage((value) => value + 1)}>Suivante</button>
-    </div>
+    </div> : null}
     <div className="qhse-policy-pdf-canvas" ref={container} aria-busy={!ready && !error}>
-      {error ? <p role="alert">{error}</p> : !ready && <p role="status">Chargement de la politique QHSE…</p>}
-      <canvas ref={canvas} role="img" aria-label={`Politique QHSE · page ${currentPage}`} aria-describedby={ready && rendered.text ? textId : undefined}
+      {error ? <p role="alert">{error}</p> : !ready && <p role="status">Chargement du PDF…</p>}
+      <canvas ref={canvas} role="img" aria-label={`${label} · page ${currentPage}`} aria-describedby={ready && rendered.text && !compact ? textId : undefined}
         style={{ visibility: ready ? 'visible' : 'hidden', display: error ? 'none' : 'block', maxWidth: '100%' }} />
-      {ready && rendered.text && <div id={textId} className="sr-only">{rendered.text}</div>}
+      {ready && rendered.text && !compact && <div id={textId} className="sr-only">{rendered.text}</div>}
     </div>
   </section>;
 }

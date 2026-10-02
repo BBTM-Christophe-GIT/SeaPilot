@@ -8,11 +8,16 @@ export function policyPublicationLabel(record: PublishedProcedureRecord): string
   return record.procedureCode && !title.startsWith(record.procedureCode) ? `${record.procedureCode} · ${title}` : title;
 }
 
-export function policyPublications(records: PublishedProcedureRecord[]): PublishedProcedureRecord[] {
-  return records.filter((record) => chapterKey(record.ismChapter) === '02'
+export function policyPublications(records: PublishedProcedureRecord[], chapterOnly = true): PublishedProcedureRecord[] {
+  return records.filter((record) => (!chapterOnly || chapterKey(record.ismChapter) === '02')
     && record.status === 'published' && record.mimeType.toLowerCase() === 'application/pdf'
     && record.fileName.toLowerCase().endsWith('.pdf'))
     .sort((left, right) => right.publishedOn.localeCompare(left.publishedOn) || right.id - left.id);
+}
+
+export function resolvePolicyPublication(records: PublishedProcedureRecord[], publicationId: number | null): PublishedProcedureRecord | undefined {
+  const publications = policyPublications(records, false);
+  return publicationId !== null ? publications.find((record) => record.id === publicationId) : policyPublications(publications)[0];
 }
 
 export function policyDriveUrls(value: string): { open: string; preview: string } | null {
