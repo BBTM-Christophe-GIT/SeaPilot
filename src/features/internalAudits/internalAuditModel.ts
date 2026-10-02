@@ -30,6 +30,7 @@ export interface AuditQuestion {
   question: string;
   maxPoints: number;
   guidance: string;
+  hrFunction?: string;
 }
 
 export interface AuditTemplate {
@@ -47,6 +48,18 @@ export interface AuditAnswer extends AuditQuestion {
   observation: string;
 }
 
+/** Identities and signature references are captured by the authenticated server workflow. */
+export interface AuditParticipant {
+  personId: number | null;
+  userId?: string;
+  firstName: string;
+  lastName: string;
+  functionLabel: string;
+  signatureSnapshot: Record<string, unknown>;
+  source: 'selected' | 'contributor';
+  signatureUrl?: string;
+}
+
 export interface InternalAudit {
   id: string;
   companyId: number;
@@ -61,6 +74,8 @@ export interface InternalAudit {
   status: AuditStatus;
   rows: AuditAnswer[];
   completedAt: string | null;
+  participants?: AuditParticipant[];
+  participantPersonIds?: number[];
 }
 
 export interface AuditFinding {

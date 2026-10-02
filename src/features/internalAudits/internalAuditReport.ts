@@ -1,8 +1,8 @@
-import type { AuditAnswer, AuditFinding, AuditFindingEvent, AuditPhoto, AuditSite, InternalAudit } from './internalAuditModel';
-import type { RowInput } from 'jspdf-autotable';
+import type { AuditAnswer, AuditFinding, AuditFindingEvent, AuditParticipant, AuditPhoto, AuditSite, AuditTemplate, InternalAudit } from './internalAuditModel';
+import type { CellHookData, RowInput } from 'jspdf-autotable';
 import {
   AUDIT_ANSWER_LABELS, AUDIT_STATUS_LABELS, FINDING_SEVERITY_LABELS, FINDING_STATUS_LABELS,
-  compareAuditScores, formatAuditDate, scoreAudit, todayAuditParis,
+  blankAuditAnswers, compareAuditScores, formatAuditDate, scoreAudit, todayAuditParis,
 } from './internalAuditModel';
 
 export interface InternalAuditReportInput {
@@ -13,6 +13,20 @@ export interface InternalAuditReportInput {
   events: readonly AuditFindingEvent[];
   loadPhoto?: (photo: AuditPhoto) => Promise<string | null>;
   generatedAt?: Date;
+  sections?: readonly InternalAuditReportSection[];
+  sortByHrFunction?: boolean;
+  loadSignature?: (participant: AuditParticipant) => Promise<string | null>;
+}
+
+export type InternalAuditReportSection = 'grid' | 'summary' | 'chart';
+
+export function internalAuditReportSections(sections?: readonly InternalAuditReportSection[]): InternalAuditReportSection[] {
+  const available: InternalAuditReportSection[] = ['grid', 'summary', 'chart'];
+  if (sections === undefined) return available;
+  if (!Array.isArray(sections) || !sections.length || sections.some((section) => !available.includes(section))) {
+    throw new Error('Sélectionnez au moins une section valide pour le rapport PDF.');
+  }
+  return available.filter((section) => sections.includes(section));
 }
 
 export interface InternalAuditReportQuestion {
@@ -60,13 +74,20 @@ export function internalAuditReportData(input: InternalAuditReportInput): Intern
   if (input.site.id !== input.audit.siteId || input.site.companyId !== input.audit.companyId) {
     throw new Error('Le site du rapport ne correspond pas à l’audit sélectionné.');
   }
+  internalAuditReportSections(input.sections);
   const findings = input.findings.filter((finding) => finding.auditId === input.audit.id && finding.companyId === input.audit.companyId);
+  const questionRows = [...input.audit.rows];
+  if (input.sortByHrFunction) questionRows.sort((left, right) => {
+    const leftFunction = left.hrFunction?.trim() || '';
+    const rightFunction = right.hrFunction?.trim() || '';
+    return Number(!leftFunction) - Number(!rightFunction) || leftFunction.localeCompare(rightFunction, 'fr', { sensitivity: 'base' });
+  });
   return {
     filename: internalAuditReportFilename(input.audit, input.site),
     draft: input.audit.status !== 'completed',
     score: scoreAudit(input.audit.rows),
     comparison: compareAuditScores(input.audit, input.audits),
-    questions: input.audit.rows.map((row) => {
+    questions: questionRows.map((row) => {
       const earnedPoints = row.answer === 'conforme' ? row.maxPoints : row.answer === 'incomplet' ? row.maxPoints / 2 : row.answer === 'non_conforme' ? 0 : null;
       return {
         row, earnedPoints,
@@ -125,25 +146,54 @@ export async function resolveInternalAuditReportPhoto(input: InternalAuditReport
   return normalized;
 }
 
+export async function resolveInternalAuditReportSignature(input: InternalAuditReportInput, participant: AuditParticipant): Promise<string | null> {
+  if (!participant.signatureUrl && !Object.keys(participant.signatureSnapshot || {}).length) return null;
+  const identity = `${participant.firstName} ${participant.lastName}`.trim();
+  let image: string | null;
+  try {
+    if (input.loadSignature) image = await input.loadSignature(participant);
+    else if (participant.signatureUrl) {
+      const response = await fetch(participant.signatureUrl);
+      if (!response.ok) throw new Error('Signature inaccessible');
+      const mimeType = response.headers.get('content-type')?.split(';')[0] || 'image/png';
+      image = bytesToDataUrl(new Uint8Array(await response.arrayBuffer()), mimeType);
+    } else image = null;
+  } catch {
+    throw new Error(`La signature de ${identity} est indisponible. Rechargez l’audit puis réessayez.`);
+  }
+  if (!image) throw new Error(`La signature de ${identity} est indisponible. Rechargez l’audit puis réessayez.`);
+  if (!/^data:image\/(png|jpeg);base64,/i.test(image)) {
+    throw new Error(`Le format de la signature de ${identity} n’est pas compatible avec le rapport.`);
+  }
+  return image;
+}
+
 function cleanText(value: string): string {
   return value.replace(/[\u2010-\u2015\u2212]/g, '-').replace(/\u00a0|\u202f/g, ' ').replace(/\u2022/g, '-');
 }
 
 export interface InternalAuditGeneratedReport { blob: Blob; filename: string; pageCount: number }
 
-async function buildAuditPdf(input: InternalAuditReportInput, gridOnly: boolean): Promise<InternalAuditGeneratedReport> {
+async function buildAuditPdf(input: InternalAuditReportInput, templateMode = false): Promise<InternalAuditGeneratedReport> {
   const data = internalAuditReportData(input);
+  const sections = internalAuditReportSections(input.sections);
+  const gridOnly = sections.length === 1 && sections[0] === 'grid';
   const photoReferences = new Map<string, AuditPhoto>();
-  for (const entry of gridOnly ? [] : data.findings) {
+  for (const entry of sections.includes('summary') ? data.findings : []) {
     for (const photo of [...(entry.finding.photos ?? []), ...entry.events.flatMap((event) => event.photos ?? [])]) {
       photoReferences.set(photo.storagePath || photo.id, photo);
     }
   }
   const loadedPhotos = new Map<string, string>();
   for (const [key, photo] of photoReferences) loadedPhotos.set(key, await resolveInternalAuditReportPhoto(input, photo));
+  const participants = templateMode ? [] : input.audit.participants || [];
+  const signatures = await Promise.all(participants.map((participant) => resolveInternalAuditReportSignature(input, participant)));
   const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
-  pdf.setProperties({ title: `${gridOnly ? 'Grille - ' : ''}Audit ISM Interne - ${input.site.name} - ${input.audit.year}`, subject: gridOnly ? 'Grille d’audit seule - aperçu imprimable' : 'Grille d’audit, synthèse et évolution annuelle', author: input.audit.auditorName || 'SeaPilot', creator: 'SeaPilot' });
+  pdf.setProperties({ title: templateMode ? `Modèle de grille ISM - ${input.audit.templateName} - version ${input.audit.templateVersion}`
+    : `${gridOnly ? 'Grille - ' : ''}Audit ISM Interne - ${input.site.name} - ${input.audit.year}`,
+    subject: templateMode ? 'Grille vierge à préparer avant la planification de l’audit' : sections.map((section) => ({ grid: 'Grille', summary: 'Synthèse', chart: 'Graphique' })[section]).join(', '),
+    author: input.audit.auditorName || 'SeaPilot', creator: 'SeaPilot' });
   const width = 297;
   const height = 210;
   const margin = 12;
@@ -152,7 +202,7 @@ async function buildAuditPdf(input: InternalAuditReportInput, gridOnly: boolean)
   const teal: [number, number, number] = [15, 123, 132];
   const muted: [number, number, number] = [82, 104, 114];
   const pale: [number, number, number] = [237, 245, 246];
-  let currentSection = '01 - Grille d’audit';
+  let currentSection = ({ grid: '01 - Grille d’audit', summary: '02 - Synthèse', chart: '03 - Graphique' })[sections[0]];
   let cursor = 41;
 
   function drawHeader() {
@@ -161,13 +211,14 @@ async function buildAuditPdf(input: InternalAuditReportInput, gridOnly: boolean)
     pdf.setTextColor(255, 255, 255);
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(16);
-    pdf.text(gridOnly ? 'Grille d’audit ISM Interne' : 'Audit ISM Interne', margin, 11);
+    pdf.text(templateMode ? 'Modèle de grille ISM Interne' : gridOnly ? 'Grille d’audit ISM Interne' : 'Audit ISM Interne', margin, 11);
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(8);
-    pdf.text(cleanText(`BBTM - ${input.site.name} - Campagne ${input.audit.year}`), margin, 18);
+    pdf.text(cleanText(templateMode ? `BBTM - ${input.site.name} - Version ${input.audit.templateVersion}`
+      : `BBTM - ${input.site.name} - Campagne ${input.audit.year}`), margin, 18);
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(9);
-    pdf.text(data.draft ? 'BROUILLON - REPONSES NON FINALISEES' : 'AUDIT REALISE', width - margin, 13, { align: 'right' });
+    pdf.text(templateMode ? 'GRILLE VIERGE' : data.draft ? 'BROUILLON - REPONSES NON FINALISEES' : 'AUDIT REALISE', width - margin, 13, { align: 'right' });
     pdf.setTextColor(...navy);
     pdf.setFontSize(13);
     pdf.text(cleanText(currentSection), margin, 34);
@@ -196,7 +247,7 @@ async function buildAuditPdf(input: InternalAuditReportInput, gridOnly: boolean)
     }
     cursor += 2.5;
   }
-  function table(body: RowInput[], head: string[], columnWidths: number[], startY = cursor) {
+  function table(body: RowInput[], head: string[], columnWidths: number[], startY = cursor, drawCell?: (cell: CellHookData) => void) {
     autoTable(pdf, {
       startY, body, head: head.length ? [head] : undefined,
       theme: 'grid', showHead: 'everyPage', rowPageBreak: 'auto',
@@ -205,6 +256,7 @@ async function buildAuditPdf(input: InternalAuditReportInput, gridOnly: boolean)
       headStyles: { fillColor: navy, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5 },
       columnStyles: Object.fromEntries(columnWidths.map((cellWidth, index) => [index, { cellWidth }])),
       didDrawPage: drawHeader,
+      didDrawCell: drawCell,
     });
     cursor = (pdf as typeof pdf & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 45;
     cursor += 6;
@@ -253,91 +305,122 @@ async function buildAuditPdf(input: InternalAuditReportInput, gridOnly: boolean)
   }
 
   drawHeader();
-  table([
+  table(templateMode ? [
+    ['Modèle', cleanText(input.audit.templateName), 'Version', String(input.audit.templateVersion)],
+    ['Site / Navire', cleanText(input.site.name), 'Utilisation', 'Préparation de l’audit'],
+  ] : [
     ['Site / Navire', cleanText(input.site.name), 'Campagne', String(input.audit.year)],
     ['Auditeur', cleanText(input.audit.auditorName || 'Non renseigné'), 'Date de réalisation', input.audit.performedOn ? formatAuditDate(input.audit.performedOn) : 'Audit non débuté'],
     ['Grille', cleanText(`${input.audit.templateName} - version ${input.audit.templateVersion}`), 'Statut', cleanText(AUDIT_STATUS_LABELS[input.audit.status])],
   ], [], [29, 109, 31, 104]);
-  scoreCards();
-  const gridRows: RowInput[] = [];
-  let previousSection = '';
-  for (const question of data.questions) {
-    if (question.row.section !== previousSection) {
-      gridRows.push([{ content: cleanText(question.row.section), colSpan: 4, styles: { fillColor: pale, fontStyle: 'bold', textColor: navy } }]);
-      previousSection = question.row.section;
-    }
-    gridRows.push([
-      cleanText(question.row.reference || '-'),
-      cleanText(`${question.row.question}${question.row.guidance ? `\n\nÉléments à vérifier :\n${question.row.guidance}` : ''}`),
-      cleanText(`${question.answerLabel}\n${question.pointsLabel}`),
-      cleanText(question.row.observation || '-'),
-    ]);
-  }
-  table(gridRows, ['Référence', 'Question / Éléments à vérifier', 'Notation', 'Observations'], [22, 124, 35, 92]);
-
-  if (gridOnly) return finishPdf();
-  beginSection('02 - Synthèse');
-  paragraph('Non conformités majeures, non conformités mineures et remarques émises pour l’audit sélectionné.', { color: muted });
-  if (!data.findings.length) {
-    paragraph('Aucun écart émis pour cet audit.', { bold: true });
-  } else {
-    table(data.findings.map(({ finding }) => [
-      cleanText(finding.reference || '-'),
-      cleanText(`${FINDING_SEVERITY_LABELS[finding.severity]}\n\n${finding.description}`),
-      cleanText(finding.assigneeLabel),
-      finding.dueOn ? formatAuditDate(finding.dueOn) : 'Sans délai',
-      cleanText(`${FINDING_STATUS_LABELS[finding.status]}${finding.treatment ? `\n\n${finding.treatment}` : '\nAucun traitement renseigné'}`),
-    ]), ['Référence', 'Écart / Constat', 'Responsable', 'Échéance', 'Traitement'], [20, 88, 50, 28, 87]);
-    for (const entry of data.findings) {
-      if (!entry.events.length && !entry.finding.photos?.length) continue;
-      ensureSpace(17);
-      paragraph(`${entry.finding.reference || 'Sans référence'} - ${FINDING_SEVERITY_LABELS[entry.finding.severity]} - ${entry.finding.description}`, { bold: true, size: 10 });
-      if (entry.question) paragraph(`Question : ${entry.question.question}`, { size: 8, color: muted });
-      await renderPhotos(entry.finding.photos ?? [], `Photo du constat - ${entry.finding.assigneeLabel}`);
-      for (const event of entry.events) {
-        ensureSpace(16);
-        paragraph(`${formatAuditDate(auditReportTimestampDay(event.createdAt))} - ${event.actorName || 'Responsable de traitement'} - ${FINDING_STATUS_LABELS[event.status]}`, { bold: true, size: 8.5 });
-        paragraph(event.treatment, { size: 8.5 });
-        await renderPhotos(event.photos ?? [], `Photo du traitement - ${event.actorName || 'Responsable de traitement'} - ${formatAuditDate(auditReportTimestampDay(event.createdAt))}`);
+  if (sections.includes('grid')) {
+    if (!templateMode) scoreCards();
+    const gridRows: RowInput[] = [];
+    let previousSection = '';
+    for (const question of data.questions) {
+      if (question.row.section !== previousSection) {
+        gridRows.push([{ content: cleanText(question.row.section), colSpan: 5, styles: { fillColor: pale, fontStyle: 'bold', textColor: navy } }]);
+        previousSection = question.row.section;
       }
-      cursor += 4;
+      gridRows.push([
+        cleanText(question.row.reference || '-'),
+        cleanText(question.row.hrFunction?.trim() || 'Non affectée'),
+        cleanText(`${question.row.question}${question.row.guidance ? `\n\nÉléments à vérifier :\n${question.row.guidance}` : ''}`),
+        cleanText(`${question.answerLabel}\n${question.pointsLabel}`),
+        cleanText(question.row.observation || '-'),
+      ]);
+    }
+    table(gridRows, ['Référence', 'Fonction RH', 'Question / Éléments à vérifier', 'Notation', 'Observations'], [20, 34, 105, 32, 82]);
+  }
+
+  if (sections.includes('summary')) {
+    if (sections[0] !== 'summary') beginSection('02 - Synthèse');
+    paragraph('Non conformités majeures, non conformités mineures et remarques émises pour l’audit sélectionné.', { color: muted });
+    if (!data.findings.length) {
+      paragraph('Aucun écart émis pour cet audit.', { bold: true });
+    } else {
+      table(data.findings.map(({ finding }) => [
+        cleanText(finding.reference || '-'),
+        cleanText(`${FINDING_SEVERITY_LABELS[finding.severity]}\n\n${finding.description}`),
+        cleanText(finding.assigneeLabel),
+        finding.dueOn ? formatAuditDate(finding.dueOn) : 'Sans délai',
+        cleanText(`${FINDING_STATUS_LABELS[finding.status]}${finding.treatment ? `\n\n${finding.treatment}` : '\nAucun traitement renseigné'}`),
+      ]), ['Référence', 'Écart / Constat', 'Responsable', 'Échéance', 'Traitement'], [20, 88, 50, 28, 87]);
+      for (const entry of data.findings) {
+        if (!entry.events.length && !entry.finding.photos?.length) continue;
+        ensureSpace(17);
+        paragraph(`${entry.finding.reference || 'Sans référence'} - ${FINDING_SEVERITY_LABELS[entry.finding.severity]} - ${entry.finding.description}`, { bold: true, size: 10 });
+        if (entry.question) paragraph(`Question : ${entry.question.question}`, { size: 8, color: muted });
+        await renderPhotos(entry.finding.photos ?? [], `Photo du constat - ${entry.finding.assigneeLabel}`);
+        for (const event of entry.events) {
+          ensureSpace(16);
+          paragraph(`${formatAuditDate(auditReportTimestampDay(event.createdAt))} - ${event.actorName || 'Responsable de traitement'} - ${FINDING_STATUS_LABELS[event.status]}`, { bold: true, size: 8.5 });
+          paragraph(event.treatment, { size: 8.5 });
+          await renderPhotos(event.photos ?? [], `Photo du traitement - ${event.actorName || 'Responsable de traitement'} - ${formatAuditDate(auditReportTimestampDay(event.createdAt))}`);
+        }
+        cursor += 4;
+      }
     }
   }
 
-  beginSection('03 - Graphique');
-  const comparison = data.comparison;
-  paragraph(`Comparaison de l’audit ${input.audit.year} avec l’audit réalisé du même site en ${input.audit.year - 1}.`, { color: muted });
-  if (data.draft) paragraph('Brouillon : les réponses peuvent encore évoluer. Le score courant est provisoire.', { bold: true, color: [152, 81, 27] });
-  if (!comparison.previousAudit) paragraph(`Aucun audit réalisé en ${input.audit.year - 1}. Le score précédent et l’évolution restent absents.`, { bold: true });
-  table([
-    [`Audit ${input.audit.year}`, auditReportPercent(comparison.current.percentage), `${auditReportNumber(comparison.current.earnedPoints)} / ${auditReportNumber(comparison.current.maxPoints)}`, input.audit.performedOn ? formatAuditDate(input.audit.performedOn) : 'Non débuté'],
-    [`Audit ${input.audit.year - 1}`, comparison.previous ? auditReportPercent(comparison.previous.percentage) : 'Absent', comparison.previous ? `${auditReportNumber(comparison.previous.earnedPoints)} / ${auditReportNumber(comparison.previous.maxPoints)}` : '-', comparison.previousAudit?.performedOn ? formatAuditDate(comparison.previousAudit.performedOn) : '-'],
-    ['Évolution', comparison.delta === null ? 'Indisponible' : `${comparison.delta > 0 ? '+' : ''}${auditReportNumber(comparison.delta)} points de pourcentage`, '', ''],
-  ], ['Audit', 'Score', 'Points applicables', 'Réalisation'], [50, 90, 65, 68]);
-  paragraph(`Bleu : audit ${input.audit.year}. Vert : audit ${input.audit.year - 1}. N/A : aucune notation applicable.`, { size: 8, color: muted });
-  const chartRows = [{ section: 'Score global', current: comparison.current.percentage, previous: comparison.previous?.percentage ?? null }, ...comparison.sections];
-  for (const row of chartRows) {
-    const label = row.section.length > 240 ? `${row.section.slice(0, 237)}...` : row.section;
-    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8);
-    const labelLines = pdf.splitTextToSize(cleanText(label), 74) as string[];
-    const rowHeight = Math.max(18, labelLines.length * 3.8 + 3);
-    ensureSpace(rowHeight);
-    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8);
-    pdf.setTextColor(...navy); pdf.text(labelLines, margin, cursor + 4);
-    for (const [index, value] of [row.current, row.previous].entries()) {
-      const y = cursor + index * 7;
-      pdf.setFillColor(...pale); pdf.rect(91, y, 164, 4.5, 'F');
-      if (value !== null && value > 0) { pdf.setFillColor(...(index === 0 ? navy : teal)); pdf.rect(91, y, 164 * value / 100, 4.5, 'F'); }
-      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor(...navy);
-      pdf.text(value === null ? index === 1 && !comparison.previousAudit ? 'Absent' : 'N/A' : auditReportPercent(value), 260, y + 3.5);
+  if (sections.includes('chart')) {
+    if (sections[0] !== 'chart') beginSection('03 - Graphique');
+    const comparison = data.comparison;
+    paragraph(`Comparaison de l’audit ${input.audit.year} avec l’audit réalisé du même site en ${input.audit.year - 1}.`, { color: muted });
+    if (data.draft) paragraph('Brouillon : les réponses peuvent encore évoluer. Le score courant est provisoire.', { bold: true, color: [152, 81, 27] });
+    if (!comparison.previousAudit) paragraph(`Aucun audit réalisé en ${input.audit.year - 1}. Le score précédent et l’évolution restent absents.`, { bold: true });
+    table([
+      [`Audit ${input.audit.year}`, auditReportPercent(comparison.current.percentage), `${auditReportNumber(comparison.current.earnedPoints)} / ${auditReportNumber(comparison.current.maxPoints)}`, input.audit.performedOn ? formatAuditDate(input.audit.performedOn) : 'Non débuté'],
+      [`Audit ${input.audit.year - 1}`, comparison.previous ? auditReportPercent(comparison.previous.percentage) : 'Absent', comparison.previous ? `${auditReportNumber(comparison.previous.earnedPoints)} / ${auditReportNumber(comparison.previous.maxPoints)}` : '-', comparison.previousAudit?.performedOn ? formatAuditDate(comparison.previousAudit.performedOn) : '-'],
+      ['Évolution', comparison.delta === null ? 'Indisponible' : `${comparison.delta > 0 ? '+' : ''}${auditReportNumber(comparison.delta)} points de pourcentage`, '', ''],
+    ], ['Audit', 'Score', 'Points applicables', 'Réalisation'], [50, 90, 65, 68]);
+    paragraph(`Bleu : audit ${input.audit.year}. Vert : audit ${input.audit.year - 1}. N/A : aucune notation applicable.`, { size: 8, color: muted });
+    const chartRows = [{ section: 'Score global', current: comparison.current.percentage, previous: comparison.previous?.percentage ?? null }, ...comparison.sections];
+    for (const row of chartRows) {
+      const label = row.section.length > 240 ? `${row.section.slice(0, 237)}...` : row.section;
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8);
+      const labelLines = pdf.splitTextToSize(cleanText(label), 74) as string[];
+      const rowHeight = Math.max(18, labelLines.length * 3.8 + 3);
+      ensureSpace(rowHeight);
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8);
+      pdf.setTextColor(...navy); pdf.text(labelLines, margin, cursor + 4);
+      for (const [index, value] of [row.current, row.previous].entries()) {
+        const y = cursor + index * 7;
+        pdf.setFillColor(...pale); pdf.rect(91, y, 164, 4.5, 'F');
+        if (value !== null && value > 0) { pdf.setFillColor(...(index === 0 ? navy : teal)); pdf.rect(91, y, 164 * value / 100, 4.5, 'F'); }
+        pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor(...navy);
+        pdf.text(value === null ? index === 1 && !comparison.previousAudit ? 'Absent' : 'N/A' : auditReportPercent(value), 260, y + 3.5);
+      }
+      cursor += rowHeight;
     }
-    cursor += rowHeight;
+    paragraph('Les N/A sont exclus du barème. Les scores de chaque année utilisent les questions et barèmes conservés dans l’audit concerné.', { size: 8, color: muted });
+    table(comparison.sections.map((row) => [
+      cleanText(row.section), auditReportPercent(row.current), row.previous === null && !comparison.previousAudit ? 'Absent' : auditReportPercent(row.previous),
+      row.delta === null ? '-' : `${row.delta > 0 ? '+' : ''}${auditReportNumber(row.delta)}`,
+    ]), ['Chapitre', `Audit ${input.audit.year}`, `Audit ${input.audit.year - 1}`, 'Évolution (points)'], [165, 35, 35, 38]);
   }
-  paragraph('Les N/A sont exclus du barème. Les scores de chaque année utilisent les questions et barèmes conservés dans l’audit concerné.', { size: 8, color: muted });
-  table(comparison.sections.map((row) => [
-    cleanText(row.section), auditReportPercent(row.current), row.previous === null && !comparison.previousAudit ? 'Absent' : auditReportPercent(row.previous),
-    row.delta === null ? '-' : `${row.delta > 0 ? '+' : ''}${auditReportNumber(row.delta)}`,
-  ]), ['Chapitre', `Audit ${input.audit.year}`, `Audit ${input.audit.year - 1}`, 'Évolution (points)'], [165, 35, 35, 38]);
+  if (!templateMode) {
+    beginSection('04 - Participants et signatures');
+    paragraph('Signatures enregistrées dans les profils des participants. Leur présence ne constitue pas une nouvelle signature de ce rapport.', { size: 8, color: muted });
+    if (!participants.length) paragraph('Aucun participant renseigné pour cet audit.', { bold: true });
+    else table(participants.map((participant, index) =>
+      [cleanText(participant.lastName), cleanText(participant.firstName), cleanText(participant.functionLabel || 'Non renseignée'), signatures[index] ? '' : 'Non signée']
+        .map((content) => ({ content, styles: { minCellHeight: 33 } }))),
+    ['Nom', 'Prénom', 'Fonction RH', 'Signature du profil'], [52, 52, 78, 91], cursor, (cell) => {
+      if (cell.section !== 'body' || cell.column.index !== 3) return;
+      const image = signatures[cell.row.index];
+      if (!image) return;
+      let dimensions: { width: number; height: number };
+      try { dimensions = pdf.getImageProperties(image); }
+      catch { throw new Error(`La signature de ${participants[cell.row.index].firstName} ${participants[cell.row.index].lastName} est illisible.`); }
+      const scale = Math.min((cell.cell.width - 8) / dimensions.width, 25 / dimensions.height);
+      const imageWidth = dimensions.width * scale;
+      const imageHeight = dimensions.height * scale;
+      pdf.addImage(image, /^data:image\/jpeg/i.test(image) ? 'JPEG' : 'PNG',
+        cell.cell.x + (cell.cell.width - imageWidth) / 2, cell.cell.y + (cell.cell.height - imageHeight) / 2,
+        imageWidth, imageHeight, undefined, 'FAST');
+    });
+  }
   return finishPdf();
 
   function finishPdf(): InternalAuditGeneratedReport {
@@ -345,7 +428,8 @@ async function buildAuditPdf(input: InternalAuditReportInput, gridOnly: boolean)
     for (let page = 1; page <= pageCount; page += 1) {
       pdf.setPage(page); pdf.setDrawColor(210, 223, 229); pdf.setLineWidth(0.25); pdf.line(margin, height - 13, width - margin, height - 13);
       pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(...muted);
-      pdf.text(cleanText(`SeaPilot - ${input.site.name} - Audit ${input.audit.year}${data.draft ? ' - Brouillon' : ''}`), margin, height - 8);
+      pdf.text(cleanText(templateMode ? `SeaPilot - Modèle de grille - version ${input.audit.templateVersion}`
+        : `SeaPilot - ${input.site.name} - Audit ${input.audit.year}${data.draft ? ' - Brouillon' : ''}`), margin, height - 8);
       pdf.text(`Export du ${formatAuditDate(todayAuditParis(input.generatedAt ?? new Date()))}`, width / 2, height - 8, { align: 'center' });
       pdf.text(`${page} / ${pageCount}`, width - margin, height - 8, { align: 'right' });
     }
@@ -354,12 +438,29 @@ async function buildAuditPdf(input: InternalAuditReportInput, gridOnly: boolean)
 }
 
 export function buildInternalAuditReport(input: InternalAuditReportInput): Promise<InternalAuditGeneratedReport> {
-  return buildAuditPdf(input, false);
+  return buildAuditPdf(input);
 }
 
 /** Print the persisted audit snapshot without findings, comparison or private-photo requests. */
 export function buildInternalAuditGridReport(input: InternalAuditReportInput): Promise<InternalAuditGeneratedReport> {
-  return buildAuditPdf(input, true);
+  return buildAuditPdf({ ...input, sections: ['grid'] });
+}
+
+export interface InternalAuditTemplateReportInput { template: AuditTemplate; site?: AuditSite; sortByHrFunction?: boolean }
+
+export async function buildInternalAuditTemplateReport(input: InternalAuditTemplateReportInput): Promise<InternalAuditGeneratedReport> {
+  if (input.site && (input.site.companyId !== input.template.companyId
+    || input.template.siteId !== null && input.template.siteId !== input.site.id)) {
+    throw new Error('Le site de la grille ne correspond pas au modèle sélectionné.');
+  }
+  const site: AuditSite = input.site || { id: input.template.siteId || `template-${input.template.id}`, companyId: input.template.companyId,
+    name: input.template.siteId ? 'Site du modèle' : 'Tous les sites', kind: 'shore', vesselId: null, anniversaryOn: null };
+  const audit: InternalAudit = { id: `template-${input.template.id}`, companyId: input.template.companyId, siteId: site.id,
+    templateId: input.template.id, templateName: input.template.name, templateVersion: input.template.version,
+    year: 0, plannedOn: '', performedOn: null, auditorName: '', status: 'planned', rows: blankAuditAnswers(input.template.rows), completedAt: null };
+  const report = await buildAuditPdf({ audit, site, audits: [], findings: [], events: [], sections: ['grid'], sortByHrFunction: input.sortByHrFunction }, true);
+  const slug = input.template.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+  return { ...report, filename: `Modele_Grille_Audit_ISM_${slug || 'Grille'}_v${input.template.version}.pdf` };
 }
 
 /** Reserve the tab during the click gesture, then let the user choose the PDF viewer's print action. */
@@ -386,6 +487,18 @@ export async function openInternalAuditGridPrintPreview(input: InternalAuditRepo
 
 export async function downloadInternalAuditReport(input: InternalAuditReportInput): Promise<void> {
   const report = await buildInternalAuditReport(input);
+  downloadGeneratedInternalAuditReport(report);
+}
+
+export async function downloadInternalAuditGridReport(input: InternalAuditReportInput): Promise<void> {
+  downloadGeneratedInternalAuditReport(await buildInternalAuditGridReport(input));
+}
+
+export async function downloadInternalAuditTemplateReport(input: InternalAuditTemplateReportInput): Promise<void> {
+  downloadGeneratedInternalAuditReport(await buildInternalAuditTemplateReport(input));
+}
+
+function downloadGeneratedInternalAuditReport(report: InternalAuditGeneratedReport): void {
   const url = URL.createObjectURL(report.blob);
   const link = document.createElement('a');
   link.href = url;

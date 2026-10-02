@@ -9,10 +9,10 @@ import { auditDueOnFromDuration, todayAuditParis, type AuditFinding, type AuditF
 import type { InternalAuditData } from './internalAuditQueries';
 import { createInternalAuditPreviewData } from './internalAuditPreview';
 
-const queries = vi.hoisted(() => ({ fetchInternalAuditData: vi.fn(), saveAuditTemplate: vi.fn(), saveInternalAudit: vi.fn(), saveAuditFinding: vi.fn(), saveAuditSite: vi.fn(), addAuditFindingTreatment: vi.fn() }));
-const reportExports = vi.hoisted(() => ({ pdf: vi.fn(), workbook: vi.fn(), print: vi.fn() }));
+const queries = vi.hoisted(() => ({ fetchInternalAuditData: vi.fn(), saveAuditTemplate: vi.fn(), deleteAuditTemplate: vi.fn(), loadAuditParticipantSignature: vi.fn(), saveInternalAudit: vi.fn(), saveAuditFinding: vi.fn(), saveAuditSite: vi.fn(), addAuditFindingTreatment: vi.fn() }));
+const reportExports = vi.hoisted(() => ({ pdf: vi.fn(), workbook: vi.fn(), print: vi.fn(), grid: vi.fn(), template: vi.fn() }));
 vi.mock('./internalAuditQueries', () => queries);
-vi.mock('./internalAuditReport', () => ({ downloadInternalAuditReport: reportExports.pdf, openInternalAuditGridPrintPreview: reportExports.print }));
+vi.mock('./internalAuditReport', () => ({ downloadInternalAuditReport: reportExports.pdf, openInternalAuditGridPrintPreview: reportExports.print, downloadInternalAuditGridReport: reportExports.grid, downloadInternalAuditTemplateReport: reportExports.template }));
 vi.mock('./internalAuditWorkbook', () => ({ downloadInternalAuditWorkbook: reportExports.workbook }));
 
 let fixture: InternalAuditData;
@@ -45,6 +45,12 @@ beforeEach(() => {
     fixture.templates = [...fixture.templates.filter((item) => item.id !== template.id), saved];
     return saved;
   });
+  queries.deleteAuditTemplate.mockImplementation(async (_client, id: string, version: number) => {
+    const archived = { ...fixture.templates.find((template) => template.id === id)!, active: false, version: version + 1 };
+    fixture.templates = fixture.templates.map((template) => template.id === id ? archived : template);
+    return archived;
+  });
+  queries.loadAuditParticipantSignature.mockResolvedValue(null);
   queries.saveInternalAudit.mockImplementation(async (_client, audit: InternalAudit) => {
     fixture.audits = [...fixture.audits.filter((item) => item.id !== audit.id), structuredClone(audit)];
     return audit;
@@ -59,6 +65,182 @@ beforeEach(() => {
 });
 
 describe('InternalAuditsPage', () => {
+  it('confirms model deletion and preserves the existing audit history', async () => {
+    const user = userEvent.setup();
+    const template = fixture.templates[0];
+    const audits = structuredClone(fixture.audits);
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Grilles' }));
+    await user.click(screen.getByRole('button', { name: 'Supprimer le modèle' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('Les audits existants, leurs réponses, écarts et historiques seront conservés.');
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Annuler' }));
+    expect(queries.deleteAuditTemplate).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Supprimer le modèle' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmer la suppression' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(queries.deleteAuditTemplate).toHaveBeenCalledWith(expect.anything(), template.id, template.version);
+    expect(within(screen.getByRole('complementary', { name: 'Grilles disponibles' })).queryByRole('button', { name: new RegExp(template.name) })).not.toBeInTheDocument();
+    expect(fixture.templates.find((item) => item.id === template.id)?.active).toBe(false);
+    expect(fixture.audits).toEqual(audits);
+    await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
+    expect(screen.getByRole('table', { name: 'Grille d’audit LE ROZEL 2026' })).toBeInTheDocument();
+  });
+
+  it('keeps a model available if its deletion fails', async () => {
+    const user = userEvent.setup();
+    queries.deleteAuditTemplate.mockRejectedValueOnce(new Error('La grille a été modifiée. Rechargez-la.'));
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Grilles' }));
+    await user.click(screen.getByRole('button', { name: 'Supprimer le modèle' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmer la suppression' }));
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent('La grille a été modifiée. Rechargez-la.');
+    expect(fixture.templates[0].active).toBe(true);
+  });
+
+  it('assigns RH functions to model and audit rows without starting a planned audit', async () => {
+    const user = userEvent.setup();
+    fixture.hrFunctions = ['Capitaine', 'Chef mécanicien'];
+    fixture.audits[1] = { ...fixture.audits[1], status: 'planned', performedOn: null };
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Grilles' }));
+    await user.click(document.querySelector('.ia-question-editor summary')!);
+    await user.selectOptions(screen.getByRole('combobox', { name: `Fonction RH ${fixture.templates[0].rows[0].reference}` }), 'Chef mécanicien');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la grille' }));
+    await waitFor(() => expect(queries.saveAuditTemplate).toHaveBeenCalledOnce());
+    expect(queries.saveAuditTemplate.mock.calls[0][1].rows[0].hrFunction).toBe('Chef mécanicien');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Grille d’audit' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
+    await user.selectOptions(screen.getAllByRole('combobox', { name: /^Fonction RH / })[0], 'Capitaine');
+    expect(screen.getByLabelText('Date de réalisation')).toHaveValue('');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer les réponses' }));
+    await waitFor(() => expect(queries.saveInternalAudit).toHaveBeenCalledOnce());
+    expect(queries.saveInternalAudit.mock.calls[0][1]).toMatchObject({ status: 'planned', performedOn: null, rows: [expect.objectContaining({ hrFunction: 'Capitaine' }), expect.anything()] });
+  });
+
+  it('selects RH participants by identity while retaining automatic contributors', async () => {
+    const user = userEvent.setup();
+    fixture.people[0] = { ...fixture.people[0], firstName: 'Alice', lastName: 'MARTIN', name: 'Alice MARTIN', hasSignature: false };
+    fixture.audits[1].participantPersonIds = [];
+    fixture.audits[1].participants = [{ personId: null, userId: 'auditor-user', firstName: '', lastName: 'Auditeur externe', functionLabel: '', source: 'contributor', signatureSnapshot: {} }];
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Ajouter un participant' }), String(fixture.people[0].id));
+    expect(screen.getByText('Alice MARTIN', { exact: true })).toBeInTheDocument();
+    expect(screen.getByText('Auditeur externe', { exact: true })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Retirer le participant Auditeur externe/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Enregistrer les réponses' }));
+    await waitFor(() => expect(queries.saveInternalAudit).toHaveBeenCalledOnce());
+    expect(queries.saveInternalAudit.mock.calls[0][1]).toMatchObject({ participantPersonIds: [fixture.people[0].id], participants: [expect.objectContaining({ personId: fixture.people[0].id, firstName: 'Alice', lastName: 'MARTIN', source: 'selected' }), expect.objectContaining({ userId: 'auditor-user', source: 'contributor' })] });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Retirer le participant Alice MARTIN' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Retirer le participant Alice MARTIN' }));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer les réponses' }));
+    await waitFor(() => expect(queries.saveInternalAudit).toHaveBeenCalledTimes(2));
+    expect(queries.saveInternalAudit.mock.calls[1][1].participantPersonIds).toEqual([]);
+    expect(screen.getByText('Auditeur externe', { exact: true })).toBeInTheDocument();
+  });
+
+  it('exports an unfinished grid and chooses report sections and RH sorting', async () => {
+    const user = userEvent.setup();
+    fixture.audits[1].status = 'planned';
+    fixture.audits[1].performedOn = null;
+    fixture.audits[1].rows[0].answer = null;
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Trier la grille PDF par fonction RH' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Synthèse' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Graphique' }));
+    await user.click(screen.getByRole('button', { name: 'Exporter le rapport' }));
+    await waitFor(() => expect(reportExports.pdf).toHaveBeenCalledOnce());
+    expect(reportExports.pdf.mock.calls[0][0]).toMatchObject({ sections: ['grid'], sortByHrFunction: true, loadSignature: expect.any(Function) });
+    await reportExports.pdf.mock.calls[0][0].loadSignature(fixture.audits[1].participants?.[0]);
+    expect(queries.loadAuditParticipantSignature).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole('checkbox', { name: /^Grille d’audit$/ }));
+    expect(screen.getByRole('button', { name: 'Exporter le rapport' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Exporter la grille PDF' }));
+    await waitFor(() => expect(reportExports.grid).toHaveBeenCalledOnce());
+    expect(reportExports.grid.mock.calls[0][0]).toMatchObject({ audit: { status: 'planned', performedOn: null }, sortByHrFunction: true, loadSignature: expect.any(Function) });
+    await reportExports.grid.mock.calls[0][0].loadSignature(fixture.audits[1].participants![0]);
+    expect(queries.loadAuditParticipantSignature).toHaveBeenCalledTimes(2);
+    expect(queries.loadAuditParticipantSignature).toHaveBeenLastCalledWith(expect.anything(), fixture.audits[1].participants![0]);
+    expect(queries.saveInternalAudit).not.toHaveBeenCalled();
+  });
+
+  it('exports a blank model PDF before any audit is planned', async () => {
+    const user = userEvent.setup();
+    fixture.audits = [];
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Grilles' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Trier le PDF par fonction RH' }));
+    await user.click(screen.getByRole('button', { name: 'Exporter la grille vierge PDF' }));
+    await waitFor(() => expect(reportExports.template).toHaveBeenCalledOnce());
+    expect(reportExports.template.mock.calls[0][0]).toMatchObject({ template: fixture.templates[0], sortByHrFunction: true });
+    expect(reportExports.template.mock.calls[0][0]).not.toHaveProperty('audit');
+  });
+
+  it('allows creating a new grid after deleting the final active model', async () => {
+    const user = userEvent.setup();
+    fixture.templates = [fixture.templates[0]];
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Grilles' }));
+    await user.click(screen.getByRole('button', { name: 'Supprimer le modèle' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmer la suppression' }));
+    await screen.findByText('Aucune grille disponible');
+    await user.click(screen.getByRole('button', { name: 'Créer une grille personnalisée' }));
+    const dialog = screen.getByRole('dialog');
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Fermer' })).toHaveFocus());
+    await user.type(within(dialog).getByRole('textbox', { name: 'Nom de la nouvelle grille' }), 'Nouvelle grille BBTM');
+    await user.click(within(dialog).getByRole('button', { name: 'Créer la grille' }));
+    await waitFor(() => expect(queries.saveAuditTemplate).toHaveBeenCalledOnce());
+    expect(queries.saveAuditTemplate.mock.calls[0][1]).toMatchObject({ name: 'Nouvelle grille BBTM', active: true, version: 1 });
+    expect(queries.saveAuditTemplate.mock.calls[0][1].rows).toHaveLength(61);
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Nom de la grille' })).toHaveValue('Nouvelle grille BBTM'));
+  });
+
+  it('avoids duplicating an explicitly selected contributor and preserves their contribution on removal', async () => {
+    const user = userEvent.setup();
+    const person = fixture.people[0];
+    fixture.audits[1].participantPersonIds = [];
+    fixture.audits[1].participants = [{ personId: person.id, firstName: 'Alice', lastName: 'MARTIN', functionLabel: person.functionLabel, source: 'contributor', signatureSnapshot: {} }];
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Ajouter un participant' }), String(person.id));
+    expect(screen.getAllByText('Alice MARTIN', { exact: true })).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Enregistrer les réponses' }));
+    await waitFor(() => expect(queries.saveInternalAudit).toHaveBeenCalledOnce());
+    expect(queries.saveInternalAudit.mock.calls[0][1].participantPersonIds).toEqual([person.id]);
+    expect(queries.saveInternalAudit.mock.calls[0][1].participants).toHaveLength(1);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Retirer le participant Alice MARTIN' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Retirer le participant Alice MARTIN' }));
+    expect(screen.getAllByText('Alice MARTIN', { exact: true })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Retirer le participant Alice MARTIN' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Enregistrer les réponses' }));
+    await waitFor(() => expect(queries.saveInternalAudit).toHaveBeenCalledTimes(2));
+    expect(queries.saveInternalAudit.mock.calls[1][1].participantPersonIds).toEqual([]);
+    expect(queries.saveInternalAudit.mock.calls[1][1].participants).toHaveLength(1);
+  });
+
+  it.each(['marin', 'capitaine'] as RoleKey[])('keeps model deletion, RH function assignment and participant editing unavailable to a real %s fixture', async (role) => {
+    const user = userEvent.setup();
+    fixture.permissions = { canManage: false, treatableFindingIds: [] };
+    renderPage([role]);
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Grilles' }));
+    expect(screen.queryByRole('button', { name: 'Supprimer le modèle' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
+    for (const field of screen.getAllByRole('combobox', { name: /^Fonction RH / })) expect(field).toBeDisabled();
+    expect(screen.queryByRole('combobox', { name: 'Ajouter un participant' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Retirer le participant / })).not.toBeInTheDocument();
+    expect(queries.deleteAuditTemplate).not.toHaveBeenCalled();
+  });
+
   it('opens the upcoming LANDEMER demonstration audit with its unanswered reference grid', async () => {
     fixture = createInternalAuditPreviewData();
     const planned = fixture.audits.find((audit) => audit.id === '00000000-0000-4000-8000-000000000202')!;
@@ -197,7 +379,9 @@ describe('InternalAuditsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
     await user.click(screen.getByRole('button', { name: 'Imprimer la grille' }));
     await waitFor(() => expect(reportExports.print).toHaveBeenCalledOnce());
-    expect(reportExports.print.mock.calls[0][0]).toMatchObject({ audit: fixture.audits[1], site: fixture.sites[3], findings: [], events: [] });
+    expect(reportExports.print.mock.calls[0][0]).toMatchObject({ audit: fixture.audits[1], site: fixture.sites[3], findings: [], events: [], loadSignature: expect.any(Function) });
+    await reportExports.print.mock.calls[0][0].loadSignature(fixture.audits[1].participants![0]);
+    expect(queries.loadAuditParticipantSignature).toHaveBeenCalledWith(expect.anything(), fixture.audits[1].participants![0]);
     expect(reportExports.pdf).not.toHaveBeenCalled();
     await user.selectOptions(screen.getAllByRole('combobox', { name: /^Réponse / })[0], 'na');
     expect(screen.getByRole('button', { name: 'Imprimer la grille' })).toBeDisabled();

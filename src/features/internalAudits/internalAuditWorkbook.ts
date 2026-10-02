@@ -11,7 +11,7 @@ const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships
 const PKG_REL = 'http://schemas.openxmlformats.org/package/2006/relationships';
 type Cell = string | number | null;
 type TableRow = { values: Cell[]; style?: number; height?: number; merge?: boolean };
-const GRID_WIDTHS = [26, 12, 64, 76, 18, 10, 10, 55];
+const GRID_WIDTHS = [26, 12, 64, 76, 18, 10, 10, 55, 28];
 const SUMMARY_WIDTHS = [13, 27, 65, 32, 26, 20, 55, 80];
 const GRAPH_WIDTHS = [42, 16, 16, 25, 4];
 
@@ -114,19 +114,20 @@ function evidenceRows(input: InternalAuditReportInput): Evidence[] {
 
 /** A portable report: actual three worksheets, native Excel chart, embedded photographic evidence. */
 export async function buildInternalAuditWorkbook(input: InternalAuditReportInput): Promise<{ blob: Blob; filename: string }> {
-  internalAuditReportData(input);
+  const reportData = internalAuditReportData({ ...input, sections: undefined });
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
   const comparison = compareAuditScores(input.audit, input.audits);
   const findings = input.findings.filter((finding) => finding.auditId === input.audit.id && finding.companyId === input.audit.companyId);
   const grid: TableRow[] = [
     ...metadata(input, 'Grille d’audit'),
-    { values: ['Chapitre ISM', 'Référence', 'Question', 'Éléments à vérifier', 'Réponse', 'Barème', 'Points', 'Observations'], style: 2, height: 40 },
-    ...input.audit.rows.flatMap((row) => continuationRows([
+    { values: ['Chapitre ISM', 'Référence', 'Question', 'Éléments à vérifier', 'Réponse', 'Barème', 'Points', 'Observations', 'Fonction RH'], style: 2, height: 40 },
+    ...reportData.questions.flatMap(({ row }) => continuationRows([
       row.section, row.reference, row.question, row.guidance,
       row.answer ? AUDIT_ANSWER_LABELS[row.answer] : 'Sans réponse', row.maxPoints,
       row.answer === 'na' || row.answer == null ? null : row.answer === 'conforme' ? row.maxPoints : row.answer === 'incomplet' ? row.maxPoints / 2 : 0,
       row.observation,
+      row.hrFunction?.trim() || 'Non affectée',
     ], GRID_WIDTHS, 1, [4, 5, 6], 42)),
     { values: ['Total applicable (hors N/A)', null, null, null, null, comparison.current.maxPoints, comparison.current.earnedPoints] },
     { values: ['Score (%)', comparison.current.percentage] },
