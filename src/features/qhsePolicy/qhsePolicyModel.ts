@@ -1,7 +1,10 @@
 import { isPlanningDate } from '../planning/planningDates';
+import { normalizeQhsePolicyAxisIconKey, type QhsePolicyAxisIconKey } from './qhsePolicyIcons';
+
+export type { QhsePolicyAxisIconKey } from './qhsePolicyIcons';
 
 export interface QhsePolicySettings { publicationId: number | null; documentUrl: string; revision: number; updatedAt: string }
-export interface QhsePolicyProcess { id: string; name: string; description: string; position: number; archived: boolean; revision: number; updatedAt: string }
+export interface QhsePolicyProcess { id: string; name: string; description: string; position: number; archived: boolean; revision: number; updatedAt: string; iconKey?: QhsePolicyAxisIconKey }
 export interface QhsePolicyObjective {
   id: string; processId: string; title: string; description: string; ownerLabel: string; dueOn: string | null;
   ownerKind: QhsePolicyOwnerKind; ownerPersonId: number | null; ownerVesselId: number | null;
@@ -19,7 +22,7 @@ export interface QhsePolicySnapshot {
   settings: QhsePolicySettings | null; processes: QhsePolicyProcess[]; objectives: QhsePolicyObjective[];
   updates: QhsePolicyObjectiveUpdate[]; attachments: QhsePolicyAttachment[]; canEdit: boolean;
 }
-export interface QhsePolicyProcessDraft { id?: string | null; name: string; description?: string; position?: number; expectedRevision?: number | null }
+export interface QhsePolicyProcessDraft { id?: string | null; name: string; description?: string; position?: number; expectedRevision?: number | null; iconKey?: QhsePolicyAxisIconKey }
 export interface QhsePolicyObjectiveDraft {
   id?: string | null; processId: string; title: string; description?: string; ownerLabel?: string;
   ownerKind?: QhsePolicyOwnerKind; ownerPersonId?: number | null; ownerVesselId?: number | null;
@@ -49,15 +52,36 @@ export function todayQhsePolicyDate(): string {
 }
 export function validateQhsePolicyProcessDraft(draft: QhsePolicyProcessDraft) {
   const id = draft.id || null;
-  if (id && !isQhsePolicyId(id)) throw new Error('Processus invalide.');
+  if (id && !isQhsePolicyId(id)) throw new Error('Axe stratégique invalide.');
   revision(draft.expectedRevision, !!id);
   const position = draft.position ?? 0;
-  if (!Number.isSafeInteger(position) || position < 0 || position > 100000) throw new Error('L’ordre du processus est invalide.');
-  return { id, name: field(draft.name, 200, true), description: field(draft.description, 5000), position, expectedRevision: draft.expectedRevision ?? null };
+  if (!Number.isSafeInteger(position) || position < 0 || position > 100000) throw new Error('L’ordre de l’axe stratégique est invalide.');
+  const iconKey = draft.iconKey ?? (id ? null : 'general');
+  if (iconKey !== null && normalizeQhsePolicyAxisIconKey(iconKey) !== iconKey) throw new Error('L’icône de l’axe stratégique est invalide.');
+  return { id, name: field(draft.name, 200, true), description: field(draft.description, 5000), position, expectedRevision: draft.expectedRevision ?? null, iconKey };
+}
+export function validateQhsePolicyProcessOrder(processes: QhsePolicyProcess[]): Array<{ id: string; revision: number }> {
+  if (!Array.isArray(processes) || processes.length > 100001) throw new Error('L’ordre des axes stratégiques est invalide.');
+  const ids = new Set<string>();
+  return processes.map((process) => {
+    if (!process || !isQhsePolicyId(process.id) || ids.has(process.id.toLowerCase())) throw new Error('Chaque axe stratégique doit apparaître une seule fois dans la liste complète.');
+    revision(process.revision, true);
+    ids.add(process.id.toLowerCase());
+    return { id: process.id, revision: process.revision };
+  });
+}
+export function validateQhsePolicyProcessDeletion(process: QhsePolicyProcess, transferTo?: QhsePolicyProcess) {
+  if (!process || !isQhsePolicyId(process.id)) throw new Error('Axe stratégique invalide.');
+  revision(process.revision, true);
+  if (transferTo) {
+    if (!isQhsePolicyId(transferTo.id) || transferTo.id.toLowerCase() === process.id.toLowerCase() || transferTo.archived) throw new Error('Choisissez un autre axe stratégique actif pour transférer les objectifs.');
+    revision(transferTo.revision, true);
+  }
+  return { id: process.id, expectedRevision: process.revision, transferTo: transferTo?.id ?? null, transferExpectedRevision: transferTo?.revision ?? null };
 }
 export function validateQhsePolicyObjectiveDraft(draft: QhsePolicyObjectiveDraft) {
   const id = draft.id || null;
-  if ((id && !isQhsePolicyId(id)) || !isQhsePolicyId(draft.processId)) throw new Error('Objectif ou processus invalide.');
+  if ((id && !isQhsePolicyId(id)) || !isQhsePolicyId(draft.processId)) throw new Error('Objectif ou axe stratégique invalide.');
   revision(draft.expectedRevision, !!id);
   const dueOn = draft.dueOn || null;
   if (dueOn && (!isPlanningDate(dueOn) || dueOn < '1900-01-01' || dueOn > '2100-12-31')) throw new Error('La date d’échéance est invalide.');

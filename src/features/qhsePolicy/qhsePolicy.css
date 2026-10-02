@@ -26,9 +26,16 @@
 .qhse-policy-checkbox input { width:16px; height:16px; margin:0; accent-color:#0c7182; }
 .qhse-policy-process { min-width:0; overflow:hidden; border:1px solid #dce7ef; border-radius:12px; background:#fff; }
 .qhse-policy-process > header { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:17px 20px; background:#f7fafc; border-bottom:1px solid #e4ecf2; }
-.qhse-policy-process > header > div:last-child { display:flex; gap:8px; align-items:center; }
-.qhse-policy-process > header > div:first-child { display:block; min-width:0; }
-.qhse-policy-process > header h3 { font-size:17px; line-height:1.3; }
+.qhse-policy-process__actions { display:flex; flex-shrink:0; flex-wrap:nowrap; justify-content:flex-end; gap:6px; align-items:center; }
+.qhse-policy-process__identity { display:flex; flex:1; align-items:center; gap:11px; min-width:0; }
+.qhse-policy-process__identity > div { min-width:0; }
+.qhse-policy-axis-icon { display:inline-grid; place-items:center; flex:0 0 40px; width:40px; height:40px; border:1px solid #d9e7ed; border-radius:11px; background:#edf6f8; color:#28778b; }
+.qhse-policy-process__order { display:flex; gap:3px; padding-right:7px; margin-right:1px; border-right:1px solid #dce7ed; }
+.qhse-policy-process__order .qhse-policy-icon-button { width:32px; min-height:32px; padding:6px; }
+.qhse-policy-process__order .qhse-policy-icon-button:disabled { cursor:default; }
+.qhse-policy-icon-button.is-danger { color:#9a4e54; }
+.qhse-policy-icon-button.is-danger:hover:not(:disabled) { border-color:#e6c6c9; background:#fff3f3; }
+.qhse-policy-process > header h3 { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:17px; line-height:1.3; overflow-wrap:anywhere; }
 .qhse-policy-process > header p { margin-top:4px; color:#64788a; font-size:13px; line-height:1.4; }
 .qhse-policy-process__empty { padding:20px; color:#64788a; font-size:14px; }
 .qhse-policy-objective { padding:18px 20px; }
@@ -73,6 +80,8 @@
 .qhse-policy-fields :is(input,select,textarea) { width:100%; min-width:0; min-height:42px; border:1px solid #cddbe6; border-radius:7px; padding:10px 11px; color:#1d3b50; background:#fff; font:inherit; font-weight:400; }
 .qhse-policy-fields textarea { resize:vertical; line-height:1.5; }
 .qhse-policy-fields__pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.qhse-policy-axis-icon-choice { display:grid; grid-template-columns:minmax(0,1fr) 42px; align-items:end; gap:12px; }
+.qhse-policy-axis-icon-choice .qhse-policy-axis-icon { width:42px; height:42px; }
 .qhse-policy-owner-current { display:grid; align-content:start; gap:10px; color:#3d5a70; font-size:13px; }
 .qhse-policy-owner-current span { padding:10px 11px; color:#6b8092; border:1px solid #dce7ed; border-radius:7px; background:#f7fafc; font-weight:400; }
 .qhse-policy-file-picker { display:grid; gap:8px; min-width:0; }
@@ -102,11 +111,18 @@
 .qhse-policy-home__error { display:flex; align-items:center; gap:6px; }
 .qhse-policy-home__error button { display:grid; place-items:center; width:28px; height:28px; border:1px solid #d5e2e9; border-radius:6px; color:#49778d; background:#fff; cursor:pointer; }
 @media(max-width:1050px) { .qhse-policy-home { grid-template-columns:minmax(250px,1fr) auto; gap:16px; } .qhse-policy-home__summary { grid-column:1; padding-left:57px; } .qhse-policy-home__links { grid-column:2; grid-row:1 / 3; } }
+@media(max-width:1050px) {
+  .qhse-policy-process > header { flex-wrap:wrap; }
+  .qhse-policy-process__identity { flex:1 1 100%; }
+  .qhse-policy-process__actions { width:100%; flex-wrap:wrap; justify-content:flex-start; }
+}
 @media(max-width:760px) {
   .qhse-policy-page { padding:20px 16px 30px; }
   .qhse-policy-page__header,.qhse-policy-objectives__heading { align-items:flex-start; flex-wrap:wrap; gap:15px; }
   .qhse-policy-page h1 { font-size:25px; }
   .qhse-policy-process > header { padding:15px; align-items:flex-start; flex-wrap:wrap; }
+  .qhse-policy-process__actions { width:100%; justify-content:flex-start; }
+  .qhse-policy-process__order .qhse-policy-icon-button { width:40px; min-height:40px; }
   .qhse-policy-objective { padding:16px 15px; }
   .qhse-policy-objective__row { grid-template-columns:1fr; gap:11px; }
   .qhse-policy-objective__progress { grid-template-columns:1fr 45px; align-items:center; }
