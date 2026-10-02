@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { previewSupabaseClient } from './previewSupabaseClient';
+import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveRightsPeriod } from '../planning/planningAbsenceBalanceQueries';
 
 describe('previewSupabaseClient', () => {
+  it('enrolls another collaborator and refreshes both annual rights after an adjustment', async () => {
+    const draft = { personId: 101, startsOn: '2026-06-01', endsOn: '2027-05-31', leaveEntitlement: 25, rttEntitlement: 0 };
+    expect((await fetchPlanningAbsenceBalanceContext(previewSupabaseClient, draft.personId)).kind).toBe('crew');
+    await savePlanningLeaveRightsPeriod(previewSupabaseClient, draft);
+    const initial = await fetchPlanningAbsenceBalanceContext(previewSupabaseClient, draft.personId);
+    expect(initial.kind).toBe('leave_rtt');
+    expect(initial.counterPeriods.map((period) => period.entitlement)).toEqual([25, 0]);
+    await savePlanningLeaveRightsPeriod(previewSupabaseClient, { ...draft, leaveEntitlement: 27.5, rttEntitlement: 9 });
+    const adjusted = await fetchPlanningAbsenceBalanceContext(previewSupabaseClient, draft.personId);
+    expect(adjusted.counterPeriods.map((period) => period.id)).toEqual(initial.counterPeriods.map((period) => period.id));
+    expect(adjusted.counterPeriods.map((period) => period.entitlement)).toEqual([27.5, 9]);
+    await expect(savePlanningLeaveRightsPeriod(previewSupabaseClient, { ...draft, startsOn: '2026-06-01', endsOn: '2027-05-31', rttEntitlement: NaN })).rejects.toThrow();
+    expect((await fetchPlanningAbsenceBalanceContext(previewSupabaseClient, draft.personId)).counterPeriods).toEqual(adjusted.counterPeriods);
+  });
   it('keeps a sold urgent purchase request for alert-regression checks', async () => {
     const requests = await previewSupabaseClient.from('purchase_requests').select('*').order('id');
 

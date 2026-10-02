@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
-import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveCounterPeriod } from './planningAbsenceBalanceQueries';
+import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveCounterPeriod, savePlanningLeaveRightsPeriod } from './planningAbsenceBalanceQueries';
 
 function rpcClient(data: unknown, error: unknown = null) { const rpc = vi.fn().mockResolvedValue({ data, error }); return { client: { rpc } as unknown as SupabaseClient, rpc }; }
 const raw = { kind: 'leave_rtt', person: { id: 15, first_name: 'Christophe', last_name: 'MINASSIAN', hired_on: '2020-01-01', departed_on: null, active: true }, counter_periods: [{ id: 1, counter_type: 'leave', starts_on: '2026-01-01', ends_on: '2026-12-31', entitlement: '0.00' }], absences: [{ id: 10, absence_type: 'rtt', starts_at: '2026-10-01T06:00:00Z', ends_at: '2026-10-01T22:00:00Z', status: 'approved', updated_at: '2026-09-01T00:00:00Z' }], crew_checkpoints: [], crew_sources: { assignments: [], periods: [], days: [] } };
@@ -24,4 +24,20 @@ describe('period rights save query', () => {
   it('sends the total entitlement and inclusive bounds with the selected person', async () => { const { client, rpc } = rpcClient(1); await savePlanningLeaveCounterPeriod(client, draft); expect(rpc).toHaveBeenCalledWith('save_planning_leave_counter_period', { p_person_id: 15, p_counter_type: 'rtt', p_starts_on: '2026-01-01', p_ends_on: '2026-12-31', p_entitlement: 10.5 }); });
   it('rejects invalid rights before a network write', async () => { const { client, rpc } = rpcClient(1); await expect(savePlanningLeaveCounterPeriod(client, { ...draft, entitlement: -1 })).rejects.toThrow(); expect(rpc).not.toHaveBeenCalled(); });
   it.each([['23P01', 'chevauche'], ['42501', 'ne peut pas modifier'], ['network', 'Réessayez']])('reports %s without claiming a successful save', async (code, message) => await expect(savePlanningLeaveCounterPeriod(rpcClient(null, { code }).client, draft)).rejects.toThrow(message));
+});
+
+describe('combined annual rights save query', () => {
+  const annual = { personId: 15, startsOn: '2026-06-01', endsOn: '2027-05-31', leaveEntitlement: 25.5, rttEntitlement: 0 };
+  it('sends both totals in one RPC so enrollment and counters cannot be partially saved', async () => {
+    const { client, rpc } = rpcClient(null);
+    await savePlanningLeaveRightsPeriod(client, annual);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('save_planning_leave_rights_period', { p_person_id: 15, p_starts_on: '2026-06-01', p_ends_on: '2027-05-31', p_leave_entitlement: 25.5, p_rtt_entitlement: 0 });
+  });
+  it.each([{ rttEntitlement: NaN }, { leaveEntitlement: -1 }, { endsOn: '2027-06-01' }])('rejects invalid values %j before enrollment or rights write', async (override) => {
+    const { client, rpc } = rpcClient(null);
+    await expect(savePlanningLeaveRightsPeriod(client, { ...annual, ...override })).rejects.toThrow();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+  it.each([['23P01', 'chevauche'], ['42501', 'ne peut pas modifier'], ['22023', '1er juin'], ['network', 'Réessayez']])('reports %s without claiming successful enrollment', async (code, message) => await expect(savePlanningLeaveRightsPeriod(rpcClient(null, { code }).client, annual)).rejects.toThrow(message));
 });

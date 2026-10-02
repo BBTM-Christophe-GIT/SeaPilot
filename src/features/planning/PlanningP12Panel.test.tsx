@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlanningP12Panel } from './PlanningP12Panel';
 import type { PlanningAbsenceBalanceContext } from './planningAbsenceBalance';
-import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveCounterPeriod } from './planningAbsenceBalanceQueries';
+import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveCounterPeriod, savePlanningLeaveRightsPeriod } from './planningAbsenceBalanceQueries';
 import type { PlanningAbsenceRecord, PlanningP12Data } from './planningP12';
 import type { PlanningOverview } from './planningQueries';
 import {
@@ -28,6 +28,7 @@ vi.mock('./planningP12Queries', () => ({
 vi.mock('./planningAbsenceBalanceQueries', () => ({
   fetchPlanningAbsenceBalanceContext: vi.fn(),
   savePlanningLeaveCounterPeriod: vi.fn(),
+  savePlanningLeaveRightsPeriod: vi.fn(),
 }));
 
 const client = {} as SupabaseClient;
@@ -63,8 +64,8 @@ const rttData: PlanningP12Data = { ...data, absences: rttRequests };
 
 function staffBalances(entitlement = 8): PlanningAbsenceBalanceContext {
   return { kind: 'leave_rtt', person: staffPerson, counterPeriods: [
-    { id: 1, counterType: 'leave', startsOn: '2026-01-01', endsOn: '2026-12-31', entitlement: 25 },
-    { id: 2, counterType: 'rtt', startsOn: '2026-01-01', endsOn: '2026-12-31', entitlement },
+    { id: 1, counterType: 'leave', startsOn: '2026-06-01', endsOn: '2027-05-31', entitlement: 25 },
+    { id: 2, counterType: 'rtt', startsOn: '2026-06-01', endsOn: '2027-05-31', entitlement },
   ], absences: rttRequests, crewCheckpoints: [], crewSources: { assignments: [], periods: [], days: [] } };
 }
 
@@ -113,6 +114,7 @@ describe('Planning P1.2 panel', () => {
       },
     }));
     vi.mocked(savePlanningLeaveCounterPeriod).mockResolvedValue(undefined);
+    vi.mocked(savePlanningLeaveRightsPeriod).mockResolvedValue(undefined);
   });
 
   it('keeps keyboard focus in the absence dialog and closes with Escape', async () => {
@@ -270,10 +272,11 @@ describe('Planning P1.2 panel', () => {
     await user.selectOptions(within(form).getByLabelText('Marin'), '11');
     await user.selectOptions(within(form).getByLabelText('Type'), 'rtt');
     await user.type(within(form).getByLabelText('Motif'), 'RTT à conserver');
-    await user.click(await screen.findByRole('button', { name: 'Modifier les droits RTT' }));
-    const editor = screen.getByRole('group', { name: 'Droits RTT' });
-    expect(editor.tagName).toBe('FIELDSET');
-    expect(editor.closest('form')).toBe(form);
+    await user.click(await screen.findByRole('button', { name: 'Périodes de Droits Congés' }));
+    const editor = screen.getByRole('dialog', { name: 'Périodes de Droits Congés' });
+    expect(editor.closest('form')).toBeNull();
+    expect(editor.querySelector('form')).not.toBeNull();
+    expect(form).not.toContainElement(editor);
     expect(form.querySelector('form')).toBeNull();
     expect(within(screen.getByRole('dialog', { name: 'Absences et conflits' })).getAllByRole('button', { name: 'Fermer' })[0]).toBeDisabled();
     for (const tab of screen.getAllByRole('tab')) expect(tab).toBeDisabled();
@@ -290,19 +293,19 @@ describe('Planning P1.2 panel', () => {
     expect(within(form).getByLabelText('Fin')).toBeDisabled();
     expect(within(form).getByLabelText('Motif')).toBeDisabled();
     expect(within(form).getByRole('button', { name: 'Envoyer la demande' })).toBeDisabled();
-    const amount = within(editor).getByLabelText('Total des droits (jours)');
+    const amount = within(editor).getByLabelText('Total RTT (jours)');
     await user.clear(amount);
     await user.type(amount, '9,5');
-    await user.keyboard('{Enter}');
     // An external submit event must also honor the parent form's edit guard.
     fireEvent.submit(form);
     expect(savePlanningAbsence).not.toHaveBeenCalled();
     expect(savePlanningLeaveCounterPeriod).not.toHaveBeenCalled();
+    expect(savePlanningLeaveRightsPeriod).not.toHaveBeenCalled();
     expect(amount).toHaveValue('9,5');
     expect(editor).toBeVisible();
     await user.keyboard('{Escape}');
     expect(props.onClose).not.toHaveBeenCalled();
-    expect(screen.queryByRole('group', { name: 'Droits RTT' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Périodes de Droits Congés' })).not.toBeInTheDocument();
     for (const tab of screen.getAllByRole('tab')) expect(tab).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Actualiser les absences et conflits' })).toBeEnabled();
     expect(within(requestedCard).getByRole('button', { name: 'Modifier' })).toBeEnabled();
@@ -311,17 +314,23 @@ describe('Planning P1.2 panel', () => {
     expect(within(form).getByLabelText('Type')).toHaveValue('rtt');
     expect(within(form).getByLabelText('Motif')).toHaveValue('RTT à conserver');
     expect(balanceMetric('RTT', 'Droits')).toHaveTextContent('8 j');
-    await user.click(screen.getByRole('button', { name: 'Modifier les droits RTT' }));
-    await user.clear(screen.getByLabelText('Total des droits (jours)'));
-    await user.type(screen.getByLabelText('Total des droits (jours)'), '9,5');
-    await user.click(screen.getByRole('button', { name: 'Enregistrer les droits' }));
+    await user.click(screen.getByRole('button', { name: 'Périodes de Droits Congés' }));
+    const nextEditor = screen.getByRole('dialog', { name: 'Périodes de Droits Congés' });
+    await user.clear(within(nextEditor).getByLabelText('Total RTT (jours)'));
+    await user.type(within(nextEditor).getByLabelText('Total RTT (jours)'), '9,5');
+    await user.keyboard('{Enter}');
     await waitFor(() => expect(balanceMetric('RTT', 'Droits')).toHaveTextContent('9,5 j'));
-    expect(savePlanningLeaveCounterPeriod).toHaveBeenCalledExactlyOnceWith(client, {
-      personId: 11, counterType: 'rtt', startsOn: '2026-01-01', endsOn: '2026-12-31', entitlement: 9.5,
+    expect(savePlanningLeaveRightsPeriod).toHaveBeenCalledExactlyOnceWith(client, {
+      personId: 11, startsOn: '2026-06-01', endsOn: '2027-05-31', leaveEntitlement: 25, rttEntitlement: 9.5,
     });
     expect(savePlanningAbsence).not.toHaveBeenCalled();
     expect(props.onAuditChange).not.toHaveBeenCalled();
     expect(props.onClose).not.toHaveBeenCalled();
+    expect(savePlanningLeaveCounterPeriod).not.toHaveBeenCalled();
+    expect(nextEditor).toBeVisible();
+    expect(within(nextEditor).getByRole('status')).toHaveTextContent(/Droits enregistrés/);
+    expect(within(form).getByRole('button', { name: 'Envoyer la demande' })).toBeDisabled();
+    await user.click(within(nextEditor).getByRole('button', { name: 'Fermer la fenêtre' }));
     await user.click(within(form).getByRole('button', { name: 'Envoyer la demande' }));
     await waitFor(() => expect(savePlanningAbsence).toHaveBeenCalledExactlyOnceWith(client, {
       id: undefined, personId: 11, absenceType: 'rtt', startsAt: '2026-08-03T08:00', endsAt: '2026-08-03T18:00', reason: 'RTT à conserver',

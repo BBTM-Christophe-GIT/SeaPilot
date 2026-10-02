@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.67.2` déplace la gestion des droits du Planning dans la fenêtre **Périodes de Droits Congés** : totaux Congés et RTT ajustables du 1er juin au 31 mai, avec choix d'un collaborateur supplémentaire. Les cartes de la demande reprennent le design fourni avec des jauges de solde et les projections distinctes. La livraison conserve le module Politique QHSE de `3.67.1`. Appliquer `20261002062949_planning_annual_leave_rights_management.sql` avant le client. Aucune nouvelle variable d'environnement. Voir [planning-rtt-counters.md](./planning-rtt-counters.md).
+
 Version `3.67.1` ajoute **Politique QHSE** en premier sur l’accueil et dans QHSE : aperçu agrandissable et sélection dans les PDF publiés, objectifs par **Processus**, responsables Personnel En poste / Équipages d’un navire / Bureau, progression et historique immuable avec pièces jointes privées, archives et export PDF complet. Seuls Administration et Direction modifient et ajoutent des suivis ; Marin et Capitaine consultent tous les objectifs et suivis de leur société. Appliquer les migrations additives décrites dans [qhse-policy.md](./qhse-policy.md) avant le client. Aucun document privé ni objectif fictif n’est publié dans les fichiers statiques. Aucune nouvelle variable d’environnement.
 
 Version `3.66.0` complète Audit ISM Interne : suppression des modèles de grille avec conservation des audits, fonction RH par ligne, PDF de modèle vierge ou d’audit incomplet, tri par fonction RH et choix des sections Grille d’audit / Synthèse / Graphique. Les rapports reprennent les noms, prénoms et signatures de profil disponibles des participants désignés et des vrais contributeurs. Appliquer la migration additive des [grilles et participants](./internal-audit-grid-roles-participants.md) avant le client. Aucune nouvelle variable d’environnement.
@@ -419,7 +421,7 @@ Vercel preview hosts matching `sea-pilot-*-bbtm-app.vercel.app` open SeaPilot di
 - project-level Vercel Authentication is disabled so anonymous preview links reach SeaPilot directly; production remains protected by the SeaPilot application login;
 - no production session or authentication token is copied to preview code;
 - no production table is read or written;
-- save attempts return an explicit preview-only error unless an explicitly implemented demonstration flow (including Politique QHSE) updates its in-memory fixture; these updates reset on page reload;
+- supported demonstration interactions, including annual leave/RTT rights and Politique QHSE, update only the in-memory preview dataset and reset on page reload; unsupported save attempts return an explicit preview-only error;
 - a `Préversion · données de démonstration` badge identifies this state;
 - production and every unrelated hostname keep the normal Supabase authentication flow.
 

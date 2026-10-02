@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPlanningLeaveCounterSummaries, getPlanningRequestCrewBalance, planningFrenchPublicHolidays, planningWorkingAbsenceDates, validatePlanningLeaveCounterPeriod, type PlanningAbsenceBalanceContext } from './planningAbsenceBalance';
+import { buildPlanningLeaveCounterSummaries, getPlanningLeaveRightsRange, getPlanningRequestCrewBalance, planningFrenchPublicHolidays, planningWorkingAbsenceDates, validatePlanningLeaveCounterPeriod, validatePlanningLeaveRightsPeriod, type PlanningAbsenceBalanceContext } from './planningAbsenceBalance';
 import { planningLocalDateTimeToUtc } from './planningDates';
 import type { PlanningAbsenceRecord } from './planningP12';
 
@@ -70,4 +70,25 @@ describe('period input validation', () => {
   const draft = { ...period, personId: person.id };
   it('accepts zero and two decimals', () => { expect(validatePlanningLeaveCounterPeriod({ ...draft, entitlement: 0 }).entitlement).toBe(0); expect(validatePlanningLeaveCounterPeriod({ ...draft, entitlement: 25.25 }).entitlement).toBe(25.25); });
   it.each([{ startsOn: '2026-02-30' }, { endsOn: '2025-12-31' }, { startsOn: '1899-01-01' }, { endsOn: '2101-01-01' }, { startsOn: '2000-01-01', endsOn: '2020-01-01' }, { entitlement: -1 }, { entitlement: 100000 }, { entitlement: 1.123 }, { entitlement: NaN }, { personId: 0 }])('rejects invalid rights/period %j', (override) => expect(() => validatePlanningLeaveCounterPeriod({ ...draft, ...override })).toThrow());
+});
+
+describe('June through May combined rights', () => {
+  const draft = { personId: person.id, startsOn: '2026-06-01', endsOn: '2027-05-31', leaveEntitlement: 25.5, rttEntitlement: 0 };
+  it.each([
+    ['2026-05-31', { start: '2025-06-01', end: '2026-05-31' }],
+    ['2026-06-01', { start: '2026-06-01', end: '2027-05-31' }],
+    ['2027-02-28', { start: '2026-06-01', end: '2027-05-31' }],
+    ['2028-02-29', { start: '2027-06-01', end: '2028-05-31' }],
+  ])('finds the rights year containing %s', (date, range) => expect(getPlanningLeaveRightsRange(date as string)).toEqual(range));
+  it('uses the same annual bounds for both uninitialized counters', () => {
+    const summaries = buildPlanningLeaveCounterSummaries({ ...base, counterPeriods: [] }, { ...request, startsAt: '2027-02-02T08:00', endsAt: '2027-02-02T18:00' }, '2026-10-01');
+    expect(summaries.map((summary) => summary.range)).toEqual([{ start: draft.startsOn, end: draft.endsOn }, { start: draft.startsOn, end: draft.endsOn }]);
+    expect(summaries.every((summary) => summary.remaining === null)).toBe(true);
+  });
+  it('requires both totals while accepting an explicit zero RTT entitlement', () => {
+    expect(validatePlanningLeaveRightsPeriod(draft)).toEqual(draft);
+    expect(() => validatePlanningLeaveRightsPeriod({ ...draft, rttEntitlement: NaN })).toThrow();
+    expect(() => validatePlanningLeaveRightsPeriod({ ...draft, leaveEntitlement: -1 })).toThrow();
+  });
+  it.each([{ startsOn: '2026-01-01', endsOn: '2026-12-31' }, { startsOn: '2026-06-02' }, { endsOn: '2027-06-01' }, { endsOn: '2028-05-31' }])('rejects nonannual bounds %j', (override) => expect(() => validatePlanningLeaveRightsPeriod({ ...draft, ...override })).toThrow('1er juin'));
 });
