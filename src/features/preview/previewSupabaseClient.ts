@@ -4,7 +4,9 @@ import type { OrgRank, OrgSupport } from '../organigramme/organigrammeModel';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { PREVIEW_LINK_CATEGORIES, PREVIEW_USEFUL_LINKS } from '../usefulLinks/usefulLinksPreview';
 import { createPlanningPreviewOverview } from '../planning/planningPreviewData';
-import { todayPlanningDate } from '../planning/planningDates';
+import { isPlanningDate, todayPlanningDate } from '../planning/planningDates';
+import { QHSE_POLICY_ATTACHMENT_MIME_TYPES } from '../qhsePolicy/qhsePolicyAttachments';
+import type { QhsePolicyOwnerKind } from '../qhsePolicy/qhsePolicyModel';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
@@ -30,7 +32,9 @@ function previewSignaturePng(): Blob {
 }
 
 function previewStorageAssetUrl(bucket: string, path: string): string {
+  if (bucket === 'qhse-policy-attachments') return Array.from(previewQhseUploads.values()).find((upload) => upload.path === path)?.url || '';
   if (bucket === 'working-time-signatures') return '/templates/attestation-signature.png';
+  if (bucket === 'procedure-documents' && path === 'published/8102/pol-01-b.pdf') return '/demo/politique-qhse-demo.pdf';
   if (bucket === 'procedure-documents') return '/templates/attestation-embarquement.pdf';
   if (bucket === 'fleet-certificates') {
     return path.toLocaleLowerCase('fr').endsWith('.pdf')
@@ -41,7 +45,49 @@ function previewStorageAssetUrl(bucket: string, path: string): string {
   return '';
 }
 
-type PreviewResult = { data: unknown; error: typeof PREVIEW_WRITE_ERROR | null };
+type PreviewResult = { data: unknown; error: (typeof PREVIEW_WRITE_ERROR & { code?: string }) | null };
+
+// This dataset lives only in the preview module instance. Reloading the page
+// discards changes; these records are never sent to Supabase or localStorage.
+const QHSE_DEMO_PROCESS_IDS = [
+  '6dbbe8e0-0000-4000-8000-000000000001',
+  '6dbbe8e0-0000-4000-8000-000000000002',
+  '6dbbe8e0-0000-4000-8000-000000000003',
+];
+const QHSE_DEMO_OBJECTIVE_IDS = [
+  '6dbbe8e1-0000-4000-8000-000000000001',
+  '6dbbe8e1-0000-4000-8000-000000000002',
+  '6dbbe8e1-0000-4000-8000-000000000003',
+];
+const previewQhsePolicy = {
+  settings: { publication_id: 8202 as number | null, document_url: '', revision: 1, updated_at: '2026-09-30T09:00:00Z' },
+  processes: ['Qualité', 'Sécurité', 'Environnement'].map((name, index) => ({
+    id: QHSE_DEMO_PROCESS_IDS[index], name, description: 'Processus de démonstration, sans donnée de production.',
+    position: index, archived: false, revision: 1, updated_at: '2026-09-30T09:00:00Z',
+  })),
+  objectives: [
+    { title: 'Améliorer le suivi documentaire', progress: 26 },
+    { title: 'Renforcer les exercices de sécurité', progress: 61 },
+    { title: 'Sensibiliser au tri des déchets', progress: 100 },
+  ].map((objective, index) => ({
+    id: QHSE_DEMO_OBJECTIVE_IDS[index], process_id: QHSE_DEMO_PROCESS_IDS[index],
+    title: `${objective.title} — démonstration`, description: 'Objectif fictif réservé à la préversion interactive.',
+    owner_label: 'Responsable Démonstration', owner_kind: null as QhsePolicyOwnerKind, owner_person_id: null as number | null, owner_vessel_id: null as number | null, due_on: '2026-12-31' as string | null,
+    progress: objective.progress, archived: false, revision: 2,
+    created_at: '2026-09-01T09:00:00Z', updated_at: '2026-09-30T09:00:00Z',
+  })),
+  updates: QHSE_DEMO_OBJECTIVE_IDS.flatMap((objectiveId, index) => [
+    { id: `6dbbe8e2-0000-4000-8000-00000000000${index * 2 + 1}`, objective_id: objectiveId,
+      kind: 'initial', progress: 0, occurred_on: '2026-09-01', note: 'État initial',
+      actor_name: 'Administrateur Démonstration', owner_label: '', created_at: '2026-09-01T09:00:00Z' },
+    { id: `6dbbe8e2-0000-4000-8000-00000000000${index * 2 + 2}`, objective_id: objectiveId,
+      kind: 'progress', progress: [26, 61, 100][index], occurred_on: '2026-09-30',
+      note: 'Avancement fictif de démonstration, sans donnée de production.',
+      actor_name: 'Administrateur Démonstration', owner_label: '', created_at: '2026-09-30T09:00:00Z' },
+  ]),
+  attachments: [] as Array<{ id: string; objective_id: string; update_id: string; file_name: string; mime_type: string; size_bytes: number; storage_bucket: string; storage_path: string; created_at: string }>,
+};
+const previewQhseUploads = new Map<string, { id: string; objectiveId: string; path: string; fileName: string; mimeType: string; sizeBytes: number; createdAt: number; finalized: boolean; blob?: Blob; url?: string }>();
 
 const PREVIEW_STCW_SHORT_FILE_NAMES: Partial<Record<number, string>> = {
   15: 'CRO',
@@ -1833,7 +1879,189 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
   return { data: [occurrenceId], error: null };
 }
 
+function qhsePreviewFailure(code: string, message: string): never {
+  throw Object.assign(new Error(message), { code });
+}
+
+function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown>): PreviewResult | null {
+  if (!functionName.startsWith('qhse_policy_')) return null;
+  const text = (value: unknown, limit: number, required = false): string => {
+    const result = String(value ?? '').trim();
+    if ((required && !result) || result.length > limit) qhsePreviewFailure('22023', 'Saisie QHSE invalide.');
+    return result;
+  };
+  const progress = (value: unknown): number => {
+    const result = value === null || value === undefined || value === '' ? NaN : Number(value);
+    if (!Number.isFinite(result) || result < 0 || result > 100
+      || Math.abs(result * 100 - Math.round(result * 100)) > 1e-6) qhsePreviewFailure('22023', 'La progression doit être comprise entre 0 et 100, avec deux décimales au maximum.');
+    return result;
+  };
+  const date = (value: unknown, optional = false): string | null => {
+    if (optional && value == null) return null;
+    const result = String(value ?? '');
+    if (!isPlanningDate(result) || result < '1900-01-01' || result > '2100-12-31') qhsePreviewFailure('22023', 'Date QHSE invalide.');
+    return result;
+  };
+  const expectedRevision = (revision: number): void => {
+    if (args.p_expected_revision !== revision) qhsePreviewFailure('40001', 'Les données ont changé. Actualisez avant de réessayer.');
+  };
+  const process = (id: unknown) => {
+    const result = previewQhsePolicy.processes.find((row) => row.id === id);
+    if (!result) qhsePreviewFailure('42501', 'Processus de démonstration introuvable.');
+    return result;
+  };
+  const objective = (id: unknown) => {
+    const result = previewQhsePolicy.objectives.find((row) => row.id === id);
+    if (!result) qhsePreviewFailure('42501', 'Objectif de démonstration introuvable.');
+    return result;
+  };
+  const archiveFlag = (): boolean => {
+    if (typeof args.p_archived !== 'boolean') qhsePreviewFailure('22023', 'État d’archivage invalide.');
+    return args.p_archived;
+  };
+  const now = new Date().toISOString();
+  try {
+    if (functionName === 'qhse_policy_snapshot') {
+      return { data: structuredClone({ ...previewQhsePolicy, can_edit: true }), error: null };
+    }
+    if (functionName === 'qhse_policy_owner_options') {
+      return { data: {
+        people: previewRows('people').filter((row) => row.hired_on && String(row.hired_on) <= todayPlanningDate() && (!row.departed_on || String(row.departed_on) > todayPlanningDate())).map((row) => ({ id: row.id, label: `${row.first_name} ${row.last_name}` })),
+        vessels: previewRows('vessels').filter((row) => row.active !== false && (!row.asset_kind || row.asset_kind === 'vessel')).map((row) => ({ id: row.id, label: row.name, length_overall: row.length_overall ?? null })),
+      }, error: null };
+    }
+    if (functionName === 'qhse_policy_prepare_attachments') {
+      const existing = objective(args.p_objective_id);
+      if (existing.archived || process(existing.process_id).archived) qhsePreviewFailure('22023', 'Objectif archivé.');
+      if (!Array.isArray(args.p_files) || args.p_files.length < 1 || args.p_files.length > 10) qhsePreviewFailure('22023', 'Pièces jointes invalides.');
+      const files = args.p_files.map((file: Record<string, unknown>) => {
+        const fileName = text(file.file_name, 200, true);
+        const mimeType = QHSE_POLICY_ATTACHMENT_MIME_TYPES[fileName.split('.').at(-1)?.toLowerCase() || ''];
+        const sizeBytes = Number(file.size_bytes);
+        if (!mimeType || mimeType !== file.mime_type || Array.from(fileName).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127 || character === '/' || character === '\\') || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 26214400) qhsePreviewFailure('22023', 'Pièces jointes invalides.');
+        const id = crypto.randomUUID();
+        const path = `1/${existing.id}/${id}.${fileName.split('.').at(-1)!.toLowerCase()}`;
+        return { id, objectiveId: existing.id, path, fileName, mimeType, sizeBytes, createdAt: Date.now(), finalized: false };
+      });
+      files.forEach((file) => previewQhseUploads.set(file.id, file));
+      return { data: files.map((file) => ({ id: file.id, storage_path: file.path, file_name: file.fileName, mime_type: file.mimeType, size_bytes: file.sizeBytes })), error: null };
+    }
+    if (functionName === 'qhse_policy_save_process') {
+      const existing = args.p_id == null ? null : process(args.p_id);
+      if (existing) expectedRevision(existing.revision);
+      else if (args.p_expected_revision != null) qhsePreviewFailure('40001', 'Les données ont changé. Actualisez avant de réessayer.');
+      if (existing?.archived) qhsePreviewFailure('22023', 'Un processus archivé ne peut pas être modifié.');
+      const name = text(args.p_name, 200, true);
+      const description = text(args.p_description, 5000);
+      const position = Number(args.p_position);
+      if (args.p_position == null || !Number.isInteger(position) || position < 0 || position > 100000) qhsePreviewFailure('22023', 'Position du processus invalide.');
+      if (!existing?.archived && previewQhsePolicy.processes.some((row) => row.id !== existing?.id && !row.archived && row.name.toLocaleLowerCase('fr') === name.toLocaleLowerCase('fr'))) qhsePreviewFailure('23505', 'Un processus actif porte déjà ce nom.');
+      if (existing) Object.assign(existing, { name, description, position, revision: existing.revision + 1, updated_at: now });
+      else previewQhsePolicy.processes.push({ id: crypto.randomUUID(), name, description, position, archived: false, revision: 1, updated_at: now });
+      return { data: existing?.id ?? previewQhsePolicy.processes.at(-1)!.id, error: null };
+    }
+    if (functionName === 'qhse_policy_archive_process') {
+      const existing = process(args.p_id);
+      expectedRevision(existing.revision);
+      const archived = archiveFlag();
+      if (!archived && previewQhsePolicy.processes.some((row) => row.id !== existing.id && !row.archived && row.name.toLocaleLowerCase('fr') === existing.name.toLocaleLowerCase('fr'))) qhsePreviewFailure('23505', 'Un processus actif porte déjà ce nom.');
+      Object.assign(existing, { archived, revision: existing.revision + 1, updated_at: now });
+      return { data: null, error: null };
+    }
+    if (functionName === 'qhse_policy_save_objective') {
+      const existing = args.p_id == null ? null : objective(args.p_id);
+      if (existing) expectedRevision(existing.revision);
+      else if (args.p_expected_revision != null) qhsePreviewFailure('40001', 'Les données ont changé. Actualisez avant de réessayer.');
+      const selectedProcess = process(args.p_process_id);
+      if (selectedProcess.archived || existing?.archived) qhsePreviewFailure('22023', 'Un processus ou objectif archivé ne peut pas être modifié.');
+      if (existing && args.p_initial_progress != null) qhsePreviewFailure('22023', 'La progression se modifie uniquement dans l’historique.');
+      const title = text(args.p_title, 250, true);
+      const description = text(args.p_description, 10000);
+      let ownerKind = (args.p_owner_kind ?? null) as QhsePolicyOwnerKind;
+      let ownerPersonId = args.p_owner_person_id == null ? null : Number(args.p_owner_person_id);
+      let ownerVesselId = args.p_owner_vessel_id == null ? null : Number(args.p_owner_vessel_id);
+      let ownerLabel = text(args.p_owner_label, 200);
+      if (ownerKind === null && existing && ownerPersonId === null && ownerVesselId === null) {
+        ownerKind = existing.owner_kind; ownerPersonId = existing.owner_person_id; ownerVesselId = existing.owner_vessel_id; ownerLabel = existing.owner_label;
+      } else if (existing && (ownerKind === 'person' || ownerKind === 'vessel') && ownerKind === existing.owner_kind && ownerPersonId === existing.owner_person_id && ownerVesselId === existing.owner_vessel_id) ownerLabel = existing.owner_label;
+      else if (ownerKind === 'person' && ownerPersonId !== null && ownerVesselId === null) {
+        const person = previewRows('people').find((row) => Number(row.id) === ownerPersonId && row.hired_on && String(row.hired_on) <= todayPlanningDate() && (!row.departed_on || String(row.departed_on) > todayPlanningDate()));
+        if (!person) qhsePreviewFailure('22023', 'Personnel en poste invalide.');
+        ownerLabel = `${person.first_name} ${person.last_name}`;
+      } else if (ownerKind === 'vessel' && ownerPersonId === null && ownerVesselId !== null) {
+        const vessel = previewRows('vessels').find((row) => Number(row.id) === ownerVesselId && row.active !== false && (!row.asset_kind || row.asset_kind === 'vessel'));
+        if (!vessel) qhsePreviewFailure('22023', 'Navire invalide.');
+        ownerLabel = `Équipages ${vessel.name}`;
+      } else if (ownerKind === 'office' && ownerPersonId === null && ownerVesselId === null && ownerLabel) { /* validated bureau */ }
+      else qhsePreviewFailure('22023', 'Responsable requis.');
+      const dueOn = date(args.p_due_on, true);
+      const initialProgress = existing ? existing.progress : progress(args.p_initial_progress);
+      if (existing) Object.assign(existing, { process_id: selectedProcess.id, title, description, owner_label: ownerLabel, owner_kind: ownerKind, owner_person_id: ownerPersonId, owner_vessel_id: ownerVesselId, due_on: dueOn, revision: existing.revision + 1, updated_at: now });
+      else {
+        const id = crypto.randomUUID();
+        previewQhsePolicy.objectives.push({ id, process_id: selectedProcess.id, title, description, owner_label: ownerLabel, owner_kind: ownerKind, owner_person_id: ownerPersonId, owner_vessel_id: ownerVesselId,
+          due_on: dueOn, progress: initialProgress, archived: false, revision: 1, created_at: now, updated_at: now });
+        previewQhsePolicy.updates.push({ id: crypto.randomUUID(), objective_id: id, kind: 'initial', progress: initialProgress,
+          occurred_on: todayPlanningDate(), note: 'État initial', actor_name: 'Administrateur Démonstration', owner_label: ownerLabel, created_at: now });
+      }
+      return { data: existing?.id ?? previewQhsePolicy.objectives.at(-1)!.id, error: null };
+    }
+    if (functionName === 'qhse_policy_archive_objective') {
+      const existing = objective(args.p_id);
+      expectedRevision(existing.revision);
+      const archived = archiveFlag();
+      Object.assign(existing, { archived, revision: existing.revision + 1, updated_at: now });
+      return { data: null, error: null };
+    }
+    if (functionName === 'qhse_policy_add_objective_update' || functionName === 'qhse_policy_add_objective_update_with_attachments') {
+      const existing = objective(args.p_objective_id);
+      expectedRevision(existing.revision);
+      if (existing.archived || process(existing.process_id).archived) qhsePreviewFailure('22023', 'Un processus ou objectif archivé ne peut pas être suivi.');
+      const currentProgress = progress(args.p_progress);
+      const occurredOn = date(args.p_occurred_on)!;
+      const note = text(args.p_note, 10000, true);
+      if (occurredOn > todayPlanningDate()) qhsePreviewFailure('22023', 'La date de suivi ne peut pas être future.');
+      const uploadIds = functionName.endsWith('_with_attachments') ? args.p_upload_ids : [];
+      if (!Array.isArray(uploadIds) || uploadIds.length > 10 || new Set(uploadIds).size !== uploadIds.length) qhsePreviewFailure('22023', 'Pièces jointes invalides.');
+      const uploads = uploadIds.map((id) => {
+        const upload = previewQhseUploads.get(String(id));
+        if (!upload || upload.finalized || upload.objectiveId !== existing.id || !upload.blob || upload.blob.size !== upload.sizeBytes || upload.createdAt <= Date.now() - 86400000) qhsePreviewFailure('22023', 'Transfert absent ou invalide.');
+        return upload;
+      });
+      const id = crypto.randomUUID();
+      previewQhsePolicy.updates.push({ id, objective_id: existing.id, kind: 'progress', progress: currentProgress,
+        occurred_on: occurredOn, note, actor_name: 'Administrateur Démonstration', owner_label: existing.owner_label, created_at: now });
+      uploads.forEach((upload) => {
+        previewQhsePolicy.attachments.push({ id: upload.id, objective_id: existing.id, update_id: id, file_name: upload.fileName, mime_type: upload.mimeType, size_bytes: upload.sizeBytes, storage_bucket: 'qhse-policy-attachments', storage_path: upload.path, created_at: now });
+        upload.finalized = true;
+      });
+      Object.assign(existing, { progress: currentProgress, revision: existing.revision + 1, updated_at: now });
+      return { data: id, error: null };
+    }
+    if (functionName === 'qhse_policy_save_settings') {
+      expectedRevision(previewQhsePolicy.settings.revision);
+      const publicationId = args.p_publication_id == null ? null : Number(args.p_publication_id);
+      const documentUrl = text(args.p_document_url, 500);
+      if (documentUrl) qhsePreviewFailure('22023', 'Choisissez un PDF publié.');
+      if (publicationId !== null && (documentUrl || !previewRows('published_procedures').some((row) => Number(row.id) === publicationId
+        && row.status === 'published'
+        && String(row.mime_type).toLowerCase() === 'application/pdf' && String(row.file_name).toLowerCase().endsWith('.pdf')
+        && ((row.google_drive_path != null && row.drive_sha256 != null)
+          || (row.storage_bucket === 'procedure-documents' && String(row.storage_path).startsWith('published/')))))) qhsePreviewFailure('22023', 'Choisissez une politique publiée du chapitre 02 ou un lien Google Drive.');
+      Object.assign(previewQhsePolicy.settings, { publication_id: publicationId, document_url: documentUrl,
+        revision: previewQhsePolicy.settings.revision + 1, updated_at: now });
+      return { data: null, error: null };
+    }
+    return { data: null, error: PREVIEW_WRITE_ERROR };
+  } catch (error) {
+    const failure = error as Error & { code?: string };
+    return { data: null, error: { code: failure.code ?? '22023', message: failure.message } };
+  }
+}
+
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  const qhsePolicyResult = previewQhsePolicyRpc(functionName, args);
+  if (qhsePolicyResult) return createPreviewQuery(qhsePolicyResult);
   if (functionName === 'get_planning_absence_balance_context') {
     const planningPerson = createPlanningPreviewOverview(todayPlanningDate()).people.find((person) => person.id === Number(args.p_person_id));
     const person = planningPerson ? { id: planningPerson.id, first_name: planningPerson.firstName, last_name: planningPerson.lastName, hired_on: planningPerson.hiredOn, departed_on: planningPerson.departedOn, active: planningPerson.active } : previewRows('people').find((row) => Number(row.id) === Number(args.p_person_id));
@@ -2715,6 +2943,10 @@ export const previewSupabaseClient = {
         data: paths.map((path) => ({ path, signedUrl: path.startsWith('demo/') ? `/${path}` : '' })), error: null,
       }),
       download: async (path: string) => {
+        if (bucket === 'qhse-policy-attachments') {
+          const upload = Array.from(previewQhseUploads.values()).find((file) => file.path === path);
+          return upload?.blob ? { data: upload.blob, error: null } : { data: null, error: PREVIEW_WRITE_ERROR };
+        }
         const assetUrl = previewStorageAssetUrl(bucket, path);
         if (!assetUrl) return { data: previewSignaturePng(), error: null };
         const response = await fetch(assetUrl);
@@ -2722,16 +2954,33 @@ export const previewSupabaseClient = {
           ? { data: await response.blob(), error: null }
           : { data: null, error: PREVIEW_WRITE_ERROR };
       },
-      upload: (_path: string, _file: Blob, options?: { contentType?: string }) => (
+      upload: (_path: string, _file: Blob, options?: { contentType?: string }) => {
+        if (bucket === 'qhse-policy-attachments') {
+          const upload = Array.from(previewQhseUploads.values()).find((file) => file.path === _path);
+          if (!upload || upload.finalized || upload.blob || upload.mimeType !== options?.contentType || upload.sizeBytes !== _file.size) return Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR });
+          upload.blob = _file;
+          upload.url = typeof URL.createObjectURL === 'function' ? URL.createObjectURL(_file) : '';
+          return Promise.resolve({ data: { path: _path }, error: null });
+        }
+        return (
         bucket === 'project-catalog-media'
         || bucket === 'action-plan-evidence'
         || (bucket === 'working-time-imports' && options?.contentType === 'application/vnd.ms-excel.sheet.macroEnabled.12')
       )
         ? Promise.resolve({ data: { path: _path }, error: null })
-        : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
-      remove: () => bucket === 'project-catalog-media' || bucket === 'service-note-files'
+        : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR });
+      },
+      remove: (paths: string[]) => {
+        if (bucket === 'qhse-policy-attachments') {
+          const uploads = Array.from(previewQhseUploads.values()).filter((file) => paths.includes(file.path));
+          if (uploads.some((file) => file.finalized)) return Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR });
+          uploads.forEach((file) => { if (file.url) URL.revokeObjectURL(file.url); previewQhseUploads.delete(file.id); });
+          return Promise.resolve({ data: uploads.map((file) => ({ name: file.path })), error: null });
+        }
+        return bucket === 'project-catalog-media' || bucket === 'service-note-files'
         ? Promise.resolve({ data: [], error: null })
-        : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
+        : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR });
+      },
     }),
   },
 } as unknown as SupabaseClient;
