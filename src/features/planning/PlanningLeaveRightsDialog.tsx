@@ -3,7 +3,7 @@ import { CalendarDays } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AppDialog } from '../../components/AppDialog';
-import { getPlanningLeaveRightsRange, type PlanningAbsenceBalanceContext, type PlanningLeaveCounterType } from './planningAbsenceBalance';
+import { getPlanningLeaveRightsRange, getPlanningRequestCrewBalance, type PlanningAbsenceBalanceContext, type PlanningLeaveCounterType } from './planningAbsenceBalance';
 import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveCounterPeriod, savePlanningLeaveRightsPeriod } from './planningAbsenceBalanceQueries';
 import { formatPlanningDate, isPlanningDate, todayPlanningDate } from './planningDates';
 import { planningErrorMessage } from './planningErrors';
@@ -75,6 +75,15 @@ function PlanningLeaveRightsEditor({ client, personId, initialContext, anchor, o
   }, [client, personId, initialContext, loadRevision]);
   if (loading) return <p role="status">Chargement des droits…</p>;
   if (!context) return <div role="alert"><p>{error}</p><button type="button" onClick={() => { setLoading(true); setLoadRevision((value) => value + 1); }}>Réessayer</button></div>;
+  if ((context.requestBalanceKind ?? context.kind) === 'crew') {
+    const today = todayPlanningDate();
+    const balance = getPlanningRequestCrewBalance(context, today);
+    return <div className="planning-absence-balances__crew">
+      <span>Solde de Congés/Repos au {formatPlanningDate(today)}</span>
+      <strong>{balance.value === null ? 'À initialiser' : `${balance.value.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} j`}</strong>
+      <p>Ce collaborateur conserve le calcul de la vue Équipages. Les droits annuels ne s’appliquent pas.</p>
+    </div>;
+  }
   return <PlanningLeaveRightsForm client={client} context={context} anchor={anchor} onSavingChange={onSavingChange} onCommitted={onCommitted} onSaved={(value) => { setContext(value); onSaved(value); }} />;
 }
 
@@ -141,7 +150,6 @@ function PlanningLeaveRightsForm({ client, context, anchor, onSavingChange, onCo
   function submit(event: FormEvent) { event.preventDefault(); event.stopPropagation(); if (isAnnual) void save(); }
 
   return <form className="planning-leave-rights__form" onSubmit={submit}>
-    {context.kind === 'crew' ? <p className="planning-absence-balances__notice">Enregistrer une période appliquera à ce collaborateur le même suivi Congés et RTT que pour Christophe MINASSIAN et Sophie HAMEL.</p> : null}
     <fieldset disabled={saving || refreshPending}>
       <label className="is-wide">Période de droits<select value={periodKey} onChange={(event) => changePeriod(event.target.value)}>
         {periods.map((key) => { const [start, end] = key.split(':'); return <option key={key} value={key}>Du {formatPlanningDate(start)} au {formatPlanningDate(end)}</option>; })}

@@ -37,9 +37,12 @@ export async function fetchPlanningAbsenceBalanceContext(client: SupabaseClient,
   const result = object(data);
   const person = object(result.person);
   if (number(person.id) !== personId || !['leave_rtt', 'crew'].includes(String(result.kind))) throw new Error('Le solde reçu ne correspond pas à la personne sélectionnée.');
+  const requestBalanceKind = result.request_balance_kind === undefined ? result.kind : result.request_balance_kind;
+  if (!['leave_rtt', 'crew'].includes(String(requestBalanceKind))) throw new Error('Les informations de solde sont incomplètes. Réessayez.');
   const sources = object(result.crew_sources);
   return {
     kind: result.kind as PlanningAbsenceBalanceContext['kind'],
+    requestBalanceKind: requestBalanceKind as PlanningAbsenceBalanceContext['requestBalanceKind'],
     person: { id: personId, firstName: text(person.first_name), lastName: text(person.last_name), hiredOn: text(person.hired_on), departedOn: text(person.departed_on), active: person.active === true,
       functionLabel: '', gradeLabel: '', roleLabel: '', contractType: '' },
     counterPeriods: rows(result.counter_periods).map((item) => {

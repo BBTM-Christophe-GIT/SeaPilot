@@ -44,7 +44,7 @@ function absence(id: number, absenceType: PlanningAbsenceRecord['absenceType'], 
 
 function staffContext(person = christophe, overrides: Partial<PlanningAbsenceBalanceContext> = {}): PlanningAbsenceBalanceContext {
   return {
-    kind: 'leave_rtt', person, counterPeriods: [counter('leave'), counter('rtt')],
+    kind: 'leave_rtt', requestBalanceKind: 'leave_rtt', person, counterPeriods: [counter('leave'), counter('rtt')],
     absences: [
       // May 1 and 8 are public holidays; May 2/3 and 9/10 are weekends. Five working days remain.
       absence(1, 'leave', 'approved', '2026-05-01T00:00', '2026-05-12T00:00', person.id),
@@ -60,7 +60,7 @@ function staffContext(person = christophe, overrides: Partial<PlanningAbsenceBal
 }
 
 function crewContext(person = crew): PlanningAbsenceBalanceContext {
-  return { kind: 'crew', person, counterPeriods: [], absences: [],
+  return { kind: 'crew', requestBalanceKind: 'crew', person, counterPeriods: [], absences: [],
     crewCheckpoints: [{ personId: person.id, asOf: '2026-09-30', balance: 10 }],
     crewSources: { periods: [], days: [], assignments: [{ id: 1, crewPersonId: person.id, crewName: 'Paul DURAND',
       startsOn: '2026-10-01', endsOn: '2026-10-01', statusLabel: 'En Mer', vesselId: 2, vesselName: 'LE ROZEL',
@@ -251,7 +251,8 @@ describe('absence balances in the request form', () => {
     render(<AuthProvider client={fixture.client}><MemoryRouter initialEntries={['/absence']}><Routes>
       <Route element={<RequireAuth />}><Route path="absence" element={<AuthenticatedBalances client={fixture.client} />} /></Route>
     </Routes></MemoryRouter></AuthProvider>);
-    expect(await screen.findByText('Solde équipage au 01/10/2026')).toBeVisible();
+    expect(await screen.findByText('Au 01/10/2026')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Solde de Congés/Repos' })).toBeVisible();
     expect(screen.getByRole('region', { name: 'Soldes et droits' })).toHaveTextContent('11,05');
     expect(screen.getByRole('region', { name: 'Soldes et droits' })).toHaveTextContent('En Mer');
     expect(fixture.personFilter).toHaveBeenCalledWith('user_id', fixture.user.id);
@@ -265,16 +266,18 @@ describe('absence balances in the request form', () => {
     expect(savePlanningLeaveRightsPeriod).not.toHaveBeenCalled();
   });
 
-  it.each(['marin', 'capitaine'] as const)('shows enrolled Congés and RTT through the own authenticated %s account without management controls', async (role) => {
+  it.each(['marin', 'capitaine'] as const)('keeps the crew calculation for the authenticated %s even with legacy annual periods', async (role) => {
     const person = { ...crew, id: role === 'marin' ? 20 : 21, functionLabel: role === 'marin' ? 'Matelot' : 'Capitaine' };
     const fixture = profileClient(role, person);
-    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValue(staffContext(person));
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValue({ ...crewContext(person), kind: 'leave_rtt', counterPeriods: [counter('leave'), counter('rtt')] });
     render(<AuthProvider client={fixture.client}><MemoryRouter initialEntries={['/absence']}><Routes>
       <Route element={<RequireAuth />}><Route path="absence" element={<AuthenticatedBalances client={fixture.client} />} /></Route>
     </Routes></MemoryRouter></AuthProvider>);
-    await screen.findByLabelText('Compteur Congés');
-    expect(metricNumber(card('Congés'), 'Solde disponible')).toBe(20);
-    expect(metricNumber(card('RTT'), 'Solde disponible')).toBe(6);
+    await screen.findByText('Au 01/10/2026');
+    expect(screen.getByRole('heading', { name: 'Solde de Congés/Repos' })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Soldes et droits' })).toHaveTextContent('11,05 j');
+    expect(screen.queryByLabelText('Compteur Congés')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Compteur RTT')).not.toBeInTheDocument();
     expect(fixture.personFilter).toHaveBeenCalledWith('user_id', fixture.user.id);
     expect(fixture.client.from).toHaveBeenCalledWith('user_roles');
     expect(fetchPlanningAbsenceBalanceContext).toHaveBeenCalledExactlyOnceWith(fixture.client, person.id);
@@ -357,37 +360,21 @@ describe('absence balances in the request form', () => {
     expect(input.onEditingChange).toHaveBeenLastCalledWith(false);
   });
 
-  it('enrolls another crew collaborator and displays Congés and RTT after the saved rights are reloaded', async () => {
+  it('shows only the crew balance at entry time for managers even if the request is in the future', async () => {
     const input = props({ personId: crew.id, canManage: true, people: [christophe, sophie, crew] });
-    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValue(crewContext());
-    render(<PlanningAbsenceBalances {...input} />);
-    const user = userEvent.setup();
-    expect(await screen.findByText('Solde équipage au 01/10/2026')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Périodes de Droits Congés' }));
-    const dialog = screen.getByRole('dialog', { name: 'Périodes de Droits Congés' });
-    expect(dialog).toBeVisible();
-    expect(screen.getByLabelText('Collaborateur')).toHaveValue(String(crew.id));
-    expect(screen.getByRole('option', { name: /Christophe MINASSIAN/ })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /Sophie HAMEL/ })).toBeInTheDocument();
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValue({ ...crewContext(), kind: 'leave_rtt', counterPeriods: [counter('leave')] });
+    const { rerender } = render(<PlanningAbsenceBalances {...input} startsAt="2027-05-10T08:00" endsAt="2027-05-14T18:00" />);
+    expect(await screen.findByText('Au 01/10/2026')).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Soldes et droits' })).toHaveTextContent('11,05 j');
     expect(screen.queryByLabelText('Compteur Congés')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Compteur RTT')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cette demande')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Périodes de Droits Congés' })).not.toBeInTheDocument();
+    rerender(<PlanningAbsenceBalances {...input} startsAt="2027-08-10T08:00" endsAt="2027-08-14T18:00" />);
+    expect(screen.getByRole('region', { name: 'Soldes et droits' })).toHaveTextContent('11,05 j');
+    expect(fetchPlanningAbsenceBalanceContext).toHaveBeenCalledOnce();
     expect(savePlanningLeaveRightsPeriod).not.toHaveBeenCalled();
-    const enrolled = staffContext(crew, { absences: [], counterPeriods: [
-      counter('leave', { startsOn: '2025-06-01', endsOn: '2026-05-31' }),
-      counter('rtt', { startsOn: '2025-06-01', endsOn: '2026-05-31' }),
-    ] });
-    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValue(enrolled);
-    await user.type(within(dialog).getByLabelText('Total Congés (jours)'), '25');
-    await user.type(within(dialog).getByLabelText('Total RTT (jours)'), '8');
-    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer les droits' }));
-    await screen.findByLabelText('Compteur Congés');
-    expect(metricNumber(card('Congés'), 'Solde disponible')).toBe(25);
-    expect(metricNumber(card('RTT'), 'Solde disponible')).toBe(8);
-    expect(screen.queryByText('Solde équipage au 01/10/2026')).not.toBeInTheDocument();
-    expect(savePlanningLeaveRightsPeriod).toHaveBeenCalledExactlyOnceWith(input.client, {
-      personId: crew.id, startsOn: '2025-06-01', endsOn: '2026-05-31', leaveEntitlement: 25, rttEntitlement: 8,
-    });
-    expect(dialog).toBeVisible();
+    expect(savePlanningLeaveCounterPeriod).not.toHaveBeenCalled();
   });
 
   it('reloads the request balance when the manager closes after a committed rights write whose refresh failed', async () => {

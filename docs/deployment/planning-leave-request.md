@@ -1,8 +1,31 @@
 # Planning — demande de congés dédiée
 
-« Demander des congés » ouvre uniquement les champs Marin, Type, Début, Fin et
-Motif, avec Annuler et Envoyer la demande. Le centre de conflits, ses indicateurs,
+« Demander des congés » ouvre les champs Marin et Type, le choix de période,
+les soldes compacts et le Motif, avec Annuler et Envoyer la demande. Le centre de conflits, ses indicateurs,
 sa liste de demandes et le bouton Nouvelle demande restent hors de cette fenêtre.
+
+La fenêtre limite sa largeur à 1 040 px. Les cartes Congés et RTT conservent leurs
+couleurs, illustrations et jauges circulaires de 116 px, avec une typographie et des
+espacements réduits. Le motif facultatif suit les soldes ; les actions restent dans
+le pied de fenêtre pendant le défilement. Sur mobile, les compteurs s'empilent.
+
+Le bouton **Période** ouvre un calendrier : un clic choisit une journée, deux clics
+choisissent les bornes d'une période, dans n'importe quel ordre. Deux mois sont
+affichés lorsque la largeur le permet, un seul sur mobile. Les changements restent
+temporaires jusqu'à **Appliquer** ; **Annuler** ou Échap ferme seulement le calendrier
+et restitue le focus au bouton. Le clavier permet de parcourir les jours, semaines,
+mois et années. Les horaires existants sont conservés et restent ajustables dans
+une section repliée. Une fin à minuit correspond au lendemain du dernier jour
+inclus ; les heures inexistantes lors d'un changement d'heure sont refusées.
+L'envoi de la demande est suspendu tant que le calendrier est ouvert.
+
+Seuls Christophe MINASSIAN et Sophie HAMEL utilisent les compteurs annuels Congés
+et RTT. Pour toute autre personne, **Solde de Congés/Repos** affiche la valeur de la
+vue Équipages au jour de saisie, même si la demande porte sur une période future.
+Le calcul du Planning reste inchangé et les droits annuels ne sont pas applicables
+aux marins. Le détail et la migration requise sont décrits dans
+[planning-rtt-counters.md](./planning-rtt-counters.md). Le formulaire de traitement
+P1.2 conserve ses champs de dates habituels.
 
 La fiche RH du profil connecté est présélectionnée, même si elle arrive après
 l'ouverture ou ne figure pas dans les personnes du planning affiché. Les managers
@@ -31,6 +54,15 @@ statuts, filtres, infobulles et messages de déplacement.
 
 ## Déploiement et validation
 
+- Version 3.67.3 : 155 tests ciblés sur neuf fichiers réussis (calendrier, modèle
+  de période, demande, soldes, P1.2, requêtes, calcul partagé Équipages et préversion).
+  `corepack pnpm lint` et `corepack pnpm build` réussis. Recette navigateur en
+  1440 × 900, 390 × 844 et 320 × 740 : jour seul, période, annulation et Échap,
+  projection des compteurs, droits dans une fenêtre séparée et affichage crew
+  indépendant des dates de demande. Aucun débordement dans la fenêtre ou le
+  calendrier et aucune erreur console. Les vrais profils Marin et Capitaine
+  sont contrôlés par les fixtures Auth/RPC/RLS décrites dans la documentation
+  des compteurs, sans utiliser une simulation de profil depuis la session Admin.
 - Filtre des personnes en poste : 94 tests ciblés réussis sur le formulaire, le
   modèle Planning, le profil connecté et les consommateurs de ce profil. Les cas
   couvrent un départ passé ou le jour même, une fiche inactive, une embauche future,

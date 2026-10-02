@@ -29,9 +29,12 @@ begin
     person_ids:=array_append(person_ids,person);
     colleague_ids:=array_append(colleague_ids,colleague);
     invalid_ids:=array_append(invalid_ids,invalid_person);
+    -- Dedicated office mode is established by privileged fixture setup, not enrollment by a client.
+    insert into public.planning_leave_counter_people(company_id,person_id,request_balance_kind)
+    values(company,colleague,'leave_rtt'),(company,invalid_person,'leave_rtt');
     -- Legacy periods retain their bounds, totals and ability to be adjusted.
     if role_name in ('admin','direction','armement') then
-      insert into public.planning_leave_counter_people(company_id,person_id) values(company,person);
+      insert into public.planning_leave_counter_people(company_id,person_id,request_balance_kind) values(company,person,'leave_rtt');
       insert into public.planning_leave_counter_periods(company_id,person_id,counter_type,starts_on,ends_on,entitlement)
       values(company,person,'leave','2025-01-01','2025-12-31',18),
         (company,person,'rtt','2027-05-30','2027-06-02',4);
@@ -46,10 +49,10 @@ begin
     execute 'set local role authenticated';
     if role_name in ('admin','direction','armement') then
       context:=public.get_planning_absence_balance_context(colleague);
-      assert context->>'kind'='crew', 'Unconfigured collaborator fabricated annual rights';
+      assert context->>'request_balance_kind'='leave_rtt' and context->'counter_periods'='[]'::jsonb, 'Dedicated mode fabricated initial rights';
       perform public.save_planning_leave_rights_period(colleague,'2026-06-01','2027-05-31',25.5,0);
       context:=public.get_planning_absence_balance_context(colleague);
-      assert context->>'kind'='leave_rtt' and jsonb_array_length(context->'counter_periods')=2, 'Selected collaborator was not enrolled with both counters';
+      assert context->>'kind'='leave_rtt' and jsonb_array_length(context->'counter_periods')=2, 'Dedicated office person missing both saved counters';
       select id into strict leave_id from public.planning_leave_counter_periods where person_id=colleague and counter_type='leave';
       select id into strict rtt_id from public.planning_leave_counter_periods where person_id=colleague and counter_type='rtt';
       assert (select entitlement=0 from public.planning_leave_counter_periods where id=rtt_id), 'Explicit zero RTT entitlement lost';
@@ -71,7 +74,7 @@ begin
         perform public.save_planning_leave_rights_period(invalid_person,'2026-06-01','2027-05-31',25,-1);
         raise exception 'Negative RTT total accepted';
       exception when invalid_parameter_value then null; end;
-      assert not exists(select 1 from public.planning_leave_counter_people where person_id=invalid_person), 'Invalid combined save enrolled a collaborator';
+      assert not exists(select 1 from public.planning_leave_counter_periods where person_id=invalid_person), 'Invalid combined save left a counter';
       select count(*) into count_before from public.planning_leave_counter_periods where person_id=person;
       begin
         perform public.save_planning_leave_rights_period(person,'2027-06-01','2028-05-31',25,8);
@@ -104,7 +107,7 @@ begin
     execute 'reset role';
     -- Once a manager configures them, actual Marin/Capitaine accounts see only their own totals.
     if role_name in ('capitaine','marin') then
-      insert into public.planning_leave_counter_people(company_id,person_id) values(company,person);
+      insert into public.planning_leave_counter_people(company_id,person_id,request_balance_kind) values(company,person,'leave_rtt');
       insert into public.planning_leave_counter_periods(company_id,person_id,counter_type,starts_on,ends_on,entitlement)
       values(company,person,'leave','2026-06-01','2027-05-31',25),(company,person,'rtt','2026-06-01','2027-05-31',10);
       execute 'set local role authenticated';
@@ -128,5 +131,5 @@ begin
   assert not has_function_privilege('anon','public.save_planning_leave_rights_period(bigint,date,date,numeric,numeric)','EXECUTE'), 'Anonymous annual RPC executable';
   assert not has_table_privilege('authenticated','public.planning_leave_counter_people','DELETE'), 'Client can erase enrolled collaborators';
 end $test$;
-select 'PASS: annual combined rights, collaborator enrollment, adjustments, zero RTT, adjacent years, atomic overlap rollback, preserved legacy periods, real Marin/Capitaine self access and management denial' as result;
+select 'PASS: dedicated annual combined rights, adjustments, zero RTT, adjacent years, atomic overlap rollback, preserved legacy periods, real Marin/Capitaine self access and management denial' as result;
 rollback;

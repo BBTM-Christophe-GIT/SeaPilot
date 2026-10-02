@@ -3,9 +3,9 @@ import { previewSupabaseClient } from './previewSupabaseClient';
 import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveRightsPeriod } from '../planning/planningAbsenceBalanceQueries';
 
 describe('previewSupabaseClient', () => {
-  it('enrolls another collaborator and refreshes both annual rights after an adjustment', async () => {
-    const draft = { personId: 101, startsOn: '2026-06-01', endsOn: '2027-05-31', leaveEntitlement: 25, rttEntitlement: 0 };
-    expect((await fetchPlanningAbsenceBalanceContext(previewSupabaseClient, draft.personId)).kind).toBe('crew');
+  it('refreshes both dedicated annual counters after an adjustment', async () => {
+    const draft = { personId: 111, startsOn: '2026-06-01', endsOn: '2027-05-31', leaveEntitlement: 25, rttEntitlement: 0 };
+    expect((await fetchPlanningAbsenceBalanceContext(previewSupabaseClient, draft.personId)).requestBalanceKind).toBe('leave_rtt');
     await savePlanningLeaveRightsPeriod(previewSupabaseClient, draft);
     const initial = await fetchPlanningAbsenceBalanceContext(previewSupabaseClient, draft.personId);
     expect(initial.kind).toBe('leave_rtt');
@@ -16,6 +16,12 @@ describe('previewSupabaseClient', () => {
     expect(adjusted.counterPeriods.map((period) => period.entitlement)).toEqual([27.5, 9]);
     await expect(savePlanningLeaveRightsPeriod(previewSupabaseClient, { ...draft, startsOn: '2026-06-01', endsOn: '2027-05-31', rttEntitlement: NaN })).rejects.toThrow();
     expect((await fetchPlanningAbsenceBalanceContext(previewSupabaseClient, draft.personId)).counterPeriods).toEqual(adjusted.counterPeriods);
+  });
+  it('uses crew display for other people and refuses annual rights without inventing a balance', async () => {
+    const context = await fetchPlanningAbsenceBalanceContext(previewSupabaseClient, 101);
+    expect(context).toMatchObject({ kind: 'crew', requestBalanceKind: 'crew', counterPeriods: [], crewCheckpoints: [] });
+    await expect(savePlanningLeaveRightsPeriod(previewSupabaseClient, { personId: 101, startsOn: '2026-06-01', endsOn: '2027-05-31', leaveEntitlement: 25, rttEntitlement: 10 })).rejects.toThrow('ne peut pas modifier');
+    expect((await fetchPlanningAbsenceBalanceContext(previewSupabaseClient, 101)).counterPeriods).toEqual([]);
   });
   it('keeps a sold urgent purchase request for alert-regression checks', async () => {
     const requests = await previewSupabaseClient.from('purchase_requests').select('*').order('id');

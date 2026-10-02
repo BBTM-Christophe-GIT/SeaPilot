@@ -21,6 +21,7 @@ export interface PlanningLeaveRightsPeriodDraft {
 }
 export interface PlanningAbsenceBalanceContext {
   kind: 'leave_rtt' | 'crew';
+  requestBalanceKind?: 'leave_rtt' | 'crew';
   person: PlanningPerson;
   counterPeriods: PlanningLeaveCounterPeriod[];
   absences: PlanningAbsenceRecord[];
