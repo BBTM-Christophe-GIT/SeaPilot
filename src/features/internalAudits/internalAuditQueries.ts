@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  AuditFinding, AuditFindingEvent, AuditFindingStatus, AuditQuestion, AuditSite,
+  AuditFinding, AuditFindingEvent, AuditFindingStatus, AuditParticipant, AuditQuestion, AuditSite,
   AuditTemplate, InternalAudit,
 } from './internalAuditModel';
 import { discardAuditPhotoUploads, hydrateAuditPhotoUrls, mapAuditPhotos, photoReferences, uploadAuditPhotos } from './internalAuditPhotos';
@@ -9,6 +9,9 @@ export interface AuditPersonOption {
   id: number;
   name: string;
   functionLabel: string;
+  firstName?: string;
+  lastName?: string;
+  hasSignature?: boolean;
 }
 
 export interface InternalAuditData {
@@ -19,6 +22,7 @@ export interface InternalAuditData {
   findings: AuditFinding[];
   events: AuditFindingEvent[];
   people: AuditPersonOption[];
+  hrFunctions?: string[];
   permissions: { canManage: boolean; treatableFindingIds: string[] };
 }
 
@@ -42,7 +46,41 @@ export function mapInternalAudit(row: Row): InternalAudit {
   return { id: text(row.id), companyId: Number(row.company_id), siteId: text(row.site_id), templateId: text(row.template_id),
     templateName: text(row.template_name), templateVersion: Number(row.template_version), year: Number(row.year),
     plannedOn: text(row.planned_on), performedOn: nullableText(row.performed_on), auditorName: text(row.auditor_name),
-    status: row.status as InternalAudit['status'], rows: rows(row.rows) as unknown as InternalAudit['rows'], completedAt: nullableText(row.completed_at) };
+    status: row.status as InternalAudit['status'], rows: rows(row.rows) as unknown as InternalAudit['rows'], completedAt: nullableText(row.completed_at),
+    participants: rows(row.participants).map(mapAuditParticipant),
+    participantPersonIds: Array.isArray(row.participantPersonIds) ? row.participantPersonIds.map(Number) : rows(row.participants).filter((person) => person.source === 'selected').map((person) => Number(person.personId)) };
+}
+
+export function mapAuditParticipant(row: Row): AuditParticipant {
+  return { personId: nullableNumber(row.personId), userId: row.userId == null ? undefined : text(row.userId), firstName: text(row.firstName), lastName: text(row.lastName),
+    functionLabel: text(row.functionLabel), source: row.source === 'selected' ? 'selected' : 'contributor',
+    signatureSnapshot: row.signatureSnapshot && typeof row.signatureSnapshot === 'object' && !Array.isArray(row.signatureSnapshot)
+      ? row.signatureSnapshot as Row : {} };
+}
+
+async function hydrateParticipantSignatures(client: SupabaseClient, audits: InternalAudit[]): Promise<void> {
+  const participants = audits.flatMap((audit) => audit.participants || []);
+  const paths = [...new Set(participants.map((person) => text(person.signatureSnapshot.storage_path)).filter(Boolean))];
+  if (!paths.length) return;
+  try {
+    const result = await client.storage.from('working-time-signatures').createSignedUrls(paths, 600);
+    if (result.error) return;
+    const urls = new Map((result.data || []).map((item) => [item.path, item.signedUrl || '']));
+    participants.forEach((person) => { person.signatureUrl = urls.get(text(person.signatureSnapshot.storage_path)) || ''; });
+  } catch { /* Reading an audit remains possible while its private signature images are unavailable. */ }
+}
+
+/** Export refreshes private access instead of relying on an expiring overview URL. */
+export async function loadAuditParticipantSignature(client: SupabaseClient, participant: AuditParticipant): Promise<string | null> {
+  const path = text(participant.signatureSnapshot.storage_path);
+  if (!path) return null;
+  const result = await client.storage.from('working-time-signatures').download(path);
+  if (result.error) throw result.error;
+  if (!result.data) throw new Error('La signature d’un participant est indisponible.');
+  const bytes = new Uint8Array(await result.data.arrayBuffer());
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+  return `data:image/png;base64,${btoa(binary)}`;
 }
 
 export function mapAuditFinding(row: Row): AuditFinding {
@@ -75,10 +113,13 @@ export async function fetchInternalAuditData(client: SupabaseClient): Promise<In
   const result: InternalAuditData = {
     companyId: Number(data.company_id), sites: rows(data.sites).map(mapAuditSite), templates: rows(data.templates).map(mapAuditTemplate),
     audits: rows(data.audits).map(mapInternalAudit), findings: rows(data.findings).map(mapAuditFinding), events: rows(data.events).map(mapAuditFindingEvent),
-    people: rows(data.people).map((person) => ({ id: Number(person.id), name: text(person.name), functionLabel: text(person.function_label) })),
+    people: rows(data.people).map((person) => ({ id: Number(person.id), name: text(person.name), functionLabel: text(person.function_label),
+      firstName: text(person.first_name), lastName: text(person.last_name), hasSignature: person.has_signature === true })),
+    hrFunctions: Array.isArray(data.hrFunctions) ? data.hrFunctions.map(text) : [],
     permissions: { canManage: permissions.canManage === true, treatableFindingIds: Array.isArray(permissions.treatableFindingIds) ? permissions.treatableFindingIds.map(text) : [] },
   };
   await hydrateAuditPhotoUrls(client, [...result.findings.flatMap((finding) => finding.photos || []), ...result.events.flatMap((event) => event.photos || [])]);
+  await hydrateParticipantSignatures(client, result.audits);
   return result;
 }
 
@@ -105,13 +146,26 @@ export async function saveAuditTemplate(client: SupabaseClient, template: AuditT
   return mapAuditTemplate(await rpc(client, 'internal_audit_save_template', { p_payload: template }));
 }
 
+export async function deleteAuditTemplate(client: SupabaseClient, templateId: string, version: number): Promise<AuditTemplate> {
+  if (!templateId || !Number.isInteger(version) || version < 1) throw new Error('La grille à supprimer est invalide.');
+  return mapAuditTemplate(await rpc(client, 'internal_audit_archive_template', { p_template_id: templateId, p_version: version }));
+}
+
 export async function saveInternalAudit(client: SupabaseClient, audit: InternalAudit): Promise<InternalAudit> {
   validateQuestions(audit.rows);
   if (!audit.plannedOn || !audit.siteId || !audit.templateId || !Number.isInteger(audit.year)) throw new Error('Le site, la grille et la date prévue sont obligatoires.');
   if (audit.status === 'completed' && (!audit.performedOn || !audit.auditorName.trim() || audit.rows.some((row) => !row.answer))) {
     throw new Error('Renseignez la date, l’auditeur et toutes les réponses avant de terminer l’audit.');
   }
-  return mapInternalAudit(await rpc(client, 'internal_audit_save', { p_payload: audit }));
+  const participantPersonIds = audit.participantPersonIds ?? (audit.participants || []).filter((person) => person.source === 'selected' && person.personId !== null).map((person) => person.personId as number);
+  if (participantPersonIds.some((id) => !Number.isInteger(id) || id < 1) || new Set(participantPersonIds).size !== participantPersonIds.length) {
+    throw new Error('Choisissez des participants RH distincts et valides.');
+  }
+  const payload = { ...audit, participantPersonIds };
+  delete payload.participants;
+  const saved = mapInternalAudit(await rpc(client, 'internal_audit_save', { p_payload: payload }));
+  await hydrateParticipantSignatures(client, [saved]);
+  return saved;
 }
 
 export async function saveAuditFinding(client: SupabaseClient, finding: AuditFinding, files: File[] = []): Promise<AuditFinding> {

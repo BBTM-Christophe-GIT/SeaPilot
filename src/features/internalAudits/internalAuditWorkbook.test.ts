@@ -60,6 +60,31 @@ describe('internal audit Excel report', () => {
     expect(await zip.file('xl/worksheets/sheet3.xml')!.async('string')).toContain('score précédent absent');
   });
 
+  it('retains all three Excel sheets even with no PDF sections and orders only grid rows by HR function', async () => {
+    const report = input();
+    report.sections = [];
+    report.sortByHrFunction = true;
+    report.audit.rows = [
+      { ...report.audit.rows[0], question: 'QA_GRID_MATE', hrFunction: 'Matelot' },
+      { ...report.audit.rows[1], question: 'QA_GRID_UNASSIGNED', hrFunction: '' },
+      { ...report.audit.rows[2], question: 'QA_GRID_CAPTAIN', hrFunction: 'Capitaine' },
+    ];
+    const original = report.audit.rows.map((row) => row.id);
+    const zip = await JSZip.loadAsync(await (await buildInternalAuditWorkbook(report)).blob.arrayBuffer());
+    const workbook = parser.parse(await zip.file('xl/workbook.xml')!.async('string'));
+    expect(workbook.workbook.sheets.sheet.map((sheet: Record<string, string>) => sheet['@name'])).toEqual(['Grille d’audit', 'Synthèse', 'Graphique']);
+    const grid = await zip.file('xl/worksheets/sheet1.xml')!.async('string');
+    expect(grid).toContain('Fonction RH');
+    expect(grid).toContain('Non affectée');
+    expect(grid.indexOf('QA_GRID_CAPTAIN')).toBeLessThan(grid.indexOf('QA_GRID_MATE'));
+    expect(grid.indexOf('QA_GRID_MATE')).toBeLessThan(grid.indexOf('QA_GRID_UNASSIGNED'));
+    const parsed = parser.parse(grid);
+    const seventhRow = array(parsed.worksheet.sheetData.row).find((row: Record<string, unknown>) => row['@r'] === '7') as { c: Record<string, unknown>[] };
+    expect(seventhRow.c.find((cell) => cell['@r'] === 'I7')).toMatchObject({ is: { t: { '#text': 'Capitaine' } } });
+    expect(report.audit.rows.map((row) => row.id)).toEqual(original);
+    expect(zip.file('xl/charts/chart1.xml')).not.toBeNull();
+  });
+
   it('embeds both finding and closure photos without expiring signed links or unrelated findings', async () => {
     const report = input();
     const photo = { id: 'photo', fileName: 'constat.png', storagePath: 'private.png', mimeType: 'image/png', sizeBytes: 70, url: 'https://private.invalid/token-secret' };

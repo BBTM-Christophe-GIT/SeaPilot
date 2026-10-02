@@ -89,9 +89,25 @@
 .ia-audit-selector { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
 .ia-audit-selector label { width: min(100%, 430px); }
 .ia-audit-selector > .ia-badge { align-self: end; margin-bottom: 10px; }
-.ia-export-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; padding-top: 16px; }
+.ia-export-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: auto; padding-top: 16px; }
 .ia-export-actions select { width: 126px; }
 .ia-export-actions button { white-space: nowrap; }
+.ia-template-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.internal-audits-page .ia-checkbox { display: inline-flex; align-items: center; gap: 7px; font-size: .73rem; font-weight: 600; }
+.internal-audits-page .ia-checkbox input { width: 16px; height: 16px; margin: 0; accent-color: var(--ia-teal); }
+.ia-report-options { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; min-width: 0; margin: 0 0 12px; padding: 10px 14px 12px; border: 1px solid var(--ia-line); border-radius: 9px; background: #fafcfc; }
+.ia-report-options legend, .ia-participants legend { padding: 0 5px; color: #385867; font-size: .75rem; font-weight: 700; }
+.ia-report-sections { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+.ia-report-options small { color: var(--ia-muted); font-size: .68rem; }
+.internal-audits-page .ia-delete-template { color: #a53c35; border-color: #dcb0aa; }
+.ia-participants { display: grid; gap: 10px; min-width: 0; margin: 12px 15px; padding: 10px 12px 12px; border: 1px solid var(--ia-line); border-radius: 8px; }
+.ia-participants > p, .ia-participants > small { color: var(--ia-muted); font-size: .7rem; line-height: 1.5; }
+.ia-participants ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.ia-participants li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 9px; border-radius: 6px; background: #f6f9fa; }
+.ia-participants li > span { display: grid; gap: 3px; min-width: 0; }
+.ia-participants li strong { color: #385867; font-size: .75rem; }
+.ia-participants li small { color: var(--ia-muted); font-size: .68rem; overflow-wrap: anywhere; }
+.ia-participants > label { max-width: 420px; font-size: .72rem; }
 .ia-unsaved { align-self: end; margin-bottom: 10px; font-size: .73rem; color: #9c6c14; }
 .ia-audit-header { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, .6fr); align-items: center; gap: 16px; padding: 12px 15px; border-bottom: 1px solid #e1eaee; background: #f9fcfc; }
 .ia-audit-header h2 { font-size: 1.18rem; }
@@ -118,10 +134,11 @@
 .ia-rating-guide { margin: 0 15px 9px; padding: 7px 10px; border-radius: 6px; color: #657e8b; background: #f0f5f7; font-size: .68rem; line-height: 1.5; }
 .ia-grid-scroll { position: relative; overflow-x: auto; min-width: 0; scrollbar-width: thin; }
 .ia-grid-scroll:focus-visible { outline: 3px solid #a8dedd; outline-offset: -3px; }
-.ia-audit-table { width: 100%; min-width: 1120px; border-collapse: collapse; table-layout: fixed; font-size: .73rem; line-height: 1.45; text-align: left; }
+.ia-audit-table { width: 100%; min-width: 1280px; border-collapse: collapse; table-layout: fixed; font-size: .73rem; line-height: 1.45; text-align: left; }
 .ia-col-ref { width: 58px; }
 .ia-col-question { width: 22%; }
 .ia-col-guidance { width: 26%; }
+.ia-col-function { width: 165px; }
 .ia-col-points { width: 61px; }
 .ia-col-answer { width: 143px; }
 .ia-col-observation { width: 20%; }

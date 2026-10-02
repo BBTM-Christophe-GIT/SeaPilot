@@ -13,12 +13,18 @@ export function createInternalAuditPreviewData(): InternalAuditData {
   }));
   const common = createDefaultAuditTemplate(1, '00000000-0000-4000-8000-000000000100');
   const rozel = { ...common, id: '00000000-0000-4000-8000-000000000101', siteId: sites[3].id, name: 'Grille LE ROZEL', rows: structuredClone(common.rows) };
+  rozel.rows = rozel.rows.map((row, index) => ({ ...row, hrFunction: index % 2 === 0 ? 'Capitaine' : 'Chef mécanicien' }));
   const year = 2026;
   const completed: InternalAudit = {
     id: '00000000-0000-4000-8000-000000000200', companyId: 1, siteId: sites[3].id,
     templateId: rozel.id, templateName: rozel.name, templateVersion: 1, year: year - 1,
     plannedOn: '2025-06-15', performedOn: '2025-06-15', auditorName: 'Auditeur de démonstration',
     status: 'completed', completedAt: '2025-06-15T16:00:00Z',
+    participantPersonIds: [9301, 9302],
+    participants: [
+      { personId: 9301, firstName: 'Arthur', lastName: 'DEMO', functionLabel: 'Armement', signatureSnapshot: {}, source: 'selected' },
+      { personId: 9302, firstName: 'Paul', lastName: 'DEMO', functionLabel: 'Capitaine', signatureSnapshot: {}, source: 'selected' },
+    ],
     rows: rozel.rows.map((row, index) => ({ ...row, answer: index % 7 === 0 ? 'incomplet' : 'conforme', observation: '' })),
   };
   const current: InternalAudit = {
@@ -45,7 +51,8 @@ export function createInternalAuditPreviewData(): InternalAuditData {
   };
   return {
     companyId: 1, sites, templates: [common, rozel], audits: [current, completed, planned], findings: [finding], events: [],
-    people: [{ id: 9301, name: 'Arthur DEMO', functionLabel: 'Armement' }, { id: 9302, name: 'Paul DEMO', functionLabel: 'Capitaine' }],
+    people: [{ id: 9301, name: 'Arthur DEMO', firstName: 'Arthur', lastName: 'DEMO', functionLabel: 'Armement', hasSignature: false }, { id: 9302, name: 'Paul DEMO', firstName: 'Paul', lastName: 'DEMO', functionLabel: 'Capitaine', hasSignature: false }],
+    hrFunctions: ['Armement', 'Capitaine', 'Chef mécanicien'],
     permissions: { canManage: true, treatableFindingIds: [finding.id] },
   };
 }
