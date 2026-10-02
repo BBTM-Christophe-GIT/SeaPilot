@@ -1,0 +1,112 @@
+.qhse-policy-page { max-width:1360px; margin:0 auto; padding:26px 30px 40px; color:#17364a; }
+.qhse-policy-page :is(h1,h2,h3,h4,p) { margin:0; }
+.qhse-policy-page__header,.qhse-policy-objectives__heading { display:flex; align-items:center; justify-content:space-between; gap:20px; }
+.qhse-policy-page__header { margin-bottom:24px; }
+.qhse-policy-eyebrow { display:inline-flex; align-items:center; gap:6px; color:#367e92; font-size:12px; font-weight:700; letter-spacing:.04em; }
+.qhse-policy-page h1 { margin:6px 0 8px; font-size:28px; line-height:1.15; }
+.qhse-policy-page__header p { color:#60768a; font-size:14px; line-height:1.45; }
+.qhse-policy-page h2 { font-size:20px; line-height:1.25; }
+.qhse-policy-button,.qhse-policy-icon-button,.qhse-policy-objective__actions button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:40px; padding:9px 13px; border:1px solid #0c7182; border-radius:8px; background:#0c7182; color:#fff; font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+.qhse-policy-button.is-secondary,.qhse-policy-icon-button,.qhse-policy-objective__actions button { border-color:#cfdee8; background:#fff; color:#25536b; }
+.qhse-policy-button:hover:not(:disabled) { background:#085c6b; }
+.qhse-policy-button.is-secondary:hover:not(:disabled),.qhse-policy-icon-button:hover:not(:disabled),.qhse-policy-objective__actions button:hover:not(:disabled) { background:#eef5f8; }
+.qhse-policy-icon-button { width:40px; padding:9px; }
+.qhse-policy-page button:disabled,.qhse-policy-dialog button:disabled { cursor:wait; opacity:.55; }
+.qhse-policy-page :is(button,input,select,summary):focus-visible,.qhse-policy-home :is(button,a):focus-visible,.qhse-policy-dialog :is(button,input,select,textarea):focus-visible { outline:3px solid #57a5c8; outline-offset:3px; }
+.qhse-policy-page__actions { display:flex; gap:9px; flex-wrap:wrap; }
+.qhse-policy-loading,.qhse-policy-empty { padding:18px 0; font-size:14px; color:#60768a; }
+.qhse-policy-document-section { scroll-margin-top:20px; margin-bottom:28px; }
+.qhse-policy-objectives { display:grid; gap:16px; }
+.qhse-policy-summary { margin-top:7px!important; color:#60768a; font-size:14px; line-height:1.5; }
+.qhse-policy-summary strong { color:#23495d; font-weight:650; }
+.qhse-policy-filters { display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; padding:14px 16px; border:1px solid #dfe8ee; border-radius:10px; background:#f8fafc; }
+.qhse-policy-filters > label:not(.qhse-policy-checkbox) { display:grid; gap:6px; min-width:240px; color:#4e6579; font-size:12px; font-weight:650; }
+.qhse-policy-filters select { min-height:40px; width:100%; padding:8px 10px; border:1px solid #cddbe6; border-radius:7px; background:#fff; color:#17364a; font:inherit; font-size:14px; }
+.qhse-policy-checkbox { display:inline-flex; align-items:center; gap:8px; min-height:40px; color:#4e6579; font-size:13px; cursor:pointer; }
+.qhse-policy-checkbox input { width:16px; height:16px; margin:0; accent-color:#0c7182; }
+.qhse-policy-process { min-width:0; overflow:hidden; border:1px solid #dce7ef; border-radius:12px; background:#fff; }
+.qhse-policy-process > header { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:17px 20px; background:#f7fafc; border-bottom:1px solid #e4ecf2; }
+.qhse-policy-process > header > div:last-child { display:flex; gap:8px; align-items:center; }
+.qhse-policy-process > header > div:first-child { display:block; min-width:0; }
+.qhse-policy-process > header h3 { font-size:17px; line-height:1.3; }
+.qhse-policy-process > header p { margin-top:4px; color:#64788a; font-size:13px; line-height:1.4; }
+.qhse-policy-process__empty { padding:20px; color:#64788a; font-size:14px; }
+.qhse-policy-objective { padding:18px 20px; }
+.qhse-policy-objective + .qhse-policy-objective { border-top:1px solid #e5edf2; }
+.qhse-policy-objective__row { display:grid; grid-template-columns:minmax(0,1fr) 170px; gap:24px; align-items:center; }
+.qhse-policy-objective__copy h3 { display:flex; align-items:center; gap:9px; flex-wrap:wrap; color:#1d3b50; font-size:15px; font-weight:650; line-height:1.4; overflow-wrap:anywhere; }
+.qhse-policy-objective__copy p { display:flex; gap:15px; flex-wrap:wrap; margin-top:7px; color:#667b8f; font-size:12px; }
+.qhse-policy-objective__copy p > span { display:inline-flex; gap:6px; align-items:center; }
+.qhse-policy-objective__progress { display:grid; gap:7px; }
+.qhse-policy-objective__progress strong { color:#18798a; font-size:16px; text-align:right; }
+.qhse-policy-objective progress { display:block; width:100%; height:7px; overflow:hidden; border:0; border-radius:99px; background:#e8eff4; accent-color:#3494a0; }
+.qhse-policy-objective progress::-webkit-progress-bar { background:#e8eff4; border-radius:99px; }
+.qhse-policy-objective progress::-webkit-progress-value { background:#3494a0; border-radius:99px; }
+.qhse-policy-objective progress::-moz-progress-bar { background:#3494a0; border-radius:99px; }
+.qhse-policy-badge { display:inline-block; padding:3px 7px; border-radius:5px; background:#edf1f5; color:#667789; font-size:11px; font-weight:500; vertical-align:middle; }
+.qhse-policy-objective__details { margin-top:12px; }
+.qhse-policy-objective__details > summary { display:inline-flex; align-items:center; gap:6px; min-height:28px; color:#35677e; font-size:12px; font-weight:600; cursor:pointer; list-style:none; }
+.qhse-policy-objective__details > summary::-webkit-details-marker { display:none; }
+.qhse-policy-objective__details[open] > summary > svg:last-child { transform:rotate(180deg); }
+.qhse-policy-objective__body { display:grid; gap:15px; padding-top:15px; }
+.qhse-policy-objective__description { color:#506c80; font-size:14px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
+.qhse-policy-objective__actions { display:flex; flex-wrap:wrap; gap:8px; }
+.qhse-policy-objective__actions button { min-height:36px; font-size:12px; padding:8px 10px; }
+.qhse-policy-objective__body h4 { color:#456277; font-size:13px; font-weight:650; }
+.qhse-policy-history { display:grid; gap:12px; margin:0; padding:0; list-style:none; }
+.qhse-policy-history li { padding:12px 14px; border-left:3px solid #bbd7e3; border-radius:0 6px 6px 0; background:#f7fafc; }
+.qhse-policy-history li > div { display:flex; align-items:center; gap:12px; flex-wrap:wrap; color:#3e6077; font-size:13px; }
+.qhse-policy-history li strong { color:#18798a; }
+.qhse-policy-history li > div > span { color:#7c8da0; font-size:11px; }
+.qhse-policy-history li p { margin-top:7px; color:#4e687c; font-size:13px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
+.qhse-policy-history li small { display:block; margin-top:8px; color:#718598; font-size:11px; line-height:1.4; }
+.qhse-policy-history__hint,.qhse-policy-muted { color:#6b8092; font-size:12px; line-height:1.45; }
+.qhse-policy-feedback { padding:12px 14px; margin-bottom:14px!important; border:1px solid #d7e5ec; border-radius:8px; color:#3b6578; font-size:13px; line-height:1.5; }
+.qhse-policy-feedback.is-error { border-color:#edc8c9; background:#fff4f4; color:#963c3e; }
+.qhse-policy-feedback.is-success { border-color:#cce8db; background:#f0faf4; color:#26704b; }
+.qhse-policy-feedback button { margin-left:7px; border:0; padding:3px 5px; background:transparent; color:inherit; font:inherit; font-weight:650; cursor:pointer; text-decoration:underline; }
+.qhse-policy-dialog .app-dialog-backdrop { z-index:2200; }
+.qhse-policy-dialog .app-dialog__actions button { min-height:42px; padding:10px 15px; border:1px solid #0c7182; border-radius:8px; background:#0c7182; color:#fff; font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+.qhse-policy-dialog .app-dialog__actions button.is-secondary { border-color:#cfdee8; color:#25536b; background:#fff; }
+.qhse-policy-fields { display:grid; gap:17px; min-width:0; border:0; padding:0; margin:0; }
+.qhse-policy-fields label { display:grid; gap:7px; color:#3d5a70; font-size:13px; font-weight:650; }
+.qhse-policy-fields :is(input,select,textarea) { width:100%; min-width:0; min-height:42px; border:1px solid #cddbe6; border-radius:7px; padding:10px 11px; color:#1d3b50; background:#fff; font:inherit; font-weight:400; }
+.qhse-policy-fields textarea { resize:vertical; line-height:1.5; }
+.qhse-policy-fields__pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.qhse-policy-home { display:grid; grid-template-columns:minmax(250px,1fr) auto auto; align-items:center; gap:24px; margin:24px 28px 0; padding:18px 20px; border:1px solid #dce8ed; border-radius:12px; background:#fff; color:#17364a; }
+.qhse-policy-home__identity { display:flex; align-items:center; gap:13px; min-width:0; }
+.qhse-policy-home__icon { flex:0 0 44px; height:44px; display:grid; place-items:center; border-radius:11px; color:#18778a; background:#edf7fa; }
+.qhse-policy-home h2 { margin:0 0 5px; font-size:18px; line-height:1.2; }
+.qhse-policy-home__identity p { margin:0; color:#6a8193; font-size:12px; line-height:1.4; }
+.qhse-policy-home__summary { display:grid; gap:5px; color:#658095; font-size:12px; line-height:1.4; }
+.qhse-policy-home__summary strong { color:#24546a; font-size:14px; font-weight:650; }
+.qhse-policy-home__links { display:grid; gap:9px; }
+.qhse-policy-home__links a { display:inline-flex; align-items:center; gap:7px; color:#276b82; font-size:13px; font-weight:650; text-decoration:none; }
+.qhse-policy-home__links a:hover { text-decoration:underline; }
+.qhse-policy-home__error { display:flex; align-items:center; gap:6px; }
+.qhse-policy-home__error button { display:grid; place-items:center; width:28px; height:28px; border:1px solid #d5e2e9; border-radius:6px; color:#49778d; background:#fff; cursor:pointer; }
+@media(max-width:1050px) { .qhse-policy-home { grid-template-columns:minmax(250px,1fr) auto; gap:16px; } .qhse-policy-home__summary { grid-column:1; padding-left:57px; } .qhse-policy-home__links { grid-column:2; grid-row:1 / 3; } }
+@media(max-width:760px) {
+  .qhse-policy-page { padding:20px 16px 30px; }
+  .qhse-policy-page__header,.qhse-policy-objectives__heading { align-items:flex-start; flex-wrap:wrap; gap:15px; }
+  .qhse-policy-page h1 { font-size:25px; }
+  .qhse-policy-process > header { padding:15px; align-items:flex-start; flex-wrap:wrap; }
+  .qhse-policy-objective { padding:16px 15px; }
+  .qhse-policy-objective__row { grid-template-columns:1fr; gap:11px; }
+  .qhse-policy-objective__progress { grid-template-columns:1fr 45px; align-items:center; }
+  .qhse-policy-objective__progress strong { grid-column:2; grid-row:1; font-size:14px; }
+  .qhse-policy-objective__progress progress { grid-column:1; grid-row:1; }
+  .qhse-policy-filters { gap:10px; padding:12px; }
+  .qhse-policy-filters > label:not(.qhse-policy-checkbox) { flex:1 1 100%; min-width:0; }
+  .qhse-policy-home { margin:16px 16px 0; padding:16px; grid-template-columns:1fr; gap:14px; }
+  .qhse-policy-home__summary { grid-column:1; padding-left:0; display:flex; flex-wrap:wrap; gap:7px 18px; }
+  .qhse-policy-home__links { grid-column:1; grid-row:auto; display:flex; flex-wrap:wrap; gap:14px 20px; }
+}
+@media(max-width:500px) {
+  .qhse-policy-fields__pair { grid-template-columns:1fr; }
+  .qhse-policy-page__actions { width:100%; }
+  .qhse-policy-page__actions > button { flex:1 1 auto; }
+  .qhse-policy-objective__actions > button { min-height:40px; }
+  .qhse-policy-dialog .app-dialog-backdrop { padding:10px; }
+  .qhse-policy-dialog .app-dialog { max-height:calc(100dvh - 20px); }
+}

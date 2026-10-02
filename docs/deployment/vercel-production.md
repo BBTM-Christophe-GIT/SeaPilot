@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.67.0` ajoute **Politique QHSE** en premier sur l’accueil et dans QHSE : consultation du PDF publié du chapitre 02, objectifs par **Processus**, progression et historique immuable, archives conservées. Seuls Administration et Direction peuvent modifier la politique et les objectifs de leur société active. Appliquer la migration additive décrite dans [qhse-policy.md](./qhse-policy.md) avant le client. Aucun document privé ni objectif fictif n’est publié dans les fichiers statiques. Aucune nouvelle variable d’environnement.
+
 Version `3.66.0` complète Audit ISM Interne : suppression des modèles de grille avec conservation des audits, fonction RH par ligne, PDF de modèle vierge ou d’audit incomplet, tri par fonction RH et choix des sections Grille d’audit / Synthèse / Graphique. Les rapports reprennent les noms, prénoms et signatures de profil disponibles des participants désignés et des vrais contributeurs. Appliquer la migration additive des [grilles et participants](./internal-audit-grid-roles-participants.md) avant le client. Aucune nouvelle variable d’environnement.
 
 Version `3.65.0` ajoute dans Administration → Planning un ordre des fonctions partagé par société pour classer les marins dans chaque bordée de la vue Flotte. La fonction temporaire en vigueur à la date sélectionnée prend la priorité pour le tri. Le « filtre actif » et son masquage automatique sont retirés du Planning et de l’administration ; les filtres explicites restent disponibles. La migration `20261002045601_planning_fleet_function_order.sql` est appliquée avant le client. Cette livraison inclut les demandes RTT et les compteurs par période de `3.64.7`. Voir [planning-fleet-function-order.md](./planning-fleet-function-order.md).
@@ -417,7 +419,7 @@ Vercel preview hosts matching `sea-pilot-*-bbtm-app.vercel.app` open SeaPilot di
 - project-level Vercel Authentication is disabled so anonymous preview links reach SeaPilot directly; production remains protected by the SeaPilot application login;
 - no production session or authentication token is copied to preview code;
 - no production table is read or written;
-- save attempts return an explicit preview-only error;
+- save attempts return an explicit preview-only error unless an explicitly implemented demonstration flow (including Politique QHSE) updates its in-memory fixture; these updates reset on page reload;
 - a `Préversion · données de démonstration` badge identifies this state;
 - production and every unrelated hostname keep the normal Supabase authentication flow.
 

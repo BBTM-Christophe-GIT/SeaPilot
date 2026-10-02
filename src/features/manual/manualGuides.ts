@@ -26,6 +26,18 @@ const REGULATORY_LIBRARY_ACCESS = 'Marin et Capitaine consultent les textes, les
 
 // Notices du profil Marin. Les noms, l’ordre et les accès viennent de la navigation.
 export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
+  qhsePolicy: {
+    purpose: 'Consulter la politique de sécurité et de protection de l’environnement et suivre les objectifs de la société par Processus.',
+    access: 'Tous les profils autorisés consultent la politique, les objectifs et leur historique. Seuls Administration et Direction peuvent modifier la politique, les Processus, les objectifs et leur suivi.',
+    steps: [
+      { title: 'Ouvrir la politique', detail: 'Le bloc Politique QHSE se trouve tout en haut de l’accueil. Il ouvre le module, également disponible dans le menu QHSE. Lire la politique affiche le PDF publié du chapitre 02 ; vous pouvez aussi ouvrir le PDF dans un onglet.' },
+      { title: 'Consulter les objectifs', detail: 'Les objectifs sont regroupés par Processus. Chaque objectif affiche sa progression en pourcentage, son responsable et son échéance lorsqu’ils sont renseignés. Le filtre Processus réduit la liste ; les objectifs archivés restent accessibles.' },
+      { title: 'Gérer les objectifs', detail: 'Administration et Direction ajoutent un Processus, puis un objectif avec son titre, son descriptif, son responsable facultatif, son échéance facultative et son pourcentage initial. Modifier permet de corriger les informations ; archiver conserve les données et l’historique.' },
+      { title: 'Enregistrer un suivi', detail: 'Administration et Direction utilisent Ajouter un suivi dans Détails et suivi sur l’objectif, saisissent le pourcentage, la date du suivi et un commentaire. L’enregistrement actualise le pourcentage et ajoute une entrée à l’historique. L’auteur et l’heure d’enregistrement sont conservés automatiquement.' },
+      { title: 'Consulter l’historique', detail: 'Ouvrez les détails de l’objectif pour consulter les suivis précédents et leurs commentaires. Une correction de progression s’enregistre comme un nouveau suivi ; les entrées existantes restent conservées.' },
+    ],
+    reminders: ['La progression globale est la moyenne simple des objectifs actifs.', 'Les versions Word des procédures restent gérées dans Procédures QHSE ; le lecteur expose uniquement les versions PDF publiées.', 'Un document Google Drive sélectionné conserve les autorisations de son propriétaire.'],
+  },
   regulatoryLibrary: {
     purpose: 'Retrouver les textes de référence et suivre la revue mensuelle de leurs mises à jour dans le carnet de veille partagé de votre société.',
     access: REGULATORY_LIBRARY_ACCESS,

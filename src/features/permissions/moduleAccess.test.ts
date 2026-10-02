@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { NAVIGATION_MODULES, canAccessModule, getVisibleModules } from './moduleAccess';
 
 describe('module access', () => {
+  it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as const)(
+    'allows the %s profile to read the QHSE policy',
+    (role) => expect(canAccessModule([role], 'qhsePolicy')).toBe(true),
+  );
   it.each([
     ['admin', true],
     ['direction', true],
@@ -35,6 +39,7 @@ describe('module access', () => {
 
     expect(navigation).toEqual([
       ['Accueil', 'Accueil', 'direct'],
+      ['QHSE', 'Politique QHSE', 'submenu'],
       ['QHSE', 'KPI', 'submenu'],
       ['Registres', 'Produits Chimiques', 'submenu'],
       ['Registres', 'Registre des Exercices', 'submenu'],

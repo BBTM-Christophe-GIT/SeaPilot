@@ -4,6 +4,7 @@ export type ModuleKey =
   | 'home'
   | 'kpi'
   | 'qhse'
+  | 'qhsePolicy'
   | 'chemicals'
   | 'emergencyExercises'
   | 'lsa'
@@ -64,6 +65,7 @@ const ALL_ROLES: RoleKey[] = ['admin', 'direction', 'armement', 'capitaine', 'ma
 
 export const APP_MODULES: AppModule[] = [
   { key: 'home', label: 'Accueil', family: 'Accueil', navigationKind: 'direct', allowedRoles: ALL_ROLES },
+  { key: 'qhsePolicy', label: 'Politique QHSE', family: 'QHSE', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   { key: 'kpi', label: 'KPI', family: 'QHSE', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   { key: 'chemicals', label: 'Produits Chimiques', family: 'Registres', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   { key: 'emergencyExercises', label: 'Registre des Exercices', family: 'Registres', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
