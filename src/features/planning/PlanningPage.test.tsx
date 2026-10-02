@@ -274,8 +274,8 @@ function deferredAuxiliaryResponse() {
 }
 
 function createClient(options: {
-  activeFilterEnabled?: boolean;
   crewPreferences?: { name_format: string; sort_order: string };
+  fleetFunctionOrder?: string[];
   vessels?: unknown[];
   people?: unknown[];
   assignments?: unknown[];
@@ -328,14 +328,11 @@ function createClient(options: {
   options.vesselResponses?.forEach((response) => vesselOrder.mockResolvedValueOnce(response));
   vesselOrder.mockResolvedValue({ data: options.vessels ?? [vesselRow], error: null });
   const from = vi.fn().mockImplementation((table: string) => {
-    if (table === 'planning_personal_display_settings') {
-      return { select: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) };
+    if (table === 'planning_fleet_display_settings') {
+      return { select: () => ({ maybeSingle: async () => ({ data: { function_order: options.fleetFunctionOrder || [] }, error: null }) }) };
     }
     if (table === 'planning_generic_crew_rows') {
       return { select: () => ({ order: () => ({ range: async () => ({ data: options.genericCrewRows || [], error: null }) }) }) };
-    }
-    if (table === 'planning_display_settings') {
-      return { select: () => ({ maybeSingle: async () => ({ data: { active_filter_enabled: options.activeFilterEnabled ?? false }, error: null }) }) };
     }
     if (table === 'planning_crew_display_preferences') {
       return { select: () => ({ maybeSingle: async () => ({ data: options.crewPreferences ?? null, error: null }) }) };
@@ -616,7 +613,7 @@ describe('PlanningPage cockpit', () => {
   it('prepares a generic position and replaces it with a real sailor while transferring its dates and status', async () => {
     const user = userEvent.setup();
     const genericCrewRows: GenericCrewRowData[] = [];
-    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], genericCrewRows, activeFilterEnabled: true });
+    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], genericCrewRows });
     render(<PlanningPage client={client as never} roles={['armement']} />);
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('button', { name: 'Ajouter un marin à Affectation de COTENTIN' }));
@@ -648,9 +645,8 @@ describe('PlanningPage cockpit', () => {
       .toEqual(expect.arrayContaining([expect.stringMatching(/^Jean MARTIN, Repos,/)]));
   });
 
-  it.each([false, true])('applies the persisted active filter (%s) to the visible crew rows', async (enabled) => {
-    const { client } = createClient({
-      activeFilterEnabled: enabled,
+  it('keeps past crew postings visible without reading the retired active-filter settings', async () => {
+    const { client, from } = createClient({
       people: [captainRow, crewRow, secondCrewRow],
       assignments: [
         { ...assignmentOverviewRow, starts_on: '2026-06-29', ends_on: '2026-06-29' },
@@ -664,11 +660,13 @@ describe('PlanningPage cockpit', () => {
     fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-06' } });
     expect(container.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-range-start', '2026-06-01');
     await waitFor(() => expect(container.querySelector('.planning-calendar-body')).toHaveTextContent('Paul DURAND'));
-    if (enabled) expect(container.querySelector('.planning-calendar-body')).not.toHaveTextContent('Luc MOREL');
-    else expect(container.querySelector('.planning-calendar-body')).toHaveTextContent('Luc MOREL');
+    expect(container.querySelector('.planning-calendar-body')).toHaveTextContent('Luc MOREL');
+    expect(screen.queryByRole('button', { name: 'Filtre actif' })).not.toBeInTheDocument();
+    expect(from).not.toHaveBeenCalledWith('planning_display_settings');
+    expect(from).not.toHaveBeenCalledWith('planning_personal_display_settings');
   });
 
-  it('keeps Gary and Mathieu on their September vessels when the active filter sees October in the grid', async () => {
+  it('keeps Gary and Mathieu on their September vessels when the grid includes October', async () => {
     const dateSpy = vi.spyOn(await import('./planningDates'), 'todayPlanningDate').mockReturnValue('2026-10-01');
     try {
       const user = userEvent.setup();
@@ -683,7 +681,7 @@ describe('PlanningPage cockpit', () => {
         watch_group: board, status_label: 'En Mer', confirmation_status: 'confirmed',
       });
       const { client, rpc } = createClient({
-        activeFilterEnabled: true, people: [captainRow, gary, mathieu], vessels: [rozel, landemer, suroit],
+        people: [captainRow, gary, mathieu], vessels: [rozel, landemer, suroit],
         periods: [], days: [], projects: [],
         assignments: [
           assignment(894, gary, rozel, '2026-09-16', '2026-09-25', 'Bordée 1'),
@@ -699,7 +697,7 @@ describe('PlanningPage cockpit', () => {
       const names = () => [...container.querySelectorAll('.is-fleet-person .planning-row-label strong')].map((node) => node.textContent);
       await waitFor(() => expect(names().filter((name) => name === 'Gary LEFEVRE')).toHaveLength(2));
       expect(names().filter((name) => name === 'Mathieu QUESNOT')).toHaveLength(3);
-      expect(screen.getByRole('button', { name: 'Filtre actif' })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.queryByRole('button', { name: 'Filtre actif' })).not.toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Actualiser' }));
       await waitFor(() => expect(names().filter((name) => name === 'Gary LEFEVRE')).toHaveLength(2));
       await user.click(screen.getByRole('tab', { name: 'Équipages' }));
@@ -758,6 +756,45 @@ describe('PlanningPage cockpit', () => {
     expect(labels()).toContain('DURAND Paul');
     expect(labels()).not.toContain('MARTIN Jean');
   });
+
+  it.each(['admin', 'marin', 'capitaine'] as const)('applies the shared fleet function order with the actual %s data path', async (role) => {
+    const user = userEvent.setup();
+    const assignments = [
+      { ...assignmentOverviewRow, id: 1001, crew_person_id: 10, crew_name: 'Jean MARTIN',
+        starts_on: '2026-06-29', assignment_role: 'Capitaine', watch_group: 'Bordée 1' },
+      { ...assignmentOverviewRow, id: 1002, starts_on: '2026-06-29', assignment_role: 'Matelot Qualifié', watch_group: 'Bordée 1' },
+    ];
+    const days = [{ ...planningDayRow, person_id: 11, vessel_id: 1, work_date: '2026-06-29',
+      function_label: 'Chef Mécanicien', slot365: 'assignment:1002', source_label: 'seapilot-assignment-note' }];
+    const { client, rpc } = createClient({
+      people: [captainRow, { ...crewRow, function_label: 'Matelot Qualifié' }], assignments, days,
+      fleetFunctionOrder: ['Chef Mécanicien', 'Capitaine', 'Matelot Qualifié'],
+      crewPreferences: { name_format: 'first_last', sort_order: 'function' },
+      publishedSnapshot: { assignments, days, periods: [], projects: [], handovers: [], derogations: [] },
+    });
+    const { container } = render(<MemoryRouter><Routes>
+      <Route element={<Outlet context={{ client, roles: [role], previewMode: false,
+        currentPerson: { id: role === 'marin' ? 11 : 10 } }} />}>
+        <Route path="/" element={<PlanningPage />} />
+      </Route>
+    </Routes></MemoryRouter>);
+    const labels = () => [...container.querySelectorAll('.is-fleet-person .planning-row-label strong')].map((node) => node.textContent);
+    await waitFor(() => expect(labels()).toEqual(['Paul DURAND', 'Jean MARTIN']));
+    expect(screen.queryByRole('button', { name: 'Filtre actif' })).not.toBeInTheDocument();
+    if (role === 'admin') {
+      await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+      const crewLabels = [...container.querySelectorAll('.is-crew .planning-row-label strong')].map((node) => node.textContent);
+      expect(crewLabels).toEqual(['Jean MARTIN', 'Paul DURAND']);
+      await user.click(screen.getByRole('tab', { name: 'Flotte' }));
+    } else {
+      expect(rpc).toHaveBeenCalledWith('latest_planning_release');
+      expect(rpc).not.toHaveBeenCalledWith('planning_assignment_overview_with_revisions');
+      expect(screen.queryByRole('tab', { name: 'Équipages' })).not.toBeInTheDocument();
+    }
+    fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-07' } });
+    await waitFor(() => expect(labels()).toEqual(['Jean MARTIN', 'Paul DURAND']));
+  });
+
   it('shows a compact project-only view with empty vessels and opens the existing project picker', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ vessels: [vesselRow, secondVesselRow], assignments: [assignmentOverviewRow], projects: [planningProjectRow] });
@@ -2024,28 +2061,29 @@ describe('PlanningPage cockpit', () => {
     expect(rpc).not.toHaveBeenCalledWith('delete_planning_board_row', expect.anything());
   });
 
-  it.each([true, false])('keeps Gary editable after adding him with past events and active filter=%s', async (activeFilterEnabled) => {
+  it.each(['assignment', 'period'])('keeps Gary editable after adding him with past %s records', async (historyKind) => {
     const user = userEvent.setup();
     const gary = { ...crewRow, id: 17, first_name: 'Gary', last_name: 'LEFEVRE' };
     const currentAssignment = { ...assignmentOverviewRow, vessel_name: 'LE ROZEL', watch_group: 'Bordée 1' };
     const oldAssignment = { ...currentAssignment, id: 101, crew_person_id: gary.id, crew_name: 'Gary LEFEVRE',
       starts_on: '2026-06-01', ends_on: '2026-06-10' };
-    const assignments = activeFilterEnabled ? [currentAssignment, oldAssignment] : [currentAssignment];
+    const assignments = historyKind === 'assignment' ? [currentAssignment, oldAssignment] : [currentAssignment];
     // Imported historical periods can identify their vessel/person only by name.
-    const periods = activeFilterEnabled ? [] : [{ ...planningPeriodRow, id: 101, vessel_id: null, person_id: null,
+    const periods = historyKind === 'assignment' ? [] : [{ ...planningPeriodRow, id: 101, vessel_id: null, person_id: null,
       vessel_name: 'LE ROZEL', crew_name: 'Gary LEFEVRE', starts_on: '2026-06-01', ends_on: '2026-06-10' }];
-    const { client, rpc } = createClient({ activeFilterEnabled, assignments, projects: [],
+    const { client, rpc } = createClient({ assignments, projects: [],
       vessels: [{ ...vesselRow, name: 'LE ROZEL' }], people: [captainRow, crewRow, gary],
       boardRows: [{ ...emptyBoardRow, id: 901, person_id: gary.id, watch_group: 'Bordée 1' }],
       periods,
     });
     render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
+    fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-07' } });
     fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-06' } });
     await user.click(screen.getByRole('button', { name: 'Filtres' }));
     await user.selectOptions(screen.getByLabelText('Filtre navire'), 'LE ROZEL');
     const emptyCellName = /Case vide de Gary LEFEVRE le 30\/06\/2026/;
-    if (activeFilterEnabled) expect(screen.queryByRole('button', { name: emptyCellName })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: emptyCellName })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Ajouter un marin à Bordée 1 de LE ROZEL' }));
     await user.click(within(await screen.findByRole('dialog', { name: 'Ajouter un marin à Bordée 1' }))
@@ -2053,7 +2091,7 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Gary LEFEVRE a été ajouté comme ligne vide à Bordée 1.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: emptyCellName })).toBeInTheDocument();
     expect(screen.getByLabelText('Filtre navire')).toHaveValue('LE ROZEL');
-    expect(screen.getByRole('button', { name: 'Filtre actif' })).toHaveAttribute('aria-pressed', String(activeFilterEnabled));
+    expect(screen.queryByRole('button', { name: 'Filtre actif' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Actualiser' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Actualiser' })).not.toBeDisabled());
@@ -2244,11 +2282,17 @@ describe('PlanningPage cockpit', () => {
     nativeConfirm.mockRestore();
   });
 
-  it('lets only administrators drag approved vacations to a new date', async () => {
-    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], absences: [approvedLeaveRow], periods: [] });
+  it.each([
+    ['leave', '2026-07-09T16:00:00Z', '09', '2026-07-19T16:00:00.000Z'],
+    ['rtt', '2026-07-09T16:00:00Z', '09', '2026-07-19T16:00:00.000Z'],
+    ['leave', '2026-07-09T22:00:00Z', '09', '2026-07-19T22:00:00.000Z'],
+    ['rtt', '2026-07-09T22:00:00Z', '09', '2026-07-19T22:00:00.000Z'],
+    ['rtt', '2026-07-06T22:00:00Z', '06', '2026-07-16T22:00:00.000Z'],
+  ])('lets administrators drag approved %s ending at %s while preserving its exclusive end', async (type, end, lastDay, movedEnd) => {
+    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], absences: [{ ...approvedLeaveRow, absence_type: type, ends_at: end }], periods: [] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
-    const vacation = await screen.findByRole('button', { name: /Congés validés du 06\/07\/2026 au 09\/07\/2026/ });
+    const vacation = await screen.findByRole('button', { name: `${type === 'rtt' ? 'RTT' : 'Congés'} validés du 06/07/2026 au ${lastDay}/07/2026` });
     expect(vacation).toHaveAttribute('draggable', 'true');
     const values = new Map<string, string>();
     const dataTransfer = {
@@ -2269,7 +2313,7 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('move_planning_approved_absence', {
       p_absence_id: 701,
       p_starts_at: '2026-07-16T06:00:00.000Z',
-      p_ends_at: '2026-07-19T16:00:00.000Z',
+      p_ends_at: movedEnd,
     }));
   });
 

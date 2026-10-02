@@ -51,6 +51,15 @@ describe('Planning P2.1 explainable assistant', () => {
     expect(candidates.candidates.find((candidate) => candidate.personId === 3)?.reasons.join(' ')).toContain('Déjà affecté');
   });
 
+  it('does not propose a sailor with approved RTT as a compatible replacement', () => {
+    const { overview, data } = fixture();
+    data.p12.absences.push({ ...data.p12.absences[0], id: 61, personId: 2, absenceType: 'rtt', reason: 'RTT validés' });
+    const suggestions = buildPlanningAssistantSuggestions(overview, data, { start: '2026-08-01', end: '2026-08-31' });
+    const candidate = suggestions.find((item) => item.type === 'compatible_sailor')!.candidates.find((item) => item.personId === 2);
+    expect(candidate).toMatchObject({ compatibility: 'incompatible' });
+    expect(candidate?.reasons.join(' ')).toContain('RTT validés sur la période');
+  });
+
   it('suggests handovers, missing-document actions, reorganization and a change summary', () => {
     const { overview, data } = fixture();
     const suggestions = buildPlanningAssistantSuggestions(overview, data, { start: '2026-08-01', end: '2026-08-31' });

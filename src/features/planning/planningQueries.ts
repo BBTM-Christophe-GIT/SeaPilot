@@ -1,5 +1,6 @@
 import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { fetchGenericCrewRows, type GenericCrewRow } from './planningGenericCrew';
+import { fetchPlanningFleetOrder } from './planningFleetOrder';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeProjectStatus, type ProjectStatus } from '../projects/projectStatus';
 import { projectDescriptionToPlainText } from '../projects/projectDescription';
@@ -656,6 +657,7 @@ export interface PlanningDerogationHistoryRecord {
 }
 
 export interface PlanningOverview {
+  fleetFunctionOrder?: string[];
   vessels: PlanningVessel[];
   people: PlanningPerson[];
   boardRows?: PlanningBoardRowRecord[];
@@ -1520,7 +1522,7 @@ export async function fetchPlanningOverview(
   options: FetchPlanningOverviewOptions = {},
 ): Promise<PlanningOverview> {
   if (options.publishedOnly) {
-    const [[vessels, people, certificates, hrDocuments, annualReviews, rules, versions], snapshot] = await Promise.all([
+    const [[vessels, people, certificates, hrDocuments, annualReviews, rules, versions, fleetFunctionOrder], snapshot] = await Promise.all([
       Promise.all([
         fetchVessels(client),
         fetchPlanningPeople(client),
@@ -1529,6 +1531,7 @@ export async function fetchPlanningOverview(
         fetchPlanningAnnualReviews(client),
         fetchPlanningRules(client),
         fetchPlanningVersions(client),
+        fetchPlanningFleetOrder(client),
       ]),
       fetchLatestPlanningReleaseSnapshot(client),
     ]);
@@ -1536,6 +1539,7 @@ export async function fetchPlanningOverview(
     return {
       vessels,
       people,
+      fleetFunctionOrder,
       boardRows: [],
       ...releasedPlanning,
       certificates,
@@ -1549,7 +1553,7 @@ export async function fetchPlanningOverview(
     };
   }
 
-  const [vessels, people, boardRows, assignmentRows, days, periods, projects, certificates, hrDocuments, annualReviews, rules, versions, history, handovers, genericCrewRows] = await Promise.all([
+  const [vessels, people, boardRows, assignmentRows, days, periods, projects, certificates, hrDocuments, annualReviews, rules, versions, history, handovers, genericCrewRows, fleetFunctionOrder] = await Promise.all([
     fetchVessels(client),
     fetchPlanningPeople(client),
     fetchPlanningBoardRows(client),
@@ -1565,11 +1569,13 @@ export async function fetchPlanningOverview(
     options.includeHistory === false ? Promise.resolve([]) : fetchPlanningHistory(client),
     fetchPlanningHandovers(client),
     fetchGenericCrewRows(client),
+    fetchPlanningFleetOrder(client),
   ]);
 
   return {
     vessels,
     people,
+    fleetFunctionOrder,
     boardRows,
     assignments: mapPlanningAssignmentOverviewRows(assignmentRows),
     genericCrewRows,

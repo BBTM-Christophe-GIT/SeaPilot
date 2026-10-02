@@ -1,5 +1,7 @@
 # Planning : filtre actif et surbrillance des colonnes
 
+Note historique : depuis `3.65.0`, le filtre actif et son masquage automatique sont retirés du Planning et de l’administration. Les préférences enregistrées n’ont plus d’effet. Voir [planning-fleet-function-order.md](./planning-fleet-function-order.md).
+
 Version 3.56.0.
 
 Administration → Planning contient le réglage **Activer ou désactiver le filtre actif**.

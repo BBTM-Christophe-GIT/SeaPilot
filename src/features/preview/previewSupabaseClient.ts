@@ -3,6 +3,8 @@ import { ORG_HIERARCHY_DEMO } from '../organigramme/organigrammeFixtures';
 import type { OrgRank, OrgSupport } from '../organigramme/organigrammeModel';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { PREVIEW_LINK_CATEGORIES, PREVIEW_USEFUL_LINKS } from '../usefulLinks/usefulLinksPreview';
+import { createPlanningPreviewOverview } from '../planning/planningPreviewData';
+import { todayPlanningDate } from '../planning/planningDates';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
@@ -239,7 +241,6 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     { id: 1, project_id: 9001, company_id: 1, scope: 3, reference: 'COMMANDE-AFFRETEMENT-2026' },
     { id: 2, project_id: 9001, company_id: 1, scope: 4, reference: 'PRESTATIONS-BBTM-2026' },
   ],
-  planning_personal_display_settings: [],
   planning_generic_crew_rows: [],
   planning_crew_display_preferences: [],
   useful_links: PREVIEW_USEFUL_LINKS,
@@ -1415,7 +1416,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       created_at: '2026-07-19T13:15:00Z',
     },
   ],
-  planning_display_settings: [{ company_id: 1, active_filter_enabled: false }],
+  planning_fleet_display_settings: [{ company_id: 1, function_order: [] }],
   action_plan_settings: [{ company_id: 1, edit_button_enabled: true, updated_at: '2026-09-06T18:00:00Z' }],
   action_documents: [
     {
@@ -1833,6 +1834,16 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'get_planning_absence_balance_context') {
+    const planningPerson = createPlanningPreviewOverview(todayPlanningDate()).people.find((person) => person.id === Number(args.p_person_id));
+    const person = planningPerson ? { id: planningPerson.id, first_name: planningPerson.firstName, last_name: planningPerson.lastName, hired_on: planningPerson.hiredOn, departed_on: planningPerson.departedOn, active: planningPerson.active } : previewRows('people').find((row) => Number(row.id) === Number(args.p_person_id));
+    if (!person) return createPreviewQuery({ data: null, error: { message: 'Personne de démonstration introuvable.' } });
+    return createPreviewQuery({ data: {
+      kind: ['Christophe MINASSIAN', 'Sophie HAMEL'].includes(`${person.first_name} ${person.last_name}`) ? 'leave_rtt' : 'crew',
+      person: { id: person.id, first_name: person.first_name, last_name: person.last_name, hired_on: person.hired_on, departed_on: person.departed_on, active: person.active },
+      counter_periods: [], absences: [], crew_checkpoints: [], crew_sources: { assignments: [], periods: [], days: [] },
+    }, error: null });
+  }
   if (functionName === 'projects_set_favorite') {
     const projectId = Number(args.target_project);
     const next = previewRows('project_favorites').filter((row) => row.project_id !== projectId).map((row) => Number(row.project_id));
@@ -1864,11 +1875,6 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     previewOrgData.watches = [...(previewOrgData.watches || []).filter((watch) => watch.id !== id), { id, vesselId, name }];
     previewOrgData.memberships = [...previewOrgData.memberships.filter((row) => !(existing && row.vesselId === existing.vesselId && row.watchGroup === existing.name)), ...(args.p_members as Array<{ personId: number; functionLabel: string }>).map((member) => ({ personId: member.personId, vesselId, watchGroup: name, functionLabel: member.functionLabel || '', source: 'manual' as const }))];
     return createPreviewQuery({ data: id, error: null });
-  }
-  if (functionName === 'planning_save_personal_display_settings') {
-    const row = { active_filter_enabled: args.p_active_filter_enabled === true };
-    PREVIEW_ROWS.planning_personal_display_settings = [row];
-    return createPreviewQuery({ data: row, error: null });
   }
   if (functionName === 'planning_save_generic_crew_row') {
     const existing = previewRows('planning_generic_crew_rows').find((row) => row.id === args.p_row_id);
@@ -2015,9 +2021,9 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     if (!previewRows('action_plan_settings').length) PREVIEW_ROWS.action_plan_settings.push(settings);
     return createPreviewQuery({ data: settings, error: null });
   }
-  if (functionName === 'planning_save_display_settings') {
-    const settings = previewRows('planning_display_settings')[0];
-    settings.active_filter_enabled = args.p_active_filter_enabled === true;
+  if (functionName === 'save_planning_fleet_display_settings') {
+    const settings = previewRows('planning_fleet_display_settings')[0];
+    settings.function_order = Array.isArray(args.p_function_order) ? [...args.p_function_order] : [];
     return createPreviewQuery({ data: settings, error: null });
   }
   if (functionName === 'action_item_admin_update') {

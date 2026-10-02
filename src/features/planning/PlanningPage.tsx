@@ -8,7 +8,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { PlanningColumnHighlights } from './PlanningColumnHighlights';
 import { PlanningGenericCrewTimelineRow } from './PlanningGenericCrewTimelineRow';
 import { resolveGenericCrewRow, saveGenericCrewRow, type GenericCrewRow } from './planningGenericCrew';
-import { savePlanningDisplaySettings, usePlanningDisplaySettings } from './planningDisplaySettings';
 import './planningProjectView.css';
 import './planningCrewPreferences.css';
 import { displayBrandName } from '../../lib/branding';
@@ -77,7 +76,6 @@ import {
   isPlanningPersonEmployedDuring,
   isSedentaryPlanningFunction,
   normalizePlanningText,
-  planningActiveFromForRange,
   planningReferenceMonthLabel,
   planningReferenceMonthRange,
   planningStatusDisplayLabel,
@@ -536,8 +534,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     isHistoryLoading,
   } = usePlanningOverview(effectiveClient, readPermissions.canRead, previewOverview, !usesLivePlanning && !previewMode);
   const planningData = usePlanningCoreOverview(overview);
-  const { settings: displaySettings, setSettings: setDisplaySettings, isLoading: displaySettingsLoading, error: displaySettingsError } = usePlanningDisplaySettings(effectiveClient, readPermissions.canRead, true);
-  const [savingDisplaySettings, setSavingDisplaySettings] = useState(false);
   const [anchorDate, setAnchorDate] = useState(initialAnchorDate);
   const [requestedPerspective, setPerspective] = useState<PlanningPerspective>('fleet');
   const perspective = requestedPerspective === 'crew' && !readPermissions.canViewCrewPlanning ? 'fleet' : requestedPerspective;
@@ -845,7 +841,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const canEditPlanning = permissions.canEditEvents;
   const latestRelease = overview.versions[0] || null;
   const todayDate = todayPlanningDate();
-  const activeFrom = planningActiveFromForRange(displaySettings.activeFilterEnabled ? todayDate : undefined, referenceMonthRange);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const effectiveDayWidth = Math.round(52 * zoomLevel / 100);
 
@@ -863,12 +858,12 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const baseFleetRows = useMemo(
     () => buildPlanningCrewRows(planningData, timelineDays, filters, allPlanningCrewEvents, {
       employmentRange: referenceMonthRange,
-      referenceRange: referenceMonthRange,
-      activeFrom,
       includeEmptyVessels: isPersonalPlanningView,
       pendingBoardRowIds,
+      functionOrder: planningData.fleetFunctionOrder,
+      referenceDate: anchorDate,
     }),
-    [activeFrom, allPlanningCrewEvents, filters, isPersonalPlanningView, pendingBoardRowIds, planningData, referenceMonthRange, timelineDays],
+    [allPlanningCrewEvents, anchorDate, filters, isPersonalPlanningView, pendingBoardRowIds, planningData, referenceMonthRange, timelineDays],
   );
   const { lanes: fleetLanes, rows: fleetRows } = useMemo(() => withPlanningAuditLanes(baseFleetLanes, baseFleetRows, visiblePlanningAudits, range, filters),
     [baseFleetLanes, baseFleetRows, visiblePlanningAudits, range, filters]);
@@ -882,8 +877,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   if (pendingBoardRows.ids.size) {
     const assignedRowIds = new Set(fleetRows
       .filter((row) => row.boardRowId !== null && pendingBoardRowIds?.has(row.boardRowId)
-        && row.events.some((event) => (!activeFrom || range.end < activeFrom || event.endsOn >= activeFrom)
-          && !pendingBoardRows.existingEvents.get(row.boardRowId!)?.has(`${event.id}:${event.startsOn}:${event.endsOn}`)))
+        && row.events.some((event) => !pendingBoardRows.existingEvents.get(row.boardRowId!)?.has(`${event.id}:${event.startsOn}:${event.endsOn}`)))
       .map((row) => row.boardRowId!));
     if ([...pendingBoardRows.ids].some((id) => assignedRowIds.has(id))) {
       setPendingBoardRows((current) => ({ ...current,
@@ -935,8 +929,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     };
   }, [planningData, absences, balanceCheckpoints, balancesLoaded, previewMode, range, readPermissions.canViewCrewPlanning]);
   const crewLanes = useMemo(
-    () => readPermissions.canViewCrewPlanning ? buildPlanningCrewLanes(planningData, range, filters, crewGrouping, allPlanningCrewEvents, crewDisplay, activeFrom, referenceMonthRange) : [],
-    [activeFrom, allPlanningCrewEvents, crewDisplay, crewGrouping, filters, planningData, range, readPermissions.canViewCrewPlanning, referenceMonthRange],
+    () => readPermissions.canViewCrewPlanning ? buildPlanningCrewLanes(planningData, range, filters, crewGrouping, allPlanningCrewEvents, crewDisplay) : [],
+    [allPlanningCrewEvents, crewDisplay, crewGrouping, filters, planningData, range, readPermissions.canViewCrewPlanning],
   );
   const certificateAlerts = useMemo(() => buildPlanningCertificateAlerts(planningData, todayDate), [planningData, todayDate]);
   const hrAlerts = useMemo(() => buildPlanningHrAlerts(planningData, todayDate), [planningData, todayDate]);
@@ -1573,15 +1567,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setEligiblePeopleDialog({ vesselId, vesselName: vessel.name, watchGroup });
   }
 
-  async function togglePersonalActiveFilter() {
-    setSavingDisplaySettings(true);
-    try {
-      setDisplaySettings(await savePlanningDisplaySettings(effectiveClient, { activeFilterEnabled: !displaySettings.activeFilterEnabled }, true));
-    } catch {
-      setErrorMessage('Impossible d’enregistrer votre filtre actif. Réessayez.');
-    } finally { setSavingDisplaySettings(false); }
-  }
-
   function updateGenericRow(id: number, saved: GenericCrewRow | null) {
     updateOverview((current) => ({ ...current, genericCrewRows: [
       ...(current.genericCrewRows || []).filter((row) => row.id !== id), ...(saved ? [saved] : []),
@@ -2028,20 +2013,22 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   async function moveApprovedAbsence(absence: PlanningAbsenceRecord, startsOn: string) {
-    if (!permissions.canMoveApprovedAbsences || absence.status !== 'approved' || absence.absenceType !== 'leave') return;
+    if (!permissions.canMoveApprovedAbsences || absence.status !== 'approved' || !['leave', 'rtt'].includes(absence.absenceType)) return;
     const endsOn = addPlanningDays(startsOn, daysBetween(absence.startsOn, absence.endsOn));
+    const localEnd = utcToPlanningLocalDateTime(absence.endsAt);
+    const shiftedEndDate = addPlanningDays(localEnd.slice(0, 10), daysBetween(absence.startsOn, startsOn));
     setPendingMutationId(`absence-${absence.id}`);
     setErrorMessage(null);
     try {
       await movePlanningApprovedAbsence(effectiveClient, {
         absenceId: absence.id,
         startsAt: localDateTime(startsOn, utcToPlanningLocalDateTime(absence.startsAt).slice(11)),
-        endsAt: localDateTime(endsOn, utcToPlanningLocalDateTime(absence.endsAt).slice(11)),
+        endsAt: localDateTime(shiftedEndDate, localEnd.slice(11)),
       });
       await loadAbsences();
-      setStatusMessage(`Congés validés déplacés du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}.`);
+      setStatusMessage(`${absence.absenceType === 'rtt' ? 'RTT' : 'Congés'} validés déplacés du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}.`);
     } catch (error) {
-      setErrorMessage(planningErrorMessage(error, 'Impossible de déplacer ces vacances validées.'));
+      setErrorMessage(planningErrorMessage(error, 'Impossible de déplacer cette absence validée.'));
     } finally {
       setPendingMutationId(null);
     }
@@ -2667,13 +2654,12 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         </div>
       </header>
 
-      {statusMessage || errorMessage || loadErrorMessage || displaySettingsError || isRefreshing ? (
+      {statusMessage || errorMessage || loadErrorMessage || isRefreshing ? (
         <div className="planning-notices" aria-live="polite">
           {isRefreshing ? <p className="admin-state">Actualisation du planning...</p> : null}
           {statusMessage ? <p className="admin-success">{statusMessage}</p> : null}
           {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
           {loadErrorMessage ? <p className="form-error" role="alert">{loadErrorMessage}</p> : null}
-          {displaySettingsError ? <p className="form-error" role="alert">{displaySettingsError}</p> : null}
         </div>
       ) : null}
 
@@ -2750,7 +2736,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               <button aria-busy={isRefreshing} className="planning-filter-toggle planning-refresh-button" disabled={isRefreshing} onClick={() => { setBalanceRevision((value) => value + 1); void Promise.all([loadPlanning(), loadAbsences(), loadVesselVisits(), loadPlanningAudits()]); }} type="button">
                 <RefreshCw aria-hidden="true" size={17} />{isRefreshing ? 'Actualisation…' : 'Actualiser'}
               </button>
-              {perspective !== 'projects' ? <button type="button" aria-pressed={displaySettings.activeFilterEnabled} className={`planning-filter-toggle${displaySettings.activeFilterEnabled ? ' is-active' : ''}`} disabled={displaySettingsLoading || savingDisplaySettings || Boolean(displaySettingsError)} onClick={() => void togglePersonalActiveFilter()} title="Préférence personnelle du filtre actif">Filtre actif</button> : null}
               <div className="planning-toolbar-spacer" />
               {perspective === 'crew' && balanceLoadError ? <span role="alert">{balanceLoadError} <button type="button" onClick={() => setBalanceRevision((value) => value + 1)}>Réessayer</button></span> : null}
               {perspective === 'crew' ? <div className="planning-grouping-switch" aria-label="Regrouper les équipages"><button className={crewGrouping === 'people' ? 'is-active' : ''} onClick={() => setCrewGrouping('people')} type="button">Marins</button><button className={crewGrouping === 'teams' ? 'is-active' : ''} onClick={() => setCrewGrouping('teams')} type="button">Équipes</button></div> : null}
@@ -2779,7 +2764,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             {isFiltersOpen ? <div className="planning-filter-strip" aria-label="Filtres du planning">
               <label className="planning-select-control"><Ship aria-hidden="true" size={16} /><span className="sr-only">Filtre navire</span><select aria-label="Filtre navire" onChange={(event) => setFilters((current) => ({ ...current, vesselName: event.target.value }))} value={filters.vesselName}><option value="">Tous les navires</option>{vesselOptions.map((value) => <option key={value}>{value}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
               {perspective === 'crew' ? <label className="planning-select-control"><Search aria-hidden="true" size={16} /><span className="sr-only">Filtre marin</span><select aria-label="Filtre marin" onChange={(event) => setFilters((current) => ({ ...current, personName: event.target.value }))} value={filters.personName}><option value="">Tous les marins</option>{personOptions.map((value) => <option key={value} value={value}>{crewPersonLabels.get(value) || value}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label> : null}
-              <label className="planning-select-control"><span className="sr-only">Filtre type</span><select aria-label="Filtre type d’événement" onChange={(event) => setFilters((current) => ({ ...current, eventType: event.target.value }))} value={filters.eventType}><option value="">Tous les types</option>{perspective !== 'crew' ? FLEET_EVENT_TYPES.map((type) => <option key={type} value={type}>{planningFleetEventTypeLabel(type)}</option>) : ['assignment', 'rest', 'leave', 'training', 'unavailability'].map((type) => <option key={type} value={type}>{planningCrewEventTypeLabel(type)}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
+              <label className="planning-select-control"><span className="sr-only">Filtre type</span><select aria-label="Filtre type d’événement" onChange={(event) => setFilters((current) => ({ ...current, eventType: event.target.value }))} value={filters.eventType}><option value="">Tous les types</option>{perspective !== 'crew' ? FLEET_EVENT_TYPES.map((type) => <option key={type} value={type}>{planningFleetEventTypeLabel(type)}</option>) : ['assignment', 'rest', 'leave', 'rtt', 'training', 'unavailability'].map((type) => <option key={type} value={type}>{planningCrewEventTypeLabel(type)}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
               <label className="planning-select-control"><span className="sr-only">Filtre statut</span><select aria-label="Filtre statut" onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))} value={filters.status}><option value="">Tous les statuts</option>{statusOptions.map((status) => <option key={status} value={status}>{status === 'provisional' || status === 'confirmed' || status === 'cancelled' ? planningConfirmationLabel(status) : planningStatusDisplayLabel(status)}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
               <label className="planning-select-control"><span className="sr-only">Filtre responsable</span><select aria-label="Filtre responsable" onChange={(event) => setFilters((current) => ({ ...current, responsible: event.target.value }))} value={filters.responsible}><option value="">Tous les responsables</option>{responsibleOptions.map((value) => <option key={value}>{value}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
               <button className="planning-filter-reset" disabled={!activeFilterCount} onClick={() => setFilters(EMPTY_FILTERS)} type="button"><X aria-hidden="true" size={14} />Réinitialiser</button>
@@ -2983,7 +2968,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {selectedEvent && eventForm ? <PlanningEventDialog activeVessels={activeVessels} controls={selectedEventControls} editable={canEditPlanning} event={selectedEvent} form={eventForm} functionOptions={PLANNING_ASSIGNMENT_FUNCTIONS} isSaving={isSaving} onChange={setEventForm} onClose={() => { setSelectedEvent(null); setEventForm(null); }} onDelete={() => void removeEvent(selectedEvent)} onDuplicate={duplicateSelectedEvent} onSave={() => void saveEvent(selectedEvent, eventForm)} watchGroupOptions={watchGroupOptions} /> : null}
       {isHandoverOpen ? <PlanningHandoverDialog editable={permissions.canManageHandovers} handover={selectedHandover} isSaving={isSaving} onClose={() => { setIsHandoverOpen(false); setSelectedHandover(null); }} onSave={(input) => void handleSaveHandover(input)} overview={overview} /> : null}
       {isP11Open ? <PlanningP11Panel canManageRotations={permissions.canManageRotations} canManageTemplates={permissions.canManageTemplates} client={effectiveClient} onClose={() => setIsP11Open(false)} onOperationalChange={handleP11OperationalChange} overview={overview} /> : null}
-      {isAbsenceRequestOpen ? <Suspense fallback={<div className="app-dialog-backdrop"><div className="admin-state" role="status">Chargement de la demande de congés…</div></div>}><PlanningAbsenceRequestDialog client={effectiveClient} currentPerson={outletContext?.currentPerson ?? null} onClose={() => setIsAbsenceRequestOpen(false)} onSaved={async () => { await handleP12AuditChange(); setStatusMessage('Demande de congés envoyée.'); }} people={overview.people} personalOnly={isPersonalPlanningView} range={range} /></Suspense> : null}
+      {isAbsenceRequestOpen ? <Suspense fallback={<div className="app-dialog-backdrop"><div className="admin-state" role="status">Chargement de la demande de congés…</div></div>}><PlanningAbsenceRequestDialog canManageBalances={canEditPlanning} client={effectiveClient} currentPerson={outletContext?.currentPerson ?? null} onClose={() => setIsAbsenceRequestOpen(false)} onSaved={async () => { await handleP12AuditChange(); setStatusMessage('Demande de congés envoyée.'); }} people={overview.people} personalOnly={isPersonalPlanningView} range={range} /></Suspense> : null}
       {isP12Open ? <Suspense fallback={<div className="app-dialog-backdrop"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canDeleteAbsences={permissions.canDeleteAbsences} canManageConflictCases={permissions.canManageConflictCases} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} overview={overview} personalOnly={isPersonalPlanningView} personalPersonId={currentPersonId} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
       {visitDialog ? <PlanningVisitsPanel canDelete={permissions.canDeleteAbsences} canEdit={canEditPlanning} canManageProviders={effectiveRoles.includes('admin') || effectiveRoles.includes('direction')} client={effectiveClient} onClose={() => setVisitDialog(null)} onSaved={async () => { await loadVesselVisits(); if (permissions.canViewHistory) { const history = await fetchPlanningHistory(effectiveClient); updateOverview((current) => ({ ...current, history })); } }} providers={serviceProviders} vessel={visitDialog.vessel} visit={visitDialog.visit} /> : null}
       {auditDialog ? <AppDialog title={PLANNING_AUDIT_LABELS[auditDialog.kind]} eyebrow={auditDialog.siteName} size="sm"

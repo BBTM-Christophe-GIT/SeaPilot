@@ -113,6 +113,9 @@ describe('planning timeline rules', () => {
     expect(planningStatusDisplayLabel('Vacances')).toBe('Congés');
     expect(normalizePlanningStatus('Congés')).toBe('Vacance');
     expect(planningStatusTone('Congés')).toBe('vacation');
+    expect(normalizePlanningStatus(' rtt ')).toBe('RTT');
+    expect(planningStatusDisplayLabel('RTT')).toBe('RTT');
+    expect(planningStatusTone('RTT')).toBe('rest');
     expect(planningStatusDisplayLabel('Repos')).toBe('Repos');
     expect(normalizePlanningStatus('arrêt maladie')).toBe('Arrêt Maladie');
     expect(normalizePlanningStatus('accident du travail')).toBe('Accident du Travail');
@@ -208,10 +211,10 @@ describe('planning timeline rules', () => {
     ]));
   });
 
-  it('blocks work planned over an unavailability period', () => {
+  it.each(['Repos', 'RTT'])('blocks work planned over a %s period', (sailorStatus) => {
     const unavailableOverview: PlanningOverview = {
       ...overview,
-      periods: [{ ...overview.periods[0], sailorStatus: 'Repos' }],
+      periods: [{ ...overview.periods[0], sailorStatus }],
     };
     const controls = evaluatePlanningAssignment(unavailableOverview, {
       id: 'new',

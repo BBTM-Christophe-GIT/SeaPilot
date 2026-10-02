@@ -80,7 +80,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
     title: 'Préparez vos bordées et repérez les journées du Planning',
     roles: ['admin', 'direction', 'armement'],
     changes: [
-      'Le filtre actif masque les collaborateurs sans affectation à partir d’aujourd’hui sur la période affichée. Il se règle dans Administration > Planning.',
+      'Le filtre actif introduit dans cette version a été retiré du Planning et de l’administration depuis la version 3.65.0. Il ne masque plus les collaborateurs ni les affectations.',
       'Dans Ajouter un marin, la catégorie Bordée Générique propose les fonctions habituelles pour créer des postes à pourvoir. Préparez leurs dates, statuts et annotations, puis cliquez sur le nom de la fonction dans le planning pour choisir un marin : toute la préparation lui est transférée.',
       'Cliquez sur les jours du calendrier pour surligner leurs colonnes en bleu léger. Vous pouvez sélectionner plusieurs jours, même séparés, et cliquer à nouveau pour les désélectionner. Ce repérage reste temporaire.',
       'Les notes de mise à jour sont désormais présentées de la plus récente à la plus ancienne.',

@@ -19,7 +19,7 @@ import {
 import type { PlanningHrDocumentRecord, PlanningProjectRecord } from './planningQueries';
 import { planningVesselVisitDateRange, planningVisitTypeLabel, type PlanningVesselVisit } from './planningVisitQueries';
 import { PLANNING_AUDIT_LABELS, planningAuditKey, type PlanningAudit } from './planningAudits';
-import { planningAbsenceTypeLabel, type PlanningAbsenceRecord } from './planningP12';
+import { planningAbsenceTypeLabel, planningAbsenceUsesPluralLabel, type PlanningAbsenceRecord } from './planningP12';
 import {
   planningGridCellKey,
   planningGridCellsShareSegment,
@@ -1055,13 +1055,14 @@ function PlanningCrewTimelineRowContent({
       {laneAbsences.map((absence) => {
         const placement = dateGridPlacement(absence.startsOn, absence.endsOn, days);
         if (!placement) return null;
-        const movable = canMoveApprovedAbsences && absence.status === 'approved' && absence.absenceType === 'leave';
+        const pluralLabel = planningAbsenceUsesPluralLabel(absence.absenceType);
+        const movable = canMoveApprovedAbsences && absence.status === 'approved' && ['leave', 'rtt'].includes(absence.absenceType);
         const statusLabel = absence.status === 'approved'
-          ? absence.absenceType === 'leave' ? 'Validés' : 'Validée'
+          ? pluralLabel ? 'Validés' : 'Validée'
           : absence.status === 'rejected'
-            ? absence.absenceType === 'leave' ? 'Refusés' : 'Refusée'
+            ? pluralLabel ? 'Refusés' : 'Refusée'
             : absence.status === 'cancelled'
-              ? absence.absenceType === 'leave' ? 'Annulés' : 'Annulée'
+              ? pluralLabel ? 'Annulés' : 'Annulée'
               : 'À valider';
         return (
           <button
@@ -1090,7 +1091,7 @@ function PlanningCrewTimelineRowContent({
               dragEvent.dataTransfer.setData('application/x-seapilot-approved-absence', String(absence.id));
             }}
             style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }}
-            title={`${planningAbsenceTypeLabel(absence.absenceType)} · ${statusLabel}\n${formatPlanningDate(absence.startsOn)} → ${formatPlanningDate(absence.endsOn)}${absence.reason ? `\n${absence.reason}` : ''}${movable ? '\nGlissez pour déplacer ces congés validés.' : ''}`}
+            title={`${planningAbsenceTypeLabel(absence.absenceType)} · ${statusLabel}\n${formatPlanningDate(absence.startsOn)} → ${formatPlanningDate(absence.endsOn)}${absence.reason ? `\n${absence.reason}` : ''}${movable ? `\nGlissez pour déplacer ces ${planningAbsenceTypeLabel(absence.absenceType).toLocaleLowerCase('fr-FR')} validés.` : ''}`}
             type="button"
           >
             <CalendarOff aria-hidden="true" size={12} />

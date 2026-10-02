@@ -1,5 +1,7 @@
 # Planning : mois historiques et calculs de soldes — v3.64.5
 
+Note historique : `3.65.0` retire entièrement le filtre actif. Les corrections de calcul des soldes et de protection des actualisations décrites ici restent conservées. Voir [planning-fleet-function-order.md](./planning-fleet-function-order.md).
+
 ## Affectations de septembre masquées
 
 La grille du mois de référence septembre 2026 couvre 49 jours, du 31 août au 18 octobre. Le filtre actif comparait la date du jour à la fin de cette grille. Le 1er octobre, il supprimait donc les lignes Flotte dont les affectations avaient fini en septembre. Gary LEFEVRE et Mathieu QUESNOT restaient dans Équipages grâce à leurs affectations d’octobre sur LANDEMER, alors que leurs lignes de septembre sur LE ROZEL et les autres navires disparaissaient.

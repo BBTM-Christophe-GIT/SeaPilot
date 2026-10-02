@@ -1,0 +1,24 @@
+.admin-fleet-order p { color: #52647b; line-height: 1.6; margin: 8px 0; }
+.admin-fleet-order fieldset { display: grid; gap: 16px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.admin-fleet-order-toggle { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+.admin-fleet-order-toggle input { width: 18px; height: 18px; }
+.admin-fleet-order-list { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; max-width: 720px; }
+.admin-fleet-order-list li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #d8e1ec; border-radius: 8px; background: #f8fafc; }
+.admin-fleet-order-list strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.admin-fleet-order-position { flex: 0 0 26px; color: #52647b; text-align: center; font-variant-numeric: tabular-nums; }
+.admin-fleet-order-actions { display: flex; gap: 6px; }
+.admin-fleet-order button { justify-self: start; }
+.admin-fleet-order-actions button, .admin-fleet-order-add button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 36px; min-height: 36px; border: 1px solid #cbd5e1; border-radius: 6px; color: #253044; background: white; cursor: pointer; }
+.admin-fleet-order button:disabled { opacity: .45; cursor: not-allowed; }
+.admin-fleet-order button:focus-visible, .admin-fleet-order input:focus-visible { outline: 3px solid #7bb4e8; outline-offset: 2px; }
+.admin-fleet-order-add { display: grid; gap: 8px; max-width: 720px; }
+.admin-fleet-order-add label { font-weight: 600; }
+.admin-fleet-order-add > div { display: flex; gap: 8px; }
+.admin-fleet-order-add input { min-width: 0; flex: 1; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+.admin-fleet-order-add button { padding: 8px 12px; font: inherit; }
+@media (max-width: 600px) {
+  .admin-fleet-order-list li { gap: 6px; padding: 10px 6px; font-size: .85rem; }
+  .admin-fleet-order-actions { gap: 3px; }
+  .admin-fleet-order-position { flex-basis: 20px; }
+  .admin-fleet-order > fieldset > button { width: 100%; }
+}

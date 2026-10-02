@@ -91,6 +91,16 @@ function renderAdminPage(client: unknown, section = 'users') {
 }
 
 describe('AdminPage', () => {
+  it('offers the shared fleet order in the Planning administration section', async () => {
+    renderAdminPage(previewSupabaseClient, 'planning');
+    const form = screen.getByRole('form', { name: 'Ordre des marins dans les bordées' });
+    await waitFor(() => expect(within(form).getByRole('checkbox')).toBeEnabled());
+    expect(form).toHaveTextContent('fonction temporaire');
+    expect(screen.getByRole('link', { name: 'Planning' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('heading', { name: 'Mes préférences Équipages' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/filtre actif/i)).not.toBeInTheDocument();
+  });
+
   it('hides departed people in both tables by default and permits explicit deletion from the former filter', async () => {
     const user = userEvent.setup();
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);

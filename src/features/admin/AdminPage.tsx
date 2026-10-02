@@ -33,7 +33,7 @@ import {
 } from './adminCollaborators';
 import './adminSections.css';
 import { AdminCrewPreferences } from './AdminCrewPreferences';
-import { AdminPlanningSettings } from './AdminPlanningSettings';
+import { AdminFleetOrder } from './AdminFleetOrder';
 
 const ADMIN_SECTIONS = [
   { key: 'users', label: 'Utilisateurs', icon: Users },
@@ -471,7 +471,7 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
       </section>
 
       {activeSection === 'documents' ? <AdminGoogleDriveSetup client={client} previewMode={previewMode} /> : null}
-      {activeSection === 'planning' ? <AdminPlanningSettings client={client} /> : null}
+      {activeSection === 'planning' ? <AdminFleetOrder client={client} /> : null}
 
       <section className="admin-panel admin-action-plan-settings" hidden={activeSection !== 'action-plan' || isLoading} aria-label="Réglages du Plan d'action">
         <div className="admin-header admin-section-header">

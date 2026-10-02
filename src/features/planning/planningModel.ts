@@ -27,6 +27,7 @@ import {
 
 import { planningEventFunctionOnDate } from './planningFunctions';
 import { comparePlanningCrewPeriods, planningCrewPeriod } from './planningCrewOrder';
+import { comparePlanningFleetFunctions, planningFleetEffectiveFunction } from './planningFleetOrder';
 
 export { addPlanningDays, daysBetween, formatPlanningDate, isoDate, rangesOverlap } from './planningDates';
 
@@ -139,10 +140,10 @@ function crewEventFromAnnualReview(review: PlanningAnnualReviewRecord): Planning
 
 export interface PlanningCrewRowOptions {
   employmentRange?: PlanningDateRange;
-  referenceRange?: PlanningDateRange;
-  activeFrom?: string;
   includeEmptyVessels?: boolean;
   pendingBoardRowIds?: ReadonlySet<number>;
+  functionOrder?: readonly string[];
+  referenceDate?: string;
 }
 
 export interface PlanningAlert {
@@ -253,11 +254,6 @@ export function planningReferenceMonthRange(anchorDate: string): PlanningDateRan
   return { start, end: addPlanningDays(shiftPlanningMonths(start, 1), -1) };
 }
 
-export function planningActiveFromForRange(activeFrom: string | undefined, referenceRange: PlanningDateRange): string | undefined {
-  // The grid extends beyond the selected month; its extra days must not hide history.
-  return activeFrom && referenceRange.end >= activeFrom ? activeFrom : undefined;
-}
-
 export function planningReferenceMonthLabel(anchorDate: string): string {
   const [year, month] = anchorDate.split('-').map(Number);
   return `${MONTH_LABELS[month - 1]} ${year}`;
@@ -323,6 +319,7 @@ export function normalizePlanningStatus(value: string): string {
   const key = normalizePlanningText(value);
   if (key.includes('EMBAR') || key === 'ENMER' || key === 'TRAVAILLE') return 'En Mer';
   if (key === 'ATERRE') return 'A Terre';
+  if (key === 'RTT') return 'RTT';
   if (key.includes('REPOS') || key.includes('DEBAR')) return 'Repos';
   if (key.includes('VACAN') || key === 'CONGE' || key === 'CONGES') return 'Vacance';
   if (key.includes('ACCIDENT') && key.includes('TRAVAIL')) return 'Accident du Travail';
@@ -341,7 +338,7 @@ export function planningStatusTone(value: string): string {
   if (key === 'ENMER') return 'sea';
   if (key === 'ATERRE') return 'shore';
   if (key === 'EXTRA') return 'extra';
-  if (key === 'REPOS') return 'rest';
+  if (key === 'REPOS' || key === 'RTT') return 'rest';
   if (key === 'VACANCE') return 'vacation';
   if (key === 'ARRETMALADIE') return 'sick-leave';
   if (key === 'ACCIDENTDUTRAVAIL') return 'accident';
@@ -560,7 +557,8 @@ export function buildPlanningCrewRows(
 ): PlanningCrewRow[] {
   const range = timelineRange(days);
   const employmentRange = options.employmentRange || range;
-  const activeFrom = planningActiveFromForRange(options.activeFrom, options.referenceRange || range);
+  const functionOrder = options.functionOrder || [];
+  const referenceDate = options.referenceDate || range.start;
   const allEvents = eventPool;
   const events = allEvents.filter(
     (event) =>
@@ -676,7 +674,8 @@ export function buildPlanningCrewRows(
             projects: [],
           });
           genericRows.filter((row) => row.watchGroup === board)
-            .sort((a, b) => comparePlanningPersonnelFunctions(a.functionLabel, b.functionLabel) || a.id - b.id)
+            .sort((a, b) => comparePlanningFleetFunctions(a.functionLabel, b.functionLabel, functionOrder)
+              || comparePlanningPersonnelFunctions(a.functionLabel, b.functionLabel) || a.id - b.id)
             .forEach((genericRow) => rows.push({
               key: `${boardKey}-generic-${genericRow.id}`, type: 'person', personId: null,
               vesselId: genericRow.vesselId, label: genericRow.functionLabel, vessel, board,
@@ -693,11 +692,22 @@ export function buildPlanningCrewRows(
             if (!people.has(entry.personName)) people.set(entry.personName, []);
           });
           const periodsByPerson = new Map([...people].map(([name, events]) => [name, planningCrewPeriod(events, range)]));
+          const functionsByPerson = new Map([...people].map(([name, personEvents]) => {
+            const personId = personEvents.find((event) => event.personId !== null)?.personId ?? null;
+            const person = (personId === null ? undefined : peopleById.get(personId)) || peopleByName.get(name);
+            const boardRow = boardContent.rows.find((entry) => entry.person.id === person?.id)?.boardRow;
+            const hrFunction = person?.functionLabel || boardRow?.functionLabel || '';
+            return [name, functionOrder.length ? planningFleetEffectiveFunction(personEvents, referenceDate, hrFunction)
+              : hrFunction || personEvents[0]?.functionLabel || ''];
+          }));
           [...people.entries()]
             .sort(([leftName, leftEvents], [rightName, rightEvents]) => {
-              const leftRole = peopleByName.get(leftName)?.functionLabel || leftEvents[0]?.functionLabel || '';
-              const rightRole = peopleByName.get(rightName)?.functionLabel || rightEvents[0]?.functionLabel || '';
-              return comparePlanningCrewPeriods(periodsByPerson.get(leftName) || null, periodsByPerson.get(rightName) || null)
+              const leftRole = functionOrder.length ? functionsByPerson.get(leftName) || ''
+                : peopleByName.get(leftName)?.functionLabel || leftEvents[0]?.functionLabel || '';
+              const rightRole = functionOrder.length ? functionsByPerson.get(rightName) || ''
+                : peopleByName.get(rightName)?.functionLabel || rightEvents[0]?.functionLabel || '';
+              return comparePlanningFleetFunctions(leftRole, rightRole, functionOrder)
+                || comparePlanningCrewPeriods(periodsByPerson.get(leftName) || null, periodsByPerson.get(rightName) || null)
                 || comparePlanningPersonnelFunctions(leftRole, rightRole) || leftName.localeCompare(rightName, 'fr');
             })
             .forEach(([person, personEvents]) => {
@@ -708,9 +718,6 @@ export function buildPlanningCrewRows(
               if (linkedPerson && !isPlanningPersonEmployedDuring(linkedPerson, employmentRange)) return;
               const isPendingBoardRow = Boolean(boardRow && options.pendingBoardRowIds?.has(boardRow.id));
               if (!personEvents.length && !isPendingBoardRow) return;
-              // An explicitly added row remains editable even if it already has past events.
-              if (!isPendingBoardRow && activeFrom && personEvents.length
-                && !personEvents.some((event) => event.endsOn >= activeFrom)) return;
               const recordPrefix = `${vessel}|${board}|`;
               const hasAnyRecords = (
                 (personId !== null && allEventRecordKeys.has(`${recordPrefix}id:${personId}`))

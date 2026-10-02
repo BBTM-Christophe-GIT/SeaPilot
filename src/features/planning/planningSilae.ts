@@ -97,7 +97,7 @@ export function silaeMonthRange(month: string): { start: string; end: string; da
 function silaeState(status: string): SilaePeriod['state'] | null {
   const key = normalizePlanningText(status);
   if (['ENMER', 'ATERRE', 'EXTRA', 'EMBARQUE', 'EMBARQUEMENT', 'TRAVAILLE'].includes(key)) return 'sea';
-  if (['REPOS', 'ENREPOS', 'CONGE', 'CONGES', 'CONGEPAYE', 'CONGESPAYES', 'VACANCE', 'VACANCES', 'DEBARQUE', 'DEBARQUEMENT'].includes(key)) return 'rest';
+  if (['REPOS', 'ENREPOS', 'RTT', 'CONGE', 'CONGES', 'CONGEPAYE', 'CONGESPAYES', 'VACANCE', 'VACANCES', 'DEBARQUE', 'DEBARQUEMENT'].includes(key)) return 'rest';
   return null;
 }
 
