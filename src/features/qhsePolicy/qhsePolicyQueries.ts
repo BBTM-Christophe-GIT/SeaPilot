@@ -1,9 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
 import {
-  isQhsePolicyId, validateQhsePolicyObjectiveDraft, validateQhsePolicyObjectiveUpdateDraft, validateQhsePolicyProcessDraft, validateQhsePolicyProgress, validateQhsePolicySettingsDraft,
-  type QhsePolicyObjectiveDraft, type QhsePolicyObjectiveUpdateDraft, type QhsePolicyProcessDraft, type QhsePolicySettingsDraft, type QhsePolicySnapshot, type QhsePolicyOwnerKind, type QhsePolicyOwnerOptions,
+  isQhsePolicyId, validateQhsePolicyObjectiveDraft, validateQhsePolicyObjectiveUpdateDraft, validateQhsePolicyProcessDraft, validateQhsePolicyProgress, validateQhsePolicySettingsDraft, validateQhsePolicyProcessOrder, validateQhsePolicyProcessDeletion,
+  type QhsePolicyObjectiveDraft, type QhsePolicyObjectiveUpdateDraft, type QhsePolicyProcessDraft, type QhsePolicySettingsDraft, type QhsePolicySnapshot, type QhsePolicyOwnerKind, type QhsePolicyOwnerOptions, type QhsePolicyProcess,
 } from './qhsePolicyModel';
+import { normalizeQhsePolicyAxisIconKey } from './qhsePolicyIcons';
 
 function object(value: unknown): Record<string, unknown> { if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Les données de la politique QHSE sont incomplètes.'); return value as Record<string, unknown>; }
 function rows(value: unknown): unknown[] { if (!Array.isArray(value)) throw new Error('Les données de la politique QHSE sont incomplètes.'); return value; }
@@ -15,8 +16,8 @@ function boolean(value: unknown): boolean { if (typeof value !== 'boolean') thro
 function errorMessage(code: string | undefined, reading = false): string {
   if (code === '42501') return reading ? 'Votre profil ne peut pas consulter la politique QHSE.' : 'Seuls les profils Admin et Direction peuvent modifier la politique QHSE.';
   if (code === '40001') return 'Cet élément a été modifié entre-temps. Actualisez la page avant de réessayer.';
-  if (code === '23505') return 'Un processus actif portant ce nom existe déjà.';
-  if (code === '22023') return 'Vérifiez les champs renseignés et que le processus et l’objectif sont actifs.';
+  if (code === '23505') return 'Un axe stratégique actif portant ce nom existe déjà.';
+  if (code === '22023') return 'Vérifiez les champs, la liste complète des axes et que l’axe cible et l’objectif sont actifs.';
   return reading ? 'Impossible de charger la politique QHSE. Réessayez.' : 'La modification n’a pas été enregistrée. Réessayez.';
 }
 export async function fetchQhsePolicySnapshot(client: SupabaseClient): Promise<QhsePolicySnapshot> {
@@ -27,7 +28,7 @@ export async function fetchQhsePolicySnapshot(client: SupabaseClient): Promise<Q
   return {
     canEdit: boolean(value.can_edit),
     settings: settings ? { publicationId: settings.publication_id == null ? null : number(settings.publication_id), documentUrl: text(settings.document_url), revision: revision(settings.revision), updatedAt: text(settings.updated_at) } : null,
-    processes: rows(value.processes).map((item) => { const row = object(item); return { id: id(row.id), name: text(row.name), description: text(row.description), position: number(row.position), archived: boolean(row.archived), revision: revision(row.revision), updatedAt: text(row.updated_at) }; }),
+    processes: rows(value.processes).map((item) => { const row = object(item); return { id: id(row.id), name: text(row.name), description: text(row.description), position: number(row.position), archived: boolean(row.archived), revision: revision(row.revision), updatedAt: text(row.updated_at), iconKey: row.icon_key === undefined ? undefined : normalizeQhsePolicyAxisIconKey(row.icon_key) }; }),
     objectives: rows(value.objectives).map((item) => { const row = object(item); if (row.owner_kind != null && !['person', 'vessel', 'office'].includes(String(row.owner_kind))) throw new Error('Responsable QHSE invalide.'); return { id: id(row.id), processId: id(row.process_id), title: text(row.title), description: text(row.description), ownerLabel: text(row.owner_label), ownerKind: (row.owner_kind ?? null) as QhsePolicyOwnerKind, ownerPersonId: row.owner_person_id == null ? null : number(row.owner_person_id), ownerVesselId: row.owner_vessel_id == null ? null : number(row.owner_vessel_id), dueOn: row.due_on == null ? null : text(row.due_on), progress: validateQhsePolicyProgress(number(row.progress)), archived: boolean(row.archived), revision: revision(row.revision), createdAt: text(row.created_at), updatedAt: text(row.updated_at) }; }),
     updates: rows(value.updates).map((item) => { const row = object(item); if (!['initial', 'progress'].includes(String(row.kind))) throw new Error('Historique QHSE invalide.'); return { id: id(row.id), objectiveId: id(row.objective_id), kind: row.kind as 'initial' | 'progress', progress: validateQhsePolicyProgress(number(row.progress)), occurredOn: text(row.occurred_on), note: text(row.note), actorName: text(row.actor_name), ownerLabel: row.owner_label == null ? '' : text(row.owner_label), createdAt: text(row.created_at) }; }),
     attachments: rows(value.attachments ?? []).map((item) => { const row = object(item); return { id: id(row.id), objectiveId: id(row.objective_id), updateId: id(row.update_id), fileName: text(row.file_name), mimeType: text(row.mime_type), sizeBytes: number(row.size_bytes), storageBucket: text(row.storage_bucket), storagePath: text(row.storage_path), createdAt: text(row.created_at) }; }),
@@ -40,7 +41,14 @@ async function write(client: SupabaseClient, name: string, parameters: Record<st
 }
 export async function saveQhsePolicyProcess(client: SupabaseClient, draft: QhsePolicyProcessDraft): Promise<string> {
   const value = validateQhsePolicyProcessDraft(draft);
-  return id(await write(client, 'qhse_policy_save_process', { p_id: value.id, p_name: value.name, p_description: value.description, p_position: value.position, p_expected_revision: value.expectedRevision }));
+  return id(await write(client, 'qhse_policy_save_process', { p_id: value.id, p_name: value.name, p_description: value.description, p_position: value.position, p_expected_revision: value.expectedRevision, p_icon_key: value.iconKey }));
+}
+export async function reorderQhsePolicyProcesses(client: SupabaseClient, processes: QhsePolicyProcess[]): Promise<void> {
+  await write(client, 'qhse_policy_reorder_processes', { p_processes: validateQhsePolicyProcessOrder(processes) });
+}
+export async function deleteQhsePolicyProcess(client: SupabaseClient, process: QhsePolicyProcess, transferTo?: QhsePolicyProcess): Promise<void> {
+  const value = validateQhsePolicyProcessDeletion(process, transferTo);
+  await write(client, 'qhse_policy_delete_process', { p_id: value.id, p_expected_revision: value.expectedRevision, p_transfer_to: value.transferTo, p_transfer_expected_revision: value.transferExpectedRevision });
 }
 export async function saveQhsePolicyObjective(client: SupabaseClient, draft: QhsePolicyObjectiveDraft): Promise<string> {
   const value = validateQhsePolicyObjectiveDraft(draft);

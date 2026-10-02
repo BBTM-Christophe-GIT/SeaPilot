@@ -54,6 +54,12 @@ statuts, filtres, infobulles et messages de déplacement.
 
 ## Déploiement et validation
 
+- La livraison en production utilise la version **3.67.5**, build **2026-10-02.009**,
+  après intégration de Politique QHSE 3.67.4. Le client cumule le calendrier et les
+  soldes compacts du Planning avec les axes stratégiques, leur ordre et leurs
+  icônes dans QHSE et son PDF. Aucune nouvelle dépendance ni variable d'environnement.
+  Après intégration : 323 tests conjoints réussis dans 21 fichiers, lint complet
+  et build de production réussis.
 - Version 3.67.3 : 155 tests ciblés sur neuf fichiers réussis (calendrier, modèle
   de période, demande, soldes, P1.2, requêtes, calcul partagé Équipages et préversion).
   `corepack pnpm lint` et `corepack pnpm build` réussis. Recette navigateur en

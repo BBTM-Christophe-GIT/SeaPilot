@@ -1,5 +1,7 @@
 import type { QhsePolicyAttachment, QhsePolicySnapshot } from './qhsePolicyModel';
 import { orderQhsePolicyUpdates, qhsePolicyDate, qhsePolicyTimestamp, summarizeQhsePolicyObjectives } from './qhsePolicyPresentation';
+import { resolveQhsePolicyAxisIcon, type QhsePolicyAxisIconKey } from './qhsePolicyIcons';
+import { drawQhsePolicyAxisIcon } from './qhsePolicyPdfIcons';
 import type { PDFDocument, PDFImage } from 'pdf-lib';
 
 export interface QhsePolicyExportInput {
@@ -78,7 +80,7 @@ export async function buildQhsePolicyExport(input: QhsePolicyExportInput): Promi
     const reference = `PJ${String(entries.length + 1).padStart(3, '0')}`;
     const objective = objectives.get(record.objectiveId)!; const update = updates.get(record.updateId)!;
     const process = processes.find((row) => row.id === objective.processId)!;
-    const context = `Processus : ${process.name}\nObjectif : ${objective.title}\n${update.kind === 'initial' ? 'État initial' : 'Suivi'} du ${qhsePolicyDate(update.occurredOn)} - ${update.actorName}\nEnregistré le ${qhsePolicyTimestamp(update.createdAt)}`;
+    const context = `Axe stratégique : ${process.name}\nObjectif : ${objective.title}\n${update.kind === 'initial' ? 'État initial' : 'Suivi'} du ${qhsePolicyDate(update.occurredOn)} - ${update.actorName}\nEnregistré le ${qhsePolicyTimestamp(update.createdAt)}`;
     let bytes: Uint8Array;
     try {
       bytes = new Uint8Array(await (await input.readAttachment(record)).arrayBuffer());
@@ -122,6 +124,19 @@ export async function buildQhsePolicyExport(input: QhsePolicyExportInput): Promi
       }
       cursor += 3;
     };
+    const axisHeading = (value: string, icon: QhsePolicyAxisIconKey) => {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+      const lines = doc.splitTextToSize(clean(value), 168) as string[];
+      // Keep the icon and normal-length heading together. Exceptionally long
+      // names can continue on another page without clipping the remaining text.
+      ensure(Math.min(40, Math.max(14, lines.length * 4.7 + 3)));
+      drawQhsePolicyAxisIcon(doc, icon, 15, cursor - 3.7, 8);
+      for (const line of lines) {
+        ensure(5); doc.setTextColor(...INK); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text(line, 27, cursor); cursor += 4.7;
+      }
+      cursor += Math.max(0, 8 - lines.length * 4.7) + 3;
+    };
     const table = (head: string[], body: string[][]) => {
       ensure(16);
       autoTable(doc, { startY: cursor, head: [head.map(clean)], body: body.map((row) => row.map(clean)),
@@ -139,14 +154,14 @@ export async function buildQhsePolicyExport(input: QhsePolicyExportInput): Promi
       }
       return PDFDocument.load(doc.output('arraybuffer'));
     };
-    return { doc, paragraph, table, finish };
+    return { doc, paragraph, axisHeading, table, finish };
   }
   const report = newSection('Objectifs et historique complet');
   report.paragraph('Dossier complet - politique, objectifs, suivis et pièces jointes', true);
-  report.paragraph(`Édité le ${qhsePolicyTimestamp(generatedAt.toISOString())}. Tous les processus, objectifs et suivis sont inclus, y compris les archives. Les filtres d’écran ne limitent pas ce dossier.`);
+  report.paragraph(`Édité le ${qhsePolicyTimestamp(generatedAt.toISOString())}. Tous les axes stratégiques, objectifs et suivis sont inclus, y compris les archives. Les filtres d’écran ne limitent pas ce dossier.`);
   report.paragraph(`Politique de référence : ${input.policy.title}\nLe PDF original intégral (${originalPolicy.getPageCount()} page(s)) figure après les objectifs et est aussi intégré comme fichier original.`);
   const summary = summarizeQhsePolicyObjectives(snapshot.objectives, processes);
-  report.paragraph(`${processes.length} processus - ${snapshot.objectives.length} objectifs - ${snapshot.updates.length} entrées d’historique - ${entries.length} pièces jointes.`);
+  report.paragraph(`${processes.length} ${processes.length === 1 ? 'axe stratégique' : 'axes stratégiques'} - ${snapshot.objectives.length} objectifs - ${snapshot.updates.length} entrées d’historique - ${entries.length} pièces jointes.`);
   report.paragraph(summary.total ? `Objectifs actifs : ${summary.completed}/${summary.total} réalisés - progression moyenne ${percent(summary.average ?? 0)}. Les archives sont exclues de cette moyenne.` : 'Aucun objectif actif.');
   if (entries.length) {
     report.paragraph('Index des pièces jointes', true);
@@ -157,12 +172,12 @@ export async function buildQhsePolicyExport(input: QhsePolicyExportInput): Promi
     report.paragraph('Chaque référence PJ renvoie à une annexe et à un fichier original intégré au PDF. Les fichiers bureautiques s’ouvrent depuis le panneau des pièces jointes d’un lecteur PDF compatible.');
   }
   for (const process of processes) {
-    report.paragraph(`Processus : ${process.name}${process.archived ? ' [ARCHIVÉ]' : ''}`, true);
+    report.axisHeading(`Axe stratégique : ${process.name}${process.archived ? ' [ARCHIVÉ]' : ''}`, resolveQhsePolicyAxisIcon(process));
     if (process.description) report.paragraph(process.description);
     const processObjectives = snapshot.objectives.filter((row) => row.processId === process.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
-    if (!processObjectives.length) report.paragraph('Aucun objectif dans ce processus.');
+    if (!processObjectives.length) report.paragraph('Aucun objectif dans cet axe stratégique.');
     for (const objective of processObjectives) {
-      report.paragraph(`Objectif : ${objective.title}${objective.archived ? ' [ARCHIVÉ]' : ''}${process.archived ? ' [PROCESSUS ARCHIVÉ]' : ''}`, true);
+      report.paragraph(`Objectif : ${objective.title}${objective.archived ? ' [ARCHIVÉ]' : ''}${process.archived ? ' [AXE STRATÉGIQUE ARCHIVÉ]' : ''}`, true);
       if (objective.description) report.paragraph(objective.description);
       report.paragraph(`Responsable actuel : ${objective.ownerLabel || 'Non renseigné'}\nÉchéance : ${qhsePolicyDate(objective.dueOn)} - progression courante : ${percent(objective.progress)}\nCréé le ${qhsePolicyTimestamp(objective.createdAt)} - modifié le ${qhsePolicyTimestamp(objective.updatedAt)}`);
       report.paragraph('Historique des suivis', true);
@@ -199,7 +214,7 @@ export async function buildQhsePolicyExport(input: QhsePolicyExportInput): Promi
     }
   }
   output.setTitle('Politique QHSE - Dossier complet'); output.setAuthor('BBTM - SeaPilot');
-  output.setSubject('Politique, processus, objectifs, historique et pièces jointes - archives incluses');
+  output.setSubject('Politique, axes stratégiques, objectifs, historique et pièces jointes - archives incluses');
   output.setCreationDate(generatedAt); output.setModificationDate(generatedAt);
   const bytes = await output.save();
   return { blob: new Blob([bytes.slice().buffer], { type: 'application/pdf' }), fileName: `Politique-QHSE-complete-${day}.pdf`, pageCount: output.getPageCount() };

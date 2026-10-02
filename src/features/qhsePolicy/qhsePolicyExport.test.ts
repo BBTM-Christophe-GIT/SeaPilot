@@ -1,11 +1,14 @@
 // @vitest-environment node
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, decodePDFRawStream } from 'pdf-lib';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { QhsePolicyAttachment, QhsePolicySnapshot } from './qhsePolicyModel';
 import { buildQhsePolicyExport, type QhsePolicyExportInput } from './qhsePolicyExport';
+import type { QhsePolicyAxisIconKey } from './qhsePolicyIcons';
+import * as axisPdfIcons from './qhsePolicyPdfIcons';
 
 const generatedAt = new Date('2026-10-02T10:00:00Z');
+afterEach(() => vi.restoreAllMocks());
 const blob = (bytes: Uint8Array) => new Blob([bytes.slice().buffer]);
 function snapshot(): QhsePolicySnapshot {
   return { settings: null, canEdit: false, processes: [
@@ -63,6 +66,8 @@ async function qa(name: string, report: { blob: Blob }) {
 }
 
 describe('complete QHSE policy PDF export', () => {
+  // Original multi-page PDFs, a large PNG and Office bytes exercise the real
+  // export pipeline; cold Windows runs can exceed 20 seconds under parallel CI.
   it('includes complete policy pages, archives, responsibility, dates, comments and original attachments byte for byte', async () => {
     const data = await input(); const attachedPdf = await pdfBytes('TRACE_ATTACHMENT'); const office = await docxBytes();
     const photo = new Uint8Array(await readFile('public/demo/action-plan-finding-ppe.png'));
@@ -80,10 +85,10 @@ describe('complete QHSE policy PDF export', () => {
     expect(result.images.length).toBeGreaterThan(1); expect(result.document.getPageCount()).toBeGreaterThanOrEqual(10);
     expect(result.document.getPages().filter((page) => page.getWidth() === 420 && page.getHeight() === 600)).toHaveLength(2);
     expect(data.readAttachment).toHaveBeenCalledTimes(3); await qa('qhse-policy-complete', report);
-  });
-  it('keeps long process descriptions, objective details, follow-up notes and filenames across page breaks', async () => {
+  }, 60000);
+  it('keeps long axis descriptions, objective details, follow-up notes and filenames across page breaks', async () => {
     const data = await input(); const attached = await pdfBytes('LONG_ATTACHMENT');
-    data.snapshot.processes[0].description = `${'Processus et contrôle documentaire détaillé. '.repeat(180)} TRACE_LAST_PROCESS`;
+    data.snapshot.processes[0].description = `${'Axe stratégique et contrôle documentaire détaillé. '.repeat(180)} TRACE_LAST_PROCESS`;
     data.snapshot.objectives[0].description = `${'Objectif, responsable et échéance documentés. '.repeat(200)} TRACE_LAST_OBJECTIVE`;
     data.snapshot.updates[1].note = `${'Suivi, commentaire et mesure vérifiée. '.repeat(230)} TRACE_LAST_HISTORY`;
     data.snapshot.attachments = [{ ...file('LONG', 'application/pdf', attached.length), fileName: `${'rapport de contrôle '.repeat(8)}FIN_DOCUMENT.pdf` }];
@@ -92,6 +97,65 @@ describe('complete QHSE policy PDF export', () => {
     expect(result.document.getPageCount()).toBeGreaterThan(9);
     for (const marker of ['TRACE_LAST_PROCESS', 'TRACE_LAST_OBJECTIVE', 'TRACE_LAST_HISTORY', 'FIN_DOCUMENT']) expect(result.text).toContain(marker);
     expect(result.files.find((row) => row.name.endsWith('FIN_DOCUMENT.pdf'))?.bytes).toEqual(attached); await qa('qhse-policy-long', report);
+  });
+  it('draws all six strategic-axis icons in persisted position order and uses the new wording throughout the PDF', async () => {
+    const data = await input();
+    const keys: QhsePolicyAxisIconKey[] = ['safety', 'ethics', 'health', 'environment', 'customer', 'cybersecurity'];
+    const draw = vi.spyOn(axisPdfIcons, 'drawQhsePolicyAxisIcon');
+    data.snapshot = { ...data.snapshot, objectives: [], updates: [], processes: keys.map((iconKey, position) => ({
+      ...data.snapshot.processes[0], id: `axis-${iconKey}`, name: `TRACE_AXIS_${iconKey}`, iconKey, position,
+    })).reverse() };
+    const report = await buildQhsePolicyExport(data); const result = await proof(report.blob);
+    expect(draw.mock.calls.map((call) => call[1])).toEqual(keys);
+    for (const call of draw.mock.calls) {
+      expect(call[2]).toBe(15); expect(call[3]).toBeGreaterThanOrEqual(39); expect(call[3] + call[4]).toBeLessThanOrEqual(273);
+    }
+    const headings = keys.map((key) => result.text.indexOf(`TRACE_AXIS_${key}`));
+    expect(headings.every((offset) => offset >= 0)).toBe(true);
+    expect(headings).toEqual([...headings].sort((a, b) => a - b));
+    expect(result.text).toContain('axes stratégiques'); expect(result.text).toContain('Axe stratégique');
+    expect(result.text).not.toMatch(/processus/i); expect(result.document.getSubject()).toContain('axes stratégiques');
+    expect(result.files[0].bytes).toEqual(new Uint8Array(await data.policy.blob.arrayBuffer()));
+    await qa('qhse-axes-six-icons', report);
+  });
+  it('uses saved icon choices for custom axes and recognises legacy names without losing an unknown axis', async () => {
+    const data = await input(); const draw = vi.spyOn(axisPdfIcons, 'drawQhsePolicyAxisIcon');
+    const axes: Array<{ name: string; iconKey?: QhsePolicyAxisIconKey; expected: QhsePolicyAxisIconKey }> = [
+      { name: 'Sécurité des opérations', expected: 'safety' },
+      { name: 'Éthique et conformité', expected: 'ethics' },
+      { name: 'Santé au travail', expected: 'health' },
+      { name: 'Environnement', expected: 'environment' },
+      { name: 'Satisfaction client', expected: 'customer' },
+      { name: 'Cybersécurité', expected: 'cybersecurity' },
+      { name: 'Axe personnalisé - engagements', iconKey: 'environment', expected: 'environment' },
+      { name: 'Sécurité - choix explicite général', iconKey: 'general', expected: 'general' },
+      { name: 'Axe inconnu conservé', expected: 'general' },
+    ];
+    data.snapshot = { ...data.snapshot, objectives: [], updates: [], processes: axes.map((axis, position) => ({
+      ...data.snapshot.processes[0], id: `custom-${position}`, name: axis.name, iconKey: axis.iconKey, position,
+    })) };
+    const report = await buildQhsePolicyExport(data); const result = await proof(report.blob);
+    expect(draw.mock.calls.map((call) => call[1])).toEqual(axes.map((axis) => axis.expected));
+    expect(result.text).toContain('Axe personnalisé'); expect(result.text).toContain('Axe inconnu conservé');
+    await qa('qhse-axes-legacy-and-custom', report);
+  });
+  it('keeps long axis headings and icons aligned when axis content spans several pages', async () => {
+    const data = await input();
+    const original = axisPdfIcons.drawQhsePolicyAxisIcon;
+    const positions: Array<{ page: number; y: number }> = [];
+    vi.spyOn(axisPdfIcons, 'drawQhsePolicyAxisIcon').mockImplementation((doc, key, x, y, size) => {
+      positions.push({ page: doc.getCurrentPageInfo().pageNumber, y });
+      original(doc, key, x, y, size);
+    });
+    data.snapshot.processes[0].name = `TRACE_LONG_AXIS_BEGIN ${'engagements de sécurité maritime et de qualité '.repeat(3)} TRACE_LONG_AXIS_END`;
+    data.snapshot.processes[0].description = `${'Maîtrise documentaire détaillée et engagements vérifiés. '.repeat(180)} TRACE_AXIS_CONTENT_END`;
+    data.snapshot.processes[1].name = `TRACE_ARCHIVED_AXIS_BEGIN ${'responsabilité environnementale et conformité '.repeat(3)} TRACE_ARCHIVED_AXIS_END`;
+    const report = await buildQhsePolicyExport(data); const result = await proof(report.blob);
+    expect(positions).toHaveLength(2); expect(positions[1].page).toBeGreaterThan(positions[0].page);
+    expect(positions.every((position) => position.y >= 39 && position.y + 8 <= 273)).toBe(true);
+    for (const marker of ['TRACE_LONG_AXIS_BEGIN', 'TRACE_LONG_AXIS_END', 'TRACE_AXIS_CONTENT_END', 'TRACE_ARCHIVED_AXIS_BEGIN', 'TRACE_ARCHIVED_AXIS_END']) expect(result.text).toContain(marker);
+    expect(result.text).toContain('AXE STRATÉGIQUE ARCHIVÉ');
+    await qa('qhse-axes-long-headings', report);
   });
   it('exports an empty objective register with the complete original policy and no fabricated average', async () => {
     const data = await input(); data.snapshot = { ...snapshot(), processes: [], objectives: [], updates: [] };

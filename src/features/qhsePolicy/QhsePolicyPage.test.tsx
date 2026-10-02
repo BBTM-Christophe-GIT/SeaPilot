@@ -10,7 +10,7 @@ import type { RoleKey } from '../permissions/roles';
 import { fetchCurrentUserRoles } from '../profiles/profileQueries';
 import { QhsePolicyPage } from './QhsePolicyPage';
 import type { QhsePolicyAttachment, QhsePolicyObjective, QhsePolicyObjectiveUpdate, QhsePolicySnapshot } from './qhsePolicyModel';
-import { fetchQhsePolicyOwnerOptions, fetchQhsePolicySnapshot, saveQhsePolicyObjective, saveQhsePolicyProcess, setQhsePolicyObjectiveArchived, setQhsePolicyProcessArchived } from './qhsePolicyQueries';
+import { deleteQhsePolicyProcess, fetchQhsePolicyOwnerOptions, fetchQhsePolicySnapshot, reorderQhsePolicyProcesses, saveQhsePolicyObjective, saveQhsePolicyProcess, setQhsePolicyObjectiveArchived, setQhsePolicyProcessArchived } from './qhsePolicyQueries';
 import { readQhsePolicyAttachment, saveQhsePolicyObjectiveUpdateWithAttachments } from './qhsePolicyAttachments';
 import { readQhsePolicyDocument } from './qhsePolicyFiles';
 import { buildQhsePolicyExport } from './qhsePolicyExport';
@@ -18,6 +18,7 @@ import { buildQhsePolicyExport } from './qhsePolicyExport';
 vi.mock('./qhsePolicyQueries', () => ({
   fetchQhsePolicySnapshot: vi.fn(), saveQhsePolicyProcess: vi.fn(), saveQhsePolicyObjective: vi.fn(),
   fetchQhsePolicyOwnerOptions: vi.fn(), setQhsePolicyObjectiveArchived: vi.fn(), setQhsePolicyProcessArchived: vi.fn(),
+  deleteQhsePolicyProcess: vi.fn(), reorderQhsePolicyProcesses: vi.fn(),
 }));
 vi.mock('./qhsePolicyAttachments', async (importOriginal) => ({ ...await importOriginal<typeof import('./qhsePolicyAttachments')>(), readQhsePolicyAttachment: vi.fn(), saveQhsePolicyObjectiveUpdateWithAttachments: vi.fn() }));
 vi.mock('./qhsePolicyFiles', () => ({ readQhsePolicyDocument: vi.fn() }));
@@ -41,13 +42,13 @@ const updates: QhsePolicyObjectiveUpdate[] = [
 ];
 function snapshot(overrides: Partial<QhsePolicySnapshot> = {}): QhsePolicySnapshot {
   return { settings: null, canEdit: true, processes: [
-    { id: PROCESS_QUALITY, name: 'Qualité', description: 'Maîtrise documentaire', position: 5, archived: false, revision: 2, updatedAt: '' },
-    { id: PROCESS_SAFETY, name: 'Sécurité', description: '', position: 10, archived: false, revision: 1, updatedAt: '' },
-    { id: PROCESS_OLD, name: 'Ancien processus', description: '', position: 15, archived: true, revision: 3, updatedAt: '' },
+    { id: PROCESS_QUALITY, name: 'Qualité', description: 'Maîtrise documentaire', position: 5, archived: false, revision: 2, updatedAt: '', iconKey: 'general' },
+    { id: PROCESS_SAFETY, name: 'Sécurité', description: '', position: 10, archived: false, revision: 1, updatedAt: '', iconKey: 'safety' },
+    { id: PROCESS_OLD, name: 'Ancien axe stratégique', description: '', position: 15, archived: true, revision: 3, updatedAt: '', iconKey: 'general' },
   ], objectives: [objective,
     { ...objective, id: '20000000-0000-0000-0000-000000000002', processId: PROCESS_SAFETY, title: 'Former les équipages', progress: 100 },
     { ...objective, id: '20000000-0000-0000-0000-000000000003', title: 'Objectif archivé', progress: 100, archived: true },
-    { ...objective, id: '20000000-0000-0000-0000-000000000004', processId: PROCESS_OLD, title: 'Objectif ancien processus', progress: 0 },
+    { ...objective, id: '20000000-0000-0000-0000-000000000004', processId: PROCESS_OLD, title: 'Objectif ancien axe stratégique', progress: 0 },
   ], updates, attachments: [], ...overrides };
 }
 function ContextOutlet({ sessionClient, roles }: { sessionClient: SupabaseClient; roles: RoleKey[] }) {
@@ -87,6 +88,7 @@ beforeEach(() => {
   vi.mocked(saveQhsePolicyObjective).mockResolvedValue(OBJECTIVE_ID);
   vi.mocked(saveQhsePolicyObjectiveUpdateWithAttachments).mockResolvedValue('30000000-0000-0000-0000-000000000004');
   vi.mocked(setQhsePolicyObjectiveArchived).mockResolvedValue(undefined); vi.mocked(setQhsePolicyProcessArchived).mockResolvedValue(undefined);
+  vi.mocked(deleteQhsePolicyProcess).mockResolvedValue(undefined); vi.mocked(reorderQhsePolicyProcesses).mockResolvedValue(undefined);
   vi.mocked(readQhsePolicyDocument).mockResolvedValue({ blob: new Blob(['policy'], { type: 'application/pdf' }), title: 'Politique QHSE', fileName: 'politique.pdf' });
   vi.mocked(buildQhsePolicyExport).mockResolvedValue({ blob: new Blob(['complete'], { type: 'application/pdf' }), fileName: 'Politique-QHSE-complete.pdf', pageCount: 5 });
   Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:qhse-policy-test') });
@@ -108,48 +110,49 @@ describe('Politique QHSE objectives', () => {
     const history = within(article).getAllByRole('listitem');
     expect(history.map((entry) => entry.textContent)).toEqual([expect.stringContaining('Procédures validées'), expect.stringContaining('Relecture du matin'), expect.stringContaining('Initialisation')]);
     expect(history[0]).toHaveTextContent('Sophie HAMEL'); expect(history[0]).toHaveTextContent('01/10/2026');
-    expect(screen.queryByRole('button', { name: /Ajouter|Modifier|Archiver|Réactiver/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Ajouter|Modifier|Archiver|Réactiver|Supprimer|Monter|Descendre/ })).not.toBeInTheDocument();
     expect(fixture.client.from).toHaveBeenCalledWith('user_roles'); expect(fixture.roleSelect).toHaveBeenCalledOnce();
     expect(fetchQhsePolicySnapshot).toHaveBeenCalledExactlyOnceWith(fixture.client);
     expect(saveQhsePolicyObjective).not.toHaveBeenCalled(); expect(saveQhsePolicyObjectiveUpdateWithAttachments).not.toHaveBeenCalled();
     expect(fetchQhsePolicyOwnerOptions).not.toHaveBeenCalled();
+    expect(deleteQhsePolicyProcess).not.toHaveBeenCalled(); expect(reorderQhsePolicyProcesses).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Exporter le PDF' })).toBeEnabled();
   });
 
   it('requires the server editing permission even for an administrator role', async () => {
     vi.mocked(fetchQhsePolicySnapshot).mockResolvedValue(snapshot({ canEdit: false }));
     render(<PageFixture />); await screen.findByText(objective.title);
-    expect(screen.queryByRole('button', { name: 'Ajouter un processus' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ajouter un axe stratégique' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier la politique' })).not.toBeInTheDocument();
   });
 
   it('filters processes and archives without including archived processes in the active summary', async () => {
     const user = userEvent.setup(); render(<PageFixture />); await screen.findByText(objective.title);
-    expect(screen.queryByText('Objectif archivé')).not.toBeInTheDocument(); expect(screen.queryByText('Objectif ancien processus')).not.toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('Processus'), PROCESS_SAFETY);
+    expect(screen.queryByText('Objectif archivé')).not.toBeInTheDocument(); expect(screen.queryByText('Objectif ancien axe stratégique')).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Axe stratégique'), PROCESS_SAFETY);
     expect(screen.getByText('Former les équipages')).toBeVisible(); expect(screen.queryByText(objective.title)).not.toBeInTheDocument();
-    await user.click(screen.getByLabelText('Afficher les archives')); await user.selectOptions(screen.getByLabelText('Processus'), PROCESS_OLD);
-    expect(screen.getByText('Objectif ancien processus')).toBeVisible(); expect(screen.getByText('1/2')).toBeVisible(); expect(screen.getByText('80 %')).toBeVisible();
+    await user.click(screen.getByLabelText('Afficher les archives')); await user.selectOptions(screen.getByLabelText('Axe stratégique'), PROCESS_OLD);
+    expect(screen.getByText('Objectif ancien axe stratégique')).toBeVisible(); expect(screen.getByText('1/2')).toBeVisible(); expect(screen.getByText('80 %')).toBeVisible();
     await user.click(screen.getByLabelText('Afficher les archives'));
-    expect(screen.getByLabelText('Processus')).toHaveValue(''); expect(screen.getByText(objective.title)).toBeVisible();
+    expect(screen.getByLabelText('Axe stratégique')).toHaveValue(''); expect(screen.getByText(objective.title)).toBeVisible();
   });
 
   it.each(['admin', 'direction'] as const)('lets %s rename a process while preserving its order and expected revision', async (role) => {
     const user = userEvent.setup(); render(<PageFixture roles={[role]} />);
-    await user.click(await screen.findByRole('button', { name: 'Modifier le processus Qualité' }));
-    const dialog = screen.getByRole('dialog', { name: 'Modifier le processus' });
-    await user.clear(within(dialog).getByLabelText('Nom du processus')); await user.type(within(dialog).getByLabelText('Nom du processus'), 'Qualité documentaire');
+    await user.click(await screen.findByRole('button', { name: 'Modifier l’axe stratégique Qualité' }));
+    const dialog = screen.getByRole('dialog', { name: 'Modifier l’axe stratégique' });
+    await user.clear(within(dialog).getByLabelText('Nom de l’axe stratégique')); await user.type(within(dialog).getByLabelText('Nom de l’axe stratégique'), 'Qualité documentaire');
     await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
-    await waitFor(() => expect(saveQhsePolicyProcess).toHaveBeenCalledExactlyOnceWith(client, { id: PROCESS_QUALITY, name: 'Qualité documentaire', description: 'Maîtrise documentaire', position: 5, expectedRevision: 2 }));
-    expect(await screen.findByText('Processus enregistré.')).toBeVisible();
+    await waitFor(() => expect(saveQhsePolicyProcess).toHaveBeenCalledExactlyOnceWith(client, { id: PROCESS_QUALITY, name: 'Qualité documentaire', description: 'Maîtrise documentaire', position: 5, expectedRevision: 2, iconKey: 'general' }));
+    expect(await screen.findByText('Axe stratégique enregistré.')).toBeVisible();
   });
 
   it('creates a classified objective with an initial progress and keeps progress out of metadata edits', async () => {
     const user = userEvent.setup(); render(<PageFixture />);
-    const process = await screen.findByRole('region', { name: 'Processus Qualité' });
+    const process = await screen.findByRole('region', { name: 'Axe stratégique Qualité' });
     await user.click(within(process).getByRole('button', { name: 'Ajouter un objectif' }));
     const dialog = screen.getByRole('dialog', { name: 'Ajouter un objectif' });
-    expect(within(dialog).getByLabelText('Processus')).toHaveValue(PROCESS_QUALITY);
+    expect(within(dialog).getByLabelText('Axe stratégique')).toHaveValue(PROCESS_QUALITY);
     await user.type(within(dialog).getByLabelText('Intitulé de l’objectif'), 'Réviser les consignes');
     await user.selectOptions(await within(dialog).findByLabelText('Collaborateur responsable'), '17');
     fireEvent.change(within(dialog).getByLabelText('Échéance (facultatif)'), { target: { value: '2026-12-15' } });
@@ -166,11 +169,12 @@ describe('Politique QHSE objectives', () => {
 
   it('adds new processes after the existing processes including archives', async () => {
     const user = userEvent.setup(); render(<PageFixture />);
-    await user.click(await screen.findByRole('button', { name: 'Ajouter un processus' }));
-    const dialog = screen.getByRole('dialog', { name: 'Ajouter un processus' });
-    await user.type(within(dialog).getByLabelText('Nom du processus'), 'Environnement');
+    await user.click(await screen.findByRole('button', { name: 'Ajouter un axe stratégique' }));
+    const dialog = screen.getByRole('dialog', { name: 'Ajouter un axe stratégique' });
+    await user.type(within(dialog).getByLabelText('Nom de l’axe stratégique'), 'Environnement');
+    expect(within(dialog).getByLabelText('Icône de l’axe stratégique')).toHaveValue('environment');
     await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
-    await waitFor(() => expect(saveQhsePolicyProcess).toHaveBeenCalledExactlyOnceWith(client, { name: 'Environnement', description: '', position: 16 }));
+    await waitFor(() => expect(saveQhsePolicyProcess).toHaveBeenCalledExactlyOnceWith(client, { name: 'Environnement', description: '', position: 16, iconKey: 'environment' }));
   });
 
   it.each([
@@ -179,7 +183,7 @@ describe('Politique QHSE objectives', () => {
     { kind: 'office', label: 'Bureau responsable', value: 'Armement - Cherbourg', ownerPersonId: null, ownerVesselId: null, ownerLabel: 'Armement - Cherbourg' },
   ] as const)('assigns an objective to a $kind responsible without sending stale identifiers', async ({ kind, label, value, ...owner }) => {
     const user = userEvent.setup(); render(<PageFixture roles={['direction']} />);
-    const process = await screen.findByRole('region', { name: 'Processus Qualité' });
+    const process = await screen.findByRole('region', { name: 'Axe stratégique Qualité' });
     expect(fetchQhsePolicyOwnerOptions).not.toHaveBeenCalled();
     await user.click(within(process).getByRole('button', { name: 'Ajouter un objectif' }));
     const dialog = screen.getByRole('dialog', { name: 'Ajouter un objectif' });
@@ -208,7 +212,7 @@ describe('Politique QHSE objectives', () => {
   it('retains the objective draft when loading private responsible options fails, and retries only the read', async () => {
     vi.mocked(fetchQhsePolicyOwnerOptions).mockRejectedValueOnce(new Error('Liste des responsables indisponible')).mockResolvedValueOnce({ people: [], vessels: [] });
     const user = userEvent.setup(); render(<PageFixture />);
-    const process = await screen.findByRole('region', { name: 'Processus Qualité' }); await user.click(within(process).getByRole('button', { name: 'Ajouter un objectif' }));
+    const process = await screen.findByRole('region', { name: 'Axe stratégique Qualité' }); await user.click(within(process).getByRole('button', { name: 'Ajouter un objectif' }));
     const dialog = screen.getByRole('dialog', { name: 'Ajouter un objectif' });
     await user.type(within(dialog).getByLabelText('Intitulé de l’objectif'), 'Revue documentaire');
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Liste des responsables indisponible');
@@ -228,12 +232,12 @@ describe('Politique QHSE objectives', () => {
     const oldOptions = deferred<Awaited<ReturnType<typeof fetchQhsePolicyOwnerOptions>>>();
     vi.mocked(fetchQhsePolicyOwnerOptions).mockReturnValueOnce(oldOptions.promise).mockResolvedValueOnce({ people: [{ id: 19, label: 'Nouveau responsable' }], vessels: [] });
     const user = userEvent.setup(); const { rerender } = render(<PageFixture />);
-    const process = await screen.findByRole('region', { name: 'Processus Qualité' }); await user.click(within(process).getByRole('button', { name: 'Ajouter un objectif' }));
+    const process = await screen.findByRole('region', { name: 'Axe stratégique Qualité' }); await user.click(within(process).getByRole('button', { name: 'Ajouter un objectif' }));
     await user.type(screen.getByLabelText('Intitulé de l’objectif'), 'Ancienne saisie');
     const nextClient = change === 'client' ? {} as SupabaseClient : client;
     rerender(<PageFixture sessionClient={nextClient} roles={['direction']} />);
     await screen.findByText(objective.title); expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    await user.click(within(screen.getByRole('region', { name: 'Processus Qualité' })).getByRole('button', { name: 'Ajouter un objectif' }));
+    await user.click(within(screen.getByRole('region', { name: 'Axe stratégique Qualité' })).getByRole('button', { name: 'Ajouter un objectif' }));
     await act(async () => { oldOptions.resolve({ people: [{ id: 33, label: 'Ancien responsable privé' }], vessels: [] }); });
     expect(screen.getByLabelText('Intitulé de l’objectif')).toHaveValue('');
     expect(screen.getByRole('option', { name: 'Nouveau responsable' })).toBeInTheDocument();
@@ -243,7 +247,7 @@ describe('Politique QHSE objectives', () => {
 
   it('saves native date input when creating, changing and clearing an objective deadline', async () => {
     const user = userEvent.setup(); render(<PageFixture />);
-    const process = await screen.findByRole('region', { name: 'Processus Qualité' });
+    const process = await screen.findByRole('region', { name: 'Axe stratégique Qualité' });
     await user.click(within(process).getByRole('button', { name: 'Ajouter un objectif' }));
     let dialog = screen.getByRole('dialog', { name: 'Ajouter un objectif' });
     await user.type(within(dialog).getByLabelText('Intitulé de l’objectif'), 'Préparer la revue');
@@ -351,7 +355,7 @@ describe('Politique QHSE objectives', () => {
     const downloads: string[] = [];
     vi.mocked(HTMLAnchorElement.prototype.click).mockImplementation(function (this: HTMLAnchorElement) { downloads.push(this.download); });
     const user = userEvent.setup(); render(<PageFixture />); await screen.findByText(objective.title);
-    await user.selectOptions(screen.getByLabelText('Processus'), PROCESS_SAFETY);
+    await user.selectOptions(screen.getByLabelText('Axe stratégique'), PROCESS_SAFETY);
     expect(screen.queryByText(objective.title)).not.toBeInTheDocument(); expect(screen.queryByText('Objectif archivé')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Exporter le PDF' }));
     await screen.findByText('PDF préparé. Le téléchargement a démarré.');
@@ -400,24 +404,187 @@ describe('Politique QHSE objectives', () => {
   });
 
   it('archives and restores a process while preserving the objective history', async () => {
-    const user = userEvent.setup(); render(<PageFixture />); await user.click(await screen.findByRole('button', { name: 'Archiver le processus Qualité' }));
-    const confirm = screen.getByRole('dialog', { name: 'Archiver ce processus ?' }); vi.mocked(fetchQhsePolicySnapshot).mockResolvedValue(snapshot({ processes: snapshot().processes.map((process) => process.id === PROCESS_QUALITY ? { ...process, archived: true, revision: 3 } : process) })); await user.click(within(confirm).getByRole('button', { name: 'Archiver le processus' }));
-    await waitFor(() => expect(setQhsePolicyProcessArchived).toHaveBeenCalledExactlyOnceWith(client, PROCESS_QUALITY, true, 2)); await screen.findByText('Processus archivé.'); await user.click(screen.getByLabelText('Afficher les archives'));
-    const process = await screen.findByRole('region', { name: 'Processus Qualité' }); const article = within(process).getByRole('article', { name: `Objectif ${objective.title}` }); await user.click(within(article).getByText('Détails et suivi')); expect(within(article).getAllByRole('listitem')).toHaveLength(3); expect(within(process).queryByRole('button', { name: 'Ajouter un objectif' })).not.toBeInTheDocument();
-    await user.click(within(process).getByRole('button', { name: 'Réactiver le processus Qualité' })); await user.click(within(screen.getByRole('dialog', { name: 'Réactiver ce processus ?' })).getByRole('button', { name: 'Réactiver le processus' })); await waitFor(() => expect(setQhsePolicyProcessArchived).toHaveBeenNthCalledWith(2, client, PROCESS_QUALITY, false, 3));
+    const user = userEvent.setup(); render(<PageFixture />); await user.click(await screen.findByRole('button', { name: 'Archiver l’axe stratégique Qualité' }));
+    const confirm = screen.getByRole('dialog', { name: 'Archiver cet axe stratégique ?' }); vi.mocked(fetchQhsePolicySnapshot).mockResolvedValue(snapshot({ processes: snapshot().processes.map((process) => process.id === PROCESS_QUALITY ? { ...process, archived: true, revision: 3 } : process) })); await user.click(within(confirm).getByRole('button', { name: 'Archiver l’axe stratégique' }));
+    await waitFor(() => expect(setQhsePolicyProcessArchived).toHaveBeenCalledExactlyOnceWith(client, PROCESS_QUALITY, true, 2)); await screen.findByText('Axe stratégique archivé.'); await user.click(screen.getByLabelText('Afficher les archives'));
+    const process = await screen.findByRole('region', { name: 'Axe stratégique Qualité' }); const article = within(process).getByRole('article', { name: `Objectif ${objective.title}` }); await user.click(within(article).getByText('Détails et suivi')); expect(within(article).getAllByRole('listitem')).toHaveLength(3); expect(within(process).queryByRole('button', { name: 'Ajouter un objectif' })).not.toBeInTheDocument();
+    await user.click(within(process).getByRole('button', { name: 'Réactiver l’axe stratégique Qualité' })); await user.click(within(screen.getByRole('dialog', { name: 'Réactiver cet axe stratégique ?' })).getByRole('button', { name: 'Réactiver l’axe stratégique' })); await waitFor(() => expect(setQhsePolicyProcessArchived).toHaveBeenNthCalledWith(2, client, PROCESS_QUALITY, false, 3));
   });
 
   it('blocks writes after a committed save whose refresh failed and retries only the snapshot read', async () => {
     vi.mocked(fetchQhsePolicySnapshot).mockResolvedValueOnce(snapshot()).mockRejectedValueOnce(new Error('Actualisation interrompue')).mockResolvedValueOnce(snapshot());
-    const user = userEvent.setup(); render(<PageFixture />); await user.click(await screen.findByRole('button', { name: 'Ajouter un processus' })); const dialog = screen.getByRole('dialog', { name: 'Ajouter un processus' }); await user.type(within(dialog).getByLabelText('Nom du processus'), 'Environnement'); await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Actualisation interrompue'); expect(screen.getByText('Processus enregistré.')).toBeVisible(); expect(screen.getByRole('button', { name: 'Ajouter un processus' })).toBeDisabled();
-    await user.click(screen.getByRole('button', { name: 'Réessayer' })); await waitFor(() => expect(screen.getByRole('button', { name: 'Ajouter un processus' })).toBeEnabled()); expect(saveQhsePolicyProcess).toHaveBeenCalledOnce(); expect(fetchQhsePolicySnapshot).toHaveBeenCalledTimes(3);
+    const user = userEvent.setup(); render(<PageFixture />); await user.click(await screen.findByRole('button', { name: 'Ajouter un axe stratégique' })); const dialog = screen.getByRole('dialog', { name: 'Ajouter un axe stratégique' }); await user.type(within(dialog).getByLabelText('Nom de l’axe stratégique'), 'Environnement'); await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Actualisation interrompue'); expect(screen.getByText('Axe stratégique enregistré.')).toBeVisible(); expect(screen.getByRole('button', { name: 'Ajouter un axe stratégique' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Réessayer' })); await waitFor(() => expect(screen.getByRole('button', { name: 'Ajouter un axe stratégique' })).toBeEnabled()); expect(saveQhsePolicyProcess).toHaveBeenCalledOnce(); expect(fetchQhsePolicySnapshot).toHaveBeenCalledTimes(3);
   });
 
   it.each(['client', 'roles'] as const)('discards an editor when the %s scope changes and ignores an old save completion', async (change) => {
     const pending = deferred<string>(); vi.mocked(saveQhsePolicyProcess).mockReturnValue(pending.promise);
-    const user = userEvent.setup(); const { rerender } = render(<PageFixture />); await user.click(await screen.findByRole('button', { name: 'Ajouter un processus' })); const dialog = screen.getByRole('dialog', { name: 'Ajouter un processus' }); await user.type(within(dialog).getByLabelText('Nom du processus'), 'Ancienne session'); await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
+    const user = userEvent.setup(); const { rerender } = render(<PageFixture />); await user.click(await screen.findByRole('button', { name: 'Ajouter un axe stratégique' })); const dialog = screen.getByRole('dialog', { name: 'Ajouter un axe stratégique' }); await user.type(within(dialog).getByLabelText('Nom de l’axe stratégique'), 'Ancienne session'); await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
     const nextClient = change === 'client' ? {} as SupabaseClient : client; rerender(<PageFixture sessionClient={nextClient} roles={['direction']} />); await screen.findByText(objective.title); expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    await act(async () => { pending.resolve(PROCESS_QUALITY); }); expect(screen.queryByText('Processus enregistré.')).not.toBeInTheDocument(); expect(fetchQhsePolicySnapshot).toHaveBeenCalledTimes(2); expect(screen.getByRole('button', { name: 'Ajouter un processus' })).toBeEnabled();
+    await act(async () => { pending.resolve(PROCESS_QUALITY); }); expect(screen.queryByText('Axe stratégique enregistré.')).not.toBeInTheDocument(); expect(fetchQhsePolicySnapshot).toHaveBeenCalledTimes(2); expect(screen.getByRole('button', { name: 'Ajouter un axe stratégique' })).toBeEnabled();
+  });
+
+  it('offers six domain icons and a general fallback, preserving an explicit choice after the name changes', async () => {
+    const user = userEvent.setup(); render(<PageFixture />);
+    await user.click(await screen.findByRole('button', { name: 'Ajouter un axe stratégique' }));
+    const dialog = screen.getByRole('dialog', { name: 'Ajouter un axe stratégique' });
+    const name = within(dialog).getByLabelText('Nom de l’axe stratégique');
+    const icon = within(dialog).getByLabelText('Icône de l’axe stratégique');
+    expect(within(icon).getAllByRole('option').map((option) => option.textContent)).toEqual(['Sécurité', 'Éthique, lutte contre la corruption', 'Santé, bien-être au travail et lutte contre les discriminations', 'Environnement', 'Écoute client', 'Sécurité informatique', 'Autre axe stratégique']);
+    await user.type(name, 'Sécurité informatique'); expect(icon).toHaveValue('cybersecurity');
+    await user.selectOptions(icon, 'general'); await user.clear(name); await user.type(name, 'Environnement');
+    expect(icon).toHaveValue('general'); expect(within(dialog).getByRole('img', { name: 'Icône : Autre axe stratégique' })).toBeVisible();
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() => expect(saveQhsePolicyProcess).toHaveBeenCalledExactlyOnceWith(client, { name: 'Environnement', description: '', position: 16, iconKey: 'general' }));
+  });
+
+  it('shows the saved axis icon to readers and preserves it while renaming an axis', async () => {
+    const data = snapshot(); data.processes[0] = { ...data.processes[0], iconKey: 'customer' };
+    vi.mocked(fetchQhsePolicySnapshot).mockResolvedValue(data);
+    const user = userEvent.setup(); render(<PageFixture />);
+    const region = await screen.findByRole('region', { name: 'Axe stratégique Qualité' });
+    expect(within(region).getByRole('img', { name: 'Icône : Écoute client' })).toBeVisible();
+    await user.click(within(region).getByRole('button', { name: 'Modifier l’axe stratégique Qualité' }));
+    const dialog = screen.getByRole('dialog', { name: 'Modifier l’axe stratégique' });
+    expect(within(dialog).getByLabelText('Icône de l’axe stratégique')).toHaveValue('customer');
+    await user.clear(within(dialog).getByLabelText('Nom de l’axe stratégique')); await user.type(within(dialog).getByLabelText('Nom de l’axe stratégique'), 'Sécurité');
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() => expect(saveQhsePolicyProcess).toHaveBeenCalledExactlyOnceWith(client, { id: PROCESS_QUALITY, name: 'Sécurité', description: 'Maîtrise documentaire', position: 5, expectedRevision: 2, iconKey: 'customer' }));
+  });
+
+  it('rejects a blank axis name and retains the chosen icon and name when its revision is stale', async () => {
+    vi.mocked(saveQhsePolicyProcess).mockRejectedValue(new Error('L’axe stratégique a été modifié. Actualisez avant de réessayer.'));
+    const user = userEvent.setup(); render(<PageFixture />);
+    await user.click(await screen.findByRole('button', { name: 'Modifier l’axe stratégique Qualité' }));
+    const dialog = screen.getByRole('dialog', { name: 'Modifier l’axe stratégique' });
+    const name = within(dialog).getByLabelText('Nom de l’axe stratégique');
+    await user.clear(name); await user.type(name, '   '); await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Renseignez le nom'); expect(saveQhsePolicyProcess).not.toHaveBeenCalled();
+    await user.clear(name); await user.type(name, 'Éthique'); await user.selectOptions(within(dialog).getByLabelText('Icône de l’axe stratégique'), 'ethics');
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('a été modifié'); expect(name).toHaveValue('Éthique'); expect(within(dialog).getByLabelText('Icône de l’axe stratégique')).toHaveValue('ethics');
+    expect(saveQhsePolicyProcess).toHaveBeenCalledExactlyOnceWith(client, { id: PROCESS_QUALITY, name: 'Éthique', description: 'Maîtrise documentaire', position: 5, expectedRevision: 2, iconKey: 'ethics' });
+  });
+
+  it('confirms an empty axis deletion without transferring anything and supports cancellation', async () => {
+    const data = snapshot({ objectives: [], updates: [] }); vi.mocked(fetchQhsePolicySnapshot).mockResolvedValue(data);
+    const user = userEvent.setup(); render(<PageFixture />);
+    await user.click(await screen.findByRole('button', { name: 'Supprimer l’axe stratégique Qualité' }));
+    let dialog = screen.getByRole('dialog', { name: 'Supprimer cet axe stratégique ?' });
+    expect(dialog).toHaveTextContent('ne contient aucun objectif'); expect(within(dialog).queryByLabelText('Axe stratégique de destination')).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Annuler' })); expect(deleteQhsePolicyProcess).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Supprimer l’axe stratégique Qualité' })); dialog = screen.getByRole('dialog', { name: 'Supprimer cet axe stratégique ?' });
+    vi.mocked(fetchQhsePolicySnapshot).mockResolvedValue({ ...data, processes: data.processes.filter((axis) => axis.id !== PROCESS_QUALITY) });
+    await user.click(within(dialog).getByRole('button', { name: 'Supprimer l’axe stratégique' }));
+    await waitFor(() => expect(deleteQhsePolicyProcess).toHaveBeenCalledExactlyOnceWith(client, data.processes[0], undefined));
+    await screen.findByText('Axe stratégique supprimé.'); expect(screen.queryByRole('region', { name: 'Axe stratégique Qualité' })).not.toBeInTheDocument();
+  });
+
+  it('transfers active and archived objectives with all their history and attachments before deleting an axis', async () => {
+    const file = attachment({ updateId: updates[1].id }); const data = snapshot({ attachments: [file] });
+    vi.mocked(fetchQhsePolicySnapshot).mockResolvedValue(data);
+    const user = userEvent.setup(); render(<PageFixture />);
+    await user.click(await screen.findByRole('button', { name: 'Supprimer l’axe stratégique Qualité' }));
+    const dialog = screen.getByRole('dialog', { name: 'Supprimer cet axe stratégique ?' });
+    expect(dialog).toHaveTextContent('2 objectifs, y compris les objectifs archivés');
+    const destination = within(dialog).getByLabelText('Axe stratégique de destination');
+    expect(within(destination).getAllByRole('option').map((option) => option.textContent)).toEqual(['Choisir un axe stratégique actif', 'Sécurité']);
+    expect(within(dialog).getByRole('button', { name: 'Transférer et supprimer' })).toBeDisabled(); fireEvent.submit(dialog); expect(deleteQhsePolicyProcess).not.toHaveBeenCalled();
+    await user.selectOptions(destination, PROCESS_SAFETY);
+    vi.mocked(fetchQhsePolicySnapshot).mockResolvedValue({ ...data, processes: data.processes.filter((axis) => axis.id !== PROCESS_QUALITY), objectives: data.objectives.map((item) => item.processId === PROCESS_QUALITY ? { ...item, processId: PROCESS_SAFETY } : item) });
+    await user.click(within(dialog).getByRole('button', { name: 'Transférer et supprimer' }));
+    await waitFor(() => expect(deleteQhsePolicyProcess).toHaveBeenCalledExactlyOnceWith(client, data.processes[0], data.processes[1]));
+    await screen.findByText('Objectifs transférés et axe stratégique supprimé.');
+    const target = screen.getByRole('region', { name: 'Axe stratégique Sécurité' }); const article = within(target).getByRole('article', { name: `Objectif ${objective.title}` });
+    await user.click(within(article).getByText('Détails et suivi')); expect(within(article).getAllByRole('listitem')).toHaveLength(4); expect(within(article).getByText(file.fileName)).toBeVisible();
+    await user.click(screen.getByLabelText('Afficher les archives')); expect(within(target).getByRole('article', { name: 'Objectif Objectif archivé' })).toBeVisible();
+  });
+
+  it('requires transfer for an axis containing only archived objectives and blocks it without an active destination', async () => {
+    const data = snapshot(); data.processes = data.processes.filter((axis) => axis.id !== PROCESS_SAFETY); data.objectives = data.objectives.filter((item) => item.processId === PROCESS_QUALITY && item.archived);
+    vi.mocked(fetchQhsePolicySnapshot).mockResolvedValue(data);
+    const user = userEvent.setup(); render(<PageFixture />);
+    await user.click(await screen.findByRole('button', { name: 'Supprimer l’axe stratégique Qualité' }));
+    const dialog = screen.getByRole('dialog', { name: 'Supprimer cet axe stratégique ?' });
+    expect(dialog).toHaveTextContent('1 objectif, y compris les objectifs archivés'); expect(dialog).toHaveTextContent('Créez ou réactivez');
+    expect(within(dialog).getByRole('button', { name: 'Transférer et supprimer' })).toBeDisabled();
+    fireEvent.submit(dialog); expect(deleteQhsePolicyProcess).not.toHaveBeenCalled();
+  });
+
+  it('allows an archived axis to transfer its objectives to an active axis and preserves the destination on a conflict', async () => {
+    vi.mocked(deleteQhsePolicyProcess).mockRejectedValue(new Error('La destination a été modifiée. Actualisez les axes stratégiques.'));
+    const data = snapshot(); const user = userEvent.setup(); render(<PageFixture />); await screen.findByText(objective.title); await user.click(screen.getByLabelText('Afficher les archives'));
+    await user.click(screen.getByRole('button', { name: 'Supprimer l’axe stratégique Ancien axe stratégique' }));
+    const dialog = screen.getByRole('dialog', { name: 'Supprimer cet axe stratégique ?' });
+    await user.selectOptions(within(dialog).getByLabelText('Axe stratégique de destination'), PROCESS_QUALITY); await user.click(within(dialog).getByRole('button', { name: 'Transférer et supprimer' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('destination a été modifiée'); expect(within(dialog).getByLabelText('Axe stratégique de destination')).toHaveValue(PROCESS_QUALITY);
+    expect(deleteQhsePolicyProcess).toHaveBeenCalledExactlyOnceWith(client, data.processes[2], data.processes[0]);
+  });
+
+  it('closes a stale deletion confirmation on manual refresh and reopens it with the latest source and destination revisions', async () => {
+    const data = snapshot();
+    const refreshed = { ...data, processes: data.processes.map((axis) => ({ ...axis, revision: axis.revision + 1 })) };
+    const deleted = { ...refreshed, processes: refreshed.processes.filter((axis) => axis.id !== PROCESS_QUALITY), objectives: refreshed.objectives.map((item) => item.processId === PROCESS_QUALITY ? { ...item, processId: PROCESS_SAFETY } : item) };
+    vi.mocked(fetchQhsePolicySnapshot).mockResolvedValueOnce(data).mockResolvedValueOnce(refreshed).mockResolvedValueOnce(deleted);
+    vi.mocked(deleteQhsePolicyProcess).mockRejectedValueOnce(new Error('L’axe stratégique a été modifié. Actualisez avant de réessayer.')).mockResolvedValueOnce(undefined);
+    const user = userEvent.setup(); render(<PageFixture />);
+    await user.click(await screen.findByRole('button', { name: 'Supprimer l’axe stratégique Qualité' }));
+    const stale = screen.getByRole('dialog', { name: 'Supprimer cet axe stratégique ?' });
+    await user.selectOptions(within(stale).getByLabelText('Axe stratégique de destination'), PROCESS_SAFETY); await user.click(within(stale).getByRole('button', { name: 'Transférer et supprimer' }));
+    expect(await within(stale).findByRole('alert')).toHaveTextContent('a été modifié');
+    await user.click(screen.getByRole('button', { name: 'Actualiser' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Supprimer l’axe stratégique Qualité' })).toBeEnabled());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Supprimer l’axe stratégique Qualité' }));
+    const latest = screen.getByRole('dialog', { name: 'Supprimer cet axe stratégique ?' });
+    expect(within(latest).getByLabelText('Axe stratégique de destination')).toHaveValue('');
+    await user.selectOptions(within(latest).getByLabelText('Axe stratégique de destination'), PROCESS_SAFETY); await user.click(within(latest).getByRole('button', { name: 'Transférer et supprimer' }));
+    await waitFor(() => expect(deleteQhsePolicyProcess).toHaveBeenNthCalledWith(2, client, refreshed.processes[0], refreshed.processes[1]));
+    await screen.findByText('Objectifs transférés et axe stratégique supprimé.'); expect(fetchQhsePolicySnapshot).toHaveBeenCalledTimes(3);
+  });
+
+  it('moves an axis with boundary controls, includes hidden archives and exports the saved order', async () => {
+    const data = snapshot(); const ordered = [data.processes[1], data.processes[0], data.processes[2]];
+    const saved = { ...data, processes: ordered.map((axis, index) => ({ ...axis, position: index, revision: axis.revision + 1 })) };
+    const user = userEvent.setup(); render(<PageFixture />); await screen.findByText(objective.title);
+    expect(screen.getByRole('button', { name: 'Monter l’axe stratégique Qualité' })).toBeDisabled(); expect(screen.getByRole('button', { name: 'Descendre l’axe stratégique Sécurité' })).toBeDisabled();
+    vi.mocked(fetchQhsePolicySnapshot).mockResolvedValue(saved); await user.click(screen.getByRole('button', { name: 'Descendre l’axe stratégique Qualité' }));
+    await waitFor(() => expect(reorderQhsePolicyProcesses).toHaveBeenCalledExactlyOnceWith(client, ordered)); await screen.findByText('Ordre des axes stratégiques enregistré.');
+    expect(screen.getAllByRole('region', { name: /^Axe stratégique / }).map((region) => region.getAttribute('aria-label'))).toEqual(['Axe stratégique Sécurité', 'Axe stratégique Qualité']);
+    expect(screen.getByRole('button', { name: 'Monter l’axe stratégique Sécurité' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Exporter le PDF' })); await waitFor(() => expect(buildQhsePolicyExport).toHaveBeenCalledOnce());
+    expect(vi.mocked(buildQhsePolicyExport).mock.calls[0][0].snapshot.processes).toEqual(saved.processes);
+  });
+
+  it('reorders archived axes too, without omitting axes hidden by an individual filter', async () => {
+    const data = snapshot(); const user = userEvent.setup(); render(<PageFixture />); await screen.findByText(objective.title);
+    await user.click(screen.getByLabelText('Afficher les archives')); await user.selectOptions(screen.getByLabelText('Axe stratégique'), PROCESS_OLD);
+    expect(screen.getAllByRole('region', { name: /^Axe stratégique / })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Descendre l’axe stratégique Ancien axe stratégique' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Monter l’axe stratégique Ancien axe stratégique' }));
+    await waitFor(() => expect(reorderQhsePolicyProcesses).toHaveBeenCalledExactlyOnceWith(client, [data.processes[0], data.processes[2], data.processes[1]]));
+  });
+
+  it('keeps the current axis order when a reorder revision conflicts', async () => {
+    vi.mocked(reorderQhsePolicyProcesses).mockRejectedValue(new Error('L’ordre a été modifié. Actualisez avant de réessayer.'));
+    const user = userEvent.setup(); render(<PageFixture />); await screen.findByText(objective.title);
+    await user.click(screen.getByRole('button', { name: 'Descendre l’axe stratégique Qualité' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('ordre a été modifié');
+    expect(screen.getAllByRole('region', { name: /^Axe stratégique / }).map((region) => region.getAttribute('aria-label'))).toEqual(['Axe stratégique Qualité', 'Axe stratégique Sécurité']);
+    expect(fetchQhsePolicySnapshot).toHaveBeenCalledOnce();
+  });
+
+  it('blocks duplicate deletion and ignores the completion after the authenticated scope changes', async () => {
+    const pending = deferred<void>(); vi.mocked(deleteQhsePolicyProcess).mockReturnValue(pending.promise);
+    const user = userEvent.setup(); const { rerender } = render(<PageFixture />);
+    await user.click(await screen.findByRole('button', { name: 'Supprimer l’axe stratégique Qualité' }));
+    const dialog = screen.getByRole('dialog', { name: 'Supprimer cet axe stratégique ?' });
+    await user.selectOptions(within(dialog).getByLabelText('Axe stratégique de destination'), PROCESS_SAFETY); await user.click(within(dialog).getByRole('button', { name: 'Transférer et supprimer' }));
+    expect(within(dialog).getByRole('button', { name: 'Fermer' })).toBeDisabled(); await user.keyboard('{Escape}'); fireEvent.submit(dialog); expect(deleteQhsePolicyProcess).toHaveBeenCalledOnce();
+    vi.mocked(fetchQhsePolicySnapshot).mockResolvedValue(snapshot({ canEdit: false })); rerender(<PageFixture roles={['marin']} />); await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await act(async () => { pending.resolve(); }); expect(screen.queryByText('Objectifs transférés et axe stratégique supprimé.')).not.toBeInTheDocument(); expect(fetchQhsePolicySnapshot).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('button', { name: /Supprimer|Monter|Descendre/ })).not.toBeInTheDocument();
   });
 });
