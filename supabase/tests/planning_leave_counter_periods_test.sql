@@ -11,7 +11,7 @@ begin
   select id into strict company from public.companies where code='bbtm';
   insert into public.companies(code,name) values('leave-counter-fixture-'||gen_random_uuid(),'Leave counter foreign fixture') returning id into other_company;
   insert into public.people(company_id,first_name,last_name,active) values(other_company,'Foreign','LEAVE COUNTER FIXTURE',true) returning id into other_person;
-  insert into public.planning_leave_counter_people(company_id,person_id) values(other_company,other_person);
+  insert into public.planning_leave_counter_people(company_id,person_id,request_balance_kind) values(other_company,other_person,'leave_rtt');
   insert into public.planning_leave_counter_periods(company_id,person_id,counter_type,starts_on,ends_on,entitlement)
   values(other_company,other_person,'leave','2026-01-01','2026-12-31',25);
   update public.role_module_permissions set is_visible=true where module_key='planning';
@@ -24,7 +24,8 @@ begin
     insert into public.people(company_id,user_id,first_name,last_name,hired_on,active)
     values(company,actor,role_name,'LEAVE COUNTER FIXTURE','2000-01-01',true) returning id into person;
     people_ids:=array_append(people_ids,person);
-    insert into public.planning_leave_counter_people(company_id,person_id) values(company,person);
+    -- Dedicated office fixtures are configured by the database setup, never the client.
+    insert into public.planning_leave_counter_people(company_id,person_id,request_balance_kind) values(company,person,'leave_rtt');
     insert into public.planning_leave_counter_periods(company_id,person_id,counter_type,starts_on,ends_on,entitlement)
     values(company,person,'leave','2026-01-01','2026-12-31',25),(company,person,'rtt','2026-01-01','2026-12-31',12);
   end loop;
@@ -60,6 +61,7 @@ begin
     execute 'set local role authenticated';
     context:=public.get_planning_absence_balance_context(person);
     assert context->>'kind'='leave_rtt' and (context#>>'{person,id}')::bigint=person, 'Own counter context incorrect';
+    assert context->>'request_balance_kind'='leave_rtt', 'Dedicated office request display incorrect';
     assert jsonb_array_length(context->'counter_periods')=2, 'Own counter periods missing';
     assert context->'crew_checkpoints'='[]'::jsonb and context#>'{crew_sources,days}'='[]'::jsonb, 'Staff context leaked crew data';
     assert not ((context->'person') ?| array['user_id','birth_date','identity_document_number','function_label']), 'Excess personnel fields in context';
@@ -127,7 +129,7 @@ begin
       begin
         perform public.save_planning_leave_counter_period(generic_person,'leave','2026-01-01','2026-12-31',25);
         raise exception 'Ineligible person gained leave/RTT rights';
-      exception when invalid_parameter_value then null; end;
+      exception when insufficient_privilege then null; end;
     else
       begin
         perform public.save_planning_leave_counter_period(person,'leave','2026-01-01','2026-12-31',99);

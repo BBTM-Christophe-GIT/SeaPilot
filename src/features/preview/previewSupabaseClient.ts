@@ -1171,8 +1171,9 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   planning_rotation_occurrences: [],
   planning_templates: [],
   planning_absences: [],
-  planning_leave_counter_people: [{ person_id: 111 }, { person_id: 112 }],
+  planning_leave_counter_people: [{ person_id: 111, request_balance_kind: 'leave_rtt' }, { person_id: 112, request_balance_kind: 'leave_rtt' }],
   planning_leave_counter_periods: [],
+  planning_crew_balance_checkpoints: [],
   planning_conflict_cases: [],
   planning_conflict_case_history: [],
   planning_manning_matrices: [{
@@ -2106,8 +2107,8 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     const annual = functionName === 'save_planning_leave_rights_period';
     const startsOn = String(args.p_starts_on || '');
     const endsOn = String(args.p_ends_on || '');
-    const enrolled = previewRows('planning_leave_counter_people').some((person) => Number(person.person_id) === personId);
-    if (!annual && !enrolled) return createPreviewQuery({ data: null, error: { code: '22023', message: 'Activez les droits Congés et RTT pour cette personne.' } });
+    const enrollment = previewRows('planning_leave_counter_people').find((person) => Number(person.person_id) === personId);
+    if (enrollment?.request_balance_kind !== 'leave_rtt') return createPreviewQuery({ data: null, error: { code: '42501', message: 'Les droits annuels sont réservés aux compteurs Congés et RTT dédiés.' } });
     const entitlement = (value: unknown) => value === null || value === undefined || value === '' ? NaN : Number(value);
     const drafts = annual ? [
       { personId, counterType: 'leave' as const, startsOn, endsOn, entitlement: entitlement(args.p_leave_entitlement) },
@@ -2125,7 +2126,6 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       && (period.starts_on !== startsOn || period.ends_on !== endsOn)))) {
       return createPreviewQuery({ data: null, error: { code: '23P01', message: 'Cette période chevauche des droits existants.' } });
     }
-    if (!enrolled) previewRows('planning_leave_counter_people').push({ person_id: personId });
     let savedId = 0;
     drafts.forEach((draft) => {
       const existing = periods.find((period) => Number(period.person_id) === personId && period.counter_type === draft.counterType && period.starts_on === startsOn && period.ends_on === endsOn);
@@ -2138,14 +2138,28 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   const qhsePolicyResult = previewQhsePolicyRpc(functionName, args);
   if (qhsePolicyResult) return createPreviewQuery(qhsePolicyResult);
   if (functionName === 'get_planning_absence_balance_context') {
-    const planningPerson = createPlanningPreviewOverview(todayPlanningDate()).people.find((person) => person.id === Number(args.p_person_id));
+    const today = todayPlanningDate();
+    const overview = createPlanningPreviewOverview(today);
+    const planningPerson = overview.people.find((person) => person.id === Number(args.p_person_id));
     const person = planningPerson ? { id: planningPerson.id, first_name: planningPerson.firstName, last_name: planningPerson.lastName, hired_on: planningPerson.hiredOn, departed_on: planningPerson.departedOn, active: planningPerson.active } : previewRows('people').find((row) => Number(row.id) === Number(args.p_person_id));
     if (!person) return createPreviewQuery({ data: null, error: { message: 'Personne de démonstration introuvable.' } });
+    const enrollment = previewRows('planning_leave_counter_people').find((row) => Number(row.person_id) === Number(person.id));
+    const requestKind = enrollment?.request_balance_kind === 'leave_rtt' ? 'leave_rtt' : 'crew';
+    const checkpoints = requestKind === 'crew' ? previewRows('planning_crew_balance_checkpoints').filter((row) => Number(row.person_id) === Number(person.id)) : [];
+    const sourceFloor = checkpoints.map((row) => String(row.as_of)).filter((date) => date <= today).sort().at(-1);
+    const assignments = !sourceFloor ? [] : overview.assignments.filter((row) => row.crewPersonId === Number(person.id) && row.endsOn >= sourceFloor && row.startsOn <= today)
+      .map((row) => ({ id: row.id, vessel_id: row.vesselId, crew_person_id: row.crewPersonId, starts_on: row.startsOn, ends_on: row.endsOn, status_label: row.statusLabel, confirmation_status: row.confirmationStatus, updated_at: row.updatedAt }));
+    const periods = !sourceFloor ? [] : overview.periods.filter((row) => row.personId === Number(person.id) && row.endsOn >= sourceFloor && row.startsOn <= today)
+      .map((row) => ({ id: row.id, vessel_id: row.vesselId, person_id: row.personId, crew_name: row.crewName, starts_on: row.startsOn, ends_on: row.endsOn, sailor_status: row.sailorStatus }));
+    const days = !sourceFloor ? [] : overview.days.filter((row) => row.personId === Number(person.id) && row.workDate >= sourceFloor && row.workDate <= today && row.sourceLabel !== 'seapilot-vessel-location')
+      .map((row) => ({ id: row.id, vessel_id: row.vesselId, person_id: row.personId, crew_name: row.crewName, work_date: row.workDate, sailor_status: row.sailorStatus, day_status: row.dayStatus, source_label: row.sourceLabel, slot365: row.slot365 }));
     return createPreviewQuery({ data: {
-      kind: previewRows('planning_leave_counter_people').some((row) => Number(row.person_id) === Number(person.id)) ? 'leave_rtt' : 'crew',
+      kind: enrollment ? 'leave_rtt' : 'crew', request_balance_kind: requestKind,
       person: { id: person.id, first_name: person.first_name, last_name: person.last_name, hired_on: person.hired_on, departed_on: person.departed_on, active: person.active },
       counter_periods: structuredClone(previewRows('planning_leave_counter_periods').filter((row) => Number(row.person_id) === Number(person.id))),
-      absences: [], crew_checkpoints: [], crew_sources: { assignments: [], periods: [], days: [] },
+      absences: structuredClone(previewRows('planning_absences').filter((row) => Number(row.person_id) === Number(person.id)).map(({ id, absence_type, starts_at, ends_at, status, updated_at }) => ({ id, absence_type, starts_at, ends_at, status, updated_at }))),
+      crew_checkpoints: structuredClone(checkpoints.map(({ person_id, as_of, balance }) => ({ person_id, as_of, balance }))),
+      crew_sources: { assignments, periods, days },
     }, error: null });
   }
   if (functionName === 'projects_set_favorite') {

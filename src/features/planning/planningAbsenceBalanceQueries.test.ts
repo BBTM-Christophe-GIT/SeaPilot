@@ -1,6 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveCounterPeriod, savePlanningLeaveRightsPeriod } from './planningAbsenceBalanceQueries';
+import { getPlanningRequestCrewBalance } from './planningAbsenceBalance';
+import { buildPlanningCrewBalanceDays } from './planningCrewBalance';
+import { EMPTY_PLANNING_OVERVIEW } from './usePlanningOverview';
 
 function rpcClient(data: unknown, error: unknown = null) { const rpc = vi.fn().mockResolvedValue({ data, error }); return { client: { rpc } as unknown as SupabaseClient, rpc }; }
 const raw = { kind: 'leave_rtt', person: { id: 15, first_name: 'Christophe', last_name: 'MINASSIAN', hired_on: '2020-01-01', departed_on: null, active: true }, counter_periods: [{ id: 1, counter_type: 'leave', starts_on: '2026-01-01', ends_on: '2026-12-31', entitlement: '0.00' }], absences: [{ id: 10, absence_type: 'rtt', starts_at: '2026-10-01T06:00:00Z', ends_at: '2026-10-01T22:00:00Z', status: 'approved', updated_at: '2026-09-01T00:00:00Z' }], crew_checkpoints: [], crew_sources: { assignments: [], periods: [], days: [] } };
@@ -12,6 +15,34 @@ describe('selected-person balance query', () => {
     expect(rpc).toHaveBeenCalledWith('get_planning_absence_balance_context', { p_person_id: 15 });
     expect(value.counterPeriods[0]).toMatchObject({ counterType: 'leave', entitlement: 0 });
     expect(value.absences[0]).toMatchObject({ absenceType: 'rtt', endsOn: '2026-10-01', reason: '', requestedBy: '', reviewComment: '' });
+    expect(value.requestBalanceKind).toBe('leave_rtt');
+  });
+  it('retains configurable rights while mapping the exact crew inputs for an enrolled collaborator', async () => {
+    const data = { ...raw, request_balance_kind: 'crew',
+      person: { ...raw.person, first_name: 'Éléonore', last_name: 'EQUIPAGE' },
+      absences: [{ ...raw.absences[0], starts_at: '2026-10-03T06:00:00Z', ends_at: '2026-10-03T22:00:00Z' }],
+      crew_checkpoints: [{ person_id: 15, as_of: '2026-09-30', balance: '10.00' }, { person_id: 15, as_of: '2026-10-20', balance: 80 }],
+      crew_sources: {
+        assignments: [{ id: 23, vessel_id: 2, crew_person_id: 15, starts_on: '2026-10-01', ends_on: '2026-10-04', status_label: 'En Mer', confirmation_status: 'confirmed', updated_at: '2026-09-29T10:00:00Z' }],
+        periods: [{ id: 40, vessel_id: 2, person_id: null, crew_name: 'EQUIPAGE Éléonore', starts_on: '2026-09-30', ends_on: '2026-10-04', sailor_status: 'En Mer' }],
+        days: [{ id: 50, vessel_id: 2, person_id: 15, work_date: '2026-10-02', sailor_status: 'À Terre', source_label: 'seapilot-assignment-note', slot365: 'assignment:23' }],
+      },
+    };
+    const context = await fetchPlanningAbsenceBalanceContext(rpcClient(data).client, 15);
+    expect(context).toMatchObject({ kind: 'leave_rtt', requestBalanceKind: 'crew' });
+    expect(context.counterPeriods[0].entitlement).toBe(0);
+    const fullOverview = { ...EMPTY_PLANNING_OVERVIEW, people: [context.person], ...context.crewSources };
+    const crewView = buildPlanningCrewBalanceDays(context.person, fullOverview, context.absences, context.crewCheckpoints, { start: '2026-09-30', end: '2026-10-04' }).get('2026-10-04');
+    expect(getPlanningRequestCrewBalance(context, '2026-10-04')).toEqual(crewView);
+    expect(crewView?.value).toBe(11.6);
+  });
+  it('trusts the persisted display choice after a name change and falls back only when the old RPC omits it', async () => {
+    const context = await fetchPlanningAbsenceBalanceContext(rpcClient({ ...raw, request_balance_kind: 'leave_rtt', person: { ...raw.person, first_name: 'Prénom modifié', last_name: 'Nom modifié' } }).client, 15);
+    expect(context.requestBalanceKind).toBe('leave_rtt');
+    expect((await fetchPlanningAbsenceBalanceContext(rpcClient({ ...raw, kind: 'crew' }).client, 15)).requestBalanceKind).toBe('crew');
+  });
+  it.each([null, '', 'unknown'])('rejects an explicitly invalid request display kind %j', async (requestBalanceKind) => {
+    await expect(fetchPlanningAbsenceBalanceContext(rpcClient({ ...raw, request_balance_kind: requestBalanceKind }).client, 15)).rejects.toThrow('incomplètes');
   });
   it.each([null, { ...raw, person: { ...raw.person, id: 9 } }, { ...raw, counter_periods: [{ ...raw.counter_periods[0], entitlement: null }] }, { ...raw, crew_checkpoints: [{ person_id: 9, as_of: '2026-10-01', balance: 10 }] }])('rejects incomplete or different-person data instead of displaying a zero', async (data) => await expect(fetchPlanningAbsenceBalanceContext(rpcClient(data).client, 15)).rejects.toThrow());
   it('distinguishes denied access and retryable loading failures', async () => {

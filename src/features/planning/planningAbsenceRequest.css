@@ -1,0 +1,21 @@
+.planning-absence-request .app-dialog.app-dialog--lg { --dialog-width:1040px; }
+.planning-absence-request .app-dialog__header { min-height:66px; padding:16px 22px; }
+.planning-absence-request .app-dialog__identity h2 { font-size:22px; }
+.planning-absence-request .app-dialog__description { padding:10px 22px; font-size:14px; }
+.planning-absence-request .app-dialog__content { padding:18px 22px; }
+.planning-absence-request .planning-p12-form { gap:16px; padding:0; border:0; border-radius:0; background:#fff; }
+.planning-absence-request .planning-p12-form > label { gap:6px; font-size:13px; }
+.planning-absence-request .planning-p12-form > label :is(select,textarea) { min-height:44px; padding:10px 12px; border-radius:9px; font-size:14px; }
+.planning-absence-request .planning-p12-form > label textarea { min-height:64px; }
+.planning-absence-request .app-dialog__footer { padding:12px 22px; }
+.planning-absence-request .app-dialog__footer button { min-height:44px; font-size:14px; }
+@media (max-width:600px) {
+  .planning-absence-request .app-dialog-backdrop { padding:10px; place-items:center; }
+  .planning-absence-request .app-dialog { max-height:calc(100dvh - 20px); border-radius:16px; }
+  .planning-absence-request .app-dialog__header { padding:14px 16px; }
+  .planning-absence-request .app-dialog__identity h2 { font-size:18px; }
+  .planning-absence-request .app-dialog__description { padding:10px 16px; font-size:13px; }
+  .planning-absence-request .app-dialog__content { padding:14px 16px; }
+  .planning-absence-request .planning-p12-form { gap:13px; }
+  .planning-absence-request .app-dialog__footer { padding:10px 16px max(10px,env(safe-area-inset-bottom)); }
+}

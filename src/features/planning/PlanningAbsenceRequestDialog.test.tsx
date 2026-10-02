@@ -20,7 +20,7 @@ const people: PlanningPerson[] = [
 ];
 function balanceContext(personId: number, staff = false): PlanningAbsenceBalanceContext {
   return {
-    kind: staff ? 'leave_rtt' : 'crew', person: people.find((person) => person.id === personId)!,
+    kind: staff ? 'leave_rtt' : 'crew', requestBalanceKind: staff ? 'leave_rtt' : 'crew', person: people.find((person) => person.id === personId)!,
     counterPeriods: staff ? [
       { id: 1, counterType: 'leave', startsOn: '2026-06-01', endsOn: '2027-05-31', entitlement: 25 },
       { id: 2, counterType: 'rtt', startsOn: '2026-06-01', endsOn: '2027-05-31', entitlement: 8 },
@@ -61,7 +61,9 @@ describe('dedicated leave request dialog', () => {
     expect(within(dialog).queryByRole('option', { name: 'Indisponibilité' })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('button', { name: 'Nouvelle demande' })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('tab')).not.toBeInTheDocument();
-    expect(within(dialog).getAllByRole('button')).toHaveLength(3);
+    expect(within(dialog).getByRole('button', { name: /Période/ })).toBeVisible();
+    expect(within(dialog).queryByLabelText('Début')).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Fin')).not.toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Envoyer la demande' }));
     await waitFor(() => expect(input.onClose).toHaveBeenCalledOnce());
     expect(savePlanningAbsence).toHaveBeenCalledWith(input.client, expect.objectContaining({ personId: 11, absenceType: 'leave', startsAt: '2026-09-14T08:00', endsAt: '2026-09-14T18:00' }));
@@ -240,12 +242,10 @@ describe('dedicated leave request dialog', () => {
     expect(savePlanningAbsence).not.toHaveBeenCalled();
   });
 
-  it('applies annual Congés and RTT rights to another collaborator while preserving the selected request', async () => {
+  it('keeps another crew collaborator read-only in the rights window while preserving the request', async () => {
     const user = userEvent.setup();
     const input = props();
-    let enrolled = false;
-    vi.mocked(fetchPlanningAbsenceBalanceContext).mockImplementation(async (_client, personId) => balanceContext(personId, personId === 11 || enrolled));
-    vi.mocked(savePlanningLeaveRightsPeriod).mockImplementation(async () => { enrolled = true; });
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockImplementation(async (_client, personId) => balanceContext(personId, personId === 11));
     render(<PlanningAbsenceRequestDialog {...input} canManageBalances />);
     const request = screen.getByRole('dialog', { name: 'Demandes et indisponibilités' });
     await waitFor(() => expect(within(request).getByRole('button', { name: 'Fermer' })).toHaveFocus());
@@ -254,18 +254,13 @@ describe('dedicated leave request dialog', () => {
     const editor = screen.getByRole('dialog', { name: 'Périodes de Droits Congés' });
     await user.selectOptions(within(editor).getByLabelText('Collaborateur'), '10');
     await waitFor(() => expect(fetchPlanningAbsenceBalanceContext).toHaveBeenCalledWith(input.client, 10));
-    const leave = within(editor).getByLabelText('Total Congés (jours)');
-    const rtt = within(editor).getByLabelText('Total RTT (jours)');
-    await waitFor(() => expect(leave).toBeEnabled());
-    await user.clear(leave);
-    await user.type(leave, '25');
-    await user.clear(rtt);
-    await user.type(rtt, '8,5');
-    await user.click(within(editor).getByRole('button', { name: 'Enregistrer les droits' }));
-    await waitFor(() => expect(savePlanningLeaveRightsPeriod).toHaveBeenCalledExactlyOnceWith(input.client, {
-      personId: 10, startsOn: '2026-06-01', endsOn: '2027-05-31', leaveEntitlement: 25, rttEntitlement: 8.5,
-    }));
-    expect(await within(editor).findByRole('status')).toHaveTextContent(/Droits enregistrés/);
+    expect(await within(editor).findByText(/Les droits annuels ne s’appliquent pas/)).toBeVisible();
+    expect(within(editor).getByText('Solde de Congés/Repos au 10/09/2026')).toBeVisible();
+    expect(within(editor).queryByLabelText('Total Congés (jours)')).not.toBeInTheDocument();
+    expect(within(editor).queryByLabelText('Total RTT (jours)')).not.toBeInTheDocument();
+    expect(within(editor).queryByRole('button', { name: 'Enregistrer les droits' })).not.toBeInTheDocument();
+    expect(savePlanningLeaveRightsPeriod).not.toHaveBeenCalled();
+    expect(savePlanningLeaveCounterPeriod).not.toHaveBeenCalled();
     expect(within(request).getByLabelText('Marin')).toHaveValue('11');
     expect(within(request).getByLabelText('Motif')).toHaveValue('Demande à conserver');
     expect(within(screen.getByLabelText('Compteur RTT')).getByText('Droits', { selector: 'dt' }).nextElementSibling).toHaveTextContent('8 j');
@@ -292,5 +287,44 @@ describe('dedicated leave request dialog', () => {
     await waitFor(() => expect(input.onClose).toHaveBeenCalledOnce());
     expect(savePlanningLeaveCounterPeriod).not.toHaveBeenCalled();
     expect(savePlanningLeaveRightsPeriod).not.toHaveBeenCalled();
+  });
+
+  it('applies a calendar range, updates the counter projection and sends the chosen dates only on submission', async () => {
+    const user = userEvent.setup();
+    const input = props();
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValue(balanceContext(11, true));
+    render(<PlanningAbsenceRequestDialog {...input} canManageBalances />);
+    await screen.findByLabelText('Compteur Congés');
+    await user.click(screen.getByRole('button', { name: /^Période :/ }));
+    const calendar = screen.getByRole('dialog', { name: 'Choisir la période' });
+    expect(screen.getByRole('button', { name: 'Envoyer la demande' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Périodes de Droits Congés' })).not.toBeInTheDocument();
+    await user.click(within(calendar).getByRole('button', { name: 'lundi 14 septembre 2026' }));
+    await user.click(within(calendar).getByRole('button', { name: 'vendredi 18 septembre 2026' }));
+    fireEvent.submit(screen.getByRole('dialog', { name: 'Demandes et indisponibilités' }));
+    expect(savePlanningAbsence).not.toHaveBeenCalled();
+    await user.click(within(calendar).getByRole('button', { name: 'Appliquer' }));
+    expect(screen.getByRole('button', { name: /^Période :/ })).toHaveTextContent('Du 14 au 18 septembre 2026');
+    expect(within(screen.getByLabelText('Compteur Congés')).getByText('Après validation', { selector: 'dt' }).nextElementSibling).toHaveTextContent('20 j');
+    expect(input.onClose).not.toHaveBeenCalled();
+    expect(savePlanningAbsence).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Envoyer la demande' }));
+    await waitFor(() => expect(savePlanningAbsence).toHaveBeenCalledExactlyOnceWith(input.client, expect.objectContaining({ startsAt: '2026-09-14T08:00', endsAt: '2026-09-18T18:00' })));
+  });
+
+  it('Escape discards the calendar draft without closing or submitting the request', async () => {
+    const user = userEvent.setup();
+    const input = props();
+    render(<PlanningAbsenceRequestDialog {...input} />);
+    const trigger = screen.getByRole('button', { name: /^Période :/ });
+    await user.click(trigger);
+    await user.click(within(screen.getByRole('dialog', { name: 'Choisir la période' })).getByRole('button', { name: 'vendredi 18 septembre 2026' }));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Choisir la période' })).not.toBeInTheDocument();
+    expect(trigger).toHaveTextContent('14 septembre 2026');
+    expect(trigger).toHaveFocus();
+    expect(input.onClose).not.toHaveBeenCalled();
+    expect(savePlanningAbsence).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Envoyer la demande' })).toBeEnabled();
   });
 });
