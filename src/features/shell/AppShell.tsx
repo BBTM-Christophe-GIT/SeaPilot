@@ -133,6 +133,7 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   home: LayoutDashboard,
   kpi: BarChart3,
   qhse: ShieldCheck,
+  qhsePolicy: ShieldCheck,
   chemicals: FlaskConical,
   emergencyExercises: BookOpenCheck,
   lsa: LifeBuoy,

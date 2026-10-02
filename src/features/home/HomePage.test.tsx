@@ -2,15 +2,17 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { RoleKey } from '../permissions/roles';
+import { APP_MODULES } from '../permissions/moduleAccess';
 import { previewSupabaseClient } from '../preview/previewSupabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { HomePage } from './HomePage';
 
-function renderHome(role: RoleKey) {
+function renderHome(role: RoleKey, policyHidden = false) {
   const context: AppShellOutletContext = {
     roles: [role],
     client: previewSupabaseClient,
     previewMode: true,
+    ...(policyHidden ? { visibleModules: APP_MODULES.filter((module) => module.key !== 'qhsePolicy') } : {}),
     currentPerson: {
       id: 9301,
       firstName: 'Arthur',
@@ -33,12 +35,20 @@ function renderHome(role: RoleKey) {
 }
 
 describe('HomePage', () => {
+  it('respects a disabled QHSE policy module on the home page', () => {
+    renderHome('marin', true);
+    expect(screen.queryByRole('region', { name: 'Politique QHSE' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Bonjour Arthur' })).toBeInTheDocument();
+  });
   it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as const)(
     'renders the consolidated dashboard for the %s role',
     async (role) => {
       renderHome(role);
 
       expect(screen.getByRole('heading', { name: 'Bonjour Arthur' })).toBeInTheDocument();
+      const policy = screen.getByRole('region', { name: 'Politique QHSE' });
+      expect(policy.compareDocumentPosition(screen.getByRole('heading', { name: 'Bonjour Arthur' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.getByRole('link', { name: 'Consulter la politique' })).toHaveAttribute('href', '/modules/qhsePolicy#politique');
       expect(screen.getByRole('heading', { name: 'Priorités & échéances' })).toBeInTheDocument();
       expect(screen.getByText('File consolidée')).toBeInTheDocument();
       expect(screen.getByRole('heading', { name: 'Prochaines dates clés' })).toBeInTheDocument();

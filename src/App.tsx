@@ -33,6 +33,7 @@ const EmergencyExercisesPage = lazy(() => import('./features/emergencyExercises/
 const PlanningPage = lazy(() => import('./features/planning/PlanningPage').then((module) => ({ default: module.PlanningPage })));
 const KpiPage = lazy(() => import('./features/kpi/KpiPage').then((module) => ({ default: module.KpiPage })));
 const HomePage = lazy(() => import('./features/home/HomePage').then((module) => ({ default: module.HomePage })));
+const QhsePolicyPage = lazy(() => import('./features/qhsePolicy/QhsePolicyPage').then((module) => ({ default: module.QhsePolicyPage })));
 const BillingElementsPage = lazy(() => import('./features/projects/BillingElementsPage').then((module) => ({ default: module.BillingElementsPage })));
 const AnnualReviewsPage = lazy(() => import('./features/annualReviews/AnnualReviewsPage').then((module) => ({ default: module.AnnualReviewsPage })));
 const DisciplinaryPage = lazy(() => import('./features/disciplinary/DisciplinaryPage').then((module) => ({ default: module.DisciplinaryPage })));
@@ -82,6 +83,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des liens utiles…</div>}><UsefulLinksPage /></Suspense>
                 ) : module.key === 'admin' ? (
                   <AdminPage client={previewMode ? previewSupabaseClient : undefined} previewMode={previewMode} />
+                ) : module.key === 'qhsePolicy' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement de la politique QHSE…</div>}><QhsePolicyPage /></Suspense>
                 ) : module.key === 'kpi' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des indicateurs HSE…</div>}><KpiPage /></Suspense>
                 ) : module.key === 'emergencyExercises' ? (
