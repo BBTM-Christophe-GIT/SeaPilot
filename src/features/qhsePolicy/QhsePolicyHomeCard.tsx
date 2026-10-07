@@ -6,7 +6,7 @@ import { QhsePolicyAxisIcon, qhsePolicyAxisIconLabel, resolveQhsePolicyAxisIcon 
 import type { QhsePolicySnapshot } from './qhsePolicyModel';
 import { fetchQhsePolicySnapshot } from './qhsePolicyQueries';
 import { qhsePolicyPercent, summarizeQhsePolicyObjectives } from './qhsePolicyPresentation';
-import './qhsePolicy.css';
+import './QhsePolicyHomeCard.css';
 
 export function QhsePolicyHomeCard({ client }: { client: SupabaseClient }) {
   const [revision, setRevision] = useState(0);
@@ -30,10 +30,9 @@ export function QhsePolicyHomeCard({ client }: { client: SupabaseClient }) {
       process,
       summary: summarizeQhsePolicyObjectives(snapshot.objectives, [process]),
       iconKey: resolveQhsePolicyAxisIcon(process),
-    }))
-    .filter((axis) => axis.summary.total > 0) : [];
+    })) : [];
 
-  return <section className="qhse-policy-home" aria-label="Politique QHSE" aria-busy={!current}>
+  return <section className="qhse-policy-home-card" aria-label="Politique QHSE" aria-busy={!current}>
     <header className="qhse-policy-home__header">
       <div className="qhse-policy-home__identity"><span className="qhse-policy-home__icon"><ShieldCheck size={23} aria-hidden="true" /></span><div><h2>Objectifs de la politique</h2><p>Suivi de nos engagements par axe stratégique.</p></div></div>
       <div className="qhse-policy-home__links"><Link to="/modules/qhsePolicy#politique"><FileText size={16} aria-hidden="true" />Consulter la politique</Link><Link to="/modules/qhsePolicy">Voir les objectifs<ArrowRight size={16} aria-hidden="true" /></Link></div>
@@ -44,8 +43,8 @@ export function QhsePolicyHomeCard({ client }: { client: SupabaseClient }) {
     {axes.length > 0 ? <ul className="qhse-policy-home__axes" aria-label="Suivi par axe stratégique">
       {axes.map(({ process, summary: axisSummary, iconKey }) => <li className="qhse-policy-home__axis" key={process.id}>
         <span className="qhse-policy-home__axis-icon" role="img" aria-label={`Icône : ${qhsePolicyAxisIconLabel(iconKey)}`}><QhsePolicyAxisIcon iconKey={iconKey} size={21} aria-hidden="true" /></span>
-        <div className="qhse-policy-home__axis-copy"><h3>{process.name}</h3><p>{axisSummary.completed}/{axisSummary.total} objectifs réalisés</p></div>
-        <div className="qhse-policy-home__axis-progress"><span><strong>{qhsePolicyPercent(axisSummary.average ?? 0)}</strong> de progression moyenne</span><progress max={100} value={axisSummary.average ?? 0} aria-label={`Progression moyenne de ${process.name}`} /></div>
+        <div className="qhse-policy-home__axis-copy"><h3>{process.name}</h3><p>{axisSummary.total ? `${axisSummary.completed}/${axisSummary.total} objectifs réalisés` : 'Aucun objectif défini'}</p></div>
+        <div className="qhse-policy-home__axis-progress">{axisSummary.average === null ? <span className="qhse-policy-home__axis-empty">Progression non renseignée</span> : <><span><strong>{qhsePolicyPercent(axisSummary.average)}</strong> de progression moyenne</span><progress max={100} value={axisSummary.average} aria-label={`Progression moyenne de ${process.name}`} /></>}</div>
       </li>)}
     </ul> : null}
   </section>;

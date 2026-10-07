@@ -40,7 +40,9 @@ describe('Politique QHSE home card', () => {
   it('shows an empty objective state without presenting a fabricated average', async () => {
     vi.mocked(fetchQhsePolicySnapshot).mockResolvedValue({ ...data(), objectives: [] }); render(<MemoryRouter><QhsePolicyHomeCard client={client} /></MemoryRouter>); expect(await screen.findByText('Aucun objectif défini.')).toBeVisible(); expect(screen.queryByText('0 %')).not.toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-    expect(screen.queryByRole('list', { name: 'Suivi par axe stratégique' })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('list', { name: 'Suivi par axe stratégique' })).getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: 'Qualité' })).toBeVisible();
+    expect(screen.getByText('Progression non renseignée')).toBeVisible();
     await waitFor(() => expect(fetchQhsePolicySnapshot).toHaveBeenCalledExactlyOnceWith(client));
   });
 
@@ -59,14 +61,17 @@ describe('Politique QHSE home card', () => {
     expect(await screen.findByText('1/3')).toBeVisible();
     expect(screen.getByText('53,3 %')).toBeVisible();
     const rows = within(screen.getByRole('list', { name: 'Suivi par axe stratégique' })).getAllByRole('listitem');
-    expect(rows).toHaveLength(2);
-    expect(within(rows[0]).getByRole('heading', { name: 'Environnement' })).toBeVisible();
-    expect(within(rows[0]).getByRole('progressbar', { name: 'Progression moyenne de Environnement' })).toHaveAttribute('value', '0');
-    expect(within(rows[1]).getByRole('heading', { name: 'Qualité' })).toBeVisible();
-    expect(within(rows[1]).getByRole('progressbar')).toHaveAttribute('value', '80');
-    expect(within(rows[1]).getByText('1/2 objectifs réalisés')).toBeVisible();
-    expect(within(rows[1]).getByRole('img', { name: 'Icône : Écoute client' })).toBeVisible();
-    expect(screen.queryByRole('heading', { name: 'Axe sans objectif' })).not.toBeInTheDocument();
+    expect(rows).toHaveLength(3);
+    expect(within(rows[0]).getByRole('heading', { name: 'Axe sans objectif' })).toBeVisible();
+    expect(within(rows[0]).getByText('Aucun objectif défini')).toBeVisible();
+    expect(within(rows[0]).getByText('Progression non renseignée')).toBeVisible();
+    expect(within(rows[0]).queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(within(rows[1]).getByRole('heading', { name: 'Environnement' })).toBeVisible();
+    expect(within(rows[1]).getByRole('progressbar', { name: 'Progression moyenne de Environnement' })).toHaveAttribute('value', '0');
+    expect(within(rows[2]).getByRole('heading', { name: 'Qualité' })).toBeVisible();
+    expect(within(rows[2]).getByRole('progressbar')).toHaveAttribute('value', '80');
+    expect(within(rows[2]).getByText('1/2 objectifs réalisés')).toBeVisible();
+    expect(within(rows[2]).getByRole('img', { name: 'Icône : Écoute client' })).toBeVisible();
   });
 
   it('treats fully archived objectives as empty without fabricating a 0% progression', async () => {
@@ -77,6 +82,29 @@ describe('Politique QHSE home card', () => {
     expect(await screen.findByText('Aucun objectif défini.')).toBeVisible();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     expect(screen.queryByText('0 %')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('list', { name: 'Suivi par axe stratégique' })).getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByText('Progression non renseignée')).toBeVisible();
+  });
+
+  it('keeps all seven active axes visible when no objective has been defined', async () => {
+    const snapshot = data();
+    const names = ['Sécurité', 'Ethique, lutte contre la corruption', 'Santé, bien-être au travail et lutte contre les discriminations', 'Environnement', 'Ecoute client', 'Technique', 'Sécurité informatique'];
+    vi.mocked(fetchQhsePolicySnapshot).mockResolvedValue({
+      ...snapshot,
+      processes: names.map((name, position) => ({ ...snapshot.processes[0], id: `axis-${position}`, name, position, iconKey: undefined })),
+      objectives: [],
+    });
+    render(<MemoryRouter><QhsePolicyHomeCard client={client} /></MemoryRouter>);
+
+    expect(await screen.findByText('Aucun objectif défini.')).toBeVisible();
+    const rows = within(screen.getByRole('list', { name: 'Suivi par axe stratégique' })).getAllByRole('listitem');
+    expect(rows).toHaveLength(7);
+    rows.forEach((row, index) => {
+      expect(within(row).getByRole('heading', { name: names[index] })).toBeVisible();
+      expect(within(row).getByText('Progression non renseignée')).toBeVisible();
+    });
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
   });
 
   it('does not display a previous account snapshot when the authenticated client changes', async () => {
