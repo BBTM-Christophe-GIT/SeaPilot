@@ -1,4 +1,5 @@
 import { SeaPilotLogo } from '../../components/SeaPilotLogo';
+import { UserAvatar } from '../../components/UserAvatar';
 import { fetchDisciplinaryNotifications, markDisciplinaryNotificationRead, DISCIPLINARY_NOTIFICATIONS_CHANGED, type DisciplinaryNotification } from '../disciplinary/disciplinaryWorkflow';
 import { LiftingOperationsIcon } from '../lifting/LiftingIcons';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -48,6 +49,7 @@ import './liftingNavigationLinks.css';
 import './regulatoryNavigation.css';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../auth/AuthProvider';
+import { loadPortrait } from '../humanResources/portraitMedia';
 import {
   fetchHrDocumentExpiryNotifications,
   formatHrDocumentExpiryDate,
@@ -208,6 +210,9 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const [isLoadingRoles, setIsLoadingRoles] = useState(!rolesOverride);
   const [hasRoleLoadError, setHasRoleLoadError] = useState(false);
   const [currentPerson, setCurrentPerson] = useState<CurrentPersonSummary | null>(null);
+  const [personPhotoSource, setPersonPhotoSource] = useState<{ path: string; userId: string | undefined } | null>(null);
+  const [personPhoto, setPersonPhoto] = useState<{ path: string; userId: string | undefined; url: string } | null>(null);
+  const personPhotoPath = personPhotoSource?.userId === sessionUserId ? personPhotoSource?.path : undefined;
   const [isLoadingPerson, setIsLoadingPerson] = useState(!rolesOverride || previewMode);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isLiftingNavigationBlocked, setLiftingNavigationBlocked] = useState(false);
@@ -283,17 +288,35 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   useEffect(() => {
     if ((rolesOverride && !previewMode) || (!sessionUserId && !previewMode)) {
       setCurrentPerson(null);
+      setPersonPhotoSource(null);
       setIsLoadingPerson(false);
       return;
     }
     let isMounted = true;
     setIsLoadingPerson(true);
     fetchCurrentPersonSummary(client)
-      .then((person) => { if (isMounted) setCurrentPerson(person); })
-      .catch(() => { if (isMounted) setCurrentPerson(null); })
+      .then((person) => {
+        if (isMounted) {
+          setCurrentPerson(person);
+          setPersonPhotoSource(person?.photoStoragePath ? { path: person.photoStoragePath, userId: sessionUserId } : null);
+        }
+      })
+      .catch(() => { if (isMounted) { setCurrentPerson(null); setPersonPhotoSource(null); } })
       .finally(() => { if (isMounted) setIsLoadingPerson(false); });
     return () => { isMounted = false; };
   }, [client, previewMode, rolesOverride, sessionUserId]);
+
+  useEffect(() => {
+    setPersonPhoto(null);
+    if (!personPhotoPath) return;
+
+    let isMounted = true;
+    void loadPortrait(client, personPhotoPath)
+      .then((url) => { if (isMounted) setPersonPhoto({ path: personPhotoPath, userId: sessionUserId, url }); })
+      .catch(() => { /* The identity and account menu remain available without a portrait. */ });
+
+    return () => { isMounted = false; };
+  }, [client, personPhotoPath, sessionUserId]);
 
   useEffect(() => {
     setIsMobileNavigationOpen(false);
@@ -449,6 +472,10 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     [activeVisibleModules, canOpenRegulatoryLibrary],
   );
   const userMetadata = (session?.user.user_metadata || {}) as Record<string, unknown>;
+  const personPhotoUrl = personPhoto?.path === personPhotoPath && personPhoto?.userId === sessionUserId ? personPhoto?.url : undefined;
+  const userPhotoUrl = personPhotoUrl || [userMetadata.avatar_url, userMetadata.picture, userMetadata.photo_url].find(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0,
+  );
   const userEmail = previewMode ? 'preview@bbtm.local' : session?.user.email || 'utilisateur@bbtm.fr';
   const sessionDisplayName = [userMetadata.full_name, userMetadata.display_name, userMetadata.name].find(
     (value): value is string => typeof value === 'string' && value.trim().length > 0,
@@ -724,11 +751,12 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
               <button
                 aria-expanded={isUserMenuOpen}
                 aria-haspopup="menu"
+                aria-label={`${userDisplayName} ${primaryRoleLabel}`}
                 className="user-menu-trigger"
                 onClick={() => setIsUserMenuOpen((isOpen) => !isOpen)}
                 type="button"
               >
-                <span className="user-avatar">{getInitials(userDisplayName)}</span>
+                <UserAvatar initials={getInitials(userDisplayName)} photoUrl={userPhotoUrl} />
                 <span className="user-identity">
                   <strong>{userDisplayName}</strong>
                   <small>{primaryRoleLabel}</small>

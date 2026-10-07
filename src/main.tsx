@@ -4,6 +4,8 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { AuthProvider } from './features/auth/AuthProvider';
 import './styles/index.css';
+import './styles/design-tokens.css';
+import './styles/module-design.css';
 
 window.addEventListener('vite:preloadError', (event) => {
   event.preventDefault();

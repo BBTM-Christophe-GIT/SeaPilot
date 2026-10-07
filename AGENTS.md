@@ -20,6 +20,18 @@ After completing any coding request in this repository, unless the user explicit
 
 Never include unrelated local changes, secrets, or generated credentials in a commit.
 
+## Shared module design
+
+For every module design change or new module, follow `docs/design/design-system.md`.
+Use the shared `--sp-*` tokens from `src/styles/design-tokens.css` and the shared
+interface classes in `src/styles/module-design.css`; reuse `ModuleRibbon`,
+`AppDialog`, `AppContextMenu` and `UserAvatar` where applicable. Do not introduce
+independent colors, typography, radii or shadows for module chrome. Sidebar,
+topbar and SeaPilot logo backgrounds all use `--sp-shell` (`#000000`).
+Preserve business status palettes, document/export layouts, dense timeline
+geometry, hidden headings, permissions and every existing feature. Verify desktop
+and mobile rendering and the actual role-specific fixtures before delivery.
+
 ## Profile-specific UI verification
 
 For Marin and Capitaine workflows, never use the Marin or Capitaine views simulated from the current user session as the source of truth: they do not represent what real Marin and Capitaine accounts see. Inspect and test the role-gated application code, RPC/RLS rules, and profile-specific test fixtures for each real profile instead.
