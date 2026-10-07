@@ -3775,7 +3775,7 @@ button:disabled {
 
 .purchase-tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   min-height: 60px;
   border-bottom: 1px solid var(--purchase-border);
 }
@@ -3961,6 +3961,7 @@ button:disabled {
 }
 
 .purchase-list-state.is-completed strong { color: #1a7f37; }
+.purchase-list-state.is-refused strong { color: #b4233c; }
 .purchase-list-state.is-to_process strong:first-child { color: #e31b23; }
 
 .purchase-empty {
@@ -4556,7 +4557,7 @@ button:disabled {
 
 @media (max-width: 720px) {
   .purchase-modern-filters { grid-template-columns: 1fr; }
-  .purchase-tabs { overflow-x: auto; grid-template-columns: repeat(4, minmax(110px, 1fr)); }
+  .purchase-tabs { overflow-x: auto; grid-template-columns: repeat(5, minmax(110px, 1fr)); }
   .purchase-list-head { display: none; }
   .purchase-list-row { grid-template-columns: minmax(155px, 1.5fr) 70px 82px; min-height: 78px; padding-inline: 14px; }
   .purchase-list-row > span:nth-child(4), .purchase-list-row > span:nth-child(5) { display: none; }

@@ -2,6 +2,7 @@ import { compareFleetNames } from '../fleet/fleetDisplay';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
+  Ban,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
@@ -80,6 +81,13 @@ const STAGE_LABELS: Record<PurchaseRequestStage, string> = {
   receiving: 'À réception',
   completed: 'Traitées',
 };
+type PurchaseRequestView = PurchaseRequestStage | 'refused';
+const VIEW_LABELS: Record<PurchaseRequestView, string> = { ...STAGE_LABELS, refused: 'Refusées' };
+
+function requestMatchesView(request: PurchaseRequestRecord, view: PurchaseRequestView): boolean {
+  const rejected = isPurchaseRequestRejected(request);
+  return view === 'refused' ? rejected : !rejected && request.stage === view;
+}
 
 const EMPTY_FORM: CreatePurchaseRequestInput = {
   amountHt: '',
@@ -150,6 +158,7 @@ function categoryKind(category: string): 'supply' | 'service' {
 }
 
 function requestStateLabel(request: PurchaseRequestRecord): string {
+  if (isPurchaseRequestRejected(request)) return request.approvalReason || 'Demande refusée';
   if (request.urgent && request.stage === 'to_process') return 'Urgente';
   if (request.stage === 'completed') return request.receivedOn ? 'Reçue' : 'Terminée';
   if (request.stage === 'receiving') return 'En attente';
@@ -194,7 +203,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
 
   const [requests, setRequests] = useState<PurchaseRequestRecord[]>([]);
   const [vessels, setVessels] = useState<PurchaseVesselOption[]>([]);
-  const [activeStage, setActiveStage] = useState<PurchaseRequestStage>('to_process');
+  const [activeStage, setActiveStage] = useState<PurchaseRequestView>('to_process');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<PurchaseFilters>({ category: '', urgentOnly: false, vesselName: '' });
@@ -249,12 +258,13 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
     return normalize(searchable).includes(normalize(search.trim()));
   }), [filters, requests, search]);
   const stageCounts = useMemo(() => ({
-    to_process: baseRequests.filter((request) => request.stage === 'to_process').length,
-    ordered: baseRequests.filter((request) => request.stage === 'ordered').length,
-    receiving: baseRequests.filter((request) => request.stage === 'receiving').length,
-    completed: baseRequests.filter((request) => request.stage === 'completed').length,
+    to_process: baseRequests.filter((request) => requestMatchesView(request, 'to_process')).length,
+    ordered: baseRequests.filter((request) => requestMatchesView(request, 'ordered')).length,
+    receiving: baseRequests.filter((request) => requestMatchesView(request, 'receiving')).length,
+    completed: baseRequests.filter((request) => requestMatchesView(request, 'completed')).length,
+    refused: baseRequests.filter(isPurchaseRequestRejected).length,
   }), [baseRequests]);
-  const visibleRequests = useMemo(() => baseRequests.filter((request) => request.stage === activeStage), [activeStage, baseRequests]);
+  const visibleRequests = useMemo(() => baseRequests.filter((request) => requestMatchesView(request, activeStage)), [activeStage, baseRequests]);
   const pageCount = Math.max(1, Math.ceil(visibleRequests.length / PAGE_SIZE));
   const paginatedRequests = visibleRequests.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const selectedRequest = visibleRequests.find((request) => request.id === selectedId) || paginatedRequests[0] || null;
@@ -265,11 +275,11 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
 
   useEffect(() => {
     setPage(1);
-    const first = baseRequests.find((request) => request.stage === activeStage);
+    const first = baseRequests.find((request) => requestMatchesView(request, activeStage));
     if (!initialStageResolved.current && baseRequests.length) {
       initialStageResolved.current = true;
-      const initialStage = (Object.keys(STAGE_LABELS) as PurchaseRequestStage[])
-        .find((stage) => baseRequests.some((request) => request.stage === stage));
+      const initialStage = (Object.keys(VIEW_LABELS) as PurchaseRequestView[])
+        .find((stage) => baseRequests.some((request) => requestMatchesView(request, stage)));
       if (initialStage && initialStage !== activeStage) {
         setActiveStage(initialStage);
         return;
@@ -350,6 +360,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
           <ModuleRibbonCommand className={activeStage === 'ordered' ? 'is-active' : ''} count={stageCounts.ordered} icon={<ShoppingCart aria-hidden="true" size={22} />} label="En commande" onClick={() => setActiveStage('ordered')} />
           <ModuleRibbonCommand className={activeStage === 'receiving' ? 'is-active' : ''} count={stageCounts.receiving} icon={<PackageCheck aria-hidden="true" size={22} />} label="À réception" onClick={() => setActiveStage('receiving')} />
           <ModuleRibbonCommand className={activeStage === 'completed' ? 'is-active' : ''} count={stageCounts.completed} icon={<CheckCircle2 aria-hidden="true" size={22} />} label="Traitées" onClick={() => setActiveStage('completed')} />
+          <ModuleRibbonCommand className={activeStage === 'refused' ? 'is-active' : ''} count={stageCounts.refused} icon={<Ban aria-hidden="true" size={22} />} label="Refusées" onClick={() => setActiveStage('refused')} />
         </ModuleRibbonGroup>
       </ModuleRibbon>
 
@@ -370,9 +381,9 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
       <div className="purchase-master-detail">
         <section className="purchase-list-panel" aria-label="Liste des demandes d'achat">
           <div className="purchase-tabs" role="tablist">
-            {(Object.keys(STAGE_LABELS) as PurchaseRequestStage[]).map((stage) => (
+            {(Object.keys(VIEW_LABELS) as PurchaseRequestView[]).map((stage) => (
               <button aria-selected={activeStage === stage} className={activeStage === stage ? 'is-active' : ''} key={stage} onClick={() => setActiveStage(stage)} role="tab" type="button">
-                {STAGE_LABELS[stage]} <span>{stageCounts[stage]}</span>
+                {VIEW_LABELS[stage]} <span>{stageCounts[stage]}</span>
               </button>
             ))}
           </div>
@@ -384,9 +395,9 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
                 <span>{request.vesselName || '—'}</span>
                 <span><em className={`purchase-category is-${categoryKind(request.categoryLabel)}`}>{categoryKind(request.categoryLabel) === 'service' ? 'Prestation' : 'Fourniture'}</em></span>
                 <span>{formatDate(request.expectedDeliveryOn)}</span>
-                <span className={`purchase-list-state is-${request.stage}`}>{request.urgent && request.stage === 'to_process' ? <strong>Urgente</strong> : <strong>{STAGE_LABELS[request.stage]}</strong>}<small>{requestStateLabel(request)}</small></span>
+                <span className={`purchase-list-state is-${isPurchaseRequestRejected(request) ? 'refused' : request.stage}`}><strong>{isPurchaseRequestRejected(request) ? 'Refusée' : request.urgent && request.stage === 'to_process' ? 'Urgente' : STAGE_LABELS[request.stage]}</strong><small>{requestStateLabel(request)}</small></span>
               </button>
-            )) : <div className="purchase-empty">Aucune demande dans cette étape.</div>}
+            )) : <div className="purchase-empty">{activeStage === 'refused' ? 'Aucune demande refusée pour ces filtres.' : 'Aucune demande dans cette étape.'}</div>}
           </div>
           <footer className="purchase-pagination">
             <span>{visibleRequests.length ? `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, visibleRequests.length)} sur ${visibleRequests.length}` : '0 demande'}</span>

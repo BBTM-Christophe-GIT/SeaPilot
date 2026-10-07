@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { isCaptainScopedPurchaseView, PurchaseRequestsPage } from './PurchaseRequestsPage';
@@ -180,6 +180,141 @@ describe('PurchaseRequestsPage', () => {
     expect(screen.getByRole('tab', { name: /En commande 1/i })).toHaveAttribute('aria-selected', 'true');
     expect(await screen.findByRole('heading', { name: /#101.*Moteur de commande/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Planifier la livraison' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Prendre en charge' })).not.toBeInTheDocument();
+  });
+
+  it('shows rejected approvals in the Refusées tab and ribbon instead of the four workflow views', async () => {
+    const user = userEvent.setup();
+    const stages = [
+      { id: 201, title: 'Pompe à traiter', status: 'À traiter', ordered_on: null, expected_delivery_on: null, received_on: null },
+      { id: 202, title: 'Pompe commandée', status: 'En commande', ordered_on: '2026-08-01', expected_delivery_on: null, received_on: null },
+      { id: 203, title: 'Pompe à réception', status: 'À réception', ordered_on: '2026-08-01', expected_delivery_on: '2026-08-30', received_on: null },
+      { id: 204, title: 'Pompe reçue', status: 'Traitée', ordered_on: '2026-08-01', expected_delivery_on: '2026-08-30', received_on: '2026-08-30' },
+    ];
+    const accepted = stages.map((stage) => ({ ...approvedRequest, ...stage, request_number: String(stage.id) }));
+    const rejected = stages.map((stage, index) => ({
+      ...baseRequest, ...stage, id: stage.id + 100, request_number: String(stage.id + 100),
+      title: `Demande rejetée ${index + 1}`,
+      approval_status: ['Demande refusée', 'REFUSÉE', 'Demande refusee', 'Refus'][index],
+      approval_reason: 'Budget non validé',
+    }));
+    const { client, rpc } = createClient([...accepted, ...rejected]);
+    render(<PurchaseRequestsPage client={client as never} roles={['armement']} />);
+    await screen.findByRole('heading', { name: /#201.*Pompe à traiter/ });
+    const list = within(screen.getByRole('region', { name: "Liste des demandes d'achat" }));
+
+    expect(screen.getByRole('tab', { name: 'Refusées 4' })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('button', { name: 'Refusées (4)' })).toBeInTheDocument();
+    for (const [index, label] of ['À traiter', 'En commande', 'À réception', 'Traitées'].entries()) {
+      await user.click(screen.getByRole('tab', { name: `${label} 1` }));
+      expect(list.getByRole('button', { name: new RegExp(stages[index].title) })).toBeInTheDocument();
+      expect(list.queryByRole('button', { name: /Demande rejetée/ })).not.toBeInTheDocument();
+    }
+
+    await user.click(screen.getByRole('button', { name: 'Refusées (4)' }));
+    expect(screen.getByRole('tab', { name: 'Refusées 4' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'Refusées (4)' })).toHaveClass('is-active');
+    expect(list.getAllByRole('button', { name: /Demande rejetée/ })).toHaveLength(4);
+    expect(list.queryByRole('button', { name: /Pompe/ })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Demande 301' })).getByText('Budget non validé')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approuver' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refuser' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Prendre en charge' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Planifier la livraison' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reçu à bord' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'À traiter (1)' }));
+    expect(screen.getByRole('button', { name: 'Prendre en charge' })).toBeEnabled();
+    await user.click(screen.getByRole('tab', { name: 'Refusées 4' }));
+    expect(screen.getByRole('tab', { name: 'Refusées 4' })).toHaveAttribute('aria-selected', 'true');
+    expect(list.getAllByRole('button', { name: /Demande rejetée/ })).toHaveLength(4);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('combines refused approvals with search, vessel and category filters and updates both counters', async () => {
+    const user = userEvent.setup();
+    const rejected = [
+      { id: 301, title: 'Pompe hydraulique refusée', vessel_name: 'GOURY', category_label: 'Approvisionnement' },
+      { id: 302, title: 'Pompe de secours refusée', vessel_name: 'LE ROZEL', category_label: 'Approvisionnement' },
+      { id: 303, title: 'Pompe révision refusée', vessel_name: 'GOURY', category_label: 'Prestataire de Service' },
+      { id: 304, title: 'Filtre hydraulique refusé', vessel_name: 'GOURY', category_label: 'Approvisionnement' },
+    ].map((request) => ({
+      ...baseRequest, ...request, request_number: String(request.id), approval_status: 'Demande refusée',
+    }));
+    const pending = { ...baseRequest, title: 'Pompe encore à approuver' };
+    const { client } = createClient([pending, ...rejected]);
+    render(<PurchaseRequestsPage client={client as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: /#95.*Pompe encore à approuver/ });
+    await user.click(screen.getByRole('tab', { name: 'Refusées 4' }));
+    const list = within(screen.getByRole('region', { name: "Liste des demandes d'achat" }));
+
+    fireEvent.change(screen.getByLabelText('Rechercher les demandes'), { target: { value: 'pompe' } });
+    expect(screen.getByRole('tab', { name: 'Refusées 3' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'Refusées (3)' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Filtres' }));
+    await user.selectOptions(screen.getByLabelText('Filtrer par navire'), 'GOURY');
+    expect(screen.getByRole('tab', { name: 'Refusées 2' })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Filtrer par catégorie'), 'Approvisionnement');
+
+    expect(screen.getByRole('tab', { name: 'Refusées 1' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'Refusées (1)' })).toBeInTheDocument();
+    expect(list.getByRole('button', { name: /Pompe hydraulique refusée/ })).toBeInTheDocument();
+    expect(list.queryByRole('button', { name: /Pompe de secours refusée|Pompe révision refusée|Filtre hydraulique refusé|Pompe encore à approuver/ })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Rechercher les demandes'), { target: { value: 'introuvable' } });
+
+    expect(screen.getByRole('tab', { name: 'Refusées 0' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'Refusées' })).toBeInTheDocument();
+    expect(list.getByText('Aucune demande refusée pour ces filtres.')).toBeInTheDocument();
+    expect(screen.getByText('0 demande')).toBeInTheDocument();
+    expect(screen.getByText('Sélectionnez une demande pour afficher son suivi.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Rechercher les demandes'), { target: { value: '' } });
+    await user.click(screen.getByRole('button', { name: 'Réinitialiser' }));
+    expect(screen.getByRole('tab', { name: 'Refusées 4' })).toHaveAttribute('aria-selected', 'true');
+    expect(list.getAllByRole('button', { name: /refus/i })).toHaveLength(4);
+  });
+
+  it('recovers from an empty Refusées view without changing pending approval actions', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient([baseRequest]);
+    render(<PurchaseRequestsPage client={client as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: /#95.*Moteur de commande/ });
+
+    await user.click(screen.getByRole('button', { name: 'Refusées' }));
+    expect(screen.getByRole('tab', { name: 'Refusées 0' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('Aucune demande refusée pour ces filtres.')).toBeInTheDocument();
+    expect(screen.getByText('Sélectionnez une demande pour afficher son suivi.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approuver' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'À traiter 1' }));
+
+    expect(screen.getByRole('heading', { name: /#95.*Moteur de commande/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approuver' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Refuser' })).toBeEnabled();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('moves a newly refused request into Refusées after the authorized refusal RPC refresh', async () => {
+    const user = userEvent.setup();
+    const requests = [{ ...baseRequest, approval_reason: '' }];
+    const { client, rpc } = createClient(requests);
+    rpc.mockImplementationOnce(async () => {
+      requests[0] = { ...baseRequest, approval_status: 'Demande refusée', approval_reason: 'Budget non validé' };
+      return { data: requests[0], error: null };
+    });
+    render(<PurchaseRequestsPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: 'Refuser' }));
+    await user.type(screen.getByLabelText('Justification du refus'), 'Budget non validé');
+    await user.click(screen.getByRole('button', { name: 'Confirmer' }));
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('purchase_request_transition', {
+      p_request_id: 95, p_action: 'refuse', p_comment: 'Budget non validé', p_effective_date: null,
+    }));
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'À traiter 0' })).toBeInTheDocument());
+    expect(screen.getByRole('tab', { name: 'Refusées 1' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Refusées 1' }));
+    expect(screen.getByRole('heading', { name: /#95.*Moteur de commande/ })).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Demande 95' })).getByText('Budget non validé')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approuver' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refuser' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Prendre en charge' })).not.toBeInTheDocument();
   });
 
