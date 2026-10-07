@@ -14,6 +14,7 @@ export interface CurrentPersonSummary {
   active: boolean;
   hiredOn: string;
   departedOn: string;
+  photoStoragePath?: string;
 }
 
 export function mapRoleRows(rows: RoleRow[]): RoleKey[] {
@@ -40,7 +41,7 @@ export async function fetchCurrentPersonSummary(client: SupabaseClient): Promise
 
   const { data, error } = await client
     .from('people')
-    .select('id,first_name,last_name,function_label,grade_label,active,hired_on,departed_on')
+    .select('id,first_name,last_name,function_label,grade_label,active,hired_on,departed_on,photo_storage_path')
     .eq('user_id', userId)
     .maybeSingle();
   if (error) throw error;
@@ -55,5 +56,6 @@ export async function fetchCurrentPersonSummary(client: SupabaseClient): Promise
     active: data.active === true,
     hiredOn: String(data.hired_on || ''),
     departedOn: String(data.departed_on || ''),
+    ...(data.photo_storage_path ? { photoStoragePath: String(data.photo_storage_path) } : {}),
   };
 }
