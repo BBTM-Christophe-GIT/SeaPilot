@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.67.9`, build `2026-10-07.004`, remplace l’oreille de **Écoute client** par une poignée de main et ajoute une **clé plate** pour **Technique**, dans Politique QHSE, sur l’accueil et dans les exports PDF. Appliquer la migration additive des icônes décrite dans [qhse-policy.md](./qhse-policy.md) avant le client. Les choix d’icônes personnalisés sont conservés ; aucune dépendance ou variable d’environnement supplémentaire.
+
 Version `3.67.8`, build `2026-10-07.003`, ajoute la vue **Refusées** dans le ruban et les onglets du module Achats. Son compteur suit la recherche et les filtres navire, catégorie et urgence. Les demandes dont la décision d’approbation est refusée sont regroupées dans cette vue et exclues des quatre autres vues, sans modifier leur statut enregistré. Le motif du refus reste consultable. Aucune migration, dépendance ou variable d’environnement supplémentaire ; droits et workflow RPC/RLS inchangés.
 
 Version `3.67.7`, build `2026-10-07.002`, conserve les axes actifs de la politique sur l’accueil même sans objectif renseigné, avec un état explicite sans progression inventée. Le panneau dispose de styles autonomes. Les tâches sont présentées en catégories côte à côte selon la largeur disponible, avec listes repliables et chips d’échéance compacts. Aucune migration, dépendance ou variable d’environnement supplémentaire. Voir [home-reference-fixes.md](./home-reference-fixes.md).

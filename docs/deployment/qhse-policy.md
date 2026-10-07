@@ -1,6 +1,6 @@
 # Politique QHSE
 
-Version 3.67.4, build 2026-10-02.008. Le bloc **Politique QHSE** est le premier contenu de l’accueil. Le module est aussi accessible dans **QHSE → Politique QHSE** et à `/modules/qhsePolicy`.
+Version 3.67.9, build 2026-10-07.004. Le bloc **Politique QHSE** est le premier contenu de l’accueil. Le module est aussi accessible dans **QHSE → Politique QHSE** et à `/modules/qhsePolicy`.
 
 ## Politique et documents
 
@@ -22,7 +22,7 @@ Les flèches **Monter / Descendre** de chaque axe enregistrent un ordre commun �
 
 **Supprimer l’axe stratégique** ouvre une confirmation. Un axe vide peut être supprimé directement. Si des objectifs y sont rattachés, même archivés, il faut choisir un autre axe actif vers lequel les transférer. Les identifiants, progressions, historiques, responsables et pièces jointes sont conservés. Sans autre axe actif, créer ou réactiver un axe avant la suppression. L’archivage reste disponible pour conserver une catégorie et la réactiver ensuite.
 
-Six icônes sont proposées : **Sécurité** (bouclier avec coche), **Éthique, lutte contre la corruption** (balance), **Santé, bien-être au travail et lutte contre les discriminations** (cœur et mains), **Environnement** (feuille), **Écoute client** (oreille), **Sécurité informatique** (cadenas). Une cible sert aux autres axes. L’icône est proposée à partir du nom lors de la création, puis reste librement sélectionnable. Les noms existants sont conservés. L’interface et le rapport utilisent la même géométrie vectorielle, sans image externe ni dépendance supplémentaire.
+Sept icônes sont proposées : **Sécurité** (bouclier avec coche), **Éthique, lutte contre la corruption** (balance), **Santé, bien-être au travail et lutte contre les discriminations** (cœur et mains), **Environnement** (feuille), **Écoute client** (poignée de main représentant la relation commerciale), **Technique** (clé plate), **Sécurité informatique** (cadenas). Une cible sert aux autres axes. L’icône est proposée à partir du nom lors de la création, puis reste librement sélectionnable. Les noms existants sont conservés. L’accueil, le module et le rapport utilisent la même géométrie vectorielle, sans image externe ni dépendance supplémentaire.
 
 ## Export PDF
 
@@ -41,6 +41,8 @@ Les jetons de transfert expirent après 24 heures. Le client nettoie les échecs
 La migration `20261002114529_qhse_policy_upload_company_index.sql` couvre la clé étrangère de société des transferts. Le schéma privé reste volontairement sans politiques de lecture directe : seuls les RPC contrôlés accèdent aux jetons.
 
 La migration `20261002195040_qhse_policy_strategic_axes.sql` ajoute la clé d’icône, attribue les symboles aux axes existants et expose les opérations contrôlées de réordonnancement et de suppression avec transfert. Le réordonnancement vérifie la liste complète de la société, sans doublon ni révision périmée, puis normalise les positions atomiquement. Les écritures d’axes et d’objectifs prennent un verrou commun par société avant les verrous de lignes. Les suivis et pièces jointes immuables ne sont pas supprimés. Les noms techniques historiques `process` restent stables dans les tables et RPC ; les libellés affichés deviennent « Axe stratégique ».
+
+La migration `20261007102949_qhse_policy_technical_icon.sql` autorise l’icône `technical` dans la contrainte et le RPC existants. Les axes nommés **Technique** qui avaient la cible générique reçoivent la clé plate ; leurs révisions sont incrémentées pour prévenir une écriture depuis un ancien formulaire. Les autres choix explicites, identifiants, objectifs et permissions sont conservés. L’icône `customer` garde sa clé et utilise désormais la poignée de main sans changement de données.
 
 Créer un objectif et son état initial est atomique ; ajouter un suivi et modifier son pourcentage est également atomique. Une révision attendue et un verrou empêchent une ancienne saisie d’écraser une modification plus récente. Les conflits demandent une actualisation. Une erreur de lecture après une écriture acquittée ne renvoie pas l’écriture.
 

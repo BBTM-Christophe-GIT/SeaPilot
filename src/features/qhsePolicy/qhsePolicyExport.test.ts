@@ -98,9 +98,9 @@ describe('complete QHSE policy PDF export', () => {
     for (const marker of ['TRACE_LAST_PROCESS', 'TRACE_LAST_OBJECTIVE', 'TRACE_LAST_HISTORY', 'FIN_DOCUMENT']) expect(result.text).toContain(marker);
     expect(result.files.find((row) => row.name.endsWith('FIN_DOCUMENT.pdf'))?.bytes).toEqual(attached); await qa('qhse-policy-long', report);
   });
-  it('draws all six strategic-axis icons in persisted position order and uses the new wording throughout the PDF', async () => {
+  it('draws all seven strategic-axis icons in persisted position order and uses the new wording throughout the PDF', async () => {
     const data = await input();
-    const keys: QhsePolicyAxisIconKey[] = ['safety', 'ethics', 'health', 'environment', 'customer', 'cybersecurity'];
+    const keys: QhsePolicyAxisIconKey[] = ['safety', 'ethics', 'health', 'environment', 'customer', 'technical', 'cybersecurity'];
     const draw = vi.spyOn(axisPdfIcons, 'drawQhsePolicyAxisIcon');
     data.snapshot = { ...data.snapshot, objectives: [], updates: [], processes: keys.map((iconKey, position) => ({
       ...data.snapshot.processes[0], id: `axis-${iconKey}`, name: `TRACE_AXIS_${iconKey}`, iconKey, position,
@@ -116,7 +116,7 @@ describe('complete QHSE policy PDF export', () => {
     expect(result.text).toContain('axes stratégiques'); expect(result.text).toContain('Axe stratégique');
     expect(result.text).not.toMatch(/processus/i); expect(result.document.getSubject()).toContain('axes stratégiques');
     expect(result.files[0].bytes).toEqual(new Uint8Array(await data.policy.blob.arrayBuffer()));
-    await qa('qhse-axes-six-icons', report);
+    await qa('qhse-axes-seven-icons', report);
   });
   it('uses saved icon choices for custom axes and recognises legacy names without losing an unknown axis', async () => {
     const data = await input(); const draw = vi.spyOn(axisPdfIcons, 'drawQhsePolicyAxisIcon');

@@ -4,7 +4,7 @@ begin;
 do $test$
 declare
   company bigint; foreign_company bigint; actor uuid; role_name text; i integer:=0;
-  shared_axis uuid; archived_axis uuid; foreign_axis uuid; source_axis uuid; target_axis uuid; empty_axis uuid;
+  shared_axis uuid; shared_technical_axis uuid; technical_axis uuid; archived_axis uuid; foreign_axis uuid; source_axis uuid; target_axis uuid; empty_axis uuid;
   active_objective uuid; archived_objective uuid; follow_up uuid; token uuid; file_path text;
   source_revision integer; target_revision integer; empty_revision integer; archive_revision integer;
   context jsonb; requested jsonb; invalid_order jsonb; prepared jsonb; before_axes text; history_hash text; attachment_hash text;
@@ -13,6 +13,7 @@ begin
   insert into public.companies(code,name) values('qhse-axis-fixture-'||gen_random_uuid(),'QHSE strategic axes fixture') returning id into company;
   insert into public.companies(code,name) values('qhse-axis-foreign-'||gen_random_uuid(),'QHSE strategic axes foreign fixture') returning id into foreign_company;
   insert into public.qhse_policy_processes(company_id,name,position) values(company,'Shared axis fixture',0) returning id into shared_axis;
+  insert into public.qhse_policy_processes(company_id,name,position,icon_key) values(company,'Shared technical axis fixture',10,'technical') returning id into shared_technical_axis;
   insert into public.qhse_policy_processes(company_id,name,position,archived) values(company,'Archived axis fixture',20,true) returning id into archived_axis;
   insert into public.qhse_policy_processes(company_id,name) values(foreign_company,'Foreign axis fixture') returning id into foreign_axis;
   assert (select icon_key='general' from public.qhse_policy_processes where id=shared_axis), 'New axes must default to general';
@@ -37,7 +38,15 @@ begin
     assert (context->>'can_edit')::boolean=(role_name in ('admin','direction')), 'Real profile permission mismatch';
     assert not exists(select 1 from public.qhse_policy_processes where id=foreign_axis), 'Foreign axis read leaked';
     assert exists(select 1 from jsonb_array_elements(context->'processes') p where (p->>'id')::uuid=shared_axis and p->>'icon_key'='general'), 'Snapshot omitted persisted icon';
+    assert exists(select 1 from jsonb_array_elements(context->'processes') p where (p->>'id')::uuid=shared_technical_axis and p->>'icon_key'='technical'), 'Real profile snapshot omitted technical icon';
     if role_name in ('admin','direction') then
+      technical_axis:=public.qhse_policy_save_process(null,'Technique '||role_name,'',40,null,'technical');
+      perform public.qhse_policy_save_process(technical_axis,'Technique '||role_name,'Legacy edit',40,1);
+      assert (select icon_key='technical' and revision=2 from public.qhse_policy_processes where id=technical_axis), 'Old caller edit reset technical icon';
+      perform public.qhse_policy_save_process(technical_axis,'Technique '||role_name,'Explicit general',40,2,'general');
+      assert (select icon_key='general' and revision=3 from public.qhse_policy_processes where id=technical_axis), 'Explicit general was replaced by technical name inference';
+      perform public.qhse_policy_save_process(technical_axis,'Technique '||role_name,'Select technical',40,3,'technical');
+      assert (select icon_key='technical' and revision=4 from public.qhse_policy_processes where id=technical_axis), 'Technical icon selection was not persisted';
       source_axis:=public.qhse_policy_save_process(null,'Source '||role_name,'',25,null,'health');
       target_axis:=public.qhse_policy_save_process(null,'Target '||role_name,'',30,null,'cybersecurity');
       empty_axis:=public.qhse_policy_save_process(null,'Legacy five arguments '||role_name,'',35,null);
@@ -98,7 +107,7 @@ begin
       assert not exists(select 1 from public.qhse_policy_processes where id=empty_axis), 'Empty axis deletion failed';
     else
       select jsonb_agg(jsonb_build_object('id',id,'revision',revision) order by position,id) into requested from public.qhse_policy_processes where company_id=company;
-      begin perform public.qhse_policy_save_process(null,'Reader forbidden','','0',null,'safety'); raise exception 'Reader changed axes with spoofed user metadata'; exception when insufficient_privilege then null; end;
+      begin perform public.qhse_policy_save_process(null,'Reader forbidden','','0',null,'technical'); raise exception 'Reader changed axes with spoofed user metadata'; exception when insufficient_privilege then null; end;
       begin perform public.qhse_policy_reorder_processes(requested); raise exception 'Reader reordered axes'; exception when insufficient_privilege then null; end;
       begin perform public.qhse_policy_delete_process(shared_axis,1); raise exception 'Reader deleted an axis'; exception when insufficient_privilege then null; end;
       assert exists(select 1 from public.qhse_policy_attachments where id=token), 'Real read profile lost transferred evidence metadata';

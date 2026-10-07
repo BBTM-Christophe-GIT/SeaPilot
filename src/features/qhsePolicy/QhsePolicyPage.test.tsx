@@ -425,13 +425,13 @@ describe('Politique QHSE objectives', () => {
     await act(async () => { pending.resolve(PROCESS_QUALITY); }); expect(screen.queryByText('Axe stratégique enregistré.')).not.toBeInTheDocument(); expect(fetchQhsePolicySnapshot).toHaveBeenCalledTimes(2); expect(screen.getByRole('button', { name: 'Ajouter un axe stratégique' })).toBeEnabled();
   });
 
-  it('offers six domain icons and a general fallback, preserving an explicit choice after the name changes', async () => {
+  it('offers seven domain icons and a general fallback, preserving an explicit choice after the name changes', async () => {
     const user = userEvent.setup(); render(<PageFixture />);
     await user.click(await screen.findByRole('button', { name: 'Ajouter un axe stratégique' }));
     const dialog = screen.getByRole('dialog', { name: 'Ajouter un axe stratégique' });
     const name = within(dialog).getByLabelText('Nom de l’axe stratégique');
     const icon = within(dialog).getByLabelText('Icône de l’axe stratégique');
-    expect(within(icon).getAllByRole('option').map((option) => option.textContent)).toEqual(['Sécurité', 'Éthique, lutte contre la corruption', 'Santé, bien-être au travail et lutte contre les discriminations', 'Environnement', 'Écoute client', 'Sécurité informatique', 'Autre axe stratégique']);
+    expect(within(icon).getAllByRole('option').map((option) => option.textContent)).toEqual(['Sécurité', 'Éthique, lutte contre la corruption', 'Santé, bien-être au travail et lutte contre les discriminations', 'Environnement', 'Écoute client', 'Technique', 'Sécurité informatique', 'Autre axe stratégique']);
     await user.type(name, 'Sécurité informatique'); expect(icon).toHaveValue('cybersecurity');
     await user.selectOptions(icon, 'general'); await user.clear(name); await user.type(name, 'Environnement');
     expect(icon).toHaveValue('general'); expect(within(dialog).getByRole('img', { name: 'Icône : Autre axe stratégique' })).toBeVisible();
