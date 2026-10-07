@@ -6,7 +6,7 @@ import {
   Paperclip, Pencil, Plus, RefreshCw, Save, Search, Ship, Trash2, UploadCloud, UserRound, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
@@ -402,6 +402,10 @@ function FleetCertificateDocumentPreview({
 
 export function FleetCertificatesPage({ client, roles }: FleetCertificatesPageProps) {
   const outlet = useOutletContext<AppShellOutletContext | undefined>();
+  const [searchParams] = useSearchParams();
+  const certificateParameter = Number(searchParams.get('certificate'));
+  const linkedCertificateId = Number.isSafeInteger(certificateParameter) && certificateParameter > 0 ? certificateParameter : null;
+  const openedCertificateLink = useRef<number | null>(null);
   const effectiveClient = client || outlet?.client || supabase;
   const effectiveRoles = roles || outlet?.roles || [];
   const manager = canManage(effectiveRoles);
@@ -411,7 +415,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [providers, setProviders] = useState<FleetServiceProvider[]>([]);
   const [visits, setVisits] = useState<FleetCertificateVisit[]>([]);
   const [documentNames, setDocumentNames] = useState<string[]>([]);
-  const [selectedCertificateId, setSelectedCertificateId] = useState<number | null>(() => Number(new URLSearchParams(window.location.search).get('certificate')) || null);
+  const [selectedCertificateId, setSelectedCertificateId] = useState<number | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(() => new Set());
   const [selectedFindingId, setSelectedFindingId] = useState<number | null>(null);
   const [scopeVesselName, setScopeVesselName] = useState('');
@@ -448,6 +452,20 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   }, [effectiveClient]);
 
   useEffect(() => { let active = true; setIsLoading(true); load().catch(() => active && setError('Impossible de charger les certificats et les écarts.')).finally(() => active && setIsLoading(false)); return () => { active = false; }; }, [load]);
+  useEffect(() => {
+    if (!linkedCertificateId) {
+      openedCertificateLink.current = null;
+      return;
+    }
+    if (isLoading || openedCertificateLink.current === linkedCertificateId) return;
+    openedCertificateLink.current = linkedCertificateId;
+    const certificate = certificates.find((record) => record.id === linkedCertificateId);
+    setSelectedCertificateId(certificate?.id || null);
+    setSelectedFindingId(null);
+    setVersionToPreview(null);
+    setModal(null);
+    setActiveTab(certificate ? 'preview' : 'findings');
+  }, [certificates, isLoading, linkedCertificateId]);
   const selectedCertificate = certificates.find((item) => item.id === selectedCertificateId) || null;
   const previewVersion = versionToPreview?.certificateId === selectedCertificateId ? versionToPreview.version : null;
   const previewCertificate = useMemo(() => selectedCertificate && previewVersion ? {

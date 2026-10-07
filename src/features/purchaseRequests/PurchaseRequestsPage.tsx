@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { AppDialog } from '../../components/AppDialog';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import { supabase } from '../../lib/supabaseClient';
@@ -192,6 +192,10 @@ function WorkflowStep({
 
 export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedIdParameter = searchParams.get('requestId');
+  const requestedId = requestedIdParameter && /^[1-9]\d*$/.test(requestedIdParameter)
+    && Number.isSafeInteger(Number(requestedIdParameter)) ? Number(requestedIdParameter) : null;
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
   const currentPerson = outletContext?.currentPerson || null;
@@ -219,6 +223,8 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const [files, setFiles] = useState<File[]>([]);
   const [actionDialog, setActionDialog] = useState<ActionDialogState | null>(null);
   const initialStageResolved = useRef(false);
+  const detailPanelRef = useRef<HTMLElement | null>(null);
+  const lastScrolledRequestParameter = useRef<string | null>(null);
 
   const loadData = useCallback(async (initial = false) => {
     if (initial) setIsLoading(true);
@@ -247,6 +253,12 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
 
   useEffect(() => { void loadData(true); }, [loadData]);
 
+  useEffect(() => {
+    if (requestedIdParameter === null) return;
+    setSearch('');
+    setFilters((current) => ({ category: '', urgentOnly: false, vesselName: captainView ? current.vesselName : '' }));
+  }, [captainView, requestedIdParameter]);
+
   const categories = useMemo(() => Array.from(new Set(requests.map((request) => request.categoryLabel).filter(Boolean))).sort(), [requests]);
   const vesselNames = useMemo(() => Array.from(new Set(requests.map((request) => request.vesselName).filter(Boolean))).sort(compareFleetNames), [requests]);
   const baseRequests = useMemo(() => requests.filter((request) => {
@@ -267,13 +279,44 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const visibleRequests = useMemo(() => baseRequests.filter((request) => requestMatchesView(request, activeStage)), [activeStage, baseRequests]);
   const pageCount = Math.max(1, Math.ceil(visibleRequests.length / PAGE_SIZE));
   const paginatedRequests = visibleRequests.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const selectedRequest = visibleRequests.find((request) => request.id === selectedId) || paginatedRequests[0] || null;
+  const selectedRequest = requestedIdParameter !== null
+    ? visibleRequests.find((request) => request.id === requestedId) || null
+    : visibleRequests.find((request) => request.id === selectedId) || paginatedRequests[0] || null;
   const metrics = useMemo(() => buildPurchaseRequestMetrics(baseRequests), [baseRequests]);
   const selectedRequestApproved = selectedRequest ? isPurchaseRequestApproved(selectedRequest) : false;
   const selectedRequestRejected = selectedRequest ? isPurchaseRequestRejected(selectedRequest) : false;
   const selectedRequestDecisionPending = selectedRequest ? isPurchaseRequestDecisionPending(selectedRequest) : false;
+  const linkedRequestOnPage = paginatedRequests.some((request) => request.id === requestedId);
 
   useEffect(() => {
+    if (requestedIdParameter === null) {
+      lastScrolledRequestParameter.current = null;
+      return;
+    }
+    if (isLoading || !linkedRequestOnPage || selectedRequest?.id !== requestedId
+      || lastScrolledRequestParameter.current === requestedIdParameter || !detailPanelRef.current) return;
+    lastScrolledRequestParameter.current = requestedIdParameter;
+    detailPanelRef.current.scrollIntoView?.({ block: 'start' });
+  }, [isLoading, linkedRequestOnPage, requestedId, requestedIdParameter, selectedRequest]);
+
+  useEffect(() => {
+    if (isLoading || requestedIdParameter === null) return;
+    initialStageResolved.current = true;
+    const linkedRequest = baseRequests.find((request) => request.id === requestedId);
+    if (!linkedRequest) {
+      setPage(1);
+      setSelectedId(null);
+      return;
+    }
+    const linkedStage = isPurchaseRequestRejected(linkedRequest) ? 'refused' : linkedRequest.stage;
+    const linkedRequests = baseRequests.filter((request) => requestMatchesView(request, linkedStage));
+    setActiveStage(linkedStage);
+    setPage(Math.floor(linkedRequests.findIndex((request) => request.id === linkedRequest.id) / PAGE_SIZE) + 1);
+    setSelectedId(linkedRequest.id);
+  }, [baseRequests, isLoading, requestedId, requestedIdParameter]);
+
+  useEffect(() => {
+    if (isLoading || requestedIdParameter !== null) return;
     setPage(1);
     const first = baseRequests.find((request) => requestMatchesView(request, activeStage));
     if (!initialStageResolved.current && baseRequests.length) {
@@ -286,7 +329,33 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
       }
     }
     setSelectedId(first?.id || null);
-  }, [activeStage, baseRequests]);
+  }, [activeStage, baseRequests, isLoading, requestedIdParameter]);
+
+  function clearRequestedSelection() {
+    if (requestedIdParameter === null) return;
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('requestId');
+    setSearchParams(nextParams, { replace: true });
+  }
+
+  function selectStage(stage: PurchaseRequestView) {
+    clearRequestedSelection();
+    setActiveStage(stage);
+  }
+
+  function selectRequest(id: number) {
+    if (requestedIdParameter !== null) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.set('requestId', String(id));
+      setSearchParams(nextParams, { replace: true });
+    }
+    setSelectedId(id);
+  }
+
+  function updateFilters(next: (current: PurchaseFilters) => PurchaseFilters) {
+    clearRequestedSelection();
+    setFilters(next);
+  }
 
   function updateForm<K extends keyof CreatePurchaseRequestInput>(key: K, value: CreatePurchaseRequestInput[K]) {
     setRequestForm((current) => ({ ...current, [key]: value }));
@@ -306,6 +375,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
       setRequestForm(EMPTY_FORM);
       setFiles([]);
       setWizardStep(0);
+      clearRequestedSelection();
       setActiveStage('to_process');
       setSelectedId(created.id);
       setStatusMessage(`Demande #${created.requestNumber} créée et équipes de traitement notifiées.`);
@@ -343,7 +413,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
           <p>{metrics.openRequestCount} demandes ouvertes · {metrics.urgentCount} urgentes</p>
         </div>
         <div className="purchase-topbar-actions">
-          <label className="purchase-search"><Search size={17} /><input aria-label="Rechercher les demandes" onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher par demande, article, navire…" value={search} /></label>
+          <label className="purchase-search"><Search size={17} /><input aria-label="Rechercher les demandes" onChange={(event) => { clearRequestedSelection(); setSearch(event.target.value); }} placeholder="Rechercher par demande, article, navire…" value={search} /></label>
         </div>
       </header>
 
@@ -351,25 +421,25 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
         <ModuleRibbonGroup label="Demandes">
           {creationAllowed ? <ModuleRibbonCommand icon={<Plus aria-hidden="true" size={22} />} label="Nouvelle demande" onClick={() => setShowCreateDialog(true)} /> : null}
           <ModuleRibbonCommand className={showFilters ? 'is-active' : ''} icon={<Filter aria-hidden="true" size={22} />} label="Filtres" onClick={() => setShowFilters((current) => !current)} />
-          <ModuleRibbonCommand className={filters.urgentOnly ? 'is-active' : ''} count={metrics.urgentCount} icon={<AlertTriangle aria-hidden="true" size={22} />} label="Urgences" onClick={() => setFilters((current) => ({ ...current, urgentOnly: !current.urgentOnly }))} />
+          <ModuleRibbonCommand className={filters.urgentOnly ? 'is-active' : ''} count={metrics.urgentCount} icon={<AlertTriangle aria-hidden="true" size={22} />} label="Urgences" onClick={() => updateFilters((current) => ({ ...current, urgentOnly: !current.urgentOnly }))} />
           <ModuleRibbonCommand disabled={isSaving} icon={<RefreshCw aria-hidden="true" size={22} />} label="Actualiser" onClick={() => void loadData()} />
         </ModuleRibbonGroup>
 
         <ModuleRibbonGroup label="Vues">
-          <ModuleRibbonCommand className={activeStage === 'to_process' ? 'is-active' : ''} count={stageCounts.to_process} icon={<Inbox aria-hidden="true" size={22} />} label="À traiter" onClick={() => setActiveStage('to_process')} />
-          <ModuleRibbonCommand className={activeStage === 'ordered' ? 'is-active' : ''} count={stageCounts.ordered} icon={<ShoppingCart aria-hidden="true" size={22} />} label="En commande" onClick={() => setActiveStage('ordered')} />
-          <ModuleRibbonCommand className={activeStage === 'receiving' ? 'is-active' : ''} count={stageCounts.receiving} icon={<PackageCheck aria-hidden="true" size={22} />} label="À réception" onClick={() => setActiveStage('receiving')} />
-          <ModuleRibbonCommand className={activeStage === 'completed' ? 'is-active' : ''} count={stageCounts.completed} icon={<CheckCircle2 aria-hidden="true" size={22} />} label="Traitées" onClick={() => setActiveStage('completed')} />
-          <ModuleRibbonCommand className={activeStage === 'refused' ? 'is-active' : ''} count={stageCounts.refused} icon={<Ban aria-hidden="true" size={22} />} label="Refusées" onClick={() => setActiveStage('refused')} />
+          <ModuleRibbonCommand className={activeStage === 'to_process' ? 'is-active' : ''} count={stageCounts.to_process} icon={<Inbox aria-hidden="true" size={22} />} label="À traiter" onClick={() => selectStage('to_process')} />
+          <ModuleRibbonCommand className={activeStage === 'ordered' ? 'is-active' : ''} count={stageCounts.ordered} icon={<ShoppingCart aria-hidden="true" size={22} />} label="En commande" onClick={() => selectStage('ordered')} />
+          <ModuleRibbonCommand className={activeStage === 'receiving' ? 'is-active' : ''} count={stageCounts.receiving} icon={<PackageCheck aria-hidden="true" size={22} />} label="À réception" onClick={() => selectStage('receiving')} />
+          <ModuleRibbonCommand className={activeStage === 'completed' ? 'is-active' : ''} count={stageCounts.completed} icon={<CheckCircle2 aria-hidden="true" size={22} />} label="Traitées" onClick={() => selectStage('completed')} />
+          <ModuleRibbonCommand className={activeStage === 'refused' ? 'is-active' : ''} count={stageCounts.refused} icon={<Ban aria-hidden="true" size={22} />} label="Refusées" onClick={() => selectStage('refused')} />
         </ModuleRibbonGroup>
       </ModuleRibbon>
 
       {showFilters ? (
         <div className="purchase-modern-filters">
-          <label>Navire<select aria-label="Filtrer par navire" onChange={(event) => setFilters((current) => ({ ...current, vesselName: event.target.value }))} value={filters.vesselName}><option value="">Tous les navires</option>{vesselNames.map((name) => <option key={name}>{name}</option>)}</select></label>
-          <label>Catégorie<select aria-label="Filtrer par catégorie" onChange={(event) => setFilters((current) => ({ ...current, category: event.target.value }))} value={filters.category}><option value="">Toutes les catégories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></label>
-          <label className="purchase-urgent-toggle"><input checked={filters.urgentOnly} onChange={(event) => setFilters((current) => ({ ...current, urgentOnly: event.target.checked }))} type="checkbox" />Urgences uniquement</label>
-          <button onClick={() => setFilters({ category: '', urgentOnly: false, vesselName: captainView ? filters.vesselName : '' })} type="button">Réinitialiser</button>
+          <label>Navire<select aria-label="Filtrer par navire" onChange={(event) => updateFilters((current) => ({ ...current, vesselName: event.target.value }))} value={filters.vesselName}><option value="">Tous les navires</option>{vesselNames.map((name) => <option key={name}>{name}</option>)}</select></label>
+          <label>Catégorie<select aria-label="Filtrer par catégorie" onChange={(event) => updateFilters((current) => ({ ...current, category: event.target.value }))} value={filters.category}><option value="">Toutes les catégories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></label>
+          <label className="purchase-urgent-toggle"><input checked={filters.urgentOnly} onChange={(event) => updateFilters((current) => ({ ...current, urgentOnly: event.target.checked }))} type="checkbox" />Urgences uniquement</label>
+          <button onClick={() => updateFilters((current) => ({ category: '', urgentOnly: false, vesselName: captainView ? current.vesselName : '' }))} type="button">Réinitialiser</button>
         </div>
       ) : null}
 
@@ -382,7 +452,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
         <section className="purchase-list-panel" aria-label="Liste des demandes d'achat">
           <div className="purchase-tabs" role="tablist">
             {(Object.keys(VIEW_LABELS) as PurchaseRequestView[]).map((stage) => (
-              <button aria-selected={activeStage === stage} className={activeStage === stage ? 'is-active' : ''} key={stage} onClick={() => setActiveStage(stage)} role="tab" type="button">
+              <button aria-selected={activeStage === stage} className={activeStage === stage ? 'is-active' : ''} key={stage} onClick={() => selectStage(stage)} role="tab" type="button">
                 {VIEW_LABELS[stage]} <span>{stageCounts[stage]}</span>
               </button>
             ))}
@@ -390,7 +460,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
           <div className="purchase-list-head"><span>Demande</span><span>Navire</span><span>Catégorie</span><span>Livraison prévue</span><span>État</span></div>
           <div className="purchase-list-body">
             {paginatedRequests.length ? paginatedRequests.map((request) => (
-              <button className={`purchase-list-row${selectedRequest?.id === request.id ? ' is-selected' : ''}`} key={request.id} onClick={() => setSelectedId(request.id)} type="button">
+              <button className={`purchase-list-row${selectedRequest?.id === request.id ? ' is-selected' : ''}`} key={request.id} onClick={() => selectRequest(request.id)} type="button">
                 <span className="purchase-request-name">{request.urgent ? <i aria-label="Urgent" /> : null}<strong>#{request.requestNumber}</strong><small>{request.title}</small></span>
                 <span>{request.vesselName || '—'}</span>
                 <span><em className={`purchase-category is-${categoryKind(request.categoryLabel)}`}>{categoryKind(request.categoryLabel) === 'service' ? 'Prestation' : 'Fourniture'}</em></span>
@@ -405,7 +475,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
           </footer>
         </section>
 
-        <section className="purchase-detail-panel" aria-label={selectedRequest ? `Demande ${selectedRequest.requestNumber}` : 'Détail de la demande'}>
+        <section className="purchase-detail-panel" aria-label={selectedRequest ? `Demande ${selectedRequest.requestNumber}` : 'Détail de la demande'} ref={detailPanelRef}>
           {selectedRequest ? <>
             <header className="purchase-detail-header">
               <div className="purchase-detail-heading">
@@ -437,7 +507,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
             <div className="purchase-detail-section"><h3>Livraison à bord</h3><dl><div><dt>Navire</dt><dd>{selectedRequest.vesselName || '—'}</dd></div><div><dt>Lieu de livraison</dt><dd>{selectedRequest.deliveryLocation || '—'}</dd></div><div><dt>Date souhaitée</dt><dd>{formatDate(selectedRequest.expectedDeliveryOn)}</dd></div><div><dt>Responsable</dt><dd>{selectedRequest.ownerName || 'Non attribué'}</dd></div><div><dt>Précision</dt><dd>{selectedRequest.deliveryDetails || '—'}</dd></div><div><dt>Traitement</dt><dd>{selectedRequest.processingComment || '—'}</dd></div></dl></div>
             <details className="purchase-attachments" open><summary><span>Pièces jointes</span><strong><Paperclip size={16} />{selectedRequest.attachments.length} fichier{selectedRequest.attachments.length > 1 ? 's' : ''}</strong><ChevronDown size={16} /></summary><div>{selectedRequest.attachments.length ? selectedRequest.attachments.map((attachment) => <a href={attachment.downloadUrl} key={attachment.id} rel="noreferrer" target="_blank">{attachment.isImage ? <ImageIcon size={18} /> : <FileText size={18} />}<span><strong>{attachment.title}</strong><small>{attachment.sourceKind === 'sharepoint' ? 'SharePoint' : 'BBTM'}</small></span></a>) : <p>Aucune pièce jointe.</p>}</div></details>
             <div className="purchase-activity"><h3>Activité</h3><ol><li className="is-primary"><i /><div><strong>Demande créée</strong><small>{formatDate(selectedRequest.createdAt, true)} par {selectedRequest.requesterName || 'le demandeur'}</small></div><span>Demandeur</span></li>{selectedRequest.events.filter((event) => event.eventType !== 'created').map((event) => <li key={event.id}><i /><div><strong>{event.statusLabel}</strong><small>{formatDate(event.createdAt, true)}{event.actorName ? ` par ${event.actorName}` : ''}</small></div><span>{event.comment || event.actorName || 'Suivi'}</span></li>)}{selectedRequest.approvalHistory && !selectedRequest.events.length ? <li className={normalize(selectedRequest.approvalStatus).includes('refuse') ? 'is-danger' : ''}><i /><div><strong>{selectedRequest.approvalStatus || 'Approbation'}</strong><small>{selectedRequest.approvalHistory}</small></div><span>{selectedRequest.approvalReason || selectedRequest.approverName}</span></li> : null}</ol></div>
-          </> : <div className="purchase-empty-detail"><ShoppingCart size={34} /><p>Sélectionnez une demande pour afficher son suivi.</p></div>}
+          </> : <div className="purchase-empty-detail"><ShoppingCart size={34} /><p>{requestedIdParameter !== null ? 'Cette demande est introuvable ou inaccessible.' : 'Sélectionnez une demande pour afficher son suivi.'}</p></div>}
         </section>
       </div>
 

@@ -20,6 +20,14 @@ vi.mock('./workingTimeQueries', async (importOriginal) => {
   const original = await importOriginal<typeof import('./workingTimeQueries')>();
   return {
     ...original,
+    fetchWorkingTimePhasesRecommendation: vi.fn().mockResolvedValue({
+      status: 'conforme', policyId: 1, policyName: 'Accords Collectifs du 27/06/2025',
+      alreadyNonCompliant: false, available24hSeconds: 14400, available7dSeconds: 180000,
+      work24hSeconds: 28800, work7dSeconds: 79200, rest24hSeconds: 57600,
+      longestRest24hSeconds: 43200, restImpactSeconds: -14400, consecutiveRestImpactSeconds: -3600,
+      maxAdditionalSeconds: 14400, latestEndAt: '2026-08-03T16:00:00Z',
+      nextResumeAt: '2026-08-03T22:00:00Z', violationCodes: [],
+    }),
     getOrCreateWorkingTimeRegister: vi.fn().mockResolvedValue(100),
     fetchWorkingTimeDayContext: vi.fn().mockResolvedValue({
       assignmentId: 1,
@@ -126,6 +134,7 @@ function renderPanel(
   data: WorkingTimeWorkspace,
   person = currentPerson,
   referenceDate = '2026-09-01',
+  navigationTarget?: { personId: number; date: string },
 ) {
   vi.mocked(useWorkingTimeWorkspace).mockReturnValue({
     workspace: data,
@@ -137,6 +146,7 @@ function renderPanel(
     <WorkingTimeWorkflowPanel
       client={client}
       currentPerson={person}
+      navigationTarget={navigationTarget}
       previewMode
       range={{ start: '2026-08-01', end: '2026-08-31' }}
       referenceDate={referenceDate}
@@ -154,6 +164,59 @@ describe('WorkingTimeWorkflowPanel', () => {
     vi.clearAllMocks();
     reload.mockResolvedValue(true);
     vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue(defaultDayContext);
+  });
+
+  it('opens the linked readable sailor and day in Conformité for a real Capitaine profile', async () => {
+    const user = userEvent.setup();
+    const data = workspace('draft');
+    data.registers.push({ ...data.registers[0], id: 101, personId: 20, personName: 'Alex MARIN', functionLabel: 'Matelot' });
+    data.editablePeople = data.editablePeople.filter((person) => person.personId === 10);
+    renderPanel(['capitaine'], data, currentPerson, '2026-09-01', { personId: 20, date: '2026-08-19' });
+
+    expect(await screen.findByRole('heading', { name: /Alex MARIN/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Mercredi 19 août 2026' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Conformité' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'Jour' })).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(fetchWorkingTimeDayContext).toHaveBeenCalledWith(client, {
+      personId: 20, localWorkDate: '2026-08-19',
+    }));
+
+    await user.click(screen.getByRole('tab', { name: /jeu 20 août/ }));
+    expect(screen.getByRole('heading', { name: 'Jeudi 20 août 2026' })).toBeInTheDocument();
+  });
+
+  it('keeps a real Marin on their own readable register when a home target names another sailor', async () => {
+    const data = workspace('draft');
+    data.readablePeople[0].functionLabel = 'Matelot';
+    data.registers[0].functionLabel = 'Matelot';
+    data.registers.push({ ...data.registers[0], id: 101, personId: 20, personName: 'Alex MARIN' });
+    renderPanel(['marin'], data, { ...currentPerson, functionLabel: 'Matelot' }, '2026-09-01', { personId: 20, date: '2026-08-19' });
+
+    expect(await screen.findByRole('heading', { name: /Camille CAPITAINE/ })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Alex MARIN/ })).not.toBeInTheDocument();
+    expect(fetchWorkingTimeDayContext).not.toHaveBeenCalledWith(client, expect.objectContaining({ personId: 20 }));
+  });
+
+  it('waits for loaded readable people before opening a home target', async () => {
+    vi.mocked(useWorkingTimeWorkspace).mockReturnValue({ workspace: null, isLoading: true, errorMessage: null, reload });
+    const props = {
+      client,
+      currentPerson,
+      navigationTarget: { personId: 20, date: '2026-08-19' },
+      previewMode: true,
+      range: { start: '2026-08-01', end: '2026-08-31' },
+      referenceDate: '2026-09-01',
+      roles: ['capitaine'] as const,
+    };
+    const view = render(<WorkingTimeWorkflowPanel {...props} roles={[...props.roles]} />);
+    expect(fetchWorkingTimeDayContext).not.toHaveBeenCalled();
+
+    vi.mocked(useWorkingTimeWorkspace).mockReturnValue({ workspace: workspace('draft', 20), isLoading: false, errorMessage: null, reload });
+    view.rerender(<WorkingTimeWorkflowPanel {...props} roles={[...props.roles]} />);
+    expect(await screen.findByRole('heading', { name: 'Mercredi 19 août 2026' })).toBeInTheDocument();
+    await waitFor(() => expect(fetchWorkingTimeDayContext).toHaveBeenCalledWith(client, {
+      personId: 20, localWorkDate: '2026-08-19',
+    }));
   });
 
   it('lets an unlinked administrator browse the catalogue while keeping mutations protected', () => {

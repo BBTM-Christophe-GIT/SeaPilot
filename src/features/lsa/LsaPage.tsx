@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Download, FileCheck2, LifeBuoy, Package, Pencil, Plus, Search } from 'lucide-react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
@@ -23,6 +23,16 @@ const messageOf = (error: unknown) => error && typeof error === 'object' && 'mes
 
 export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: RoleKey[] }) {
   const context = useOutletContext<AppShellOutletContext | undefined>();
+  const [searchParams] = useSearchParams();
+  const vesselParameter = Number(searchParams.get('vessel'));
+  const itemParameter = Number(searchParams.get('item'));
+  const linkedVesselId = Number.isSafeInteger(vesselParameter) && vesselParameter > 0 ? vesselParameter : null;
+  const linkedItemId = Number.isSafeInteger(itemParameter) && itemParameter > 0 ? itemParameter : null;
+  const linkKey = `${linkedVesselId || ''}:${linkedItemId || ''}`;
+  const selectedVesselLink = useRef<string | null>(null);
+  const openedItemLink = useRef<string | null>(null);
+  const revealedItemLink = useRef<string | null>(null);
+  const [openItemIds, setOpenItemIds] = useState<Set<number>>(() => new Set());
   const [preview] = useState(createLsaPreviewClient);
   const db = client || (context?.previewMode ? preview : context?.client) || supabase;
   const administrator = (roles || context?.roles || []).includes('admin');
@@ -32,6 +42,7 @@ export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: Ro
   const [vessels, setVessels] = useState<LiftingVessel[]>([]);
   const [vesselId, setVesselId] = useState(context?.liftingVesselId || 0);
   const [register, setRegister] = useState(emptyRegister);
+  const [loadedRegisterVesselId, setLoadedRegisterVesselId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -64,14 +75,48 @@ export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: Ro
 
   useEffect(() => {
     let cancelled = false;
-    setRegister(emptyRegister); setError('');
+    setRegister(emptyRegister); setLoadedRegisterVesselId(null); setError('');
     if (!vesselId) return;
     setLoading(true);
-    fetchLsaRegister(db, vesselId).then((loaded) => { if (!cancelled) setRegister(loaded); })
+    fetchLsaRegister(db, vesselId).then((loaded) => {
+      if (!cancelled) { setRegister(loaded); setLoadedRegisterVesselId(vesselId); }
+    })
       .catch((reason) => { if (!cancelled) setError(messageOf(reason)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [db, vesselId, refresh]);
+
+  useEffect(() => {
+    if (!linkedVesselId) {
+      selectedVesselLink.current = null;
+      return;
+    }
+    if (selectedVesselLink.current === linkKey) return;
+    if (!vessels.some((vessel) => vessel.id === linkedVesselId)) return;
+    selectedVesselLink.current = linkKey;
+    setVesselId(linkedVesselId);
+    setQuery(''); setCategory(''); setYear(''); setView('inventory');
+  }, [linkKey, linkedVesselId, vessels]);
+
+  useEffect(() => {
+    if (!linkedItemId) {
+      openedItemLink.current = null;
+      revealedItemLink.current = null;
+      return;
+    }
+    if (loading || loadedRegisterVesselId !== vesselId || openedItemLink.current === linkKey) return;
+    if (linkedVesselId && (vesselId !== linkedVesselId || !vessels.some((vessel) => vessel.id === linkedVesselId))) return;
+    const item = register.items.find((record) => record.id === linkedItemId && record.vessel_id === vesselId);
+    openedItemLink.current = linkKey;
+    setOpenItemIds(new Set(item ? [item.id] : []));
+    setQuery(''); setCategory(''); setYear(''); setView('inventory');
+  }, [linkKey, linkedItemId, linkedVesselId, loadedRegisterVesselId, loading, register.items, vesselId, vessels]);
+
+  useEffect(() => {
+    if (!linkedItemId || !openItemIds.has(linkedItemId) || revealedItemLink.current === linkKey) return;
+    document.getElementById(`lsa-item-${linkedItemId}`)?.scrollIntoView?.({ block: 'center' });
+    revealedItemLink.current = linkKey;
+  }, [linkKey, linkedItemId, openItemIds]);
 
   const filtered = items.filter((item) => matchesLsaItem(item, query, category));
   const filteredIds = new Set(filtered.map((item) => item.id));
@@ -118,11 +163,19 @@ export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: Ro
           const rows = filtered.filter((item) => item.category_key === group.key);
           return !!rows.length && <section key={group.key} className="lifting-accessory-group" aria-label={group.name}>
             <header><h3>{group.name}</h3><strong>{rows.length} matériel{rows.length > 1 ? 's' : ''}</strong></header>
-            <div className="lifting-item-list">{rows.map((item) => <article key={item.id} className={`lifting-item ${liftingDeadline(item.expires_on, today, 90)}`}>
+            <div className="lifting-item-list">{rows.map((item) => <article id={`lsa-item-${item.id}`} key={item.id} className={`lifting-item ${liftingDeadline(item.expires_on, today, 90)}`}>
               <div className="lifting-id">{item.id}</div><div className="lifting-item-main">
                 <div className="lifting-item-title"><small>{item.category_label}</small><h3>{item.document_title || item.title}</h3></div>
                 <div className="lifting-item-metadata"><p>{[item.brand, item.model, item.serial_number && `N° de série : ${item.serial_number}`].filter(Boolean).join(' · ')}</p><LiftingDueBadge alertDays={90} date={item.expires_on} today={today} />{!item.expires_on && <p>Échéance non renseignée</p>}</div>
-                <details className="lsa-details"><summary>Détails et historique</summary>
+                <details className="lsa-details" open={openItemIds.has(item.id)} onToggle={(event) => {
+                  const isOpen = event.currentTarget.open;
+                  setOpenItemIds((current) => {
+                    if (current.has(item.id) === isOpen) return current;
+                    const next = new Set(current);
+                    if (isOpen) next.add(item.id); else next.delete(item.id);
+                    return next;
+                  });
+                }}><summary>Détails et historique</summary>
                   <dl><div><dt>Marque</dt><dd>{item.brand || 'Non renseignée'}</dd></div><div><dt>Modèle</dt><dd>{item.model || 'Non renseigné'}</dd></div><div><dt>Numéro de série</dt><dd>{item.serial_number || 'Non renseigné'}</dd></div><div><dt>Notes</dt><dd>{item.notes || 'Aucune'}</dd></div>{item.original_designation && item.original_designation !== item.document_title && <div><dt>Désignation d’origine</dt><dd>{item.original_designation}</dd></div>}</dl>
                   {versions.filter((version) => version.certificate_id === item.id).map((version) => <p key={version.id}>Version {version.version_no} · {lsaVersionStatus(version.status)} · {version.normalized_file_name}<button className="secondary-button" disabled={busy} onClick={() => void act(async () => saveLiftingBlob(await downloadLsaDocument(db, version), version.normalized_file_name))}><Download size={16} /> Télécharger</button></p>)}
                   {events.filter((event) => event.certificate_id === item.id).map((event) => <p key={event.id}>{formatLiftingDate(event.created_at.slice(0, 10))} · {event.event_type === 'version_uploaded' ? 'Document déposé' : event.event_type === 'metadata_updated' ? 'Fiche mise à jour' : event.event_type}{event.notes && ` · ${event.notes}`}{event.provider_name && ` · ${event.provider_name}`}{event.planned_on && ` · Contrôle prévu : ${formatLiftingDate(event.planned_on)}`}{event.visit_location && ` · ${event.visit_location}`}</p>)}

@@ -1,6 +1,6 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { Link, MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { LsaPage } from './LsaPage';
 import { createLsaPreviewClient } from './lsaPreview';
@@ -10,6 +10,72 @@ import { demoFleetVessels } from '../lifting/liftingPreview';
 import { getFleetCertificateCategoryOptions } from '../fleetCertificates/fleetCertificateCategories';
 
 describe('Registre LSA', () => {
+  it.each(['capitaine', 'marin'] as const)('opens the linked vessel and exact item history read-only for %s', async (role) => {
+    const client = createLsaPreviewClient();
+    const vessel = demoFleetVessels[1];
+    const register = await fetchLsaRegister(client, vessel.id);
+    const item = register.items[1];
+    render(<MemoryRouter initialEntries={[`/modules/lsa?vessel=${vessel.id}&item=${item.id}`]}><LsaPage client={client} roles={[role]} /></MemoryRouter>);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: vessel.name })).toHaveAttribute('aria-pressed', 'true'), { timeout: 5000 });
+    await waitFor(() => expect(document.getElementById(`lsa-item-${item.id}`)?.querySelector('details')).toHaveAttribute('open'), { timeout: 5000 });
+    expect(document.querySelectorAll('.lsa-details[open]')).toHaveLength(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Modifier/ })).not.toBeInTheDocument();
+  });
+
+  it('follows another item link in the mounted register without opening an edit dialog', async () => {
+    const user = userEvent.setup();
+    const client = createLsaPreviewClient();
+    const vessel = demoFleetVessels[1];
+    const register = await fetchLsaRegister(client, vessel.id);
+    const [first, second] = register.items;
+    render(<MemoryRouter initialEntries={[`/modules/lsa?vessel=${vessel.id}&item=${first.id}`]}><Link to={`?vessel=${vessel.id}&item=${second.id}`}>Ouvrir un autre matériel</Link><LsaPage client={client} roles={['admin']} /></MemoryRouter>);
+
+    await waitFor(() => expect(document.getElementById(`lsa-item-${first.id}`)?.querySelector('details')).toHaveAttribute('open'), { timeout: 5000 });
+    await user.click(screen.getByRole('link', { name: 'Ouvrir un autre matériel' }));
+    await waitFor(() => expect(document.getElementById(`lsa-item-${second.id}`)?.querySelector('details')).toHaveAttribute('open'));
+    expect(document.getElementById(`lsa-item-${first.id}`)?.querySelector('details')).not.toHaveAttribute('open');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('waits for a newly linked vessel register before resolving its item', async () => {
+    const user = userEvent.setup();
+    const client = createLsaPreviewClient();
+    const vessel = demoFleetVessels[1];
+    const targetRegister = await fetchLsaRegister(client, vessel.id);
+    const item = targetRegister.items[1];
+    const originalFrom = client.from.bind(client);
+    let releaseTarget!: () => void;
+    const targetItems = new Promise((resolve) => {
+      releaseTarget = () => resolve({ data: targetRegister.items, error: null });
+    });
+    vi.spyOn(client, 'from').mockImplementation((table: string) => table === 'lsa_items'
+      ? { select: () => ({ eq: (key: string, value: number) => ({ order: () => value === vessel.id ? targetItems : originalFrom(table).select('*').eq(key, value).order('id') }) }) } as never
+      : originalFrom(table));
+    render(<MemoryRouter initialEntries={['/modules/lsa']}><Link to={`?vessel=${vessel.id}&item=${item.id}`}>Ouvrir le matériel d’un autre navire</Link><LsaPage client={client} roles={['marin']} /></MemoryRouter>);
+
+    await screen.findByText('4 / 4 matériels affichés');
+    await user.click(screen.getByRole('link', { name: 'Ouvrir le matériel d’un autre navire' }));
+    await screen.findByText('Chargement du registre…');
+    expect(document.querySelectorAll('.lsa-details[open]')).toHaveLength(0);
+    await act(async () => releaseTarget());
+    await waitFor(() => expect(document.getElementById(`lsa-item-${item.id}`)?.querySelector('details')).toHaveAttribute('open'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('does not open an item belonging to another vessel', async () => {
+    const client = createLsaPreviewClient();
+    const vessel = demoFleetVessels[1];
+    const otherRegister = await fetchLsaRegister(client, demoFleetVessels[0].id);
+    render(<MemoryRouter initialEntries={[`/modules/lsa?vessel=${vessel.id}&item=${otherRegister.items[0].id}`]}><LsaPage client={client} roles={['marin']} /></MemoryRouter>);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: vessel.name })).toHaveAttribute('aria-pressed', 'true'));
+    await screen.findByText('4 / 4 matériels affichés');
+    expect(document.querySelectorAll('.lsa-details[open]')).toHaveLength(0);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('combines vessel, category and text filters and resets the selection', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><LsaPage client={createLsaPreviewClient()} roles={['admin']} /></MemoryRouter>);

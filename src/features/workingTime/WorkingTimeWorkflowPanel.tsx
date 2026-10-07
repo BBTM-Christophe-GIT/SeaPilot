@@ -20,7 +20,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { compareHrFunctionLabels, normalizeHrFunctionLabel } from '../humanResources/peopleQueries';
 import type { RoleKey } from '../permissions/roles';
 import { todayPlanningDate } from '../planning/planningDates';
@@ -69,6 +69,7 @@ interface WorkingTimeWorkflowPanelProps {
   roles: RoleKey[];
   currentPerson: CurrentPersonSummary | null;
   range: WorkingTimeRange;
+  navigationTarget?: { personId: number; date: string } | null;
   previewMode?: boolean;
   refreshToken?: number;
   referenceDate?: string;
@@ -262,6 +263,7 @@ export function WorkingTimeWorkflowPanel({
   roles,
   currentPerson,
   range,
+  navigationTarget,
   previewMode = false,
   refreshToken = 0,
   referenceDate,
@@ -302,6 +304,7 @@ export function WorkingTimeWorkflowPanel({
   const [registerView, setRegisterView] = useState<'daily' | 'monthly'>('daily');
   const [rightPanelTab, setRightPanelTab] = useState<'compliance' | 'approvals'>('compliance');
   const [approvalNavigationTarget, setApprovalNavigationTarget] = useState<{ personId: number; date: string } | null>(null);
+  const consumedNavigationTarget = useRef('');
 
   const currentPersonId = workspace?.currentPersonId || currentPerson?.id || 0;
   const canActAsCaptain = currentPerson?.functionLabel === 'Capitaine' || workspace?.canActAsCaptain === true;
@@ -473,14 +476,16 @@ export function WorkingTimeWorkflowPanel({
     setSelectedPersonId((current) => {
       if (current
         && visibleReadablePeople.some((person) => person.personId === current)
-        && (monthlyRegisterByPerson.has(current) || monthlyRegisters.length === 0)) return current;
+        && (monthlyRegisterByPerson.has(current) || monthlyRegisters.length === 0
+          || (navigationTarget?.personId === current
+            && consumedNavigationTarget.current === `${navigationTarget.personId}:${navigationTarget.date}`))) return current;
       return (monthlyRegisterByPerson.has(workspace.currentPersonId) ? workspace.currentPersonId : null)
         || monthlyRegisters[0]?.personId
         || visibleReadablePeople.find((person) => person.personId === workspace.currentPersonId)?.personId
         || visibleReadablePeople[0]?.personId
         || null;
     });
-  }, [currentPerson?.id, monthlyRegisterByPerson, monthlyRegisters, visibleEditablePeople, visibleReadablePeople, workspace]);
+  }, [currentPerson?.id, monthlyRegisterByPerson, monthlyRegisters, navigationTarget, visibleEditablePeople, visibleReadablePeople, workspace]);
 
   useEffect(() => {
     if (!workspace || !catalogPeople.length) return;
@@ -503,6 +508,25 @@ export function WorkingTimeWorkflowPanel({
     setEndsAt(`${initialDay}T00:00`);
     setPendingPhases([]);
   }, [localToday, range.end, range.start]);
+
+  useEffect(() => {
+    if (!navigationTarget || !workspace || isLoading
+      || navigationTarget.date < range.start || navigationTarget.date > range.end) return;
+    const targetKey = `${navigationTarget.personId}:${navigationTarget.date}`;
+    if (consumedNavigationTarget.current === targetKey) return;
+    consumedNavigationTarget.current = targetKey;
+    const person = visibleReadablePeople.find((candidate) => candidate.personId === navigationTarget.personId);
+    if (!person) return;
+    setPersonnelFilter(isVisibleForPersonnelFilter(person, 'departed', localToday) ? 'departed' : 'active');
+    setRegisterSearch('');
+    setSelectedPersonId(person.personId);
+    setSelectedDay(navigationTarget.date);
+    setStartsAt(`${navigationTarget.date}T00:00`);
+    setEndsAt(`${navigationTarget.date}T00:00`);
+    setRegisterView('daily');
+    setRightPanelTab('compliance');
+    setPendingPhases([]);
+  }, [isLoading, localToday, navigationTarget, range.end, range.start, visibleReadablePeople, workspace]);
 
   useEffect(() => {
     if (!approvalNavigationTarget

@@ -1,10 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { RefreshCw, X } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
-import { addPlanningDays, todayPlanningDate } from '../planning/planningDates';
+import { addPlanningDays, isPlanningDate, todayPlanningDate } from '../planning/planningDates';
 import { getPlanningPermissions } from '../planning/planningPermissions';
 import { PlanningP13Panel, type P13Tab } from '../planning/PlanningP13Panel';
 import { createPlanningPreviewOverview } from '../planning/planningPreviewData';
@@ -68,6 +68,13 @@ function WorkingTimeModal({ children, onClose, subtitle, title }: {
 
 export function WorkingTimePage({ client, roles, currentPerson, initialRange }: WorkingTimePageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
+  const [searchParams] = useSearchParams();
+  const navigationTarget = useMemo(() => {
+    const person = searchParams.get('person');
+    const date = searchParams.get('date');
+    const personId = person && /^[1-9]\d*$/.test(person) ? Number(person) : NaN;
+    return Number.isSafeInteger(personId) && isPlanningDate(date) ? { personId, date } : null;
+  }, [searchParams]);
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
   const effectiveCurrentPerson = currentPerson === undefined ? outletContext?.currentPerson || null : currentPerson;
@@ -80,7 +87,7 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
     () => previewMode ? createPlanningPreviewOverview(referenceDate) : undefined,
     [previewMode, referenceDate],
   );
-  const [range, setRange] = useState(() => currentMonthRange(initialRange?.start || referenceDate));
+  const [range, setRange] = useState(() => currentMonthRange(navigationTarget?.date || initialRange?.start || referenceDate));
   const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
   const [activeModal, setActiveModal] = useState<WorkingTimeModalKey | null>(null);
   const {
@@ -106,6 +113,10 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
     setWorkspaceRefreshToken((value) => value + 1);
     await reload();
   };
+
+  useEffect(() => {
+    if (navigationTarget) setRange(currentMonthRange(navigationTarget.date));
+  }, [navigationTarget]);
 
   useEffect(() => {
     if (!activeModal) return undefined;
@@ -135,8 +146,10 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
 
       {rangeIsValid ? (
         <WorkingTimeWorkflowPanel
+          key={navigationTarget ? `${navigationTarget.personId}:${navigationTarget.date}` : 'working-time'}
           client={effectiveClient}
           currentPerson={effectiveCurrentPerson}
+          navigationTarget={navigationTarget}
           previewMode={previewMode}
           range={range}
           refreshToken={workspaceRefreshToken}
