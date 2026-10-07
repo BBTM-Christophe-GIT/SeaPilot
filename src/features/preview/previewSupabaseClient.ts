@@ -9,6 +9,7 @@ import { validatePlanningLeaveCounterPeriod, validatePlanningLeaveRightsPeriod }
 import { QHSE_POLICY_ATTACHMENT_MIME_TYPES } from '../qhsePolicy/qhsePolicyAttachments';
 import { isQhsePolicyId, type QhsePolicyOwnerKind } from '../qhsePolicy/qhsePolicyModel';
 import { normalizeQhsePolicyAxisIconKey, resolveQhsePolicyAxisIcon } from '../qhsePolicy/qhsePolicyIcons';
+import { DEFAULT_PROCEDURE_TAGS } from '../procedures/procedureTagCatalogue';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
@@ -293,6 +294,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   planning_crew_display_preferences: [],
   useful_links: PREVIEW_USEFUL_LINKS,
   useful_link_categories: PREVIEW_LINK_CATEGORIES,
+  procedure_tag_catalogue: DEFAULT_PROCEDURE_TAGS.map(name => ({ name, active: true })),
   procedures: [
     {
       id: 8101, procedure_code: 'GEN 01-A', title: 'Manuel Qualité Santé Sécurité Environnement', status: 'published',

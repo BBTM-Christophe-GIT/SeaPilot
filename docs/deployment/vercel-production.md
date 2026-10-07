@@ -1,5 +1,14 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.68.1` propose une liste de tags pré-enregistrés dans Procédures QHSE,
+commune à Administration et Direction. La liste initiale comprend Rôle, MARPOL,
+Pollution, Incendie et THOMSEA, et s'enrichit avec les nouveaux tags enregistrés.
+**Gérer les tags** permet d'ajouter ou de supprimer des choix ; les tags des
+documents existants sont conservés et restent recherchables. Appliquer
+`20261007141605_procedure_tag_catalogue.sql` puis
+`20261007142542_procedure_tag_catalogue_archive.sql` avant le client.
+Voir [procedure-document-tags.md](./procedure-document-tags.md).
+
 Version `3.68.0` ajoute les tags aux documents de Procédures QHSE et à leur
 recherche. Appliquer `20261007135737_procedure_document_tags.sql` avant le client.
 Les tags sont conservés à la publication et synchronisés sur les PDF liés.

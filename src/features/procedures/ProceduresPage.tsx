@@ -69,6 +69,8 @@ import { buildProcedureCode, getAnnualReviewAlert, getAnnualReviewDueDate } from
 import './procedureGoogleDrive.css';
 import './procedureTags.css';
 import { normalizeProcedureSearch, normalizeProcedureTags, parseProcedureTags } from './procedureTags';
+import { createProcedureTag, fetchProcedureTagCatalogue, removeProcedureTag } from './procedureTagCatalogue';
+import { ProcedureTagCatalogueDialog } from './ProcedureTagCatalogueDialog';
 import { ProcedureListDialog } from './ProcedureListDialog';
 import { procedureAppliesToVessel } from './procedureList';
 import { CHAPTERS, ISM_CHAPTER_THEMES, chapterKey, type ProcedureChapterKey } from './procedureChapters';
@@ -186,18 +188,33 @@ function formFromProcedure(procedure: ProcedureRecord): ProcedureInput {
   };
 }
 
-function ProcedureTagsField({ value, onChange, disabled }: { value: string; onChange: (value: string) => void; disabled: boolean }) {
+interface ProcedureTagCatalogueState {
+  names: string[];
+  loading: boolean;
+  error: string;
+  onRetry: () => void;
+}
+
+function ProcedureTagsField({ value, onChange, disabled, catalogue }: { value: string; onChange: (value: string) => void; disabled: boolean; catalogue: ProcedureTagCatalogueState }) {
   const fieldId = useId();
   const tags = parseProcedureTags(value);
+  const selectedKeys = new Set(tags.map(normalizeProcedureSearch));
+  const availableTags = normalizeProcedureTags(catalogue.names).filter(tag => !selectedKeys.has(normalizeProcedureSearch(tag)));
   return <div className="procedure-tags-field">
     <label htmlFor={fieldId}>Tags</label>
-    <input id={fieldId} aria-describedby={`${fieldId}-help`} disabled={disabled} placeholder="Ex. sécurité, évacuation, machine" value={value} onChange={event => onChange(event.target.value)} />
-    <small id={`${fieldId}-help`}>Séparez les tags par une virgule ou un point-virgule. La recherche retrouve les documents grâce à ces tags.</small>
+    <input id={fieldId} aria-describedby={`${fieldId}-help`} disabled={disabled} placeholder="Ex. Rôle, MARPOL, Pollution" value={value} onChange={event => onChange(event.target.value)} />
+    <small id={`${fieldId}-help`}>Séparez les tags par une virgule ou un point-virgule. La recherche retrouve les documents grâce à ces tags. Les nouveaux tags enregistrés seront réutilisables pour les autres documents.</small>
+    <label htmlFor={`${fieldId}-catalogue`}>Ajouter un tag pré-enregistré</label>
+    <select id={`${fieldId}-catalogue`} disabled={disabled || catalogue.loading || !availableTags.length} value="" onChange={event => { if (event.target.value) onChange([...tags, event.target.value].join(', ')); }}>
+      <option value="">Choisir un tag…</option>
+      {availableTags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
+    </select>
+    {catalogue.loading ? <small role="status">Chargement des tags pré-enregistrés… La saisie libre reste disponible.</small> : catalogue.error ? <div className="procedure-tag-catalogue-error"><p role="alert">{catalogue.error} La saisie libre reste disponible.</p><button className="sp-button sp-button--secondary" disabled={disabled} onClick={catalogue.onRetry} type="button">Réessayer le chargement des tags</button></div> : !catalogue.names.length ? <small>Aucun tag pré-enregistré pour le moment.</small> : !availableTags.length ? <small>Tous les tags pré-enregistrés sont déjà sélectionnés.</small> : null}
     {tags.length ? <ul aria-label="Tags du document" className="procedure-tag-list">{tags.map(tag => <li className="procedure-tag" key={tag}><span>{tag}</span><button aria-label={`Retirer le tag ${tag}`} disabled={disabled} onClick={() => onChange(tags.filter(value => value !== tag).join(', '))} type="button"><X aria-hidden="true" size={14} /></button></li>)}</ul> : null}
   </div>;
 }
 
-function ProcedureTagsDialog({ record, onClose, onSave, saving }: { record: ProcedureRecord; onClose: () => void; onSave: (tags: string[]) => Promise<void>; saving: boolean }) {
+function ProcedureTagsDialog({ record, onClose, onSave, saving, catalogue }: { record: ProcedureRecord; onClose: () => void; onSave: (tags: string[]) => Promise<void>; saving: boolean; catalogue: ProcedureTagCatalogueState }) {
   const [value, setValue] = useState(record.tags.join(', '));
   const [error, setError] = useState('');
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -209,7 +226,7 @@ function ProcedureTagsDialog({ record, onClose, onSave, saving }: { record: Proc
   }
   return <AppDialog title="Modifier les tags" description={record.title} icon={<Tags aria-hidden="true" size={20} />} size="sm" isBusy={saving} onClose={onClose} onSubmit={handleSubmit}
     footer={<div className="app-dialog__actions"><button className="sp-button sp-button--secondary" disabled={saving} onClick={onClose} type="button">Annuler</button><button className="sp-button sp-button--primary" disabled={saving} type="submit">{saving ? 'Enregistrement…' : 'Enregistrer'}</button></div>}>
-    <ProcedureTagsField value={value} onChange={setValue} disabled={saving} />
+    <ProcedureTagsField value={value} onChange={setValue} disabled={saving} catalogue={catalogue} />
     {error ? <p className="form-error" role="alert">{error}</p> : null}
   </AppDialog>;
 }
@@ -221,12 +238,13 @@ interface ProcedureEditorProps {
   vesselOptions: string[];
   vesselsLoading: boolean;
   vesselsError: string;
+  tagCatalogue: ProcedureTagCatalogueState;
   onClose: () => void;
   onSave: (input: ProcedureInput, file: File | null, fromTemplate: boolean) => Promise<void>;
   saving: boolean;
 }
 
-function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions, vesselsLoading, vesselsError, onClose, onSave, saving }: ProcedureEditorProps) {
+function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions, vesselsLoading, vesselsError, tagCatalogue, onClose, onSave, saving }: ProcedureEditorProps) {
   const [form, setForm] = useState(() => procedure ? formFromProcedure(procedure) : {
     ...EMPTY_FORM, documentNumber: suggestNextProcedureNumber(procedures, EMPTY_FORM.theme), versionLabel: 'A',
   });
@@ -323,7 +341,7 @@ function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions,
           <section className="procedure-form-section" aria-labelledby="procedure-details-title">
             <header><BookOpenCheck aria-hidden="true" size={18} /><h3 id="procedure-details-title">Informations complémentaires</h3></header>
             <div className="procedure-form-grid"><label>Description<textarea rows={2} value={form.description} onChange={event => setValue('description', event.target.value)} /></label><label>Exigence réglementaire<textarea rows={2} value={form.regulatoryRequirement} onChange={event => setValue('regulatoryRequirement', event.target.value)} /></label></div>
-            <ProcedureTagsField value={tagsValue} onChange={setTagsValue} disabled={saving} />
+            <ProcedureTagsField value={tagsValue} onChange={setTagsValue} disabled={saving} catalogue={tagCatalogue} />
           </section>
           {!fromTemplate ? <section className="procedure-form-section procedure-file-section" aria-labelledby="procedure-file-title">
             <header><Upload aria-hidden="true" size={18} /><div><h3 id="procedure-file-title">Importer un fichier</h3><p>Google Drive synchronisé · dossier Procedures</p></div></header>
@@ -371,6 +389,11 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
   const [procedures, setProcedures] = useState<ProcedureRecord[]>([]);
   const [publications, setPublications] = useState<PublishedProcedureRecord[]>([]);
   const [procedureProjects, setProcedureProjects] = useState<ProcedureProjectOption[]>([]);
+  const [catalogueTags, setCatalogueTags] = useState<string[]>([]);
+  const [catalogueLoading, setCatalogueLoading] = useState(isManager);
+  const [catalogueError, setCatalogueError] = useState('');
+  const [catalogueRetry, setCatalogueRetry] = useState(0);
+  const [isTagManagerOpen, setIsTagManagerOpen] = useState(false);
   const [fleetVessels, setFleetVessels] = useState<string[]>([]);
   const [vesselsLoading, setVesselsLoading] = useState(true);
   const [vesselsError, setVesselsError] = useState('');
@@ -391,6 +414,9 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
     if (!isManager) {
       setView('published');
       setSelectedId(null);
+      setEditorProcedure(null);
+      setTagsTarget(null);
+      setIsTagManagerOpen(false);
     }
   }, [isManager]);
 
@@ -403,6 +429,23 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
       .finally(() => { if (mounted) setIsLoading(false); });
     return () => { mounted = false; };
   }, [effectiveClient, isManager]);
+
+  useEffect(() => {
+    if (!isManager) {
+      setCatalogueTags([]);
+      setCatalogueLoading(false);
+      setCatalogueError('');
+      return undefined;
+    }
+    let mounted = true;
+    setCatalogueLoading(true);
+    setCatalogueError('');
+    fetchProcedureTagCatalogue(effectiveClient)
+      .then(names => { if (mounted) setCatalogueTags(names); })
+      .catch(() => { if (mounted) setCatalogueError('Impossible de charger les tags pré-enregistrés.'); })
+      .finally(() => { if (mounted) setCatalogueLoading(false); });
+    return () => { mounted = false; };
+  }, [effectiveClient, isManager, catalogueRetry]);
 
   useEffect(() => {
     if (!isManager) {
@@ -434,11 +477,34 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
   const vessels = useMemo(() => [...new Set([...fleetVessels, ...activeRecords.map((record) => record.vesselName.trim()).filter(Boolean)])].sort(compareFleetNames), [activeRecords, fleetVessels]);
   const selectedProcedure = procedures.find((procedure) => procedure.id === selectedId) || null;
   const metrics = useMemo(() => buildProcedureMetrics({ procedures, publications }), [procedures, publications]);
+  const tagCatalogue: ProcedureTagCatalogueState = { names: catalogueTags, loading: catalogueLoading, error: catalogueError, onRetry: () => setCatalogueRetry(current => current + 1) };
 
   function updateFilter(key: keyof ProcedureFilterState, value: string) { setFilters((current) => ({ ...current, [key]: value })); }
   function toggleChapter(key: string) { setCollapsedChapters((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; }); }
   function flash(message: string) { setStatusMessage(message); setErrorMessage(null); }
   function fail(message: string) { setErrorMessage(message); setStatusMessage(null); }
+  async function refreshCatalogueAfterSave() {
+    if (!isManager) return;
+    setCatalogueLoading(true);
+    setCatalogueError('');
+    try { setCatalogueTags(await fetchProcedureTagCatalogue(effectiveClient)); }
+    catch { setCatalogueError('Le document est enregistré, mais le rechargement des tags pré-enregistrés a échoué.'); }
+    finally { setCatalogueLoading(false); }
+  }
+
+  async function handleCreateCatalogueTag(name: string): Promise<string> {
+    if (!isManager) throw new Error('La gestion des tags est réservée à l’Administration et à la Direction.');
+    const created = await createProcedureTag(effectiveClient, name);
+    setCatalogueTags(current => normalizeProcedureTags([...current, created]).sort((left, right) => left.localeCompare(right, 'fr')));
+    return created;
+  }
+
+  async function handleRemoveCatalogueTag(name: string) {
+    if (!isManager) throw new Error('La gestion des tags est réservée à l’Administration et à la Direction.');
+    await removeProcedureTag(effectiveClient, name);
+    const key = normalizeProcedureSearch(name);
+    setCatalogueTags(current => current.filter(tag => normalizeProcedureSearch(tag) !== key));
+  }
 
   async function handleSave(input: ProcedureInput, file: File | null, fromTemplate: boolean) {
     setIsSaving(true);
@@ -454,6 +520,7 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
       if (editorProcedure === 'new') {
         if (!input.driveSource) throw new Error('Sélectionnez le fichier à importer.');
         const created = await createProcedure(effectiveClient, input, null);
+        void refreshCatalogueAfterSave();
         setProcedures((current) => sortRecords([...current, created]));
         flash('Document QSMS ajouté.');
         setEditorProcedure(null);
@@ -463,6 +530,7 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
         }
       } else if (editorProcedure) {
         const updated = await updateProcedure(effectiveClient, editorProcedure, input, null);
+        void refreshCatalogueAfterSave();
         setProcedures((current) => sortRecords(current.map((item) => item.id === updated.id ? updated : item)));
         setPublications((current) => current.map((item) => item.procedureId === updated.id ? { ...item, tags: updated.tags } : item));
         flash('Informations mises à jour.');
@@ -482,6 +550,7 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
     const tags = normalizeProcedureTags(values);
     try {
       await updateProcedureTags(effectiveClient, tagsTarget, tags);
+      void refreshCatalogueAfterSave();
       const sourceId = 'procedureId' in tagsTarget ? tagsTarget.procedureId : tagsTarget.id;
       if (sourceId !== null) {
         setProcedures(current => current.map(item => item.id === sourceId ? { ...item, tags } : item));
@@ -588,6 +657,7 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
             <button className={view === 'sources' ? 'is-active' : ''} onClick={() => { setView('sources'); setSelectedId(null); }} type="button"><List size={16} />Documents de travail</button>
             <button className={view === 'published' ? 'is-active' : ''} onClick={() => { setView('published'); setSelectedId(null); }} type="button"><FileCheck2 size={16} />PDF publiés</button>
             <button className="procedure-primary-action" onClick={() => setEditorProcedure('new')} type="button"><FilePlus2 size={17} />Nouveau document</button>
+            <button onClick={() => setIsTagManagerOpen(true)} type="button"><Tags aria-hidden="true" size={16} />Gérer les tags</button>
             <button disabled={!selectedProcedure || view !== 'sources'} onClick={() => selectedProcedure && setEditorProcedure(selectedProcedure)} type="button"><Edit3 size={16} />Modifier</button>
             <button disabled={!selectedProcedure || view !== 'sources'} onClick={() => selectedProcedure && setPublishTarget(selectedProcedure)} type="button"><Send size={16} />Publier PDF</button>
             <button disabled={!selectedProcedure || view !== 'sources'} onClick={() => selectedProcedure && void handleDownload(selectedProcedure)} type="button"><Download size={16} />{selectedProcedure?.googleDriveFileId ? 'Voir dans Drive' : 'Télécharger'}</button>
@@ -643,8 +713,9 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
         </div>
       </section>
 
-      {editorProcedure ? <ProcedureEditor procedure={editorProcedure === 'new' ? null : editorProcedure} procedures={procedures} projectOptions={procedureProjects} vesselOptions={fleetVessels} vesselsLoading={vesselsLoading} vesselsError={vesselsError} onClose={() => setEditorProcedure(null)} onSave={handleSave} saving={isSaving} /> : null}
-      {isManager && tagsTarget ? <ProcedureTagsDialog record={tagsTarget} onClose={() => setTagsTarget(null)} onSave={handleSaveTags} saving={isSaving} /> : null}
+      {isManager && editorProcedure ? <ProcedureEditor procedure={editorProcedure === 'new' ? null : editorProcedure} procedures={procedures} projectOptions={procedureProjects} vesselOptions={fleetVessels} vesselsLoading={vesselsLoading} vesselsError={vesselsError} tagCatalogue={tagCatalogue} onClose={() => setEditorProcedure(null)} onSave={handleSave} saving={isSaving} /> : null}
+      {isManager && tagsTarget ? <ProcedureTagsDialog record={tagsTarget} onClose={() => setTagsTarget(null)} onSave={handleSaveTags} saving={isSaving} catalogue={tagCatalogue} /> : null}
+      {isManager && isTagManagerOpen ? <ProcedureTagCatalogueDialog names={catalogueTags} loading={catalogueLoading} loadError={catalogueError} onRetry={tagCatalogue.onRetry} onCreate={handleCreateCatalogueTag} onRemove={handleRemoveCatalogueTag} onClose={() => setIsTagManagerOpen(false)} /> : null}
       {isListOpen ? <ProcedureListDialog records={activeRecords} vessels={vessels} initialVessel={filters.vessel} library={isManager ? view : 'published'} onClose={() => setIsListOpen(false)} /> : null}
       {publishTarget ? <PublishDialog procedure={publishTarget} onClose={() => setPublishTarget(null)} onPublish={handlePublish} saving={isSaving} /> : null}
     </section>

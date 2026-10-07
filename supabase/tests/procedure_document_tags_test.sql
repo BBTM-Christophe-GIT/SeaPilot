@@ -72,7 +72,9 @@ insert into public.published_procedures (
 do $$
 begin
   if (select count(*) from pg_proc function join pg_namespace schema on schema.oid = function.pronamespace
-      where schema.nspname = 'procedure_tags_private' and not function.prosecdef) <> 2 then
+      where schema.nspname = 'procedure_tags_private'
+        and function.proname in ('prepare_document_tags', 'sync_publication_tags')
+        and not function.prosecdef) <> 2 then
     raise exception 'Tag triggers must be security invoker';
   end if;
   if has_schema_privilege('authenticated', 'procedure_tags_private', 'usage')
