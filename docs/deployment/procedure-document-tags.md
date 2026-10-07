@@ -13,6 +13,11 @@ document et sont inclus dans la barre **Recherche de document**, avec la même
 recherche insensible à la casse et aux accents que les autres métadonnées.
 Les filtres Projet et Navire continuent à s'appliquer aux résultats.
 
+Depuis la version 3.68.2, les tags s'affichent immédiatement après le navire,
+sur la même ligne de métadonnées que les projets. Leur hauteur reprend celle
+du badge Navire. Sur les petits écrans ou avec de nombreux tags, cette ligne
+se parcourt horizontalement au toucher ou au clavier sans agrandir le document.
+
 Depuis la version 3.68.1, le champ **Ajouter un tag pré-enregistré** permet de
 choisir les tags d'un catalogue partagé. Sa liste initiale comprend **Rôle**,
 **MARPOL**, **Pollution**, **Incendie** et **THOMSEA**. Les tags déjà utilisés
