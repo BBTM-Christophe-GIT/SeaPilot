@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.68.2` place les tags des documents de Procédures QHSE juste après
+le navire, avec des badges de même hauteur sur une seule ligne. Le défilement
+horizontal garde tous les tags et projets accessibles sur les petits écrans
+sans augmenter la hauteur des documents. Aucune migration supplémentaire.
+Voir [procedure-document-tags.md](./procedure-document-tags.md).
+
 Version `3.68.1` propose une liste de tags pré-enregistrés dans Procédures QHSE,
 commune à Administration et Direction. La liste initiale comprend Rôle, MARPOL,
 Pollution, Incendie et THOMSEA, et s'enrichit avec les nouveaux tags enregistrés.

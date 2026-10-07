@@ -31,6 +31,28 @@
   list-style: none;
 }
 
+.procedure-document-scopes.procedure-document-scopes--inline {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.procedure-document-scopes--inline > span { flex-shrink: 0; }
+.procedure-document-scopes--inline > .procedure-tag-list {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  margin: 0;
+}
+.procedure-document-scopes--inline .procedure-tag {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: .56rem;
+  line-height: inherit;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.procedure-document-scopes--inline:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; }
+
 .procedure-tag {
   display: inline-flex;
   align-items: center;

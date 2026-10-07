@@ -686,15 +686,15 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
                       <span className="procedure-document-icon"><FileText size={18} /></span>
                       <div className="procedure-document-copy">
                         <button aria-label={`Ouvrir ${record.procedureCode || record.documentNumber || ''} ${record.title}`.trim()} className="procedure-document-name" onClick={() => void handleOpen(record)} type="button"><strong>{record.procedureCode || record.documentNumber || 'Sans numéro'} <span>{record.title}</span></strong></button>
-                        {record.vesselName || recordProjects.length > 0 ? (
+                        {record.vesselName || record.tags.length > 0 || recordProjects.length > 0 ? (
                           <div className="procedure-document-metadata">
-                            <span className="procedure-document-scopes">
+                            <div aria-label={`Navire, tags et projets de ${record.title}`} className="procedure-document-scopes procedure-document-scopes--inline" role="group" tabIndex={0}>
                               {record.vesselName ? <span><b>Navire :</b>{record.vesselName}</span> : null}
+                              {record.tags.length ? <ul aria-label={`Tags de ${record.title}`} className="procedure-tag-list">{record.tags.map(tag => <li className="procedure-tag" key={tag}>{tag}</li>)}</ul> : null}
                               {recordProjects.map((projectName) => <span key={projectName}><b>Projet :</b>{projectName}</span>)}
-                            </span>
+                            </div>
                           </div>
                         ) : null}
-                        {record.tags.length ? <ul aria-label={`Tags de ${record.title}`} className="procedure-tag-list">{record.tags.map(tag => <li className="procedure-tag" key={tag}>{tag}</li>)}</ul> : null}
                       </div>
                       <div className="procedure-document-status">{reviewAlert ? <strong className={`procedure-review-badge is-${reviewAlert.tone}`}><BellRing aria-hidden="true" size={12} />{reviewAlert.label}</strong> : null}{publication || linkedPublication ? <strong className="is-published">Document publié le {formatDate((publication || linkedPublication)?.publishedOn || '')}</strong> : <span className={`procedure-status-${record.status}`}>{getProcedureStatusLabel(record.status)}</span>}<small>{humanFileSize(record.sizeBytes)}</small></div>
                       <div className="procedure-row-actions">
