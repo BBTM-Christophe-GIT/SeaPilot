@@ -11,7 +11,7 @@ describe('strategic axis symbols', () => {
     ['Ecoute client', 'customer'],
     ['Sécurité informatique', 'cybersecurity'],
     ['CYBERSÉCURITÉ', 'cybersecurity'],
-    ['Technique', 'general'],
+    ['Technique', 'technical'],
   ] as const)('recognizes existing axis %s without reclassifying cyber safety', (name, expected) => {
     expect(resolveQhsePolicyAxisIcon({ name })).toBe(expected);
   });
