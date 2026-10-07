@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render as renderTestingLibrary, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { Link, MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { FleetCertificatesPage } from './FleetCertificatesPage';
 import { compareFleetFindingsByTypeDueYearAndTitle, compareFleetFindingTitles } from './fleetCertificateFindings';
@@ -10,6 +11,10 @@ import {
   mapFleetCertificateRows,
   normalizeFleetCertificateDocumentName,
 } from './fleetCertificateQueries';
+
+function render(ui: Parameters<typeof renderTestingLibrary>[0], initialEntry = '/modules/certificates') {
+  return renderTestingLibrary(<MemoryRouter initialEntries={[initialEntry]}>{ui}</MemoryRouter>);
+}
 
 const certificates = [
   {
@@ -90,6 +95,28 @@ function createClient(
 }
 
 describe('FleetCertificatesPage', () => {
+  it('opens the exact linked certificate preview and reacts to another certificate link', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+    render(<><Link to="?certificate=42">Ouvrir le Franc-Bord</Link><FleetCertificatesPage client={client as never} roles={['direction']} /></>, '/modules/certificates?certificate=43');
+
+    expect(await screen.findByRole('region', { name: 'Aperçu de Certificat extincteurs' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Aperçu du document' })).toHaveAttribute('aria-selected', 'true');
+    await user.click(screen.getByRole('link', { name: 'Ouvrir le Franc-Bord' }));
+    expect(await screen.findByRole('region', { name: 'Aperçu de Certificat de Franc-Bord' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Aperçu de Certificat extincteurs' })).not.toBeInTheDocument();
+  });
+
+  it('does not select a certificate absent from the authorized records', async () => {
+    const { client } = createClient();
+    render(<FleetCertificatesPage client={client as never} roles={['capitaine']} />, '/modules/certificates?certificate=999');
+
+    await screen.findByText('2 document(s) affiché(s) · 0 sélectionné(s)');
+    expect(screen.getByRole('heading', { name: 'Écarts & actions flotte' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Pilotage du traitement' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('region', { name: /^Aperçu de/ })).not.toBeInTheDocument();
+  });
+
   it('sorts numbered finding titles in natural numeric order', () => {
     const sorted = [
       { title: '2. Relevés périodiques' },

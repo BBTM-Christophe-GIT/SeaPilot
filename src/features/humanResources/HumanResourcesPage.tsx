@@ -30,7 +30,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { useLocation, useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
@@ -94,6 +94,9 @@ interface HumanResourcesPageProps {
   client?: SupabaseClient;
   currentPersonId?: number | null;
   roles?: RoleKey[];
+  initialPersonId?: number | null;
+  initialDocumentId?: number | null;
+  initialSectionKey?: HrDetailsSectionKey;
 }
 
 type PersonFormState = UpdatePersonDetailsInput;
@@ -719,11 +722,16 @@ function buildPersonDetailsForm(person: PersonRecord): UpdatePersonDetailsInput 
 
 export function HumanResourcesRoute(props: HumanResourcesPageProps) {
   const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  const person = params.get('person');
+  const documentId = Number(params.get('document')) || null;
+  const personId = person === null ? undefined : /^\d+$/.test(person) && Number(person) > 0 ? Number(person) : null;
+  const section = documentId ? 'documents' : params.get('section') === 'contract' ? 'contract' : undefined;
   // A fresh navigation, including a click on the active RH link, starts on oneself.
-  return <HumanResourcesPage key={location.key} {...props} />;
+  return <HumanResourcesPage key={location.key} {...props} initialPersonId={personId} initialDocumentId={documentId} initialSectionKey={section} />;
 }
 
-export function HumanResourcesPage({ client, currentPersonId, roles }: HumanResourcesPageProps) {
+export function HumanResourcesPage({ client, currentPersonId, roles, initialPersonId, initialDocumentId, initialSectionKey }: HumanResourcesPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
@@ -748,9 +756,10 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
   const [form, setForm] = useState<PersonFormState>(EMPTY_FORM);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   // undefined follows the connected person's default; null is an explicit close.
-  const [selectedPersonId, setSelectedPersonId] = useState<number | null | undefined>(undefined);
+  const [selectedPersonId, setSelectedPersonId] = useState<number | null | undefined>(initialPersonId);
   const [documentCreationPersonId, setDocumentCreationPersonId] = useState<number | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(() => new Set());
+  const openedInitialDocumentId = useRef<number | null>(null);
   const [renewalDocumentId, setRenewalDocumentId] = useState<number | null>(null);
   const [documentAction, setDocumentAction] = useState<{ document: HrDocumentRecord; mode: 'edit' | 'delete' } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -1006,10 +1015,22 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     [effectiveRoles, visibilityRules],
   );
   useEffect(() => {
-    if (selectedPersonId != null && !visiblePeople.some((person) => person.id === selectedPersonId)) {
-      setSelectedPersonId(visiblePeople[0]?.id ?? null);
+    if (!isLoading && selectedPersonId != null && !visiblePeople.some((person) => person.id === selectedPersonId)) {
+      setSelectedPersonId(selectedPersonId === initialPersonId ? null : visiblePeople[0]?.id ?? null);
     }
-  }, [selectedPersonId, visiblePeople]);
+  }, [initialPersonId, isLoading, selectedPersonId, visiblePeople]);
+
+  useEffect(() => {
+    if (!initialDocumentId || isLoading || openedInitialDocumentId.current === initialDocumentId) return;
+    const document = roleVisibleDocuments.find((record) => record.id === initialDocumentId);
+    if (!document) return;
+    if (document.personId === null && isManager) {
+      setDocumentAction({ document, mode: 'edit' });
+    } else if (selectedPersonDocuments.some((record) => record.id === initialDocumentId)) {
+      setSelectedDocumentIds(new Set([initialDocumentId]));
+    } else return;
+    openedInitialDocumentId.current = initialDocumentId;
+  }, [initialDocumentId, isLoading, isManager, roleVisibleDocuments, selectedPersonDocuments]);
 
   function updateFormValue(key: keyof PersonFormState, value: string) {
     setForm((currentForm) => ({
@@ -1569,6 +1590,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
         </section> : null}
 
         <PersonProfileCard
+          initialSectionKey={selectedPerson?.id === initialPersonId ? initialSectionKey : undefined}
           canDelete={canDeletePerson}
           canEdit={Boolean(
             isManager
@@ -2017,6 +2039,7 @@ function PersonRow({ isSelected, onSelect, person }: { isSelected: boolean; onSe
 
 
 function PersonProfileCard({
+  initialSectionKey,
   canDelete,
   canEdit,
   canManageSignature,
@@ -2041,6 +2064,7 @@ function PersonProfileCard({
   selectedDocumentIds,
   visibleSectionKeys,
 }: {
+  initialSectionKey?: HrDetailsSectionKey;
   canDelete: boolean;
   canEdit: boolean;
   canManageSignature: boolean;
@@ -2088,6 +2112,7 @@ function PersonProfileCard({
   return (
     <aside aria-label={`Fiche RH de ${formatPersonName(person)}`} className="hr-profile-card">
       <PersonDetailsPanel
+        initialSectionKey={initialSectionKey}
         canClose={canClose}
         canDelete={canDelete}
         canEdit={canEdit}
@@ -2839,6 +2864,7 @@ function CreatePersonDialog({
 }
 
 function PersonDetailsPanel({
+  initialSectionKey,
   canClose,
   canDelete,
   canEdit,
@@ -2866,6 +2892,7 @@ function PersonDetailsPanel({
   urgentCount,
   visibleSectionKeys,
 }: {
+  initialSectionKey?: HrDetailsSectionKey;
   canClose: boolean;
   canDelete: boolean;
   canEdit: boolean;
@@ -2913,10 +2940,10 @@ function PersonDetailsPanel({
 
   useEffect(() => {
     setForm(buildPersonDetailsForm(person));
-    setActiveSectionKey(availableSections[0]?.key || 'identity');
+    setActiveSectionKey(initialSectionKey && visibleSectionKeys.has(initialSectionKey) ? initialSectionKey : availableSections[0]?.key || 'identity');
     setIsEditing(false);
     setIsActionsOpen(false);
-  }, [person]);
+  }, [person, initialSectionKey]);
 
   useEffect(() => {
     if (!visibleSectionKeys.has(activeSectionKey) && availableSections[0]) {

@@ -35,9 +35,9 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { AppDialog } from '../../components/AppDialog';
 import type { RoleKey } from '../permissions/roles';
@@ -379,9 +379,62 @@ function PublishDialog({ procedure, onClose, onPublish, saving }: PublishDialogP
   );
 }
 
+function PublicationPreviewDialog({ client, drive, publication, onClose, onDownload }: {
+  client: SupabaseClient;
+  drive: ProcedureFileStore;
+  publication: PublishedProcedureRecord;
+  onClose: () => void;
+  onDownload: () => void;
+}) {
+  const [preview, setPreview] = useState({ url: '', error: '', loading: true });
+  useEffect(() => {
+    let active = true;
+    let blobUrl = '';
+    setPreview({ url: '', error: '', loading: true });
+    void (async () => {
+      try {
+        if (publication.status !== 'published' || publication.mimeType.toLowerCase() !== 'application/pdf' || !publication.fileName.toLowerCase().endsWith('.pdf')) {
+          throw new Error('Seules les versions PDF publiées peuvent être ouvertes.');
+        }
+        let url: string;
+        if (publication.googleDrivePath) {
+          const blob = await drive.read(publication);
+          if (!active) return;
+          blobUrl = URL.createObjectURL(blob);
+          url = blobUrl;
+        } else {
+          url = await getProcedureFileUrl(client, publication, 'open');
+        }
+        if (active) setPreview({ url, error: '', loading: false });
+      } catch (error) {
+        if (active) setPreview({ url: '', error: error instanceof Error ? error.message : 'Le PDF ne peut pas être affiché.', loading: false });
+      }
+    })();
+    return () => {
+      active = false;
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [client, drive, publication]);
+
+  return <AppDialog title={publication.title} eyebrow="Procédure publiée · Lecture seule" icon={<FileText size={20} />} size="fullscreen" variant="preview" onClose={onClose}
+    description={[publication.procedureCode, publication.vesselName, publication.publishedOn ? `Publié le ${formatDate(publication.publishedOn)}` : ''].filter(Boolean).join(' · ')}
+    footer={<div className="app-dialog__actions"><button className="is-secondary" onClick={onClose} type="button">Fermer</button><button className="is-primary" onClick={onDownload} type="button"><Download size={16} />Télécharger le PDF</button></div>}>
+    {preview.loading ? <p role="status">Chargement du PDF…</p> : null}
+    {preview.error ? <p className="form-error" role="alert">{preview.error}</p> : null}
+    {preview.url ? <iframe src={preview.url} title={`Aperçu de ${publication.title}`} style={{ width: '100%', height: '70vh', border: 0 }} /> : null}
+  </AppDialog>;
+}
+
 export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
-  const linkedPublicationId = Number(new URLSearchParams(window.location.search).get('document')) || null;
+  const [searchParams] = useSearchParams();
+  const publicationParameter = Number(searchParams.get('document'));
+  const linkedPublicationId = Number.isSafeInteger(publicationParameter) && publicationParameter > 0 ? publicationParameter : null;
+  const procedureParameter = Number(searchParams.get('procedure'));
+  const linkedProcedureId = Number.isSafeInteger(procedureParameter) && procedureParameter > 0 ? procedureParameter : null;
+  const openedProcedureLink = useRef<number | null>(null);
+  const openedPublicationLink = useRef<number | null>(null);
+  const publicationToFocus = useRef<number | null>(null);
   const effectiveClient = client || outletContext?.client || supabase;
   const drive = useMemo(() => fileStore || createProcedureFileStore(effectiveClient), [effectiveClient, fileStore]);
   const effectiveRoles = roles || outletContext?.roles || [];
@@ -403,6 +456,7 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
   const [selectedId, setSelectedId] = useState<number | null>(linkedPublicationId);
   const [collapsedChapters, setCollapsedChapters] = useState<Set<string>>(new Set());
   const [editorProcedure, setEditorProcedure] = useState<ProcedureRecord | 'new' | null>(null);
+  const [publicationPreview, setPublicationPreview] = useState<PublishedProcedureRecord | null>(null);
   const [publishTarget, setPublishTarget] = useState<ProcedureRecord | null>(null);
   const [tagsTarget, setTagsTarget] = useState<ProcedureRecord | PublishedProcedureRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -429,6 +483,49 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
       .finally(() => { if (mounted) setIsLoading(false); });
     return () => { mounted = false; };
   }, [effectiveClient, isManager]);
+
+  useEffect(() => {
+    if (!linkedProcedureId) {
+      openedProcedureLink.current = null;
+      return;
+    }
+    if (isLoading || !isManager || openedProcedureLink.current === linkedProcedureId) return;
+    openedProcedureLink.current = linkedProcedureId;
+    const procedure = procedures.find((record) => record.id === linkedProcedureId);
+    if (!procedure) {
+      setSelectedId(null);
+      setEditorProcedure(null);
+      setPublicationPreview(null);
+      return;
+    }
+    setView('sources');
+    setSelectedId(procedure.id);
+    setPublicationPreview(null);
+    setEditorProcedure(procedure);
+  }, [isLoading, isManager, linkedProcedureId, procedures]);
+
+  useEffect(() => {
+    if (!linkedPublicationId) {
+      openedPublicationLink.current = null;
+      publicationToFocus.current = null;
+      return;
+    }
+    if (isLoading || (isManager && linkedProcedureId) || openedPublicationLink.current === linkedPublicationId) return;
+    openedPublicationLink.current = linkedPublicationId;
+    const publication = publications.find((record) => record.id === linkedPublicationId);
+    setEditorProcedure(null);
+    setView('published');
+    setSelectedId(publication?.id || null);
+    setPublicationPreview(publication || null);
+    publicationToFocus.current = publication?.id || null;
+    if (!publication) return;
+    setFilters(EMPTY_FILTERS);
+    setCollapsedChapters((current) => {
+      const next = new Set(current);
+      next.delete(chapterKey(publication.ismChapter));
+      return next;
+    });
+  }, [isLoading, isManager, linkedProcedureId, linkedPublicationId, publications]);
 
   useEffect(() => {
     if (!isManager) {
@@ -473,6 +570,14 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
 
   const activeRecords = isManager && view === 'sources' ? procedures : publications;
   const filteredRecords = useMemo(() => activeRecords.filter((record) => matchesFilters(record, filters)), [activeRecords, filters]);
+  useEffect(() => {
+    if (publicationPreview || view !== 'published' || publicationToFocus.current !== selectedId) return;
+    const card = document.getElementById(`procedure-published-${selectedId}`);
+    if (!card) return;
+    card.focus({ preventScroll: true });
+    card.scrollIntoView?.({ block: 'center' });
+    publicationToFocus.current = null;
+  }, [filteredRecords, publicationPreview, selectedId, view]);
   const projects = useMemo(() => [...new Set(activeRecords.flatMap((record) => projectNames(record.projectName)))].sort(), [activeRecords]);
   const vessels = useMemo(() => [...new Set([...fleetVessels, ...activeRecords.map((record) => record.vesselName.trim()).filter(Boolean)])].sort(compareFleetNames), [activeRecords, fleetVessels]);
   const selectedProcedure = procedures.find((procedure) => procedure.id === selectedId) || null;
@@ -681,7 +786,7 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
                   const recordProjects = projectNames(record.projectName);
                   const reviewAlert = getAnnualReviewAlert(record.annualReview, record.diffusionOn);
                   return (
-                    <article className={`${selectedId === record.id ? 'is-selected ' : ''}${!source || !isManager ? 'procedure-document-public ' : ''}${reviewAlert ? `is-review-due is-review-${reviewAlert.tone}` : ''}`.trim()} key={`${view}-${record.id}`}>
+                    <article id={`procedure-${publication ? 'published' : 'source'}-${record.id}`} tabIndex={selectedId === record.id ? -1 : undefined} className={`${selectedId === record.id ? 'is-selected ' : ''}${!source || !isManager ? 'procedure-document-public ' : ''}${reviewAlert ? `is-review-due is-review-${reviewAlert.tone}` : ''}`.trim()} key={`${view}-${record.id}`}>
                       {source && isManager ? <input aria-label={`Sélectionner ${record.title}`} checked={selectedId === record.id} type="checkbox" onChange={() => setSelectedId((current) => current === record.id ? null : record.id)} /> : null}
                       <span className="procedure-document-icon"><FileText size={18} /></span>
                       <div className="procedure-document-copy">
@@ -714,6 +819,7 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
       </section>
 
       {isManager && editorProcedure ? <ProcedureEditor procedure={editorProcedure === 'new' ? null : editorProcedure} procedures={procedures} projectOptions={procedureProjects} vesselOptions={fleetVessels} vesselsLoading={vesselsLoading} vesselsError={vesselsError} tagCatalogue={tagCatalogue} onClose={() => setEditorProcedure(null)} onSave={handleSave} saving={isSaving} /> : null}
+      {publicationPreview ? <PublicationPreviewDialog key={publicationPreview.id} client={effectiveClient} drive={drive} publication={publicationPreview} onClose={() => setPublicationPreview(null)} onDownload={() => void handleDownload(publicationPreview)} /> : null}
       {isManager && tagsTarget ? <ProcedureTagsDialog record={tagsTarget} onClose={() => setTagsTarget(null)} onSave={handleSaveTags} saving={isSaving} catalogue={tagCatalogue} /> : null}
       {isManager && isTagManagerOpen ? <ProcedureTagCatalogueDialog names={catalogueTags} loading={catalogueLoading} loadError={catalogueError} onRetry={tagCatalogue.onRetry} onCreate={handleCreateCatalogueTag} onRemove={handleRemoveCatalogueTag} onClose={() => setIsTagManagerOpen(false)} /> : null}
       {isListOpen ? <ProcedureListDialog records={activeRecords} vessels={vessels} initialVessel={filters.vessel} library={isManager ? view : 'published'} onClose={() => setIsListOpen(false)} /> : null}

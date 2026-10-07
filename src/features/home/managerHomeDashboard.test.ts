@@ -16,6 +16,57 @@ function sources(overrides: Partial<ManagerHomeSourceRows> = {}): ManagerHomeSou
 }
 
 describe('managerHomeDashboard', () => {
+  it('links published procedure reviews to the publication without requesting source editing', () => {
+    const items = buildManagerHomeItems(sources({ procedures: [{
+      id: 81, library: 'published', procedure_code: 'GEN 01-A', title: 'Manuel QHSE',
+      diffusion_on: '2025-08-20', annual_review: true, vessel_name: 'LE ROZEL',
+      project_name: null, status: 'published',
+    }] }), TODAY);
+    expect(items).toHaveLength(1);
+    expect(items[0].to).toBe('/modules/procedures?document=81');
+  });
+
+  it('shows only non-refused purchases in the canonical À traiter stage and links their IDs', () => {
+    const base = {
+      id: 274, request_number: '274', title: 'Dyneema petit treuil', requested_on: '2026-08-20',
+      requester_name: null, project_code: null, vessel_name: 'LE ROZEL',
+      status: 'À traiter', urgent: false, approval_status: 'Demande acceptée',
+      ordered_on: null, expected_delivery_on: '2026-09-20', received_on: null,
+    };
+    const items = buildManagerHomeItems(sources({ purchases: [
+      base,
+      { ...base, id: 275, status: 'En cours', ordered_on: '2026-08-21' },
+      { ...base, id: 276, status: 'À réception' },
+      { ...base, id: 277, status: 'Traitée', received_on: '2026-08-22' },
+      { ...base, id: 278, approval_status: 'Demande refusée' },
+      { ...base, id: 279, approval_status: 'Refus' },
+    ] }), TODAY);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      id: 'purchase-274', title: 'DA-2026-274 · Dyneema petit treuil',
+      to: '/modules/purchaseRequests?requestId=274', dueDate: '2026-08-25',
+    });
+  });
+
+  it('links each alarm to its exact record, person and date', () => {
+    const items = buildManagerHomeItems(sources({
+      people: [{ id: 11, first_name: 'Jean', last_name: 'MARTIN', function_label: 'Matelot', active: true, departed_on: '2026-08-31' }],
+      hrDocuments: [{ id: 22, person_id: 11, person_name: 'Jean MARTIN', category_key: 'deck', title: 'Brevet', status: 'expired', expires_on: '2026-08-20', medical_unfit: false }],
+      fleetCertificates: [
+        { id: 33, vessel_id: 8, vessel_name: 'GOURY', title: 'Classe', document_title: 'Classe', status: 'expired', expires_on: '2026-08-20', planned_on: null, workflow_status: null, is_active_fleet: true },
+        { id: 44, vessel_id: 8, vessel_name: 'GOURY', title: 'Radeau', document_title: 'Radeau', status: 'expired', expires_on: '2026-08-20', planned_on: null, workflow_status: null, is_active_fleet: true, register: 'lsa' },
+      ],
+      workingTimeCalculations: [{ id: 55, person_id: 11, local_window_end_date: '2026-08-24', rest_24h_seconds: 0, longest_rest_24h_seconds: 0, is_compliant: false, violation_codes: ['rest_24h'], calculated_at: '2026-08-24T12:00:00Z' }],
+    }), TODAY);
+    expect(Object.fromEntries(items.map((item) => [item.id, item.to]))).toEqual({
+      'working-time-55': '/modules/workingTime?person=11&date=2026-08-24',
+      'fleet-33': '/modules/certificates?certificate=33',
+      'lsa-44': '/modules/lsa?vessel=8&item=44',
+      'hr-document-22': '/modules/humanResources?person=11&document=22',
+      'contract-11': '/modules/humanResources?person=11&section=contract',
+    });
+  });
+
   it('aggregates actionable records and keeps the approved category order', () => {
     const items = buildManagerHomeItems(sources({
       purchases: [{
@@ -187,7 +238,7 @@ describe('managerHomeDashboard', () => {
       title: 'OPE 01-A · Courbe de Déviation Compas - KROKDUR',
       dueDate: '2026-11-04',
       tone: 'warning',
-      to: '/modules/procedures',
+      to: '/modules/procedures?procedure=17',
     });
     expect(items[0].visibleDates).toEqual(expect.arrayContaining(['2026-08-25', '2026-11-04']));
   });

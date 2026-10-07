@@ -216,6 +216,31 @@ function createClient(people: Array<Record<string, unknown>> = [activePerson, fo
 }
 
 describe('HumanResourcesPage', () => {
+  it('opens an accessible unassigned document chip for a manager', async () => {
+    render(<MemoryRouter initialEntries={['/modules/humanResources?document=12']}><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={createClient([activePerson], [unassignedDocument]) as never} currentPersonId={1} roles={['admin']} />} /></Routes></MemoryRouter>);
+    expect(await screen.findByRole('dialog', { name: 'Modifier Brevet pont a rattacher' })).toBeInTheDocument();
+  });
+
+  it('opens the linked person and document section instead of the connected record', async () => {
+    render(<MemoryRouter initialEntries={['/modules/humanResources?person=1&document=11']}><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={createClient([activePerson, yardManagerPerson]) as never} currentPersonId={3} roles={['admin']} />} /></Routes></MemoryRouter>);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await waitFor(() => expect(within(profile).getByRole('button', { name: 'Documents' })).toHaveAttribute('aria-current', 'page'));
+    expect(within(profile).getByText('Capitaine 200')).toBeInTheDocument();
+    expect(within(profile).getByRole('checkbox', { name: /Capitaine 200/ })).toBeChecked();
+  });
+
+  it('opens a contract chip on the linked person’s contract section', async () => {
+    render(<MemoryRouter initialEntries={['/modules/humanResources?person=1&section=contract']}><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={createClient() as never} currentPersonId={3} roles={['admin']} />} /></Routes></MemoryRouter>);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await waitFor(() => expect(within(profile).getByRole('button', { name: 'Contrat et dates' })).toHaveAttribute('aria-current', 'page'));
+  });
+
+  it.each(['capitaine', 'marin'] as const)('keeps an inaccessible linked RH person hidden for a real %s fixture', async (role) => {
+    render(<MemoryRouter initialEntries={['/modules/humanResources?person=999&document=11']}><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={createClient([activePerson], []) as never} currentPersonId={1} roles={[role]} />} /></Routes></MemoryRouter>);
+    await waitFor(() => expect(screen.queryByText('Chargement du personnel RH…')).not.toBeInTheDocument());
+    expect(screen.queryByRole('complementary', { name: 'Fiche RH de Jean MARTIN' })).not.toBeInTheDocument();
+  });
+
   it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as const)('opens the connected person’s record by default for the %s profile', async (role) => {
     const ownPerson = { ...activePerson, id: 3, user_id: 'own-user', first_name: 'Lea', last_name: 'ZULU' };
     // The Marin fixture contains only the person allowed by the real read scope.

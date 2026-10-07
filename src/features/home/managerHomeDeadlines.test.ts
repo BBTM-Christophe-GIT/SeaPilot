@@ -38,9 +38,9 @@ describe('home deadline horizon', () => {
     ] }), TODAY);
     expect(items).toHaveLength(2);
     expect(items.find((item) => item.id === 'lsa-1')).toMatchObject({
-      to: '/modules/lsa', context: 'LSA · SUROIT', action: 'Ouvrir le registre LSA', urgent: true,
+      to: '/modules/lsa?item=1', context: 'LSA · SUROIT', action: 'Ouvrir le registre LSA', urgent: true,
     });
-    expect(items.find((item) => item.id === 'fleet-1')?.to).toBe('/modules/certificates');
+    expect(items.find((item) => item.id === 'fleet-1')?.to).toBe('/modules/certificates?certificate=1');
   });
   it.each(['valid', 'missing', 'pending_validation', 'expired'])('uses only the LSA expiry for alarms with legacy status %s', (status) => {
     for (const days of [-1, 0, 60, 90, 91]) {
@@ -99,7 +99,7 @@ describe('home deadline horizon', () => {
     expect(items[0].queueVisibleDates).toContain(toLocalIsoDate(TODAY));
   });
 
-  it.each([false, true])('limits delivery deadlines to 90 days with urgent=%s', (urgent) => {
+  it.each([false, true])('excludes purchases awaiting delivery from home with urgent=%s', (urgent) => {
     for (const days of [-1, 0, 90, 91, 1210]) {
       const items = buildManagerHomeItems(sources({ purchases: [{
         id: 3, request_number: '3', title: 'Pièce de rechange', requested_on: expiryIn(-10),
@@ -107,7 +107,7 @@ describe('home deadline horizon', () => {
         approval_status: 'Approuvée', urgent, ordered_on: expiryIn(-5),
         expected_delivery_on: expiryIn(days), received_on: null,
       }] }), TODAY);
-      expect(items.map((item) => item.id), `delivery in ${days} days`).toEqual(days <= 90 ? ['purchase-3'] : []);
+      expect(items, `delivery in ${days} days`).toEqual([]);
     }
   });
 });

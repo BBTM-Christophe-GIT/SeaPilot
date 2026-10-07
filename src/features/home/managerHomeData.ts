@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RoleKey } from '../permissions/roles';
 import { getAnnualReviewAlert } from '../procedures/procedureReview';
+import { derivePurchaseRequestStage, isPurchaseRequestRejected } from '../purchaseRequests/purchaseRequestQueries';
 import { buildManagerHomeVessels, normalizeHomeVesselName, type ManagerHomeVessel, type ManagerHomeVesselIndex } from './managerHomeVessels';
 
 export type ManagerHomeGroupKey = 'purchases' | 'workingTime' | 'procedures' | 'fleetDocuments' | 'humanResources';
@@ -65,6 +66,7 @@ interface FleetCertificateRow {
 }
 
 interface ProcedureReviewRow {
+  library?: 'published';
   id: number;
   procedure_code: string | null;
   title: string;
@@ -371,38 +373,25 @@ function formatRequestNumber(row: PurchaseRequestRow): string {
   return `DA-${year}-${raw.padStart(3, '0')}`;
 }
 
-function purchaseStage(row: PurchaseRequestRow): 'to_process' | 'ordered' | 'receiving' | 'completed' {
-  const status = normalize(row.status);
-  if (row.received_on || status.includes('traitee') || status.includes('recu') || status.includes('termine')) return 'completed';
-  if (status.includes('reception') || (row.expected_delivery_on && !row.received_on)) return 'receiving';
-  if (row.ordered_on || status.includes('commande') || status.includes('cours')) return 'ordered';
-  return 'to_process';
-}
-
 function purchaseItems(rows: PurchaseRequestRow[], today: Date, vessels: ManagerHomeVesselIndex): ManagerHomeItem[] {
   const todayKey = toLocalIsoDate(today);
   return rows.flatMap((row) => {
-    const stage = purchaseStage(row);
-    const approval = normalize(row.approval_status);
-    if (stage === 'completed' || approval.includes('refuse')) return [];
+    const stage = derivePurchaseRequestStage({
+      status: row.status || '',
+      orderedOn: row.ordered_on || '',
+      expectedDeliveryOn: row.expected_delivery_on || '',
+      receivedOn: row.received_on || '',
+    });
+    if (stage !== 'to_process' || isPurchaseRequestRejected({ approvalStatus: row.approval_status || '' })) return [];
 
-    const expectedDate = row.expected_delivery_on?.slice(0, 10) || '';
-    const expectedIsFuture = expectedDate && daysFromToday(expectedDate, today) > 0;
-    const dueDate = stage === 'to_process' || !expectedIsFuture ? todayKey : expectedDate;
-    if (daysFromToday(dueDate, today) > UPCOMING_HORIZON_DAYS) return [];
+    const dueDate = todayKey;
     const requestAge = row.requested_on ? Math.max(0, -daysFromToday(row.requested_on.slice(0, 10), today)) : 0;
-    const explicitlyUrgent = Boolean(row.urgent) || (stage === 'to_process' && requestAge >= 2);
+    const explicitlyUrgent = Boolean(row.urgent) || requestAge >= 2;
     const tone = explicitlyUrgent ? 'danger' : toneForDueDate(dueDate, today);
     const queueTone = queueToneForDueDate(dueDate, today, explicitlyUrgent);
     const urgent = queueTone === 'danger';
-    const action = stage === 'to_process'
-      ? 'Valider la demande'
-      : stage === 'ordered'
-        ? 'Suivre la commande'
-        : 'Contrôler la réception';
-    const deadline = stage === 'to_process'
-      ? requestAge > 0 ? `En attente depuis ${requestAge} j` : "Aujourd'hui"
-      : deadlineForDate(dueDate, today, 'Livraison');
+    const action = 'Valider la demande';
+    const deadline = requestAge > 0 ? `En attente depuis ${requestAge} j` : "Aujourd'hui";
     const contextEntity = row.vessel_name || row.project_code || row.requester_name || 'Demande interne';
 
     return [{
@@ -414,7 +403,7 @@ function purchaseItems(rows: PurchaseRequestRow[], today: Date, vessels: Manager
       context: `Achats · ${contextEntity}`,
       deadline,
       action,
-      to: '/modules/purchaseRequests',
+      to: `/modules/purchaseRequests?requestId=${row.id}`,
       dueDate,
       visibleDates: visibleDatesFor(dueDate, today, urgent),
       queueVisibleDates: queueVisibleDatesFor(dueDate, dueDate, today, queueTone),
@@ -480,7 +469,7 @@ function fleetCertificateItems(rows: FleetCertificateRow[], today: Date, vessels
       context: `${row.register === 'lsa' ? 'LSA' : 'Flotte'} · ${row.vessel_name || 'Navire non renseigné'}`,
       deadline,
       action: row.register === 'lsa' ? 'Ouvrir le registre LSA' : action,
-      to: row.register === 'lsa' ? '/modules/lsa' : '/modules/certificates',
+      to: row.register === 'lsa' ? `/modules/lsa?${row.vessel_id ? `vessel=${row.vessel_id}&` : ''}item=${row.id}` : `/modules/certificates?certificate=${row.id}`,
       dueDate,
       visibleDates: visibleDatesFor(dueDate, today, urgent),
       queueVisibleDates: queueVisibleDatesFor(dueDate, alarmDate, today, queueTone),
@@ -511,7 +500,7 @@ function procedureReviewItems(rows: ProcedureReviewRow[], today: Date, vessels: 
         ? `Revue échue depuis ${Math.abs(alert.daysUntilDue)} j`
         : `Revue le ${formatShortDate(alert.dueDate)} · J-${alert.daysUntilDue}`,
       action: 'Ouvrir la fiche information',
-      to: '/modules/procedures',
+      to: `/modules/procedures?${row.library === 'published' ? 'document' : 'procedure'}=${row.id}`,
       dueDate: alert.dueDate,
       visibleDates: [...new Set([todayKey, alert.dueDate])],
       queueVisibleDates: [...new Set([todayKey, alert.dueDate])],
@@ -548,6 +537,7 @@ function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date
     const name = person ? personName(person) : (row.person_name || personName(undefined));
     const medical = normalize(row.category_key).includes('medical') || normalize(row.title).includes('medical');
     const documentTitle = row.title || (medical ? 'Visite médicale' : 'Document RH');
+    const targetPersonId = person?.id ?? row.person_id;
     const title = documentTitleWithPerson(name, documentTitle);
     const deadline = row.medical_unfit ? 'Inaptitude déclarée' : expiry ? deadlineForDate(expiry, today, medical ? 'Visite' : 'Expire') : 'Document manquant';
 
@@ -560,7 +550,7 @@ function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date
       context: `Ressources humaines${person?.function_label ? ` · ${person.function_label}` : ''}`,
       deadline,
       action: 'Voir le dossier',
-      to: '/modules/humanResources',
+      to: `/modules/humanResources?${targetPersonId ? `person=${targetPersonId}&` : ''}document=${row.id}`,
       dueDate,
       visibleDates: visibleDatesFor(dueDate, today, urgent),
       queueVisibleDates: queueVisibleDatesFor(dueDate, alarmDate, today, queueTone),
@@ -591,7 +581,7 @@ function contractItems(rows: PersonRow[], today: Date, vessels: ManagerHomeVesse
       context: `Ressources humaines${person.function_label ? ` · ${person.function_label}` : ''}`,
       deadline: remainingDays === 0 ? "Fin aujourd'hui" : `Fin le ${formatShortDate(departedOn)}`,
       action: 'Préparer le renouvellement',
-      to: '/modules/humanResources',
+      to: `/modules/humanResources?person=${person.id}&section=contract`,
       dueDate: departedOn,
       visibleDates: visibleDatesFor(departedOn, today, false),
       queueVisibleDates: queueVisibleDatesFor(departedOn, departedOn, today, queueTone),
@@ -639,7 +629,7 @@ function workingTimeItems(rows: WorkingTimeCalculationRow[], people: PersonRow[]
       context: `Temps de travail · ${name}`,
       deadline,
       action: "Examiner l'alerte",
-      to: '/modules/workingTime',
+      to: `/modules/workingTime?person=${row.person_id}&date=${dueDate}`,
       dueDate,
       visibleDates: visibleDatesFor(dueDate, today, true),
       queueVisibleDates: queueVisibleDatesFor(dueDate, dueDate, today, 'danger'),
@@ -799,7 +789,7 @@ export async function fetchManagerHomeDashboard(
   const sources: ManagerHomeSourceRows = {
     assignments: assignments.rows,
     purchases: purchases.rows,
-    procedures: procedures.rows,
+    procedures: procedures.rows.map((row) => procedureTable === 'published_procedures' ? { ...row, library: 'published' as const } : row),
     fleetCertificates: [...fleetCertificates.rows, ...lsaItems.rows.map((row) => ({ ...row, register: 'lsa' as const }))],
     people: people.rows,
     hrDocuments: hrDocuments.rows,

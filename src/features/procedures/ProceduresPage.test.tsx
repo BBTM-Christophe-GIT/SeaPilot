@@ -1,10 +1,15 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render as renderTestingLibrary, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { Link, MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProceduresPage } from './ProceduresPage';
 import { procedureDriveFilename } from './procedureDriveFiles';
 import { downloadProcedureListPdf } from './procedureListPdf';
 import { normalizeProcedureSearch, normalizeProcedureTags } from './procedureTags';
+
+function render(ui: Parameters<typeof renderTestingLibrary>[0], initialEntry = '/modules/procedures') {
+  return renderTestingLibrary(<MemoryRouter initialEntries={[initialEntry]}>{ui}</MemoryRouter>);
+}
 
 const drive = vi.hoisted(() => ({ connect: vi.fn(), write: vi.fn(), publish: vi.fn(), open: vi.fn(), read: vi.fn() }));
 vi.mock('./procedureDriveFiles', async importOriginal => ({ ...await importOriginal<typeof import('./procedureDriveFiles')>(), createProcedureFileStore: () => drive }));
@@ -186,6 +191,120 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
 }
 
 describe('ProceduresPage', () => {
+  it('opens the linked source information and follows another source link without remounting', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+    render(<><Link to="?procedure=12">Ouvrir la seconde fiche</Link><ProceduresPage client={client as never} roles={['direction']} /></>, '/modules/procedures?procedure=13');
+
+    const firstDialog = await screen.findByRole('dialog', { name: /Consigne machine provisoire/ });
+    expect(within(firstDialog).getByLabelText('Titre')).toHaveValue('Consigne machine provisoire');
+    await user.click(within(firstDialog).getByRole('button', { name: 'Fermer' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Ouvrir la seconde fiche' }));
+    expect(await screen.findByRole('dialog', { name: /Procédure embarquement ROZEL/ })).toBeInTheDocument();
+  });
+
+  it.each(['armement', 'capitaine', 'marin'] as const)('does not open source editing through a link for %s', async (role) => {
+    const { client, from } = createClient();
+    render(<ProceduresPage client={client as never} roles={[role]} />, '/modules/procedures?procedure=13');
+
+    await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL.pdf/ });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(from).not.toHaveBeenCalledWith('procedures');
+  });
+
+  it.each(['armement', 'capitaine', 'marin'] as const)('selects the linked accessible publication and keeps %s read-only', async (role) => {
+    const user = userEvent.setup();
+    const { client, from } = createClient();
+    render(<ProceduresPage client={client as never} roles={[role]} />, '/modules/procedures?document=32');
+
+    const title = await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL.pdf/ });
+    const dialog = await screen.findByRole('dialog', { name: 'Procédure embarquement ROZEL.pdf' });
+    expect(await within(dialog).findByTitle('Aperçu de Procédure embarquement ROZEL.pdf')).toHaveAttribute('src', 'https://storage.test/signed');
+    expect(title.closest('article')).toHaveClass('is-selected');
+    expect(screen.getByRole('heading', { name: 'Procédures publiées' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Modifier/ })).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Titre')).not.toBeInTheDocument();
+    expect(from).not.toHaveBeenCalledWith('procedures');
+    await user.click(within(dialog).getByLabelText('Fermer'));
+    await waitFor(() => expect(title.closest('article')).toHaveFocus());
+  });
+
+  it('reacts to another publication link and expands its collapsed chapter', async () => {
+    const user = userEvent.setup();
+    const secondPublication = { ...publishedProcedureRow, id: 33, title: 'Autre consigne publiée.pdf' };
+    const { client } = createClient({ publications: [publishedProcedureRow, secondPublication] });
+    render(<><Link to="?document=33">Ouvrir la seconde publication</Link><ProceduresPage client={client as never} roles={['armement']} /></>, '/modules/procedures?document=32');
+
+    const firstTitle = await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL.pdf/ });
+    const firstDialog = await screen.findByRole('dialog', { name: 'Procédure embarquement ROZEL.pdf' });
+    await user.click(within(firstDialog).getByLabelText('Fermer'));
+    await waitFor(() => expect(firstTitle.closest('article')).toHaveFocus());
+    const chapterToggle = firstTitle.closest('.procedure-chapter')!.querySelector('.procedure-chapter-heading') as HTMLElement;
+    await user.click(chapterToggle);
+    expect(chapterToggle).toHaveAttribute('aria-expanded', 'false');
+    await user.click(screen.getByRole('link', { name: 'Ouvrir la seconde publication' }));
+    const secondTitle = await screen.findByRole('button', { name: /Ouvrir.*Autre consigne publiée.pdf/ });
+    const secondDialog = await screen.findByRole('dialog', { name: secondPublication.title });
+    expect(await within(secondDialog).findByTitle(`Aperçu de ${secondPublication.title}`)).toBeInTheDocument();
+    await user.click(within(secondDialog).getByLabelText('Fermer'));
+    await waitFor(() => expect(secondTitle.closest('article')).toHaveFocus());
+    expect(secondTitle.closest('article')).toHaveClass('is-selected');
+    expect(screen.getByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL.pdf/ }).closest('article')).not.toHaveClass('is-selected');
+    expect(chapterToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('previews a published Drive PDF and releases its local URL when closed', async () => {
+    const user = userEvent.setup();
+    const createObjectURL = vi.fn(() => 'blob:http://localhost/published-procedure');
+    const revokeObjectURL = vi.fn();
+    const OriginalURL = URL;
+    vi.stubGlobal('URL', class extends OriginalURL {
+      static createObjectURL = createObjectURL;
+      static revokeObjectURL = revokeObjectURL;
+    });
+    const blob = new Blob(['%PDF-1.7'], { type: 'application/pdf' });
+    drive.read.mockResolvedValue(blob);
+    const { client } = createClient({ publications: [{ ...publishedProcedureRow, google_drive_path: 'publication.pdf', storage_bucket: null, storage_path: null }] });
+    render(<ProceduresPage client={client as never} roles={['marin']} />, '/modules/procedures?document=32');
+
+    const dialog = await screen.findByRole('dialog', { name: publishedProcedureRow.title });
+    expect(await within(dialog).findByTitle(`Aperçu de ${publishedProcedureRow.title}`)).toHaveAttribute('src', 'blob:http://localhost/published-procedure');
+    expect(drive.read).toHaveBeenCalledWith(expect.objectContaining({ id: 32, googleDrivePath: 'publication.pdf' }));
+    expect(createObjectURL).toHaveBeenCalledWith(blob);
+    await user.click(within(dialog).getByLabelText('Fermer'));
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:http://localhost/published-procedure');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('keeps the published detail window readable when its PDF is unavailable', async () => {
+    const { client } = createClient({ publications: [{ ...publishedProcedureRow, storage_bucket: null, storage_path: null }] });
+    render(<ProceduresPage client={client as never} roles={['capitaine']} />, '/modules/procedures?document=32');
+
+    const dialog = await screen.findByRole('dialog', { name: publishedProcedureRow.title });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Aucun fichier disponible pour ce document.');
+    expect(within(dialog).queryByTitle(`Aperçu de ${publishedProcedureRow.title}`)).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Titre')).not.toBeInTheDocument();
+  });
+
+  it('ignores a publication absent from the authorized library', async () => {
+    const { client } = createClient();
+    render(<ProceduresPage client={client as never} roles={['marin']} />, '/modules/procedures?document=999');
+
+    const title = await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL.pdf/ });
+    expect(title.closest('article')).not.toHaveClass('is-selected');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('ignores a source link that is absent from the authorized records', async () => {
+    const { client } = createClient();
+    render(<ProceduresPage client={client as never} roles={['admin']} />, '/modules/procedures?procedure=999');
+
+    await screen.findByRole('button', { name: /Ouvrir.*Consigne machine provisoire/ });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('assigns all twelve ISM themes and updates the suggested number when the theme changes', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ procedures: [{ ...approvedProcedureRow, theme: 'OPE', document_number: '18' }] });
