@@ -1,14 +1,84 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildProcedureDesktopUri,
+  createProcedure,
+  fetchProceduresData,
   fetchProcedureVessels,
   getProcedurePublicationDate,
   isProcedureNumberTaken,
   suggestNextProcedureNumber,
   updateProcedure,
+  updateProcedureTags,
+  publishProcedure,
   type ProcedureInput,
   type ProcedureRecord,
 } from './procedureQueries';
+
+describe('procedure tags persistence', () => {
+  const row = {
+    id: 12, title: 'Consigne', status: 'published', tags: [' Sécurité ', 'sécurité', 'Incendie'],
+    file_name: 'consigne.pdf', mime_type: 'application/pdf', procedure_id: 12,
+  };
+  const input: ProcedureInput = {
+    procedureCode: '', title: 'Consigne', status: 'draft', revisionLabel: '', diffusionOn: '',
+    categoryLabel: '', description: '', regulatoryRequirement: '', ismChapter: '08', vesselName: '', projectName: '',
+    documentNumber: '01', restrictions: '', annualReview: false, theme: 'URG', documentType: '', bridgeWatch: false,
+    versionLabel: 'A', notes: '', googleDriveUrl: 'https://drive.google.com/file/d/drive-id-123/view',
+    googleDrivePath: 'URG/consigne.docx', tags: [' Sécurité ', 'sécurité', '', 'Incendie'],
+  };
+
+  it('fetches tags with sources and published PDFs, including documents without tags', async () => {
+    const select = vi.fn((fields: string) => {
+      expect(fields).toContain('tags');
+      const query = {
+        order: vi.fn(() => query), eq: vi.fn(() => query),
+        then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: [row, { ...row, id: 13, tags: null }], error: null }).then(resolve),
+      };
+      return query;
+    });
+    const result = await fetchProceduresData({ from: () => ({ select }) } as never);
+    expect(select.mock.calls.every(([fields]) => String(fields).includes('tags'))).toBe(true);
+    expect(result.procedures.map((record) => record.tags)).toEqual([['Sécurité', 'Incendie'], []]);
+    expect(result.publications.map((record) => record.tags)).toEqual([['Sécurité', 'Incendie'], []]);
+  });
+
+  it('stores normalized tags when creating a Drive-linked source', async () => {
+    const insert = vi.fn(() => ({ select: () => ({ single: async () => ({ data: row, error: null }) }) }));
+    const created = await createProcedure({ from: () => ({ insert }) } as never, input, null);
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ tags: ['Sécurité', 'Incendie'] }));
+    expect(created.tags).toEqual(['Sécurité', 'Incendie']);
+  });
+
+  it.each([
+    [{ id: 12 }, 'procedures', 12],
+    [{ id: 32, procedureId: 12 }, 'procedures', 12],
+    [{ id: 32, procedureId: null }, 'published_procedures', 32],
+  ])('updates the owning document for %j', async (record, table, id) => {
+    const single = vi.fn().mockResolvedValue({ data: { id }, error: null });
+    const select = vi.fn(() => ({ single }));
+    const eq = vi.fn(() => ({ select }));
+    const update = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ update }));
+    await updateProcedureTags({ from } as never, record as ProcedureRecord, [' Sécurité ', 'sécurité', '']);
+    expect(from).toHaveBeenCalledWith(table);
+    expect(update).toHaveBeenCalledWith({ tags: ['Sécurité'] });
+    expect(eq).toHaveBeenCalledWith('id', id);
+    expect(single).toHaveBeenCalledOnce();
+  });
+
+  it('clears all tags and propagates rejected or invisible row updates', async () => {
+    const update = vi.fn(() => ({ eq: () => ({ select: () => ({ single: async () => ({ data: null, error: new Error('Denied') }) }) }) }));
+    await expect(updateProcedureTags({ from: () => ({ update }) } as never, { id: 12 } as ProcedureRecord, [])).rejects.toThrow('Denied');
+    expect(update).toHaveBeenCalledWith({ tags: [] });
+  });
+
+  it('returns tags inherited by a Drive publication', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: row, error: null });
+    const result = await publishProcedure({ rpc } as never, { id: 12 } as ProcedureRecord, { path: 'Procedures/published/consigne.pdf', bytes: 10, sha256: 'a'.repeat(64) });
+    expect(result.tags).toEqual(['Sécurité', 'Incendie']);
+    expect(rpc).toHaveBeenCalledWith('publish_procedure_drive', expect.objectContaining({ target_procedure: 12 }));
+  });
+});
 
 describe('procedure fleet options', () => {
   it('queries the active fleet, removes empty names and excludes office and quay entries', async () => {

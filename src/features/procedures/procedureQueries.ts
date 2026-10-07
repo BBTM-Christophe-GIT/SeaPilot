@@ -3,6 +3,7 @@ import { compareFleetNames, fleetAssetKind, type FleetAssetKind } from '../fleet
 import { buildProcedureCode } from './procedureReview';
 import { buildGoogleDriveDesktopUri, googleDriveFileUrl, parseProcedureDriveLink } from './procedureGoogleDrive';
 import type { ProcedureDriveReceipt, ProcedureDriveSource } from './procedureDriveFiles';
+import { normalizeProcedureTags } from './procedureTags';
 
 export const PROCEDURE_DOCUMENT_BUCKET = 'procedure-documents';
 
@@ -10,7 +11,7 @@ const PROCEDURE_FIELDS = [
   'id', 'procedure_code', 'title', 'status', 'revision_label', 'published_on', 'source_label', 'file_url', 'notes',
   'category_label', 'diffusion_on', 'description', 'regulatory_requirement', 'ism_chapter', 'vessel_name',
   'project_name', 'document_number', 'restrictions', 'annual_review', 'theme', 'document_type',
-  'bridge_watch', 'version_label',
+  'bridge_watch', 'version_label', 'tags',
 ].join(', ');
 
 const PROCEDURE_SELECT = [
@@ -49,6 +50,7 @@ interface ProcedureBaseRow {
   document_type: string | null;
   bridge_watch: boolean | null;
   version_label: string | null;
+  tags?: string[] | null;
 }
 
 interface ProcedureRow extends ProcedureBaseRow {
@@ -100,6 +102,7 @@ export interface ProcedureRecord {
   documentType: string;
   bridgeWatch: boolean;
   versionLabel: string;
+  tags: string[];
   storageBucket: string;
   storagePath: string;
   fileName: string;
@@ -141,6 +144,7 @@ export interface ProcedureMetrics {
 }
 
 export interface ProcedureInput {
+  tags?: string[];
   driveSource?: ProcedureDriveSource;
   googleDriveUrl?: string;
   googleDrivePath?: string;
@@ -208,6 +212,7 @@ function mapProcedureBase(row: ProcedureBaseRow) {
     documentType: nullableText(row.document_type),
     bridgeWatch: Boolean(row.bridge_watch),
     versionLabel: nullableText(row.version_label),
+    tags: normalizeProcedureTags(row.tags || []),
   };
 }
 
@@ -369,6 +374,7 @@ function procedurePayload(input: ProcedureInput) {
     document_type: optionalText(input.documentType),
     bridge_watch: input.bridgeWatch,
     version_label: optionalText(input.versionLabel || input.revisionLabel),
+    ...(input.tags === undefined ? {} : { tags: normalizeProcedureTags(input.tags) }),
   };
 }
 
@@ -512,6 +518,18 @@ export function getProcedurePublicationDate(date = new Date()): string {
   return `${value('year')}-${value('month')}-${value('day')}`;
 }
 
+export async function updateProcedureTags(
+  client: SupabaseClient,
+  record: ProcedureRecord | PublishedProcedureRecord,
+  tags: readonly string[],
+): Promise<void> {
+  const sourceId = 'procedureId' in record ? record.procedureId : record.id;
+  const table = sourceId === null ? 'published_procedures' : 'procedures';
+  const { error } = await client.from(table).update({ tags: normalizeProcedureTags(tags) })
+    .eq('id', sourceId ?? record.id).select('id').single();
+  if (error) throw error;
+}
+
 export async function publishProcedure(client: SupabaseClient, procedure: ProcedureRecord, pdfFile: File | ProcedureDriveReceipt): Promise<PublishedProcedureRecord> {
   if ('path' in pdfFile) {
     const { data, error } = await client.rpc('publish_procedure_drive', { target_procedure: procedure.id, pdf_path: pdfFile.path, pdf_bytes: pdfFile.bytes, pdf_sha256: pdfFile.sha256 });
@@ -532,6 +550,7 @@ export async function publishProcedure(client: SupabaseClient, procedure: Proced
     revision_label: optionalText(procedure.revisionLabel),
     published_on: publishedOn,
     source_label: 'seapilot', file_url: null, notes: optionalText(procedure.notes),
+    tags: normalizeProcedureTags(procedure.tags || []),
     category_label: optionalText(procedure.categoryLabel),
     diffusion_on: publishedOn,
     description: optionalText(procedure.description),

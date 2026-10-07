@@ -1,5 +1,19 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.68.1` propose une liste de tags pré-enregistrés dans Procédures QHSE,
+commune à Administration et Direction. La liste initiale comprend Rôle, MARPOL,
+Pollution, Incendie et THOMSEA, et s'enrichit avec les nouveaux tags enregistrés.
+**Gérer les tags** permet d'ajouter ou de supprimer des choix ; les tags des
+documents existants sont conservés et restent recherchables. Appliquer
+`20261007141605_procedure_tag_catalogue.sql` puis
+`20261007142542_procedure_tag_catalogue_archive.sql` avant le client.
+Voir [procedure-document-tags.md](./procedure-document-tags.md).
+
+Version `3.68.0` ajoute les tags aux documents de Procédures QHSE et à leur
+recherche. Appliquer `20261007135737_procedure_document_tags.sql` avant le client.
+Les tags sont conservés à la publication et synchronisés sur les PDF liés.
+Voir [procedure-document-tags.md](./procedure-document-tags.md).
+
 Version `3.67.9`, build `2026-10-07.004`, remplace l’oreille de **Écoute client** par une poignée de main et ajoute une **clé plate** pour **Technique**, dans Politique QHSE, sur l’accueil et dans les exports PDF. Appliquer la migration additive des icônes décrite dans [qhse-policy.md](./qhse-policy.md) avant le client. Les choix d’icônes personnalisés sont conservés ; aucune dépendance ou variable d’environnement supplémentaire.
 
 Version `3.67.8`, build `2026-10-07.003`, ajoute la vue **Refusées** dans le ruban et les onglets du module Achats. Son compteur suit la recherche et les filtres navire, catégorie et urgence. Les demandes dont la décision d’approbation est refusée sont regroupées dans cette vue et exclues des quatre autres vues, sans modifier leur statut enregistré. Le motif du refus reste consultable. Aucune migration, dépendance ou variable d’environnement supplémentaire ; droits et workflow RPC/RLS inchangés.

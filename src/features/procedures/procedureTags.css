@@ -1,0 +1,104 @@
+.procedure-tags-field {
+  display: grid;
+  gap: var(--sp-space-2);
+  margin-top: var(--sp-space-3);
+  color: var(--sp-text);
+  font-family: var(--sp-font);
+}
+
+.procedure-tags-field > label { font-size: .875rem; font-weight: 600; }
+.procedure-tags-field > small { color: var(--sp-muted); font-size: .75rem; line-height: 1.5; }
+.procedure-tags-field > input,
+.procedure-tags-field > select {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--sp-control-height);
+  padding: var(--sp-space-2) var(--sp-space-3);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  font: inherit;
+  font-size: .875rem;
+}
+
+.procedure-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-space-1);
+  margin: var(--sp-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.procedure-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-space-1);
+  max-width: 100%;
+  padding: var(--sp-space-1) var(--sp-space-2);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-primary-soft);
+  color: var(--sp-primary);
+  font-size: .75rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.procedure-tag > span { min-width: 0; }
+.procedure-tag > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  min-height: 28px;
+  padding: var(--sp-space-1);
+  border: 0;
+  border-radius: var(--sp-control-radius);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.procedure-tag > button:hover { background: var(--sp-surface); }
+.procedure-tag > button:disabled { cursor: wait; opacity: .6; }
+.procedure-tags-field > input:focus-visible,
+.procedure-tags-field > select:focus-visible,
+.procedure-tag > button:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; }
+
+.procedure-tag-catalogue-error { display: grid; gap: var(--sp-space-2); }
+.procedure-tag-catalogue-error > p { margin: 0; color: var(--sp-muted); font-size: .75rem; line-height: 1.5; }
+.procedure-tag-catalogue-error > button { justify-self: start; }
+
+.procedure-tag-manager { display: grid; gap: var(--sp-space-4); color: var(--sp-text); font-family: var(--sp-font); }
+.procedure-tag-manager-create { display: grid; gap: var(--sp-space-2); grid-template-columns: minmax(0, 1fr) auto; }
+.procedure-tag-manager-create > label { grid-column: 1 / -1; font-size: .875rem; font-weight: 600; }
+.procedure-tag-manager-create > input {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--sp-control-height);
+  padding: var(--sp-space-2) var(--sp-space-3);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  font: inherit;
+  font-size: .875rem;
+}
+.procedure-tag-manager-create > input:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; }
+.procedure-tag-manager > p { margin: 0; font-size: .875rem; line-height: 1.5; }
+.procedure-tag-manager-notice { color: var(--sp-primary); }
+.procedure-tag-manager-list { display: grid; gap: var(--sp-space-2); margin: 0; padding: 0; list-style: none; }
+.procedure-tag-manager-list > li { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-space-3); padding-bottom: var(--sp-space-2); border-bottom: 1px solid var(--sp-border); }
+.procedure-tag-manager-list > li > span { min-width: 0; overflow-wrap: anywhere; }
+.procedure-tag-manager-list button { display: inline-flex; align-items: center; gap: var(--sp-space-2); flex-shrink: 0; }
+
+@media (max-width: 480px) {
+  .procedure-tag-manager-create { grid-template-columns: 1fr; }
+}
+
+@media (pointer: coarse) {
+  .procedure-tag > button { width: 44px; min-height: 44px; }
+}
