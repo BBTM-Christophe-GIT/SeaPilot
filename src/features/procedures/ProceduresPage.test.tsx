@@ -32,6 +32,7 @@ const baseMetadata = {
   document_type: 'PRO',
   bridge_watch: true,
   version_label: '4',
+  tags: [],
 };
 
 const approvedProcedureRow = {
@@ -101,7 +102,7 @@ function orderedResult(data: unknown[]) {
   return result;
 }
 
-function createClient(options: { procedures?: unknown[]; publications?: unknown[]; projects?: unknown[]; vessels?: unknown[]; created?: unknown; published?: unknown } = {}) {
+function createClient(options: { procedures?: unknown[]; publications?: unknown[]; projects?: unknown[]; vessels?: unknown[]; created?: unknown; published?: unknown; updateError?: Error } = {}) {
   const procedures = options.procedures ?? [approvedProcedureRow, draftProcedureRow];
   const publications = options.publications ?? [publishedProcedureRow];
   const projects = options.projects ?? projectRows;
@@ -118,16 +119,24 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
       single: vi.fn().mockResolvedValue({ data: options.published || publishedProcedureRow, error: null }),
     }),
   });
-  const update = vi.fn().mockReturnValue({
-    eq: vi.fn().mockResolvedValue({ error: null }),
-  });
+  const createUpdate = (rows: unknown[]) => vi.fn().mockImplementation((payload: Record<string, unknown>) => ({
+    eq: vi.fn().mockImplementation((_column: string, id: number) => ({
+      select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({
+        data: { ...rows.find(row => (row as { id: number }).id === id) as object, ...payload },
+        error: options.updateError || null,
+      }) }),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ error: options.updateError || null }).then(resolve),
+    })),
+  }));
+  const procedureUpdate = createUpdate(procedures);
+  const publicationUpdate = createUpdate(publications);
   const removeRow = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
   const from = vi.fn().mockImplementation((table: string) => {
     if (table === 'procedures') {
       return {
         select: vi.fn(() => orderedResult(procedures)),
         insert: procedureInsert,
-        update,
+        update: procedureUpdate,
         delete: removeRow,
       };
     }
@@ -135,7 +144,7 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
       return {
         select: vi.fn(() => orderedResult(publications)),
         insert: publicationInsert,
-        update,
+        update: publicationUpdate,
         delete: removeRow,
       };
     }
@@ -152,7 +161,7 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
     rpc, from,
     storage: { from: vi.fn(() => ({ upload, remove, createSignedUrl })) },
   };
-  return { client, rpc, from, upload, createSignedUrl, procedureInsert, publicationInsert };
+  return { client, rpc, from, upload, createSignedUrl, procedureInsert, publicationInsert, procedureUpdate, publicationUpdate };
 }
 
 describe('ProceduresPage', () => {
@@ -539,7 +548,7 @@ describe('ProceduresPage', () => {
 
   it('imports a new editable source into the synchronized Procedures folder', async () => {
     const user = userEvent.setup();
-    const created = { ...approvedProcedureRow, id: 44, title: 'Plan de préparation aux urgences', procedure_code: 'URG 08-A', document_number: '08' };
+    const created = { ...approvedProcedureRow, id: 44, title: 'Plan de préparation aux urgences', procedure_code: 'URG 08-A', document_number: '08', tags: ['Sécurité', 'Machine'] };
     const { client, upload, procedureInsert } = createClient({ procedures: [], publications: [], created });
     render(<ProceduresPage client={client as never} roles={['admin']} />);
 
@@ -554,6 +563,9 @@ describe('ProceduresPage', () => {
     expect(within(dialog).queryByLabelText('Veille Passerelle')).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText("Statut d'approbation")).not.toBeInTheDocument();
     fireEvent.change(within(dialog).getByLabelText('Titre'), { target: { value: 'Plan de préparation aux urgences' } });
+    fireEvent.change(within(dialog).getByLabelText('Tags'), { target: { value: '  Sécurité; Machine, securite; ' } });
+    expect(within(dialog).getByText(/Séparez les tags par une virgule/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('list', { name: 'Tags du document' }).children).toHaveLength(2);
     await user.selectOptions(within(dialog).getByLabelText('Thème'), 'URG');
     fireEvent.change(within(dialog).getByLabelText('Numéro'), { target: { value: '08' } });
     fireEvent.change(within(dialog).getByLabelText('Version'), { target: { value: 'a' } });
@@ -581,10 +593,144 @@ describe('ProceduresPage', () => {
       vessel_name: 'LANDEMER',
       project_name: 'P144 - GUARD VESSEL EMDT',
       annual_review: true,
+      tags: ['Sécurité', 'Machine'],
       source_storage_bucket: null,
       source_google_drive_path: 'URG 08 A - Plan de préparation aux urgences.docx',
       source_file_name: 'URG 08 A - Plan de préparation aux urgences.docx',
     }));
+    expect(screen.getByRole('list', { name: 'Tags de Plan de préparation aux urgences' })).toHaveTextContent('SécuritéMachine');
+  });
+
+  it('changes source tags in the editor and removes them, updating every linked PDF immediately', async () => {
+    const user = userEvent.setup();
+    const source = { ...approvedProcedureRow, document_number: '01', tags: ['Sécurité', 'Machine'] };
+    const publications = [
+      { ...publishedProcedureRow, tags: source.tags },
+      { ...publishedProcedureRow, id: 33, title: 'Deuxième diffusion.pdf', tags: source.tags },
+    ];
+    const { client, procedureUpdate } = createClient({ procedures: [source], publications });
+    render(<ProceduresPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByLabelText('Modifier Procédure embarquement ROZEL'));
+    let dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByLabelText('Tags')).toHaveValue('Sécurité, Machine');
+    fireEvent.change(dialog.getByLabelText('Tags'), { target: { value: 'Évacuation, ÉVACUATION; Secours' } });
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Informations mises à jour.');
+    expect(procedureUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ tags: ['Évacuation', 'Secours'] }));
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('ÉvacuationSecours');
+    await user.click(screen.getByRole('button', { name: 'PDF publiés' }));
+    for (const publication of publications) {
+      expect(screen.getByRole('list', { name: `Tags de ${publication.title}` })).toHaveTextContent('ÉvacuationSecours');
+    }
+    fireEvent.change(screen.getByLabelText('Recherche de document'), { target: { value: 'EVACUATION' } });
+    expect(screen.getAllByRole('list', { name: /^Tags de / })).toHaveLength(2);
+    fireEvent.change(screen.getByLabelText('Recherche de document'), { target: { value: '' } });
+    await user.click(screen.getByRole('button', { name: 'Documents de travail' }));
+    await user.click(screen.getByLabelText('Modifier les tags Procédure embarquement ROZEL'));
+    dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    await user.click(dialog.getByLabelText('Retirer le tag Évacuation'));
+    await user.click(dialog.getByLabelText('Retirer le tag Secours'));
+    expect(dialog.getByLabelText('Tags')).toHaveValue('');
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Tags mis à jour.');
+    expect(procedureUpdate).toHaveBeenLastCalledWith({ tags: [] });
+    expect(screen.queryByRole('list', { name: /^Tags de / })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'PDF publiés' }));
+    expect(screen.queryByRole('list', { name: /^Tags de / })).not.toBeInTheDocument();
+  });
+
+  it.each(['admin', 'direction'] as const)('lets %s edit linked and standalone PDF tags without changing other publications', async role => {
+    const user = userEvent.setup();
+    const standalone = { ...publishedProcedureRow, id: 54, procedure_id: null, title: 'Document autonome.pdf', tags: ['Autonome'] };
+    const linkedCopy = { ...publishedProcedureRow, id: 33, title: 'Deuxième diffusion.pdf' };
+    const { client, procedureUpdate, publicationUpdate } = createClient({ procedures: [approvedProcedureRow], publications: [publishedProcedureRow, linkedCopy, standalone] });
+    render(<ProceduresPage client={client as never} roles={[role]} />);
+    await user.click(await screen.findByRole('button', { name: 'PDF publiés' }));
+    await user.click(screen.getByLabelText('Modifier les tags Procédure embarquement ROZEL.pdf'));
+    let dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    fireEvent.change(dialog.getByLabelText('Tags'), { target: { value: 'Énergie; Energie' } });
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Tags mis à jour.');
+    expect(procedureUpdate).toHaveBeenCalledWith({ tags: ['Énergie'] });
+    expect(publicationUpdate).not.toHaveBeenCalled();
+    expect(screen.getByRole('list', { name: 'Tags de Deuxième diffusion.pdf' })).toHaveTextContent('Énergie');
+    expect(screen.getByRole('list', { name: 'Tags de Document autonome.pdf' })).toHaveTextContent('Autonome');
+    await user.click(screen.getByLabelText('Modifier les tags Document autonome.pdf'));
+    dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    expect(dialog.getByLabelText('Tags')).toHaveValue('Autonome');
+    fireEvent.change(dialog.getByLabelText('Tags'), { target: { value: 'Formation' } });
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Tags mis à jour.');
+    expect(publicationUpdate).toHaveBeenCalledWith({ tags: ['Formation'] });
+    expect(procedureUpdate).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL.pdf' })).toHaveTextContent('Énergie');
+    expect(screen.getByRole('list', { name: 'Tags de Document autonome.pdf' })).toHaveTextContent('Formation');
+    await user.click(screen.getByRole('button', { name: 'Documents de travail' }));
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('Énergie');
+  });
+
+  it.each(['armement', 'capitaine', 'marin'] as const)('searches published tags for a real %s role fixture with case and accent insensitive matching', async role => {
+    const publications = [
+      { ...publishedProcedureRow, tags: ['Sécurité'] },
+      { ...publishedProcedureRow, id: 33, title: 'Consignes techniques.pdf', tags: ['sécurité à bord'] },
+    ];
+    const { client, from } = createClient({ procedures: [{ ...draftProcedureRow, tags: ['confidentiel'] }], publications });
+    render(<ProceduresPage client={client as never} roles={[role]} />);
+    await screen.findByText('Procédure embarquement ROZEL.pdf');
+    const search = screen.getByLabelText('Recherche de document');
+    expect(search).toHaveAttribute('placeholder', expect.stringContaining('tags'));
+    fireEvent.change(search, { target: { value: 'SECURITE' } });
+    expect(screen.getByText('Procédure embarquement ROZEL.pdf')).toBeInTheDocument();
+    expect(screen.getByText('Consignes techniques.pdf')).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: 'Sécurité À BORD' } });
+    expect(screen.queryByText('Procédure embarquement ROZEL.pdf')).not.toBeInTheDocument();
+    expect(screen.getByText('Consignes techniques.pdf')).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: 'confidentiel' } });
+    expect(screen.getByText('Aucun document ne correspond aux filtres.')).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: '' } });
+    expect(screen.queryByRole('button', { name: /Modifier/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nouveau document' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(from).not.toHaveBeenCalledWith('procedures');
+  });
+
+  it('retains tag edits after a save error and leaves the displayed tags unchanged', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ procedures: [{ ...approvedProcedureRow, tags: ['Sécurité'] }], updateError: new Error('Connexion indisponible') });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByLabelText('Modifier les tags Procédure embarquement ROZEL'));
+    const dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    fireEvent.change(dialog.getByLabelText('Tags'), { target: { value: 'Évacuation' } });
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    expect(await dialog.findByRole('alert')).toHaveTextContent('Connexion indisponible');
+    expect(dialog.getByLabelText('Tags')).toHaveValue('Évacuation');
+    expect(dialog.getByRole('button', { name: 'Enregistrer' })).toBeEnabled();
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('Sécurité');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('disables tag actions while saving and updates the library only after persistence succeeds', async () => {
+    const user = userEvent.setup();
+    const { client, procedureUpdate } = createClient({ procedures: [{ ...approvedProcedureRow, tags: ['Sécurité'] }] });
+    let finishSave!: (value: { data: { id: number }; error: null }) => void;
+    const pendingSave = new Promise<{ data: { id: number }; error: null }>(resolve => { finishSave = resolve; });
+    procedureUpdate.mockReturnValue({ eq: vi.fn(() => ({ select: vi.fn(() => ({ single: vi.fn(() => pendingSave) })) })) });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByLabelText('Modifier les tags Procédure embarquement ROZEL'));
+    const dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    fireEvent.change(dialog.getByLabelText('Tags'), { target: { value: 'Évacuation' } });
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    expect(dialog.getByRole('button', { name: 'Enregistrement…' })).toBeDisabled();
+    expect(dialog.getByRole('button', { name: 'Fermer' })).toBeDisabled();
+    expect(dialog.getByLabelText('Tags')).toBeDisabled();
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('Sécurité');
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { name: 'Modifier les tags' })).toBeInTheDocument();
+    finishSave({ data: { id: 12 }, error: null });
+    await screen.findByText('Tags mis à jour.');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('Évacuation');
   });
 
   it('converts the saved source and atomically registers its published PDF', async () => {

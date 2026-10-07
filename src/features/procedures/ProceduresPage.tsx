@@ -23,6 +23,7 @@ import {
   ListChecks,
   Search,
   Send,
+  Tags,
   ShipWheel,
   ShieldCheck,
   TriangleAlert,
@@ -34,10 +35,11 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
+import { AppDialog } from '../../components/AppDialog';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import {
@@ -56,6 +58,7 @@ import {
   publishProcedure,
   suggestNextProcedureNumber,
   updateProcedure,
+  updateProcedureTags,
   type ProcedureInput,
   type ProcedureProjectOption,
   type ProcedureRecord,
@@ -64,6 +67,8 @@ import {
 } from './procedureQueries';
 import { buildProcedureCode, getAnnualReviewAlert, getAnnualReviewDueDate } from './procedureReview';
 import './procedureGoogleDrive.css';
+import './procedureTags.css';
+import { normalizeProcedureSearch, normalizeProcedureTags, parseProcedureTags } from './procedureTags';
 import { ProcedureListDialog } from './ProcedureListDialog';
 import { procedureAppliesToVessel } from './procedureList';
 import { CHAPTERS, ISM_CHAPTER_THEMES, chapterKey, type ProcedureChapterKey } from './procedureChapters';
@@ -111,15 +116,11 @@ const EMPTY_FORM: ProcedureInput = {
   procedureCode: '', title: '', status: 'draft', revisionLabel: '', diffusionOn: '', categoryLabel: '',
   description: '', regulatoryRequirement: '', ismChapter: '01', vesselName: '', projectName: '', documentNumber: '',
   restrictions: '', annualReview: false, theme: ISM_CHAPTER_THEMES['01']!, documentType: '',
-  bridgeWatch: false, versionLabel: '', notes: '',
+  bridgeWatch: false, versionLabel: '', notes: '', tags: [],
 };
 
 function canManageProcedures(roles: RoleKey[]): boolean {
   return roles.some((role) => role === 'admin' || role === 'direction');
-}
-
-function normalizeSearch(value: string): string {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
 function ProcedureChapterIcon({ chapter }: { chapter: ProcedureChapterKey }) {
@@ -135,11 +136,11 @@ function matchesFilters(record: ProcedureRecord, filters: ProcedureFilterState):
   if (filters.project && !projectNames(record.projectName).includes(filters.project)) return false;
   if (!procedureAppliesToVessel(record, filters.vessel)) return false;
   if (!filters.search) return true;
-  const searchable = normalizeSearch([
+  const searchable = normalizeProcedureSearch([
     record.title, record.procedureCode, record.documentNumber, record.theme, record.ismChapter, record.description,
-    record.projectName, record.vesselName,
+    record.projectName, record.vesselName, ...record.tags,
   ].join(' '));
-  return searchable.includes(normalizeSearch(filters.search));
+  return searchable.includes(normalizeProcedureSearch(filters.search));
 }
 
 function sortRecords<T extends ProcedureRecord>(records: T[]): T[] {
@@ -181,7 +182,36 @@ function formFromProcedure(procedure: ProcedureRecord): ProcedureInput {
     bridgeWatch: procedure.bridgeWatch,
     versionLabel: procedure.versionLabel,
     notes: procedure.notes,
+    tags: procedure.tags,
   };
+}
+
+function ProcedureTagsField({ value, onChange, disabled }: { value: string; onChange: (value: string) => void; disabled: boolean }) {
+  const fieldId = useId();
+  const tags = parseProcedureTags(value);
+  return <div className="procedure-tags-field">
+    <label htmlFor={fieldId}>Tags</label>
+    <input id={fieldId} aria-describedby={`${fieldId}-help`} disabled={disabled} placeholder="Ex. sécurité, évacuation, machine" value={value} onChange={event => onChange(event.target.value)} />
+    <small id={`${fieldId}-help`}>Séparez les tags par une virgule ou un point-virgule. La recherche retrouve les documents grâce à ces tags.</small>
+    {tags.length ? <ul aria-label="Tags du document" className="procedure-tag-list">{tags.map(tag => <li className="procedure-tag" key={tag}><span>{tag}</span><button aria-label={`Retirer le tag ${tag}`} disabled={disabled} onClick={() => onChange(tags.filter(value => value !== tag).join(', '))} type="button"><X aria-hidden="true" size={14} /></button></li>)}</ul> : null}
+  </div>;
+}
+
+function ProcedureTagsDialog({ record, onClose, onSave, saving }: { record: ProcedureRecord; onClose: () => void; onSave: (tags: string[]) => Promise<void>; saving: boolean }) {
+  const [value, setValue] = useState(record.tags.join(', '));
+  const [error, setError] = useState('');
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saving) return;
+    setError('');
+    try { await onSave(parseProcedureTags(value)); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'L’enregistrement des tags a échoué.'); }
+  }
+  return <AppDialog title="Modifier les tags" description={record.title} icon={<Tags aria-hidden="true" size={20} />} size="sm" isBusy={saving} onClose={onClose} onSubmit={handleSubmit}
+    footer={<div className="app-dialog__actions"><button className="sp-button sp-button--secondary" disabled={saving} onClick={onClose} type="button">Annuler</button><button className="sp-button sp-button--primary" disabled={saving} type="submit">{saving ? 'Enregistrement…' : 'Enregistrer'}</button></div>}>
+    <ProcedureTagsField value={value} onChange={setValue} disabled={saving} />
+    {error ? <p className="form-error" role="alert">{error}</p> : null}
+  </AppDialog>;
 }
 
 interface ProcedureEditorProps {
@@ -203,6 +233,7 @@ function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions,
   const [file, setFile] = useState<File | null>(null);
   const [fromTemplate, setFromTemplate] = useState(false);
   const [fileError, setFileError] = useState('');
+  const [tagsValue, setTagsValue] = useState(() => procedure?.tags.join(', ') || '');
   const generatedProcedureCode = buildProcedureCode(form.theme, form.documentNumber, form.versionLabel);
   const annualReviewDueOn = form.annualReview ? getAnnualReviewDueDate(form.diffusionOn) : '';
   const numberTaken = isProcedureNumberTaken(procedures, form.theme, form.documentNumber, procedure?.id);
@@ -237,7 +268,7 @@ function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions,
     setFileError('');
     const versionLabel = form.versionLabel.trim().toUpperCase();
     try {
-      await onSave({ ...form, versionLabel, revisionLabel: versionLabel, procedureCode: buildProcedureCode(form.theme, form.documentNumber, versionLabel) }, file, fromTemplate);
+      await onSave({ ...form, tags: parseProcedureTags(tagsValue), versionLabel, revisionLabel: versionLabel, procedureCode: buildProcedureCode(form.theme, form.documentNumber, versionLabel) }, file, fromTemplate);
     } catch (error) {
       setFileError(error instanceof Error ? error.message : 'L’enregistrement du document a échoué.');
     }
@@ -292,6 +323,7 @@ function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions,
           <section className="procedure-form-section" aria-labelledby="procedure-details-title">
             <header><BookOpenCheck aria-hidden="true" size={18} /><h3 id="procedure-details-title">Informations complémentaires</h3></header>
             <div className="procedure-form-grid"><label>Description<textarea rows={2} value={form.description} onChange={event => setValue('description', event.target.value)} /></label><label>Exigence réglementaire<textarea rows={2} value={form.regulatoryRequirement} onChange={event => setValue('regulatoryRequirement', event.target.value)} /></label></div>
+            <ProcedureTagsField value={tagsValue} onChange={setTagsValue} disabled={saving} />
           </section>
           {!fromTemplate ? <section className="procedure-form-section procedure-file-section" aria-labelledby="procedure-file-title">
             <header><Upload aria-hidden="true" size={18} /><div><h3 id="procedure-file-title">Importer un fichier</h3><p>Google Drive synchronisé · dossier Procedures</p></div></header>
@@ -349,6 +381,7 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
   const [collapsedChapters, setCollapsedChapters] = useState<Set<string>>(new Set());
   const [editorProcedure, setEditorProcedure] = useState<ProcedureRecord | 'new' | null>(null);
   const [publishTarget, setPublishTarget] = useState<ProcedureRecord | null>(null);
+  const [tagsTarget, setTagsTarget] = useState<ProcedureRecord | PublishedProcedureRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -431,6 +464,7 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
       } else if (editorProcedure) {
         const updated = await updateProcedure(effectiveClient, editorProcedure, input, null);
         setProcedures((current) => sortRecords(current.map((item) => item.id === updated.id ? updated : item)));
+        setPublications((current) => current.map((item) => item.procedureId === updated.id ? { ...item, tags: updated.tags } : item));
         flash('Informations mises à jour.');
       }
       setEditorProcedure(null);
@@ -440,6 +474,22 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
         : `${error instanceof Error ? error.message : 'L’enregistrement du document a échoué.'}${createdFilePath ? ` Le fichier créé reste dans Procedures/${createdFilePath}.` : ''}`);
     }
     finally { setIsSaving(false); }
+  }
+
+  async function handleSaveTags(values: string[]) {
+    if (!tagsTarget || !isManager) return;
+    setIsSaving(true);
+    const tags = normalizeProcedureTags(values);
+    try {
+      await updateProcedureTags(effectiveClient, tagsTarget, tags);
+      const sourceId = 'procedureId' in tagsTarget ? tagsTarget.procedureId : tagsTarget.id;
+      if (sourceId !== null) {
+        setProcedures(current => current.map(item => item.id === sourceId ? { ...item, tags } : item));
+      }
+      setPublications(current => current.map(item => (sourceId === null ? item.id === tagsTarget.id : item.procedureId === sourceId) ? { ...item, tags } : item));
+      setTagsTarget(null);
+      flash('Tags mis à jour.');
+    } finally { setIsSaving(false); }
   }
 
   async function handlePublish() {
@@ -519,7 +569,7 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
       <div aria-live="polite" className="admin-notices">{statusMessage ? <p className="admin-success">{statusMessage}</p> : null}{errorMessage ? <p className="form-error">{errorMessage}</p> : null}</div>
 
       <section aria-label="Filtres des procédures" className="procedure-filter-bar">
-        <label className="procedure-search"><span>Recherche de document</span><div><Search size={16} /><input aria-label="Recherche de document" placeholder="Nom, numéro, thème, projet, navire…" value={filters.search} onChange={(event) => updateFilter('search', event.target.value)} /></div></label>
+        <label className="procedure-search"><span>Recherche de document</span><div><Search size={16} /><input aria-label="Recherche de document" placeholder="Nom, numéro, thème, projet, navire, tags…" value={filters.search} onChange={(event) => updateFilter('search', event.target.value)} /></div></label>
         <label><span>Projet</span><select aria-label="Projet" value={filters.project} onChange={(event) => updateFilter('project', event.target.value)}><option value="">Tous les projets</option>{projects.map((project) => <option key={project}>{project}</option>)}</select></label>
         <label><span>Navire</span><select aria-label="Navire" value={filters.vessel} onChange={(event) => updateFilter('vessel', event.target.value)}><option value="">Tous les navires</option>{vessels.map((vessel) => <option key={vessel}>{vessel}</option>)}</select></label>
       </section>
@@ -574,10 +624,12 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
                             </span>
                           </div>
                         ) : null}
+                        {record.tags.length ? <ul aria-label={`Tags de ${record.title}`} className="procedure-tag-list">{record.tags.map(tag => <li className="procedure-tag" key={tag}>{tag}</li>)}</ul> : null}
                       </div>
                       <div className="procedure-document-status">{reviewAlert ? <strong className={`procedure-review-badge is-${reviewAlert.tone}`}><BellRing aria-hidden="true" size={12} />{reviewAlert.label}</strong> : null}{publication || linkedPublication ? <strong className="is-published">Document publié le {formatDate((publication || linkedPublication)?.publishedOn || '')}</strong> : <span className={`procedure-status-${record.status}`}>{getProcedureStatusLabel(record.status)}</span>}<small>{humanFileSize(record.sizeBytes)}</small></div>
                       <div className="procedure-row-actions">
                         <button aria-label={`${source?.googleDriveFileId ? 'Voir dans Drive' : 'Télécharger'} ${record.title}`} onClick={() => void handleDownload(record)} type="button"><Download size={16} /></button>
+                        {isManager ? <button aria-label={`Modifier les tags ${record.title}`} onClick={() => setTagsTarget(record)} type="button"><Tags aria-hidden="true" size={16} /></button> : null}
                         {source && isManager ? <><button aria-label={`Modifier ${record.title}`} onClick={() => setEditorProcedure(source)} type="button"><Edit3 size={16} /></button><button aria-label={`Publier ${record.title}`} onClick={() => setPublishTarget(source)} type="button"><Send size={16} /></button><button aria-label={`Supprimer ${record.title}`} className="danger" onClick={() => void handleDeleteSource(source)} type="button"><Trash2 size={16} /></button></> : null}
                         {publication && isManager ? <button aria-label={`Retirer ${record.title}`} className="danger" onClick={() => void handleDeletePublication(publication)} type="button"><Trash2 size={16} /></button> : null}
                       </div>
@@ -592,6 +644,7 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
       </section>
 
       {editorProcedure ? <ProcedureEditor procedure={editorProcedure === 'new' ? null : editorProcedure} procedures={procedures} projectOptions={procedureProjects} vesselOptions={fleetVessels} vesselsLoading={vesselsLoading} vesselsError={vesselsError} onClose={() => setEditorProcedure(null)} onSave={handleSave} saving={isSaving} /> : null}
+      {isManager && tagsTarget ? <ProcedureTagsDialog record={tagsTarget} onClose={() => setTagsTarget(null)} onSave={handleSaveTags} saving={isSaving} /> : null}
       {isListOpen ? <ProcedureListDialog records={activeRecords} vessels={vessels} initialVessel={filters.vessel} library={isManager ? view : 'published'} onClose={() => setIsListOpen(false)} /> : null}
       {publishTarget ? <PublishDialog procedure={publishTarget} onClose={() => setPublishTarget(null)} onPublish={handlePublish} saving={isSaving} /> : null}
     </section>

@@ -1,0 +1,71 @@
+.procedure-tags-field {
+  display: grid;
+  gap: var(--sp-space-2);
+  margin-top: var(--sp-space-3);
+  color: var(--sp-text);
+  font-family: var(--sp-font);
+}
+
+.procedure-tags-field > label { font-size: .875rem; font-weight: 600; }
+.procedure-tags-field > small { color: var(--sp-muted); font-size: .75rem; line-height: 1.5; }
+.procedure-tags-field > input {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--sp-control-height);
+  padding: var(--sp-space-2) var(--sp-space-3);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  font: inherit;
+  font-size: .875rem;
+}
+
+.procedure-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-space-1);
+  margin: var(--sp-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.procedure-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-space-1);
+  max-width: 100%;
+  padding: var(--sp-space-1) var(--sp-space-2);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-primary-soft);
+  color: var(--sp-primary);
+  font-size: .75rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.procedure-tag > span { min-width: 0; }
+.procedure-tag > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  min-height: 28px;
+  padding: var(--sp-space-1);
+  border: 0;
+  border-radius: var(--sp-control-radius);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.procedure-tag > button:hover { background: var(--sp-surface); }
+.procedure-tag > button:disabled { cursor: wait; opacity: .6; }
+.procedure-tags-field > input:focus-visible,
+.procedure-tag > button:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; }
+
+@media (pointer: coarse) {
+  .procedure-tag > button { width: 44px; min-height: 44px; }
+}
