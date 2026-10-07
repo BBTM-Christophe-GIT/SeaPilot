@@ -1,0 +1,64 @@
+.qhse-policy-home-card {
+  --qhse-home-blue: #1764c0;
+  --qhse-home-navy: #174b88;
+  --qhse-home-heading: #14233e;
+  --qhse-home-muted: #607089;
+  --qhse-home-border: #e0e7f0;
+  container: qhse-policy-home / inline-size;
+  display: block;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  padding: 20px 22px;
+  border: 1px solid var(--qhse-home-border);
+  border-radius: 12px;
+  color: #26354b;
+  background: #fff;
+  line-height: 1.4;
+}
+
+.qhse-policy-home-card,
+.qhse-policy-home-card * { box-sizing: border-box; }
+
+.qhse-policy-home-card .qhse-policy-home__header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.qhse-policy-home-card .qhse-policy-home__identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.qhse-policy-home-card .qhse-policy-home__icon { display: grid; place-items: center; flex: 0 0 28px; height: 28px; border-radius: 0; color: var(--qhse-home-blue); background: transparent; }
+.qhse-policy-home-card .qhse-policy-home__identity h2 { margin: 0 0 5px; color: var(--qhse-home-heading); font-size: 1.04rem; font-weight: 730; letter-spacing: -.02em; line-height: 1.2; }
+.qhse-policy-home-card .qhse-policy-home__identity p { margin: 0; color: var(--qhse-home-muted); font-size: .71rem; line-height: 1.4; }
+.qhse-policy-home-card .qhse-policy-home__links { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; min-width: 0; grid-column: auto; grid-row: auto; }
+.qhse-policy-home-card .qhse-policy-home__links a { display: inline-flex; align-items: center; gap: 7px; color: var(--qhse-home-blue); font-size: .73rem; font-weight: 650; text-decoration: none; }
+.qhse-policy-home-card .qhse-policy-home__links a:hover { text-decoration: underline; }
+.qhse-policy-home-card :is(button, a):focus-visible { outline: 3px solid #57a5c8; outline-offset: 3px; }
+.qhse-policy-home-card .qhse-policy-home__summary { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 16px 0 0; padding: 0; grid-column: auto; color: var(--qhse-home-muted); font-size: .71rem; line-height: 1.4; }
+.qhse-policy-home-card .qhse-policy-home__summary strong { color: var(--qhse-home-heading); font-size: .79rem; font-weight: 650; }
+.qhse-policy-home-card .qhse-policy-home__axes { display: grid; margin: 12px 0 0; padding: 0; list-style: none; }
+.qhse-policy-home-card .qhse-policy-home__axis { display: grid; grid-template-columns: 28px minmax(0, 1fr) minmax(180px, 34%); align-items: center; gap: 12px; border-top: 1px solid var(--qhse-home-border); padding: 13px 0; }
+.qhse-policy-home-card .qhse-policy-home__axis:last-child { padding-bottom: 0; }
+.qhse-policy-home-card .qhse-policy-home__axis-icon { display: grid; place-items: center; color: var(--qhse-home-navy); }
+.qhse-policy-home-card .qhse-policy-home__axis-copy { min-width: 0; }
+.qhse-policy-home-card .qhse-policy-home__axis-copy h3 { margin: 0; color: var(--qhse-home-heading); font-size: .77rem; font-weight: 650; overflow-wrap: anywhere; }
+.qhse-policy-home-card .qhse-policy-home__axis-copy p { margin: 4px 0 0; color: var(--qhse-home-muted); font-size: .67rem; line-height: 1.4; }
+.qhse-policy-home-card .qhse-policy-home__axis-progress { min-width: 0; }
+.qhse-policy-home-card .qhse-policy-home__axis-progress > span { display: block; margin-bottom: 7px; color: var(--qhse-home-muted); font-size: .67rem; line-height: 1.4; }
+.qhse-policy-home-card .qhse-policy-home__axis-progress strong { color: var(--qhse-home-navy); font-weight: 650; }
+.qhse-policy-home-card .qhse-policy-home__axis-progress progress { display: block; width: 100%; height: 6px; appearance: none; border: 0; border-radius: 10px; overflow: hidden; background: #e5ecf5; color: var(--qhse-home-blue); }
+.qhse-policy-home-card .qhse-policy-home__axis-progress progress::-webkit-progress-bar { border-radius: 10px; background: #e5ecf5; }
+.qhse-policy-home-card .qhse-policy-home__axis-progress progress::-webkit-progress-value { border-radius: 10px; background: var(--qhse-home-blue); }
+.qhse-policy-home-card .qhse-policy-home__axis-progress progress::-moz-progress-bar { border-radius: 10px; background: var(--qhse-home-blue); }
+.qhse-policy-home-card .qhse-policy-home__axis-progress > .qhse-policy-home__axis-empty { margin: 0; }
+.qhse-policy-home-card .qhse-policy-home__error { display: flex; align-items: center; gap: 8px; color: #b4233c; }
+.qhse-policy-home-card .qhse-policy-home__error button { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; border: 1px solid var(--qhse-home-border); border-radius: 6px; padding: 0; color: var(--qhse-home-navy); background: #fff; cursor: pointer; }
+
+@container qhse-policy-home (max-width: 620px) {
+  .qhse-policy-home-card .qhse-policy-home__header { flex-wrap: wrap; gap: 14px; }
+  .qhse-policy-home-card .qhse-policy-home__links { gap: 12px 16px; }
+}
+
+@container qhse-policy-home (max-width: 430px) {
+  .qhse-policy-home-card .qhse-policy-home__axis { grid-template-columns: 24px minmax(0, 1fr); }
+  .qhse-policy-home-card .qhse-policy-home__axis-progress { grid-column: 2; }
+}
+
+@media (max-width: 600px) {
+  .qhse-policy-home-card { padding: 18px 16px; }
+}

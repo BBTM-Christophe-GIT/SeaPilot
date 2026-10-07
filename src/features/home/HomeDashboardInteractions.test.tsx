@@ -158,4 +158,108 @@ describe('home calendar and task interactions', () => {
     await user.click(screen.getByRole('button', { name: 'Aujourd’hui' }));
     expect(calendar().getByRole('heading', { name: 'Octobre 2026' })).toBeInTheDocument();
   });
+
+  it('collapses only the chosen category and expands it with the keyboard', async () => {
+    const user = await renderDashboard();
+    const collapse = screen.getByRole('button', { name: 'Replier la catégorie Achats' });
+    const itemsId = collapse.getAttribute('aria-controls');
+
+    expect(collapse).toHaveAttribute('aria-expanded', 'true');
+    expect(itemsId).toBeTruthy();
+    expect(document.getElementById(itemsId!)).toContainElement(screen.getByRole('link', { name: /Commande de pièces/ }));
+    await user.click(collapse);
+
+    const expand = screen.getByRole('button', { name: 'Déplier la catégorie Achats' });
+    expect(expand).toHaveAttribute('aria-expanded', 'false');
+    expect(expand).toHaveAttribute('aria-controls', itemsId);
+    expect(screen.queryByRole('link', { name: /Commande de pièces/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Visite annuelle du navire/ })).toBeVisible();
+    expect(filters().getByRole('button', { name: /^Tous\s*2$/ })).toBeInTheDocument();
+
+    expect(expand).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Replier la catégorie Flotte & documents' })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(expand).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('button', { name: 'Replier la catégorie Achats' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Replier la catégorie Achats' })).toHaveAttribute('aria-controls', itemsId);
+    expect(document.getElementById(itemsId!)).toContainElement(screen.getByRole('link', { name: /Commande de pièces/ }));
+    expect(screen.getByRole('link', { name: /Commande de pièces/ })).toHaveAttribute('href', '/modules/purchaseRequests');
+  });
+
+  it('retains task data and date counts when a category is collapsed during filter and month changes', async () => {
+    const user = await renderDashboard();
+    await user.click(screen.getByRole('button', { name: 'Replier la catégorie Achats' }));
+    await user.click(calendar().getByRole('button', { name: 'Mois suivant' }));
+
+    expect(screen.getByText('Mercredi 7 octobre · 2 éléments')).toBeInTheDocument();
+    expect(filters().getByRole('button', { name: /^Achats\s*1$/ })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Commande de pièces/ })).not.toBeInTheDocument();
+    await user.click(filters().getByRole('button', { name: /^Documents\s*1$/ }));
+    expect(screen.getByRole('link', { name: /Visite annuelle du navire/ })).toHaveAttribute('href', '/modules/certificates');
+    await user.click(filters().getByRole('button', { name: /^Tous\s*2$/ }));
+    await user.click(calendar().getByRole('button', { name: 'Mois précédent' }));
+    await user.click(calendar().getByRole('button', { name: '9 Octobre 2026, 1 échéance' }));
+
+    expect(screen.getByText('Vendredi 9 octobre · 1 élément')).toBeInTheDocument();
+    expect(filters().getByRole('button', { name: /^Achats\s*0$/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Visite annuelle du navire/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Aujourd’hui' }));
+
+    await user.click(screen.getByRole('button', { name: 'Déplier la catégorie Achats' }));
+    expect(screen.getByText('Mercredi 7 octobre · 2 éléments')).toBeInTheDocument();
+    expect(filters().getByRole('button', { name: /^Achats\s*1$/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Commande de pièces/ })).toHaveAttribute('href', '/modules/purchaseRequests');
+    expect(screen.getByRole('link', { name: /Visite annuelle du navire/ })).toHaveAttribute('href', '/modules/certificates');
+    expect(fetchManagerHomeDashboard).toHaveBeenCalledTimes(1);
+  });
+
+  it('presents each deadline as task information without an interactive completion checkbox', async () => {
+    await renderDashboard();
+    const purchase = screen.getByRole('link', { name: /Commande de pièces/ });
+    const fleet = screen.getByRole('link', { name: /Visite annuelle du navire/ });
+
+    expect(within(purchase).getByText('Aujourd’hui')).toBeVisible();
+    expect(within(purchase).getByText('Achats · GOURY · Aujourd’hui')).toBeVisible();
+    expect(within(fleet).getByTitle('Visite le 9 oct')).toHaveTextContent('9 oct. 2026');
+    expect(within(fleet).getByText('Flotte · KROKDUR · Visite le 9 oct')).toBeVisible();
+    expect(purchase).toHaveAccessibleName('Commande de pièces. Achats · GOURY. Aujourd’hui. Suivre la commande');
+    expect(fleet).toHaveAccessibleName('Visite annuelle du navire. Flotte · KROKDUR. Visite le 9 oct. Ouvrir le certificat');
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(within(purchase).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(fleet).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('distinguishes expired and working-time alerts from deadlines due today', async () => {
+    vi.mocked(fetchManagerHomeDashboard).mockResolvedValue({
+      items: [
+        ...ITEMS,
+        item({
+          id: 'expired-certificate', group: 'fleetDocuments', tags: ['documents', 'fleet'],
+          title: 'Certificat de sécurité expiré', context: 'Flotte · GOURY',
+          deadline: 'Expiré depuis 12 j', action: 'Renouveler le certificat', to: '/modules/certificates',
+          dueDate: TODAY,
+        }),
+        item({
+          id: 'working-time-alert', group: 'workingTime', tags: ['workingTime'],
+          title: 'Repos continu insuffisant', context: 'Temps de travail · Arthur',
+          deadline: 'Repos continu limité à 5 h', action: 'Vérifier le repos', to: '/modules/workingTime',
+          dueDate: TODAY,
+        }),
+      ],
+      vessels: [GOURY, KROKDUR], unavailableSources: [], scopeLabel: null,
+    });
+    await renderDashboard();
+
+    const certificate = screen.getByRole('link', { name: /Certificat de sécurité expiré/ });
+    const workingTime = screen.getByRole('link', { name: /Repos continu insuffisant/ });
+    expect(within(certificate).getByText('En retard')).toHaveClass('is-danger');
+    expect(within(certificate).queryByText('Aujourd’hui')).not.toBeInTheDocument();
+    expect(certificate).toHaveAccessibleName(/Expiré depuis 12 j/);
+    expect(within(workingTime).getByText('Alerte')).toHaveClass('is-danger');
+    expect(within(workingTime).queryByText('Aujourd’hui')).not.toBeInTheDocument();
+    expect(workingTime).toHaveAccessibleName(/Repos continu limité à 5 h/);
+    expect(workingTime).toHaveAccessibleName(/GOURY/);
+  });
 });

@@ -5,6 +5,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Clock3,
   FileCheck2,
   Ship,
@@ -233,21 +234,41 @@ function CalendarPanel({
   );
 }
 
-function QueueRow({ item }: { item: ManagerHomeItem }) {
+function deadlineChipLabel(item: ManagerHomeItem, todayKey: string): string {
+  // Some alerts are placed in today's queue even when their deadline has passed.
+  // Keep the original deadline's meaning instead of treating the queue date as expiry.
+  if (item.deadline.startsWith('Expiré depuis') || item.deadline.startsWith('Revue échue depuis')) return 'En retard';
+  if (item.deadline === 'Document manquant') return 'Manquant';
+  if (item.deadline === 'Inaptitude déclarée' || item.deadline === 'Non-conformité détectée' || item.deadline.startsWith('Repos continu limité')) return 'Alerte';
+  if (item.deadline.startsWith('En attente depuis')) return 'En attente';
+  const { dueDate } = item;
+  if (dueDate < todayKey) return 'En retard';
+  if (dueDate === todayKey) return 'Aujourd’hui';
+  const tomorrow = parseIsoDate(todayKey);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  if (dueDate === toLocalIsoDate(tomorrow)) return 'Demain';
+  return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }).format(parseIsoDate(dueDate));
+}
+
+function QueueRow({ item, todayKey }: { item: ManagerHomeItem; todayKey: string }) {
+  const dateLabel = deadlineChipLabel(item, todayKey);
+  const chipTone = item.urgent || item.dueDate <= todayKey ? 'danger' : dateLabel === 'Demain' ? 'warning' : 'neutral';
+  const vesselsLabel = ['workingTime', 'humanResources'].includes(item.group)
+    ? item.vessels.map((vessel) => vessel.name).join(' · ')
+    : '';
   return (
-    <Link className={`manager-home-queue-row is-${item.queueTone}`} to={item.to}>
+    <Link className="manager-home-queue-row" to={item.to} aria-label={[item.title, item.context, vesselsLabel, item.deadline, item.action].filter(Boolean).join('. ')}>
+      <span className="manager-home-task-marker" aria-hidden="true" />
       <span className="manager-home-queue-copy">
         <strong>{item.title}</strong>
-        <small>{item.context}</small>
-        {item.vessels.length && ['workingTime', 'humanResources'].includes(item.group)
-          ? <small className="manager-home-row-vessels"><Ship aria-hidden="true" size={12} />{item.vessels.map((vessel) => vessel.name).join(' · ')}</small>
+        <small>{item.context} · {item.deadline}</small>
+        {vesselsLabel
+          ? <small className="manager-home-row-vessels"><Ship aria-hidden="true" size={12} />{vesselsLabel}</small>
           : null}
       </span>
-      <span className="manager-home-queue-deadline">
-        <strong>{item.deadline}</strong>
-        <small>{item.action}</small>
-      </span>
-      <ChevronRight aria-hidden="true" size={17} />
+      <span className={`manager-home-deadline-chip is-${chipTone}`} title={item.deadline}>{dateLabel}</span>
+      <span className="manager-home-task-action" title={item.action} aria-hidden="true">Traiter</span>
+      <ChevronRight aria-hidden="true" size={14} />
     </Link>
   );
 }
@@ -265,6 +286,7 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles, child
   const [displayedMonth, setDisplayedMonth] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1, 12));
   const [selectedFilter, setSelectedFilter] = useState<ManagerHomeFilter>('all');
   const [selectedVessel, setSelectedVessel] = useState('all');
+  const [collapsedGroups, setCollapsedGroups] = useState<Partial<Record<ManagerHomeGroupKey, boolean>>>({});
 
   useEffect(() => {
     let active = true;
@@ -406,13 +428,24 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles, child
                 <div className="manager-home-queue-state" role="status"><CalendarDays aria-hidden="true" size={20} />Chargement des échéances…</div>
               ) : visibleGroups.length ? visibleGroups.map((group) => {
                 const Icon = group.icon;
+                const isCollapsed = Boolean(collapsedGroups[group.key]);
+                const groupItemsId = `manager-home-group-${group.key}-items`;
                 return (
                   <section className="manager-home-group" key={group.key} aria-labelledby={`manager-home-group-${group.key}`}>
                     <header>
-                      <h3 id={`manager-home-group-${group.key}`}><Icon aria-hidden="true" size={15} />{group.label}</h3>
-                      <span className="manager-home-count" aria-label={`${group.items.length} élément${group.items.length > 1 ? 's' : ''}`}>{group.items.length}</span>
+                      <h3 id={`manager-home-group-${group.key}`}><Icon aria-hidden="true" size={16} />{group.label}<small aria-hidden="true">({group.items.length})</small></h3>
+                      <button
+                        className="manager-home-category-toggle"
+                        type="button"
+                        aria-label={`${isCollapsed ? 'Déplier' : 'Replier'} la catégorie ${group.label}`}
+                        aria-expanded={!isCollapsed}
+                        aria-controls={groupItemsId}
+                        onClick={() => setCollapsedGroups((previous) => ({ ...previous, [group.key]: !previous[group.key] }))}
+                      ><ChevronUp aria-hidden="true" size={14} className={isCollapsed ? 'is-collapsed' : ''} /></button>
                     </header>
-                    {group.items.map((item) => <QueueRow item={item} key={item.id} />)}
+                    <ul className="manager-home-category-items" id={groupItemsId} hidden={isCollapsed}>
+                      {group.items.map((item) => <li key={item.id}><QueueRow item={item} todayKey={todayKey} /></li>)}
+                    </ul>
                   </section>
                 );
               }) : (
