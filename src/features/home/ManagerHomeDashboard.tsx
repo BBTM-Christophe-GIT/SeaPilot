@@ -12,7 +12,7 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RoleKey } from '../permissions/roles';
@@ -27,12 +27,14 @@ import {
 } from './managerHomeData';
 import { itemMatchesVessel } from './managerHomeVessels';
 import './managerHomeVessels.css';
+import './ManagerHomeDashboard.css';
 
 interface ManagerHomeDashboardProps {
   client: SupabaseClient;
   firstName: string;
   personId: number | null;
   roles: RoleKey[];
+  children?: ReactNode;
 }
 
 interface CalendarCell {
@@ -90,10 +92,6 @@ function queueDateLabel(dateKey: string): string {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-function shortKeyDateLabel(dateKey: string): string {
-  return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' }).format(parseIsoDate(dateKey)).replace('.', '');
-}
-
 function calendarCells(month: Date): CalendarCell[] {
   const firstDay = new Date(month.getFullYear(), month.getMonth(), 1, 12);
   const lastDay = new Date(month.getFullYear(), month.getMonth() + 1, 0, 12);
@@ -140,7 +138,7 @@ function nearestKeyDates(items: ManagerHomeItem[], todayKey: string): ManagerHom
       seen.add(item.dueDate);
       return true;
     })
-    .slice(0, 2);
+    .slice(0, 3);
 }
 
 function CalendarPanel({
@@ -198,8 +196,9 @@ function CalendarPanel({
           return (
             <button
               aria-label={`${cell.day} ${monthLabel(parseIsoDate(cell.key))}${dayItems.length ? `, ${dayItems.length} échéance${dayItems.length > 1 ? 's' : ''}` : ''}`}
+              aria-current={cell.key === todayKey ? 'date' : undefined}
               aria-pressed={isSelected}
-              className={`${cell.isCurrentMonth ? '' : 'is-outside'} ${isSelected ? 'is-selected' : ''}`.trim()}
+              className={`${cell.isCurrentMonth ? '' : 'is-outside'} ${isSelected ? 'is-selected' : ''} ${cell.key === todayKey ? 'is-today' : ''}`.trim()}
               key={cell.key}
               onClick={() => onSelectDate(cell.key)}
               type="button"
@@ -224,8 +223,8 @@ function CalendarPanel({
             onChangeMonth(parseIsoDate(item.dueDate));
             onSelectDate(item.dueDate);
           }} type="button">
-            <strong>{shortKeyDateLabel(item.dueDate)}</strong>
-            <span>{item.title}</span>
+            <strong className="manager-home-key-date"><span>{parseIsoDate(item.dueDate).getDate()}</span><small>{new Intl.DateTimeFormat('fr-FR', { month: 'short' }).format(parseIsoDate(item.dueDate)).replace('.', '')}</small></strong>
+            <span className="manager-home-key-date-copy">{item.title}<small>{item.context}</small></span>
             <ChevronRight aria-hidden="true" size={15} />
           </button>
         )) : <p>Aucune échéance future dans les 90 prochains jours.</p>}
@@ -253,7 +252,7 @@ function QueueRow({ item }: { item: ManagerHomeItem }) {
   );
 }
 
-export function ManagerHomeDashboard({ client, firstName, personId, roles }: ManagerHomeDashboardProps) {
+export function ManagerHomeDashboard({ client, firstName, personId, roles, children }: ManagerHomeDashboardProps) {
   const now = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => toLocalIsoDate(now), [now]);
   const roleKey = [...roles].sort().join(',');
@@ -311,21 +310,24 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles }: Man
   return (
     <section className="manager-home-page" data-testid="manager-home-dashboard">
       <header className="manager-home-intro">
-        <h1>{firstName ? `Bonjour ${firstName}` : 'Bonjour'}</h1>
-        <p>Voici les échéances et décisions qui requièrent votre attention.</p>
+        <div>
+          <h1>{firstName ? `Bonjour ${firstName}` : 'Bonjour'}</h1>
+          <p>Vos priorités, vos échéances et vos objectifs, au même endroit.</p>
+        </div>
+        <time dateTime={todayKey}>{new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(now)}</time>
       </header>
 
       <section className="manager-home-workspace" aria-labelledby="manager-home-title">
         <header className="manager-home-summary">
           <div className="manager-home-summary-title">
             <h2 id="manager-home-title">Priorités & échéances</h2>
-            <p>Vue consolidée des décisions et échéances opérationnelles</p>
+            <p>Votre activité en un coup d’œil</p>
             {scopeLabel ? <small className="manager-home-scope">Périmètre : {scopeLabel}</small> : null}
           </div>
           <dl className="manager-home-metrics">
-            <div><dt>éléments à traiter</dt><dd>{vesselItems.length}</dd></div>
-            <div><dt>urgents</dt><dd className="is-danger">{urgentCount}</dd></div>
-            <div><dt>cette semaine</dt><dd className="is-warning">{weekCount}</dd></div>
+            <div><dt>éléments à traiter</dt><dd>{isLoading ? '—' : vesselItems.length}</dd></div>
+            <div><dt>urgents</dt><dd className="is-danger">{isLoading ? '—' : urgentCount}</dd></div>
+            <div><dt>cette semaine</dt><dd className="is-warning">{isLoading ? '—' : weekCount}</dd></div>
           </dl>
           <Link className="manager-home-kpi-link" to="/modules/kpi">
             <BarChart3 aria-hidden="true" size={17} />
@@ -349,7 +351,7 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles }: Man
               </button>
             ))}
           </div>
-          <small>Pastilles : éléments à traiter à la date et selon les filtres choisis.</small>
+          <small>Éléments à traiter pour la date et les catégories sélectionnées.</small>
         </div>
 
         <div className="manager-home-main">
@@ -366,10 +368,13 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles }: Man
             <header className="manager-home-queue-header">
               <div className="manager-home-queue-title-row">
                 <div>
-                  <span>File consolidée</span>
-                  <h2 id="manager-home-queue-title">{queueDateLabel(selectedDate)} — {visibleItems.length} élément{visibleItems.length > 1 ? 's' : ''}</h2>
+                  <h2 id="manager-home-queue-title">Tâches par catégorie</h2>
+                  <p>{queueDateLabel(selectedDate)} · {visibleItems.length} élément{visibleItems.length > 1 ? 's' : ''}</p>
                 </div>
-                <small>{visibleItems.length} affiché{visibleItems.length > 1 ? 's' : ''} sur {vesselItems.length}</small>
+                <button className="manager-home-today-button" onClick={() => {
+                  changeFilters(todayKey, selectedFilter);
+                  setDisplayedMonth(new Date(now.getFullYear(), now.getMonth(), 1, 12));
+                }} type="button"><CalendarDays aria-hidden="true" size={16} />Aujourd’hui</button>
               </div>
               <div className="manager-home-filters" role="group" aria-label="Filtres de la file">
                 {FILTERS.map((filter) => {
@@ -420,6 +425,7 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles }: Man
           </section>
         </div>
       </section>
+      {children}
     </section>
   );
 }

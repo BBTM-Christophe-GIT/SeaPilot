@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { ArrowRight, FileText, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { QhsePolicyAxisIcon, qhsePolicyAxisIconLabel, resolveQhsePolicyAxisIcon } from './qhsePolicyIcons';
 import type { QhsePolicySnapshot } from './qhsePolicyModel';
 import { fetchQhsePolicySnapshot } from './qhsePolicyQueries';
 import { qhsePolicyPercent, summarizeQhsePolicyObjectives } from './qhsePolicyPresentation';
@@ -20,12 +21,32 @@ export function QhsePolicyHomeCard({ client }: { client: SupabaseClient }) {
     });
     return () => { active = false; };
   }, [client, revision]);
-  const summary = current?.snapshot ? summarizeQhsePolicyObjectives(current.snapshot.objectives, current.snapshot.processes) : null;
-  return <section className="qhse-policy-home" aria-label="Politique QHSE">
-    <div className="qhse-policy-home__identity"><span className="qhse-policy-home__icon"><ShieldCheck size={25} aria-hidden="true" /></span><div><h2>Politique QHSE</h2><p>Notre politique et le suivi de nos objectifs par axe stratégique.</p></div></div>
+  const snapshot = current?.snapshot;
+  const summary = snapshot ? summarizeQhsePolicyObjectives(snapshot.objectives, snapshot.processes) : null;
+  const axes = snapshot ? snapshot.processes
+    .filter((process) => !process.archived)
+    .sort((left, right) => left.position - right.position || left.name.localeCompare(right.name, 'fr'))
+    .map((process) => ({
+      process,
+      summary: summarizeQhsePolicyObjectives(snapshot.objectives, [process]),
+      iconKey: resolveQhsePolicyAxisIcon(process),
+    }))
+    .filter((axis) => axis.summary.total > 0) : [];
+
+  return <section className="qhse-policy-home" aria-label="Politique QHSE" aria-busy={!current}>
+    <header className="qhse-policy-home__header">
+      <div className="qhse-policy-home__identity"><span className="qhse-policy-home__icon"><ShieldCheck size={23} aria-hidden="true" /></span><div><h2>Objectifs de la politique</h2><p>Suivi de nos engagements par axe stratégique.</p></div></div>
+      <div className="qhse-policy-home__links"><Link to="/modules/qhsePolicy#politique"><FileText size={16} aria-hidden="true" />Consulter la politique</Link><Link to="/modules/qhsePolicy">Voir les objectifs<ArrowRight size={16} aria-hidden="true" /></Link></div>
+    </header>
     <div className="qhse-policy-home__summary">
-      {!current ? <span role="status">Chargement des objectifs…</span> : current.failed ? <span className="qhse-policy-home__error"><span>Le suivi des objectifs est indisponible.</span><button type="button" aria-label="Actualiser les objectifs QHSE" onClick={() => setRevision((value) => value + 1)}><RefreshCw size={15} aria-hidden="true" /></button></span> : summary?.total ? <><span><strong>{summary.completed}/{summary.total}</strong> objectifs réalisés</span><span><strong>{qhsePolicyPercent(summary.average ?? 0)}</strong> de progression moyenne</span></> : <span>Aucun objectif défini.</span>}
+      {!current ? <span role="status">Chargement des objectifs…</span> : current.failed ? <span className="qhse-policy-home__error" role="alert"><span>Le suivi des objectifs est indisponible.</span><button type="button" aria-label="Actualiser les objectifs QHSE" onClick={() => setRevision((value) => value + 1)}><RefreshCw size={15} aria-hidden="true" /></button></span> : summary?.total ? <><span><strong>{summary.completed}/{summary.total}</strong> objectifs réalisés</span><span><strong>{qhsePolicyPercent(summary.average ?? 0)}</strong> de progression moyenne</span></> : <span>Aucun objectif défini.</span>}
     </div>
-    <div className="qhse-policy-home__links"><Link to="/modules/qhsePolicy#politique"><FileText size={17} aria-hidden="true" />Consulter la politique</Link><Link to="/modules/qhsePolicy">Voir les objectifs<ArrowRight size={16} aria-hidden="true" /></Link></div>
+    {axes.length > 0 ? <ul className="qhse-policy-home__axes" aria-label="Suivi par axe stratégique">
+      {axes.map(({ process, summary: axisSummary, iconKey }) => <li className="qhse-policy-home__axis" key={process.id}>
+        <span className="qhse-policy-home__axis-icon" role="img" aria-label={`Icône : ${qhsePolicyAxisIconLabel(iconKey)}`}><QhsePolicyAxisIcon iconKey={iconKey} size={21} aria-hidden="true" /></span>
+        <div className="qhse-policy-home__axis-copy"><h3>{process.name}</h3><p>{axisSummary.completed}/{axisSummary.total} objectifs réalisés</p></div>
+        <div className="qhse-policy-home__axis-progress"><span><strong>{qhsePolicyPercent(axisSummary.average ?? 0)}</strong> de progression moyenne</span><progress max={100} value={axisSummary.average ?? 0} aria-label={`Progression moyenne de ${process.name}`} /></div>
+      </li>)}
+    </ul> : null}
   </section>;
 }

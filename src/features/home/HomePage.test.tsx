@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { RoleKey } from '../permissions/roles';
@@ -34,11 +34,19 @@ function renderHome(role: RoleKey, policyHidden = false) {
   );
 }
 
+async function waitForHomeData() {
+  await waitFor(() => {
+    expect(screen.queryByText('Chargement des échéances…')).not.toBeInTheDocument();
+    expect(screen.queryByText('Chargement des objectifs…')).not.toBeInTheDocument();
+  });
+}
+
 describe('HomePage', () => {
-  it('respects a disabled QHSE policy module on the home page', () => {
+  it('respects a disabled QHSE policy module on the home page', async () => {
     renderHome('marin', true);
     expect(screen.queryByRole('region', { name: 'Politique QHSE' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Bonjour Arthur' })).toBeInTheDocument();
+    await waitForHomeData();
   });
   it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as const)(
     'renders the consolidated dashboard for the %s role',
@@ -47,13 +55,15 @@ describe('HomePage', () => {
 
       expect(screen.getByRole('heading', { name: 'Bonjour Arthur' })).toBeInTheDocument();
       const policy = screen.getByRole('region', { name: 'Politique QHSE' });
-      expect(policy.compareDocumentPosition(screen.getByRole('heading', { name: 'Bonjour Arthur' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(policy.compareDocumentPosition(screen.getByRole('heading', { name: 'Bonjour Arthur' })) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+      expect(screen.getByRole('heading', { name: 'Objectifs de la politique' })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Consulter la politique' })).toHaveAttribute('href', '/modules/qhsePolicy#politique');
       expect(screen.getByRole('heading', { name: 'Priorités & échéances' })).toBeInTheDocument();
-      expect(screen.getByText('File consolidée')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Tâches par catégorie' })).toBeInTheDocument();
       expect(screen.getByRole('heading', { name: 'Prochaines dates clés' })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Consulter les indicateurs' })).toHaveAttribute('href', '/modules/kpi');
       expect(await screen.findByText(/DA-\d{4}-086/)).toBeInTheDocument();
+      await waitForHomeData();
     },
   );
 
@@ -65,6 +75,7 @@ describe('HomePage', () => {
       expect(await screen.findByText('Périmètre : Bordée 1 · M/V Démonstration')).toBeInTheDocument();
       expect(screen.getByText(/Ampoule feu de navigation/)).toBeInTheDocument();
       expect(screen.queryByText(/Douilles inox M12/)).not.toBeInTheDocument();
+      await waitForHomeData();
     },
   );
 });
