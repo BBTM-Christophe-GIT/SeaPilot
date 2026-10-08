@@ -335,6 +335,49 @@ export async function saveProjectBillingPeriod(
   return mapPeriod(data as Record<string, unknown>);
 }
 
+export async function ensureProjectBillingPeriod(
+  client: SupabaseClient,
+  projectId: number,
+  draft: BillingPeriodDraft,
+): Promise<ProjectBillingPeriod> {
+  const companyId = await projectCompanyId(client, projectId);
+  const periodMonth = `${draft.periodMonth.slice(0, 7)}-01`;
+  const readPeriod = () => client
+    .from('project_billing_periods')
+    .select('*')
+    .eq('company_id', companyId)
+    .eq('project_id', projectId)
+    .eq('period_month', periodMonth);
+  const { data: existing, error: readError } = await readPeriod().maybeSingle();
+  if (readError) throw readError;
+  if (existing) return mapPeriod(existing as Record<string, unknown>);
+
+  // Another session may create this month after our read. Never replace its invoice or PDF choices.
+  const { error: insertError } = await client.from('project_billing_periods').upsert({
+    company_id: companyId,
+    project_id: projectId,
+    period_month: periodMonth,
+    client_reference: draft.clientReference.trim() || null,
+    invoice_number: draft.invoiceNumber.trim() || null,
+    invoice_issued_on: draft.invoiceIssuedOn || null,
+    invoice_sent_on: draft.invoiceSentOn || null,
+    payment_due_on: draft.paymentDueOn || null,
+    paid_on: draft.paidOn || null,
+    amount_ht: draft.amountHt || 0,
+    comments: draft.comments.trim() || null,
+    include_operations_in_pdf: draft.includeOperationsInPdf,
+    include_expenses_in_pdf: draft.includeExpensesInPdf,
+    include_bbtm_in_pdf: draft.includeBbtmInPdf,
+    excluded_operation_keys: draft.excludedOperationKeys,
+  }, { onConflict: 'company_id,project_id,period_month', ignoreDuplicates: true });
+  if (insertError) throw insertError;
+
+  // A separate read also returns the winning row when the insert was ignored on conflict.
+  const { data: saved, error: savedError } = await readPeriod().single();
+  if (savedError) throw savedError;
+  return mapPeriod(saved as Record<string, unknown>);
+}
+
 export async function saveProjectChargeableExpense(
   client: SupabaseClient,
   projectId: number,

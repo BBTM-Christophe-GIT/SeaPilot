@@ -47,6 +47,7 @@ import {
   fetchProjectBillingData,
   fetchProjectBillingDprs,
   fetchProjectServiceCatalog,
+  ensureProjectBillingPeriod,
   generateBillingExportPackage,
   missingBillingDates,
   saveProjectBillingPeriod,
@@ -220,8 +221,22 @@ export function ProjectBillingPanel({
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const contextRevision = useRef(0);
+  const referenceContext = useRef<{ client: SupabaseClient; projectId: number } | null>({ client, projectId: project.id });
+  const autoCreatedPeriodId = useRef<number | null>(null);
+  const pendingPeriods = useRef(new Map<string, Promise<ProjectBillingPeriod>>());
+  const referenceQueue = useRef<Promise<void>>(Promise.resolve());
+  const pendingReferences = useRef(new Map<string, { value: string; promise: Promise<void> }>());
+  const referenceSaveCount = useRef(0);
+  const [savingReference, setSavingReference] = useState(false);
+
+  useEffect(() => {
+    referenceContext.current = { client, projectId: project.id };
+    return () => { referenceContext.current = null; };
+  }, [client, project.id]);
 
   async function reload() {
+    const revision = contextRevision.current;
     setBusy('load');
     setError('');
     try {
@@ -230,17 +245,21 @@ export function ProjectBillingPanel({
         fetchProjectServiceCatalog(client),
         fetchBillingReferences(client, project.id),
       ]);
+      if (revision !== contextRevision.current) return;
       setData(billingData);
       setServiceCatalog(catalog);
       setReferences(savedReferences);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'La facturation est indisponible.');
+      if (revision === contextRevision.current) setError(caught instanceof Error ? caught.message : 'La facturation est indisponible.');
     } finally {
-      setBusy('');
+      if (revision === contextRevision.current) setBusy('');
     }
   }
 
   useEffect(() => {
+    contextRevision.current += 1;
+    pendingPeriods.current.clear();
+    autoCreatedPeriodId.current = null;
     const month = initialMonth?.slice(0, 7) || currentMonth();
     setData(EMPTY_DATA);
     setReferences([]);
@@ -255,12 +274,14 @@ export function ProjectBillingPanel({
     setServiceDrafts([]);
     void reload();
     void reloadServiceProviders();
-  }, [initialMonth, project.id]);
+    return () => { contextRevision.current += 1; };
+  }, [initialMonth, project.id, client]);
 
   const selectedPeriod = data.periods.find((period) => period.periodMonth.startsWith(selectedMonth));
   useEffect(() => {
     if (selectedPeriod) {
-      setPeriodDraft(billingDraft(project, selectedPeriod));
+      if (autoCreatedPeriodId.current === selectedPeriod.id) autoCreatedPeriodId.current = null;
+      else setPeriodDraft(billingDraft(project, selectedPeriod));
       setLegacyReferenceScope(billingReferenceScope(selectedPeriod));
     }
   }, [selectedPeriod?.id]);
@@ -315,7 +336,7 @@ export function ProjectBillingPanel({
       amountHt: null,
     })
     : periodDprs;
-  const defaultServiceQuantity = countDailyOperations(periodDprs.filter((dpr) => !(selectedPeriod?.excludedOperationKeys || []).includes(billingOperationKey(dpr))));
+  const defaultServiceQuantity = countDailyOperations(periodDprs.filter((dpr) => !(selectedPeriod?.excludedOperationKeys ?? periodDraft.excludedOperationKeys).includes(billingOperationKey(dpr))));
   const calculatedServiceDrafts = serviceDrafts.map((service) => ({
     ...service,
     quantity: automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) ?? service.quantity,
@@ -323,15 +344,36 @@ export function ProjectBillingPanel({
   const referenceScope = billingReferenceScope(selectedPeriod || periodDraft);
   const savedReference = references.find((reference) => reference.scope === referenceScope);
   const exportReference = referenceDrafts[referenceScope] ?? savedReference?.reference ?? (legacyReferenceScope === referenceScope || legacyReferenceScope === null ? periodDraft.clientReference : '');
-  async function storeReference() {
-    if (!isManager || busy || !exportReference.trim()) return;
-    setBusy('reference'); setError('');
-    try {
-      await saveBillingReference(client, project.id, referenceScope, exportReference);
-      setReferences(await fetchBillingReferences(client, project.id));
-      setMessage('Référence enregistrée pour cette combinaison, pour tous les mois du projet.');
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer la référence.'); }
-    finally { setBusy(''); }
+  function storeReference(automatic = false): Promise<void> {
+    if (!isManager || !exportReference.trim() || (automatic && referenceDrafts[referenceScope] === undefined)) return Promise.resolve();
+    const value = exportReference.trim();
+    const key = `${project.id}/${referenceScope}`;
+    const pending = pendingReferences.current.get(key);
+    if (pending?.value === value) return pending.promise;
+    if (!pending && savedReference?.reference === value) return Promise.resolve();
+    const revision = contextRevision.current;
+    const projectId = project.id;
+    const scope = referenceScope;
+    referenceSaveCount.current += 1;
+    setSavingReference(true);
+    setError('');
+    const request = referenceQueue.current.catch(() => undefined).then(async () => {
+      await saveBillingReference(client, projectId, scope, value);
+      const saved = await fetchBillingReferences(client, projectId);
+      if (referenceContext.current?.client !== client || referenceContext.current.projectId !== projectId) return;
+      setReferences(saved);
+      if (revision === contextRevision.current) setMessage('Référence enregistrée automatiquement pour ce contenu.');
+    }).catch((caught: unknown) => {
+      if (revision === contextRevision.current) setError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer la référence.');
+      throw caught;
+    }).finally(() => {
+      if (pendingReferences.current.get(key)?.promise === request) pendingReferences.current.delete(key);
+      referenceSaveCount.current -= 1;
+      setSavingReference(referenceSaveCount.current > 0);
+    });
+    pendingReferences.current.set(key, { value, promise: request });
+    referenceQueue.current = request;
+    return request;
   }
   const serviceForExport: ProjectBillingService[] = calculatedServiceDrafts
     .filter((service) => service.category.trim())
@@ -373,7 +415,8 @@ export function ProjectBillingPanel({
   }, [client, project.id, exportRange.start, exportRange.end, dprRange.start, dprRange.end, vesselFilter]);
 
   useEffect(() => {
-    const key = `${project.id}/${selectedMonth}/${selectedPeriod?.id || 'new'}`;
+    // Creating the monthly row must not reset unsaved service lines.
+    const key = `${project.id}/${selectedMonth}`;
     const reset = initializedServices.current !== key;
     initializedServices.current = key;
     setServiceDrafts((current) => {
@@ -389,6 +432,11 @@ export function ProjectBillingPanel({
   }, [defaultServiceQuantity, periodServices.length, serviceCatalog]);
 
   function selectMonth(month: string) {
+    contextRevision.current += 1;
+    autoCreatedPeriodId.current = null;
+    setBusy('');
+    setError('');
+    setMessage('');
     const normalized = month.slice(0, 7);
     setSelectedMonth(normalized);
     const period = data.periods.find((item) => item.periodMonth.startsWith(normalized));
@@ -402,32 +450,58 @@ export function ProjectBillingPanel({
     setPreviewBlob(null);
   }
 
+  async function getOrCreatePeriod(draft = periodDraft): Promise<ProjectBillingPeriod> {
+    if (selectedPeriod) return selectedPeriod;
+    if (!isManager) throw new Error('Aucune fiche de facturation n’est disponible pour ce mois.');
+    const revision = contextRevision.current;
+    const key = `${project.id}/${draft.periodMonth.slice(0, 7)}`;
+    let request = pendingPeriods.current.get(key);
+    if (!request) {
+      request = ensureProjectBillingPeriod(client, project.id, draft);
+      pendingPeriods.current.set(key, request);
+    }
+    try {
+      const saved = await request;
+      if (revision !== contextRevision.current) throw new Error('Le mois ou le projet a changé.');
+      autoCreatedPeriodId.current = saved.id;
+      setData((current) => ({ ...current, periods: [saved, ...current.periods.filter((period) => period.id !== saved.id && period.periodMonth.slice(0, 7) !== saved.periodMonth.slice(0, 7))] }));
+      return saved;
+    } finally {
+      if (pendingPeriods.current.get(key) === request) pendingPeriods.current.delete(key);
+    }
+  }
+
   async function updatePeriodPdfSelection(
     changes: Partial<Pick<BillingPeriodDraft,
       'includeOperationsInPdf' | 'includeExpensesInPdf' | 'includeBbtmInPdf' | 'excludedOperationKeys'>>,
   ) {
-    if (!selectedPeriod || !isManager || busy) return;
+    if (!isManager || busy) return;
+    const revision = contextRevision.current;
     const selection = {
-      includeOperationsInPdf: changes.includeOperationsInPdf ?? selectedPeriod.includeOperationsInPdf !== false,
-      includeExpensesInPdf: changes.includeExpensesInPdf ?? selectedPeriod.includeExpensesInPdf !== false,
-      includeBbtmInPdf: changes.includeBbtmInPdf ?? selectedPeriod.includeBbtmInPdf !== false,
-      excludedOperationKeys: changes.excludedOperationKeys ?? selectedPeriod.excludedOperationKeys ?? [],
+      includeOperationsInPdf: changes.includeOperationsInPdf ?? selectedPeriod?.includeOperationsInPdf ?? periodDraft.includeOperationsInPdf,
+      includeExpensesInPdf: changes.includeExpensesInPdf ?? selectedPeriod?.includeExpensesInPdf ?? periodDraft.includeExpensesInPdf,
+      includeBbtmInPdf: changes.includeBbtmInPdf ?? selectedPeriod?.includeBbtmInPdf ?? periodDraft.includeBbtmInPdf,
+      excludedOperationKeys: changes.excludedOperationKeys ?? selectedPeriod?.excludedOperationKeys ?? periodDraft.excludedOperationKeys,
     };
     setBusy('selection');
     setError('');
     setData((current) => ({
       ...current,
-      periods: current.periods.map((period) => period.id === selectedPeriod.id ? { ...period, ...selection } : period),
+      periods: current.periods.map((period) => period.id === selectedPeriod?.id ? { ...period, ...selection } : period),
     }));
     setPeriodDraft((current) => ({ ...current, ...selection }));
     try {
-      await saveProjectBillingPdfSelection(client, selectedPeriod.id, selection);
+      const period = await getOrCreatePeriod({ ...periodDraft, ...selection });
+      await saveProjectBillingPdfSelection(client, period.id, selection);
+      if (revision !== contextRevision.current) return;
+      setData((current) => ({ ...current, periods: current.periods.map((item) => item.id === period.id ? { ...item, ...selection } : item) }));
       setMessage('Sélection du PDF enregistrée.');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer la sélection du PDF.');
+      if (revision !== contextRevision.current) return;
       await reload();
+      if (revision === contextRevision.current) setError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer la sélection du PDF.');
     } finally {
-      setBusy('');
+      if (revision === contextRevision.current) setBusy('');
     }
   }
 
@@ -460,10 +534,12 @@ export function ProjectBillingPanel({
 
   async function savePeriod() {
     if (!isManager || busy) return;
+    const revision = contextRevision.current;
     setBusy('period');
     setError('');
     try {
       const savedResult = await saveProjectBillingPeriod(client, project.id, periodDraft);
+      if (revision !== contextRevision.current) return;
       const savedMonth = savedResult.periodMonth.slice(0, 7) || periodDraft.periodMonth.slice(0, 7);
       const saved = {
         ...savedResult,
@@ -474,18 +550,19 @@ export function ProjectBillingPanel({
         ...current,
         periods: [saved, ...current.periods.filter((period) => period.id !== saved.id)],
       }));
-      setSelectedMonth(savedMonth);
       setPeriodDraft({ ...billingDraft(project, saved), periodMonth: savedMonth });
       setMessage('Paramètres du mois enregistrés.');
     } catch (caught) {
+      if (revision !== contextRevision.current) return;
       setError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer la facturation.');
     } finally {
-      setBusy('');
+      if (revision === contextRevision.current) setBusy('');
     }
   }
 
   async function saveExpense() {
-    if (!selectedPeriod || !expenseEditor || busy) return;
+    if (!isManager || !expenseEditor || busy) return;
+    const revision = contextRevision.current;
     if (!expenseEditor.draft.supplier || !expenseEditor.draft.invoiceDate || expenseEditor.draft.amountHt <= 0) {
       setError('Renseignez le fournisseur, la date et un montant HT supérieur à 0.');
       return;
@@ -493,13 +570,15 @@ export function ProjectBillingPanel({
     setBusy('expense');
     setError('');
     try {
+      const period = await getOrCreatePeriod();
       const saved = await saveProjectChargeableExpense(
         client,
         project.id,
-        selectedPeriod.id,
+        period.id,
         expenseEditor.draft,
         expenseEditor.id,
       );
+      if (revision !== contextRevision.current) return;
       setData((current) => ({
         ...current,
         expenses: [saved, ...current.expenses.filter((expense) => expense.id !== saved.id)],
@@ -507,9 +586,10 @@ export function ProjectBillingPanel({
       setExpenseEditor(null);
       setMessage('Frais imputable enregistré.');
     } catch (caught) {
+      if (revision !== contextRevision.current) return;
       setError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer ce frais.');
     } finally {
-      setBusy('');
+      if (revision === contextRevision.current) setBusy('');
     }
   }
 
@@ -604,7 +684,8 @@ export function ProjectBillingPanel({
   }
 
   async function saveService(serviceDraft: BillingServiceLineDraft) {
-    if (!selectedPeriod || !isManager || busy) return;
+    if (!isManager || busy) return;
+    const revision = contextRevision.current;
     if (!serviceDraft.serviceCatalogId || !serviceDraft.category.trim()) {
       setError('Sélectionnez une catégorie de prestation.');
       return;
@@ -616,13 +697,15 @@ export function ProjectBillingPanel({
     setBusy(`service-${serviceDraft.key}`);
     setError('');
     try {
-      const saved = await saveProjectBillingService(client, project.id, selectedPeriod.id, {
+      const period = await getOrCreatePeriod();
+      const saved = await saveProjectBillingService(client, project.id, period.id, {
         serviceCatalogId: serviceDraft.serviceCatalogId,
         category: serviceDraft.category,
         descriptionHtml: serviceDraft.descriptionHtml,
         unitAmountHt: serviceDraft.unitAmountHt,
         quantity: serviceDraft.quantity,
       }, serviceDraft.id);
+      if (revision !== contextRevision.current) return;
       setData((current) => ({
         ...current,
         services: [saved, ...current.services.filter((service) => service.id !== saved.id)],
@@ -630,9 +713,10 @@ export function ProjectBillingPanel({
       setServiceDrafts((current) => current.map((draft) => draft.key === serviceDraft.key ? { ...draft, id: saved.id, quantityEdited: true } : draft));
       setMessage(`${saved.category} enregistrée dans les prestations BBTM.`);
     } catch (caught) {
+      if (revision !== contextRevision.current) return;
       setError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer la prestation BBTM.');
     } finally {
-      setBusy('');
+      if (revision === contextRevision.current) setBusy('');
     }
   }
 
@@ -696,10 +780,7 @@ export function ProjectBillingPanel({
 
   async function createExport(mode: 'preview' | 'download') {
     if (busy || dprsLoading) return;
-    if (!selectedPeriod) {
-      setError('Enregistrez d’abord la fiche du mois.');
-      return;
-    }
+    const revision = contextRevision.current;
     if (!exportRange.start || !exportRange.end || exportRange.end < exportRange.start) {
       setError('La période d’export est invalide.');
       return;
@@ -707,24 +788,29 @@ export function ProjectBillingPanel({
     setBusy('export');
     setError('');
     try {
+      const period = await getOrCreatePeriod();
+      await storeReference(true);
+      if (revision !== contextRevision.current) return;
       const result = await generateBillingExportPackage(client, {
         project,
         contract,
         operations,
-        period: { ...selectedPeriod, clientReference: exportReference || '—' },
+        period: { ...period, clientReference: exportReference || '—' },
         expenses: periodExpenses,
         services: serviceForExport,
-        includeBbtmService: selectedPeriod.includeBbtmInPdf !== false,
+        includeBbtmService: period.includeBbtmInPdf !== false,
         dprs: exportDprs,
         monthlyDprs: dprs,
         selectedVesselName,
         startDate: exportRange.start,
         endDate: exportRange.end,
       }, periodDocuments.filter((document) => document.chargeableExpenseId !== null), mode === 'preview' ? 'pdf' : exportFormat);
+      if (revision !== contextRevision.current) return;
       const fileName = `${project.projectCode || `P${project.id}`}-Elements-facturation-${selectedMonth}.${result.extension}`;
       if (mode === 'download') {
         if (isManager) {
-          const stored = await uploadProjectBillingDocument(client, { projectId: project.id, billingPeriodId: selectedPeriod.id, file: new File([result.blob], fileName, { type: result.blob.type }), kind: 'export' });
+          const stored = await uploadProjectBillingDocument(client, { projectId: project.id, billingPeriodId: period.id, file: new File([result.blob], fileName, { type: result.blob.type }), kind: 'export' });
+          if (revision !== contextRevision.current) return;
           setData((current) => ({ ...current, documents: [stored, ...current.documents] }));
         }
         downloadBlob(result.blob, fileName);
@@ -734,16 +820,17 @@ export function ProjectBillingPanel({
       }
       setMessage(mode === 'download' ? 'Export PDF généré.' : 'Aperçu actualisé.');
     } catch (caught) {
+      if (revision !== contextRevision.current) return;
       setError(caught instanceof Error ? caught.message : 'Impossible de générer l’export.');
     } finally {
-      setBusy('');
+      if (revision === contextRevision.current) setBusy('');
     }
   }
 
   const hireDays = [...exportDprs].filter((dpr) => dpr.reportDate >= exportRange.start && dpr.reportDate <= exportRange.end)
     .sort((left, right) => left.reportDate.localeCompare(right.reportDate) || left.id - right.id);
   const dayAmount = (dpr: ProjectBillingDpr) => dpr.amountHt ?? billingApplicableHire(operations, contract, dpr.reportDate, dpr.vesselName || selectedVesselName, contractHireModeForOperation(dpr.operation)) ?? 0;
-  const includedHireTotal = selectedPeriod?.includeOperationsInPdf === false ? 0 : hireDays.filter((dpr) => !(selectedPeriod?.excludedOperationKeys || []).includes(billingOperationKey(dpr))).reduce((sum, dpr) => sum + dayAmount(dpr), 0);
+  const includedHireTotal = selectedPeriod?.includeOperationsInPdf === false ? 0 : hireDays.filter((dpr) => !(selectedPeriod?.excludedOperationKeys ?? periodDraft.excludedOperationKeys).includes(billingOperationKey(dpr))).reduce((sum, dpr) => sum + dayAmount(dpr), 0);
   const includedExpenses = selectedPeriod?.includeExpensesInPdf === false ? [] : periodExpenses.filter((expense) => expense.includeInPdf !== false);
   const includedServiceTotal = selectedPeriod?.includeBbtmInPdf === false ? 0 : billingServicesTotal(serviceForExport);
   const expenseByCurrency = new Map<string, number>();
@@ -795,8 +882,8 @@ export function ProjectBillingPanel({
           <div className="project-billing-table-scroll"><table className="project-billing-hire-table"><thead><tr><th>PDF</th><th>Date</th><th>Navire</th><th>Opération</th><th>Montant HT</th></tr></thead><tbody>
             {hireDays.map((dpr) => {
               const key = billingOperationKey(dpr);
-              const included = !(selectedPeriod?.excludedOperationKeys || []).includes(key);
-              return <tr key={key}><td><input aria-label={`Inclure le ${dpr.reportDate} ${dpr.vesselName}`} checked={included} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ excludedOperationKeys: included ? [...(selectedPeriod?.excludedOperationKeys || []), key] : (selectedPeriod?.excludedOperationKeys || []).filter((item) => item !== key) })} type="checkbox" /></td><td>{new Date(`${dpr.reportDate}T12:00:00`).toLocaleDateString('fr-FR')}</td><td>{dpr.vesselName || selectedVesselName}</td><td>{dpr.operation || '24/24 Operation'}</td><td>{money(dayAmount(dpr), hireCurrency)}</td></tr>;
+              const included = !(selectedPeriod?.excludedOperationKeys ?? periodDraft.excludedOperationKeys).includes(key);
+              return <tr key={key}><td><input aria-label={`Inclure le ${dpr.reportDate} ${dpr.vesselName}`} checked={included} disabled={!isManager || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ excludedOperationKeys: included ? [...(selectedPeriod?.excludedOperationKeys ?? periodDraft.excludedOperationKeys), key] : (selectedPeriod?.excludedOperationKeys ?? periodDraft.excludedOperationKeys).filter((item) => item !== key) })} type="checkbox" /></td><td>{new Date(`${dpr.reportDate}T12:00:00`).toLocaleDateString('fr-FR')}</td><td>{dpr.vesselName || selectedVesselName}</td><td>{dpr.operation || '24/24 Operation'}</td><td>{money(dayAmount(dpr), hireCurrency)}</td></tr>;
             })}
             {!hireDays.length ? <tr><td colSpan={5} className="project-billing-empty">{dprsLoading ? 'Chargement des DPR…' : 'Aucun DPR pour cette période.'}</td></tr> : null}
           </tbody></table></div>
@@ -805,13 +892,13 @@ export function ProjectBillingPanel({
       {visibleSections.billingElements ? <article id="billing-view-followup" className="project-billing-card" hidden={workspace && billingView !== 'followup'}>
         <header><ReceiptText size={20} /><strong>Suivi de la facture du mois</strong></header>
         <div className="project-billing-export-controls">
-          <label>Numéro de facture<input disabled={!isManager} value={periodDraft.invoiceNumber} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, invoiceNumber: event.target.value }))} /></label>
-          <label>Date d’émission<input type="date" disabled={!isManager} value={periodDraft.invoiceIssuedOn} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, invoiceIssuedOn: event.target.value }))} /></label>
-          <label>Envoyée le<input type="date" disabled={!isManager} value={periodDraft.invoiceSentOn} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, invoiceSentOn: event.target.value }))} /></label>
-          <label>Échéance<input type="date" disabled={!isManager} value={periodDraft.paymentDueOn} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, paymentDueOn: event.target.value }))} /></label>
-          <label>Réglée le<input type="date" disabled={!isManager} value={periodDraft.paidOn} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, paidOn: event.target.value }))} /></label>
-          <label>Montant facturé HT<input type="number" min="0" step="0.01" disabled={!isManager} value={periodDraft.amountHt} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, amountHt: Number(event.target.value) }))} /></label>
-          <label>Commentaires<textarea disabled={!isManager} value={periodDraft.comments} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, comments: event.target.value }))} /></label>
+          <label>Numéro de facture<input disabled={!isManager || Boolean(busy)} value={periodDraft.invoiceNumber} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, invoiceNumber: event.target.value }))} /></label>
+          <label>Date d’émission<input type="date" disabled={!isManager || Boolean(busy)} value={periodDraft.invoiceIssuedOn} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, invoiceIssuedOn: event.target.value }))} /></label>
+          <label>Envoyée le<input type="date" disabled={!isManager || Boolean(busy)} value={periodDraft.invoiceSentOn} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, invoiceSentOn: event.target.value }))} /></label>
+          <label>Échéance<input type="date" disabled={!isManager || Boolean(busy)} value={periodDraft.paymentDueOn} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, paymentDueOn: event.target.value }))} /></label>
+          <label>Réglée le<input type="date" disabled={!isManager || Boolean(busy)} value={periodDraft.paidOn} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, paidOn: event.target.value }))} /></label>
+          <label>Montant facturé HT<input type="number" min="0" step="0.01" disabled={!isManager || Boolean(busy)} value={periodDraft.amountHt} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, amountHt: Number(event.target.value) }))} /></label>
+          <label>Commentaires<textarea disabled={!isManager || Boolean(busy)} value={periodDraft.comments} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, comments: event.target.value }))} /></label>
           {isManager ? <button type="button" disabled={Boolean(busy)} onClick={() => void savePeriod()}>Enregistrer la fiche du mois</button> : null}
         </div>
         <div className="project-billing-export-controls"><strong>Factures et exports conservés</strong>
@@ -829,7 +916,7 @@ export function ProjectBillingPanel({
         <header className="project-billing-card-heading">
           <div><Fuel aria-hidden="true" size={20} /><span><strong>Services refacturables</strong><small>{money(expenseTotal)} HT sur la période</small></span></div>
           <div className="project-billing-card-actions">
-            {isManager ? <button disabled={!selectedPeriod || Boolean(busy)} onClick={() => openExpenseEditor()} type="button"><Plus aria-hidden="true" size={16} /> Ajouter un frais</button> : null}
+            {isManager ? <button disabled={Boolean(busy)} onClick={() => openExpenseEditor()} type="button"><Plus aria-hidden="true" size={16} /> Ajouter un frais</button> : null}
           </div>
         </header>
         <div className="project-billing-table-scroll">
@@ -934,7 +1021,7 @@ export function ProjectBillingPanel({
               </label>
               <label>Montant total HT<input disabled value={money(service.unitAmountHt * service.quantity)} /></label>
               {isManager ? <div className="project-billing-service-actions">
-                <button disabled={!selectedPeriod || Boolean(busy)} onClick={() => void saveService(service)} type="button"><Save aria-hidden="true" size={15} /> Enregistrer</button>
+                <button disabled={Boolean(busy)} onClick={() => void saveService(service)} type="button"><Save aria-hidden="true" size={15} /> Enregistrer</button>
                 <button aria-label={`Supprimer la prestation ${service.category}`} className="is-danger" disabled={Boolean(busy)} onClick={() => void removeService(service)} type="button"><Trash2 aria-hidden="true" size={15} /></button>
               </div> : null}
             </div>
@@ -951,14 +1038,14 @@ export function ProjectBillingPanel({
           <div className="project-billing-summary-total"><span>Total sélectionné HT</span>{[...totalsByCurrency].map(([currency, total]) => <strong key={currency}>{dprsLoading ? '…' : money(total, currency)}</strong>)}</div>
         </div> : null}
         <fieldset className="project-export-selection"><legend>Contenu du PDF</legend>
-          <label><input type="checkbox" checked={selectedPeriod?.includeOperationsInPdf !== false} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeOperationsInPdf: selectedPeriod?.includeOperationsInPdf === false })} /> Inclure les loyers</label>
-          <label><input type="checkbox" checked={selectedPeriod?.includeExpensesInPdf !== false} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeExpensesInPdf: selectedPeriod?.includeExpensesInPdf === false })} /> Inclure les frais et leurs pièces dans l’export</label>
-          <label><input type="checkbox" checked={selectedPeriod?.includeBbtmInPdf !== false} disabled={!isManager || !selectedPeriod || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeBbtmInPdf: selectedPeriod?.includeBbtmInPdf === false })} /> Inclure les prestations BBTM</label>
+          <label><input type="checkbox" checked={selectedPeriod?.includeOperationsInPdf ?? periodDraft.includeOperationsInPdf} disabled={!isManager || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeOperationsInPdf: !(selectedPeriod?.includeOperationsInPdf ?? periodDraft.includeOperationsInPdf) })} /> Inclure les loyers</label>
+          <label><input type="checkbox" checked={selectedPeriod?.includeExpensesInPdf ?? periodDraft.includeExpensesInPdf} disabled={!isManager || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeExpensesInPdf: !(selectedPeriod?.includeExpensesInPdf ?? periodDraft.includeExpensesInPdf) })} /> Inclure les frais et leurs pièces dans l’export</label>
+          <label><input type="checkbox" checked={selectedPeriod?.includeBbtmInPdf ?? periodDraft.includeBbtmInPdf} disabled={!isManager || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeBbtmInPdf: !(selectedPeriod?.includeBbtmInPdf ?? periodDraft.includeBbtmInPdf) })} /> Inclure les prestations BBTM</label>
         </fieldset>
         <div className="project-export-reference">
-          <label>Référence client<input disabled={!isManager} onChange={(event) => setReferenceDrafts((current) => ({ ...current, [referenceScope]: event.target.value }))} value={exportReference} maxLength={200} /></label>
+          <label>Référence client<input disabled={!isManager} onBlur={() => void storeReference(true).catch(() => undefined)} onChange={(event) => setReferenceDrafts((current) => ({ ...current, [referenceScope]: event.target.value }))} value={exportReference} maxLength={200} /></label>
           <span>{billingReferenceScopeLabel(referenceScope)} · Même emplacement dans le PDF.</span>
-          {isManager ? <button type="button" disabled={Boolean(busy) || !exportReference.trim()} onClick={() => void storeReference()}>{workspace ? 'Enregistrer la référence' : 'Enregistrer cette référence pour ce contenu'}</button> : null}
+          {isManager ? <button type="button" disabled={Boolean(busy) || savingReference || !exportReference.trim()} onClick={() => void storeReference().catch(() => undefined)}>{savingReference ? 'Enregistrement…' : workspace ? 'Enregistrer la référence' : 'Enregistrer cette référence pour ce contenu'}</button> : null}
           {references.length > 0 ? <details><summary>{references.length} référence(s) du projet</summary>{references.map((reference) => <p key={reference.id}><strong>{billingReferenceScopeLabel(reference.scope)}</strong> : {reference.reference}</p>)}</details> : <small>La référence historique du mois est proposée tant qu’aucune référence n’est enregistrée pour ce contenu.</small>}
         </div>
         <div className="project-billing-export-controls">
@@ -976,9 +1063,8 @@ export function ProjectBillingPanel({
             </fieldset>
           ) : null}
           <div className="project-billing-export-actions">
-            {isManager ? <button disabled={Boolean(busy)} onClick={() => void savePeriod()} type="button"><Save aria-hidden="true" size={16} /> Enregistrer les paramètres</button> : null}
-            <button disabled={Boolean(busy) || dprsLoading || !selectedPeriod} onClick={() => void createExport('preview')} type="button">{workspace ? 'Prévisualiser le PDF' : 'Actualiser l’aperçu'}</button>
-            <button disabled={Boolean(busy) || dprsLoading || !selectedPeriod} onClick={() => void createExport('download')} type="button"><Download aria-hidden="true" size={16} /> Exporter le PDF</button>
+            <button disabled={Boolean(busy) || dprsLoading || (!isManager && !selectedPeriod)} onClick={() => void createExport('preview')} type="button">{workspace ? 'Prévisualiser le PDF' : 'Actualiser l’aperçu'}</button>
+            <button disabled={Boolean(busy) || dprsLoading || (!isManager && !selectedPeriod)} onClick={() => void createExport('download')} type="button"><Download aria-hidden="true" size={16} /> Exporter le PDF</button>
           </div>
         </div>
         {!workspace ? previewBlob ? <ProjectPdfPreview key={`${project.id}-${selectedMonth}`} blob={previewBlob} /> : <p className="project-section-empty">Générez l’aperçu pour contrôler le document avant export.</p> : null}

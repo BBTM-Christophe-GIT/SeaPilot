@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.69.1` crée automatiquement la fiche mensuelle de facturation lors de la première action et enregistre les références client par contenu à la sortie du champ. Les fiches existantes ne sont pas réécrites lors d’un aperçu ; les créations concurrentes, les brouillons et les réponses tardives sont contrôlés. Aucune migration ni nouvelle configuration n’est nécessaire. Voir [project-billing-autosave.md](./project-billing-autosave.md).
+
 Version `3.69.0` ajoute le suivi des demandes d'achat avec des commentaires
 horodatés, leur auteur et les étapes métier dans un historique persistant.
 Administrateur, Direction, Armement, Capitaine et Marin peuvent commenter les

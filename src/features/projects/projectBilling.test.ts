@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import {
   automaticBillingServiceQuantity,
@@ -13,12 +13,120 @@ import {
   completeBillingDprs,
   countDailyOperations,
   defaultProjectClientReference,
+  ensureProjectBillingPeriod,
   fetchProjectBillingDprs,
   missingBillingDates,
   resolveBillingDprOperation,
   type BillingExportInput,
+  type BillingPeriodDraft,
   type ProjectBillingDpr,
 } from './projectBilling';
+
+describe('ensureProjectBillingPeriod', () => {
+  const draft: BillingPeriodDraft = {
+    periodMonth: '2026-09', clientReference: ' Nouvelle référence ', invoiceNumber: '',
+    invoiceIssuedOn: '', invoiceSentOn: '', paymentDueOn: '', paidOn: '', amountHt: 0, comments: '',
+    includeOperationsInPdf: true, includeExpensesInPdf: true, includeBbtmInPdf: true, excludedOperationKeys: [],
+  };
+  const invoicedRow = {
+    id: 77, company_id: 1, project_id: 42, period_month: '2026-09-01', client_reference: 'Référence existante',
+    invoice_number: 'F-77', invoice_issued_on: '2026-09-01', invoice_sent_on: '2026-09-02',
+    payment_due_on: '2026-09-30', paid_on: '2026-09-28', amount_ht: 2800, comments: 'Facture réglée',
+    include_operations_in_pdf: false, include_expenses_in_pdf: false, include_bbtm_in_pdf: true,
+    excluded_operation_keys: ['dpr:12'],
+  };
+  type Row = Record<string, unknown>;
+  let clientNumber = 0;
+  function fixture(options: { row?: Row; beforeInsert?: () => Row | undefined; simultaneousReads?: number; fail?: 'read' | 'insert' | 'reread' } = {}) {
+    let row = options.row;
+    let reads = 0;
+    let failed = false;
+    let releaseReads: () => void = () => {};
+    const initialReads = new Promise<void>((resolve) => { releaseReads = resolve; });
+    const respond = (body: unknown, status = 200) => new Response(body === null ? null : JSON.stringify(body), {
+      status, headers: { 'Content-Type': 'application/json' },
+    });
+    const fetch = vi.fn(async (request: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(request));
+      if (url.pathname.endsWith('/projects')) return respond({ company_id: 1 });
+      expect(url.pathname).toBe('/rest/v1/project_billing_periods');
+      if (init?.method === 'POST') {
+        if (options.fail === 'insert' && !failed) {
+          failed = true;
+          return respond({ message: 'Création indisponible', code: 'temporary' }, 409);
+        }
+        row ||= options.beforeInsert?.();
+        const incoming = JSON.parse(String(init.body)) as Row;
+        const ignored = new Headers(init.headers).get('Prefer')?.includes('resolution=ignore-duplicates');
+        if (!row) row = { ...incoming, id: 77 };
+        else if (!ignored) row = { ...row, ...incoming };
+        return respond(null, 201);
+      }
+      expect(url.searchParams.get('company_id')).toBe('eq.1');
+      expect(url.searchParams.get('project_id')).toBe('eq.42');
+      expect(url.searchParams.get('period_month')).toBe('eq.2026-09-01');
+      reads += 1;
+      if (!failed && (options.fail === 'read' || options.fail === 'reread' && reads === 2)) {
+        failed = true;
+        return respond({ message: 'Lecture indisponible', code: 'temporary' }, 409);
+      }
+      const snapshot = row;
+      if (options.simultaneousReads && reads <= options.simultaneousReads) {
+        if (reads === options.simultaneousReads) releaseReads();
+        await initialReads;
+      }
+      return respond(new Headers(init?.headers).get('Accept')?.includes('pgrst.object') ? snapshot : snapshot ? [snapshot] : []);
+    });
+    const client = () => createClient('https://billing.example.invalid', 'fixture-publishable-key', {
+      global: { fetch }, auth: { storageKey: `billing-fixture-${++clientNumber}`, persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+    return { client, fetch, row: () => row };
+  }
+
+  it('returns an existing invoiced month without changing its invoice, reference or PDF choices', async () => {
+    const server = fixture({ row: { ...invoicedRow } });
+    const period = await ensureProjectBillingPeriod(server.client(), 42, draft);
+    expect(period).toMatchObject({
+      id: 77, invoiceNumber: 'F-77', invoiceIssuedOn: '2026-09-01', invoiceSentOn: '2026-09-02',
+      paymentDueOn: '2026-09-30', paidOn: '2026-09-28', amountHt: 2800, comments: 'Facture réglée',
+      clientReference: 'Référence existante', includeOperationsInPdf: false, includeExpensesInPdf: false,
+      includeBbtmInPdf: true, excludedOperationKeys: ['dpr:12'],
+    });
+    expect(server.row()).toEqual(invoicedRow);
+    expect(server.fetch.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(true);
+  });
+
+  it('reads a competing session’s new invoice intact after a conflict instead of overwriting it', async () => {
+    const server = fixture({ beforeInsert: () => ({ ...invoicedRow }) });
+    const period = await ensureProjectBillingPeriod(server.client(), 42, draft);
+    expect(period).toMatchObject({ invoiceNumber: 'F-77', amountHt: 2800, clientReference: 'Référence existante' });
+    expect(server.row()).toEqual(invoicedRow);
+    const insert = server.fetch.mock.calls.find(([, init]) => init?.method === 'POST')!;
+    expect(new Headers(insert[1]?.headers).get('Prefer')).toContain('resolution=ignore-duplicates');
+    expect(new URL(String(insert[0])).searchParams.get('on_conflict')).toBe('company_id,project_id,period_month');
+  });
+
+  it('lets simultaneous sessions converge on the same month and the first saved values', async () => {
+    const server = fixture({ simultaneousReads: 2 });
+    const periods = await Promise.all([
+      ensureProjectBillingPeriod(server.client(), 42, draft),
+      ensureProjectBillingPeriod(server.client(), 42, { ...draft, clientReference: 'Autre session', amountHt: 900 }),
+    ]);
+    expect(periods[0]).toEqual(periods[1]);
+    expect(periods[0].clientReference).toBe(server.row()?.client_reference);
+    expect(periods[0].amountHt).toBe(server.row()?.amount_ht);
+    expect(server.fetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(2);
+  });
+
+  it.each(['read', 'insert', 'reread'] as const)('propagates a %s failure and allows the same client to retry', async (fail) => {
+    const server = fixture({ fail });
+    const client = server.client();
+    await expect(ensureProjectBillingPeriod(client, 42, draft)).rejects.toMatchObject({ code: 'temporary' });
+    await expect(ensureProjectBillingPeriod(client, 42, draft)).resolves.toMatchObject({
+      id: 77, periodMonth: '2026-09-01', clientReference: 'Nouvelle référence', amountHt: 0,
+    });
+  });
+});
 
 const input: BillingExportInput = {
   project: {
