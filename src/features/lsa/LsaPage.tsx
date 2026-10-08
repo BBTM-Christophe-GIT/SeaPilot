@@ -12,7 +12,7 @@ import { saveLiftingBlob } from '../lifting/liftingPdf';
 import { LsaItemForm } from './LsaItemForm';
 import { LsaCatalogDialog } from './LsaCatalogDialog';
 import { blankLsaDraft, canAddLsaItem, canManageLsaCatalog, categorizeLsaItems, compareLsaNames, lsaTypeKey, lsaVersionStatus, matchesLsaItem, type LsaCatalog, type LsaItem } from './lsaModel';
-import { downloadLsaDocument, fetchLsaCatalog, fetchLsaRegister, fetchLsaVessels, saveLsaItem } from './lsaQueries';
+import { downloadLsaDocument, fetchLsaCatalog, fetchLsaCreateAccess, fetchLsaRegister, fetchLsaVessels, saveLsaItem } from './lsaQueries';
 import { createLsaPreviewClient } from './lsaPreview';
 import '../lifting/lifting.css';
 import '../lifting/liftingNavigation.css';
@@ -45,6 +45,7 @@ export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: Ro
   const [vesselId, setVesselId] = useState(context?.liftingVesselId || 0);
   const [register, setRegister] = useState(emptyRegister);
   const [loadedRegisterVesselId, setLoadedRegisterVesselId] = useState<number | null>(null);
+  const [addAccess, setAddAccess] = useState({ vesselId: 0, allowed: false });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -80,13 +81,13 @@ export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: Ro
     setRegister(emptyRegister); setLoadedRegisterVesselId(null); setError('');
     if (!vesselId) return;
     setLoading(true);
-    fetchLsaRegister(db, vesselId).then((loaded) => {
-      if (!cancelled) { setRegister(loaded); setLoadedRegisterVesselId(vesselId); }
+    Promise.all([fetchLsaRegister(db, vesselId), canAddItem ? fetchLsaCreateAccess(db, vesselId) : Promise.resolve(false)]).then(([loaded, allowed]) => {
+      if (!cancelled) { setRegister(loaded); setLoadedRegisterVesselId(vesselId); setAddAccess({ vesselId, allowed }); }
     })
       .catch((reason) => { if (!cancelled) setError(messageOf(reason)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [db, vesselId, refresh]);
+  }, [db, vesselId, refresh, canAddItem]);
 
   useEffect(() => {
     if (!linkedVesselId) {
@@ -151,7 +152,7 @@ export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: Ro
           <button type="button" aria-label="Documents de contrôle" aria-pressed={view === 'reports'} onClick={() => setView('reports')}><FileCheck2 size={22} /><span><strong>Documents de contrôle</strong><small>Versions et historique</small></span><b>{loading ? '…' : fileCount}</b></button>
         </div>
         {canManageCatalog && <button className="secondary-button" disabled={busy || loading} onClick={() => setCatalogOpen(true)}>Gérer les désignations</button>}
-        {canAddItem && view === 'inventory' && <button className="secondary-button" disabled={busy || loading || !vesselId} onClick={() => { setError(''); setEditor({}); }}><Plus size={17} /> Ajouter un matériel</button>}
+        {canAddItem && view === 'inventory' && <button className="secondary-button" disabled={busy || loading || !vesselId || addAccess.vesselId !== vesselId || !addAccess.allowed} onClick={() => { setError(''); setEditor({}); }}><Plus size={17} /> Ajouter un matériel</button>}
       </div>
       <div className="lifting-filter lifting-register-filters" role="search" aria-label="Filtres — registre LSA">
         <label>Type d’équipement<select aria-label="Type d’équipement" value={category} onChange={(event) => setCategory(event.target.value)}><option value="">Tous les types</option>{groups.map((option) => <option key={option.key} value={option.key}>{option.name}</option>)}</select></label>

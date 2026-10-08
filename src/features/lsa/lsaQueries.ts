@@ -26,6 +26,12 @@ export async function fetchLsaVessels(client: SupabaseClient): Promise<LiftingVe
   return [...(data || []) as LiftingVessel[]].sort(compareFleetAssets);
 }
 
+export async function fetchLsaCreateAccess(client: SupabaseClient, vesselId: number): Promise<boolean> {
+  const { data, error } = await client.rpc('lsa_can_add_item', { p_vessel_id: vesselId });
+  if (error) throw error;
+  return data === true;
+}
+
 export async function fetchLsaRegister(client: SupabaseClient, vesselId: number) {
   const { data, error } = await client.from('lsa_items').select('*').eq('vessel_id', vesselId).order('id');
   if (error) throw error;

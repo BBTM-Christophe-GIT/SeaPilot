@@ -145,6 +145,51 @@ describe('Registre LSA', () => {
     expect(register.items.find((item) => item.document_title === 'Feu à main - 02')?.brand).toBe(`Marque ${role}`);
   });
 
+  it.each(['capitaine', 'marin'] as const)('keeps historical inventory readable and denies creation according to server access for %s', async (role) => {
+    const user = userEvent.setup();
+    const client = createLsaPreviewClient();
+    const currentVessel = demoFleetVessels.find((vessel) => vessel.acronym === 'SUR')!;
+    const historicalVessel = demoFleetVessels.find((vessel) => vessel.id !== currentVessel.id && !vessel.name.startsWith('YARD'))!;
+    const historicalRegister = await fetchLsaRegister(client, historicalVessel.id);
+    const originalRpc = client.rpc.bind(client);
+    let releaseHistoricalAccess!: () => void;
+    const historicalAccess = new Promise((resolve) => {
+      releaseHistoricalAccess = () => resolve({ data: false, error: null });
+    });
+    const rpc = vi.spyOn(client, 'rpc').mockImplementation((name: string, args?: Record<string, unknown>) => {
+      if (name === 'lsa_can_add_item') {
+        return (args?.p_vessel_id === historicalVessel.id ? historicalAccess : Promise.resolve({ data: true, error: null })) as never;
+      }
+      return originalRpc(name, args);
+    });
+    renderLsaProfile([role], client);
+    await screen.findByText('4 / 4 matériels affichés');
+    const addButton = screen.getByRole('button', { name: 'Ajouter un matériel' });
+    expect(addButton).toBeEnabled();
+    expect(rpc).toHaveBeenCalledWith('lsa_can_add_item', { p_vessel_id: currentVessel.id });
+
+    await user.click(screen.getByRole('button', { name: historicalVessel.name }));
+    await screen.findByText('Chargement du registre…');
+    // A true result for the preceding vessel must not enable creation while the new scope is pending.
+    expect(addButton).toBeDisabled();
+    await user.click(addButton);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(rpc).toHaveBeenCalledWith('lsa_can_add_item', { p_vessel_id: historicalVessel.id });
+
+    await act(async () => releaseHistoricalAccess());
+    await screen.findByText('4 / 4 matériels affichés');
+    expect(document.getElementById(`lsa-item-${historicalRegister.items[0].id}`)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: historicalVessel.name })).toHaveAttribute('aria-pressed', 'true');
+    expect(addButton).toBeDisabled();
+    await user.click(addButton);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(rpc.mock.calls.some(([name]) => name === 'lsa_next_item_number' || name === 'save_lsa_item')).toBe(false);
+    expect(screen.queryByRole('button', { name: /^Modifier/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: currentVessel.name }));
+    await waitFor(() => expect(addButton).toBeEnabled());
+  });
+
   it.each([
     { profile: 'marin', roles: ['marin'] },
     { profile: 'direction', roles: ['direction'] },

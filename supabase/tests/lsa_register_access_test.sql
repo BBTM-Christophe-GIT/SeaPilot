@@ -4,7 +4,7 @@ do $$
 declare
   company bigint; other_company bigint; vessel bigint; unassigned bigint; foreign_vessel bigint; inactive_vessel bigint;
   actor uuid; person bigint; role_name text; item bigint; other_item bigint; hidden_item bigint;
-  current_revision timestamptz; saved bigint; count_before bigint; designation bigint; foreign_designation bigint;
+  current_revision timestamptz; saved bigint; expired_saved bigint; count_before bigint; designation bigint; foreign_designation bigint;
   catalog_type bigint; catalog_designation bigint; foreign_type bigint; next_number integer;
   payload jsonb;
 begin
@@ -22,6 +22,8 @@ begin
   assert not has_table_privilege('authenticated','public.lsa_items','DELETE'), 'Direct delete bypass';
   assert not has_function_privilege('anon','public.save_lsa_item(bigint,jsonb,bigint,timestamptz)','EXECUTE'), 'Anonymous write RPC';
   assert not has_function_privilege('anon','public.lsa_next_item_number(bigint,bigint)','EXECUTE'), 'Anonymous number preview RPC';
+  assert not has_function_privilege('anon','public.lsa_can_add_item(bigint)','EXECUTE'), 'Anonymous creation capability RPC';
+  assert has_function_privilege('authenticated','public.lsa_can_add_item(bigint)','EXECUTE'), 'Creation capability unavailable to client';
   assert not has_function_privilege('authenticated','private.can_access_lsa_vessel(bigint,bigint)','EXECUTE'), 'Private scope helper exposed';
   select id into strict company from public.companies where code='bbtm';
   select id into strict designation from public.lsa_designations where company_id=company and name='EPIRB';
@@ -65,11 +67,15 @@ begin
     assert not exists(select 1 from public.lsa_items where id=other_item), role_name||' cross-company leak';
     assert exists(select 1 from public.lsa_available_vessels() where id=vessel), role_name||' missing vessel';
     assert not exists(select 1 from public.lsa_available_vessels() where id=foreign_vessel), 'Foreign vessel leak';
+    assert public.lsa_can_add_item(vessel), role_name||' assigned vessel capability denied';
+    assert not public.lsa_can_add_item(foreign_vessel), role_name||' foreign vessel capability allowed';
     assert exists(select 1 from public.lsa_versions where certificate_id=item), 'Missing document';
     next_number:=public.lsa_next_item_number(vessel,designation);
     saved:=public.save_lsa_item(vessel,payload);
     assert (select item_number=next_number and designation_id=designation from public.lsa_items where id=saved), role_name||' cannot create numbered equipment';
     assert public.lsa_next_item_number(vessel,designation)=next_number+1, 'Preview did not advance after creation';
+    expired_saved:=public.save_lsa_item(vessel,payload||jsonb_build_object('expires_on',current_date-2));
+    assert exists(select 1 from public.lsa_items where id=expired_saved and expires_on=current_date-2), role_name||' expired equipment hidden after creation';
     select updated_at into current_revision from public.lsa_items where id=saved;
     begin
       perform public.save_lsa_item(foreign_vessel,payload);
@@ -92,6 +98,8 @@ begin
       assert not exists(select 1 from public.lsa_versions where certificate_id=hidden_item), 'Unassigned version leak';
       assert not exists(select 1 from public.lsa_renewal_events where certificate_id=hidden_item), 'Unassigned history leak';
       assert not exists(select 1 from public.lsa_available_vessels() where id=unassigned), 'Unassigned vessel leak';
+      assert not public.lsa_can_add_item(unassigned), role_name||' unassigned vessel capability allowed';
+      assert not public.lsa_can_add_item(inactive_vessel), role_name||' inactive vessel capability allowed';
       begin
         perform public.save_lsa_item(vessel,payload||'{"notes":"Unauthorized edit"}',saved,current_revision);
         raise exception 'Onboard profile edited inventory';
@@ -119,6 +127,7 @@ begin
       where crew_person_id=person and vessel_id=vessel;
       execute 'set local role authenticated';
       assert exists(select 1 from public.lsa_items where id=item), 'Historical assigned inventory should remain readable';
+      assert not public.lsa_can_add_item(vessel), 'Historical vessel capability remained enabled';
       begin
         perform public.save_lsa_item(vessel,payload);
         raise exception 'Formerly assigned profile added inventory';
@@ -174,6 +183,7 @@ begin
     assert not exists(select 1 from public.lsa_equipment_types), 'Disabled module leaked catalog';
     assert count_before=0, 'Disabled module still readable';
     assert not exists(select 1 from public.lsa_available_vessels()), 'Disabled module leaked vessels';
+    assert not public.lsa_can_add_item(vessel), 'Disabled module retained creation capability';
     begin
       perform public.save_lsa_item(vessel,payload);
       raise exception 'Disabled module accepted write';
