@@ -1,38 +1,63 @@
-import { Download, ExternalLink, FolderSync, Monitor } from 'lucide-react';
-import { useState } from 'react';
+import { CheckCircle2, Download, ExternalLink, FolderOpen, Monitor } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { connectLocalDrive, DRIVE_MODULES, localDriveRequest, type LocalDriveStatus } from '../documents/localDriveLauncher';
+import { connectLocalDrive, DRIVE_MODULES, LOCAL_DRIVE_DOWNLOAD_VERSION, localDriveRequest, supportsLocalDriveVersion, type LocalDriveStatus } from '../documents/localDriveLauncher';
 
 export function AdminGoogleDriveSetup({ client, previewMode = false }: { client: SupabaseClient; previewMode?: boolean }) {
-  const [root, setRoot] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(!previewMode);
   const [status, setStatus] = useState<LocalDriveStatus | null>(null);
+  const [installedVersion, setInstalledVersion] = useState<string | null>(null);
   const [error, setError] = useState('');
-  async function configure(action: 'configure' | 'status') {
+  const [cancelled, setCancelled] = useState(false);
+  const request = useRef(0);
+  const configure = useCallback(async (action: 'status' | 'select-root', fresh = false) => {
     if (previewMode) return;
-    const connection = connectLocalDrive();
-    setBusy(true); setError(''); setStatus(null);
+    const current = ++request.current;
+    setBusy(true); setError(''); setStatus(null); setCancelled(false); setInstalledVersion(null);
     try {
-      const result = await localDriveRequest<LocalDriveStatus>(client, await connection, { action, root: root.trim() });
-      setStatus(result); setRoot(result.root || '');
-    } catch (e) { setError(e instanceof Error ? e.message : 'Configuration impossible.'); }
-    finally { setBusy(false); }
-  }
+      const connection = await connectLocalDrive({ fresh });
+      if (current !== request.current) return;
+      setInstalledVersion(connection.version || null);
+      if (!supportsLocalDriveVersion(connection.version, '2.7.0')) throw new Error('Installez le lanceur Windows 2.7 ou ultérieur depuis l’archive ci-dessus, puis relancez le lanceur. Votre dossier existant sera conservé.');
+      const result = await localDriveRequest<LocalDriveStatus>(client, connection, { action });
+      if (current !== request.current) return;
+      if (result.cancelled) { setCancelled(true); return; }
+      // The picker prepares the folder; confirm its availability automatically afterwards.
+      const verified = action === 'select-root' ? await localDriveRequest<LocalDriveStatus>(client, await connectLocalDrive(), { action: 'status' }) : result;
+      if (current !== request.current) return;
+      if (!supportsLocalDriveVersion(verified.version, '2.7.0') || typeof verified.exists !== 'boolean') throw new Error('Le lanceur n’a pas confirmé la disponibilité du dossier SeaPilot.');
+      setStatus({ ...verified, collaborators: result.collaborators ?? verified.collaborators });
+    } catch (e) { if (current === request.current) setError(e instanceof Error ? e.message : 'Configuration impossible.'); }
+    finally { if (current === request.current) setBusy(false); }
+  }, [client, previewMode]);
+  useEffect(() => {
+    void configure('status', true);
+    return () => { request.current += 1; };
+  }, [configure]);
+  const configured = Boolean(status?.exists && status.root);
   return <section className="admin-panel admin-drive-setup" aria-labelledby="admin-drive-title">
     <div className="admin-header"><div><p className="module-family">Documents et Google Drive</p><h2 id="admin-drive-title">Un seul dossier SeaPilot pour ce PC</h2><p className="admin-section-description">Configurez une fois la racine synchronisée. Tous les modules utilisent ensuite le même lanceur Windows.</p></div><span className="admin-platform-badge"><Monitor aria-hidden="true" size={16} />Windows</span></div>
     <ol className="admin-setup-steps">
-      <li><div><h3>Connecter Google Drive</h3><p>Le dossier SeaPilot doit être disponible dans l’Explorateur de fichiers de ce PC.</p><a className="admin-secondary-button" href="https://support.google.com/drive/answer/10838124?hl=fr" target="_blank" rel="noreferrer"><ExternalLink size={16} />Installer Google Drive</a></div></li>
-      <li><div><h3>Installer le lanceur unique</h3><p>Extrayez l’archive puis exécutez <strong>Installer.cmd</strong>, une seule fois sur chaque PC. Ce lanceur commun ouvre les documents dans Office et classe les fichiers dans Drive.</p><a className="admin-primary-button" href="/connectors/seapilot-drive-windows.zip" download><Download size={16} />Installer le lanceur Windows</a></div></li>
-      <li><div><h3>Renseigner uniquement la racine SeaPilot</h3><p>Le chemin est mémorisé sur ce PC. Les sous-dossiers des modules et des collaborateurs sont déduits automatiquement.</p>
-        <label className="admin-root-label">Chemin du dossier SeaPilot sur ce PC<input value={root} onChange={(e) => setRoot(e.target.value)} placeholder="G:\Mon Drive\SeaPilot" disabled={busy || previewMode} spellCheck={false} /></label>
-        <div className="admin-root-actions"><button className="admin-primary-button" disabled={busy || previewMode || !root.trim()} onClick={() => void configure('configure')}><FolderSync size={16} />Enregistrer la racine SeaPilot</button><button className="admin-secondary-button" disabled={busy || previewMode} onClick={() => void configure('status')}>Vérifier ce PC</button></div>
-        <p>À la première utilisation, autorisez l’ouverture du lanceur et la connexion locale demandée par le navigateur.</p>
+      <li><div><h3>Connecter Google Drive</h3><p>Le dossier SeaPilot doit être disponible dans l’Explorateur de fichiers de ce PC. S’il est dans « Partagés avec moi », ouvrez Google Drive sur le Web, puis choisissez Organiser → Ajouter un raccourci dans Mon Drive sur le dossier SeaPilot. Attendez sa synchronisation dans Google Drive pour ordinateur.</p><a className="admin-secondary-button" href="https://support.google.com/drive/answer/10838124?hl=fr" target="_blank" rel="noreferrer"><ExternalLink size={16} />Installer Google Drive</a><a className="admin-secondary-button" href="https://support.google.com/drive/answer/2375057?hl=fr" target="_blank" rel="noreferrer"><ExternalLink size={16} />Ajouter le dossier partagé à Mon Drive</a></div></li>
+      <li><div><h3>Installer le lanceur unique</h3><p>Extrayez l’archive puis exécutez <strong>Installer.cmd</strong> sur chaque PC. La version 2.7 accepte le dossier SeaPilot et les raccourcis Google Drive Windows (.lnk). Elle conserve toutes les fonctions de classement, d’ouverture et d’export PDF. Une mise à jour conserve le dossier déjà configuré.</p>
+        <p>Version proposée au téléchargement : <strong>{LOCAL_DRIVE_DOWNLOAD_VERSION}</strong></p>
+        <p role="status">Version installée sur ce PC : <strong>{installedVersion || (previewMode ? 'indisponible en préversion' : busy ? 'détection en cours…' : 'non détectée')}</strong></p>
+        <div className="admin-root-actions"><a className="admin-primary-button" href={`/connectors/seapilot-drive-windows.zip?v=${LOCAL_DRIVE_DOWNLOAD_VERSION}`} download><Download size={16} />Installer le lanceur Windows</a><button className="admin-secondary-button" disabled={busy || previewMode} onClick={() => void configure('status', true)}>Vérifier la version installée</button></div>
+      </div></li>
+      <li><div><h3>{configured ? 'Google Drive est bien configuré' : busy ? 'Vérification automatique de Google Drive…' : 'Sélectionner le dossier SeaPilot'}</h3>
+        {configured ? <div role="status"><p><CheckCircle2 size={18} aria-hidden="true" /> Le dossier SeaPilot est accessible sur ce PC.</p><p className="admin-drive-path">{status?.root}</p>{status?.collaborators !== undefined ? <p>{status.collaborators} dossier(s) de collaborateurs en poste préparé(s).</p> : null}</div> : <>
+          <p>SeaPilot recherche automatiquement <strong>G:\Mon Drive\SeaPilot</strong> ou votre dossier déjà configuré. S’il est introuvable, sélectionnez le dossier SeaPilot ou son raccourci <strong>SeaPilot.lnk</strong> dans la fenêtre Windows. La lettre du lecteur et le nom Mon Drive / My Drive peuvent varier selon le PC.</p>
+          {status && !status.exists ? <p role="status">Le dossier SeaPilot est introuvable ou inaccessible sur ce PC.</p> : null}
+          {cancelled ? <p role="status">Sélection annulée. Aucun réglage n’a été modifié.</p> : null}
+          <div className="admin-root-actions">{error ? <button className="admin-secondary-button" disabled={busy || previewMode} onClick={() => void configure('status', true)}>Relancer le lanceur</button> : <button className="admin-primary-button" disabled={busy || previewMode} onClick={() => void configure('select-root')}><FolderOpen size={16} />Sélectionner le dossier dans Windows</button>}</div>
+          <p>Le dossier choisi est enregistré et vérifié automatiquement.</p>
+        </>}
+        {!configured ? <p>À la première utilisation, autorisez l’ouverture du lanceur et la connexion locale demandée par le navigateur.</p> : null}
       </div></li>
     </ol>
     {previewMode ? <p className="admin-section-description">Préversion : la configuration du PC est désactivée.</p> : null}
     {busy ? <p role="status">Connexion au lanceur SeaPilot…</p> : null}
     {error ? <p role="alert" className="admin-root-error">{error}</p> : null}
-    {status ? <div role="status" className="admin-drive-usage"><h3>{status.root ? 'Ce PC est configuré' : 'Racine à renseigner'}</h3><p className="admin-drive-path">{status.root || 'Le lanceur est installé. Renseignez maintenant le chemin SeaPilot.'}</p>{status.collaborators !== undefined ? <p>{status.collaborators} dossier(s) de collaborateurs en poste préparé(s).</p> : null}</div> : null}
-    <div className="admin-drive-usage"><h3>Classement automatique</h3><ul>{Object.entries(DRIVE_MODULES).map(([key, folder]) => <li key={key}><strong>{folder}</strong> : {key === 'disciplinary' ? 'un dossier par collaborateur, puis un sous-dossier par date.' : 'les fichiers de travail des procédures.'}</li>)}</ul><p>Les futurs modules utiliseront cette même racine. Enregistrez dans Word ou Excel puis laissez Google Drive terminer sa synchronisation.</p><p>Le dossier Sanctions Disciplinaires doit être partagé uniquement avec Administration et Direction. Les droits de partage Google Drive restent à gérer dans Google Drive.</p></div>
+    <div className="admin-drive-usage"><h3>Classement automatique</h3><ul>{Object.entries(DRIVE_MODULES).map(([key, folder]) => <li key={key}><strong>{folder}</strong> : {key === 'disciplinary' ? 'un dossier par collaborateur, puis un sous-dossier par date.' : key === 'chemicals' ? 'un dossier par navire et par produit pour les FDS et pièces jointes.' : key === 'procedurePdfs' ? 'les PDF publiés, accessibles en lecture seule aux Capitaines et Marins.' : key === 'humanResources' ? 'un dossier par collaborateur pour les pièces RH.' : key === 'projects' ? 'un dossier par numéro et nom de projet, puis par catégorie de documents.' : 'les fichiers de travail des procédures.'}</li>)}</ul><p>Ces dossiers sont créés automatiquement à l’installation ou à la configuration. Enregistrez dans Word ou Excel puis laissez Google Drive terminer sa synchronisation.</p><p>Réservez Procedures et Sanctions Disciplinaires aux profils Administration et Direction. Partagez Procedures PDF en lecture seule avec les profils de consultation. Les autorisations Google Drive s’appliquent également en dehors de SeaPilot.</p></div>
   </section>;
 }

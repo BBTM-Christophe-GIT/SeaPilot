@@ -1,5 +1,6 @@
+import { SeaPilotLogo } from '../../components/SeaPilotLogo';
 import type { FormEvent } from 'react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 
@@ -9,6 +10,24 @@ interface RedirectLocationState {
     search?: string;
     hash?: string;
   };
+}
+
+function withoutAuthCallback(raw: string, prefix: '?' | '#'): string {
+  if (!raw) return '';
+  const parameters = new URLSearchParams(raw.slice(1));
+  const callbackKeys = ['access_token', 'refresh_token', 'token_hash', 'code', 'error_code', 'error_description'];
+  const isCallback = callbackKeys.some((key) => parameters.has(key))
+    || ['recovery', 'invite', 'signup', 'magiclink', 'email_change'].includes(parameters.get('type') || '');
+  if (!isCallback) return raw;
+  [...callbackKeys, 'token', 'token_type', 'expires_in', 'expires_at', 'type', 'error'].forEach((key) => parameters.delete(key));
+  const remaining = parameters.toString();
+  return remaining ? `${prefix}${remaining}` : '';
+}
+
+function loginDestination(from?: RedirectLocationState['from']): string {
+  const pathname = from?.pathname || '/';
+  if (!pathname.startsWith('/') || pathname.startsWith('//') || pathname === '/login' || pathname.startsWith('/auth/')) return '/';
+  return `${pathname}${withoutAuthCallback(from?.search || '', '?')}${withoutAuthCallback(from?.hash || '', '#')}`;
 }
 
 export function LoginPage() {
@@ -21,35 +40,43 @@ export function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mode, setMode] = useState<'sign-in' | 'activation' | 'recovery'>('sign-in');
   const [isEmailSent, setIsEmailSent] = useState(false);
+  const request = useRef(0);
   const fromLocation = (location.state as RedirectLocationState | null)?.from;
-  const from = `${fromLocation?.pathname || '/'}${fromLocation?.search || ''}${fromLocation?.hash || ''}`;
+  const from = loginDestination(fromLocation);
+
+  useEffect(() => () => { request.current += 1; }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSubmitting) return;
+    const current = ++request.current;
     setError(null);
     setIsSubmitting(true);
 
     try {
       if (mode === 'sign-in') {
         await signIn(email, password);
-        navigate(from, { replace: true });
+        if (current === request.current) navigate(from, { replace: true });
       } else {
         await sendPasswordReset(email, `${window.location.origin}/auth/update-password`);
-        setIsEmailSent(true);
+        if (current === request.current) setIsEmailSent(true);
       }
     } catch {
+      if (current !== request.current) return;
       setError(
         mode === 'sign-in'
           ? 'Connexion impossible. Vérifiez votre email et votre mot de passe.'
           : "Le lien n'a pas pu être envoyé. Réessayez dans quelques instants.",
       );
     } finally {
-      setIsSubmitting(false);
+      if (current === request.current) setIsSubmitting(false);
     }
   }
 
   function switchMode(nextMode: 'sign-in' | 'activation' | 'recovery') {
+    request.current += 1;
     setMode(nextMode);
+    setIsSubmitting(false);
     setError(null);
     setIsEmailSent(false);
     setPassword('');
@@ -64,9 +91,9 @@ export function LoginPage() {
     <main className="login-page">
       <form className="login-panel" onSubmit={handleSubmit}>
         <div className="login-brand">
-          <strong>BBTM</strong>
+          <SeaPilotLogo />
         </div>
-        <h1>{mode === 'sign-in' ? 'Connexion à BBTM' : recoveryTitle}</h1>
+        <h1>{mode === 'sign-in' ? 'Connexion à SeaPilot' : recoveryTitle}</h1>
         {mode !== 'sign-in' ? <p className="login-description">{recoveryDescription}</p> : null}
         {isEmailSent ? (
           <div className="login-success" role="status">

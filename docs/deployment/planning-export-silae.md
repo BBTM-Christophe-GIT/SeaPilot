@@ -35,6 +35,10 @@ Les règles complémentaires de février seront précisées ultérieurement par 
 
 Le champ **Fonction** de l’affectation ou de la période du planning porte déjà une fonction datée, indépendante de la fonction permanente RH. Le formulaire complet permet de modifier cette fonction et ses dates. L’export lit `planning_assignments.assignment_role`, `planning_periods.function_label` et `planning_days.function_label`. Il utilise le même référentiel `getHrEnimClassification` que les RH : aucun lien avec le grade.
 
+Le menu contextuel des cases propose aussi **Fonction temporaire**, pour un jour
+ou pour le groupe de cases. Cette saisie utilise les états quotidiens et leurs
+nouvelles RPC décrites dans [Fonctions temporaires par jour](planning-daily-functions.md).
+
 La fonction journalière explicite prime sur celle de l’affectation, puis sur celle de la période historique. Les champs vides, le libellé générique « Équipage » et les absences sans fonction ne remplacent pas une fonction explicite datée. À défaut de fonction planifiée applicable, les valeurs RH sont utilisées, notamment dans les repos sans affectation. Une fonction inconnue ou deux fonctions différentes à même priorité bloquent l’export au lieu de reprendre silencieusement un code RH.
 
 Une fonction temporaire modifie **le code et la catégorie** pendant ses dates (catégorie confirmée par l’utilisateur). BORIS BROT, normalement 2nd Capitaine (`CA01A`, catégorie `12`), est déjà planifié Capitaine du 22/09 au 06/10/2026 : l’export de septembre utilise `AA01A` / `15` du 22 au 30, celui d’octobre du 1 au 6. Hors de cette affectation, il retrouve la fonction applicable à la date. Le tableau de vérification affiche fonction, code et catégorie pour chaque période ; la fiche RH permanente n’est pas modifiée.

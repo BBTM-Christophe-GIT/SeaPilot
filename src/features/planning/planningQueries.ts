@@ -1,4 +1,6 @@
 import { compareFleetAssets } from '../fleet/fleetDisplay';
+import { fetchGenericCrewRows, type GenericCrewRow } from './planningGenericCrew';
+import { fetchPlanningFleetOrder } from './planningFleetOrder';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeProjectStatus, type ProjectStatus } from '../projects/projectStatus';
 import { projectDescriptionToPlainText } from '../projects/projectDescription';
@@ -14,7 +16,7 @@ import {
   requiredPlanningText,
 } from './planningValidation';
 
-const VESSEL_SELECT = 'id, name, acronym, registration_number, active';
+const VESSEL_SELECT = 'id, name, acronym, registration_number, active, length_overall';
 const PLANNING_READ_PAGE_SIZE = 1_000;
 const PLANNING_PERSON_SELECT =
   'id, first_name, last_name, function_label, grade_label, role_label, sailor_number, contract_type, hired_on, departed_on, birth_date, birth_place, identity_document_number, identity_document_type, deck_certificate_label, engine_certificate_label, active';
@@ -56,6 +58,7 @@ interface VesselRow {
   acronym: string | null;
   registration_number?: string | null;
   active: boolean;
+  length_overall?: string | null;
 }
 
 interface PlanningPersonRow {
@@ -349,6 +352,7 @@ export interface PlanningVessel {
   acronym: string;
   registrationNumber?: string;
   active: boolean;
+  lengthOverall?: string | null;
 }
 
 export interface PlanningPerson {
@@ -653,9 +657,11 @@ export interface PlanningDerogationHistoryRecord {
 }
 
 export interface PlanningOverview {
+  fleetFunctionOrder?: string[];
   vessels: PlanningVessel[];
   people: PlanningPerson[];
   boardRows?: PlanningBoardRowRecord[];
+  genericCrewRows?: GenericCrewRow[];
   assignments: PlanningAssignmentRecord[];
   days: PlanningDayRecord[];
   periods: PlanningPeriodRecord[];
@@ -763,6 +769,7 @@ export interface SavePlanningAssignmentDayNoteInput {
 
 export interface SavePlanningAssignmentDayStateInput extends SavePlanningAssignmentDayNoteInput {
   status: PlanningGridStatus;
+  functionLabel?: string;
 }
 
 export interface PlanningGridMutationCell {
@@ -855,6 +862,7 @@ export function mapVesselRows(rows: VesselRow[]): PlanningVessel[] {
     acronym: row.acronym || '',
     registrationNumber: row.registration_number || '',
     active: row.active,
+    lengthOverall: row.length_overall,
   })).sort(compareFleetAssets);
 }
 
@@ -1514,7 +1522,7 @@ export async function fetchPlanningOverview(
   options: FetchPlanningOverviewOptions = {},
 ): Promise<PlanningOverview> {
   if (options.publishedOnly) {
-    const [[vessels, people, certificates, hrDocuments, annualReviews, rules, versions], snapshot] = await Promise.all([
+    const [[vessels, people, certificates, hrDocuments, annualReviews, rules, versions, fleetFunctionOrder], snapshot] = await Promise.all([
       Promise.all([
         fetchVessels(client),
         fetchPlanningPeople(client),
@@ -1523,6 +1531,7 @@ export async function fetchPlanningOverview(
         fetchPlanningAnnualReviews(client),
         fetchPlanningRules(client),
         fetchPlanningVersions(client),
+        fetchPlanningFleetOrder(client),
       ]),
       fetchLatestPlanningReleaseSnapshot(client),
     ]);
@@ -1530,6 +1539,7 @@ export async function fetchPlanningOverview(
     return {
       vessels,
       people,
+      fleetFunctionOrder,
       boardRows: [],
       ...releasedPlanning,
       certificates,
@@ -1543,7 +1553,7 @@ export async function fetchPlanningOverview(
     };
   }
 
-  const [vessels, people, boardRows, assignmentRows, days, periods, projects, certificates, hrDocuments, annualReviews, rules, versions, history, handovers] = await Promise.all([
+  const [vessels, people, boardRows, assignmentRows, days, periods, projects, certificates, hrDocuments, annualReviews, rules, versions, history, handovers, genericCrewRows, fleetFunctionOrder] = await Promise.all([
     fetchVessels(client),
     fetchPlanningPeople(client),
     fetchPlanningBoardRows(client),
@@ -1558,13 +1568,17 @@ export async function fetchPlanningOverview(
     fetchPlanningVersions(client),
     options.includeHistory === false ? Promise.resolve([]) : fetchPlanningHistory(client),
     fetchPlanningHandovers(client),
+    fetchGenericCrewRows(client),
+    fetchPlanningFleetOrder(client),
   ]);
 
   return {
     vessels,
     people,
+    fleetFunctionOrder,
     boardRows,
     assignments: mapPlanningAssignmentOverviewRows(assignmentRows),
+    genericCrewRows,
     days,
     periods,
     projects,
@@ -1733,11 +1747,13 @@ export async function savePlanningAssignmentDayState(
   const note = input.note.trim();
   if (!isPlanningGridStatus(input.status)) throw new Error('Le statut quotidien est invalide.');
   if (note.length > 32) throw new Error('Le commentaire quotidien ne peut pas dépasser 32 caractères.');
-  const { data, error } = await client.rpc('save_planning_assignment_day_state', {
+  const functionLabel = input.functionLabel === undefined ? undefined : requiredPlanningText(input.functionLabel, 'La fonction temporaire');
+  const { data, error } = await client.rpc(functionLabel === undefined ? 'save_planning_assignment_day_state' : 'save_planning_assignment_day_details', {
     p_assignment_id: assignmentId,
     p_work_date: input.workDate,
     p_status: input.status,
     p_note: note,
+    ...(functionLabel === undefined ? {} : { p_function_label: functionLabel }),
   });
   if (error) throwPlanningDataError('save-assignment-day-state', 'Impossible d’enregistrer le statut quotidien.', error);
   return typeof data === 'number' ? data : null;
@@ -1752,12 +1768,14 @@ export async function savePlanningAssignmentDayStates(
   const note = input.note.trim();
   if (!isPlanningGridStatus(input.status)) throw new Error('Le statut quotidien est invalide.');
   if (note.length > 32) throw new Error('Le commentaire quotidien ne peut pas dépasser 32 caractères.');
-  const { error } = await client.rpc('save_planning_assignment_day_states', {
+  const functionLabel = input.functionLabel === undefined ? undefined : requiredPlanningText(input.functionLabel, 'La fonction temporaire');
+  const { error } = await client.rpc(functionLabel === undefined ? 'save_planning_assignment_day_states' : 'save_planning_assignment_day_details_range', {
     p_assignment_id: assignmentId,
     p_starts_on: input.startsOn,
     p_ends_on: input.endsOn,
     p_status: input.status,
     p_note: note,
+    ...(functionLabel === undefined ? {} : { p_function_label: functionLabel }),
   });
   if (error) throwPlanningDataError('save-assignment-day-states', 'Impossible d’enregistrer les statuts quotidiens.', error);
 }

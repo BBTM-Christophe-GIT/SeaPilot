@@ -8,7 +8,7 @@ export function Field({ label, children, wide = false }: { label: string; childr
 }
 export function DisciplinaryForm({ value: f, onChange, disabled = false }: { value: Form; onChange: (value: Form) => void; disabled?: boolean }) {
   const update = <K extends keyof Form>(key: K, value: Form[K]) => onChange({ ...f, [key]: value });
-  return <div className="disciplinary-form">
+  return <fieldset disabled={disabled} className="disciplinary-form disciplinary-form-fields">
     <Field label="Prénom et NOM du collaborateur"><input value={f.employeeName} onChange={(e) => update('employeeName', e.target.value)} /></Field>
     <Field label="Adresse postale"><textarea rows={2} value={f.address} onChange={(e) => update('address', e.target.value)} /></Field>
     <Field label="Qualification de la faute"><select value={f.fault} onChange={(e) => update('fault', e.target.value as FaultKey)}>{Object.entries(FAULTS).map(([key, v]) => <option key={key} value={key}>{v.label}</option>)}</select><small>{FAULTS[f.fault].definition}</small></Field>
@@ -38,5 +38,5 @@ export function DisciplinaryForm({ value: f, onChange, disabled = false }: { val
     <div className="disciplinary-field wide"><span>Modalités de la sanction</span><ServiceNoteRichTextEditor ariaLabel="Modalités de la sanction" toolbarLabel="Mise en forme — Modalités de la sanction" disabled={disabled} value={f.sanctionDetails ? disciplinaryBodyToHtml(f.sanctionDetails) : ''} onChange={(value) => update('sanctionDetails', value)} placeholder="Durée et dates de suspension, affectation proposée, délai de réponse, préavis, indemnités…" /></div>
     {f.fault === 'lourde' ? <Field label="Éléments établissant l’intention de nuire" wide><textarea value={f.harmfulIntent} onChange={(e) => update('harmfulIntent', e.target.value)} /></Field> : null}
     <label className="disciplinary-check wide"><input type="checkbox" checked={f.protectedEmployee} onChange={(e) => update('protectedEmployee', e.target.checked)} />Collaborateur bénéficiant d’une protection particulière</label>
-  </div>;
+  </fieldset>;
 }

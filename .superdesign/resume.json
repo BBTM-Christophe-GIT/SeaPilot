@@ -366,6 +366,39 @@
       },
       "targetKind": "new-ui",
       "updatedAt": "2026-09-15T09:04:42.4321947Z"
+    },
+    "/modules/internalAudits": {
+      "targetKind": "existing-ui",
+      "projectId": "136c3f34-b063-4755-a59c-3a422abf9fab",
+      "activeDraftId": "6491e7e9-12fb-477c-a447-c3bd07c261b1",
+      "designSystemPath": ".superdesign/audit-design-system.md",
+      "referenceIds": [],
+      "contextFiles": [
+        ".superdesign/audit-design-system.md",
+        "src/features/internalAudits/InternalAuditsPage.tsx:67:73",
+        "src/features/internalAudits/InternalAuditsPage.tsx:288:356",
+        "src/features/internalAudits/InternalAuditsPage.tsx:365:429",
+        "src/features/internalAudits/internalAudits.css",
+        "src/components/AppDialog.tsx",
+        "src/styles/index.css:1:95"
+      ],
+      "fingerprints": {
+        ".superdesign/audit-design-system.md": "7cea4db197bb1a4fcd98554635b5144d2ffb4d0a75e3dc6427bb5bebd0954148",
+        "src/components/AppDialog.tsx": "ad276ebb1259f6112ac5dcb0ee7be62ea320d03c15d18a31084e9fcb4b93d42c",
+        "src/features/internalAudits/InternalAuditsPage.tsx": "386039ad2ceb8db3dd24cb6390129827c0785c8a26104c592ac36777f8695965",
+        "src/features/internalAudits/internalAudits.css": "326c5a3ee5f565b4c7a9829b91f88180c49048f74b49e1a5fa17211398da472c",
+        "src/styles/index.css": "1fb55e00d6113b6778779b844921c1caef856e944b8c030cf64200737c922b6d"
+      },
+      "components": [],
+      "drafts": {
+        "6491e7e9-12fb-477c-a447-c3bd07c261b1": {
+          "title": "Audit ISM Interne — Planning & Graphique",
+          "visualDirection": "Planning annuel janvier–décembre avec les huit sites et vignettes existantes, fenêtre ±3 mois et dates explicites. Radar ISM N/N-1 exact, légende et tableau accessible, vrais zéros préservés et données absentes non tracées. Grille compacte conservée et aperçu PDF de la grille seule. Shell externe hors cadre.",
+          "currentVersion": 5
+        }
+      },
+      "workflowNote": "L’utilisateur a choisi directement Planning annuel + Radar. Itération version 4 incorrecte (ancienne grille et sites hors cible), remplacée par import direct version 5 du DOM de démonstration réel et styles existants : huit sites, frise et radar. Assets publics du déploiement vérifiés. Aucun changement du shell ou des rapports complets. UI 22 tests et PDF 9 tests ; grille PDF 61 questions/10 pages contrôlée visuellement aux première et dernière pages. Version 5 relue via get-design ; le rendu du canvas reste à contrôler dans un navigateur disponible.",
+      "updatedAt": "2026-10-01T06:01:57.838020+00:00"
     }
   }
 }

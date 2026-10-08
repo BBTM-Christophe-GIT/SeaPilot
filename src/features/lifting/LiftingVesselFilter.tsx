@@ -11,14 +11,14 @@ function VesselImage({ vessel }: { vessel: LiftingVessel }) {
     : <span className="lifting-vessel-placeholder"><Ship size={34} aria-hidden="true" /><small>Photo à venir</small></span>;
 }
 
-export function LiftingVesselFilter({ vessels, value, disabled, onChange }: {
-  vessels: LiftingVessel[]; value: number; disabled: boolean; onChange: (id: number) => void;
+export function LiftingVesselFilter({ vessels, value, disabled, onChange, includeYard = true }: {
+  vessels: LiftingVessel[]; value: number; disabled: boolean; onChange: (id: number) => void; includeYard?: boolean;
 }) {
   const row = useRef<HTMLDivElement>(null);
   const selected = vessels.find((vessel) => vessel.id === value);
   return <section className="lifting-fleet" aria-label="Sélection du navire">
     <div className="lifting-fleet-heading">
-      <div><span className="lifting-fleet-label">FLOTTE BBTM</span><h2>Choisir un navire <span>ou le Yard</span></h2></div>
+      <div><span className="lifting-fleet-label">FLOTTE BBTM</span><h2>Choisir un navire {includeYard && <span>ou le Yard</span>}</h2></div>
       <div className="lifting-fleet-scroll">
         <span>{vessels.length} unités</span>
         <button type="button" aria-label="Voir les navires précédents" disabled={!vessels.length} onClick={() => row.current?.scrollBy({ left: -360, behavior: 'smooth' })}><ChevronLeft size={17} /></button>

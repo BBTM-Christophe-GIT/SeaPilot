@@ -24,6 +24,8 @@ Les profils `Administrateur` et `Direction` peuvent rappeler uniquement la note 
 
 Un brouillon privé peut être supprimé après confirmation. Les fichiers stockés sont retirés du bucket avant l'appel protégé à `delete_service_note_draft`; les autres enregistrements associés disparaissent par cascade.
 
+La date affichée sur chaque puce de la bibliothèque, son année de classement et son ordre de tri suivent la date d’émission du document (`authored_on`). Une correction de cette date se reflète donc aussi dans la bibliothèque. L’horodatage de diffusion (`published_at`) conserve sa valeur d’origine pour l’historique et les règles de rappel.
+
 ## Pièces jointes et références
 
 Les fichiers sont déposés dans le bucket privé `service-note-files` avec une limite de 50 Mo. Les politiques RLS autorisent le dépôt uniquement sur un brouillon géré par un profil `Administrateur` ou `Direction`. Les lecteurs d'une note diffusée peuvent télécharger ses pièces jointes.

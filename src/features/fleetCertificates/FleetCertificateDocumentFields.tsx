@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { compareFleetNames } from '../fleet/fleetDisplay';
 import type { FleetCertificateRecord } from './fleetCertificateQueries';
 
 export interface FleetCertificateDocumentPath {
@@ -13,7 +14,7 @@ const frenchSort = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' 
 
 function sortCertificates(certificates: FleetCertificateRecord[]): FleetCertificateRecord[] {
   return certificates.slice().sort((left, right) => (
-    frenchSort.compare(left.vesselName, right.vesselName)
+    compareFleetNames(left.vesselName, right.vesselName)
     || frenchSort.compare(left.categoryLabel, right.categoryLabel)
     || frenchSort.compare(left.documentTitle, right.documentTitle)
   ));

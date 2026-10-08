@@ -1,13 +1,88 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { launcherOpenUri, localDriveRequest } from './localDriveLauncher';
+import { launcherOpenUri, localDrivePorts, localDriveRequest, supportsLocalDriveVersion } from './localDriveLauncher';
 
 vi.mock('../../lib/env', () => ({ loadAppEnv: () => ({ supabaseUrl: 'https://szlvyrrmvdvhzixilymh.supabase.co', supabaseAnonKey: 'public-test-key' }) }));
 const connection = { url: 'http://127.0.0.1:50000/session', expiresAt: Date.now() + 100000 };
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('common Windows launcher', () => {
-  it.each([['procedures', 'Procedures'], ['disciplinary', 'Sanctions Disciplinaires']] as const)('uses the root protocol for %s', (module, directory) => {
+  it.each([
+    ['2.5.0', '2.5.0', true], ['2.5.1', '2.5.0', true], ['2.6.0', '2.5.0', true],
+    ['2.10.0', '2.6.0', true], ['2.4.9', '2.5.0', false], ['2.5.0', '2.5.1', false],
+    ['3.0.0', '2.5.0', false], ['1.9.0', '2.5.0', false], ['2.6.0-beta', '2.5.0', false],
+    ['2.6', '2.5.0', false], [undefined, '2.5.0', false], [260, '2.5.0', false],
+  ])('checks API compatibility for %s requiring %s', (version, minimum, supported) => {
+    expect(supportsLocalDriveVersion(version, minimum)).toBe(supported);
+  });
+  it.each(['2.6.1', '2.10.0'])('discovers compatible updates %s using the matching nonce', async version => {
+    vi.resetModules();
+    const { connectLocalDrive } = await import('./localDriveLauncher');
+    let nonce = '';
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { nonce = new URL(this.href).pathname.split('/')[2]; });
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => ({ ok: true, json: async () => ({ version, nonce }) })));
+    expect((await connectLocalDrive()).version).toBe(version);
+  });
+  it('spreads discovery across bounded distinct ports, including wraparound', () => {
+    for (const first of [49152, 50000, 65535]) {
+      const ports = localDrivePorts(first);
+      expect(ports[0]).toBe(first);
+      expect(new Set(ports).size).toBe(16);
+      expect(ports.every((port) => port >= 49152 && port <= 65535)).toBe(true);
+    }
+    expect(localDrivePorts(65535).slice(0, 3)).toEqual([65535, 50170, 51189]);
+  });
+  it('finds the native fallback when Windows refuses the first ports, reuses it and opens the launcher only once', async () => {
+    vi.resetModules();
+    const { connectLocalDrive } = await import('./localDriveLauncher');
+    let firstPort = 0, nonce = '';
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      const parts = new URL(this.href).pathname.split('/');
+      firstPort = Number(parts[1]); nonce = parts[2];
+    });
+    const fetcher = vi.fn().mockImplementation(async (url: string) => {
+      if (new URL(url).port !== String(localDrivePorts(firstPort)[3])) throw new TypeError('Failed to fetch');
+      return { ok: true, json: async () => ({ version: '2.1.0', nonce }) };
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const pending = connectLocalDrive();
+    expect(connectLocalDrive()).toBe(pending);
+    const session = await pending;
+    expect(session.url).toBe(`http://127.0.0.1:${localDrivePorts(firstPort)[3]}/${nonce}`);
+    expect(await connectLocalDrive()).toEqual(session);
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls.every(([, options]) => !options.method && !options.headers)).toBe(true);
+  });
+  it.each([{ version: '2.6.0', nonce: 'wrong-session' }, { version: '3.0.0' }])('refuses an incompatible or mismatched health response %j', async health => {
+    vi.useFakeTimers(); vi.resetModules();
+    const { connectLocalDrive } = await import('./localDriveLauncher');
+    let nonce = '';
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { nonce = new URL(this.href).pathname.split('/')[2]; });
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => ({ ok: true, json: async () => ({ nonce, ...health }) })));
+    const result = expect(connectLocalDrive()).rejects.toThrow('le dossier déjà configuré sera conservé');
+    await vi.runAllTimersAsync();
+    await result;
+  });
+  it('still connects to an older launcher on the initial port', async () => {
+    vi.resetModules();
+    const { connectLocalDrive } = await import('./localDriveLauncher');
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ version: '2.0.0' }) }));
+    const session = await connectLocalDrive();
+    expect(session.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/[a-f0-9]{32}$/);
+  });
+  it('detects the current launcher and discards an old cached connection after an update', async () => {
+    vi.resetModules();
+    const { connectLocalDrive } = await import('./localDriveLauncher');
+    let nonce = '', version = '2.5.0';
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { nonce = new URL(this.href).pathname.split('/')[2]; });
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => ({ ok: true, json: async () => ({ version, nonce }) })));
+    expect((await connectLocalDrive()).version).toBe('2.5.0');
+    version = '2.6.0';
+    expect((await connectLocalDrive({ fresh: true })).version).toBe('2.6.0');
+    expect(click).toHaveBeenCalledTimes(2);
+  });
+  it.each([['procedures', 'Procedures'], ['disciplinary', 'Sanctions Disciplinaires'], ['chemicals', 'Produits Chimiques']] as const)('uses the root protocol for %s', (module, directory) => {
     const uri = launcherOpenUri(module, 'Équipe/Courrier.docx');
     expect(uri).toMatch(/^seapilot-drive:\/\/root\/open\/[A-Za-z0-9_-]+$/);
     const payload = uri.split('/').pop()!.replace(/-/g, '+').replace(/_/g, '/');

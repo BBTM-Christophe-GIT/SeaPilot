@@ -1,42 +1,55 @@
+import { SeaPilotLogo } from '../../components/SeaPilotLogo';
+import { UserAvatar } from '../../components/UserAvatar';
+import { fetchDisciplinaryNotifications, markDisciplinaryNotificationRead, DISCIPLINARY_NOTIFICATIONS_CHANGED, type DisciplinaryNotification } from '../disciplinary/disciplinaryWorkflow';
 import { LiftingOperationsIcon } from '../lifting/LiftingIcons';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   BarChart3,
   Bell,
   BookOpenCheck,
+  BookOpen,
   CalendarDays,
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
+  CircleHelp,
   Clock3,
   ClipboardCheck,
   FileCheck2,
   FileText,
+  FlaskConical,
   FolderKanban,
   Gauge,
   Home,
   LayoutDashboard,
+  Link2,
+  LifeBuoy,
   LogOut,
   Mail,
   Menu,
+  Network,
   Settings,
   ShieldCheck,
   ShoppingCart,
   Store,
   ReceiptText,
+  Scale,
   Ship,
   Users,
   Wrench,
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { APP_BUILD_VERSION, APP_VERSION_LABEL } from '../../config/appVersion';
+import { ReleaseNotes } from '../releaseNotes/ReleaseNotes';
+import { LIFTING_SECTIONS } from '../lifting/liftingSections';
+import './liftingNavigationLinks.css';
+import './regulatoryNavigation.css';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../auth/AuthProvider';
+import { loadPortrait } from '../humanResources/portraitMedia';
 import {
   fetchHrDocumentExpiryNotifications,
   formatHrDocumentExpiryDate,
@@ -63,15 +76,20 @@ interface AppShellProps {
 }
 
 export interface AppShellOutletContext {
+  visibleModules?: AppModule[];
   roles: RoleKey[];
   client: SupabaseClient;
   previewMode: boolean;
   currentPerson: CurrentPersonSummary | null;
+  setLiftingNavigationBlocked?: (blocked: boolean) => void;
+  liftingVesselId?: number;
+  setLiftingVesselId?: (id: number) => void;
 }
 
 const NAVIGATION_FAMILIES: AppModule['family'][] = [
   'Accueil',
   'QHSE',
+  'Registres',
   'Audits',
   'Opérations',
   'Achats',
@@ -79,13 +97,14 @@ const NAVIGATION_FAMILIES: AppModule['family'][] = [
   'Planning',
   'Ressources Humaines',
   'Maintenance',
-  'Levage',
+  'Bibliothèque Réglementaire',
   'Administration',
 ];
 
 const FAMILY_ICONS: Record<AppModule['family'], LucideIcon> = {
   Accueil: Home,
   QHSE: ShieldCheck,
+  Registres: BookOpenCheck,
   Audits: ClipboardCheck,
   Opérations: Gauge,
   Achats: ShoppingCart,
@@ -93,13 +112,14 @@ const FAMILY_ICONS: Record<AppModule['family'], LucideIcon> = {
   Planning: CalendarDays,
   'Ressources Humaines': Users,
   Maintenance: Wrench,
-  Levage: LiftingOperationsIcon,
+  'Bibliothèque Réglementaire': BookOpen,
   Administration: Settings,
 };
 
 const FAMILY_THEME_KEYS: Record<AppModule['family'], string> = {
   Accueil: 'home',
   QHSE: 'qhse',
+  Registres: 'registers',
   Audits: 'qhse',
   Opérations: 'operations',
   Achats: 'purchasing',
@@ -107,7 +127,7 @@ const FAMILY_THEME_KEYS: Record<AppModule['family'], string> = {
   Planning: 'planning',
   'Ressources Humaines': 'human-resources',
   Maintenance: 'maintenance',
-  Levage: 'lifting',
+  'Bibliothèque Réglementaire': 'regulatory',
   Administration: 'administration',
 };
 
@@ -115,21 +135,28 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   home: LayoutDashboard,
   kpi: BarChart3,
   qhse: ShieldCheck,
+  qhsePolicy: ShieldCheck,
+  chemicals: FlaskConical,
+  emergencyExercises: BookOpenCheck,
+  lsa: LifeBuoy,
   certificates: FileCheck2,
   procedures: FileText,
   serviceNotes: Mail,
   actionPlan: ClipboardCheck,
+  ovid: FileCheck2,
   ecmid: FileCheck2,
   externalIsmAudits: ShieldCheck,
   internalAudits: ClipboardCheck,
   clientAudits: FileCheck2,
   dpr: Gauge,
   purchaseRequests: ShoppingCart,
+  expenseNotes: ReceiptText,
   serviceProviders: Store,
   billingElements: ReceiptText,
   planning: CalendarDays,
   fleet: Ship,
   humanResources: Users,
+  organigramme: Network,
   annualReviews: ClipboardCheck,
   disciplinary: ShieldCheck,
   workingTime: Clock3,
@@ -137,7 +164,11 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   marad: Wrench,
   technicalDocuments: BookOpenCheck,
   lifting: LiftingOperationsIcon,
+  regulatoryLibrary: BookOpen,
+  regulatorySafety: ShieldCheck,
+  regulatoryTransport: Scale,
   admin: Settings,
+  usefulLinks: Link2,
 };
 
 function getRequestedModule(pathname: string) {
@@ -179,15 +210,24 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const [isLoadingRoles, setIsLoadingRoles] = useState(!rolesOverride);
   const [hasRoleLoadError, setHasRoleLoadError] = useState(false);
   const [currentPerson, setCurrentPerson] = useState<CurrentPersonSummary | null>(null);
+  const [personPhotoSource, setPersonPhotoSource] = useState<{ path: string; userId: string | undefined } | null>(null);
+  const [personPhoto, setPersonPhoto] = useState<{ path: string; userId: string | undefined; url: string } | null>(null);
+  const personPhotoPath = personPhotoSource?.userId === sessionUserId ? personPhotoSource?.path : undefined;
   const [isLoadingPerson, setIsLoadingPerson] = useState(!rolesOverride || previewMode);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isLiftingNavigationBlocked, setLiftingNavigationBlocked] = useState(false);
+  const [liftingVesselId, setLiftingVesselId] = useState(0);
   const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState('');
+  const signOutPending = useRef(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [serviceNoteNotifications, setServiceNoteNotifications] = useState<ServiceNoteNotification[]>([]);
   const [hrDocumentNotifications, setHrDocumentNotifications] = useState<HrDocumentExpiryNotification[]>([]);
   const [annualReviewNotifications, setAnnualReviewNotifications] = useState<AnnualReviewNotification[]>([]);
   const [actionPlanNotifications, setActionPlanNotifications] = useState<ActionPlanNotification[]>([]);
+  const [disciplinaryNotifications, setDisciplinaryNotifications] = useState<DisciplinaryNotification[]>([]);
   const [leaveNotifications, setLeaveNotifications] = useState<PlanningLeaveNotification[]>([]);
   const [expandedFamilies, setExpandedFamilies] = useState<Set<AppModule['family']>>(
     () => new Set(NAVIGATION_FAMILIES),
@@ -248,23 +288,41 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   useEffect(() => {
     if ((rolesOverride && !previewMode) || (!sessionUserId && !previewMode)) {
       setCurrentPerson(null);
+      setPersonPhotoSource(null);
       setIsLoadingPerson(false);
       return;
     }
     let isMounted = true;
     setIsLoadingPerson(true);
     fetchCurrentPersonSummary(client)
-      .then((person) => { if (isMounted) setCurrentPerson(person); })
-      .catch(() => { if (isMounted) setCurrentPerson(null); })
+      .then((person) => {
+        if (isMounted) {
+          setCurrentPerson(person);
+          setPersonPhotoSource(person?.photoStoragePath ? { path: person.photoStoragePath, userId: sessionUserId } : null);
+        }
+      })
+      .catch(() => { if (isMounted) { setCurrentPerson(null); setPersonPhotoSource(null); } })
       .finally(() => { if (isMounted) setIsLoadingPerson(false); });
     return () => { isMounted = false; };
   }, [client, previewMode, rolesOverride, sessionUserId]);
 
   useEffect(() => {
+    setPersonPhoto(null);
+    if (!personPhotoPath) return;
+
+    let isMounted = true;
+    void loadPortrait(client, personPhotoPath)
+      .then((url) => { if (isMounted) setPersonPhoto({ path: personPhotoPath, userId: sessionUserId, url }); })
+      .catch(() => { /* The identity and account menu remain available without a portrait. */ });
+
+    return () => { isMounted = false; };
+  }, [client, personPhotoPath, sessionUserId]);
+
+  useEffect(() => {
     setIsMobileNavigationOpen(false);
     setIsUserMenuOpen(false);
     setIsNotificationsOpen(false);
-  }, [location.pathname]);
+  }, [location.key, location.pathname]);
 
   useEffect(() => {
     if (previewMode) {
@@ -367,22 +425,57 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     };
   }, [client, previewMode, sessionUserId]);
 
+  const canReceiveDisciplinary = roles.some((r) => r === 'admin' || r === 'direction') && visibleModules.some((m) => m.key === 'disciplinary');
+  useEffect(() => {
+    setDisciplinaryNotifications([]);
+    if (previewMode || !sessionUserId || !canReceiveDisciplinary) return;
+    let live = true;
+    let version = 0;
+    const refresh = () => {
+      const request = ++version;
+      void fetchDisciplinaryNotifications(client).then((rows) => { if (live && request === version) setDisciplinaryNotifications(rows); })
+        .catch(() => { if (live && request === version) setDisciplinaryNotifications([]); });
+    };
+    const visible = () => { if (document.visibilityState === 'visible') refresh(); };
+    refresh();
+    const timer = window.setInterval(visible, 30_000);
+    window.addEventListener('focus', refresh);
+    window.addEventListener(DISCIPLINARY_NOTIFICATIONS_CHANGED, refresh);
+    document.addEventListener('visibilitychange', visible);
+    return () => { live = false; window.clearInterval(timer); window.removeEventListener('focus', refresh); window.removeEventListener(DISCIPLINARY_NOTIFICATIONS_CHANGED, refresh); document.removeEventListener('visibilitychange', visible); };
+  }, [client, previewMode, sessionUserId, canReceiveDisciplinary]);
+  function openDisciplinaryNotification(notification: DisciplinaryNotification) {
+    setIsNotificationsOpen(false);
+    void markDisciplinaryNotificationRead(client, notification.id)
+      .then(() => setDisciplinaryNotifications((items) => items.filter((item) => item.id !== notification.id))).catch(() => undefined);
+  }
+
   const requestedModule = getRequestedModule(location.pathname);
+  const liftingSection = requestedModule?.key === 'lifting' ? LIFTING_SECTIONS.find((section) => location.pathname.replace(/\/+$/, '').endsWith(`/${section.path}`)) : undefined;
+  const isManualPage = location.pathname === '/manual' || location.pathname.startsWith('/manual/');
   const activeVisibleModules = visibleModules;
+  const canOpenRegulatoryLibrary = activeVisibleModules.some((module) => module.key === 'regulatoryLibrary');
   const isRequestedModuleDenied = requestedModule
     ? !activeVisibleModules.some((module) => module.key === requestedModule.key)
+      || (requestedModule.family === 'Bibliothèque Réglementaire' && !canOpenRegulatoryLibrary)
     : false;
   const groupedModules = useMemo(
     () =>
       NAVIGATION_FAMILIES.map((family) => ({
         family,
         modules: activeVisibleModules.filter(
-          (module) => module.family === family && module.navigationKind !== 'hidden',
+          (module) => module.family === family && module.navigationKind !== 'hidden' && module.key !== 'regulatoryLibrary',
         ),
-      })).filter((group) => group.modules.length > 0),
-    [activeVisibleModules],
+      })).filter((group) => (
+        group.family === 'Bibliothèque Réglementaire' ? canOpenRegulatoryLibrary : group.modules.length > 0
+      )),
+    [activeVisibleModules, canOpenRegulatoryLibrary],
   );
   const userMetadata = (session?.user.user_metadata || {}) as Record<string, unknown>;
+  const personPhotoUrl = personPhoto?.path === personPhotoPath && personPhoto?.userId === sessionUserId ? personPhoto?.url : undefined;
+  const userPhotoUrl = personPhotoUrl || [userMetadata.avatar_url, userMetadata.picture, userMetadata.photo_url].find(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0,
+  );
   const userEmail = previewMode ? 'preview@bbtm.local' : session?.user.email || 'utilisateur@bbtm.fr';
   const sessionDisplayName = [userMetadata.full_name, userMetadata.display_name, userMetadata.name].find(
     (value): value is string => typeof value === 'string' && value.trim().length > 0,
@@ -394,7 +487,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     || (previewMode ? 'Préversion BBTM' : sessionDisplayName || userEmail.split('@')[0] || 'Utilisateur');
   const primaryRole = ROLE_KEYS.find((role) => roles.includes(role));
   const primaryRoleLabel = primaryRole ? ROLE_LABELS[primaryRole] : 'Utilisateur';
-  const notificationCount = serviceNoteNotifications.length + hrDocumentNotifications.length + annualReviewNotifications.length + actionPlanNotifications.length + leaveNotifications.length;
+  const notificationCount = serviceNoteNotifications.length + hrDocumentNotifications.length + annualReviewNotifications.length + actionPlanNotifications.length + leaveNotifications.length + disciplinaryNotifications.length;
 
   function openLeaveNotification(notification: PlanningLeaveNotification) {
     setIsNotificationsOpen(false);
@@ -411,6 +504,22 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     setActionPlanNotifications((items) => items.filter((item) => item.id !== notification.id));
     setIsNotificationsOpen(false);
     void markActionPlanNotificationRead(client, notification.id).catch(() => undefined);
+  }
+
+  async function handleSignOut() {
+    if (signOutPending.current) return;
+    signOutPending.current = true;
+    setIsSigningOut(true);
+    setSignOutError('');
+
+    try {
+      await signOut();
+    } catch {
+      setSignOutError('Déconnexion impossible. Vérifiez votre connexion puis réessayez.');
+    } finally {
+      signOutPending.current = false;
+      setIsSigningOut(false);
+    }
   }
 
   function toggleFamily(family: AppModule['family']) {
@@ -435,10 +544,11 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     return (
       <div className="auth-loading">
         <p>Impossible de charger vos droits d'acces.</p>
-        <button onClick={() => void signOut()} type="button">
+        <button disabled={isSigningOut} onClick={() => void handleSignOut()} type="button">
           <LogOut aria-hidden="true" size={16} />
-          Deconnexion
+          {isSigningOut ? 'Déconnexion en cours…' : 'Deconnexion'}
         </button>
+        {signOutError ? <p className="form-error" role="alert">{signOutError}</p> : null}
       </div>
     );
   }
@@ -457,8 +567,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
       />
       <aside className={`sidebar${isMobileNavigationOpen ? ' is-mobile-open' : ''}`}>
         <div className="brand-block">
-          <img alt="BBTM" className="brand-logo" src="/bbtm-logo.png" />
-          <span className="brand-name">BBTM</span>
+          <SeaPilotLogo />
           <button
             aria-label="Fermer le menu"
             className="sidebar-mobile-close"
@@ -475,6 +584,8 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
             const isExpanded = expandedFamilies.has(family);
             const directModule =
               modules.length === 1 && modules[0]?.navigationKind === 'direct' ? modules[0] : undefined;
+            const isRegulatoryFamily = family === 'Bibliothèque Réglementaire';
+            const canOpenRegulatoryOverview = isRegulatoryFamily && canOpenRegulatoryLibrary;
 
             if (directModule) {
               return (
@@ -501,28 +612,56 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
             }
 
             return (
-              <section className="navigation-family" data-family-theme={FAMILY_THEME_KEYS[family]} key={family}>
-                <button
-                  aria-expanded={isExpanded}
-                  className="navigation-family-button"
-                  onClick={() => toggleFamily(family)}
-                  title={family}
-                  type="button"
-                >
-                  <span className="navigation-icon-tile">
-                    <FamilyIcon aria-hidden="true" size={20} />
-                  </span>
-                  <span className="navigation-label">{family}</span>
-                  {isExpanded ? (
-                    <ChevronUp aria-hidden="true" className="navigation-chevron" size={15} />
-                  ) : (
-                    <ChevronDown aria-hidden="true" className="navigation-chevron" size={15} />
-                  )}
-                </button>
+              <section className={`navigation-family${isRegulatoryFamily ? ' navigation-regulatory-family' : ''}`} data-family-theme={FAMILY_THEME_KEYS[family]} key={family}>
+                {canOpenRegulatoryOverview ? (
+                  <div className="navigation-regulatory-header">
+                    <NavLink aria-label={family} className="navigation-direct-link" end title={family} to="/modules/regulatoryLibrary">
+                      <span className="navigation-icon-tile"><FamilyIcon aria-hidden="true" size={20} /></span>
+                      <span className="navigation-link-label">{family}</span>
+                    </NavLink>
+                    {modules.length > 0 ? (
+                      <button
+                        aria-controls="regulatory-navigation-links"
+                        aria-expanded={isExpanded}
+                        aria-label={`${isExpanded ? 'Replier' : 'Déplier'} ${family}`}
+                        className="navigation-regulatory-toggle"
+                        onClick={() => toggleFamily(family)}
+                        title={`${isExpanded ? 'Replier' : 'Déplier'} ${family}`}
+                        type="button"
+                      >
+                        {isExpanded ? <ChevronDown aria-hidden="true" size={15} /> : <ChevronRight aria-hidden="true" size={15} />}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <button
+                    aria-expanded={isExpanded}
+                    className="navigation-family-button"
+                    onClick={() => toggleFamily(family)}
+                    title={family}
+                    type="button"
+                  >
+                    <span className="navigation-icon-tile">
+                      <FamilyIcon aria-hidden="true" size={20} />
+                    </span>
+                    <span className="navigation-label">{family}</span>
+                    {isExpanded ? (
+                      <ChevronDown aria-hidden="true" className="navigation-chevron" size={15} />
+                    ) : (
+                      <ChevronRight aria-hidden="true" className="navigation-chevron" size={15} />
+                    )}
+                  </button>
+                )}
                 {isExpanded ? (
-                  <div className="navigation-family-links">
+                  <div className="navigation-family-links" id={isRegulatoryFamily ? 'regulatory-navigation-links' : undefined}>
                     {modules.map((module) => {
                       const ModuleIcon = MODULE_ICONS[module.key];
+                      if (module.key === 'lifting') return LIFTING_SECTIONS.map((section) => (
+                        <NavLink className="lifting-navigation-link" aria-label={section.title} aria-disabled={isLiftingNavigationBlocked || undefined} onClick={(event) => { if (isLiftingNavigationBlocked) event.preventDefault(); }} key={section.key} title={isLiftingNavigationBlocked ? 'Terminez l’opération et enregistrez vos modifications avant de changer de rubrique.' : section.title} to={`/modules/lifting/${section.path}`}>
+                          <span aria-hidden="true" className={`navigation-equipment-icon navigation-equipment-icon--${section.key}`} />
+                          <span className="navigation-link-label">{section.title}</span>
+                        </NavLink>
+                      ));
 
                       return (
                         <NavLink
@@ -531,7 +670,6 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                           title={module.label}
                           to={module.key === 'home' ? '/' : `/modules/${module.key}`}
                         >
-                          <span aria-hidden="true" className="navigation-submenu-bullet" />
                           <ModuleIcon aria-hidden="true" size={16} />
                           <span className="navigation-link-label">{module.label}</span>
                         </NavLink>
@@ -545,10 +683,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
         </nav>
 
         <div className="sidebar-footer">
-          <div className="app-version" title={`Build ${APP_BUILD_VERSION}`}>
-            <span>Version</span>
-            <strong>{APP_VERSION_LABEL}</strong>
-          </div>
+          <ReleaseNotes key={`${previewMode ? 'preview' : sessionUserId}-${roles.join(',')}`} client={client} userId={sessionUserId} previewMode={previewMode} roles={roles} />
           <button
             aria-label={isSidebarCollapsed ? 'Agrandir le menu' : 'Réduire le menu'}
             className="sidebar-collapse-button"
@@ -560,7 +695,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
             ) : (
               <ChevronLeft aria-hidden="true" size={17} />
             )}
-            <span>{isSidebarCollapsed ? 'Agrandir' : 'Réduire le menu'}</span>
+            <span>{isSidebarCollapsed ? 'Agrandir' : 'Réduire'}</span>
           </button>
         </div>
       </aside>
@@ -576,21 +711,22 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
             >
               <Menu aria-hidden="true" size={20} />
             </button>
-            <span>{requestedModule?.family || 'BBTM'}</span>
+            <span>{isManualPage ? 'Aide' : requestedModule?.family || 'BBTM'}</span>
             <ChevronRight aria-hidden="true" size={16} />
-            <strong>{requestedModule?.label || 'Accueil'}</strong>
+            <strong>{isManualPage ? 'Manuel d’utilisation' : liftingSection?.title || requestedModule?.label || 'Accueil'}</strong>
             {previewMode ? <span className="preview-mode-badge">Préversion · données de démonstration</span> : null}
           </div>
 
           <div className="topbar-actions">
             <div className="topbar-notifications">
-              <button aria-expanded={isNotificationsOpen} aria-label={`Notifications${notificationCount ? `, ${notificationCount} élément(s) à traiter` : ''}`} className="topbar-icon-button" onClick={() => { if (!isNotificationsOpen) window.dispatchEvent(new Event(PLANNING_NOTIFICATIONS_CHANGED)); setIsNotificationsOpen((open) => !open); setIsUserMenuOpen(false); }} type="button">
+              <button aria-expanded={isNotificationsOpen} aria-label={`Notifications${notificationCount ? `, ${notificationCount} élément(s) à traiter` : ''}`} className="topbar-icon-button" onClick={() => { if (!isNotificationsOpen) { window.dispatchEvent(new Event(PLANNING_NOTIFICATIONS_CHANGED)); window.dispatchEvent(new Event(DISCIPLINARY_NOTIFICATIONS_CHANGED)); } setIsNotificationsOpen((open) => !open); setIsUserMenuOpen(false); }} type="button">
                 <Bell aria-hidden="true" size={19} />
                 {notificationCount ? <span className="topbar-notification-badge">{notificationCount > 9 ? '9+' : notificationCount}</span> : null}
               </button>
               {isNotificationsOpen ? <div className="topbar-notification-popover">
                 <header><div><strong>Notifications</strong><span>{notificationCount} élément{notificationCount > 1 ? 's' : ''} à traiter</span></div><Bell aria-hidden="true" size={18} /></header>
                 <div className="topbar-notification-list">
+                  {canReceiveDisciplinary && disciplinaryNotifications.length ? <section aria-label="Sanctions disciplinaires" className="topbar-notification-group"><h4>Sanctions disciplinaires</h4>{disciplinaryNotifications.map((notification) => <Link key={notification.id} onClick={() => openDisciplinaryNotification(notification)} to={`/modules/disciplinary?case=${notification.case_id}&tab=review`}><span><strong>{notification.title}</strong><small>{formatServiceNoteDate(notification.created_at)}</small></span><em>Ouvrir la relecture <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {leaveNotifications.length ? <section aria-label="Demandes de congés" className="topbar-notification-group"><h4>Demandes de congés</h4>{leaveNotifications.map((notification) => <Link key={notification.id} onClick={() => openLeaveNotification(notification)} to="/modules/planning"><span><strong>{notification.title}</strong><small>{formatServiceNoteDate(notification.createdAt)}</small></span><p>{notification.body}</p><em>Voir le planning <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {serviceNoteNotifications.length ? <section aria-label="Notes de service" className="topbar-notification-group"><h4>Notes de service</h4>{serviceNoteNotifications.map((notification) => <Link key={notification.noteId} to={`/modules/serviceNotes?note=${notification.noteId}`}><span><strong>{notification.chronologyCode}</strong><small>{formatServiceNoteDate(notification.publishedAt)}</small></span><p>{notification.subject}</p><em>Lire et signer <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {hrDocumentNotifications.length ? <section aria-label="Documents RH et brevets" className="topbar-notification-group"><h4>RH / Brevets · échéance à 40 jours</h4>{hrDocumentNotifications.map((notification) => <Link key={notification.documentId} to="/modules/humanResources"><span><strong>Document personnel</strong><small>{formatHrDocumentExpiryDate(notification.expiresOn)}</small></span><p>{notification.title}</p><em>{notification.daysUntilExpiry === 0 ? 'Expire aujourd’hui' : notification.daysUntilExpiry === 1 ? 'Expire demain' : `Expire dans ${notification.daysUntilExpiry} jours`} <ChevronRight size={14} /></em></Link>)}</section> : null}
@@ -601,15 +737,26 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                 <nav aria-label="Raccourcis notifications" className="topbar-notification-footer"><Link to="/modules/serviceNotes">Notes de service</Link>{activeVisibleModules.some((module) => module.key === 'actionPlan') ? <Link to="/modules/actionPlan">Plan d&apos;action</Link> : null}{activeVisibleModules.some((module) => module.key === 'annualReviews') ? <Link to="/modules/annualReviews">Entretiens</Link> : null}<Link to="/modules/humanResources">Mes documents RH</Link></nav>
               </div> : null}
             </div>
+            <Link
+              aria-label="Manuel d’utilisation"
+              aria-current={isManualPage ? 'page' : undefined}
+              className="topbar-icon-button topbar-manual-link"
+              onClick={() => { setIsNotificationsOpen(false); setIsUserMenuOpen(false); }}
+              title="Manuel d’utilisation"
+              to="/manual"
+            >
+              <CircleHelp aria-hidden="true" size={19} />
+            </Link>
             <div className="user-menu">
               <button
                 aria-expanded={isUserMenuOpen}
                 aria-haspopup="menu"
+                aria-label={`${userDisplayName} ${primaryRoleLabel}`}
                 className="user-menu-trigger"
                 onClick={() => setIsUserMenuOpen((isOpen) => !isOpen)}
                 type="button"
               >
-                <span className="user-avatar">{getInitials(userDisplayName)}</span>
+                <UserAvatar initials={getInitials(userDisplayName)} photoUrl={userPhotoUrl} />
                 <span className="user-identity">
                   <strong>{userDisplayName}</strong>
                   <small>{primaryRoleLabel}</small>
@@ -622,10 +769,13 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                   {previewMode ? (
                     <span className="preview-mode-menu-note">Aucune donnée de production n’est utilisée.</span>
                   ) : (
-                    <button onClick={() => void signOut()} role="menuitem" type="button">
-                      <LogOut aria-hidden="true" size={16} />
-                      Deconnexion
-                    </button>
+                    <>
+                      <button disabled={isSigningOut} onClick={() => void handleSignOut()} role="menuitem" type="button">
+                        <LogOut aria-hidden="true" size={16} />
+                        {isSigningOut ? 'Déconnexion en cours…' : 'Deconnexion'}
+                      </button>
+                      {signOutError ? <p className="form-error" role="alert">{signOutError}</p> : null}
+                    </>
                   )}
                 </div>
               ) : null}
@@ -637,7 +787,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
           {isRequestedModuleDenied ? (
             <div className="auth-loading">Acces refuse pour ce module.</div>
           ) : (
-            <Outlet context={{ roles, client, previewMode, currentPerson } satisfies AppShellOutletContext} />
+            <Outlet context={{ roles, client, previewMode, currentPerson, visibleModules: activeVisibleModules, setLiftingNavigationBlocked, liftingVesselId, setLiftingVesselId } satisfies AppShellOutletContext} />
           )}
         </main>
       </div>

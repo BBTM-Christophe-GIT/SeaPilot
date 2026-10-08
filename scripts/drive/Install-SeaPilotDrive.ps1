@@ -4,7 +4,8 @@ $installFolder = Join-Path $env:LOCALAPPDATA 'SeaPilotDrive'
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $source = Join-Path $PSScriptRoot 'SeaPilotDrive.cs'
 $bridgeSource = Join-Path $PSScriptRoot 'SeaPilotDriveBridge.cs'
-if (!(Test-Path -LiteralPath $compiler) -or !(Test-Path -LiteralPath $source) -or !(Test-Path -LiteralPath $bridgeSource)) {
+$binaryInstaller = Join-Path $PSScriptRoot 'Install-SeaPilotDriveBinary.ps1'
+if (!(Test-Path -LiteralPath $compiler) -or !(Test-Path -LiteralPath $source) -or !(Test-Path -LiteralPath $bridgeSource) -or !(Test-Path -LiteralPath $binaryInstaller)) {
     throw 'Extrayez toutes les pieces de l archive avant installation. .NET Framework 4 est requis.'
 }
 if ($SyncRoot) {
@@ -15,10 +16,8 @@ if ($DisciplinaryRoot) {
     $DisciplinaryRoot = (Resolve-Path -LiteralPath $DisciplinaryRoot -ErrorAction Stop).Path
     if (!(Test-Path -LiteralPath $DisciplinaryRoot -PathType Container)) { throw 'Dossier disciplinaire invalide.' }
 }
-New-Item -ItemType Directory -Path $installFolder -Force | Out-Null
-$executable = Join-Path $installFolder 'SeaPilotDrive.exe'
-& $compiler /nologo /target:winexe /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll "/out:$executable" $source $bridgeSource
-if ($LASTEXITCODE -ne 0) { throw 'Compilation du lanceur impossible.' }
+. $binaryInstaller
+$executable = Install-SeaPilotDriveBinary -InstallFolder $installFolder -Compiler $compiler -Sources @($source, $bridgeSource)
 $protocolKey = 'HKCU:\Software\Classes\seapilot-drive'
 New-Item -Path "$protocolKey\shell\open\command" -Force | Out-Null
 Set-Item -Path $protocolKey -Value 'URL:SeaPilot Google Drive'
@@ -43,10 +42,12 @@ if (!$SeaPilotRoot -and $previous.Root -and $previous.DisciplinaryRoot) {
     if ($procedureParent -eq (Split-Path -Parent $previous.DisciplinaryRoot) -and (Split-Path -Leaf $procedureParent) -eq 'SeaPilot') { $SeaPilotRoot = $procedureParent }
 }
 if ($SeaPilotRoot) {
-    $SeaPilotRoot = (Resolve-Path -LiteralPath $SeaPilotRoot -ErrorAction Stop).Path.TrimEnd('\')
-    if (!(Test-Path -LiteralPath $SeaPilotRoot -PathType Container) -or (Split-Path -Leaf $SeaPilotRoot) -ne 'SeaPilot') { throw 'Selectionnez la racine SeaPilot.' }
-    New-Item -Path $settingsPath -Force | Out-Null
-    New-ItemProperty -Path $settingsPath -Name SeaPilotRoot -Value $SeaPilotRoot -PropertyType String -Force | Out-Null
+    # Let the launcher resolve direct folders and Google Drive Shell shortcuts
+    # with the same validation as the authenticated configuration screen.
+    $SeaPilotRoot = $SeaPilotRoot.TrimEnd('\')
+    if ($SeaPilotRoot -match '["\x00-\x1f]') { throw 'Chemin SeaPilot invalide.' }
+    $initialize = Start-Process -FilePath $executable -ArgumentList @('--configure-root', ('"' + $SeaPilotRoot + '"')) -WindowStyle Hidden -Wait -PassThru
+    if ($initialize.ExitCode -ne 0) { throw 'Les dossiers SeaPilot n ont pas pu etre prepares. Verifiez la synchronisation et les droits du dossier.' }
 } elseif (!$NoConfigure) {
     Start-Process -FilePath $executable -ArgumentList 'seapilot-drive://configure' -WindowStyle Hidden
 }

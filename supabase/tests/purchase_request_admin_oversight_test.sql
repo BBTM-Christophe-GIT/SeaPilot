@@ -106,7 +106,10 @@ select is(
 );
 
 select is(
-  (select count(*) from public.purchase_request_events where status_label = 'Demande créée'),
+  (select count(*) from public.purchase_request_events
+   where status_label = 'Demande créée' and purchase_request_id = (
+     select id from public.purchase_requests where request_number = 'ADMIN-OVERSIGHT-001'
+   )),
   1::bigint,
   'the administrator can see the validation timeline'
 );

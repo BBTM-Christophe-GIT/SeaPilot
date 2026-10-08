@@ -18,6 +18,7 @@ export interface LiftingVessel {
   id: number; company_id: number; name: string; acronym: string; registration_number: string;
   call_sign: string; registration_port: string;
   illustration_thumbnail_url?: string | null;
+  length_overall?: string | null;
 }
 export interface LiftingItem {
   id: number; company_id: number; vessel_id: number; kind: LiftingKind; reference: string;
@@ -49,6 +50,9 @@ export interface LiftingInspection {
 }
 export function canManageLifting(roles: RoleKey[]): boolean {
   return roles.some((role) => ['admin', 'direction', 'armement'].includes(role));
+}
+export function canRemoveLiftingItem(roles: RoleKey[]): boolean {
+  return canManageLifting(roles) || roles.includes('capitaine');
 }
 export function emptyChecks(): Partial<Record<CheckKey, CheckValue>> {
   return Object.fromEntries(CHECK_KEYS.map((key) => [key, 'pending']));
@@ -82,10 +86,10 @@ export function todayLocal(): string {
 export function formatLiftingDate(date: string): string {
   return date ? date.split('-').reverse().join('/') : '—';
 }
-export function liftingDeadline(date?: string | null, today = todayLocal()): 'expired' | 'soon' | '' {
+export function liftingDeadline(date?: string | null, today = todayLocal(), alertDays = 60): 'expired' | 'soon' | '' {
   if (!date) return '';
   const days = (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86400000;
-  return days < 0 ? 'expired' : days <= 60 ? 'soon' : '';
+  return days < 0 ? 'expired' : days <= alertDays ? 'soon' : '';
 }
 export function entryComplete(entry: InspectionEntry): boolean {
   if (entry.condition === 'pending') return false;

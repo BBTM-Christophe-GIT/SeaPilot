@@ -1,6 +1,7 @@
 import type { PlanningOverview } from './planningQueries';
 import type { PlanningP13Data, PlanningWorkRestCheck } from './planningP13';
 import { buildPlanningExportRows, formatPlanningPerson, getAllPlanningCrewEvents } from './planningModel';
+import { splitPlanningEventByFunction } from './planningFunctions';
 
 export type PlanningExportFormat = 'xlsx' | 'pdf' | 'ics';
 export type PlanningExportKind = 'schedule' | 'sailor' | 'crew_list' | 'handover_sheet' | 'anomalies' | 'work_rest';
@@ -47,7 +48,11 @@ function filteredCrewEvents(context: PlanningExportContext) {
   return getAllPlanningCrewEvents(context.overview).filter((event) => selected(event.personId, context.personIds)
     && selected(event.vesselId, context.vesselIds)
     && event.confirmationStatus !== 'cancelled'
-    && within(event.startsOn, event.endsOn, context.startsOn, context.endsOn));
+    && within(event.startsOn, event.endsOn, context.startsOn, context.endsOn))
+    .flatMap((event) => splitPlanningEventByFunction(event).map((segment, index) => ({
+      ...segment, id: index === 0 ? event.id : `${event.id}-${segment.startsOn}`,
+    })))
+    .filter((event) => within(event.startsOn, event.endsOn, context.startsOn, context.endsOn));
 }
 
 function tablesFor(kind: PlanningExportKind, context: PlanningExportContext): PlanningExportTable[] {

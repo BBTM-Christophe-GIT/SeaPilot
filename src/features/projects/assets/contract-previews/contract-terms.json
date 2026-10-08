@@ -1,0 +1,321 @@
+{
+  "towage": {
+    "source": "contrat-remorquage-bbtm.docx",
+    "sourceSha256": "6cf596b879f1129ea8620b3c05e63e95335780f8da4fd5305d890d9002aad717",
+    "paragraphRange": [
+      43,
+      192
+    ],
+    "sections": [
+      {
+        "title": "Lieu et date de départ",
+        "paragraphs": [
+          "(a) Lieu de départ",
+          "Le Remorqueur doit prendre en charge le Remorqué au lieu défini au (7), à un poste sûr et accessible pour que le Remorqueur puisse y accéder, y opérer et pour que le convoi formé par le Remorqueur et le Remorqué puisse en sortir, et où le Remorqueur est autorisé à prendre en charge le Remorqué conformément à toutes les réglementations locales, le poste devant être préalablement soumis à l'approbation de l'Armateur par l’Affréteur.",
+          "(b) Date de départ",
+          "Le Remorqué doit être mis à disposition du Remorqueur au lieu défini au (7) à la date définie au (8). L’Affréteur devra confirmer le créneau de mise à disposition du Remorqué ainsi que le lieu de la prise en charge au plus tard sept jours avant la date de début du créneau de mise à disposition du Remorqué initialement fixé et devra donner une date précise et engageante dans le créneau initialement prévu au plus tard trois jours avant la date confirmée de début du créneau de mise à disposition du Remorqué, cette date étant alors considérée comme étant la date de départ.",
+          "La date de départ ainsi définie fait foi pour toutes les conséquences découlant des Paiements de pénalité de retard et de tout autre paiement dû ou frais encourus dans l'exécution du présent Accord en cas de non-respect par l’une des Parties de ses obligations relative à l’exécution du Contrat.",
+          "Dans le cas où l’une des Parties anticiperaient une indisponibilité du Remorqueur ou du Remorqué dans le créneau de dates initialement fixé, la Partie à l’origine du décalage de date pourra proposer à l’autre Partie un report du créneau de dates de prise en charge du Remorqué par le Remorqueur. Cette proposition devra être adressée par écrit par la Partie anticipant l’indisponibilité du Remorqueur ou du Remorqué à l’autre Partie, sans délai et, au plus tard, 96 heures avant la date de départ prévue, en indiquant une nouvelle date prévue de la mise à disposition du remorqueur et en demandant à l’autre Partie s'il souhaite exercer sa faculté de résiliation.",
+          "Ce décalage pourra être refusé et le contrat sera alors annulé.",
+          "Cette option d'annulation doit être exercée dans les 48 heures suivant la réception de la notification. En cas d’absence de réponse le troisième jour après la date indiquée dans la notification transmise, la nouvelle date proposée sera considérée comme la nouvelle date validée par les Parties pour commencer le remorquage conformément au présent Contrat."
+        ]
+      },
+      {
+        "title": "Lieu de destination",
+        "paragraphs": [
+          "(a) Le Remorqué sera immédiatement pris en charge par l’Affréteur ou son représentant dûment désigné au lieu de destination défini au (9).",
+          "(b) Le lieu ou le poste où le Remorqueur doit remettre le Remorqué à l’Affréteur ou à son représentant doit être un poste sûr et accessible pour que le Remorqueur puisse y accéder avec le Remorqué et où le Remorqueur est autorisé à accéder avec le Remorqué conformément à toutes les réglementations locales, ce lieu ou ce poste devant être préalablement soumis à l'approbation de l'Armateur par l’Affréteur."
+        ]
+      },
+      {
+        "title": "Route prévisionnelle",
+        "paragraphs": [
+          "Un passage plan pourra être fourni sur demande pour un coût additionnel de 200€ HT."
+        ]
+      },
+      {
+        "title": "Temps libres",
+        "paragraphs": [
+          "Le temps libre accordé pour la connexion de la remorque et pour toute autre opération connexe au total des opérations est défini au (10). Il s’agit d’un maximum, il n’y a pas de minimum.",
+          "Le décompte du temps libre commence lorsque le Remorqueur arrive au lieu de départ défini au (7) même si le remorqué n’ait pas encore disponible.",
+          "Temps libre accordé pour la déconnexion de la remorque et pour toute autre opération connexe est défini au (11). Il s’agit d’un maximum, il n’y a pas de minimum.",
+          "Le décompte du temps libre commence lorsque le convoi arrive au lieu défini au défini au (9).",
+          "En cas de dépassement du temps libre, des indemnités de retard sont dues jusqu'à ce que le Remorqueur et le Remorqué quittent le lieu de départ ou que le Remorqueur soit libre de quitter le lieu de destination."
+        ]
+      },
+      {
+        "title": "Prix et conditions de paiement",
+        "paragraphs": [
+          "(a) L’Affréteur paiera à l’Armateur la somme forfaitaire définit au (14) (ci-après dénommée \"la somme forfaitaire\") hors indemnités diverses.",
+          "(b) La somme forfaitaire est payable aux termes définis au (15).",
+          "(c) Les indemnités de retard ou de stand-by sont définis au (16) et facturées prorata temporis.",
+          "(d) La somme forfaitaire et toutes les autres sommes payables à l’Armateur dans le cadre de l’exécution du présent Contrat sont payables sans déduction ou compensation liée à toute réclamation ou contre-réclamation. Chaque versement des sommes forfaitaires dues est entièrement et irrévocablement gagné au moment où il est dû.",
+          "(e) Toute indemnité de retard due en vertu du présent Contrat sera versée à l’Armateur dès que ces sommes seront dues, sur présentation de la facture.",
+          "(f) Tous les paiements de l’Affréteur doivent être effectués en euros et sur le compte bancaire suivant :",
+          "Titulaire : BENJAMIN BON TRAVAUX MARITIMES",
+          "Banque : CCM LE CONQUET",
+          "IBAN : FR76 1558 9297 8707 2982 7794 016",
+          "BIC : CMBRFR2BXXX"
+        ]
+      },
+      {
+        "title": "Frais supplémentaires et coûts additionnels",
+        "paragraphs": [
+          "(a) L’Affréteur doit désigner ses agents au lieu de départ et au lieu de destination ainsi qu'aux ports d'escale ou de refuge et doit fournir à ces agents les fonds nécessaires afin de prendre en charge tous les de port que l’Affréteur a à sa charge.",
+          "(b) L’Affréteur supportera et paiera au fur et à mesure qu'ils seront dus :",
+          "(i) Tous les frais portuaires, les frais de pilotage, les droits de port et de canal et tous les autres frais de nature similaire perçus ou payables à l'égard du remorqueur et de la remorque.",
+          "(ii) Toutes les taxes ou impôts, droits de douane ou d’octroi, permis, péages ou autres prélèvements dus au titre ou en relation avec l’exécution du présent contrat à l’exception de ceux qui sont normalement dus par l’Armateur en France dans le cadre de l’exploitation du Remorqueur et de son activité commerciale.",
+          "(iii) Le coût des services de tout remorqueur d'assistance lorsque l’Armateur le juge nécessaire ou lorsque cela est prescrit par les autorités portuaires ou toute autre autorité compétente.",
+          "(iv) Tous les coûts et dépenses nécessaires à la préparation du remorquage (y compris les coûts ou dépenses tels que ceux liés au relevage du mouillage du remorquée ou à la mise en place ou au largage des amarres du remorqué).",
+          "(v) Le coût de l'assurance du remorqué est à la charge exclusive de l’Affréteur.",
+          "(c) Pour des raisons pratiques, l’armateur pourra prendre en charge ces frais et les inclure dans la somme forfaitaire (14) ou les refacturés en sus. Cette disposition est précisée au (16).",
+          "(d) Toutes les taxes, charges, coûts et dépenses payables par l’Affréteur seront payés par l’Affréteur directement à ceux qui y ont droit. Si, toutefois, ces taxes, charges, coûts ou dépenses sont effectivement payés par ou pour le compte de l’Armateur (bien que l’Armateur ne soit en aucun cas tenu d'effectuer ces paiements pour le compte de l’Affréteur), l’Affréteur remboursera l’Armateur sur la base du coût réel payé par l’Armateur sur présentation de la facture ou du justificatif de paiement."
+        ]
+      },
+      {
+        "title": "Intérêts",
+        "paragraphs": [
+          "Si les sommes dues en vertu du présent accord ne sont pas payées lorsqu'elles sont dues, des intérêts courent et doivent être payés par l’Affréteur à l’Armateur, sur toutes ces sommes jusqu'à ce que le paiement soit reçu par l'Armateur, les intérêts étant calculé au prorata temporis sur la base d’un intérêt annuel de 5%."
+        ]
+      },
+      {
+        "title": "Passage de la remorque - Equipement de remorquage",
+        "paragraphs": [
+          "Dans le cadre de l’exécution du contrat :",
+          "(a) L’Armateur se charge des opérations de prise en remorque et de restitution du Remorqué au lieu de destination.",
+          "(b) L’Armateur s'engage à fournir gratuitement à l’Affréteur toutes les aussières de remorquage, les brides et autres équipements de remorquage normalement nécessaires à l’exécution du présent contrat. Les dispositions de remorquage sont définies et mises en place par et sous la responsabilité de l’Armateur.",
+          "(c) L’Armateur peut, à sa discrétion, faire un usage raisonnable des engins, de l'énergie, des ancres, des câbles d'ancrage, des équipements de radio, de communication et de navigation et de tous les autres accessoires du Remorqué, sans frais, pendant et aux fins du remorquage ou des autres services à fournir dans le cadre de l’exécution du contrat."
+        ]
+      },
+      {
+        "title": "Permis et autorisations",
+        "paragraphs": [
+          "(a) L’Affréteur doit obtenir à ses frais et fournir à l'Armateur toutes les licences, autorisations et permis nécessaires pour que le convoi constitué du Remorqueur et du Remorqué puisse entreprendre et achever le voyage entre le lieu de départ et le lieu de destination, ainsi que pour entrer et sortir dans/de tout port ou lieu d’escale ou de refuge au cours du voyage envisagé.",
+          "(b) Toute perte ou dépense encourue par l’Armateur en raison du manquement de l’Affréteur à ses obligations définies par la présente clause sera remboursée par l’Affréteur à l’Armateur et, tout retard qui découlerait de ces manquements sera compensé par l’Affréteur qui devra payer à l’Armateur la compensation due en cas de retard définie à l’article 5."
+        ]
+      },
+      {
+        "title": "Etat / Préparation du Remorqué",
+        "paragraphs": [
+          "(a) Préalablement à la date de départ, l’Affréteur doit s’assurer que le Remorqué est, à tous égards, préparé et apte à être remorquée du lieu de départ au lieu de destination, au moment où le remorqueur arrive au lieu de départ et à ce qu'il soit équipé des formes, signaux, feux de navigation et autres feux d'un type requis pour le remorquage.",
+          "(b) L’Affréteur doit fournir à l’Armateur ou au commandant du Remorqueur, à l'arrivée du Remorqueur sur le lieu de départ, un certificat inconditionnel de remorquage établi par une société reconnue d'experts maritimes ou un organisme d'expertise validée par l’assureur du Remorqué.",
+          "(c) Même si un certificat de remorquage est délivré à l’Armateur par l’Affréteur, l’Armateur n’est pas tenu d'effectuer le remorquage avant d'être convaincu, à sa discrétion, que le Remorqué est à tous égards, préparée, et prêt à être remorqué. Cependant, l’Armateur ne pourra pas refuser son approbation sans raison exprimée par écrit à l’Affréteur.",
+          "(d) Aucune inspection du Remorqué par l’Armateur ne constitue une approbation de l'état du Remorqué ni ne peut être considérée comme une renonciation aux engagements susmentionnés pris par l’Affréteur."
+        ]
+      },
+      {
+        "title": "Aptitude à la navigation du Remorqueur",
+        "paragraphs": [
+          "L’Armateur fera preuve de diligence raisonnable pour présenter le Remorqueur au lieu de départ en état de navigabilité et prêt à tous égards à effectuer le remorquage",
+          "."
+        ]
+      },
+      {
+        "title": "Remplacement de la remorque et assistance au convoi formé par le Remorqueur et le Remorqué",
+        "paragraphs": [
+          "(a) Si le câble de remorquage se détache ou se casse au cours du remorquage, l’équipage du Remorqueur doit fournir tous les efforts raisonnables pour reconnecter la remorque et poursuivre l’exécution du présent contrat sans faire demander d’assistance.",
+          "(b) Si, à tout moment, l’Armateur ou le commandant du Remorqueur considère qu'il est nécessaire ou souhaitable de rechercher ou d'accepter des services d’assistance de la part d'un navire ou d'une personne pour le Remorqueur ou le Remorqué ou les deux, l’Affréteur s'engage et garantit, par la présente, que l’Armateur ou l’un de ses représentants dûment mandatés, dont fait partie de commandant du Remorqueur, a la pleine autorité effective de l’Affréteur pour accepter de tels services à des conditions raisonnables."
+        ]
+      },
+      {
+        "title": "Annulation et retrait",
+        "paragraphs": [
+          "(a) À tout moment avant le départ du Remorqueur du lieu de départ, l’Affréteur peut annuler le présent contrat moyennant le paiement des frais d'annulation suivant :",
+          "- 25% du montant total du contrat si l'annulation a lieu avant le départ du Remorqueur vers le lieu de départ",
+          "- 50% du montant total du contrat si l'annulation a lieu après l’arrivée du Remorqueur au le lieu de départ",
+          "(b) Dans le cas où l'opération de remorquage est interrompue après le départ du lieu de départ, mais avant que le remorquage n'arrive au lieu de destination sans faute de la part de l’Armateur, de ses préposés ou de ses agents, l’Armateur a le droit d'être payé et, s'il a déjà été payé, de conserver toutes les sommes payables conformément à l’exécution de l’ensemble du contrat, les indemnités de retard accumulées et tous les autres montants dus en vertu du présent contrat.",
+          "(c) L’Armateur peut, sans préjudice de tout autre recours dont il dispose, laisser le Remorqué en un lieu où l’Affréteur peut en reprendre possession et doit être payé de de la somme forfaitaire éventuellement augmentée de tous les autres paiements dus en vertu du présent Contrat, pour l'un ou plusieurs des motifs suivants :",
+          "(i) S'il y a un ou plusieurs retards (autres que ceux causés par le Remorqueur) au lieu de départ dépassant la durée équivalente à deux fois la durée prévue pour le remorquage augmentée d’une journée calendaire.",
+          "(ii) S'il y a un ou plusieurs retards (autres qu'un retard causé par le Remorqueur) dans un port ou un lieu d'escale ou un refuge la durée équivalente à deux fois la durée prévue pour le remorquage augmentée d’une journée calendaire.",
+          "(iii) Si le locataire n'a pas accepté la restitution du remorqué dans les 7 jours ouvrables suivant l'arrivée du Remorqué au lieu de destination.",
+          "(iv) Si une quelconque somme due en vertu du présent Contrat n'a pas été payée dans un délai de sept (7) jour calendaire à compter de la date d'exigibilité de ces sommes.",
+          "L’Armateur doit, si possible, donner au locataire un préavis de 48 heures (samedi, dimanche et jours fériés exclus) de son intention de se retirer.",
+          "(e) Si le Remorqueur n'est pas prêt à commencer le remorquage au plus tard à minuit à la date de départ prévue et validée par les Parties, éventuellement reportée à la demande de l’une des Partie, sous réserve que ce report ait été validé par les deux Parties, l’Affréteur aura la possibilité de résilier le présent contrat et pourra réclamer le remboursement des sommes déjà payées à l’Armateur."
+        ]
+      },
+      {
+        "title": "Changement de route ou réduction de vitesse",
+        "paragraphs": [
+          "(a) Si, au cours du Remorquage, le remorqueur entre dans un port ou un lieu, cherche à s'abriter, est retenu ou dévie de sa route initiale, ou ralentit parce que l'Armateur ou le capitaine du Remorqueur considère raisonnablement que",
+          "(i) le remorqué n'est pas apte à être remorquée ou",
+          "ii) le remorqué ne peut être remorquée à la vitesse initialement envisagée par l'armateur ou",
+          "(iii) la remorque nécessite un réarrangement, ou",
+          "(iv) des réparations, des modifications ou des équipements supplémentaires sont nécessaires pour sauvegarder le convoi constitué du Remorqueur et du Remorqué et permettre le remorquage de du convoi jusqu'à sa destination ; ou",
+          "(v) il ne serait pas prudent de poursuivre le remorquage en raison des conditions météorologiques actuelles ou prévues, ou",
+          "en raison de toute autre raison valable et indépendante de la volonté de l’Armateur ou du commandant de Remorqueur, ou en raison de tout retard causé par l’Affréteur ou à sa demande, le présent contrat reste en vigueur et l’Armateur a le droit de recevoir de l’Affréteur une compensation supplémentaire au taux horaire mentionné à l’article 6 pour tout le temps passé dans le port ou le lieu en question et pour tout le temps passé par le remorqueur en mer en sus du temps qui aurait été passé si la navigation à vitesse réduite ou le changement de route n'avait pas eu lieu.",
+          "(b) Le remorqueur est à tout moment libre de se porter au secours de tout navire en détresse pour sauver des vies ou des biens, ou de faire escale dans tout port ou endroit pour se ravitailler en soutes, fournitures ou en tout autre produit nécessaire, pour réparer, ou pour débarquer des marins, mais s'il effectue un remorquage, le Remorqueur doit laisser la Remorqué en lieu sûr et, pendant cette période, le présent accord reste pleinement en vigueur.",
+          "(c) Le Remorqueur a la liberté de se conformer à tous les ordres ou instructions concernant le départ, l'arrivée, les itinéraires, les ports d'escale, les arrêts, la destination, la livraison, les réquisitions ou autres, donnés par l’état du pavillon sous lequel le Remorqueur ou la Remorque navigue, ou toute entité ou toute personne agissant ou prétendant agir sous l'autorité de cet état, par le comité ou la personne ayant, selon les termes de l'assurance pour risques de guerre du Remorqueur, le droit de donner de tels ordres ou instructions et si, en raison de ces ordres ou instructions et en conformité avec ceux-ci, quelque chose est fait ou n'est pas fait, cela ne sera pas considéré comme un changement de route ou de lieu de destination, la restitution du Remorqué à l’Affréteur, dans le lieu indiqué conformément  à ces ordres ou instructions sera alors considéré comme une exécution de ce Contrat et la somme forfaitaire et/ou toutes les autres sommes dues seront payées à l’Armateur en conséquence.",
+          "(d) Toute dérogation, de quelque nature qu'elle soit, par le Remorqueur ou par l'Armateur, non expressément autorisée par les termes et conditions du présent Accord, n'équivaut pas à une annulation de ce Contrat et le Contrat restera en vigueur et de plein effet nonobstant une telle dérogation."
+        ]
+      },
+      {
+        "title": "Limite de responsabilité",
+        "paragraphs": [
+          "1. (a) L’Armateur indemnisera l’Affréteur pour toute responsabilité ou toute réclamation résultant d'une blessure ou d'un décès survenu au cours du remorquage ou de tout autre service prévu par le présent Contrat de l'une des personnes suivantes :",
+          "(i) Le commandant et les membres de l'équipage du Remorqueur et tout autre employé ou représentant de l’Armateur présent à bord du Remorqueur ou du Remorqué ;",
+          "(iii) Toute autre personne présente à bord du Remorqueur ou du Remorqué qui n'est pas un employé ou représentant de l’Affréteur ou qui ne se trouve à bord du Remorqueur ou du Remorqué pour le compte ou à la demande de l’Affréteur.",
+          "(b) L’Affréteur indemnisera l’Armateur pour toute responsabilité ou toute réclamation résultant d'une blessure ou d'un décès survenant pendant le remorquage ou tout autre service prévu par le présent Contrat de l'une des personnes suivantes :",
+          "(i) Le commandant et les membres de l'équipage du Remorqué et tout autre employé ou représentant de l’Affréteur ;",
+          "(ii) Toute autre personne se trouvant à bord du Remorqué à quelque fin que ce soit, à l'exception de toute personne que l’Armateur met à disposition à bord du Remorque conformément à ses obligations en vertu du présent Contrat.",
+          "2. (a) Les éléments suivants sont à la charge exclusive de l’Armateur sans aucun recours contre l’Affréteur, ses représentants ou ses agents, que ces pertes ou responsabilités soient dus, ou non, à une annulation du Contrat, à une négligence ou à toute autre faute de la part de l’Affréteur, de ses représentants ou de ses agents :",
+          "(i) Les pertes ou dommages de quelque nature que ce soit, quelle que soit la manière dont ils sont causés ou subis par le Remorqueur ou tout équipement à bord du remorqueur.",
+          "(ii) Les pertes ou dommages de quelque nature que ce soit causés ou subis par des tiers ou leurs biens en raison du contact avec le Remorqueur ou de l'obstruction créée par la présence du Remorqueur.",
+          "(iii) Les pertes ou dommages de quelque nature que ce soit subis par le Remorqueur ou par des tiers en conséquence des pertes ou dommages visés aux points (i) et (ii) ci-dessus.",
+          "(iv) Toute responsabilité relative à l'enlèvement de l'épave ou aux frais de déplacement, d'éclairage ou de balisage du Remorqueur ou à la prévention ou à la réduction de la pollution provenant du Remorqueur.",
+          "L’Armateur indemnisera l’Affréteur pour toute responsabilité vis-à-vis d’un tiers ou toute réclamation d'un tiers découlant de ces pertes ou dommages mais l’Armateur ne sera en aucun cas responsable des pertes ou des dommages subis par l’Affréteur ou causés à ou subis par le Remorqué en conséquence de pertes ou de dommages causés à ou subis par le Remorqueur ou tout équipement à bord du remorqueur.",
+          "(b) Les éléments suivants seront à la charge exclusive de l’Affréteur sans aucun recours contre l’Armateur, ses employés ou ses représentants, qu'ils soient dus, ou non, à une rupture de contrat, à une négligence ou à une faute quelconque de la part de l’Armateur, de ses employés ou de ses représentants :",
+          "(i) Perte ou dommage de quelque nature que ce soit, quelle que soit la manière dont il a été causé ou subi par le Remorqué.",
+          "(ii) Les pertes ou dommages de quelque nature que ce soit causés ou subis par des tiers ou leurs biens en raison d'un contact avec le Remorqué ou d'une obstruction créée par la présence du Remorqué.",
+          "(iii) Les pertes ou dommages de quelque nature que ce soit subis par l’Affréteur ou par des tiers en conséquence des pertes ou dommages visés aux points (i) et (ii) ci-dessus.",
+          "(iv) Toute responsabilité relative à l'enlèvement d'épave ou aux frais de déplacement, d'éclairage ou de balisage du Remorqué ou à la prévention ou à la réduction de la pollution provenant du Remorqué.",
+          "L’Affréteur indemnisera l’Armateur pour toute responsabilité vis-à-vis d’un tiers ou toute réclamation d'un tiers découlant de ces pertes ou dommages mais l’Affréteur ne sera en aucun cas responsable des pertes ou des dommages subis par l’Armateur ou causé ou subi par le Remorqueur en conséquence d'une perte ou d'un dommage, quel qu'il soit, causé ou subi par le Remorqué.",
+          "3. Sous réserve des dispositions des clauses 10, 11, 12 et 14, ni l’Armateur ni l’Affréteur ne seront responsables envers l'autre Partie du manque à gagner, de la perte d'utilisation, de la perte de production ou de tout autre dommage indirect ou consécutif pour quelque raison que ce soit.",
+          "4. Nonobstant toute disposition contraire du présent Contrat, l’Armateur bénéficiera de toutes les limitations et exonérations de responsabilité accordées aux Propriétaires de Navires par toute loi ou règle de droit en vigueur, et les mêmes avantages s'appliqueront quelle que soit les termes du présent Contrat."
+        ]
+      },
+      {
+        "title": "Clause de l'Himalaya",
+        "paragraphs": [
+          "Toutes les exceptions, exemptions, protections, immunités, limitations de responsabilité, garanties, privilèges et conditions accordées ou prévues par le présent Contrat ou par toute loi, règlement ou réglementation applicable au bénéfice de l’Armateur ou de l’Affréteur s'appliqueront également et bénéficieront aux sociétés mères, affiliées, apparentées et filiales de l’Armateur ou de l‘Affréteur; aux contractants, sous sous-traitants, clients, co-contractants et clients de l’Armateur ou de l’Affréteur (ayant une relation contractuelle avec l’Affréteur, et toujours en lien avec le travail ou le projet pour lequel le Navire est employé); leurs employés respectifs et leurs assureurs respectifs.",
+          "L’Armateur ou l’Affréteur seront réputés agir comme agent ou mandataire de et pour le compte de toutes ces personnes ou parties concernées mentionnées ci-dessus mais seulement et uniquement dans le but d'obtenir l'extension de ces bénéfices à ces personnes et parties."
+        ]
+      },
+      {
+        "title": "Force majeure",
+        "paragraphs": [
+          "(a) Si, en raison de guerre, émeute, incendie, grèves internes ou externes, lock-out, occupation des locaux du d’une des parties, intempéries, tremblement de terre, inondation, dégât des eaux, restrictions légales ou gouvernementales, modifications légales ou réglementaires des formes de commercialisation, les accidents de toutes natures, épidémie, pandémie, maladie touchant plus de quinze (15) % du personnel de l’une des parties dans une période de deux mois consécutifs, absence de fourniture d’énergie, arrêt partiel ou total du réseau Internet et, de manière plus générale, des réseaux de télécommunications privés ou publics, blocages de routes et impossibilités d’approvisionnement et tout autre cas indépendant de la volonté expresse des parties empêchant l’exécution normale du présent Contrat, y compris saisie du Remorqué en vertu d'une procédure judiciaire ou pour toute autre cause indépendante de la volonté de l’Armateur, il était impossible ou dangereux ou commercialement irréalisable pour le Remorqueur ou le Remorqué ou les deux de quitter ou de tenter de quitter le lieu de départ ou tout port ou lieu d'escale ou de refuge ou d'atteindre ou d'entrer ou de tenter d'atteindre ou d'entrer dans le port ou le lieu de destination du convoi et d'y livrer le Remorqué et de repartir, pour chacun de ces cas, en toute sécurité et sans retard déraisonnable, l’Armateur peut laisser le Remorqué au lieu de départ ou à tout autre port ou lieu où l’Affréteur peut en prendre possession, ce qui sera considéré comme une exécution en bonne et due forme du présent Contrat par l’Armateur et toutes les sommes impayées et tous les frais supplémentaires de livraison à ce lieu et tous les frais supplémentaires encourus par l’Armateur seront alors dus et payables par l’Affréteur.",
+          "(b) Si l'exécution du présent Contrat ou le voyage vers le lieu de départ exige, dans le cours normal du remorquage, que le Remorqueur et/ou le Remorque traversent ou se rapprochent d'une zone où, après la conclusion du présent Contrat, il existe ou semble exister un danger que cette zone soit bloquée ou que le passage soit restreint ou rendu dangereux en raison de la guerre, d'actes de terrorisme, de guerre civile, de restrictions légales ou gouvernementales, d'insurrection, d'émeutes ou de troubles civils ou d'autres dangers de nature similaire :",
+          "(i) Si le remorqueur n'a pas pénétré dans cette zone en route vers le lieu de départ, ou si, après y avoir pénétré, il y est resté bloqué, l’Affréteur devra payer une indemnité de retard au taux défini ci-dessus (article 6) pour chaque jour de retard qui en résulte. Si le retard est supérieur à 14 jours, l'une ou l'autre des parties aura le droit de résilier le présent contrat par écrit, auquel cas, à l'exception des obligations déjà contractées, aucune des parties ne sera plus tenue envers l'autre, mais l’Armateur ne sera pas tenu de rembourser à l’Affréteur les paiements déjà effectués et tous les montants dus resteront exigibles.",
+          "(ii) Si le remorqueur et le remorqué, alors qu'ils font route vers le lieu de destination et ne sont pas entrés dans cette zone, l’affréteur devra payer une indemnité de retard d’un montant calculé telle que défini à l’article 6 du présent Contrat pour chaque jour de prolongation du remorquage en raison de l'attente de la libération et/ou de l'état de cette zone et/ou de la nécessité d'emprunter une route plus longue pour éviter ou passer cette zone en toute sécurité.",
+          "(iii) Si le remorqueur et le remorqué, alors qu'ils sont en route vers le lieu de destination, sont restés bloqués dans cette zone, l’affréteur devra payer une indemnité de retard d’un montant calculé telle que défini à l’article 6 du présent Contrat pour chaque jour de retard qui en résulte. Si le retard est supérieur à 14 jours, l'une ou l'autre des parties aura le droit de résilier le présent contrat par écrit, auquel cas, à l'exception des obligations déjà contractées, aucune des parties ne sera plus tenue envers l'autre, mais l’Armateur ne sera pas tenu de rembourser à l’Affréteur les paiements déjà effectués et tous les montants dus resteront exigibles."
+        ]
+      },
+      {
+        "title": "Privilège",
+        "paragraphs": [
+          "Sans préjudice de tout autre droit qu'il peut avoir, l’Armateur, par lui-même ou par l’un de ses employés ou représentant ou de quelque façon que ce soit, est en droit d'exercer un privilège sur le remorqué pour toutes sommes dues par l’Affréteur ou réclamations à l’encontre de l’Affréteur au titre du présent contrat et est en droit, aux fins de l'exercice de ce privilège, de prendre et/ou de garder possession du Remorqué, étant établi que l’Affréteur devra payer à l’Armateur tous les coûts et dépenses raisonnables, quels qu'ils soient, engagés par ou pour le compte de l’Armateur dans l'exercice, la tentative ou la préparation de l'exercice de ce privilège, et que l’Armateur est en droit de recevoir de l’Affréteur l'indemnité de retard d’un montant calculé telle que défini à l’article 6 du présent Contrat pour tout retard du Remorqueur en résultant."
+        ]
+      },
+      {
+        "title": "Généralités",
+        "paragraphs": [
+          "(a) Si, au moment de la conclusion du présent contrat, l’Affréteur n'est pas le propriétaire du Remorqué, l’Affréteur déclare expressément qu'il est autorisé à conclure et conclut le présent contrat pour et au nom du propriétaire dudit Remorqué et confirme que l’Affréteur et le propriétaire du Remorqué sont liés conjointement et solidairement par l’ensemble des conditions du présent Contrat.",
+          "(b) Aux fins du présent accord, à moins que le contexte ne l'exige autrement, le singulier inclut le pluriel et vice versa.",
+          "(c) Toute prorogation de délai accordée par l’Armateur à l’Affréteur ou toute indulgence manifestée à l'égard des délais fixés dans le présent Contrat ne constitue pas une renonciation au droit de l’Armateur, en vertu du présent Contrat, d'agir en cas de non-respect des délais par l’Affréteur.",
+          "(d) À l'exception des dispositions relatives à l'indemnisation prévues à la clause 18 du présent accord, toute réclamation pouvant résulter du présent accord ou de tout remorquage ou autre service à effectuer en vertu du présent accord, ou s'y rapportant, doit être notifiée par télex, câble ou autre moyen écrit dans les 6 mois suivant la livraison du remorquage ou la fin du remorquage ou autre service pour quelque raison que ce soit, et toute action en justice doit être intentée dans un délai d'un an à compter de la date à laquelle la cause de l'action a pris naissance. Si l'une ou l'autre de ces conditions n'est pas respectée, la réclamation et tous les droits, quels qu'ils soient, seront absolument prescrits et éteints."
+        ]
+      },
+      {
+        "title": "Droit et juridiction",
+        "paragraphs": [
+          "Le présent contrat sera soumis au droit français et régi par celui-ci. Tout litige ou différend pouvant découler du présent contrat ou des services à exécuter dans le cadre de l’exécution de celui-ci sera soumis exclusivement à la Tribunal de commerce du Havre. Aucune procédure ne sera engagée dans un autre état ou auprès d’une autre juridiction, à l’exception de la demande d’une saisie conservatoire qui serait engagé par l’une des parties à l’encontre de l’autre partie."
+        ]
+      },
+      {
+        "title": "Clauses additionnelles",
+        "paragraphs": [
+          "Frais de port et de pilotage inclus à Cherbourg uniquement."
+        ]
+      }
+    ]
+  },
+  "bareboat": {
+    "source": "contrat-affretement-bbtm.docx",
+    "sourceSha256": "5292648b23660b6c71ae1e64ae10fef49916508802fb53e388c7a5396bfafba0",
+    "paragraphRange": [
+      43,
+      88
+    ],
+    "sections": [
+      {
+        "title": "Préambule :",
+        "paragraphs": [
+          "Ce contrat est établi afin de définir les termes de l'affrètement coque nue du navire dans la case (4). Les termes du présent contrat prévalent sur tout autre document contractuel (Bon de commande, Conditions Générales,)."
+        ]
+      },
+      {
+        "title": "Article 1 : Généralités",
+        "paragraphs": [
+          "Par le présent contrat d'affrètement \"coque nue\", le propriétaire (2) s'engage, contre le paiement d'un loyer (13), à mettre, pour un temps défini minimal (11) assortis d’options de prolongation (12), à la disposition de l'affréteur (3), le navire sans équipage, mais avec matériel de sécurité réglementaire et visite à jour."
+        ]
+      },
+      {
+        "title": "Article 2 : Navire",
+        "paragraphs": [
+          "À la suite de discussions préalables, l’affréteur accepte le navire (4) et confirme que celui-ci correspond à ses besoins."
+        ]
+      },
+      {
+        "title": "Article 3 : Règlement",
+        "paragraphs": [
+          "La facturation est établi sur un rythme mensuel (fin de mois).",
+          "Les paiements devront être effectués dans un délai de 30 jours suivant la réception de la facture.",
+          "Le fuel est approvisionné par le propriétaire et refacturé Ad Cost à l’affréteur."
+        ]
+      },
+      {
+        "title": "Article 6 : Obligations de l'affréteur",
+        "paragraphs": [
+          "L'affréteur s'engage à :",
+          "Utiliser le navire conformément à la législation en vigueur, aux capacités du navire et consignes transmises par le propriétaire.",
+          "Payer le loyer dans les délais convenus.",
+          "Fournir à ses frais, un poste à quai sûr et adapté au navire.",
+          "Assurer la maintenance préventive conformément aux consignes transmises par le propriétaire.",
+          "A payer la franchise d’assurance en lieu et place du propriétaire en cas de recours à cette dernière."
+        ]
+      },
+      {
+        "title": "Article 7 : Obligations du propriétaire",
+        "paragraphs": [
+          "Le propriétaire s'engage à :",
+          "Mettre le navire à la disposition de l'affréteur en bon état de fonctionnement.",
+          "Maintenir les titres de navigation et de sécurité à jour tout au long de la durée du contrat.",
+          "Assurer le navire et ses occupants.",
+          "Assurer la maintenance nécessaire du navire.",
+          "Fournir et payer les équipages.",
+          "Avitailler le fuel pour le compte de l’affréteur."
+        ]
+      },
+      {
+        "title": "Article 8 : Résiliation",
+        "paragraphs": [
+          "Le contrat peut être résilié par l'une ou l'autre des parties en cas de :",
+          "Non-paiement du loyer dans un délai de 5 jours après la date d’échéance de la facture due.",
+          "Manquement aux obligations contractuelles.",
+          "L’affréteur a la faculté de terminer l’affrétement avant la fin de la période ferme, avec un préavis de 2 jours. Une indemnité de fin de contrat égal à 50% du nombre de jours d’affrètement fermes restant sera alors payée par l’affréteur au propriétaire."
+        ]
+      },
+      {
+        "title": "Article 9 : Recours des tiers",
+        "paragraphs": [
+          "L’affréteur garantit le propriétaire contre tous recours des tiers qui sont la conséquence de l'exploitation du navire pendant la validité du présent contrat.",
+          "Toutefois, le propriétaire s’engage à effectuer toutes les déclarations d’assurance utiles à l’assureur P&I du navire (4), pour le compte et le bénéfice de l’affréteur, chaque fois que la réclamation du tiers pourra être couverte par cette assurance, le contraire devant être dûment justifié par le propriétaire.",
+          "En cas d’engagement de l’assurance du propriétaire pour le compte de l’affréteur, la franchise sera payée par l’affréteur ainsi que les conséquences tarifaires sur les primes futures."
+        ]
+      },
+      {
+        "title": "Article 10 : Etat des lieux, Remise en état",
+        "paragraphs": [
+          "Un état des lieux contradictoire est réalisé entre le propriétaire et l’affréteur en début de contrat. Cet état des lieux peut être réalisé à distance via échange de photos et documents ou en présentiel avec un expert indépendant. Dans ce cas les frais d’expertise sont à la charge de l’affréteur.",
+          "A la fin du contrat, le navire doit être restitué dans le même état que lors de sa livraison. Les travaux de remise en état sont à la charge de l’affréteur. Pendant les travaux de remise en état, l’affrètement se poursuit avec paiement du loyer prévu à la box 13."
+        ]
+      },
+      {
+        "title": "Article 11 : Utilisation et désordres",
+        "paragraphs": [
+          "Lors d’un affrètement coque nue, le propriétaire ne peut être tenu responsable des désordres mécaniques et techniques qui pourraient intervenir lors de l’utilisation du navire par l’affréteur.",
+          "Néanmoins dans le cas où le navire deviendrait inutilisable ou utilisable en un mode dégradé, consécutivement à un problème technique, le propriétaire s’engage à assister l’affréteur avec tout son savoir faire et sa connaissance pour résoudre les désordres dans les meilleurs délais.",
+          "Les problèmes techniques qui interviendraient lors de l’affrètement et limiteraient l’utilisation du navire ne suspend pas le contrat le contrat d’affrétement et les obligations de l’affréteur vis-à-vis du propriétaire.",
+          "Pour limiter ces risques, le propriétaire remet à l’affréteur un mode d’emploi avec les vérifications et entretiens périodiques à réaliser. Le propriétaire peut aussi remettre à l’affréteur un stock de pièces de rechanges et consommables. Dans ce cas, les pièces et consommables sont refacturés au fur et à mesure de leur utilisation."
+        ]
+      },
+      {
+        "title": "Article 12 : Dispositions générales",
+        "paragraphs": [
+          "Loi applicable : Le présent contrat est régi par le droit français.",
+          "Litiges : En cas de litige, les parties conviennent de soumettre leur différend au tribunal de Commerce de LE HAVRE"
+        ]
+      }
+    ]
+  }
+}

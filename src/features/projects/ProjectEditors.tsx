@@ -54,7 +54,7 @@ import {
   type ProjectDocumentCategory,
 } from './projectDocumentCategories';
 import {
-  BAREBOAT_CONTRACT_TYPE,
+  isCharterContractType,
   COMMERCIAL_OFFER_CONTRACT_TYPE,
   BIMCO_CONTRACT_TYPE,
   DEFAULT_BAREBOAT_OWNER_IDENTITY,
@@ -68,7 +68,7 @@ import {
   withBareboatContractDefaults,
   withTowageContractDefaults,
 } from './projectContractOptions';
-import { BIMCO_P144_GROUPS } from './projectContractModels';
+import { BIMCO_P144_BUSINESS_GROUPS } from './projectContractModels';
 import {
   COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY,
   COMMERCIAL_CONDITIONS_DESCRIPTION_KEY,
@@ -251,7 +251,7 @@ export function projectToWriteInput(
     isRovSupport: project.isRovSupport,
     isDivingSupport: project.isDivingSupport,
     ownerIdentity: contract?.ownerIdentity
-      || (contractType === BAREBOAT_CONTRACT_TYPE ? DEFAULT_BAREBOAT_OWNER_IDENTITY : DEFAULT_PROJECT_OWNER_IDENTITY),
+      || (isCharterContractType(contractType) ? DEFAULT_BAREBOAT_OWNER_IDENTITY : DEFAULT_PROJECT_OWNER_IDENTITY),
     vesselAssignmentLimit: contract?.vesselAssignmentLimit || '',
     extensionCount: contract?.extensionCount ?? null,
     extensionDuration: contract?.extensionDuration ?? null,
@@ -268,7 +268,7 @@ export function projectToWriteInput(
     maxAuditPeriod: contract?.maxAuditPeriod || '',
     supplytimeData: contractType === TOWAGE_CONTRACT_TYPE
       ? withTowageContractDefaults(savedContractData)
-      : contractType === BAREBOAT_CONTRACT_TYPE
+      : isCharterContractType(contractType)
         ? withBareboatContractDefaults(savedContractData)
         : savedContractData,
     expectedUpdatedAt: project.updatedAt,
@@ -508,7 +508,7 @@ export function ProjectEditor({
   const normalizedContractType = normalizeProjectContractType(form.contractType);
   const isCommercialOffer = normalizedContractType === COMMERCIAL_OFFER_CONTRACT_TYPE;
   const isTowage = normalizedContractType === TOWAGE_CONTRACT_TYPE;
-  const isBareboat = normalizedContractType === BAREBOAT_CONTRACT_TYPE;
+  const isCharter = isCharterContractType(normalizedContractType);
   const isBimco = normalizedContractType === BIMCO_CONTRACT_TYPE;
   const commercialConditionsMode = getCommercialConditionsMode(form.supplytimeData);
   const commercialConditionAttachmentDrafts = projectAttachmentDrafts.filter((draft) => (
@@ -581,7 +581,7 @@ export function ProjectEditor({
   }, [client]);
 
   useEffect(() => {
-    if (!isBareboat) {
+    if (!isCharter) {
       setVesselCertificates(undefined);
       setCertificateLoadError('');
       return;
@@ -607,11 +607,15 @@ export function ProjectEditor({
         if (active) setCertificateLoadError('Impossible de charger les titres administratifs du navire.');
       });
     return () => { active = false; };
-  }, [client, form.primaryVesselId, isBareboat]);
+  }, [client, form.primaryVesselId, isCharter]);
 
   useEffect(() => {
-    if (activeStep === 'offer' || activeStep === 'bimco') setActiveStep(contractStep);
-  }, [contractStep]);
+    setActiveStep((current) => (
+      current === 'offer' || current === 'bimco' || (!isBimco && current === 'billing')
+        ? contractStep
+        : current
+    ));
+  }, [contractStep, isBimco]);
 
   function update<K extends keyof ProjectWriteInput>(key: K, value: ProjectWriteInput[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -682,23 +686,19 @@ export function ProjectEditor({
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage('');
+    const submitter = (event.nativeEvent as SubmitEvent).submitter;
+    const submittedForm = submitter instanceof HTMLButtonElement && submitter.value === 'draft'
+      ? { ...form, status: 'Non validé' }
+      : form;
     const operationVesselIds = [form.primaryVesselId, form.secondaryVesselId]
       .filter((vesselId): vesselId is number => vesselId !== null);
-    if (!project) {
-      const missingOperationFields = [
-        !form.primaryVesselId ? 'le navire principal' : '',
-        !form.deliveryAt ? 'la livraison' : '',
-        !form.redeliveryAt ? 'la restitution' : '',
-      ].filter(Boolean);
-      if (missingOperationFields.length > 0) {
-        setActiveStep(!form.deliveryAt || !form.redeliveryAt ? 'planning' : 'billing');
-        setErrorMessage(
-          `Pour créer l’opération dans le planning, renseignez ${missingOperationFields.join(', ')}.`,
-        );
-        return;
-      }
+    const canScheduleOperation = Boolean(form.primaryVesselId && form.deliveryAt && form.redeliveryAt);
+    if (!project && !canScheduleOperation && (initialOperationFiles.length > 0 || initialOperationForm?.description.trim())) {
+      setActiveStep('planning');
+      setErrorMessage('Pour conserver la mission ou les documents de l’opération, renseignez le navire, la livraison et la restitution. Pour un projet sans dates, reportez la mission dans Identification et les pièces jointes dans Documents, puis retirez-les de la première opération.');
+      return;
     }
-    const automaticOperation = !project && initialOperationForm ? {
+    const automaticOperation = !project && initialOperationForm && canScheduleOperation ? {
       ...initialOperationForm,
       description: initialOperationForm.description.trim() || projectDescriptionToPlainText(form.description),
       endsOn: dateOnly(form.redeliveryAt),
@@ -711,27 +711,27 @@ export function ProjectEditor({
     try {
       const isCommercialOffer = normalizeProjectContractType(form.contractType) === COMMERCIAL_OFFER_CONTRACT_TYPE;
       const isTowageContract = normalizeProjectContractType(form.contractType) === TOWAGE_CONTRACT_TYPE;
-      const isBareboatContract = normalizeProjectContractType(form.contractType) === BAREBOAT_CONTRACT_TYPE;
-      const usesDirectHire = isCommercialOffer || isTowageContract || isBareboatContract;
+      const isCharterContract = isCharterContractType(form.contractType);
+      const usesDirectHire = isCommercialOffer || isTowageContract || isCharterContract;
       const effectiveHirePeriods = usesDirectHire ? [] : hirePeriods;
       const firstHirePeriod = [...effectiveHirePeriods].sort((left, right) => left.startsOn.localeCompare(right.startsOn))[0];
       const projectCoreChanged = !project
-        || projectCoreSnapshot(form) !== projectCoreSnapshot(initialForm);
+        || projectCoreSnapshot(submittedForm) !== projectCoreSnapshot(initialForm);
       const projectContractChanged = !project
         || !contract
         || projectContractSnapshot(form) !== projectContractSnapshot(initialForm);
       const hirePeriodsChanged = !project
         || hirePeriodsSnapshot(effectiveHirePeriods) !== hirePeriodsSnapshot(initialHirePeriods);
       const formWithEffectiveHire = firstHirePeriod ? {
-        ...form,
+        ...submittedForm,
         charterHire: firstHirePeriod.charterHire,
         hireCurrency: firstHirePeriod.hireCurrency,
         hireUnit: firstHirePeriod.hireUnit,
       } : usesDirectHire ? {
-        ...form,
+        ...submittedForm,
         hireCurrency: 'EUR',
-        hireUnit: isCommercialOffer || isBareboatContract ? 'jour' : '',
-      } : form;
+        hireUnit: isCommercialOffer || isCharterContract ? 'jour' : '',
+      } : submittedForm;
       const result = projectCoreChanged
         ? await saveProject(client, formWithEffectiveHire)
         : {
@@ -834,6 +834,35 @@ export function ProjectEditor({
     setClientEditorOpen(false);
   }
 
+  const primaryVesselSelect = (
+    <select id="project-primary-vessel" onChange={(event) => update('primaryVesselId', optionalNumber(event.target.value))} value={form.primaryVesselId ?? ''}>
+      <option value="">Non renseigné</option>
+      {eligibleVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>)}
+    </select>
+  );
+  const vesselFields = (
+    <>
+      <Field label={isCharter ? '4. Navire affrété *' : 'Navire principal *'} wide={isCharter}>
+        {primaryVesselSelect}
+      </Field>
+      {!isTowage && !isCharter ? (
+        <Field label="Navire secondaire">
+          <select onChange={(event) => update('secondaryVesselId', optionalNumber(event.target.value))} value={form.secondaryVesselId ?? ''}>
+            <option value="">Non renseigné</option>
+            {eligibleVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>)}
+          </select>
+        </Field>
+      ) : null}
+    </>
+  );
+  const operationSupportFields = (
+    <>
+      <Field label="Zone d’opération" wide><textarea onChange={(event) => update('operationArea', event.target.value)} value={form.operationArea} /></Field>
+      <label className="project-editor-check"><input checked={form.isRovSupport} onChange={(event) => update('isRovSupport', event.target.checked)} type="checkbox" /> Support ROV</label>
+      <label className="project-editor-check"><input checked={form.isDivingSupport} onChange={(event) => update('isDivingSupport', event.target.checked)} type="checkbox" /> Support plongée</label>
+    </>
+  );
+
   return (
     <div className="project-editor-backdrop">
       <section aria-label={project ? 'Modifier le projet' : 'Créer un projet'} aria-modal="true" className="project-editor is-project-assistant" role="dialog">
@@ -852,7 +881,32 @@ export function ProjectEditor({
             <aside aria-label="Étapes de création du projet">
               <span>PARCOURS PROJET</span>
               <strong>{nextProjectCode}</strong>
-              {assistantSteps.map((step, index) => {
+              <label className="project-assistant-contract-type">
+                <span>Type de contrat</span>
+                <select
+                  aria-label="Type de contrat"
+                  onChange={(event) => {
+                    const contractType = event.target.value;
+                    setForm((current) => ({
+                      ...current,
+                      contractType,
+                      ownerIdentity: isCharterContractType(contractType)
+                        && (!current.ownerIdentity || current.ownerIdentity === DEFAULT_PROJECT_OWNER_IDENTITY)
+                        ? DEFAULT_BAREBOAT_OWNER_IDENTITY
+                        : current.ownerIdentity,
+                      supplytimeData: normalizeProjectContractType(contractType) === TOWAGE_CONTRACT_TYPE
+                        ? withTowageContractDefaults(current.supplytimeData)
+                        : isCharterContractType(contractType)
+                          ? withBareboatContractDefaults(current.supplytimeData)
+                          : current.supplytimeData,
+                    }));
+                  }}
+                  value={normalizedContractType}
+                >
+                  {PROJECT_CONTRACT_TYPES.map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </label>
+              {assistantSteps.filter((step) => isBimco || step.id !== 'billing').map((step, index) => {
                 const Icon = step.icon;
                 const isActive = activeStep === step.id;
                 return (
@@ -872,32 +926,7 @@ export function ProjectEditor({
               })}
             </aside>
             <main>
-          <section className="project-contract-choice" aria-label="Choix du type de contrat">
-            <label>
-              <span>Type de contrat</span>
-              <select
-                aria-label="Type de contrat"
-                onChange={(event) => {
-                  const contractType = event.target.value;
-                  setForm((current) => ({
-                    ...current,
-                    contractType,
-                    ownerIdentity: normalizeProjectContractType(contractType) === BAREBOAT_CONTRACT_TYPE
-                      && (!current.ownerIdentity || current.ownerIdentity === DEFAULT_PROJECT_OWNER_IDENTITY)
-                      ? DEFAULT_BAREBOAT_OWNER_IDENTITY
-                      : current.ownerIdentity,
-                    supplytimeData: normalizeProjectContractType(contractType) === TOWAGE_CONTRACT_TYPE
-                      ? withTowageContractDefaults(current.supplytimeData)
-                      : normalizeProjectContractType(contractType) === BAREBOAT_CONTRACT_TYPE
-                        ? withBareboatContractDefaults(current.supplytimeData)
-                        : current.supplytimeData,
-                  }));
-                }}
-                value={normalizedContractType}
-              >
-                {PROJECT_CONTRACT_TYPES.map((value) => <option key={value} value={value}>{value}</option>)}
-              </select>
-            </label>
+          <section className="project-assistant-summary" aria-label="Résumé du projet">
             <p><strong>{form.title || 'Projet sans titre'}</strong><span>{availableClients.find((item) => item.id === form.clientId)?.name || 'Client à renseigner'}</span></p>
           </section>
           <fieldset hidden={activeStep !== 'identification'} id="project-step-identification">
@@ -910,7 +939,7 @@ export function ProjectEditor({
               </Field>
               <div className="project-editor-client-field">
                 <div className="project-editor-field-label">
-                  <span>{isTowage || isBareboat ? '2. Client / affréteur' : 'Client / affréteur'}</span>
+                  <span>{isTowage || isCharter ? '2. Client / affréteur' : 'Client / affréteur'}</span>
                   <button aria-label="Ajouter un client ou affréteur" onClick={() => setClientEditorOpen(true)} type="button">
                     <Plus aria-hidden="true" size={15} />
                     Ajouter
@@ -923,7 +952,7 @@ export function ProjectEditor({
                   ))}
                 </select>
               </div>
-              {!isBareboat ? (
+              {!isCharter ? (
                 <>
                   <Field label="Statut">
                     <select onChange={(event) => update('status', event.target.value)} value={form.status}>
@@ -961,12 +990,13 @@ export function ProjectEditor({
 
           <fieldset hidden={activeStep !== 'planning'} id="project-step-planning">
             <legend><span>3</span> Opérations</legend>
+            {!project ? <p>Les dates sont facultatives. Une opération sera ajoutée au planning à la création uniquement si le navire principal, la livraison et la restitution sont renseignés.</p> : null}
             <div className="project-editor-grid">
-              {initialOperation && initialOperationForm && !isBareboat ? (
+              {initialOperation && initialOperationForm && !isCharter ? (
                 <section className="project-initial-operation is-wide" aria-label="Première opération">
                   <div className="project-initial-operation-heading">
                     <strong>Première opération</strong>
-                    <small>Les dates et navires seront repris depuis Livraison, Restitution et Mission et facturation.</small>
+                    <small>Les dates et navires seront repris depuis les informations du projet.</small>
                   </div>
                   <div className="project-editor-grid">
                     <Field label="Description / mission" wide>
@@ -986,7 +1016,7 @@ export function ProjectEditor({
                   </div>
                 </section>
               ) : null}
-              {!isBareboat ? (
+              {!isCharter ? (
                 <>
                   <Field label="Début du projet"><input onInput={(event) => {
                     const value = event.currentTarget.value;
@@ -998,17 +1028,17 @@ export function ProjectEditor({
                   }} type="date" value={form.endsOn} /></Field>
                 </>
               ) : null}
-              <Field label={isBareboat ? '7. Date de livraison *' : 'Livraison *'}><input onChange={(event) => update('deliveryAt', event.target.value)} type="datetime-local" value={form.deliveryAt} /></Field>
-              <Field label={isBareboat ? '9. Date de restitution *' : 'Restitution *'}><input onChange={(event) => update('redeliveryAt', event.target.value)} type="datetime-local" value={form.redeliveryAt} /></Field>
-              {!isTowage && !isBareboat ? (
+              <Field label={isCharter ? '7. Date de livraison' : 'Livraison'}><input onChange={(event) => update('deliveryAt', event.target.value)} type="datetime-local" value={form.deliveryAt} /></Field>
+              <Field label={isCharter ? '9. Date de restitution' : 'Restitution'}><input onChange={(event) => update('redeliveryAt', event.target.value)} type="datetime-local" value={form.redeliveryAt} /></Field>
+              {!isTowage && !isCharter ? (
                 <>
                   <Field label="Début d’affrètement"><input onChange={(event) => update('charterStartsAt', event.target.value)} type="datetime-local" value={form.charterStartsAt} /></Field>
                   <Field label="Fin d’affrètement"><input onChange={(event) => update('charterEndsAt', event.target.value)} type="datetime-local" value={form.charterEndsAt} /></Field>
                 </>
               ) : null}
-              <PortSelect label={isTowage ? '7. Lieu de prise en charge · Port de livraison' : isBareboat ? '7. Port de livraison' : 'Port de livraison'} onChange={(value) => update('deliveryPort', value)} value={form.deliveryPort} />
-              <PortSelect label={isTowage ? '9. Lieu de destination · Port de restitution' : isBareboat ? '9. Port de restitution' : 'Port de restitution'} onChange={(value) => update('redeliveryPort', value)} value={form.redeliveryPort} />
-              {isBareboat ? (
+              <PortSelect label={isTowage ? '7. Lieu de prise en charge · Port de livraison' : isCharter ? '7. Port de livraison' : 'Port de livraison'} onChange={(value) => update('deliveryPort', value)} value={form.deliveryPort} />
+              <PortSelect label={isTowage ? '9. Lieu de destination · Port de restitution' : isCharter ? '9. Port de restitution' : 'Port de restitution'} onChange={(value) => update('redeliveryPort', value)} value={form.redeliveryPort} />
+              {isCharter ? (
                 <label className="project-editor-check is-wide">
                   <input
                     checked={form.supplytimeData.bareboat_delivery_by_truck === 'true'}
@@ -1090,8 +1120,8 @@ export function ProjectEditor({
           <fieldset hidden={activeStep !== 'offer' && !(isBimco && activeStep === 'billing')} id="project-step-offer">
             <legend><span>{isBimco ? 4 : 2}</span> {isBimco ? 'Conditions tarifaires' : normalizedContractType}</legend>
             <div className="project-editor-grid">
-              <label className={`project-owner-identity${isCommercialOffer ? ' is-wide' : ''}`}>
-                <span>{isTowage ? '3. Armateur · Identité armateur' : isBareboat ? '3. Propriétaire · Identité contractuelle' : 'Identité armateur'}</span>
+              <label className="project-owner-identity is-wide">
+                <span>{isTowage ? '3. Armateur · Identité armateur' : isCharter ? '3. Propriétaire · Identité contractuelle' : 'Identité armateur'}</span>
                 <textarea onChange={(event) => update('ownerIdentity', event.target.value)} rows={3} value={form.ownerIdentity} />
               </label>
               {isTowage ? (
@@ -1139,7 +1169,13 @@ export function ProjectEditor({
                 </section>
               ) : null}
               {isTowage ? (
-                <section className="project-towage-contract-fields is-wide" aria-label="Conditions du contrat de remorquage">
+                <section className="project-contract-form-section is-wide" aria-label="Remorqueur">
+                  <h3><label htmlFor="project-primary-vessel">5. Remorqueur · Navire principal *</label></h3>
+                  {primaryVesselSelect}
+                </section>
+              ) : null}
+              {isTowage ? (
+                <section className="project-contract-form-section is-wide" aria-label="Conditions du contrat de remorquage">
                   <h3>Conditions financières et particulières</h3>
                   <div className="project-editor-grid">
                     {[
@@ -1158,71 +1194,94 @@ export function ProjectEditor({
                   </div>
                 </section>
               ) : null}
-              {isBareboat ? (
-                <section className="project-towage-contract-fields is-wide" aria-label="Cases du contrat d'affrètement">
-                  <h3>Cases du contrat d’affrètement coque nue</h3>
-                  <div className="project-editor-grid">
-                    <Field label="1. Lieu de signature">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_contract_place: event.target.value })} value={form.supplytimeData.bareboat_contract_place || ''} />
-                    </Field>
-                    <Field label="1. Date de signature">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_contract_date: event.target.value })} type="date" value={form.supplytimeData.bareboat_contract_date || ''} />
-                    </Field>
-                    <Field label="2. Affréteur · Identité contractuelle (facultatif)" wide>
-                      <textarea
-                        onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_charterer_identity: event.target.value })}
-                        placeholder="Reprise automatique de la fiche client"
-                        rows={4}
-                        value={form.supplytimeData.bareboat_charterer_identity || ''}
-                      />
-                    </Field>
-                    <Field label="4. Refit / complément à l’année de construction">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_refit_details: event.target.value })} placeholder="Ex. Refit 2023" value={form.supplytimeData.bareboat_refit_details || ''} />
-                    </Field>
-                    <Field label="4. Limites d’exploitation">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_operating_limits: event.target.value })} placeholder="Reprise automatique de la fiche navire" value={form.supplytimeData.bareboat_operating_limits || ''} />
-                    </Field>
-                    <Field label="5. Dernière visite administrative">
-                      <input readOnly type="date" value={bareboatCertificateFields?.lastAdminVisitIso || ''} />
-                    </Field>
-                    <Field label="6. Permis de navigation">
-                      <input readOnly value={bareboatCertificateFields?.navigationPermitLabel || ''} />
-                    </Field>
-                    <Field label="6. Permis d’armement">
-                      <input readOnly value={bareboatCertificateFields?.manningPermitLabel || ''} />
-                    </Field>
-                    {certificateLoadError ? <p className="form-error is-wide" role="status">{certificateLoadError}</p> : null}
-                    <Field label="11. Durée minimale (facultatif)">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_minimum_duration: event.target.value })} placeholder="Calculée depuis les dates si vide" value={form.supplytimeData.bareboat_minimum_duration || ''} />
-                    </Field>
-                    <Field label="12. Options de prolongation" wide>
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_extension_options: event.target.value })} value={form.supplytimeData.bareboat_extension_options || ''} />
-                    </Field>
-                    <Field label="14. Indemnité de fin de contrat anticipé" wide>
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_early_termination_indemnity: event.target.value })} value={form.supplytimeData.bareboat_early_termination_indemnity || ''} />
-                    </Field>
-                    <Field label="15. Valeur à assurer (Si applicable)">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_insured_value: event.target.value })} placeholder="Ex. 40 000 € HT" value={form.supplytimeData.bareboat_insured_value || ''} />
-                    </Field>
-                    <Field label="16. Assurance à la charge de">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_insurance_payer: event.target.value })} value={form.supplytimeData.bareboat_insurance_payer || ''} />
-                    </Field>
-                    <Field label="17. Loi applicable">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_applicable_law: event.target.value })} value={form.supplytimeData.bareboat_applicable_law || ''} />
-                    </Field>
-                    <Field label="18. Juridiction compétente">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_jurisdiction: event.target.value })} value={form.supplytimeData.bareboat_jurisdiction || ''} />
-                    </Field>
-                    <Field label="19. Signataire de l’affréteur">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_charterer_signatory: event.target.value })} placeholder="Représentant du client" value={form.supplytimeData.bareboat_charterer_signatory || ''} />
-                    </Field>
-                    <Field label="20. Signataire du propriétaire">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_owner_signatory: event.target.value })} placeholder="Émetteur connecté" value={form.supplytimeData.bareboat_owner_signatory || ''} />
-                    </Field>
-                    <Field label="20. Fonction du signataire propriétaire">
-                      <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_owner_signatory_function: event.target.value })} placeholder="Fonction de l’émetteur" value={form.supplytimeData.bareboat_owner_signatory_function || ''} />
-                    </Field>
-                  </div>
+              {isCharter ? (
+                <section className="project-contract-form-sections is-wide" aria-label="Cases du contrat d'affrètement">
+                  <section className="project-contract-form-section">
+                    <h3>Parties et lieu de signature</h3>
+                    <div className="project-editor-grid">
+                      <Field label="1. Lieu de signature">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_contract_place: event.target.value })} value={form.supplytimeData.bareboat_contract_place || ''} />
+                      </Field>
+                      <Field label="1. Date de signature">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_contract_date: event.target.value })} type="date" value={form.supplytimeData.bareboat_contract_date || ''} />
+                      </Field>
+                      <Field label="2. Affréteur · Identité contractuelle (facultatif)" wide>
+                        <textarea
+                          onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_charterer_identity: event.target.value })}
+                          placeholder="Reprise automatique de la fiche client"
+                          rows={4}
+                          value={form.supplytimeData.bareboat_charterer_identity || ''}
+                        />
+                      </Field>
+                    </div>
+                  </section>
+                  <section className="project-contract-form-section">
+                    <h3>Navire et titres de navigation</h3>
+                    <div className="project-editor-grid">
+                      {vesselFields}
+                      <Field label="4. Refit / complément à l’année de construction">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_refit_details: event.target.value })} placeholder="Ex. Refit 2023" value={form.supplytimeData.bareboat_refit_details || ''} />
+                      </Field>
+                      <Field label="4. Limites d’exploitation">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_operating_limits: event.target.value })} placeholder="Reprise automatique de la fiche navire" value={form.supplytimeData.bareboat_operating_limits || ''} />
+                      </Field>
+                      <Field label="5. Dernière visite administrative">
+                        <input readOnly type="date" value={bareboatCertificateFields?.lastAdminVisitIso || ''} />
+                      </Field>
+                      <Field label="6. Permis de navigation">
+                        <input readOnly value={bareboatCertificateFields?.navigationPermitLabel || ''} />
+                      </Field>
+                      <Field label="6. Permis d’armement">
+                        <input readOnly value={bareboatCertificateFields?.manningPermitLabel || ''} />
+                      </Field>
+                      {certificateLoadError ? <p className="form-error is-wide" role="status">{certificateLoadError}</p> : null}
+                    </div>
+                  </section>
+                  <section className="project-contract-form-section">
+                    <h3>Durée et prolongations</h3>
+                    <div className="project-editor-grid">
+                      <Field label="11. Durée minimale (facultatif)">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_minimum_duration: event.target.value })} placeholder="Calculée depuis les dates si vide" value={form.supplytimeData.bareboat_minimum_duration || ''} />
+                      </Field>
+                      <Field label="12. Options de prolongation" wide>
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_extension_options: event.target.value })} value={form.supplytimeData.bareboat_extension_options || ''} />
+                      </Field>
+                      <Field label="14. Indemnité de fin de contrat anticipé" wide>
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_early_termination_indemnity: event.target.value })} value={form.supplytimeData.bareboat_early_termination_indemnity || ''} />
+                      </Field>
+                    </div>
+                  </section>
+                  <section className="project-contract-form-section">
+                    <h3>Assurance et droit applicable</h3>
+                    <div className="project-editor-grid">
+                      <Field label="15. Valeur à assurer (Si applicable)">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_insured_value: event.target.value })} placeholder="Ex. 40 000 € HT" value={form.supplytimeData.bareboat_insured_value || ''} />
+                      </Field>
+                      <Field label="16. Assurance à la charge de">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_insurance_payer: event.target.value })} value={form.supplytimeData.bareboat_insurance_payer || ''} />
+                      </Field>
+                      <Field label="17. Loi applicable">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_applicable_law: event.target.value })} value={form.supplytimeData.bareboat_applicable_law || ''} />
+                      </Field>
+                      <Field label="18. Juridiction compétente">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_jurisdiction: event.target.value })} value={form.supplytimeData.bareboat_jurisdiction || ''} />
+                      </Field>
+                    </div>
+                  </section>
+                  <section className="project-contract-form-section">
+                    <h3>Signataires du contrat</h3>
+                    <div className="project-editor-grid">
+                      <Field label="19. Signataire de l’affréteur">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_charterer_signatory: event.target.value })} placeholder="Représentant du client" value={form.supplytimeData.bareboat_charterer_signatory || ''} />
+                      </Field>
+                      <Field label="20. Signataire du propriétaire">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_owner_signatory: event.target.value })} placeholder="Émetteur connecté" value={form.supplytimeData.bareboat_owner_signatory || ''} />
+                      </Field>
+                      <Field label="20. Fonction du signataire propriétaire">
+                        <input onChange={(event) => update('supplytimeData', { ...form.supplytimeData, bareboat_owner_signatory_function: event.target.value })} placeholder="Fonction de l’émetteur" value={form.supplytimeData.bareboat_owner_signatory_function || ''} />
+                      </Field>
+                    </div>
+                  </section>
                 </section>
               ) : null}
               {isCommercialOffer ? (
@@ -1314,8 +1373,9 @@ export function ProjectEditor({
                   </div>
                 </section>
               ) : null}
-              {(isCommercialOffer && commercialConditionsMode === 'structured') || isTowage || isBareboat ? (
-                <Field label={isTowage ? '12. Tarif forfaitaire HT · Loyer d’affrètement' : isBareboat ? '13. Loyer journalier' : 'Loyer d’affrètement'} wide>
+              {isCommercialOffer ? vesselFields : null}
+              {(isCommercialOffer && commercialConditionsMode === 'structured') || isTowage || isCharter ? (
+                <Field label={isTowage ? '12. Tarif forfaitaire HT · Loyer d’affrètement' : isCharter ? '13. Loyer journalier' : 'Loyer d’affrètement'} wide>
                   <span className="project-commercial-hire-input">
                     <input
                       min="0"
@@ -1329,7 +1389,7 @@ export function ProjectEditor({
                       type="number"
                       value={form.charterHire ?? ''}
                     />
-                    <strong>{isTowage ? '€ HT' : isBareboat ? '€ HT / jour' : '€ / jour'}</strong>
+                    <strong>{isTowage ? '€ HT' : isCharter ? '€ HT / jour' : '€ / jour'}</strong>
                   </span>
                 </Field>
               ) : null}
@@ -1352,7 +1412,7 @@ export function ProjectEditor({
               {!isTowage ? (
               <>
               {!isCommercialOffer || commercialConditionsMode === 'structured' ? (
-                <Field label={isBareboat ? '8. Forfait de mobilisation · Frais de mobilisation' : 'Frais de mobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('mobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.mobilisationFee ?? ''} /></Field>
+                <Field label={isCharter ? '8. Forfait de mobilisation · Frais de mobilisation' : 'Frais de mobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('mobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.mobilisationFee ?? ''} /></Field>
               ) : null}
               {isCommercialOffer && commercialConditionsMode === 'structured' ? (
                 <RichField label="Description de la prestation incluse dans les frais de mobilisation">
@@ -1371,7 +1431,7 @@ export function ProjectEditor({
                 </RichField>
               ) : null}
               {!isCommercialOffer || commercialConditionsMode === 'structured' ? (
-                <Field label={isBareboat ? '10. Forfait de démobilisation · Frais de démobilisation' : 'Frais de démobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('demobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.demobilisationFee ?? ''} /></Field>
+                <Field label={isCharter ? '10. Forfait de démobilisation · Frais de démobilisation' : 'Frais de démobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('demobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.demobilisationFee ?? ''} /></Field>
               ) : null}
               {isCommercialOffer && commercialConditionsMode === 'structured' ? (
                 <RichField label="Description de la prestation incluse dans les frais de démobilisation">
@@ -1399,10 +1459,10 @@ export function ProjectEditor({
                   </select>
                 </Field>
               ) : null}
-              {!isCommercialOffer && !isBareboat ? (
+              {!isCommercialOffer && !isCharter ? (
                 <Field label="Loyer en prolongation"><input min="0" onChange={(event) => update('extensionHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.extensionHire ?? ''} /></Field>
               ) : null}
-              {!isBareboat ? (
+              {!isCharter ? (
               <Field label="Fuel" wide>
                 <input
                   onChange={(event) => update('supplytimeData', { ...form.supplytimeData, box19_special_fuel: event.target.value })}
@@ -1411,7 +1471,7 @@ export function ProjectEditor({
                 />
               </Field>
               ) : null}
-              {!isCommercialOffer && !isBareboat ? (
+              {!isCommercialOffer && !isCharter ? (
               <section className="project-hire-periods is-wide" aria-label="Barème des loyers d’affrètement">
                 <div className="project-hire-periods-heading">
                   <div><strong>Barème des loyers d’affrètement</strong><small>Le tarif applicable est déterminé automatiquement pour chaque date d’opération.</small></div>
@@ -1448,30 +1508,15 @@ export function ProjectEditor({
             </div>
           </fieldset>
 
-          <fieldset hidden={activeStep !== 'billing'} id="project-step-billing">
-            <legend><span>4</span> Facturation</legend>
-            <div className="project-editor-grid">
-              <Field label={isTowage ? '5. Remorqueur · Navire principal *' : isBareboat ? '4. Navire affrété *' : 'Navire principal *'} wide={isTowage || isBareboat}>
-                <select onChange={(event) => update('primaryVesselId', optionalNumber(event.target.value))} value={form.primaryVesselId ?? ''}>
-                  <option value="">Non renseigné</option>
-                  {eligibleVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>)}
-                </select>
-              </Field>
-              {!isTowage && !isBareboat ? (
-                <>
-              <Field label="Navire secondaire">
-                <select onChange={(event) => update('secondaryVesselId', optionalNumber(event.target.value))} value={form.secondaryVesselId ?? ''}>
-                  <option value="">Non renseigné</option>
-                  {eligibleVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>)}
-                </select>
-              </Field>
-              <Field label="Zone d’opération" wide><textarea onChange={(event) => update('operationArea', event.target.value)} value={form.operationArea} /></Field>
-              <label className="project-editor-check"><input checked={form.isRovSupport} onChange={(event) => update('isRovSupport', event.target.checked)} type="checkbox" /> Support ROV</label>
-              <label className="project-editor-check"><input checked={form.isDivingSupport} onChange={(event) => update('isDivingSupport', event.target.checked)} type="checkbox" /> Support plongée</label>
-                </>
-              ) : null}
-            </div>
-          </fieldset>
+          {isBimco ? (
+            <fieldset hidden={activeStep !== 'billing'} id="project-step-billing">
+              <legend><span>4</span> Facturation</legend>
+              <div className="project-editor-grid">
+                {vesselFields}
+                {operationSupportFields}
+              </div>
+            </fieldset>
+          ) : null}
 
           <fieldset hidden={activeStep !== 'bimco'} id="project-step-bimco">
             <legend><span>2</span> BIMCO</legend>
@@ -1485,7 +1530,7 @@ export function ProjectEditor({
               <Field label="Période maximale d’audit"><input onChange={(event) => update('maxAuditPeriod', event.target.value)} value={form.maxAuditPeriod} /></Field>
             </div>
             <div className="project-supplytime-editor">
-              {BIMCO_P144_GROUPS.map((group) => (
+              {BIMCO_P144_BUSINESS_GROUPS.map((group) => (
                 <section key={group.id}>
                   <h3>{group.label}</h3>
                   {group.fields.map((field) => (
@@ -1502,7 +1547,7 @@ export function ProjectEditor({
           </fieldset>
 
           <fieldset hidden={activeStep !== 'documents'} id="project-step-documents">
-            <legend><span>5</span> Documents</legend>
+            <legend><span>{isBimco ? 5 : 4}</span> Documents</legend>
             <section className="project-document-library" aria-label="Pièces jointes du projet">
               <div className="project-document-library-heading">
                 <div>
@@ -1645,7 +1690,7 @@ export function ProjectEditor({
           {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
           <footer>
             <button disabled={isSaving} onClick={onClose} type="button">Annuler</button>
-            <button disabled={isSaving} onClick={() => update('status', 'En préparation')} type="submit">Enregistrer le brouillon</button>
+            <button disabled={isSaving} name="saveMode" type="submit" value="draft">Enregistrer le brouillon</button>
             <button className="is-primary" disabled={isSaving} type="submit">{isSaving ? 'Enregistrement…' : project ? 'Enregistrer le projet' : 'Créer le projet'}</button>
           </footer>
         </form>

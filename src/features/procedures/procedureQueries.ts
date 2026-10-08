@@ -1,6 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { compareFleetNames, fleetAssetKind, type FleetAssetKind } from '../fleet/fleetDisplay';
 import { buildProcedureCode } from './procedureReview';
 import { buildGoogleDriveDesktopUri, googleDriveFileUrl, parseProcedureDriveLink } from './procedureGoogleDrive';
+import type { ProcedureDriveReceipt, ProcedureDriveSource } from './procedureDriveFiles';
+import { normalizeProcedureTags } from './procedureTags';
 
 export const PROCEDURE_DOCUMENT_BUCKET = 'procedure-documents';
 
@@ -8,7 +11,7 @@ const PROCEDURE_FIELDS = [
   'id', 'procedure_code', 'title', 'status', 'revision_label', 'published_on', 'source_label', 'file_url', 'notes',
   'category_label', 'diffusion_on', 'description', 'regulatory_requirement', 'ism_chapter', 'vessel_name',
   'project_name', 'document_number', 'restrictions', 'annual_review', 'theme', 'document_type',
-  'bridge_watch', 'version_label',
+  'bridge_watch', 'version_label', 'tags',
 ].join(', ');
 
 const PROCEDURE_SELECT = [
@@ -18,7 +21,7 @@ const PROCEDURE_SELECT = [
 
 const PUBLISHED_PROCEDURE_SELECT = [
   PROCEDURE_FIELDS, 'procedure_id', 'procedure_sharepoint_item_id', 'storage_bucket', 'storage_path', 'file_name',
-  'mime_type', 'size_bytes', 'published_by',
+  'mime_type', 'size_bytes', 'published_by', 'google_drive_path', 'drive_sha256',
 ].join(', ');
 
 export type ProcedureStatus = 'draft' | 'review' | 'approved' | 'published' | 'archived' | 'unknown';
@@ -47,6 +50,7 @@ interface ProcedureBaseRow {
   document_type: string | null;
   bridge_watch: boolean | null;
   version_label: string | null;
+  tags?: string[] | null;
 }
 
 interface ProcedureRow extends ProcedureBaseRow {
@@ -60,6 +64,8 @@ interface ProcedureRow extends ProcedureBaseRow {
 }
 
 interface PublishedProcedureRow extends ProcedureBaseRow {
+  google_drive_path?: string | null;
+  drive_sha256?: string | null;
   procedure_id: number | null;
   procedure_sharepoint_item_id: string | null;
   storage_bucket: string | null;
@@ -96,6 +102,7 @@ export interface ProcedureRecord {
   documentType: string;
   bridgeWatch: boolean;
   versionLabel: string;
+  tags: string[];
   storageBucket: string;
   storagePath: string;
   fileName: string;
@@ -137,6 +144,8 @@ export interface ProcedureMetrics {
 }
 
 export interface ProcedureInput {
+  tags?: string[];
+  driveSource?: ProcedureDriveSource;
   googleDriveUrl?: string;
   googleDrivePath?: string;
   procedureCode: string;
@@ -203,6 +212,7 @@ function mapProcedureBase(row: ProcedureBaseRow) {
     documentType: nullableText(row.document_type),
     bridgeWatch: Boolean(row.bridge_watch),
     versionLabel: nullableText(row.version_label),
+    tags: normalizeProcedureTags(row.tags || []),
   };
 }
 
@@ -229,6 +239,7 @@ export function mapPublishedProcedureRows(rows: PublishedProcedureRow[]): Publis
   return rows.map((row) => ({
     ...mapProcedureBase(row),
     procedureId: row.procedure_id,
+    googleDrivePath: nullableText(row.google_drive_path),
     procedureSharePointItemId: nullableText(row.procedure_sharepoint_item_id),
     storageBucket: nullableText(row.storage_bucket),
     storagePath: nullableText(row.storage_path),
@@ -329,6 +340,15 @@ export async function fetchProcedureProjects(client: SupabaseClient): Promise<Pr
     .filter((option) => option.label);
 }
 
+export async function fetchProcedureVessels(client: SupabaseClient): Promise<string[]> {
+  const { data, error } = await client.from('vessels').select('name,asset_kind').eq('active', true).order('name');
+  if (error) throw error;
+  return [...new Set(((data || []) as { name: string; asset_kind?: FleetAssetKind }[])
+    .filter((row) => fleetAssetKind({ name: row.name, assetKind: row.asset_kind }) === 'vessel')
+    .map((row) => row.name.trim())
+    .filter(Boolean))].sort(compareFleetNames);
+}
+
 function procedurePayload(input: ProcedureInput) {
   const title = input.title.trim();
   if (!title) throw new Error('Le titre de la procédure est obligatoire.');
@@ -354,6 +374,7 @@ function procedurePayload(input: ProcedureInput) {
     document_type: optionalText(input.documentType),
     bridge_watch: input.bridgeWatch,
     version_label: optionalText(input.versionLabel || input.revisionLabel),
+    ...(input.tags === undefined ? {} : { tags: normalizeProcedureTags(input.tags) }),
   };
 }
 
@@ -409,7 +430,20 @@ function driveSourcePayload(input: ProcedureInput) {
   };
 }
 
+function synchronizedSourcePayload(source: ProcedureDriveSource) {
+  return {
+    source_google_drive_file_id: null, source_google_drive_path: source.path,
+    source_storage_bucket: null, source_storage_path: null,
+    source_file_name: source.path, source_mime_type: source.mimeType, source_size_bytes: source.bytes,
+  };
+}
+
 export async function createProcedure(client: SupabaseClient, input: CreateProcedureInput, sourceFile: File | null): Promise<ProcedureRecord> {
+  if (input.driveSource) {
+    const { data, error } = await client.from('procedures').insert({ ...procedurePayload(input), ...synchronizedSourcePayload(input.driveSource) }).select(PROCEDURE_SELECT).single();
+    if (error) throw error;
+    return mapProcedureRows([data as unknown as ProcedureRow])[0];
+  }
   if (input.googleDriveUrl) {
     if (sourceFile) throw new Error('Enregistrez le fichier dans Google Drive avant de le lier.');
     const payload = { ...procedurePayload(input), ...driveSourcePayload(input) };
@@ -441,6 +475,12 @@ export async function updateProcedure(
   input: ProcedureInput,
   replacementFile?: File | null,
 ): Promise<ProcedureRecord> {
+  if (input.driveSource) {
+    const { data, error } = await client.from('procedures').update({ ...procedurePayload(input), ...synchronizedSourcePayload(input.driveSource) })
+      .eq('id', procedure.id).select(PROCEDURE_SELECT).single();
+    if (error) throw error;
+    return mapProcedureRows([data as unknown as ProcedureRow])[0];
+  }
   const keepsDrive = input.googleDriveUrl === undefined ? Boolean(procedure.googleDriveFileId) : Boolean(input.googleDriveUrl);
   if (keepsDrive && replacementFile) throw new Error('Remplacez le fichier dans le dossier Google Drive synchronisé.');
   if (procedure.googleDriveFileId && !keepsDrive && !replacementFile) {
@@ -478,7 +518,24 @@ export function getProcedurePublicationDate(date = new Date()): string {
   return `${value('year')}-${value('month')}-${value('day')}`;
 }
 
-export async function publishProcedure(client: SupabaseClient, procedure: ProcedureRecord, pdfFile: File): Promise<PublishedProcedureRecord> {
+export async function updateProcedureTags(
+  client: SupabaseClient,
+  record: ProcedureRecord | PublishedProcedureRecord,
+  tags: readonly string[],
+): Promise<void> {
+  const sourceId = 'procedureId' in record ? record.procedureId : record.id;
+  const table = sourceId === null ? 'published_procedures' : 'procedures';
+  const { error } = await client.from(table).update({ tags: normalizeProcedureTags(tags) })
+    .eq('id', sourceId ?? record.id).select('id').single();
+  if (error) throw error;
+}
+
+export async function publishProcedure(client: SupabaseClient, procedure: ProcedureRecord, pdfFile: File | ProcedureDriveReceipt): Promise<PublishedProcedureRecord> {
+  if ('path' in pdfFile) {
+    const { data, error } = await client.rpc('publish_procedure_drive', { target_procedure: procedure.id, pdf_path: pdfFile.path, pdf_bytes: pdfFile.bytes, pdf_sha256: pdfFile.sha256 });
+    if (error) throw error;
+    return mapPublishedProcedureRows([data as PublishedProcedureRow])[0];
+  }
   if (pdfFile.type !== 'application/pdf' && !pdfFile.name.toLowerCase().endsWith('.pdf')) {
     throw new Error('La publication doit être un fichier PDF.');
   }
@@ -493,6 +550,7 @@ export async function publishProcedure(client: SupabaseClient, procedure: Proced
     revision_label: optionalText(procedure.revisionLabel),
     published_on: publishedOn,
     source_label: 'seapilot', file_url: null, notes: optionalText(procedure.notes),
+    tags: normalizeProcedureTags(procedure.tags || []),
     category_label: optionalText(procedure.categoryLabel),
     diffusion_on: publishedOn,
     description: optionalText(procedure.description),

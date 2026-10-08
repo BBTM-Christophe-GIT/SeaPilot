@@ -24,15 +24,14 @@ begin
   perform set_config('request.jwt.claims','{"sub":"db540000-0000-4000-8000-000000000102","role":"authenticated"}',true);
   execute 'set local role authenticated';
   assert public.disciplinary_has_access(company), 'Direction should have access';
-  insert into public.disciplinary_cases(id,company_id,person_id,data)
-  values(test_case_id,company,target_person,'{"employeeName":"Fixture DISCIPLINARY","fault":"simple","sanction":"avertissement","reason":"impregnation_presumee"}');
+  perform public.disciplinary_mutate('create',test_case_id,null,jsonb_build_object('company_id',company,'person_id',target_person,'data','{"employeeName":"Fixture DISCIPLINARY","fault":"simple","sanction":"avertissement","reason":"impregnation_presumee"}'::jsonb));
   insert into public.disciplinary_documents(case_id,file_name,drive_path,document_date,kind)
-  values(test_case_id,'fixture.docx','1/Fixture DISCIPLINARY/2026-09-15/fixture.docx',current_date,'letter');
+  values(test_case_id,'fixture.docx','1/Fixture DISCIPLINARY/2026-09-15/fixture.docx',current_date,'attachment');
   assert (select count(*)=1 from public.disciplinary_cases where id=test_case_id), 'Direction reads its company case';
   begin
     update public.disciplinary_cases set person_id=person_id+1 where id=test_case_id;
     raise exception 'Case identity was mutable';
-  exception when check_violation then null;
+  exception when insufficient_privilege then null;
   end;
   execute 'reset role';
   counter := 0;
@@ -46,7 +45,7 @@ begin
       assert public.disciplinary_has_access(company), 'Allowed role denied';
       assert public.desktop_drive_scope('disciplinary',company,target_person)->>'directory' = 'Sanctions Disciplinaires', 'Launcher scope denied';
       assert (select count(*)=1 from public.disciplinary_documents where disciplinary_documents.case_id=test_case_id), 'Allowed role cannot read attachment metadata';
-      update public.disciplinary_cases set data=data || '{"facts":"Updated by authorized fixture"}'::jsonb where id=test_case_id;
+      perform public.disciplinary_mutate('save',test_case_id,(select updated_at from public.disciplinary_cases where id=test_case_id),jsonb_build_object('data',(select data || '{"facts":"Updated by authorized fixture"}'::jsonb from public.disciplinary_cases where id=test_case_id),'letter',null));
     else
       assert not public.disciplinary_has_access(company), 'Forbidden role access';
       begin

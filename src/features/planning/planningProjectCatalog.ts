@@ -127,6 +127,23 @@ export async function createAndSchedulePlanningProject(
   return project;
 }
 
+export async function createQuickPlanningProject(
+  client: SupabaseClient,
+  input: { title: string; vesselId: number; startsOn: string },
+): Promise<PlanningProjectRecord> {
+  if (!input.title.trim()) throw new Error('Le nom du projet est obligatoire.');
+  const { data, error } = await client.rpc('planning_create_quick_project', {
+    target_title: input.title.trim(),
+    target_primary_vessel_id: input.vesselId,
+    target_starts_on: input.startsOn,
+  });
+  if (error) throw rpcError(error, 'Impossible de créer ce projet rapide.');
+  const row = firstRpcRow(data);
+  const project = row ? mapPlanningProjectRows([row as never])[0] : undefined;
+  if (!project) throw new Error('Le projet créé n’a pas pu être relu dans le planning.');
+  return project;
+}
+
 export async function createPlanningProjectClient(
   client: SupabaseClient,
   input: PlanningProjectClientInput,

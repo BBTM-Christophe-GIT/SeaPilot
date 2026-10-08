@@ -1,6 +1,7 @@
 import type {
   ProjectContractRecord,
   ProjectDocumentRecord,
+  ProjectPlanningOccurrenceRecord,
   ProjectRecord,
 } from './projectQueries';
 import { compareProjectCodesNewestFirst } from '../../lib/projectCode';
@@ -163,6 +164,14 @@ function getProjectStart(project: ProjectRecord): string {
 
 function getProjectEnd(project: ProjectRecord): string {
   return project.redeliveryAt || project.charterEndsAt || project.endsOn;
+}
+
+/** Date-based scope, independent of archiving and of the KPI month picker. */
+export function isCurrentProject(project: ProjectRecord, occurrences: ProjectPlanningOccurrenceRecord[], monthStart: string): boolean {
+  const lastProjectDate = (getProjectEnd(project) || getProjectStart(project)).slice(0, 10);
+  return lastProjectDate >= monthStart || occurrences.some((occurrence) => occurrence.projectId === project.id
+    && !/annul|cancel/i.test(occurrence.status)
+    && (occurrence.endsOn || occurrence.startsOn) >= monthStart);
 }
 
 export function projectMatchesFilters(project: ProjectRecord, filters: ProjectFilterState): boolean {

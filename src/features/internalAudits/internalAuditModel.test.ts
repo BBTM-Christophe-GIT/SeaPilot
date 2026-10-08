@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addAuditMonths, annualAuditWindow, auditWindow, blankAuditAnswers, compareAuditScores, completionIssues,
-  findingIssues, findingOverdue, isAuditDate, nextAnnualDate, planningStatus, previousYearAudit,
+  auditDueOnFromDuration, defaultFindingDueOn, defaultFindingDuration, findingIssues, findingOverdue, isAuditDate, nextAnnualDate, planningStatus, previousYearAudit,
   plannedAuditDateIssues, questionIssues, scoreAudit, scoreBySection, todayAuditParis,
   type AuditAnswer, type AuditAnswerValue, type AuditFinding, type AuditSite, type InternalAudit,
 } from './internalAuditModel';
@@ -24,7 +24,7 @@ function finding(changes: Partial<AuditFinding> = {}): AuditFinding {
   return {
     id: 'finding', companyId: 1, auditId: 'audit-2026', questionId: 'q1', reference: '1.1', severity: 'major',
     description: 'Procédure manquante', assigneePersonId: null, assigneeRole: 'captain', assigneeVesselId: 12,
-    assigneeLabel: 'Capitaines LE ROZEL', dueOn: '2026-10-31', status: 'open', treatment: '', resolvedAt: null, closedAt: null,
+    assigneeLabel: 'Capitaines LE ROZEL', openedOn: '2026-10-24', dueOn: '2026-10-31', treatmentDelayValue: 1, treatmentDelayUnit: 'weeks', status: 'open', treatment: '', resolvedAt: null, closedAt: null,
     ...changes,
   };
 }
@@ -164,6 +164,22 @@ describe('audit template snapshots and validation', () => {
 });
 
 describe('audit findings and treatment ownership', () => {
+  it('defaults major findings to one week, minor findings to one clamped calendar month, and remarks to no deadline', () => {
+    expect(defaultFindingDuration('major')).toEqual({ amount: 1, unit: 'weeks' });
+    expect(defaultFindingDuration('minor')).toEqual({ amount: 1, unit: 'months' });
+    expect(defaultFindingDueOn('major', '2026-12-28')).toBe('2027-01-04');
+    expect(defaultFindingDueOn('minor', '2026-01-31')).toBe('2026-02-28');
+    expect(defaultFindingDueOn('minor', '2024-01-31')).toBe('2024-02-29');
+    expect(defaultFindingDueOn('remark', '2026-10-01')).toBeNull();
+    expect(auditDueOnFromDuration('2026-10-24', { amount: 2, unit: 'days' })).toBe('2026-10-26');
+    expect(auditDueOnFromDuration('2026-10-24', { amount: 0, unit: 'days' })).toBeNull();
+  });
+  it('accepts a remark with no deadline and never flags it overdue', () => {
+    const remark = finding({ severity: 'remark', dueOn: null, treatmentDelayValue: null, treatmentDelayUnit: null });
+    expect(findingIssues(remark)).toEqual([]);
+    expect(findingOverdue(remark, '2028-01-01')).toBe(false);
+    expect(findingIssues(finding({ severity: 'remark' }))).toContain('Une remarque ne comporte pas de délai de traitement.');
+  });
   it('accepts one named person or one vessel role and rejects ambiguous or missing assignment', () => {
     expect(findingIssues(finding())).toEqual([]);
     expect(findingIssues(finding({ assigneePersonId: 9, assigneeRole: null, assigneeVesselId: null }))).toEqual([]);

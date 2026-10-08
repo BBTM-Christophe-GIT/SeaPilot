@@ -1,9 +1,31 @@
 import { ACTION_PLAN_FLEET_PREVIEW, ACTION_PLAN_PREVIEW_VESSELS } from './actionPlanFleetPreview';
+import { ORG_HIERARCHY_DEMO } from '../organigramme/organigrammeFixtures';
+import type { OrgRank, OrgSupport } from '../organigramme/organigrammeModel';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { PREVIEW_LINK_CATEGORIES, PREVIEW_USEFUL_LINKS } from '../usefulLinks/usefulLinksPreview';
+import { createPlanningPreviewOverview } from '../planning/planningPreviewData';
+import { isPlanningDate, todayPlanningDate } from '../planning/planningDates';
+import { validatePlanningLeaveCounterPeriod, validatePlanningLeaveRightsPeriod } from '../planning/planningAbsenceBalance';
+import { QHSE_POLICY_ATTACHMENT_MIME_TYPES } from '../qhsePolicy/qhsePolicyAttachments';
+import { isQhsePolicyId, type QhsePolicyOwnerKind } from '../qhsePolicy/qhsePolicyModel';
+import { normalizeQhsePolicyAxisIconKey, resolveQhsePolicyAxisIcon } from '../qhsePolicy/qhsePolicyIcons';
+import { DEFAULT_PROCEDURE_TAGS } from '../procedures/procedureTagCatalogue';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
 };
+const previewOrgData = structuredClone(ORG_HIERARCHY_DEMO);
+const PREVIEW_FAVORITES_KEY = 'seapilot:preview:project-favorites:v1';
+let previewFavoriteIds: number[] = [];
+try {
+  const saved: unknown = JSON.parse(localStorage.getItem(PREVIEW_FAVORITES_KEY) || '[]');
+  if (Array.isArray(saved) && saved.every((id) => Number.isSafeInteger(id) && id > 0)) previewFavoriteIds = saved;
+} catch { /* Preview preferences stay local to this browser. */ }
+const PREVIEW_EMERGENCY_KEY = 'seapilot:preview:organigramme-emergency-default';
+try {
+  const saved: unknown = JSON.parse(localStorage.getItem(PREVIEW_EMERGENCY_KEY) || 'null');
+  if (Array.isArray(saved) && saved.every((id) => Number.isSafeInteger(id) && id > 0)) previewOrgData.emergencyDefaultIds = saved;
+} catch { /* Storage can be unavailable in a restricted browser. */ }
 
 const PREVIEW_SIGNATURE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
@@ -13,7 +35,9 @@ function previewSignaturePng(): Blob {
 }
 
 function previewStorageAssetUrl(bucket: string, path: string): string {
+  if (bucket === 'qhse-policy-attachments') return Array.from(previewQhseUploads.values()).find((upload) => upload.path === path)?.url || '';
   if (bucket === 'working-time-signatures') return '/templates/attestation-signature.png';
+  if (bucket === 'procedure-documents' && path === 'published/8102/pol-01-b.pdf') return '/demo/politique-qhse-demo.pdf';
   if (bucket === 'procedure-documents') return '/templates/attestation-embarquement.pdf';
   if (bucket === 'fleet-certificates') {
     return path.toLocaleLowerCase('fr').endsWith('.pdf')
@@ -24,7 +48,49 @@ function previewStorageAssetUrl(bucket: string, path: string): string {
   return '';
 }
 
-type PreviewResult = { data: unknown; error: typeof PREVIEW_WRITE_ERROR | null };
+type PreviewResult = { data: unknown; error: (typeof PREVIEW_WRITE_ERROR & { code?: string }) | null };
+
+// This dataset lives only in the preview module instance. Reloading the page
+// discards changes; these records are never sent to Supabase or localStorage.
+const QHSE_DEMO_PROCESS_IDS = [
+  '6dbbe8e0-0000-4000-8000-000000000001',
+  '6dbbe8e0-0000-4000-8000-000000000002',
+  '6dbbe8e0-0000-4000-8000-000000000003',
+];
+const QHSE_DEMO_OBJECTIVE_IDS = [
+  '6dbbe8e1-0000-4000-8000-000000000001',
+  '6dbbe8e1-0000-4000-8000-000000000002',
+  '6dbbe8e1-0000-4000-8000-000000000003',
+];
+const previewQhsePolicy = {
+  settings: { publication_id: 8202 as number | null, document_url: '', revision: 1, updated_at: '2026-09-30T09:00:00Z' },
+  processes: ['Qualité', 'Sécurité', 'Environnement'].map((name, index) => ({
+    id: QHSE_DEMO_PROCESS_IDS[index], name, description: 'Axe stratégique de démonstration, sans donnée de production.', icon_key: resolveQhsePolicyAxisIcon({ name }),
+    position: index, archived: false, revision: 1, updated_at: '2026-09-30T09:00:00Z',
+  })),
+  objectives: [
+    { title: 'Améliorer le suivi documentaire', progress: 26 },
+    { title: 'Renforcer les exercices de sécurité', progress: 61 },
+    { title: 'Sensibiliser au tri des déchets', progress: 100 },
+  ].map((objective, index) => ({
+    id: QHSE_DEMO_OBJECTIVE_IDS[index], process_id: QHSE_DEMO_PROCESS_IDS[index],
+    title: `${objective.title} — démonstration`, description: 'Objectif fictif réservé à la préversion interactive.',
+    owner_label: 'Responsable Démonstration', owner_kind: null as QhsePolicyOwnerKind, owner_person_id: null as number | null, owner_vessel_id: null as number | null, due_on: '2026-12-31' as string | null,
+    progress: objective.progress, archived: false, revision: 2,
+    created_at: '2026-09-01T09:00:00Z', updated_at: '2026-09-30T09:00:00Z',
+  })),
+  updates: QHSE_DEMO_OBJECTIVE_IDS.flatMap((objectiveId, index) => [
+    { id: `6dbbe8e2-0000-4000-8000-00000000000${index * 2 + 1}`, objective_id: objectiveId,
+      kind: 'initial', progress: 0, occurred_on: '2026-09-01', note: 'État initial',
+      actor_name: 'Administrateur Démonstration', owner_label: '', created_at: '2026-09-01T09:00:00Z' },
+    { id: `6dbbe8e2-0000-4000-8000-00000000000${index * 2 + 2}`, objective_id: objectiveId,
+      kind: 'progress', progress: [26, 61, 100][index], occurred_on: '2026-09-30',
+      note: 'Avancement fictif de démonstration, sans donnée de production.',
+      actor_name: 'Administrateur Démonstration', owner_label: '', created_at: '2026-09-30T09:00:00Z' },
+  ]),
+  attachments: [] as Array<{ id: string; objective_id: string; update_id: string; file_name: string; mime_type: string; size_bytes: number; storage_bucket: string; storage_path: string; created_at: string }>,
+};
+const previewQhseUploads = new Map<string, { id: string; objectiveId: string; path: string; fileName: string; mimeType: string; sizeBytes: number; createdAt: number; finalized: boolean; blob?: Blob; url?: string }>();
 
 const PREVIEW_STCW_SHORT_FILE_NAMES: Partial<Record<number, string>> = {
   15: 'CRO',
@@ -89,6 +155,8 @@ const PREVIEW_STCW_SOURCE_ROWS: Array<[number, string, string, string[], boolean
   [45, 'Arrêt de Travail', 'Ressources Humaines', [], false],
   [46, 'Arrêt Maladie', 'Ressources Humaines', [], false],
   [56, 'Dérogation', 'Ressources Humaines', [], false],
+  [57, 'Attestation de droits', 'Ressources Humaines', [], false],
+  [58, 'Carte Vitale', 'Ressources Humaines', [], false],
   [47, 'CACES', "Conduite d'Engin", [], true],
   [48, 'APAVE - Formation Conduite de Grue - LMG 130', 'Levage', [], true],
   [49, 'Autorisation de Conduite', "Conduite d'Engin", [], true],
@@ -215,6 +283,18 @@ function createPreviewFleetFindingEvents(): unknown[] {
 }
 
 const PREVIEW_ROWS: Record<string, unknown[]> = {
+  project_favorites: previewFavoriteIds.map((project_id) => ({ project_id })),
+  project_drive_files: [],
+  project_change_log: [],
+  project_billing_client_references: [
+    { id: 1, project_id: 9001, company_id: 1, scope: 3, reference: 'COMMANDE-AFFRETEMENT-2026' },
+    { id: 2, project_id: 9001, company_id: 1, scope: 4, reference: 'PRESTATIONS-BBTM-2026' },
+  ],
+  planning_generic_crew_rows: [],
+  planning_crew_display_preferences: [],
+  useful_links: PREVIEW_USEFUL_LINKS,
+  useful_link_categories: PREVIEW_LINK_CATEGORIES,
+  procedure_tag_catalogue: DEFAULT_PROCEDURE_TAGS.map(name => ({ name, active: true })),
   procedures: [
     {
       id: 8101, procedure_code: 'GEN 01-A', title: 'Manuel Qualité Santé Sécurité Environnement', status: 'published',
@@ -303,7 +383,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     },
   ],
   profiles: [{ id: 'preview-user', display_name: 'Administrateur Démonstration', email: 'admin@example.invalid', user_roles: [{ role_key: 'admin' }] }],
-  role_module_permissions: [],
+    role_module_permissions: [],
+    lsa_items: [],
   sharepoint_sources: [{
     key: 'library-procedures-demo', title: 'Procédures — démonstration', source_type: 'library',
     module_key: 'procedures', target_table: 'procedures', import_priority: 10, confirmed: true,
@@ -515,13 +596,30 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       id: 144,
       title: 'EMDT - GOURY',
       project_code: 'P144',
+      contract_type: 'BIMCO',
       client_id: 9101,
       client_name: 'EMDT',
       primary_vessel_id: 1,
       primary_vessel_name: 'GOURY',
+      delivery_port: 'Cherbourg',
+      redelivery_port: 'Cherbourg',
+      operation_area: 'Manche — démonstration',
+      description: 'Jeu de démonstration P144 pour la fiche projet. Les conditions ci-dessous ne sont pas celles du contrat réel.',
       starts_on: '2026-01-01',
       ends_on: '2026-08-31',
       status: 'Contrat signé',
+      archived_at: null,
+    },
+    {
+      id: 280,
+      title: 'BR71',
+      project_code: 'P280',
+      contract_type: 'Offre Commerciale',
+      client_name: 'CONSTRUCTIONS MECANIQUES DE NORMANDIE',
+      primary_vessel_name: 'HIRONDELLE DE LA MANCHE',
+      status: 'Non validé',
+      is_rov_support: false,
+      is_diving_support: false,
       archived_at: null,
     },
     {
@@ -662,6 +760,42 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     },
   ],
   project_contracts: [
+    {
+      id: 93144,
+      project_id: 144,
+      owner_identity: 'BBTM — démonstration',
+      vessel_assignment_limit: 'Assistance maritime et travaux en mer — démonstration',
+      charter_hire: 4800,
+      hire_currency: 'EUR',
+      hire_unit: 'jour',
+      supplytime_schema_version: 'supplytime-2017-v1',
+      supplytime_data: {
+        p144_box01_place_date: 'Cherbourg — données de démonstration',
+        p144_box02_owners: 'BBTM — démonstration',
+        p144_box03_charterers: 'EMDT — démonstration',
+        p144_box04_vessel_imo: 'GOURY',
+        p144_box09_hire_period: 'Du 1er janvier au 31 août 2026 — démonstration',
+        p144_box20_charter_hire: 'En opération : 4 800 EUR / jour\nStand-by : 3 600 EUR / jour\nConditions illustratives uniquement.',
+        p144_box22_invoicing: 'Facturation mensuelle sur relevés validés — démonstration.',
+        p144_box23_payments: 'Règlement à 30 jours — démonstration.',
+        p144_box33_dispute_resolution: 'Droit et juridiction à préciser — démonstration.',
+        p144_box34_additional_clauses: 'Les interventions sont coordonnées avec le représentant du client.\nLes conditions météorologiques et les contraintes du chantier sont examinées avant chaque opération.\nTexte de démonstration, sans valeur contractuelle.',
+        p144_signature_owners: 'Représentant BBTM — démonstration',
+        p144_signature_charterers: 'Représentant EMDT — démonstration',
+        p144_annexes: 'Annexe A : caractéristiques du navire\nAnnexe B : périmètre de la mission\nDocuments de démonstration.',
+      },
+      archived_at: null,
+    },
+    {
+      id: 93280,
+      project_id: 280,
+      owner_identity: 'BBTM\n15, impasse du pou\n50340 Le Rozel',
+      charter_hire: 2600,
+      hire_currency: 'EUR',
+      hire_unit: 'jour',
+      supplytime_data: {},
+      archived_at: null,
+    },
     {
       id: 9301,
       project_id: 9001,
@@ -920,6 +1054,11 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     { id: 9972, purchase_request_id: 9951, event_type: 'information_requested', status_label: 'Envoyée pour approbation', actor_name: 'Julien LECOCQ', comment: null, effective_on: '2026-07-29', created_at: '2026-07-29T17:40:00Z' },
   ],
   dpr_reports: [
+    ...[
+      { id: 9911, dpr_number: 1063, report_date: '2026-09-10', project_id: null, unlisted_project_name: 'Navire à quai' },
+      { id: 9912, dpr_number: 1064, report_date: '2026-09-11', project_id: null, unlisted_project_name: 'Navire en transit' },
+      { id: 9913, dpr_number: 1065, report_date: '2026-09-12', project_id: 9001, unlisted_project_name: null },
+    ].map((report) => ({ ...report, vessel_id: 1, status: 'validated', issuer_name_snapshot: 'Arthur DEMO', description: 'Activité de démonstration pour le portefeuille projet.', qhse_note: 'RAS', created_by: 'preview-user', updated_at: `${report.report_date}T18:00:00Z`, deleted_at: null })),
     {
       id: 9908, dpr_number: 1062, status: 'validated', report_date: '2026-08-01',
       project_id: 9002, unlisted_project_name: null, vessel_id: 9202,
@@ -1034,6 +1173,9 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   planning_rotation_occurrences: [],
   planning_templates: [],
   planning_absences: [],
+  planning_leave_counter_people: [{ person_id: 111, request_balance_kind: 'leave_rtt' }, { person_id: 112, request_balance_kind: 'leave_rtt' }],
+  planning_leave_counter_periods: [],
+  planning_crew_balance_checkpoints: [],
   planning_conflict_cases: [],
   planning_conflict_case_history: [],
   planning_manning_matrices: [{
@@ -1327,6 +1469,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       created_at: '2026-07-19T13:15:00Z',
     },
   ],
+  planning_fleet_display_settings: [{ company_id: 1, function_order: [] }],
   action_plan_settings: [{ company_id: 1, edit_button_enabled: true, updated_at: '2026-09-06T18:00:00Z' }],
   action_documents: [
     {
@@ -1654,9 +1797,12 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   stcw_certificates: PREVIEW_STCW_CERTIFICATES,
 };
 
-function createPreviewQuery(result: PreviewResult): object {
+function createPreviewQuery(result: PreviewResult, readOnly = false): object {
   const query: object = new Proxy({}, {
     get(_target, property) {
+      if (readOnly && ['insert', 'update', 'delete', 'upsert'].includes(String(property))) {
+        return () => createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR });
+      }
       if (property === 'then') {
         return (resolve: (value: PreviewResult) => unknown, reject?: (reason: unknown) => unknown) =>
           Promise.resolve(result).then(resolve, reject);
@@ -1740,7 +1886,333 @@ function deletePreviewProjectOperation(args: Record<string, unknown>): PreviewRe
   return { data: [occurrenceId], error: null };
 }
 
+function qhsePreviewFailure(code: string, message: string): never {
+  throw Object.assign(new Error(message), { code });
+}
+
+function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown>): PreviewResult | null {
+  if (!functionName.startsWith('qhse_policy_')) return null;
+  const text = (value: unknown, limit: number, required = false): string => {
+    const result = String(value ?? '').trim();
+    if ((required && !result) || result.length > limit) qhsePreviewFailure('22023', 'Saisie QHSE invalide.');
+    return result;
+  };
+  const progress = (value: unknown): number => {
+    const result = value === null || value === undefined || value === '' ? NaN : Number(value);
+    if (!Number.isFinite(result) || result < 0 || result > 100
+      || Math.abs(result * 100 - Math.round(result * 100)) > 1e-6) qhsePreviewFailure('22023', 'La progression doit être comprise entre 0 et 100, avec deux décimales au maximum.');
+    return result;
+  };
+  const date = (value: unknown, optional = false): string | null => {
+    if (optional && value == null) return null;
+    const result = String(value ?? '');
+    if (!isPlanningDate(result) || result < '1900-01-01' || result > '2100-12-31') qhsePreviewFailure('22023', 'Date QHSE invalide.');
+    return result;
+  };
+  const expectedRevision = (revision: number): void => {
+    if (args.p_expected_revision !== revision) qhsePreviewFailure('40001', 'Les données ont changé. Actualisez avant de réessayer.');
+  };
+  const process = (id: unknown) => {
+    const result = previewQhsePolicy.processes.find((row) => row.id === id);
+    if (!result) qhsePreviewFailure('42501', 'Axe stratégique de démonstration introuvable.');
+    return result;
+  };
+  const objective = (id: unknown) => {
+    const result = previewQhsePolicy.objectives.find((row) => row.id === id);
+    if (!result) qhsePreviewFailure('42501', 'Objectif de démonstration introuvable.');
+    return result;
+  };
+  const archiveFlag = (): boolean => {
+    if (typeof args.p_archived !== 'boolean') qhsePreviewFailure('22023', 'État d’archivage invalide.');
+    return args.p_archived;
+  };
+  const now = new Date().toISOString();
+  try {
+    if (functionName === 'qhse_policy_snapshot') {
+      return { data: structuredClone({ ...previewQhsePolicy, processes: [...previewQhsePolicy.processes].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, 'fr') || a.id.localeCompare(b.id)), can_edit: true }), error: null };
+    }
+    if (functionName === 'qhse_policy_owner_options') {
+      return { data: {
+        people: previewRows('people').filter((row) => row.hired_on && String(row.hired_on) <= todayPlanningDate() && (!row.departed_on || String(row.departed_on) > todayPlanningDate())).map((row) => ({ id: row.id, label: `${row.first_name} ${row.last_name}` })),
+        vessels: previewRows('vessels').filter((row) => row.active !== false && (!row.asset_kind || row.asset_kind === 'vessel')).map((row) => ({ id: row.id, label: row.name, length_overall: row.length_overall ?? null })),
+      }, error: null };
+    }
+    if (functionName === 'qhse_policy_prepare_attachments') {
+      const existing = objective(args.p_objective_id);
+      if (existing.archived || process(existing.process_id).archived) qhsePreviewFailure('22023', 'Objectif archivé.');
+      if (!Array.isArray(args.p_files) || args.p_files.length < 1 || args.p_files.length > 10) qhsePreviewFailure('22023', 'Pièces jointes invalides.');
+      const files = args.p_files.map((file: Record<string, unknown>) => {
+        const fileName = text(file.file_name, 200, true);
+        const mimeType = QHSE_POLICY_ATTACHMENT_MIME_TYPES[fileName.split('.').at(-1)?.toLowerCase() || ''];
+        const sizeBytes = Number(file.size_bytes);
+        if (!mimeType || mimeType !== file.mime_type || Array.from(fileName).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127 || character === '/' || character === '\\') || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 26214400) qhsePreviewFailure('22023', 'Pièces jointes invalides.');
+        const id = crypto.randomUUID();
+        const path = `1/${existing.id}/${id}.${fileName.split('.').at(-1)!.toLowerCase()}`;
+        return { id, objectiveId: existing.id, path, fileName, mimeType, sizeBytes, createdAt: Date.now(), finalized: false };
+      });
+      files.forEach((file) => previewQhseUploads.set(file.id, file));
+      return { data: files.map((file) => ({ id: file.id, storage_path: file.path, file_name: file.fileName, mime_type: file.mimeType, size_bytes: file.sizeBytes })), error: null };
+    }
+    if (functionName === 'qhse_policy_save_process') {
+      const existing = args.p_id == null ? null : process(args.p_id);
+      if (existing) expectedRevision(existing.revision);
+      else if (args.p_expected_revision != null) qhsePreviewFailure('40001', 'Les données ont changé. Actualisez avant de réessayer.');
+      if (existing?.archived) qhsePreviewFailure('22023', 'Un axe stratégique archivé ne peut pas être modifié.');
+      const name = text(args.p_name, 200, true);
+      const description = text(args.p_description, 5000);
+      const position = Number(args.p_position);
+      if (args.p_position == null || !Number.isInteger(position) || position < 0 || position > 100000) qhsePreviewFailure('22023', 'Position de l’axe stratégique invalide.');
+      const iconKey = args.p_icon_key == null ? existing?.icon_key ?? 'general' : normalizeQhsePolicyAxisIconKey(args.p_icon_key);
+      if (args.p_icon_key != null && iconKey !== args.p_icon_key) qhsePreviewFailure('22023', 'Icône de l’axe stratégique invalide.');
+      if (!existing?.archived && previewQhsePolicy.processes.some((row) => row.id !== existing?.id && !row.archived && row.name.toLocaleLowerCase('fr') === name.toLocaleLowerCase('fr'))) qhsePreviewFailure('23505', 'Un axe stratégique actif porte déjà ce nom.');
+      if (existing) Object.assign(existing, { name, description, position, icon_key: iconKey, revision: existing.revision + 1, updated_at: now });
+      else previewQhsePolicy.processes.push({ id: crypto.randomUUID(), name, description, position, icon_key: iconKey, archived: false, revision: 1, updated_at: now });
+      return { data: existing?.id ?? previewQhsePolicy.processes.at(-1)!.id, error: null };
+    }
+    if (functionName === 'qhse_policy_reorder_processes') {
+      if (!Array.isArray(args.p_processes) || args.p_processes.length > 100001) qhsePreviewFailure('22023', 'Liste complète des axes invalide.');
+      const seen = new Set<string>();
+      const requested = args.p_processes.map((item: unknown) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) qhsePreviewFailure('22023', 'Ordre des axes invalide.');
+        const row = item as Record<string, unknown>;
+        if (!isQhsePolicyId(row.id) || seen.has(row.id.toLowerCase()) || typeof row.revision !== 'number' || !Number.isSafeInteger(row.revision) || row.revision < 1 || row.revision > 2147483647) qhsePreviewFailure('22023', 'Ordre des axes invalide.');
+        seen.add(row.id.toLowerCase());
+        const existing = process(row.id);
+        return { existing, revision: row.revision };
+      });
+      if (requested.length !== previewQhsePolicy.processes.length) qhsePreviewFailure('22023', 'Incluez tous les axes, y compris les archives.');
+      if (requested.some((row) => row.revision !== row.existing.revision)) qhsePreviewFailure('40001', 'Les données ont changé. Actualisez avant de réessayer.');
+      requested.forEach(({ existing }, position) => Object.assign(existing, { position, revision: existing.revision + 1, updated_at: now }));
+      return { data: null, error: null };
+    }
+    if (functionName === 'qhse_policy_delete_process') {
+      const source = process(args.p_id);
+      expectedRevision(source.revision);
+      const objectives = previewQhsePolicy.objectives.filter((row) => row.process_id === source.id);
+      if ((objectives.length && args.p_transfer_to == null) || (args.p_transfer_to == null && args.p_transfer_expected_revision != null)
+        || args.p_transfer_to === source.id) qhsePreviewFailure('22023', 'Transférez les objectifs vers un autre axe actif.');
+      const destination = args.p_transfer_to == null ? null : process(args.p_transfer_to);
+      if (destination && destination.revision !== args.p_transfer_expected_revision) qhsePreviewFailure('40001', 'Les données ont changé. Actualisez avant de réessayer.');
+      if (destination?.archived) qhsePreviewFailure('22023', 'La destination doit être active.');
+      if (objectives.length && destination) {
+        objectives.forEach((row) => Object.assign(row, { process_id: destination.id, revision: row.revision + 1, updated_at: now }));
+        Object.assign(destination, { revision: destination.revision + 1, updated_at: now });
+      }
+      previewQhsePolicy.processes = previewQhsePolicy.processes.filter((row) => row.id !== source.id);
+      return { data: null, error: null };
+    }
+    if (functionName === 'qhse_policy_archive_process') {
+      const existing = process(args.p_id);
+      expectedRevision(existing.revision);
+      const archived = archiveFlag();
+      if (!archived && previewQhsePolicy.processes.some((row) => row.id !== existing.id && !row.archived && row.name.toLocaleLowerCase('fr') === existing.name.toLocaleLowerCase('fr'))) qhsePreviewFailure('23505', 'Un axe stratégique actif porte déjà ce nom.');
+      Object.assign(existing, { archived, revision: existing.revision + 1, updated_at: now });
+      return { data: null, error: null };
+    }
+    if (functionName === 'qhse_policy_save_objective') {
+      const existing = args.p_id == null ? null : objective(args.p_id);
+      if (existing) expectedRevision(existing.revision);
+      else if (args.p_expected_revision != null) qhsePreviewFailure('40001', 'Les données ont changé. Actualisez avant de réessayer.');
+      const selectedProcess = process(args.p_process_id);
+      if (selectedProcess.archived || existing?.archived) qhsePreviewFailure('22023', 'Un axe stratégique ou objectif archivé ne peut pas être modifié.');
+      if (existing && args.p_initial_progress != null) qhsePreviewFailure('22023', 'La progression se modifie uniquement dans l’historique.');
+      const title = text(args.p_title, 250, true);
+      const description = text(args.p_description, 10000);
+      let ownerKind = (args.p_owner_kind ?? null) as QhsePolicyOwnerKind;
+      let ownerPersonId = args.p_owner_person_id == null ? null : Number(args.p_owner_person_id);
+      let ownerVesselId = args.p_owner_vessel_id == null ? null : Number(args.p_owner_vessel_id);
+      let ownerLabel = text(args.p_owner_label, 200);
+      if (ownerKind === null && existing && ownerPersonId === null && ownerVesselId === null) {
+        ownerKind = existing.owner_kind; ownerPersonId = existing.owner_person_id; ownerVesselId = existing.owner_vessel_id; ownerLabel = existing.owner_label;
+      } else if (existing && (ownerKind === 'person' || ownerKind === 'vessel') && ownerKind === existing.owner_kind && ownerPersonId === existing.owner_person_id && ownerVesselId === existing.owner_vessel_id) ownerLabel = existing.owner_label;
+      else if (ownerKind === 'person' && ownerPersonId !== null && ownerVesselId === null) {
+        const person = previewRows('people').find((row) => Number(row.id) === ownerPersonId && row.hired_on && String(row.hired_on) <= todayPlanningDate() && (!row.departed_on || String(row.departed_on) > todayPlanningDate()));
+        if (!person) qhsePreviewFailure('22023', 'Personnel en poste invalide.');
+        ownerLabel = `${person.first_name} ${person.last_name}`;
+      } else if (ownerKind === 'vessel' && ownerPersonId === null && ownerVesselId !== null) {
+        const vessel = previewRows('vessels').find((row) => Number(row.id) === ownerVesselId && row.active !== false && (!row.asset_kind || row.asset_kind === 'vessel'));
+        if (!vessel) qhsePreviewFailure('22023', 'Navire invalide.');
+        ownerLabel = `Équipages ${vessel.name}`;
+      } else if (ownerKind === 'office' && ownerPersonId === null && ownerVesselId === null && ownerLabel) { /* validated bureau */ }
+      else qhsePreviewFailure('22023', 'Responsable requis.');
+      const dueOn = date(args.p_due_on, true);
+      const initialProgress = existing ? existing.progress : progress(args.p_initial_progress);
+      if (existing) Object.assign(existing, { process_id: selectedProcess.id, title, description, owner_label: ownerLabel, owner_kind: ownerKind, owner_person_id: ownerPersonId, owner_vessel_id: ownerVesselId, due_on: dueOn, revision: existing.revision + 1, updated_at: now });
+      else {
+        const id = crypto.randomUUID();
+        previewQhsePolicy.objectives.push({ id, process_id: selectedProcess.id, title, description, owner_label: ownerLabel, owner_kind: ownerKind, owner_person_id: ownerPersonId, owner_vessel_id: ownerVesselId,
+          due_on: dueOn, progress: initialProgress, archived: false, revision: 1, created_at: now, updated_at: now });
+        previewQhsePolicy.updates.push({ id: crypto.randomUUID(), objective_id: id, kind: 'initial', progress: initialProgress,
+          occurred_on: todayPlanningDate(), note: 'État initial', actor_name: 'Administrateur Démonstration', owner_label: ownerLabel, created_at: now });
+      }
+      return { data: existing?.id ?? previewQhsePolicy.objectives.at(-1)!.id, error: null };
+    }
+    if (functionName === 'qhse_policy_archive_objective') {
+      const existing = objective(args.p_id);
+      expectedRevision(existing.revision);
+      const archived = archiveFlag();
+      Object.assign(existing, { archived, revision: existing.revision + 1, updated_at: now });
+      return { data: null, error: null };
+    }
+    if (functionName === 'qhse_policy_add_objective_update' || functionName === 'qhse_policy_add_objective_update_with_attachments') {
+      const existing = objective(args.p_objective_id);
+      expectedRevision(existing.revision);
+      if (existing.archived || process(existing.process_id).archived) qhsePreviewFailure('22023', 'Un processus ou objectif archivé ne peut pas être suivi.');
+      const currentProgress = progress(args.p_progress);
+      const occurredOn = date(args.p_occurred_on)!;
+      const note = text(args.p_note, 10000, true);
+      if (occurredOn > todayPlanningDate()) qhsePreviewFailure('22023', 'La date de suivi ne peut pas être future.');
+      const uploadIds = functionName.endsWith('_with_attachments') ? args.p_upload_ids : [];
+      if (!Array.isArray(uploadIds) || uploadIds.length > 10 || new Set(uploadIds).size !== uploadIds.length) qhsePreviewFailure('22023', 'Pièces jointes invalides.');
+      const uploads = uploadIds.map((id) => {
+        const upload = previewQhseUploads.get(String(id));
+        if (!upload || upload.finalized || upload.objectiveId !== existing.id || !upload.blob || upload.blob.size !== upload.sizeBytes || upload.createdAt <= Date.now() - 86400000) qhsePreviewFailure('22023', 'Transfert absent ou invalide.');
+        return upload;
+      });
+      const id = crypto.randomUUID();
+      previewQhsePolicy.updates.push({ id, objective_id: existing.id, kind: 'progress', progress: currentProgress,
+        occurred_on: occurredOn, note, actor_name: 'Administrateur Démonstration', owner_label: existing.owner_label, created_at: now });
+      uploads.forEach((upload) => {
+        previewQhsePolicy.attachments.push({ id: upload.id, objective_id: existing.id, update_id: id, file_name: upload.fileName, mime_type: upload.mimeType, size_bytes: upload.sizeBytes, storage_bucket: 'qhse-policy-attachments', storage_path: upload.path, created_at: now });
+        upload.finalized = true;
+      });
+      Object.assign(existing, { progress: currentProgress, revision: existing.revision + 1, updated_at: now });
+      return { data: id, error: null };
+    }
+    if (functionName === 'qhse_policy_save_settings') {
+      expectedRevision(previewQhsePolicy.settings.revision);
+      const publicationId = args.p_publication_id == null ? null : Number(args.p_publication_id);
+      const documentUrl = text(args.p_document_url, 500);
+      if (documentUrl) qhsePreviewFailure('22023', 'Choisissez un PDF publié.');
+      if (publicationId !== null && (documentUrl || !previewRows('published_procedures').some((row) => Number(row.id) === publicationId
+        && row.status === 'published'
+        && String(row.mime_type).toLowerCase() === 'application/pdf' && String(row.file_name).toLowerCase().endsWith('.pdf')
+        && ((row.google_drive_path != null && row.drive_sha256 != null)
+          || (row.storage_bucket === 'procedure-documents' && String(row.storage_path).startsWith('published/')))))) qhsePreviewFailure('22023', 'Choisissez une politique publiée du chapitre 02 ou un lien Google Drive.');
+      Object.assign(previewQhsePolicy.settings, { publication_id: publicationId, document_url: documentUrl,
+        revision: previewQhsePolicy.settings.revision + 1, updated_at: now });
+      return { data: null, error: null };
+    }
+    return { data: null, error: PREVIEW_WRITE_ERROR };
+  } catch (error) {
+    const failure = error as Error & { code?: string };
+    return { data: null, error: { code: failure.code ?? '22023', message: failure.message } };
+  }
+}
+
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'save_planning_leave_rights_period' || functionName === 'save_planning_leave_counter_period') {
+    const personId = Number(args.p_person_id);
+    const personExists = createPlanningPreviewOverview(todayPlanningDate()).people.some((person) => person.id === personId)
+      || previewRows('people').some((person) => Number(person.id) === personId);
+    if (!personExists) return createPreviewQuery({ data: null, error: { code: '42501', message: 'Personne de démonstration introuvable.' } });
+    const annual = functionName === 'save_planning_leave_rights_period';
+    const startsOn = String(args.p_starts_on || '');
+    const endsOn = String(args.p_ends_on || '');
+    const enrollment = previewRows('planning_leave_counter_people').find((person) => Number(person.person_id) === personId);
+    if (enrollment?.request_balance_kind !== 'leave_rtt') return createPreviewQuery({ data: null, error: { code: '42501', message: 'Les droits annuels sont réservés aux compteurs Congés et RTT dédiés.' } });
+    const entitlement = (value: unknown) => value === null || value === undefined || value === '' ? NaN : Number(value);
+    const drafts = annual ? [
+      { personId, counterType: 'leave' as const, startsOn, endsOn, entitlement: entitlement(args.p_leave_entitlement) },
+      { personId, counterType: 'rtt' as const, startsOn, endsOn, entitlement: entitlement(args.p_rtt_entitlement) },
+    ] : [{ personId, counterType: args.p_counter_type as 'leave' | 'rtt', startsOn, endsOn, entitlement: entitlement(args.p_entitlement) }];
+    try {
+      if (annual) validatePlanningLeaveRightsPeriod({ personId, startsOn, endsOn, leaveEntitlement: drafts[0].entitlement, rttEntitlement: drafts[1].entitlement });
+      else validatePlanningLeaveCounterPeriod(drafts[0]);
+    } catch (error) {
+      return createPreviewQuery({ data: null, error: { code: '22023', message: error instanceof Error ? error.message : 'Droits invalides.' } });
+    }
+    const periods = previewRows('planning_leave_counter_periods');
+    if (drafts.some((draft) => periods.some((period) => Number(period.person_id) === personId && period.counter_type === draft.counterType
+      && String(period.starts_on) <= endsOn && String(period.ends_on) >= startsOn
+      && (period.starts_on !== startsOn || period.ends_on !== endsOn)))) {
+      return createPreviewQuery({ data: null, error: { code: '23P01', message: 'Cette période chevauche des droits existants.' } });
+    }
+    let savedId = 0;
+    drafts.forEach((draft) => {
+      const existing = periods.find((period) => Number(period.person_id) === personId && period.counter_type === draft.counterType && period.starts_on === startsOn && period.ends_on === endsOn);
+      savedId = Number(existing?.id) || nextPreviewId('planning_leave_counter_periods', 0);
+      const row = { id: savedId, person_id: personId, counter_type: draft.counterType, starts_on: startsOn, ends_on: endsOn, entitlement: draft.entitlement, updated_at: new Date().toISOString() };
+      if (existing) Object.assign(existing, row); else periods.push(row);
+    });
+    return createPreviewQuery({ data: annual ? null : savedId, error: null });
+  }
+  const qhsePolicyResult = previewQhsePolicyRpc(functionName, args);
+  if (qhsePolicyResult) return createPreviewQuery(qhsePolicyResult);
+  if (functionName === 'get_planning_absence_balance_context') {
+    const today = todayPlanningDate();
+    const overview = createPlanningPreviewOverview(today);
+    const planningPerson = overview.people.find((person) => person.id === Number(args.p_person_id));
+    const person = planningPerson ? { id: planningPerson.id, first_name: planningPerson.firstName, last_name: planningPerson.lastName, hired_on: planningPerson.hiredOn, departed_on: planningPerson.departedOn, active: planningPerson.active } : previewRows('people').find((row) => Number(row.id) === Number(args.p_person_id));
+    if (!person) return createPreviewQuery({ data: null, error: { message: 'Personne de démonstration introuvable.' } });
+    const enrollment = previewRows('planning_leave_counter_people').find((row) => Number(row.person_id) === Number(person.id));
+    const requestKind = enrollment?.request_balance_kind === 'leave_rtt' ? 'leave_rtt' : 'crew';
+    const checkpoints = requestKind === 'crew' ? previewRows('planning_crew_balance_checkpoints').filter((row) => Number(row.person_id) === Number(person.id)) : [];
+    const sourceFloor = checkpoints.map((row) => String(row.as_of)).filter((date) => date <= today).sort().at(-1);
+    const assignments = !sourceFloor ? [] : overview.assignments.filter((row) => row.crewPersonId === Number(person.id) && row.endsOn >= sourceFloor && row.startsOn <= today)
+      .map((row) => ({ id: row.id, vessel_id: row.vesselId, crew_person_id: row.crewPersonId, starts_on: row.startsOn, ends_on: row.endsOn, status_label: row.statusLabel, confirmation_status: row.confirmationStatus, updated_at: row.updatedAt }));
+    const periods = !sourceFloor ? [] : overview.periods.filter((row) => row.personId === Number(person.id) && row.endsOn >= sourceFloor && row.startsOn <= today)
+      .map((row) => ({ id: row.id, vessel_id: row.vesselId, person_id: row.personId, crew_name: row.crewName, starts_on: row.startsOn, ends_on: row.endsOn, sailor_status: row.sailorStatus }));
+    const days = !sourceFloor ? [] : overview.days.filter((row) => row.personId === Number(person.id) && row.workDate >= sourceFloor && row.workDate <= today && row.sourceLabel !== 'seapilot-vessel-location')
+      .map((row) => ({ id: row.id, vessel_id: row.vesselId, person_id: row.personId, crew_name: row.crewName, work_date: row.workDate, sailor_status: row.sailorStatus, day_status: row.dayStatus, source_label: row.sourceLabel, slot365: row.slot365 }));
+    return createPreviewQuery({ data: {
+      kind: enrollment ? 'leave_rtt' : 'crew', request_balance_kind: requestKind,
+      person: { id: person.id, first_name: person.first_name, last_name: person.last_name, hired_on: person.hired_on, departed_on: person.departed_on, active: person.active },
+      counter_periods: structuredClone(previewRows('planning_leave_counter_periods').filter((row) => Number(row.person_id) === Number(person.id))),
+      absences: structuredClone(previewRows('planning_absences').filter((row) => Number(row.person_id) === Number(person.id)).map(({ id, absence_type, starts_at, ends_at, status, updated_at }) => ({ id, absence_type, starts_at, ends_at, status, updated_at }))),
+      crew_checkpoints: structuredClone(checkpoints.map(({ person_id, as_of, balance }) => ({ person_id, as_of, balance }))),
+      crew_sources: { assignments, periods, days },
+    }, error: null });
+  }
+  if (functionName === 'projects_set_favorite') {
+    const projectId = Number(args.target_project);
+    const next = previewRows('project_favorites').filter((row) => row.project_id !== projectId).map((row) => Number(row.project_id));
+    if (args.favorite) next.push(projectId);
+    try { localStorage.setItem(PREVIEW_FAVORITES_KEY, JSON.stringify(next)); }
+    catch { return createPreviewQuery({ data: null, error: { message: 'Préférence de démonstration indisponible.' } }); }
+    PREVIEW_ROWS.project_favorites = next.map((project_id) => ({ project_id }));
+    return createPreviewQuery({ data: Boolean(args.favorite), error: null });
+  }
+  if (functionName === 'organigramme_snapshot_v2') return createPreviewQuery({ data: { ...previewOrgData, asOf: args.p_as_of }, error: null });
+  if (functionName === 'save_organigramme_emergency_default') {
+    const ids = args.p_person_ids as number[];
+    try { localStorage.setItem(PREVIEW_EMERGENCY_KEY, JSON.stringify(ids)); }
+    catch { return createPreviewQuery({ data: null, error: { message: 'Le navigateur ne permet pas de mémoriser cette sélection de démonstration.' } }); }
+    previewOrgData.emergencyDefaultIds = [...ids];
+    return createPreviewQuery({ data: null, error: null });
+  }
+  if (functionName === 'save_organigramme_responsibility') {
+    const id = args.p_id ? Number(args.p_id) : Math.max(0, ...previewOrgData.support.map((item) => item.id)) + 1;
+    const entry: OrgSupport = { id, personId: args.p_person_id ? Number(args.p_person_id) : null, name: String(args.p_name), functionLabel: String(args.p_function_label), category: args.p_category as OrgSupport['category'], position: Number(args.p_position), rank: args.p_rank as OrgRank };
+    previewOrgData.support = [...previewOrgData.support.filter((item) => item.id !== id), entry];
+    return createPreviewQuery({ data: id, error: null });
+  }
+  if (functionName === 'save_organigramme_watch') {
+    const id = args.p_id ? Number(args.p_id) : Math.max(0, ...(previewOrgData.watches || []).map((item) => item.id)) + 1;
+    const vesselId = Number(args.p_vessel_id); const name = String(args.p_name).trim();
+    const existing = previewOrgData.watches?.find((watch) => watch.id === id);
+    if (previewOrgData.watches?.some((watch) => watch.id !== id && watch.vesselId === vesselId && watch.name.toLowerCase() === name.toLowerCase())) return createPreviewQuery({ data: null, error: { message: 'Nom de bordée déjà utilisé.' } });
+    previewOrgData.watches = [...(previewOrgData.watches || []).filter((watch) => watch.id !== id), { id, vesselId, name }];
+    previewOrgData.memberships = [...previewOrgData.memberships.filter((row) => !(existing && row.vesselId === existing.vesselId && row.watchGroup === existing.name)), ...(args.p_members as Array<{ personId: number; functionLabel: string }>).map((member) => ({ personId: member.personId, vesselId, watchGroup: name, functionLabel: member.functionLabel || '', source: 'manual' as const }))];
+    return createPreviewQuery({ data: id, error: null });
+  }
+  if (functionName === 'planning_save_generic_crew_row') {
+    const existing = previewRows('planning_generic_crew_rows').find((row) => row.id === args.p_row_id);
+    const row = { id: args.p_row_id || Date.now(), vessel_id: args.p_vessel_id, watch_group: args.p_watch_group,
+      function_label: args.p_function_label, periods: args.p_periods, revision: Number(existing?.revision || 0) + 1 };
+    PREVIEW_ROWS.planning_generic_crew_rows = [...previewRows('planning_generic_crew_rows').filter((item) => item.id !== row.id), row];
+    return createPreviewQuery({ data: row, error: null });
+  }
+  if (functionName === 'planning_resolve_generic_crew_row') {
+    PREVIEW_ROWS.planning_generic_crew_rows = previewRows('planning_generic_crew_rows').filter((row) => row.id !== args.p_row_id);
+    return createPreviewQuery({ data: args.p_person_id ? Date.now() : null, error: null });
+  }
+  if (functionName === 'planning_save_crew_display_preferences') {
+    const row = { name_format: args.p_name_format, sort_order: args.p_sort_order };
+    PREVIEW_ROWS.planning_crew_display_preferences = [row];
+    return createPreviewQuery({ data: row, error: null });
+  }
+  if (functionName === 'useful_links_can_manage') return createPreviewQuery({ data: true, error: null });
   if (functionName === 'service_note_targeting_options') {
     const note = previewRows('qhse_service_notes').find((row) => Number(row.id) === Number(args.p_note_id));
     if (!note) return createPreviewQuery({ data: null, error: { message: 'Brouillon de démonstration introuvable.' } });
@@ -1867,6 +2339,11 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     settings.edit_button_enabled = args.p_edit_button_enabled !== false;
     settings.updated_at = new Date().toISOString();
     if (!previewRows('action_plan_settings').length) PREVIEW_ROWS.action_plan_settings.push(settings);
+    return createPreviewQuery({ data: settings, error: null });
+  }
+  if (functionName === 'save_planning_fleet_display_settings') {
+    const settings = previewRows('planning_fleet_display_settings')[0];
+    settings.function_order = Array.isArray(args.p_function_order) ? [...args.p_function_order] : [];
     return createPreviewQuery({ data: settings, error: null });
   }
   if (functionName === 'action_item_admin_update') {
@@ -2307,6 +2784,9 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       configuration_complete: true,
     }, error: null });
   }
+  if (functionName === 'dpr_report_projects') {
+    return Promise.resolve({ data: previewRows('projects').map(({ id, project_code, title }) => ({ id, project_code, title })), error: null });
+  }
   if (functionName === 'dpr_entry_context') {
     const reportDate = String(args.target_date || '2026-08-01');
     const requestedVesselId = args.target_vessel_id === null || args.target_vessel_id === undefined ? 9201 : Number(args.target_vessel_id);
@@ -2465,7 +2945,8 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   if (functionName === 'planning_schedule_catalog_project') {
     return createPreviewQuery(schedulePreviewProject(args));
   }
-  if (functionName === 'planning_create_and_schedule_project') {
+  if (functionName === 'planning_create_and_schedule_project' || functionName === 'planning_create_quick_project') {
+    if (functionName === 'planning_create_quick_project') args = { ...args, target_status: 'Brouillon' };
     const vessel = previewVessel(Number(args.target_primary_vessel_id));
     const client = previewRows('clients').find((row) => Number(row.id) === Number(args.target_client_id));
     const projectId = nextPreviewId('projects', 9002);
@@ -2517,7 +2998,7 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
 
 export const previewSupabaseClient = {
   from: (table: string) => table in PREVIEW_ROWS
-    ? createPreviewQuery({ data: PREVIEW_ROWS[table], error: null })
+    ? createPreviewQuery({ data: PREVIEW_ROWS[table], error: null }, table === 'useful_links' || table === 'useful_link_categories')
     : createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR }),
   rpc: (functionName: string, args?: Record<string, unknown>) => previewRpc(functionName, args),
   auth: {
@@ -2554,6 +3035,10 @@ export const previewSupabaseClient = {
         data: paths.map((path) => ({ path, signedUrl: path.startsWith('demo/') ? `/${path}` : '' })), error: null,
       }),
       download: async (path: string) => {
+        if (bucket === 'qhse-policy-attachments') {
+          const upload = Array.from(previewQhseUploads.values()).find((file) => file.path === path);
+          return upload?.blob ? { data: upload.blob, error: null } : { data: null, error: PREVIEW_WRITE_ERROR };
+        }
         const assetUrl = previewStorageAssetUrl(bucket, path);
         if (!assetUrl) return { data: previewSignaturePng(), error: null };
         const response = await fetch(assetUrl);
@@ -2561,16 +3046,33 @@ export const previewSupabaseClient = {
           ? { data: await response.blob(), error: null }
           : { data: null, error: PREVIEW_WRITE_ERROR };
       },
-      upload: (_path: string, _file: Blob, options?: { contentType?: string }) => (
+      upload: (_path: string, _file: Blob, options?: { contentType?: string }) => {
+        if (bucket === 'qhse-policy-attachments') {
+          const upload = Array.from(previewQhseUploads.values()).find((file) => file.path === _path);
+          if (!upload || upload.finalized || upload.blob || upload.mimeType !== options?.contentType || upload.sizeBytes !== _file.size) return Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR });
+          upload.blob = _file;
+          upload.url = typeof URL.createObjectURL === 'function' ? URL.createObjectURL(_file) : '';
+          return Promise.resolve({ data: { path: _path }, error: null });
+        }
+        return (
         bucket === 'project-catalog-media'
         || bucket === 'action-plan-evidence'
         || (bucket === 'working-time-imports' && options?.contentType === 'application/vnd.ms-excel.sheet.macroEnabled.12')
       )
         ? Promise.resolve({ data: { path: _path }, error: null })
-        : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
-      remove: () => bucket === 'project-catalog-media' || bucket === 'service-note-files'
+        : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR });
+      },
+      remove: (paths: string[]) => {
+        if (bucket === 'qhse-policy-attachments') {
+          const uploads = Array.from(previewQhseUploads.values()).filter((file) => paths.includes(file.path));
+          if (uploads.some((file) => file.finalized)) return Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR });
+          uploads.forEach((file) => { if (file.url) URL.revokeObjectURL(file.url); previewQhseUploads.delete(file.id); });
+          return Promise.resolve({ data: uploads.map((file) => ({ name: file.path })), error: null });
+        }
+        return bucket === 'project-catalog-media' || bucket === 'service-note-files'
         ? Promise.resolve({ data: [], error: null })
-        : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR }),
+        : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR });
+      },
     }),
   },
 } as unknown as SupabaseClient;

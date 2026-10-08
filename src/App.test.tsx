@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -84,7 +84,7 @@ describe('App', () => {
       </AuthProvider>,
     );
 
-    expect(await screen.findByRole('heading', { name: 'Connexion à BBTM' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Connexion à SeaPilot' })).toBeInTheDocument();
   });
 
   it('opens the Planning application directly with safe demo data on a preview deployment', async () => {
@@ -103,7 +103,7 @@ describe('App', () => {
     expect(document.querySelector('.content-area')).toHaveTextContent('Planning BBTM');
     expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
     expect(screen.queryByText('NAVIRES SANS EQUIPAGE')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Connexion à BBTM' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Connexion à SeaPilot' })).not.toBeInTheDocument();
   }, 60_000);
 
   it('renders the fleet certificates module with imported certificate data', async () => {
@@ -513,6 +513,10 @@ describe('App', () => {
         return createIdPaginatedQuery([]);
       }
 
+      if (table === 'project_drive_files') {
+        return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }) };
+      }
+
       if (table === 'project_documents') {
         return createIdPaginatedQuery([
           {
@@ -579,18 +583,21 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Projets' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Tous les projets/ }));
     expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent(/1\s*actifs/);
     expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent(/1\s*contrats/);
     expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent(/1\s*documents projets/);
     expect(screen.getByRole('button', { name: /P-2026-014 Campagne Atlantique 2026/ })).toHaveTextContent('P-2026-014');
     expect(screen.getAllByText('Ifremer').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: /P-2026-014 Campagne Atlantique 2026/ }));
     fireEvent.click(screen.getByRole('tab', { name: 'Documents' }));
-    expect(screen.getByText('Contrat Atlantique signe.pdf')).toBeInTheDocument();
-    expect(screen.getByText('Plan projet Atlantique.pdf')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Ouvrir dans SharePoint.*Plan projet Atlantique.pdf/ })).toHaveAttribute(
-      'href',
-      'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P-2026-014/plan.pdf',
-    );
+    expect(await screen.findByText('Contrat Atlantique signe.pdf')).toBeInTheDocument();
+    expect(await screen.findByText('Plan projet Atlantique.pdf')).toBeInTheDocument();
+    const viewer = { location: { href: '' }, opener: null, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(viewer as unknown as Window);
+    fireEvent.click(screen.getByRole('button', { name: /Ouvrir le document.*Plan projet Atlantique.pdf/ }));
+    await waitFor(() => expect(viewer.location.href).toBe('https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P-2026-014/plan.pdf'));
+    open.mockRestore();
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
 
@@ -783,6 +790,9 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: "Plan d'action" })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tout afficher · 1' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Afficher COTENTIN · 1 élément' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Audit pont COTENTIN' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Statut')).toHaveValue('open');
+    fireEvent.click(screen.getByRole('button', { name: /Audit pont COTENTIN · COTENTIN/ }));
     expect(screen.getByRole('heading', { name: 'Audit pont COTENTIN' })).toBeInTheDocument();
     expect(screen.getByText('Controle pont')).toBeInTheDocument();
     expect(screen.getByText('Remplacer garde-corps')).toBeInTheDocument();

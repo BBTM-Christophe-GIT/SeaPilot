@@ -21,6 +21,8 @@ describe('disciplinary role and UI workflows', () => {
   it('selects a named active collaborator, explains choices and preserves editable letter text', async () => {
     const user = userEvent.setup();
     renderPage('direction', undefined, true);
+    expect(screen.queryByRole('button', { name: /Luc MARTIN/ })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Nouveau dossier' }));
     await user.click(await screen.findByRole('button', { name: /Luc MARTIN/ }));
     await user.selectOptions(screen.getByLabelText(/^Motif/), 'comportement_evocateur');
     for (const label of ['Faits observés', 'Éléments justificatifs', 'Obligations et consignes applicables', 'Modalités de la sanction']) {
@@ -35,7 +37,7 @@ describe('disciplinary role and UI workflows', () => {
     expect(body.querySelector('strong')).toHaveTextContent('Constat factuel de test.');
     expect(body.querySelector('li')).toHaveTextContent('Observation datée');
     expect(body).toHaveTextContent('ne constitue pas un fondement de dépistage des stupéfiants');
-    expect(screen.getByLabelText('Prénom et NOM de l’émetteur')).toHaveValue('Marie DIRECTION');
+    expect(screen.getByLabelText('Prénom et NOM de l’émetteur')).toHaveDisplayValue('Marie DIRECTION');
     expect(screen.getByText(`Cherbourg-en-Cotentin, le ${new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris' }).format(new Date())}`)).toBeInTheDocument();
     await user.clear(body); await user.type(body, 'Texte modifié par la direction.');
     await user.click(screen.getByRole('tab', { name: 'Dossier et pièces' }));

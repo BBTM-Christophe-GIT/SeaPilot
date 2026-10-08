@@ -28,7 +28,7 @@ interface AppDialogProps {
 function focusableElements(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>(
     'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-  )).filter((element) => !element.hasAttribute('hidden') && element.getAttribute('aria-hidden') !== 'true');
+  )).filter((element) => !element.closest('[hidden], [aria-hidden="true"]') && !element.matches(':disabled'));
 }
 
 export function AppDialog({
@@ -52,8 +52,13 @@ export function AppDialog({
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const dialog = dialogRef.current;
     const first = dialog ? focusableElements(dialog)[0] : null;
-    window.requestAnimationFrame(() => (first || dialog)?.focus());
-    return () => previousFocus?.focus();
+    const focusFrame = window.requestAnimationFrame(() => {
+      if (dialog?.isConnected && !dialog.contains(document.activeElement)) (first || dialog).focus();
+    });
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      previousFocus?.focus();
+    };
   }, []);
 
   function handleKeyDown(event: KeyboardEvent<HTMLElement>) {

@@ -8,6 +8,8 @@ import {
   storeProjectAttachment,
 } from './projectDocumentStorage';
 
+vi.mock('./projectDriveStorage', () => ({ projectDriveStorage: (client: { storage: { from: (bucket: string) => unknown } }, bucket: string) => client.storage.from(bucket) }));
+
 describe('projectDocumentStorage', () => {
   it('creates a ZIP containing the issued document and every private project attachment', async () => {
     const download = vi.fn()
@@ -49,7 +51,7 @@ describe('projectDocumentStorage', () => {
     expect(download).toHaveBeenNthCalledWith(2, 'projects/144/attachments/procedure.pdf');
   });
 
-  it('stores generated documents in private Supabase Storage without invoking SharePoint', async () => {
+  it('keeps generated document registration and logical addresses stable through the storage adapter', async () => {
     const upload = vi.fn().mockResolvedValue({ data: { path: 'stored' }, error: null });
     const remove = vi.fn().mockResolvedValue({ data: [], error: null });
     const rpc = vi.fn().mockResolvedValue({ data: 91, error: null });
@@ -108,7 +110,7 @@ describe('projectDocumentStorage', () => {
     expect(stored).toMatchObject({ id: 92, storageBucket: 'project-files', webUrl: '' });
   });
 
-  it('uploads categorized attachments to private Supabase Storage and registers their metadata', async () => {
+  it('registers categorized attachments after the storage adapter confirms upload', async () => {
     const upload = vi.fn().mockResolvedValue({ data: { path: 'stored' }, error: null });
     const remove = vi.fn().mockResolvedValue({ data: [], error: null });
     const rpc = vi.fn().mockResolvedValue({ data: 73, error: null });

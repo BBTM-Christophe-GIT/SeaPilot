@@ -1,19 +1,28 @@
 import { addPlanningDays, formatPlanningDate } from './planningDates';
 import { formatPlanningPerson, normalizePlanningText, type PlanningDateRange } from './planningModel';
 import { PLANNING_ASSIGNMENT_NOTE_SOURCE, PLANNING_VESSEL_LOCATION_SOURCE, type PlanningOverview, type PlanningPerson } from './planningQueries';
-import type { PlanningAbsenceRecord } from './planningP12';
+import type { PlanningAbsenceRecord, PlanningAbsenceType } from './planningP12';
 import { latestPlanningSources } from './planningSourcePriority';
 
 export interface PlanningCrewBalanceCheckpoint { personId: number; asOf: string; balance: number }
 export interface PlanningCrewBalanceDay { value: number | null; explanation: string }
 export type PlanningCrewBalanceDays = ReadonlyMap<string, PlanningCrewBalanceDay>;
 
+const ABSENCE_BALANCE_STATUSES: Record<PlanningAbsenceType, string> = {
+  leave: 'Congés',
+  rtt: 'RTT',
+  illness: 'Arrêt Maladie',
+  training: 'Formation',
+  recovery: 'Repos',
+  medical_visit: 'Visite médicale',
+};
+
 export function planningCrewDayCents(status: string): number | null {
   const key = normalizePlanningText(status);
   if (['ENMER', 'EMBARQUE', 'EMBARQUEMENT'].includes(key)) return 105;
   if (['ATERRE', 'FORMATION'].includes(key)) return 50;
   if (['ARRETMALADIE', 'ACCIDENTDUTRAVAIL'].includes(key)) return 0;
-  if (['', 'EXTRA', 'REPOS', 'ENREPOS', 'CONGE', 'CONGES', 'VACANCE', 'VACANCES', 'DEBARQUE', 'DEBARQUEMENT'].includes(key)) return -100;
+  if (['', 'EXTRA', 'REPOS', 'ENREPOS', 'RTT', 'CONGE', 'CONGES', 'VACANCE', 'VACANCES', 'DEBARQUE', 'DEBARQUEMENT'].includes(key)) return -100;
   return null;
 }
 
@@ -34,7 +43,7 @@ export function buildPlanningCrewBalanceDays(
   const assignments = overview.assignments.filter((item) => item.crewPersonId === person.id && item.confirmationStatus !== 'cancelled');
   const periods = overview.periods.filter((item) => matches(item.personId, item.crewName));
   const days = overview.days.filter((item) => matches(item.personId, item.crewName) && item.sourceLabel !== PLANNING_VESSEL_LOCATION_SOURCE);
-  const leave = absences.filter((item) => item.personId === person.id && item.status === 'approved');
+  const approvedAbsences = absences.filter((item) => item.personId === person.id && item.status === 'approved');
   let cents: number | null = null;
   let explanation = 'Solde à initialiser';
   for (let date = start; date <= range.end; date = addPlanningDays(date, 1)) {
@@ -54,8 +63,8 @@ export function buildPlanningCrewBalanceDays(
         ...days.filter((item) => item.workDate === date && (item.sourceLabel !== PLANNING_ASSIGNMENT_NOTE_SOURCE
           || activeAssignments.some((assignment) => item.slot365 === `assignment:${assignment.id}`)))
           .map((item) => ({ vesselId: item.vesselId, status: item.sailorStatus || item.dayStatus, priority: 3, sourceId: item.id })),
-        ...leave.filter((item) => item.startsOn <= date && item.endsOn >= date).map((item) => ({ vesselId: null, priority: 4, sourceId: item.id, updatedAt: item.updatedAt,
-          status: ({ leave: 'Congés', illness: 'Arrêt Maladie', training: 'Formation', recovery: 'Repos', medical_visit: 'Visite médicale' })[item.absenceType] })),
+        ...approvedAbsences.filter((item) => item.startsOn <= date && item.endsOn >= date).map((item) => ({ vesselId: null, priority: 4, sourceId: item.id, updatedAt: item.updatedAt,
+          status: ABSENCE_BALANCE_STATUSES[item.absenceType] })),
       ]);
       const priority = Math.max(...candidates.map((item) => item.priority));
       const effective = candidates.filter((item) => item.priority === priority);

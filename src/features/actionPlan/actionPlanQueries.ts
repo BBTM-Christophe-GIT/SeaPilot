@@ -161,6 +161,7 @@ export interface ActionPlanSettings {
 
 export interface ActionPlanData {
   actions: ActionItemRecord[];
+  assignedVesselIds?: number[];
   documents: ActionDocumentRecord[];
   actionTypes: ActionTypeCatalogRecord[];
   vessels: VesselOption[];
@@ -678,8 +679,11 @@ export async function fetchActionPlanHseDashboard(
   };
 }
 
-export async function fetchActionPlanData(client: SupabaseClient): Promise<ActionPlanData> {
+export async function fetchActionPlanData(client: SupabaseClient, restrictToAssignedVessels = false): Promise<ActionPlanData> {
   const currentYear = new Date().getFullYear();
+  const vesselScope = restrictToAssignedVessels ? await client.rpc('action_plan_current_vessel_scope') : null;
+  if (vesselScope?.error) throw vesselScope.error;
+  const assignedVessels = vesselScope ? new Set<number>((vesselScope.data || []).map(Number)) : null;
   const [actionsResult, documentsResult, typesResult, vesselsResult, peopleResult, assigneesResult, treatmentEventsResult, settingsResult, hseResult] = await Promise.allSettled([
     fetchActionItems(client), fetchActionDocuments(client), fetchActionTypes(client), fetchVessels(client),
     fetchPeople(client), fetchActionAssignees(client), fetchActionTreatmentEvents(client),
@@ -689,15 +693,18 @@ export async function fetchActionPlanData(client: SupabaseClient): Promise<Actio
   if (actionsResult.status === 'rejected') throw actionsResult.reason;
   const actionTypes = typesResult.status === 'fulfilled' ? typesResult.value : [];
   const currentLabels = new Map(actionTypes.map((type) => [type.key, type.label]));
+  // RLS includes the current vessel plus reports authored by / assigned to this
+  // person, even on another vessel. Do not discard those personal reports here.
   const actions = await hydrateActionThumbnailUrls(client, actionsResult.value.map((action) => ({
     ...action,
     actionType: currentLabels.get(action.actionTypeKey) || action.actionType,
   })));
   return {
     actions,
+    assignedVesselIds: assignedVessels ? [...assignedVessels] : undefined,
     documents: documentsResult.status === 'fulfilled' ? documentsResult.value : [],
     actionTypes,
-    vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value : [],
+    vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value.filter((vessel) => !assignedVessels || assignedVessels.has(vessel.id)) : [],
     people: peopleResult.status === 'fulfilled' ? peopleResult.value : [],
     assignees: assigneesResult.status === 'fulfilled' ? assigneesResult.value : [],
     treatmentEvents: treatmentEventsResult.status === 'fulfilled' ? treatmentEventsResult.value : [],

@@ -8,7 +8,7 @@ import { RequireAuth } from './features/auth/RequireAuth';
 import { DprPage } from './features/dpr/DprPage';
 import { FleetCertificatesPage } from './features/fleetCertificates/FleetCertificatesPage';
 import { FleetPage } from './features/fleet/FleetPage';
-import { HumanResourcesPage } from './features/humanResources/HumanResourcesPage';
+import { HumanResourcesRoute } from './features/humanResources/HumanResourcesPage';
 import { ModulePage } from './features/modules/ModulePage';
 import { APP_MODULES } from './features/permissions/moduleAccess';
 import { isSeaPilotPreviewDeployment } from './features/preview/previewMode';
@@ -21,17 +21,28 @@ import { ServiceProvidersPage } from './features/serviceProviders/ServiceProvide
 import { ServiceNotesPage } from './features/serviceNotes/ServiceNotesPage';
 import { AppShell } from './features/shell/AppShell';
 import type { RoleKey } from './features/permissions/roles';
+import { LIFTING_SECTIONS } from './features/lifting/liftingSections';
 
+const OrganigrammePage = lazy(() => import('./features/organigramme/OrganigrammePage').then((module) => ({ default: module.OrganigrammePage })));
+const UsefulLinksPage = lazy(() => import('./features/usefulLinks/UsefulLinksPage').then((module) => ({ default: module.UsefulLinksPage })));
 const WorkingTimePage = lazy(() => import('./features/workingTime/WorkingTimePage').then((module) => ({ default: module.WorkingTimePage })));
+const ExpenseNotesPage = lazy(() => import('./features/expenseNotes/ExpenseNotesPage').then((module) => ({ default: module.ExpenseNotesPage })));
+const UserManualPage = lazy(() => import('./features/manual/UserManualPage').then((module) => ({ default: module.UserManualPage })));
+const ChemicalsPage = lazy(() => import('./features/chemicals/ChemicalsPage').then((module) => ({ default: module.ChemicalsPage })));
+const EmergencyExercisesPage = lazy(() => import('./features/emergencyExercises/EmergencyExercisesPage').then((module) => ({ default: module.EmergencyExercisesPage })));
 const PlanningPage = lazy(() => import('./features/planning/PlanningPage').then((module) => ({ default: module.PlanningPage })));
 const KpiPage = lazy(() => import('./features/kpi/KpiPage').then((module) => ({ default: module.KpiPage })));
 const HomePage = lazy(() => import('./features/home/HomePage').then((module) => ({ default: module.HomePage })));
+const QhsePolicyPage = lazy(() => import('./features/qhsePolicy/QhsePolicyPage').then((module) => ({ default: module.QhsePolicyPage })));
 const BillingElementsPage = lazy(() => import('./features/projects/BillingElementsPage').then((module) => ({ default: module.BillingElementsPage })));
 const AnnualReviewsPage = lazy(() => import('./features/annualReviews/AnnualReviewsPage').then((module) => ({ default: module.AnnualReviewsPage })));
 const DisciplinaryPage = lazy(() => import('./features/disciplinary/DisciplinaryPage').then((module) => ({ default: module.DisciplinaryPage })));
 const LiftingPage = lazy(() => import('./features/lifting/LiftingPage').then((module) => ({ default: module.LiftingPage })));
+const LsaPage = lazy(() => import('./features/lsa/LsaPage').then((module) => ({ default: module.LsaPage })));
+const RegulatoryLibraryPage = lazy(() => import('./features/regulatoryLibrary/RegulatoryLibraryPage').then((module) => ({ default: module.RegulatoryLibraryPage })));
 
 const InternalAuditsPage = lazy(() => import('./features/internalAudits/InternalAuditsPage').then((module) => ({ default: module.InternalAuditsPage })));
+const DocumentaryAuditsPage = lazy(() => import('./features/documentaryAudits/DocumentaryAuditsPage').then((module) => ({ default: module.DocumentaryAuditsPage })));
 
 interface AppProps {
   previewModeOverride?: boolean;
@@ -59,19 +70,35 @@ export default function App({ previewModeOverride }: AppProps) {
           }
         >
           <Route index element={<Suspense fallback={<div className="admin-state" role="status">Chargement de votre accueil…</div>}><HomePage /></Suspense>} />
+          <Route path="manual/:moduleKey?" element={<Suspense fallback={<div className="admin-state" role="status">Chargement du manuel…</div>}><UserManualPage /></Suspense>} />
+          {LIFTING_SECTIONS.map((section) => <Route key={section.key} path={`modules/lifting/${section.path}`} element={<Suspense fallback={<div className="admin-state" role="status">Chargement du registre de levage…</div>}><LiftingPage section={section.key} /></Suspense>} />)}
           {APP_MODULES.filter((module) => module.key !== 'home').map((module) => (
             <Route
               key={module.key}
               path={`modules/${module.key}`}
               element={
-                module.key === 'admin' ? (
+                module.key === 'regulatoryLibrary' || module.key === 'regulatorySafety' || module.key === 'regulatoryTransport' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement de la bibliothèque réglementaire…</div>}><RegulatoryLibraryPage key={module.key} category={module.key === 'regulatorySafety' ? 'safety' : module.key === 'regulatoryTransport' ? 'transport' : undefined} /></Suspense>
+                ) : module.key === 'usefulLinks' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement des liens utiles…</div>}><UsefulLinksPage /></Suspense>
+                ) : module.key === 'admin' ? (
                   <AdminPage client={previewMode ? previewSupabaseClient : undefined} previewMode={previewMode} />
+                ) : module.key === 'qhsePolicy' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement de la politique QHSE…</div>}><QhsePolicyPage /></Suspense>
                 ) : module.key === 'kpi' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des indicateurs HSE…</div>}><KpiPage /></Suspense>
+                ) : module.key === 'emergencyExercises' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement du registre des exercices…</div>}><EmergencyExercisesPage /></Suspense>
+                ) : module.key === 'lsa' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement du registre LSA…</div>}><LsaPage /></Suspense>
+                ) : module.key === 'chemicals' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement des produits chimiques…</div>}><ChemicalsPage /></Suspense>
                 ) : module.key === 'actionPlan' ? (
                   <ActionPlanPage />
                 ) : module.key === 'internalAudits' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des audits ISM internes…</div>}><InternalAuditsPage /></Suspense>
+                ) : module.key === 'ovid' || module.key === 'ecmid' || module.key === 'externalIsmAudits' || module.key === 'clientAudits' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement du dossier d’audit…</div>}><DocumentaryAuditsPage key={module.key} kind={module.key === 'externalIsmAudits' ? 'external_ism' : module.key === 'clientAudits' ? 'client' : module.key} /></Suspense>
                 ) : module.key === 'dpr' ? (
                   <DprPage />
                 ) : module.key === 'certificates' ? (
@@ -81,7 +108,9 @@ export default function App({ previewModeOverride }: AppProps) {
                 ) : module.key === 'fleet' ? (
                   <FleetPage />
                 ) : module.key === 'humanResources' ? (
-                  <HumanResourcesPage />
+                  <HumanResourcesRoute />
+                ) : module.key === 'organigramme' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement de l’organigramme…</div>}><OrganigrammePage /></Suspense>
                 ) : module.key === 'annualReviews' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des entretiens…</div>}><AnnualReviewsPage /></Suspense>
                 ) : module.key === 'disciplinary' ? (
@@ -98,10 +127,12 @@ export default function App({ previewModeOverride }: AppProps) {
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des éléments de facturation…</div>}><BillingElementsPage /></Suspense>
                 ) : module.key === 'purchaseRequests' ? (
                   <PurchaseRequestsPage />
+                ) : module.key === 'expenseNotes' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement des notes de frais…</div>}><ExpenseNotesPage /></Suspense>
                 ) : module.key === 'serviceProviders' ? (
                   <ServiceProvidersPage />
                 ) : module.key === 'lifting' ? (
-                  <Suspense fallback={<div className="admin-state" role="status">Chargement du registre de levage…</div>}><LiftingPage /></Suspense>
+                  <Navigate to="/modules/lifting/apparaux" replace />
                 ) : module.key === 'qhse' ? (
                   <QhseDocumentsPage />
                 ) : (

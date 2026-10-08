@@ -47,7 +47,8 @@ Les PDF historiques restent les originaux déjà stockés dans Certificats flott
 ## Accès et conservation
 
 - Tous les profils du module (Admin, Direction, Armement, Capitaine et Marin) : ajout de matériel et ajout / téléchargement de certificats sur leurs navires accessibles.
-- Admin, Direction, Armement : modification, retrait, restauration et remplacement du matériel ; création et finalisation des contrôles.
+- Admin, Direction, Armement et Capitaine : bouton **Supprimer** pour chaque matériel actif des registres Apparaux et Remorques, sur les navires accessibles. Une confirmation retire le matériel de l’inventaire actif sans effacer ses rapports ni ses certificats. Le profil Marin ne dispose pas de ce bouton et la RPC refuse aussi ses demandes de suppression.
+- Admin, Direction, Armement : modification, restauration et remplacement du matériel ; création et finalisation des contrôles.
 - Création d’un contrôle masquée et refusée côté serveur pour Capitaine / Marin, sauf le compte vérifié d’Antoine MONCEAUX lorsqu’il possède le rôle Capitaine. La dérogation est liée à son `auth.uid` dans une table privée ; modifier un nom d’affichage ne donne aucun droit.
 - Capitaine et Marin : consultation et saisie des contrôles sur les navires accessibles selon les règles réelles du planning et les affectations. Les fonctions SQL contrôlent les droits indépendamment de l’interface.
 - Aucun accès anonyme aux données. Le tampon est conservé dans `lifting-assets`, accessible uniquement aux profils de gestion de la société. Aucun tampon ni inventaire réel n’est inclus dans les données de démonstration publiques.
@@ -67,6 +68,8 @@ La RPC `delete_lifting_inspection_draft(id, revision)`, ajoutée par `2026091004
 Validation : tests React de confirmation/annulation, deux registres, conservation de l’inventaire et des autres saisies, filtre d’année, conflits de révision, rapports publiés et profils ; fixtures SQL réelles Admin/Direction/Armement/Capitaine/Marin, accès anonyme/inter-sociétés, révision absente, préservation exacte des autres rapports et versions de certificats, avec rollback. L’avis Supabase sur cette RPC `SECURITY DEFINER` authentifiée correspond au point d’entrée de mutation volontairement contrôlé ([détail de l’avis](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)) ; identité, rôles, périmètre et statut sont vérifiés dans la fonction.
 
 ## Exploitation et validation
+
+- Droits de suppression de matériel : appliquer `20260922084411_lifting_inventory_delete_roles.sql` avant le déploiement de l’interface. La RPC vérifie le rôle et le périmètre du navire ; la restauration reste réservée aux profils de gestion. Les fixtures de composant couvrent les cinq profils et les deux registres ; les fixtures SQL vérifient les affectations réelles, les refus Marin / hors périmètre et la conservation de l’historique avec rollback.
 
 - Migration autorisant plusieurs contrôles dans une année : `20260909203059_lifting_multiple_inspections_per_year.sql`. Les tests couvrent la création le même jour, avant échéance, les instantanés indépendants et la publication de deux certificats sans écrasement.
 - Migration des formulaires et de la numérotation : `20260909191741_lifting_accessory_checklists.sql`.

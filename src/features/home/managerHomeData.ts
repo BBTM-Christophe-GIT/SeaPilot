@@ -1,10 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RoleKey } from '../permissions/roles';
 import { getAnnualReviewAlert } from '../procedures/procedureReview';
+import { derivePurchaseRequestStage, isPurchaseRequestRejected } from '../purchaseRequests/purchaseRequestQueries';
+import { buildManagerHomeVessels, normalizeHomeVesselName, type ManagerHomeVessel, type ManagerHomeVesselIndex } from './managerHomeVessels';
 
 export type ManagerHomeGroupKey = 'purchases' | 'workingTime' | 'procedures' | 'fleetDocuments' | 'humanResources';
 export type ManagerHomeTone = 'danger' | 'warning' | 'success';
-export type ManagerHomeFilter = 'all' | 'urgent' | 'week' | 'purchases' | 'documents' | 'fleet' | 'workingTime' | 'humanResources';
+export type ManagerHomeFilter = 'all' | 'urgent' | 'week' | 'purchases' | 'documents' | 'procedures' | 'fleet' | 'workingTime' | 'humanResources';
 
 export interface ManagerHomeItem {
   id: string;
@@ -22,12 +24,14 @@ export interface ManagerHomeItem {
   queueTone: ManagerHomeTone;
   urgent: boolean;
   thisWeek: boolean;
+  vessels: ManagerHomeVessel[];
 }
 
 export interface ManagerHomeDashboardResult {
   items: ManagerHomeItem[];
   unavailableSources: string[];
   scopeLabel: string | null;
+  vessels: ManagerHomeVessel[];
 }
 
 interface PurchaseRequestRow {
@@ -48,6 +52,7 @@ interface PurchaseRequestRow {
 }
 
 interface FleetCertificateRow {
+  register?: 'lsa';
   id: number;
   vessel_id?: number | null;
   vessel_name: string | null;
@@ -61,6 +66,7 @@ interface FleetCertificateRow {
 }
 
 interface ProcedureReviewRow {
+  library?: 'published';
   id: number;
   procedure_code: string | null;
   title: string;
@@ -111,6 +117,7 @@ export interface ManagerHomeAssignmentRow {
 }
 
 export interface ManagerHomeAssignmentScope {
+  assignments: ManagerHomeAssignmentRow[];
   vesselIds: number[];
   vesselNames: string[];
   personIds: number[];
@@ -118,6 +125,7 @@ export interface ManagerHomeAssignmentScope {
 }
 
 export interface ManagerHomeSourceRows {
+  assignments?: ManagerHomeAssignmentRow[];
   purchases: PurchaseRequestRow[];
   procedures: ProcedureReviewRow[];
   fleetCertificates: FleetCertificateRow[];
@@ -131,13 +139,6 @@ const UPCOMING_HORIZON_DAYS = 90;
 
 function normalize(value: string | null | undefined): string {
   return (value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-}
-
-function normalizeVesselName(value: string | null | undefined): string {
-  return normalize(value)
-    .replace(/^(?:m\s*\/?\s*v|mv)\s+/, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
 }
 
 export function toLocalIsoDate(date: Date): string {
@@ -283,6 +284,7 @@ export function buildManagerHomeAssignmentScope(
   );
 
   return {
+    assignments: scopedAssignments,
     vesselIds,
     vesselNames: [...new Set(actorAssignments.map(assignmentVesselName).filter(Boolean))],
     personIds: [...new Set([
@@ -298,9 +300,9 @@ function rowMatchesVesselScope(
   vesselName: string | null,
   scope: ManagerHomeAssignmentScope,
 ): boolean {
-  if (vesselId != null && scope.vesselIds.includes(vesselId)) return true;
-  const normalizedName = normalizeVesselName(vesselName);
-  return Boolean(normalizedName) && scope.vesselNames.some((name) => normalizeVesselName(name) === normalizedName);
+  if (vesselId != null) return scope.vesselIds.includes(vesselId);
+  const normalizedName = normalizeHomeVesselName(vesselName);
+  return Boolean(normalizedName) && scope.vesselNames.some((name) => normalizeHomeVesselName(name) === normalizedName);
 }
 
 export function filterManagerHomeSourcesForScope(
@@ -312,6 +314,7 @@ export function filterManagerHomeSourcesForScope(
   const scopedPeopleByAlias = buildPeopleByUniqueAlias(scopedPeople);
 
   return {
+    assignments: scope.assignments,
     purchases: sources.purchases.filter((row) => rowMatchesVesselScope(row.vessel_id, row.vessel_name, scope)),
     procedures: sources.procedures.filter((row) => rowMatchesVesselScope(null, row.vessel_name, scope)),
     fleetCertificates: sources.fleetCertificates.filter((row) => rowMatchesVesselScope(row.vessel_id, row.vessel_name, scope)),
@@ -370,49 +373,37 @@ function formatRequestNumber(row: PurchaseRequestRow): string {
   return `DA-${year}-${raw.padStart(3, '0')}`;
 }
 
-function purchaseStage(row: PurchaseRequestRow): 'to_process' | 'ordered' | 'receiving' | 'completed' {
-  const status = normalize(row.status);
-  if (row.received_on || status.includes('traitee') || status.includes('recu') || status.includes('termine')) return 'completed';
-  if (status.includes('reception') || (row.expected_delivery_on && !row.received_on)) return 'receiving';
-  if (row.ordered_on || status.includes('commande') || status.includes('cours')) return 'ordered';
-  return 'to_process';
-}
-
-function purchaseItems(rows: PurchaseRequestRow[], today: Date): ManagerHomeItem[] {
+function purchaseItems(rows: PurchaseRequestRow[], today: Date, vessels: ManagerHomeVesselIndex): ManagerHomeItem[] {
   const todayKey = toLocalIsoDate(today);
   return rows.flatMap((row) => {
-    const stage = purchaseStage(row);
-    const approval = normalize(row.approval_status);
-    if (stage === 'completed' || approval.includes('refuse')) return [];
+    const stage = derivePurchaseRequestStage({
+      status: row.status || '',
+      orderedOn: row.ordered_on || '',
+      expectedDeliveryOn: row.expected_delivery_on || '',
+      receivedOn: row.received_on || '',
+    });
+    if (stage !== 'to_process' || isPurchaseRequestRejected({ approvalStatus: row.approval_status || '' })) return [];
 
-    const expectedDate = row.expected_delivery_on?.slice(0, 10) || '';
-    const expectedIsFuture = expectedDate && daysFromToday(expectedDate, today) > 0;
-    const dueDate = stage === 'to_process' || !expectedIsFuture ? todayKey : expectedDate;
-    if (daysFromToday(dueDate, today) > UPCOMING_HORIZON_DAYS) return [];
+    const dueDate = todayKey;
     const requestAge = row.requested_on ? Math.max(0, -daysFromToday(row.requested_on.slice(0, 10), today)) : 0;
-    const explicitlyUrgent = Boolean(row.urgent) || (stage === 'to_process' && requestAge >= 2);
+    const explicitlyUrgent = Boolean(row.urgent) || requestAge >= 2;
     const tone = explicitlyUrgent ? 'danger' : toneForDueDate(dueDate, today);
     const queueTone = queueToneForDueDate(dueDate, today, explicitlyUrgent);
     const urgent = queueTone === 'danger';
-    const action = stage === 'to_process'
-      ? 'Valider la demande'
-      : stage === 'ordered'
-        ? 'Suivre la commande'
-        : 'Contrôler la réception';
-    const deadline = stage === 'to_process'
-      ? requestAge > 0 ? `En attente depuis ${requestAge} j` : "Aujourd'hui"
-      : deadlineForDate(dueDate, today, 'Livraison');
+    const action = 'Valider la demande';
+    const deadline = requestAge > 0 ? `En attente depuis ${requestAge} j` : "Aujourd'hui";
     const contextEntity = row.vessel_name || row.project_code || row.requester_name || 'Demande interne';
 
     return [{
       id: `purchase-${row.id}`,
+      vessels: vessels.forRow(row.vessel_id, row.vessel_name),
       group: 'purchases',
       tags: ['purchases'],
       title: `${formatRequestNumber(row)} · ${row.title || 'Demande d’achat'}`,
       context: `Achats · ${contextEntity}`,
       deadline,
       action,
-      to: '/modules/purchaseRequests',
+      to: `/modules/purchaseRequests?requestId=${row.id}`,
       dueDate,
       visibleDates: visibleDatesFor(dueDate, today, urgent),
       queueVisibleDates: queueVisibleDatesFor(dueDate, dueDate, today, queueTone),
@@ -425,6 +416,11 @@ function purchaseItems(rows: PurchaseRequestRow[], today: Date): ManagerHomeItem
 }
 
 function effectiveFleetStatus(row: FleetCertificateRow, today: Date): string {
+  if (row.register === 'lsa') {
+    if (!row.expires_on) return 'valid';
+    const days = daysFromToday(row.expires_on.slice(0, 10), today);
+    return days < 0 ? 'expired' : days <= UPCOMING_HORIZON_DAYS ? 'renew_due' : 'valid';
+  }
   const status = normalize(row.status);
   if (['missing', 'manquant', 'pending_validation', 'a valider'].some((value) => status.includes(value))) return status;
   const expiry = row.expires_on?.slice(0, 10) || '';
@@ -435,7 +431,7 @@ function effectiveFleetStatus(row: FleetCertificateRow, today: Date): string {
   return status || 'valid';
 }
 
-function fleetCertificateItems(rows: FleetCertificateRow[], today: Date): ManagerHomeItem[] {
+function fleetCertificateItems(rows: FleetCertificateRow[], today: Date, vessels: ManagerHomeVesselIndex): ManagerHomeItem[] {
   const todayKey = toLocalIsoDate(today);
   return rows.flatMap((row) => {
     if (row.is_active_fleet === false) return [];
@@ -446,7 +442,7 @@ function fleetCertificateItems(rows: FleetCertificateRow[], today: Date): Manage
     const status = effectiveFleetStatus(row, today);
     if (status === 'valid' || status === 'valide') return [];
 
-    const planned = row.planned_on?.slice(0, 10) || '';
+    const planned = row.register === 'lsa' ? '' : row.planned_on?.slice(0, 10) || '';
     const plannedIsUpcoming = planned && daysFromToday(planned, today) >= 0;
     const expiryIsUpcoming = expiry && daysFromToday(expiry, today) >= 0;
     const dueDate = plannedIsUpcoming ? planned : expiryIsUpcoming ? expiry : todayKey;
@@ -465,14 +461,15 @@ function fleetCertificateItems(rows: FleetCertificateRow[], today: Date): Manage
       : expiry ? deadlineForDate(expiry, today, 'Expire') : 'Document manquant';
 
     return [{
-      id: `fleet-${row.id}`,
+      id: `${row.register === 'lsa' ? 'lsa' : 'fleet'}-${row.id}`,
+      vessels: vessels.forRow(row.vessel_id, row.vessel_name),
       group: 'fleetDocuments',
       tags: ['documents', 'fleet'],
       title: row.document_title || row.title || 'Document flotte',
-      context: `Flotte · ${row.vessel_name || 'Navire non renseigné'}`,
+      context: `${row.register === 'lsa' ? 'LSA' : 'Flotte'} · ${row.vessel_name || 'Navire non renseigné'}`,
       deadline,
-      action,
-      to: '/modules/certificates',
+      action: row.register === 'lsa' ? 'Ouvrir le registre LSA' : action,
+      to: row.register === 'lsa' ? `/modules/lsa?${row.vessel_id ? `vessel=${row.vessel_id}&` : ''}item=${row.id}` : `/modules/certificates?certificate=${row.id}`,
       dueDate,
       visibleDates: visibleDatesFor(dueDate, today, urgent),
       queueVisibleDates: queueVisibleDatesFor(dueDate, alarmDate, today, queueTone),
@@ -484,7 +481,7 @@ function fleetCertificateItems(rows: FleetCertificateRow[], today: Date): Manage
   });
 }
 
-function procedureReviewItems(rows: ProcedureReviewRow[], today: Date): ManagerHomeItem[] {
+function procedureReviewItems(rows: ProcedureReviewRow[], today: Date, vessels: ManagerHomeVesselIndex): ManagerHomeItem[] {
   const todayKey = toLocalIsoDate(today);
   return rows.flatMap((row) => {
     if (normalize(row.status).includes('archive')) return [];
@@ -494,15 +491,16 @@ function procedureReviewItems(rows: ProcedureReviewRow[], today: Date): ManagerH
     const queueTone = queueToneForDueDate(alert.dueDate, today);
     return [{
       id: `procedure-review-${row.id}`,
+      vessels: vessels.forRow(null, row.vessel_name),
       group: 'procedures',
-      tags: ['documents'],
+      tags: ['documents', 'procedures'],
       title: `${row.procedure_code ? `${row.procedure_code} · ` : ''}${row.title}`,
       context: `Procédures QHSE · ${scope}`,
       deadline: alert.daysUntilDue < 0
         ? `Revue échue depuis ${Math.abs(alert.daysUntilDue)} j`
         : `Revue le ${formatShortDate(alert.dueDate)} · J-${alert.daysUntilDue}`,
       action: 'Ouvrir la fiche information',
-      to: '/modules/procedures',
+      to: `/modules/procedures?${row.library === 'published' ? 'document' : 'procedure'}=${row.id}`,
       dueDate: alert.dueDate,
       visibleDates: [...new Set([todayKey, alert.dueDate])],
       queueVisibleDates: [...new Set([todayKey, alert.dueDate])],
@@ -514,7 +512,7 @@ function procedureReviewItems(rows: ProcedureReviewRow[], today: Date): ManagerH
   });
 }
 
-function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date): ManagerHomeItem[] {
+function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date, vessels: ManagerHomeVesselIndex): ManagerHomeItem[] {
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const peopleByUniqueAlias = buildPeopleByUniqueAlias(people);
   const todayKey = toLocalIsoDate(today);
@@ -539,18 +537,20 @@ function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date
     const name = person ? personName(person) : (row.person_name || personName(undefined));
     const medical = normalize(row.category_key).includes('medical') || normalize(row.title).includes('medical');
     const documentTitle = row.title || (medical ? 'Visite médicale' : 'Document RH');
+    const targetPersonId = person?.id ?? row.person_id;
     const title = documentTitleWithPerson(name, documentTitle);
     const deadline = row.medical_unfit ? 'Inaptitude déclarée' : expiry ? deadlineForDate(expiry, today, medical ? 'Visite' : 'Expire') : 'Document manquant';
 
     return [{
       id: `hr-document-${row.id}`,
+      vessels: vessels.forPerson(person?.id ?? row.person_id),
       group: 'humanResources',
       tags: ['documents', 'humanResources'],
       title,
       context: `Ressources humaines${person?.function_label ? ` · ${person.function_label}` : ''}`,
       deadline,
       action: 'Voir le dossier',
-      to: '/modules/humanResources',
+      to: `/modules/humanResources?${targetPersonId ? `person=${targetPersonId}&` : ''}document=${row.id}`,
       dueDate,
       visibleDates: visibleDatesFor(dueDate, today, urgent),
       queueVisibleDates: queueVisibleDatesFor(dueDate, alarmDate, today, queueTone),
@@ -562,7 +562,7 @@ function hrDocumentItems(rows: HrDocumentRow[], people: PersonRow[], today: Date
   });
 }
 
-function contractItems(rows: PersonRow[], today: Date): ManagerHomeItem[] {
+function contractItems(rows: PersonRow[], today: Date, vessels: ManagerHomeVesselIndex): ManagerHomeItem[] {
   return rows.flatMap((person) => {
     const departedOn = person.departed_on?.slice(0, 10) || '';
     if (!departedOn || person.active === false) return [];
@@ -574,13 +574,14 @@ function contractItems(rows: PersonRow[], today: Date): ManagerHomeItem[] {
 
     return [{
       id: `contract-${person.id}`,
+      vessels: vessels.forPerson(person.id),
       group: 'humanResources',
       tags: ['humanResources'],
       title: `Contrat ${name}`,
       context: `Ressources humaines${person.function_label ? ` · ${person.function_label}` : ''}`,
       deadline: remainingDays === 0 ? "Fin aujourd'hui" : `Fin le ${formatShortDate(departedOn)}`,
       action: 'Préparer le renouvellement',
-      to: '/modules/humanResources',
+      to: `/modules/humanResources?person=${person.id}&section=contract`,
       dueDate: departedOn,
       visibleDates: visibleDatesFor(departedOn, today, false),
       queueVisibleDates: queueVisibleDatesFor(departedOn, departedOn, today, queueTone),
@@ -600,7 +601,7 @@ function workingTimeTitle(codes: string[]): string {
   return 'Non-conformité du temps de travail';
 }
 
-function workingTimeItems(rows: WorkingTimeCalculationRow[], people: PersonRow[], today: Date): ManagerHomeItem[] {
+function workingTimeItems(rows: WorkingTimeCalculationRow[], people: PersonRow[], today: Date, vessels: ManagerHomeVesselIndex): ManagerHomeItem[] {
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const latestByPerson = new Map<number, WorkingTimeCalculationRow>();
   [...rows]
@@ -621,13 +622,14 @@ function workingTimeItems(rows: WorkingTimeCalculationRow[], people: PersonRow[]
 
     return [{
       id: `working-time-${row.id}`,
+      vessels: vessels.forPerson(row.person_id),
       group: 'workingTime',
       tags: ['workingTime'],
       title: workingTimeTitle(row.violation_codes || []),
       context: `Temps de travail · ${name}`,
       deadline,
       action: "Examiner l'alerte",
-      to: '/modules/workingTime',
+      to: `/modules/workingTime?person=${row.person_id}&date=${dueDate}`,
       dueDate,
       visibleDates: visibleDatesFor(dueDate, today, true),
       queueVisibleDates: queueVisibleDatesFor(dueDate, dueDate, today, 'danger'),
@@ -643,13 +645,14 @@ const GROUP_ORDER: ManagerHomeGroupKey[] = ['purchases', 'workingTime', 'procedu
 const TONE_ORDER: ManagerHomeTone[] = ['danger', 'warning', 'success'];
 
 export function buildManagerHomeItems(sources: ManagerHomeSourceRows, today = new Date()): ManagerHomeItem[] {
+  const vessels = buildManagerHomeVessels(sources);
   return [
-    ...purchaseItems(sources.purchases, today),
-    ...workingTimeItems(sources.workingTimeCalculations, sources.people, today),
-    ...procedureReviewItems(sources.procedures, today),
-    ...fleetCertificateItems(sources.fleetCertificates, today),
-    ...hrDocumentItems(sources.hrDocuments, sources.people, today),
-    ...contractItems(sources.people, today),
+    ...purchaseItems(sources.purchases, today, vessels),
+    ...workingTimeItems(sources.workingTimeCalculations, sources.people, today, vessels),
+    ...procedureReviewItems(sources.procedures, today, vessels),
+    ...fleetCertificateItems(sources.fleetCertificates, today, vessels),
+    ...hrDocumentItems(sources.hrDocuments, sources.people, today, vessels),
+    ...contractItems(sources.people, today, vessels),
   ].sort((left, right) =>
     GROUP_ORDER.indexOf(left.group) - GROUP_ORDER.indexOf(right.group)
     || TONE_ORDER.indexOf(left.queueTone) - TONE_ORDER.indexOf(right.queueTone)
@@ -696,25 +699,27 @@ export async function fetchManagerHomeDashboard(
   const assignmentScoped = isAssignmentScopedViewer(viewer.roles);
   let scope: ManagerHomeAssignmentScope | null = null;
 
+  if (assignmentScoped && !viewer.personId) {
+    return { items: [], vessels: [], unavailableSources: [], scopeLabel: 'Aucune fiche RH liée au profil' };
+  }
+
+  const assignments = await loadRows<ManagerHomeAssignmentRow>('les affectations Planning', async () => client
+    .from('planning_assignments')
+    .select('vessel_id,crew_person_id,captain_person_id,watch_group,vessels(name)')
+    .lte('starts_on', todayKey)
+    .gte('ends_on', todayKey)
+    .neq('confirmation_status', 'cancelled'));
   if (assignmentScoped) {
-    if (!viewer.personId) {
-      return { items: [], unavailableSources: [], scopeLabel: 'Aucune fiche RH liée au profil' };
-    }
-
-    const assignments = await loadRows<ManagerHomeAssignmentRow>('les affectations Planning', async () => client
-      .from('planning_assignments')
-      .select('vessel_id,crew_person_id,captain_person_id,watch_group,vessels(name)')
-      .lte('starts_on', todayKey)
-      .gte('ends_on', todayKey)
-      .neq('confirmation_status', 'cancelled'));
     if (assignments.error) {
-      return { items: [], unavailableSources: [assignments.label], scopeLabel: 'Affectation indisponible' };
+      return { items: [], vessels: [], unavailableSources: [assignments.label], scopeLabel: 'Affectation indisponible' };
     }
 
-    scope = buildManagerHomeAssignmentScope(assignments.rows, viewer.personId);
+    scope = buildManagerHomeAssignmentScope(assignments.rows, viewer.personId!);
     if (!scope.vesselIds.length) {
-      return { items: [], unavailableSources: [], scopeLabel: 'Aucune affectation active' };
+      return { items: [], vessels: [], unavailableSources: [], scopeLabel: 'Aucune affectation active' };
     }
+    // The database also enforces this personal scope for real Marin accounts.
+    if (!viewer.roles.includes('capitaine')) scope.personIds = [viewer.personId!];
   }
 
   const assignmentScope = scope;
@@ -722,7 +727,7 @@ export async function fetchManagerHomeDashboard(
     ? 'procedures'
     : 'published_procedures';
 
-  const [purchases, procedures, fleetCertificates, people, hrDocuments, workingTimeCalculations] = await Promise.all([
+  const [purchases, procedures, fleetCertificates, lsaItems, people, hrDocuments, workingTimeCalculations] = await Promise.all([
     loadRows<PurchaseRequestRow>('les achats', async () => {
       let query = client.from('purchase_requests')
         .select('id,request_number,title,requested_on,requester_name,project_code,vessel_id,vessel_name,status,urgent,approval_status,ordered_on,expected_delivery_on,received_on')
@@ -741,6 +746,13 @@ export async function fetchManagerHomeDashboard(
     }),
     loadRows<FleetCertificateRow>('les documents flotte', async () => {
       let query = client.from('fleet_certificates')
+        .select('id,vessel_id,vessel_name,document_title,title,status,expires_on,planned_on,workflow_status,is_active_fleet')
+        .order('expires_on', { ascending: true, nullsFirst: false });
+      if (assignmentScope) query = query.in('vessel_id', assignmentScope.vesselIds);
+      return query;
+    }),
+    loadRows<FleetCertificateRow>('le registre LSA', async () => {
+      let query = client.from('lsa_items')
         .select('id,vessel_id,vessel_name,document_title,title,status,expires_on,planned_on,workflow_status,is_active_fleet')
         .order('expires_on', { ascending: true, nullsFirst: false });
       if (assignmentScope) query = query.in('vessel_id', assignmentScope.vesselIds);
@@ -773,11 +785,12 @@ export async function fetchManagerHomeDashboard(
     }),
   ]);
 
-  const results = [purchases, procedures, fleetCertificates, people, hrDocuments, workingTimeCalculations];
+  const results = [assignments, purchases, procedures, fleetCertificates, lsaItems, people, hrDocuments, workingTimeCalculations];
   const sources: ManagerHomeSourceRows = {
+    assignments: assignments.rows,
     purchases: purchases.rows,
-    procedures: procedures.rows,
-    fleetCertificates: fleetCertificates.rows,
+    procedures: procedures.rows.map((row) => procedureTable === 'published_procedures' ? { ...row, library: 'published' as const } : row),
+    fleetCertificates: [...fleetCertificates.rows, ...lsaItems.rows.map((row) => ({ ...row, register: 'lsa' as const }))],
     people: people.rows,
     hrDocuments: hrDocuments.rows,
     workingTimeCalculations: workingTimeCalculations.rows,
@@ -787,6 +800,7 @@ export async function fetchManagerHomeDashboard(
 
   return {
     items,
+    vessels: buildManagerHomeVessels(filteredSources).vessels,
     unavailableSources: results.filter((result) => result.error).map((result) => result.label),
     scopeLabel: assignmentScope ? assignmentScopeLabel(assignmentScope) : null,
   };

@@ -61,6 +61,29 @@ describe('fetchCurrentPersonSummary', () => {
       departedOn: '2026-09-09',
     });
     expect(eq).toHaveBeenCalledWith('user_id', 'user-12');
-    expect(select).toHaveBeenCalledWith('id,first_name,last_name,function_label,grade_label,active,hired_on,departed_on');
+    expect(select).toHaveBeenCalledWith('id,first_name,last_name,function_label,grade_label,active,hired_on,departed_on,photo_storage_path');
+  });
+
+  it('returns the authenticated person’s portrait path without waiting for private storage', async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: { id: 12, first_name: 'Paul', last_name: 'DURAND', photo_storage_path: '12/portrait.jpg' },
+      error: null,
+    });
+    const eq = vi.fn().mockReturnValue({ maybeSingle });
+    const download = vi.fn().mockReturnValue(new Promise(() => {}));
+    const storageFrom = vi.fn().mockReturnValue({ download });
+    const client = {
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-12' } }, error: null }) },
+      from: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ eq }) }),
+      storage: { from: storageFrom },
+    };
+
+    await expect(fetchCurrentPersonSummary(client as never)).resolves.toEqual(expect.objectContaining({
+      id: 12,
+      photoStoragePath: '12/portrait.jpg',
+    }));
+    expect(eq).toHaveBeenCalledWith('user_id', 'user-12');
+    expect(storageFrom).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
   });
 });

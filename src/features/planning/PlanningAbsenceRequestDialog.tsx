@@ -2,15 +2,18 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { useMemo, useState, type FormEvent } from 'react';
 import { AppDialog } from '../../components/AppDialog';
 import type { CurrentPersonSummary } from '../profiles/profileQueries';
-import { PlanningAbsenceFormFields, type PlanningAbsenceFormValue } from './PlanningAbsenceForm';
+import { PlanningAbsencePersonFields, PlanningAbsenceReasonField, type PlanningAbsenceFormValue } from './PlanningAbsenceForm';
+import { PlanningAbsenceBalances } from './PlanningAbsenceBalances';
+import { PlanningAbsencePeriodPicker } from './PlanningAbsencePeriodPicker';
 import { todayPlanningDate } from './planningDates';
 import { planningErrorMessage } from './planningErrors';
 import { isPlanningPersonEmployedOn } from './planningModel';
 import type { PlanningDateRange } from './planningP12';
 import { savePlanningAbsence } from './planningP12Queries';
 import type { PlanningPerson } from './planningQueries';
+import './planningAbsenceRequest.css';
 
-export function PlanningAbsenceRequestDialog({ client, people, currentPerson, personalOnly, range, onClose, onSaved }: {
+export function PlanningAbsenceRequestDialog({ client, people, currentPerson, personalOnly, range, onClose, onSaved, canManageBalances = false }: {
   client: SupabaseClient;
   people: PlanningPerson[];
   currentPerson: CurrentPersonSummary | null;
@@ -18,6 +21,7 @@ export function PlanningAbsenceRequestDialog({ client, people, currentPerson, pe
   range: PlanningDateRange;
   onClose: () => void;
   onSaved: () => Promise<void>;
+  canManageBalances?: boolean;
 }) {
   const [form, setForm] = useState<PlanningAbsenceFormValue>(() => ({
     personId: '', absenceType: 'leave',
@@ -26,6 +30,8 @@ export function PlanningAbsenceRequestDialog({ client, people, currentPerson, pe
     reason: '',
   }));
   const [isSaving, setIsSaving] = useState(false);
+  const [isEditingBalances, setIsEditingBalances] = useState(false);
+  const [isSelectingPeriod, setIsSelectingPeriod] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const today = todayPlanningDate();
   const options = useMemo(() => {
@@ -39,7 +45,7 @@ export function PlanningAbsenceRequestDialog({ client, people, currentPerson, pe
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isSaving || !effectiveForm.personId) return;
+    if (isSaving || isEditingBalances || isSelectingPeriod || !effectiveForm.personId) return;
     setIsSaving(true);
     setError(null);
     try {
@@ -55,21 +61,24 @@ export function PlanningAbsenceRequestDialog({ client, people, currentPerson, pe
 
   return <div className="planning-absence-request">
     <AppDialog
-      description="Les dates sont affichées en heure locale et conservées en UTC."
-      isBusy={isSaving}
+      description="Choisissez un jour ou une période, puis consultez le solde de la personne."
+      isBusy={isSaving || isEditingBalances || isSelectingPeriod}
       onClose={onClose}
       onSubmit={(event) => void submit(event)}
       size="lg"
       title="Demandes et indisponibilités"
+      footer={<div className="app-dialog__actions">
+        <button className="is-secondary" disabled={isSaving || isEditingBalances || isSelectingPeriod} onClick={onClose} type="button">Annuler</button>
+        <button className="is-primary" disabled={isSaving || isEditingBalances || isSelectingPeriod || !effectiveForm.personId} type="submit">{isSaving ? 'Envoi en cours…' : 'Envoyer la demande'}</button>
+      </div>}
     >
       <div className="planning-p12-section">
         {error ? <p className="form-error" role="alert">{error}</p> : null}
         <div className="planning-p12-form">
-          <PlanningAbsenceFormFields isSaving={isSaving} onChange={setForm} people={options} personalOnly={personalOnly} value={effectiveForm} />
-          <footer>
-            <button className="is-secondary" disabled={isSaving} onClick={onClose} type="button">Annuler</button>
-            <button disabled={isSaving || !effectiveForm.personId} type="submit">{isSaving ? 'Envoi en cours…' : 'Envoyer la demande'}</button>
-          </footer>
+          <PlanningAbsencePersonFields isSaving={isSaving || isEditingBalances} onChange={setForm} people={options} personalOnly={personalOnly} value={effectiveForm} />
+          <PlanningAbsencePeriodPicker startsAt={effectiveForm.startsAt} endsAt={effectiveForm.endsAt} disabled={isSaving || isEditingBalances} onOpenChange={setIsSelectingPeriod} onChange={(startsAt, endsAt) => setForm((current) => ({ ...current, startsAt, endsAt }))} />
+          <PlanningAbsenceBalances client={client} people={options} personId={effectiveForm.personId ? Number(effectiveForm.personId) : null} absenceType={effectiveForm.absenceType} startsAt={effectiveForm.startsAt} endsAt={effectiveForm.endsAt} absenceId={effectiveForm.id} canManage={canManageBalances && !personalOnly && !isSaving && !isSelectingPeriod} onEditingChange={setIsEditingBalances} />
+          <PlanningAbsenceReasonField isSaving={isSaving || isEditingBalances} onChange={setForm} value={effectiveForm} />
         </div>
       </div>
     </AppDialog>

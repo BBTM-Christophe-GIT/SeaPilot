@@ -75,12 +75,12 @@ export function resolveServiceNoteAudiencePeople(
 }
 
 function serviceNoteLibraryTimestamp(note: ServiceNote): number {
-  const timestamp = new Date(note.publishedAt || note.updatedAt || note.authoredOn).getTime();
+  const timestamp = new Date(note.authoredOn || note.publishedAt || note.updatedAt).getTime();
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
 function serviceNoteLibraryYear(note: ServiceNote): number {
-  const date = new Date(note.publishedAt || note.updatedAt || note.authoredOn);
+  const date = new Date(note.authoredOn || note.publishedAt || note.updatedAt);
   return Number.isNaN(date.getTime()) ? 0 : date.getFullYear();
 }
 
@@ -127,7 +127,7 @@ function ServiceNoteListRow({ note, currentUserId, selected, onSelect }: {
     && !note.signatures.some((signature) => signature.userId === currentUserId);
   return <button className={`${selected ? 'is-selected' : ''}${pendingForMe ? ' is-pending' : ''}`} onClick={() => onSelect(note.id)} role="listitem" type="button">
     <span className={`service-note-file-icon is-${note.status}`}>{note.status === 'draft' ? <FileClock size={20} /> : note.status === 'recalled' ? <ArchiveRestore size={20} /> : <FileCheck2 size={20} />}</span>
-    <span className="service-note-list-copy"><span><strong>{serviceNoteDisplayCode(note)}</strong><em className={`is-${note.status}`}>{serviceNoteStatusLabel(note.status)}</em></span><b>{note.subject || 'Sans objet'}</b><small><Ship size={12} /> {serviceNoteAudienceLabel(note)} · {formatServiceNoteDate(note.publishedAt || note.updatedAt)}</small></span>
+    <span className="service-note-list-copy"><span><strong>{serviceNoteDisplayCode(note)}</strong><em className={`is-${note.status}`}>{serviceNoteStatusLabel(note.status)}</em></span><b>{note.subject || 'Sans objet'}</b><small><Ship size={12} /> {serviceNoteAudienceLabel(note)} · {formatServiceNoteDate(note.authoredOn || note.publishedAt || note.updatedAt)}</small></span>
     <span className={`service-note-list-progress${missing.length ? ' is-missing' : ''}`} title={missing.map((person) => `${person.firstName} ${person.lastName}`).join(', ')}><strong>{note.status === 'recalled' ? 'Archive' : recipients ? `${percent(signed, recipients)}%` : '—'}</strong><small>{note.status === 'recalled' ? 'Retirée des destinataires' : missing.length ? `${missing.length} non-signataire${missing.length > 1 ? 's' : ''}` : recipients ? 'Tout le monde a signé' : 'Non diffusée'}</small>{recipients && note.status !== 'recalled' ? <i><span style={{ width: `${percent(signed, recipients)}%` }} /></i> : null}</span>
     <ChevronRight size={18} />
   </button>;
@@ -445,7 +445,7 @@ function ServiceNoteEditor({ note, client, vessels, hasActiveSignature, onBack, 
           </section>
           <section className="service-note-form-section">
             <header><span>03</span><div><h2>Message</h2><p>Ce texte constituera le corps de la note commune.</p></div></header>
-            <label className="service-note-body-field"><span>Contenu</span><ServiceNoteRichTextEditor onChange={(body) => { setSaveState('saving'); setDraft((current) => ({ ...current, body })); }} value={draft.body} /></label>
+            <div className="service-note-body-field"><span>Contenu</span><ServiceNoteRichTextEditor onChange={(body) => { setSaveState('saving'); setDraft((current) => ({ ...current, body })); }} value={draft.body} /></div>
           </section>
           <section className="service-note-form-section">
             <header><span>04</span><div><h2>Pièces jointes et liens</h2><p>Le nom sans extension sera inventorié dans la note.</p></div></header>
@@ -546,7 +546,7 @@ function ServiceNoteInformationEditor({ note, client, authorSignatureUrl, signat
           </section>
           <section className="service-note-form-section">
             <header><span>02</span><div><h2>Message</h2><p>Complétez ou corrigez le contenu du document.</p></div></header>
-            <label className="service-note-body-field"><span>Contenu</span><ServiceNoteRichTextEditor onChange={(body) => changeInformation({ body })} value={information.body} /></label>
+            <div className="service-note-body-field"><span>Contenu</span><ServiceNoteRichTextEditor onChange={(body) => changeInformation({ body })} value={information.body} /></div>
           </section>
           {message ? <div className="service-note-inline-error" role="alert"><CircleAlert size={17} />{message}</div> : null}
           <div className="service-note-editor-footer"><button className="is-secondary" disabled={saveState === 'saving'} onClick={onBack} type="button">Annuler</button><button className="is-primary" disabled={!canSave || saveState === 'saving'} onClick={() => void handleSave()} type="button"><Save size={17} />{saveState === 'saving' ? 'Enregistrement…' : 'Enregistrer les informations'}</button></div>

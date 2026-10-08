@@ -1,4 +1,6 @@
 import { rangesOverlap } from './planningDates';
+import { comparePlanningCrewPeriods, planningCrewPeriod } from './planningCrewOrder';
+import { compareCrewNames, crewFunctionRank, DEFAULT_CREW_PREFERENCES, formatCrewName, type CrewDisplayPreferences } from './planningCrewPreferences';
 import {
   getAllPlanningCrewEvents,
   isPlanningPersonEmployedDuring,
@@ -19,10 +21,36 @@ import type {
   PlanningProjectRecord,
   PlanningVessel,
 } from './planningQueries';
-import { PLANNING_VESSEL_LOCATION_SOURCE } from './planningQueries';
+import { PLANNING_ASSIGNMENT_NOTE_SOURCE, PLANNING_VESSEL_LOCATION_SOURCE } from './planningQueries';
 
-export type PlanningPerspective = 'fleet' | 'crew';
+export type PlanningPerspective = 'fleet' | 'projects' | 'crew';
 export type PlanningCrewGrouping = 'people' | 'teams';
+
+/** Select today's posting, never an old or future assignment. A manual fleet
+ * selection is handled by the page and takes precedence over this default. */
+export function defaultPlanningVesselName(overview: PlanningOverview, personId: number | null, date: string): string {
+  if (personId === null) return '';
+  const vessels = new Map(overview.vessels.filter((vessel) => vessel.active).map((vessel) => [vessel.id, vessel.name]));
+  const day = overview.days.filter((item) => item.personId === personId && item.workDate === date
+    && item.sourceLabel !== PLANNING_ASSIGNMENT_NOTE_SOURCE && item.sourceLabel !== PLANNING_VESSEL_LOCATION_SOURCE)
+    .sort((left, right) => right.id - left.id)[0];
+  if (day) return normalizePlanningStatus(day.sailorStatus || day.dayStatus) === 'En Mer'
+    ? vessels.get(day.vesselId ?? -1) || '' : '';
+  const assignment = overview.assignments.filter((item) =>
+    (item.crewPersonId === personId || item.captainPersonId === personId)
+    && item.startsOn <= date && item.endsOn >= date
+    && item.confirmationStatus !== 'cancelled' && vessels.has(item.vesselId)
+    && normalizePlanningStatus(item.statusLabel) === 'En Mer',
+  ).sort((left, right) => Number(right.crewPersonId === personId) - Number(left.crewPersonId === personId)
+    || Number(right.confirmationStatus === 'confirmed') - Number(left.confirmationStatus === 'confirmed')
+    || right.startsOn.localeCompare(left.startsOn) || right.id - left.id)[0];
+  if (assignment) return vessels.get(assignment.vesselId) || '';
+  const period = overview.periods.filter((item) => item.personId === personId
+    && item.startsOn <= date && item.endsOn >= date
+    && normalizePlanningStatus(item.sailorStatus) === 'En Mer',
+  ).sort((left, right) => right.startsOn.localeCompare(left.startsOn) || right.id - left.id)[0];
+  return vessels.get(period?.vesselId ?? -1) || '';
+}
 
 export interface PlanningFleetLane {
   key: string;
@@ -87,6 +115,7 @@ export function planningCrewEventType(event: Pick<PlanningCrewEvent, 'status' | 
   const status = normalizePlanningStatus(event.status);
   if (status === 'Repos') return 'rest';
   if (status === 'Vacance') return 'leave';
+  if (status === 'RTT') return 'rtt';
   if (status === 'Formation') return 'training';
   if (status === 'Arrêt de travail') return 'unavailability';
   return 'assignment';
@@ -97,6 +126,7 @@ export function planningCrewEventTypeLabel(type: string): string {
     assignment: 'Embarquement / affectation',
     rest: 'Repos',
     leave: 'Congés',
+    rtt: 'RTT',
     training: 'Formation',
     unavailability: 'Indisponibilité',
     annual_review: 'Entretien professionnel',
@@ -131,11 +161,38 @@ function vesselDetail(vessel: PlanningVessel | undefined): string {
   return vessel.acronym || 'Navire actif';
 }
 
+export function buildPlanningProjectLanes(
+  overview: PlanningOverview,
+  range: PlanningDateRange,
+  filters: PlanningFilters,
+): PlanningFleetLane[] {
+  const lanes = buildPlanningFleetLanes({ ...overview, assignments: [], days: [] }, range, filters, []);
+  const lanesByVessel = new Map(lanes.map((lane) => [lane.vessel, lane]));
+  overview.vessels.filter((vessel) => vessel.active).forEach((vessel) => {
+    if (lanesByVessel.has(vessel.name)) return;
+    lanesByVessel.set(vessel.name, {
+      key: `fleet-${vessel.id}`,
+      vesselId: vessel.id,
+      label: vessel.name,
+      detail: vesselDetail(vessel),
+      vessel: vessel.name,
+      projects: [],
+      assignments: [],
+      locations: [],
+    });
+  });
+  return [...lanesByVessel.values()]
+    .filter((lane) => !filters.vesselName || lane.vessel === filters.vesselName)
+    .sort((left, right) => left.label.localeCompare(right.label, 'fr'));
+}
+
 export function buildPlanningFleetLanes(
   overview: PlanningOverview,
   range: PlanningDateRange,
   filters: PlanningFilters,
   eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
+  includeEmptyVessels = false,
+  pendingBoardRowIds?: ReadonlySet<number>,
 ): PlanningFleetLane[] {
   const uniqueProjects = [...new Map(overview.projects.map((project) => [
     `${project.id}:${(project.vesselIds || [project.primaryVesselId, project.secondaryVesselId]).join(',')}:${project.startsOn}:${project.endsOn}`,
@@ -163,6 +220,20 @@ export function buildPlanningFleetLanes(
   ));
   const vesselNames = new Set(
     [
+      ...(!filters.eventType && !filters.status && !filters.responsible ? (overview.boardRows || []).flatMap((row) => {
+        if (!pendingBoardRowIds?.has(row.id)) return [];
+        const vessel = overview.vessels.find((item) => item.id === row.vesselId);
+        const person = overview.people.find((item) => item.id === row.personId);
+        return vessel && person && (!filters.vesselName || vessel.name === filters.vesselName)
+          && (!filters.personName || formatPlanningPerson(person) === filters.personName) ? [vessel.name] : [];
+      }) : []),
+      ...(!filters.personName ? (overview.genericCrewRows || []).flatMap((row) => {
+        const vessel = overview.vessels.find((item) => item.id === row.vesselId);
+        return vessel && (!filters.vesselName || vessel.name === filters.vesselName) ? [vessel.name] : [];
+      }) : []),
+      ...(includeEmptyVessels && !filters.personName ? overview.vessels
+        .filter((vessel) => vessel.active && (!filters.vesselName || vessel.name === filters.vesselName))
+        .map((vessel) => vessel.name) : []),
       ...eventPool
       .filter((event) => (
         event.confirmationStatus !== 'cancelled'
@@ -204,7 +275,9 @@ export function buildPlanningCrewLanes(
   filters: PlanningFilters,
   grouping: PlanningCrewGrouping,
   eventPool: PlanningCrewEvent[] = getAllPlanningCrewEvents(overview),
+  preferences: CrewDisplayPreferences = DEFAULT_CREW_PREFERENCES,
 ): PlanningCrewLane[] {
+  const peopleById = new Map(overview.people.map((person) => [person.id, person]));
   const vesselsByName = new Map(overview.vessels.map((vessel) => [vessel.name, vessel.id]));
   const events = eventPool.filter((event) => event.confirmationStatus !== 'cancelled'
     && rangesOverlap(event.startsOn, event.endsOn, range.start, range.end) && crewEventMatchesFilters(event, filters))
@@ -213,9 +286,9 @@ export function buildPlanningCrewLanes(
   const peopleByName = new Map(overview.people.map((person) => [normalizePlanningText(formatPlanningPerson(person)), person]));
   const groups = new Map<string, PlanningCrewLane>();
   events.forEach((event) => {
-    const person = overview.people.find((item) => item.id === event.personId) || peopleByName.get(normalizePlanningText(event.person));
+    const person = peopleById.get(event.personId ?? -1) || peopleByName.get(normalizePlanningText(event.person));
     const key = person ? `person-${person.id}` : `person-name-${normalizePlanningText(event.person)}`;
-    const lane = groups.get(key) || { key, label: person ? formatPlanningPerson(person) : event.person,
+    const lane = groups.get(key) || { key, label: person ? formatCrewName(person, preferences.nameFormat) : event.person,
       detail: person?.functionLabel || event.functionLabel, personId: person?.id ?? event.personId,
       vesselId: event.vesselId, vessel: event.vessel, watchGroup: event.board,
       functionLabel: person?.functionLabel || event.functionLabel, events: [] };
@@ -229,17 +302,23 @@ export function buildPlanningCrewLanes(
       && !isSedentaryPlanningFunction(person.functionLabel)
       && (!filters.personName || filters.personName === formatPlanningPerson(person))).forEach((person) => {
       const key = `person-${person.id}`;
-      if (!groups.has(key)) groups.set(key, { key, label: formatPlanningPerson(person), detail: person.functionLabel,
+      if (!groups.has(key)) groups.set(key, { key, label: formatCrewName(person, preferences.nameFormat), detail: person.functionLabel,
         personId: person.id, vesselId: null, vessel: '', watchGroup: '', functionLabel: person.functionLabel, events: [] });
     });
   }
+  const periodsByLane = new Map([...groups.values()].map((lane) => [lane.key, planningCrewPeriod(lane.events, range)]));
   return [...groups.values()].map((lane) => ({ ...lane,
     detail: [grouping === 'teams' ? lane.watchGroup || 'Sans équipe' : lane.functionLabel,
       ...new Set(lane.events.map((event) => event.vessel).filter(Boolean))].filter(Boolean).join(' · '),
-  })).sort((left, right) => (grouping === 'teams' ? left.watchGroup.localeCompare(right.watchGroup, 'fr') : 0)
-    || (overview.people.find((person) => person.id === left.personId)?.lastName || left.label)
-      .localeCompare(overview.people.find((person) => person.id === right.personId)?.lastName || right.label, 'fr')
-    || left.label.localeCompare(right.label, 'fr'));
+  })).sort((left, right) => (preferences.sortOrder === 'period'
+    ? comparePlanningCrewPeriods(periodsByLane.get(left.key) || null, periodsByLane.get(right.key) || null) : 0)
+    || (grouping === 'teams' ? left.watchGroup.localeCompare(right.watchGroup, 'fr') : 0)
+    || (preferences.sortOrder === 'function' ? crewFunctionRank(left.functionLabel || '') - crewFunctionRank(right.functionLabel || '') : 0)
+    || compareCrewNames(
+      peopleById.get(left.personId ?? -1) || { firstName: '', lastName: left.label },
+      peopleById.get(right.personId ?? -1) || { firstName: '', lastName: right.label },
+    )
+    || left.key.localeCompare(right.key, 'fr', { numeric: true }));
 }
 
 export function patchPlanningEvent(

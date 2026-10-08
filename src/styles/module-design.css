@@ -1,0 +1,734 @@
+/*
+ * Shared interface rules and adapters for existing modules.
+ * Explicit chrome selectors protect document layouts, status colors and dense business grids.
+ * Shell ancestry keeps these rules stable when feature CSS is loaded lazily.
+ */
+.app-shell,
+.app-shell .content-shell {
+  background: var(--sp-canvas);
+  font-family: var(--sp-font);
+}
+
+.app-shell .sidebar,
+.app-shell .sidebar-footer,
+.app-shell .topbar,
+.app-shell .brand-block,
+.app-shell .seapilot-logo {
+  background: var(--sp-shell);
+}
+
+.app-shell .sidebar {
+  box-shadow: none;
+}
+
+.app-shell .user-avatar {
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--sp-primary);
+}
+
+.app-shell .user-avatar > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Existing local variables now consume the shared interface palette. */
+.app-shell .manager-home-page,
+.app-shell .home-page {
+  --manager-blue: var(--sp-primary);
+  --manager-navy: var(--sp-primary);
+  --manager-heading: var(--sp-heading);
+  --manager-ink: var(--sp-text);
+  --manager-muted: var(--sp-muted);
+  --manager-border: var(--sp-border);
+  --home-blue: var(--sp-primary);
+  --home-blue-dark: var(--sp-primary-hover);
+  --home-heading: var(--sp-heading);
+  --home-muted: var(--sp-muted);
+  --home-border: var(--sp-border);
+}
+
+.app-shell .action-plan-page {
+  --ap-blue: var(--sp-primary);
+  --ap-ink: var(--sp-text);
+  --ap-muted: var(--sp-muted);
+  --ap-line: var(--sp-border);
+  --ap-surface: var(--sp-surface);
+}
+
+.app-shell .documentary-audits-page {
+  --da-teal: var(--sp-primary);
+  --da-ink: var(--sp-text);
+  --da-muted: var(--sp-muted);
+  --da-line: var(--sp-border);
+}
+
+.app-shell .internal-audits-page {
+  --ia-teal: var(--sp-primary);
+  --ia-ink: var(--sp-text);
+  --ia-muted: var(--sp-muted);
+  --ia-line: var(--sp-border);
+}
+
+.app-shell .kpi-page {
+  --kpi-blue: var(--sp-primary);
+  --kpi-ink: var(--sp-text);
+  --kpi-muted: var(--sp-muted);
+  --kpi-line: var(--sp-border);
+}
+
+.app-shell :is(.fcx-page, .fc-page) {
+  --fcx-blue: var(--sp-primary);
+  --fcx-navy: var(--sp-text);
+  --fcx-muted: var(--sp-muted);
+  --fcx-border: var(--sp-border);
+  --fc-blue: var(--sp-primary);
+  --fc-ink: var(--sp-text);
+  --fc-muted: var(--sp-muted);
+  --fc-border: var(--sp-border);
+}
+
+.app-shell :is(.service-notes-page, .service-note-editor) {
+  --sn-blue: var(--sp-primary);
+  --sn-teal: var(--sp-primary);
+  --sn-navy: var(--sp-text);
+  --sn-muted: var(--sp-muted);
+  --sn-border: var(--sp-border);
+  --sn-pale: var(--sp-primary-soft);
+}
+
+.app-shell .lifting-page {
+  --lev-navy: var(--sp-text);
+  --lev-muted: var(--sp-muted);
+  --lev-border: var(--sp-border);
+}
+
+.app-shell .reg-library {
+  --reg-teal: var(--sp-primary);
+  --reg-navy: var(--sp-text);
+  --reg-muted: var(--sp-muted);
+  --reg-line: var(--sp-border);
+  font-family: var(--sp-font);
+}
+
+.app-shell .purchase-workspace {
+  --purchase-blue: var(--sp-primary);
+  --purchase-teal: var(--sp-primary);
+  --purchase-navy: var(--sp-text);
+  --purchase-ink: var(--sp-text);
+  --purchase-muted: var(--sp-muted);
+  --purchase-border: var(--sp-border);
+}
+
+/* Chrome tokens in existing editor/cockpit shells; métier states remain untouched. */
+.app-shell .project-editor {
+  --surface: var(--sp-surface);
+  --surface-subtle: var(--sp-surface-subtle);
+  --line: var(--sp-border);
+  --line-strong: var(--sp-border-strong);
+  --text: var(--sp-text);
+  --muted-text: var(--sp-muted);
+  --navy: var(--sp-primary);
+}
+
+.app-shell .planning-p13-panel {
+  --surface: var(--sp-surface);
+  --surface-soft: var(--sp-surface-subtle);
+  --line: var(--sp-border);
+  --line-strong: var(--sp-border-strong);
+  --text: var(--sp-text);
+  --muted-text: var(--sp-muted);
+  --primary: var(--sp-primary);
+}
+
+.app-shell .planning-p21-panel {
+  --assistant-primary: var(--sp-primary);
+  --assistant-primary-soft: var(--sp-primary-soft);
+  --assistant-ink: var(--sp-text);
+  --assistant-muted: var(--sp-muted);
+  --assistant-line: var(--sp-border);
+}
+
+/* The service-note A4 document keeps its original palette inside the shared editor. */
+.app-shell .service-note-paper {
+  --sn-navy: #082f49;
+  --sn-blue: #075985;
+  --sn-teal: #0f8f91;
+  --sn-pale: #eef7f7;
+  --sn-border: #d8e3e8;
+  --sn-muted: #617481;
+}
+
+/* One outer horizontal gutter. Internal documents, forms and business grids retain theirs. */
+.app-shell .content-area {
+  padding: var(--sp-space-5);
+}
+
+.app-shell .content-area :is(
+  .qhse-policy-page, .chem-page, .exercise-page, .lifting-page, .fcx-page,
+  .service-notes-page, .service-providers-page, .org-page, .reg-library,
+  .useful-links, .user-manual
+) {
+  padding: 0;
+}
+
+.app-shell .content-area :is(.expense-header, .dpr-native__header) {
+  padding: 0 0 var(--sp-space-5);
+}
+
+.app-shell .content-area .kpi-page {
+  padding-top: 0;
+}
+
+.app-shell .content-area :is(.dpr-native, .reg-library, .fcx-page) {
+  background: var(--sp-canvas);
+}
+
+/* Workspace content can shrink while its existing table/panel keeps its own scrollbar. */
+.app-shell .content-area :is(
+  .fcx-page, .fcx-workbench, .hr-page, .hr-master-detail-layout,
+  .hr-roster-panel, .service-notes-page, .service-note-workspace
+) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.app-shell .content-area :is(.hr-page, .hr-roster-panel, .service-notes-page) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-shell .content-area :is(
+  .ia-year-scroll, .ia-grid-scroll, .ia-radar-table-scroll,
+  .fcx-workbench-library > .fcx-tree, .fcx-workspace-panel
+) {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.app-shell .content-area :is(.hr-command-header, .hr-command-actions, .ia-page-header, .ia-panel-header) {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.app-shell .content-area :is(.hr-command-header, .ia-page-header, .ia-panel-header) > div {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.app-shell .content-area .ia-header-note span {
+  white-space: normal;
+}
+
+/* The common page heading applies only to interface headers, never document headings. */
+.app-shell .content-area :is(
+  .sp-module-header, .manager-home-intro, .kpi-page-head, .qhse-policy-page__header,
+  .chem-header, .exercise-header, .lifting-heading, .fcx-hero, .procedure-hero,
+  .service-notes-hero, .action-control-page-header, .planning-command-header,
+  .da-header, .ia-page-header, .dpr-native__header, .purchase-topbar,
+  .service-providers-command-header, .expense-header,
+  .fleet-page-heading, .hr-command-header, .org-header, .annual-review-command-header,
+  .disciplinary-page-header, .project-module-header, .reg-library__header,
+  .useful-links__header, .admin-page-heading, .admin-header, .manual-header,
+  .module-page, .internal-audits-page > .ia-state
+) h1 {
+  margin: 0;
+  color: var(--sp-heading);
+  font-family: var(--sp-font);
+  font-size: var(--sp-title-size);
+  font-weight: 750;
+  line-height: 1.25;
+  letter-spacing: -.025em;
+  overflow-wrap: anywhere;
+}
+
+.app-shell .content-area :is(
+  .sp-module-header, .manager-home-intro, .kpi-page-head, .qhse-policy-page__header,
+  .chem-header, .exercise-header, .lifting-heading, .fcx-hero, .procedure-hero,
+  .service-notes-hero, .action-control-page-header, .planning-command-header,
+  .da-header, .ia-page-header, .dpr-native__header, .purchase-topbar,
+  .service-providers-command-header, .expense-header,
+  .fleet-page-heading, .hr-command-header, .org-header, .annual-review-command-header,
+  .disciplinary-page-header, .project-module-header, .reg-library__header,
+  .useful-links__header, .admin-page-heading, .admin-header, .manual-header
+) :is(h1 + p, h1 + div > p) {
+  margin-top: var(--sp-space-2);
+  color: var(--sp-muted);
+  font-family: var(--sp-font);
+  font-size: var(--sp-subtitle-size);
+  line-height: 1.5;
+  letter-spacing: normal;
+}
+
+.app-shell .content-area .annual-review-command-header h1 + span {
+  display: inline-block;
+  margin-top: var(--sp-space-2);
+  color: var(--sp-muted);
+  font-family: var(--sp-font);
+  font-size: var(--sp-subtitle-size);
+  line-height: 1.5;
+}
+
+/* Shared panels and command bars: geometry inside each workspace is preserved. */
+.app-shell .content-area :is(
+  .sp-panel, .sp-filters, .sp-toolbar, .admin-panel, .module-page,
+  .manager-home-summary, .manager-home-calendar, .manager-home-queue,
+  .kpi-panel, .kpi-metrics, .qhse-policy-process, .chem-inventory,
+  .exercise-filters, .exercise-report, .lifting-summary, .lifting-content,
+  .lifting-fleet, .lifting-crane, .lsa-catalog-tree > section,
+  .fcx-workspace-card, .fcx-finding-workspace, .fc-document-library,
+  .procedure-hero, .procedure-filter-bar, .procedure-library,
+  .service-note-workspace, .action-fleet-nav, .action-control-queue,
+  .action-control-detail, .da-workspace, .ia-panel, .ia-radar-panel,
+  .expense-vessel, .expense-stats > div, .org-controls, .org-canvas-panel,
+  .org-inspector, .useful-links__toolbar, .reg-library__table-scroll,
+  .disciplinary-people, .disciplinary-main, .disciplinary-procedure,
+  .annual-review-list-panel, .annual-review-workspace, .annual-review-summary,
+  .fleet-roster, .fleet-detail, .fleet-manning-panel, .hr-roster-panel,
+  .hr-signature-panel, .service-provider-directory, .service-provider-profile,
+  .planning-module-toolbar, .planning-publication-panel, .working-time-command-bar,
+  .project-design .project-contract-workspace .project-detail.project-contract-sheet.project-dossier
+) {
+  border-color: var(--sp-border);
+  border-radius: var(--sp-panel-radius);
+  box-shadow: var(--sp-shadow);
+}
+
+.app-shell .content-area :is(
+  .sp-toolbar, .sp-filters, .planning-module-toolbar, .procedure-filter-bar,
+  .working-time-command-bar
+) {
+  background: var(--sp-surface);
+}
+
+/* Explicit control families leave charts, timeline cells, document editors and status chips alone. */
+.app-shell .content-area :is(
+  .sp-button, .dpr-native .button, .lifting-page .primary-button,
+  .lifting-page .secondary-button, .chem-primary,
+  .chem-secondary, .exercise-export, .qhse-policy-button, .expense-button,
+  .reg-button, .org-primary, .procedure-button-primary,
+  .procedure-button-secondary, .procedure-primary-action, .planning-ribbon-command,
+  .admin-primary-button, .admin-secondary-button, .hr-primary-button,
+  .hr-secondary-button, .kpi-button, .fcx-primary, .fcx-secondary,
+  .fc-primary-action, .service-provider-primary, .disciplinary-primary,
+  .planning-primary-action, .working-time-import-actions > button,
+  .working-time-form-actions > button, .working-time-report-actions > button,
+  .fleet-heading-actions > button, .service-provider-toolbar button,
+  .useful-links__actions button, .org-actions button, .project-workspace-actions > button,
+  .project-workspace-actions > a, .service-notes-hero > button,
+  .service-note-editor-footer > button, .service-note-detail-actions > button,
+  .service-note-detail-actions > a, .service-note-download-menu > button,
+  .service-note-sign-panel button, .app-dialog__footer button,
+  .annual-review-command-header button, .annual-review-primary-actions button,
+  .annual-review-action-card > button, .annual-review-counter-grid > button,
+  .annual-review-empty > button, .ia-save-actions > button,
+  .ia-dialog-actions > button, .da-dialog-actions > button,
+  .action-control-page-header > button, .action-control-detail-actions > button,
+  .working-time-command-group button, .da-section-toolbar > button,
+  .da-actions > button, .da-empty > button, .ia-template-actions > button,
+  .disciplinary-actions > button, .disciplinary-compose > button
+) {
+  border-radius: var(--sp-control-radius);
+  font-family: var(--sp-font);
+}
+
+.app-shell .content-area :is(
+  .sp-button, .dpr-native__actions .button, .lifting-page .primary-button,
+  .lifting-page .secondary-button, .chem-primary,
+  .chem-secondary, .exercise-export, .qhse-policy-button, .expense-button,
+  .reg-button, .org-primary, .procedure-button-primary,
+  .procedure-button-secondary, .admin-primary-button, .admin-secondary-button,
+  .hr-primary-button, .hr-secondary-button, .service-provider-primary,
+  .fleet-heading-actions > button, .useful-links__actions button,
+  .service-notes-hero > button, .annual-review-command-header button,
+  .service-note-sign-panel button, .annual-review-empty > button,
+  .ia-save-actions > button, .ia-dialog-actions > button, .da-dialog-actions > button,
+  .da-section-toolbar > button, .da-actions > button, .da-empty > button,
+  .app-dialog__footer button
+) {
+  min-height: var(--sp-control-height);
+}
+
+.app-shell .content-area :is(
+  .sp-button--primary, .dpr-native .button--primary, .lifting-page .primary-button,
+  .chem-primary, .exercise-export, .qhse-policy-button:not(.is-secondary),
+  .expense-button--primary, .reg-button--navy, .reg-button--review,
+  .org-page button.org-primary, .procedure-button-primary, .procedure-primary-action,
+  .admin-primary-button, .hr-primary-button, .kpi-button.is-primary,
+  .disciplinary-page button.disciplinary-primary, .service-provider-primary,
+  .service-provider-toolbar button.is-primary, .fleet-heading-actions button.is-primary,
+  .fcx-primary, .fc-primary-action, .service-notes-hero > button,
+  .service-note-editor-footer .is-primary,
+  .service-note-detail-actions > button:is(.is-publish, .is-republish),
+  .service-note-sign-panel button, .useful-links__actions .is-primary,
+  .app-dialog__footer button.is-primary,
+  .annual-review-command-header button:not(.is-secondary),
+  .annual-review-primary-actions button:not(.is-secondary),
+  .annual-review-action-card > button:not(.is-secondary),
+  .annual-review-counter-grid > button, .annual-review-empty > button,
+  .annual-review-page button[type='submit'], .ia-save-actions button:not(.is-secondary),
+  .ia-dialog-actions button:not(.is-secondary), .da-dialog-actions button:not(.is-secondary),
+  .da-section-toolbar > button:not(.is-secondary), .da-actions > button:not(.is-secondary),
+  .da-empty > button,
+  .action-control-page-header > button, .action-control-detail-actions > button:not(.is-secondary),
+  .action-control-followup-tools > button, .action-control-types > footer button,
+  .projects-page.project-design .project-primary-commands > button:first-child,
+  .project-design .project-billing-card-actions > button, .planning-primary-action,
+  .planning-leave-rights button.is-primary, .planning-publication-actions button.is-primary,
+  .working-time-import-actions button.is-primary,
+  .working-time-form-actions > button[value='submit-day'],
+  .working-time-form-actions > button[value='validate-day'],
+  .working-time-form-actions.is-readonly > button,
+  .working-time-report-actions > button:first-of-type
+) {
+  border-color: var(--sp-primary);
+  color: var(--sp-surface);
+  background: var(--sp-primary);
+  box-shadow: none;
+}
+
+.app-shell .content-area :is(
+  .sp-button--primary, .dpr-native .button--primary, .lifting-page .primary-button,
+  .chem-primary, .exercise-export, .qhse-policy-button:not(.is-secondary),
+  .expense-button--primary, .reg-button--navy, .reg-button--review,
+  .org-page button.org-primary, .procedure-button-primary, .procedure-primary-action,
+  .admin-primary-button, .hr-primary-button, .kpi-button.is-primary,
+  .disciplinary-page button.disciplinary-primary, .service-provider-primary,
+  .service-provider-toolbar button.is-primary, .fleet-heading-actions button.is-primary,
+  .fcx-primary, .fc-primary-action, .service-notes-hero > button,
+  .service-note-editor-footer .is-primary,
+  .service-note-detail-actions > button:is(.is-publish, .is-republish),
+  .service-note-sign-panel button, .useful-links__actions .is-primary,
+  .app-dialog__footer button.is-primary,
+  .annual-review-command-header button:not(.is-secondary),
+  .annual-review-primary-actions button:not(.is-secondary),
+  .annual-review-action-card > button:not(.is-secondary),
+  .annual-review-counter-grid > button, .annual-review-empty > button,
+  .annual-review-page button[type='submit'], .ia-save-actions button:not(.is-secondary),
+  .ia-dialog-actions button:not(.is-secondary), .da-dialog-actions button:not(.is-secondary),
+  .da-section-toolbar > button:not(.is-secondary), .da-actions > button:not(.is-secondary),
+  .da-empty > button,
+  .action-control-page-header > button, .action-control-detail-actions > button:not(.is-secondary),
+  .action-control-followup-tools > button, .action-control-types > footer button,
+  .projects-page.project-design .project-primary-commands > button:first-child,
+  .project-design .project-billing-card-actions > button, .planning-primary-action,
+  .planning-leave-rights button.is-primary, .planning-publication-actions button.is-primary,
+  .working-time-import-actions button.is-primary,
+  .working-time-form-actions > button[value='submit-day'],
+  .working-time-form-actions > button[value='validate-day'],
+  .working-time-form-actions.is-readonly > button,
+  .working-time-report-actions > button:first-of-type
+):hover:not(:disabled) {
+  border-color: var(--sp-primary-hover);
+  background: var(--sp-primary-hover);
+}
+
+/* The original certificate primary uses !important with its local color variable. */
+.app-shell .content-area .fcx-primary:hover:not(:disabled) {
+  --fcx-blue: var(--sp-primary-hover);
+}
+
+.app-shell .content-area .purchase-context-primary:hover:not(:disabled) {
+  border-color: var(--sp-primary-hover);
+  background: var(--sp-primary-hover);
+}
+
+.app-shell .content-area :is(
+  .sp-button--secondary, .lifting-page .secondary-button, .chem-secondary,
+  .procedure-button-secondary, .admin-secondary-button, .hr-secondary-button,
+  .qhse-policy-button.is-secondary, .fcx-secondary,
+  .useful-links__actions .is-secondary,
+  .working-time-report-actions > button:last-of-type
+) {
+  border-color: var(--sp-border-strong);
+  color: var(--sp-primary);
+  background: var(--sp-surface);
+}
+
+.app-shell .content-area :is(
+  .sp-filters, .procedure-filter-bar, .chem-toolbar, .exercise-filters,
+  .lifting-register-filters, .expense-filters, .useful-links__filters,
+  .reg-library__filters, .org-toolbar, .qhse-policy-filters,
+  .purchase-modern-filters, .purchase-topbar .purchase-search,
+  .hr-filter-panel, .qhse-filter-panel, .service-provider-filters,
+  .billing-elements-primary-filters, .dpr-native__filters
+) :is(input:not([type='checkbox']):not([type='radio']), select) {
+  min-height: var(--sp-control-height);
+  border-color: var(--sp-border-strong);
+  border-radius: var(--sp-control-radius);
+  color: var(--sp-text);
+  background: var(--sp-surface);
+  font-family: var(--sp-font);
+}
+
+.app-shell .content-area :is(
+  .sp-tabs, .ia-tabs, .annual-review-tabs, .annual-review-response-switcher,
+  .expense-tabs, .org-tabs, .service-note-status-tabs, .working-time-side-tabs,
+  .lifting-view-switch, .useful-links__filters
+) :is(button[aria-selected='true'], button[aria-pressed='true'], button[aria-current='page'], button.is-active) {
+  border-color: var(--sp-primary);
+  color: var(--sp-primary);
+  background: var(--sp-primary-soft);
+}
+
+/* Underline tabs keep their existing indicator rather than acquiring a pill layout. */
+.app-shell .content-area :is(
+  .kpi-tabs, .da-tabs, .disciplinary-tabs, .org-document-tabs, .lifting-tabs,
+  .fcx-workspace-tabs, .project-detail-tabs, .project-billing-workspace-tabs,
+  .planning-billing-tabs, .purchase-tabs
+) :is(button[aria-selected='true'], button[aria-pressed='true'], button[aria-current='page'], button.is-active) {
+  color: var(--sp-primary);
+  border-bottom-color: var(--sp-primary);
+}
+
+.app-shell .content-area :is(
+  .lifting-tabs, .project-detail-tabs, .project-billing-workspace-tabs
+) :is(button[aria-selected='true'], button[aria-pressed='true']) {
+  box-shadow: inset 0 -2px var(--sp-primary);
+}
+
+/* The dossier stylesheet is deliberately more specific than its portfolio counterpart. */
+.app-shell .content-area .project-design .project-contract-sheet.project-dossier .project-detail-tabs button[aria-selected='true'],
+.app-shell .content-area .project-design .project-billing .project-billing-workspace-tabs button[aria-pressed='true'] {
+  color: var(--sp-primary);
+  box-shadow: inset 0 -2px var(--sp-primary);
+}
+
+.app-shell .content-area .purchase-tabs button.is-active::after {
+  background: var(--sp-primary);
+}
+
+.app-shell .content-area .fcx-workspace-tabs button.active {
+  color: var(--sp-primary);
+}
+
+.app-shell .content-area .fcx-workspace-tabs button.active::after {
+  background: var(--sp-primary);
+}
+
+/* Existing segmented controls keep their grid, count badges and pointer targets. */
+.app-shell .content-area :is(
+  .fleet-tabs, .fleet-kind-tabs, .planning-perspective-switch, .working-time-view-toggle
+) :is(button[aria-selected='true'], button[aria-pressed='true'], button.is-active) {
+  border-color: var(--sp-primary);
+  color: var(--sp-primary);
+  background: var(--sp-primary-soft);
+  box-shadow: none;
+}
+
+.app-shell .content-area .fleet-kind-tabs button.is-active strong {
+  color: var(--sp-primary);
+  background: var(--sp-surface);
+}
+
+/* Shared ribbon colors only: each module retains its group count and row heights. */
+.app-shell .content-area .planning-ribbon-command-icon,
+.app-shell .content-area .project-ribbon-command-icon,
+.app-shell .content-area .working-time-command-group button > svg {
+  color: var(--sp-primary);
+}
+
+.app-shell .content-area .planning-ribbon-command:is(:hover, :focus-visible, .is-active),
+.app-shell .content-area .project-ribbon-command:is(:hover, [aria-pressed='true']),
+.app-shell .content-area .working-time-command-group button:hover {
+  border-color: var(--sp-border-strong);
+  color: var(--sp-primary);
+  background: var(--sp-primary-soft);
+}
+
+.app-shell .content-area .planning-ribbon-command:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--sp-focus);
+}
+
+/* Do not recolor the icon inside an existing filled primary ribbon command. */
+.app-shell .content-area .project-design .project-primary-commands > button:first-child .project-ribbon-command-icon {
+  color: var(--sp-surface);
+}
+
+.app-shell .content-area :is(.sp-tabs, .ia-tabs, .expense-tabs, .org-tabs, .service-note-status-tabs) {
+  border-radius: var(--sp-panel-radius);
+}
+
+.app-shell .content-area :is(
+  .ia-tabs, .annual-review-tabs, .annual-review-response-switcher, .expense-tabs,
+  .org-tabs, .service-note-status-tabs, .working-time-side-tabs, .fleet-tabs,
+  .fleet-kind-tabs, .planning-perspective-switch, .working-time-view-toggle
+) > button {
+  border-radius: var(--sp-control-radius);
+}
+
+/* Shared dialog chrome does not change the document or editor inside it. */
+.app-shell :is(
+  .app-dialog, .fcx-modal, .fcx-visit-dialog, .fcx-report-dialog, .procedure-dialog,
+  .working-time-modal, .action-control-editor, .action-control-edit-sheet,
+  .action-plan-dialog, .action-plan-approval, .action-plan-treatment, .dpr-modal__panel
+) {
+  border-radius: var(--sp-panel-radius);
+}
+
+.app-shell .app-dialog__footer button {
+  border-radius: var(--sp-control-radius);
+  font-family: var(--sp-font);
+}
+
+.app-shell .project-editor form > footer button {
+  min-height: var(--sp-control-height);
+  border-radius: var(--sp-control-radius);
+  border-color: var(--sp-border-strong);
+  color: var(--sp-primary);
+  background: var(--sp-surface);
+  font-family: var(--sp-font);
+}
+
+.app-shell .project-editor form > footer button.is-primary,
+.app-shell .project-assistant-layout > aside button.is-active {
+  border-color: var(--sp-primary);
+  color: var(--sp-surface);
+  background: var(--sp-primary);
+}
+
+.app-shell .project-editor form > footer button.is-primary:hover:not(:disabled) {
+  border-color: var(--sp-primary-hover);
+  background: var(--sp-primary-hover);
+}
+
+.app-shell .project-editor.is-project-assistant legend > span {
+  background: var(--sp-primary);
+}
+
+.app-shell .app-dialog--drawer {
+  border-radius: var(--sp-panel-radius) 0 0 var(--sp-panel-radius);
+}
+
+/* Billing is already a fullscreen module dialog; keep its existing heading element. */
+.app-shell .app-dialog--fullscreen:has(.billing-elements-workspace) .app-dialog__identity h2 {
+  color: var(--sp-heading);
+  font-family: var(--sp-font);
+  font-size: var(--sp-title-size);
+  font-weight: 750;
+  line-height: 1.25;
+  letter-spacing: -.025em;
+}
+
+.app-shell :is(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 3px;
+}
+
+.app-shell .content-area :is(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 3px;
+}
+
+.app-shell button:disabled {
+  cursor: not-allowed;
+}
+
+.sp-module-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-space-4);
+  margin-bottom: var(--sp-space-5);
+}
+
+.sp-panel,
+.sp-filters,
+.sp-toolbar {
+  min-width: 0;
+  border: 1px solid var(--sp-border);
+  padding: var(--sp-space-4);
+  background: var(--sp-surface);
+}
+
+.sp-filters,
+.sp-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-space-3);
+}
+
+.sp-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-space-2);
+  border: 1px solid var(--sp-border-strong);
+  padding: var(--sp-space-2) var(--sp-space-3);
+  color: var(--sp-primary);
+  background: var(--sp-surface);
+  font-weight: 650;
+}
+
+/* Reuse existing feature breakpoints against the already declared app-content container.
+ * No new containment is introduced, so fixed dialogs keep their original containing block.
+ * Stacking keeps every library, dossier and action available beside the responsive sidebar.
+ */
+@container app-content (max-width: 1260px) {
+  .app-shell .content-area .service-note-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell .content-area .service-note-library {
+    border-right: 0;
+    border-bottom: 1px solid var(--sp-border);
+  }
+
+  .app-shell .content-area .service-note-list {
+    max-height: 520px;
+  }
+}
+
+@container app-content (max-width: 1250px) {
+  .app-shell .content-area .fcx-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell .content-area .fcx-workbench-library > .fcx-tree {
+    max-height: 520px;
+  }
+
+  .app-shell .content-area .fcx-workspace-panel {
+    max-height: none;
+  }
+}
+
+@container app-content (max-width: 1180px) {
+  .app-shell .content-area .hr-kpi-band {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  }
+
+  .app-shell .content-area .hr-master-detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell .content-area .hr-profile-card {
+    position: static;
+    max-height: none;
+  }
+
+  .app-shell .content-area .hr-profile-documents {
+    max-height: 620px;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-shell { --sp-title-size: 1.5rem; }
+  .app-shell .content-area { padding: var(--sp-space-3); }
+}
+
+@media (pointer: coarse) {
+  .app-shell { --sp-control-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell *, .app-shell *::before, .app-shell *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

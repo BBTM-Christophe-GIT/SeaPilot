@@ -1,6 +1,183 @@
 # SeaPilot Vercel Production Notes
 
-Version `3.43.0` ajoute **Audits → Audit ISM Interne** : planning annuel pour huit sites avec fenêtre de ± 3 mois calendaires, grille BBTM de 61 questions personnalisable par navire, notation avec exclusion des N/A, écarts affectés et suivi historisé, puis synthèse et comparaison des scores avec N-1. Les entrées eCMID, Audit ISM Externe et Audit Client sont présentes dans le nouveau menu. La migration `20260930214840_internal_audits.sql` a été appliquée au projet SeaPilot avant le client. Voir [internal-audits.md](./internal-audits.md) pour les dates initiales, les permissions et la recette.
+Version `3.68.2` place les tags des documents de Procédures QHSE juste après
+le navire, avec des badges de même hauteur sur une seule ligne. Le défilement
+horizontal garde tous les tags et projets accessibles sur les petits écrans
+sans augmenter la hauteur des documents. Aucune migration supplémentaire.
+Voir [procedure-document-tags.md](./procedure-document-tags.md).
+
+Version `3.68.1` propose une liste de tags pré-enregistrés dans Procédures QHSE,
+commune à Administration et Direction. La liste initiale comprend Rôle, MARPOL,
+Pollution, Incendie et THOMSEA, et s'enrichit avec les nouveaux tags enregistrés.
+**Gérer les tags** permet d'ajouter ou de supprimer des choix ; les tags des
+documents existants sont conservés et restent recherchables. Appliquer
+`20261007141605_procedure_tag_catalogue.sql` puis
+`20261007142542_procedure_tag_catalogue_archive.sql` avant le client.
+Voir [procedure-document-tags.md](./procedure-document-tags.md).
+
+Version `3.68.0` ajoute les tags aux documents de Procédures QHSE et à leur
+recherche. Appliquer `20261007135737_procedure_document_tags.sql` avant le client.
+Les tags sont conservés à la publication et synchronisés sur les PDF liés.
+Voir [procedure-document-tags.md](./procedure-document-tags.md).
+
+Version `3.67.9`, build `2026-10-07.004`, remplace l’oreille de **Écoute client** par une poignée de main et ajoute une **clé plate** pour **Technique**, dans Politique QHSE, sur l’accueil et dans les exports PDF. Appliquer la migration additive des icônes décrite dans [qhse-policy.md](./qhse-policy.md) avant le client. Les choix d’icônes personnalisés sont conservés ; aucune dépendance ou variable d’environnement supplémentaire.
+
+Version `3.67.8`, build `2026-10-07.003`, ajoute la vue **Refusées** dans le ruban et les onglets du module Achats. Son compteur suit la recherche et les filtres navire, catégorie et urgence. Les demandes dont la décision d’approbation est refusée sont regroupées dans cette vue et exclues des quatre autres vues, sans modifier leur statut enregistré. Le motif du refus reste consultable. Aucune migration, dépendance ou variable d’environnement supplémentaire ; droits et workflow RPC/RLS inchangés.
+
+Version `3.67.7`, build `2026-10-07.002`, conserve les axes actifs de la politique sur l’accueil même sans objectif renseigné, avec un état explicite sans progression inventée. Le panneau dispose de styles autonomes. Les tâches sont présentées en catégories côte à côte selon la largeur disponible, avec listes repliables et chips d’échéance compacts. Aucune migration, dépendance ou variable d’environnement supplémentaire. Voir [home-reference-fixes.md](./home-reference-fixes.md).
+
+Version `3.67.6`, build `2026-10-07.001`, modernise l’accueil : synthèse, filtres par navire, tâches par catégorie et calendrier disposent de zones distinctes. Trois prochaines dates clés et un retour à **Aujourd’hui** facilitent la navigation. Le suivi de la politique QHSE conserve ses données et affiche la progression des objectifs par axe stratégique actif. Aucune migration, dépendance ou variable d’environnement supplémentaire. Voir [home-redesign.md](./home-redesign.md).
+
+Version `3.67.5`, build `2026-10-02.009`, réduit les cartes de soldes et réorganise la demande de congés autour d'un calendrier de sélection de journée ou de période, avec motif en bas et actions toujours visibles. Christophe et Sophie conservent les compteurs annuels Congés/RTT ; les autres personnes affichent uniquement **Solde de Congés/Repos**, calculé par la vue Équipages à la date de saisie. Le calcul Équipages reste inchangé et aucune saisie annuelle n'est autorisée pour les marins. Cette livraison reprend aussi les axes stratégiques de Politique QHSE de `3.67.4`. Appliquer la migration du mode de solde décrite dans [planning-rtt-counters.md](./planning-rtt-counters.md) avant le client. Aucune nouvelle dépendance ni variable d'environnement. Voir [planning-leave-request.md](./planning-leave-request.md).
+
+Version `3.67.4` renomme les Processus de Politique QHSE en **Axes stratégiques**, avec ordre modifiable, suppression avec transfert conservant les objectifs et leurs preuves, et six icônes communes au module et à l'export PDF. Appliquer `20261002195040_qhse_policy_strategic_axes.sql` avant le client. Voir [qhse-policy.md](./qhse-policy.md).
+
+Version `3.67.2` déplace la gestion des droits du Planning dans la fenêtre **Périodes de Droits Congés** : totaux Congés et RTT ajustables du 1er juin au 31 mai, avec choix d'un collaborateur supplémentaire. Les cartes de la demande reprennent le design fourni avec des jauges de solde et les projections distinctes. La livraison conserve le module Politique QHSE de `3.67.1`. Appliquer `20261002062949_planning_annual_leave_rights_management.sql` avant le client. Aucune nouvelle variable d'environnement. Voir [planning-rtt-counters.md](./planning-rtt-counters.md).
+
+Version `3.67.1` ajoute **Politique QHSE** en premier sur l’accueil et dans QHSE : aperçu agrandissable et sélection dans les PDF publiés, objectifs par **Processus**, responsables Personnel En poste / Équipages d’un navire / Bureau, progression et historique immuable avec pièces jointes privées, archives et export PDF complet. Seuls Administration et Direction modifient et ajoutent des suivis ; Marin et Capitaine consultent tous les objectifs et suivis de leur société. Appliquer les migrations additives décrites dans [qhse-policy.md](./qhse-policy.md) avant le client. Aucun document privé ni objectif fictif n’est publié dans les fichiers statiques. Aucune nouvelle variable d’environnement.
+
+Version `3.66.0` complète Audit ISM Interne : suppression des modèles de grille avec conservation des audits, fonction RH par ligne, PDF de modèle vierge ou d’audit incomplet, tri par fonction RH et choix des sections Grille d’audit / Synthèse / Graphique. Les rapports reprennent les noms, prénoms et signatures de profil disponibles des participants désignés et des vrais contributeurs. Appliquer la migration additive des [grilles et participants](./internal-audit-grid-roles-participants.md) avant le client. Aucune nouvelle variable d’environnement.
+
+Version `3.65.0` ajoute dans Administration → Planning un ordre des fonctions partagé par société pour classer les marins dans chaque bordée de la vue Flotte. La fonction temporaire en vigueur à la date sélectionnée prend la priorité pour le tri. Le « filtre actif » et son masquage automatique sont retirés du Planning et de l’administration ; les filtres explicites restent disponibles. La migration `20261002045601_planning_fleet_function_order.sql` est appliquée avant le client. Cette livraison inclut les demandes RTT et les compteurs par période de `3.64.7`. Voir [planning-fleet-function-order.md](./planning-fleet-function-order.md).
+
+Version `3.64.7` ajoute RTT aux demandes du Planning et affiche le solde de la personne sélectionnée dans les deux formulaires. Christophe MINASSIAN et Sophie HAMEL disposent de compteurs Congés et RTT par période : droits saisis moins tous les jours ouvrés validés de la période, hors jours fériés nationaux. Les demandes en attente et la projection après validation restent distinctes. Administration, Direction et Armement peuvent saisir les droits ; Marin et Capitaine consultent leur propre solde. La migration `20261001140235_planning_rtt_and_leave_counter_periods.sql` est appliquée avant le frontend, sans initialisation fictive. Voir [planning-rtt-counters.md](./planning-rtt-counters.md).
+
+Version `3.64.6` préserve le focus d'un champ déjà utilisé lorsque l'animation de focus initial d'un dialogue arrive en retard. Elle ne peut plus déplacer la saisie vers Fermer et laisser un espace fermer involontairement la fenêtre. Le démontage annule l'animation en attente. Les dialogues conservent leur design, leur autofocus habituel, leurs contrôles de fichiers et leur navigation clavier. Les corrections Planning de `3.64.5` restent incluses. Aucune migration ni modification de données.
+
+Version `3.64.5` corrige les affectations de septembre masquées par le filtre actif lorsque la grille déborde sur octobre. Le mois de référence révolu conserve toutes ses affectations, tandis que le filtre courant/futur et les filtres explicites restent appliqués. Les soldes sont calculés uniquement pour les personnes affichées dans Équipages et conservés entre les changements de vue ; Flotte et Projet évitent ces calculs. Les anciennes réponses d’actualisation des absences, visites/prestataires et audits ne peuvent plus écraser les données récentes. Aucun changement de design, retrait de fonctionnalité, modification de données ou migration. Voir [planning-reference-month-audit.md](./planning-reference-month-audit.md).
+
+Version `3.64.4` termine la correction de l’audit mobile : dans l’arbre Certificats flotte, les compteurs ne peuvent plus masquer le nom du navire sur les petits écrans. Le nom et les indicateurs disposent de lignes distinctes, avec conservation des actions et des compteurs. La connexion mobile corrigée en `3.64.3` reste incluse. Aucun changement de données ni migration.
+
+Version `3.64.3` corrige la demande répétée de choix de mot de passe lorsqu’une icône mobile ou un onglet conserve l’ancienne route d’activation. Une session ordinaire ouvre l’accueil ; les vrais liens d’invitation et de récupération restent traités avec le SDK Supabase. L’intention temporaire est effacée après succès, les réponses Auth tardives et les changements de compte sont protégés. Le retour de récupération ne masque plus la connexion, les formulaires sont adaptés aux petits écrans et les erreurs de déconnexion sont affichées avec possibilité de réessayer. Aucune migration, nouvelle variable ou modification de compte. Voir [mobile-authentication.md](./mobile-authentication.md).
+
+Version `3.64.2` corrige l’ajout d’un marin dans une bordée lorsque le filtre actif masque ses anciennes affectations. La ligne ajoutée reste disponible pour la saisie et après Actualiser, sans modifier les filtres personnels. Certificats flotte affiche les fichiers reçus en attente de validation, leurs versions et leur aperçu ; les profils Administration, Direction et Armement peuvent valider une version pour la rendre courante. Le lanceur Windows `2.7.0` résout les raccourcis Google Drive vers le dossier partagé SeaPilot, y compris les chemins Mon Drive / My Drive, puis enregistre le dossier réel sur chaque PC. Chaque utilisateur doit d’abord ajouter le raccourci SeaPilot dans Mon Drive et mettre à jour le lanceur depuis Administration → Documents et Google Drive. Aucune migration ni nouvelle variable d’environnement. Voir [planning-empty-board-rows.md](./planning-empty-board-rows.md), [fleet-certificate-pending-uploads.md](./fleet-certificate-pending-uploads.md) et [shared-windows-drive-launcher.md](./shared-windows-drive-launcher.md).
+
+Version `3.64.1` affiche les audits planifiés OVID, eCMID, ISM externe, ISM interne et Client au **Planning**, au jour prévu et sur la ligne du navire, avec le même rendu que les visites et un empilement commun. Un navire sans équipage affecté reste visible lorsqu’un audit est prévu ; les audits internes à terre disposent de leur ligne. Les dossiers documentaires ont une date prévue facultative et modifiable, indépendante de leur date réelle. Le clic donne le rendez-vous et un lien direct vers le dossier autorisé. La migration additive `20261001071713_audits_global_planning.sql` est appliquée au projet SeaPilot avant le client ; elle conserve les anciens dossiers sans inventer de date et expose seulement les métadonnées autorisées par les règles Planning existantes.
+
+Version `3.64.0` ajoute **OVID** et les dossiers annuels communs à OVID, eCMID, Audit ISM Externe et Audit Client : plusieurs documents par navire, quatre catégories d’écarts, suivi et preuves privés, rapports PDF complets ou individuels avec photos visibles, PDF annexés et originaux attachés. Audit ISM Interne dispose d’un planning annuel illustré, d’un radar N/N−1 et de l’impression de la grille seule. Appliquer la migration `20261001060641_documentary_audits.sql` après les migrations internes avant de déployer le client. Voir [documentary-audits.md](./documentary-audits.md) et [internal-audits.md](./internal-audits.md).
+
+Version `3.63.0` complète Audit ISM Interne : photos privées du constat, du traitement et de la clôture, délais proposés d’une semaine pour les majeures et d’un mois pour les mineures, remarques sans échéance ni clôture obligatoire, grille compacte avec consignes toujours visibles, date de réalisation automatique, sélection annuelle, graphique annuel revu et rapports PDF / Excel à trois onglets avec preuves intégrées. La migration additive `internal_audit_photos_deadlines` doit être appliquée après la migration initiale et avant le client. Voir [internal-audits.md](./internal-audits.md).
+
+Version `3.62.0` ajoute **Audits → Audit ISM Interne** : planning annuel pour huit sites avec fenêtre de ± 3 mois calendaires, grille BBTM de 61 questions personnalisable par navire, notation avec exclusion des N/A, écarts affectés et suivi historisé, puis synthèse et comparaison des scores avec N-1. Les entrées eCMID, Audit ISM Externe et Audit Client sont présentes dans le nouveau menu. La migration `20260930214840_internal_audits.sql` a été appliquée au projet SeaPilot avant le client. Voir [internal-audits.md](./internal-audits.md) pour les dates initiales, les permissions et la recette.
+
+Version **3.59.1** : à chaque clic sur **RH / Brevets**, même depuis le module
+déjà ouvert sur un autre collaborateur, la fiche liée au compte
+connecté est sélectionnée en priorité parmi les collaborateurs autorisés et
+visibles. Une identité chargée après le personnel est également prise en compte.
+La sélection manuelle d’un autre collaborateur et la fermeture de la fiche restent
+respectées. En l’absence de fiche liée visible, la sélection initiale habituelle
+est conservée. Aucun changement de permissions ni migration n’est nécessaire.
+
+Version **3.59.0** : cartes et portraits homogènes dans l’organigramme, six choix
+de contenu dans les trois documents, liste du personnel sur une page A4, liste
+d’urgence par défaut partagée, et distinction entre fonction à bord et intitulé
+de bureau. Le PDF du diagramme rejoint les exports d’images. Une note de mise à
+jour présente ces nouveautés aux profils Administrateur et Direction.
+Les migrations `20260926220402_organigramme_emergency_defaults.sql` et
+`20260926221451_organigramme_emergency_default_grants.sql` ont été appliquées au
+projet lié avant le client. Voir [Organigramme RH](./organigramme.md).
+
+RH / Brevets ajoute **Attestation de droits** et **Carte Vitale**, et utilise le
+lanceur Windows **2.4.0** pour les pièces dans Google Drive, classées par
+collaborateur. Appliquer `hr_documents_google_drive` puis
+`hr_legacy_document_metadata` avant le frontend, vérifier
+les copies cloud avant d'activer les références migrées et mettre à jour le
+lanceur sur chaque poste. Voir [la migration et les contrôles](./hr-documents-google-drive.md).
+
+Le temps de travail rattache désormais le blocage de validation à la même journée
+que l'alerte affichée, et charge tous les calculs du mois par pagination.
+Appliquer `20260925100533_align_working_time_daily_compliance.sql` avant le client
+(déjà appliquée au projet lié). Voir [la correction et les tests](./working-time-daily-validation-attribution.md).
+
+Le Planning propose **Projet rapide** depuis **Nouvelle opération** dans les vues
+Flotte et Projet : titre seul, numéro Pxxx, statut Brouillon et ajout immédiat sur
+la case choisie, sans quitter le planning. La migration
+`20260925090628_planning_quick_draft_project.sql` est appliquée avant le frontend.
+Voir [le parcours et les vérifications](./planning-quick-project.md).
+
+La fenêtre **Générer une liste des documents** affiche désormais une arborescence
+de chapitres ISM repliables, avec documents indentés, tri par référence et compteur
+par chapitre. Replier un chapitre conserve la sélection et l'export PDF. Aucune
+migration ni configuration supplémentaire. Voir [les listes](./procedures-vessel-list.md).
+
+Le module Procédures propose le modèle Word fourni, les boutons **Importer un fichier
+existant / Nouvelle Procédure**, le chapitre ISM avant la référence et une liste de
+projets. La liste des documents se filtre aussi par chapitre ISM et affiche une ligne
+compacte par document. Le lanceur Windows **2.3.0** crée les dossiers de modules et
+convertit les sources Office en PDF lors de la publication. Les migrations
+`20260925072400_procedures_drive_workflow.sql` et
+`20260925073813_procedures_drive_receipt_validation.sql` précèdent le frontend et sont
+déjà appliquées. Voir [le modèle et le formulaire](./procedures-template-ism.md),
+[les listes](./procedures-vessel-list.md) et [Google Drive](./procedures-google-drive.md).
+
+Le build `2026-09-24.001` de la version `3.55.0` ajoute, à la demande de
+l’utilisateur, une note annonçant le module **Notes de Frais**, le suivi des notes
+émises et l’arrêt de l’ancienne application à la fin de septembre 2026. Son nouvel
+identifiant `3.55.0-expense-notes-launch` déclenche la fenêtre à la prochaine
+ouverture de SeaPilot après connexion, même si les notes précédentes ont déjà été
+lues. **Ok** enregistre la lecture par compte ; **Lire plus tard** conserve la note
+accessible depuis la version avec une pastille. Les notes précédentes sont
+conservées. Aucune migration ni modification de configuration n’est requise.
+
+Version `3.55.0` ajoute les préférences personnelles d’affichage et de tri des
+Équipages dans Administration. Appliquer
+`20260923201855_planning_crew_display_preferences.sql` avant le client.
+Voir [les réglages et la recette](./crew-display-preferences-v3-55-0.md).
+
+Version `3.54.0` simplifie la fiche LSA : catalogue de désignations administrable,
+numérotation automatique par navire, marque/modèle/numéro de série et alarmes à J−90.
+Appliquer la migration `lsa_designation_catalog` avant le client. Voir [la recette](./lsa-designations-v3-54-0.md).
+
+Version `3.53.0` ajoute **Registres → Registre LSA** et transfère les catégories
+Life Jacket, GMDSS, Pyrotechnie et Bouée/Feux à retournement/MOB depuis Certificats
+flotte. Appliquer `20260923095002_lsa_register.sql` avant le client : copie et
+vérification intégrale des fiches, versions et historiques avant retrait de la
+source, sans suppression des PDF. Voir [le protocole et la recette](./lsa-register-v3-53-0.md).
+
+Version `3.51.2` inclut les TBT à thème libre dans le registre des exercices, ses totaux et le PDF individuel. La migration `20260923060419_emergency_exercises_tbt.sql` est appliquée et vérifiée. Les cinq profils authentifiés utilisent le même périmètre que les exercices prédéfinis. Aucune note de mise à jour ajoutée. Voir [le registre et les vérifications](./emergency-exercises.md).
+
+Version `3.51.1` harmonise les filtres navires du plus long au plus court. Le registre des exercices propose uniquement les navires actifs, une seule fois par nom, et conserve les exercices historiques dans la vue flotte. La migration `20260923053355_emergency_exercises_active_vessels.sql` est appliquée et vérifiée avec les cinq profils authentifiés. Aucune nouvelle note de mise à jour, conformément à la demande. Voir [la correction des filtres](./vessel-filter-order.md).
+
+Version `3.51.0` réunit les trois rubriques de levage dans **Registres**, supprime le menu **Levage** et ajoute les notes de mise à jour à lecture différée, avec compteur par compte. La migration `20260923043157_user_release_note_states.sql` est déjà appliquée. Voir [le fonctionnement et la recette](./release-notes-and-lifting-sections.md).
+
+Version `3.50.0` ajoute **Registres → Registre des Exercices** : vue flotte ou navire,
+graphique et tableau mensuels, carnet PDF individuel avec le pied de page et le nommage
+historiques. Les migrations du registre et des illustrations sont déjà appliquées.
+Voir [droits, calcul et déploiement](./emergency-exercises.md).
+
+Les vues Capitaine et Marin s'adaptent à la largeur disponible : navigation,
+Demandes d'achat, registre des heures, DPR, Planning et fiche RH. Le bouton
+**Suivant** de la création d'une demande d'achat est débloqué à l'étape Demandeur.
+Aucune migration ni nouvelle configuration n'est requise. Voir
+[Affichage Capitaine et Marin](./crew-responsive-layout.md).
+
+Le menu **Registres → Produits Chimiques** regroupe désormais le registre existant.
+Les procédures QHSE proposent une liste PDF sélectionnable par navire, incluant les
+procédures communes sans navire, et une liste déroulante de la flotte pour le champ Navire.
+Aucune migration ni nouvelle configuration n’est requise. Voir [procedures-vessel-list.md](./procedures-vessel-list.md).
+
+Version `3.49.0` ajoute QHSE → Produits Chimiques pour les cinq profils, les inventaires
+GOURY/LANDEMER, les pictogrammes et le PDF BBTM avec annexes facultatives.
+Les fichiers sont stockés dans Google Drive via le lanceur Windows **2.2.0**.
+Appliquer `20260922093349_qhse_chemical_inventory.sql`, puis
+`20260922095332_chemical_documents_google_drive.sql` avant le client (déjà appliquées).
+Voir [Produits Chimiques](./chemical-inventory.md).
+
+Version `3.48.0` ajoute le répertoire partagé « Liens utiles », ses catégories, les favicons et les 15 liens initiaux.
+Appliquer `20260921194845_useful_links.sql` avant le client. Les cinq profils sont contrôlés par la matrice
+Administration ; seuls Administration et Direction gèrent les liens. Voir [la recette et les droits](./useful-links.md).
+
+Version `3.46.0` corrige les libellés des projets DPR pour les profils terrain et leur permet de consulter toute la flotte publiée, avec le navire affecté sélectionné par défaut. Appliquer la migration `20260921121717_dpr_project_labels_and_planning_fleet_read.sql` avant le client. Voir [DPR et Planning terrain](./dpr-project-labels-planning-fleet.md).
+
+Version `3.45.0` applique la proposition 2 aux notes de frais : sections repliables, contrôles tactiles et total/action d'émission fixes sur mobile. Le bouton **Mes véhicules** ouvre le carnet personnel et permet de choisir un véhicule par défaut, repris dans les nouvelles notes kilométriques. La migration `20260921084003_expense_default_vehicle.sql` a été appliquée avant le frontend ; la préférence reste isolée par compte et société et les notes émises sont inchangées. Voir [expense-notes.md](./expense-notes.md).
+
+Version `3.44.1` limite les listes d'émetteurs NDF aux personnes en poste selon les dates RH du jour à Paris. Appliquer `20260921081145_expense_current_issuers.sql` avant le frontend. Les anciennes notes restent consultables et recherchables. Voir [expense-notes.md](./expense-notes.md).
+
+Version `3.44.0` compacte les fenêtres Dépense et Indemnités kilométriques et ajoute le carnet personnel de véhicules. La migration `20260917134330_expense_personal_vehicles.sql` a été appliquée avant le frontend. Le carnet est isolé par compte et société ; les notes émises gardent leurs informations historiques. Voir [expense-notes.md](./expense-notes.md).
+
+Version `3.42.1` permet de choisir directement l’émetteur dans le pied du courrier parmi les profils Administration et Direction autorisés. Les brouillons sont enregistrés avant transfert, les corrections des relecteurs restent des propositions et la signature précédente est retirée. L’archive du lanceur corrige CS0016 en compilant un nouvel exécutable avant de mettre à jour le protocole, sans interrompre la version en cours. Aucune migration ni modification des droits n’est nécessaire.
+
+Version `3.42.0` ajoute la relecture collaborative des courriers disciplinaires, les notifications privées, le changement d’émetteur, la validation et les courriers successifs d’un même dossier. La liste des collaborateurs contient uniquement ceux ayant un dossier. Le logo fourni remplace l’identité applicative. Les migrations `20260915125415_disciplinary_collaboration.sql` et `20260915130254_disciplinary_validated_letters.sql` précèdent le client et sont appliquées au projet lié. Voir [le fonctionnement détaillé](./disciplinary-sanctions.md). Le lanceur Windows 2.0.0 reste commun à tous les modules.
 
 Version `3.41.0` centralise le lanceur Windows et la racine Google Drive dans Administration. Procédures et Sanctions Disciplinaires utilisent le même protocole ; les dossiers des collaborateurs sont créés automatiquement. Appliquer `20260915115648_desktop_drive_scope.sql` (déjà appliquée au projet lié), puis mettre à jour une fois le lanceur Windows avec l’archive fournie. Voir [la configuration commune](./shared-windows-drive-launcher.md).
 
@@ -276,7 +453,7 @@ Vercel preview hosts matching `sea-pilot-*-bbtm-app.vercel.app` open SeaPilot di
 - project-level Vercel Authentication is disabled so anonymous preview links reach SeaPilot directly; production remains protected by the SeaPilot application login;
 - no production session or authentication token is copied to preview code;
 - no production table is read or written;
-- save attempts return an explicit preview-only error;
+- supported demonstration interactions, including annual leave/RTT rights and Politique QHSE, update only the in-memory preview dataset and reset on page reload; unsupported save attempts return an explicit preview-only error;
 - a `Préversion · données de démonstration` badge identifies this state;
 - production and every unrelated hostname keep the normal Supabase authentication flow.
 

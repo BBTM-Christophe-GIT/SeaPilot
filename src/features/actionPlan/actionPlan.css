@@ -149,6 +149,7 @@
 .action-plan-page select,
 .action-plan-page textarea {
   width: 100%;
+  min-width: 0;
   min-height: 44px;
   border: 1px solid #ccd8e7;
   border-radius: 10px;

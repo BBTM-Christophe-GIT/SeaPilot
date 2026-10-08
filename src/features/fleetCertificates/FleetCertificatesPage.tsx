@@ -1,11 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { compareFleetNames } from '../fleet/fleetDisplay';
 import {
   AlertCircle, CalendarPlus, CheckCircle2, Download,
   ExternalLink, FileCheck2, FilePlus2, FileText, Filter, Flag, Image,
   Paperclip, Pencil, Plus, RefreshCw, Save, Search, Ship, Trash2, UploadCloud, UserRound, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
@@ -16,7 +17,7 @@ import {
   getDefaultFleetCertificateExpiryDate,
   getEffectiveFleetCertificateStatus, openFleetCertificateDocument, submitFleetCertificateRenewal,
   normalizeFleetCertificateDocumentName, updateFleetCertificateDocumentMetadata,
-  type FleetCertificateRecord,
+  type FleetCertificateRecord, type FleetCertificateVersion,
   type UpdateFleetCertificateDocumentMetadataInput,
 } from './fleetCertificateQueries';
 import { getFleetCertificateCategory, getFleetCertificateCategoryOptions } from './fleetCertificateCategories';
@@ -37,6 +38,7 @@ import {
   generateFleetCertificateVisitReport,
 } from './fleetCertificateVisitReport';
 import { FleetCertificateLibraryTree } from './FleetCertificateLibraryTree';
+import { FleetCertificateVersionsPanel } from './FleetCertificateVersionsPanel';
 import {
   createDefaultFleetCertificateDocumentPath,
   FleetCertificateDocumentFields,
@@ -186,7 +188,7 @@ function FindingForm({ certificate, finding, responsibles, onClose, onOpenAttach
 
 function DocumentForm({ certificates, documentNames, onClose, onSave }: { certificates: FleetCertificateRecord[]; documentNames: string[]; onClose: () => void; onSave: (form: FormData) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
-  const vessels = useMemo(() => Array.from(new Map(certificates.filter((item) => item.vesselId).map((item) => [item.vesselId, item])).values()), [certificates]);
+  const vessels = useMemo(() => Array.from(new Map(certificates.filter((item) => item.vesselId).map((item) => [item.vesselId, item])).values()).sort((a, b) => compareFleetNames(a.vesselName, b.vesselName)), [certificates]);
   const categories = useMemo(() => getFleetCertificateCategoryOptions(certificates), [certificates]);
   const vesselLabels = useMemo(() => certificates.flatMap((item) => [item.vesselName, item.vesselAcronym]), [certificates]);
   const suggestedNames = useMemo(() => Array.from(new Set([...documentNames, ...certificates.map((item) => item.documentTitle)]
@@ -265,7 +267,7 @@ function DocumentMetadataForm({ certificate, certificates, documentNames, onClos
 }) {
   const vessels = useMemo(() => Array.from(new Map(certificates
     .filter((item) => item.vesselId)
-    .map((item) => [item.vesselId, item])).values()), [certificates]);
+    .map((item) => [item.vesselId, item])).values()).sort((a, b) => compareFleetNames(a.vesselName, b.vesselName)), [certificates]);
   const categories = useMemo(() => getFleetCertificateCategoryOptions(certificates), [certificates]);
   const vesselLabels = useMemo(() => certificates.flatMap((item) => [item.vesselName, item.vesselAcronym]), [certificates]);
   const suggestedNames = useMemo(() => Array.from(new Set([...documentNames, ...certificates.map((item) => item.documentTitle)]
@@ -350,6 +352,7 @@ function FleetCertificateDocumentPreview({
   onEdit,
   onRenew,
   previewUrl,
+  previewVersion,
 }: {
   canEdit: boolean;
   certificate: FleetCertificateRecord | null;
@@ -359,6 +362,7 @@ function FleetCertificateDocumentPreview({
   onEdit: () => void;
   onRenew: () => void;
   previewUrl: string;
+  previewVersion: FleetCertificateVersion | null;
 }) {
   if (!certificate) {
     return <div className="fcx-preview-empty"><FileCheck2 size={30} /><h3>Sélectionnez un document</h3><p>Cliquez sur une ligne ou sur son titre dans la bibliothèque pour l’afficher ici.</p></div>;
@@ -370,9 +374,9 @@ function FleetCertificateDocumentPreview({
 
   return <div className="fcx-document-preview">
     <section className="fcx-preview-stage" aria-label={`Aperçu de ${certificate.documentTitle}`}>
-      <header><span><FileText size={17} /><strong>{certificate.fileName || 'Aucun fichier joint'}</strong></span>{hasFile ? <button onClick={() => onDownload(certificate)} type="button"><Download size={16} /> Télécharger</button> : null}</header>
+      <header><span><FileText size={17} /><strong>{certificate.fileName || (certificate.status === 'pending_validation' ? 'Document reçu · À valider' : 'Aucun fichier joint')}</strong></span>{hasFile ? <button onClick={() => onDownload(certificate)} type="button"><Download size={16} /> Télécharger</button> : null}</header>
       <div>
-        {!hasFile ? <div className="fcx-preview-status"><FilePlus2 /> Cette ligne ne contient pas encore de document.</div> : null}
+        {!hasFile ? <div className="fcx-preview-status"><FilePlus2 /> {certificate.status === 'pending_validation' ? 'Document reçu, en attente de validation. Affichez sa version ci-dessous.' : 'Cette ligne ne contient pas encore de document.'}</div> : null}
         {isLoading ? <div className="fcx-preview-status"><RefreshCw className="spin" /> Chargement de l’aperçu…</div> : null}
         {hasFile && !isLoading && error ? <div className="fcx-preview-status is-error"><AlertCircle /> {error}</div> : null}
         {hasFile && !isLoading && !error && previewUrl && isImage ? <img alt={`Aperçu de ${certificate.documentTitle}`} src={previewUrl} /> : null}
@@ -381,14 +385,14 @@ function FleetCertificateDocumentPreview({
       </div>
     </section>
     <aside className="fcx-preview-metadata">
-      <div className="fcx-preview-metadata-head"><h3>Informations du document</h3>{canEdit ? <button className="fcx-secondary" onClick={onEdit} type="button"><Pencil size={14} /> Modifier</button> : null}</div>
+      <div className="fcx-preview-metadata-head"><h3>{previewVersion ? 'Informations de la version affichée' : 'Informations du document'}</h3>{canEdit ? <button className="fcx-secondary" onClick={onEdit} type="button"><Pencil size={14} /> Modifier</button> : null}</div>
       <dl>
         <div><dt>Navire</dt><dd>{certificate.vesselName}</dd></div>
         <div><dt>Catégorie</dt><dd>{certificate.categoryLabel}</dd></div>
         <div><dt>Document</dt><dd>{certificate.documentTitle}</dd></div>
         <div><dt>Date d’émission</dt><dd>{formatDate(certificate.issuedOn)}</dd></div>
         <div><dt>Date d’échéance</dt><dd>{formatDate(certificate.expiresOn)}</dd></div>
-        <div><dt>Version</dt><dd>{hasFile ? `v${certificate.currentVersionNo}` : 'Aucune version'}</dd></div>
+        <div><dt>Version</dt><dd>{hasFile ? `v${certificate.currentVersionNo}${previewVersion?.status === 'pending_validation' ? ' · À valider' : previewVersion?.status === 'archived' ? ' · Archivée' : previewVersion?.status === 'rejected' ? ' · Refusée' : ' · Version actuelle'}` : 'Aucune version validée'}</dd></div>
         <div><dt>Fichier</dt><dd>{hasFile ? formatFileSize(certificate.fileSizeBytes) : 'Aucun fichier joint'}</dd></div>
       </dl>
       {hasFile ? <button className="fcx-secondary" onClick={() => onDownload(certificate)} type="button"><Download size={16} /> Télécharger le document</button> : canEdit ? <button className="fcx-secondary" onClick={onRenew} type="button"><UploadCloud size={16} /> Ajouter un fichier</button> : null}
@@ -398,6 +402,10 @@ function FleetCertificateDocumentPreview({
 
 export function FleetCertificatesPage({ client, roles }: FleetCertificatesPageProps) {
   const outlet = useOutletContext<AppShellOutletContext | undefined>();
+  const [searchParams] = useSearchParams();
+  const certificateParameter = Number(searchParams.get('certificate'));
+  const linkedCertificateId = Number.isSafeInteger(certificateParameter) && certificateParameter > 0 ? certificateParameter : null;
+  const openedCertificateLink = useRef<number | null>(null);
   const effectiveClient = client || outlet?.client || supabase;
   const effectiveRoles = roles || outlet?.roles || [];
   const manager = canManage(effectiveRoles);
@@ -407,7 +415,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [providers, setProviders] = useState<FleetServiceProvider[]>([]);
   const [visits, setVisits] = useState<FleetCertificateVisit[]>([]);
   const [documentNames, setDocumentNames] = useState<string[]>([]);
-  const [selectedCertificateId, setSelectedCertificateId] = useState<number | null>(() => Number(new URLSearchParams(window.location.search).get('certificate')) || null);
+  const [selectedCertificateId, setSelectedCertificateId] = useState<number | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(() => new Set());
   const [selectedFindingId, setSelectedFindingId] = useState<number | null>(null);
   const [scopeVesselName, setScopeVesselName] = useState('');
@@ -427,6 +435,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewError, setPreviewError] = useState('');
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [versionToPreview, setVersionToPreview] = useState<{ certificateId: number; version: FleetCertificateVersion } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [uploadKind, setUploadKind] = useState<FleetFindingAttachmentKind>('finding');
 
@@ -443,7 +452,28 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   }, [effectiveClient]);
 
   useEffect(() => { let active = true; setIsLoading(true); load().catch(() => active && setError('Impossible de charger les certificats et les écarts.')).finally(() => active && setIsLoading(false)); return () => { active = false; }; }, [load]);
+  useEffect(() => {
+    if (!linkedCertificateId) {
+      openedCertificateLink.current = null;
+      return;
+    }
+    if (isLoading || openedCertificateLink.current === linkedCertificateId) return;
+    openedCertificateLink.current = linkedCertificateId;
+    const certificate = certificates.find((record) => record.id === linkedCertificateId);
+    setSelectedCertificateId(certificate?.id || null);
+    setSelectedFindingId(null);
+    setVersionToPreview(null);
+    setModal(null);
+    setActiveTab(certificate ? 'preview' : 'findings');
+  }, [certificates, isLoading, linkedCertificateId]);
   const selectedCertificate = certificates.find((item) => item.id === selectedCertificateId) || null;
+  const previewVersion = versionToPreview?.certificateId === selectedCertificateId ? versionToPreview.version : null;
+  const previewCertificate = useMemo(() => selectedCertificate && previewVersion ? {
+    ...selectedCertificate, storageBucket: previewVersion.storageBucket, storagePath: previewVersion.storagePath,
+    fileName: previewVersion.normalizedFileName, originalFileName: previewVersion.originalFileName,
+    mimeType: previewVersion.mimeType, fileSizeBytes: previewVersion.fileSizeBytes,
+    issuedOn: previewVersion.issuedOn, expiresOn: previewVersion.expiresOn, currentVersionNo: previewVersion.versionNo,
+  } : selectedCertificate, [previewVersion, selectedCertificate]);
   const certificateFindings = findings.filter((item) => item.certificateId === selectedCertificateId);
   const selectedFinding = certificateFindings.find((item) => item.id === selectedFindingId) || certificateFindings[0] || null;
   useEffect(() => { if (selectedFinding && selectedFinding.id !== selectedFindingId) setSelectedFindingId(selectedFinding.id); }, [selectedFinding, selectedFindingId]);
@@ -452,7 +482,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     setComment('');
   }, [selectedFinding?.id, selectedFinding?.progress]);
   useEffect(() => {
-    if (activeTab !== 'preview' || !selectedCertificate || !selectedCertificate.storageBucket || !selectedCertificate.storagePath) {
+    if (activeTab !== 'preview' || !previewCertificate || !previewCertificate.storageBucket || !previewCertificate.storagePath) {
       setPreviewUrl('');
       setPreviewError('');
       setIsPreviewLoading(false);
@@ -462,12 +492,12 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     setPreviewUrl('');
     setPreviewError('');
     setIsPreviewLoading(true);
-    openFleetCertificateDocument(effectiveClient, selectedCertificate)
+    openFleetCertificateDocument(effectiveClient, previewCertificate)
       .then((url) => { if (!cancelled) setPreviewUrl(url); })
       .catch((caught) => { if (!cancelled) setPreviewError(caught instanceof Error ? caught.message : 'Aperçu indisponible.'); })
       .finally(() => { if (!cancelled) setIsPreviewLoading(false); });
     return () => { cancelled = true; };
-  }, [activeTab, effectiveClient, selectedCertificate]);
+  }, [activeTab, effectiveClient, previewCertificate]);
 
   const active = useMemo(() => certificates.filter((item) => item.isActiveFleet), [certificates]);
   const upcoming = useMemo(() => active.filter((item) => item.expiresOn && daysFromToday(item.expiresOn) >= 0 && daysFromToday(item.expiresOn) <= 90), [active]);
@@ -517,6 +547,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
 
   function selectCertificate(certificate: FleetCertificateRecord, tab: FleetCertificateWorkspaceTab = 'preview') {
     setSelectedCertificateId(certificate.id);
+    setVersionToPreview(null);
     setSelectedFindingId(null);
     setActiveTab(tab);
   }
@@ -692,7 +723,9 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
 
           {activeTab === 'visits' ? <FleetCertificateVisitCalendar embedded canManage={manager} onSchedule={() => setModal('visit-target')} onSelectDocument={(certificateId) => { const certificate = certificates.find((item) => item.id === certificateId); if (certificate) selectCertificate(certificate); }} visits={scopedVisits} /> : null}
 
-          {activeTab === 'preview' ? <FleetCertificateDocumentPreview canEdit={manager} certificate={selectedCertificate} error={previewError} isLoading={isPreviewLoading} onDownload={(certificate) => downloadDocuments([certificate])} onEdit={() => setModal('metadata')} onRenew={() => selectedCertificate && renewCertificate(selectedCertificate)} previewUrl={previewUrl} /> : null}
+          {activeTab === 'preview' ? <><FleetCertificateDocumentPreview canEdit={manager && (!previewVersion || previewVersion.isCurrent)} certificate={previewCertificate} error={previewError} isLoading={isPreviewLoading} onDownload={(certificate) => downloadDocuments([certificate])} onEdit={() => setModal('metadata')} onRenew={() => selectedCertificate && renewCertificate(selectedCertificate)} previewUrl={previewUrl} previewVersion={previewVersion} />
+            {selectedCertificate ? <FleetCertificateVersionsPanel key={selectedCertificate.id} canValidate={manager} certificate={selectedCertificate} client={effectiveClient} onPreview={(version) => setVersionToPreview({ certificateId: selectedCertificate.id, version })} onValidated={async () => { await load(); setVersionToPreview(null); setMessage('Version validée et document disponible.'); }} /> : null}
+          </> : null}
         </div>
       </section>
     </section>
@@ -754,7 +787,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     />}
     {modal === 'document' && <DocumentForm certificates={certificates} documentNames={documentNames} onClose={() => setModal(null)} onSave={async (form) => { const vessel = certificates.find((item) => item.vesselId === Number(form.get('vesselId')))!; const categoryKey = String(form.get('category')); const category = getFleetCertificateCategoryOptions(certificates).find((item) => item.key === categoryKey); const documentTitle = normalizeFleetCertificateDocumentName(String(form.get('title')), certificates.flatMap((item) => [item.vesselName, item.vesselAcronym])); const input = { companyId: vessel.companyId, vesselId: vessel.vesselId!, vesselName: vessel.vesselName, vesselAcronym: vessel.vesselAcronym, categoryKey, categoryLabel: category?.label || categoryKey, documentTitle, issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')) }; const selectedFile = form.get('file'); const attachment = typeof selectedFile !== 'string' && selectedFile?.size ? selectedFile : null; if (attachment) await createFleetCertificateDocument(effectiveClient, { ...input, file: attachment }); else await createFleetCertificateLine(effectiveClient, input); await load(); setMessage(attachment ? 'Document ajouté.' : 'Ligne de suivi ajoutée.'); }} />}
     {modal === 'metadata' && selectedCertificate && <DocumentMetadataForm certificate={selectedCertificate} certificates={certificates} documentNames={documentNames} onClose={() => setModal(null)} onSave={async (input) => { await updateFleetCertificateDocumentMetadata(effectiveClient, input); await load(); setMessage('Informations du document mises à jour.'); }} />}
-    {modal === 'renewal' && selectedCertificate && <RenewalForm certificate={selectedCertificate} onClose={() => setModal(null)} onSave={async (form) => { await submitFleetCertificateRenewal(effectiveClient, selectedCertificate, { issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')), notes: String(form.get('notes')), file: form.get('file') as File }); await load(); setMessage(selectedCertificate.storagePath ? 'Renouvellement enregistré.' : 'Document ajouté à la ligne.'); }} />}
+    {modal === 'renewal' && selectedCertificate && <RenewalForm certificate={selectedCertificate} onClose={() => setModal(null)} onSave={async (form) => { await submitFleetCertificateRenewal(effectiveClient, selectedCertificate, { issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')), notes: String(form.get('notes')), file: form.get('file') as File }); await load(); setVersionToPreview(null); setActiveTab('preview'); setMessage(selectedCertificate.storagePath ? 'Nouvelle version reçue, en attente de validation.' : 'Document reçu, en attente de validation.'); }} />}
     {modal === 'report' && <FleetCertificateReportDialog certificates={active} findings={findings} onClose={() => setModal(null)} onGenerate={generateReport} />}
     {modal === 'visit-target' && <VisitTargetForm certificates={active} onClose={() => setModal(null)} onSelect={(certificateId) => { setVisitCertificateId(certificateId); setModal('visit'); }} />}
     {modal === 'visit' && certificates.find((certificate) => certificate.id === visitCertificateId) && <FleetCertificateVisitForm certificate={certificates.find((certificate) => certificate.id === visitCertificateId)!} providers={providers} onClose={() => setModal(null)} onExport={generateVisitReport} onSave={(input) => run(() => saveFleetCertificateVisit(effectiveClient, input).then(() => undefined), 'Visite prestataire programmée.')} />}

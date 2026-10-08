@@ -70,6 +70,7 @@ function canManageReport(
   currentUserId: string | null | undefined,
   now = Date.now(),
 ): boolean {
+  if (report?.canManage !== undefined) return report.canManage;
   if (!report || !isPureMarin(roles)) return true;
   const createdAt = Date.parse(report.createdAt);
   return report.createdBy === currentUserId
@@ -81,7 +82,10 @@ function canEdit(report: DprReportRecord | null, roles: RoleKey[], currentUserId
   return ['draft', 'reopened'].includes(report.status) && canManageReport(report, roles, currentUserId);
 }
 function reportTitle(report: DprReportRecord): string { return report.number ? `DPR-${report.number}` : `Brouillon #${report.id}`; }
-function projectLabel(report: DprReportRecord): string { return report.projectCode || report.unlistedProjectName || 'Sans projet'; }
+function projectLabel(report: DprReportRecord): string {
+  return report.projectCode || report.projectTitle || report.unlistedProjectName
+    || (report.projectId !== null ? `Projet #${report.projectId}` : 'Sans projet');
+}
 function formatDate(value: string): string { return value ? new Intl.DateTimeFormat('fr-FR').format(new Date(`${value}T12:00:00`)) : '-'; }
 
 function Field({ label, children, wide = false }: { label: string; children: ReactNode; wide?: boolean }) {
@@ -153,7 +157,7 @@ export function DprPage({ client, roles }: DprPageProps) {
   const [issuerName, setIssuerName] = useState('');
 
   const load = async (): Promise<DprDashboardData> => {
-    const data = await fetchDprDashboard(db, { ownReportsOnly: isMarinView });
+    const data = await fetchDprDashboard(db);
     setDashboard(data);
     return data;
   };
@@ -161,11 +165,11 @@ export function DprPage({ client, roles }: DprPageProps) {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    fetchDprDashboard(db, { ownReportsOnly: isMarinView }).then((data) => { if (active) setDashboard(data); })
+    fetchDprDashboard(db).then((data) => { if (active) setDashboard(data); })
       .catch((reason: Error) => { if (active) setError(reason.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [db, isMarinView]);
+  }, [db]);
 
   const dirty = modalOpen && (JSON.stringify(payload) !== initialSignature || pendingFiles.length > 0);
   useEffect(() => {

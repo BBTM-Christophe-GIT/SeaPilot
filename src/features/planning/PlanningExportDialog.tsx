@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { Download, RefreshCw, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -90,9 +91,8 @@ export function PlanningExportDialog({
   const people = useMemo<ExportOption[]>(() => overview.people
     .map((person) => ({ id: person.id, label: formatPlanningPerson(person) }))
     .sort((left, right) => left.label.localeCompare(right.label, 'fr')), [overview.people]);
-  const vessels = useMemo<ExportOption[]>(() => overview.vessels
-    .map((vessel) => ({ id: vessel.id, label: vessel.acronym ? `${vessel.name} (${vessel.acronym})` : vessel.name }))
-    .sort((left, right) => left.label.localeCompare(right.label, 'fr')), [overview.vessels]);
+  const vessels = useMemo<ExportOption[]>(() => [...overview.vessels].sort(compareFleetAssets)
+    .map((vessel) => ({ id: vessel.id, label: vessel.acronym ? `${vessel.name} (${vessel.acronym})` : vessel.name })), [overview.vessels]);
   const [startsOn, setStartsOn] = useState(range.start);
   const [endsOn, setEndsOn] = useState(range.end);
   const [selectedPersonIds, setSelectedPersonIds] = useState<number[]>(() => people.map((person) => person.id));

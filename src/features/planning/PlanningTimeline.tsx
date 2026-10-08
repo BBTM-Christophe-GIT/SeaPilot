@@ -18,7 +18,8 @@ import {
 } from './planningModel';
 import type { PlanningHrDocumentRecord, PlanningProjectRecord } from './planningQueries';
 import { planningVesselVisitDateRange, planningVisitTypeLabel, type PlanningVesselVisit } from './planningVisitQueries';
-import { planningAbsenceTypeLabel, type PlanningAbsenceRecord } from './planningP12';
+import { PLANNING_AUDIT_LABELS, planningAuditKey, type PlanningAudit } from './planningAudits';
+import { planningAbsenceTypeLabel, planningAbsenceUsesPluralLabel, type PlanningAbsenceRecord } from './planningP12';
 import {
   planningGridCellKey,
   planningGridCellsShareSegment,
@@ -33,6 +34,7 @@ import {
   type PlanningFleetLane,
 } from './planningViews';
 import { planningStaffingBoardKey } from './planningStaffingQueries';
+import { planningEventFunctionOnDate, planningShortFunctionLabel, planningTemporaryFunctionSegments } from './planningFunctions';
 import { samePlanningLaneSelection, shallowPlanningEqual, withStablePlanningHandlers } from './planningRendering';
 
 export const PlanningFleetTimelineRow = withStablePlanningHandlers(PlanningFleetTimelineRowContent);
@@ -62,6 +64,7 @@ const EMPTY_CONFLICT_DATES: ReadonlySet<string> = new Set();
 const EMPTY_ABSENCES: PlanningAbsenceRecord[] = [];
 const EMPTY_HR_DOCUMENTS: PlanningHrDocumentRecord[] = [];
 const EMPTY_STAFFING_ALERT_KEYS: ReadonlySet<string> = new Set();
+const EMPTY_AUDITS: readonly PlanningAudit[] = [];
 
 function expiredDocumentsLabel(documents: readonly PlanningHrDocumentRecord[]): string {
   const prefix = documents.length > 1 ? `${documents.length} documents échus` : 'Document échu';
@@ -126,6 +129,7 @@ function buildPlanningVisitStack(
 }
 
 function PlanningFleetTimelineRowContent({
+  projectsOnly = false,
   lane,
   days,
   editable,
@@ -144,6 +148,8 @@ function PlanningFleetTimelineRowContent({
   onAddBoard,
   onOpenVessel,
   visits,
+  audits = EMPTY_AUDITS,
+  onOpenAudit,
   onCreateVisit,
   onOpenVisit,
   onMoveVisit,
@@ -152,6 +158,7 @@ function PlanningFleetTimelineRowContent({
   onSelect,
   onToggle,
 }: TimelineBaseProps & {
+  projectsOnly?: boolean;
   lane: PlanningFleetLane;
   dayWidth: number;
   expanded: boolean;
@@ -167,6 +174,8 @@ function PlanningFleetTimelineRowContent({
   onAddBoard: (lane: PlanningFleetLane) => void;
   onOpenVessel: (lane: PlanningFleetLane) => void;
   visits: PlanningVesselVisit[];
+  audits?: readonly PlanningAudit[];
+  onOpenAudit?: (audit: PlanningAudit) => void;
   onCreateVisit: (lane: PlanningFleetLane) => void;
   onOpenVisit: (visit: PlanningVesselVisit) => void;
   onMoveVisit: (visitId: number, lane: PlanningFleetLane, startsOn: string) => void;
@@ -185,7 +194,7 @@ function PlanningFleetTimelineRowContent({
   const [visitMovePreview, setVisitMovePreview] = useState<{ startsOn: string; endsOn: string } | null>(null);
   const suppressClickRef = useRef(false);
   const watchGroup = 'Bordée 1';
-  const canDropPerson = editable && !hasBoards && lane.vesselId !== null;
+  const canDropPerson = !projectsOnly && editable && !hasBoards && lane.vesselId !== null;
   const touchPersonOver = canDropPerson && touchDropTarget?.vesselId === lane.vesselId && touchDropTarget.watchGroup === watchGroup;
   const projectStack = buildPlanningProjectStack(lane.projects.map((project) => {
     const preview = resizePreview?.id === project.id ? resizePreview : null;
@@ -214,10 +223,13 @@ function PlanningFleetTimelineRowContent({
       endsOn: occurrence.scheduledOn,
     }));
   });
-  const visitStack = buildPlanningVisitStack(visitTimelineItems, days);
+  const auditTimelineItems = projectsOnly ? [] : audits.map((audit) => ({
+    key: planningAuditKey(audit), audit, startsOn: audit.plannedOn, endsOn: audit.plannedOn,
+  }));
+  const visitStack = buildPlanningVisitStack([...visitTimelineItems, ...auditTimelineItems], days);
   const maxVisitStack = visitStack.count;
   const additionalProjectStacks = Math.max(0, projectStack.count - 1);
-  const rowMinHeight = maxVisitStack
+  const rowMinHeight = projectsOnly ? 38 + additionalProjectStacks * 27 : maxVisitStack
     ? 76 + additionalProjectStacks * 27 + maxVisitStack * 25
     : projectStack.count > 1
       ? 74 + additionalProjectStacks * 27
@@ -314,7 +326,7 @@ function PlanningFleetTimelineRowContent({
   };
   return (
     <div
-      className={`planning-calendar-grid planning-timeline-row is-fleet${maxVisitStack ? ' has-visits' : ''}${projectStack.count > 1 ? ' has-project-stacks' : ''}`}
+      className={`planning-calendar-grid planning-timeline-row is-fleet${projectsOnly ? ' is-projects-only' : ''}${maxVisitStack ? ' has-visits' : ''}${projectStack.count > 1 ? ' has-project-stacks' : ''}`}
       data-project-stack-count={projectStack.count}
       data-vessel={lane.vessel}
       style={rowMinHeight ? { minHeight: rowMinHeight } : undefined}
@@ -328,15 +340,16 @@ function PlanningFleetTimelineRowContent({
         onDragOver={canDropPerson ? (event) => { if (event.dataTransfer.types.includes('application/x-seapilot-planning')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } } : undefined}
         onDrop={dropPerson}
       >
-        <button aria-expanded={expanded} aria-label={`${expanded ? 'Replier' : 'Déplier'} ${lane.label}`} className="planning-tree-toggle" onClick={onToggle} type="button">
+        {projectsOnly || lane.vesselId === null && audits.length > 0 ? <span className="planning-project-vessel-name" title={lane.label}><strong>{lane.label}</strong><small>{lane.detail}</small></span> : <button aria-expanded={expanded} aria-label={`${expanded ? 'Replier' : 'Déplier'} ${lane.label}`} className="planning-tree-toggle" onClick={onToggle} type="button">
           <span><strong>{lane.label}</strong><small>{lane.detail}</small></span>
           <em>{crewCount}</em>
           {expanded ? <ChevronDown aria-hidden="true" size={16} /> : <ChevronRight aria-hidden="true" size={16} />}
-        </button>
+        </button>}
         <div aria-label={`Actions pour ${lane.label}`} className="planning-vessel-actions" role="group">
           <button aria-label={`Ouvrir la fiche de ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onOpenVessel(lane)} title="Fiche du navire" type="button"><FilePenLine aria-hidden="true" size={14} /></button>
-          {editable ? <button aria-label={`Ajouter une bordée à ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onAddBoard(lane)} title="Ajouter une bordée" type="button"><Plus aria-hidden="true" size={15} /></button> : null}
-          {editable ? <button aria-label={`Ajouter une visite ou un audit à ${lane.label}`} className="planning-tree-action is-visit" disabled={lane.vesselId === null} onClick={() => onCreateVisit(lane)} title="Nouvelle Visite / Audit" type="button"><CalendarCheck2 aria-hidden="true" size={14} /></button> : null}
+          {editable && projectsOnly ? <button aria-label={`Ajouter un projet à ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onOpenCell(lane, days[0].date)} title="Ajouter un projet" type="button"><Plus aria-hidden="true" size={15} /></button> : null}
+          {editable && !projectsOnly ? <button aria-label={`Ajouter une bordée à ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onAddBoard(lane)} title="Ajouter une bordée" type="button"><Plus aria-hidden="true" size={15} /></button> : null}
+          {editable && !projectsOnly ? <button aria-label={`Ajouter une visite ou un audit à ${lane.label}`} className="planning-tree-action is-visit" disabled={lane.vesselId === null} onClick={() => onCreateVisit(lane)} title="Nouvelle Visite / Audit" type="button"><CalendarCheck2 aria-hidden="true" size={14} /></button> : null}
         </div>
       </div>
       {days.map((day, index) => {
@@ -516,6 +529,20 @@ function PlanningFleetTimelineRowContent({
           </button>
         );
       })}
+      {auditTimelineItems.map(({ key, audit, startsOn }) => {
+        const placement = dateGridPlacement(startsOn, startsOn, days);
+        if (!placement) return null;
+        const label = PLANNING_AUDIT_LABELS[audit.kind];
+        const status = { planned: 'Planifié', in_progress: 'En cours', completed: 'Réalisé' }[audit.status];
+        return <button key={key} type="button" className="planning-visit-bar" data-audit-id={audit.id}
+          aria-label={`${label} · ${audit.siteName}, ${formatPlanningDate(startsOn)}`}
+          title={`${label}\n${audit.siteName}\n${formatPlanningDate(startsOn)} · ${status}${audit.title ? `\n${audit.title}` : ''}`}
+          onClick={() => onOpenAudit?.(audit)}
+          style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1,
+            marginTop: 35 + additionalProjectStacks * 27 + (visitStack.stackByKey.get(key) || 0) * 25 }}>
+          <CalendarCheck2 aria-hidden="true" size={12} /><span>{label}</span>
+        </button>;
+      })}
     </div>
   );
 }
@@ -617,6 +644,7 @@ function PlanningCrewTimelineRowContent({
   onMoveAbsence,
   onRequestAbsence,
   onDeleteEmptyRow,
+  onReplacePerson,
   isDeletingEmptyRow = false,
   balances,
   balanceLoading = false,
@@ -647,6 +675,7 @@ function PlanningCrewTimelineRowContent({
   onMoveAbsence?: (absence: PlanningAbsenceRecord, startsOn: string) => void;
   onRequestAbsence?: () => void;
   onDeleteEmptyRow?: () => void;
+  onReplacePerson?: () => void;
   isDeletingEmptyRow?: boolean;
   balances?: PlanningCrewBalanceDays;
   balanceLoading?: boolean;
@@ -728,12 +757,17 @@ function PlanningCrewTimelineRowContent({
     window.addEventListener('pointercancel', cancel, { once: true });
   };
 
+  const temporarySegments = lane.events.flatMap((event) => event.kind === 'annualReview' ? [] : planningTemporaryFunctionSegments(event, lane.functionLabel || ''))
+    .filter((segment) => segment.startsOn <= days[days.length - 1].date && segment.endsOn >= days[0].date);
+  const temporaryFunctions = [...new Set(temporarySegments.map((segment) => segment.functionLabel))];
   return (
-    <div className={`planning-calendar-grid planning-timeline-row is-crew${hierarchy ? ' is-fleet-person' : ''}${balances ? ' has-crew-balances' : ''}`}>
+    <div className={`planning-calendar-grid planning-timeline-row is-crew${hierarchy ? ' is-fleet-person' : ''}${balances ? ' has-crew-balances' : ''}${temporarySegments.length ? ' has-temporary-functions' : ''}`}>
       <div className={`planning-row-label${onDeleteEmptyRow ? ' has-empty-row-action' : ''}`}>
         <span>
-          <strong>{lane.label}</strong>
+          {onReplacePerson ? <button className="planning-generic-person" type="button" onClick={onReplacePerson} aria-label={`Remplacer ${lane.label} par un marin`}>{lane.label}</button> : <strong>{lane.label}</strong>}
+          {onReplacePerson ? <small>Poste à pourvoir</small> : null}
           <small>{hierarchy ? (lane.functionLabel || 'Fonction non renseignée') : (lane.detail || 'Sans détail')}</small>
+          {temporaryFunctions.length ? <small className="planning-temporary-function-summary">Temp. : {temporaryFunctions.join(' / ')}</small> : null}
         </span>
         {onInitializeBalance ? <button className="planning-balance-open" aria-label={`Saisir le solde de ${lane.label}`} onClick={onInitializeBalance} type="button">Solde</button> : null}
         {onDeleteEmptyRow ? <button aria-label={`Supprimer la ligne vide de ${lane.label}`} className="planning-empty-row-delete" disabled={isDeletingEmptyRow} onClick={onDeleteEmptyRow} title="Supprimer la ligne vide" type="button"><Trash2 aria-hidden="true" size={13} /></button> : null}
@@ -926,7 +960,7 @@ function PlanningCrewTimelineRowContent({
               vesselId: event.vesselId,
               vessel: event.vessel,
               watchGroup: event.board,
-              functionLabel: event.functionLabel,
+              functionLabel: planningEventFunctionOnDate(event, day.date),
               assignmentId: event.assignmentId || null,
               eventId: event.id,
               status: normalizePlanningGridStatus(event.dailyStatuses?.[day.date] || event.status, event.vessel),
@@ -941,6 +975,7 @@ function PlanningCrewTimelineRowContent({
                 ...storedCell,
                 key: adjacentKey,
                 workDate: date,
+                functionLabel: planningEventFunctionOnDate(event, date),
                 status: normalizePlanningGridStatus(event.dailyStatuses?.[date] || event.status, event.vessel),
                 note: event.dailyNotes?.[date] || '',
                 isConflict: conflictDates.has(date),
@@ -991,7 +1026,7 @@ function PlanningCrewTimelineRowContent({
                   onOpen(event);
                 }}
                 style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
-                title={[hasStaffingAlert ? 'Écart vis-à-vis de la Décision d’effectif — confirmation administrateur requise' : '', documentAlert, cell.isConflict ? `Conflit d'affectation — ${cell.note || 'aucun commentaire'}` : cell.note || 'Case sans commentaire'].filter(Boolean).join('\n')}
+                title={[cell.functionLabel, hasStaffingAlert ? 'Écart vis-à-vis de la Décision d’effectif — confirmation administrateur requise' : '', documentAlert, cell.isConflict ? `Conflit d'affectation — ${cell.note || 'aucun commentaire'}` : cell.note || 'Case sans commentaire'].filter(Boolean).join('\n')}
                 type="button"
               >{cell.note}{documentAlert ? <FileWarning aria-hidden="true" className="planning-expired-document-icon" size={13} /> : null}{hasStaffingAlert ? <AlertTriangle aria-hidden="true" className="planning-staffing-alert-icon" size={13} /> : null}{cell.isConflict ? <AlertTriangle aria-hidden="true" className="planning-grid-conflict-icon" size={13} /> : null}</button>
             );
@@ -1008,16 +1043,26 @@ function PlanningCrewTimelineRowContent({
           </Fragment>
         );
       })}
+      {temporarySegments.map((segment) => {
+        const placement = dateGridPlacement(segment.startsOn, segment.endsOn, days);
+        if (!placement) return null;
+        const label = `Fonction temporaire : ${segment.functionLabel}, du ${formatPlanningDate(segment.startsOn)} au ${formatPlanningDate(segment.endsOn)}`;
+        return <span aria-label={label} className="planning-temporary-function-label" key={`function-${segment.id}-${segment.startsOn}`}
+          style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }} title={label}>
+          {placement.span * dayWidth >= segment.functionLabel.length * 6 + 12 ? segment.functionLabel : planningShortFunctionLabel(segment.functionLabel)}
+        </span>;
+      })}
       {laneAbsences.map((absence) => {
         const placement = dateGridPlacement(absence.startsOn, absence.endsOn, days);
         if (!placement) return null;
-        const movable = canMoveApprovedAbsences && absence.status === 'approved' && absence.absenceType === 'leave';
+        const pluralLabel = planningAbsenceUsesPluralLabel(absence.absenceType);
+        const movable = canMoveApprovedAbsences && absence.status === 'approved' && ['leave', 'rtt'].includes(absence.absenceType);
         const statusLabel = absence.status === 'approved'
-          ? absence.absenceType === 'leave' ? 'Validés' : 'Validée'
+          ? pluralLabel ? 'Validés' : 'Validée'
           : absence.status === 'rejected'
-            ? absence.absenceType === 'leave' ? 'Refusés' : 'Refusée'
+            ? pluralLabel ? 'Refusés' : 'Refusée'
             : absence.status === 'cancelled'
-              ? absence.absenceType === 'leave' ? 'Annulés' : 'Annulée'
+              ? pluralLabel ? 'Annulés' : 'Annulée'
               : 'À valider';
         return (
           <button
@@ -1046,7 +1091,7 @@ function PlanningCrewTimelineRowContent({
               dragEvent.dataTransfer.setData('application/x-seapilot-approved-absence', String(absence.id));
             }}
             style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1 }}
-            title={`${planningAbsenceTypeLabel(absence.absenceType)} · ${statusLabel}\n${formatPlanningDate(absence.startsOn)} → ${formatPlanningDate(absence.endsOn)}${absence.reason ? `\n${absence.reason}` : ''}${movable ? '\nGlissez pour déplacer ces congés validés.' : ''}`}
+            title={`${planningAbsenceTypeLabel(absence.absenceType)} · ${statusLabel}\n${formatPlanningDate(absence.startsOn)} → ${formatPlanningDate(absence.endsOn)}${absence.reason ? `\n${absence.reason}` : ''}${movable ? `\nGlissez pour déplacer ces ${planningAbsenceTypeLabel(absence.absenceType).toLocaleLowerCase('fr-FR')} validés.` : ''}`}
             type="button"
           >
             <CalendarOff aria-hidden="true" size={12} />

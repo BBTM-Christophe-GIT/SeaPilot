@@ -1,11 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { actionAssetKey, actionCategory, buildActionAssetGroups } from './actionPlanNavigation';
+import { actionAssetKey, actionCategory, actionTreatmentSummary, buildActionAssetGroups } from './actionPlanNavigation';
 import { compareFleetAssets, fleetDisplayName, fleetLength } from '../fleet/fleetDisplay';
 import type { ActionItemRecord, ActionTypeCatalogRecord, VesselOption } from './actionPlanQueries';
 
 const action = (id: number, vesselName: string, patch: Partial<ActionItemRecord> = {}) => ({ id, vesselName, vesselId: null, categoryKey: 'action', actionTypeKey: '', ...patch }) as ActionItemRecord;
 
 describe('action plan fleet navigation', () => {
+  it.each([
+    [0, 0, 'red'], [74, 74, 'red'], [75, 75, 'orange'], [90, 90, 'orange'], [91, 91, 'green'], [100, 100, 'green'],
+  ])('uses strict treatment thresholds with %i closed reports', (closed, percentage, tone) => {
+    const rows = Array.from({ length: 100 }, (_, i) => action(i, 'GOURY', { status: i < closed ? 'Ecart Soldé' : 'Ecart Non Soldé', closedOn: '' }));
+    expect(actionTreatmentSummary(rows)).toEqual({ open: 100 - closed, percentage, tone });
+  });
+
+  it('handles empty groups and historical closure dates using the same closure rule as the filters', () => {
+    expect(actionTreatmentSummary([])).toEqual({ open: 0, percentage: 0, tone: 'red' });
+    expect(actionTreatmentSummary([action(1, 'GOURY', { status: '', closedOn: '2026-09-16' })])).toEqual({ open: 0, percentage: 100, tone: 'green' });
+  });
+
   it('orders vessels by decreasing length, then the Yard and offices, omitting assets with no accessible reports', () => {
     const vessels: VesselOption[] = [{ id: 7, name: 'ECREHOUEL', lengthOverall: '50 m' }];
     const rows = ['Bureaux', 'KROKDUR', 'YARD - Le Havre', 'LE ROZEL', 'GOURY', 'SUROIT'].map((name, i) => action(i, name));

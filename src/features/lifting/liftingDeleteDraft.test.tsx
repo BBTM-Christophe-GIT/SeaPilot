@@ -13,9 +13,8 @@ describe('draft-only inspection deletion', () => {
     const second = await startLiftingInspection(client, demoVessel.id, kind, '2026-01-22', '2027-01-22');
     const original = await fetchLiftingRegister(client, demoVessel.id, kind);
     const otherEntries = await fetchInspectionEntries(client, second);
-    render(<MemoryRouter><LiftingPage client={client} roles={['admin']} /></MemoryRouter>);
-    await screen.findByText('ÉLINGUE TEXTILE RONDE — 3 M');
-    if (kind === 'towing') await user.click(screen.getByRole('button', { name: 'Remorques' }));
+    render(<MemoryRouter><LiftingPage client={client} roles={['admin']} section={kind} /></MemoryRouter>);
+    await screen.findByText(original.items[0].description);
     await user.click(screen.getByRole('button', { name: 'Rapports de contrôle' }));
     await user.selectOptions(await screen.findByLabelText('Année'), '2028');
     await user.click(screen.getByRole('button', { name: `Supprimer le brouillon LEV-${first}` }));

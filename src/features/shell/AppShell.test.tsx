@@ -1,9 +1,9 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useOutletContext } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { APP_VERSION_LABEL } from '../../config/appVersion';
-import { AuthProvider } from '../auth/AuthProvider';
+import { AuthProvider, useAuth } from '../auth/AuthProvider';
 import { ModulePage } from '../modules/ModulePage';
 import { APP_MODULES } from '../permissions/moduleAccess';
 import { AppShell, type AppShellOutletContext } from './AppShell';
@@ -11,6 +11,11 @@ import { AppShell, type AppShellOutletContext } from './AppShell';
 function RoleProbe() {
   const { roles } = useOutletContext<AppShellOutletContext>();
   return <div data-testid="effective-roles">{roles.join(',')}</div>;
+}
+
+function SessionProbe() {
+  const { session } = useAuth();
+  return <div data-testid="session-user">{session?.user.id || 'signed-out'}</div>;
 }
 
 describe('AppShell', () => {
@@ -38,13 +43,17 @@ describe('AppShell', () => {
       </AuthProvider>,
     );
 
-    expect(await screen.findByText('BBTM')).toBeInTheDocument();
+    expect(await screen.findByRole('img', { name: 'SeaPilot by BBTM' })).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(/seapilot/i);
-    expect(screen.getByRole('img', { name: 'BBTM' })).toHaveAttribute('src', '/bbtm-logo.png');
+    expect(screen.getByRole('img', { name: 'SeaPilot by BBTM' })).toHaveAttribute('src', '/seapilot-logo.png');
     expect(screen.getByText('Projets')).toBeInTheDocument();
     const qhseButton = screen.getByRole('button', { name: 'QHSE' });
     expect(qhseButton).toBeInTheDocument();
     expect(qhseButton.closest('section')).toHaveAttribute('data-family-theme', 'qhse');
+    const registersButton = screen.getByRole('button', { name: 'Registres' });
+    expect(registersButton.closest('section')).toHaveAttribute('data-family-theme', 'registers');
+    expect(registersButton.closest('section')).toContainElement(screen.getByRole('link', { name: 'Produits Chimiques' }));
+    expect(qhseButton.closest('section')).not.toContainElement(screen.getByRole('link', { name: 'Produits Chimiques' }));
     expect(screen.getByRole('link', { name: 'KPI' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Planning' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Facturation' })).not.toBeInTheDocument();
@@ -55,9 +64,32 @@ describe('AppShell', () => {
       'operations',
     );
     expect(screen.getByRole('link', { name: 'Suivi du Temps de travail' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Levage' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Levage' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Levage' })).not.toBeInTheDocument();
+    const registersSection = screen.getByRole('button', { name: 'Registres' }).closest('section');
+    expect(registersSection).toContainElement(screen.getByRole('link', { name: 'Registre des Apparaux de levage' }));
+    expect(registersSection).toContainElement(screen.getByRole('link', { name: 'Registre des Remorques' }));
+    expect(registersSection).toContainElement(screen.getByRole('link', { name: 'Examen à Fond - Grue' }));
+    expect(screen.getByRole('link', { name: 'Registre des Apparaux de levage' })).toHaveAttribute('href', '/modules/lifting/apparaux');
+    expect(screen.getByRole('link', { name: 'Registre des Remorques' })).toHaveAttribute('href', '/modules/lifting/remorques');
+    expect(screen.getByRole('link', { name: 'Examen à Fond - Grue' })).toHaveAttribute('href', '/modules/lifting/grue');
     expect(screen.getByText(APP_VERSION_LABEL)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Réduire le menu' })).toBeInTheDocument();
+
+    const navigation = within(screen.getByRole('navigation', { name: 'Navigation principale' }));
+    for (const button of navigation.getAllByRole('button')) {
+      expect(button).toHaveAttribute('aria-expanded', 'true');
+    }
+    const user = userEvent.setup();
+    await user.click(qhseButton);
+    expect(qhseButton).toHaveAttribute('aria-expanded', 'false');
+    expect(navigation.queryByRole('link', { name: 'KPI' })).not.toBeInTheDocument();
+    expect(navigation.getByRole('link', { name: 'Registre des Exercices' })).toBeInTheDocument();
+    await user.click(qhseButton);
+    expect(navigation.getByRole('link', { name: 'KPI' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Réduire le menu' }));
+    await user.click(screen.getByRole('button', { name: 'Agrandir le menu' }));
+    expect(qhseButton).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('keeps the administrator role active without exposing profile simulations', async () => {
@@ -433,6 +465,72 @@ describe('AppShell', () => {
     expect(screen.queryByText('Aucun module autorise pour ce compte.')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Deconnexion/i })).toBeInTheDocument();
   });
+
+  it.each(['user-menu', 'role-load-error'] as const)(
+    'keeps the session and allows retry after a sign-out failure in %s',
+    async (surface) => {
+      const user = userEvent.setup();
+      let failSignOut: ((error: Error) => void) | undefined;
+      const signOut = vi.fn()
+        .mockImplementationOnce(() => new Promise<{ error: Error | null }>((resolve, reject) => {
+          failSignOut = surface === 'user-menu' ? reject : (error) => resolve({ error });
+        }))
+        .mockResolvedValueOnce({ error: null });
+      const authClient = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: { session: { user: { id: 'user-1', email: 'mobile@example.test' } } }, error: null,
+          }),
+          onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
+          signInWithPassword: vi.fn(),
+          signOut,
+        },
+      };
+      const appClient = {
+        auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }) },
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockResolvedValue({ data: null, error: new Error('RLS denied') }),
+        }),
+      };
+
+      render(
+        <AuthProvider client={authClient as never}>
+          <SessionProbe />
+          <MemoryRouter>
+            <Routes>
+              <Route element={<AppShell client={appClient as never} rolesOverride={surface === 'user-menu' ? ['admin'] : undefined} />}>
+                <Route index element={<div>Accueil prive</div>} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>,
+      );
+
+      if (surface === 'user-menu') {
+        await user.click(await screen.findByRole('button', { name: /mobile.*Admin/ }));
+      } else {
+        await screen.findByText("Impossible de charger vos droits d'acces.");
+      }
+      const buttonRole = surface === 'user-menu' ? 'menuitem' : 'button';
+      const button = screen.getByRole(buttonRole, { name: 'Deconnexion' });
+      await user.dblClick(button);
+
+      expect(signOut).toHaveBeenCalledTimes(1);
+      expect(button).toBeDisabled();
+      expect(button).toHaveTextContent('Déconnexion en cours…');
+      await act(async () => failSignOut?.(new Error('Network request failed')));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Déconnexion impossible. Vérifiez votre connexion puis réessayez.');
+      expect(screen.getByTestId('session-user')).toHaveTextContent('user-1');
+      expect(button).toBeEnabled();
+      if (surface === 'user-menu') expect(screen.getByText('Accueil prive')).toBeInTheDocument();
+
+      await user.click(button);
+      expect(signOut).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(button).toBeEnabled();
+    },
+  );
 
   it('reloads roles when the authenticated user changes', async () => {
     let authStateChange: ((session: { user: { id: string } }) => void) | undefined;

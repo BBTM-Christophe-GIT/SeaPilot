@@ -1,3 +1,6 @@
+import { PersonAvatar } from './PersonAvatar';
+import { PersonPhotoField, type PersonPhotoChanged } from './PersonPhotoField';
+import { connectHrDrive } from './hrDocumentDrive';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
@@ -27,9 +30,9 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useLocation, useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
@@ -91,6 +94,9 @@ interface HumanResourcesPageProps {
   client?: SupabaseClient;
   currentPersonId?: number | null;
   roles?: RoleKey[];
+  initialPersonId?: number | null;
+  initialDocumentId?: number | null;
+  initialSectionKey?: HrDetailsSectionKey;
 }
 
 type PersonFormState = UpdatePersonDetailsInput;
@@ -381,9 +387,7 @@ function formatDateForDisplay(value: string): string {
   return `${dateParts[3]}/${dateParts[2]}/${dateParts[1]}`;
 }
 
-function getPersonInitials(person: PersonRecord): string {
-  return `${person.firstName.charAt(0)}${person.lastName.charAt(0)}`.toUpperCase() || 'RH';
-}
+
 
 function ProfileTabIcon({ tabKey }: { tabKey: HrDetailsSectionKey }) {
   switch (tabKey) {
@@ -532,7 +536,7 @@ function buildMedicalFitnessNote(document: HrDocumentRecord): MedicalFitnessNote
 }
 
 function documentDownloadFileName(document: HrDocumentRecord): string {
-  const sourcePath = (document.storagePath || document.fileUrl).split(/[?#]/)[0];
+  const sourcePath = (document.drivePath || document.storagePath || document.fileUrl).split(/[?#]/)[0];
   const extension = /\.[a-z0-9]+$/i.test(document.title)
     ? ''
     : getFileExtension(sourcePath) || (document.mimeType === 'application/pdf' ? '.pdf' : '');
@@ -716,7 +720,18 @@ function buildPersonDetailsForm(person: PersonRecord): UpdatePersonDetailsInput 
   };
 }
 
-export function HumanResourcesPage({ client, currentPersonId, roles }: HumanResourcesPageProps) {
+export function HumanResourcesRoute(props: HumanResourcesPageProps) {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  const person = params.get('person');
+  const documentId = Number(params.get('document')) || null;
+  const personId = person === null ? undefined : /^\d+$/.test(person) && Number(person) > 0 ? Number(person) : null;
+  const section = documentId ? 'documents' : params.get('section') === 'contract' ? 'contract' : undefined;
+  // A fresh navigation, including a click on the active RH link, starts on oneself.
+  return <HumanResourcesPage key={location.key} {...props} initialPersonId={personId} initialDocumentId={documentId} initialSectionKey={section} />;
+}
+
+export function HumanResourcesPage({ client, currentPersonId, roles, initialPersonId, initialDocumentId, initialSectionKey }: HumanResourcesPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
@@ -740,9 +755,11 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
   const [filters, setFilters] = useState<HrFilterState>(EMPTY_FILTERS);
   const [form, setForm] = useState<PersonFormState>(EMPTY_FORM);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
+  // undefined follows the connected person's default; null is an explicit close.
+  const [selectedPersonId, setSelectedPersonId] = useState<number | null | undefined>(initialPersonId);
   const [documentCreationPersonId, setDocumentCreationPersonId] = useState<number | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(() => new Set());
+  const openedInitialDocumentId = useRef<number | null>(null);
   const [renewalDocumentId, setRenewalDocumentId] = useState<number | null>(null);
   const [documentAction, setDocumentAction] = useState<{ document: HrDocumentRecord; mode: 'edit' | 'delete' } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -766,15 +783,6 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
           setDocuments(loadedData.documents);
           setDocumentTypes(loadedData.documentTypes);
           setVisibilityRules(loadedData.visibilityRules);
-          setSelectedPersonId(
-            (currentId) =>
-              currentId ??
-              buildHumanResourcesDashboard(
-                sortedPeople.filter((person) => matchesRosterPopulation(person, 'current')),
-                loadedData.documents,
-              ).groups[0]?.people[0]?.id ??
-              null,
-          );
         }
       })
       .catch(() => {
@@ -971,8 +979,11 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     trailingWorkforceMetrics,
   ]);
   const selectedPerson = useMemo(
-    () => visiblePeople.find((person) => person.id === selectedPersonId) || null,
-    [selectedPersonId, visiblePeople],
+    () => selectedPersonId === undefined
+      ? visiblePeople.find((person) => person.id === ownPersonId)
+        || visiblePeople.find((person) => person.id === dashboard.groups[0]?.people[0]?.id) || null
+      : visiblePeople.find((person) => person.id === selectedPersonId) || null,
+    [dashboard.groups, ownPersonId, selectedPersonId, visiblePeople],
   );
   const selectedPersonDocuments = useMemo(
     () => (selectedPerson ? roleVisibleDocuments.filter((document) => document.personId === selectedPerson.id) : []),
@@ -1004,10 +1015,22 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     [effectiveRoles, visibilityRules],
   );
   useEffect(() => {
-    if (selectedPersonId !== null && !visiblePeople.some((person) => person.id === selectedPersonId)) {
-      setSelectedPersonId(visiblePeople[0]?.id ?? null);
+    if (!isLoading && selectedPersonId != null && !visiblePeople.some((person) => person.id === selectedPersonId)) {
+      setSelectedPersonId(selectedPersonId === initialPersonId ? null : visiblePeople[0]?.id ?? null);
     }
-  }, [selectedPersonId, visiblePeople]);
+  }, [initialPersonId, isLoading, selectedPersonId, visiblePeople]);
+
+  useEffect(() => {
+    if (!initialDocumentId || isLoading || openedInitialDocumentId.current === initialDocumentId) return;
+    const document = roleVisibleDocuments.find((record) => record.id === initialDocumentId);
+    if (!document) return;
+    if (document.personId === null && isManager) {
+      setDocumentAction({ document, mode: 'edit' });
+    } else if (selectedPersonDocuments.some((record) => record.id === initialDocumentId)) {
+      setSelectedDocumentIds(new Set([initialDocumentId]));
+    } else return;
+    openedInitialDocumentId.current = initialDocumentId;
+  }, [initialDocumentId, isLoading, isManager, roleVisibleDocuments, selectedPersonDocuments]);
 
   function updateFormValue(key: keyof PersonFormState, value: string) {
     setForm((currentForm) => ({
@@ -1063,8 +1086,9 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     try {
       const url = await createHrDocumentSignedUrl(effectiveClient, document);
       window.open(url, '_blank', 'noopener,noreferrer');
-    } catch {
-      setErrorMessage("Impossible d'ouvrir ce document.");
+      if (url.startsWith('blob:')) window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Impossible d'ouvrir ce document.");
     }
   }
 
@@ -1082,24 +1106,23 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
         const blob = await downloadHrDocumentBlob(effectiveClient, documentToDownload);
         saveBlob(blob, documentDownloadFileName(documentToDownload));
       } else {
+        if (selectedDocuments.some(document => document.drivePath)) await connectHrDrive();
         const { default: JSZip } = await import('jszip');
         const zip = new JSZip();
         const usedNames = new Map<string, number>();
 
-        await Promise.all(
-          selectedDocuments.map(async (documentToDownload) => {
-            const blob = await downloadHrDocumentBlob(effectiveClient, documentToDownload);
-            zip.file(uniqueFileName(documentDownloadFileName(documentToDownload), usedNames), blob);
-          }),
-        );
+        for (const documentToDownload of selectedDocuments) {
+          const blob = await downloadHrDocumentBlob(effectiveClient, documentToDownload);
+          zip.file(uniqueFileName(documentDownloadFileName(documentToDownload), usedNames), blob);
+        }
 
         const zipBlob = await zip.generateAsync({ type: 'blob' });
         saveBlob(zipBlob, `Documents RH - ${new Date().toISOString().slice(0, 10)}.zip`);
       }
 
       setSelectedDocumentIds(new Set());
-    } catch {
-      setErrorMessage('Impossible de telecharger les fichiers selectionnes.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Impossible de télécharger les fichiers sélectionnés.');
     } finally {
       setIsDownloading(false);
     }
@@ -1110,7 +1133,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     setRosterPopulation(value);
     setFilters((currentFilters) => ({ ...currentFilters, collaboratorId: '' }));
     setSelectedPersonId((currentPersonId) =>
-      currentPersonId !== null && nextPopulationPeople.some((person) => person.id === currentPersonId)
+      currentPersonId === undefined || (currentPersonId !== null && nextPopulationPeople.some((person) => person.id === currentPersonId))
         ? currentPersonId
         : nextPopulationPeople[0]?.id ?? null,
     );
@@ -1559,7 +1582,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
                 group={group}
                 key={group.label}
                 onPersonSelect={setSelectedPersonId}
-                selectedPersonId={selectedPersonId}
+                selectedPersonId={selectedPerson?.id ?? null}
               />
             ))}
           </div>
@@ -1567,11 +1590,16 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
         </section> : null}
 
         <PersonProfileCard
+          initialSectionKey={selectedPerson?.id === initialPersonId ? initialSectionKey : undefined}
           canDelete={canDeletePerson}
           canEdit={Boolean(
             isManager
             || (isRestrictedHrView && selectedPerson && selectedPerson.id === ownPersonId)
           )}
+          onPhotoChanged={(id, photo, document) => {
+            setPeople((previous) => previous.map((person) => person.id === id ? { ...person, ...photo, photoUnavailable: false } : person));
+            if (document) setDocuments((previous) => [...previous, document]);
+          }}
           canManageSignature={Boolean(selectedPerson && (
             selectedPerson.id === ownPersonId
             || effectiveRoles.includes('admin')
@@ -1992,7 +2020,7 @@ function PersonRow({ isSelected, onSelect, person }: { isSelected: boolean; onSe
       onClick={onSelect}
       type="button"
     >
-      <span className="hr-person-mini-avatar">{getPersonInitials(person)}</span>
+      <PersonAvatar className="hr-person-mini-avatar" person={person} />
       <span className="hr-person-compact-name">
         <strong>{formatPersonName(person)}</strong>
       </span>
@@ -2011,9 +2039,11 @@ function PersonRow({ isSelected, onSelect, person }: { isSelected: boolean; onSe
 
 
 function PersonProfileCard({
+  initialSectionKey,
   canDelete,
   canEdit,
   canManageSignature,
+  onPhotoChanged,
   canEditAnnualReviewDueDate,
   canClose = true,
   client,
@@ -2034,9 +2064,11 @@ function PersonProfileCard({
   selectedDocumentIds,
   visibleSectionKeys,
 }: {
+  initialSectionKey?: HrDetailsSectionKey;
   canDelete: boolean;
   canEdit: boolean;
   canManageSignature: boolean;
+  onPhotoChanged: PersonPhotoChanged;
   canEditAnnualReviewDueDate: boolean;
   canClose?: boolean;
   client: SupabaseClient;
@@ -2080,9 +2112,11 @@ function PersonProfileCard({
   return (
     <aside aria-label={`Fiche RH de ${formatPersonName(person)}`} className="hr-profile-card">
       <PersonDetailsPanel
+        initialSectionKey={initialSectionKey}
         canClose={canClose}
         canDelete={canDelete}
         canEdit={canEdit}
+        onPhotoChanged={onPhotoChanged}
         canManageSignature={canManageSignature}
         canEditAnnualReviewDueDate={canEditAnnualReviewDueDate}
         client={client}
@@ -2270,7 +2304,7 @@ function DocumentDetailsDialog({ document, isSaving, mode, onClose, onSubmit }: 
           {isDeleting ? (
             <div className="hr-document-delete-explanation">
               <p>Le document « {getHrDocumentDisplayName(document)} » sera retiré du dossier de {document.personName || 'ce collaborateur'}.</p>
-              <p>{document.storageBucket === 'hr-documents' && document.storagePath
+              <p>{!document.drivePath && document.storageBucket === 'hr-documents' && document.storagePath
                 ? 'Le fichier sera également supprimé. Cette action est définitive.'
                 : 'Seul le lien dans BBTM sera supprimé. Le fichier d’origine restera sur son espace de stockage.'}</p>
             </div>
@@ -2418,6 +2452,7 @@ function DocumentCreationDialog({
           <label className="hr-edit-field">
             Fichier
             <input
+              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.txt"
               disabled={isSaving}
               onChange={(event) => setFile(event.currentTarget.files?.[0] || null)}
               required
@@ -2533,6 +2568,7 @@ function DocumentRenewalDialog({
           <label className="hr-edit-field">
             Nouveau document
             <input
+              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.txt"
               disabled={isSaving}
               onChange={(event) => setFile(event.currentTarget.files?.[0] || null)}
               type="file"
@@ -2828,10 +2864,12 @@ function CreatePersonDialog({
 }
 
 function PersonDetailsPanel({
+  initialSectionKey,
   canClose,
   canDelete,
   canEdit,
   canManageSignature,
+  onPhotoChanged,
   canEditAnnualReviewDueDate,
   client,
   documents,
@@ -2854,10 +2892,12 @@ function PersonDetailsPanel({
   urgentCount,
   visibleSectionKeys,
 }: {
+  initialSectionKey?: HrDetailsSectionKey;
   canClose: boolean;
   canDelete: boolean;
   canEdit: boolean;
   canManageSignature: boolean;
+  onPhotoChanged: PersonPhotoChanged;
   canEditAnnualReviewDueDate: boolean;
   client: SupabaseClient;
   documents: HrDocumentRecord[];
@@ -2900,10 +2940,10 @@ function PersonDetailsPanel({
 
   useEffect(() => {
     setForm(buildPersonDetailsForm(person));
-    setActiveSectionKey(availableSections[0]?.key || 'identity');
+    setActiveSectionKey(initialSectionKey && visibleSectionKeys.has(initialSectionKey) ? initialSectionKey : availableSections[0]?.key || 'identity');
     setIsEditing(false);
     setIsActionsOpen(false);
-  }, [person]);
+  }, [person, initialSectionKey]);
 
   useEffect(() => {
     if (!visibleSectionKeys.has(activeSectionKey) && availableSections[0]) {
@@ -2955,6 +2995,7 @@ function PersonDetailsPanel({
       case 'identity':
         return (
           <section className="hr-profile-identity-section">
+            {isManager && <PersonPhotoField key={person.id} client={client} person={person} onChanged={onPhotoChanged} />}
             <div className="hr-profile-field-group is-card">
               <h4>Identification interne</h4>
               <DetailsGrid isEditing={isEditing}>
@@ -3288,13 +3329,10 @@ function PersonDetailsPanel({
   return (
     <form className="hr-profile-editor" onSubmit={handleSubmit}>
       <header className="hr-profile-header">
-        <span className="hr-profile-avatar">{getPersonInitials(person)}</span>
+        <PersonAvatar className="hr-profile-avatar" person={person} />
         <div className="hr-profile-identity">
           <div className="hr-profile-name-row">
             <h2>{formatPersonName(person)}</h2>
-            <span className={person.active ? 'hr-profile-active' : 'hr-profile-inactive'}>
-              {person.active ? 'Actif' : 'Inactif'}
-            </span>
           </div>
           <p>
             {normalizeHrFunctionLabel(person.functionLabel) || person.gradeLabel || 'Fonction non renseignée'}

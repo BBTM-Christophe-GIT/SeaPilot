@@ -1,0 +1,46 @@
+import { fireEvent, render, screen, within, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { describe, expect, it, vi } from 'vitest';
+import { ChemicalsPage } from './ChemicalsPage';
+import { createChemicalPreviewClient, createChemicalPreviewFiles } from './chemicalPreview';
+import { fetchChemicalWorkspace, saveChemicalProduct } from './chemicalQueries';
+vi.mock('../../lib/supabaseClient', () => ({supabase:{}}));
+describe('chemical inventory workflow', () => {
+  it('creates a product with decimal stock and selected pictograms, attaches a file, edits and deletes it', async () => {
+    const client = createChemicalPreviewClient();
+    render(<MemoryRouter><ChemicalsPage client={client} fileStore={createChemicalPreviewFiles()}/></MemoryRouter>);
+    await screen.findByText('Produit exemple');
+    fireEvent.click(screen.getByRole('button',{name:'Ajouter un produit'}));
+    const form = screen.getByRole('dialog',{name:'Ajouter un produit'});
+    fireEvent.change(within(form).getByLabelText('Navire *'),{target:{value:'90002'}});
+    fireEvent.change(within(form).getByLabelText('Type / produit *'),{target:{value:'Nettoyant de test'}});
+    fireEvent.change(within(form).getByLabelText('Stock en litres'),{target:{value:'4.5'}});
+    fireEvent.click(within(form).getByLabelText(/SGH05Corrosif/));
+    fireEvent.click(within(form).getByRole('button',{name:'Enregistrer'}));
+    let detail = await screen.findByRole('dialog',{name:'Nettoyant de test'});
+    expect(within(detail).getByText('4,5 L')).toBeInTheDocument();
+    expect(within(detail).getByAltText('Corrosif')).toBeInTheDocument();
+    fireEvent.change(within(detail).getByLabelText('Ajouter des pièces jointes'),{target:{files:[new File(['sample'],'fds.txt',{type:'text/plain'})]}});
+    await within(detail).findByText('fds.txt');
+    fireEvent.click(within(detail).getByRole('button',{name:'Modifier le produit'}));
+    const edit = await screen.findByRole('dialog',{name:'Modifier le produit'});
+    fireEvent.change(within(edit).getByLabelText('Stock en litres'),{target:{value:'0'}});
+    fireEvent.click(within(edit).getByRole('button',{name:'Enregistrer'}));
+    detail = await screen.findByRole('dialog',{name:'Nettoyant de test'});
+    expect(within(detail).getByText('0 L')).toBeInTheDocument();
+    fireEvent.click(within(detail).getAllByRole('button',{name:'Fermer'})[0]);
+    fireEvent.click(screen.getByRole('button',{name:/NAVIRE EXEMPLE/}));
+    expect(screen.queryByText('Produit exemple')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:/Supprimer Nettoyant de test/}));
+    fireEvent.click(within(screen.getByRole('dialog',{name:'Supprimer le produit ?'})).getByRole('button',{name:'Supprimer'}));
+    await waitFor(() => expect(screen.queryByText('Nettoyant de test')).not.toBeInTheDocument());
+    expect((await fetchChemicalWorkspace(client)).products).toHaveLength(1);
+  });
+  it('rejects a stale edit instead of overwriting another user stock', async () => {
+    const client = createChemicalPreviewClient();
+    const {products,vessels} = await fetchChemicalWorkspace(client);
+    await saveChemicalProduct(client,{...products[0],stock_litres:9},vessels[0],products[0]);
+    await expect(saveChemicalProduct(client,{...products[0],stock_litres:2},vessels[0],products[0])).rejects.toThrow(/modifié ou supprimé/);
+    expect((await fetchChemicalWorkspace(client)).products[0].stock_litres).toBe(9);
+  });
+});

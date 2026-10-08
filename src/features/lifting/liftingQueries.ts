@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import type { InspectionEntry, ItemDraft, LiftingInspection, LiftingItem, LiftingKind, LiftingVessel } from './liftingModel';
 import { uploadLiftingCertificate, validateLiftingCertificate, type UploadedLiftingCertificate } from './liftingCertificateQueries';
 
@@ -20,7 +21,7 @@ export async function fetchLiftingVessels(client: SupabaseClient): Promise<Lifti
   if (error) throw error;
   // The role-scoped RPC supplies the small, cacheable thumbnail URL directly.
   // Opening an inventory never waits for signed URLs or original photographs.
-  return (data || []) as LiftingVessel[];
+  return [...(data || []) as LiftingVessel[]].sort(compareFleetAssets);
 }
 // Paper forms always read current inventory, independently of UI filters and report snapshots.
 export async function fetchLiftingPaperInventory(client: SupabaseClient, vesselId: number, kind: LiftingKind) {

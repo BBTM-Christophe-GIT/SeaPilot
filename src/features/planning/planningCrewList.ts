@@ -1,4 +1,6 @@
 import type { PlanningOverview, PlanningPerson } from './planningQueries';
+import { getAllPlanningCrewEvents } from './planningModel';
+import { planningEventFunctionOnDate } from './planningFunctions';
 import shipOwnerSignatureUrl from './assets/signature-benjamin-bon.png?inline';
 
 export type PlanningCrewListFormat = 'xlsx' | 'pdf';
@@ -135,12 +137,15 @@ export function planningIdentityDocumentLabel(value: string): string {
 }
 
 function crewListCandidates(overview: PlanningOverview, vesselId: number, date: string): CrewListCandidate[] {
+  const eventsByAssignmentId = new Map(getAllPlanningCrewEvents(overview)
+    .filter((event) => event.assignmentId).map((event) => [event.assignmentId, event]));
   const assignments: CrewListCandidate[] = overview.assignments
     .filter((assignment) => assignment.vesselId === vesselId && assignment.confirmationStatus !== 'cancelled' && activeOn(date, assignment.startsOn, assignment.endsOn))
     .map((assignment) => ({
       personId: assignment.crewPersonId,
       crewName: assignment.crewName,
-      assignmentRole: assignment.assignmentRole,
+      assignmentRole: eventsByAssignmentId.has(assignment.id)
+        ? planningEventFunctionOnDate(eventsByAssignmentId.get(assignment.id)!, date) : assignment.assignmentRole,
       watchGroup: assignment.watchGroup || 'Affectation',
     }));
   const nativeKeys = new Set(assignments.map((assignment) => assignment.personId ? `person:${assignment.personId}` : `name:${assignment.crewName}`));

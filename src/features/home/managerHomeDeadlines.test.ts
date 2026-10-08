@@ -31,6 +31,30 @@ function hrDocument(status: string, expiresOn: string | null): ManagerHomeSource
 }
 
 describe('home deadline horizon', () => {
+  it('preserves transferred LSA alerts with a distinct identity and the new destination', () => {
+    const items = buildManagerHomeItems(sources({ fleetCertificates: [
+      fleetDocument('expired', expiryIn(-1)),
+      { ...fleetDocument('expired', expiryIn(-1)), register: 'lsa' },
+    ] }), TODAY);
+    expect(items).toHaveLength(2);
+    expect(items.find((item) => item.id === 'lsa-1')).toMatchObject({
+      to: '/modules/lsa?item=1', context: 'LSA · SUROIT', action: 'Ouvrir le registre LSA', urgent: true,
+    });
+    expect(items.find((item) => item.id === 'fleet-1')?.to).toBe('/modules/certificates?certificate=1');
+  });
+  it.each(['valid', 'missing', 'pending_validation', 'expired'])('uses only the LSA expiry for alarms with legacy status %s', (status) => {
+    for (const days of [-1, 0, 60, 90, 91]) {
+      const items = buildManagerHomeItems(sources({ fleetCertificates: [{
+        ...fleetDocument(status, expiryIn(days)), register: 'lsa', planned_on: expiryIn(5),
+      }] }), TODAY);
+      expect(items).toHaveLength(days <= 90 ? 1 : 0);
+      if (days <= 90) {
+        expect(items[0].queueTone).toBe(days < 0 ? 'danger' : 'warning');
+        expect(items[0].deadline).not.toContain('Visite');
+      }
+    }
+    expect(buildManagerHomeItems(sources({ fleetCertificates: [{ ...fleetDocument(status, null), register: 'lsa' }] }), TODAY)).toEqual([]);
+  });
   it.each(['valid', 'expired', 'renew_due', 'missing', 'manquant', 'pending_validation', 'À valider'])(
     'limits fleet documents with status %s to 90 days, regardless of imported status',
     (status) => {
@@ -75,7 +99,7 @@ describe('home deadline horizon', () => {
     expect(items[0].queueVisibleDates).toContain(toLocalIsoDate(TODAY));
   });
 
-  it.each([false, true])('limits delivery deadlines to 90 days with urgent=%s', (urgent) => {
+  it.each([false, true])('excludes purchases awaiting delivery from home with urgent=%s', (urgent) => {
     for (const days of [-1, 0, 90, 91, 1210]) {
       const items = buildManagerHomeItems(sources({ purchases: [{
         id: 3, request_number: '3', title: 'Pièce de rechange', requested_on: expiryIn(-10),
@@ -83,7 +107,7 @@ describe('home deadline horizon', () => {
         approval_status: 'Approuvée', urgent, ordered_on: expiryIn(-5),
         expected_delivery_on: expiryIn(days), received_on: null,
       }] }), TODAY);
-      expect(items.map((item) => item.id), `delivery in ${days} days`).toEqual(days <= 90 ? ['purchase-3'] : []);
+      expect(items, `delivery in ${days} days`).toEqual([]);
     }
   });
 });

@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { FleetAssetKind } from '../fleet/fleetQueries';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { normalizeProjectStatus } from './projectStatus';
 import { projectDescriptionToPlainText } from './projectDescription';
 
@@ -54,6 +56,7 @@ const PROJECT_CONTRACT_HIRE_PERIOD_SELECT = [
 
 const VESSEL_SELECT = [
   'id',
+  'asset_kind',
   'name',
   'acronym',
   'active',
@@ -225,6 +228,7 @@ interface ProjectContractRow {
 }
 
 interface VesselRow {
+  asset_kind?: FleetAssetKind | null;
   id: number;
   name: string;
   acronym: string | null;
@@ -519,6 +523,7 @@ export interface ClientRecord {
 }
 
 export interface VesselRecord {
+  assetKind?: FleetAssetKind;
   id: number;
   name: string;
   acronym: string;
@@ -808,6 +813,7 @@ export function mapVesselRows(rows: VesselRow[]): VesselRecord[] {
     acronym: nullableText(row.acronym),
     active: row.active ?? true,
     fleetExitOn: nullableText(row.fleet_exit_on),
+    assetKind: row.asset_kind || 'vessel',
     sharePointItemId: nullableText(row.sharepoint_item_id),
     lengthOverall: nullableText(row.length_overall),
     bollardPullTonnes: nullableNumber(row.bollard_pull_tonnes),
@@ -821,7 +827,7 @@ export function mapVesselRows(rows: VesselRow[]): VesselRecord[] {
     builtYear: nullableNumber(row.built_year),
     navigationCategory: nullableText(row.navigation_category),
     liabilityInsurer: nullableText(row.liability_insurer),
-  }));
+  })).sort(compareFleetAssets);
 }
 
 export function mapProjectVesselCertificateRows(

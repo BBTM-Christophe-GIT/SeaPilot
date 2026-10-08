@@ -66,7 +66,7 @@ export async function fetchPlanningSilaeData(client: SupabaseClient, month: stri
     sources.push({
       personId: id(row.person_id), vesselId: null, startsOn: planningDateFromTimestamp(text(row.starts_at)),
       endsOn: planningDateFromTimestamp(new Date(Date.parse(text(row.ends_at)) - 1).toISOString()),
-      status: row.absence_type === 'leave' ? 'Congés' : `Absence ${text(row.absence_type)}`, priority: 4,
+      status: row.absence_type === 'leave' ? 'Congés' : row.absence_type === 'rtt' ? 'RTT' : `Absence ${text(row.absence_type)}`, priority: 4,
     });
   });
   return { people, sources, vessels: vesselRows.map((row) => ({ id: Number(row.id), name: text(row.name), registrationNumber: text(row.registration_number) })) };

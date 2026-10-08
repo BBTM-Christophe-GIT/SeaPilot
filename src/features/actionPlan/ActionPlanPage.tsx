@@ -31,7 +31,7 @@ const EMPTY_DATA: ActionPlanData = {
   exposureHours: 0, hseKpis: null, hseDashboard: null,
 };
 
-const EMPTY_FILTERS: ActionPlanFilters = { search: '', status: '', vessel: '', category: '', actionType: '', deviationType: '' };
+const EMPTY_FILTERS: ActionPlanFilters = { search: '', status: 'open', vessel: '', category: '', actionType: '', deviationType: '' };
 const DEVIATION_TYPES = [
   'Non Conformité Majeure', 'Non Conformité Mineure', 'Prescription', "Proposition d'Amélioration",
   'Recommandation', 'Remarque', 'Remarque Positive',
@@ -399,6 +399,8 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
   const profileName = context?.currentPerson ? `${context.currentPerson.firstName} ${context.currentPerson.lastName}`.trim() : '';
   const previewMode = Boolean(context?.previewMode);
   const canManageActionPlan = effectiveRoles.includes('admin') || effectiveRoles.includes('direction');
+  const restrictToAssignedVessels = !canManageActionPlan && !effectiveRoles.includes('armement')
+    && (effectiveRoles.includes('marin') || effectiveRoles.includes('capitaine'));
   const [data, setData] = useState<ActionPlanData>(EMPTY_DATA);
   const [filters, setFilters] = useState<ActionPlanFilters>(EMPTY_FILTERS);
   const [createOpen, setCreateOpen] = useState(false);
@@ -414,11 +416,11 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
 
   async function load() {
     setLoading(true); setError('');
-    try { setData(await fetchActionPlanData(effectiveClient)); }
-    catch { setError("Impossible de charger le plan d'action."); }
+    try { setData(await fetchActionPlanData(effectiveClient, restrictToAssignedVessels)); }
+    catch { setData(EMPTY_DATA); setError("Impossible de charger le plan d'action."); }
     finally { setLoading(false); }
   }
-  useEffect(() => { void load(); }, [effectiveClient]);
+  useEffect(() => { void load(); }, [effectiveClient, restrictToAssignedVessels]);
 
   const filtered = useMemo(() => data.actions.filter((action) => actionMatches(action, filters, data)), [data, filters]);
   const typeOptions = useMemo(() => unique(data.actions.map(actionTypeLabel)), [data.actions]);

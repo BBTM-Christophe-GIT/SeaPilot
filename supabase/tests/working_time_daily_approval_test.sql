@@ -56,19 +56,19 @@ select ok(
   'clients cannot bypass daily workflow RPC checks'
 );
 select matches(
-  pg_get_functiondef('public.working_time_day_has_non_compliance(bigint,date)'::regprocedure),
-  '(?is)working_time_intervals.*voided_at is null.*working_time_calculation_windows',
-  'a rolling-window breach is attached to a day only when that day contains actual work'
+  pg_get_functiondef('public.working_time_day_violations(bigint,date)'::regprocedure),
+  '(?is)working_time_calculation_windows.*working_time_intervals.*voided_at is null.*contributing_day.local_work_date = p_local_work_date',
+  'a rolling-window breach is attached to the last contributing worked day'
 );
 select matches(
   pg_get_functiondef('public.validate_working_time_day(bigint)'::regprocedure),
-  '(?is)function_label = ''Capitaine''.*working_time_captain_matches_day',
-  'daily captain eligibility comes from the exact HR function and Planning board'
+  '(?is)is_hr_captain := .*working_time_captain_matches_day',
+  'daily captain eligibility comes from the effective Captain duty and Planning board'
 );
 select matches(
   pg_get_functiondef('public.submit_working_time_day(bigint,date)'::regprocedure),
-  '(?is)target_person.function_label = ''Capitaine''.*next_status := ''validated''',
-  'an exact HR Capitaine can validate their own compliant signed day'
+  '(?is)self_captain := public.working_time_captain_matches_day.*next_status := ''validated''',
+  'an HR or temporary Capitaine can validate their own compliant signed day'
 );
 select matches(
   pg_get_functiondef('public.dpr_entry_context(date,bigint)'::regprocedure),

@@ -4,21 +4,28 @@ export type ModuleKey =
   | 'home'
   | 'kpi'
   | 'qhse'
+  | 'qhsePolicy'
+  | 'chemicals'
+  | 'emergencyExercises'
+  | 'lsa'
   | 'certificates'
   | 'procedures'
   | 'serviceNotes'
   | 'actionPlan'
+  | 'ovid'
   | 'ecmid'
   | 'externalIsmAudits'
   | 'internalAudits'
   | 'clientAudits'
   | 'dpr'
   | 'purchaseRequests'
+  | 'expenseNotes'
   | 'serviceProviders'
   | 'billingElements'
   | 'planning'
   | 'fleet'
   | 'humanResources'
+  | 'organigramme'
   | 'annualReviews'
   | 'disciplinary'
   | 'workingTime'
@@ -26,11 +33,16 @@ export type ModuleKey =
   | 'marad'
   | 'technicalDocuments'
   | 'lifting'
+  | 'regulatoryLibrary'
+  | 'regulatorySafety'
+  | 'regulatoryTransport'
+  | 'usefulLinks'
   | 'admin';
 
 export type ModuleFamily =
   | 'Accueil'
   | 'QHSE'
+  | 'Registres'
   | 'Audits'
   | 'Opérations'
   | 'Achats'
@@ -38,7 +50,7 @@ export type ModuleFamily =
   | 'Planning'
   | 'Ressources Humaines'
   | 'Maintenance'
-  | 'Levage'
+  | 'Bibliothèque Réglementaire'
   | 'Administration';
 
 export interface AppModule {
@@ -53,7 +65,11 @@ const ALL_ROLES: RoleKey[] = ['admin', 'direction', 'armement', 'capitaine', 'ma
 
 export const APP_MODULES: AppModule[] = [
   { key: 'home', label: 'Accueil', family: 'Accueil', navigationKind: 'direct', allowedRoles: ALL_ROLES },
+  { key: 'qhsePolicy', label: 'Politique QHSE', family: 'QHSE', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   { key: 'kpi', label: 'KPI', family: 'QHSE', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'chemicals', label: 'Produits Chimiques', family: 'Registres', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'emergencyExercises', label: 'Registre des Exercices', family: 'Registres', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'lsa', label: 'Registre LSA', family: 'Registres', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   {
     key: 'certificates',
     label: 'Certificats flotte',
@@ -89,6 +105,7 @@ export const APP_MODULES: AppModule[] = [
     navigationKind: 'hidden',
     allowedRoles: ALL_ROLES,
   },
+  { key: 'ovid', label: 'OVID', family: 'Audits', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   { key: 'ecmid', label: 'eCMID', family: 'Audits', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   { key: 'externalIsmAudits', label: 'Audit ISM Externe', family: 'Audits', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   { key: 'internalAudits', label: 'Audit ISM Interne', family: 'Audits', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
@@ -122,6 +139,7 @@ export const APP_MODULES: AppModule[] = [
     navigationKind: 'submenu',
     allowedRoles: ['admin', 'direction'],
   },
+  { key: 'expenseNotes', label: 'Notes de frais', family: 'Achats', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   {
     key: 'billingElements',
     label: 'Éléments de facturation',
@@ -136,6 +154,13 @@ export const APP_MODULES: AppModule[] = [
     family: 'Ressources Humaines',
     navigationKind: 'submenu',
     allowedRoles: ALL_ROLES,
+  },
+  {
+    key: 'organigramme',
+    label: 'Organigramme',
+    family: 'Ressources Humaines',
+    navigationKind: 'submenu',
+    allowedRoles: ['admin', 'direction'],
   },
   {
     key: 'annualReviews',
@@ -169,7 +194,11 @@ export const APP_MODULES: AppModule[] = [
     navigationKind: 'submenu',
     allowedRoles: ALL_ROLES,
   },
-  { key: 'lifting', label: 'Levage', family: 'Levage', navigationKind: 'direct', allowedRoles: ALL_ROLES },
+  { key: 'lifting', label: 'Levage', family: 'Registres', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'regulatoryLibrary', label: 'Bibliothèque Réglementaire', family: 'Bibliothèque Réglementaire', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'regulatorySafety', label: 'Sécurité Maritime', family: 'Bibliothèque Réglementaire', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'regulatoryTransport', label: 'Code des Transports', family: 'Bibliothèque Réglementaire', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'usefulLinks', label: 'Liens utiles', family: 'Accueil', navigationKind: 'direct', allowedRoles: ALL_ROLES },
   {
     key: 'admin',
     label: 'Administration',

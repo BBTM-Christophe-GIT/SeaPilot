@@ -60,7 +60,7 @@ describe('Planning timeline visit and leave rendering', () => {
     expect(stack.stackById.get(3)).toBe(0);
   });
 
-  it('renders overlapping vessel projects on separate visual sub-rows', () => {
+  it.each([false, true])('renders overlapping projects on separate sub-rows (projectsOnly=%s)', (projectsOnly) => {
     const project = (id: number, title: string, startsOn: string, endsOn: string): PlanningProjectRecord => ({
       id,
       title,
@@ -78,6 +78,7 @@ describe('Planning timeline visit and leave rendering', () => {
       sourceLabel: 'test',
     });
     const { container } = render(<PlanningFleetTimelineRow
+      projectsOnly={projectsOnly}
       crewCount={4}
       dayWidth={110}
       days={buildPlanningTimeline('2026-08-11', 'week')}
@@ -120,7 +121,7 @@ describe('Planning timeline visit and leave rendering', () => {
     const bars = Array.from(container.querySelectorAll<HTMLElement>('.planning-project-bar'));
     expect(row).toHaveClass('has-project-stacks');
     expect(row).toHaveAttribute('data-project-stack-count', '2');
-    expect(row.style.minHeight).toBe('101px');
+    expect(row.style.minHeight).toBe(projectsOnly ? '65px' : '101px');
     expect(bars.map((bar) => bar.dataset.projectStack)).toEqual(['0', '1']);
     expect(bars.map((bar) => bar.style.marginTop)).toEqual(['7px', '34px']);
   });
@@ -276,19 +277,24 @@ describe('Planning timeline visit and leave rendering', () => {
     expect(bar.querySelector('.planning-resize-handle')).not.toBeInTheDocument();
   });
 
-  it('renders approved leave as a black Congés bar and lets an administrator move it', () => {
+  it.each([
+    { absenceType: 'leave', label: 'Congés', status: 'approved', canMove: true, movable: true },
+    { absenceType: 'rtt', label: 'RTT', status: 'approved', canMove: true, movable: true },
+    { absenceType: 'rtt', label: 'RTT', status: 'requested', canMove: true, movable: false },
+    { absenceType: 'rtt', label: 'RTT', status: 'approved', canMove: false, movable: false },
+  ] as const)('renders $label ($status) and honors administrator move permission ($canMove)', ({ absenceType, label, status, canMove, movable }) => {
     const onMoveAbsence = vi.fn();
     const { container } = render(<PlanningCrewTimelineRow
       absences={[{
         id: 7,
         personId: 10,
-        absenceType: 'leave',
+        absenceType,
         startsAt: '2026-08-11T06:00:00Z',
         endsAt: '2026-08-12T18:00:00Z',
         startsOn: '2026-08-11',
         endsOn: '2026-08-12',
         reason: '',
-        status: 'approved',
+        status,
         requestedBy: 'user',
         reviewedBy: 'admin',
         reviewedAt: '2026-07-23T10:00:00Z',
@@ -297,7 +303,7 @@ describe('Planning timeline visit and leave rendering', () => {
         updatedAt: '',
       }]}
       conflictDatesByEvent={new Map()}
-      canMoveApprovedAbsences
+      canMoveApprovedAbsences={canMove}
       dayWidth={110}
       days={buildPlanningTimeline('2026-08-11', 'week')}
       editable
@@ -312,9 +318,14 @@ describe('Planning timeline visit and leave rendering', () => {
       selectedId={null}
     />);
 
-    expect(screen.getByText('Congés')).toBeInTheDocument();
-    const vacation = container.querySelector<HTMLButtonElement>('.planning-absence-bar.is-approved.is-leave')!;
-    expect(vacation).toHaveAttribute('draggable', 'true');
+    expect(screen.getByText(label)).toBeInTheDocument();
+    const vacation = container.querySelector<HTMLButtonElement>(`.planning-absence-bar.is-${status}.is-${absenceType}`)!;
+    expect(vacation).toHaveAttribute('draggable', String(movable));
+    if (!movable) {
+      expect(onMoveAbsence).not.toHaveBeenCalled();
+      return;
+    }
+    expect(vacation).toHaveAccessibleName(`${label} validés du 11/08/2026 au 12/08/2026`);
 
     const values = new Map<string, string>();
     const dataTransfer = {
@@ -331,6 +342,6 @@ describe('Planning timeline visit and leave rendering', () => {
     const target = container.querySelector<HTMLElement>('[data-planning-drop-date="2026-08-13"]')!;
     fireEvent.dragOver(target, { dataTransfer });
     fireEvent.drop(target, { dataTransfer });
-    expect(onMoveAbsence).toHaveBeenCalledWith(expect.objectContaining({ id: 7, status: 'approved' }), '2026-08-13');
+    expect(onMoveAbsence).toHaveBeenCalledWith(expect.objectContaining({ id: 7, status: 'approved', absenceType }), '2026-08-13');
   });
 });

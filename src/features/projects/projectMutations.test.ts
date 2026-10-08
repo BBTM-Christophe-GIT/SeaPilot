@@ -17,6 +17,27 @@ import {
 } from './projectMutations';
 
 describe('projectMutations', () => {
+  it('persists absent project and contract dates as null without requiring a vessel', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { id: 902, project_code: 'P902', title: 'Projet sans dates', updated_at: '2026-09-22T10:00:00Z' },
+      error: null,
+    });
+
+    await saveProject({ rpc } as never, { ...EMPTY_PROJECT_WRITE_INPUT, title: 'Projet sans dates' });
+
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('projects_save', expect.objectContaining({
+      target_starts_on: null,
+      target_ends_on: null,
+      target_delivery_at: null,
+      target_redelivery_at: null,
+      target_charter_starts_at: null,
+      target_charter_ends_at: null,
+      target_primary_vessel_id: null,
+      target_secondary_vessel_id: null,
+      target_status: 'Non validé',
+    }));
+  });
+
   it('validates dated contract rates and rejects overlaps', () => {
     expect(validateProjectContractHirePeriods([
       { startsOn: '2026-01-01', endsOn: '2026-06-30', charterHire: 4000, standbyHire: 3000, weatherStandbyHire: 2000, hireCurrency: 'EUR', hireUnit: 'jour' },

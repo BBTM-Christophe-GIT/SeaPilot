@@ -5,3 +5,33 @@
   line-height: 1.6;
   margin: 10px 0 0;
 }
+
+.procedure-editor-compact .procedure-form-body { gap: 10px; padding: 12px 16px 2px; }
+.procedure-editor-compact .procedure-form-section { padding: 12px; }
+.procedure-editor-compact .procedure-form-section > header { margin-bottom: 10px; align-items: center; }
+.procedure-editor-compact .procedure-form-grid { gap: 10px; }
+.procedure-editor-compact .procedure-creation-mode { display: grid; gap: 6px; margin-bottom: 12px; }
+.procedure-creation-mode > span { color: #52657a; font-size: .64rem; font-weight: 790; }
+.procedure-creation-mode > small { color: #687d94; font-size: 11px; }
+.procedure-creation-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.procedure-creation-options button { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 8px 12px; border: 1px solid #d7dfe8; border-radius: 8px; color: #52657a; background: white; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.procedure-creation-options button svg { flex-shrink: 0; }
+.procedure-creation-options button[aria-pressed='true'] { border-color: #2563eb; color: #1d4ed8; background: #eff6ff; box-shadow: inset 0 0 0 1px #2563eb; }
+.procedure-creation-options button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.procedure-creation-options button:disabled { opacity: .6; cursor: wait; }
+.procedure-editor-compact .procedure-chapter-field { margin-bottom: 10px; }
+.procedure-editor-compact .procedure-identity-fields { grid-template-columns: 85px 90px 75px minmax(0, 1fr); }
+.procedure-editor-compact .procedure-context-fields { margin-top: 10px; grid-template-columns: 1fr 1.6fr; }
+.procedure-editor-compact .procedure-lifecycle-fields { grid-template-columns: 1fr 1fr 1fr 1.3fr; align-items: end; }
+.procedure-editor-compact .procedure-review-toggle { min-height: 40px; margin: 0; padding: 0; }
+.procedure-editor-compact .procedure-review-inline { display: flex; align-items: center; gap: 6px; min-height: 40px; color: #52667d; font-size: 11px; }
+.procedure-editor-compact #procedure-number-help { display: block; margin-top: 4px; font-size: 10px; color: #687d94; }
+.procedure-editor-compact #procedure-number-help.procedure-field-error { color: #b42318; }
+.procedure-editor-compact textarea { min-height: 54px; }
+
+@media (max-width: 640px) {
+  .procedure-editor-compact .procedure-identity-fields { grid-template-columns: 1fr 1fr 1fr; }
+  .procedure-editor-compact .procedure-title-field { grid-column: 1 / -1; }
+  .procedure-editor-compact .procedure-context-fields,
+  .procedure-editor-compact .procedure-lifecycle-fields { grid-template-columns: 1fr 1fr; }
+}
