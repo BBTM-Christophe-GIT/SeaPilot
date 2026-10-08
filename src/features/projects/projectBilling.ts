@@ -1145,6 +1145,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   const operationSource = operationRows.length ? operationRows : [{
     date: '—', operation: 'Aucune opération DPR sur la période', amountHt: 0, comments: '',
   }];
+  const expenseCollator = new Intl.Collator('fr-FR', { sensitivity: 'base', numeric: true });
   return renderBillingPdf({
     documentTitle: input.project.projectCode + ' - Éléments de facturation - ' + input.period.periodMonth.slice(0, 7),
     projectLabel: input.project.projectCode + ' - ' + input.project.title,
@@ -1163,7 +1164,9 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
     expenseRows: includeExpenses ? expenses.map((expense) => [
       expense.supplier, billingExpenseSpecialtyLabel(expense), formatDate(expense.invoiceDate),
       expense.invoiceNumber || '—', money(expense.amountHt, currencyCode(expense.currency)),
-    ]) : null,
+    ]).sort((left, right) => (
+      expenseCollator.compare(left[1], right[1]) || expenseCollator.compare(left[0], right[0])
+    )) : null,
     serviceRows: includeBbtmService ? (services.length ? services.map((service) => [
       service.category || 'Prestation non renseignée', money(service.unitAmountHt),
       quantity(service.quantity), money(service.unitAmountHt * service.quantity),

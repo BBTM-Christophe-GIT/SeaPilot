@@ -1150,6 +1150,134 @@ describe('raw billing lines', () => {
     }
   });
 
+  it('sorts expenses by their displayed French specialties and supplier without changing totals or source data', async () => {
+    const source = [
+      { supplier: 'Transporteur', specialties: ['Transport / Manutention'], invoice: 'TRANSP', amount: 70, currency: 'EUR' },
+      { supplier: 'Port 10', specialties: ['FRAIS DE PORT'], invoice: 'P10-PORT', amount: 40, currency: 'EUR' },
+      { supplier: 'Livraison multi', specialties: ['Gasoil', 'Frais de port'], invoice: 'G-MULTI', amount: 50, currency: 'USD' },
+      { supplier: 'Éclair', specialties: ['frais de pórt'], invoice: 'E-PORT', amount: 30, currency: 'EUR' },
+      { supplier: 'Livraison simple', specialties: ['Gasoil'], invoice: 'G-SOLO', amount: 60, currency: 'EUR' },
+      { supplier: 'Port 2', specialties: ['Frais de port'], invoice: 'P2-PORT', amount: 20, currency: 'EUR' },
+      { supplier: 'Armateur', specialties: [], invoice: 'A-PORT', amount: 10, currency: 'EUR' },
+    ];
+    const expenses = source.map((entry, index) => ({
+      id: index + 1, billingPeriodId: 1, category: 'port' as const, nature: '', supplier: entry.supplier,
+      supplierSpecialties: entry.specialties, invoiceDate: '2026-06-01', invoiceNumber: entry.invoice,
+      amountHt: entry.amount, amountTtc: null, currency: entry.currency,
+      quantity: null, unit: '', comments: '', dprReportId: null, includeInPdf: true,
+    }));
+    for (const expense of expenses) {
+      Object.freeze(expense.supplierSpecialties);
+      Object.freeze(expense);
+    }
+    Object.freeze(expenses);
+    const exportInput = Object.freeze({
+      ...input, dprs: [], expenses,
+      period: { ...input.period, includeOperationsInPdf: false, includeExpensesInPdf: true, includeBbtmInPdf: false },
+    });
+    const snapshot = JSON.stringify(exportInput);
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const { pdf, visibleText, elements } = await readPdf(await generateBillingPdf(exportInput));
+      expectSingleLandscapeA4(pdf);
+      const invoiceIds = new Set(source.map((entry) => entry.invoice));
+      const renderedInvoices = elements.filter((element) => invoiceIds.has(element.value)).map((element) => element.value);
+      expect([...renderedInvoices].sort()).toEqual([...invoiceIds].sort());
+      const specialtyLabels = new Set(['Frais de port', 'frais de pórt', 'FRAIS DE PORT', 'Gasoil', 'Gasoil · Frais de port', 'Transport / Manutention']);
+      const renderedSpecialties = elements.filter((element) => specialtyLabels.has(element.value)).map((element) => element.value);
+      expect([...renderedSpecialties.slice(0, 3)].sort()).toEqual(['Frais de port', 'frais de pórt', 'FRAIS DE PORT'].sort());
+      expect(renderedSpecialties.slice(3)).toEqual(['Gasoil', 'Gasoil · Frais de port', 'Transport / Manutention']);
+      expect(renderedInvoices.indexOf('A-PORT')).toBeLessThan(renderedInvoices.indexOf('P2-PORT'));
+      const sameSpecialty = source.filter((entry) => entry.specialties[0] === 'Frais de port' || !entry.specialties.length);
+      expect(elements.filter((element) => sameSpecialty.some((entry) => entry.supplier === element.value)).map((element) => element.value)).toEqual(['Armateur', 'Port 2']);
+      expect(elements.some((element) => element.value === 'Société' || element.value === 'Spécialités')).toBe(false);
+      expect(visibleText).toContain('Gasoil · Frais de port');
+      expect(visibleText).toContain('Transport / Manutention');
+      expect(visibleText.match(/230,00 €/g)).toHaveLength(2);
+      expect(visibleText.match(/50,00 USD/g)).toHaveLength(3);
+      expect(visibleText).not.toContain('280,00 €');
+      expect(JSON.stringify(exportInput)).toBe(snapshot);
+      expect(expenses.map((expense) => expense.invoiceNumber)).toEqual(source.map((entry) => entry.invoice));
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it('renders specialty and company values as indented nodes with each invoice once and BBTM below the right-hand tree', async () => {
+    const source = [
+      { supplier: 'Société Diesel', specialties: ['Gasoil'], invoice: 'DIESEL1', date: '2026-06-02', amount: 30, currency: 'USD' },
+      { supplier: 'Port 2', specialties: ['Frais de port'], invoice: 'PORT-B', date: '2026-06-04', amount: 20, currency: 'EUR' },
+      { supplier: 'Transporteur', specialties: ['Transport / Manutention', 'Gasoil'], invoice: 'TR-MUL', date: '2026-06-05', amount: 50, currency: 'EUR' },
+      { supplier: 'Port 10', specialties: ['Frais de port'], invoice: 'PORT-A', date: '2026-06-01', amount: 10, currency: 'EUR' },
+      { supplier: 'Port 2', specialties: ['Frais de port'], invoice: 'PORT-C', date: '2026-06-03', amount: 25, currency: 'EUR' },
+      { supplier: 'Société Diesel', specialties: ['Gasoil'], invoice: 'DIESEL2', date: '2026-06-06', amount: 35, currency: 'USD' },
+      { supplier: 'Société Éclair', specialties: ['Gasoil'], invoice: 'DIESEL3', date: '2026-06-07', amount: 5, currency: 'EUR' },
+    ];
+    const expenses = source.map((entry, index) => ({
+      id: index + 1, billingPeriodId: 1, category: 'port' as const, nature: '', supplier: entry.supplier,
+      supplierSpecialties: entry.specialties, invoiceDate: entry.date, invoiceNumber: entry.invoice,
+      amountHt: entry.amount, amountTtc: null, currency: entry.currency,
+      quantity: null, unit: '', comments: '', dprReportId: null, includeInPdf: true,
+    }));
+    const services = [{
+      id: 1, billingPeriodId: 1, serviceCatalogId: 1, category: 'BBTM-SOUS-ARBRE', descriptionHtml: '',
+      unitAmountHt: 7, quantity: 3, includeInPdf: true,
+    }];
+    const snapshot = JSON.stringify(expenses);
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const { pdf, visibleText, elements } = await readPdf(await generateBillingPdf({
+        ...input, project: { ...input.project, projectCode: 'P145' }, dprs: [], expenses, services,
+        period: { ...input.period, includeOperationsInPdf: false },
+      }));
+      expectSingleLandscapeA4(pdf);
+      expect(elements.some((element) => element.value === 'Société' || element.value === 'Spécialités')).toBe(false);
+      const specialtyLabels = ['Frais de port', 'Gasoil', 'Transport / Manutention · Gasoil'];
+      expect(elements.filter((element) => specialtyLabels.includes(element.value)).map((element) => element.value)).toEqual(specialtyLabels);
+      for (const supplier of ['Port 10', 'Port 2', 'Société Diesel', 'Société Éclair', 'Transporteur']) {
+        expect(elements.filter((element) => element.value === supplier)).toHaveLength(1);
+      }
+      for (const entry of source) {
+        expect(elements.filter((element) => element.value === entry.invoice)).toHaveLength(1);
+        expect(visibleText).toContain(entry.date.slice(8, 10) + '/06/2026');
+        expect(visibleText).toContain(`${entry.amount},00 ${entry.currency === 'EUR' ? '€' : entry.currency}`);
+      }
+      const node = (value: string) => {
+        const element = elements.find((item) => item.value === value);
+        expect(element).toBeDefined();
+        return element!;
+      };
+      const index = (value: string) => elements.findIndex((element) => element.value === value);
+      expect(index('Port 2')).toBeLessThan(index('Port 10'));
+      for (const invoice of ['PORT-B', 'PORT-C']) {
+        expect(index(invoice)).toBeGreaterThan(index('Port 2'));
+        expect(index(invoice)).toBeLessThan(index('Port 10'));
+      }
+      for (const invoice of ['DIESEL1', 'DIESEL2']) {
+        expect(index(invoice)).toBeGreaterThan(index('Société Diesel'));
+        expect(index(invoice)).toBeLessThan(index('Société Éclair'));
+      }
+      const port = node('Frais de port');
+      const company = node('Port 10');
+      const invoiceDate = node('01/06/2026');
+      expect(port.x).toBeGreaterThan(pdf.getPage(0).getWidth() / 2);
+      expect(company.x).toBeGreaterThan(port.x);
+      expect(invoiceDate.x).toBeGreaterThan(company.x);
+      expect(company.y).toBeLessThan(port.y);
+      expect(invoiceDate.y).toBeLessThan(company.y);
+      expect(node('Prestations BBTM').x).toBeGreaterThan(pdf.getPage(0).getWidth() / 2);
+      expect(node('Prestations BBTM').y).toBeLessThan(node('TR-MUL').y);
+      expect(node('BBTM-SOUS-ARBRE').x).toBeGreaterThan(pdf.getPage(0).getWidth() / 2);
+      expect(visibleText).toContain('131,00 €');
+      expect(visibleText).toContain('65,00 USD');
+      expect(visibleText).toContain('21,00 €');
+      expect(visibleText).not.toContain('196,00 €');
+      expect(JSON.stringify(expenses)).toBe(snapshot);
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
   it('groups mixed-currency expense subtotals and the invoice amounts by currency', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
     try {
