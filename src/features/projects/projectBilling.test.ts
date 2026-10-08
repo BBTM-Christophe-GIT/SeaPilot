@@ -915,6 +915,136 @@ describe('raw billing lines', () => {
     expect(size.height).toBeCloseTo(595.28, 1);
   }
 
+  function subtotalExportInput(): BillingExportInput {
+    const expenses = [
+      ['PORT-EUR-1', 'EUR', 20], ['PORT-EUR-2', 'EUR', 15],
+      ['PORT-USD-1', 'USD', 30], ['PORT-USD-2', 'USD', 10], ['PORT-CAD', 'CAD', 12],
+    ].map(([invoice, currency, amount], index) => ({
+      id: index + 1, billingPeriodId: 1, category: 'port' as const, nature: '', supplier: `FOURNISSEUR-${index}`, supplierSpecialties: ['Frais de port'],
+      invoiceDate: '2026-06-03', invoiceNumber: String(invoice), amountHt: Number(amount), amountTtc: null, currency: String(currency),
+      quantity: null, unit: '', comments: '', dprReportId: null, includeInPdf: true,
+    }));
+    return {
+      ...input, project: { ...input.project, projectCode: 'P145' }, contract: { ...input.contract!, hireCurrency: 'USD' },
+      dprs: [
+        { ...input.dprs[0], operation: 'LOYER-LIGNE-1', amountHt: 100 },
+        { ...input.dprs[0], id: 839, reportDate: '2026-06-02', operation: 'LOYER-LIGNE-2', amountHt: 25 },
+      ],
+      expenses,
+      services: [
+        { id: 1, billingPeriodId: 1, serviceCatalogId: 1, category: 'BBTM-LIGNE-1', descriptionHtml: '', unitAmountHt: 7, quantity: 3, includeInPdf: true },
+        { id: 2, billingPeriodId: 1, serviceCatalogId: 2, category: 'BBTM-LIGNE-2', descriptionHtml: '', unitAmountHt: 9, quantity: 2, includeInPdf: true },
+      ],
+      rawLines: [
+        { ...rawLine, designation: 'DETAIL-LIGNE-1', vesselName: 'NAVIRE-SNAPSHOT', unitAmountHt: 50, quantity: 1 },
+        { ...rawLine, id: 2, designation: 'DETAIL-LIGNE-2', vesselName: 'NAVIRE-SNAPSHOT', unitAmountHt: 10, quantity: 2 },
+      ],
+    };
+  }
+
+  it('places each currency-preserving subtotal after its section and only the final invoice total below all four sections', async () => {
+    const exportInput = subtotalExportInput();
+    const snapshot = JSON.stringify(exportInput);
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const { pdf, visibleText, elements } = await readPdf(await generateBillingPdf(exportInput));
+      expectSingleLandscapeA4(pdf);
+      const titles = ["Loyers d'Affrètement", 'Frais imputables', 'Prestations BBTM', 'Détail des Opérations', 'Total facture du mois HT'];
+      const section = (title: string) => {
+        const start = elements.findIndex((element) => element.value === title);
+        expect(start).toBeGreaterThanOrEqual(0);
+        const next = elements.findIndex((element, index) => index > start && titles.includes(element.value));
+        return elements.slice(start, next < 0 ? elements.length : next);
+      };
+      const amounts = (items: typeof elements) => items.filter((element) => /^[\d ]+,\d{2} (?:€|[A-Z]{3})$/.test(element.value));
+      const subtotalAmounts: Record<string, string[]> = {
+        "Loyers d'Affrètement": ['125,00 USD'],
+        'Frais imputables': ['12,00 CAD', '35,00 €', '40,00 USD'],
+        'Prestations BBTM': ['39,00 €'],
+        'Détail des Opérations': ['70,00 €'],
+      };
+      const subtotals = new Map<string, typeof elements>();
+      for (const title of titles.slice(0, -1)) {
+        expect(elements.filter((element) => element.value === title)).toHaveLength(1);
+        const rows = section(title);
+        const subtotalIndex = rows.findIndex((element) => element.value.startsWith('Sous-total '));
+        expect(subtotalIndex).toBeGreaterThan(1);
+        const subtotal = rows.slice(subtotalIndex);
+        expect(subtotal.map((element) => element.value).join(' ')).toContain(`Sous-total ${title} HT`);
+        expect(visibleText.split(`Sous-total ${title} HT`)).toHaveLength(2);
+        expect(subtotal[0].y).toBeLessThan(Math.min(...rows.slice(0, subtotalIndex).map((element) => element.y)));
+        expect(amounts(subtotal).map((element) => element.value)).toEqual(subtotalAmounts[title]);
+        const onRight = title === 'Frais imputables' || title === 'Prestations BBTM';
+        expect(subtotal[0].x > pdf.getPage(0).getWidth() / 2).toBe(onRight);
+        for (const amount of amounts(subtotal)) expect(amount.x).toBeGreaterThan(subtotal[0].x);
+        subtotals.set(title, subtotal);
+      }
+      expect(elements.filter((element) => element.value.startsWith('Sous-total '))).toHaveLength(4);
+      for (const [previous, next] of [
+        ['Frais imputables', 'Prestations BBTM'], ["Loyers d'Affrètement", 'Détail des Opérations'],
+        ['Prestations BBTM', 'Détail des Opérations'], ['Détail des Opérations', 'Total facture du mois HT'],
+      ]) {
+        expect(section(next)[0].y).toBeLessThan(Math.min(...subtotals.get(previous)!.map((element) => element.y)));
+      }
+      const final = section('Total facture du mois HT');
+      expect(elements.filter((element) => element.value === 'Total facture du mois HT')).toHaveLength(1);
+      expect(amounts(final).map((element) => element.value)).toEqual(['12,00 CAD', '144,00 €', '165,00 USD']);
+      expect(final[0].y).toBeLessThan(Math.min(...elements.slice(0, elements.indexOf(final[0])).map((element) => element.y)));
+      for (const value of ['LOYER-LIGNE-1', 'LOYER-LIGNE-2', 'BBTM-LIGNE-1', 'BBTM-LIGNE-2', 'DETAIL-LIGNE-1', 'DETAIL-LIGNE-2', ...exportInput.expenses.map((expense) => expense.invoiceNumber)]) {
+        expect(elements.filter((element) => element.value === value)).toHaveLength(1);
+      }
+      for (const comment of billingDprComment(exportInput.dprs[0]).split('\n')) expect(visibleText).toContain(comment);
+      expect(JSON.stringify(exportInput)).toBe(snapshot);
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it.each([
+    { section: 'hires', title: "Loyers d'Affrètement", totals: ['125,00 USD'] },
+    { section: 'expenses', title: 'Frais imputables', totals: ['12,00 CAD', '35,00 €', '40,00 USD'] },
+    { section: 'bbtm', title: 'Prestations BBTM', totals: ['39,00 €'] },
+    { section: 'raw', title: 'Détail des Opérations', totals: ['70,00 €'] },
+  ])('omits every subtotal when only $section is included, preserving the single final currency total', async ({ section, title, totals }) => {
+    const fixture = subtotalExportInput();
+    const exportInput: BillingExportInput = {
+      ...fixture,
+      period: {
+        ...fixture.period, includeOperationsInPdf: section === 'hires', includeExpensesInPdf: section === 'expenses',
+        includeBbtmInPdf: section === 'bbtm', includeRawInPdf: section === 'raw',
+      },
+    };
+    const snapshot = JSON.stringify(exportInput);
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const { pdf, visibleText, elements } = await readPdf(await generateBillingPdf(exportInput));
+      expectSingleLandscapeA4(pdf);
+      expect(visibleText).not.toContain('Sous-total');
+      expect(elements.filter((element) => element.value === title)).toHaveLength(1);
+      const finalIndex = elements.findIndex((element) => element.value === 'Total facture du mois HT');
+      expect(finalIndex).toBeGreaterThanOrEqual(0);
+      expect(elements.filter((element) => element.value === 'Total facture du mois HT')).toHaveLength(1);
+      expect(elements.slice(finalIndex).map((element) => element.value)).toEqual(['Total facture du mois HT', ...totals]);
+      expect(elements[finalIndex].y).toBeLessThan(Math.min(...elements.slice(0, finalIndex).map((element) => element.y)));
+      if (section === 'hires' || section === 'bbtm') {
+        for (const operation of ['LOYER-LIGNE-1', 'LOYER-LIGNE-2']) expect(visibleText).toContain(operation);
+        const dprStart = elements.findIndex((element) => element.value === "Loyers d'Affrètement");
+        const dprEnd = elements.findIndex((element, index) => index > dprStart && ['Prestations BBTM', 'Total facture du mois HT'].includes(element.value));
+        expect(elements.slice(dprStart, dprEnd).some((element) => element.value === 'Montant HT')).toBe(section === 'hires');
+      }
+      if (section === 'bbtm') {
+        expect(visibleText).not.toContain('100,00 USD');
+        expect(visibleText).not.toContain('25,00 USD');
+        for (const service of ['BBTM-LIGNE-1', 'BBTM-LIGNE-2']) expect(visibleText).toContain(service);
+      }
+      if (section === 'expenses') for (const expense of exportInput.expenses) expect(visibleText).toContain(expense.invoiceNumber);
+      if (section === 'raw') for (const raw of exportInput.rawLines!) expect(visibleText).toContain(raw.designation);
+      expect(JSON.stringify(exportInput)).toBe(snapshot);
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
   it('preserves a complete 31-day month, 95 details, supplier fields, DPR comments and currency totals in the synthetic layout', async () => {
     const dprs = Array.from({ length: 31 }, (_, index) => ({
       ...input.dprs[0], id: index + 1, reportDate: `2026-01-${String(index + 1).padStart(2, '0')}`,
@@ -1118,6 +1248,11 @@ describe('raw billing lines', () => {
       expect(visibleText).toContain(includeBbtm ? '91,00 €' : '70,00 €');
       expect(visibleText.includes('BBTM-RESTE')).toBe(includeBbtm);
       expect(visibleText.includes('100,00 USD')).toBe(includeHires);
+      expect(visibleText.includes("Sous-total Loyers d'Affrètement HT")).toBe(includeHires);
+      expect(visibleText.includes('Sous-total Prestations BBTM HT')).toBe(includeBbtm);
+      expect(visibleText.split('Sous-total Frais imputables HT')).toHaveLength(2);
+      expect(visibleText.split('Sous-total Détail des Opérations HT')).toHaveLength(2);
+      expect(elements.filter((element) => element.value.startsWith('Sous-total '))).toHaveLength(2 + Number(includeHires) + Number(includeBbtm));
       const hireTitleIndex = elements.findIndex((element) => element.value === "Loyers d'Affrètement");
       if (includeHires || includeBbtm) {
         expect(hireTitleIndex).toBeGreaterThanOrEqual(0);
@@ -1158,6 +1293,11 @@ describe('raw billing lines', () => {
       expect(visibleText).toContain('DETAIL-OVERRIDE');
       expect(visibleText).toContain('50,00 €');
       expect(visibleText).not.toContain('750,00 €');
+      expect(elements.filter((element) => element.value.startsWith('Sous-total '))).toHaveLength(2);
+      expect(visibleText).toContain('Sous-total Frais imputables HT');
+      expect(visibleText).toContain('Sous-total Détail des Opérations HT');
+      expect(visibleText).not.toContain('Sous-total Loyers');
+      expect(visibleText).not.toContain('Sous-total Prestations BBTM');
       expect(JSON.stringify(exportInput)).toBe(snapshot);
     } finally {
       fetch.mockRestore();
@@ -1186,11 +1326,36 @@ describe('raw billing lines', () => {
       for (const omitted of ['DPR-EXCLU', 'FRAIS-EXCLUS', 'FACTURE-EXCLUE', 'BBTM-EXCLUE']) expect(searchableText).not.toContain(omitted);
       if (includeSections) {
         for (const retained of ['FRAIS-INCLUS', 'FACTURE-INCLUSE', 'BBTM-INCLUSE', 'DETAIL-GLOBAL', '191,00 €']) expect(searchableText).toContain(retained.replace(/\s/g, ''));
+        for (const title of ["Loyers d'Affrètement", 'Frais imputables', 'Prestations BBTM', 'Détail des Opérations']) expect(visibleText.split(`Sous-total ${title} HT`)).toHaveLength(2);
       } else {
         for (const omitted of ['FRAIS-INCLUS', 'FACTURE-INCLUSE', 'BBTM-INCLUSE', 'DETAIL-GLOBAL', 'Détail des Opérations']) expect(searchableText).not.toContain(omitted.replace(/\s/g, ''));
         expect(visibleText).toContain('100,00 €');
         expect(visibleText).not.toContain('191,00 €');
+        expect(visibleText).not.toContain('Sous-total');
+        for (const title of ['Frais imputables', 'Prestations BBTM', 'Détail des Opérations']) expect(visibleText).not.toContain(`Sous-total ${title} HT`);
       }
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it('renders only the final zero invoice total when all four sections are excluded', async () => {
+    const exportInput: BillingExportInput = {
+      ...input,
+      period: { ...input.period, includeOperationsInPdf: false, includeExpensesInPdf: false, includeBbtmInPdf: false, includeRawInPdf: false },
+      services: [{ id: 1, billingPeriodId: 1, serviceCatalogId: 1, category: 'BBTM-TOUT-EXCLU', descriptionHtml: '', unitAmountHt: 700, quantity: 1 }],
+      rawLines: [{ ...rawLine, designation: 'DETAIL-TOUT-EXCLU', unitAmountHt: 999, quantity: 1 }],
+    };
+    const snapshot = JSON.stringify(exportInput);
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const { pdf, visibleText, elements } = await readPdf(await generateBillingPdf(exportInput));
+      expectSingleLandscapeA4(pdf);
+      for (const omitted of ["Loyers d'Affrètement", 'Frais imputables', 'Prestations BBTM', 'Détail des Opérations', 'Sous-total', 'BBTM-TOUT-EXCLU', 'DETAIL-TOUT-EXCLU']) expect(visibleText).not.toContain(omitted);
+      const finalIndex = elements.findIndex((element) => element.value === 'Total facture du mois HT');
+      expect(finalIndex).toBeGreaterThanOrEqual(0);
+      expect(elements.slice(finalIndex).map((element) => element.value)).toEqual(['Total facture du mois HT', '0,00 €']);
+      expect(JSON.stringify(exportInput)).toBe(snapshot);
     } finally {
       fetch.mockRestore();
     }
@@ -1266,8 +1431,9 @@ describe('raw billing lines', () => {
       expect(elements.some((element) => element.value === 'Société' || element.value === 'Spécialités')).toBe(false);
       expect(visibleText).toContain('Gasoil · Frais de port');
       expect(visibleText).toContain('Transport / Manutention');
-      expect(visibleText.match(/230,00 €/g)).toHaveLength(2);
-      expect(visibleText.match(/50,00 USD/g)).toHaveLength(3);
+      expect(visibleText).not.toContain('Sous-total');
+      expect(visibleText.match(/230,00 €/g)).toHaveLength(1);
+      expect(visibleText.match(/50,00 USD/g)).toHaveLength(2);
       expect(visibleText).not.toContain('280,00 €');
       expect(JSON.stringify(exportInput)).toBe(snapshot);
       expect(expenses.map((expense) => expense.invoiceNumber)).toEqual(source.map((entry) => entry.invoice));
