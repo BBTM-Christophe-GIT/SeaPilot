@@ -889,10 +889,116 @@ describe('raw billing lines', () => {
         return stream instanceof PDFRawStream ? new TextDecoder('windows-1252').decode(decodePDFRawStream(stream).decode()) : '';
       }).join('\n');
     });
-    return { pdf, pages, text: pages.join('\n') };
+    const elements = pages.flatMap((content, pageIndex) => [...content.matchAll(/\bBT\s*\n([\s\S]*?)\nET\b/g)].flatMap((block) => {
+      const origin = block[1].match(/([-\d.]+)\s+([-\d.]+)\s+Td/);
+      if (!origin) return [];
+      const leading = Number(block[1].match(/([-\d.]+)\s+TL/)?.[1] || 0);
+      let previousEnd = 0;
+      let line = 0;
+      return [...block[1].matchAll(/\(((?:\\[\s\S]|[^\\()])*)\)\s*Tj/g)].map((item) => {
+        line += (block[1].slice(previousEnd, item.index).match(/T\*/g) || []).length;
+        previousEnd = item.index! + item[0].length;
+        const value = item[1].replace(/\\([0-7]{1,3}|[\\()nrtbf])/g, (_, escaped: string) => {
+          if (/^[0-7]+$/.test(escaped)) return String.fromCharCode(parseInt(escaped, 8));
+          return ({ n: '\n', r: '\r', t: '\t', b: '\b', f: '\f' } as Record<string, string>)[escaped] ?? escaped;
+        });
+        return { value, x: Number(origin[1]), y: Number(origin[2]) - line * leading, pageIndex };
+      });
+    }));
+    return { pdf, pages, text: pages.join('\n'), elements, visibleText: elements.map((element) => element.value).join(' ').replace(/\s+/g, ' ').trim() };
   }
 
-  it('exports all six columns with wrapped vessel snapshots, rounded totals and every raw line across repeated table pages', async () => {
+  function expectSingleLandscapeA4(pdf: PDFDocument) {
+    expect(pdf.getPageCount()).toBe(1);
+    const size = pdf.getPage(0).getSize();
+    expect(size.width).toBeCloseTo(841.89, 1);
+    expect(size.height).toBeCloseTo(595.28, 1);
+  }
+
+  it('preserves a complete 31-day month, 95 details, supplier fields, DPR comments and currency totals in the synthetic layout', async () => {
+    const dprs = Array.from({ length: 31 }, (_, index) => ({
+      ...input.dprs[0], id: index + 1, reportDate: `2026-01-${String(index + 1).padStart(2, '0')}`,
+      operation: index === 0 ? '24/24 Crew Change' : `OPERATION-JOUR-${String(index + 1).padStart(3, '0')}`,
+      amountHt: 100,
+    }));
+    const rawLines = Array.from({ length: 95 }, (_, index) => ({
+      ...rawLine, id: index + 1, serviceDate: '2026-01-15', designation: `DETAIL-COMPLET-${String(index + 1).padStart(3, '0')}`,
+      vesselId: 42, vesselName: 'NAVIRE-HISTORIQUE-COMPLET',
+    }));
+    const expenses = Array.from({ length: 14 }, (_, index) => ({
+      id: index + 1, billingPeriodId: 1, category: 'port' as const, nature: '',
+      supplier: `FOURNISSEUR-UNIQUE-${String(index + 1).padStart(3, '0')}`,
+      supplierSpecialties: [`SPECIALITE-${String(index + 1).padStart(3, '0')} ${'Libellé complet '.repeat(6)}`],
+      invoiceDate: '2026-01-15', invoiceNumber: `FACTURE-UNIQUE-${String(index + 1).padStart(3, '0')}`,
+      amountHt: index + 1, amountTtc: null, currency: index === 1 ? 'USD' : 'EUR',
+      quantity: null, unit: '', comments: '', dprReportId: null, includeInPdf: true,
+    }));
+    const services = [{
+      id: 1, billingPeriodId: 1, serviceCatalogId: 1, category: 'SERVICE-BBTM-DROITE', descriptionHtml: '',
+      unitAmountHt: 7, quantity: 3, includeInPdf: true,
+    }];
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const { pdf, visibleText, elements } = await readPdf(await generateBillingPdf({
+        ...input, project: { ...input.project, projectCode: 'P145' },
+        contract: { ...input.contract!, hireCurrency: 'USD' },
+        startDate: '2026-01-01', endDate: '2026-01-31',
+        period: { ...input.period, periodMonth: '2026-01-01', clientReference: 'REFERENCE-CONSERVEE' },
+        dprs, rawLines, expenses, services,
+      }));
+      expectSingleLandscapeA4(pdf);
+      expect(visibleText).toContain("Loyers d'Affrètement");
+      expect(visibleText).toContain('Détail des Opérations');
+      expect(visibleText).toContain('Frais imputables');
+      expect(visibleText).toContain('Prestations BBTM');
+      expect(visibleText).toContain('REFERENCE-CONSERVEE');
+      for (const day of Array.from({ length: 31 }, (_, index) => `${String(index + 1).padStart(2, '0')}/01/2026`)) expect(visibleText).toContain(day);
+      for (const dpr of dprs.slice(1)) expect(visibleText.split(dpr.operation)).toHaveLength(2);
+      for (const line of rawLines) expect(visibleText.split(line.designation)).toHaveLength(2);
+      for (const expense of expenses) {
+        expect(visibleText.split(expense.supplier)).toHaveLength(2);
+        expect(visibleText.split(expense.invoiceNumber)).toHaveLength(2);
+        expect(visibleText).toContain(expense.supplierSpecialties[0].trim());
+      }
+      for (const comment of billingDprComment(dprs[0]).split('\n')) expect(visibleText).toContain(comment);
+      expect(visibleText).toContain('3 102,00 USD');
+      expect(visibleText).toContain('165,80 €');
+      expect(visibleText).toContain('41,80 €');
+      expect(visibleText).toContain('21,00 €');
+      expect(visibleText).not.toContain('3 267,80 €');
+      for (const removed of ['Saisie brute', 'Loyers et DPR', 'Justificatifs', 'TABLEAU SYNTHÉTIQUE', 'Montants HT par devise', 'sans conversion', 'données fictives']) expect(visibleText.toLocaleLowerCase('fr-FR')).not.toContain(removed.toLocaleLowerCase('fr-FR'));
+
+      const pageSize = pdf.getPage(0).getSize();
+      const expensesTitle = elements.find((element) => element.value === 'Frais imputables')!;
+      const servicesTitle = elements.find((element) => element.value === 'Prestations BBTM')!;
+      const service = elements.find((element) => element.value === 'SERVICE-BBTM-DROITE')!;
+      expect(expensesTitle).toBeDefined();
+      expect(servicesTitle).toBeDefined();
+      expect(service).toBeDefined();
+      expect(expensesTitle.x).toBeGreaterThan(pageSize.width / 2);
+      expect(servicesTitle.x).toBeGreaterThan(pageSize.width / 2);
+      expect(service.x).toBeGreaterThan(pageSize.width / 2);
+      expect(servicesTitle.y).toBeLessThan(expensesTitle.y);
+      const detailsTitleIndex = elements.findIndex((element) => element.value === 'Détail des Opérations');
+      const detailHeaders = elements.slice(detailsTitleIndex + 1);
+      const dateHeader = detailHeaders.find((element) => element.value === 'Date')!;
+      const totalHeader = detailHeaders.find((element) => /^(Prix Total HT|Total HT)$/.test(element.value))!;
+      expect(dateHeader).toBeDefined();
+      expect(totalHeader).toBeDefined();
+      expect(dateHeader.x).toBeLessThan(pageSize.width * 0.15);
+      expect(totalHeader.x).toBeGreaterThan(pageSize.width * 0.85);
+      for (const element of elements) {
+        expect(element.x).toBeGreaterThanOrEqual(0);
+        expect(element.x).toBeLessThanOrEqual(pageSize.width);
+        expect(element.y).toBeGreaterThanOrEqual(0);
+        expect(element.y).toBeLessThanOrEqual(pageSize.height);
+      }
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it('keeps all 95 operation details, long vessel snapshots and rounded totals on one landscape A4 page', async () => {
     const longProjectTitle = 'Campagne maritime très longue '.repeat(8);
     const rawLines = Array.from({ length: 95 }, (_, index) => ({
       ...rawLine, id: index + 1, designation: `SAISIE-UNIQUE-${String(index + 1).padStart(3, '0')}`,
@@ -900,33 +1006,28 @@ describe('raw billing lines', () => {
     }));
     const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
     try {
-      const { pdf, pages, text } = await readPdf(await generateBillingPdf({
+      const { pdf, pages, text, visibleText } = await readPdf(await generateBillingPdf({
         ...input, project: { ...input.project, title: longProjectTitle }, dprs: [], period: { ...input.period, includeOperationsInPdf: false, includeExpensesInPdf: false, includeBbtmInPdf: false },
         rawLines: [...rawLines, { ...rawLine, id: 999, designation: 'EXCLUE-DU-PDF', includeInPdf: false }],
       }));
-      expect(pdf.getPageCount()).toBeGreaterThan(6);
-      for (const page of pages) expect(page).not.toContain(longProjectTitle);
-      for (const page of pages.slice(1)) {
-        expect(page).toContain('(Date)');
-        expect(page).toContain('(Navire)');
-        expect(page).toContain('(Désignation)');
-        expect(page).toContain('(Prix unitaire HT)');
-        expect(page).toContain('(Quantité)');
-        expect(page).toContain('(Prix Total HT)');
-      }
+      expectSingleLandscapeA4(pdf);
+      expect(visibleText).toContain(longProjectTitle.trim());
+      expect(visibleText).toContain('Détail des Opérations');
+      for (const column of ['Date', 'Navire', 'Désignation']) expect(visibleText).toContain(column);
+      expect(visibleText).toMatch(/Prix unitaire HT|PU HT/);
+      expect(visibleText).toMatch(/Quantité|Qté/);
+      expect(visibleText).toMatch(/Prix Total HT|Total HT/);
       for (const line of rawLines) {
         expect(text.split(line.designation)).toHaveLength(2);
         expect(text.split(line.vesselName.split(' ')[0])).toHaveLength(2);
       }
+      expect(visibleText.match(/Nom maritime très long/g)).toHaveLength(95 * 7);
       expect(text.split('EXCLUE-DU-PDF')).toHaveLength(2);
-      expect(pages[0]).not.toContain('Sous-total Saisie brute');
-      expect(pages[0]).not.toContain('(Navire)');
       expect(pages[0]).not.toContain('(GOURY)');
       expect(pages[0]).toContain('42,24');
-      expect(pages.at(-1)).toContain('42,24');
-      expect(pages.at(-1)).toContain('Sous-total Saisie brute');
-      expect(pages[1]).toContain('02/06/2026');
-      expect(pages[1]).toContain('0,44');
+      expect(pages[0]).toContain('02/06/2026');
+      expect(pages[0]).toContain('0,44');
+      expect(visibleText).not.toContain('Saisie brute');
     } finally {
       fetch.mockRestore();
     }
@@ -935,45 +1036,41 @@ describe('raw billing lines', () => {
   it.each(['empty', 'excluded', 'included'] as const)('shows the top-right vessel header only when raw lines are not exported (%s)', async (mode) => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
     try {
-      const { pages } = await readPdf(await generateBillingPdf({
+      const { pdf, pages, visibleText } = await readPdf(await generateBillingPdf({
         ...input, dprs: [], selectedVesselName: 'NAVIRE-EN-TETE',
         period: { ...input.period, includeRawInPdf: mode !== 'excluded' },
         rawLines: mode === 'empty' ? [] : [{ ...rawLine, vesselId: 42, vesselName: 'NAVIRE-DE-LIGNE' }],
       }));
+      expectSingleLandscapeA4(pdf);
       if (mode === 'included') {
-        expect(pages[0]).not.toContain('(Navire)');
         expect(pages[0]).not.toContain('NAVIRE-EN-TETE');
-        expect(pages[1]).toContain('(Navire)');
-        expect(pages[1]).toContain('NAVIRE-DE-LIGNE');
+        expect(visibleText).toContain('Navire');
+        expect(visibleText).toContain('NAVIRE-DE-LIGNE');
+        expect(visibleText).toContain('Détail des Opérations');
       } else {
-        expect(pages[0]).toContain('(Navire)');
+        expect(visibleText).toContain('Navire');
         expect(pages[0]).toContain('NAVIRE-EN-TETE');
-        expect(pages).toHaveLength(1);
+        expect(visibleText).not.toContain('NAVIRE-DE-LIGNE');
       }
     } finally {
       fetch.mockRestore();
     }
   });
 
-  it('continues a vessel name taller than one page without clipping text or duplicating the billed line', async () => {
+  it('preserves every fragment of a very long vessel name without clipping or duplicating the billed line', async () => {
     const vesselFragments = Array.from({ length: 120 }, (_, index) => `FRAGMENT-NAVIRE-${String(index + 1).padStart(3, '0')}`);
     const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
     try {
-      const { pages, text } = await readPdf(await generateBillingPdf({
+      const { pdf, pages, text, visibleText } = await readPdf(await generateBillingPdf({
         ...input, dprs: [],
         period: { ...input.period, includeOperationsInPdf: false, includeExpensesInPdf: false, includeBbtmInPdf: false },
         rawLines: [{ ...rawLine, vesselId: 42, vesselName: vesselFragments.join('\n'), designation: 'LIGNE-LONG-NAVIRE', unitAmountHt: 11.25, quantity: 2 }],
       }));
-      expect(pages).toHaveLength(4);
+      expectSingleLandscapeA4(pdf);
       expect(text.split('LIGNE-LONG-NAVIRE')).toHaveLength(2);
       for (const fragment of vesselFragments) expect(text.split(fragment)).toHaveLength(2);
-      for (const page of pages.slice(1)) {
-        expect(page).toContain('(Date)');
-        expect(page).toContain('(Navire)');
-        expect(page).toContain('(Prix Total HT)');
-      }
-      expect(pages.at(-1)).toContain('Sous-total Saisie brute');
-      expect(pages.at(-1)).toContain('22,50');
+      expect(visibleText).toContain('Détail des Opérations');
+      expect(pages[0]).toContain('22,50');
     } finally {
       fetch.mockRestore();
     }
@@ -985,10 +1082,42 @@ describe('raw billing lines', () => {
       const { pdf, text } = await readPdf(await generateBillingPdf({
         ...input, period: { ...input.period, includeRawInPdf: false }, rawLines: [{ ...rawLine, designation: 'RAW-EXCLUDED', unitAmountHt: 999 }],
       }));
-      expect(pdf.getPageCount()).toBe(1);
-      expect(text).not.toContain('Saisie brute');
+      expectSingleLandscapeA4(pdf);
+      expect(text).not.toContain('Détail des Opérations');
       expect(text).not.toContain('RAW-EXCLUDED');
       expect(text).toContain('4 227,50');
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it.each([true, false])('preserves expense, BBTM and global detail exclusions in the one-page PDF (sections included: %s)', async (includeSections) => {
+    const expense = {
+      id: 25, billingPeriodId: 1, category: 'port' as const, nature: '', supplier: 'FRAIS-INCLUS', supplierSpecialties: [],
+      invoiceDate: '2026-06-01', invoiceNumber: 'FACTURE-INCLUSE', amountHt: 20, amountTtc: null, currency: 'EUR',
+      quantity: null, unit: '', comments: '', dprReportId: null, includeInPdf: true,
+    };
+    const service = { id: 1, billingPeriodId: 1, serviceCatalogId: 1, category: 'BBTM-INCLUSE', descriptionHtml: '', unitAmountHt: 7, quantity: 3, includeInPdf: true };
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const { pdf, visibleText } = await readPdf(await generateBillingPdf({
+        ...input, project: { ...input.project, projectCode: 'P145' },
+        period: { ...input.period, includeExpensesInPdf: includeSections, includeBbtmInPdf: includeSections, includeRawInPdf: includeSections, excludedOperationKeys: ['dpr:999'] },
+        dprs: [{ ...input.dprs[0], amountHt: 100 }, { ...input.dprs[0], id: 999, operation: 'DPR-EXCLU', amountHt: 900 }],
+        expenses: [expense, { ...expense, id: 26, supplier: 'FRAIS-EXCLUS', invoiceNumber: 'FACTURE-EXCLUE', amountHt: 900, includeInPdf: false }],
+        services: [service, { ...service, id: 2, category: 'BBTM-EXCLUE', unitAmountHt: 900, includeInPdf: false }],
+        rawLines: [{ ...rawLine, designation: 'DETAIL-GLOBAL', unitAmountHt: 50, quantity: 1, includeInPdf: false }],
+      }));
+      expectSingleLandscapeA4(pdf);
+      const searchableText = visibleText.replace(/\s/g, '');
+      for (const omitted of ['DPR-EXCLU', 'FRAIS-EXCLUS', 'FACTURE-EXCLUE', 'BBTM-EXCLUE']) expect(searchableText).not.toContain(omitted);
+      if (includeSections) {
+        for (const retained of ['FRAIS-INCLUS', 'FACTURE-INCLUSE', 'BBTM-INCLUSE', 'DETAIL-GLOBAL', '191,00 €']) expect(searchableText).toContain(retained.replace(/\s/g, ''));
+      } else {
+        for (const omitted of ['FRAIS-INCLUS', 'FACTURE-INCLUSE', 'BBTM-INCLUSE', 'DETAIL-GLOBAL', 'Détail des Opérations']) expect(searchableText).not.toContain(omitted.replace(/\s/g, ''));
+        expect(visibleText).toContain('100,00 €');
+        expect(visibleText).not.toContain('191,00 €');
+      }
     } finally {
       fetch.mockRestore();
     }
@@ -1002,19 +1131,20 @@ describe('raw billing lines', () => {
         invoiceDate: '2026-06-01', invoiceNumber: 'USD-1', amountHt: expenseAmount, amountTtc: null, currency: 'USD',
         quantity: null, unit: '', comments: '', dprReportId: null, includeInPdf: true,
       }] : [];
-      const { pages, text } = await readPdf(await generateBillingPdf({
+      const { pdf, pages, text, visibleText } = await readPdf(await generateBillingPdf({
         ...input, contract: { ...input.contract!, hireCurrency: 'USD' },
         period: { ...input.period, includeBbtmInPdf: false },
         dprs: [{ ...input.dprs[0], amountHt: 100 }], expenses,
         rawLines: [{ ...rawLine, unitAmountHt: 50, quantity: 1 }],
       }));
+      expectSingleLandscapeA4(pdf);
       expect(pages[0]).toContain('(100,00 USD)');
       expect(pages[0]).toContain(`(${100 + expenseAmount},00 USD)`);
       expect(pages[0]).toContain('(50,00 €)');
       expect(text).not.toContain(`(${150 + expenseAmount},00 €)`);
       expect(pages[0]).not.toContain('(100,00 €)');
       if (expenseAmount) expect(pages[0]).toContain('(30,00 USD)');
-      expect(pages.at(-1)).toContain('Sous-total Saisie brute : 50,00 €');
+      expect(visibleText).toContain('Détail des Opérations');
     } finally {
       fetch.mockRestore();
     }
@@ -1028,12 +1158,13 @@ describe('raw billing lines', () => {
         invoiceDate: '2026-06-01', invoiceNumber: `DEV-${index}`, amountHt: Number(amount), amountTtc: null, currency: String(currency),
         quantity: null, unit: '', comments: '', dprReportId: null, includeInPdf: true,
       }));
-      const { pages } = await readPdf(await generateBillingPdf({
+      const { pdf, pages } = await readPdf(await generateBillingPdf({
         ...input, contract: { ...input.contract!, hireCurrency: 'USD' },
         period: { ...input.period, includeBbtmInPdf: false },
         dprs: [{ ...input.dprs[0], amountHt: 100 }], expenses,
         rawLines: [{ ...rawLine, unitAmountHt: 50, quantity: 1 }],
       }));
+      expectSingleLandscapeA4(pdf);
       expect(pages[0]).toContain('(130,00 USD)');
       expect(pages[0]).toContain('(55,00 €)');
       expect(pages[0]).toContain('(10,00 CAD)');
@@ -1045,7 +1176,7 @@ describe('raw billing lines', () => {
     }
   });
 
-  it('uses a currency summary page when more than three currencies cannot fit the original total blocks', async () => {
+  it('keeps more than three currencies separate on the single landscape A4 page', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
     try {
       const expenses = ['USD', 'GBP', 'CAD', 'CHF', 'JPY'].map((currency, index) => ({
@@ -1057,13 +1188,11 @@ describe('raw billing lines', () => {
         ...input, period: { ...input.period, includeOperationsInPdf: false, includeBbtmInPdf: false },
         dprs: [], expenses, rawLines: [{ ...rawLine, unitAmountHt: 50, quantity: 1 }],
       }));
-      expect(pdf.getPageCount()).toBe(3);
-      expect(pages[0]).toContain('Voir le récapitulatif par devise');
-      expect(pages[1]).toContain('Récapitulatif par devise');
-      expect(pages[1]).toContain('sans conversion');
-      for (const currency of ['USD', 'GBP', 'CAD', 'CHF', 'JPY']) expect(pages[1]).toContain(`(10,00 ${currency})`);
-      expect(pages[1]).toContain('(50,00 €)');
-      expect(pages[2]).toContain('Sous-total Saisie brute : 50,00 €');
+      expectSingleLandscapeA4(pdf);
+      for (const currency of ['USD', 'GBP', 'CAD', 'CHF', 'JPY']) expect(pages[0]).toContain(`(10,00 ${currency})`);
+      expect(pages[0]).toContain('(50,00 €)');
+      expect(pages[0]).not.toContain('Voir le récapitulatif par devise');
+      expect(pages[0]).not.toContain('sans conversion');
       expect(pages[0]).not.toContain('(100,00 €)');
     } finally {
       fetch.mockRestore();
