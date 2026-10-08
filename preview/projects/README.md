@@ -12,15 +12,21 @@ Elle ne lit ni n'écrit de données Supabase et ne remplace pas le module exista
 
 - Rechercher un projet, filtrer son statut et changer la densité du portefeuille.
 - Changer de dossier et de rubrique ; créer ou modifier un projet et ses opérations.
-- Sélectionner un mois et enregistrer sa fiche avant d'ajouter des frais ou d'exporter.
+- Sélectionner un mois : sa fiche est créée automatiquement lors de la première action.
 - Déplier les trois sections, exclure une journée ou une section et vérifier le total HT.
 - Ajouter ou modifier un frais ou une prestation et joindre un justificatif local.
+- Ajouter une ligne brute datée, avec son navire, sa quantité et son prix unitaire.
+- Saisir une référence client, enregistrée à la sortie du champ pour le contenu sélectionné.
 - Afficher le vrai PDF, exporter le PDF standard, le PDF avec annexes ou le ZIP.
 
 Les calculs et exports réutilisent `projectBilling.ts`. La fiche mensuelle reste
 distincte du statut du projet. Modifier le loyer contractuel ne modifie pas les
 loyers copiés dans les opérations existantes. Les tarifs propres aux opérations,
 les règles de stand-by et les exclusions PDF restent ceux du moteur existant.
+Les totaux sont séparés par devise, sans conversion implicite. Les quantités
+automatiques des prestations et les arrondis des lignes brutes suivent les
+fonctions actuelles du moteur. La section Saisie brute apparaît après le premier
+ajout depuis le menu ; la vue initiale conserve les trois sections de la maquette.
 
 Les rubriques Offre & contrat et Documents présentent des résumés et les pièces
 fictives du mois. L'édition contractuelle complète, les synchronisations Planning,
@@ -33,7 +39,7 @@ elle ne crée ni n'envoie de facture.
 Avec pnpm 10.34.5 :
 
 ```powershell
-corepack pnpm test src/features/projects/preview/billingDemo.test.ts src/features/projects/preview/ProjectPreview.test.tsx src/features/projects/projectBilling.test.ts --pool=forks --maxWorkers=1
+corepack pnpm test src/features/projects/preview/billingDemo.test.ts src/features/projects/preview/previewStorageClient.test.ts src/features/projects/preview/ProjectPreview.test.tsx src/features/projects/projectBilling.test.ts src/features/projects/projectBillingReferences.test.ts --pool=forks --maxWorkers=1
 corepack pnpm build
 ```
 

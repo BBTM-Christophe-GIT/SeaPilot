@@ -65,15 +65,27 @@ affiner le cadrage du logo et les espacements à partir du retour utilisateur.
 
 ## Comportements vérifiés
 
-- 44 tests : moteur existant, exclusions, tarifs d'opérations, stand-by,
+- 98 tests réussis et build de production réussi : moteur existant, exclusions, tarifs d'opérations, stand-by,
   totaux, ajout/modification de frais, indépendance des projets/mois et
-  enregistrement préalable d'une fiche mensuelle.
+  création automatique d'une fiche mensuelle, références par contenu,
+  devises séparées et lignes brutes.
 - Navigateur : exclusion d'une journée 10 955 → 8 555 €, création d'une
   opération à 2 500 € sans modifier le statut projet, navigation clavier des
   onglets, rendu du vrai PDF et téléchargements PDF/ZIP.
 - PDF fusionné vérifié : 3 pages. ZIP vérifié : synthèse et 2 justificatifs.
 - Console finale : aucune erreur ni avertissement sur le parcours vérifié.
 - Petits écrans : pas de débordement horizontal de page ; menu corrigé.
+- Justificatif image : ajout et ouverture d'un PNG local vérifiés.
+- Saisie brute : ajout de 2 × 62,50 €, total passant à 11 080,00 €,
+  [preuve interactive](./evidence/billing-raw.jpg).
+
+L'export a été recontrôlé après intégration de `origin/main` du 8 octobre
+(`474670c`) : modèle PDF bleu courant et téléchargement avec les deux annexes.
+Les références client sont maintenant conservées par projet et combinaison de
+sections. Ajouter/Aperçu/Exporter restent disponibles sur un nouveau mois et
+créent sa fiche. La saisie brute reste accessible dans le menu Ajouter ; elle
+apparaît en quatrième section lorsqu'elle contient des lignes. Ces fonctions
+préservent l'état initial représenté par la maquette.
 
 Les accès des vrais profils, synchronisations et documents contractuels complets
 ne sont pas exercés par ce prototype isolé. Ils ne sont pas modifiés ; le rapport

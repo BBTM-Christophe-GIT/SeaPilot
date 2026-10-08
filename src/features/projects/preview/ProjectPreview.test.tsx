@@ -65,28 +65,47 @@ describe('interactive project billing preview', () => {
     expect(screen.getByRole('checkbox', { name: 'Inclure la journée du 2026-10-05' })).not.toBeChecked();
   });
 
-  it('requires saving a new monthly sheet before adding lines or exporting', async () => {
+  it('creates a month on the first addition and keeps references scoped to the project and PDF selection', async () => {
     const user = userEvent.setup();
     render(<ProjectPreview />);
     fireEvent.change(screen.getByLabelText('Mois de facturation'), { target: { value: '2026-11' } });
-    expect(screen.getByRole('button', { name: 'Ajouter' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Aperçu' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Exporter' })).toBeDisabled();
-    expect(screen.getByText('Enregistrez la fiche du mois avant d’ajouter des frais ou d’exporter.')).toBeInTheDocument();
-    await user.type(screen.getByLabelText('Référence client'), 'DEMO-NOVEMBRE');
-
-    await user.click(screen.getByRole('button', { name: 'Enregistrer' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Enregistrer les paramètres' }));
     expect(screen.getByRole('button', { name: 'Ajouter' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Aperçu' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Exporter' })).toBeEnabled();
 
+    await user.click(screen.getByRole('button', { name: 'Ajouter' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Ajouter un frais' }));
+    const dialog = screen.getByRole('dialog', { name: 'Ajouter un frais imputable' });
+    await user.type(within(dialog).getByLabelText('Fournisseur'), 'Fournisseur novembre');
+    await user.type(within(dialog).getByLabelText('Montant HT', { exact: true }), '125');
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // Custom DPR dates remain in October; the expense belongs to November.
+    expect(screen.getByTestId('billing-total')).toHaveTextContent(/9\s*725,00\s*€/);
+
+    await user.clear(screen.getByLabelText('Référence client'));
+    await user.type(screen.getByLabelText('Référence client'), 'DEMO-NOVEMBRE');
+    await user.tab();
     fireEvent.change(screen.getByLabelText('Mois de facturation'), { target: { value: '2026-10' } });
     expect(screen.getByTestId('billing-total')).toHaveTextContent(/10\s*955,00\s*€/);
-    expect(screen.getByLabelText('Référence client')).toHaveValue('DEMO-P264-2026');
+    expect(screen.getByLabelText('Référence client')).toHaveValue('DEMO-NOVEMBRE');
+
+    await user.click(screen.getByRole('button', { name: /^P263 — Remorquage côtier/ }));
+    expect(screen.getByLabelText('Référence client')).toHaveValue('DEMO-P263-2026');
+    await user.click(screen.getByRole('button', { name: /^P264 — Assistance offshore/ }));
+    expect(screen.getByLabelText('Référence client')).toHaveValue('DEMO-NOVEMBRE');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Inclure Prestations BBTM dans le PDF' }));
+    await user.clear(screen.getByLabelText('Référence client'));
+    await user.type(screen.getByLabelText('Référence client'), 'DEMO-SANS-BBTM');
+    await user.tab();
+    await user.click(screen.getByRole('checkbox', { name: 'Inclure Prestations BBTM dans le PDF' }));
+    expect(screen.getByLabelText('Référence client')).toHaveValue('DEMO-NOVEMBRE');
+
     fireEvent.change(screen.getByLabelText('Mois de facturation'), { target: { value: '2026-11' } });
     expect(screen.getByRole('button', { name: 'Ajouter' })).toBeEnabled();
     expect(screen.getByLabelText('Référence client')).toHaveValue('DEMO-NOVEMBRE');
+    expect(screen.getByTestId('billing-total')).toHaveTextContent(/9\s*725,00\s*€/);
   });
 
   it('adds an expense through the command bar and exposes its supplier and new total', async () => {
@@ -106,6 +125,32 @@ describe('interactive project billing preview', () => {
     const row = screen.getByRole('row', { name: /Fournisseur test local.*TEST-125/ });
     expect(within(row).getByText('125,00 €')).toBeInTheDocument();
     expect(within(row).getByRole('radio', { name: 'Sélectionner Fournisseur test local' })).toBeChecked();
+    expect(screen.getByTestId('billing-total')).toHaveTextContent(/11\s*080,00\s*€/);
+  });
+
+  it('adds a raw billing line through the command bar and includes its amount in the total', async () => {
+    const user = userEvent.setup();
+    render(<ProjectPreview />);
+    await user.click(screen.getByRole('button', { name: 'Ajouter' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Ajouter une ligne brute' }));
+    const dialog = screen.getByRole('dialog', { name: 'Ajouter une ligne brute' });
+    await user.type(within(dialog).getByLabelText('Désignation libre'), 'Assistance brute locale');
+    fireEvent.change(within(dialog).getByLabelText('Date'), { target: { value: '2026-10-08' } });
+    await user.selectOptions(within(dialog).getByLabelText('Navire'), 'GOURY');
+    const quantity = within(dialog).getByLabelText('Quantité');
+    await user.clear(quantity);
+    await user.type(quantity, '2');
+    const unitAmount = within(dialog).getByLabelText('Prix unitaire HT');
+    await user.clear(unitAmount);
+    await user.type(unitAmount, '62.5');
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const rawSection = screen.getByRole('button', { name: /^Saisie brute/ });
+    if (rawSection.getAttribute('aria-expanded') !== 'true') await user.click(rawSection);
+    const row = screen.getByRole('row', { name: /Assistance brute locale/ });
+    expect(within(row).getByText('GOURY')).toBeInTheDocument();
+    expect(within(row).getByText('125,00 €')).toBeInTheDocument();
     expect(screen.getByTestId('billing-total')).toHaveTextContent(/11\s*080,00\s*€/);
   });
 });

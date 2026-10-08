@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { billingOperationRows, billingServicesTotal } from '../projectBilling';
+import { billingOperationRows, billingServicesTotal, type ProjectBillingRawLine } from '../projectBilling';
 import {
   INITIAL_BILLING_OPTIONS,
   billingDemoRange,
@@ -112,5 +112,64 @@ describe('project billing interactive preview', () => {
     expect(billingDemoRange({ ...INITIAL_BILLING_OPTIONS, periodMode: 'calendar-month' })).toEqual({ startDate: '2026-10-01', endDate: '2026-10-31' });
     expect(billingDemoRange({ ...INITIAL_BILLING_OPTIONS, month: '2028-02', periodMode: 'calendar-month' })).toEqual({ startDate: '2028-02-01', endDate: '2028-02-29' });
     expect(billingDemoRange({ ...INITIAL_BILLING_OPTIONS, month: '2026-13', periodMode: 'calendar-month' })).toEqual({ startDate: '', endDate: '' });
+  });
+
+  it('keeps currency totals separate in both mixed-expense and foreign-hire scenarios', () => {
+    const demo = createDemoProjects()[0];
+    demo.expenses[0].currency = ' usd ';
+    let view = buildBillingView(demo, INITIAL_BILLING_OPTIONS);
+    expect([...view.totalsByCurrency]).toEqual([['EUR', 10280], ['USD', 675]]);
+    expect([...view.expenseTotalsByCurrency]).toEqual([['USD', 675], ['EUR', 340]]);
+    expect(view.totalHt).toBe(10280);
+    demo.contract.hireCurrency = 'GBP';
+    view = buildBillingView(demo, INITIAL_BILLING_OPTIONS);
+    expect([...view.totalsByCurrency]).toEqual([['EUR', 680], ['GBP', 9600], ['USD', 675]]);
+    expect(view.totalHt).toBe(680);
+    demo.period.includeExpensesInPdf = false;
+    expect([...buildBillingView(demo, INITIAL_BILLING_OPTIONS).totalsByCurrency]).toEqual([['EUR', 340], ['GBP', 9600]]);
+  });
+
+  it('calculates selected raw lines with production rounding and the saved month/date boundaries', () => {
+    const demo = createDemoProjects()[0];
+    const line: ProjectBillingRawLine = {
+      id: 1, billingPeriodId: demo.period.id, serviceCatalogId: null,
+      vesselName: 'JERSEY', vesselId: 2, serviceDate: '2026-10-07', designation: 'Service local', unitAmountHt: 15, quantity: 0.333,
+    };
+    demo.rawLines = [line, { ...line, id: 2, unitAmountHt: 0.1, quantity: 3 },
+      { ...line, id: 3, serviceDate: '2026-10-09', unitAmountHt: 1000 },
+      { ...line, id: 4, billingPeriodId: 999, unitAmountHt: 1000 }];
+    let view = buildBillingView(demo, INITIAL_BILLING_OPTIONS);
+    // Raw rows retain each vessel's assignment; the existing panel only filters their dates.
+    expect(view.rawLines.map((item) => item.id)).toEqual([1, 2]);
+    expect(view.rawTotal).toBe(5.3);
+    expect(view.totalHt).toBe(10960.3);
+    expect(view.exportInput.rawLines).toEqual(view.rawLines);
+    demo.period.includeRawInPdf = false;
+    view = buildBillingView(demo, INITIAL_BILLING_OPTIONS);
+    expect(view.rawLines).toHaveLength(2);
+    expect(view.selectedRawLines).toHaveLength(0);
+    expect(view.rawTotal).toBe(0);
+    expect(view.totalHt).toBe(10955);
+  });
+
+  it('uses full-month weather DPRs for automatic P144 quantities even in a short export range', () => {
+    const demo = createDemoProjects()[0];
+    demo.project.projectCode = 'P144';
+    demo.services[0].category = 'SPREAD ANTIPOLLUTION';
+    demo.services[0].quantity = 1;
+    demo.dprs.push({ ...demo.dprs[0], id: 99, reportDate: '2026-10-20', operation: '24/24 Weather Stand-by' });
+    const view = buildBillingView(demo, INITIAL_BILLING_OPTIONS);
+    expect(view.rows).toHaveLength(4);
+    expect(view.services[0].quantity).toBe(30);
+    expect(view.serviceTotal).toBe(2550);
+    expect(view.exportInput.monthlyDprs).toHaveLength(7);
+    expect(demo.services[0].quantity).toBe(1);
+    expect(view.totalHt).toBe(13165);
+    demo.period.includeBbtmInPdf = false;
+    const excluded = buildBillingView(demo, INITIAL_BILLING_OPTIONS);
+    expect(excluded.services).toHaveLength(1);
+    expect(excluded.services[0].quantity).toBe(30);
+    expect(excluded.serviceTotal).toBe(0);
+    expect(excluded.totalHt).toBe(10615);
   });
 });

@@ -1,8 +1,11 @@
 import {
+  billingExportRawLines,
+  billingExportServices,
   billingInvoiceTotal,
   billingOperationKey,
   billingOperationRows,
   billingServicesTotal,
+  billingRawLinesTotal,
   completeBillingDprs,
   missingBillingDates,
   type BillingExportInput,
@@ -10,6 +13,7 @@ import {
   type BillingPeriodMode,
   type ProjectBillingDpr,
   type ProjectBillingPeriod,
+  type ProjectBillingRawLine,
   type ProjectBillingService,
   type ProjectChargeableExpense,
 } from '../projectBilling';
@@ -38,6 +42,7 @@ export interface DemoProject {
   period: ProjectBillingPeriod;
   expenses: DemoExpense[];
   services: ProjectBillingService[];
+  rawLines: ProjectBillingRawLine[];
 }
 
 export interface BillingDemoOptions {
@@ -63,9 +68,15 @@ export interface BillingDemoView {
   selectedRows: BillingDemoRow[];
   expenses: DemoExpense[];
   services: ProjectBillingService[];
+  rawLines: ProjectBillingRawLine[];
+  selectedRawLines: ProjectBillingRawLine[];
   operationTotal: number;
   expenseTotal: number;
   serviceTotal: number;
+  rawTotal: number;
+  totalsByCurrency: Map<string, number>;
+  expenseTotalsByCurrency: Map<string, number>;
+  /** EUR subtotal, retained for the initial EUR-only demonstration. */
   totalHt: number;
   missingDates: string[];
   exportInput: BillingExportInput;
@@ -209,6 +220,7 @@ function makePeriod(projectId: number): ProjectBillingPeriod {
     includeOperationsInPdf: true,
     includeExpensesInPdf: true,
     includeBbtmInPdf: true,
+    includeRawInPdf: true,
     excludedOperationKeys: [],
   };
 }
@@ -290,6 +302,7 @@ export const DEMO_PROJECTS: DemoProject[] = [
       quantity: 4,
       includeInPdf: true,
     }],
+    rawLines: [],
   },
   {
     project: { ...makeProject(263, 'Remorquage côtier', 'Client Atlantique', 'Non validé'), contractType: 'Remorquage' },
@@ -299,6 +312,7 @@ export const DEMO_PROJECTS: DemoProject[] = [
     period: makePeriod(263),
     expenses: [],
     services: [],
+    rawLines: [],
   },
   {
     project: makeProject(262, 'Inspection de quai', 'Client Littoral', 'Facturé'),
@@ -311,6 +325,7 @@ export const DEMO_PROJECTS: DemoProject[] = [
     period: makePeriod(262),
     expenses: [],
     services: [],
+    rawLines: [],
   },
 ];
 
@@ -327,6 +342,35 @@ export function billingDemoRange(options: BillingDemoOptions): { startDate: stri
   const [year, month] = options.month.split('-').map(Number);
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   return { startDate: `${options.month}-01`, endDate: `${options.month}-${lastDay}` };
+}
+
+function currencyCode(currency: string): string {
+  return currency.trim().toUpperCase() || 'EUR';
+}
+
+function expenseCurrencyTotals(input: BillingExportInput): Map<string, number> {
+  const totals = new Map<string, number>();
+  if (input.period.includeExpensesInPdf !== false) {
+    input.expenses.filter((expense) => expense.includeInPdf !== false).forEach((expense) => {
+      const currency = currencyCode(expense.currency);
+      totals.set(currency, (totals.get(currency) || 0) + expense.amountHt);
+    });
+  }
+  return totals;
+}
+
+/** Same currency grouping as generateBillingPdf: no exchange rate or mixed-currency sum. */
+export function billingCurrencyTotals(input: BillingExportInput): Map<string, number> {
+  const totals = expenseCurrencyTotals(input);
+  const add = (currency: string, amount: number) => totals.set(currency, (totals.get(currency) || 0) + amount);
+  if (input.period.includeOperationsInPdf !== false) {
+    add(currencyCode(input.contract?.hireCurrency || 'EUR'), billingOperationRows(input).reduce((sum, row) => sum + row.amountHt, 0));
+  }
+  const servicesTotal = billingServicesTotal(billingExportServices(input));
+  const rawLines = billingExportRawLines(input);
+  if (servicesTotal || rawLines.length) add('EUR', servicesTotal + billingRawLinesTotal(rawLines));
+  if (!totals.size) totals.set('EUR', 0);
+  return new Map([...totals].sort(([left], [right]) => left.localeCompare(right)).map(([currency, amount]) => [currency, Number(amount.toFixed(2))]));
 }
 
 /**
@@ -347,6 +391,7 @@ export function buildBillingView(demo: DemoProject, options: BillingDemoOptions)
       includeOperationsInPdf: true,
       includeExpensesInPdf: true,
       includeBbtmInPdf: true,
+      includeRawInPdf: true,
     }),
   };
   const vesselName = options.vesselName.trim().toLocaleUpperCase('fr-FR');
@@ -368,6 +413,15 @@ export function buildBillingView(demo: DemoProject, options: BillingDemoOptions)
   const services = selectedPeriodMatches
     ? demo.services.filter((service) => service.billingPeriodId === demo.period.id)
     : [];
+  // Raw services may cover several vessels in one month; like the existing panel,
+  // they follow the date range and retain their explicit vessel assignment.
+  const rawLines = selectedPeriodMatches && validRange
+    ? demo.rawLines.filter((line) => line.billingPeriodId === demo.period.id && line.serviceDate >= startDate && line.serviceDate <= endDate)
+    : [];
+  const monthRange = billingDemoRange({ ...options, periodMode: 'calendar-month' });
+  const monthlyDprs = demo.dprs.filter((dpr) => dpr.reportDate >= monthRange.startDate
+    && dpr.reportDate <= monthRange.endDate
+    && (!vesselName || dpr.vesselName.trim().toLocaleUpperCase('fr-FR') === vesselName));
   const exportInput: BillingExportInput = {
     project: demo.project,
     contract: demo.contract,
@@ -375,8 +429,10 @@ export function buildBillingView(demo: DemoProject, options: BillingDemoOptions)
     period,
     expenses,
     services,
+    rawLines,
     includeBbtmService: period.includeBbtmInPdf !== false,
     dprs,
+    monthlyDprs,
     selectedVesselName: options.vesselName || demo.project.primaryVesselName,
     startDate,
     endDate,
@@ -395,19 +451,34 @@ export function buildBillingView(demo: DemoProject, options: BillingDemoOptions)
   const expenseTotal = period.includeExpensesInPdf === false
     ? 0
     : expenses.filter((expense) => expense.includeInPdf !== false).reduce((sum, expense) => sum + expense.amountHt, 0);
-  const selectedServices = period.includeBbtmInPdf === false ? [] : services.filter((service) => service.includeInPdf !== false);
+  const selectedServices = billingExportServices(exportInput);
+  const displayServices = billingExportServices({
+    ...exportInput,
+    includeBbtmService: true,
+    period: { ...period, includeBbtmInPdf: true },
+  });
   const serviceTotal = billingServicesTotal(selectedServices);
+  const selectedRawLines = billingExportRawLines(exportInput);
+  const rawTotal = billingRawLinesTotal(selectedRawLines);
+  const expenseTotalsByCurrency = expenseCurrencyTotals(exportInput);
   return {
     startDate,
     endDate,
     rows,
     selectedRows,
     expenses,
-    services,
+    services: displayServices,
+    rawLines,
+    selectedRawLines,
     operationTotal,
     expenseTotal,
     serviceTotal,
-    totalHt: billingInvoiceTotal(operationTotal, expenseTotal, selectedServices, period.includeBbtmInPdf !== false),
+    rawTotal,
+    expenseTotalsByCurrency,
+    totalsByCurrency: billingCurrencyTotals(exportInput),
+    totalHt: billingInvoiceTotal(currencyCode(demo.contract.hireCurrency) === 'EUR' ? operationTotal : 0,
+      expenseTotalsByCurrency.get('EUR') || 0, selectedServices, period.includeBbtmInPdf !== false,
+      selectedRawLines, period.includeRawInPdf !== false),
     missingDates,
     exportInput,
   };

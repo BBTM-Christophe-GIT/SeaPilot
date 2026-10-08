@@ -391,6 +391,9 @@ body.pp-preview-page {
 .pp-app .pp-accordion .pp-table td { font-size: 13px; padding-top: 5px; padding-bottom: 5px; }
 .pp-app .pp-accordion .pp-table th { font-size: 12px; }
 .pp-app .pp-accordion-header > button, .pp-app .pp-accordion-header strong { font-size: 15px; }
+.pp-app .pp-accordion-header > strong { white-space: normal; max-width: 50%; text-align: right; }
+.pp-app .pp-total strong { white-space: normal; }
+.pp-app .pp-total > span:last-child { max-width: 100%; margin-left: auto; text-align: right; }
 .pp-app .pp-topbar .pp-button { min-height: 32px; }
 .pp-app .pp-dialog-header .pp-button { min-height: 30px; }
 .pp-app .pp-table .pp-button.icon { min-height: 27px; }
