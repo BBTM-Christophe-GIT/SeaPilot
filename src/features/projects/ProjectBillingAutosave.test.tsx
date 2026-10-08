@@ -135,6 +135,86 @@ describe('automatic monthly billing creation', () => {
     expect(mocks.savePeriod).not.toHaveBeenCalled();
   });
 
+  it.each([true, false])('uses the canonical period contents when another session created the month (scoped reference present: %s)', async hasScopedReference => {
+    mocks.references.mockResolvedValue([
+      { id: 1, scope: 7, reference: 'REF-ALL' },
+      ...(hasScopedReference ? [{ id: 2, scope: 5, reference: 'REF-SANS-FRAIS' }] : []),
+    ]);
+    const canonicalPeriod = period({ includeExpensesInPdf: false, clientReference: 'REF-CANONIQUE', invoiceNumber: 'F77', amountHt: 7700 });
+    mocks.ensurePeriod.mockResolvedValue(canonicalPeriod);
+    mocks.savePeriod.mockResolvedValue(canonicalPeriod);
+    const user = userEvent.setup();
+    render(panel());
+    await ready();
+    await waitFor(() => expect(screen.getByLabelText('Référence client')).toHaveValue('REF-ALL'));
+    await user.click(screen.getByRole('button', { name: 'Actualiser l’aperçu' }));
+    expect(await screen.findByText('PDF de recette')).toBeVisible();
+    expect(mocks.export.mock.calls[0][1].period).toEqual(expect.objectContaining({
+      id: 10, includeOperationsInPdf: true, includeExpensesInPdf: false, includeBbtmInPdf: true,
+      clientReference: hasScopedReference ? 'REF-SANS-FRAIS' : 'REF-CANONIQUE', invoiceNumber: 'F77', amountHt: 7700,
+    }));
+    expect(screen.getByLabelText('Numéro de facture')).toHaveValue('F77');
+    expect(screen.getByLabelText('Montant facturé HT')).toHaveValue(7700);
+    await user.click(screen.getByRole('button', { name: 'Actualiser l’aperçu' }));
+    await waitFor(() => expect(mocks.export).toHaveBeenCalledTimes(2));
+    expect(mocks.export.mock.calls[1][1].period).toEqual(expect.objectContaining({
+      clientReference: hasScopedReference ? 'REF-SANS-FRAIS' : 'REF-CANONIQUE', invoiceNumber: 'F77', amountHt: 7700,
+    }));
+    expect(mocks.ensurePeriod).toHaveBeenCalledTimes(1);
+    expect(mocks.savePeriod).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer la fiche du mois' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la fiche du mois' }));
+    await waitFor(() => expect(mocks.savePeriod).toHaveBeenCalledWith(client, 145, expect.objectContaining({
+      periodMonth: '2026-09', invoiceNumber: 'F77', amountHt: 7700,
+      includeOperationsInPdf: true, includeExpensesInPdf: false, includeBbtmInPdf: true,
+    })));
+  });
+
+  it('uses a canonical legacy reference for the same PDF contents on the first and second preview', async () => {
+    mocks.ensurePeriod.mockResolvedValue(period({ clientReference: 'REF-CANONIQUE' }));
+    const user = userEvent.setup();
+    render(panel());
+    await ready();
+    expect(screen.getByLabelText('Référence client')).toHaveValue('');
+    await user.click(screen.getByRole('button', { name: 'Actualiser l’aperçu' }));
+    expect(await screen.findByText('PDF de recette')).toBeVisible();
+    expect(mocks.export.mock.calls[0][1].period.clientReference).toBe('REF-CANONIQUE');
+    expect(screen.getByLabelText('Référence client')).toHaveValue('REF-CANONIQUE');
+    await user.click(screen.getByRole('button', { name: 'Actualiser l’aperçu' }));
+    await waitFor(() => expect(mocks.export).toHaveBeenCalledTimes(2));
+    expect(mocks.export.mock.calls[1][1].period.clientReference).toBe('REF-CANONIQUE');
+    expect(mocks.ensurePeriod).toHaveBeenCalledTimes(1);
+    expect(mocks.savePeriod).not.toHaveBeenCalled();
+  });
+
+  it('keeps edited invoice fields and an explicitly cleared comment while hydrating untouched dates from another session', async () => {
+    const canonicalPeriod = period({
+      invoiceNumber: 'F77', amountHt: 7700, comments: 'Commentaire canonique',
+      invoiceIssuedOn: '2026-09-30', invoiceSentOn: '2026-10-01', paymentDueOn: '2026-10-30', paidOn: '2026-10-05',
+    });
+    mocks.ensurePeriod.mockResolvedValue(canonicalPeriod);
+    const user = userEvent.setup();
+    render(panel());
+    await ready();
+    fireEvent.change(screen.getByLabelText('Numéro de facture'), { target: { value: 'LOCAL-F1' } });
+    fireEvent.change(screen.getByLabelText('Montant facturé HT'), { target: { value: '123' } });
+    fireEvent.change(screen.getByLabelText('Commentaires'), { target: { value: 'Commentaire local' } });
+    fireEvent.change(screen.getByLabelText('Commentaires'), { target: { value: '' } });
+    await user.click(screen.getByRole('button', { name: 'Actualiser l’aperçu' }));
+    expect(await screen.findByText('PDF de recette')).toBeVisible();
+    expect(screen.getByLabelText('Numéro de facture')).toHaveValue('LOCAL-F1');
+    expect(screen.getByLabelText('Montant facturé HT')).toHaveValue(123);
+    expect(screen.getByLabelText('Commentaires')).toHaveValue('');
+    expect(screen.getByLabelText('Date d’émission')).toHaveValue('2026-09-30');
+    expect(screen.getByLabelText('Envoyée le')).toHaveValue('2026-10-01');
+    expect(screen.getByLabelText('Échéance')).toHaveValue('2026-10-30');
+    expect(screen.getByLabelText('Réglée le')).toHaveValue('2026-10-05');
+    expect(mocks.export.mock.calls[0][1].period).toEqual(expect.objectContaining({
+      invoiceNumber: 'F77', amountHt: 7700, comments: 'Commentaire canonique',
+    }));
+    expect(mocks.savePeriod).not.toHaveBeenCalled();
+  });
+
   it('creates a missing period when changing PDF contents using only the selection API', async () => {
     const user = userEvent.setup();
     render(panel());

@@ -224,6 +224,7 @@ export function ProjectBillingPanel({
   const contextRevision = useRef(0);
   const referenceContext = useRef<{ client: SupabaseClient; projectId: number } | null>({ client, projectId: project.id });
   const autoCreatedPeriodId = useRef<number | null>(null);
+  const editedInvoiceFields = useRef(new Set<keyof BillingPeriodDraft>());
   const pendingPeriods = useRef(new Map<string, Promise<ProjectBillingPeriod>>());
   const referenceQueue = useRef<Promise<void>>(Promise.resolve());
   const pendingReferences = useRef(new Map<string, { value: string; promise: Promise<void> }>());
@@ -260,6 +261,7 @@ export function ProjectBillingPanel({
     contextRevision.current += 1;
     pendingPeriods.current.clear();
     autoCreatedPeriodId.current = null;
+    editedInvoiceFields.current.clear();
     const month = initialMonth?.slice(0, 7) || currentMonth();
     setData(EMPTY_DATA);
     setReferences([]);
@@ -343,7 +345,7 @@ export function ProjectBillingPanel({
   }));
   const referenceScope = billingReferenceScope(selectedPeriod || periodDraft);
   const savedReference = references.find((reference) => reference.scope === referenceScope);
-  const exportReference = referenceDrafts[referenceScope] ?? savedReference?.reference ?? (legacyReferenceScope === referenceScope || legacyReferenceScope === null ? periodDraft.clientReference : '');
+  const exportReference = referenceDrafts[referenceScope] ?? savedReference?.reference ?? (legacyReferenceScope === referenceScope || legacyReferenceScope === null ? selectedPeriod?.clientReference || periodDraft.clientReference : '');
   function storeReference(automatic = false): Promise<void> {
     if (!isManager || !exportReference.trim() || (automatic && referenceDrafts[referenceScope] === undefined)) return Promise.resolve();
     const value = exportReference.trim();
@@ -434,6 +436,7 @@ export function ProjectBillingPanel({
   function selectMonth(month: string) {
     contextRevision.current += 1;
     autoCreatedPeriodId.current = null;
+    editedInvoiceFields.current.clear();
     setBusy('');
     setError('');
     setMessage('');
@@ -450,6 +453,11 @@ export function ProjectBillingPanel({
     setPreviewBlob(null);
   }
 
+  function editInvoiceDraft(changes: Partial<BillingPeriodDraft>) {
+    for (const field of Object.keys(changes) as (keyof BillingPeriodDraft)[]) editedInvoiceFields.current.add(field);
+    setPeriodDraft((current) => ({ ...current, ...changes }));
+  }
+
   async function getOrCreatePeriod(draft = periodDraft): Promise<ProjectBillingPeriod> {
     if (selectedPeriod) return selectedPeriod;
     if (!isManager) throw new Error('Aucune fiche de facturation n’est disponible pour ce mois.');
@@ -464,6 +472,10 @@ export function ProjectBillingPanel({
       const saved = await request;
       if (revision !== contextRevision.current) throw new Error('Le mois ou le projet a changé.');
       autoCreatedPeriodId.current = saved.id;
+      setPeriodDraft((current) => ({
+        ...billingDraft(project, saved),
+        ...Object.fromEntries([...editedInvoiceFields.current].map((field) => [field, current[field]])),
+      }));
       setData((current) => ({ ...current, periods: [saved, ...current.periods.filter((period) => period.id !== saved.id && period.periodMonth.slice(0, 7) !== saved.periodMonth.slice(0, 7))] }));
       return saved;
     } finally {
@@ -551,6 +563,7 @@ export function ProjectBillingPanel({
         periods: [saved, ...current.periods.filter((period) => period.id !== saved.id)],
       }));
       setPeriodDraft({ ...billingDraft(project, saved), periodMonth: savedMonth });
+      editedInvoiceFields.current.clear();
       setMessage('Paramètres du mois enregistrés.');
     } catch (caught) {
       if (revision !== contextRevision.current) return;
@@ -791,11 +804,16 @@ export function ProjectBillingPanel({
       const period = await getOrCreatePeriod();
       await storeReference(true);
       if (revision !== contextRevision.current) return;
+      // A concurrent creation may have saved a different PDF selection.
+      const periodReferenceScope = billingReferenceScope(period);
+      const periodReference = referenceDrafts[periodReferenceScope]
+        ?? references.find((reference) => reference.scope === periodReferenceScope)?.reference
+        ?? (legacyReferenceScope === periodReferenceScope || legacyReferenceScope === null ? period.clientReference || defaultProjectClientReference(project) : '');
       const result = await generateBillingExportPackage(client, {
         project,
         contract,
         operations,
-        period: { ...period, clientReference: exportReference || '—' },
+        period: { ...period, clientReference: periodReference || '—' },
         expenses: periodExpenses,
         services: serviceForExport,
         includeBbtmService: period.includeBbtmInPdf !== false,
@@ -892,13 +910,13 @@ export function ProjectBillingPanel({
       {visibleSections.billingElements ? <article id="billing-view-followup" className="project-billing-card" hidden={workspace && billingView !== 'followup'}>
         <header><ReceiptText size={20} /><strong>Suivi de la facture du mois</strong></header>
         <div className="project-billing-export-controls">
-          <label>Numéro de facture<input disabled={!isManager || Boolean(busy)} value={periodDraft.invoiceNumber} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, invoiceNumber: event.target.value }))} /></label>
-          <label>Date d’émission<input type="date" disabled={!isManager || Boolean(busy)} value={periodDraft.invoiceIssuedOn} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, invoiceIssuedOn: event.target.value }))} /></label>
-          <label>Envoyée le<input type="date" disabled={!isManager || Boolean(busy)} value={periodDraft.invoiceSentOn} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, invoiceSentOn: event.target.value }))} /></label>
-          <label>Échéance<input type="date" disabled={!isManager || Boolean(busy)} value={periodDraft.paymentDueOn} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, paymentDueOn: event.target.value }))} /></label>
-          <label>Réglée le<input type="date" disabled={!isManager || Boolean(busy)} value={periodDraft.paidOn} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, paidOn: event.target.value }))} /></label>
-          <label>Montant facturé HT<input type="number" min="0" step="0.01" disabled={!isManager || Boolean(busy)} value={periodDraft.amountHt} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, amountHt: Number(event.target.value) }))} /></label>
-          <label>Commentaires<textarea disabled={!isManager || Boolean(busy)} value={periodDraft.comments} onChange={(event) => setPeriodDraft((draft) => ({ ...draft, comments: event.target.value }))} /></label>
+          <label>Numéro de facture<input disabled={!isManager || Boolean(busy)} value={periodDraft.invoiceNumber} onChange={(event) => editInvoiceDraft({ invoiceNumber: event.target.value })} /></label>
+          <label>Date d’émission<input type="date" disabled={!isManager || Boolean(busy)} value={periodDraft.invoiceIssuedOn} onChange={(event) => editInvoiceDraft({ invoiceIssuedOn: event.target.value })} /></label>
+          <label>Envoyée le<input type="date" disabled={!isManager || Boolean(busy)} value={periodDraft.invoiceSentOn} onChange={(event) => editInvoiceDraft({ invoiceSentOn: event.target.value })} /></label>
+          <label>Échéance<input type="date" disabled={!isManager || Boolean(busy)} value={periodDraft.paymentDueOn} onChange={(event) => editInvoiceDraft({ paymentDueOn: event.target.value })} /></label>
+          <label>Réglée le<input type="date" disabled={!isManager || Boolean(busy)} value={periodDraft.paidOn} onChange={(event) => editInvoiceDraft({ paidOn: event.target.value })} /></label>
+          <label>Montant facturé HT<input type="number" min="0" step="0.01" disabled={!isManager || Boolean(busy)} value={periodDraft.amountHt} onChange={(event) => editInvoiceDraft({ amountHt: Number(event.target.value) })} /></label>
+          <label>Commentaires<textarea disabled={!isManager || Boolean(busy)} value={periodDraft.comments} onChange={(event) => editInvoiceDraft({ comments: event.target.value })} /></label>
           {isManager ? <button type="button" disabled={Boolean(busy)} onClick={() => void savePeriod()}>Enregistrer la fiche du mois</button> : null}
         </div>
         <div className="project-billing-export-controls"><strong>Factures et exports conservés</strong>
