@@ -113,6 +113,9 @@ describe('planning timeline rules', () => {
     expect(planningStatusDisplayLabel('Vacances')).toBe('Congés');
     expect(normalizePlanningStatus('Congés')).toBe('Vacance');
     expect(planningStatusTone('Congés')).toBe('vacation');
+    expect(normalizePlanningStatus('congé paternité')).toBe('Congés Paternités');
+    expect(planningStatusDisplayLabel('Congés Paternités')).toBe('Congés Paternités');
+    expect(planningStatusTone('Congés Paternités')).toBe('vacation');
     expect(normalizePlanningStatus(' rtt ')).toBe('RTT');
     expect(planningStatusDisplayLabel('RTT')).toBe('RTT');
     expect(planningStatusTone('RTT')).toBe('rest');

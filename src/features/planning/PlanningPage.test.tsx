@@ -1674,7 +1674,7 @@ describe('PlanningPage cockpit', () => {
     expect(within(calendarBody).queryByText('Cherbourg')).not.toBeInTheDocument();
   });
 
-  it('edits a health status and a different short text on each colored assignment day', async () => {
+  it.each(['Accident du Travail', 'Congés Paternités'])('edits %s and a short text on a colored assignment day', async (status) => {
     const user = userEvent.setup();
     const assignmentNoteRow = {
       ...planningDayRow,
@@ -1711,8 +1711,9 @@ describe('PlanningPage cockpit', () => {
     expect(within(dialog).getByRole('radio', { name: 'Congés' })).toBeInTheDocument();
     expect(within(dialog).getByRole('radio', { name: 'Arrêt Maladie' })).toBeInTheDocument();
     expect(within(dialog).getByRole('radio', { name: 'Accident du Travail' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: 'Congés Paternités' })).toBeInTheDocument();
     expect(within(dialog).queryByText(/^Vacance$/)).not.toBeInTheDocument();
-    await user.click(within(dialog).getByText('Accident du Travail'));
+    await user.click(within(dialog).getByRole('radio', { name: status }));
     const noteInput = within(dialog).getByLabelText('Commentaire');
     await user.clear(noteInput);
     await user.type(noteInput, 'Le Havre');
@@ -1721,13 +1722,13 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('save_planning_assignment_day_state', {
       p_assignment_id: 100,
       p_work_date: '2026-07-14',
-      p_status: 'Accident du Travail',
+      p_status: status,
       p_note: 'Le Havre',
     }));
-    expect(await screen.findByText('Accident du Travail enregistré pour Paul DURAND le 14/07/2026.')).toBeInTheDocument();
+    expect(await screen.findByText(`${status} ${status === 'Congés Paternités' ? 'enregistrés' : 'enregistré'} pour Paul DURAND le 14/07/2026.`)).toBeInTheDocument();
   });
 
-  it('applies a group status through one RPC while keeping the original assignment dates', async () => {
+  it.each(['Repos', 'Congés Paternités'])('applies %s to a group through one RPC while keeping the original assignment dates', async (status) => {
     const user = userEvent.setup();
     const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], periods: [], days: [] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
@@ -1735,19 +1736,19 @@ describe('PlanningPage cockpit', () => {
     fireEvent.contextMenu(cell);
     const dialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
     await user.click(within(dialog).getByRole('button', { name: 'Tout le groupe de cases' }));
-    await user.click(within(dialog).getByRole('radio', { name: 'Repos' }));
+    await user.click(within(dialog).getByRole('radio', { name: status }));
     await user.type(within(dialog).getByLabelText('Commentaire'), 'Escale');
     await user.click(within(dialog).getByRole('button', { name: 'Appliquer à la période' }));
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('save_planning_assignment_day_states', {
       p_assignment_id: 100,
       p_starts_on: assignmentOverviewRow.starts_on,
       p_ends_on: assignmentOverviewRow.ends_on,
-      p_status: 'Repos',
+      p_status: status,
       p_note: 'Escale',
     }));
     expect(rpc.mock.calls.filter(([name]) => name === 'save_planning_assignment_day_states')).toHaveLength(1);
     expect(rpc.mock.calls.some(([name]) => name === 'save_planning_assignment_day_state')).toBe(false);
-    expect(await screen.findByText('Repos enregistré pour Paul DURAND sur toute la période.')).toBeInTheDocument();
+    expect(await screen.findByText(`${status} ${status === 'Congés Paternités' ? 'enregistrés' : 'enregistré'} pour Paul DURAND sur toute la période.`)).toBeInTheDocument();
   });
 
   it.each(['day', 'group'])('saves a temporary function for the selected %s without editing the parent assignment or RH', async (scope) => {

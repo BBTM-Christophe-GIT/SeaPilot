@@ -26,6 +26,17 @@ describe('Planning grid editing helpers', () => {
   it('keeps health-related daily statuses when reading the grid', () => {
     expect(normalizePlanningGridStatus('Arrêt Maladie', 'GOURY')).toBe('Arrêt Maladie');
     expect(normalizePlanningGridStatus('Accident du Travail', 'GOURY')).toBe('Accident du Travail');
+    expect(normalizePlanningGridStatus('Congés Paternités', 'GOURY')).toBe('Congés Paternités');
+  });
+
+  it('preserves paternity leave and its comment when copying to another date', () => {
+    const pasted = buildPlanningGridPaste(
+      [cell('source', '2026-10-08', 'Congés Paternités', 'Naissance')],
+      [cell('target', '2026-10-12', 'En Mer')],
+    );
+    expect(pasted).toEqual([expect.objectContaining({
+      laneKey: 'target', workDate: '2026-10-12', status: 'Congés Paternités', note: 'Naissance',
+    })]);
   });
 
   it('separates adjacent cells when status, comment or conflict state differs', () => {

@@ -157,6 +157,7 @@ describe('SILAE monthly service lines', () => {
     ['2026-08', 'En Mer', '31 jours sans repos'], ['2026-02', 'Repos', 'Février sans travail'],
     ['2028-02', 'En Mer', '29 jours'], ['2026-09', 'Arrêt Maladie', 'Statut à préciser'],
     ['2026-09', 'Accident du Travail', 'Statut à préciser'], ['2026-09', '', 'non renseigné'],
+    ['2026-09', 'Congés Paternités', 'Statut à préciser'],
   ])('blocks unspecified rule %s / %s', (month, status, expected) => {
     const range = silaeMonthRange(month);
     const result = buildSilaeEmployee(data([source(range.start, range.end, status)]), person, month);
