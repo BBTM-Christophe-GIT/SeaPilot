@@ -11,7 +11,7 @@ import { LiftingDueBadge, useLiftingToday } from '../lifting/LiftingLifecycle';
 import { saveLiftingBlob } from '../lifting/liftingPdf';
 import { LsaItemForm } from './LsaItemForm';
 import { LsaCatalogDialog } from './LsaCatalogDialog';
-import { blankLsaDraft, categorizeLsaItems, compareLsaNames, lsaTypeKey, lsaVersionStatus, matchesLsaItem, type LsaCatalog, type LsaItem } from './lsaModel';
+import { blankLsaDraft, canAddLsaItem, canManageLsaCatalog, categorizeLsaItems, compareLsaNames, lsaTypeKey, lsaVersionStatus, matchesLsaItem, type LsaCatalog, type LsaItem } from './lsaModel';
 import { downloadLsaDocument, fetchLsaCatalog, fetchLsaRegister, fetchLsaVessels, saveLsaItem } from './lsaQueries';
 import { createLsaPreviewClient } from './lsaPreview';
 import '../lifting/lifting.css';
@@ -35,10 +35,12 @@ export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: Ro
   const [openItemIds, setOpenItemIds] = useState<Set<number>>(() => new Set());
   const [preview] = useState(createLsaPreviewClient);
   const db = client || (context?.previewMode ? preview : context?.client) || supabase;
-  const administrator = (roles || context?.roles || []).includes('admin');
+  const profileRoles = roles || context?.roles || [];
+  const canAddItem = canAddLsaItem(profileRoles);
+  const canManageCatalog = canManageLsaCatalog(profileRoles);
   const [catalog, setCatalog] = useState<LsaCatalog>({ types: [], designations: [] });
   const [catalogOpen, setCatalogOpen] = useState(false);
-  const manager = canManageLifting(roles || context?.roles || []);
+  const manager = canManageLifting(profileRoles);
   const [vessels, setVessels] = useState<LiftingVessel[]>([]);
   const [vesselId, setVesselId] = useState(context?.liftingVesselId || 0);
   const [register, setRegister] = useState(emptyRegister);
@@ -148,8 +150,8 @@ export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: Ro
           <button type="button" aria-label="Inventaire" aria-pressed={view === 'inventory'} onClick={() => setView('inventory')}><Package size={22} /><span><strong>Inventaire</strong><small>Matériels et équipements</small></span><b>{loading ? '…' : items.length}</b></button>
           <button type="button" aria-label="Documents de contrôle" aria-pressed={view === 'reports'} onClick={() => setView('reports')}><FileCheck2 size={22} /><span><strong>Documents de contrôle</strong><small>Versions et historique</small></span><b>{loading ? '…' : fileCount}</b></button>
         </div>
-        {administrator && <button className="secondary-button" disabled={busy || loading} onClick={() => setCatalogOpen(true)}>Gérer les désignations</button>}
-        {manager && view === 'inventory' && <button className="secondary-button" disabled={busy || loading || !vesselId} onClick={() => { setError(''); setEditor({}); }}><Plus size={17} /> Ajouter un matériel</button>}
+        {canManageCatalog && <button className="secondary-button" disabled={busy || loading} onClick={() => setCatalogOpen(true)}>Gérer les désignations</button>}
+        {canAddItem && view === 'inventory' && <button className="secondary-button" disabled={busy || loading || !vesselId} onClick={() => { setError(''); setEditor({}); }}><Plus size={17} /> Ajouter un matériel</button>}
       </div>
       <div className="lifting-filter lifting-register-filters" role="search" aria-label="Filtres — registre LSA">
         <label>Type d’équipement<select aria-label="Type d’équipement" value={category} onChange={(event) => setCategory(event.target.value)}><option value="">Tous les types</option>{groups.map((option) => <option key={option.key} value={option.key}>{option.name}</option>)}</select></label>

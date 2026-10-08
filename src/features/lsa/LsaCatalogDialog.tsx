@@ -23,7 +23,7 @@ export function LsaCatalogDialog({ client, catalog, onChange, onClose }: {
     } catch (reason) { setError(reason && typeof reason === 'object' && 'message' in reason ? String(reason.message) : 'Impossible d’enregistrer l’arborescence.'); }
     finally { setBusy(false); }
   }
-  return <AppDialog title="Arborescence des désignations" eyebrow="Administration · Registre LSA" size="lg" isBusy={busy} onClose={onClose}
+  return <AppDialog title="Arborescence des désignations" eyebrow="Registre LSA" size="lg" isBusy={busy} onClose={onClose}
     footer={<button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Terminer</button>}>
     <p>Les types et désignations sont communs aux navires de l’entreprise. Un élément archivé reste visible sur les fiches existantes.</p>
     {notice && <p className="lifting-notice" role="status">{notice}</p>}

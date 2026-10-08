@@ -2,9 +2,10 @@
 begin;
 do $$
 declare
-  company bigint; other_company bigint; vessel bigint; unassigned bigint; foreign_vessel bigint;
+  company bigint; other_company bigint; vessel bigint; unassigned bigint; foreign_vessel bigint; inactive_vessel bigint;
   actor uuid; person bigint; role_name text; item bigint; other_item bigint; hidden_item bigint;
-  current_revision timestamptz; saved bigint; count_before bigint; designation bigint;
+  current_revision timestamptz; saved bigint; count_before bigint; designation bigint; foreign_designation bigint;
+  catalog_type bigint; catalog_designation bigint; foreign_type bigint; next_number integer;
   payload jsonb;
 begin
   assert not exists(select 1 from public.fleet_certificates where category_key in
@@ -17,15 +18,21 @@ begin
     where a.source_table='fleet_certificate_renewal_events' and a.snapshot is distinct from to_jsonb(e)), 'Event copy differs';
   assert not has_table_privilege('anon','public.lsa_items','SELECT'), 'Anonymous access';
   assert not has_table_privilege('authenticated','public.lsa_items','UPDATE'), 'Direct update bypass';
+  assert not has_table_privilege('authenticated','public.lsa_items','INSERT'), 'Direct insert bypass';
   assert not has_table_privilege('authenticated','public.lsa_items','DELETE'), 'Direct delete bypass';
   assert not has_function_privilege('anon','public.save_lsa_item(bigint,jsonb,bigint,timestamptz)','EXECUTE'), 'Anonymous write RPC';
+  assert not has_function_privilege('anon','public.lsa_next_item_number(bigint,bigint)','EXECUTE'), 'Anonymous number preview RPC';
+  assert not has_function_privilege('authenticated','private.can_access_lsa_vessel(bigint,bigint)','EXECUTE'), 'Private scope helper exposed';
   select id into strict company from public.companies where code='bbtm';
   select id into strict designation from public.lsa_designations where company_id=company and name='EPIRB';
-  payload:=jsonb_build_object('designation_id',designation,'expires_on','2030-01-01','notes','LSA fixture');
+  payload:=jsonb_build_object('designation_id',designation,'expires_on',current_date+90,'notes','LSA fixture');
   insert into public.companies(code,name) values('lsa-fixture-'||gen_random_uuid(),'LSA other company') returning id into other_company;
+  select id into strict foreign_designation from public.lsa_designations where company_id=other_company and name='EPIRB';
+  select id into strict foreign_type from public.lsa_equipment_types where company_id=other_company and name='Survie';
   insert into public.vessels(company_id,name,acronym,active,asset_kind) values(company,'LSA assigned fixture','LSAA',true,'vessel') returning id into vessel;
   insert into public.vessels(company_id,name,acronym,active,asset_kind) values(company,'LSA unassigned fixture','LSAU',true,'vessel') returning id into unassigned;
   insert into public.vessels(company_id,name,acronym,active,asset_kind) values(other_company,'LSA foreign fixture','LSAF',true,'vessel') returning id into foreign_vessel;
+  insert into public.vessels(company_id,name,acronym,active,asset_kind) values(company,'LSA inactive fixture','LSAI',false,'vessel') returning id into inactive_vessel;
   insert into public.lsa_items(company_id,vessel_id,title,category_key,issued_on,expires_on) values(company,vessel,'Assigned fixture','07-2-life-jacket',current_date-1,current_date+1) returning id into item;
   insert into public.lsa_items(company_id,vessel_id,title,category_key,issued_on,expires_on) values(company,unassigned,'Unassigned fixture','07-4-gmdss',current_date-1,current_date+1) returning id into hidden_item;
   insert into public.lsa_items(company_id,vessel_id,title,category_key,issued_on,expires_on) values(other_company,foreign_vessel,'Other company fixture','07-6-pyrotechnie',current_date-1,current_date+1) returning id into other_item;
@@ -34,6 +41,9 @@ begin
   insert into public.lsa_renewal_events(company_id,certificate_id,event_type) values(company,item,'submitted'),(company,hidden_item,'submitted');
 
   foreach role_name in array array['admin','direction','armement','capitaine','marin'] loop
+    -- Fixture setup runs without the preceding profile's JWT claims.
+    perform set_config('request.jwt.claim.sub','',true);
+    perform set_config('request.jwt.claims','{}',true);
     actor := gen_random_uuid();
     insert into auth.users(id,email) values(actor,actor::text||'@example.invalid');
     insert into public.profiles(id,email,display_name,active_company_id) values(actor,actor::text||'@example.invalid','LSA '||role_name,company);
@@ -43,7 +53,8 @@ begin
       insert into public.people(company_id,user_id,first_name,last_name,function_label,sailor_number,active)
         values(company,actor,'LSA',role_name,case when role_name='capitaine' then 'Capitaine' else 'Matelot' end,actor::text,true) returning id into person;
       insert into public.planning_assignments(company_id,vessel_id,crew_person_id,starts_on,ends_on,assignment_role,confirmation_status)
-        values(company,vessel,person,current_date-1,current_date+1,case when role_name='capitaine' then 'Capitaine' else 'Matelot' end,'confirmed');
+        values(company,vessel,person,current_date-1,current_date+1,case when role_name='capitaine' then 'Capitaine' else 'Matelot' end,'confirmed'),
+          (company,inactive_vessel,person,current_date-1,current_date+1,case when role_name='capitaine' then 'Capitaine' else 'Matelot' end,'confirmed');
     end if;
     perform set_config('request.jwt.claim.sub',actor::text,true);
     perform set_config('request.jwt.claims',json_build_object('sub',actor,'role','authenticated')::text,true);
@@ -55,33 +66,104 @@ begin
     assert exists(select 1 from public.lsa_available_vessels() where id=vessel), role_name||' missing vessel';
     assert not exists(select 1 from public.lsa_available_vessels() where id=foreign_vessel), 'Foreign vessel leak';
     assert exists(select 1 from public.lsa_versions where certificate_id=item), 'Missing document';
+    next_number:=public.lsa_next_item_number(vessel,designation);
+    saved:=public.save_lsa_item(vessel,payload);
+    assert (select item_number=next_number and designation_id=designation from public.lsa_items where id=saved), role_name||' cannot create numbered equipment';
+    assert public.lsa_next_item_number(vessel,designation)=next_number+1, 'Preview did not advance after creation';
+    select updated_at into current_revision from public.lsa_items where id=saved;
+    begin
+      perform public.save_lsa_item(foreign_vessel,payload);
+      raise exception 'Cross-company write accepted';
+    exception when insufficient_privilege then null; end;
+    begin
+      perform public.lsa_next_item_number(foreign_vessel,designation);
+      raise exception 'Cross-company vessel counter accepted';
+    exception when insufficient_privilege then null; end;
+    begin
+      perform public.save_lsa_item(vessel,payload||jsonb_build_object('designation_id',foreign_designation));
+      raise exception 'Cross-company designation accepted';
+    exception when insufficient_privilege then null; end;
+    begin
+      perform public.lsa_next_item_number(vessel,foreign_designation);
+      raise exception 'Cross-company designation counter accepted';
+    exception when insufficient_privilege then null; end;
     if role_name in ('capitaine','marin') then
       assert not exists(select 1 from public.lsa_items where id=hidden_item), role_name||' unassigned leak';
       assert not exists(select 1 from public.lsa_versions where certificate_id=hidden_item), 'Unassigned version leak';
       assert not exists(select 1 from public.lsa_renewal_events where certificate_id=hidden_item), 'Unassigned history leak';
       assert not exists(select 1 from public.lsa_available_vessels() where id=unassigned), 'Unassigned vessel leak';
       begin
-        perform public.save_lsa_item(vessel,payload);
-        raise exception 'Onboard profile wrote inventory';
+        perform public.save_lsa_item(vessel,payload||'{"notes":"Unauthorized edit"}',saved,current_revision);
+        raise exception 'Onboard profile edited inventory';
       exception when insufficient_privilege then null; end;
+      assert (select notes='LSA fixture' from public.lsa_items where id=saved), 'Denied edit changed equipment';
+      begin
+        perform public.save_lsa_item(unassigned,payload);
+        raise exception 'Onboard profile added unassigned inventory';
+      exception when insufficient_privilege then null; end;
+      begin
+        perform public.lsa_next_item_number(unassigned,designation);
+        raise exception 'Onboard profile previewed unassigned counter';
+      exception when insufficient_privilege then null; end;
+      begin
+        perform public.save_lsa_item(inactive_vessel,payload);
+        raise exception 'Onboard profile added inactive inventory';
+      exception when insufficient_privilege then null; end;
+      begin
+        perform public.lsa_next_item_number(inactive_vessel,designation);
+        raise exception 'Onboard profile previewed inactive counter';
+      exception when insufficient_privilege then null; end;
+      -- Historical inventory can remain readable after disembarkation; creation needs current access.
+      execute 'reset role';
+      update public.planning_assignments set ends_at=((current_date-1)::timestamp+interval '23 hours 59 minutes 59 seconds') at time zone 'Europe/Paris'
+      where crew_person_id=person and vessel_id=vessel;
+      execute 'set local role authenticated';
+      assert exists(select 1 from public.lsa_items where id=item), 'Historical assigned inventory should remain readable';
+      begin
+        perform public.save_lsa_item(vessel,payload);
+        raise exception 'Formerly assigned profile added inventory';
+      exception when insufficient_privilege then null; end;
+      begin
+        perform public.lsa_next_item_number(vessel,designation);
+        raise exception 'Formerly assigned profile previewed counter';
+      exception when insufficient_privilege then null; end;
+      execute 'reset role';
+      update public.planning_assignments set ends_at=((current_date+1)::timestamp+interval '23 hours 59 minutes 59 seconds') at time zone 'Europe/Paris'
+      where crew_person_id=person and vessel_id=vessel;
+      execute 'set local role authenticated';
     else
-      saved := public.save_lsa_item(vessel,payload);
-      select updated_at into current_revision from public.lsa_items where id=saved;
       perform public.save_lsa_item(vessel,payload||'{"notes":"Edited fixture","brand":"Ocean","model":"Test","serial_number":"SN-001"}',saved,current_revision);
       assert (select notes='Edited fixture' and brand='Ocean' and model='Test' and serial_number='SN-001' from public.lsa_items where id=saved), 'Update lost';
       begin
         perform public.save_lsa_item(vessel,payload,saved,current_revision);
         raise exception 'Stale update accepted';
       exception when serialization_failure then null; end;
-      begin
-        perform public.save_lsa_item(foreign_vessel,payload);
-        raise exception 'Cross-company write accepted';
-      exception when insufficient_privilege then null; end;
     end if;
-    if role_name <> 'admin' then
+    if role_name in ('admin','capitaine') then
+      catalog_type:=public.save_lsa_catalog_entry('type',jsonb_build_object('name','LSA profile type '||role_name));
+      catalog_designation:=public.save_lsa_catalog_entry('designation',jsonb_build_object('name','LSA profile designation '||role_name,'equipment_type_id',catalog_type));
+      select updated_at into current_revision from public.lsa_designations where id=catalog_designation;
+      perform public.save_lsa_catalog_entry('designation',jsonb_build_object('id',catalog_designation,'updated_at',current_revision,'name','LSA renamed designation '||role_name,'equipment_type_id',catalog_type,'active',false));
+      assert (select name='LSA renamed designation '||role_name and not active from public.lsa_designations where id=catalog_designation), role_name||' catalog edit failed';
+      select updated_at into current_revision from public.lsa_equipment_types where id=catalog_type;
+      perform public.save_lsa_catalog_entry('type',jsonb_build_object('id',catalog_type,'updated_at',current_revision,'name','LSA renamed type '||role_name,'active',false));
+      assert (select name='LSA renamed type '||role_name and not active from public.lsa_equipment_types where id=catalog_type), role_name||' type edit failed';
+      begin
+        perform public.save_lsa_catalog_entry('designation',jsonb_build_object('name','Foreign type attempt','equipment_type_id',foreign_type));
+        raise exception 'Cross-company catalog type accepted';
+      exception when insufficient_privilege then null; end;
+      begin
+        perform public.save_lsa_catalog_entry('designation',jsonb_build_object('id',foreign_designation,'updated_at',clock_timestamp(),'name','Foreign designation attempt','equipment_type_id',catalog_type));
+        raise exception 'Cross-company catalog entry edited';
+      exception when serialization_failure then null; end;
+    else
       begin
         perform public.save_lsa_catalog_entry('type', '{"name":"Unauthorized type"}');
-        raise exception 'Non-administrator edited catalog';
+        raise exception 'Unauthorized profile edited catalog';
+      exception when insufficient_privilege then null; end;
+      begin
+        perform public.save_lsa_catalog_entry('designation',jsonb_build_object('name','Unauthorized designation','equipment_type_id',foreign_type));
+        raise exception 'Unauthorized profile edited designations';
       exception when insufficient_privilege then null; end;
     end if;
     execute 'reset role';
@@ -95,6 +177,14 @@ begin
     begin
       perform public.save_lsa_item(vessel,payload);
       raise exception 'Disabled module accepted write';
+    exception when insufficient_privilege then null; end;
+    begin
+      perform public.lsa_next_item_number(vessel,designation);
+      raise exception 'Disabled module accepted number preview';
+    exception when insufficient_privilege then null; end;
+    begin
+      perform public.save_lsa_catalog_entry('type','{"name":"Disabled module type"}');
+      raise exception 'Disabled module accepted catalog write';
     exception when insufficient_privilege then null; end;
     execute 'reset role';
     update public.role_module_permissions set is_visible=true where module_key='lsa' and role_key=role_name;

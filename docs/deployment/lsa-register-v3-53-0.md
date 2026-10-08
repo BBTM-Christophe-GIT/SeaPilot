@@ -47,8 +47,10 @@ contrainte. L’historique d’import original est conservé dans chaque fiche.
 
 Le menu hérite de la visibilité de Certificats flotte au déploiement et dispose de
 sa propre permission `lsa`. RLS applique le périmètre société et navire des
-certificats d’origine, y compris aux versions et événements. Marin et Capitaine
-sont en lecture seule. Administration, Direction et Armement ajoutent/modifient
+certificats d’origine, y compris aux versions et événements. Après la migration
+[des actions par profil](./lsa-profile-actions.md), Marin et Capitaine peuvent
+ajouter du matériel sur leurs navires accessibles. Administration, Direction et
+Armement ajoutent/modifient
 les fiches de leur société via un RPC contrôlé. Une modification concurrente est
 refusée ; l’utilisateur doit recharger. Les tables ne permettent aucune écriture
 directe au rôle authentifié. Les PDF en attente gardent leur statut d’origine.
