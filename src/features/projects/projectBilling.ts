@@ -1236,7 +1236,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   pdf.rect(945.375, 190.875, 776.25, 46.5);
   setFont(32);
   pdf.setTextColor(91, 88, 84);
-  pdf.text(`${input.project.projectCode} - ${input.project.title}`, 950, 226);
+  pdf.text(fitText(`${input.project.projectCode} - ${input.project.title}`, 715), 950, 226);
   drawChevron(1686, 205);
 
   strokeRect(2088, 18, 483.75, 224.25);
@@ -1458,7 +1458,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
       setFont(44, 'bold');
       pdf.text('Récapitulatif par devise', 1333.5, 96, { align: 'center' });
       setFont(26);
-      pdf.text(`${input.project.projectCode} - ${input.project.title}`, 82, 146);
+      pdf.text(fitText(`${input.project.projectCode} - ${input.project.title}`, 2500), 82, 146);
       pdf.text('Les montants sont présentés par devise, sans conversion.', 82, 190);
       pdf.setFillColor(246, 247, 249);
       pdf.rect(73.5, 210, 2545.5, 56, 'F');
@@ -1492,7 +1492,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
       setFont(44, 'bold');
       pdf.text('Saisie brute', 1333.5, 96, { align: 'center' });
       setFont(26);
-      pdf.text(`${input.project.projectCode} - ${input.project.title}`, 82, 146);
+      pdf.text(fitText(`${input.project.projectCode} - ${input.project.title}`, 1700), 82, 146);
       pdf.text(`${formatDate(input.startDate)} au ${formatDate(input.endDate)}`, 2598, 146, { align: 'right' });
       pdf.setFillColor(246, 247, 249);
       pdf.rect(73.5, 178, 2545.5, 56, 'F');

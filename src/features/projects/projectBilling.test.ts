@@ -843,16 +843,18 @@ describe('raw billing lines', () => {
   }
 
   it('exports all five columns, rounded totals and every included line across repeated table pages', async () => {
+    const longProjectTitle = 'Campagne maritime très longue '.repeat(8);
     const rawLines = Array.from({ length: 95 }, (_, index) => ({
       ...rawLine, id: index + 1, designation: `SAISIE-UNIQUE-${String(index + 1).padStart(3, '0')}`,
     }));
     const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
     try {
       const { pdf, pages, text } = await readPdf(await generateBillingPdf({
-        ...input, dprs: [], period: { ...input.period, includeOperationsInPdf: false, includeExpensesInPdf: false, includeBbtmInPdf: false },
+        ...input, project: { ...input.project, title: longProjectTitle }, dprs: [], period: { ...input.period, includeOperationsInPdf: false, includeExpensesInPdf: false, includeBbtmInPdf: false },
         rawLines: [...rawLines, { ...rawLine, id: 999, designation: 'EXCLUE-DU-PDF', includeInPdf: false }],
       }));
       expect(pdf.getPageCount()).toBeGreaterThan(3);
+      for (const page of pages) expect(page).not.toContain(longProjectTitle);
       for (const page of pages.slice(1)) {
         expect(page).toContain('(Date)');
         expect(page).toContain('(Désignation)');
