@@ -701,6 +701,7 @@ function ProjectDetail({
   operationDocuments,
   planningOccurrences,
   towedAsset,
+  vessels,
 }: {
   project: ProjectRecord;
   contract?: ProjectContractRecord;
@@ -721,6 +722,7 @@ function ProjectDetail({
   operationDocuments: ProjectOperationDocumentRecord[];
   planningOccurrences: ProjectPlanningOccurrenceRecord[];
   towedAsset?: ProjectTowedAssetRecord;
+  vessels: ProjectsData['vessels'];
 }) {
   const [activeTab, setActiveTab] = useState<ProjectDetailTab>('identification');
   const savedContractVariant = projectContractVariant(project.contractType);
@@ -1059,6 +1061,7 @@ function ProjectDetail({
           isManager={isManager}
           operations={planningOccurrences}
           project={project}
+          vessels={vessels}
         />
       ) : null}
 
@@ -1808,6 +1811,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               project={selectedProject}
               projectDocuments={selectedProjectDocuments}
               towedAsset={selectedTowedAsset}
+              vessels={projectsData.vessels}
             />
           ) : null}
         </div>
@@ -1880,6 +1884,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         <ServiceCatalogDialog
           canManage={isManager}
           client={effectiveClient}
+          vessels={projectsData.vessels}
           onClose={() => setServiceCatalogOpen(false)}
         />
       ) : null}

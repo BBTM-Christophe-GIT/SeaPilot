@@ -542,7 +542,8 @@ describe('ProjectsPage', () => {
     expect(screen.getByLabelText('Inclure les frais et leurs pièces dans l’export')).toBeInTheDocument();
     expect(screen.getByLabelText('Inclure les prestations BBTM')).toBeInTheDocument();
     expect(within(screen.getByText('Prestation BBTM').closest('article')!).queryAllByRole('checkbox')).toHaveLength(0);
-    expect(within(screen.getByRole('group', { name: 'Contenu du PDF' })).getAllByRole('checkbox')).toHaveLength(3);
+    expect(within(screen.getByRole('group', { name: 'Contenu du PDF' })).getAllByRole('checkbox')).toHaveLength(4);
+    expect(screen.getByLabelText('Inclure la saisie brute')).toBeInTheDocument();
     expect(screen.queryByLabelText('Inclure cette prestation dans le PDF')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Inclure les loyers')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Affich.*PDF/i })).not.toBeInTheDocument();
@@ -558,6 +559,7 @@ describe('ProjectsPage', () => {
           'clients',
           'project_billing_periods',
           'project_billing_services',
+          'project_billing_raw_lines',
           'project_service_catalog',
           'project_chargeable_expenses',
           'project_billing_documents',
@@ -588,7 +590,7 @@ describe('ProjectsPage', () => {
     expect(quantity).toHaveValue(7);
     expect(screen.getByLabelText('Totaux sélectionnés pour l’export')).toHaveTextContent(/1\s?750,00/);
     const exportPanel = screen.getByRole('article', { name: 'Export du relevé mensuel' });
-    expect(within(exportPanel).getAllByRole('checkbox')).toHaveLength(3);
+    expect(within(exportPanel).getAllByRole('checkbox')).toHaveLength(4);
     await user.clear(within(exportPanel).getByLabelText('Référence client'));
     await user.type(within(exportPanel).getByLabelText('Référence client'), 'COMMANDE-007');
     await user.selectOptions(within(exportPanel).getByLabelText('Fichier'), 'zip');

@@ -20,10 +20,11 @@ interface BillingElementsPageProps {
   roles?: RoleKey[];
 }
 
-const EMPTY_BILLING_PROJECTS: Pick<ProjectsData, 'projects' | 'projectContracts' | 'planningOccurrences'> = {
+const EMPTY_BILLING_PROJECTS: Pick<ProjectsData, 'projects' | 'projectContracts' | 'planningOccurrences' | 'vessels'> = {
   projects: [],
   projectContracts: [],
   planningOccurrences: [],
+  vessels: [],
 };
 
 const BILLING_CATEGORIES: Array<{
@@ -40,6 +41,11 @@ const BILLING_CATEGORIES: Array<{
     id: 'bbtm',
     label: 'Prestation BBTM',
     description: 'Montant unitaire, quantité et total de la prestation interne.',
+  },
+  {
+    id: 'raw',
+    label: 'Saisie brute',
+    description: 'Lignes libres avec désignation, prix unitaire et quantité.',
   },
   {
     id: 'billingElements',
@@ -77,6 +83,7 @@ export function BillingElementsPage({ client, roles }: BillingElementsPageProps)
     services: true,
     bbtm: true,
     billingElements: true,
+    raw: true,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -93,6 +100,7 @@ export function BillingElementsPage({ client, roles }: BillingElementsPageProps)
           projects: sortBillingProjects(loadedData.projects),
           projectContracts: loadedData.projectContracts,
           planningOccurrences: loadedData.planningOccurrences,
+          vessels: loadedData.vessels || [],
         });
       })
       .catch((caught: unknown) => {
@@ -205,6 +213,7 @@ export function BillingElementsPage({ client, roles }: BillingElementsPageProps)
             key={`${selectedProject.id}-${selectedMonth}`}
             operations={selectedOperations}
             project={selectedProject}
+            vessels={data.vessels}
             showMonthSelector={false}
             visibleSections={visibleSections}
           />

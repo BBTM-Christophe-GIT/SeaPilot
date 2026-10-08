@@ -38,6 +38,7 @@ export function createLsaPreviewClient(): SupabaseClient {
     },
     rpc: async (name: string, args: Record<string, unknown>) => {
       if (name === 'lsa_available_vessels') return { data: vessels, error: null };
+      if (name === 'lsa_can_add_item') return { data: vessels.some((vessel) => vessel.id === args.p_vessel_id), error: null };
       if (name === 'lsa_next_item_number') return { data: (counters.get(`${args.p_vessel_id}:${args.p_designation_id}`) || 0) + 1, error: null };
       if (name === 'save_lsa_catalog_entry') {
         const entry = args.p_entry as Record<string, unknown>;
