@@ -6,7 +6,7 @@ Lieu du contrôle, contrôle prévu, date d’émission, suivi du renouvellement
 
 ## Catalogue et numérotation
 
-Les tables `lsa_equipment_types` et `lsa_designations` appartiennent à une société. Le catalogue est initialisé pour les sociétés existantes et nouvelles. La consultation respecte l’accès au module. Seul le rôle `admin` de la société active peut appeler `save_lsa_catalog_entry`. Direction et Armement conservent la saisie des fiches ; Marin et Capitaine restent en consultation selon leurs affectations réelles.
+Les tables `lsa_equipment_types` et `lsa_designations` appartiennent à une société. Le catalogue est initialisé pour les sociétés existantes et nouvelles. La consultation respecte l’accès au module. Après la migration [des actions par profil](./lsa-profile-actions.md), Administration et Capitaine peuvent appeler `save_lsa_catalog_entry` pour leur société active. Marin et Capitaine peuvent ajouter du matériel sur les navires auxquels ils ont accès selon leurs affectations réelles ; Administration, Direction et Armement conservent la création et la modification des fiches.
 
 Le bouton **Gérer les désignations** permet d’ajouter/renommer un type ou une désignation, de déplacer une désignation et de l’archiver/désarchiver. Les libellés sont uniques dans une société. Les fiches gardent leurs références et leurs numéros après renommage ou archivage. Une sélection archivée ne peut plus être ajoutée sur une nouvelle fiche. Les modifications concurrentes d’une fiche ou d’une entrée du catalogue sont refusées avec une invitation à recharger.
 

@@ -1,3 +1,8 @@
+import type { RoleKey } from '../permissions/roles';
+
+export const canAddLsaItem = (roles: RoleKey[]): boolean => roles.some((role) => ['admin', 'direction', 'armement', 'capitaine', 'marin'].includes(role));
+export const canManageLsaCatalog = (roles: RoleKey[]): boolean => roles.some((role) => role === 'admin' || role === 'capitaine');
+
 export const LSA_CATEGORIES = [
   { key: '07-2-life-jacket', label: '07.2 - Life Jacket' },
   { key: '07-4-gmdss', label: '07.4 - GMDSS' },
