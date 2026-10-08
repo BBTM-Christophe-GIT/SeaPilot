@@ -1,19 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { PackageCheck, Plus, Save, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { billingRawLineTotal } from './projectBilling';
-import type { BillingRawLineDraft, ProjectBillingRawLine, ProjectServiceCatalogEntry } from './projectBilling';
+import type { BillingRawLineDraft, ProjectBillingRawLine, ProjectServiceCatalogDraft, ProjectServiceCatalogEntry } from './projectBilling';
+import type { VesselRecord } from './projectQueries';
 import './ProjectBillingRawLines.css';
 
 interface ProjectBillingRawLinesProps {
   lines: ProjectBillingRawLine[];
   catalog: ProjectServiceCatalogEntry[];
+  vessels?: VesselRecord[];
   isManager: boolean;
   disabled?: boolean;
   initialDate: string;
   onSave: (draft: BillingRawLineDraft, id?: number) => Promise<ProjectBillingRawLine>;
   onDelete: (id: number) => Promise<void>;
   onCatalogOpen: () => void;
+  onCatalogCreate: (draft: ProjectServiceCatalogDraft) => Promise<ProjectServiceCatalogEntry>;
   onDirtyChange?: (dirty: boolean) => void;
 }
 
@@ -37,6 +41,8 @@ const euros = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR
 function draftFromLine(line: ProjectBillingRawLine): BillingRawLineDraft {
   return {
     serviceCatalogId: line.serviceCatalogId,
+    vesselId: line.vesselId ?? null,
+    vesselName: line.vesselName || '',
     serviceDate: line.serviceDate,
     designation: line.designation,
     unitAmountHt: line.unitAmountHt,
@@ -55,6 +61,8 @@ function draftFromValues(values: RawLineValues): BillingRawLineDraft {
 
 function sameDraft(left: BillingRawLineDraft, right: BillingRawLineDraft): boolean {
   return left.serviceCatalogId === right.serviceCatalogId
+    && (left.vesselId ?? null) === (right.vesselId ?? null)
+    && (left.vesselName || '') === (right.vesselName || '')
     && left.serviceDate === right.serviceDate
     && left.designation === right.designation
     && left.unitAmountHt === right.unitAmountHt
@@ -79,21 +87,43 @@ function totalForValues(values: RawLineValues): number {
   return billingRawLineTotal({ unitAmountHt, quantity });
 }
 
-export function ProjectBillingRawLines({ lines, catalog, isManager, disabled = false, initialDate, onSave, onDelete, onCatalogOpen, onDirtyChange }: ProjectBillingRawLinesProps) {
+export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager, disabled = false, initialDate, onSave, onDelete, onCatalogOpen, onCatalogCreate, onDirtyChange }: ProjectBillingRawLinesProps) {
   const [rows, setRows] = useState<RawLineRow[]>(() => lines.map(rowFromLine));
   const [catalogRowKey, setCatalogRowKey] = useState<string | null>(null);
   const [catalogQuery, setCatalogQuery] = useState('');
+  const [catalogMode, setCatalogMode] = useState<'pick' | 'create'>('pick');
+  const [catalogDraft, setCatalogDraft] = useState({ category: '', unitAmountHt: '', vesselId: null as number | null, vesselName: '' });
+  const [catalogSaving, setCatalogSaving] = useState(false);
+  const [catalogError, setCatalogError] = useState('');
+  const catalogCreatePending = useRef(false);
+  const catalogSearchRef = useRef<HTMLInputElement>(null);
+  const catalogDesignationRef = useRef<HTMLInputElement>(null);
   const nextKey = useRef(0);
   const deletedIds = useRef(new Set<number>());
   const dirty = rows.some(isDirty);
   const total = rows.reduce((sum, row) => sum + totalForValues(row.values), 0);
   const catalogRow = rows.find((row) => row.key === catalogRowKey);
-  const catalogLocked = !isManager || disabled || Boolean(catalogRow?.pending);
+  const catalogLocked = !isManager || disabled || Boolean(catalogRow?.pending) || catalogSaving;
   const search = catalogQuery.trim().toLocaleLowerCase('fr-FR');
   const matchingCatalog = catalog.filter((entry) => (
     (entry.active || entry.id === catalogRow?.values.serviceCatalogId)
-    && entry.category.toLocaleLowerCase('fr-FR').includes(search)
+    && `${entry.category} ${catalogVesselName(entry)}`.toLocaleLowerCase('fr-FR').includes(search)
   ));
+
+  function availableVessels(selectedId?: number | null): VesselRecord[] {
+    return vessels.filter((vessel) => (!vessel.assetKind || vessel.assetKind === 'vessel') && (vessel.active || vessel.id === selectedId)).sort(compareFleetAssets);
+  }
+
+  function vesselChoice(value: string, currentName = '') {
+    if (!value) return { vesselId: null, vesselName: '' };
+    const vesselId = Number(value);
+    const vessel = vessels.find((item) => item.id === vesselId);
+    return { vesselId, vesselName: vessel?.name || currentName };
+  }
+
+  function catalogVesselName(entry: ProjectServiceCatalogEntry) {
+    return entry.vesselName || vessels.find((vessel) => vessel.id === entry.vesselId)?.name || '';
+  }
 
   useEffect(() => {
     const incoming = new Map(lines.map((line) => [line.id, line]));
@@ -120,6 +150,11 @@ export function ProjectBillingRawLines({ lines, catalog, isManager, disabled = f
   }, [lines]);
 
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => {
+    if (!catalogRowKey) return;
+    if (catalogMode === 'create') catalogDesignationRef.current?.focus();
+    else catalogSearchRef.current?.focus();
+  }, [catalogRowKey, catalogMode]);
 
   function updateRow(key: string, update: Partial<RawLineValues>) {
     setRows((current) => current.map((row) => row.key === key
@@ -131,6 +166,7 @@ export function ProjectBillingRawLines({ lines, catalog, isManager, disabled = f
     nextKey.current += 1;
     const values: RawLineValues = {
       serviceCatalogId: null, serviceDate: initialDate, designation: '',
+      vesselId: null, vesselName: '',
       unitAmountHt: '0', quantity: '1', includeInPdf: true,
     };
     setRows((current) => [...current, { key: `new-${nextKey.current}`, values }]);
@@ -138,8 +174,49 @@ export function ProjectBillingRawLines({ lines, catalog, isManager, disabled = f
 
   function selectCatalog(entry: ProjectServiceCatalogEntry) {
     if (!catalogRow || catalogLocked) return;
-    updateRow(catalogRow.key, { serviceCatalogId: entry.id, designation: entry.category, unitAmountHt: String(entry.unitAmountHt) });
+    updateRow(catalogRow.key, { serviceCatalogId: entry.id, vesselId: entry.vesselId ?? null, vesselName: catalogVesselName(entry), designation: entry.category, unitAmountHt: String(entry.unitAmountHt) });
     setCatalogRowKey(null);
+  }
+
+  function closeCatalog() {
+    if (catalogSaving || catalogCreatePending.current) return;
+    if (catalogMode === 'create') {
+      setCatalogMode('pick');
+      setCatalogError('');
+    } else setCatalogRowKey(null);
+  }
+
+  function beginCatalogCreation() {
+    if (catalogLocked) return;
+    setCatalogDraft({ category: '', unitAmountHt: '', vesselId: null, vesselName: '' });
+    setCatalogError('');
+    setCatalogMode('create');
+  }
+
+  async function createCatalogEntry() {
+    if (!catalogRow || catalogLocked || catalogCreatePending.current) return;
+    const category = catalogDraft.category.trim();
+    const unitAmountHt = Number(catalogDraft.unitAmountHt);
+    const error = !category ? 'Renseignez la désignation de la prestation.'
+      : category.length > 120 ? 'La désignation ne doit pas dépasser 120 caractères.'
+        : !catalogDraft.unitAmountHt.trim() || !Number.isFinite(unitAmountHt) || unitAmountHt < 0
+          ? 'Renseignez un prix unitaire HT positif ou nul.' : '';
+    if (error) { setCatalogError(error); return; }
+    const originKey = catalogRow.key;
+    catalogCreatePending.current = true;
+    setCatalogSaving(true);
+    setCatalogError('');
+    try {
+      const entry = await onCatalogCreate({ category, unitAmountHt, vesselId: catalogDraft.vesselId, vesselName: catalogDraft.vesselName, descriptionHtml: '', active: true });
+      updateRow(originKey, { serviceCatalogId: entry.id, vesselId: entry.vesselId ?? null, vesselName: catalogVesselName(entry), designation: entry.category, unitAmountHt: String(entry.unitAmountHt) });
+      setCatalogRowKey(null);
+      setCatalogMode('pick');
+    } catch (cause) {
+      setCatalogError(cause instanceof Error ? cause.message : 'Impossible de créer cette prestation.');
+    } finally {
+      catalogCreatePending.current = false;
+      setCatalogSaving(false);
+    }
   }
 
   async function saveRow(row: RawLineRow) {
@@ -191,20 +268,25 @@ export function ProjectBillingRawLines({ lines, catalog, isManager, disabled = f
     <div className="project-billing-raw-heading">
       <div><strong>Saisie brute</strong><p>Choisissez une prestation du catalogue ou saisissez votre ligne librement.</p></div>
       {isManager ? <div className="project-billing-raw-toolbar">
-        <button className="sp-button sp-button--secondary" disabled={disabled} onClick={onCatalogOpen} type="button"><PackageCheck aria-hidden="true" size={16} /> Catalogue de prestations</button>
+        <button className="sp-button sp-button--secondary" disabled={disabled || catalogSaving} onClick={onCatalogOpen} type="button"><PackageCheck aria-hidden="true" size={16} /> Catalogue de prestations</button>
       </div> : null}
     </div>
     <div className="project-billing-raw-scroll" role="region" aria-label="Tableau de saisie brute" tabIndex={0}>
       <table className="project-billing-raw-table">
-        <thead><tr><th scope="col">Date</th><th scope="col">Désignation</th><th scope="col">Prix unitaire HT</th><th scope="col">Quantité</th><th scope="col">Prix Total HT</th><th scope="col">Actions</th></tr></thead>
+        <thead><tr><th scope="col">Date</th><th scope="col">Navire</th><th scope="col">Désignation</th><th scope="col">Prix unitaire HT</th><th scope="col">Quantité</th><th scope="col">Prix Total HT</th><th scope="col">Actions</th></tr></thead>
         <tbody>{rows.map((row, index) => {
           const number = index + 1;
-          const locked = !isManager || disabled || Boolean(row.pending);
+          const locked = !isManager || disabled || Boolean(row.pending) || catalogSaving;
           return <tr key={row.key}>
             <td><input aria-label={`Date, ligne ${number}`} disabled={locked} onChange={(event) => updateRow(row.key, { serviceDate: event.target.value })} required type="date" value={row.values.serviceDate} /></td>
+            <td><select aria-label={`Navire, ligne ${number}`} disabled={locked} onChange={(event) => updateRow(row.key, vesselChoice(event.target.value, row.values.vesselName))} value={row.values.vesselId ?? ''}>
+              <option value="">Sans navire</option>
+              {row.values.vesselId != null && !availableVessels(row.values.vesselId).some((vessel) => vessel.id === row.values.vesselId) ? <option value={row.values.vesselId}>{row.values.vesselName || 'Navire archivé'}</option> : null}
+              {availableVessels(row.values.vesselId).map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.id === row.values.vesselId && row.values.vesselName ? row.values.vesselName : vessel.name}</option>)}
+            </select></td>
             <td className="project-billing-raw-designation">
               <div className="project-billing-raw-designation-input">
-                <button aria-label={`Choisir dans le catalogue, ligne ${number}`} aria-haspopup="dialog" aria-expanded={catalogRowKey === row.key} className="sp-button sp-button--secondary project-billing-raw-catalog-button" disabled={locked} onClick={() => { setCatalogQuery(''); setCatalogRowKey(row.key); }} title="Choisir dans le catalogue" type="button"><Plus aria-hidden="true" size={17} /></button>
+                <button aria-label={`Choisir dans le catalogue, ligne ${number}`} aria-haspopup="dialog" aria-expanded={catalogRowKey === row.key} className="sp-button sp-button--secondary project-billing-raw-catalog-button" disabled={locked} onClick={() => { setCatalogQuery(''); setCatalogMode('pick'); setCatalogRowKey(row.key); }} title="Choisir dans le catalogue" type="button"><Plus aria-hidden="true" size={17} /></button>
                 <input aria-label={`Désignation, ligne ${number}`} disabled={locked} maxLength={120} onChange={(event) => updateRow(row.key, { designation: event.target.value, serviceCatalogId: null })} placeholder="Désignation libre" required type="text" value={row.values.designation} />
               </div>
             </td>
@@ -221,22 +303,34 @@ export function ProjectBillingRawLines({ lines, catalog, isManager, disabled = f
               {row.error ? <p className="project-billing-raw-error" role="alert">{row.error}</p> : null}
             </div></td>
           </tr>;
-        })}{!rows.length ? <tr><td className="project-billing-raw-empty" colSpan={6}>Aucune ligne de saisie brute pour cette période.</td></tr> : null}</tbody>
+        })}{!rows.length ? <tr><td className="project-billing-raw-empty" colSpan={7}>Aucune ligne de saisie brute pour cette période.</td></tr> : null}</tbody>
       </table>
     </div>
     {isManager ? <div className="project-billing-raw-add">
-      <button className="sp-button sp-button--primary" disabled={disabled} onClick={addRow} type="button"><Plus aria-hidden="true" size={16} /> Ajouter une ligne</button>
+      <button className="sp-button sp-button--primary" disabled={disabled || catalogSaving} onClick={addRow} type="button"><Plus aria-hidden="true" size={16} /> Ajouter une ligne</button>
     </div> : null}
     <div className="project-billing-raw-summary"><span>Total des lignes HT{dirty ? ' · modifications à enregistrer' : ''}</span><strong>{euros.format(total)}</strong></div>
-    {catalogRow ? <div onKeyDown={(event) => { if (event.key === 'Escape' || event.key === 'Tab') event.stopPropagation(); }}>
-      <AppDialog description={`Ligne ${rows.indexOf(catalogRow) + 1} · Sélectionnez une catégorie pour reprendre sa désignation et son prix unitaire HT.`} icon={<PackageCheck aria-hidden="true" size={20} />} onClose={() => setCatalogRowKey(null)} size="sm" title="Choisir une prestation">
-        <div className="project-billing-raw-catalog-picker">
-          <label className="project-billing-raw-catalog-search">Rechercher une prestation<input disabled={catalogLocked} onChange={(event) => setCatalogQuery(event.target.value)} placeholder="Nom de la catégorie" type="search" value={catalogQuery} /></label>
+    {catalogRow ? <div onKeyDown={(event) => { if (event.key === 'Escape' || event.key === 'Tab') event.stopPropagation(); }} onSubmit={(event) => event.stopPropagation()}>
+      <AppDialog description={catalogMode === 'create' ? 'Enregistrez une prestation dans le catalogue pour remplir cette ligne.' : `Ligne ${rows.indexOf(catalogRow) + 1} · Sélectionnez une catégorie pour reprendre sa désignation et son prix unitaire HT.`} footer={catalogMode === 'create' ? <div className="project-billing-raw-catalog-form-actions">
+        <button className="sp-button sp-button--secondary" disabled={catalogSaving} onClick={closeCatalog} type="button">Annuler</button>
+        <button aria-label="Créer la prestation" className="sp-button sp-button--primary" disabled={catalogLocked} type="submit"><Plus aria-hidden="true" size={16} />{catalogSaving ? 'Création…' : 'Créer la prestation'}</button>
+      </div> : undefined} icon={<PackageCheck aria-hidden="true" size={20} />} isBusy={catalogSaving} onClose={closeCatalog} onSubmit={catalogMode === 'create' ? (event) => { event.preventDefault(); void createCatalogEntry(); } : undefined} size="sm" title={catalogMode === 'create' ? 'Nouvelle prestation' : 'Choisir une prestation'}>
+        {catalogMode === 'create' ? <div className="project-billing-raw-catalog-create">
+          <label>Navire<select aria-label="Navire de la nouvelle prestation" disabled={catalogLocked} onChange={(event) => setCatalogDraft((current) => ({ ...current, ...vesselChoice(event.target.value, current.vesselName) }))} value={catalogDraft.vesselId ?? ''}>
+            <option value="">Sans navire</option>
+            {availableVessels(catalogDraft.vesselId).map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}
+          </select></label>
+          <label>Désignation *<input aria-label="Désignation de la nouvelle prestation" disabled={catalogLocked} maxLength={120} onChange={(event) => { setCatalogDraft((current) => ({ ...current, category: event.target.value })); setCatalogError(''); }} ref={catalogDesignationRef} required type="text" value={catalogDraft.category} /></label>
+          <label>Prix unitaire HT *<input aria-label="Prix unitaire HT de la nouvelle prestation" disabled={catalogLocked} inputMode="decimal" min="0" onChange={(event) => { setCatalogDraft((current) => ({ ...current, unitAmountHt: event.target.value })); setCatalogError(''); }} required step="0.01" type="number" value={catalogDraft.unitAmountHt} /></label>
+          {catalogError ? <p className="project-billing-raw-catalog-create-error" role="alert">{catalogError}</p> : null}
+        </div> : <div className="project-billing-raw-catalog-picker">
+          <label className="project-billing-raw-catalog-search">Rechercher une prestation<input disabled={catalogLocked} onChange={(event) => setCatalogQuery(event.target.value)} placeholder="Nom de la catégorie" ref={catalogSearchRef} type="search" value={catalogQuery} /></label>
+          <button className="sp-button sp-button--primary project-billing-raw-catalog-new" disabled={catalogLocked} onClick={beginCatalogCreation} type="button"><Plus aria-hidden="true" size={16} />Nouvelle prestation</button>
           <div className="project-billing-raw-catalog-list">
-            {matchingCatalog.map((entry) => <button aria-label={`Choisir ${entry.category}`} className="sp-button sp-button--secondary project-billing-raw-catalog-option" disabled={catalogLocked} key={entry.id} onClick={() => selectCatalog(entry)} type="button"><strong>{entry.category}</strong><span>{euros.format(entry.unitAmountHt)} HT</span></button>)}
+            {matchingCatalog.map((entry) => <button aria-label={`Choisir ${entry.category}${catalogVesselName(entry) ? ` — ${catalogVesselName(entry)}` : ''}`} className="sp-button sp-button--secondary project-billing-raw-catalog-option" disabled={catalogLocked} key={entry.id} onClick={() => selectCatalog(entry)} type="button"><span className="project-billing-raw-catalog-option-identity"><strong>{entry.category}</strong><small>{catalogVesselName(entry) || 'Sans navire'}</small></span><span>{euros.format(entry.unitAmountHt)} HT</span></button>)}
             {!matchingCatalog.length ? <p className="project-billing-raw-catalog-empty">{search ? 'Aucune prestation ne correspond à votre recherche.' : 'Aucune prestation disponible dans le catalogue.'}</p> : null}
           </div>
-        </div>
+        </div>}
       </AppDialog>
     </div> : null}
   </section>;

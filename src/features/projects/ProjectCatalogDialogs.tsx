@@ -23,7 +23,8 @@ import {
   type ClientWriteInput,
   type ProjectTowedAssetWriteInput,
 } from './projectMutations';
-import type { ClientRecord, ProjectTowedAssetRecord } from './projectQueries';
+import type { ClientRecord, ProjectTowedAssetRecord, VesselRecord } from './projectQueries';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import {
   discoverClientLogoUrl,
   normalizeProjectCatalogUrl,
@@ -62,6 +63,7 @@ interface TowedAssetCatalogDialogProps extends CatalogDialogProps {
 interface ServiceCatalogDialogProps extends Omit<CatalogDialogProps, 'onChanged'> {
   initialMode?: 'view' | 'create';
   onChanged?: (entries: ProjectServiceCatalogEntry[]) => void;
+  vessels?: VesselRecord[];
 }
 
 type EditorMode = 'view' | 'edit' | 'create';
@@ -817,7 +819,7 @@ export function TowedAssetCatalogDialog({
 }
 
 function emptyServiceForm(): ProjectServiceCatalogDraft {
-  return { category: '', unitAmountHt: 0, descriptionHtml: '', active: true };
+  return { category: '', unitAmountHt: 0, descriptionHtml: '', active: true, vesselId: null, vesselName: '' };
 }
 
 function serviceForm(entry?: ProjectServiceCatalogEntry): ProjectServiceCatalogDraft {
@@ -827,6 +829,8 @@ function serviceForm(entry?: ProjectServiceCatalogEntry): ProjectServiceCatalogD
     unitAmountHt: entry.unitAmountHt,
     descriptionHtml: entry.descriptionHtml,
     active: entry.active,
+    vesselId: entry.vesselId ?? null,
+    vesselName: entry.vesselName || '',
   } : emptyServiceForm();
 }
 
@@ -840,6 +844,7 @@ export function ServiceCatalogDialog({
   initialMode = 'view',
   onChanged,
   onClose,
+  vessels = [],
 }: ServiceCatalogDialogProps) {
   const [items, setItems] = useState<ProjectServiceCatalogEntry[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -871,10 +876,13 @@ export function ServiceCatalogDialog({
   }, [client, initialMode]);
 
   const filteredItems = useMemo(
-    () => items.filter((item) => queryMatches([item.category, item.unitAmountHt, item.descriptionHtml], query)),
+    () => items.filter((item) => queryMatches([item.category, item.unitAmountHt, item.descriptionHtml, item.vesselName || ''], query)),
     [items, query],
   );
   const selected = items.find((item) => item.id === selectedId);
+  const availableVessels = vessels
+    .filter((vessel) => (!vessel.assetKind || vessel.assetKind === 'vessel') && (vessel.active || vessel.id === form.vesselId))
+    .sort(compareFleetAssets);
 
   function selectService(id: number) {
     const entry = items.find((item) => item.id === id);
@@ -909,12 +917,13 @@ export function ServiceCatalogDialog({
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canManage || isSaving || isLoading) return;
     const category = form.category.trim();
     if (!category) {
       setErrorMessage('La catégorie est obligatoire.');
       return;
     }
-    if (form.unitAmountHt < 0) {
+    if (!Number.isFinite(form.unitAmountHt) || form.unitAmountHt < 0 || form.unitAmountHt >= 1e12) {
       setErrorMessage('Le montant unitaire doit être positif.');
       return;
     }
@@ -984,7 +993,7 @@ export function ServiceCatalogDialog({
             {filteredItems.map((item) => (
               <button aria-selected={item.id === selectedId} className={item.id === selectedId ? 'is-selected' : undefined} key={item.id} onClick={() => selectService(item.id)} role="option" type="button">
                 <span className="project-catalog-list-avatar"><PackageCheck aria-hidden="true" size={17} /></span>
-                <span><strong>{item.category}</strong><small>{serviceAmount(item.unitAmountHt)} HT</small></span>
+                <span><strong>{item.category}</strong><small>{[item.vesselName, `${serviceAmount(item.unitAmountHt)} HT`].filter(Boolean).join(' · ')}</small></span>
               </button>
             ))}
             {!isLoading && filteredItems.length === 0 ? <p className="project-catalog-empty-list">Aucune prestation trouvée.</p> : null}
@@ -1002,7 +1011,7 @@ export function ServiceCatalogDialog({
 
           {mode === 'view' && selected ? <div className="project-catalog-view project-service-catalog-view">
             <div className="project-catalog-identity"><div className="project-catalog-image is-service"><PackageCheck aria-hidden="true" size={26} /></div><div><h3>{selected.category}</h3><p>{serviceAmount(selected.unitAmountHt)} HT par unité</p></div></div>
-            <dl className="project-catalog-data-grid"><div><dt>Catégorie</dt><dd>{selected.category}</dd></div><div><dt>Montant unitaire</dt><dd>{serviceAmount(selected.unitAmountHt)} HT</dd></div></dl>
+            <dl className="project-catalog-data-grid"><div><dt>Catégorie</dt><dd>{selected.category}</dd></div><div><dt>Navire</dt><dd>{selected.vesselName || 'Sans navire'}</dd></div><div><dt>Montant unitaire</dt><dd>{serviceAmount(selected.unitAmountHt)} HT</dd></div></dl>
             <div className="project-service-description"><strong>Description</strong>{serviceNoteBodyHasContent(selected.descriptionHtml) ? <div dangerouslySetInnerHTML={{ __html: sanitizeServiceNoteHtml(selected.descriptionHtml) }} /> : <p>Non renseignée</p>}</div>
           </div> : null}
           {mode === 'view' && !selected && !isLoading ? <div className="project-catalog-empty-detail"><PackageCheck aria-hidden="true" size={34} /><p>Sélectionnez une prestation ou ajoutez-en une nouvelle.</p></div> : null}
@@ -1010,6 +1019,7 @@ export function ServiceCatalogDialog({
             <div className="project-catalog-form-grid">
               <label><span>Catégorie *</span><input autoFocus maxLength={120} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))} required value={form.category} /></label>
               <label><span>Montant unitaire (€ HT) *</span><input min="0" onChange={(event) => setForm((current) => ({ ...current, unitAmountHt: Number(event.target.value) }))} required step="0.01" type="number" value={form.unitAmountHt} /></label>
+              <label><span>Navire</span><select disabled={!canManage || isSaving || isLoading} onChange={(event) => { const vessel = availableVessels.find((item) => item.id === Number(event.target.value)); setForm((current) => ({ ...current, vesselId: vessel?.id ?? null, vesselName: vessel?.name || '' })); }} value={form.vesselId ?? ''}><option value="">Sans navire</option>{form.vesselId && !availableVessels.some((vessel) => vessel.id === form.vesselId) ? <option value={form.vesselId}>{form.vesselName || 'Navire indisponible'}</option> : null}{availableVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.id === form.vesselId && form.vesselName ? form.vesselName : vessel.name}{vessel.active ? '' : ' (archivé)'}</option>)}</select></label>
               <label className="is-wide project-service-rich-field"><span>Description</span><ServiceNoteRichTextEditor ariaLabel="Description de la prestation" onChange={(descriptionHtml) => setForm((current) => ({ ...current, descriptionHtml }))} placeholder="Décrivez le contenu et les conditions de la prestation…" toolbarLabel="Mise en forme de la description" value={form.descriptionHtml} /></label>
             </div>
             <div className="project-catalog-form-actions"><button disabled={isSaving} onClick={cancelEdit} type="button">Annuler</button><button className="is-primary" disabled={isSaving} type="submit">{isSaving ? 'Enregistrement…' : 'Enregistrer'}</button></div>

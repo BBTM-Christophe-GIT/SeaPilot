@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.71.0` ajoute **Nouvelle prestation** dans le sélecteur de Saisie brute et **Navire** dans le catalogue, la création rapide et chaque ligne brute. Le navire est choisi dans la flotte SeaPilot et son nom est conservé dans la ligne. Le PDF ajoute la colonne Navire et masque le bloc Navire en haut à droite lorsque des lignes brutes sont incluses. Appliquer la migration additive `20261008131113_project_billing_vessel_snapshots.sql` avant le client. Les entrées et lignes existantes gardent un navire vide ; droits et configuration inchangés. Voir [project-raw-billing.md](./project-raw-billing.md).
+
 Version `3.70.1` remplace le sélecteur « Saisie manuelle » de la Saisie brute par un bouton **+** devant le champ **Désignation libre**. Il ouvre le catalogue avec recherche et copie la désignation et le prix dans la ligne choisie. **Ajouter une ligne** est placé sous le tableau et **Enregistrer** reste sur chaque ligne. La case du volet de droite contrôle seule l’inclusion de toutes les lignes brutes dans les totaux/PDF. Aucune migration supplémentaire ni configuration. Voir [project-raw-billing.md](./project-raw-billing.md).
 
 Version `3.70.0` ajoute **Saisie brute** dans Projets → Facturation : lignes libres datées, catalogue explicite, quantité initiale de 1, total automatique et inclusion globale ou individuelle dans les totaux et les PDF paginés. Appliquer la migration additive de [project-raw-billing.md](./project-raw-billing.md) avant le client. Aucune nouvelle dépendance ni configuration.

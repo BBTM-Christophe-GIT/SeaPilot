@@ -8,13 +8,14 @@ import type { BillingPeriodDraft, BillingRawLineDraft, ProjectBillingData, Proje
 const mocks = vi.hoisted(() => ({
   data: vi.fn(), catalog: vi.fn(), dprs: vi.fn(), ensurePeriod: vi.fn(), savePeriod: vi.fn(),
   saveSelection: vi.fn(), saveRaw: vi.fn(), deleteRaw: vi.fn(), export: vi.fn(), upload: vi.fn(),
-  references: vi.fn(), saveReference: vi.fn(), providers: vi.fn(),
+  references: vi.fn(), saveReference: vi.fn(), providers: vi.fn(), createCatalog: vi.fn(),
 }));
 
 vi.mock('./projectBilling', async original => ({
   ...await original<typeof import('./projectBilling')>(),
   fetchProjectBillingData: mocks.data,
   fetchProjectServiceCatalog: mocks.catalog,
+  saveProjectServiceCatalogEntry: mocks.createCatalog,
   fetchProjectBillingDprs: mocks.dprs,
   ensureProjectBillingPeriod: mocks.ensurePeriod,
   saveProjectBillingPeriod: mocks.savePeriod,
@@ -42,6 +43,7 @@ const catalog = [
   { id: 8, companyId: 1, category: 'Assistance', descriptionHtml: '', unitAmountHt: 100, active: true, createdAt: '', updatedAt: '' },
 ];
 const emptyData: ProjectBillingData = { periods: [], services: [], expenses: [], documents: [], rawLines: [] };
+const vessels = [{ id: 1, name: 'GOURY', active: true, acronym: '', fleetExitOn: '', sharePointItemId: '', lengthOverall: '30' }];
 
 function period(overrides: Partial<ProjectBillingPeriod> = {}): ProjectBillingPeriod {
   return {
@@ -63,7 +65,7 @@ function deferred<T>() {
 }
 
 function panel(record = project, isManager = true) {
-  return <ProjectBillingPanel client={client} project={record} operations={[]} isManager={isManager} initialMonth="2026-09" workspace />;
+  return <ProjectBillingPanel client={client} project={record} operations={[]} vessels={vessels} isManager={isManager} initialMonth="2026-09" workspace />;
 }
 
 async function ready() {
@@ -97,6 +99,7 @@ beforeEach(() => {
   mocks.saveReference.mockResolvedValue(undefined);
   mocks.saveRaw.mockImplementation(async (_client: unknown, _project: number, billingPeriodId: number, draft: BillingRawLineDraft, id?: number) => ({ id: id ?? 50, billingPeriodId, ...draft }));
   mocks.deleteRaw.mockResolvedValue(undefined);
+  mocks.createCatalog.mockImplementation(async (_client: unknown, draft: import('./projectBilling').ProjectServiceCatalogDraft) => ({ ...catalog[0], ...draft, id: 9 }));
   mocks.export.mockResolvedValue({ blob: new Blob(['PDF fixture'], { type: 'application/pdf' }), extension: 'pdf' });
   mocks.upload.mockResolvedValue({ id: 60, billingPeriodId: 10, chargeableExpenseId: null, documentKind: 'export', fileName: 'export.pdf' });
   Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:raw-billing-test') });
@@ -107,6 +110,69 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('raw billing workspace integration', () => {
+  it('distinguishes vessel-specific catalogue categories in the BBTM selector', async () => {
+    mocks.catalog.mockResolvedValue([{ ...catalog[0], vesselId: 1, vesselName: 'GOURY' }, { ...catalog[0], id: 9, vesselId: 2, vesselName: 'SUROIT', unitAmountHt: 125 }]);
+    const user = userEvent.setup();
+    render(panel());
+    await ready();
+    await user.click(screen.getByRole('button', { name: /^Prestations BBTM/ }));
+    const categorySelect = screen.getByLabelText('Catégorie de la prestation 1');
+    expect(within(categorySelect).getAllByRole('option').map((option) => option.textContent)).toEqual(['Spread Antipollution — GOURY', 'Spread Antipollution — SUROIT']);
+    await user.selectOptions(categorySelect, '9');
+    expect(screen.getByLabelText('Montant unitaire HT', { exact: true })).toHaveValue(125);
+  });
+
+  it('creates a vessel-specific catalogue entry and selects it without saving the raw line', async () => {
+    const user = userEvent.setup();
+    render(panel());
+    await ready();
+    await openRaw(user);
+    await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
+    fireEvent.change(screen.getByLabelText('Date, ligne 1'), { target: { value: '2026-09-12' } });
+    fireEvent.change(screen.getByLabelText('Quantité, ligne 1'), { target: { value: '2.5' } });
+    await user.click(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' }));
+    await user.click(screen.getByRole('button', { name: 'Nouvelle prestation' }));
+    await user.type(screen.getByLabelText('Désignation de la nouvelle prestation'), 'Prestation créée');
+    await user.clear(screen.getByLabelText('Prix unitaire HT de la nouvelle prestation'));
+    await user.type(screen.getByLabelText('Prix unitaire HT de la nouvelle prestation'), '42.50');
+    await user.selectOptions(screen.getByLabelText('Navire de la nouvelle prestation'), '1');
+    await user.click(screen.getByRole('button', { name: 'Créer la prestation' }));
+    await waitFor(() => expect(mocks.createCatalog).toHaveBeenCalledWith(client, expect.objectContaining({ category: 'Prestation créée', unitAmountHt: 42.5, vesselId: 1, vesselName: 'GOURY', active: true })));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Nouvelle prestation' })).not.toBeInTheDocument());
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Prestation créée');
+    expect(screen.getByLabelText('Navire, ligne 1')).toHaveValue('1');
+    expect(screen.getByLabelText('Date, ligne 1')).toHaveValue('2026-09-12');
+    expect(screen.getByLabelText('Quantité, ligne 1')).toHaveValue(2.5);
+    expect(mocks.saveRaw).not.toHaveBeenCalled();
+    expect(mocks.ensurePeriod).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' }));
+    expect(screen.getByRole('button', { name: 'Choisir Prestation créée — GOURY' })).toBeVisible();
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
+    await ready();
+    expect(mocks.saveRaw).toHaveBeenCalledWith(client, project.id, 10, expect.objectContaining({ serviceCatalogId: 9, vesselId: 1, vesselName: 'GOURY', designation: 'Prestation créée', unitAmountHt: 42.5, quantity: 2.5 }), undefined);
+  });
+
+  it('preserves a failed creation and handles an active duplicate without changing the raw line', async () => {
+    mocks.createCatalog.mockRejectedValueOnce({ code: '23505', message: 'duplicate key' });
+    const user = userEvent.setup();
+    render(panel());
+    await ready();
+    await openRaw(user);
+    await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
+    await user.click(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' }));
+    await user.click(screen.getByRole('button', { name: 'Nouvelle prestation' }));
+    await user.type(screen.getByLabelText('Désignation de la nouvelle prestation'), 'Assistance');
+    await user.type(screen.getByLabelText('Prix unitaire HT de la nouvelle prestation'), '100');
+    await user.click(screen.getByRole('button', { name: 'Créer la prestation' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Une prestation de même désignation existe déjà pour ce navire');
+    expect(screen.getByLabelText('Désignation de la nouvelle prestation')).toHaveValue('Assistance');
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('');
+    expect(mocks.saveRaw).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Annuler' }));
+    expect(screen.getByRole('dialog', { name: 'Choisir une prestation' })).toBeVisible();
+  });
+
   it('preserves unsaved raw values and export protection while its section is hidden', async () => {
     const user = userEvent.setup();
     const view = render(panel());
