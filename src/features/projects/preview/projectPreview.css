@@ -132,7 +132,7 @@ body.pp-preview-page {
 .pp-tab svg { width: 18px; height: 18px; stroke-width: 1.7; }
 .pp-tab:hover { color: var(--sp-primary, #0c5598); background: var(--sp-surface-subtle, #fbfcfe); }
 .pp-tab.active { color: var(--sp-primary, #0c5598); border-bottom-color: var(--sp-primary, #0c5598); font-weight: 700; }
-.pp-content { min-width: 0; flex: 1; padding: 17px 18px 20px; background: var(--sp-surface, #ffffff); border: 1px solid var(--sp-border, #d8e0ea); border-radius: var(--sp-panel-radius, 8px); }
+.pp-content { min-width: 0; flex: 1; padding: 17px 18px 20px; background: var(--sp-surface, #ffffff); border: 1px solid var(--sp-border, #d8e0ea); border-radius: var(--sp-panel-radius, 8px); container-type: inline-size; }
 .pp-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 13px; }
 .pp-section-heading h2 { font-size: 24px; }
 .pp-section-heading p { color: var(--sp-muted, #536276); font-size: 12px; margin-top: 5px; }
@@ -155,8 +155,19 @@ body.pp-preview-page {
 .pp-button.danger:hover:not(:disabled) { background: #fff1f1; }
 .pp-button.icon { padding: 8px; width: var(--sp-control-height, 40px); flex-shrink: 0; }
 
-.pp-billing-controls { display: grid; grid-template-columns: 1.05fr 1fr 1fr 1.55fr; gap: 12px 16px; margin-bottom: 16px; }
-.pp-billing-controls .pp-field.wide { grid-column: span 2; }
+.pp-billing-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 10px; }
+.pp-billing-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pp-billing-title h2 { font-size: 20px; }
+.pp-billing-month { width: 168px; flex-shrink: 0; }
+.pp-billing-commandbar { flex: 1 0 auto; gap: 6px; margin: 0; }
+.pp-billing-commandbar > .pp-menu-wrap + .pp-menu-wrap { border-left: 0; padding-left: 0; }
+.pp-billing-commandbar .pp-button { padding-inline: 10px; }
+.pp-billing-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.pp-billing-controls .pp-field { gap: 2px; }
+.pp-billing-controls.calendar-period { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@container (max-width: 1110px) {
+  .pp-billing-title { flex: 1 0 100%; }
+}
 .pp-field { min-width: 0; display: flex; flex-direction: column; gap: 4px; color: var(--sp-muted, #536276); font-size: 11px; font-weight: 550; }
 .pp-field input:not([type="checkbox"]):not([type="radio"]), .pp-field select, .pp-field textarea,
 .pp-section-heading > select { display: block; min-width: 0; width: 100%; min-height: var(--sp-control-height, 40px); padding: 7px 10px; border: 1px solid var(--sp-border, #d8e0ea); border-radius: var(--sp-control-radius, 6px); background: var(--sp-surface, #ffffff); color: var(--sp-muted, #536276); font-size: 12px; font-weight: 400; }
@@ -279,8 +290,6 @@ body.pp-preview-page {
   .pp-shell { margin-left: 70px; }
   .pp-topbar { padding: 0 18px; }
   .pp-toast { left: calc(50% + 35px); }
-  .pp-billing-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .pp-billing-controls .pp-field.wide { grid-column: span 1; }
   .pp-commandbar { gap: 7px; }
   .pp-commandbar > :last-child { margin-left: 0; }
 }
@@ -324,7 +333,6 @@ body.pp-preview-page {
   .pp-commandbar { gap: 7px; padding-bottom: 11px; border-bottom: 1px solid #e3ebf4; }
   .pp-commandbar .pp-button { padding: 8px 9px; min-height: var(--sp-control-height, 40px); }
   .pp-commandbar > .pp-menu-wrap + .pp-menu-wrap { border: 0; padding: 0; }
-  .pp-billing-controls { gap: 10px 12px; margin-bottom: 13px; }
   .pp-accordion-header { gap: 9px; padding: 10px; }
   .pp-accordion-header > button:first-child { font-size: 12px; flex-basis: 100%; }
   .pp-accordion-header > button:first-child > svg { width: 19px; height: 19px; }
@@ -397,6 +405,16 @@ body.pp-preview-page {
 .pp-app .pp-topbar .pp-button { min-height: 32px; }
 .pp-app .pp-dialog-header .pp-button { min-height: 30px; }
 .pp-app .pp-table .pp-button.icon { min-height: 27px; }
+@container (min-width: 830px) {
+  .pp-billing-controls.custom-period { grid-template-columns: minmax(132px, 1fr) minmax(124px, 1fr) minmax(124px, 1fr) minmax(100px, .85fr) minmax(136px, 1.1fr) minmax(170px, 1.35fr); }
+  .pp-app .pp-billing-controls input, .pp-app .pp-billing-controls select { padding-inline: 8px; }
+}
+@container (max-width: 620px) {
+  .pp-billing-title { flex-basis: 100%; flex-wrap: wrap; gap: 8px; }
+  .pp-billing-commandbar { flex-basis: 100%; padding-bottom: 0; border-bottom: 0; }
+  .pp-billing-commandbar > :last-child { margin-left: 0; }
+  .pp-billing-controls, .pp-billing-controls.calendar-period { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (pointer: coarse) {
   .pp-app .pp-button, .pp-app .pp-menu-item, .pp-app .pp-search,
   .pp-app .pp-field input:not([type="checkbox"]):not([type="radio"]),

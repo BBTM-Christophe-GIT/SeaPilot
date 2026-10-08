@@ -91,4 +91,30 @@ Les accès des vrais profils, synchronisations et documents contractuels complet
 ne sont pas exercés par ce prototype isolé. Ils ne sont pas modifiés ; le rapport
 ne revendique pas une validation de ces parcours de production.
 
+## Itération : en-tête de facturation compact
+
+Demande du 8 octobre : compacter la zone montrée dans
+`C:/Users/chris/AppData/Local/Temp/codex-clipboard-d69f2fb0-84a0-42a3-aa42-87d73b252607.png`.
+Cette capture décrit la zone à modifier, sans imposer de nouveau style visuel.
+
+- Le titre, le mois et les cinq commandes partagent une rangée lorsque le
+  panneau est assez large ; ils reviennent à la ligne aux tailles intermédiaires.
+- Les six paramètres restent visibles, dans leur ordre habituel. Leur grille
+  dépend de la largeur du panneau, en tenant compte du portefeuille et de la sidebar.
+- À 1488 × 1058, hauteur mesurée de la zone titre/commandes/paramètres :
+  240 px avant, 156 px après (environ 35 % de réduction). À 2200 × 1058 : 108 px.
+- Contrôles de 40 px conservés, règle 44 px sur pointeur tactile conservée.
+  Aucun changement de règle de facturation, de valeur, d'action ou d'export.
+- Vérification à 390 × 844 : six champs en deux colonnes, page sans débordement
+  horizontal (scrollWidth 375 px), menu Ajouter entièrement accessible.
+- Comportements recontrôlés : période calendaire/personnalisée, exclusion DPR
+  10 955 → 8 555 € puis restauration, rendu du PDF, menus. Les 98 tests existants
+  et le build de production passent. Aucun nouvel incident console sur ce parcours.
+
+Captures ouvertes et contrôlées : [ordinateur](./evidence/billing-compact-desktop.jpg),
+[grand écran](./evidence/billing-compact-wide.jpg),
+[mobile et menu Ajouter](./evidence/billing-compact-mobile.jpg).
+
+Aucun P0/P1/P2 restant dans cette itération.
+
 final result: passed

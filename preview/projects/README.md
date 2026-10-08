@@ -8,6 +8,12 @@ projets, opérations, DPR et justificatifs fictifs. Les changements sont conserv
 en mémoire pendant la session ; actualiser la page réinitialise les exemples.
 Elle ne lit ni n'écrit de données Supabase et ne remplace pas le module existant.
 
+L'en-tête de facturation regroupe le titre, le mois et les commandes sur une
+ligne sur grand écran. Les six paramètres occupent une seule rangée dès que
+le panneau offre 830 px, puis se répartissent sur trois ou deux colonnes selon
+l'espace disponible. Les labels restent visibles et les contrôles conservent
+les dimensions partagées SeaPilot.
+
 ## Parcours à essayer
 
 - Rechercher un projet, filtrer son statut et changer la densité du portefeuille.
