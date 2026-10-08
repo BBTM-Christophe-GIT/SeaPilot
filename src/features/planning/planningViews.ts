@@ -114,7 +114,7 @@ export function planningCrewEventType(event: Pick<PlanningCrewEvent, 'status' | 
   if (event.kind === 'annualReview') return 'annual_review';
   const status = normalizePlanningStatus(event.status);
   if (status === 'Repos') return 'rest';
-  if (status === 'Vacance') return 'leave';
+  if (status === 'Vacance' || status === 'Congés Paternités') return 'leave';
   if (status === 'RTT') return 'rtt';
   if (status === 'Formation') return 'training';
   if (status === 'Arrêt de travail') return 'unavailability';

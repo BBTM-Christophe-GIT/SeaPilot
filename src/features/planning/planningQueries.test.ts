@@ -991,7 +991,7 @@ describe('planning writes', () => {
     }));
   });
 
-  it.each(['Arrêt Maladie', 'Accident du Travail'] as const)('saves the %s daily state with its short comment', async (status) => {
+  it.each(['Arrêt Maladie', 'Accident du Travail', 'Congés Paternités'] as const)('saves the %s daily state with its short comment', async (status) => {
     const rpc = vi.fn().mockResolvedValue({ data: 8, error: null });
     await expect(savePlanningAssignmentDayState({ rpc } as never, {
       assignmentId: 12,

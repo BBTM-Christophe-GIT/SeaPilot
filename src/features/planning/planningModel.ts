@@ -320,6 +320,7 @@ export function normalizePlanningStatus(value: string): string {
   if (key.includes('EMBAR') || key === 'ENMER' || key === 'TRAVAILLE') return 'En Mer';
   if (key === 'ATERRE') return 'A Terre';
   if (key === 'RTT') return 'RTT';
+  if (key.includes('PATERNITE')) return 'Congés Paternités';
   if (key.includes('REPOS') || key.includes('DEBAR')) return 'Repos';
   if (key.includes('VACAN') || key === 'CONGE' || key === 'CONGES') return 'Vacance';
   if (key.includes('ACCIDENT') && key.includes('TRAVAIL')) return 'Accident du Travail';
@@ -339,7 +340,7 @@ export function planningStatusTone(value: string): string {
   if (key === 'ATERRE') return 'shore';
   if (key === 'EXTRA') return 'extra';
   if (key === 'REPOS' || key === 'RTT') return 'rest';
-  if (key === 'VACANCE') return 'vacation';
+  if (key === 'VACANCE' || key === 'CONGESPATERNITES') return 'vacation';
   if (key === 'ARRETMALADIE') return 'sick-leave';
   if (key === 'ACCIDENTDUTRAVAIL') return 'accident';
   if (key === 'ARRETDETRAVAIL') return 'sick';

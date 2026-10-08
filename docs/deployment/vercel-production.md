@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.69.2` ajoute **Congés Paternités** aux statuts du Planning : journée,
+groupe de cases, affectation et poste fictif. Appliquer
+`20261008113550_planning_paternity_status.sql` avant le client. Les droits restent
+identiques ; le solde et l'export SILAE demandent une règle métier spécifique.
+Voir [planning-paternity-status.md](./planning-paternity-status.md).
+
 Version `3.69.1` crée automatiquement la fiche mensuelle de facturation lors de la première action et enregistre les références client par contenu à la sortie du champ. Les fiches existantes ne sont pas réécrites lors d’un aperçu ; les créations concurrentes, les brouillons et les réponses tardives sont contrôlés. Aucune migration ni nouvelle configuration n’est nécessaire. Voir [project-billing-autosave.md](./project-billing-autosave.md).
 
 Version `3.69.0` ajoute le suivi des demandes d'achat avec des commentaires

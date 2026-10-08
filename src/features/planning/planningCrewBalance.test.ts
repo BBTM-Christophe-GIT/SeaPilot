@@ -16,6 +16,11 @@ const range = { start: '2026-09-30', end: '2026-10-08' };
 const ref = { personId: person.id, asOf: range.start, balance: 10 };
 
 describe('crew cumulative balance', () => {
+  it('requires a paternity leave balance rule instead of deducting ordinary leave', () => {
+    expect(planningCrewDayCents('Congés Paternités')).toBeNull();
+    const data = overview([assignment(1, '2026-10-01', '2026-10-01', 'Congés Paternités')]);
+    expect(buildPlanningCrewBalanceDays(person, data, [], [ref], range).get(range.end)?.explanation).toContain('À préciser');
+  });
   it.each([['En Mer', 105], ['A Terre', 50], ['Extra', -100], ['Formation', 50], ['Arrêt Maladie', 0], ['Accident du Travail', 0], ['Repos', -100], ['Congés', -100], ['RTT', -100], ['', -100]])('%s has the agreed weight in cents', (status, cents) => expect(planningCrewDayCents(status)).toBe(cents));
   it('starts the day after the EOD checkpoint and carries the sum across months and empty days', () => {
     const data = overview([

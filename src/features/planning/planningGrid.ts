@@ -4,6 +4,7 @@ export const PLANNING_GRID_STATUSES = [
   'En Mer',
   'A Terre', 'Extra', 'Formation',
   'Vacance',
+  'Congés Paternités',
   'Repos',
   'Arrêt Maladie',
   'Accident du Travail',

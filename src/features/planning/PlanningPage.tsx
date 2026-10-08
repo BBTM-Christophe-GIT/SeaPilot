@@ -357,7 +357,7 @@ const EMPTY_PROJECT_FORM: ProjectFormState = {
   description: '',
 };
 
-const PLANNING_STATUSES = ['En Mer', 'A Terre', 'Extra', 'Repos', 'Vacance', 'Arrêt Maladie', 'Arrêt de travail', 'Formation'];
+const PLANNING_STATUSES = ['En Mer', 'A Terre', 'Extra', 'Repos', 'Vacance', 'Congés Paternités', 'Arrêt Maladie', 'Arrêt de travail', 'Formation'];
 const FLEET_EVENT_TYPES: PlanningFleetEventType[] = ['operation', 'transit', 'maintenance', 'unavailability'];
 
 const SIDE_TABS: Array<{ key: SideTab; label: string }> = [
@@ -1206,7 +1206,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         updateOverview((current) => ({ ...current, days: daysData }));
       }
       const displayStatus = planningStatusDisplayLabel(dayStateForm.status);
-      setStatusMessage(`${displayStatus} ${displayStatus === 'Congés' ? 'enregistrés' : 'enregistré'} pour ${dayStateForm.event.person}${dayStateForm.date ? ` le ${formatPlanningDate(dayStateForm.date)}` : ' sur toute la période'}.`);
+      setStatusMessage(`${displayStatus} ${displayStatus === 'Congés' || displayStatus === 'Congés Paternités' ? 'enregistrés' : 'enregistré'} pour ${dayStateForm.event.person}${dayStateForm.date ? ` le ${formatPlanningDate(dayStateForm.date)}` : ' sur toute la période'}.`);
       setDayStateForm(null);
     } catch (error) {
       setErrorMessage(planningErrorMessage(error, 'Impossible d’enregistrer le statut, la fonction et le commentaire.'));
@@ -3183,6 +3183,7 @@ function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onDelete, o
     ['Extra', 'Extra', 'extra'],
     ['Formation', 'Formation', 'training'],
     ['Vacance', 'Congés', 'vacation'],
+    ['Congés Paternités', 'Congés Paternités', 'vacation'],
     ['Repos', 'Repos', 'rest'],
     ['Arrêt Maladie', 'Arrêt Maladie', 'sick-leave'],
     ['Accident du Travail', 'Accident du Travail', 'accident'],

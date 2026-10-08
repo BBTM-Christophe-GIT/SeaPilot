@@ -40,6 +40,13 @@ const range = { start: '2026-07-06', end: '2026-07-19' };
 const emptyFilters = { vesselName: '', personName: '', eventType: '', status: '', responsible: '' };
 
 describe('planning P0.2 views', () => {
+  it('classifies and filters paternity leave as a leave event', () => {
+    const data = { ...overview, assignments: [{ ...overview.assignments[0], statusLabel: 'Congés Paternités' }], periods: [] };
+    expect(planningCrewEventType({ kind: 'assignment', status: 'Congés Paternités' })).toBe('leave');
+    const lanes = buildPlanningCrewLanes(data, range, { ...emptyFilters, eventType: 'leave', status: 'Congés Paternités' }, 'people');
+    expect(lanes.flatMap((lane) => lane.events)).toEqual([expect.objectContaining({ status: 'Congés Paternités' })]);
+  });
+
   it('applies explicit surname/function sorting independently of posting periods and display format', () => {
     const roles = ['Matelot', 'Maître Machine', "Maître d’Equipage", '2nd Capitaine', 'Chef Mécanicien', 'Capitaine'];
     const people = roles.map((functionLabel, index) => ({ ...overview.people[0], id: index + 1, firstName: 'Jean', lastName: String.fromCharCode(65 + index), functionLabel }));
