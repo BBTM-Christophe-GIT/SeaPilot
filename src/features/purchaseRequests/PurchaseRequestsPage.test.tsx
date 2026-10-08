@@ -200,7 +200,7 @@ describe('PurchaseRequestsPage', () => {
     const detail = within(screen.getByRole('region', { name: 'Demande 274' }));
     expect(detail.getByRole('heading', { name: 'Besoin' })).toBeInTheDocument();
     expect(detail.getByRole('heading', { name: 'Livraison à bord' })).toBeInTheDocument();
-    expect(detail.getByRole('heading', { name: 'Activité' })).toBeInTheDocument();
+    expect(detail.getByRole('heading', { name: 'Suivi de la demande' })).toBeInTheDocument();
   });
 
   it('selects the linked row and its page when the request is beyond the first ten rows', async () => {

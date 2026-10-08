@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.69.0` ajoute le suivi des demandes d'achat avec des commentaires
+horodatés, leur auteur et les étapes métier dans un historique persistant.
+Administrateur, Direction, Armement, Capitaine et Marin peuvent commenter les
+demandes auxquelles leur compte a réellement accès. Appliquer
+`20261008083542_purchase_request_followup_comments.sql` avant le client.
+Voir [purchase-request-followup.md](./purchase-request-followup.md).
+
 Version `3.68.2` place les tags des documents de Procédures QHSE juste après
 le navire, avec des badges de même hauteur sur une seule ligne. Le défilement
 horizontal garde tous les tags et projets accessibles sur les petits écrans
