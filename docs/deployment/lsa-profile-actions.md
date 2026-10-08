@@ -11,7 +11,7 @@ du catalogue commun de leur société. Marin, Direction et Armement ne gèrent p
 ce catalogue. La modification des fiches existantes reste réservée à
 Administration, Direction et Armement.
 
-Appliquer `supabase/migrations/20261008062751_lsa_profile_actions.sql` avant le
+Appliquer `supabase/migrations/20261008063400_lsa_profile_actions.sql` avant le
 client. Les trois RPC contrôlent la session, l’accès au module et la société.
 Les tables publiques restent protégées par RLS et sans écriture directe pour
 les utilisateurs authentifiés. Aucun secret, nouvelle configuration ou transfert
