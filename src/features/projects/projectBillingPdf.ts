@@ -26,7 +26,7 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
   const pageHeight = pdf.internal.pageSize.getHeight();
   const margin = 24;
   const width = pageWidth - margin * 2;
-  const blue = [16, 87, 152] as const;
+  const blue = [21, 96, 130] as const;
   const ink = [26, 37, 55] as const;
   const white = [255, 255, 255] as const;
   const columnGap = 16;
@@ -34,12 +34,18 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
   const rightX = margin + halfWidth + columnGap;
   const hasRightColumn = content.expenseRows !== null || content.serviceRows !== null;
   const showSectionSubtotals = content.totals.filter((total) => !total.final).length > 1;
+  const setColor = (method: 'setFillColor' | 'setTextColor', color: readonly [number, number, number]) => {
+    // jsPDF rounds numeric fill and text channels differently. Decimal strings
+    // preserve the requested blue consistently without changing other colors.
+    const channels = color === blue ? color.map((channel) => (channel / 255).toFixed(8)) : color;
+    Reflect.apply(pdf[method], pdf, channels);
+  };
   const font = (size: number, bold = false, color: readonly [number, number, number] = ink) => {
     pdf.setFont('helvetica', bold ? 'bold' : 'normal');
     pdf.setFontSize(size);
-    pdf.setTextColor(...color);
+    setColor('setTextColor', color);
   };
-  const fill = (color: readonly [number, number, number]) => pdf.setFillColor(...color);
+  const fill = (color: readonly [number, number, number]) => setColor('setFillColor', color);
   const wrap = (value: string, cellWidth: number, size: number, bold = false): string[] => {
     font(size, bold);
     return pdf.splitTextToSize(value || ' ', cellWidth) as string[];
@@ -220,7 +226,7 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
       }
     }
   }
-  pdf.setFillColor(...blue);
+  fill(blue);
   pdf.rect(margin, margin, width, 44, 'F');
   let objectUrl: string | null = null;
   try {
@@ -284,7 +290,7 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
       drawLines([table.title], x, top, table.titleSize);
     }
     let y = top + table.titleHeight;
-    pdf.setFillColor(...blue);
+    fill(blue);
     pdf.rect(x, y, table.width, table.headerHeight, 'F');
     let cellX = x;
     font(table.headerSize, true, white);
