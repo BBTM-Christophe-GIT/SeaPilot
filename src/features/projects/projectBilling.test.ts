@@ -1,13 +1,17 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { PDFArray, PDFDocument, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
 import { describe, expect, it, vi } from 'vitest';
 import {
   automaticBillingServiceQuantity,
   billingExportServices,
+  billingExportRawLines,
   billingExpenseAttachmentName,
   billingExpenseSpecialtyLabel,
   billingInvoiceTotal,
   billingOperationHire,
   billingServicesTotal,
+  billingRawLineTotal,
+  billingRawLinesTotal,
   billingDprComment,
   billingOperationRows,
   completeBillingDprs,
@@ -15,11 +19,18 @@ import {
   defaultProjectClientReference,
   ensureProjectBillingPeriod,
   fetchProjectBillingDprs,
+  fetchProjectBillingData,
+  generateBillingPdf,
   missingBillingDates,
   resolveBillingDprOperation,
+  saveProjectBillingRawLine,
+  deleteProjectBillingRawLine,
+  saveProjectBillingPdfSelection,
+  setProjectBillingRawLinePdfInclusion,
   type BillingExportInput,
   type BillingPeriodDraft,
   type ProjectBillingDpr,
+  type ProjectBillingRawLine,
 } from './projectBilling';
 
 describe('ensureProjectBillingPeriod', () => {
@@ -690,5 +701,266 @@ describe('Power BI P144 comments formula', () => {
       ...base,
       vesselStatus: 'Navire en Opération - On hire',
     })).toBe('Accosté au port à 00h20\nRefueling : 7 200 L\nAppareillage du quai à 14h20');
+  });
+});
+
+describe('raw billing lines', () => {
+  const rawLine: ProjectBillingRawLine = {
+    id: 1, billingPeriodId: 1, serviceCatalogId: null, serviceDate: '2026-06-02',
+    designation: 'Spread Antipollution', unitAmountHt: 0.29, quantity: 1.5, includeInPdf: true,
+  };
+
+  it('rounds each line to cents before summing decimal quantities and excludes deselected lines', () => {
+    expect(billingRawLineTotal(rawLine)).toBe(0.44);
+    expect(billingRawLineTotal({ unitAmountHt: 92.58, quantity: 1.125 })).toBe(104.15);
+    expect(billingRawLineTotal({ unitAmountHt: 0.1, quantity: 0.05 })).toBe(0.01);
+    expect(billingRawLineTotal({ unitAmountHt: 500, quantity: 0 })).toBe(0);
+    const lines = [rawLine, { ...rawLine, id: 2 }, { ...rawLine, id: 3, unitAmountHt: 900, includeInPdf: false }];
+    expect(billingRawLinesTotal(lines)).toBe(0.88);
+    expect(billingInvoiceTotal(100, 0.1, [], false, lines)).toBe(100.98);
+    expect(billingInvoiceTotal(100, 0.1, [], false, lines, false)).toBe(100.1);
+  });
+
+  it.each([NaN, Infinity, -1, 1e21])('keeps the live total usable for an invalid numeric draft (%s)', (value) => {
+    expect(billingRawLineTotal({ unitAmountHt: value, quantity: 1 })).toBe(0);
+    expect(billingRawLineTotal({ unitAmountHt: 1, quantity: value })).toBe(0);
+  });
+
+  it('keeps manual quantities on P144 even when the designation is an automatically calculated catalogue category', () => {
+    const lines = billingExportRawLines({ ...input, rawLines: [
+      { ...rawLine, id: 2, serviceCatalogId: 7 },
+      { ...rawLine, serviceDate: '2026-06-01' },
+      { ...rawLine, id: 3, includeInPdf: false },
+    ] });
+    expect(lines.map((line) => [line.id, line.quantity, line.unitAmountHt, line.serviceCatalogId]))
+      .toEqual([[1, 1.5, 0.29, null], [2, 1.5, 0.29, 7]]);
+    expect(billingExportRawLines({ ...input, period: { ...input.period, includeRawInPdf: false }, rawLines: [rawLine] })).toEqual([]);
+    expect(billingExportRawLines(input)).toEqual([]);
+  });
+
+  let clientNumber = 0;
+  function clientWithFetch(fetch: typeof globalThis.fetch) {
+    return createClient('https://raw-billing.example.invalid', 'fixture-publishable-key', {
+      global: { fetch },
+      auth: { storageKey: `raw-billing-${++clientNumber}`, persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+  }
+  const respond = (data: unknown, status = 200) => new Response(data === null ? null : JSON.stringify(data), {
+    status, headers: { 'Content-Type': 'application/json' },
+  });
+  const rawDbLine = {
+    id: 1, billing_period_id: 1, service_catalog_id: null, service_date: '2026-06-02',
+    designation: 'Spread Antipollution', unit_amount_ht: '0.29', quantity: '1.5', include_in_pdf: true,
+  };
+
+  it('loads every raw line beyond the PostgREST 1,000-row response limit and maps the period choice', async () => {
+    const requests: URL[] = [];
+    const fetch = vi.fn(async (request: RequestInfo | URL) => {
+      const url = new URL(String(request));
+      expect(url.searchParams.get('project_id')).toBe('eq.144');
+      if (url.pathname.endsWith('/project_billing_periods')) return respond([{
+        id: 1, company_id: 1, project_id: 144, period_month: '2026-06-01', include_raw_in_pdf: false,
+      }]);
+      if (!url.pathname.endsWith('/project_billing_raw_lines')) return respond([]);
+      requests.push(url);
+      expect(url.searchParams.get('order')).toBe('service_date.asc,id.asc');
+      expect(url.searchParams.get('limit')).toBe('1000');
+      const offset = Number(url.searchParams.get('offset'));
+      return respond(Array.from({ length: offset === 0 ? 1_000 : 27 }, (_, index) => ({
+        ...rawDbLine, id: offset + index + 1,
+      })));
+    });
+    const data = await fetchProjectBillingData(clientWithFetch(fetch), 144);
+    expect(requests.map((url) => url.searchParams.get('offset'))).toEqual(['0', '1000']);
+    expect(data.rawLines).toHaveLength(1_027);
+    expect(data.rawLines?.at(-1)).toEqual({ ...rawLine, id: 1_027 });
+    expect(data.periods[0].includeRawInPdf).toBe(false);
+  });
+
+  it('propagates a later page failure rather than returning an incomplete list', async () => {
+    const fetch = vi.fn(async (request: RequestInfo | URL) => {
+      const url = new URL(String(request));
+      if (!url.pathname.endsWith('/project_billing_raw_lines')) return respond([]);
+      if (url.searchParams.get('offset') === '0') return respond(Array.from({ length: 1_000 }, () => rawDbLine));
+      return respond({ code: 'raw_page_failed', message: 'Page indisponible' }, 409);
+    });
+    await expect(fetchProjectBillingData(clientWithFetch(fetch), 144)).rejects.toMatchObject({ code: 'raw_page_failed' });
+  });
+
+  it('saves a manually entered catalogue name without linking it, changing its price or calculating its quantity', async () => {
+    const payloads: Record<string, unknown>[] = [];
+    const fetch = vi.fn(async (request: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(request));
+      if (url.pathname.endsWith('/projects')) return respond({ company_id: 1 });
+      expect(url.pathname).toBe('/rest/v1/project_billing_raw_lines');
+      const payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      payloads.push(payload);
+      return respond({ ...payload, id: 17 });
+    });
+    const client = clientWithFetch(fetch);
+    const draft = { serviceCatalogId: null, serviceDate: '2026-06-02', designation: ' Spread Antipollution ', unitAmountHt: 32.5, quantity: 2.125 };
+    await expect(saveProjectBillingRawLine(client, 144, 1, draft)).resolves.toMatchObject({
+      id: 17, designation: 'Spread Antipollution', unitAmountHt: 32.5, quantity: 2.125, serviceCatalogId: null, includeInPdf: true,
+    });
+    await saveProjectBillingRawLine(client, 144, 1, { ...draft, serviceCatalogId: 7, quantity: 1.5, includeInPdf: false }, 17);
+    expect(payloads[0]).toMatchObject({
+      company_id: 1, project_id: 144, billing_period_id: 1, service_catalog_id: null,
+      designation: 'Spread Antipollution', unit_amount_ht: 32.5, quantity: 2.125, include_in_pdf: true,
+    });
+    expect(payloads[1]).toMatchObject({ service_catalog_id: 7, quantity: 1.5, include_in_pdf: false });
+    const updateRequest = fetch.mock.calls.at(-1)!;
+    expect(updateRequest[1]?.method).toBe('PATCH');
+    expect(new URL(String(updateRequest[0])).searchParams.get('id')).toBe('eq.17');
+  });
+
+  it('persists line and global inclusion choices and deletes only the requested raw line', async () => {
+    const fetch = vi.fn(async () => respond(null));
+    const client = clientWithFetch(fetch);
+    await setProjectBillingRawLinePdfInclusion(client, 17, false);
+    await saveProjectBillingPdfSelection(client, 1, {
+      includeOperationsInPdf: true, includeExpensesInPdf: true, includeBbtmInPdf: false,
+      includeRawInPdf: false, excludedOperationKeys: [],
+    });
+    await deleteProjectBillingRawLine(client, 17);
+    const calls = fetch.mock.calls as unknown as [RequestInfo | URL, RequestInit][];
+    expect(JSON.parse(String(calls[0][1]?.body))).toMatchObject({ include_in_pdf: false });
+    expect(JSON.parse(String(calls[1][1]?.body))).toMatchObject({ include_raw_in_pdf: false });
+    expect(calls[2][1]?.method).toBe('DELETE');
+    expect(new URL(String(calls[2][0])).searchParams.get('id')).toBe('eq.17');
+  });
+
+  async function readPdf(blob: Blob) {
+    const pdf = await PDFDocument.load(await blob.arrayBuffer());
+    const pages = pdf.getPages().map((page) => {
+      const contents = page.node.Contents();
+      const streams = contents instanceof PDFArray ? contents.asArray() : contents ? [contents] : [];
+      return streams.map((ref) => {
+        const stream = pdf.context.lookup(ref);
+        return stream instanceof PDFRawStream ? new TextDecoder('windows-1252').decode(decodePDFRawStream(stream).decode()) : '';
+      }).join('\n');
+    });
+    return { pdf, pages, text: pages.join('\n') };
+  }
+
+  it('exports all five columns, rounded totals and every included line across repeated table pages', async () => {
+    const rawLines = Array.from({ length: 95 }, (_, index) => ({
+      ...rawLine, id: index + 1, designation: `SAISIE-UNIQUE-${String(index + 1).padStart(3, '0')}`,
+    }));
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const { pdf, pages, text } = await readPdf(await generateBillingPdf({
+        ...input, dprs: [], period: { ...input.period, includeOperationsInPdf: false, includeExpensesInPdf: false, includeBbtmInPdf: false },
+        rawLines: [...rawLines, { ...rawLine, id: 999, designation: 'EXCLUE-DU-PDF', includeInPdf: false }],
+      }));
+      expect(pdf.getPageCount()).toBeGreaterThan(3);
+      for (const page of pages.slice(1)) {
+        expect(page).toContain('(Date)');
+        expect(page).toContain('(Désignation)');
+        expect(page).toContain('(Prix unitaire HT)');
+        expect(page).toContain('(Quantité)');
+        expect(page).toContain('(Prix Total HT)');
+      }
+      for (const line of rawLines) expect(text.split(line.designation)).toHaveLength(2);
+      expect(text).not.toContain('EXCLUE-DU-PDF');
+      expect(pages[0]).not.toContain('Sous-total Saisie brute');
+      expect(pages[0]).toContain('41,80');
+      expect(pages.at(-1)).toContain('41,80');
+      expect(pages.at(-1)).toContain('Sous-total Saisie brute');
+      expect(pages[1]).toContain('02/06/2026');
+      expect(pages[1]).toContain('0,44');
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it('omits the raw table and raw invoice amount when the global export option is off', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const { pdf, text } = await readPdf(await generateBillingPdf({
+        ...input, period: { ...input.period, includeRawInPdf: false }, rawLines: [{ ...rawLine, designation: 'RAW-EXCLUDED', unitAmountHt: 999 }],
+      }));
+      expect(pdf.getPageCount()).toBe(1);
+      expect(text).not.toContain('Saisie brute');
+      expect(text).not.toContain('RAW-EXCLUDED');
+      expect(text).toContain('4 227,50');
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it.each([0, 30])('keeps 100 USD of hire and %s USD of expenses separate from 50 EUR of raw lines', async (expenseAmount) => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const expenses = expenseAmount ? [{
+        id: 25, billingPeriodId: 1, category: 'port' as const, nature: '', supplier: 'PORT USD', supplierSpecialties: [],
+        invoiceDate: '2026-06-01', invoiceNumber: 'USD-1', amountHt: expenseAmount, amountTtc: null, currency: 'USD',
+        quantity: null, unit: '', comments: '', dprReportId: null, includeInPdf: true,
+      }] : [];
+      const { pages, text } = await readPdf(await generateBillingPdf({
+        ...input, contract: { ...input.contract!, hireCurrency: 'USD' },
+        period: { ...input.period, includeBbtmInPdf: false },
+        dprs: [{ ...input.dprs[0], amountHt: 100 }], expenses,
+        rawLines: [{ ...rawLine, unitAmountHt: 50, quantity: 1 }],
+      }));
+      expect(pages[0]).toContain('(100,00 USD)');
+      expect(pages[0]).toContain(`(${100 + expenseAmount},00 USD)`);
+      expect(pages[0]).toContain('(50,00 €)');
+      expect(text).not.toContain(`(${150 + expenseAmount},00 €)`);
+      expect(pages[0]).not.toContain('(100,00 €)');
+      if (expenseAmount) expect(pages[0]).toContain('(30,00 USD)');
+      expect(pages.at(-1)).toContain('Sous-total Saisie brute : 50,00 €');
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it('groups mixed-currency expense subtotals and the invoice amounts by currency', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const expenses = [['USD', 30], ['EUR', 5], ['CAD', 10]].map(([currency, amount], index) => ({
+        id: index + 1, billingPeriodId: 1, category: 'port' as const, nature: '', supplier: `PORT ${currency}`, supplierSpecialties: [],
+        invoiceDate: '2026-06-01', invoiceNumber: `DEV-${index}`, amountHt: Number(amount), amountTtc: null, currency: String(currency),
+        quantity: null, unit: '', comments: '', dprReportId: null, includeInPdf: true,
+      }));
+      const { pages } = await readPdf(await generateBillingPdf({
+        ...input, contract: { ...input.contract!, hireCurrency: 'USD' },
+        period: { ...input.period, includeBbtmInPdf: false },
+        dprs: [{ ...input.dprs[0], amountHt: 100 }], expenses,
+        rawLines: [{ ...rawLine, unitAmountHt: 50, quantity: 1 }],
+      }));
+      expect(pages[0]).toContain('(130,00 USD)');
+      expect(pages[0]).toContain('(55,00 €)');
+      expect(pages[0]).toContain('(10,00 CAD)');
+      expect(pages[0]).toContain('(5,00 €)');
+      expect(pages[0]).not.toContain('(45,00 €)');
+      expect(pages[0]).not.toContain('(195,00 €)');
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it('uses a currency summary page when more than three currencies cannot fit the original total blocks', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const expenses = ['USD', 'GBP', 'CAD', 'CHF', 'JPY'].map((currency, index) => ({
+        id: index + 1, billingPeriodId: 1, category: 'port' as const, nature: '', supplier: `PORT ${currency}`, supplierSpecialties: [],
+        invoiceDate: '2026-06-01', invoiceNumber: `DEV-${index}`, amountHt: 10, amountTtc: null, currency,
+        quantity: null, unit: '', comments: '', dprReportId: null, includeInPdf: true,
+      }));
+      const { pdf, pages } = await readPdf(await generateBillingPdf({
+        ...input, period: { ...input.period, includeOperationsInPdf: false, includeBbtmInPdf: false },
+        dprs: [], expenses, rawLines: [{ ...rawLine, unitAmountHt: 50, quantity: 1 }],
+      }));
+      expect(pdf.getPageCount()).toBe(3);
+      expect(pages[0]).toContain('Voir le récapitulatif par devise');
+      expect(pages[1]).toContain('Récapitulatif par devise');
+      expect(pages[1]).toContain('sans conversion');
+      for (const currency of ['USD', 'GBP', 'CAD', 'CHF', 'JPY']) expect(pages[1]).toContain(`(10,00 ${currency})`);
+      expect(pages[1]).toContain('(50,00 €)');
+      expect(pages[2]).toContain('Sous-total Saisie brute : 50,00 €');
+      expect(pages[0]).not.toContain('(100,00 €)');
+    } finally {
+      fetch.mockRestore();
+    }
   });
 });

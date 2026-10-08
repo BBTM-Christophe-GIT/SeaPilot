@@ -1513,6 +1513,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     include_operations_in_pdf: true,
     include_expenses_in_pdf: true,
     include_bbtm_in_pdf: true,
+    include_raw_in_pdf: true,
     excluded_operation_keys: [],
     created_at: '2026-08-01T08:00:00Z',
     updated_at: '2026-08-01T08:00:00Z',
@@ -1531,6 +1532,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
     created_at: '2026-08-01T08:05:00Z',
     updated_at: '2026-08-01T08:05:00Z',
   }],
+  project_billing_raw_lines: [],
   project_service_catalog: [{
     id: 9945,
     company_id: 1,

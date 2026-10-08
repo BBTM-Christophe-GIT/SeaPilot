@@ -42,6 +42,11 @@ const BILLING_CATEGORIES: Array<{
     description: 'Montant unitaire, quantité et total de la prestation interne.',
   },
   {
+    id: 'raw',
+    label: 'Saisie brute',
+    description: 'Lignes libres avec désignation, prix unitaire et quantité.',
+  },
+  {
     id: 'billingElements',
     label: 'Éléments de facturation',
     description: 'Loyers, opérations, aperçu et export du document client.',
@@ -77,6 +82,7 @@ export function BillingElementsPage({ client, roles }: BillingElementsPageProps)
     services: true,
     bbtm: true,
     billingElements: true,
+    raw: true,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
