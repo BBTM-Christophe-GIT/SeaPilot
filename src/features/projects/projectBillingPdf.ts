@@ -57,9 +57,10 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
     { label: 'Commentaires', ratio: content.includeOperationAmounts ? 0.39 : 0.49 },
   ];
   const expenseColumns: Column[] = [
-    { label: 'Date facture', ratio: 0.28 },
-    { label: 'N° facture', ratio: 0.43 },
-    { label: 'Montant HT', ratio: 0.29, align: 'right' },
+    { label: 'Société', ratio: 0.36 },
+    { label: 'Date facture', ratio: 0.18 },
+    { label: 'N° facture', ratio: 0.24 },
+    { label: 'Montant HT', ratio: 0.22, align: 'right' },
   ];
   const expenseGroups = new Map<string, Map<string, string[][]>>();
   content.expenseRows?.forEach(([supplier, specialty, ...invoice]) => {
@@ -144,28 +145,19 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
     const titleSize = 11.5 * scale;
     const titleHeight = titleSize * 1.2 + 5 * scale;
     const specialtySize = 10 * scale;
-    const supplierSize = 9 * scale;
-    const supplierIndent = 12 * scale;
-    const invoiceIndent = 24 * scale;
     const groupGap = 5 * scale;
     const groups = orderedExpenseGroups.map(({ specialty, suppliers }) => {
       const lines = wrap(specialty, halfWidth - padding * 2, specialtySize, true);
       const headingHeight = lines.length * specialtySize * 1.2 + padding * 2;
-      const measuredSuppliers = suppliers.map(([supplier, invoices]) => {
-        const supplierLines = wrap(supplier, halfWidth - supplierIndent - padding * 2, supplierSize, true);
-        const supplierHeight = supplierLines.length * supplierSize * 1.2 + padding * 2;
-        const table = measureTable('', invoices, expenseColumns, halfWidth - invoiceIndent, scale);
-        return { lines: supplierLines, headingHeight: supplierHeight, table, height: supplierHeight + table.height };
-      });
-      return { lines, headingHeight, suppliers: measuredSuppliers,
-        height: headingHeight + measuredSuppliers.reduce((sum, supplier) => sum + supplier.height, 0) };
+      const invoices = suppliers.flatMap(([supplier, rows]) => rows.map((invoice) => [supplier, ...invoice]));
+      const table = measureTable('', invoices, expenseColumns, halfWidth, scale);
+      return { lines, headingHeight, table, height: headingHeight + table.height };
     });
     // Preserve the empty expense section and its invoice column headings.
-    const emptyTable = groups.length ? null : measureTable('', [], expenseColumns, halfWidth - invoiceIndent, scale);
+    const emptyTable = groups.length ? null : measureTable('', [], expenseColumns, halfWidth, scale);
     const subtotal = measureSectionTotal('Frais imputables', halfWidth, scale);
     return {
-      titleSize, titleHeight, padding, specialtySize, supplierSize, supplierIndent, invoiceIndent,
-      groupGap, groups, emptyTable, subtotal,
+      titleSize, titleHeight, padding, specialtySize, groupGap, groups, emptyTable, subtotal,
       height: titleHeight + groups.reduce((sum, group) => sum + group.height, 0)
         + Math.max(0, groups.length - 1) * groupGap + (emptyTable?.height || 0) + (subtotal?.height || 0),
     };
@@ -342,16 +334,11 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
       font(tree.specialtySize, true, blue);
       drawLines(group.lines, x + tree.padding, y + tree.padding, tree.specialtySize);
       y += group.headingHeight;
-      group.suppliers.forEach((supplier) => {
-        font(tree.supplierSize, true);
-        drawLines(supplier.lines, x + tree.supplierIndent + tree.padding, y + tree.padding, tree.supplierSize);
-        y += supplier.headingHeight;
-        drawTable(supplier.table, x + tree.invoiceIndent, y);
-        y += supplier.table.height;
-      });
+      drawTable(group.table, x, y);
+      y += group.table.height;
     });
     if (tree.emptyTable) {
-      drawTable(tree.emptyTable, x + tree.invoiceIndent, y);
+      drawTable(tree.emptyTable, x, y);
       y += tree.emptyTable.height;
     }
     if (tree.subtotal) drawTotal(tree.subtotal, x, y);

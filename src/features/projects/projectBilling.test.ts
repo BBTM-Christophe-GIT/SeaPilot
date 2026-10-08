@@ -1428,7 +1428,8 @@ describe('raw billing lines', () => {
       expect(renderedInvoices.indexOf('A-PORT')).toBeLessThan(renderedInvoices.indexOf('P2-PORT'));
       const sameSpecialty = source.filter((entry) => entry.specialties[0] === 'Frais de port' || !entry.specialties.length);
       expect(elements.filter((element) => sameSpecialty.some((entry) => entry.supplier === element.value)).map((element) => element.value)).toEqual(['Armateur', 'Port 2']);
-      expect(elements.some((element) => element.value === 'Société' || element.value === 'Spécialités')).toBe(false);
+      expect(elements.filter((element) => element.value === 'Société')).toHaveLength(specialtyLabels.size);
+      expect(elements.some((element) => element.value === 'Spécialités')).toBe(false);
       expect(visibleText).toContain('Gasoil · Frais de port');
       expect(visibleText).toContain('Transport / Manutention');
       expect(visibleText).not.toContain('Sous-total');
@@ -1442,7 +1443,7 @@ describe('raw billing lines', () => {
     }
   });
 
-  it('renders specialty and company values as indented nodes with each invoice once and BBTM below the right-hand tree', async () => {
+  it('renders company, date, invoice and amount on the same row for every invoice, with BBTM below the specialty groups', async () => {
     const source = [
       { supplier: 'Société Diesel', specialties: ['Gasoil'], invoice: 'DIESEL1', date: '2026-06-02', amount: 30, currency: 'USD' },
       { supplier: 'Port 2', specialties: ['Frais de port'], invoice: 'PORT-B', date: '2026-06-04', amount: 20, currency: 'EUR' },
@@ -1470,11 +1471,12 @@ describe('raw billing lines', () => {
         period: { ...input.period, includeOperationsInPdf: false },
       }));
       expectSingleLandscapeA4(pdf);
-      expect(elements.some((element) => element.value === 'Société' || element.value === 'Spécialités')).toBe(false);
+      expect(elements.some((element) => element.value === 'Spécialités')).toBe(false);
       const specialtyLabels = ['Frais de port', 'Gasoil', 'Transport / Manutention · Gasoil'];
       expect(elements.filter((element) => specialtyLabels.includes(element.value)).map((element) => element.value)).toEqual(specialtyLabels);
+      expect(elements.filter((element) => element.value === 'Société')).toHaveLength(specialtyLabels.length);
       for (const supplier of ['Port 10', 'Port 2', 'Société Diesel', 'Société Éclair', 'Transporteur']) {
-        expect(elements.filter((element) => element.value === supplier)).toHaveLength(1);
+        expect(elements.filter((element) => element.value === supplier)).toHaveLength(source.filter((entry) => entry.supplier === supplier).length);
       }
       for (const entry of source) {
         expect(elements.filter((element) => element.value === entry.invoice)).toHaveLength(1);
@@ -1500,10 +1502,19 @@ describe('raw billing lines', () => {
       const company = node('Port 10');
       const invoiceDate = node('01/06/2026');
       expect(port.x).toBeGreaterThan(pdf.getPage(0).getWidth() / 2);
-      expect(company.x).toBeGreaterThan(port.x);
+      expect(company.x).toBeGreaterThanOrEqual(port.x);
       expect(invoiceDate.x).toBeGreaterThan(company.x);
       expect(company.y).toBeLessThan(port.y);
-      expect(invoiceDate.y).toBeLessThan(company.y);
+      expect(invoiceDate.y).toBeCloseTo(company.y, 5);
+      for (const entry of source) {
+        const invoice = node(entry.invoice);
+        const cells = elements.filter((element) => Math.abs(element.y - invoice.y) < 0.00001 && element.x > pdf.getPage(0).getWidth() / 2);
+        expect(cells.map((element) => element.value)).toEqual([
+          entry.supplier, entry.date.slice(8, 10) + '/06/2026', entry.invoice,
+          `${entry.amount},00 ${entry.currency === 'EUR' ? '€' : entry.currency}`,
+        ]);
+        for (let index = 1; index < cells.length; index += 1) expect(cells[index].x).toBeGreaterThan(cells[index - 1].x);
+      }
       expect(node('Prestations BBTM').x).toBeGreaterThan(pdf.getPage(0).getWidth() / 2);
       expect(node('Prestations BBTM').y).toBeLessThan(node('TR-MUL').y);
       expect(node('BBTM-SOUS-ARBRE').x).toBeGreaterThan(pdf.getPage(0).getWidth() / 2);
@@ -1512,6 +1523,55 @@ describe('raw billing lines', () => {
       expect(visibleText).toContain('21,00 €');
       expect(visibleText).not.toContain('196,00 €');
       expect(JSON.stringify(expenses)).toBe(snapshot);
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it('preserves wrapped company, specialty and invoice fragments on each expense row without changing currencies or inclusion', async () => {
+    const companyFragments = Array.from({ length: 12 }, (_, index) => `CIE-${String(index + 1).padStart(3, '0')}`);
+    const specialtyFragments = Array.from({ length: 22 }, (_, index) => `SPEC-${String(index + 1).padStart(3, '0')}`);
+    const source = [
+      { key: 'A', currency: 'EUR', amount: 10.1 }, { key: 'B', currency: 'USD', amount: 20.2 }, { key: 'C', currency: 'CAD', amount: 30.3 },
+    ];
+    const expenses = source.map((entry, index) => ({
+      id: index + 1, billingPeriodId: 1, category: 'port' as const, nature: '', supplier: companyFragments.join(' '),
+      supplierSpecialties: [specialtyFragments.join(' ')], invoiceDate: `2026-06-0${index + 1}`,
+      invoiceNumber: Array.from({ length: 10 }, (_, fragment) => `F-${entry.key}-${String(fragment + 1).padStart(3, '0')}`).join(' '),
+      amountHt: entry.amount, amountTtc: null, currency: entry.currency,
+      quantity: null, unit: '', comments: '', dprReportId: null, includeInPdf: true,
+    }));
+    const fixture = subtotalExportInput();
+    const exportInput: BillingExportInput = {
+      ...fixture, dprs: [], services: [],
+      period: { ...fixture.period, includeOperationsInPdf: false, includeBbtmInPdf: false },
+      expenses: [...expenses, { ...expenses[0], id: 99, supplier: 'SOCIETE-EXCLUE', supplierSpecialties: ['SPECIALITE-EXCLUE'], invoiceNumber: 'FACTURE-EXCLUE', amountHt: 999, includeInPdf: false }],
+    };
+    const snapshot = JSON.stringify(exportInput);
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const { pdf, visibleText, elements } = await readPdf(await generateBillingPdf(exportInput));
+      expectSingleLandscapeA4(pdf);
+      expect(elements.filter((element) => element.value === 'Société')).toHaveLength(1);
+      for (const fragment of companyFragments) expect(visibleText.split(fragment)).toHaveLength(4);
+      for (const fragment of specialtyFragments) expect(visibleText.split(fragment)).toHaveLength(2);
+      for (const entry of source) {
+        const rowStart = elements.find((element) => element.value.startsWith(`F-${entry.key}-001`));
+        expect(rowStart).toBeDefined();
+        const rowCells = elements.filter((element) => Math.abs(element.y - rowStart!.y) < 0.00001 && element.x > pdf.getPage(0).getWidth() / 2);
+        expect(rowCells).toHaveLength(4);
+        expect(rowCells[0].value).toContain(companyFragments[0]);
+        expect(rowCells[2].value).toContain(`F-${entry.key}-001`);
+        expect(rowCells[3].value).toBe(`${entry.amount.toFixed(2).replace('.', ',')} ${entry.currency === 'EUR' ? '€' : entry.currency}`);
+        for (let fragment = 1; fragment <= 10; fragment += 1) expect(visibleText.split(`F-${entry.key}-${String(fragment).padStart(3, '0')}`)).toHaveLength(2);
+      }
+      for (const omitted of ['SOCIETE-EXCLUE', 'SPECIALITE-EXCLUE', 'FACTURE-EXCLUE', '999,00']) expect(visibleText).not.toContain(omitted);
+      const expenseSubtotalIndex = elements.findIndex((element) => element.value.startsWith('Sous-total Frais'));
+      const rawTitleIndex = elements.findIndex((element) => element.value === 'Détail des Opérations');
+      expect(elements.slice(expenseSubtotalIndex, rawTitleIndex).map((element) => element.value).join(' ')).toContain('30,30 CAD 10,10 € 20,20 USD');
+      const finalIndex = elements.findIndex((element) => element.value === 'Total facture du mois HT');
+      expect(elements.slice(finalIndex).map((element) => element.value)).toEqual(['Total facture du mois HT', '30,30 CAD', '80,10 €', '20,20 USD']);
+      expect(JSON.stringify(exportInput)).toBe(snapshot);
     } finally {
       fetch.mockRestore();
     }
