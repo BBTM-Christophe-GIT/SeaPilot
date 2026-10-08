@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectBillingRawLines } from './ProjectBillingRawLines';
 import { AppDialog } from '../../components/AppDialog';
-import type { BillingRawLineDraft, ProjectBillingRawLine, ProjectServiceCatalogEntry } from './projectBilling';
+import type { BillingRawLineDraft, ProjectBillingRawLine, ProjectServiceCatalogDraft, ProjectServiceCatalogEntry } from './projectBilling';
+import type { VesselRecord } from './projectQueries';
 
 const catalog: ProjectServiceCatalogEntry[] = [{
   id: 7, companyId: 1, category: 'Spread Antipollution', unitAmountHt: 92.58,
@@ -16,28 +17,57 @@ const savedLine: ProjectBillingRawLine = {
 const onSave = vi.fn<(draft: BillingRawLineDraft, id?: number) => Promise<ProjectBillingRawLine>>();
 const onDelete = vi.fn<(id: number) => Promise<void>>();
 const onCatalogOpen = vi.fn();
+const onCatalogCreate = vi.fn<(draft: ProjectServiceCatalogDraft) => Promise<ProjectServiceCatalogEntry>>();
 const onDirtyChange = vi.fn();
+const vessels: VesselRecord[] = [
+  { id: 101, name: 'COURT', acronym: '', active: true, fleetExitOn: '', sharePointItemId: '', assetKind: 'vessel', lengthOverall: '8' },
+  { id: 102, name: 'LONG', acronym: '', active: true, fleetExitOn: '', sharePointItemId: '', assetKind: 'vessel', lengthOverall: '40' },
+  { id: 103, name: 'ARCHIVÉ', acronym: '', active: false, fleetExitOn: '', sharePointItemId: '', assetKind: 'vessel', lengthOverall: '45' },
+  { id: 104, name: 'QUAI', acronym: '', active: true, fleetExitOn: '', sharePointItemId: '', assetKind: 'quay', lengthOverall: '50' },
+  { id: 105, name: 'BUREAU', acronym: '', active: true, fleetExitOn: '', sharePointItemId: '', assetKind: 'office', lengthOverall: '60' },
+  { id: 106, name: 'SANS DIMENSION', acronym: '', active: true, fleetExitOn: '', sharePointItemId: '' },
+];
 
 function props(lines: ProjectBillingRawLine[] = []) {
-  return { lines, catalog, isManager: true, initialDate: '2026-10-01', onSave, onDelete, onCatalogOpen, onDirtyChange };
+  return { lines, catalog, vessels, isManager: true, initialDate: '2026-10-01', onSave, onDelete, onCatalogOpen, onCatalogCreate, onDirtyChange };
 }
 
 function change(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
 
+async function startCreation(user: ReturnType<typeof userEvent.setup>, line = 1) {
+  await user.click(screen.getByRole('button', { name: `Choisir dans le catalogue, ligne ${line}` }));
+  await user.click(screen.getByRole('button', { name: 'Nouvelle prestation' }));
+  return screen.getByRole('dialog', { name: 'Nouvelle prestation' });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   onSave.mockImplementation(async (draft, id) => ({ ...draft, id: id ?? 20, billingPeriodId: 2 }));
   onDelete.mockResolvedValue(undefined);
+  onCatalogCreate.mockImplementation(async (draft) => ({
+    ...catalog[0], id: 99, category: draft.category, unitAmountHt: draft.unitAmountHt,
+    vesselId: draft.vesselId ?? null, vesselName: draft.vesselName || '',
+  }));
 });
 
 describe('raw project billing lines', () => {
+  it.each(['vessel', 'office'] as const)('keeps the saved vessel name visible after a fleet rename or reclassification to %s', async (assetKind) => {
+    const user = userEvent.setup();
+    const line = { ...savedLine, vesselId: 102, vesselName: 'NOM HISTORIQUE' };
+    render(<ProjectBillingRawLines {...props([line])} vessels={vessels.map((vessel) => vessel.id === 102 ? { ...vessel, name: 'NOM ACTUEL', assetKind } : vessel)} />);
+    expect(screen.getByLabelText('Navire, ligne 1')).toHaveDisplayValue('NOM HISTORIQUE');
+    change('Prix unitaire HT, ligne 1', '110');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ vesselId: 102, vesselName: 'NOM HISTORIQUE', unitAmountHt: 110 }), savedLine.id));
+  });
+
   it('adds several independent rows with the requested columns and opens the catalogue', async () => {
     const user = userEvent.setup();
     render(<ProjectBillingRawLines {...props()} />);
     expect(screen.getByText('Aucune ligne de saisie brute pour cette période.')).toBeVisible();
-    for (const column of ['Date', 'Désignation', 'Prix unitaire HT', 'Quantité', 'Prix Total HT']) {
+    for (const column of ['Date', 'Navire', 'Désignation', 'Prix unitaire HT', 'Quantité', 'Prix Total HT']) {
       expect(screen.getByRole('columnheader', { name: column })).toBeVisible();
     }
     for (let index = 0; index < 4; index += 1) await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
@@ -45,7 +75,7 @@ describe('raw project billing lines', () => {
     expect(screen.getByLabelText('Date, ligne 4')).toHaveValue('2026-10-01');
     expect(screen.getByLabelText('Quantité, ligne 4')).toHaveValue(1);
     expect(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 4' })).toHaveAttribute('aria-haspopup', 'dialog');
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /Prestation du catalogue/ })).not.toBeInTheDocument();
     expect(screen.queryByText('Saisie manuelle')).not.toBeInTheDocument();
     const add = screen.getByRole('button', { name: 'Ajouter une ligne' });
     const lastRow = screen.getByLabelText('Désignation, ligne 4').closest('tr')!;
@@ -224,7 +254,7 @@ describe('raw project billing lines', () => {
 
   it('disables every mutation for a read-only profile without any per-line PDF control', () => {
     render(<ProjectBillingRawLines {...props([savedLine])} isManager={false} />);
-    for (const field of ['Date, ligne 1', 'Désignation, ligne 1', 'Prix unitaire HT, ligne 1', 'Quantité, ligne 1']) {
+    for (const field of ['Date, ligne 1', 'Navire, ligne 1', 'Désignation, ligne 1', 'Prix unitaire HT, ligne 1', 'Quantité, ligne 1']) {
       expect(screen.getByLabelText(field)).toBeDisabled();
     }
     expect(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' })).toBeDisabled();
@@ -319,5 +349,183 @@ describe('raw project billing lines', () => {
     await user.keyboard('{Escape}');
     expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Assistance');
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('orders real vessel options by length, keeps the current archived vessel and changes only vessel metadata', async () => {
+    const user = userEvent.setup();
+    render(<ProjectBillingRawLines {...props([{ ...savedLine, vesselId: 103, vesselName: 'ARCHIVÉ' }])} />);
+    const select = screen.getByRole('combobox', { name: 'Navire, ligne 1' });
+    expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual(['Sans navire', 'ARCHIVÉ', 'LONG', 'COURT', 'SANS DIMENSION']);
+    await user.selectOptions(select, '102');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Assistance');
+    expect(screen.getByLabelText('Prix unitaire HT, ligne 1')).toHaveValue(100);
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ vesselId: 102, vesselName: 'LONG', designation: 'Assistance', unitAmountHt: 100 }), 10));
+  });
+
+  it('distinguishes equal catalogue designations by vessel and copies only the chosen line', async () => {
+    const user = userEvent.setup();
+    const second = { ...savedLine, id: 11, serviceDate: '2026-10-12', quantity: 2.5 };
+    const longService = { ...catalog[0], vesselId: 102 };
+    const shortService = { ...catalog[0], id: 8, vesselId: 101, vesselName: 'COURT', unitAmountHt: 35 };
+    render(<ProjectBillingRawLines {...props([savedLine, second])} catalog={[longService, shortService]} />);
+    await user.click(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 2' }));
+    expect(screen.getByRole('button', { name: 'Choisir Spread Antipollution — LONG' })).toHaveTextContent(/LONG.*92,58/);
+    expect(screen.getByRole('button', { name: 'Choisir Spread Antipollution — COURT' })).toHaveTextContent(/COURT.*35,00/);
+    await user.type(screen.getByLabelText('Rechercher une prestation'), 'LONG');
+    expect(screen.queryByRole('button', { name: 'Choisir Spread Antipollution — COURT' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Choisir Spread Antipollution — LONG' }));
+    expect(screen.getByLabelText('Navire, ligne 1')).toHaveValue('');
+    expect(screen.getByLabelText('Navire, ligne 2')).toHaveValue('102');
+    expect(screen.getByLabelText('Date, ligne 2')).toHaveValue('2026-10-12');
+    expect(screen.getByLabelText('Quantité, ligne 2')).toHaveValue(2.5);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('creates a catalogue service without a quantity and fills the second row without autosaving it', async () => {
+    const user = userEvent.setup();
+    const second = { ...savedLine, id: 11, serviceDate: '2026-10-12', quantity: 2.5 };
+    render(<ProjectBillingRawLines {...props([savedLine, second])} />);
+    const dialog = await startCreation(user, 2);
+    expect(within(dialog).queryByLabelText(/Quantité/)).not.toBeInTheDocument();
+    const vesselSelect = within(dialog).getByLabelText('Navire de la nouvelle prestation');
+    expect(within(vesselSelect).getAllByRole('option').map((option) => option.textContent)).toEqual(['Sans navire', 'LONG', 'COURT', 'SANS DIMENSION']);
+    await user.selectOptions(vesselSelect, '102');
+    await user.type(within(dialog).getByLabelText('Désignation de la nouvelle prestation'), '  Forfait portuaire  ');
+    await user.type(within(dialog).getByLabelText('Prix unitaire HT de la nouvelle prestation'), '125.5');
+    await user.click(within(dialog).getByRole('button', { name: 'Créer la prestation' }));
+    await waitFor(() => expect(onCatalogCreate).toHaveBeenCalledWith({ category: 'Forfait portuaire', unitAmountHt: 125.5, vesselId: 102, vesselName: 'LONG', descriptionHtml: '', active: true }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Assistance');
+    expect(screen.getByLabelText('Navire, ligne 1')).toHaveValue('');
+    expect(screen.getByLabelText('Désignation, ligne 2')).toHaveValue('Forfait portuaire');
+    expect(screen.getByLabelText('Navire, ligne 2')).toHaveValue('102');
+    expect(screen.getByLabelText('Prix unitaire HT, ligne 2')).toHaveValue(125.5);
+    expect(screen.getByLabelText('Date, ligne 2')).toHaveValue('2026-10-12');
+    expect(screen.getByLabelText('Quantité, ligne 2')).toHaveValue(2.5);
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    expect(screen.getByRole('button', { name: 'Enregistrer la ligne 2' })).toBeEnabled();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 2' })).toHaveFocus());
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 2' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ serviceCatalogId: 99, vesselId: 102, vesselName: 'LONG', serviceDate: '2026-10-12', quantity: 2.5 }), 11));
+  });
+
+  it('offers creation in an empty catalogue and accepts a zero price without a vessel', async () => {
+    const user = userEvent.setup();
+    render(<ProjectBillingRawLines {...props([savedLine])} catalog={[]} />);
+    const dialog = await startCreation(user);
+    await user.type(within(dialog).getByLabelText('Désignation de la nouvelle prestation'), 'Prestation gratuite');
+    await user.type(within(dialog).getByLabelText('Prix unitaire HT de la nouvelle prestation'), '0');
+    await user.click(within(dialog).getByRole('button', { name: 'Créer la prestation' }));
+    await waitFor(() => expect(onCatalogCreate).toHaveBeenCalledWith({ category: 'Prestation gratuite', unitAmountHt: 0, vesselId: null, vesselName: '', descriptionHtml: '', active: true }));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Prix unitaire HT, ligne 1')).toHaveValue(0);
+  });
+
+  it('returns to the picker on cancellation or Escape without changing the originating row', async () => {
+    const user = userEvent.setup();
+    render(<ProjectBillingRawLines {...props([savedLine])} />);
+    await user.click(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' }));
+    await user.type(screen.getByLabelText('Rechercher une prestation'), 'spread');
+    await user.click(screen.getByRole('button', { name: 'Nouvelle prestation' }));
+    expect(screen.getByLabelText('Désignation de la nouvelle prestation')).toHaveFocus();
+    await user.type(screen.getByLabelText('Désignation de la nouvelle prestation'), 'Annulée');
+    await user.click(screen.getByRole('button', { name: 'Annuler' }));
+    expect(screen.getByRole('dialog', { name: 'Choisir une prestation' })).toBeVisible();
+    expect(screen.getByLabelText('Rechercher une prestation')).toHaveValue('spread');
+    await user.click(screen.getByRole('button', { name: 'Nouvelle prestation' }));
+    await user.type(screen.getByLabelText('Désignation de la nouvelle prestation'), 'Abandonnée');
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { name: 'Choisir une prestation' })).toBeVisible();
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Assistance');
+    expect(screen.getByLabelText('Prix unitaire HT, ligne 1')).toHaveValue(100);
+    expect(onCatalogCreate).not.toHaveBeenCalled();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('retains the creation fields after an API failure and retries without creating a raw invoice line', async () => {
+    const user = userEvent.setup();
+    onCatalogCreate.mockRejectedValueOnce(new Error('Catalogue indisponible'));
+    render(<ProjectBillingRawLines {...props([savedLine])} />);
+    const dialog = await startCreation(user);
+    await user.selectOptions(within(dialog).getByLabelText('Navire de la nouvelle prestation'), '102');
+    await user.type(within(dialog).getByLabelText('Désignation de la nouvelle prestation'), 'Transport');
+    await user.type(within(dialog).getByLabelText('Prix unitaire HT de la nouvelle prestation'), '125');
+    await user.click(within(dialog).getByRole('button', { name: 'Créer la prestation' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Catalogue indisponible');
+    expect(screen.getByLabelText('Désignation de la nouvelle prestation')).toHaveValue('Transport');
+    expect(screen.getByLabelText('Prix unitaire HT de la nouvelle prestation')).toHaveValue(125);
+    expect(screen.getByLabelText('Navire de la nouvelle prestation')).toHaveValue('102');
+    expect(screen.getByRole('button', { name: 'Créer la prestation' })).toBeEnabled();
+    expect(onSave).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Créer la prestation' }));
+    await waitFor(() => expect(onCatalogCreate).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('blocks closing, editing and double submission while catalogue creation is pending', async () => {
+    const user = userEvent.setup();
+    let resolveCreate!: (entry: ProjectServiceCatalogEntry) => void;
+    onCatalogCreate.mockImplementation(() => new Promise((resolve) => { resolveCreate = resolve; }));
+    render(<ProjectBillingRawLines {...props([savedLine])} />);
+    const dialog = await startCreation(user);
+    await user.type(within(dialog).getByLabelText('Désignation de la nouvelle prestation'), 'Transport');
+    await user.type(within(dialog).getByLabelText('Prix unitaire HT de la nouvelle prestation'), '125');
+    await user.click(within(dialog).getByRole('button', { name: 'Créer la prestation' }));
+    expect(dialog).toHaveAttribute('aria-busy', 'true');
+    for (const label of ['Désignation de la nouvelle prestation', 'Prix unitaire HT de la nouvelle prestation', 'Navire de la nouvelle prestation']) expect(screen.getByLabelText(label)).toBeDisabled();
+    for (const label of ['Créer la prestation', 'Annuler', 'Fermer']) expect(within(dialog).getByRole('button', { name: label })).toBeDisabled();
+    fireEvent.submit(dialog);
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { name: 'Nouvelle prestation' })).toBeVisible();
+    expect(onCatalogCreate).toHaveBeenCalledOnce();
+    resolveCreate({ ...catalog[0], id: 99, category: 'Transport', unitAmountHt: 125 });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Transport');
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('validates a trimmed designation and a finite nonnegative required catalogue price', async () => {
+    const user = userEvent.setup();
+    render(<ProjectBillingRawLines {...props([savedLine])} />);
+    const dialog = await startCreation(user);
+    change('Désignation de la nouvelle prestation', '   ');
+    change('Prix unitaire HT de la nouvelle prestation', '1');
+    fireEvent.submit(dialog);
+    expect(screen.getByRole('alert')).toHaveTextContent('Renseignez la désignation');
+    change('Désignation de la nouvelle prestation', 'Transport');
+    change('Prix unitaire HT de la nouvelle prestation', '');
+    fireEvent.submit(dialog);
+    expect(screen.getByRole('alert')).toHaveTextContent('prix unitaire HT positif ou nul');
+    change('Prix unitaire HT de la nouvelle prestation', '-1');
+    fireEvent.submit(dialog);
+    expect(screen.getByRole('alert')).toHaveTextContent('prix unitaire HT positif ou nul');
+    change('Prix unitaire HT de la nouvelle prestation', '1e309');
+    fireEvent.submit(dialog);
+    expect(screen.getByRole('alert')).toHaveTextContent('prix unitaire HT positif ou nul');
+    expect(onCatalogCreate).not.toHaveBeenCalled();
+  });
+
+  it('prevents catalogue creation when the disabled state or editing permissions change', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ProjectBillingRawLines {...props([savedLine])} />);
+    const dialog = await startCreation(user);
+    change('Désignation de la nouvelle prestation', 'Transport');
+    change('Prix unitaire HT de la nouvelle prestation', '125');
+    rerender(<ProjectBillingRawLines {...props([savedLine])} disabled />);
+    expect(screen.getByRole('button', { name: 'Créer la prestation' })).toBeDisabled();
+    fireEvent.submit(dialog);
+    expect(onCatalogCreate).not.toHaveBeenCalled();
+    rerender(<ProjectBillingRawLines {...props([savedLine])} isManager={false} />);
+    expect(screen.getByLabelText('Désignation de la nouvelle prestation')).toBeDisabled();
+    expect(screen.getByLabelText('Navire de la nouvelle prestation')).toBeDisabled();
+    fireEvent.submit(dialog);
+    expect(onCatalogCreate).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Annuler' }));
+    expect(screen.getByRole('button', { name: 'Nouvelle prestation' })).toBeDisabled();
   });
 });

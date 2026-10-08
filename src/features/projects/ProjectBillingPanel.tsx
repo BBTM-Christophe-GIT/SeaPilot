@@ -30,7 +30,7 @@ import {
   type ServiceProvider,
   type ServiceProviderDraft,
 } from '../serviceProviders/serviceProviders';
-import type { ProjectContractRecord, ProjectPlanningOccurrenceRecord, ProjectRecord } from './projectQueries';
+import type { ProjectContractRecord, ProjectPlanningOccurrenceRecord, ProjectRecord, VesselRecord } from './projectQueries';
 import { ServiceCatalogDialog } from './ProjectCatalogDialogs';
 import {
   automaticBillingServiceQuantity,
@@ -57,6 +57,7 @@ import {
   saveProjectBillingPdfSelection,
   saveProjectBillingService,
   saveProjectBillingRawLine,
+  saveProjectServiceCatalogEntry,
   saveProjectChargeableExpense,
   setProjectChargeableExpensePdfInclusion,
   signedProjectBillingDocumentUrl,
@@ -75,6 +76,7 @@ import {
   type ProjectBillingRawLine,
   type ProjectChargeableExpense,
   type ProjectServiceCatalogEntry,
+  type ProjectServiceCatalogDraft,
 } from './projectBilling';
 
 const EMPTY_DATA: ProjectBillingData = { periods: [], expenses: [], documents: [], services: [] };
@@ -186,6 +188,7 @@ export function ProjectBillingPanel({
   showMonthSelector = true,
   visibleSections = ALL_BILLING_SECTIONS,
   workspace = false,
+  vessels = [],
 }: {
   client: SupabaseClient;
   contract?: ProjectContractRecord;
@@ -196,6 +199,7 @@ export function ProjectBillingPanel({
   showMonthSelector?: boolean;
   visibleSections?: ProjectBillingSectionVisibility;
   workspace?: boolean;
+  vessels?: VesselRecord[];
 }) {
   const [billingView, setBillingView] = useState<'hire' | 'expenses' | 'services' | 'raw' | 'followup'>('hire');
   const [rawLinesDirty, setRawLinesDirty] = useState(false);
@@ -544,6 +548,26 @@ export function ProjectBillingPanel({
       setServiceProviders(await fetchServiceProviders(client));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Le référentiel fournisseurs est indisponible.');
+    }
+  }
+
+  async function createCatalogEntry(draft: ProjectServiceCatalogDraft): Promise<ProjectServiceCatalogEntry> {
+    if (!isManager || busy) throw new Error('La création de prestation est indisponible.');
+    const revision = contextRevision.current;
+    setBusy('catalog-create');
+    try {
+      const saved = await saveProjectServiceCatalogEntry(client, { ...draft, id: undefined });
+      if (revision !== contextRevision.current) throw new Error('Le mois ou le projet a changé.');
+      setServiceCatalog((current) => [...current.filter((entry) => entry.id !== saved.id), saved]
+        .sort((left, right) => left.category.localeCompare(right.category, 'fr')));
+      return saved;
+    } catch (caught) {
+      if (caught && typeof caught === 'object' && 'code' in caught && caught.code === '23505') {
+        throw new Error('Une prestation de même désignation existe déjà pour ce navire dans le catalogue.');
+      }
+      throw caught;
+    } finally {
+      if (revision === contextRevision.current) setBusy('');
     }
   }
 
@@ -1080,7 +1104,7 @@ export function ProjectBillingPanel({
                 <span>
                   <select aria-label={`Catégorie de la prestation ${index + 1}`} disabled={!isManager} onChange={(event) => selectServiceCategory(service.key, Number(event.target.value))} value={service.serviceCatalogId ?? ''}>
                     {!serviceCatalog.some((entry) => entry.id === service.serviceCatalogId) && service.category ? <option value={service.serviceCatalogId ?? ''}>{service.category}</option> : null}
-                    {serviceCatalog.map((entry) => <option key={entry.id} value={entry.id}>{entry.category}</option>)}
+                    {serviceCatalog.map((entry) => <option key={entry.id} value={entry.id}>{entry.category}{entry.vesselName ? ` — ${entry.vesselName}` : ''}</option>)}
                   </select>
                   {isManager ? <button aria-label="Ajouter une catégorie de prestation" onClick={() => setServiceCatalogOpen(true)} title="Ajouter une catégorie" type="button"><Plus aria-hidden="true" size={17} /></button> : null}
                 </span>
@@ -1109,12 +1133,14 @@ export function ProjectBillingPanel({
           key={`${project.id}-${selectedMonth}`}
           lines={periodRawLines}
           catalog={serviceCatalog}
+          vessels={vessels}
           isManager={isManager}
           disabled={Boolean(busy)}
           initialDate={`${selectedMonth}-01`}
           onSave={saveRawLine}
           onDelete={removeRawLine}
           onCatalogOpen={() => setServiceCatalogOpen(true)}
+          onCatalogCreate={createCatalogEntry}
           onDirtyChange={setRawLinesDirty}
         />
       </article>
@@ -1191,7 +1217,7 @@ export function ProjectBillingPanel({
         </AppDialog>
       ) : null}
       {providerEditor ? <ServiceProviderEditorDialog categories={providerCategories} draft={providerEditor} isSaving={busy === 'provider'} onChange={setProviderEditor} onClose={() => setProviderEditor(null)} onSubmit={submitProvider} serviceTypes={providerServiceTypes} /> : null}
-      {serviceCatalogOpen ? <ServiceCatalogDialog canManage={isManager} client={client} initialMode="create" onChanged={(entries) => setServiceCatalog(entries)} onClose={() => setServiceCatalogOpen(false)} /> : null}
+      {serviceCatalogOpen ? <ServiceCatalogDialog canManage={isManager} client={client} vessels={vessels} initialMode="create" onChanged={(entries) => setServiceCatalog(entries)} onClose={() => setServiceCatalogOpen(false)} /> : null}
     </section>
   );
 }

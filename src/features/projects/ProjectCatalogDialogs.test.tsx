@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClientCatalogDialog, ServiceCatalogDialog, TowedAssetCatalogDialog } from './ProjectCatalogDialogs';
 import { previewSupabaseClient } from '../preview/previewSupabaseClient';
 import type { ClientRecord, ProjectTowedAssetRecord } from './projectQueries';
+import * as billing from './projectBilling';
 
 const clients: ClientRecord[] = [
   {
@@ -112,9 +113,12 @@ afterEach(() => {
 });
 
 describe('ProjectCatalogDialogs', () => {
-  it('shows the service catalogue and its three editable fields', async () => {
+  it('shows the service catalogue and its vessel selector sorted by vessel length', async () => {
     const user = userEvent.setup();
-    render(<ServiceCatalogDialog canManage client={previewSupabaseClient as never} onClose={vi.fn()} />);
+    const vessels = [{ id: 1, name: 'PETIT', active: true, acronym: '', fleetExitOn: '', sharePointItemId: '', lengthOverall: '20' }, { id: 2, name: 'GRAND', active: true, acronym: '', fleetExitOn: '', sharePointItemId: '', lengthOverall: '50' }];
+    const saved = { id: 91, companyId: 1, category: 'Assistance GRAND', unitAmountHt: 30, descriptionHtml: '', active: true, vesselId: 2, vesselName: 'GRAND', createdAt: '', updatedAt: '' };
+    const save = vi.spyOn(billing, 'saveProjectServiceCatalogEntry').mockResolvedValue(saved);
+    render(<ServiceCatalogDialog canManage client={previewSupabaseClient as never} vessels={vessels} onClose={vi.fn()} />);
 
     const serviceList = await screen.findByRole('listbox', { name: 'Prestations' });
     const spreadService = within(serviceList).getByRole('option', { name: /Spread Antipollution/ });
@@ -123,6 +127,30 @@ describe('ProjectCatalogDialogs', () => {
     expect(screen.getByLabelText('Catégorie *')).toBeInTheDocument();
     expect(screen.getByLabelText('Montant unitaire (€ HT) *')).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Description de la prestation' })).toBeInTheDocument();
+    const vesselSelect = screen.getByLabelText('Navire');
+    expect(within(vesselSelect).getAllByRole('option').map((option) => option.textContent)).toEqual(['Sans navire', 'GRAND', 'PETIT']);
+    await user.selectOptions(vesselSelect, '2');
+    await user.type(screen.getByLabelText('Catégorie *'), 'Assistance GRAND');
+    await user.clear(screen.getByLabelText('Montant unitaire (€ HT) *'));
+    await user.type(screen.getByLabelText('Montant unitaire (€ HT) *'), '30');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(previewSupabaseClient, expect.objectContaining({ vesselId: 2, vesselName: 'GRAND', category: 'Assistance GRAND', unitAmountHt: 30 })));
+    expect(await screen.findByText('Prestation enregistrée dans le catalogue.')).toBeVisible();
+    expect(screen.getByText('Navire').parentElement).toHaveTextContent('GRAND');
+  });
+
+  it('keeps the catalogue vessel snapshot visible while editing another field', async () => {
+    const user = userEvent.setup();
+    const entry = { id: 91, companyId: 1, category: 'Assistance', unitAmountHt: 30, descriptionHtml: '', active: true, vesselId: 2, vesselName: 'NOM HISTORIQUE', createdAt: '', updatedAt: '' };
+    vi.spyOn(billing, 'fetchProjectServiceCatalog').mockResolvedValue([entry]);
+    const save = vi.spyOn(billing, 'saveProjectServiceCatalogEntry').mockResolvedValue({ ...entry, unitAmountHt: 35 });
+    render(<ServiceCatalogDialog canManage client={previewSupabaseClient as never} vessels={[{ id: 2, name: 'NOM ACTUEL', active: true, acronym: '', fleetExitOn: '', sharePointItemId: '' }]} onClose={vi.fn()} />);
+    await user.click(await screen.findByRole('button', { name: 'Modifier' }));
+    expect(screen.getByLabelText('Navire')).toHaveDisplayValue('NOM HISTORIQUE');
+    await user.clear(screen.getByLabelText('Montant unitaire (€ HT) *'));
+    await user.type(screen.getByLabelText('Montant unitaire (€ HT) *'), '35');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(previewSupabaseClient, expect.objectContaining({ vesselId: 2, vesselName: 'NOM HISTORIQUE', unitAmountHt: 35 })));
   });
 
   it('filters client keywords and saves an automatically proposed, replaceable logo', async () => {

@@ -20,10 +20,12 @@ import {
   ensureProjectBillingPeriod,
   fetchProjectBillingDprs,
   fetchProjectBillingData,
+  fetchProjectServiceCatalog,
   generateBillingPdf,
   missingBillingDates,
   resolveBillingDprOperation,
   saveProjectBillingRawLine,
+  saveProjectServiceCatalogEntry,
   deleteProjectBillingRawLine,
   saveProjectBillingPdfSelection,
   setProjectBillingRawLinePdfInclusion,
@@ -707,6 +709,7 @@ describe('Power BI P144 comments formula', () => {
 describe('raw billing lines', () => {
   const rawLine: ProjectBillingRawLine = {
     id: 1, billingPeriodId: 1, serviceCatalogId: null, serviceDate: '2026-06-02',
+    vesselId: null, vesselName: '',
     designation: 'Spread Antipollution', unitAmountHt: 0.29, quantity: 1.5, includeInPdf: true,
   };
 
@@ -802,15 +805,62 @@ describe('raw billing lines', () => {
     await expect(saveProjectBillingRawLine(client, 144, 1, draft)).resolves.toMatchObject({
       id: 17, designation: 'Spread Antipollution', unitAmountHt: 32.5, quantity: 2.125, serviceCatalogId: null, includeInPdf: true,
     });
-    await saveProjectBillingRawLine(client, 144, 1, { ...draft, serviceCatalogId: 7, quantity: 1.5, includeInPdf: false }, 17);
+    await expect(saveProjectBillingRawLine(client, 144, 1, { ...draft, serviceCatalogId: 7, vesselId: 42, vesselName: ' Navire figé ', quantity: 1.5, includeInPdf: false }, 17))
+      .resolves.toMatchObject({ vesselId: 42, vesselName: 'Navire figé' });
     expect(payloads[0]).toMatchObject({
       company_id: 1, project_id: 144, billing_period_id: 1, service_catalog_id: null,
       designation: 'Spread Antipollution', unit_amount_ht: 32.5, quantity: 2.125, include_in_pdf: true,
+      vessel_id: null, vessel_name: '',
     });
-    expect(payloads[1]).toMatchObject({ service_catalog_id: 7, quantity: 1.5, include_in_pdf: true });
+    expect(payloads[1]).toMatchObject({ service_catalog_id: 7, vessel_id: 42, vessel_name: 'Navire figé', quantity: 1.5, include_in_pdf: true });
     const updateRequest = fetch.mock.calls.at(-1)!;
     expect(updateRequest[1]?.method).toBe('PATCH');
     expect(new URL(String(updateRequest[0])).searchParams.get('id')).toBe('eq.17');
+  });
+
+  it('maps selected vessels and historical raw vessel names without looking up the current fleet or catalogue', async () => {
+    const fetch = vi.fn(async (request: RequestInfo | URL) => {
+      const url = new URL(String(request));
+      if (!url.pathname.endsWith('/project_billing_raw_lines')) return respond([]);
+      return respond([
+        { ...rawDbLine, vessel_id: '42', vessel_name: 'Nom historique du navire' },
+        { ...rawDbLine, id: 2 },
+      ]);
+    });
+    const data = await fetchProjectBillingData(clientWithFetch(fetch), 144);
+    expect(data.rawLines).toEqual([
+      { ...rawLine, vesselId: 42, vesselName: 'Nom historique du navire' },
+      { ...rawLine, id: 2 },
+    ]);
+    expect(fetch.mock.calls.every(([request]) => !String(request).includes('/vessels') && !String(request).includes('/project_service_catalog'))).toBe(true);
+  });
+
+  it('keeps identical catalogue categories for separate vessels and saves the selected vessel snapshot', async () => {
+    const catalogueRows = [
+      { id: 7, company_id: 1, category: 'Mobilisation', unit_amount_ht: 200, vessel_id: '42', vessel_name: 'Navire A', active: true },
+      { id: 8, company_id: 1, category: 'Mobilisation', unit_amount_ht: 300, vessel_id: 43, vessel_name: 'Navire B', active: true },
+      { id: 9, company_id: 1, category: 'Mobilisation', unit_amount_ht: 100, active: true },
+    ];
+    const payloads: Record<string, unknown>[] = [];
+    const fetch = vi.fn(async (request: RequestInfo | URL, init?: RequestInit) => {
+      expect(new URL(String(request)).pathname).toBe('/rest/v1/project_service_catalog');
+      if (init?.method !== 'POST' && init?.method !== 'PATCH') return respond(catalogueRows);
+      const payload = JSON.parse(String(init.body)) as Record<string, unknown>;
+      payloads.push(payload);
+      return respond({ ...payload, id: 10, company_id: 1 });
+    });
+    const client = clientWithFetch(fetch);
+    const entries = await fetchProjectServiceCatalog(client);
+    expect(entries.map((entry) => [entry.category, entry.vesselId, entry.vesselName, entry.unitAmountHt])).toEqual([
+      ['Mobilisation', 42, 'Navire A', 200], ['Mobilisation', 43, 'Navire B', 300], ['Mobilisation', null, '', 100],
+    ]);
+    await expect(saveProjectServiceCatalogEntry(client, {
+      category: ' Assistance ', unitAmountHt: 75, vesselId: 42, vesselName: ' Navire A ', descriptionHtml: '',
+    })).resolves.toMatchObject({ category: 'Assistance', vesselId: 42, vesselName: 'Navire A', unitAmountHt: 75 });
+    expect(payloads[0]).toMatchObject({ category: 'Assistance', vessel_id: 42, vessel_name: 'Navire A', unit_amount_ht: 75 });
+    await saveProjectServiceCatalogEntry(client, { id: 10, category: 'Assistance', unitAmountHt: 50, descriptionHtml: '' });
+    expect(payloads[1]).toMatchObject({ vessel_id: null, vessel_name: '' });
+    expect(fetch.mock.calls.at(-1)?.[1]?.method).toBe('PATCH');
   });
 
   it('preserves the legacy line flag API, persists the global choice and deletes only the requested raw line', async () => {
@@ -842,10 +892,11 @@ describe('raw billing lines', () => {
     return { pdf, pages, text: pages.join('\n') };
   }
 
-  it('exports all five columns, rounded totals and every line including legacy exclusions across repeated table pages', async () => {
+  it('exports all six columns with wrapped vessel snapshots, rounded totals and every raw line across repeated table pages', async () => {
     const longProjectTitle = 'Campagne maritime très longue '.repeat(8);
     const rawLines = Array.from({ length: 95 }, (_, index) => ({
       ...rawLine, id: index + 1, designation: `SAISIE-UNIQUE-${String(index + 1).padStart(3, '0')}`,
+      vesselId: index + 1, vesselName: `NAVIRE-UNIQUE-${String(index + 1).padStart(3, '0')} ${'Nom maritime très long '.repeat(7)}`,
     }));
     const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
     try {
@@ -853,23 +904,76 @@ describe('raw billing lines', () => {
         ...input, project: { ...input.project, title: longProjectTitle }, dprs: [], period: { ...input.period, includeOperationsInPdf: false, includeExpensesInPdf: false, includeBbtmInPdf: false },
         rawLines: [...rawLines, { ...rawLine, id: 999, designation: 'EXCLUE-DU-PDF', includeInPdf: false }],
       }));
-      expect(pdf.getPageCount()).toBeGreaterThan(3);
+      expect(pdf.getPageCount()).toBeGreaterThan(6);
       for (const page of pages) expect(page).not.toContain(longProjectTitle);
       for (const page of pages.slice(1)) {
         expect(page).toContain('(Date)');
+        expect(page).toContain('(Navire)');
         expect(page).toContain('(Désignation)');
         expect(page).toContain('(Prix unitaire HT)');
         expect(page).toContain('(Quantité)');
         expect(page).toContain('(Prix Total HT)');
       }
-      for (const line of rawLines) expect(text.split(line.designation)).toHaveLength(2);
+      for (const line of rawLines) {
+        expect(text.split(line.designation)).toHaveLength(2);
+        expect(text.split(line.vesselName.split(' ')[0])).toHaveLength(2);
+      }
       expect(text.split('EXCLUE-DU-PDF')).toHaveLength(2);
       expect(pages[0]).not.toContain('Sous-total Saisie brute');
+      expect(pages[0]).not.toContain('(Navire)');
+      expect(pages[0]).not.toContain('(GOURY)');
       expect(pages[0]).toContain('42,24');
       expect(pages.at(-1)).toContain('42,24');
       expect(pages.at(-1)).toContain('Sous-total Saisie brute');
       expect(pages[1]).toContain('02/06/2026');
       expect(pages[1]).toContain('0,44');
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it.each(['empty', 'excluded', 'included'] as const)('shows the top-right vessel header only when raw lines are not exported (%s)', async (mode) => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const { pages } = await readPdf(await generateBillingPdf({
+        ...input, dprs: [], selectedVesselName: 'NAVIRE-EN-TETE',
+        period: { ...input.period, includeRawInPdf: mode !== 'excluded' },
+        rawLines: mode === 'empty' ? [] : [{ ...rawLine, vesselId: 42, vesselName: 'NAVIRE-DE-LIGNE' }],
+      }));
+      if (mode === 'included') {
+        expect(pages[0]).not.toContain('(Navire)');
+        expect(pages[0]).not.toContain('NAVIRE-EN-TETE');
+        expect(pages[1]).toContain('(Navire)');
+        expect(pages[1]).toContain('NAVIRE-DE-LIGNE');
+      } else {
+        expect(pages[0]).toContain('(Navire)');
+        expect(pages[0]).toContain('NAVIRE-EN-TETE');
+        expect(pages).toHaveLength(1);
+      }
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it('continues a vessel name taller than one page without clipping text or duplicating the billed line', async () => {
+    const vesselFragments = Array.from({ length: 120 }, (_, index) => `FRAGMENT-NAVIRE-${String(index + 1).padStart(3, '0')}`);
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const { pages, text } = await readPdf(await generateBillingPdf({
+        ...input, dprs: [],
+        period: { ...input.period, includeOperationsInPdf: false, includeExpensesInPdf: false, includeBbtmInPdf: false },
+        rawLines: [{ ...rawLine, vesselId: 42, vesselName: vesselFragments.join('\n'), designation: 'LIGNE-LONG-NAVIRE', unitAmountHt: 11.25, quantity: 2 }],
+      }));
+      expect(pages).toHaveLength(4);
+      expect(text.split('LIGNE-LONG-NAVIRE')).toHaveLength(2);
+      for (const fragment of vesselFragments) expect(text.split(fragment)).toHaveLength(2);
+      for (const page of pages.slice(1)) {
+        expect(page).toContain('(Date)');
+        expect(page).toContain('(Navire)');
+        expect(page).toContain('(Prix Total HT)');
+      }
+      expect(pages.at(-1)).toContain('Sous-total Saisie brute');
+      expect(pages.at(-1)).toContain('22,50');
     } finally {
       fetch.mockRestore();
     }

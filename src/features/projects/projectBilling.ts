@@ -76,6 +76,8 @@ export interface ProjectBillingRawLine {
   id: number;
   billingPeriodId: number;
   serviceCatalogId: number | null;
+  vesselId?: number | null;
+  vesselName?: string;
   serviceDate: string;
   designation: string;
   unitAmountHt: number;
@@ -86,6 +88,8 @@ export interface ProjectBillingRawLine {
 export interface ProjectServiceCatalogEntry {
   id: number;
   companyId: number;
+  vesselId?: number | null;
+  vesselName?: string;
   category: string;
   unitAmountHt: number;
   descriptionHtml: string;
@@ -145,6 +149,8 @@ export interface BillingServiceDraft {
 
 export interface BillingRawLineDraft {
   serviceCatalogId: number | null;
+  vesselId?: number | null;
+  vesselName?: string;
   serviceDate: string;
   designation: string;
   unitAmountHt: number;
@@ -154,6 +160,8 @@ export interface BillingRawLineDraft {
 
 export interface ProjectServiceCatalogDraft {
   id?: number;
+  vesselId?: number | null;
+  vesselName?: string;
   category: string;
   unitAmountHt: number;
   descriptionHtml: string;
@@ -255,6 +263,8 @@ function mapRawLine(row: Record<string, unknown>): ProjectBillingRawLine {
     id: number(row.id),
     billingPeriodId: number(row.billing_period_id),
     serviceCatalogId: nullableNumber(row.service_catalog_id),
+    vesselId: nullableNumber(row.vessel_id),
+    vesselName: text(row.vessel_name),
     serviceDate: text(row.service_date),
     designation: text(row.designation),
     unitAmountHt: number(row.unit_amount_ht),
@@ -267,6 +277,8 @@ function mapServiceCatalogEntry(row: Record<string, unknown>): ProjectServiceCat
   return {
     id: number(row.id),
     companyId: number(row.company_id),
+    vesselId: nullableNumber(row.vessel_id),
+    vesselName: text(row.vessel_name),
     category: text(row.category),
     unitAmountHt: number(row.unit_amount_ht),
     descriptionHtml: text(row.description_html),
@@ -293,6 +305,8 @@ export async function saveProjectServiceCatalogEntry(
 ): Promise<ProjectServiceCatalogEntry> {
   const payload = {
     category: draft.category.trim(),
+    vessel_id: draft.vesselId ?? null,
+    vessel_name: draft.vesselName?.trim() || '',
     unit_amount_ht: draft.unitAmountHt,
     description_html: draft.descriptionHtml,
     active: draft.active !== false,
@@ -551,6 +565,8 @@ export async function saveProjectBillingRawLine(
     service_catalog_id: draft.serviceCatalogId,
     service_date: draft.serviceDate,
     designation: draft.designation.trim(),
+    vessel_id: draft.vesselId ?? null,
+    vessel_name: draft.vesselName?.trim() || '',
     unit_amount_ht: draft.unitAmountHt,
     quantity: draft.quantity,
     include_in_pdf: true,
@@ -1236,7 +1252,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   pdf.text(fitText(`${input.project.projectCode} - ${input.project.title}`, 715), 950, 226);
   drawChevron(1686, 205);
 
-  strokeRect(2088, 18, 483.75, 224.25);
+  strokeRect(2088, 18, 483.75, rawLines.length ? 134.25 : 224.25);
   setFont(31, 'bold');
   pdf.text('Période', 2110, 56);
   pdf.setDrawColor(234);
@@ -1247,18 +1263,20 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   pdf.text(formatDate(input.endDate), 2338, 119);
   drawCalendar(2304, 96);
   drawCalendar(2522, 96);
-  setFont(31, 'bold');
-  pdf.text('Navire', 2110, 176);
-  pdf.setDrawColor(234);
-  pdf.rect(2110.875, 190.125, 455.25, 46.5);
-  setFont(32);
-  pdf.setTextColor(91, 88, 84);
-  const selectedVessel = input.selectedVesselName
-    || input.dprs.find((dpr) => dpr.vesselName)?.vesselName
-    || input.project.primaryVesselName
-    || 'Non renseigné';
-  pdf.text(selectedVessel, 2117, 225);
-  drawChevron(2523, 202);
+  if (!rawLines.length) {
+    setFont(31, 'bold');
+    pdf.text('Navire', 2110, 176);
+    pdf.setDrawColor(234);
+    pdf.rect(2110.875, 190.125, 455.25, 46.5);
+    setFont(32);
+    pdf.setTextColor(91, 88, 84);
+    const selectedVessel = input.selectedVesselName
+      || input.dprs.find((dpr) => dpr.vesselName)?.vesselName
+      || input.project.primaryVesselName
+      || 'Non renseigné';
+    pdf.text(selectedVessel, 2117, 225);
+    drawChevron(2523, 202);
+  }
   setFont(28, 'italic');
   pdf.setTextColor(30, 29, 28);
   pdf.text(
@@ -1478,7 +1496,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   }
 
   if (rawLines.length) {
-    const columns = { date: 82, designation: 315, unitAmount: 1860, quantity: 2165, total: 2598 };
+    const columns = { date: 82, vessel: 315, designation: 955, unitAmount: 1860, quantity: 2165, total: 2598 };
     const bottom = 1730;
     let rawY = 260;
     let rawPage = 0;
@@ -1495,6 +1513,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
       pdf.rect(73.5, 178, 2545.5, 56, 'F');
       setFont(28, 'bold');
       pdf.text('Date', columns.date, 217);
+      pdf.text('Navire', columns.vessel, 217);
       pdf.text('Désignation', columns.designation, 217);
       pdf.text('Prix unitaire HT', columns.unitAmount, 217, { align: 'right' });
       pdf.text('Quantité', columns.quantity, 217, { align: 'right' });
@@ -1507,19 +1526,32 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
     };
     addRawPage();
     rawLines.forEach((line, index) => {
-      const designationLines = pdf.splitTextToSize(line.designation, 1260) as string[];
-      const rowHeight = Math.max(52, designationLines.length * 34 + 18);
-      if (rawY + rowHeight > bottom) addRawPage();
-      if (index % 2 === 1) {
-        pdf.setFillColor(249, 250, 251);
-        pdf.rect(73.5, rawY - 30, 2545.5, rowHeight, 'F');
+      const vesselLines = pdf.splitTextToSize(line.vesselName?.trim() || '—', 600) as string[];
+      const designationLines = pdf.splitTextToSize(line.designation, 670) as string[];
+      const lineCount = Math.max(vesselLines.length, designationLines.length);
+      const rowHeight = Math.max(52, lineCount * 34 + 18);
+      if (rowHeight <= bottom - 260 && rawY + rowHeight > bottom) addRawPage();
+      let lineOffset = 0;
+      while (lineOffset < lineCount) {
+        if (bottom - rawY < 52) addRawPage();
+        const chunkLines = Math.min(lineCount - lineOffset, Math.floor((bottom - rawY - 18) / 34));
+        const chunkHeight = Math.max(52, chunkLines * 34 + 18);
+        if (index % 2 === 1) {
+          pdf.setFillColor(249, 250, 251);
+          pdf.rect(73.5, rawY - 30, 2545.5, chunkHeight, 'F');
+        }
+        if (lineOffset === 0) {
+          pdf.text(formatDate(line.serviceDate), columns.date, rawY);
+          pdf.text(money(line.unitAmountHt), columns.unitAmount, rawY, { align: 'right' });
+          pdf.text(line.quantity.toLocaleString('fr-FR', { maximumFractionDigits: 3 }), columns.quantity, rawY, { align: 'right' });
+          pdf.text(money(billingRawLineTotal(line)), columns.total, rawY, { align: 'right' });
+        }
+        vesselLines.slice(lineOffset, lineOffset + chunkLines).forEach((name, lineIndex) => pdf.text(name, columns.vessel, rawY + lineIndex * 34));
+        designationLines.slice(lineOffset, lineOffset + chunkLines).forEach((description, lineIndex) => pdf.text(description, columns.designation, rawY + lineIndex * 34));
+        rawY += chunkHeight;
+        lineOffset += chunkLines;
+        if (lineOffset < lineCount) addRawPage();
       }
-      pdf.text(formatDate(line.serviceDate), columns.date, rawY);
-      designationLines.forEach((description, lineIndex) => pdf.text(description, columns.designation, rawY + lineIndex * 34));
-      pdf.text(money(line.unitAmountHt), columns.unitAmount, rawY, { align: 'right' });
-      pdf.text(line.quantity.toLocaleString('fr-FR', { maximumFractionDigits: 3 }), columns.quantity, rawY, { align: 'right' });
-      pdf.text(money(billingRawLineTotal(line)), columns.total, rawY, { align: 'right' });
-      rawY += rowHeight;
     });
     pdf.setDrawColor(96, 94, 92);
     pdf.line(1810.5, rawY + 14, 2598, rawY + 14);

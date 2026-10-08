@@ -20,10 +20,11 @@ interface BillingElementsPageProps {
   roles?: RoleKey[];
 }
 
-const EMPTY_BILLING_PROJECTS: Pick<ProjectsData, 'projects' | 'projectContracts' | 'planningOccurrences'> = {
+const EMPTY_BILLING_PROJECTS: Pick<ProjectsData, 'projects' | 'projectContracts' | 'planningOccurrences' | 'vessels'> = {
   projects: [],
   projectContracts: [],
   planningOccurrences: [],
+  vessels: [],
 };
 
 const BILLING_CATEGORIES: Array<{
@@ -99,6 +100,7 @@ export function BillingElementsPage({ client, roles }: BillingElementsPageProps)
           projects: sortBillingProjects(loadedData.projects),
           projectContracts: loadedData.projectContracts,
           planningOccurrences: loadedData.planningOccurrences,
+          vessels: loadedData.vessels || [],
         });
       })
       .catch((caught: unknown) => {
@@ -211,6 +213,7 @@ export function BillingElementsPage({ client, roles }: BillingElementsPageProps)
             key={`${selectedProject.id}-${selectedMonth}`}
             operations={selectedOperations}
             project={selectedProject}
+            vessels={data.vessels}
             showMonthSelector={false}
             visibleSections={visibleSections}
           />
