@@ -1156,11 +1156,11 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
       || input.dprs.find((dpr) => dpr.vesselName)?.vesselName
       || input.project.primaryVesselName || 'Non renseigné'),
     includeOperationAmounts,
-    operationRows: operationSource.map((row) => [
+    operationRows: includeOperationAmounts || includeBbtmService ? operationSource.map((row) => [
       row.date, row.operation,
       ...(includeOperationAmounts ? [money(row.amountHt, hireCurrency)] : []),
       row.comments,
-    ]),
+    ]) : null,
     expenseRows: includeExpenses ? expenses.map((expense) => [
       expense.supplier, billingExpenseSpecialtyLabel(expense), formatDate(expense.invoiceDate),
       expense.invoiceNumber || '—', money(expense.amountHt, currencyCode(expense.currency)),

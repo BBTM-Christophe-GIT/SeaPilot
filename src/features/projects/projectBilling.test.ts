@@ -1091,6 +1091,79 @@ describe('raw billing lines', () => {
     }
   });
 
+  it.each([
+    { includeHires: true, includeBbtm: true },
+    { includeHires: true, includeBbtm: false },
+    { includeHires: false, includeBbtm: true },
+    { includeHires: false, includeBbtm: false },
+  ])('shows hire DPR details only when hires or BBTM are included (hires=$includeHires, BBTM=$includeBbtm)', async ({ includeHires, includeBbtm }) => {
+    const expense = {
+      id: 25, billingPeriodId: 1, category: 'port' as const, nature: '', supplier: 'FRAIS-RESTE', supplierSpecialties: ['Gasoil'],
+      invoiceDate: '2026-06-03', invoiceNumber: 'FACTURE-RESTE', amountHt: 20, amountTtc: null, currency: 'EUR',
+      quantity: null, unit: '', comments: '', dprReportId: null, includeInPdf: true,
+    };
+    const exportInput: BillingExportInput = {
+      ...input, project: { ...input.project, projectCode: 'P145' }, contract: { ...input.contract!, hireCurrency: 'USD' },
+      period: { ...input.period, includeOperationsInPdf: includeHires, includeBbtmInPdf: includeBbtm },
+      dprs: [{ ...input.dprs[0], amountHt: 100 }], expenses: [expense],
+      services: [{ id: 1, billingPeriodId: 1, serviceCatalogId: 1, category: 'BBTM-RESTE', descriptionHtml: '', unitAmountHt: 7, quantity: 3, includeInPdf: true }],
+      rawLines: [{ ...rawLine, designation: 'DETAIL-RESTE', vesselName: 'NAVIRE-DE-LIGNE', unitAmountHt: 50, quantity: 1 }],
+    };
+    const snapshot = JSON.stringify(exportInput);
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const { pdf, visibleText, elements } = await readPdf(await generateBillingPdf(exportInput));
+      expectSingleLandscapeA4(pdf);
+      for (const retained of ['Frais imputables', 'FRAIS-RESTE', 'FACTURE-RESTE', 'Détail des Opérations', 'DETAIL-RESTE', 'NAVIRE-DE-LIGNE', '20,00 €', '50,00 €', 'Total facture du mois HT']) expect(visibleText).toContain(retained);
+      expect(visibleText).toContain(includeBbtm ? '91,00 €' : '70,00 €');
+      expect(visibleText.includes('BBTM-RESTE')).toBe(includeBbtm);
+      expect(visibleText.includes('100,00 USD')).toBe(includeHires);
+      const hireTitleIndex = elements.findIndex((element) => element.value === "Loyers d'Affrètement");
+      if (includeHires || includeBbtm) {
+        expect(hireTitleIndex).toBeGreaterThanOrEqual(0);
+        const expensesTitleIndex = elements.findIndex((element) => element.value === 'Frais imputables');
+        const hireSection = elements.slice(hireTitleIndex, expensesTitleIndex).map((element) => element.value);
+        for (const retained of ['Date', 'Opération', 'Commentaires', '01/06/2026', '24/24 Crew Change']) expect(hireSection).toContain(retained);
+        expect(hireSection.includes('Montant HT')).toBe(includeHires);
+        for (const comment of billingDprComment(exportInput.dprs[0]).split('\n')) expect(visibleText).toContain(comment);
+      } else {
+        for (const omitted of ["Loyers d'Affrètement", '24/24 Crew Change', 'Accosté au port', 'Refueling', 'Appareillage', 'Aucune opération DPR sur la période']) expect(visibleText).not.toContain(omitted);
+        for (const removedHeader of ['Opération', 'Commentaires']) expect(elements.some((element) => element.value === removedHeader)).toBe(false);
+        const emptyDprPdf = await readPdf(await generateBillingPdf({ ...exportInput, dprs: [] }));
+        expectSingleLandscapeA4(emptyDprPdf.pdf);
+        expect(emptyDprPdf.visibleText).not.toContain("Loyers d'Affrètement");
+        expect(emptyDprPdf.visibleText).not.toContain('Aucune opération DPR sur la période');
+        for (const retained of ['FRAIS-RESTE', 'FACTURE-RESTE', 'DETAIL-RESTE', '70,00 €']) expect(emptyDprPdf.visibleText).toContain(retained);
+      }
+      expect(JSON.stringify(exportInput)).toBe(snapshot);
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it('hides DPR details when the legacy BBTM override is off even if its period option remains selected', async () => {
+    const exportInput: BillingExportInput = {
+      ...input, includeBbtmService: false,
+      period: { ...input.period, includeOperationsInPdf: false, includeBbtmInPdf: true },
+      services: [{ id: 1, billingPeriodId: 1, serviceCatalogId: 1, category: 'BBTM-OVERRIDE-OFF', descriptionHtml: '', unitAmountHt: 700, quantity: 1 }],
+      rawLines: [{ ...rawLine, designation: 'DETAIL-OVERRIDE', unitAmountHt: 50, quantity: 1 }],
+    };
+    const snapshot = JSON.stringify(exportInput);
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const { pdf, visibleText, elements } = await readPdf(await generateBillingPdf(exportInput));
+      expectSingleLandscapeA4(pdf);
+      for (const omitted of ["Loyers d'Affrètement", 'Prestations BBTM', 'BBTM-OVERRIDE-OFF', '24/24 Crew Change', 'Refueling', 'Commentaires']) expect(visibleText).not.toContain(omitted);
+      expect(elements.some((element) => element.value === 'Opération')).toBe(false);
+      expect(visibleText).toContain('DETAIL-OVERRIDE');
+      expect(visibleText).toContain('50,00 €');
+      expect(visibleText).not.toContain('750,00 €');
+      expect(JSON.stringify(exportInput)).toBe(snapshot);
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
   it.each([true, false])('preserves expense, BBTM and global detail exclusions in the one-page PDF (sections included: %s)', async (includeSections) => {
     const expense = {
       id: 25, billingPeriodId: 1, category: 'port' as const, nature: '', supplier: 'FRAIS-INCLUS', supplierSpecialties: [],

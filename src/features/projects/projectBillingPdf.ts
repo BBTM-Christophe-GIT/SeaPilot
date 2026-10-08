@@ -6,7 +6,7 @@ interface BillingPdfContent {
   clientReference: string;
   vesselName: string | null;
   includeOperationAmounts: boolean;
-  operationRows: string[][];
+  operationRows: string[][] | null;
   expenseRows: string[][] | null;
   serviceRows: string[][] | null;
   rawRows: string[][];
@@ -160,19 +160,21 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
     const rightHeight = month.length * monthSize * 1.2 + 4 * scale
       + (reference.length + vessel.length) * metaSize * 1.2 + (vessel.length ? 4 * scale : 0);
     const tablesTop = metadataTop + Math.max(leftHeight, rightHeight) + gap;
-    const operations = measureTable("Loyers d'Affrètement", content.operationRows, operationColumns, hasRightColumn ? halfWidth : width, scale);
+    const operations = content.operationRows === null ? null
+      : measureTable("Loyers d'Affrètement", content.operationRows, operationColumns, hasRightColumn ? halfWidth : width, scale);
     const expenses = content.expenseRows === null ? null
       : measureExpenses(scale);
     const services = content.serviceRows === null ? null
       : measureTable('Prestations BBTM', content.serviceRows, serviceColumns, halfWidth, scale);
     const servicesTop = tablesTop + (expenses ? expenses.height + gap : 0);
     const columnBottom = Math.max(
-      tablesTop + operations.height,
+      tablesTop + (operations?.height || 0),
       services ? servicesTop + services.height : tablesTop + (expenses?.height || 0),
     );
+    const columnGapAfter = operations || expenses || services ? gap : 0;
     const raw = content.rawRows.length ? measureTable('Détail des Opérations', content.rawRows, rawColumns, width, scale) : null;
-    const rawTop = columnBottom + gap;
-    const totalsTop = (raw ? rawTop + raw.height : columnBottom) + gap;
+    const rawTop = columnBottom + columnGapAfter;
+    const totalsTop = raw ? rawTop + raw.height + gap : columnBottom + columnGapAfter;
     const finalWidth = content.totals.length === 1 ? width : width * 0.28;
     const subtotalWidth = content.totals.length === 1 ? width : (width - finalWidth) / (content.totals.length - 1);
     const totalPadding = 8 * scale;
@@ -321,7 +323,7 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
     });
     if (tree.emptyTable) drawTable(tree.emptyTable, x + tree.invoiceIndent, y);
   };
-  drawTable(layout.operations, margin, layout.tablesTop);
+  if (layout.operations) drawTable(layout.operations, margin, layout.tablesTop);
   if (layout.expenses) drawExpenses(layout.expenses, rightX, layout.tablesTop);
   if (layout.services) drawTable(layout.services, rightX, layout.servicesTop);
   if (layout.raw) drawTable(layout.raw, margin, layout.rawTop);
