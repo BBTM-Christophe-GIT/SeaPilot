@@ -6,7 +6,9 @@ Le bandeau bleu contient uniquement le logo et **Éléments de facturation**. Le
 
 **Loyers d'Affrètement** occupe la colonne de gauche. **Frais imputables** puis **Prestations BBTM** partagent la colonne de droite. **Détail des Opérations** reprend les lignes brutes sur toute la largeur, avec Date, Navire, Désignation, Prix unitaire HT, Quantité et Prix Total HT. Le bandeau inférieur regroupe les sous-totaux sélectionnés et le total du mois, en conservant les montants distincts de chaque devise.
 
-Depuis `3.71.2`, le tableau **Frais imputables** est classé par **Spécialités** dans l’ordre alphabétique français, sans distinction de casse ou d’accents, puis par société pour une même spécialité. Le tri utilise le libellé complet affiché, y compris les spécialités multiples. Il ne modifie ni la saisie ni l’ordre des données sauvegardées ou des calculs de totaux.
+Depuis `3.71.2`, **Frais imputables** est présenté en arborescence : la valeur de la spécialité au premier niveau, puis les noms des sociétés en retrait au deuxième niveau, puis leurs factures avec Date facture, N° facture et Montant HT. Les deux premiers niveaux affichent uniquement leur valeur, sans les libellés « Spécialité » ou « Société ». Les factures d’une même société et d’une même spécialité sont réunies sous un seul nom.
+
+Les groupes suivent l’ordre alphabétique français, puis les sociétés à l’intérieur de chaque spécialité. Les libellés exacts sont conservés, y compris les spécialités multiples ; des valeurs différentes ne sont pas fusionnées. Ce classement ne modifie ni la saisie ni l’ordre des données sauvegardées ou des calculs de totaux.
 
 Le document tient sur une page A4 paysage. Le générateur mesure tous les textes et cellules avant de dessiner ; il ajuste ensemble les espacements et la typographie au volume de données. Les commentaires, noms, catégories, spécialités et références de facture passent à la ligne sans être raccourcis. Un export très dense emploie donc des caractères plus petits, et reste sélectionnable et agrandissable dans un lecteur PDF.
 

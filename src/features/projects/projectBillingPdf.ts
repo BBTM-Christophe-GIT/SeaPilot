@@ -56,12 +56,29 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
     { label: 'Commentaires', ratio: content.includeOperationAmounts ? 0.39 : 0.49 },
   ];
   const expenseColumns: Column[] = [
-    { label: 'Société', ratio: 0.25 },
-    { label: 'Spécialités', ratio: 0.19 },
-    { label: 'Date facture', ratio: 0.16 },
-    { label: 'N° facture', ratio: 0.21 },
-    { label: 'Montant HT', ratio: 0.19, align: 'right' },
+    { label: 'Date facture', ratio: 0.28 },
+    { label: 'N° facture', ratio: 0.43 },
+    { label: 'Montant HT', ratio: 0.29, align: 'right' },
   ];
+  const expenseGroups = new Map<string, Map<string, string[][]>>();
+  content.expenseRows?.forEach(([supplier, specialty, ...invoice]) => {
+    const specialtyLabel = specialty ?? '';
+    const supplierLabel = supplier ?? '';
+    let suppliers = expenseGroups.get(specialtyLabel);
+    if (!suppliers) {
+      suppliers = new Map();
+      expenseGroups.set(specialtyLabel, suppliers);
+    }
+    const invoices = suppliers.get(supplierLabel);
+    if (invoices) invoices.push(invoice);
+    else suppliers.set(supplierLabel, [invoice]);
+  });
+  // Map keys retain the exact source labels. Locale comparison only orders the
+  // nodes; equivalent spellings keep their first occurrence and remain distinct.
+  const compareLabels = ([left]: [string, unknown], [right]: [string, unknown]) =>
+    left.localeCompare(right, 'fr-FR', { numeric: true, sensitivity: 'base' });
+  const orderedExpenseGroups = [...expenseGroups.entries()].sort(compareLabels)
+    .map(([specialty, suppliers]) => ({ specialty, suppliers: [...suppliers.entries()].sort(compareLabels) }));
   const serviceColumns: Column[] = [
     { label: 'Catégorie', ratio: 0.40 },
     { label: 'Prix unitaire HT', ratio: 0.24, align: 'right' },
@@ -81,7 +98,7 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
     const bodySize = 9 * scale;
     const headerSize = 8.3 * scale;
     const titleSize = 11.5 * scale;
-    const titleHeight = titleSize * 1.2 + 5 * scale;
+    const titleHeight = title ? titleSize * 1.2 + 5 * scale : 0;
     const widths = columns.map((column) => column.ratio * tableWidth);
     const headers = columns.map((column, index) => wrap(column.label, widths[index] - padding * 2, headerSize, true));
     const headerHeight = Math.max(...headers.map((lines) => lines.length)) * headerSize * 1.2 + padding * 2;
@@ -94,6 +111,36 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
       titleHeight, headerHeight,
       height: titleHeight + headerHeight + measuredRows.reduce((sum, row) => sum + row.height, 0),
       width: tableWidth,
+    };
+  };
+  const measureExpenses = (scale: number) => {
+    const padding = 3.5 * scale;
+    const titleSize = 11.5 * scale;
+    const titleHeight = titleSize * 1.2 + 5 * scale;
+    const specialtySize = 10 * scale;
+    const supplierSize = 9 * scale;
+    const supplierIndent = 12 * scale;
+    const invoiceIndent = 24 * scale;
+    const groupGap = 5 * scale;
+    const groups = orderedExpenseGroups.map(({ specialty, suppliers }) => {
+      const lines = wrap(specialty, halfWidth - padding * 2, specialtySize, true);
+      const headingHeight = lines.length * specialtySize * 1.2 + padding * 2;
+      const measuredSuppliers = suppliers.map(([supplier, invoices]) => {
+        const supplierLines = wrap(supplier, halfWidth - supplierIndent - padding * 2, supplierSize, true);
+        const supplierHeight = supplierLines.length * supplierSize * 1.2 + padding * 2;
+        const table = measureTable('', invoices, expenseColumns, halfWidth - invoiceIndent, scale);
+        return { lines: supplierLines, headingHeight: supplierHeight, table, height: supplierHeight + table.height };
+      });
+      return { lines, headingHeight, suppliers: measuredSuppliers,
+        height: headingHeight + measuredSuppliers.reduce((sum, supplier) => sum + supplier.height, 0) };
+    });
+    // Preserve the empty expense section and its invoice column headings.
+    const emptyTable = groups.length ? null : measureTable('', [], expenseColumns, halfWidth - invoiceIndent, scale);
+    return {
+      titleSize, titleHeight, padding, specialtySize, supplierSize, supplierIndent, invoiceIndent,
+      groupGap, groups, emptyTable,
+      height: titleHeight + groups.reduce((sum, group) => sum + group.height, 0)
+        + Math.max(0, groups.length - 1) * groupGap + (emptyTable?.height || 0),
     };
   };
   const measure = (scale: number) => {
@@ -115,7 +162,7 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
     const tablesTop = metadataTop + Math.max(leftHeight, rightHeight) + gap;
     const operations = measureTable("Loyers d'Affrètement", content.operationRows, operationColumns, hasRightColumn ? halfWidth : width, scale);
     const expenses = content.expenseRows === null ? null
-      : measureTable('Frais imputables', content.expenseRows, expenseColumns, halfWidth, scale);
+      : measureExpenses(scale);
     const services = content.serviceRows === null ? null
       : measureTable('Prestations BBTM', content.serviceRows, serviceColumns, halfWidth, scale);
     const servicesTop = tablesTop + (expenses ? expenses.height + gap : 0);
@@ -210,8 +257,10 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
   drawLines(layout.reference, pageWidth - margin, referenceTop, layout.metaSize, 'right');
   drawLines(layout.vessel, pageWidth - margin, referenceTop + layout.reference.length * layout.metaSize * 1.2 + 4 * layout.scale, layout.metaSize, 'right');
   const drawTable = (table: ReturnType<typeof measureTable>, x: number, top: number) => {
-    font(table.titleSize, true, blue);
-    drawLines([table.title], x, top, table.titleSize);
+    if (table.title) {
+      font(table.titleSize, true, blue);
+      drawLines([table.title], x, top, table.titleSize);
+    }
     let y = top + table.titleHeight;
     pdf.setFillColor(...blue);
     pdf.rect(x, y, table.width, table.headerHeight, 'F');
@@ -251,8 +300,29 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
       pdf.line(x, rowY, x + table.width, rowY);
     });
   };
+  const drawExpenses = (tree: ReturnType<typeof measureExpenses>, x: number, top: number) => {
+    font(tree.titleSize, true, blue);
+    drawLines(['Frais imputables'], x, top, tree.titleSize);
+    let y = top + tree.titleHeight;
+    tree.groups.forEach((group, groupIndex) => {
+      if (groupIndex) y += tree.groupGap;
+      fill([234, 243, 253]);
+      pdf.rect(x, y, halfWidth, group.headingHeight, 'F');
+      font(tree.specialtySize, true, blue);
+      drawLines(group.lines, x + tree.padding, y + tree.padding, tree.specialtySize);
+      y += group.headingHeight;
+      group.suppliers.forEach((supplier) => {
+        font(tree.supplierSize, true);
+        drawLines(supplier.lines, x + tree.supplierIndent + tree.padding, y + tree.padding, tree.supplierSize);
+        y += supplier.headingHeight;
+        drawTable(supplier.table, x + tree.invoiceIndent, y);
+        y += supplier.table.height;
+      });
+    });
+    if (tree.emptyTable) drawTable(tree.emptyTable, x + tree.invoiceIndent, y);
+  };
   drawTable(layout.operations, margin, layout.tablesTop);
-  if (layout.expenses) drawTable(layout.expenses, rightX, layout.tablesTop);
+  if (layout.expenses) drawExpenses(layout.expenses, rightX, layout.tablesTop);
   if (layout.services) drawTable(layout.services, rightX, layout.servicesTop);
   if (layout.raw) drawTable(layout.raw, margin, layout.rawTop);
   let totalX = margin;

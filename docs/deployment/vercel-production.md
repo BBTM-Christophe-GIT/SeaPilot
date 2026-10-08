@@ -1,6 +1,6 @@
 # SeaPilot Vercel Production Notes
 
-Version `3.71.2` trie les **Frais imputables** du PDF par **Spécialités**, dans l’ordre alphabétique français, puis par société lorsque les spécialités sont identiques. Le tri porte sur le libellé complet affiché et conserve les données, sélections et totaux de la page A4 du design choisi. Aucune migration ni nouvelle configuration. Voir [billing-pdf-synthetic.md](./billing-pdf-synthetic.md).
+Version `3.71.2` présente les **Frais imputables** du PDF en arborescence : valeur de la spécialité, puis sociétés en retrait, puis leurs factures avec date, numéro et montant HT. Les valeurs des deux premiers niveaux apparaissent sans les libellés « Spécialité » ou « Société ». Les groupes suivent l’ordre alphabétique français et conservent les données, sélections et totaux de la page A4 du design choisi. Aucune migration ni nouvelle configuration. Voir [billing-pdf-synthetic.md](./billing-pdf-synthetic.md).
 
 Version `3.71.1` applique le design **Tableau synthétique** au PDF Éléments de facturation : une page A4 paysage, **Loyers d'Affrètement** à gauche, **Frais imputables** et **Prestations BBTM** dans la colonne de droite, puis **Détail des Opérations** sur toute la largeur. Toutes les lignes et les textes sont conservés avec une densité ajustée au volume. Le bloc Justificatifs, les mentions de démonstration et le nom du design sont retirés. Aucune migration ni nouvelle configuration. Voir [billing-pdf-synthetic.md](./billing-pdf-synthetic.md).
 
