@@ -1102,17 +1102,11 @@ export function billingOperationHire(
 }
 
 export async function generateBillingPdf(input: BillingExportInput): Promise<Blob> {
-  const { jsPDF } = await import('jspdf');
-  const pdf = new jsPDF({
-    compress: true,
-    orientation: 'landscape',
-    unit: 'pt',
-    format: [2667.12, 1896],
-  });
+  const { renderBillingPdf } = await import('./projectBillingPdf');
   const currencyCode = (value: string) => value.trim().toUpperCase() || 'EUR';
-  const money = (value: number, currency = 'EUR') => `${value
+  const money = (value: number, currency = 'EUR') => value
     .toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    .replace(/[\u00a0\u202f]/g, ' ')} ${currency === 'EUR' ? '€' : currency}`;
+    .replace(/[\u00a0\u202f]/g, ' ') + ' ' + (currency === 'EUR' ? '€' : currency);
   const hireCurrency = currencyCode(input.contract?.hireCurrency || 'EUR');
   const operationRows = billingOperationRows(input);
   const includeOperationAmounts = input.period.includeOperationsInPdf !== false;
@@ -1120,9 +1114,9 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   const hiresTotal = includeOperationAmounts
     ? operationRows.reduce((sum, row) => sum + row.amountHt, 0)
     : 0;
-  const expenses = input.period.includeExpensesInPdf === false
-    ? []
-    : input.expenses.filter((expense) => expense.includeInPdf !== false);
+  const expenses = includeExpenses
+    ? input.expenses.filter((expense) => expense.includeInPdf !== false)
+    : [];
   const expenseTotals = new Map<string, number>();
   expenses.forEach((expense) => {
     const currency = currencyCode(expense.currency);
@@ -1142,428 +1136,59 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   if (!invoiceTotals.size) invoiceTotals.set('EUR', 0);
   const currencyAmounts = (totals: Map<string, number>) => [...totals]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([currency, value]) => ({ currency, value: Number(value.toFixed(2)) }));
-
-  const setFont = (size: number, style: 'normal' | 'bold' | 'italic' = 'normal') => {
-    pdf.setFont('helvetica', style);
-    pdf.setFontSize(size);
-    pdf.setTextColor(30, 29, 28);
-  };
-  const strokeRect = (x: number, y: number, width: number, height: number, color = 0) => {
-    pdf.setDrawColor(color);
-    pdf.setLineWidth(0.75);
-    pdf.rect(x, y, width, height);
-  };
-  const drawChevron = (x: number, y: number) => {
-    pdf.setDrawColor(91, 88, 84);
-    pdf.setLineWidth(2);
-    pdf.line(x, y, x + 14, y + 14);
-    pdf.line(x + 14, y + 14, x + 28, y);
-  };
-  const drawCalendar = (x: number, y: number) => {
-    pdf.setDrawColor(91, 88, 84);
-    pdf.setLineWidth(1.5);
-    pdf.rect(x, y + 4, 12, 11);
-    pdf.line(x, y + 8, x + 12, y + 8);
-    pdf.line(x + 3, y + 1, x + 3, y + 6);
-    pdf.line(x + 9, y + 1, x + 9, y + 6);
-  };
-  const drawSortArrow = (x: number, y: number, direction: 'up' | 'down') => {
-    pdf.setFillColor(30, 29, 28);
-    const points = direction === 'up'
-      ? [[x, y + 14], [x + 14, y], [x + 28, y + 14]]
-      : [[x, y], [x + 14, y + 14], [x + 28, y]];
-    pdf.triangle(
-      points[0][0],
-      points[0][1],
-      points[1][0],
-      points[1][1],
-      points[2][0],
-      points[2][1],
-      'F',
-    );
-  };
-  const fitText = (value: string, maxWidth: number): string => {
-    if (pdf.getTextWidth(value) <= maxWidth) return value;
-    let candidate = value;
-    while (candidate.length > 1 && pdf.getTextWidth(`${candidate}…`) > maxWidth) {
-      candidate = candidate.slice(0, -1);
-    }
-    return `${candidate.trimEnd()}…`;
-  };
-  const fitTextLines = (value: string, maxWidth: number, maxLines = 2): string[] => {
-    const lines = pdf.splitTextToSize(value, maxWidth) as string[];
-    if (lines.length <= maxLines) return lines;
-    return [
-      ...lines.slice(0, maxLines - 1),
-      fitText(lines.slice(maxLines - 1).join(' '), maxWidth),
-    ];
-  };
-  const expenseTable = {
-    left: 1284,
-    right: 2619,
-    headerTop: 389,
-    headerBottom: 456,
-    supplier: { x: 1297, width: 390 },
-    specialty: { x: 1705, width: 280 },
-    invoiceDate: { x: 2100 },
-    invoiceNumber: { x: 2320, width: 185 },
-    amount: { x: 2605 },
-  } as const;
-
-  try {
-    const response = await fetch('/bbtm-logo.png');
-    const source = await response.blob();
-    const objectUrl = URL.createObjectURL(source);
-    const logo = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.onerror = reject;
-      image.src = objectUrl;
-    });
-    const canvas = document.createElement('canvas');
-    canvas.width = logo.naturalWidth;
-    canvas.height = logo.naturalHeight;
-    const context = canvas.getContext('2d');
-    if (context) {
-      context.drawImage(logo, 0, 0);
-      const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-      for (let index = 0; index < pixels.data.length; index += 4) {
-        pixels.data[index] = 255 - pixels.data[index];
-        pixels.data[index + 1] = 255 - pixels.data[index + 1];
-        pixels.data[index + 2] = 255 - pixels.data[index + 2];
-      }
-      context.putImageData(pixels, 0, 0);
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 110.25, 21.75, 217.5, 217.5);
-    }
-    URL.revokeObjectURL(objectUrl);
-  } catch {
-    // The export remains usable if the browser cannot decode the logo.
-  }
-
-  strokeRect(420, 18, 1668, 169.5);
-  setFont(60, 'bold');
-  pdf.text('Éléments de facturation', 1254, 142.5, { align: 'center' });
-  strokeRect(420, 186.75, 1668, 55.5);
-  pdf.setDrawColor(234);
-  pdf.rect(945.375, 190.875, 776.25, 46.5);
-  setFont(32);
-  pdf.setTextColor(91, 88, 84);
-  pdf.text(fitText(`${input.project.projectCode} - ${input.project.title}`, 715), 950, 226);
-  drawChevron(1686, 205);
-
-  strokeRect(2088, 18, 483.75, rawLines.length ? 134.25 : 224.25);
-  setFont(31, 'bold');
-  pdf.text('Période', 2110, 56);
-  pdf.setDrawColor(234);
-  pdf.rect(2113.125, 70.125, 213, 69.75);
-  pdf.rect(2331.375, 70.125, 213, 69.75);
-  setFont(32);
-  pdf.text(formatDate(input.startDate), 2120, 119);
-  pdf.text(formatDate(input.endDate), 2338, 119);
-  drawCalendar(2304, 96);
-  drawCalendar(2522, 96);
-  if (!rawLines.length) {
-    setFont(31, 'bold');
-    pdf.text('Navire', 2110, 176);
-    pdf.setDrawColor(234);
-    pdf.rect(2110.875, 190.125, 455.25, 46.5);
-    setFont(32);
-    pdf.setTextColor(91, 88, 84);
-    const selectedVessel = input.selectedVesselName
-      || input.dprs.find((dpr) => dpr.vesselName)?.vesselName
-      || input.project.primaryVesselName
-      || 'Non renseigné';
-    pdf.text(selectedVessel, 2117, 225);
-    drawChevron(2523, 202);
-  }
-  setFont(28, 'italic');
-  pdf.setTextColor(30, 29, 28);
-  pdf.text(
-    `Référence Client : ${input.period.clientReference || defaultProjectClientReference(input.project) || '—'}`,
-    2564,
-    280,
-    { align: 'right' },
-  );
-  pdf.setDrawColor(17, 141, 255);
-  pdf.setLineWidth(0.75);
-  pdf.line(2153, 288, 2564, 288);
-
-  setFont(40, 'bold');
-  pdf.text('Opérations', 672, 360, { align: 'center' });
-  if (includeExpenses) pdf.text('Frais Imputables', 1951, 360, { align: 'center' });
-  pdf.setDrawColor(96, 94, 92);
-  pdf.setLineWidth(0.75);
-  pdf.line(73.5, 375.375, 1270.5, 375.375);
-  if (includeExpenses) pdf.line(1284, 375.375, 2619, 375.375);
-
-  setFont(32, 'bold');
-  pdf.text('Date', 140.65, 423);
-  pdf.text('Operations', 389.06, 423);
-  if (includeOperationAmounts) {
-    pdf.text('Montant HT', 765.5, 423, { align: 'center' });
-  }
-  pdf.text('Commentaires', 1046.8, 423, { align: 'center' });
-  drawSortArrow(82, 441, 'up');
-  if (includeExpenses) {
-    pdf.setFillColor(246, 247, 249);
-    pdf.rect(
-      expenseTable.left,
-      expenseTable.headerTop,
-      expenseTable.right - expenseTable.left,
-      expenseTable.headerBottom - expenseTable.headerTop,
-      'F',
-    );
-    pdf.text('Société', expenseTable.supplier.x, 431);
-    pdf.text('Spécialités', expenseTable.specialty.x, 431);
-    pdf.text('Date Facture', expenseTable.invoiceDate.x, 431, { align: 'center' });
-    pdf.text('N° Facture', expenseTable.invoiceNumber.x, 431, { align: 'center' });
-    pdf.text('Montant HT', expenseTable.amount.x, 431, { align: 'right' });
-    pdf.setDrawColor(205, 208, 214);
-    pdf.line(expenseTable.left, expenseTable.headerBottom, expenseTable.right, expenseTable.headerBottom);
-    drawSortArrow(expenseTable.supplier.x, 441, 'up');
-  }
-
-  setFont(28);
-  let operationY = 486;
+    .map(([currency, value]) => money(Number(value.toFixed(2)), currency));
+  const quantity = (value: number) => value.toLocaleString('fr-FR', { maximumFractionDigits: 3 });
+  const monthDate = new Date(input.period.periodMonth.slice(0, 7) + '-01T12:00:00');
+  const formattedMonth = Number.isNaN(monthDate.getTime())
+    ? input.period.periodMonth.slice(0, 7)
+    : new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' }).format(monthDate);
   const operationSource = operationRows.length ? operationRows : [{
-    date: '—',
-    operation: 'Aucune opération DPR sur la période',
-    amountHt: 0,
-    comments: '',
+    date: '—', operation: 'Aucune opération DPR sur la période', amountHt: 0, comments: '',
   }];
-  operationSource.forEach((row) => {
-    const commentLines = row.comments ? row.comments.split('\n') : [];
-    pdf.text(row.date, 81.75, operationY);
-    pdf.text(fitText(row.operation, includeOperationAmounts ? 380 : 520), 277.5, operationY);
-    if (includeOperationAmounts) pdf.text(money(row.amountHt, hireCurrency), 829.5, operationY, { align: 'right' });
-    commentLines.forEach((line, index) => pdf.text(line, 865.3, operationY + index * 36.75));
-    operationY += Math.max(38.25, commentLines.length * 36.75 + (commentLines.length > 1 ? 1.5 : 0));
+  return renderBillingPdf({
+    documentTitle: input.project.projectCode + ' - Éléments de facturation - ' + input.period.periodMonth.slice(0, 7),
+    projectLabel: input.project.projectCode + ' - ' + input.project.title,
+    monthLabel: formattedMonth.charAt(0).toLocaleUpperCase('fr-FR') + formattedMonth.slice(1),
+    periodLabel: 'Période : ' + formatDate(input.startDate) + ' au ' + formatDate(input.endDate),
+    clientReference: input.period.clientReference || defaultProjectClientReference(input.project) || '—',
+    vesselName: rawLines.length ? null : (input.selectedVesselName
+      || input.dprs.find((dpr) => dpr.vesselName)?.vesselName
+      || input.project.primaryVesselName || 'Non renseigné'),
+    includeOperationAmounts,
+    operationRows: operationSource.map((row) => [
+      row.date, row.operation,
+      ...(includeOperationAmounts ? [money(row.amountHt, hireCurrency)] : []),
+      row.comments,
+    ]),
+    expenseRows: includeExpenses ? expenses.map((expense) => [
+      expense.supplier, billingExpenseSpecialtyLabel(expense), formatDate(expense.invoiceDate),
+      expense.invoiceNumber || '—', money(expense.amountHt, currencyCode(expense.currency)),
+    ]) : null,
+    serviceRows: includeBbtmService ? (services.length ? services.map((service) => [
+      service.category || 'Prestation non renseignée', money(service.unitAmountHt),
+      quantity(service.quantity), money(service.unitAmountHt * service.quantity),
+    ]) : [['Prestation non renseignée', money(0), '0', money(0)]]) : null,
+    rawRows: rawLines.map((line) => [
+      formatDate(line.serviceDate), line.vesselName?.trim() || '—', line.designation,
+      money(line.unitAmountHt), quantity(line.quantity), money(billingRawLineTotal(line)),
+    ]),
+    totals: [
+      ...(includeOperationAmounts ? [{
+        label: "Loyers d'Affrètement", amounts: [money(hiresTotal, hireCurrency)],
+      }] : []),
+      ...(includeExpenses ? [{
+        label: 'Frais imputables',
+        amounts: currencyAmounts(expenseTotals.size ? expenseTotals : new Map([['EUR', 0]])),
+      }] : []),
+      ...(includeBbtmService ? [{
+        label: 'Prestations BBTM', amounts: [money(serviceTotal)],
+      }] : []),
+      ...(rawLines.length ? [{
+        label: 'Détail des Opérations', amounts: [money(rawLinesTotal)],
+      }] : []),
+      { label: 'Total facture du mois HT', amounts: currencyAmounts(invoiceTotals), final: true },
+    ],
   });
-
-  let expenseY = 486;
-  expenses.forEach((expense, index) => {
-    const supplierLines = fitTextLines(expense.supplier, expenseTable.supplier.width);
-    const specialtyLines = fitTextLines(
-      billingExpenseSpecialtyLabel(expense),
-      expenseTable.specialty.width,
-    );
-    const lineCount = Math.max(supplierLines.length, specialtyLines.length);
-    const rowHeight = Math.max(42, lineCount * 30 + 8);
-    if (index % 2 === 1) {
-      pdf.setFillColor(249, 250, 251);
-      pdf.rect(
-        expenseTable.left,
-        expenseY - 29,
-        expenseTable.right - expenseTable.left,
-        rowHeight,
-        'F',
-      );
-    }
-    supplierLines.forEach((line, lineIndex) => {
-      pdf.text(line, expenseTable.supplier.x, expenseY + lineIndex * 30);
-    });
-    specialtyLines.forEach((line, lineIndex) => {
-      pdf.text(line, expenseTable.specialty.x, expenseY + lineIndex * 30);
-    });
-    const centeredY = expenseY + (lineCount - 1) * 15;
-    pdf.text(formatDate(expense.invoiceDate), expenseTable.invoiceDate.x, centeredY, { align: 'center' });
-    pdf.text(
-      fitText(expense.invoiceNumber || '—', expenseTable.invoiceNumber.width),
-      expenseTable.invoiceNumber.x,
-      centeredY,
-      { align: 'center' },
-    );
-    pdf.text(money(expense.amountHt, currencyCode(expense.currency)), expenseTable.amount.x, centeredY, { align: 'right' });
-    expenseY += rowHeight;
-  });
-
-  if (includeBbtmService) {
-    const serviceY = Math.min(Math.max(expenseY + 58, 760), 1180);
-    setFont(36, 'bold');
-    pdf.text('Prestation BBTM', 1951, serviceY, { align: 'center' });
-    pdf.setDrawColor(96, 94, 92);
-    pdf.line(1284, serviceY + 15, 2619, serviceY + 15);
-    setFont(28, 'bold');
-    pdf.text('Catégorie', 1297, serviceY + 64);
-    pdf.text('Montant unitaire HT', 1815, serviceY + 64, { align: 'center' });
-    pdf.text('Nombre d’unités', 2180, serviceY + 64, { align: 'center' });
-    pdf.text('Montant total HT', 2520, serviceY + 64, { align: 'center' });
-    setFont(28);
-    const serviceSource = services.length ? services : [{
-      id: 0,
-      billingPeriodId: input.period.id,
-      serviceCatalogId: null,
-      category: 'Prestation non renseignée',
-      descriptionHtml: '',
-      unitAmountHt: 0,
-      quantity: 0,
-    }];
-    serviceSource.forEach((service, index) => {
-      const rowY = serviceY + 112 + index * 40;
-      pdf.text(fitText(service.category || 'Prestation non renseignée', 470), 1297, rowY);
-      pdf.text(money(service.unitAmountHt), 1880, rowY, { align: 'center' });
-      pdf.text(service.quantity.toLocaleString('fr-FR', { maximumFractionDigits: 3 }), 2180, rowY, { align: 'center' });
-      pdf.text(money(service.unitAmountHt * service.quantity), 2598, rowY, { align: 'right' });
-    });
-  }
-
-  pdf.setFillColor(179, 179, 179);
-  const subtotalDefinitions = [
-    ...(includeOperationAmounts ? [{ label: 'Total des Loyers journaliers', amounts: [{ currency: hireCurrency, value: hiresTotal }] }] : []),
-    ...(includeExpenses ? [{ label: 'Total des Frais Imputables', amounts: currencyAmounts(expenseTotals.size ? expenseTotals : new Map([['EUR', 0]])) }] : []),
-    ...(includeBbtmService ? [{ label: 'Sous-total Prestation BBTM', amounts: [{ currency: 'EUR', value: serviceTotal }] }] : []),
-  ];
-  const totalFrame = {
-    y: 1833 - (subtotalDefinitions.length * 105 + 187.5),
-    height: subtotalDefinitions.length * 105 + 187.5,
-  };
-  pdf.rect(1810.5, totalFrame.y, 787.5, totalFrame.height, 'F');
-  pdf.setDrawColor(0);
-  pdf.setLineWidth(0.75);
-  pdf.rect(1810.5, totalFrame.y, 787.5, totalFrame.height);
-  const totalBlocks = [
-    ...subtotalDefinitions.map((definition, index) => ({
-      ...definition,
-      y: totalFrame.y + index * 105,
-      height: 105,
-      final: false,
-    })),
-    {
-      y: totalFrame.y + subtotalDefinitions.length * 105,
-      height: 187.5,
-      label: 'Total Facture du mois Hors Taxes',
-      amounts: currencyAmounts(invoiceTotals),
-      final: true,
-    },
-  ];
-  totalBlocks.forEach((block) => {
-    const background = block.final ? 230 : 255;
-    pdf.setFillColor(background, background, background);
-    pdf.rect(1850.25, block.y, 742.5, block.height, 'F');
-    pdf.setFillColor(179, 179, 179);
-    pdf.rect(1850.25, block.y, 742.5, block.final ? 42.75 : 36.75, 'F');
-    setFont(block.final ? 34 : 29, 'bold');
-    pdf.text(block.label, 2221.5, block.y + (block.final ? 34 : 29), { align: 'center' });
-    if (block.amounts.length > 3) {
-      setFont(24, block.final ? 'bold' : 'normal');
-      pdf.text('Voir le récapitulatif par devise', 2221.5, block.y + (block.final ? 112 : 82), { align: 'center' });
-    } else if (block.amounts.length === 1) {
-      setFont(block.final ? 46 : 42, block.final ? 'bold' : 'normal');
-      const amount = block.amounts[0];
-      pdf.text(money(amount.value, amount.currency), 2221.5, block.y + (block.final ? 126 : 92), { align: 'center' });
-    } else {
-      const fontSize = block.final ? (block.amounts.length === 2 ? 40 : 32) : (block.amounts.length === 2 ? 26 : 18);
-      const headerHeight = block.final ? 42.75 : 36.75;
-      const lineHeight = fontSize * 1.2;
-      const firstY = block.y + headerHeight + (block.height - headerHeight - block.amounts.length * lineHeight) / 2 + fontSize;
-      setFont(fontSize, block.final ? 'bold' : 'normal');
-      block.amounts.forEach((amount, index) => pdf.text(money(amount.value, amount.currency), 2221.5, firstY + index * lineHeight, { align: 'center' }));
-    }
-  });
-
-  const overflowBlocks = totalBlocks.filter((block) => block.amounts.length > 3);
-  if (overflowBlocks.length) {
-    let summaryY = 290;
-    let summaryPage = 0;
-    const addCurrencyPage = () => {
-      pdf.addPage();
-      summaryY = 290;
-      summaryPage += 1;
-      setFont(44, 'bold');
-      pdf.text('Récapitulatif par devise', 1333.5, 96, { align: 'center' });
-      setFont(26);
-      pdf.text(fitText(`${input.project.projectCode} - ${input.project.title}`, 2500), 82, 146);
-      pdf.text('Les montants sont présentés par devise, sans conversion.', 82, 190);
-      pdf.setFillColor(246, 247, 249);
-      pdf.rect(73.5, 210, 2545.5, 56, 'F');
-      setFont(28, 'bold');
-      pdf.text('Éléments de facturation', 82, 249);
-      pdf.text('Devise', 2040, 249, { align: 'right' });
-      pdf.text('Montant HT', 2598, 249, { align: 'right' });
-      setFont(22);
-      pdf.text(`Récapitulatif par devise · page ${summaryPage}`, 2598, 1845, { align: 'right' });
-    };
-    addCurrencyPage();
-    overflowBlocks.forEach((block) => block.amounts.forEach((amount) => {
-      if (summaryY + 52 > 1730) addCurrencyPage();
-      setFont(28, block.final ? 'bold' : 'normal');
-      pdf.text(block.label, 82, summaryY);
-      pdf.text(amount.currency, 2040, summaryY, { align: 'right' });
-      pdf.text(money(amount.value, amount.currency), 2598, summaryY, { align: 'right' });
-      summaryY += 52;
-    }));
-  }
-
-  if (rawLines.length) {
-    const columns = { date: 82, vessel: 315, designation: 955, unitAmount: 1860, quantity: 2165, total: 2598 };
-    const bottom = 1730;
-    let rawY = 260;
-    let rawPage = 0;
-    const addRawPage = () => {
-      pdf.addPage();
-      rawPage += 1;
-      rawY = 260;
-      setFont(44, 'bold');
-      pdf.text('Saisie brute', 1333.5, 96, { align: 'center' });
-      setFont(26);
-      pdf.text(fitText(`${input.project.projectCode} - ${input.project.title}`, 1700), 82, 146);
-      pdf.text(`${formatDate(input.startDate)} au ${formatDate(input.endDate)}`, 2598, 146, { align: 'right' });
-      pdf.setFillColor(246, 247, 249);
-      pdf.rect(73.5, 178, 2545.5, 56, 'F');
-      setFont(28, 'bold');
-      pdf.text('Date', columns.date, 217);
-      pdf.text('Navire', columns.vessel, 217);
-      pdf.text('Désignation', columns.designation, 217);
-      pdf.text('Prix unitaire HT', columns.unitAmount, 217, { align: 'right' });
-      pdf.text('Quantité', columns.quantity, 217, { align: 'right' });
-      pdf.text('Prix Total HT', columns.total, 217, { align: 'right' });
-      pdf.setDrawColor(205, 208, 214);
-      pdf.line(73.5, 234, 2619, 234);
-      setFont(22);
-      pdf.text(`Saisie brute · page ${rawPage}`, 2598, 1845, { align: 'right' });
-      setFont(28);
-    };
-    addRawPage();
-    rawLines.forEach((line, index) => {
-      const vesselLines = pdf.splitTextToSize(line.vesselName?.trim() || '—', 600) as string[];
-      const designationLines = pdf.splitTextToSize(line.designation, 670) as string[];
-      const lineCount = Math.max(vesselLines.length, designationLines.length);
-      const rowHeight = Math.max(52, lineCount * 34 + 18);
-      if (rowHeight <= bottom - 260 && rawY + rowHeight > bottom) addRawPage();
-      let lineOffset = 0;
-      while (lineOffset < lineCount) {
-        if (bottom - rawY < 52) addRawPage();
-        const chunkLines = Math.min(lineCount - lineOffset, Math.floor((bottom - rawY - 18) / 34));
-        const chunkHeight = Math.max(52, chunkLines * 34 + 18);
-        if (index % 2 === 1) {
-          pdf.setFillColor(249, 250, 251);
-          pdf.rect(73.5, rawY - 30, 2545.5, chunkHeight, 'F');
-        }
-        if (lineOffset === 0) {
-          pdf.text(formatDate(line.serviceDate), columns.date, rawY);
-          pdf.text(money(line.unitAmountHt), columns.unitAmount, rawY, { align: 'right' });
-          pdf.text(line.quantity.toLocaleString('fr-FR', { maximumFractionDigits: 3 }), columns.quantity, rawY, { align: 'right' });
-          pdf.text(money(billingRawLineTotal(line)), columns.total, rawY, { align: 'right' });
-        }
-        vesselLines.slice(lineOffset, lineOffset + chunkLines).forEach((name, lineIndex) => pdf.text(name, columns.vessel, rawY + lineIndex * 34));
-        designationLines.slice(lineOffset, lineOffset + chunkLines).forEach((description, lineIndex) => pdf.text(description, columns.designation, rawY + lineIndex * 34));
-        rawY += chunkHeight;
-        lineOffset += chunkLines;
-        if (lineOffset < lineCount) addRawPage();
-      }
-    });
-    pdf.setDrawColor(96, 94, 92);
-    pdf.line(1810.5, rawY + 14, 2598, rawY + 14);
-    setFont(30, 'bold');
-    pdf.text(`Sous-total Saisie brute : ${money(rawLinesTotal)}`, 2598, rawY + 62, { align: 'right' });
-  }
-
-  pdf.setProperties({
-    title: `${input.project.projectCode} - Éléments de facturation - ${input.period.periodMonth.slice(0, 7)}`,
-    subject: 'Export BBTM des éléments de facturation',
-  });
-  return pdf.output('blob');
 }
 
 export type BillingExportFormat = 'pdf' | 'merged-pdf' | 'zip';
