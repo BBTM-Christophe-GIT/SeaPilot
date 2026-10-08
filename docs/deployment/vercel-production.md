@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.70.1` remplace le sélecteur « Saisie manuelle » de la Saisie brute par un bouton **+** devant le champ **Désignation libre**. Il ouvre le catalogue avec recherche et copie la désignation et le prix dans la ligne choisie. **Ajouter une ligne** est placé sous le tableau et **Enregistrer** reste sur chaque ligne. La case du volet de droite contrôle seule l’inclusion de toutes les lignes brutes dans les totaux/PDF. Aucune migration supplémentaire ni configuration. Voir [project-raw-billing.md](./project-raw-billing.md).
+
+Version `3.70.0` ajoute **Saisie brute** dans Projets → Facturation : lignes libres datées, catalogue explicite, quantité initiale de 1, total automatique et inclusion globale ou individuelle dans les totaux et les PDF paginés. Appliquer la migration additive de [project-raw-billing.md](./project-raw-billing.md) avant le client. Aucune nouvelle dépendance ni configuration.
+
 Version `3.69.1` crée automatiquement la fiche mensuelle de facturation lors de la première action et enregistre les références client par contenu à la sortie du champ. Les fiches existantes ne sont pas réécrites lors d’un aperçu ; les créations concurrentes, les brouillons et les réponses tardives sont contrôlés. Aucune migration ni nouvelle configuration n’est nécessaire. Voir [project-billing-autosave.md](./project-billing-autosave.md).
 
 Version `3.69.0` ajoute le suivi des demandes d'achat avec des commentaires

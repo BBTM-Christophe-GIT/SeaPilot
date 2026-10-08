@@ -26,6 +26,7 @@ export interface ProjectBillingPeriod {
   includeOperationsInPdf?: boolean;
   includeExpensesInPdf?: boolean;
   includeBbtmInPdf?: boolean;
+  includeRawInPdf?: boolean;
   excludedOperationKeys?: string[];
 }
 
@@ -71,6 +72,17 @@ export interface ProjectBillingService {
   includeInPdf?: boolean;
 }
 
+export interface ProjectBillingRawLine {
+  id: number;
+  billingPeriodId: number;
+  serviceCatalogId: number | null;
+  serviceDate: string;
+  designation: string;
+  unitAmountHt: number;
+  quantity: number;
+  includeInPdf?: boolean;
+}
+
 export interface ProjectServiceCatalogEntry {
   id: number;
   companyId: number;
@@ -87,6 +99,7 @@ export interface ProjectBillingData {
   expenses: ProjectChargeableExpense[];
   documents: ProjectBillingDocument[];
   services: ProjectBillingService[];
+  rawLines?: ProjectBillingRawLine[];
 }
 
 export interface BillingPeriodDraft {
@@ -102,6 +115,7 @@ export interface BillingPeriodDraft {
   includeOperationsInPdf: boolean;
   includeExpensesInPdf: boolean;
   includeBbtmInPdf: boolean;
+  includeRawInPdf?: boolean;
   excludedOperationKeys: string[];
 }
 
@@ -127,6 +141,15 @@ export interface BillingServiceDraft {
   descriptionHtml: string;
   unitAmountHt: number;
   quantity: number;
+}
+
+export interface BillingRawLineDraft {
+  serviceCatalogId: number | null;
+  serviceDate: string;
+  designation: string;
+  unitAmountHt: number;
+  quantity: number;
+  includeInPdf?: boolean;
 }
 
 export interface ProjectServiceCatalogDraft {
@@ -172,6 +195,7 @@ function mapPeriod(row: Record<string, unknown>): ProjectBillingPeriod {
     includeOperationsInPdf: row.include_operations_in_pdf !== false,
     includeExpensesInPdf: row.include_expenses_in_pdf !== false,
     includeBbtmInPdf: row.include_bbtm_in_pdf !== false,
+    includeRawInPdf: row.include_raw_in_pdf !== false,
     excludedOperationKeys: Array.isArray(row.excluded_operation_keys)
       ? row.excluded_operation_keys.map(String)
       : [],
@@ -220,6 +244,19 @@ function mapService(row: Record<string, unknown>): ProjectBillingService {
     serviceCatalogId: nullableNumber(row.service_catalog_id),
     category: text(row.category) as BillingServiceCategory,
     descriptionHtml: text(row.description_html),
+    unitAmountHt: number(row.unit_amount_ht),
+    quantity: number(row.quantity),
+    includeInPdf: row.include_in_pdf !== false,
+  };
+}
+
+function mapRawLine(row: Record<string, unknown>): ProjectBillingRawLine {
+  return {
+    id: number(row.id),
+    billingPeriodId: number(row.billing_period_id),
+    serviceCatalogId: nullableNumber(row.service_catalog_id),
+    serviceDate: text(row.service_date),
+    designation: text(row.designation),
     unitAmountHt: number(row.unit_amount_ht),
     quantity: number(row.quantity),
     includeInPdf: row.include_in_pdf !== false,
@@ -284,11 +321,12 @@ async function projectCompanyId(client: SupabaseClient, projectId: number): Prom
 }
 
 export async function fetchProjectBillingData(client: SupabaseClient, projectId: number): Promise<ProjectBillingData> {
-  const [periodResult, expenseResult, documentResult, serviceResult] = await Promise.all([
+  const [periodResult, expenseResult, documentResult, serviceResult, rawLines] = await Promise.all([
     client.from('project_billing_periods').select('*').eq('project_id', projectId).order('period_month', { ascending: false }),
     client.from('project_chargeable_expenses').select('*').eq('project_id', projectId).order('invoice_date', { ascending: false }),
     client.from('project_billing_documents').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
     client.from('project_billing_services').select('*').eq('project_id', projectId).order('created_at'),
+    fetchProjectBillingRawLines(client, projectId),
   ]);
   if (periodResult.error) throw periodResult.error;
   if (expenseResult.error) throw expenseResult.error;
@@ -299,7 +337,25 @@ export async function fetchProjectBillingData(client: SupabaseClient, projectId:
     expenses: (expenseResult.data || []).map((row) => mapExpense(row as Record<string, unknown>)),
     documents: (documentResult.data || []).map((row) => mapDocument(row as Record<string, unknown>)),
     services: (serviceResult.data || []).map((row) => mapService(row as Record<string, unknown>)),
+    rawLines,
   };
+}
+
+async function fetchProjectBillingRawLines(client: SupabaseClient, projectId: number): Promise<ProjectBillingRawLine[]> {
+  const rawLines: ProjectBillingRawLine[] = [];
+  const pageSize = 1_000;
+  for (let offset = 0; ; offset += pageSize) {
+    // PostgREST caps each response at 1,000 rows. Stable ordering preserves every line across pages.
+    const { data, error } = await client.from('project_billing_raw_lines')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('service_date')
+      .order('id')
+      .range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    rawLines.push(...(data || []).map((row) => mapRawLine(row as Record<string, unknown>)));
+    if (!data || data.length < pageSize) return rawLines;
+  }
 }
 
 export async function saveProjectBillingPeriod(
@@ -323,6 +379,7 @@ export async function saveProjectBillingPeriod(
     include_operations_in_pdf: draft.includeOperationsInPdf,
     include_expenses_in_pdf: draft.includeExpensesInPdf,
     include_bbtm_in_pdf: draft.includeBbtmInPdf,
+    include_raw_in_pdf: draft.includeRawInPdf !== false,
     excluded_operation_keys: draft.excludedOperationKeys,
     updated_at: new Date().toISOString(),
   };
@@ -368,6 +425,7 @@ export async function ensureProjectBillingPeriod(
     include_operations_in_pdf: draft.includeOperationsInPdf,
     include_expenses_in_pdf: draft.includeExpensesInPdf,
     include_bbtm_in_pdf: draft.includeBbtmInPdf,
+    include_raw_in_pdf: draft.includeRawInPdf !== false,
     excluded_operation_keys: draft.excludedOperationKeys,
   }, { onConflict: 'company_id,project_id,period_month', ignoreDuplicates: true });
   if (insertError) throw insertError;
@@ -478,11 +536,56 @@ export async function setProjectBillingServicePdfInclusion(
   if (error) throw error;
 }
 
+export async function saveProjectBillingRawLine(
+  client: SupabaseClient,
+  projectId: number,
+  billingPeriodId: number,
+  draft: BillingRawLineDraft,
+  rawLineId?: number,
+): Promise<ProjectBillingRawLine> {
+  const companyId = await projectCompanyId(client, projectId);
+  const payload = {
+    company_id: companyId,
+    project_id: projectId,
+    billing_period_id: billingPeriodId,
+    service_catalog_id: draft.serviceCatalogId,
+    service_date: draft.serviceDate,
+    designation: draft.designation.trim(),
+    unit_amount_ht: draft.unitAmountHt,
+    quantity: draft.quantity,
+    include_in_pdf: true,
+    updated_at: new Date().toISOString(),
+  };
+  const query = rawLineId
+    ? client.from('project_billing_raw_lines').update(payload).eq('id', rawLineId)
+    : client.from('project_billing_raw_lines').insert(payload);
+  const { data, error } = await query.select('*').single();
+  if (error) throw error;
+  return mapRawLine(data as Record<string, unknown>);
+}
+
+export async function deleteProjectBillingRawLine(client: SupabaseClient, rawLineId: number): Promise<void> {
+  const { error } = await client.from('project_billing_raw_lines').delete().eq('id', rawLineId);
+  if (error) throw error;
+}
+
+export async function setProjectBillingRawLinePdfInclusion(
+  client: SupabaseClient,
+  rawLineId: number,
+  includeInPdf: boolean,
+): Promise<void> {
+  const { error } = await client.from('project_billing_raw_lines')
+    .update({ include_in_pdf: includeInPdf, updated_at: new Date().toISOString() })
+    .eq('id', rawLineId);
+  if (error) throw error;
+}
+
 export async function saveProjectBillingPdfSelection(
   client: SupabaseClient,
   periodId: number,
   selection: Required<Pick<ProjectBillingPeriod,
-    'includeOperationsInPdf' | 'includeExpensesInPdf' | 'includeBbtmInPdf' | 'excludedOperationKeys'>>,
+    'includeOperationsInPdf' | 'includeExpensesInPdf' | 'includeBbtmInPdf' | 'excludedOperationKeys'>>
+    & Pick<ProjectBillingPeriod, 'includeRawInPdf'>,
 ): Promise<void> {
   const { error } = await client
     .from('project_billing_periods')
@@ -490,6 +593,7 @@ export async function saveProjectBillingPdfSelection(
       include_operations_in_pdf: selection.includeOperationsInPdf,
       include_expenses_in_pdf: selection.includeExpensesInPdf,
       include_bbtm_in_pdf: selection.includeBbtmInPdf,
+      include_raw_in_pdf: selection.includeRawInPdf !== false,
       excluded_operation_keys: selection.excludedOperationKeys,
       updated_at: new Date().toISOString(),
     })
@@ -573,6 +677,7 @@ export interface BillingExportInput {
   period: ProjectBillingPeriod;
   expenses: ProjectChargeableExpense[];
   services: ProjectBillingService[];
+  rawLines?: ProjectBillingRawLine[];
   includeBbtmService?: boolean;
   dprs: ProjectBillingDpr[];
   /** Full-month DPRs when the visible/exported range is shorter than the billing month. */
@@ -687,13 +792,40 @@ export function billingServicesTotal(services: ProjectBillingService[]): number 
   return services.reduce((sum, service) => sum + service.unitAmountHt * service.quantity, 0);
 }
 
+export function billingExportRawLines(input: BillingExportInput): ProjectBillingRawLine[] {
+  if (input.period.includeRawInPdf === false) return [];
+  return [...(input.rawLines || [])]
+    .sort((left, right) => left.serviceDate.localeCompare(right.serviceDate) || left.id - right.id);
+}
+
+function billingRawLineCents(line: Pick<ProjectBillingRawLine, 'unitAmountHt' | 'quantity'>): bigint {
+  if (![line.unitAmountHt, line.quantity].every((value) => Number.isFinite(value) && value >= 0 && value < 1e21)) return 0n;
+  const unitCents = BigInt(line.unitAmountHt.toFixed(2).replace('.', ''));
+  const quantityThousandths = BigInt(line.quantity.toFixed(3).replace('.', ''));
+  // Round each displayed line to cents before adding it to the invoice.
+  return (unitCents * quantityThousandths + 500n) / 1_000n;
+}
+
+export function billingRawLineTotal(line: Pick<ProjectBillingRawLine, 'unitAmountHt' | 'quantity'>): number {
+  return Number(billingRawLineCents(line)) / 100;
+}
+
+export function billingRawLinesTotal(rawLines: ProjectBillingRawLine[]): number {
+  const cents = rawLines.reduce((sum, line) => sum + billingRawLineCents(line), 0n);
+  return Number(cents) / 100;
+}
+
 export function billingInvoiceTotal(
   hiresTotal: number,
   expenseTotal: number,
   services: ProjectBillingService[],
   includeBbtmService: boolean,
+  rawLines: ProjectBillingRawLine[] = [],
+  includeRaw = true,
 ): number {
-  return hiresTotal + expenseTotal + (includeBbtmService ? billingServicesTotal(services) : 0);
+  const total = hiresTotal + expenseTotal + (includeBbtmService ? billingServicesTotal(services) : 0)
+    + (includeRaw ? billingRawLinesTotal(rawLines) : 0);
+  return Number(total.toFixed(2));
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -961,9 +1093,11 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
     unit: 'pt',
     format: [2667.12, 1896],
   });
-  const money = (value: number) => `${value
+  const currencyCode = (value: string) => value.trim().toUpperCase() || 'EUR';
+  const money = (value: number, currency = 'EUR') => `${value
     .toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    .replace(/[\u00a0\u202f]/g, ' ')} €`;
+    .replace(/[\u00a0\u202f]/g, ' ')} ${currency === 'EUR' ? '€' : currency}`;
+  const hireCurrency = currencyCode(input.contract?.hireCurrency || 'EUR');
   const operationRows = billingOperationRows(input);
   const includeOperationAmounts = input.period.includeOperationsInPdf !== false;
   const includeExpenses = input.period.includeExpensesInPdf !== false;
@@ -973,11 +1107,26 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   const expenses = input.period.includeExpensesInPdf === false
     ? []
     : input.expenses.filter((expense) => expense.includeInPdf !== false);
-  const expenseTotal = expenses.reduce((sum, expense) => sum + expense.amountHt, 0);
+  const expenseTotals = new Map<string, number>();
+  expenses.forEach((expense) => {
+    const currency = currencyCode(expense.currency);
+    expenseTotals.set(currency, (expenseTotals.get(currency) || 0) + expense.amountHt);
+  });
   const includeBbtmService = input.period.includeBbtmInPdf !== false && input.includeBbtmService !== false;
   const services = billingExportServices(input);
   const serviceTotal = includeBbtmService ? billingServicesTotal(services) : 0;
-  const invoiceTotal = billingInvoiceTotal(hiresTotal, expenseTotal, services, includeBbtmService);
+  const rawLines = billingExportRawLines(input);
+  const rawLinesTotal = billingRawLinesTotal(rawLines);
+  const invoiceTotals = new Map<string, number>(expenseTotals);
+  const addInvoiceAmount = (currency: string, amount: number) => {
+    invoiceTotals.set(currency, (invoiceTotals.get(currency) || 0) + amount);
+  };
+  if (includeOperationAmounts) addInvoiceAmount(hireCurrency, hiresTotal);
+  if (serviceTotal || rawLines.length) addInvoiceAmount('EUR', serviceTotal + rawLinesTotal);
+  if (!invoiceTotals.size) invoiceTotals.set('EUR', 0);
+  const currencyAmounts = (totals: Map<string, number>) => [...totals]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([currency, value]) => ({ currency, value: Number(value.toFixed(2)) }));
 
   const setFont = (size: number, style: 'normal' | 'bold' | 'italic' = 'normal') => {
     pdf.setFont('helvetica', style);
@@ -1084,7 +1233,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
   pdf.rect(945.375, 190.875, 776.25, 46.5);
   setFont(32);
   pdf.setTextColor(91, 88, 84);
-  pdf.text(`${input.project.projectCode} - ${input.project.title}`, 950, 226);
+  pdf.text(fitText(`${input.project.projectCode} - ${input.project.title}`, 715), 950, 226);
   drawChevron(1686, 205);
 
   strokeRect(2088, 18, 483.75, 224.25);
@@ -1169,7 +1318,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
     const commentLines = row.comments ? row.comments.split('\n') : [];
     pdf.text(row.date, 81.75, operationY);
     pdf.text(fitText(row.operation, includeOperationAmounts ? 380 : 520), 277.5, operationY);
-    if (includeOperationAmounts) pdf.text(money(row.amountHt), 829.5, operationY, { align: 'right' });
+    if (includeOperationAmounts) pdf.text(money(row.amountHt, hireCurrency), 829.5, operationY, { align: 'right' });
     commentLines.forEach((line, index) => pdf.text(line, 865.3, operationY + index * 36.75));
     operationY += Math.max(38.25, commentLines.length * 36.75 + (commentLines.length > 1 ? 1.5 : 0));
   });
@@ -1207,7 +1356,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
       centeredY,
       { align: 'center' },
     );
-    pdf.text(money(expense.amountHt), expenseTable.amount.x, centeredY, { align: 'right' });
+    pdf.text(money(expense.amountHt, currencyCode(expense.currency)), expenseTable.amount.x, centeredY, { align: 'right' });
     expenseY += rowHeight;
   });
 
@@ -1243,9 +1392,9 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
 
   pdf.setFillColor(179, 179, 179);
   const subtotalDefinitions = [
-    ...(includeOperationAmounts ? [{ label: 'Total des Loyers journaliers', value: hiresTotal }] : []),
-    ...(includeExpenses ? [{ label: 'Total des Frais Imputables', value: expenseTotal }] : []),
-    ...(includeBbtmService ? [{ label: 'Sous-total Prestation BBTM', value: serviceTotal }] : []),
+    ...(includeOperationAmounts ? [{ label: 'Total des Loyers journaliers', amounts: [{ currency: hireCurrency, value: hiresTotal }] }] : []),
+    ...(includeExpenses ? [{ label: 'Total des Frais Imputables', amounts: currencyAmounts(expenseTotals.size ? expenseTotals : new Map([['EUR', 0]])) }] : []),
+    ...(includeBbtmService ? [{ label: 'Sous-total Prestation BBTM', amounts: [{ currency: 'EUR', value: serviceTotal }] }] : []),
   ];
   const totalFrame = {
     y: 1833 - (subtotalDefinitions.length * 105 + 187.5),
@@ -1266,7 +1415,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
       y: totalFrame.y + subtotalDefinitions.length * 105,
       height: 187.5,
       label: 'Total Facture du mois Hors Taxes',
-      value: invoiceTotal,
+      amounts: currencyAmounts(invoiceTotals),
       final: true,
     },
   ];
@@ -1278,9 +1427,105 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
     pdf.rect(1850.25, block.y, 742.5, block.final ? 42.75 : 36.75, 'F');
     setFont(block.final ? 34 : 29, 'bold');
     pdf.text(block.label, 2221.5, block.y + (block.final ? 34 : 29), { align: 'center' });
-    setFont(block.final ? 46 : 42, block.final ? 'bold' : 'normal');
-    pdf.text(money(block.value), 2221.5, block.y + (block.final ? 126 : 92), { align: 'center' });
+    if (block.amounts.length > 3) {
+      setFont(24, block.final ? 'bold' : 'normal');
+      pdf.text('Voir le récapitulatif par devise', 2221.5, block.y + (block.final ? 112 : 82), { align: 'center' });
+    } else if (block.amounts.length === 1) {
+      setFont(block.final ? 46 : 42, block.final ? 'bold' : 'normal');
+      const amount = block.amounts[0];
+      pdf.text(money(amount.value, amount.currency), 2221.5, block.y + (block.final ? 126 : 92), { align: 'center' });
+    } else {
+      const fontSize = block.final ? (block.amounts.length === 2 ? 40 : 32) : (block.amounts.length === 2 ? 26 : 18);
+      const headerHeight = block.final ? 42.75 : 36.75;
+      const lineHeight = fontSize * 1.2;
+      const firstY = block.y + headerHeight + (block.height - headerHeight - block.amounts.length * lineHeight) / 2 + fontSize;
+      setFont(fontSize, block.final ? 'bold' : 'normal');
+      block.amounts.forEach((amount, index) => pdf.text(money(amount.value, amount.currency), 2221.5, firstY + index * lineHeight, { align: 'center' }));
+    }
   });
+
+  const overflowBlocks = totalBlocks.filter((block) => block.amounts.length > 3);
+  if (overflowBlocks.length) {
+    let summaryY = 290;
+    let summaryPage = 0;
+    const addCurrencyPage = () => {
+      pdf.addPage();
+      summaryY = 290;
+      summaryPage += 1;
+      setFont(44, 'bold');
+      pdf.text('Récapitulatif par devise', 1333.5, 96, { align: 'center' });
+      setFont(26);
+      pdf.text(fitText(`${input.project.projectCode} - ${input.project.title}`, 2500), 82, 146);
+      pdf.text('Les montants sont présentés par devise, sans conversion.', 82, 190);
+      pdf.setFillColor(246, 247, 249);
+      pdf.rect(73.5, 210, 2545.5, 56, 'F');
+      setFont(28, 'bold');
+      pdf.text('Éléments de facturation', 82, 249);
+      pdf.text('Devise', 2040, 249, { align: 'right' });
+      pdf.text('Montant HT', 2598, 249, { align: 'right' });
+      setFont(22);
+      pdf.text(`Récapitulatif par devise · page ${summaryPage}`, 2598, 1845, { align: 'right' });
+    };
+    addCurrencyPage();
+    overflowBlocks.forEach((block) => block.amounts.forEach((amount) => {
+      if (summaryY + 52 > 1730) addCurrencyPage();
+      setFont(28, block.final ? 'bold' : 'normal');
+      pdf.text(block.label, 82, summaryY);
+      pdf.text(amount.currency, 2040, summaryY, { align: 'right' });
+      pdf.text(money(amount.value, amount.currency), 2598, summaryY, { align: 'right' });
+      summaryY += 52;
+    }));
+  }
+
+  if (rawLines.length) {
+    const columns = { date: 82, designation: 315, unitAmount: 1860, quantity: 2165, total: 2598 };
+    const bottom = 1730;
+    let rawY = 260;
+    let rawPage = 0;
+    const addRawPage = () => {
+      pdf.addPage();
+      rawPage += 1;
+      rawY = 260;
+      setFont(44, 'bold');
+      pdf.text('Saisie brute', 1333.5, 96, { align: 'center' });
+      setFont(26);
+      pdf.text(fitText(`${input.project.projectCode} - ${input.project.title}`, 1700), 82, 146);
+      pdf.text(`${formatDate(input.startDate)} au ${formatDate(input.endDate)}`, 2598, 146, { align: 'right' });
+      pdf.setFillColor(246, 247, 249);
+      pdf.rect(73.5, 178, 2545.5, 56, 'F');
+      setFont(28, 'bold');
+      pdf.text('Date', columns.date, 217);
+      pdf.text('Désignation', columns.designation, 217);
+      pdf.text('Prix unitaire HT', columns.unitAmount, 217, { align: 'right' });
+      pdf.text('Quantité', columns.quantity, 217, { align: 'right' });
+      pdf.text('Prix Total HT', columns.total, 217, { align: 'right' });
+      pdf.setDrawColor(205, 208, 214);
+      pdf.line(73.5, 234, 2619, 234);
+      setFont(22);
+      pdf.text(`Saisie brute · page ${rawPage}`, 2598, 1845, { align: 'right' });
+      setFont(28);
+    };
+    addRawPage();
+    rawLines.forEach((line, index) => {
+      const designationLines = pdf.splitTextToSize(line.designation, 1260) as string[];
+      const rowHeight = Math.max(52, designationLines.length * 34 + 18);
+      if (rawY + rowHeight > bottom) addRawPage();
+      if (index % 2 === 1) {
+        pdf.setFillColor(249, 250, 251);
+        pdf.rect(73.5, rawY - 30, 2545.5, rowHeight, 'F');
+      }
+      pdf.text(formatDate(line.serviceDate), columns.date, rawY);
+      designationLines.forEach((description, lineIndex) => pdf.text(description, columns.designation, rawY + lineIndex * 34));
+      pdf.text(money(line.unitAmountHt), columns.unitAmount, rawY, { align: 'right' });
+      pdf.text(line.quantity.toLocaleString('fr-FR', { maximumFractionDigits: 3 }), columns.quantity, rawY, { align: 'right' });
+      pdf.text(money(billingRawLineTotal(line)), columns.total, rawY, { align: 'right' });
+      rawY += rowHeight;
+    });
+    pdf.setDrawColor(96, 94, 92);
+    pdf.line(1810.5, rawY + 14, 2598, rawY + 14);
+    setFont(30, 'bold');
+    pdf.text(`Sous-total Saisie brute : ${money(rawLinesTotal)}`, 2598, rawY + 62, { align: 'right' });
+  }
 
   pdf.setProperties({
     title: `${input.project.projectCode} - Éléments de facturation - ${input.period.periodMonth.slice(0, 7)}`,

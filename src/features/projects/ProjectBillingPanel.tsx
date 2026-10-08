@@ -1,5 +1,6 @@
 import './ProjectWorkspace.css';
 import { ProjectPdfPreview } from './ProjectPdfPreview';
+import { ProjectBillingRawLines } from './ProjectBillingRawLines';
 import { billingReferenceScope, billingReferenceScopeLabel, fetchBillingReferences, saveBillingReference, type BillingReference } from './projectBillingReferences';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetNames } from '../fleet/fleetDisplay';
@@ -39,10 +40,12 @@ import {
   billingApplicableHire,
   contractHireModeForOperation,
   billingServicesTotal,
+  billingRawLinesTotal,
   completeBillingDprs,
   countDailyOperations,
   defaultProjectClientReference,
   deleteProjectBillingService,
+  deleteProjectBillingRawLine,
   deleteProjectChargeableExpense,
   fetchProjectBillingData,
   fetchProjectBillingDprs,
@@ -53,11 +56,13 @@ import {
   saveProjectBillingPeriod,
   saveProjectBillingPdfSelection,
   saveProjectBillingService,
+  saveProjectBillingRawLine,
   saveProjectChargeableExpense,
   setProjectChargeableExpensePdfInclusion,
   signedProjectBillingDocumentUrl,
   uploadProjectBillingDocument,
   type BillingExpenseDraft,
+  type BillingRawLineDraft,
   type BillingExportFormat,
   type BillingPeriodDraft,
   type BillingPeriodMode,
@@ -67,6 +72,7 @@ import {
   type ProjectBillingDocument,
   type ProjectBillingPeriod,
   type ProjectBillingService,
+  type ProjectBillingRawLine,
   type ProjectChargeableExpense,
   type ProjectServiceCatalogEntry,
 } from './projectBilling';
@@ -99,12 +105,14 @@ export interface ProjectBillingSectionVisibility {
   services: boolean;
   bbtm: boolean;
   billingElements: boolean;
+  raw?: boolean;
 }
 
 const ALL_BILLING_SECTIONS: ProjectBillingSectionVisibility = {
   services: true,
   bbtm: true,
   billingElements: true,
+  raw: true,
 };
 
 function currentMonth(): string {
@@ -136,6 +144,7 @@ function billingDraft(project: ProjectRecord, period?: ProjectBillingPeriod): Bi
     includeOperationsInPdf: period?.includeOperationsInPdf !== false,
     includeExpensesInPdf: period?.includeExpensesInPdf !== false,
     includeBbtmInPdf: period?.includeBbtmInPdf !== false,
+    includeRawInPdf: period?.includeRawInPdf !== false,
     excludedOperationKeys: period?.excludedOperationKeys || [],
   };
 }
@@ -188,7 +197,8 @@ export function ProjectBillingPanel({
   visibleSections?: ProjectBillingSectionVisibility;
   workspace?: boolean;
 }) {
-  const [billingView, setBillingView] = useState<'hire' | 'expenses' | 'services' | 'followup'>('hire');
+  const [billingView, setBillingView] = useState<'hire' | 'expenses' | 'services' | 'raw' | 'followup'>('hire');
+  const [rawLinesDirty, setRawLinesDirty] = useState(false);
   const defaultMonth = initialMonth?.slice(0, 7) || currentMonth();
   const [data, setData] = useState<ProjectBillingData>(EMPTY_DATA);
   const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
@@ -274,6 +284,7 @@ export function ProjectBillingPanel({
     setDprs([]);
     setCompleteMissingDays(false);
     setServiceDrafts([]);
+    setRawLinesDirty(false);
     void reload();
     void reloadServiceProviders();
     return () => { contextRevision.current += 1; };
@@ -284,7 +295,7 @@ export function ProjectBillingPanel({
     if (selectedPeriod) {
       if (autoCreatedPeriodId.current === selectedPeriod.id) autoCreatedPeriodId.current = null;
       else setPeriodDraft(billingDraft(project, selectedPeriod));
-      setLegacyReferenceScope(billingReferenceScope(selectedPeriod));
+      setLegacyReferenceScope(billingReferenceScope({ ...selectedPeriod, includeRawInPdf: selectedPeriod.includeRawInPdf !== false && (data.rawLines || []).some((line) => line.billingPeriodId === selectedPeriod.id) }));
     }
   }, [selectedPeriod?.id]);
   const periodExpenses = selectedPeriod
@@ -298,6 +309,10 @@ export function ProjectBillingPanel({
       ? data.services.filter((service) => service.billingPeriodId === selectedPeriod.id)
       : [],
     [data.services, selectedPeriod?.id],
+  );
+  const periodRawLines = useMemo(
+    () => selectedPeriod ? (data.rawLines || []).filter((line) => line.billingPeriodId === selectedPeriod.id) : [],
+    [data.rawLines, selectedPeriod?.id],
   );
   const expenseTotal = periodExpenses.reduce((sum, expense) => sum + expense.amountHt, 0);
   const providerCategories = useMemo(
@@ -343,7 +358,12 @@ export function ProjectBillingPanel({
     ...service,
     quantity: automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) ?? service.quantity,
   }));
-  const referenceScope = billingReferenceScope(selectedPeriod || periodDraft);
+  const rawLinesForExport = periodRawLines.filter((line) => line.serviceDate >= exportRange.start && line.serviceDate <= exportRange.end);
+  const referenceScope = billingReferenceScope({
+    ...(selectedPeriod || periodDraft),
+    includeRawInPdf: (selectedPeriod?.includeRawInPdf ?? periodDraft.includeRawInPdf) !== false
+      && rawLinesForExport.length > 0,
+  });
   const savedReference = references.find((reference) => reference.scope === referenceScope);
   const exportReference = referenceDrafts[referenceScope] ?? savedReference?.reference ?? (legacyReferenceScope === referenceScope || legacyReferenceScope === null ? selectedPeriod?.clientReference || periodDraft.clientReference : '');
   function storeReference(automatic = false): Promise<void> {
@@ -434,6 +454,7 @@ export function ProjectBillingPanel({
   }, [defaultServiceQuantity, periodServices.length, serviceCatalog]);
 
   function selectMonth(month: string) {
+    setRawLinesDirty(false);
     contextRevision.current += 1;
     autoCreatedPeriodId.current = null;
     editedInvoiceFields.current.clear();
@@ -444,7 +465,7 @@ export function ProjectBillingPanel({
     setSelectedMonth(normalized);
     const period = data.periods.find((item) => item.periodMonth.startsWith(normalized));
     setPeriodDraft({ ...billingDraft(project, period), periodMonth: normalized });
-    setLegacyReferenceScope(period ? billingReferenceScope(period) : null);
+    setLegacyReferenceScope(period ? billingReferenceScope({ ...period, includeRawInPdf: period.includeRawInPdf !== false && (data.rawLines || []).some((line) => line.billingPeriodId === period.id) }) : null);
     setReferenceDrafts({});
     const range = monthRange(normalized);
     setCustomStart(range.start);
@@ -485,7 +506,7 @@ export function ProjectBillingPanel({
 
   async function updatePeriodPdfSelection(
     changes: Partial<Pick<BillingPeriodDraft,
-      'includeOperationsInPdf' | 'includeExpensesInPdf' | 'includeBbtmInPdf' | 'excludedOperationKeys'>>,
+      'includeOperationsInPdf' | 'includeExpensesInPdf' | 'includeBbtmInPdf' | 'includeRawInPdf' | 'excludedOperationKeys'>>,
   ) {
     if (!isManager || busy) return;
     const revision = contextRevision.current;
@@ -493,6 +514,7 @@ export function ProjectBillingPanel({
       includeOperationsInPdf: changes.includeOperationsInPdf ?? selectedPeriod?.includeOperationsInPdf ?? periodDraft.includeOperationsInPdf,
       includeExpensesInPdf: changes.includeExpensesInPdf ?? selectedPeriod?.includeExpensesInPdf ?? periodDraft.includeExpensesInPdf,
       includeBbtmInPdf: changes.includeBbtmInPdf ?? selectedPeriod?.includeBbtmInPdf ?? periodDraft.includeBbtmInPdf,
+      includeRawInPdf: changes.includeRawInPdf ?? selectedPeriod?.includeRawInPdf ?? periodDraft.includeRawInPdf ?? true,
       excludedOperationKeys: changes.excludedOperationKeys ?? selectedPeriod?.excludedOperationKeys ?? periodDraft.excludedOperationKeys,
     };
     setBusy('selection');
@@ -791,8 +813,39 @@ export function ProjectBillingPanel({
     }
   }
 
+  async function saveRawLine(draft: BillingRawLineDraft, id?: number): Promise<ProjectBillingRawLine> {
+    if (!isManager || busy) throw new Error('La saisie brute est momentanément indisponible.');
+    const revision = contextRevision.current;
+    setBusy('raw-line');
+    try {
+      const period = await getOrCreatePeriod();
+      const saved = await saveProjectBillingRawLine(client, project.id, period.id, draft, id);
+      if (referenceContext.current?.client !== client || referenceContext.current.projectId !== project.id) {
+        throw new Error('Le projet a changé pendant l’enregistrement.');
+      }
+      // The cache contains every month: keep completed writes when only the selected month changed.
+      setData((current) => ({ ...current, rawLines: [...(current.rawLines || []).filter((line) => line.id !== saved.id), saved] }));
+      return saved;
+    } finally {
+      if (revision === contextRevision.current) setBusy('');
+    }
+  }
+
+  async function removeRawLine(id: number): Promise<void> {
+    if (!isManager || busy) throw new Error('La saisie brute est momentanément indisponible.');
+    const revision = contextRevision.current;
+    setBusy('raw-line');
+    try {
+      await deleteProjectBillingRawLine(client, id);
+      if (referenceContext.current?.client !== client || referenceContext.current.projectId !== project.id) return;
+      setData((current) => ({ ...current, rawLines: (current.rawLines || []).filter((line) => line.id !== id) }));
+    } finally {
+      if (revision === contextRevision.current) setBusy('');
+    }
+  }
+
   async function createExport(mode: 'preview' | 'download') {
-    if (busy || dprsLoading) return;
+    if (busy || dprsLoading || rawLinesDirty) return;
     const revision = contextRevision.current;
     if (!exportRange.start || !exportRange.end || exportRange.end < exportRange.start) {
       setError('La période d’export est invalide.');
@@ -805,7 +858,7 @@ export function ProjectBillingPanel({
       await storeReference(true);
       if (revision !== contextRevision.current) return;
       // A concurrent creation may have saved a different PDF selection.
-      const periodReferenceScope = billingReferenceScope(period);
+      const periodReferenceScope = billingReferenceScope({ ...period, includeRawInPdf: period.includeRawInPdf !== false && rawLinesForExport.length > 0 });
       const periodReference = referenceDrafts[periodReferenceScope]
         ?? references.find((reference) => reference.scope === periodReferenceScope)?.reference
         ?? (legacyReferenceScope === periodReferenceScope || legacyReferenceScope === null ? period.clientReference || defaultProjectClientReference(project) : '');
@@ -816,6 +869,7 @@ export function ProjectBillingPanel({
         period: { ...period, clientReference: periodReference || '—' },
         expenses: periodExpenses,
         services: serviceForExport,
+        rawLines: rawLinesForExport,
         includeBbtmService: period.includeBbtmInPdf !== false,
         dprs: exportDprs,
         monthlyDprs: dprs,
@@ -851,12 +905,14 @@ export function ProjectBillingPanel({
   const includedHireTotal = selectedPeriod?.includeOperationsInPdf === false ? 0 : hireDays.filter((dpr) => !(selectedPeriod?.excludedOperationKeys ?? periodDraft.excludedOperationKeys).includes(billingOperationKey(dpr))).reduce((sum, dpr) => sum + dayAmount(dpr), 0);
   const includedExpenses = selectedPeriod?.includeExpensesInPdf === false ? [] : periodExpenses.filter((expense) => expense.includeInPdf !== false);
   const includedServiceTotal = selectedPeriod?.includeBbtmInPdf === false ? 0 : billingServicesTotal(serviceForExport);
+  const includedRawTotal = (selectedPeriod?.includeRawInPdf ?? periodDraft.includeRawInPdf) === false ? 0 : billingRawLinesTotal(rawLinesForExport);
   const expenseByCurrency = new Map<string, number>();
   includedExpenses.forEach((expense) => expenseByCurrency.set(expense.currency, (expenseByCurrency.get(expense.currency) || 0) + expense.amountHt));
   const totalsByCurrency = new Map(expenseByCurrency);
   const hireCurrency = contract?.hireCurrency || 'EUR';
   totalsByCurrency.set(hireCurrency, (totalsByCurrency.get(hireCurrency) || 0) + includedHireTotal);
   if (includedServiceTotal) totalsByCurrency.set('EUR', (totalsByCurrency.get('EUR') || 0) + includedServiceTotal);
+  if (includedRawTotal) totalsByCurrency.set('EUR', (totalsByCurrency.get('EUR') || 0) + includedRawTotal);
   const periodControls = <>
     <label>Période<select onChange={(event) => setPeriodMode(event.target.value as BillingPeriodMode)} value={periodMode}><option value="calendar-month">Mois calendaire</option><option value="custom">Période personnalisée</option></select></label>
     {periodMode === 'custom' ? <><label>Début<input onChange={(event) => setCustomStart(event.target.value)} type="date" value={customStart} /></label><label>Fin<input onChange={(event) => setCustomEnd(event.target.value)} type="date" value={customEnd} /></label></> : null}
@@ -892,7 +948,7 @@ export function ProjectBillingPanel({
       <div className="project-billing-workspace-main">
       {workspace ? <>
         <nav className="project-billing-workspace-tabs" aria-label="Rubriques de facturation">
-          {([['hire', 'Loyers & DPR', hireDays.length], ['expenses', 'Frais refacturables', periodExpenses.length], ['services', 'Prestations BBTM', serviceDrafts.length], ['followup', 'Suivi & pièces', periodDocuments.filter((document) => document.documentKind !== 'chargeable_expense').length]] as const).map(([id, label, count]) => <button key={id} type="button" aria-pressed={billingView === id} aria-controls={`billing-view-${id}`} onClick={() => setBillingView(id)}>{label}<span>{count}</span></button>)}
+          {([['hire', 'Loyers & DPR', hireDays.length], ['expenses', 'Frais refacturables', periodExpenses.length], ['services', 'Prestations BBTM', serviceDrafts.length], ['raw', 'Saisie brute', periodRawLines.length], ['followup', 'Suivi & pièces', periodDocuments.filter((document) => document.documentKind !== 'chargeable_expense').length]] as const).map(([id, label, count]) => <button key={id} type="button" aria-pressed={billingView === id} aria-controls={`billing-view-${id}`} onClick={() => setBillingView(id)}>{label}<span>{count}</span></button>)}
         </nav>
         <article id="billing-view-hire" className="project-billing-card" hidden={billingView !== 'hire'}>
           <header><CalendarRange size={20} aria-hidden="true" /><div><strong>Loyers & DPR</strong><small>Journées, opérations et tarifs contractuels.</small></div></header>
@@ -1048,17 +1104,33 @@ export function ProjectBillingPanel({
         </div>
       </article> : null}
 
+      <article id="billing-view-raw" className="project-billing-card" hidden={visibleSections.raw === false || (workspace && billingView !== 'raw')}>
+        <ProjectBillingRawLines
+          key={`${project.id}-${selectedMonth}`}
+          lines={periodRawLines}
+          catalog={serviceCatalog}
+          isManager={isManager}
+          disabled={Boolean(busy)}
+          initialDate={`${selectedMonth}-01`}
+          onSave={saveRawLine}
+          onDelete={removeRawLine}
+          onCatalogOpen={() => setServiceCatalogOpen(true)}
+          onDirtyChange={setRawLinesDirty}
+        />
+      </article>
+
       </div>
       {visibleSections.billingElements ? <article className="project-billing-card project-billing-export" aria-label="Export du relevé mensuel">
         <header><CalendarRange aria-hidden="true" size={20} /><div><strong>{workspace ? 'Relevé du mois' : 'Éléments de facturation'}</strong><span>{workspace ? new Date(`${selectedMonth}-01T12:00:00`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : 'Le tableau Opérations reste toujours visible ; cette sélection concerne uniquement les loyers.'}</span></div></header>
         {workspace ? <div className="project-billing-summary" aria-label="Totaux sélectionnés pour l’export">
-          <dl><div><dt>Loyers & DPR</dt><dd>{dprsLoading ? '…' : money(includedHireTotal, hireCurrency)}</dd></div><div><dt>Frais refacturables</dt><dd>{expenseByCurrency.size ? [...expenseByCurrency].map(([currency, total]) => <span key={currency}>{money(total, currency)}</span>) : money(0)}</dd></div><div><dt>Prestations BBTM</dt><dd>{money(includedServiceTotal)}</dd></div></dl>
+          <dl><div><dt>Loyers & DPR</dt><dd>{dprsLoading ? '…' : money(includedHireTotal, hireCurrency)}</dd></div><div><dt>Frais refacturables</dt><dd>{expenseByCurrency.size ? [...expenseByCurrency].map(([currency, total]) => <span key={currency}>{money(total, currency)}</span>) : money(0)}</dd></div><div><dt>Prestations BBTM</dt><dd>{money(includedServiceTotal)}</dd></div><div><dt>Saisie brute</dt><dd>{money(includedRawTotal)}</dd></div></dl>
           <div className="project-billing-summary-total"><span>Total sélectionné HT</span>{[...totalsByCurrency].map(([currency, total]) => <strong key={currency}>{dprsLoading ? '…' : money(total, currency)}</strong>)}</div>
         </div> : null}
         <fieldset className="project-export-selection"><legend>Contenu du PDF</legend>
           <label><input type="checkbox" checked={selectedPeriod?.includeOperationsInPdf ?? periodDraft.includeOperationsInPdf} disabled={!isManager || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeOperationsInPdf: !(selectedPeriod?.includeOperationsInPdf ?? periodDraft.includeOperationsInPdf) })} /> Inclure les loyers</label>
           <label><input type="checkbox" checked={selectedPeriod?.includeExpensesInPdf ?? periodDraft.includeExpensesInPdf} disabled={!isManager || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeExpensesInPdf: !(selectedPeriod?.includeExpensesInPdf ?? periodDraft.includeExpensesInPdf) })} /> Inclure les frais et leurs pièces dans l’export</label>
           <label><input type="checkbox" checked={selectedPeriod?.includeBbtmInPdf ?? periodDraft.includeBbtmInPdf} disabled={!isManager || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeBbtmInPdf: !(selectedPeriod?.includeBbtmInPdf ?? periodDraft.includeBbtmInPdf) })} /> Inclure les prestations BBTM</label>
+          <label><input type="checkbox" checked={(selectedPeriod?.includeRawInPdf ?? periodDraft.includeRawInPdf) !== false} disabled={!isManager || Boolean(busy)} onChange={() => void updatePeriodPdfSelection({ includeRawInPdf: (selectedPeriod?.includeRawInPdf ?? periodDraft.includeRawInPdf) === false })} /> Inclure la saisie brute</label>
         </fieldset>
         <div className="project-export-reference">
           <label>Référence client<input disabled={!isManager} onBlur={() => void storeReference(true).catch(() => undefined)} onChange={(event) => setReferenceDrafts((current) => ({ ...current, [referenceScope]: event.target.value }))} value={exportReference} maxLength={200} /></label>
@@ -1081,9 +1153,10 @@ export function ProjectBillingPanel({
             </fieldset>
           ) : null}
           <div className="project-billing-export-actions">
-            <button disabled={Boolean(busy) || dprsLoading || (!isManager && !selectedPeriod)} onClick={() => void createExport('preview')} type="button">{workspace ? 'Prévisualiser le PDF' : 'Actualiser l’aperçu'}</button>
-            <button disabled={Boolean(busy) || dprsLoading || (!isManager && !selectedPeriod)} onClick={() => void createExport('download')} type="button"><Download aria-hidden="true" size={16} /> Exporter le PDF</button>
+            <button disabled={Boolean(busy) || dprsLoading || rawLinesDirty || (!isManager && !selectedPeriod)} onClick={() => void createExport('preview')} type="button">{workspace ? 'Prévisualiser le PDF' : 'Actualiser l’aperçu'}</button>
+            <button disabled={Boolean(busy) || dprsLoading || rawLinesDirty || (!isManager && !selectedPeriod)} onClick={() => void createExport('download')} type="button"><Download aria-hidden="true" size={16} /> Exporter le PDF</button>
           </div>
+          {rawLinesDirty ? <p className="project-billing-auto-quantity" role="status">Enregistrez les lignes modifiées dans Saisie brute avant l’export.</p> : null}
         </div>
         {!workspace ? previewBlob ? <ProjectPdfPreview key={`${project.id}-${selectedMonth}`} blob={previewBlob} /> : <p className="project-section-empty">Générez l’aperçu pour contrôler le document avant export.</p> : null}
       </article> : null}
