@@ -6,6 +6,8 @@ Le bandeau bleu contient uniquement le logo et **Éléments de facturation**. Le
 
 **Loyers d'Affrètement** occupe la colonne de gauche. **Frais imputables** puis **Prestations BBTM** partagent la colonne de droite. **Détail des Opérations** reprend les lignes brutes sur toute la largeur, avec Date, Navire, Désignation, Prix unitaire HT, Quantité et Prix Total HT. Le bandeau inférieur regroupe les sous-totaux sélectionnés et le total du mois, en conservant les montants distincts de chaque devise.
 
+Depuis `3.71.2`, le tableau **Frais imputables** est classé par **Spécialités** dans l’ordre alphabétique français, sans distinction de casse ou d’accents, puis par société pour une même spécialité. Le tri utilise le libellé complet affiché, y compris les spécialités multiples. Il ne modifie ni la saisie ni l’ordre des données sauvegardées ou des calculs de totaux.
+
 Le document tient sur une page A4 paysage. Le générateur mesure tous les textes et cellules avant de dessiner ; il ajuste ensemble les espacements et la typographie au volume de données. Les commentaires, noms, catégories, spécialités et références de facture passent à la ligne sans être raccourcis. Un export très dense emploie donc des caractères plus petits, et reste sélectionnable et agrandissable dans un lecteur PDF.
 
 Le bloc Justificatifs, les mentions explicatives de pied de page, les marques de démonstration et le libellé **01 - TABLEAU SYNTHÉTIQUE** ne sont pas affichés. Les justificatifs joints aux formats PDF fusionné et ZIP restent inclus selon les sélections existantes ; ces pièces peuvent naturellement ajouter leurs propres pages au PDF fusionné.

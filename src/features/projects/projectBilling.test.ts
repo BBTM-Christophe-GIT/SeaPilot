@@ -1150,6 +1150,52 @@ describe('raw billing lines', () => {
     }
   });
 
+  it('sorts expenses by their displayed French specialties and supplier without changing totals or source data', async () => {
+    const source = [
+      { supplier: 'Transporteur', specialties: ['Transport / Manutention'], invoice: 'TRANSP', amount: 70, currency: 'EUR' },
+      { supplier: 'Port 10', specialties: ['FRAIS DE PORT'], invoice: 'P10-PORT', amount: 40, currency: 'EUR' },
+      { supplier: 'Livraison multi', specialties: ['Gasoil', 'Frais de port'], invoice: 'G-MULTI', amount: 50, currency: 'USD' },
+      { supplier: 'Éclair', specialties: ['frais de pórt'], invoice: 'E-PORT', amount: 30, currency: 'EUR' },
+      { supplier: 'Livraison simple', specialties: ['Gasoil'], invoice: 'G-SOLO', amount: 60, currency: 'EUR' },
+      { supplier: 'Port 2', specialties: ['Frais de port'], invoice: 'P2-PORT', amount: 20, currency: 'EUR' },
+      { supplier: 'Armateur', specialties: [], invoice: 'A-PORT', amount: 10, currency: 'EUR' },
+    ];
+    const expenses = source.map((entry, index) => ({
+      id: index + 1, billingPeriodId: 1, category: 'port' as const, nature: '', supplier: entry.supplier,
+      supplierSpecialties: entry.specialties, invoiceDate: '2026-06-01', invoiceNumber: entry.invoice,
+      amountHt: entry.amount, amountTtc: null, currency: entry.currency,
+      quantity: null, unit: '', comments: '', dprReportId: null, includeInPdf: true,
+    }));
+    for (const expense of expenses) {
+      Object.freeze(expense.supplierSpecialties);
+      Object.freeze(expense);
+    }
+    Object.freeze(expenses);
+    const exportInput = Object.freeze({
+      ...input, dprs: [], expenses,
+      period: { ...input.period, includeOperationsInPdf: false, includeExpensesInPdf: true, includeBbtmInPdf: false },
+    });
+    const snapshot = JSON.stringify(exportInput);
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
+    try {
+      const { pdf, visibleText, elements } = await readPdf(await generateBillingPdf(exportInput));
+      expectSingleLandscapeA4(pdf);
+      const invoiceIds = new Set(source.map((entry) => entry.invoice));
+      expect(elements.filter((element) => invoiceIds.has(element.value)).map((element) => element.value)).toEqual([
+        'A-PORT', 'E-PORT', 'P2-PORT', 'P10-PORT', 'G-SOLO', 'G-MULTI', 'TRANSP',
+      ]);
+      expect(visibleText).toContain('Gasoil · Frais de port');
+      expect(visibleText).toContain('Transport / Manutention');
+      expect(visibleText.match(/230,00 €/g)).toHaveLength(2);
+      expect(visibleText.match(/50,00 USD/g)).toHaveLength(3);
+      expect(visibleText).not.toContain('280,00 €');
+      expect(JSON.stringify(exportInput)).toBe(snapshot);
+      expect(expenses.map((expense) => expense.invoiceNumber)).toEqual(source.map((entry) => entry.invoice));
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
   it('groups mixed-currency expense subtotals and the invoice amounts by currency', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
     try {
