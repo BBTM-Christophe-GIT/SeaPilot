@@ -295,7 +295,7 @@ export function ProjectBillingPanel({
     if (selectedPeriod) {
       if (autoCreatedPeriodId.current === selectedPeriod.id) autoCreatedPeriodId.current = null;
       else setPeriodDraft(billingDraft(project, selectedPeriod));
-      setLegacyReferenceScope(billingReferenceScope({ ...selectedPeriod, includeRawInPdf: selectedPeriod.includeRawInPdf !== false && (data.rawLines || []).some((line) => line.billingPeriodId === selectedPeriod.id && line.includeInPdf !== false) }));
+      setLegacyReferenceScope(billingReferenceScope({ ...selectedPeriod, includeRawInPdf: selectedPeriod.includeRawInPdf !== false && (data.rawLines || []).some((line) => line.billingPeriodId === selectedPeriod.id) }));
     }
   }, [selectedPeriod?.id]);
   const periodExpenses = selectedPeriod
@@ -362,7 +362,7 @@ export function ProjectBillingPanel({
   const referenceScope = billingReferenceScope({
     ...(selectedPeriod || periodDraft),
     includeRawInPdf: (selectedPeriod?.includeRawInPdf ?? periodDraft.includeRawInPdf) !== false
-      && rawLinesForExport.some((line) => line.includeInPdf !== false),
+      && rawLinesForExport.length > 0,
   });
   const savedReference = references.find((reference) => reference.scope === referenceScope);
   const exportReference = referenceDrafts[referenceScope] ?? savedReference?.reference ?? (legacyReferenceScope === referenceScope || legacyReferenceScope === null ? selectedPeriod?.clientReference || periodDraft.clientReference : '');
@@ -465,7 +465,7 @@ export function ProjectBillingPanel({
     setSelectedMonth(normalized);
     const period = data.periods.find((item) => item.periodMonth.startsWith(normalized));
     setPeriodDraft({ ...billingDraft(project, period), periodMonth: normalized });
-    setLegacyReferenceScope(period ? billingReferenceScope({ ...period, includeRawInPdf: period.includeRawInPdf !== false && (data.rawLines || []).some((line) => line.billingPeriodId === period.id && line.includeInPdf !== false) }) : null);
+    setLegacyReferenceScope(period ? billingReferenceScope({ ...period, includeRawInPdf: period.includeRawInPdf !== false && (data.rawLines || []).some((line) => line.billingPeriodId === period.id) }) : null);
     setReferenceDrafts({});
     const range = monthRange(normalized);
     setCustomStart(range.start);
@@ -858,7 +858,7 @@ export function ProjectBillingPanel({
       await storeReference(true);
       if (revision !== contextRevision.current) return;
       // A concurrent creation may have saved a different PDF selection.
-      const periodReferenceScope = billingReferenceScope({ ...period, includeRawInPdf: period.includeRawInPdf !== false && rawLinesForExport.some((line) => line.includeInPdf !== false) });
+      const periodReferenceScope = billingReferenceScope({ ...period, includeRawInPdf: period.includeRawInPdf !== false && rawLinesForExport.length > 0 });
       const periodReference = referenceDrafts[periodReferenceScope]
         ?? references.find((reference) => reference.scope === periodReferenceScope)?.reference
         ?? (legacyReferenceScope === periodReferenceScope || legacyReferenceScope === null ? period.clientReference || defaultProjectClientReference(project) : '');

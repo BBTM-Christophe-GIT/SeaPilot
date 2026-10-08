@@ -710,14 +710,14 @@ describe('raw billing lines', () => {
     designation: 'Spread Antipollution', unitAmountHt: 0.29, quantity: 1.5, includeInPdf: true,
   };
 
-  it('rounds each line to cents before summing decimal quantities and excludes deselected lines', () => {
+  it('rounds each line to cents before summing decimal quantities and includes legacy deselected lines', () => {
     expect(billingRawLineTotal(rawLine)).toBe(0.44);
     expect(billingRawLineTotal({ unitAmountHt: 92.58, quantity: 1.125 })).toBe(104.15);
     expect(billingRawLineTotal({ unitAmountHt: 0.1, quantity: 0.05 })).toBe(0.01);
     expect(billingRawLineTotal({ unitAmountHt: 500, quantity: 0 })).toBe(0);
     const lines = [rawLine, { ...rawLine, id: 2 }, { ...rawLine, id: 3, unitAmountHt: 900, includeInPdf: false }];
-    expect(billingRawLinesTotal(lines)).toBe(0.88);
-    expect(billingInvoiceTotal(100, 0.1, [], false, lines)).toBe(100.98);
+    expect(billingRawLinesTotal(lines)).toBe(1350.88);
+    expect(billingInvoiceTotal(100, 0.1, [], false, lines)).toBe(1450.98);
     expect(billingInvoiceTotal(100, 0.1, [], false, lines, false)).toBe(100.1);
   });
 
@@ -733,7 +733,7 @@ describe('raw billing lines', () => {
       { ...rawLine, id: 3, includeInPdf: false },
     ] });
     expect(lines.map((line) => [line.id, line.quantity, line.unitAmountHt, line.serviceCatalogId]))
-      .toEqual([[1, 1.5, 0.29, null], [2, 1.5, 0.29, 7]]);
+      .toEqual([[1, 1.5, 0.29, null], [2, 1.5, 0.29, 7], [3, 1.5, 0.29, null]]);
     expect(billingExportRawLines({ ...input, period: { ...input.period, includeRawInPdf: false }, rawLines: [rawLine] })).toEqual([]);
     expect(billingExportRawLines(input)).toEqual([]);
   });
@@ -807,13 +807,13 @@ describe('raw billing lines', () => {
       company_id: 1, project_id: 144, billing_period_id: 1, service_catalog_id: null,
       designation: 'Spread Antipollution', unit_amount_ht: 32.5, quantity: 2.125, include_in_pdf: true,
     });
-    expect(payloads[1]).toMatchObject({ service_catalog_id: 7, quantity: 1.5, include_in_pdf: false });
+    expect(payloads[1]).toMatchObject({ service_catalog_id: 7, quantity: 1.5, include_in_pdf: true });
     const updateRequest = fetch.mock.calls.at(-1)!;
     expect(updateRequest[1]?.method).toBe('PATCH');
     expect(new URL(String(updateRequest[0])).searchParams.get('id')).toBe('eq.17');
   });
 
-  it('persists line and global inclusion choices and deletes only the requested raw line', async () => {
+  it('preserves the legacy line flag API, persists the global choice and deletes only the requested raw line', async () => {
     const fetch = vi.fn(async () => respond(null));
     const client = clientWithFetch(fetch);
     await setProjectBillingRawLinePdfInclusion(client, 17, false);
@@ -842,7 +842,7 @@ describe('raw billing lines', () => {
     return { pdf, pages, text: pages.join('\n') };
   }
 
-  it('exports all five columns, rounded totals and every included line across repeated table pages', async () => {
+  it('exports all five columns, rounded totals and every line including legacy exclusions across repeated table pages', async () => {
     const longProjectTitle = 'Campagne maritime très longue '.repeat(8);
     const rawLines = Array.from({ length: 95 }, (_, index) => ({
       ...rawLine, id: index + 1, designation: `SAISIE-UNIQUE-${String(index + 1).padStart(3, '0')}`,
@@ -863,10 +863,10 @@ describe('raw billing lines', () => {
         expect(page).toContain('(Prix Total HT)');
       }
       for (const line of rawLines) expect(text.split(line.designation)).toHaveLength(2);
-      expect(text).not.toContain('EXCLUE-DU-PDF');
+      expect(text.split('EXCLUE-DU-PDF')).toHaveLength(2);
       expect(pages[0]).not.toContain('Sous-total Saisie brute');
-      expect(pages[0]).toContain('41,80');
-      expect(pages.at(-1)).toContain('41,80');
+      expect(pages[0]).toContain('42,24');
+      expect(pages.at(-1)).toContain('42,24');
       expect(pages.at(-1)).toContain('Sous-total Saisie brute');
       expect(pages[1]).toContain('02/06/2026');
       expect(pages[1]).toContain('0,44');

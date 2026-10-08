@@ -553,7 +553,7 @@ export async function saveProjectBillingRawLine(
     designation: draft.designation.trim(),
     unit_amount_ht: draft.unitAmountHt,
     quantity: draft.quantity,
-    include_in_pdf: draft.includeInPdf !== false,
+    include_in_pdf: true,
     updated_at: new Date().toISOString(),
   };
   const query = rawLineId
@@ -794,8 +794,7 @@ export function billingServicesTotal(services: ProjectBillingService[]): number 
 
 export function billingExportRawLines(input: BillingExportInput): ProjectBillingRawLine[] {
   if (input.period.includeRawInPdf === false) return [];
-  return (input.rawLines || [])
-    .filter((line) => line.includeInPdf !== false)
+  return [...(input.rawLines || [])]
     .sort((left, right) => left.serviceDate.localeCompare(right.serviceDate) || left.id - right.id);
 }
 
@@ -812,9 +811,7 @@ export function billingRawLineTotal(line: Pick<ProjectBillingRawLine, 'unitAmoun
 }
 
 export function billingRawLinesTotal(rawLines: ProjectBillingRawLine[]): number {
-  const cents = rawLines.reduce((sum, line) => (
-    line.includeInPdf === false ? sum : sum + billingRawLineCents(line)
-  ), 0n);
+  const cents = rawLines.reduce((sum, line) => sum + billingRawLineCents(line), 0n);
   return Number(cents) / 100;
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { PackageCheck, Plus, Save, Trash2 } from 'lucide-react';
+import { AppDialog } from '../../components/AppDialog';
 import { billingRawLineTotal } from './projectBilling';
 import type { BillingRawLineDraft, ProjectBillingRawLine, ProjectServiceCatalogEntry } from './projectBilling';
 import './ProjectBillingRawLines.css';
@@ -40,7 +41,7 @@ function draftFromLine(line: ProjectBillingRawLine): BillingRawLineDraft {
     designation: line.designation,
     unitAmountHt: line.unitAmountHt,
     quantity: line.quantity,
-    includeInPdf: line.includeInPdf !== false,
+    includeInPdf: true,
   };
 }
 
@@ -80,10 +81,19 @@ function totalForValues(values: RawLineValues): number {
 
 export function ProjectBillingRawLines({ lines, catalog, isManager, disabled = false, initialDate, onSave, onDelete, onCatalogOpen, onDirtyChange }: ProjectBillingRawLinesProps) {
   const [rows, setRows] = useState<RawLineRow[]>(() => lines.map(rowFromLine));
+  const [catalogRowKey, setCatalogRowKey] = useState<string | null>(null);
+  const [catalogQuery, setCatalogQuery] = useState('');
   const nextKey = useRef(0);
   const deletedIds = useRef(new Set<number>());
   const dirty = rows.some(isDirty);
   const total = rows.reduce((sum, row) => sum + totalForValues(row.values), 0);
+  const catalogRow = rows.find((row) => row.key === catalogRowKey);
+  const catalogLocked = !isManager || disabled || Boolean(catalogRow?.pending);
+  const search = catalogQuery.trim().toLocaleLowerCase('fr-FR');
+  const matchingCatalog = catalog.filter((entry) => (
+    (entry.active || entry.id === catalogRow?.values.serviceCatalogId)
+    && entry.category.toLocaleLowerCase('fr-FR').includes(search)
+  ));
 
   useEffect(() => {
     const incoming = new Map(lines.map((line) => [line.id, line]));
@@ -126,11 +136,10 @@ export function ProjectBillingRawLines({ lines, catalog, isManager, disabled = f
     setRows((current) => [...current, { key: `new-${nextKey.current}`, values }]);
   }
 
-  function selectCatalog(row: RawLineRow, value: string) {
-    const entry = catalog.find((item) => String(item.id) === value);
-    updateRow(row.key, entry
-      ? { serviceCatalogId: entry.id, designation: entry.category, unitAmountHt: String(entry.unitAmountHt) }
-      : { serviceCatalogId: null });
+  function selectCatalog(entry: ProjectServiceCatalogEntry) {
+    if (!catalogRow || catalogLocked) return;
+    updateRow(catalogRow.key, { serviceCatalogId: entry.id, designation: entry.category, unitAmountHt: String(entry.unitAmountHt) });
+    setCatalogRowKey(null);
   }
 
   async function saveRow(row: RawLineRow) {
@@ -183,31 +192,26 @@ export function ProjectBillingRawLines({ lines, catalog, isManager, disabled = f
       <div><strong>Saisie brute</strong><p>Choisissez une prestation du catalogue ou saisissez votre ligne librement.</p></div>
       {isManager ? <div className="project-billing-raw-toolbar">
         <button className="sp-button sp-button--secondary" disabled={disabled} onClick={onCatalogOpen} type="button"><PackageCheck aria-hidden="true" size={16} /> Catalogue de prestations</button>
-        <button className="sp-button sp-button--primary" disabled={disabled} onClick={addRow} type="button"><Plus aria-hidden="true" size={16} /> Ajouter une ligne</button>
       </div> : null}
     </div>
     <div className="project-billing-raw-scroll" role="region" aria-label="Tableau de saisie brute" tabIndex={0}>
       <table className="project-billing-raw-table">
-        <thead><tr><th scope="col">Date</th><th scope="col">Désignation</th><th scope="col">Prix unitaire HT</th><th scope="col">Quantité</th><th scope="col">Prix Total HT</th><th scope="col">Export et actions</th></tr></thead>
+        <thead><tr><th scope="col">Date</th><th scope="col">Désignation</th><th scope="col">Prix unitaire HT</th><th scope="col">Quantité</th><th scope="col">Prix Total HT</th><th scope="col">Actions</th></tr></thead>
         <tbody>{rows.map((row, index) => {
           const number = index + 1;
           const locked = !isManager || disabled || Boolean(row.pending);
-          const catalogEntry = catalog.find((entry) => entry.id === row.values.serviceCatalogId);
           return <tr key={row.key}>
             <td><input aria-label={`Date, ligne ${number}`} disabled={locked} onChange={(event) => updateRow(row.key, { serviceDate: event.target.value })} required type="date" value={row.values.serviceDate} /></td>
             <td className="project-billing-raw-designation">
-              <input aria-label={`Désignation, ligne ${number}`} disabled={locked} maxLength={120} onChange={(event) => updateRow(row.key, { designation: event.target.value, serviceCatalogId: null })} placeholder="Désignation libre" required type="text" value={row.values.designation} />
-              <select aria-label={`Prestation du catalogue, ligne ${number}`} disabled={locked} onChange={(event) => selectCatalog(row, event.target.value)} value={row.values.serviceCatalogId ?? ''}>
-                <option value="">Saisie manuelle</option>
-                {row.values.serviceCatalogId !== null && !catalogEntry ? <option value={row.values.serviceCatalogId}>{row.values.designation} (catalogue)</option> : null}
-                {catalog.filter((entry) => entry.active || entry.id === row.values.serviceCatalogId).map((entry) => <option key={entry.id} value={entry.id}>{entry.category} · {euros.format(entry.unitAmountHt)} HT</option>)}
-              </select>
+              <div className="project-billing-raw-designation-input">
+                <button aria-label={`Choisir dans le catalogue, ligne ${number}`} aria-haspopup="dialog" aria-expanded={catalogRowKey === row.key} className="sp-button sp-button--secondary project-billing-raw-catalog-button" disabled={locked} onClick={() => { setCatalogQuery(''); setCatalogRowKey(row.key); }} title="Choisir dans le catalogue" type="button"><Plus aria-hidden="true" size={17} /></button>
+                <input aria-label={`Désignation, ligne ${number}`} disabled={locked} maxLength={120} onChange={(event) => updateRow(row.key, { designation: event.target.value, serviceCatalogId: null })} placeholder="Désignation libre" required type="text" value={row.values.designation} />
+              </div>
             </td>
             <td><input aria-label={`Prix unitaire HT, ligne ${number}`} disabled={locked} inputMode="decimal" min="0" onChange={(event) => updateRow(row.key, { unitAmountHt: event.target.value })} required step="0.01" type="number" value={row.values.unitAmountHt} /></td>
             <td><input aria-label={`Quantité, ligne ${number}`} disabled={locked} inputMode="decimal" min="0" onChange={(event) => updateRow(row.key, { quantity: event.target.value })} required step="0.001" type="number" value={row.values.quantity} /></td>
             <td className="project-billing-raw-total"><output aria-label={`Prix Total HT, ligne ${number}`}>{euros.format(totalForValues(row.values))}</output></td>
             <td><div className="project-billing-raw-actions">
-              <label className="project-billing-raw-pdf"><input aria-label={`Inclure dans le PDF la ligne ${number}`} checked={row.values.includeInPdf !== false} disabled={locked} onChange={(event) => updateRow(row.key, { includeInPdf: event.target.checked })} type="checkbox" /> Inclure dans le PDF</label>
               {isManager ? <div className="project-billing-raw-row-buttons">
                 <button aria-label={`Enregistrer la ligne ${number}`} className="sp-button sp-button--secondary" disabled={locked || !isDirty(row)} onClick={() => void saveRow(row)} type="button"><Save aria-hidden="true" size={15} />{row.pending === 'save' ? 'Enregistrement…' : 'Enregistrer'}</button>
                 <button aria-label={`Supprimer la ligne ${number}`} className="sp-button sp-button--secondary" disabled={locked} onClick={() => void deleteRow(row)} type="button"><Trash2 aria-hidden="true" size={15} /></button>
@@ -220,6 +224,20 @@ export function ProjectBillingRawLines({ lines, catalog, isManager, disabled = f
         })}{!rows.length ? <tr><td className="project-billing-raw-empty" colSpan={6}>Aucune ligne de saisie brute pour cette période.</td></tr> : null}</tbody>
       </table>
     </div>
+    {isManager ? <div className="project-billing-raw-add">
+      <button className="sp-button sp-button--primary" disabled={disabled} onClick={addRow} type="button"><Plus aria-hidden="true" size={16} /> Ajouter une ligne</button>
+    </div> : null}
     <div className="project-billing-raw-summary"><span>Total des lignes HT{dirty ? ' · modifications à enregistrer' : ''}</span><strong>{euros.format(total)}</strong></div>
+    {catalogRow ? <div onKeyDown={(event) => { if (event.key === 'Escape' || event.key === 'Tab') event.stopPropagation(); }}>
+      <AppDialog description={`Ligne ${rows.indexOf(catalogRow) + 1} · Sélectionnez une catégorie pour reprendre sa désignation et son prix unitaire HT.`} icon={<PackageCheck aria-hidden="true" size={20} />} onClose={() => setCatalogRowKey(null)} size="sm" title="Choisir une prestation">
+        <div className="project-billing-raw-catalog-picker">
+          <label className="project-billing-raw-catalog-search">Rechercher une prestation<input disabled={catalogLocked} onChange={(event) => setCatalogQuery(event.target.value)} placeholder="Nom de la catégorie" type="search" value={catalogQuery} /></label>
+          <div className="project-billing-raw-catalog-list">
+            {matchingCatalog.map((entry) => <button aria-label={`Choisir ${entry.category}`} className="sp-button sp-button--secondary project-billing-raw-catalog-option" disabled={catalogLocked} key={entry.id} onClick={() => selectCatalog(entry)} type="button"><strong>{entry.category}</strong><span>{euros.format(entry.unitAmountHt)} HT</span></button>)}
+            {!matchingCatalog.length ? <p className="project-billing-raw-catalog-empty">{search ? 'Aucune prestation ne correspond à votre recherche.' : 'Aucune prestation disponible dans le catalogue.'}</p> : null}
+          </div>
+        </div>
+      </AppDialog>
+    </div> : null}
   </section>;
 }

@@ -137,7 +137,8 @@ describe('raw billing workspace integration', () => {
     expect(screen.getByLabelText('Date, ligne 1')).toHaveValue('2026-09-01');
     expect(screen.getByLabelText('Quantité, ligne 1')).toHaveValue(1);
     fillManual('Spread Antipollution', '32.50', '2.125');
-    expect(screen.getByRole('combobox', { name: 'Prestation du catalogue, ligne 1' })).toHaveValue('');
+    expect(screen.queryByRole('combobox', { name: 'Prestation du catalogue, ligne 1' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' })).toBeEnabled();
     await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
     await waitFor(() => expect(mocks.saveRaw).toHaveBeenCalledWith(client, 144, 10, expect.objectContaining({
       serviceCatalogId: null, designation: 'Spread Antipollution', unitAmountHt: 32.5, quantity: 2.125,
@@ -156,14 +157,16 @@ describe('raw billing workspace integration', () => {
     await ready();
     await openRaw(user);
     await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Prestation du catalogue, ligne 1' }), '8');
+    await user.click(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Choisir une prestation' })).getByRole('button', { name: 'Choisir Assistance' }));
     expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Assistance');
     expect(screen.getByLabelText('Prix unitaire HT, ligne 1')).toHaveValue(100);
     expect(screen.getByLabelText('Quantité, ligne 1')).toHaveValue(1);
     expect(screen.getByRole('button', { name: 'Prévisualiser le PDF' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Exporter le PDF' })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Quantité, ligne 1'), { target: { value: '1.5' } });
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Prestation du catalogue, ligne 1' }), '7');
+    await user.click(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Choisir une prestation' })).getByRole('button', { name: 'Choisir Spread Antipollution' }));
     expect(screen.getByLabelText('Quantité, ligne 1')).toHaveValue(1.5);
     await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
     await ready();
@@ -228,21 +231,17 @@ describe('raw billing workspace integration', () => {
     expect(mocks.savePeriod).not.toHaveBeenCalled();
   });
 
-  it('saves per-line exclusion, updates the selected total and can delete the saved raw line', async () => {
-    mocks.data.mockResolvedValue({ ...emptyData, periods: [period()], rawLines: [rawLine()] });
+  it('includes a legacy excluded line with the global selection and can delete the saved raw line', async () => {
+    mocks.data.mockResolvedValue({ ...emptyData, periods: [period()], rawLines: [rawLine({ includeInPdf: false })] });
     mocks.references.mockResolvedValue([{ id: 1, scope: 7, reference: 'REFERENCE-7' }, { id: 2, scope: 15, reference: 'REFERENCE-15' }]);
     const user = userEvent.setup();
     render(panel());
     await ready();
     await openRaw(user);
     expect(within(selectedTotal()).getByText(/200,00\s*€/)).toBeVisible();
-    await user.click(screen.getByRole('checkbox', { name: 'Inclure dans le PDF la ligne 1' }));
-    expect(screen.getByRole('button', { name: 'Exporter le PDF' })).toBeDisabled();
-    await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
-    await ready();
-    expect(mocks.saveRaw).toHaveBeenCalledWith(client, 145, 10, expect.objectContaining({ includeInPdf: false }), 50);
-    expect(within(selectedTotal()).getByText(/0,00\s*€/)).toBeVisible();
-    expect(screen.getByLabelText('Référence client')).toHaveValue('REFERENCE-7');
+    expect(screen.queryByRole('checkbox', { name: 'Inclure dans le PDF la ligne 1' })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Inclure la saisie brute' })).toBeChecked();
+    expect(screen.getByLabelText('Référence client')).toHaveValue('REFERENCE-15');
     await user.click(screen.getByRole('button', { name: 'Prévisualiser le PDF' }));
     expect(await screen.findByText('PDF brut de recette')).toBeVisible();
     expect(mocks.export.mock.calls[0][1].rawLines).toEqual([expect.objectContaining({ includeInPdf: false })]);
@@ -250,6 +249,9 @@ describe('raw billing workspace integration', () => {
     await waitFor(() => expect(mocks.deleteRaw).toHaveBeenCalledWith(client, 50));
     await waitFor(() => expect(screen.queryByLabelText('Désignation, ligne 1')).not.toBeInTheDocument());
     expect(screen.getByText('Aucune ligne de saisie brute pour cette période.')).toBeVisible();
+    expect(within(selectedTotal()).getByText(/0,00\s*€/)).toBeVisible();
+    expect(screen.getByLabelText('Référence client')).toHaveValue('REFERENCE-7');
+    expect(mocks.saveRaw).not.toHaveBeenCalled();
     expect(mocks.savePeriod).not.toHaveBeenCalled();
   });
 
@@ -279,7 +281,7 @@ describe('raw billing workspace integration', () => {
     await ready();
     await openRaw(user);
     expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Ligne conservée');
-    for (const name of ['Date, ligne 1', 'Désignation, ligne 1', 'Prix unitaire HT, ligne 1', 'Quantité, ligne 1', 'Prestation du catalogue, ligne 1', 'Inclure dans le PDF la ligne 1']) {
+    for (const name of ['Date, ligne 1', 'Désignation, ligne 1', 'Prix unitaire HT, ligne 1', 'Quantité, ligne 1', 'Choisir dans le catalogue, ligne 1']) {
       expect(screen.getByLabelText(name)).toBeDisabled();
     }
     expect(screen.getByRole('checkbox', { name: 'Inclure la saisie brute' })).toBeDisabled();

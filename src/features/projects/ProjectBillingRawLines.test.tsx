@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectBillingRawLines } from './ProjectBillingRawLines';
+import { AppDialog } from '../../components/AppDialog';
 import type { BillingRawLineDraft, ProjectBillingRawLine, ProjectServiceCatalogEntry } from './projectBilling';
 
 const catalog: ProjectServiceCatalogEntry[] = [{
@@ -43,7 +44,15 @@ describe('raw project billing lines', () => {
     expect(screen.getAllByLabelText(/^Date, ligne/)).toHaveLength(4);
     expect(screen.getByLabelText('Date, ligne 4')).toHaveValue('2026-10-01');
     expect(screen.getByLabelText('Quantité, ligne 4')).toHaveValue(1);
-    expect(screen.getByLabelText('Prestation du catalogue, ligne 4')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 4' })).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.queryByText('Saisie manuelle')).not.toBeInTheDocument();
+    const add = screen.getByRole('button', { name: 'Ajouter une ligne' });
+    const lastRow = screen.getByLabelText('Désignation, ligne 4').closest('tr')!;
+    expect(lastRow.compareDocumentPosition(add) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(add.compareDocumentPosition(screen.getByText(/Total des lignes HT/)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeVisible();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
     await user.click(screen.getByRole('button', { name: 'Catalogue de prestations' }));
     expect(onCatalogOpen).toHaveBeenCalledOnce();
@@ -55,7 +64,9 @@ describe('raw project billing lines', () => {
     await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
     change('Date, ligne 1', '2026-10-07');
     change('Quantité, ligne 1', '7');
-    await user.selectOptions(screen.getByLabelText('Prestation du catalogue, ligne 1'), '7');
+    await user.click(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' }));
+    await user.click(screen.getByRole('button', { name: 'Choisir Spread Antipollution' }));
+    expect(screen.queryByRole('dialog', { name: 'Choisir une prestation' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Spread Antipollution');
     expect(screen.getByLabelText('Prix unitaire HT, ligne 1')).toHaveValue(92.58);
     expect(screen.getByLabelText('Date, ligne 1')).toHaveValue('2026-10-07');
@@ -84,10 +95,10 @@ describe('raw project billing lines', () => {
     const user = userEvent.setup();
     render(<ProjectBillingRawLines {...props()} />);
     await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
-    await user.selectOptions(screen.getByLabelText('Prestation du catalogue, ligne 1'), '7');
+    await user.click(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' }));
+    await user.click(screen.getByRole('button', { name: 'Choisir Spread Antipollution' }));
     await user.clear(screen.getByLabelText('Désignation, ligne 1'));
     await user.type(screen.getByLabelText('Désignation, ligne 1'), 'Spread Antipollution');
-    expect(screen.getByLabelText('Prestation du catalogue, ligne 1')).toHaveValue('');
     await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ serviceCatalogId: null, unitAmountHt: 92.58 }), undefined));
   });
@@ -134,6 +145,7 @@ describe('raw project billing lines', () => {
     change('Désignation, ligne 1', 'Manutention');
     await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
     expect(screen.getByLabelText('Désignation, ligne 1')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' })).toBeDisabled();
     const acknowledged = { ...savedLine, id: 20, serviceDate: '2026-10-01', designation: 'Manutention', unitAmountHt: 0, quantity: 1 };
     rerender(<ProjectBillingRawLines {...props([acknowledged])} />);
     resolveSave(acknowledged);
@@ -210,19 +222,102 @@ describe('raw project billing lines', () => {
     confirm.mockRestore();
   });
 
-  it('saves per-line PDF selection and disables every mutation for a read-only profile', async () => {
-    const user = userEvent.setup();
-    const { rerender } = render(<ProjectBillingRawLines {...props([savedLine])} />);
-    await user.click(screen.getByLabelText('Inclure dans le PDF la ligne 1'));
-    await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ includeInPdf: false }), 10));
-    rerender(<ProjectBillingRawLines {...props([savedLine])} isManager={false} />);
-    for (const field of ['Date, ligne 1', 'Désignation, ligne 1', 'Prix unitaire HT, ligne 1', 'Quantité, ligne 1', 'Prestation du catalogue, ligne 1', 'Inclure dans le PDF la ligne 1']) {
+  it('disables every mutation for a read-only profile without any per-line PDF control', () => {
+    render(<ProjectBillingRawLines {...props([savedLine])} isManager={false} />);
+    for (const field of ['Date, ligne 1', 'Désignation, ligne 1', 'Prix unitaire HT, ligne 1', 'Quantité, ligne 1']) {
       expect(screen.getByLabelText(field)).toBeDisabled();
     }
+    expect(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Ajouter une ligne' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Enregistrer la ligne 1' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Supprimer la ligne 1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Prix Total HT, ligne 1')).toHaveTextContent(/200,00\s*€/);
+  });
+
+  it('normalizes legacy per-line PDF exclusions when saving a changed line', async () => {
+    const user = userEvent.setup();
+    render(<ProjectBillingRawLines {...props([{ ...savedLine, includeInPdf: false }])} />);
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    change('Quantité, ligne 1', '3');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ quantity: 3, includeInPdf: true }), 10));
+  });
+
+  it('searches catalogue prices and fills only the second row through its plus button', async () => {
+    const user = userEvent.setup();
+    const second = { ...savedLine, id: 11, serviceDate: '2026-10-12', designation: 'Manutention', quantity: 2.5 };
+    const other = { ...catalog[0], id: 8, category: 'Assistance', unitAmountHt: 125 };
+    const archived = { ...catalog[0], id: 9, category: 'Ancienne prestation', active: false };
+    render(<ProjectBillingRawLines {...props([savedLine, second])} catalog={[...catalog, other, archived]} />);
+    const plus = screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 2' });
+    expect(plus.nextElementSibling).toBe(screen.getByLabelText('Désignation, ligne 2'));
+    await user.click(plus);
+    const dialog = screen.getByRole('dialog', { name: 'Choisir une prestation' });
+    expect(dialog).toHaveTextContent('Ligne 2');
+    expect(within(dialog).getByRole('button', { name: 'Choisir Assistance' })).toHaveTextContent(/125,00\s*€ HT/);
+    expect(within(dialog).queryByRole('button', { name: 'Choisir Ancienne prestation' })).not.toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText('Rechercher une prestation'), 'spread');
+    expect(within(dialog).queryByRole('button', { name: 'Choisir Assistance' })).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Choisir Spread Antipollution' }));
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Assistance');
+    expect(screen.getByLabelText('Prix unitaire HT, ligne 1')).toHaveValue(100);
+    expect(screen.getByLabelText('Désignation, ligne 2')).toHaveValue('Spread Antipollution');
+    expect(screen.getByLabelText('Prix unitaire HT, ligne 2')).toHaveValue(92.58);
+    expect(screen.getByLabelText('Date, ligne 2')).toHaveValue('2026-10-12');
+    expect(screen.getByLabelText('Quantité, ligne 2')).toHaveValue(2.5);
+    await waitFor(() => expect(plus).toHaveFocus());
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 2' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ serviceCatalogId: 7, serviceDate: '2026-10-12', quantity: 2.5 }), 11));
+  });
+
+  it('closes the catalogue with Escape and restores focus without closing an ancestor dialog', async () => {
+    const user = userEvent.setup();
+    const closeProject = vi.fn();
+    render(<AppDialog onClose={closeProject} title="Dossier projet"><ProjectBillingRawLines {...props([savedLine])} /></AppDialog>);
+    const plus = screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' });
+    await user.click(plus);
+    const dialog = screen.getByRole('dialog', { name: 'Choisir une prestation' });
+    expect(plus).toHaveAttribute('aria-expanded', 'true');
+    await user.type(within(dialog).getByLabelText('Rechercher une prestation'), 'Introuvable');
+    expect(within(dialog).getByText('Aucune prestation ne correspond à votre recherche.')).toBeVisible();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Choisir une prestation' })).not.toBeInTheDocument();
+    expect(closeProject).not.toHaveBeenCalled();
+    expect(plus).toHaveAttribute('aria-expanded', 'false');
+    await waitFor(() => expect(plus).toHaveFocus());
+    await user.click(plus);
+    expect(screen.getByLabelText('Rechercher une prestation')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Choisir Spread Antipollution' })).toBeVisible();
+  });
+
+  it('keeps the catalogue chooser disabled during global work and blocks selection if permissions change', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ProjectBillingRawLines {...props([savedLine])} disabled />);
+    const plus = screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' });
+    expect(plus).toBeDisabled();
+    await user.click(plus);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    rerender(<ProjectBillingRawLines {...props([savedLine])} />);
+    await user.click(plus);
+    rerender(<ProjectBillingRawLines {...props([savedLine])} isManager={false} />);
+    expect(screen.getByRole('button', { name: 'Choisir Spread Antipollution' })).toBeDisabled();
+    expect(screen.getByLabelText('Rechercher une prestation')).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Choisir Spread Antipollution' }));
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Assistance');
+    expect(onSave).not.toHaveBeenCalled();
+    await user.click(within(screen.getByRole('dialog', { name: 'Choisir une prestation' })).getByRole('button', { name: 'Fermer' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('shows an empty catalogue without replacing the manually entered designation', async () => {
+    const user = userEvent.setup();
+    render(<ProjectBillingRawLines {...props([savedLine])} catalog={[]} />);
+    await user.click(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' }));
+    expect(screen.getByRole('dialog', { name: 'Choisir une prestation' })).toHaveTextContent('Aucune prestation disponible dans le catalogue.');
+    await user.keyboard('{Escape}');
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Assistance');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   });
 });
