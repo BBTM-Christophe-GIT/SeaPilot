@@ -557,3 +557,21 @@ export async function transitionPurchaseRequest(
   });
   if (error) throw error;
 }
+
+export async function addPurchaseRequestComment(
+  client: SupabaseClient,
+  requestId: number,
+  comment: string,
+): Promise<PurchaseRequestEvent> {
+  const trimmedComment = comment.trim();
+  if (!trimmedComment) throw new Error('Le commentaire est obligatoire.');
+  if (trimmedComment.length > 4000) throw new Error('Le commentaire ne peut pas dépasser 4 000 caractères.');
+  const { data, error } = await client.rpc('purchase_request_add_comment', {
+    p_request_id: requestId,
+    p_comment: trimmedComment,
+  });
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as PurchaseEventRow | null;
+  if (!row) throw new Error('Impossible d’enregistrer le commentaire.');
+  return mapEventRows([row]).get(row.purchase_request_id)![0];
+}

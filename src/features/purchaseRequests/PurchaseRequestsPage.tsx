@@ -33,7 +33,9 @@ import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../comp
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
+import { PurchaseRequestFollowup } from './PurchaseRequestFollowup';
 import {
+  addPurchaseRequestComment,
   buildPurchaseRequestMetrics,
   createPurchaseRequest,
   fetchCurrentAssignedVessel,
@@ -223,10 +225,13 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const [files, setFiles] = useState<File[]>([]);
   const [actionDialog, setActionDialog] = useState<ActionDialogState | null>(null);
   const initialStageResolved = useRef(false);
+  const lastListSignature = useRef('');
+  const lastLoadSequence = useRef(0);
   const detailPanelRef = useRef<HTMLElement | null>(null);
   const lastScrolledRequestParameter = useRef<string | null>(null);
 
   const loadData = useCallback(async (initial = false) => {
+    const loadSequence = ++lastLoadSequence.current;
     if (initial) setIsLoading(true);
     setErrorMessage(null);
     try {
@@ -237,6 +242,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
           ? fetchCurrentAssignedVessel(effectiveClient, currentPerson.id).catch(() => null)
           : Promise.resolve(null),
       ]);
+      if (loadSequence !== lastLoadSequence.current) return;
       setRequests(loadedRequests);
       setVessels(loadedVessels);
       setSelectedId((current) => current && loadedRequests.some((request) => request.id === current) ? current : loadedRequests[0]?.id || null);
@@ -245,7 +251,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
         setRequestForm((current) => ({ ...current, vesselId: assignedVessel.id }));
       }
     } catch {
-      setErrorMessage("Impossible de charger les demandes d'achat.");
+      if (loadSequence === lastLoadSequence.current) setErrorMessage("Impossible de charger les demandes d'achat.");
     } finally {
       if (initial) setIsLoading(false);
     }
@@ -317,7 +323,9 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
 
   useEffect(() => {
     if (isLoading || requestedIdParameter !== null) return;
-    setPage(1);
+    const listSignature = `${activeStage}:${baseRequests.filter((request) => requestMatchesView(request, activeStage)).map((request) => request.id).join(',')}`;
+    if (lastListSignature.current !== listSignature) setPage(1);
+    lastListSignature.current = listSignature;
     const first = baseRequests.find((request) => requestMatchesView(request, activeStage));
     if (!initialStageResolved.current && baseRequests.length) {
       initialStageResolved.current = true;
@@ -328,7 +336,8 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
         return;
       }
     }
-    setSelectedId(first?.id || null);
+    setSelectedId((current) => baseRequests.some((request) => request.id === current && requestMatchesView(request, activeStage))
+      ? current : first?.id || null);
   }, [activeStage, baseRequests, isLoading, requestedIdParameter]);
 
   function clearRequestedSelection() {
@@ -398,6 +407,18 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
       await loadData();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Action impossible.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleAddComment(requestId: number, comment: string) {
+    setIsSaving(true);
+    try {
+      const addedEvent = await addPurchaseRequestComment(effectiveClient, requestId, comment);
+      ++lastLoadSequence.current;
+      setRequests((current) => current.map((request) => request.id === requestId
+        ? { ...request, events: [addedEvent, ...request.events.filter((event) => event.id !== addedEvent.id)] } : request));
     } finally {
       setIsSaving(false);
     }
@@ -506,7 +527,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
             <div className="purchase-detail-section"><h3>Besoin</h3><p>{htmlToText(selectedRequest.description) || selectedRequest.urgencyReason || 'Aucune description complémentaire.'}</p>{selectedRequest.reference ? <dl><div><dt>Référence</dt><dd>{selectedRequest.reference}</dd></div><div><dt>Quantité</dt><dd>{selectedRequest.quantity || '—'} {selectedRequest.unitLabel}</dd></div><div><dt>Fournisseur</dt><dd>{selectedRequest.supplierName || 'À définir'}</dd></div><div><dt>Montant HT</dt><dd>{selectedRequest.amountHt.toLocaleString('fr-FR', { style: 'currency', currency: selectedRequest.currency || 'EUR' })}</dd></div></dl> : null}</div>
             <div className="purchase-detail-section"><h3>Livraison à bord</h3><dl><div><dt>Navire</dt><dd>{selectedRequest.vesselName || '—'}</dd></div><div><dt>Lieu de livraison</dt><dd>{selectedRequest.deliveryLocation || '—'}</dd></div><div><dt>Date souhaitée</dt><dd>{formatDate(selectedRequest.expectedDeliveryOn)}</dd></div><div><dt>Responsable</dt><dd>{selectedRequest.ownerName || 'Non attribué'}</dd></div><div><dt>Précision</dt><dd>{selectedRequest.deliveryDetails || '—'}</dd></div><div><dt>Traitement</dt><dd>{selectedRequest.processingComment || '—'}</dd></div></dl></div>
             <details className="purchase-attachments" open><summary><span>Pièces jointes</span><strong><Paperclip size={16} />{selectedRequest.attachments.length} fichier{selectedRequest.attachments.length > 1 ? 's' : ''}</strong><ChevronDown size={16} /></summary><div>{selectedRequest.attachments.length ? selectedRequest.attachments.map((attachment) => <a href={attachment.downloadUrl} key={attachment.id} rel="noreferrer" target="_blank">{attachment.isImage ? <ImageIcon size={18} /> : <FileText size={18} />}<span><strong>{attachment.title}</strong><small>{attachment.sourceKind === 'sharepoint' ? 'SharePoint' : 'BBTM'}</small></span></a>) : <p>Aucune pièce jointe.</p>}</div></details>
-            <div className="purchase-activity"><h3>Activité</h3><ol><li className="is-primary"><i /><div><strong>Demande créée</strong><small>{formatDate(selectedRequest.createdAt, true)} par {selectedRequest.requesterName || 'le demandeur'}</small></div><span>Demandeur</span></li>{selectedRequest.events.filter((event) => event.eventType !== 'created').map((event) => <li key={event.id}><i /><div><strong>{event.statusLabel}</strong><small>{formatDate(event.createdAt, true)}{event.actorName ? ` par ${event.actorName}` : ''}</small></div><span>{event.comment || event.actorName || 'Suivi'}</span></li>)}{selectedRequest.approvalHistory && !selectedRequest.events.length ? <li className={normalize(selectedRequest.approvalStatus).includes('refuse') ? 'is-danger' : ''}><i /><div><strong>{selectedRequest.approvalStatus || 'Approbation'}</strong><small>{selectedRequest.approvalHistory}</small></div><span>{selectedRequest.approvalReason || selectedRequest.approverName}</span></li> : null}</ol></div>
+            <PurchaseRequestFollowup canComment={processingAllowed} isBusy={isSaving} key={selectedRequest.id} onAddComment={(comment) => handleAddComment(selectedRequest.id, comment)} request={selectedRequest} />
           </> : <div className="purchase-empty-detail"><ShoppingCart size={34} /><p>{requestedIdParameter !== null ? 'Cette demande est introuvable ou inaccessible.' : 'Sélectionnez une demande pour afficher son suivi.'}</p></div>}
         </section>
       </div>

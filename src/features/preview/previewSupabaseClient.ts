@@ -2101,6 +2101,21 @@ function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'purchase_request_add_comment') {
+    const request = previewRows('purchase_requests').find((row) => Number(row.id) === Number(args.p_request_id));
+    const comment = String(args.p_comment || '').trim();
+    if (!request) return createPreviewQuery({ data: null, error: { code: 'P0002', message: 'Demande introuvable ou inaccessible.' } });
+    if (!comment || comment.length > 4000) return createPreviewQuery({ data: null, error: { code: '22023', message: !comment ? 'Le commentaire est obligatoire.' : 'Le commentaire ne peut pas dépasser 4 000 caractères.' } });
+    const events = previewRows('purchase_request_events');
+    const addedEvent = {
+      id: Math.max(0, ...events.map((event) => Number(event.id))) + 1,
+      purchase_request_id: Number(request.id), event_type: 'comment_added',
+      status_label: 'Commentaire de suivi', actor_name: 'Administrateur Démonstration',
+      comment, effective_on: null, created_at: new Date().toISOString(),
+    };
+    events.push(addedEvent);
+    return createPreviewQuery({ data: addedEvent, error: null });
+  }
   if (functionName === 'save_planning_leave_rights_period' || functionName === 'save_planning_leave_counter_period') {
     const personId = Number(args.p_person_id);
     const personExists = createPlanningPreviewOverview(todayPlanningDate()).people.some((person) => person.id === personId)
