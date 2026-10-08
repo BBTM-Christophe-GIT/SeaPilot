@@ -4,6 +4,7 @@ const PLANNING_READ_ROLES = new Set<RoleKey>(['admin', 'direction', 'armement', 
 
 export interface PlanningPermissions {
   canRead: boolean;
+  canViewCrewPlanning: boolean;
   canEditEvents: boolean;
   canExport: boolean;
   canGenerateCrewList: boolean;
@@ -44,6 +45,7 @@ export function getPlanningPermissions(roles: RoleKey[], legacyLockState = false
   const canEdit = isAdmin || isDirection || isArmement;
   return {
     canRead: roles.some((role) => PLANNING_READ_ROLES.has(role)),
+    canViewCrewPlanning: canEdit,
     canEditEvents: canEdit,
     canExport: isAdmin || isDirection || isArmement,
     canGenerateCrewList: roles.some((role) => PLANNING_READ_ROLES.has(role)),

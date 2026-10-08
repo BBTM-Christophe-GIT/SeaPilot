@@ -38,12 +38,12 @@ vi.mock('./WorkingTimeComplianceReport', () => ({
 const client = {} as SupabaseClient;
 const reload = vi.fn().mockResolvedValue(true);
 
-function renderPage(roles: Array<'admin' | 'marin'> = ['admin']) {
+function renderPage(roles: Array<'admin' | 'marin'> = ['admin'], entry = '/') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[entry]}>
       <WorkingTimePage
         client={client}
-        currentPerson={{ id: 42, firstName: 'Alex', lastName: 'Marin', functionLabel: 'Matelot', gradeLabel: '' }}
+        currentPerson={{ id: 42, firstName: 'Alex', lastName: 'Marin', functionLabel: 'Matelot', gradeLabel: '', active: true, hiredOn: '2020-01-01', departedOn: '' }}
         initialRange={{ start: '2026-08-01', end: '2026-08-31' }}
         roles={roles}
       />
@@ -62,7 +62,32 @@ describe('WorkingTimePage', () => {
       isInitialLoading: false,
       isRefreshing: false,
       loadErrorMessage: null,
+      isHistoryLoading: false,
     });
+  });
+
+  it('loads the linked person and calendar month from a home alert', () => {
+    renderPage(['admin'], '/temps-de-travail?person=20&date=2026-09-19');
+
+    expect(WorkingTimeWorkflowPanel).toHaveBeenLastCalledWith(expect.objectContaining({
+      navigationTarget: { personId: 20, date: '2026-09-19' },
+      range: { start: '2026-09-01', end: '2026-09-30' },
+    }), undefined);
+  });
+
+  it.each([
+    '?person=20&date=2026-02-30',
+    '?person=0&date=2026-09-19',
+    '?person=20.5&date=2026-09-19',
+    '?person=999999999999999999&date=2026-09-19',
+    '?date=2026-09-19',
+  ])('ignores an invalid home alert target %s', (query) => {
+    renderPage(['admin'], `/temps-de-travail${query}`);
+
+    expect(WorkingTimeWorkflowPanel).toHaveBeenLastCalledWith(expect.objectContaining({
+      navigationTarget: null,
+      range: { start: '2026-08-01', end: '2026-08-31' },
+    }), undefined);
   });
 
   it('opens the import, HSE, report and work/rest cards in dedicated modal windows', () => {

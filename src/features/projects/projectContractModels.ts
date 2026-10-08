@@ -93,6 +93,30 @@ export const BIMCO_P144_FIELDS = BIMCO_P144_GROUPS.flatMap((group) => group.fiel
 
 export const BIMCO_P144_FIELD_COUNT = 34;
 
+// Business navigation is independent of the printed form's page/box layout.
+// Preserve every storage key and page used by editing and PDF generation.
+export const BIMCO_PROJECT_SECTIONS = [
+  { id: 'bimco-parties', label: 'Parties & navire', boxes: [1, 2, 3, 4], legacyGroups: ['parties'] },
+  { id: 'bimco-period', label: 'Période & livraison', boxes: [5, 6, 7, 8, 9, 10, 11, 13, 14], legacyGroups: ['delivery'] },
+  { id: 'bimco-operations', label: 'Exploitation', boxes: [16, 17, 18, 19, 27, 28], legacyGroups: ['operations'] },
+  { id: 'bimco-pricing', label: 'Tarifs & paiement', boxes: [12, 15, 20, 21, 22, 23, 24, 25, 26, 31], legacyGroups: ['pricing'] },
+  { id: 'bimco-clauses', label: 'Clauses & responsabilités', boxes: [29, 30, 32, 33, 34], legacyGroups: ['risks', 'law'] },
+  { id: 'bimco-signatures', label: 'Signatures & annexes', boxes: [], legacyGroups: ['signatures'] },
+] as const;
+
+export type BimcoProjectSectionId = typeof BIMCO_PROJECT_SECTIONS[number]['id'];
+
+export const BIMCO_P144_BUSINESS_GROUPS = BIMCO_PROJECT_SECTIONS.map((section) => ({
+  id: section.id,
+  label: section.label,
+  fields: BIMCO_P144_FIELDS.filter((field) => {
+    const box = Number(/^p144_box(\d+)/.exec(field.key)?.[1]);
+    return section.id === 'bimco-signatures'
+      ? field.key.startsWith('p144_signature_') || field.key === 'p144_annexes'
+      : (section.boxes as readonly number[]).includes(box);
+  }),
+}));
+
 export const TOWAGE_REQUIRED_FIELD_KEYS = [
   'contractDate',
   'charterer',

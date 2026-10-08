@@ -20,6 +20,14 @@ vi.mock('./workingTimeQueries', async (importOriginal) => {
   const original = await importOriginal<typeof import('./workingTimeQueries')>();
   return {
     ...original,
+    fetchWorkingTimePhasesRecommendation: vi.fn().mockResolvedValue({
+      status: 'conforme', policyId: 1, policyName: 'Accords Collectifs du 27/06/2025',
+      alreadyNonCompliant: false, available24hSeconds: 14400, available7dSeconds: 180000,
+      work24hSeconds: 28800, work7dSeconds: 79200, rest24hSeconds: 57600,
+      longestRest24hSeconds: 43200, restImpactSeconds: -14400, consecutiveRestImpactSeconds: -3600,
+      maxAdditionalSeconds: 14400, latestEndAt: '2026-08-03T16:00:00Z',
+      nextResumeAt: '2026-08-03T22:00:00Z', violationCodes: [],
+    }),
     getOrCreateWorkingTimeRegister: vi.fn().mockResolvedValue(100),
     fetchWorkingTimeDayContext: vi.fn().mockResolvedValue({
       assignmentId: 1,
@@ -41,7 +49,7 @@ vi.mock('./workingTimeQueries', async (importOriginal) => {
 });
 
 const client = {} as SupabaseClient;
-const currentPerson = { id: 10, firstName: 'Camille', lastName: 'CAPITAINE', functionLabel: 'Capitaine', gradeLabel: '' };
+const currentPerson = { id: 10, firstName: 'Camille', lastName: 'CAPITAINE', functionLabel: 'Capitaine', gradeLabel: '', active: true, hiredOn: '2020-01-01', departedOn: '' };
 const reload = vi.fn().mockResolvedValue(true);
 const onOpenHse = vi.fn();
 const onOpenImport = vi.fn();
@@ -126,6 +134,7 @@ function renderPanel(
   data: WorkingTimeWorkspace,
   person = currentPerson,
   referenceDate = '2026-09-01',
+  navigationTarget?: { personId: number; date: string },
 ) {
   vi.mocked(useWorkingTimeWorkspace).mockReturnValue({
     workspace: data,
@@ -137,6 +146,7 @@ function renderPanel(
     <WorkingTimeWorkflowPanel
       client={client}
       currentPerson={person}
+      navigationTarget={navigationTarget}
       previewMode
       range={{ start: '2026-08-01', end: '2026-08-31' }}
       referenceDate={referenceDate}
@@ -154,6 +164,59 @@ describe('WorkingTimeWorkflowPanel', () => {
     vi.clearAllMocks();
     reload.mockResolvedValue(true);
     vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue(defaultDayContext);
+  });
+
+  it('opens the linked readable sailor and day in Conformité for a real Capitaine profile', async () => {
+    const user = userEvent.setup();
+    const data = workspace('draft');
+    data.registers.push({ ...data.registers[0], id: 101, personId: 20, personName: 'Alex MARIN', functionLabel: 'Matelot' });
+    data.editablePeople = data.editablePeople.filter((person) => person.personId === 10);
+    renderPanel(['capitaine'], data, currentPerson, '2026-09-01', { personId: 20, date: '2026-08-19' });
+
+    expect(await screen.findByRole('heading', { name: /Alex MARIN/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Mercredi 19 août 2026' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Conformité' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'Jour' })).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(fetchWorkingTimeDayContext).toHaveBeenCalledWith(client, {
+      personId: 20, localWorkDate: '2026-08-19',
+    }));
+
+    await user.click(screen.getByRole('tab', { name: /jeu 20 août/ }));
+    expect(screen.getByRole('heading', { name: 'Jeudi 20 août 2026' })).toBeInTheDocument();
+  });
+
+  it('keeps a real Marin on their own readable register when a home target names another sailor', async () => {
+    const data = workspace('draft');
+    data.readablePeople[0].functionLabel = 'Matelot';
+    data.registers[0].functionLabel = 'Matelot';
+    data.registers.push({ ...data.registers[0], id: 101, personId: 20, personName: 'Alex MARIN' });
+    renderPanel(['marin'], data, { ...currentPerson, functionLabel: 'Matelot' }, '2026-09-01', { personId: 20, date: '2026-08-19' });
+
+    expect(await screen.findByRole('heading', { name: /Camille CAPITAINE/ })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Alex MARIN/ })).not.toBeInTheDocument();
+    expect(fetchWorkingTimeDayContext).not.toHaveBeenCalledWith(client, expect.objectContaining({ personId: 20 }));
+  });
+
+  it('waits for loaded readable people before opening a home target', async () => {
+    vi.mocked(useWorkingTimeWorkspace).mockReturnValue({ workspace: null, isLoading: true, errorMessage: null, reload });
+    const props = {
+      client,
+      currentPerson,
+      navigationTarget: { personId: 20, date: '2026-08-19' },
+      previewMode: true,
+      range: { start: '2026-08-01', end: '2026-08-31' },
+      referenceDate: '2026-09-01',
+      roles: ['capitaine'] as const,
+    };
+    const view = render(<WorkingTimeWorkflowPanel {...props} roles={[...props.roles]} />);
+    expect(fetchWorkingTimeDayContext).not.toHaveBeenCalled();
+
+    vi.mocked(useWorkingTimeWorkspace).mockReturnValue({ workspace: workspace('draft', 20), isLoading: false, errorMessage: null, reload });
+    view.rerender(<WorkingTimeWorkflowPanel {...props} roles={[...props.roles]} />);
+    expect(await screen.findByRole('heading', { name: 'Mercredi 19 août 2026' })).toBeInTheDocument();
+    await waitFor(() => expect(fetchWorkingTimeDayContext).toHaveBeenCalledWith(client, {
+      personId: 20, localWorkDate: '2026-08-19',
+    }));
   });
 
   it('lets an unlinked administrator browse the catalogue while keeping mutations protected', () => {
@@ -225,6 +288,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     data.editablePeople[0].functionLabel = 'Matelot';
     data.registers[0].functionLabel = 'Matelot';
     renderPanel(['marin'], data, {
+      ...currentPerson,
       id: 10,
       firstName: 'Camille',
       lastName: 'MARIN',
@@ -306,6 +370,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     const data = workspace('draft', 20);
     data.editablePeople = [];
     renderPanel(['direction'], data, {
+      ...currentPerson,
       id: 10,
       firstName: 'Diane',
       lastName: 'DIRECTION',
@@ -314,6 +379,60 @@ describe('WorkingTimeWorkflowPanel', () => {
     });
 
     expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
+  });
+
+  it.each([7, null])('lets a real Marin profile submit recorded hours without a captain (vessel %s)', async (vesselId) => {
+    const user = userEvent.setup();
+    const data = workspace('draft', 20);
+    data.currentPersonId = 20;
+    vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue({
+      assignmentId: vesselId ? 1 : null, vesselId, watchGroup: null, statusLabel: null,
+      approverPersonId: null, captainCandidates: [],
+    });
+    renderPanel(['marin'], data, { ...currentPerson, id: 20, firstName: 'Alex', lastName: 'MARIN', functionLabel: 'Matelot', gradeLabel: '' });
+
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Valider' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Valider' }));
+    expect(submitWorkingTimeDay).toHaveBeenCalledWith(client, { registerId: 100, localWorkDate: '2026-08-03' });
+    expect(await screen.findByText(/transmise pour approbation à un Administrateur/)).toBeInTheDocument();
+    expect(validateWorkingTimeDay).not.toHaveBeenCalled();
+  });
+
+  it.each(['admin', 'direction', 'armement'] as const)('lets %s find and approve a submitted day with no captain', async (role) => {
+    const user = userEvent.setup();
+    const data = workspace('draft', 20);
+    data.editablePeople = [];
+    data.dayApprovals = [{
+      id: 510, companyId: 1, registerId: 100, personId: 20,
+      localWorkDate: '2026-08-03', status: 'submitted', planningAssignmentId: null,
+      vesselId: null, watchGroup: null, approverPersonId: null,
+      submittedAt: '2026-08-03T16:00:00Z', validatedAt: null, validatedByPersonId: null,
+      subjectSignatureSnapshot: null, approverSignatureSnapshot: null,
+    }];
+    renderPanel([role], data, { ...currentPerson, functionLabel: 'Direction' });
+
+    await user.click(screen.getByRole('tab', { name: /Approbation1/ }));
+    await user.click(screen.getAllByRole('button', { name: /Alex MARIN/ }).at(-1)!);
+    await user.click(screen.getByRole('button', { name: 'Valider la journée' }));
+    expect(validateWorkingTimeDay).toHaveBeenCalledWith(client, 510);
+  });
+
+  it.each(['direction', 'capitaine', 'marin'] as const)('does not let %s take an approval assigned to another captain', async (role) => {
+    const user = userEvent.setup();
+    const data = workspace('draft', 20);
+    data.editablePeople = [];
+    data.dayApprovals = [{
+      id: 511, companyId: 1, registerId: 100, personId: 20,
+      localWorkDate: '2026-08-03', status: 'submitted', planningAssignmentId: 1,
+      vesselId: 7, watchGroup: 'Bordée 1', approverPersonId: 11,
+      submittedAt: '2026-08-03T16:00:00Z', validatedAt: null, validatedByPersonId: null,
+      subjectSignatureSnapshot: null, approverSignatureSnapshot: null,
+    }];
+    renderPanel([role], data);
+    await user.click(screen.getByRole('tab', { name: /Approbation/ }));
+    expect(screen.getByText('Aucune journée en attente d’approbation.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Valider la journée' })).not.toBeInTheDocument();
   });
 
   it('shows one catalogue card per sailor even when legacy weekly and monthly registers overlap', () => {
@@ -433,6 +552,50 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.queryByText('2026-08-18', { selector: '.working-time-non-compliance-card strong' })).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['2026-08-03', '2026-08-04', /mar 04 août$/],
+    ['2026-07-31', '2026-08-01', /sam 01 août$/],
+  ])('allows the assigned Captain to approve %s carry-over on %s without a false justification', async (alarmDay, day, tabName) => {
+    const user = userEvent.setup();
+    const data = workspace('draft', 20);
+    data.registers[0].workRestPolicyId = null;
+    const interval = data.intervals[0];
+    data.intervals = [
+      { ...interval, localWorkDate: alarmDay, startsAt: `${alarmDay}T15:00:00Z`, endsAt: `${alarmDay}T19:30:00Z` },
+      { ...interval, id: 201, localWorkDate: day, startsAt: `${day}T07:00:00Z`, endsAt: `${day}T10:30:00Z` },
+      { ...interval, id: 202, localWorkDate: day, startsAt: `${day}T11:30:00Z`, endsAt: `${day}T16:30:00Z` },
+    ];
+    data.calculations = [{
+      id: 402, companyId: 1, personId: 20, windowEnd: `${day}T01:00:00Z`, localWindowEndDate: day,
+      timezoneName: 'Europe/Paris', vesselId: 7, workRestPolicyId: 1, work24hSeconds: 36_000, rest24hSeconds: 50_400,
+      longestRest24hSeconds: 19_800, restPeriodCount24h: 3, work7dSeconds: 208_800, rest7dSeconds: 396_000,
+      nightWork24hSeconds: 0, isCompliant: false, violationCodes: ['consecutive_rest'], calculationVersion: 1,
+      calculatedAt: `${day}T01:00:01Z`,
+    }, {
+      id: 403, companyId: 1, personId: 20, windowEnd: `${day}T16:30:00Z`, localWindowEndDate: day,
+      timezoneName: 'Europe/Paris', vesselId: 7, workRestPolicyId: 1, work24hSeconds: 30_600, rest24hSeconds: 55_800,
+      longestRest24hSeconds: 41_400, restPeriodCount24h: 2, work7dSeconds: 228_600, rest7dSeconds: 376_200,
+      nightWork24hSeconds: 0, isCompliant: true, violationCodes: [], calculationVersion: 1,
+      calculatedAt: `${day}T16:30:01Z`,
+    }];
+    data.dayApprovals = [{
+      id: 520, companyId: 1, registerId: 100, personId: 20, localWorkDate: day,
+      status: 'submitted', planningAssignmentId: 1, vesselId: 7, watchGroup: 'Bordée 1', approverPersonId: 10,
+      submittedAt: `${day}T17:00:00Z`, validatedAt: null, validatedByPersonId: null,
+      subjectSignatureSnapshot: null, approverSignatureSnapshot: null,
+    }];
+    renderPanel(['capitaine'], data);
+    await user.click(screen.getByRole('tab', { name: tabName }));
+    expect(screen.getByText('Alertes').closest('article')).toHaveTextContent('0Aucune alerte détectée');
+    expect(screen.getByText('Calcul serveur P1.3')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Impact des 24 heures glissantes' })).toHaveTextContent('5,5 h / minimum 6 h');
+    await user.click(screen.getByRole('button', { name: 'Valider la journée' }));
+    expect(validateWorkingTimeDay).toHaveBeenCalledWith(client, 520);
+    expect(validateWorkingTimeDayWithComment).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Mois' }));
+    expect(screen.getByText(alarmDay.startsWith('2026-07') ? '8 h 30 sur le mois' : '13 h 00 sur le mois')).toBeInTheDocument();
+  });
+
   it('does not flag an empty day because of a rolling-window breach inherited from the previous day', async () => {
     const user = userEvent.setup();
     const data = workspace('draft', 20);
@@ -504,9 +667,10 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(validateWorkingTimeDay).toHaveBeenCalledWith(client, 501);
   });
 
-  it('lets the assigned exact HR Captain validate a compliant sailor draft directly', async () => {
+  it.each(['capitaine', 'marin'] as const)('lets a temporary Captain with role %s validate a compliant sailor draft', async (role) => {
     const user = userEvent.setup();
     const data = workspace('validated', 20);
+    data.canActAsCaptain = true;
     vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue({
       assignmentId: 1,
       vesselId: 7,
@@ -515,7 +679,7 @@ describe('WorkingTimeWorkflowPanel', () => {
       approverPersonId: 10,
       captainCandidates: [{ personId: 10, firstName: 'Camille', lastName: 'CAPITAINE', name: 'Camille CAPITAINE' }],
     });
-    renderPanel(['capitaine'], data);
+    renderPanel([role], data, { ...currentPerson, functionLabel: '2nd Capitaine' });
 
     await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
     const validateButton = screen.getByRole('button', { name: 'Valider' });

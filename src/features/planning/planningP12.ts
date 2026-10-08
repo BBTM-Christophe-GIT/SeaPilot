@@ -7,7 +7,7 @@ import type {
 } from './planningQueries';
 import type { PlanningManningMatrix, PlanningManningRequirement } from './planningP11';
 
-export type PlanningAbsenceType = 'leave' | 'illness' | 'training' | 'medical_visit' | 'unavailability' | 'recovery';
+export type PlanningAbsenceType = 'leave' | 'rtt' | 'illness' | 'training' | 'medical_visit' | 'recovery';
 export type PlanningAbsenceStatus = 'requested' | 'approved' | 'rejected' | 'cancelled';
 export type PlanningConflictType =
   | 'double_assignment'
@@ -123,10 +123,10 @@ export interface PlanningDateRange {
 
 const ABSENCE_TYPE_LABELS: Record<PlanningAbsenceType, string> = {
   leave: 'Congés',
+  rtt: 'RTT',
   illness: 'Maladie',
   training: 'Formation',
   medical_visit: 'Visite médicale',
-  unavailability: 'Indisponibilité',
   recovery: 'Récupération',
 };
 
@@ -146,12 +146,16 @@ export function planningAbsenceTypeLabel(type: PlanningAbsenceType): string {
   return ABSENCE_TYPE_LABELS[type];
 }
 
+export function planningAbsenceUsesPluralLabel(type: PlanningAbsenceType): boolean {
+  return type === 'leave' || type === 'rtt';
+}
+
 export function planningConflictTypeLabel(type: PlanningConflictType): string {
   return CONFLICT_TYPE_LABELS[type];
 }
 
 function absenceDecisionLabel(type: PlanningAbsenceType, approved: boolean): string {
-  if (type === 'leave') return `Congés ${approved ? 'validés' : 'demandés'}`;
+  if (planningAbsenceUsesPluralLabel(type)) return `${planningAbsenceTypeLabel(type)} ${approved ? 'validés' : 'demandés'}`;
   return `${planningAbsenceTypeLabel(type)} ${approved ? 'validée' : 'demandée'}`;
 }
 
@@ -304,10 +308,9 @@ export function buildPlanningP12Conflicts(
         { start: absence.startsOn, end: absence.endsOn },
       );
       if (!overlap) continue;
-      const absenceType = absence.absenceType === 'unavailability' ? 'unavailability' : 'absence';
       pushUnique(detected, conflict({
-        key: `${absenceType}:${absence.id}:assignment:${assignment.id}`,
-        type: absenceType,
+        key: `absence:${absence.id}:assignment:${assignment.id}`,
+        type: 'absence',
         severity: absence.status === 'approved' ? 'blocking' : 'warning',
         title: absenceDecisionLabel(absence.absenceType, absence.status === 'approved'),
         detail: `${assignmentPersonName(overview, assignment)} est planifié sur ${vesselName(overview, assignment.vesselId)} pendant cette période.`,
@@ -328,7 +331,7 @@ export function buildPlanningP12Conflicts(
     }
   }
 
-  const legacyUnavailabilityPattern = /(CONGE|ABSEN|MALAD|ARRET|REPOS|FORMATION|INDISPON)/;
+  const legacyUnavailabilityPattern = /(CONGE|RTT|ABSEN|MALAD|ARRET|REPOS|FORMATION|INDISPON)/;
   for (const period of overview.periods) {
     if (!period.personId || !legacyUnavailabilityPattern.test(normalizePlanningText(period.sailorStatus))
       || !rangesOverlap(period.startsOn, period.endsOn, range.start, range.end)) continue;

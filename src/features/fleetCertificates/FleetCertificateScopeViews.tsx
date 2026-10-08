@@ -1,5 +1,6 @@
 import { CheckCircle2, ChevronDown, FileText, Folder, Ship } from 'lucide-react';
 import { useMemo } from 'react';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { compareFleetFindingsByTypeDueYearAndTitle, type FleetCertificateFinding } from './fleetCertificateFindings';
 import type { FleetCertificateRecord } from './fleetCertificateQueries';
 
@@ -45,7 +46,7 @@ function groupCertificates(certificates: FleetCertificateRecord[]): CertificateV
       label,
       documents: documents.slice().sort((left, right) => collator.compare(left.documentTitle, right.documentTitle)),
     })).sort((left, right) => collator.compare(left.label, right.label)),
-  })).sort((left, right) => collator.compare(left.name, right.name));
+  })).sort(compareFleetAssets);
 }
 
 function groupFindings(

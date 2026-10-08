@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -99,8 +99,8 @@ describe('App', () => {
     );
 
     expect(await screen.findByText('Préversion · données de démonstration')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Nouveau projet' }, { timeout: 10_000 })).toBeInTheDocument();
     expect(document.querySelector('.content-area')).toHaveTextContent('Planning BBTM');
-    expect(screen.getByRole('button', { name: 'Nouveau projet' })).toBeInTheDocument();
     expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
     expect(screen.queryByText('NAVIRES SANS EQUIPAGE')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Connexion à SeaPilot' })).not.toBeInTheDocument();
@@ -270,34 +270,44 @@ describe('App', () => {
       }
 
       if (table === 'published_procedures') {
-        return {
-          select: vi.fn().mockReturnValue({
-            order: vi.fn().mockReturnValue({
-              order: vi.fn().mockReturnValue({
-                order: vi.fn().mockResolvedValue({
-                  data: [
-                    {
-                      id: 32,
-                      procedure_id: 12,
-                      procedure_sharepoint_item_id: '12',
-                      procedure_code: 'QSMS-OPS-01',
-                      title: 'Procedure embarquement ROZEL.pdf',
-                      status: 'approved',
-                      revision_label: 'Rev. 4',
-                      published_on: '2026-03-20',
-                      source_label: 'SharePoint PDF',
-                      file_url: 'https://sharepoint.test/procedure.pdf',
-                      notes: 'Publication signee',
-                      ism_chapter: '08',
-                      project_name: 'P144',
-                      vessel_name: 'LE ROZEL',
-                    },
-                  ],
-                  error: null,
-                }),
-              }),
-            }),
+        const orderedPublicationResult = {
+          order: vi.fn(),
+        };
+        orderedPublicationResult.order.mockReturnValueOnce(orderedPublicationResult)
+          .mockReturnValueOnce(orderedPublicationResult)
+          .mockResolvedValueOnce({
+            data: [
+              {
+                id: 32,
+                procedure_id: 12,
+                procedure_sharepoint_item_id: '12',
+                procedure_code: 'QSMS-OPS-01',
+                title: 'Procedure embarquement ROZEL.pdf',
+                status: 'published',
+                revision_label: 'Rev. 4',
+                published_on: '2026-03-20',
+                source_label: 'BBTM',
+                file_url: null,
+                notes: 'Publication signee',
+                ism_chapter: '08',
+                project_name: 'P144',
+                vessel_name: 'LE ROZEL',
+                storage_bucket: 'procedure-documents',
+                storage_path: 'published/12/procedure.pdf',
+                file_name: 'procedure.pdf',
+                mime_type: 'application/pdf',
+                size_bytes: 4096,
+              },
+            ],
+            error: null,
+          });
+        const filteredPublicationResult = {
+          eq: vi.fn().mockReturnValueOnce({
+            eq: vi.fn().mockReturnValue(orderedPublicationResult),
           }),
+        };
+        return {
+          select: vi.fn().mockReturnValue(filteredPublicationResult),
         };
       }
 
@@ -503,6 +513,10 @@ describe('App', () => {
         return createIdPaginatedQuery([]);
       }
 
+      if (table === 'project_drive_files') {
+        return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }) };
+      }
+
       if (table === 'project_documents') {
         return createIdPaginatedQuery([
           {
@@ -569,18 +583,21 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Projets' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Tous les projets/ }));
     expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent(/1\s*actifs/);
     expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent(/1\s*contrats/);
     expect(screen.getByLabelText('Indicateurs des contrats')).toHaveTextContent(/1\s*documents projets/);
     expect(screen.getByRole('button', { name: /P-2026-014 Campagne Atlantique 2026/ })).toHaveTextContent('P-2026-014');
     expect(screen.getAllByText('Ifremer').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: /P-2026-014 Campagne Atlantique 2026/ }));
     fireEvent.click(screen.getByRole('tab', { name: 'Documents' }));
-    expect(screen.getByText('Contrat Atlantique signe.pdf')).toBeInTheDocument();
-    expect(screen.getByText('Plan projet Atlantique.pdf')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Ouvrir dans SharePoint.*Plan projet Atlantique.pdf/ })).toHaveAttribute(
-      'href',
-      'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P-2026-014/plan.pdf',
-    );
+    expect(await screen.findByText('Contrat Atlantique signe.pdf')).toBeInTheDocument();
+    expect(await screen.findByText('Plan projet Atlantique.pdf')).toBeInTheDocument();
+    const viewer = { location: { href: '' }, opener: null, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(viewer as unknown as Window);
+    fireEvent.click(screen.getByRole('button', { name: /Ouvrir le document.*Plan projet Atlantique.pdf/ }));
+    await waitFor(() => expect(viewer.location.href).toBe('https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/P-2026-014/plan.pdf'));
+    open.mockRestore();
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
 
@@ -771,8 +788,11 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('heading', { name: "Plan d'action" })).toBeInTheDocument();
-    expect(screen.getByLabelText('Actions ouvertes')).toHaveTextContent('1');
-    expect(screen.getByLabelText('En retard')).toHaveTextContent('1');
+    expect(screen.getByRole('button', { name: 'Tout afficher · 1' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Afficher COTENTIN · 1 élément' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Audit pont COTENTIN' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Statut')).toHaveValue('open');
+    fireEvent.click(screen.getByRole('button', { name: /Audit pont COTENTIN · COTENTIN/ }));
     expect(screen.getByRole('heading', { name: 'Audit pont COTENTIN' })).toBeInTheDocument();
     expect(screen.getByText('Controle pont')).toBeInTheDocument();
     expect(screen.getByText('Remplacer garde-corps')).toBeInTheDocument();

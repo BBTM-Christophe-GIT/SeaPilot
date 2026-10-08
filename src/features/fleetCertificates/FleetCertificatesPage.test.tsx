@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render as renderTestingLibrary, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { Link, MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { FleetCertificatesPage } from './FleetCertificatesPage';
 import { compareFleetFindingsByTypeDueYearAndTitle, compareFleetFindingTitles } from './fleetCertificateFindings';
@@ -10,6 +11,10 @@ import {
   mapFleetCertificateRows,
   normalizeFleetCertificateDocumentName,
 } from './fleetCertificateQueries';
+
+function render(ui: Parameters<typeof renderTestingLibrary>[0], initialEntry = '/modules/certificates') {
+  return renderTestingLibrary(<MemoryRouter initialEntries={[initialEntry]}>{ui}</MemoryRouter>);
+}
 
 const certificates = [
   {
@@ -61,6 +66,10 @@ function createClient(
   peopleRows: Array<{ id: number; first_name: string; last_name: string; function_label: string; departed_on: string | null; active: boolean }> = [
     { id: 9303, first_name: 'Luc', last_name: 'MARTIN', function_label: 'Chef mécanicien', departed_on: null, active: true },
   ],
+  certificateRows: Array<Omit<(typeof certificates)[number], 'storage_path' | 'storage_bucket' | 'file_name'> & {
+    storage_path: string | null; storage_bucket: string | null; file_name: string | null;
+  }> = certificates,
+  versionRows: Array<Record<string, unknown>> = [],
 ) {
   const rpc = vi.fn().mockResolvedValue({ data: 42, error: null });
   const findingUpdateEq = vi.fn().mockResolvedValue({ error: null });
@@ -70,7 +79,8 @@ function createClient(
   const client = {
     rpc, storage: { from: vi.fn().mockReturnValue(storageApi) },
     from: vi.fn().mockImplementation((table: string) => {
-      if (table === 'fleet_certificates') return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: certificates, error: null }) }) }) };
+      if (table === 'fleet_certificates') return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: certificateRows, error: null }) }) }) };
+      if (table === 'fleet_certificate_versions') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ order: vi.fn().mockImplementation(async () => ({ data: versionRows, error: null })) }) }) };
       if (table === 'fleet_certificate_findings') return { select: vi.fn().mockResolvedValue({ data: findingRows, error: null }), insert: vi.fn(), update: findingUpdate };
       if (table === 'fleet_certificate_finding_attachments') return { select: vi.fn().mockResolvedValue({ data: [], error: null }), insert: attachmentInsert };
       if (table === 'fleet_certificate_finding_events') return { select: vi.fn().mockResolvedValue({ data: [{ id: 91, finding_id: 81, event_type: 'created', note: 'Écart créé', author: { display_name: 'Arthur DEMO' }, created_at: '2026-07-16T09:14:00Z' }], error: null }), insert: vi.fn().mockResolvedValue({ error: null }) };
@@ -85,6 +95,28 @@ function createClient(
 }
 
 describe('FleetCertificatesPage', () => {
+  it('opens the exact linked certificate preview and reacts to another certificate link', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+    render(<><Link to="?certificate=42">Ouvrir le Franc-Bord</Link><FleetCertificatesPage client={client as never} roles={['direction']} /></>, '/modules/certificates?certificate=43');
+
+    expect(await screen.findByRole('region', { name: 'Aperçu de Certificat extincteurs' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Aperçu du document' })).toHaveAttribute('aria-selected', 'true');
+    await user.click(screen.getByRole('link', { name: 'Ouvrir le Franc-Bord' }));
+    expect(await screen.findByRole('region', { name: 'Aperçu de Certificat de Franc-Bord' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Aperçu de Certificat extincteurs' })).not.toBeInTheDocument();
+  });
+
+  it('does not select a certificate absent from the authorized records', async () => {
+    const { client } = createClient();
+    render(<FleetCertificatesPage client={client as never} roles={['capitaine']} />, '/modules/certificates?certificate=999');
+
+    await screen.findByText('2 document(s) affiché(s) · 0 sélectionné(s)');
+    expect(screen.getByRole('heading', { name: 'Écarts & actions flotte' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Pilotage du traitement' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('region', { name: /^Aperçu de/ })).not.toBeInTheDocument();
+  });
+
   it('sorts numbered finding titles in natural numeric order', () => {
     const sorted = [
       { title: '2. Relevés périodiques' },
@@ -531,7 +563,7 @@ describe('FleetCertificatesPage', () => {
     );
     await user.click(within(dialog).getByRole('button', { name: 'Enregistrer la nouvelle version' }));
 
-    expect(await screen.findByText('Renouvellement enregistré.')).toBeInTheDocument();
+    expect(await screen.findByText('Nouvelle version reçue, en attente de validation.')).toBeInTheDocument();
     expect(storageApi.upload).toHaveBeenCalledTimes(1);
     expect(rpc).toHaveBeenCalledWith('submit_fleet_certificate_renewal', expect.objectContaining({
       p_certificate_id: 42,
@@ -539,6 +571,104 @@ describe('FleetCertificatesPage', () => {
       p_issued_on: '2026-08-20',
       p_expires_on: '2028-08-20',
     }));
+  });
+
+  it('shows a first uploaded file awaiting validation and activates it only after validation', async () => {
+    const user = userEvent.setup();
+    const missing = { ...certificates[0], status: 'missing', workflow_status: 'not_started', storage_path: null,
+      storage_bucket: null, file_name: null, current_version_no: 0 };
+    const versionRows: Array<Record<string, unknown>> = [];
+    const { client, rpc, storageApi } = createClient(findings, [], [missing], versionRows);
+    rpc.mockImplementation(async (name, args) => {
+      if (name === 'submit_fleet_certificate_renewal') {
+        missing.status = 'pending_validation'; missing.workflow_status = 'pending_validation';
+        missing.updated_at = '2026-10-01T08:07:09Z';
+        versionRows.push({ id: 202, version_no: 1, status: 'pending_validation', is_current: false,
+          original_file_name: args.p_original_file_name, normalized_file_name: args.p_normalized_file_name,
+          storage_bucket: 'fleet-certificates', storage_path: args.p_storage_path, mime_type: args.p_mime_type,
+          file_size_bytes: args.p_file_size_bytes, issued_on: args.p_issued_on, expires_on: args.p_expires_on,
+          created_at: missing.updated_at, validated_at: null });
+      }
+      if (name === 'validate_fleet_certificate_renewal') {
+        Object.assign(missing, { storage_bucket: 'fleet-certificates', storage_path: versionRows[0].storage_path,
+          file_name: versionRows[0].normalized_file_name, current_version_no: 1, status: 'valid',
+          workflow_status: 'validated', updated_at: '2026-10-01T08:08:00Z' });
+        Object.assign(versionRows[0], { status: 'active', is_current: true, validated_at: missing.updated_at });
+      }
+      return { data: 202, error: null };
+    });
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+    await user.click(within(library).getByRole('button', { name: /GOURY/ }));
+    await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
+    await user.click(within(library).getByRole('button', { name: 'Prévisualiser Certificat de Franc-Bord' }));
+    await user.click(screen.getByRole('button', { name: 'Ajouter un fichier' }));
+    const dialog = screen.getByRole('dialog', { name: 'Ajouter le document' });
+    fireEvent.change(within(dialog).getByLabelText('Date d’émission'), { target: { value: '2026-10-01' } });
+    await user.upload(within(dialog).getByLabelText('Nouveau certificat signé'), new File(['certificat'], 'signe.pdf', { type: 'application/pdf' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Ajouter le document' }));
+
+    expect(await screen.findByText('Document reçu, en attente de validation.')).toBeInTheDocument();
+    expect(await screen.findByText('v1 · À valider')).toBeInTheDocument();
+    expect(within(library).getByText('Document reçu · À valider')).toBeInTheDocument();
+    expect(screen.queryByText('Cette ligne ne contient pas encore de document.')).not.toBeInTheDocument();
+    expect(missing.storage_path).toBeNull();
+    expect(rpc).not.toHaveBeenCalledWith('validate_fleet_certificate_renewal', expect.anything());
+    await user.click(screen.getByRole('button', { name: 'Afficher la version v1' }));
+    expect(await screen.findByTitle('Aperçu de Certificat de Franc-Bord')).toHaveAttribute('src', 'https://signed.test/document');
+    expect(storageApi.createSignedUrl).toHaveBeenCalledWith(versionRows[0].storage_path, 300);
+    expect(screen.getByRole('button', { name: 'Télécharger le document' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Valider la version v1' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Valider la version v1' }));
+    expect(await screen.findByText('Version validée et document disponible.')).toBeInTheDocument();
+    expect(rpc).toHaveBeenCalledWith('validate_fleet_certificate_renewal', { p_version_id: 202 });
+    expect(await screen.findByText('v1 · Version actuelle', { selector: 'strong' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Valider la version v1' })).not.toBeInTheDocument();
+    expect(within(library).getByRole('button', { name: 'Télécharger Certificat de Franc-Bord' })).toBeEnabled();
+  });
+
+  it('allows a captain to view a received version without offering validation', async () => {
+    const user = userEvent.setup();
+    const pending = { ...certificates[0], status: 'pending_validation', storage_path: null, storage_bucket: null,
+      file_name: null, current_version_no: 0 };
+    const versions = [{ id: 202, version_no: 1, status: 'pending_validation', is_current: false,
+      original_file_name: 'signe.pdf', normalized_file_name: 'GOURY - Certificat de Franc-Bord - 2026.pdf',
+      storage_bucket: 'fleet-certificates', storage_path: '1/GRY/42/renewals/signe.pdf', mime_type: 'application/pdf',
+      issued_on: '2026-10-01', expires_on: '2027-10-01', created_at: '2026-10-01T08:07:09Z' }];
+    const { client, rpc, storageApi } = createClient(findings, [], [pending], versions);
+    render(<FleetCertificatesPage client={client as never} roles={['capitaine']} />);
+    const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+    await user.click(within(library).getByRole('button', { name: /GOURY/ }));
+    await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
+    await user.click(within(library).getByRole('button', { name: 'Prévisualiser Certificat de Franc-Bord' }));
+    expect(await screen.findByText('v1 · À valider')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Valider la version/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Afficher la version v1' }));
+    expect(await screen.findByTitle('Aperçu de Certificat de Franc-Bord')).toBeInTheDocument();
+    expect(storageApi.createSignedUrl).toHaveBeenCalledWith(versions[0].storage_path, 300);
+    expect(rpc).not.toHaveBeenCalledWith('validate_fleet_certificate_renewal', expect.anything());
+  });
+
+  it('reports a refused validation and preserves the received version', async () => {
+    const user = userEvent.setup();
+    const versions = [{ id: 202, version_no: 2, status: 'pending_validation', is_current: false,
+      original_file_name: 'signe.pdf', normalized_file_name: 'GOURY - Certificat de Franc-Bord - 2026.pdf',
+      storage_bucket: 'fleet-certificates', storage_path: '1/GRY/42/renewals/signe.pdf', mime_type: 'application/pdf',
+      issued_on: '2026-10-01', expires_on: '2027-10-01', created_at: '2026-10-01T08:07:09Z' }];
+    const { client, rpc, storageApi } = createClient(findings, [], certificates, versions);
+    rpc.mockResolvedValue({ data: null, error: { message: 'Accès refusé.' } });
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+    await user.click(within(library).getByRole('button', { name: /GOURY/ }));
+    await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
+    await user.click(within(library).getByRole('button', { name: 'Prévisualiser Certificat de Franc-Bord' }));
+    await user.click(await screen.findByRole('button', { name: 'Valider la version v2' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Accès refusé.');
+    expect(screen.getByRole('button', { name: 'Valider la version v2' })).toBeEnabled();
+    expect(screen.getByText('v2 · À valider')).toBeInTheDocument();
+    expect(storageApi.remove).not.toHaveBeenCalled();
+    await waitFor(() => expect(storageApi.createSignedUrl).toHaveBeenCalledWith(certificates[0].storage_path, 300));
   });
 
   it('opens the centered visit agenda from the Planning-style ribbon with searchable grouped ports', async () => {

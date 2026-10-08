@@ -79,7 +79,8 @@ export function withBareboatContractDefaults(data: Record<string, string>): Reco
 export const PROJECT_CONTRACT_TYPES = [
   'Offre Commerciale',
   'Contrat de Remorquage',
-  "Contrat d'Affrètement",
+  "Contrat d'Affrètement à Temps",
+  "Contrat d'Affrètement Coque Nue",
   'BIMCO',
 ] as const;
 
@@ -87,7 +88,8 @@ export type ProjectContractType = (typeof PROJECT_CONTRACT_TYPES)[number];
 
 export const COMMERCIAL_OFFER_CONTRACT_TYPE: ProjectContractType = 'Offre Commerciale';
 export const TOWAGE_CONTRACT_TYPE: ProjectContractType = 'Contrat de Remorquage';
-export const BAREBOAT_CONTRACT_TYPE: ProjectContractType = "Contrat d'Affrètement";
+export const TIME_CHARTER_CONTRACT_TYPE: ProjectContractType = "Contrat d'Affrètement à Temps";
+export const BAREBOAT_CONTRACT_TYPE: ProjectContractType = "Contrat d'Affrètement Coque Nue";
 export const BIMCO_CONTRACT_TYPE: ProjectContractType = 'BIMCO';
 
 export function normalizeProjectContractType(value?: string | null): string {
@@ -95,8 +97,9 @@ export function normalizeProjectContractType(value?: string | null): string {
   const lowered = normalizedValue.toLocaleLowerCase('fr-FR');
 
   if (lowered.includes('remorquage')) return TOWAGE_CONTRACT_TYPE;
-  if (lowered.includes('coque nue') || lowered.includes("contrat d'affrètement") || lowered.includes('contrat d’affrètement')) {
-    return BAREBOAT_CONTRACT_TYPE;
+  if (lowered.includes('coque nue') || lowered.includes('bareboat')) return BAREBOAT_CONTRACT_TYPE;
+  if (lowered.includes("contrat d'affrètement") || lowered.includes('contrat d’affrètement')) {
+    return TIME_CHARTER_CONTRACT_TYPE;
   }
   if (lowered.includes('bimco') || lowered.includes('supplytime') || lowered.includes('affrètement à temps')) {
     return BIMCO_CONTRACT_TYPE;
@@ -105,6 +108,18 @@ export function normalizeProjectContractType(value?: string | null): string {
     return COMMERCIAL_OFFER_CONTRACT_TYPE;
   }
   return normalizedValue || COMMERCIAL_OFFER_CONTRACT_TYPE;
+}
+
+/** Both named charters currently share the same fields, defaults and PDF model. */
+export function isCharterContractType(value?: string | null): boolean {
+  const type = normalizeProjectContractType(value);
+  return type === TIME_CHARTER_CONTRACT_TYPE || type === BAREBOAT_CONTRACT_TYPE;
+}
+
+export function charterContractLabel(value?: string | null): ProjectContractType {
+  return normalizeProjectContractType(value) === TIME_CHARTER_CONTRACT_TYPE
+    ? TIME_CHARTER_CONTRACT_TYPE
+    : BAREBOAT_CONTRACT_TYPE;
 }
 
 export const PROJECT_CURRENCIES = [

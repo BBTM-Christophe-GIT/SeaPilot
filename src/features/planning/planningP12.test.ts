@@ -55,6 +55,22 @@ const data: PlanningP12Data = {
 };
 
 describe('planning P1.2 conflict detection', () => {
+  it.each(['approved', 'requested'] as const)('classifies RTT conflicts and vacancies according to their decision (%s)', (status) => {
+    const source: PlanningP12Data = { ...data, absences: [{ ...data.absences[0], absenceType: 'rtt', status }] };
+    const conflicts = buildPlanningP12Conflicts(overview, source, { start: '2026-08-01', end: '2026-08-31' });
+    expect(conflicts.find((item) => item.type === 'absence' && item.absenceId === 60)).toMatchObject({
+      title: status === 'approved' ? 'RTT validés' : 'RTT demandés', severity: status === 'approved' ? 'blocking' : 'warning',
+    });
+    expect(conflicts.some((item) => item.type === 'vacant_position' && item.absenceId === 60)).toBe(status === 'approved');
+  });
+
+  it('blocks an assignment overlapping a historical RTT period', () => {
+    const source = { ...overview, periods: [{ ...overview.periods[0], sailorStatus: 'RTT' }] };
+    const conflicts = buildPlanningP12Conflicts(source, data, { start: '2026-08-01', end: '2026-08-31' });
+    expect(conflicts.find((item) => item.type === 'unavailability' && item.assignmentId === 1)).toMatchObject({ severity: 'blocking' });
+    expect(conflicts.find((item) => item.type === 'unavailability' && item.assignmentId === 1)?.detail).toContain('« RTT »');
+  });
+
   it('detects and classifies every P1.2 conflict family from existing operational data', () => {
     const conflicts = buildPlanningP12Conflicts(overview, data, { start: '2026-08-01', end: '2026-08-31' });
     expect(new Set(conflicts.map((item) => item.type))).toEqual(new Set([

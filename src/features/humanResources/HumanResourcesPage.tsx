@@ -1,3 +1,6 @@
+import { PersonAvatar } from './PersonAvatar';
+import { PersonPhotoField, type PersonPhotoChanged } from './PersonPhotoField';
+import { connectHrDrive } from './hrDocumentDrive';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
@@ -27,14 +30,14 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import JSZip from 'jszip';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useLocation, useOutletContext } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
 import { notifyHrDocumentsChanged } from './hrDocumentNotifications';
+import './hrDocumentActions.css';
 import {
   buildStaffEvolution,
   buildMonthlyStaffEvolution,
@@ -47,6 +50,7 @@ import {
   buildWorkforceExitBreakdown,
   compareHrFunctionLabels,
   createHrDocument,
+  deleteHrDocument,
   createPerson,
   deletePerson,
   createHrDocumentSignedUrl,
@@ -59,6 +63,7 @@ import {
   getHrEnimClassification,
   getHrFunctionVisibilityKey,
   HR_PRIMARY_FUNCTIONS,
+  HR_DOCUMENT_CATEGORY_LABELS,
   HR_SEDENTARY_FUNCTIONS,
   isHrDocumentRenewalDue,
   isPersonEmployedOn,
@@ -66,6 +71,7 @@ import {
   normalizeHrFunctionLabel,
   renewHrDocument,
   updateHrDocumentMedicalDetails,
+  updateHrDocumentDetails,
   updatePersonDetails,
   type HrDocumentRecord,
   type HrDocumentTypeOption,
@@ -75,6 +81,7 @@ import {
   type HumanResourcesRosterGroup,
   type PersonRecord,
   type UpdateHrDocumentMedicalInput,
+  type UpdateHrDocumentInput,
   type UpdatePersonDetailsInput,
   type WorkforceTurnoverMetric,
   type WorkforceExitBreakdown,
@@ -87,6 +94,9 @@ interface HumanResourcesPageProps {
   client?: SupabaseClient;
   currentPersonId?: number | null;
   roles?: RoleKey[];
+  initialPersonId?: number | null;
+  initialDocumentId?: number | null;
+  initialSectionKey?: HrDetailsSectionKey;
 }
 
 type PersonFormState = UpdatePersonDetailsInput;
@@ -377,9 +387,7 @@ function formatDateForDisplay(value: string): string {
   return `${dateParts[3]}/${dateParts[2]}/${dateParts[1]}`;
 }
 
-function getPersonInitials(person: PersonRecord): string {
-  return `${person.firstName.charAt(0)}${person.lastName.charAt(0)}`.toUpperCase() || 'RH';
-}
+
 
 function ProfileTabIcon({ tabKey }: { tabKey: HrDetailsSectionKey }) {
   switch (tabKey) {
@@ -528,7 +536,7 @@ function buildMedicalFitnessNote(document: HrDocumentRecord): MedicalFitnessNote
 }
 
 function documentDownloadFileName(document: HrDocumentRecord): string {
-  const sourcePath = (document.storagePath || document.fileUrl).split(/[?#]/)[0];
+  const sourcePath = (document.drivePath || document.storagePath || document.fileUrl).split(/[?#]/)[0];
   const extension = /\.[a-z0-9]+$/i.test(document.title)
     ? ''
     : getFileExtension(sourcePath) || (document.mimeType === 'application/pdf' ? '.pdf' : '');
@@ -712,7 +720,18 @@ function buildPersonDetailsForm(person: PersonRecord): UpdatePersonDetailsInput 
   };
 }
 
-export function HumanResourcesPage({ client, currentPersonId, roles }: HumanResourcesPageProps) {
+export function HumanResourcesRoute(props: HumanResourcesPageProps) {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  const person = params.get('person');
+  const documentId = Number(params.get('document')) || null;
+  const personId = person === null ? undefined : /^\d+$/.test(person) && Number(person) > 0 ? Number(person) : null;
+  const section = documentId ? 'documents' : params.get('section') === 'contract' ? 'contract' : undefined;
+  // A fresh navigation, including a click on the active RH link, starts on oneself.
+  return <HumanResourcesPage key={location.key} {...props} initialPersonId={personId} initialDocumentId={documentId} initialSectionKey={section} />;
+}
+
+export function HumanResourcesPage({ client, currentPersonId, roles, initialPersonId, initialDocumentId, initialSectionKey }: HumanResourcesPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
@@ -736,10 +755,13 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
   const [filters, setFilters] = useState<HrFilterState>(EMPTY_FILTERS);
   const [form, setForm] = useState<PersonFormState>(EMPTY_FORM);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
+  // undefined follows the connected person's default; null is an explicit close.
+  const [selectedPersonId, setSelectedPersonId] = useState<number | null | undefined>(initialPersonId);
   const [documentCreationPersonId, setDocumentCreationPersonId] = useState<number | null>(null);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<number>>(() => new Set());
+  const openedInitialDocumentId = useRef<number | null>(null);
   const [renewalDocumentId, setRenewalDocumentId] = useState<number | null>(null);
+  const [documentAction, setDocumentAction] = useState<{ document: HrDocumentRecord; mode: 'edit' | 'delete' } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -761,15 +783,6 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
           setDocuments(loadedData.documents);
           setDocumentTypes(loadedData.documentTypes);
           setVisibilityRules(loadedData.visibilityRules);
-          setSelectedPersonId(
-            (currentId) =>
-              currentId ??
-              buildHumanResourcesDashboard(
-                sortedPeople.filter((person) => matchesRosterPopulation(person, 'current')),
-                loadedData.documents,
-              ).groups[0]?.people[0]?.id ??
-              null,
-          );
         }
       })
       .catch(() => {
@@ -966,8 +979,11 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     trailingWorkforceMetrics,
   ]);
   const selectedPerson = useMemo(
-    () => visiblePeople.find((person) => person.id === selectedPersonId) || null,
-    [selectedPersonId, visiblePeople],
+    () => selectedPersonId === undefined
+      ? visiblePeople.find((person) => person.id === ownPersonId)
+        || visiblePeople.find((person) => person.id === dashboard.groups[0]?.people[0]?.id) || null
+      : visiblePeople.find((person) => person.id === selectedPersonId) || null,
+    [dashboard.groups, ownPersonId, selectedPersonId, visiblePeople],
   );
   const selectedPersonDocuments = useMemo(
     () => (selectedPerson ? roleVisibleDocuments.filter((document) => document.personId === selectedPerson.id) : []),
@@ -999,10 +1015,22 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     [effectiveRoles, visibilityRules],
   );
   useEffect(() => {
-    if (selectedPersonId !== null && !visiblePeople.some((person) => person.id === selectedPersonId)) {
-      setSelectedPersonId(visiblePeople[0]?.id ?? null);
+    if (!isLoading && selectedPersonId != null && !visiblePeople.some((person) => person.id === selectedPersonId)) {
+      setSelectedPersonId(selectedPersonId === initialPersonId ? null : visiblePeople[0]?.id ?? null);
     }
-  }, [selectedPersonId, visiblePeople]);
+  }, [initialPersonId, isLoading, selectedPersonId, visiblePeople]);
+
+  useEffect(() => {
+    if (!initialDocumentId || isLoading || openedInitialDocumentId.current === initialDocumentId) return;
+    const document = roleVisibleDocuments.find((record) => record.id === initialDocumentId);
+    if (!document) return;
+    if (document.personId === null && isManager) {
+      setDocumentAction({ document, mode: 'edit' });
+    } else if (selectedPersonDocuments.some((record) => record.id === initialDocumentId)) {
+      setSelectedDocumentIds(new Set([initialDocumentId]));
+    } else return;
+    openedInitialDocumentId.current = initialDocumentId;
+  }, [initialDocumentId, isLoading, isManager, roleVisibleDocuments, selectedPersonDocuments]);
 
   function updateFormValue(key: keyof PersonFormState, value: string) {
     setForm((currentForm) => ({
@@ -1058,8 +1086,9 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     try {
       const url = await createHrDocumentSignedUrl(effectiveClient, document);
       window.open(url, '_blank', 'noopener,noreferrer');
-    } catch {
-      setErrorMessage("Impossible d'ouvrir ce document.");
+      if (url.startsWith('blob:')) window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Impossible d'ouvrir ce document.");
     }
   }
 
@@ -1077,23 +1106,23 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
         const blob = await downloadHrDocumentBlob(effectiveClient, documentToDownload);
         saveBlob(blob, documentDownloadFileName(documentToDownload));
       } else {
+        if (selectedDocuments.some(document => document.drivePath)) await connectHrDrive();
+        const { default: JSZip } = await import('jszip');
         const zip = new JSZip();
         const usedNames = new Map<string, number>();
 
-        await Promise.all(
-          selectedDocuments.map(async (documentToDownload) => {
-            const blob = await downloadHrDocumentBlob(effectiveClient, documentToDownload);
-            zip.file(uniqueFileName(documentDownloadFileName(documentToDownload), usedNames), blob);
-          }),
-        );
+        for (const documentToDownload of selectedDocuments) {
+          const blob = await downloadHrDocumentBlob(effectiveClient, documentToDownload);
+          zip.file(uniqueFileName(documentDownloadFileName(documentToDownload), usedNames), blob);
+        }
 
         const zipBlob = await zip.generateAsync({ type: 'blob' });
         saveBlob(zipBlob, `Documents RH - ${new Date().toISOString().slice(0, 10)}.zip`);
       }
 
       setSelectedDocumentIds(new Set());
-    } catch {
-      setErrorMessage('Impossible de telecharger les fichiers selectionnes.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Impossible de télécharger les fichiers sélectionnés.');
     } finally {
       setIsDownloading(false);
     }
@@ -1104,7 +1133,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     setRosterPopulation(value);
     setFilters((currentFilters) => ({ ...currentFilters, collaboratorId: '' }));
     setSelectedPersonId((currentPersonId) =>
-      currentPersonId !== null && nextPopulationPeople.some((person) => person.id === currentPersonId)
+      currentPersonId === undefined || (currentPersonId !== null && nextPopulationPeople.some((person) => person.id === currentPersonId))
         ? currentPersonId
         : nextPopulationPeople[0]?.id ?? null,
     );
@@ -1170,6 +1199,34 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Impossible de renouveler le document.');
       throw new Error('hr-document-renewal-failed');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleDocumentAction(input?: UpdateHrDocumentInput) {
+    if (!isManager || !documentAction) return;
+    setStatusMessage(null);
+    setErrorMessage(null);
+    setIsSaving(true);
+    try {
+      const document = documentAction.document;
+      if (documentAction.mode === 'edit' && input) {
+        const updated = await updateHrDocumentDetails(effectiveClient, document, input);
+        setDocuments((current) => current.map((item) => item.id === updated.id ? updated : item));
+        setStatusMessage('Informations du document mises à jour.');
+      } else if (documentAction.mode === 'delete') {
+        await deleteHrDocument(effectiveClient, document.id);
+        setDocuments((current) => current.filter((item) => item.id !== document.id));
+        setSelectedDocumentIds((current) => {
+          const next = new Set(current);
+          next.delete(document.id);
+          return next;
+        });
+        setStatusMessage('Document supprimé.');
+      }
+      notifyHrDocumentsChanged();
+      setDocumentAction(null);
     } finally {
       setIsSaving(false);
     }
@@ -1525,7 +1582,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
                 group={group}
                 key={group.label}
                 onPersonSelect={setSelectedPersonId}
-                selectedPersonId={selectedPersonId}
+                selectedPersonId={selectedPerson?.id ?? null}
               />
             ))}
           </div>
@@ -1533,11 +1590,16 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
         </section> : null}
 
         <PersonProfileCard
+          initialSectionKey={selectedPerson?.id === initialPersonId ? initialSectionKey : undefined}
           canDelete={canDeletePerson}
           canEdit={Boolean(
             isManager
             || (isRestrictedHrView && selectedPerson && selectedPerson.id === ownPersonId)
           )}
+          onPhotoChanged={(id, photo, document) => {
+            setPeople((previous) => previous.map((person) => person.id === id ? { ...person, ...photo, photoUnavailable: false } : person));
+            if (document) setDocuments((previous) => [...previous, document]);
+          }}
           canManageSignature={Boolean(selectedPerson && (
             selectedPerson.id === ownPersonId
             || effectiveRoles.includes('admin')
@@ -1553,6 +1615,8 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
           onDocumentCreate={(person) => setDocumentCreationPersonId(person.id)}
           onDocumentOpen={handleOpenDocument}
           onDocumentRenew={(document) => setRenewalDocumentId(document.id)}
+          onDocumentEdit={(document) => setDocumentAction({ document, mode: 'edit' })}
+          onDocumentDelete={(document) => setDocumentAction({ document, mode: 'delete' })}
           onAnnualReviewDueDate={handleAnnualReviewDueDate}
           onDocumentSelect={toggleDocumentSelection}
           onDelete={handleDeletePerson}
@@ -1570,6 +1634,16 @@ export function HumanResourcesPage({ client, currentPersonId, roles }: HumanReso
           onClose={() => setIsCreateOpen(false)}
           onSubmit={handleCreatePerson}
           onUpdate={updateFormValue}
+        />
+      ) : null}
+
+      {documentAction && isManager ? (
+        <DocumentDetailsDialog
+          document={documentAction.document}
+          isSaving={isSaving}
+          mode={documentAction.mode}
+          onClose={() => setDocumentAction(null)}
+          onSubmit={handleDocumentAction}
         />
       ) : null}
 
@@ -1946,7 +2020,7 @@ function PersonRow({ isSelected, onSelect, person }: { isSelected: boolean; onSe
       onClick={onSelect}
       type="button"
     >
-      <span className="hr-person-mini-avatar">{getPersonInitials(person)}</span>
+      <PersonAvatar className="hr-person-mini-avatar" person={person} />
       <span className="hr-person-compact-name">
         <strong>{formatPersonName(person)}</strong>
       </span>
@@ -1965,9 +2039,11 @@ function PersonRow({ isSelected, onSelect, person }: { isSelected: boolean; onSe
 
 
 function PersonProfileCard({
+  initialSectionKey,
   canDelete,
   canEdit,
   canManageSignature,
+  onPhotoChanged,
   canEditAnnualReviewDueDate,
   canClose = true,
   client,
@@ -1978,6 +2054,8 @@ function PersonProfileCard({
   onDocumentCreate,
   onDocumentOpen,
   onDocumentRenew,
+  onDocumentEdit,
+  onDocumentDelete,
   onAnnualReviewDueDate,
   onDocumentSelect,
   onDelete,
@@ -1986,9 +2064,11 @@ function PersonProfileCard({
   selectedDocumentIds,
   visibleSectionKeys,
 }: {
+  initialSectionKey?: HrDetailsSectionKey;
   canDelete: boolean;
   canEdit: boolean;
   canManageSignature: boolean;
+  onPhotoChanged: PersonPhotoChanged;
   canEditAnnualReviewDueDate: boolean;
   canClose?: boolean;
   client: SupabaseClient;
@@ -1999,6 +2079,8 @@ function PersonProfileCard({
   onDocumentCreate: (person: PersonRecord) => void;
   onDocumentOpen: (document: HrDocumentRecord) => void;
   onDocumentRenew: (document: HrDocumentRecord) => void;
+  onDocumentEdit: (document: HrDocumentRecord) => void;
+  onDocumentDelete: (document: HrDocumentRecord) => void;
   onAnnualReviewDueDate: (document: HrDocumentRecord, dueOn: string) => Promise<void>;
   onDocumentSelect: (documentId: number) => void;
   onDelete: (person: PersonRecord) => Promise<void>;
@@ -2030,9 +2112,11 @@ function PersonProfileCard({
   return (
     <aside aria-label={`Fiche RH de ${formatPersonName(person)}`} className="hr-profile-card">
       <PersonDetailsPanel
+        initialSectionKey={initialSectionKey}
         canClose={canClose}
         canDelete={canDelete}
         canEdit={canEdit}
+        onPhotoChanged={onPhotoChanged}
         canManageSignature={canManageSignature}
         canEditAnnualReviewDueDate={canEditAnnualReviewDueDate}
         client={client}
@@ -2044,6 +2128,8 @@ function PersonProfileCard({
         onDocumentCreate={() => onDocumentCreate(person)}
         onDocumentOpen={onDocumentOpen}
         onDocumentRenew={onDocumentRenew}
+        onDocumentEdit={onDocumentEdit}
+        onDocumentDelete={onDocumentDelete}
         onAnnualReviewDueDate={onAnnualReviewDueDate}
         onDocumentSelect={onDocumentSelect}
         onDelete={() => onDelete(person)}
@@ -2143,6 +2229,122 @@ function groupHrDocumentTypeOptions(documentTypes: HrDocumentTypeOption[]) {
   ).map(([label, options]) => ({ label, options }));
 }
 
+function DocumentExpiryFields({ disabled, label, noExpiry, onNoExpiryChange, onChange, value }: {
+  disabled: boolean;
+  label: string;
+  noExpiry: boolean;
+  onNoExpiryChange: (value: boolean) => void;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <div className="hr-document-expiry-fields">
+      <label className="hr-edit-field">
+        {label}
+        <input disabled={disabled || noExpiry} onChange={(event) => onChange(event.target.value)}
+          required={!noExpiry} type="date" value={value} />
+      </label>
+      <label className="hr-document-no-expiry">
+        <input checked={noExpiry} disabled={disabled} onChange={(event) => onNoExpiryChange(event.target.checked)} type="checkbox" />
+        Sans date de péremption
+      </label>
+    </div>
+  );
+}
+
+function DocumentDetailsDialog({ document, isSaving, mode, onClose, onSubmit }: {
+  document: HrDocumentRecord;
+  isSaving: boolean;
+  mode: 'edit' | 'delete';
+  onClose: () => void;
+  onSubmit: (input?: UpdateHrDocumentInput) => Promise<void>;
+}) {
+  const [form, setForm] = useState(() => ({
+    title: document.title,
+    categoryKey: document.categoryKey,
+    issuedOn: document.issuedOn,
+    expiresOn: document.expiresOn,
+    notes: document.notes,
+  }));
+  const [noExpiry, setNoExpiry] = useState(!document.expiresOn);
+  const [medicalForm, setMedicalForm] = useState(() => buildMedicalDetailsForm(document));
+  const [formError, setFormError] = useState('');
+  const isDeleting = mode === 'delete';
+  const categories = Object.entries(HR_DOCUMENT_CATEGORY_LABELS).filter(([key]) => key !== 'annual_review');
+  if (!HR_DOCUMENT_CATEGORY_LABELS[document.categoryKey]) categories.push([document.categoryKey, document.categoryKey]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (isSaving) return;
+    setFormError('');
+    try {
+      await onSubmit(isDeleting ? undefined : { ...form, ...medicalDetailsInput(medicalForm) });
+    } catch (error) {
+      setFormError(error && typeof error === 'object' && 'message' in error
+        ? String(error.message)
+        : 'Impossible d’enregistrer les changements. Réessayez.');
+    }
+  }
+
+  return (
+    <div aria-label={`${isDeleting ? 'Supprimer' : 'Modifier'} ${getHrDocumentDisplayName(document)}`}
+      aria-modal="true" className="hr-dialog-backdrop" role="dialog">
+      <form className="hr-dialog hr-renewal-dialog" onSubmit={handleSubmit}>
+        <div className="hr-dialog-header">
+          <div>
+            <p>Documents</p>
+            <h2>{isDeleting ? 'Supprimer le document' : 'Modifier les informations'}</h2>
+            <span>{getHrDocumentDisplayName(document)}</span>
+          </div>
+          <button aria-label="Fermer" className="hr-icon-button" disabled={isSaving} onClick={onClose} type="button">
+            <X aria-hidden="true" size={18} />
+          </button>
+        </div>
+        <div className="hr-renewal-body">
+          {isDeleting ? (
+            <div className="hr-document-delete-explanation">
+              <p>Le document « {getHrDocumentDisplayName(document)} » sera retiré du dossier de {document.personName || 'ce collaborateur'}.</p>
+              <p>{!document.drivePath && document.storageBucket === 'hr-documents' && document.storagePath
+                ? 'Le fichier sera également supprimé. Cette action est définitive.'
+                : 'Seul le lien dans BBTM sera supprimé. Le fichier d’origine restera sur son espace de stockage.'}</p>
+            </div>
+          ) : (
+            <>
+              <label className="hr-edit-field">Nom du document
+                <input disabled={isSaving} onChange={(event) => setForm({ ...form, title: event.target.value })} required value={form.title} />
+              </label>
+              <label className="hr-edit-field">Catégorie
+                <select disabled={isSaving} onChange={(event) => setForm({ ...form, categoryKey: event.target.value })} value={form.categoryKey}>
+                  {categories.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+              </label>
+              <label className="hr-edit-field">Date de délivrance
+                <input disabled={isSaving} onChange={(event) => setForm({ ...form, issuedOn: event.target.value })} type="date" value={form.issuedOn} />
+              </label>
+              <DocumentExpiryFields disabled={isSaving} label="Date de péremption" noExpiry={noExpiry}
+                onNoExpiryChange={(value) => { setNoExpiry(value); if (value) setForm({ ...form, expiresOn: '' }); }}
+                onChange={(value) => setForm({ ...form, expiresOn: value })} value={form.expiresOn} />
+              <label className="hr-edit-field">Notes
+                <textarea disabled={isSaving} onChange={(event) => setForm({ ...form, notes: event.target.value })} rows={3} value={form.notes} />
+              </label>
+              {form.categoryKey === 'medical_visit' ? (
+                <MedicalOptionsFields disabled={isSaving} idPrefix={`edit-document-${document.id}`} onChange={setMedicalForm} value={medicalForm} />
+              ) : null}
+            </>
+          )}
+          {formError ? <p className="form-error" role="alert">{formError}</p> : null}
+        </div>
+        <footer className="hr-dialog-footer">
+          <button disabled={isSaving} onClick={onClose} type="button">Annuler</button>
+          <button className={isDeleting ? 'hr-document-delete-confirm' : undefined} disabled={isSaving} type="submit">
+            {isSaving ? 'Enregistrement…' : isDeleting ? 'Supprimer le document' : 'Enregistrer'}
+          </button>
+        </footer>
+      </form>
+    </div>
+  );
+}
+
 function DocumentCreationDialog({
   documentTypes,
   isSaving,
@@ -2166,6 +2368,7 @@ function DocumentCreationDialog({
 }) {
   const [selectedDocumentTypeId, setSelectedDocumentTypeId] = useState(() => String(documentTypes[0]?.id || ''));
   const [dueDate, setDueDate] = useState('');
+  const [noExpiry, setNoExpiry] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [formError, setFormError] = useState('');
   const [medicalForm, setMedicalForm] = useState<MedicalDetailsForm>({ condition: '', restriction: '', unfit: false });
@@ -2186,8 +2389,8 @@ function DocumentCreationDialog({
     event.preventDefault();
     setFormError('');
 
-    if (!selectedDocumentType || !file || !dueDate || !generatedFileName) {
-      setFormError("Selectionnez le type de document, la date d'echeance et le fichier.");
+    if (!selectedDocumentType || !file || (!dueDate && !noExpiry) || !generatedFileName) {
+      setFormError('Choisissez un document, un fichier et une échéance, ou cochez « Sans date de péremption ».');
       return;
     }
 
@@ -2243,13 +2446,13 @@ function DocumentCreationDialog({
               ))}
             </select>
           </label>
-          <label className="hr-edit-field">
-            Date d'echeance
-            <input disabled={isSaving} onChange={(event) => setDueDate(event.target.value)} required type="date" value={dueDate} />
-          </label>
+          <DocumentExpiryFields disabled={isSaving} label="Date d'echeance" noExpiry={noExpiry}
+            onNoExpiryChange={(value) => { setNoExpiry(value); if (value) setDueDate(''); }}
+            onChange={setDueDate} value={dueDate} />
           <label className="hr-edit-field">
             Fichier
             <input
+              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.txt"
               disabled={isSaving}
               onChange={(event) => setFile(event.currentTarget.files?.[0] || null)}
               required
@@ -2281,7 +2484,7 @@ function DocumentCreationDialog({
           <button disabled={isSaving} onClick={onClose} type="button">
             Annuler
           </button>
-          <button disabled={isSaving || !selectedDocumentType || !file || !dueDate} type="submit">
+          <button disabled={isSaving || !selectedDocumentType || !file || (!dueDate && !noExpiry)} type="submit">
             <Upload aria-hidden="true" size={16} />
             {isSaving ? 'Chargement...' : 'Creer le document'}
           </button>
@@ -2313,6 +2516,7 @@ function DocumentRenewalDialog({
   person: PersonRecord;
 }) {
   const [dueDate, setDueDate] = useState('');
+  const [noExpiry, setNoExpiry] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [formError, setFormError] = useState('');
   const [medicalForm, setMedicalForm] = useState<MedicalDetailsForm>(() => buildMedicalDetailsForm(document));
@@ -2323,8 +2527,8 @@ function DocumentRenewalDialog({
     event.preventDefault();
     setFormError('');
 
-    if (!file || !dueDate || !generatedFileName) {
-      setFormError('Depose le nouveau document et renseigne la nouvelle date d echeance.');
+    if (!file || (!dueDate && !noExpiry) || !generatedFileName) {
+      setFormError('Ajoutez le nouveau fichier et une échéance, ou cochez « Sans date de péremption ».');
       return;
     }
 
@@ -2364,15 +2568,15 @@ function DocumentRenewalDialog({
           <label className="hr-edit-field">
             Nouveau document
             <input
+              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.txt"
               disabled={isSaving}
               onChange={(event) => setFile(event.currentTarget.files?.[0] || null)}
               type="file"
             />
           </label>
-          <label className="hr-edit-field">
-            Nouvelle date d'echeance
-            <input disabled={isSaving} onChange={(event) => setDueDate(event.target.value)} type="date" value={dueDate} />
-          </label>
+          <DocumentExpiryFields disabled={isSaving} label="Nouvelle date d'echeance" noExpiry={noExpiry}
+            onNoExpiryChange={(value) => { setNoExpiry(value); if (value) setDueDate(''); }}
+            onChange={setDueDate} value={dueDate} />
           <label className="hr-edit-field">
             Nom genere
             <input readOnly value={generatedFileName} />
@@ -2660,10 +2864,12 @@ function CreatePersonDialog({
 }
 
 function PersonDetailsPanel({
+  initialSectionKey,
   canClose,
   canDelete,
   canEdit,
   canManageSignature,
+  onPhotoChanged,
   canEditAnnualReviewDueDate,
   client,
   documents,
@@ -2674,6 +2880,8 @@ function PersonDetailsPanel({
   onDocumentCreate,
   onDocumentOpen,
   onDocumentRenew,
+  onDocumentEdit,
+  onDocumentDelete,
   onAnnualReviewDueDate,
   onDocumentSelect,
   onDelete,
@@ -2684,10 +2892,12 @@ function PersonDetailsPanel({
   urgentCount,
   visibleSectionKeys,
 }: {
+  initialSectionKey?: HrDetailsSectionKey;
   canClose: boolean;
   canDelete: boolean;
   canEdit: boolean;
   canManageSignature: boolean;
+  onPhotoChanged: PersonPhotoChanged;
   canEditAnnualReviewDueDate: boolean;
   client: SupabaseClient;
   documents: HrDocumentRecord[];
@@ -2698,6 +2908,8 @@ function PersonDetailsPanel({
   onDocumentCreate: () => void;
   onDocumentOpen: (document: HrDocumentRecord) => void;
   onDocumentRenew: (document: HrDocumentRecord) => void;
+  onDocumentEdit: (document: HrDocumentRecord) => void;
+  onDocumentDelete: (document: HrDocumentRecord) => void;
   onAnnualReviewDueDate: (document: HrDocumentRecord, dueOn: string) => Promise<void>;
   onDocumentSelect: (documentId: number) => void;
   onDelete: () => Promise<void>;
@@ -2728,10 +2940,10 @@ function PersonDetailsPanel({
 
   useEffect(() => {
     setForm(buildPersonDetailsForm(person));
-    setActiveSectionKey(availableSections[0]?.key || 'identity');
+    setActiveSectionKey(initialSectionKey && visibleSectionKeys.has(initialSectionKey) ? initialSectionKey : availableSections[0]?.key || 'identity');
     setIsEditing(false);
     setIsActionsOpen(false);
-  }, [person]);
+  }, [person, initialSectionKey]);
 
   useEffect(() => {
     if (!visibleSectionKeys.has(activeSectionKey) && availableSections[0]) {
@@ -2783,6 +2995,7 @@ function PersonDetailsPanel({
       case 'identity':
         return (
           <section className="hr-profile-identity-section">
+            {isManager && <PersonPhotoField key={person.id} client={client} person={person} onChanged={onPhotoChanged} />}
             <div className="hr-profile-field-group is-card">
               <h4>Identification interne</h4>
               <DetailsGrid isEditing={isEditing}>
@@ -3085,6 +3298,8 @@ function PersonDetailsPanel({
             onDocumentCreate={onDocumentCreate}
             onDocumentOpen={onDocumentOpen}
             onDocumentRenew={onDocumentRenew}
+            onDocumentEdit={onDocumentEdit}
+            onDocumentDelete={onDocumentDelete}
             onDueDateChange={onAnnualReviewDueDate}
             onDocumentSelect={onDocumentSelect}
             selectedDocumentIds={selectedDocumentIds}
@@ -3100,6 +3315,8 @@ function PersonDetailsPanel({
             onDocumentCreate={onDocumentCreate}
             onDocumentOpen={onDocumentOpen}
             onDocumentRenew={onDocumentRenew}
+            onDocumentEdit={onDocumentEdit}
+            onDocumentDelete={onDocumentDelete}
             onDocumentSelect={onDocumentSelect}
             selectedDocumentIds={selectedDocumentIds}
           />
@@ -3112,13 +3329,10 @@ function PersonDetailsPanel({
   return (
     <form className="hr-profile-editor" onSubmit={handleSubmit}>
       <header className="hr-profile-header">
-        <span className="hr-profile-avatar">{getPersonInitials(person)}</span>
+        <PersonAvatar className="hr-profile-avatar" person={person} />
         <div className="hr-profile-identity">
           <div className="hr-profile-name-row">
             <h2>{formatPersonName(person)}</h2>
-            <span className={person.active ? 'hr-profile-active' : 'hr-profile-inactive'}>
-              {person.active ? 'Actif' : 'Inactif'}
-            </span>
           </div>
           <p>
             {normalizeHrFunctionLabel(person.functionLabel) || person.gradeLabel || 'Fonction non renseignée'}
@@ -3248,6 +3462,8 @@ function ProfileDocumentsSection({
   onDocumentCreate,
   onDocumentOpen,
   onDocumentRenew,
+  onDocumentEdit,
+  onDocumentDelete,
   onDueDateChange,
   onDocumentSelect,
   selectedDocumentIds,
@@ -3260,6 +3476,8 @@ function ProfileDocumentsSection({
   onDocumentCreate: () => void;
   onDocumentOpen: (document: HrDocumentRecord) => void;
   onDocumentRenew: (document: HrDocumentRecord) => void;
+  onDocumentEdit: (document: HrDocumentRecord) => void;
+  onDocumentDelete: (document: HrDocumentRecord) => void;
   onDueDateChange?: (document: HrDocumentRecord, dueOn: string) => Promise<void>;
   onDocumentSelect: (documentId: number) => void;
   selectedDocumentIds: Set<number>;
@@ -3352,6 +3570,19 @@ function ProfileDocumentsSection({
                           </button>
                         ) : null}
                       </div>
+                      {isManager ? (
+                        <div className="hr-document-management-actions">
+                          <button aria-label={`Modifier ${getHrDocumentDisplayName(document)}`} disabled={isSaving}
+                            onClick={() => onDocumentEdit(document)} title="Modifier les informations" type="button">
+                            <Pencil aria-hidden="true" size={15} />
+                            <span>Modifier</span>
+                          </button>
+                          <button aria-label={`Supprimer ${getHrDocumentDisplayName(document)}`} disabled={isSaving}
+                            onClick={() => onDocumentDelete(document)} title="Supprimer le document" type="button">
+                            <Trash2 aria-hidden="true" size={15} />
+                          </button>
+                        </div>
+                      ) : null}
                     </article>
                   ))}
                 </div>

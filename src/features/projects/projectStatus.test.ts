@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { normalizeProjectStatus, PROJECT_STATUSES } from './projectStatus';
 
 describe('project statuses', () => {
-  it('exposes exactly the four canonical business statuses', () => {
-    expect(PROJECT_STATUSES).toEqual(['Non validé', 'Validé', 'Stand-by météo', 'Facturé']);
+  it('exposes the draft and canonical business statuses', () => {
+    expect(PROJECT_STATUSES).toEqual(['Brouillon', 'Non validé', 'Validé', 'Stand-by météo', 'Facturé']);
   });
 
   it.each([
+    [' Brouillon ', 'Brouillon'],
     [null, 'Non validé'],
     ['A planifier', 'Non validé'],
     ['Contrat Signé', 'Non validé'],

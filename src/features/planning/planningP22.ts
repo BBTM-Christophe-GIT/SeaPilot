@@ -448,7 +448,7 @@ function scenarioAbsence(
     && assignment.confirmationStatus !== 'cancelled'
     && rangesOverlap(assignment.startsOn, assignment.endsOn, input.startsOn, input.endsOn));
   const simulatedAbsence: PlanningAbsenceRecord = {
-    id: -220_001, personId: input.personId!, absenceType: 'unavailability',
+    id: -220_001, personId: input.personId!, absenceType: 'leave',
     startsAt: `${input.startsOn}T00:00:00.000Z`, endsAt: `${addPlanningDays(input.endsOn, 1)}T00:00:00.000Z`,
     startsOn: input.startsOn, endsOn: input.endsOn, reason: 'Absence simulée P2.2', status: 'approved',
     requestedBy: 'simulation', reviewedBy: 'simulation', reviewedAt: '', reviewComment: '', createdAt: '', updatedAt: '',

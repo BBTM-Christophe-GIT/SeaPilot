@@ -1,0 +1,77 @@
+# Notes de frais — v3.45.0
+
+## Formulaire mobile et véhicule par défaut
+
+La proposition 2 remplace la disposition horizontale par des sections repliables : **Informations**, **Mon véhicule**, **Déplacements**, **Compléments** (ou **Montant et paiement** pour une dépense). Les résumés restent visibles lorsque les sections sont fermées. Sur smartphone, la fenêtre occupe la hauteur disponible ; seul le corps défile, le total et l'action d'émission restent visibles. Les contrôles ont une hauteur minimale de 44 px. Un champ obligatoire masqué provoque l'ouverture de sa section et reçoit le focus ; les saisies et justificatifs sont conservés pendant le repli.
+
+Le bouton **Mes véhicules** de la barre de menu ouvre le carnet personnel : ajouter, modifier, retirer un véhicule et choisir **Utiliser par défaut**. Il est possible de désactiver cette présélection. Le choix appartient au compte connecté dans sa société active, indépendamment de l'émetteur indiqué sur la note. Une nouvelle note kilométrique reprend le modèle, la puissance fiscale et le carburant du véhicule choisi. Un chargement tardif ne remplace pas une saisie déjà commencée. Modifier ou retirer un véhicule ne change aucune note déjà émise.
+
+Migration `20260921084003_expense_default_vehicle.sql` appliquée le 21 septembre 2026 avant le frontend : colonne `is_default`, index unique par compte/société et RPC transactionnel `set_expense_default_vehicle`. Le changement valide la propriété du véhicule avant de remplacer le choix précédent ; la RLS existante reste appliquée. Un véhicule d'un autre compte ou d'une autre société est refusé sans effacer le choix précédent.
+
+Validation : 59 tests ciblés frontend/service d'envoi, 73 assertions SQL transactionnelles sur les cinq profils réels et deux sociétés, lint et compilation production. Recette navigateur à 320 × 740, 390 × 844 et 1440 × 1000, changement de préférence puis nouvelle note, calcul avec péages, validation d'une section repliée et absence de débordement horizontal. Voir [la recette visuelle](../../design-qa.md). Aucun faux document comptable n'a été émis.
+
+## Émetteurs en poste
+
+Les listes d'émetteurs des formulaires Dépense/Indemnités kilométriques et du filtre d'historique proposent uniquement les personnes actuellement en poste : fiche active, date d'entrée renseignée et atteinte, départ absent ou strictement après aujourd'hui (heure de Paris). Le RPC conserve la présélection du compte connecté et les restrictions de société et de profil. Les anciens collaborateurs restent présents sur leurs notes historiques, consultables et recherchables.
+
+Migration `20260921081145_expense_current_issuers.sql` appliquée avant le frontend le 21 septembre 2026. Elle remplace uniquement la fonction de lecture du répertoire ; elle ne modifie ni les fiches RH ni les notes. Les 55 assertions SQL couvrent les dates limites, les cinq profils réels, une deuxième société et les accès anonyme/inactif/module masqué. La matrice d'accès utilisée par les fixtures est annulée avec la transaction, sans modifier les réglages administrateur. Les 46 tests ciblés couvrent le module et l'envoi, notamment le filtre, la recherche historique et le départ d'une personne après actualisation.
+
+## Formulaires compacts et véhicules personnels
+
+- Depuis la version 3.45.0, les sections repliables remplacent la disposition horizontale introduite en 3.44.0. La fenêtre mesure au maximum 760 px sur ordinateur et occupe l'écran sur smartphone.
+- La description et les justificatifs sont regroupés dans Compléments. Les déplacements kilométriques s'affichent en blocs adaptés au mobile ; les règles NDF, les péages et les montants électriques restent inchangés.
+- Dans **Indemnités kilométriques → Mes véhicules**, chaque compte peut conserver plusieurs modèles avec puissance fiscale et carburant. **Nouveau véhicule / saisie ponctuelle** permet une nouvelle saisie ; **Enregistrer ce véhicule** la rend réutilisable dans les sessions suivantes. Sélectionner un véhicule préremplit la note. **Modifier** puis **Mettre à jour le véhicule** actualise le carnet ; le retrait est confirmé dans le formulaire.
+- Le carnet appartient au compte connecté dans sa société active, indépendamment du nom d'émetteur choisi sur la note. Aucun rôle, y compris Admin/Direction, ne consulte les véhicules des autres comptes. La saisie manuelle reste disponible si le chargement échoue.
+- Les informations du véhicule sont copiées dans le JSON de chaque note, sans clé étrangère vers le carnet. Modifier ou retirer un véhicule ne modifie donc jamais une note existante ni son PDF.
+
+Migration préalable : `20260917134330_expense_personal_vehicles.sql` (appliquée à SeaPilot le 17 septembre 2026). Aucun changement de l'Edge Function d'envoi ni des anciennes tables n'est nécessaire. Un retour arrière du frontend peut conserver cette table et ses données.
+
+Validation : 34 tests du module (formulaire, véhicules, profils, calculs, PDF et requêtes) ; 46 assertions SQL dans `supabase/tests/expense_personal_vehicles_test.sql` avec véritables rôles Admin/Direction/Armement/Capitaine/Marin, deuxième société, propriété immuable, accès anonyme/inactif et conservation d'une note émise. Les fixtures SQL sont intégralement annulées. Aucun faux document n'est envoyé à la comptabilité.
+
+## Parcours
+
+Le module **Achats → Notes de frais** (`/modules/expenseNotes`) reprend NDF : dépenses, indemnités kilométriques, pièces JPG/PNG/WebP/PDF et dossier PDF réunissant les justificatifs puis le récapitulatif.
+
+- Marin, Capitaine et Armement consultent les notes créées depuis leur compte. Le nom d'émetteur déclaré est modifiable sans modifier le compte créateur utilisé pour les droits d'accès.
+- Admin et Direction consultent toutes les notes émises de leur société active, regroupées par navire puis par émetteur, avec filtres cumulables navire/personne et recherche.
+- « Hors navire » couvre l'armement, le chantier et les autres dépenses à terre.
+- L'émetteur est présélectionné à partir du personnel lié au compte ; à défaut, le nom du compte est proposé en saisie libre. Le navire vient de l'affectation actuelle lorsqu'elle est disponible. Les deux champs sont modifiables.
+- Le bouton **Paramétrage**, réservé à Admin, permet d'ajouter, renommer et retirer les moyens de paiement et de sélectionner la carte proposée par défaut. Les listes de navires et de personnes proviennent des référentiels SeaPilot. Les libellés historiques sont conservés sur chaque note.
+- La règle métier du projet NDF est conservée : 0,606 €/km, maximum 100 € par déplacement thermique/hybride, montant saisi pour l'électrique, plus péages. Il ne s'agit pas d'une présentation du barème fiscal légal. Le serveur recalcule le total.
+
+## Données et droits
+
+Migration : `20260917092601_expense_notes.sql`.
+
+`expense_notes` conserve le créateur immuable (`created_by`, `creator_name`), l'émetteur choisi (`issuer_person_id`, `issuer_name`), le navire, les montants et les détails kilométriques. La RLS impose société active + adhésion active + compte créateur ; seuls Admin/Direction ont une lecture élargie aux notes émises de cette société. Le changement de libellé d'émetteur n'étend jamais les accès.
+
+`expense_note_settings` est lisible dans la société et modifiable uniquement par Admin. Le RPC `expense_note_people` expose seulement les identifiants et noms des personnes en poste dans la société pour le choix de l'émetteur, sans ouvrir les dossiers RH. Son indicateur `is_current` désigne la personne liée au compte connecté, et non son statut d'emploi.
+
+Le bucket privé `expense-note-pdfs` suit les mêmes règles de lecture. Un PDF peut être téléversé uniquement sur le chemin calculé par le serveur pour une note en préparation du compte connecté. Les documents émis ne peuvent être remplacés ni supprimés par les utilisateurs. Le client ne peut modifier ni le créateur, ni les montants enregistrés, ni l'état de livraison.
+
+L'émission se fait en trois étapes : préparation en base, création/téléversement du PDF, puis passage à `issued` après contrôle de l'objet Storage. Le formulaire conserve son UUID pendant les reprises réseau pour éviter une double émission. Les préparations interrompues restent invisibles dans l'historique des notes émises ; elles peuvent être nettoyées ultérieurement après vérification. Aucune ancienne note n'est importée : le projet NDF d'origine ne contient pas de base d'historique.
+
+## Envoi comptable
+
+Déployer `supabase/functions/expense-note-send` avec validation JWT activée et son `deno.json`. La fonction vérifie le compte puis lit la note/PDF via les règles RLS du demandeur. La clé de service n'est utilisée qu'après cette vérification pour verrouiller et enregistrer le résultat de transmission.
+
+Le relais existant, fourni par le propriétaire, est conservé : `https://bbtm-ndfv2.netlify.app/.netlify/functions/send`, projet Netlify `12a15b20-b760-4e12-b076-505b123cd351` (`bbtm-ndfv2`). Il conserve les identifiants Gmail et le destinataire Inexweb de NDF. Aucun secret Gmail n'est copié dans SeaPilot et aucun destinataire/URL arbitraire n'est accepté du navigateur. **Ce site Netlify doit rester actif pour l'envoi.**
+
+Limites : 20 justificatifs, 15 Mo par fichier source, 50 Mo cumulés avant conversion, et **4 Mo pour le PDF final**, compatible avec la limite de transport JSON/base64 du relais NDF. Les photos sont orientées par le décodeur navigateur, réduites à 1 600 pixels et compressées.
+
+États : `pending`, `sending`, `sent`, `failed`, `unknown`. Une erreur d'envoi ne supprime pas une note émise. Les refus certains avant envoi permettent une reprise ; un délai dépassé ou une erreur SMTP ambiguë impose une vérification de réception. Le verrou d'envoi empêche les transmissions concurrentes. Un résultat `unknown` ou un verrou resté `sending` doit être rapproché du journal Netlify et d'Inexweb avant correction administrative de son statut, afin de ne pas créer une double pièce comptable.
+
+## Vérification
+
+- Tests React avec fixtures distinctes Admin, Direction, Armement, Capitaine et Marin ; aucune vue simulée de la session de l'administrateur ne sert de preuve de droits.
+- `supabase/tests/expense_notes_access_test.sql` : transaction annulée en fin de test ; vérifie les cinq rôles, une deuxième société, les PDF privés, l'émetteur modifiable, le créateur immuable, le paramétrage et les calculs serveur.
+- `supabase/tests/expense_note_send.test.ts` : tests du service d'envoi avec relais simulé (authentification, RLS, doublons, succès, refus et résultats ambigus). Ils restent avec le serveur, exclu de l'artefact Vercel par `.vercelignore` ; ils sont exécutés par Vitest en local et en CI.
+- Tests PDF réels pour l'ordre des pages, les fichiers invalides et les descriptions longues.
+- Vérification visuelle sur ordinateur et mobile ; la préversion n'enregistre ni ne transmet de note.
+- La réception d'un premier document réel dans Inexweb reste à constater en exploitation. Les tests automatisés n'envoient pas de faux justificatif à la comptabilité.
+
+## Déploiement et retour arrière
+
+Appliquer la migration, déployer l'Edge Function, puis livrer le frontend. Vérifier le code HTTP 401 de la fonction sans session, l'ouverture du module authentifié et les permissions de navigation. Le contrôle Supabase de sécurité ne signale pas d'anomalie sur les objets de ce module.
+
+Un retour arrière frontend est compatible avec les tables ajoutées. Conserver les données et les PDF émis ; masquer le module par les permissions de navigation si nécessaire.

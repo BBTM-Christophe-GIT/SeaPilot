@@ -1,6 +1,6 @@
 begin;
 
-select plan(3);
+select plan(5);
 
 select ok(
   public.is_valid_supplytime_data(
@@ -9,6 +9,8 @@ select ok(
       "commercial_charter_hire_service_description":"Mise à disposition du navire et de son équipage",
       "commercial_mobilisation_service_description":"Préparation et transit vers le port de livraison",
       "commercial_demobilisation_service_description":"Transit retour et remise en configuration",
+      "commercial_conditions_mode":"free_text",
+      "commercial_conditions_description":"<p><strong>Conditions</strong> négociées avec le client.</p>",
       "towed_conditions":"Bonne condition de partance",
       "bareboat_contract_place":"Cherbourg-En-Cotentin",
       "p144_box34_additional_clauses":"Clause particulière",
@@ -26,6 +28,16 @@ select ok(
 select ok(
   not public.is_valid_supplytime_data('{"bareboat_contract_place":{"nested":true}}'::jsonb),
   'nested project contract values remain rejected'
+);
+
+select ok(
+  not public.is_valid_supplytime_data('{"commercial_conditions_mode":"unsupported"}'::jsonb),
+  'unknown commercial conditions modes remain rejected'
+);
+
+select ok(
+  not public.is_valid_supplytime_data('{"commercial_conditions_description":{"html":"nested"}}'::jsonb),
+  'commercial conditions remain scalar text'
 );
 
 select * from finish();

@@ -1,8 +1,9 @@
-export const PROJECT_STATUSES = ['Non validé', 'Validé', 'Stand-by météo', 'Facturé'] as const;
+export const PROJECT_STATUSES = ['Brouillon', 'Non validé', 'Validé', 'Stand-by météo', 'Facturé'] as const;
 
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
 const STATUS_ALIASES = new Map<string, ProjectStatus>([
+  ['brouillon', 'Brouillon'],
   ['', 'Non validé'],
   ['a planifier', 'Non validé'],
   ['à planifier', 'Non validé'],

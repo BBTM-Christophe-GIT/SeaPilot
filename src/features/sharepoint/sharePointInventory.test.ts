@@ -8,7 +8,7 @@ import {
 } from './sharePointInventory';
 
 describe('SharePoint migration inventory', () => {
-  it('registers the confirmed QHSE document libraries needed by SeaPilot imports', () => {
+  it('registers the confirmed QHSE document libraries needed by BBTM imports', () => {
     expect(SHAREPOINT_MIGRATION_SOURCES).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -36,7 +36,7 @@ describe('SharePoint migration inventory', () => {
     );
   });
 
-  it('registers critical SharePoint lists with their target SeaPilot tables', () => {
+  it('registers critical SharePoint lists with their target BBTM tables', () => {
     expect(getSharePointSourceByKey('list-rh-personnel-bbtm')).toEqual(
       expect.objectContaining({
         listId: '3b6f504c-908a-4d3e-8319-a595acb54efe',

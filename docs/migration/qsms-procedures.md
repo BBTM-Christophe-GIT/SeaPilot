@@ -4,7 +4,7 @@
 
 Le module SharePoint `Portail-BBTM---Armement.aspx` expose 127 documents de travail et 64 PDF publiés, classés dans les chapitres ISM 01 à 12 et dans « Documents non contrôlés ». Ce décompte provient directement des deux listes SharePoint REST. La recherche Microsoft Graph n’en retournait que 125 et 45 : elle omettait notamment un modèle Word `.dotx`, un fichier `.html` et 19 PDF. L’interface comprend la recherche, les filtres Projet/Navire, la sélection, la création, la modification des métadonnées, le téléchargement, la suppression et la publication d’un PDF dans la bibliothèque `QSMS - PDF`.
 
-Les métadonnées reprises dans SeaPilot sont : catégorie, date de diffusion, description, exigence réglementaire, chapitre ISM, navire, numéro, projet, restrictions, revue annuelle, statut d’approbation, thème, titre, type de document, veille passerelle et version. Le projet provient exclusivement du lookup multiple SharePoint `Projet_LK` ; l’ancienne colonne de choix `Projet` n’est pas utilisée.
+Les métadonnées reprises dans SeaPilot sont : catégorie, date de diffusion, description, exigence réglementaire, chapitre ISM, navire, numéro, projet, restrictions, revue annuelle, statut, thème, titre, type de document, veille passerelle et version. Le champ historique redondant « Statut d’approbation » a été retiré de l’interface, des imports et du contrat applicatif. Deux colonnes nullable restent provisoirement en base, sans être lues ni écrites, pour préserver la compatibilité du client antérieur à la fusion. Le projet provient exclusivement du lookup multiple SharePoint `Projet_LK` ; l’ancienne colonne de choix `Projet` n’est pas utilisée.
 
 La fiche information SeaPilot expose uniquement les métadonnées encore utiles à l’exploitation. Les colonnes historiques `type de document`, `catégorie`, `restrictions`, `notes` et `veille passerelle` restent conservées en base pour la traçabilité de la migration, mais ne sont plus éditables dans cette fenêtre. La référence affichée et enregistrée est calculée sous la forme `Thème Numéro-Version`, puis présentée avec le titre sous la forme `Code - Titre`.
 
@@ -33,7 +33,9 @@ Les sources et les PDF sont conservés dans le bucket privé Supabase Storage `p
 
 Les URLs signées ont une durée de cinq minutes. Les règles RLS protègent à la fois les tables et `storage.objects`. La publication crée un instantané des métadonnées afin qu’un PDF diffusé reste traçable indépendamment des modifications ultérieures de la source.
 
-Un clic sur le nom d'une source Word, Excel ou PowerPoint invoque désormais l'application Microsoft 365 installée sur le poste en mode lecture, au moyen du schéma URI bureau correspondant. Le bouton Télécharger reste disponible pour récupérer une copie locale. Les autres formats conservent leur ouverture directe par URL signée.
+Un clic sur le nom d'une source Word, Excel ou PowerPoint invoque l'application Microsoft 365 installée sur le poste en mode lecture, au moyen du schéma URI bureau correspondant. Après modification locale, la fiche « Modifier » accepte le fichier enregistré et remplace directement l'objet existant au même chemin Supabase avec `upsert` : aucune suppression manuelle n'est nécessaire. Le bouton Télécharger reste disponible pour récupérer une copie locale. Les autres formats conservent leur ouverture directe par URL signée.
+
+Supabase Storage reste un stockage d'objets et ne fournit ni WebDAV ni hôte WOPI. Word, Excel ou PowerPoint ne peuvent donc pas réécrire directement une URL signée Supabase au moment du raccourci Enregistrer. Un vrai cycle « ouvrir dans Office puis Ctrl+S vers le cloud » sans étape de sélection du fichier nécessiterait un éditeur intégré comme ONLYOFFICE ou Collabora et son service de callback. Le flux SeaPilot retenu supprime déjà l'étape dangereuse de suppression : une seule validation dans la fiche remplace la source.
 
 Les en-têtes de chapitres reprennent les pictogrammes du portail QSMS d'origine. Les documents classés explicitement dans « Documents non contrôlés » et ceux dont le chapitre ISM n'est pas renseigné sont présentés dans deux groupes distincts.
 
@@ -55,11 +57,13 @@ Le bucket accepte jusqu’à 100 Mio afin de préparer la migration des sources 
 
 Les formats historiques `.dotx` et `.html` sont autorisés dans le bucket afin de conserver les deux sources que la recherche Graph ignorait. Ils ne changent pas la règle de diffusion : seuls les PDF publiés sont accessibles aux profils opérationnels.
 
-La conversion Office vers PDF n’est pas exécutée dans le navigateur : le responsable sélectionne le PDF approuvé au moment de cliquer sur « Publier PDF ». Cela évite une conversion non maîtrisée et conserve la version signée ou validée par QHSE.
+La conversion Office vers PDF n’est pas exécutée dans le navigateur : le responsable sélectionne le PDF approuvé dans la fenêtre de confirmation « Publier PDF ». Le bouton « Oui, publier » crée la diffusion, passe le statut à `Publié` et inscrit la date du jour (fuseau Europe/Paris) dans « Date diffusion ». Cela évite une conversion non maîtrisée et conserve la version signée ou validée par QHSE.
+
+Quand un thème est choisi, SeaPilot propose le premier numéro entier directement supérieur au plus grand numéro principal du thème. La proposition reste modifiable et accepte les sous-numéros pointés, par exemple `04.1`. Un index unique normalisé en base interdit toute nouvelle collision `Thème + Numéro`. Les doublons historiques ont reçu des suffixes pointés déterministes avant l'activation de cet index.
 
 ## Déploiement
 
-1. Appliquer les migrations `20260902051953_qsms_procedure_document_workflow.sql`, `20260902113123_increase_procedure_document_file_limit.sql` et `20260902144500_allow_legacy_procedure_document_mime.sql`.
+1. Appliquer les migrations `20260902051953_qsms_procedure_document_workflow.sql`, `20260902113123_increase_procedure_document_file_limit.sql`, `20260902144500_allow_legacy_procedure_document_mime.sql`, `20260908044216_procedure_publishing_workflow.sql` et `20260908054709_preserve_procedure_approval_status_compatibility.sql`.
 2. Exporter puis importer les métadonnées SharePoint avec les sources `library-qsms` et `library-qsms-pdf`.
 3. Résoudre les liens source/publication avec `--resolve-published-procedure-links`.
 4. Contrôler le plan de copie des fichiers :
@@ -81,12 +85,14 @@ Le script ne journalise aucun secret, refuse les publications dont le contenu n�
 
 ## Contrôles de recette
 
-- Administration et Direction voient l’onglet « Documents de travail », peuvent ajouter/remplacer une source et publier un PDF.
+- Administration et Direction voient l’onglet « Documents de travail », peuvent ajouter/remplacer une source au même chemin Storage et publier un PDF après confirmation.
 - Armement, Capitaine et Marin ne déclenchent aucune requête vers `public.procedures` et ne voient que `public.published_procedures`.
+- Capitaine et Marin ne peuvent lire ni les métadonnées ni l'objet Storage d'une publication qui n'est pas simultanément au statut `published`, au format MIME `application/pdf` et nommée avec l'extension `.pdf`.
 - Un téléchargement passe par une URL Storage signée ; aucun bucket n’est public.
 - Un clic sur une source Office lance Word, Excel ou PowerPoint bureau en lecture, sans passage par Office Online.
 - Les filtres par texte, projet, navire et chapitre ISM sont cohérents avec les métadonnées importées.
 - La fiche information propose une recherche dans les projets actifs et recalcule immédiatement la référence `Thème Numéro-Version`.
+- La sélection d'un thème propose le prochain numéro et la base refuse un doublon `Thème + Numéro`, y compris en cas de concurrence entre deux utilisateurs.
 - Une revue annuelle apparaît dans la bibliothèque et sur l’accueil dès J-90 ; le 29 février est reporté au 28 février l’année suivante si nécessaire.
 - Un PDF retiré disparaît immédiatement de la vue opérationnelle.
 

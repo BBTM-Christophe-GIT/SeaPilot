@@ -34,4 +34,20 @@ describe('fleetQueries', () => {
     await expect(saveFleetVessel(client, { ...EMPTY_INPUT, name: ' ' })).rejects.toThrow('au moins deux caractères');
     expect(client.from).not.toHaveBeenCalled();
   });
+
+  it('keeps existing photographs and additional illustrations independently reusable', async () => {
+    const secondOrder = vi.fn().mockResolvedValue({ data: [{
+      id: 1, company_id: 1, name: 'GOURY', acronym: 'GRY', active: true,
+      photo_url: '/vessels/goury.jpg', photo_storage_bucket: null, photo_storage_path: null,
+      illustration_storage_bucket: 'fleet-media', illustration_storage_path: '1/1/illustration.png',
+      illustration_thumbnail_url: '/vessels/bbtm/goury-small.webp',
+    }], error: null });
+    const client = { from: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: secondOrder }) }) }) } as unknown as SupabaseClient;
+    const [vessel] = await fetchFleetVessels(client);
+    expect(vessel).toMatchObject({
+      photoUrl: '/vessels/goury.jpg', photoStoragePath: '',
+      illustrationStorageBucket: 'fleet-media', illustrationStoragePath: '1/1/illustration.png',
+      illustrationThumbnailUrl: '/vessels/bbtm/goury-small.webp',
+    });
+  });
 });

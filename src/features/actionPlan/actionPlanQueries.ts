@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { compareFleetAssets, fleetDisplayName, type FleetAssetKind } from '../fleet/fleetDisplay';
 
 const ACTION_ITEM_SELECT = [
   'id', 'company_id', 'project_id', 'project_sharepoint_item_id', 'project_code', 'project_title',
@@ -115,6 +116,9 @@ export interface ActionTypeCatalogRecord {
 export interface VesselOption {
   id: number;
   name: string;
+  assetKind?: FleetAssetKind;
+  lengthOverall?: string;
+  illustrationThumbnailUrl?: string;
 }
 
 export interface PersonOption {
@@ -157,6 +161,7 @@ export interface ActionPlanSettings {
 
 export interface ActionPlanData {
   actions: ActionItemRecord[];
+  assignedVesselIds?: number[];
   documents: ActionDocumentRecord[];
   actionTypes: ActionTypeCatalogRecord[];
   vessels: VesselOption[];
@@ -478,9 +483,12 @@ async function fetchActionTypes(client: SupabaseClient): Promise<ActionTypeCatal
 }
 
 async function fetchVessels(client: SupabaseClient): Promise<VesselOption[]> {
-  const { data, error } = await client.from('vessels').select('id,name').eq('active', true).order('name', { ascending: true });
+  const { data, error } = await client.from('vessels').select('id,name,asset_kind,length_overall,illustration_thumbnail_url').eq('active', true).order('name', { ascending: true });
   if (error) throw error;
-  return (data || []).map((row) => ({ id: Number(row.id), name: String(row.name || '') })).filter((row) => row.name);
+  return (data || []).map((row) => ({ id: Number(row.id), name: fleetDisplayName({ name: String(row.name || '') }),
+    assetKind: row.asset_kind as FleetAssetKind | undefined, lengthOverall: nullableText(row.length_overall),
+    illustrationThumbnailUrl: nullableText(row.illustration_thumbnail_url),
+  })).filter((row) => row.name).sort(compareFleetAssets);
 }
 
 async function fetchPeople(client: SupabaseClient): Promise<PersonOption[]> {
@@ -671,8 +679,11 @@ export async function fetchActionPlanHseDashboard(
   };
 }
 
-export async function fetchActionPlanData(client: SupabaseClient): Promise<ActionPlanData> {
+export async function fetchActionPlanData(client: SupabaseClient, restrictToAssignedVessels = false): Promise<ActionPlanData> {
   const currentYear = new Date().getFullYear();
+  const vesselScope = restrictToAssignedVessels ? await client.rpc('action_plan_current_vessel_scope') : null;
+  if (vesselScope?.error) throw vesselScope.error;
+  const assignedVessels = vesselScope ? new Set<number>((vesselScope.data || []).map(Number)) : null;
   const [actionsResult, documentsResult, typesResult, vesselsResult, peopleResult, assigneesResult, treatmentEventsResult, settingsResult, hseResult] = await Promise.allSettled([
     fetchActionItems(client), fetchActionDocuments(client), fetchActionTypes(client), fetchVessels(client),
     fetchPeople(client), fetchActionAssignees(client), fetchActionTreatmentEvents(client),
@@ -682,15 +693,18 @@ export async function fetchActionPlanData(client: SupabaseClient): Promise<Actio
   if (actionsResult.status === 'rejected') throw actionsResult.reason;
   const actionTypes = typesResult.status === 'fulfilled' ? typesResult.value : [];
   const currentLabels = new Map(actionTypes.map((type) => [type.key, type.label]));
+  // RLS includes the current vessel plus reports authored by / assigned to this
+  // person, even on another vessel. Do not discard those personal reports here.
   const actions = await hydrateActionThumbnailUrls(client, actionsResult.value.map((action) => ({
     ...action,
     actionType: currentLabels.get(action.actionTypeKey) || action.actionType,
   })));
   return {
     actions,
+    assignedVesselIds: assignedVessels ? [...assignedVessels] : undefined,
     documents: documentsResult.status === 'fulfilled' ? documentsResult.value : [],
     actionTypes,
-    vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value : [],
+    vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value.filter((vessel) => !assignedVessels || assignedVessels.has(vessel.id)) : [],
     people: peopleResult.status === 'fulfilled' ? peopleResult.value : [],
     assignees: assigneesResult.status === 'fulfilled' ? assigneesResult.value : [],
     treatmentEvents: treatmentEventsResult.status === 'fulfilled' ? treatmentEventsResult.value : [],

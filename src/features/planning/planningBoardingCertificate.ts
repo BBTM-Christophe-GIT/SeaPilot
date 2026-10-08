@@ -1,4 +1,3 @@
-import JSZip from 'jszip';
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import {
   addPlanningDays,
@@ -9,6 +8,7 @@ import {
 } from './planningDates';
 import { formatPlanningPerson, getAllPlanningCrewEvents, normalizePlanningStatus } from './planningModel';
 import type { PlanningOverview } from './planningQueries';
+import { planningEventFunctionOnDate } from './planningFunctions';
 
 export type BoardingCertificateFormat = 'docx' | 'pdf';
 
@@ -96,7 +96,7 @@ function serviceDays(overview: PlanningOverview, input: BoardingCertificateInput
       for (let date = start; date <= end; date = addPlanningDays(date, 1)) {
         const status = event.dailyStatuses?.[date] || event.status;
         if (normalizePlanningStatus(status) !== 'En Mer') continue;
-        const functionLabel = event.functionLabel.trim();
+        const functionLabel = planningEventFunctionOnDate(event, date).trim();
         const key = [date, vessel.id, functionLabel.toLocaleUpperCase('fr-FR')].join('|');
         byKey.set(key, {
           date,
@@ -204,6 +204,7 @@ function periodLabel(period: BoardingCertificatePeriod): string {
 }
 
 async function buildDocx(template: ArrayBuffer, data: BoardingCertificateData): Promise<Blob> {
+  const { default: JSZip } = await import('jszip');
   const archive = await JSZip.loadAsync(template);
   const documentPart = archive.file('word/document.xml');
   if (!documentPart) throw new Error('Le modèle Word ne contient pas word/document.xml.');

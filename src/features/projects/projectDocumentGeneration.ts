@@ -1,4 +1,3 @@
-import autoTable from 'jspdf-autotable';
 import type {
   ClientRecord,
   ProjectContractRecord,
@@ -11,6 +10,7 @@ import type {
 import type { ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import { buildSupplytimePreview } from './projectReadModel';
 import {
+  charterContractLabel,
   DEFAULT_BAREBOAT_CONTRACT_FIELDS,
   DEFAULT_BAREBOAT_OWNER_IDENTITY,
   DEFAULT_PROJECT_FUEL_TERMS,
@@ -21,14 +21,20 @@ import {
 } from './projectContractOptions';
 import { formatProjectOfferPort } from './projectPorts';
 import { BIMCO_P144_FIELDS } from './projectContractModels';
-import type { PDFFont, PDFImage, PDFPage } from 'pdf-lib';
+import { buildStyledContract } from './projectStyledContract';
 import {
   buildCommercialReserves,
+  COMMERCIAL_RESERVE_AVAILABILITY,
+  COMMERCIAL_RESERVE_WEATHER,
   formatProjectDocumentEmitterName,
+  getCommercialConditionsDescription,
+  getCommercialConditionsMode,
   getCommercialIncludedServiceDescriptions,
+  getCommercialIncludedServiceRichDescriptions,
   shouldDisplayCommercialOfferRoute,
   type ProjectDocumentEmitter,
 } from './projectCommercialOffer';
+import { renderProjectPdfRichText } from './projectPdfRichText';
 import {
   buildBareboatDeliveryLabel,
   buildBareboatRedeliveryLabel,
@@ -36,6 +42,7 @@ import {
   formatBareboatDate,
   localTodayIso,
 } from './projectBareboatContract';
+import { projectDescriptionToPlainText } from './projectDescription';
 import bimcoPage01Url from './assets/contract-previews/bimco-p144-page-01.png';
 import bimcoPage02Url from './assets/contract-previews/bimco-p144-page-02.png';
 import bimcoPage03Url from './assets/contract-previews/bimco-p144-page-03.png';
@@ -56,7 +63,10 @@ export interface ProjectDocumentGenerationInput {
   towedAsset?: ProjectTowedAssetRecord;
   vessel?: VesselRecord;
   vesselCertificates?: ProjectVesselCertificateRecord[];
+  language?: ProjectDocumentLanguage;
 }
+
+export type ProjectDocumentLanguage = 'fr' | 'en';
 
 export interface ProjectOfferRow {
   label: string;
@@ -115,15 +125,15 @@ function present(value: string | number | null | undefined): string {
   return value === null || value === undefined || value === '' ? '' : String(value);
 }
 
-function formatDate(value: string): string {
+function formatDate(value: string, language: ProjectDocumentLanguage = 'fr'): string {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium' }).format(date);
+  return new Intl.DateTimeFormat(language === 'en' ? 'en-GB' : 'fr-FR', { dateStyle: 'medium' }).format(date);
 }
 
-export function formatOfferGenerationDate(value: Date): string {
-  return new Intl.DateTimeFormat('fr-FR', {
+export function formatOfferGenerationDate(value: Date, language: ProjectDocumentLanguage = 'fr'): string {
+  return new Intl.DateTimeFormat(language === 'en' ? 'en-GB' : 'fr-FR', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -137,21 +147,139 @@ const CURRENCY_SYMBOLS: Readonly<Record<string, string>> = {
   USD: '$',
 };
 
-function formatHireUnit(unit: string): string {
+function formatHireUnit(unit: string, language: ProjectDocumentLanguage = 'fr'): string {
   const normalized = unit.trim().toLocaleLowerCase('fr-FR');
-  if (['jour', 'jours', 'journalier', 'journalière'].includes(normalized)) return 'Jour';
+  if (['jour', 'jours', 'journalier', 'journalière'].includes(normalized)) return language === 'en' ? 'Day' : 'Jour';
   return normalized ? `${normalized[0].toLocaleUpperCase('fr-FR')}${normalized.slice(1)}` : '';
 }
 
-function formatMoney(value: number | null | undefined, currency: string, unit = ''): string {
+function formatMoney(
+  value: number | null | undefined,
+  currency: string,
+  unit = '',
+  language: ProjectDocumentLanguage = 'fr',
+): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return '';
-  const amount = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 })
+  const amount = new Intl.NumberFormat(language === 'en' ? 'en-GB' : 'fr-FR', { maximumFractionDigits: 2 })
     .format(value)
     .replace(/[\s\u00a0\u202f]+/g, ' ');
   const normalizedCurrency = currency.trim().toLocaleUpperCase('fr-FR');
   const currencyLabel = CURRENCY_SYMBOLS[normalizedCurrency] || normalizedCurrency;
-  const unitLabel = formatHireUnit(unit);
-  return [amount, currencyLabel, 'HT', unitLabel ? `/ ${unitLabel}` : ''].filter(Boolean).join(' ');
+  const unitLabel = formatHireUnit(unit, language);
+  return [amount, currencyLabel, language === 'en' ? 'excl. VAT' : 'HT', unitLabel ? `/ ${unitLabel}` : '']
+    .filter(Boolean)
+    .join(' ');
+}
+
+export const PROJECT_OFFER_TRANSLATIONS = {
+  fr: {
+    title: 'OFFRE COMMERCIALE',
+    issuedOn: 'Émise le',
+    proposalAddressedTo: 'PROPOSITION ADRESSÉE À',
+    attention: 'À l’attention de',
+    contactMissing: 'Interlocuteur à renseigner',
+    clientMissing: 'CLIENT À RENSEIGNER',
+    project: 'PROJET',
+    newProject: 'NOUVEAU PROJET',
+    contractType: 'Offre Commerciale',
+    ourProposal: 'NOTRE PROPOSITION',
+    serviceMissing: 'Prestation à renseigner.',
+    vessel: 'Navire',
+    period: 'Période',
+    route: 'Route',
+    operationalFramework: 'Cadre opérationnel',
+    proposedScope: 'PÉRIMÈTRE PROPOSÉ',
+    operationAreaMissing: 'Zone d’opération à renseigner',
+    delivery: 'Livraison',
+    redelivery: 'Redélivraison',
+    firmDuration: 'Durée ferme',
+    calendarDays: 'jours calendaires',
+    fuel: 'Carburant',
+    commercialTerms: 'Conditions commerciales',
+    descriptionOfTerms: 'DESCRIPTION DES CONDITIONS',
+    termsDetailedBelow: 'Description complète présentée ci-après.',
+    mobilisation: 'Mobilisation',
+    demobilisation: 'Démobilisation',
+    operation: 'Opération',
+    extension: 'Extension',
+    invoicing: 'FACTURATION',
+    payment: 'PAIEMENT',
+    includedServices: 'PRESTATIONS INCLUSES DANS LES CONDITIONS COMMERCIALES',
+    charterHire: 'Loyer d’affrètement',
+    mobilisationFees: 'Frais de mobilisation',
+    demobilisationFees: 'Frais de démobilisation',
+    commercialReserves: 'RÉSERVES COMMERCIALES',
+    owner: 'Armateur',
+    client: 'Client',
+    emitterMissing: 'Émetteur à renseigner',
+    functionMissing: 'Fonction à renseigner',
+    signatureMissing: 'Signature non renseignée',
+    agreed: 'BON POUR ACCORD',
+    nameAndCapacity: 'NOM ET QUALITÉ',
+    signature: 'SIGNATURE',
+    dateAndStamp: 'DATE ET CACHET',
+    generatedOn: 'Offre générée le',
+  },
+  en: {
+    title: 'COMMERCIAL OFFER',
+    issuedOn: 'Issued on',
+    proposalAddressedTo: 'PROPOSAL ADDRESSED TO',
+    attention: 'For the attention of',
+    contactMissing: 'Contact to be provided',
+    clientMissing: 'CLIENT TO BE PROVIDED',
+    project: 'PROJECT',
+    newProject: 'NEW PROJECT',
+    contractType: 'Commercial Offer',
+    ourProposal: 'OUR PROPOSAL',
+    serviceMissing: 'Service description to be provided.',
+    vessel: 'Vessel',
+    period: 'Period',
+    route: 'Route',
+    operationalFramework: 'Operational framework',
+    proposedScope: 'PROPOSED SCOPE',
+    operationAreaMissing: 'Operating area to be provided',
+    delivery: 'Delivery',
+    redelivery: 'Redelivery',
+    firmDuration: 'Firm period',
+    calendarDays: 'calendar days',
+    fuel: 'Fuel',
+    commercialTerms: 'Commercial terms',
+    descriptionOfTerms: 'DESCRIPTION OF TERMS',
+    termsDetailedBelow: 'Full description provided below.',
+    mobilisation: 'Mobilization',
+    demobilisation: 'Demobilization',
+    operation: 'Operations',
+    extension: 'Extension',
+    invoicing: 'INVOICING',
+    payment: 'PAYMENT',
+    includedServices: 'SERVICES INCLUDED IN THE COMMERCIAL TERMS',
+    charterHire: 'Charter hire',
+    mobilisationFees: 'Mobilization fees',
+    demobilisationFees: 'Demobilization fees',
+    commercialReserves: 'COMMERCIAL RESERVATIONS',
+    owner: 'Owners',
+    client: 'Client',
+    emitterMissing: 'Issuer to be provided',
+    functionMissing: 'Position to be provided',
+    signatureMissing: 'Signature not provided',
+    agreed: 'AGREED AND ACCEPTED',
+    nameAndCapacity: 'NAME AND CAPACITY',
+    signature: 'SIGNATURE',
+    dateAndStamp: 'DATE AND COMPANY STAMP',
+    generatedOn: 'Offer generated on',
+  },
+} as const;
+
+function translateProjectOfferStandardText(value: string, language: ProjectDocumentLanguage): string {
+  if (language === 'fr') return value;
+  if (value === DEFAULT_PROJECT_FUEL_TERMS) return "For the Charterer's account.";
+  if (value === COMMERCIAL_RESERVE_AVAILABILITY) {
+    return 'Subject to vessel availability and technical and contractual approval.';
+  }
+  if (value === COMMERCIAL_RESERVE_WEATHER) {
+    return 'Subject to weather conditions compatible with the operation.';
+  }
+  return value;
 }
 
 function projectReference(project: ProjectRecord): string {
@@ -212,7 +340,7 @@ export function buildProjectOfferRows({
     { label: 'Project', value: present(projectReference(project)) },
     { label: 'Contract form', value: present(project.contractType) },
     { label: 'Vessel(s)', value: present([project.primaryVesselName, project.secondaryVesselName].filter(Boolean).join(' / ')) },
-    { label: 'Duties', value: present(project.description) },
+    { label: 'Duties', value: present(projectDescriptionToPlainText(project.description)) },
     { label: 'Port of Delivery', value: present(formatProjectOfferPort(project.deliveryPort)) },
     { label: 'Date of Delivery', value: formatDate(project.deliveryAt || project.startsOn) },
     { label: 'Mobilization costs HT', value: formatMoney(contract?.mobilisationFee, contract?.feeCurrency || '') },
@@ -279,7 +407,7 @@ export function buildProjectBimcoP144PdfFields({
     p144_box12_mobilisation: saved.p144_box12_mobilisation || formatMoney(contract?.mobilisationFee, contract?.feeCurrency || ''),
     p144_box15_demobilisation: saved.p144_box15_demobilisation || formatMoney(contract?.demobilisationFee, contract?.feeCurrency || ''),
     p144_box16_operation_area: saved.p144_box16_operation_area || project.operationArea,
-    p144_box17_employment: saved.p144_box17_employment || project.description,
+    p144_box17_employment: saved.p144_box17_employment || projectDescriptionToPlainText(project.description),
     p144_box18_specialist_operations: saved.p144_box18_specialist_operations || specialistOperations,
     p144_box19_fuel: saved.p144_box19_fuel || saved.box19_special_fuel || DEFAULT_PROJECT_FUEL_TERMS,
     p144_box20_charter_hire: saved.p144_box20_charter_hire || contractHireScheduleLabel(contract),
@@ -291,7 +419,11 @@ export function buildProjectBimcoP144PdfFields({
   return Object.fromEntries(BIMCO_P144_FIELDS.map((field) => [field.key, canonical[field.key] || saved[field.key] || '']));
 }
 
-export function buildGeneratedDocumentFileName(kind: ProjectGeneratedDocumentKind, project: ProjectRecord): string {
+export function buildGeneratedDocumentFileName(
+  kind: ProjectGeneratedDocumentKind,
+  project: ProjectRecord,
+  language: ProjectDocumentLanguage = 'fr',
+): string {
   const reference = (project.projectCode || project.title || 'Projet')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -299,10 +431,10 @@ export function buildGeneratedDocumentFileName(kind: ProjectGeneratedDocumentKin
     .replace(/\s+/g, ' ')
     .trim();
   const suffixes: Record<ProjectGeneratedDocumentKind, string> = {
-    offer: 'Offre - R1.pdf',
+    offer: language === 'en' ? 'Commercial Offer - R1.pdf' : 'Offre - R1.pdf',
     bimco_supplytime: 'BIMCO - R1.pdf',
     towage_contract: 'Contrat de remorquage - R1.pdf',
-    bareboat_charter: "Contrat d'affretement - R1.pdf",
+    bareboat_charter: `${charterContractLabel(project.contractType).normalize('NFD').replace(/[\u0300-\u036f]/g, '')} - R1.pdf`,
     intellectual_service: 'Contrat prestation intellectuelle - R1.docx',
   };
   return `${reference} - ${suffixes[kind]}`;
@@ -310,7 +442,7 @@ export function buildGeneratedDocumentFileName(kind: ProjectGeneratedDocumentKin
 
 async function loadAssetBytes(url: string): Promise<Uint8Array> {
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`Le modèle SeaPilot n'a pas pu être chargé (${response.status}).`);
+  if (!response.ok) throw new Error(`Le modèle BBTM n'a pas pu être chargé (${response.status}).`);
   return new Uint8Array(await response.arrayBuffer());
 }
 
@@ -323,20 +455,21 @@ export async function generateProjectDocument(
   }
 
   if (kind === 'towage_contract') {
-    return generateTowageContract(input);
+    return generateStyledContractDocument('towage_contract', input);
   }
 
   if (kind === 'bareboat_charter') {
-    return generateBareboatCharter(input);
+    return generateStyledContractDocument('bareboat_charter', input);
   }
 
   const { jsPDF } = await import('jspdf');
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
   const title = projectReference(input.project);
+  const language = input.language || 'fr';
   pdf.setProperties({
-    title: buildGeneratedDocumentFileName(kind, input.project),
+    title: buildGeneratedDocumentFileName(kind, input.project, language),
     subject: title,
-    creator: 'SeaPilot',
+    creator: 'BBTM',
   });
 
   if (kind === 'offer') {
@@ -348,13 +481,21 @@ export async function generateProjectDocument(
     ]);
     const contract = input.contract;
     const supplytime = contract?.supplytimeData || {};
-    const reserves = buildCommercialReserves(supplytime);
-    const includedServices = getCommercialIncludedServiceDescriptions(supplytime);
+    const copy = PROJECT_OFFER_TRANSLATIONS[language];
+    const reserves = buildCommercialReserves(supplytime).map((reserve) => (
+      translateProjectOfferStandardText(reserve, language)
+    ));
+    const conditionsMode = getCommercialConditionsMode(supplytime);
+    const conditionsDescription = getCommercialConditionsDescription(supplytime);
+    const includedServices = getCommercialIncludedServiceRichDescriptions(supplytime);
     const includedServiceRows = [
-      ['Loyer d’affrètement', includedServices.charterHire],
-      ['Frais de mobilisation', includedServices.mobilisation],
-      ['Frais de démobilisation', includedServices.demobilisation],
+      [copy.charterHire, includedServices.charterHire],
+      [copy.mobilisationFees, includedServices.mobilisation],
+      [copy.demobilisationFees, includedServices.demobilisation],
     ].filter((row): row is [string, string] => Boolean(row[1]));
+    const richConditionRows = conditionsMode === 'free_text'
+      ? conditionsDescription ? [{ html: conditionsDescription, label: copy.descriptionOfTerms }] : []
+      : includedServiceRows.map(([label, html]) => ({ html, label }));
     const emitterName = formatProjectDocumentEmitterName(input.emitter);
     const duration = input.project.startsOn && input.project.endsOn
       ? Math.max(1, Math.round((new Date(input.project.endsOn).getTime() - new Date(input.project.startsOn).getTime()) / 86_400_000) + 1)
@@ -391,16 +532,16 @@ export async function generateProjectDocument(
     pdf.setTextColor(255, 255, 255);
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(15);
-    pdf.text('OFFRE COMMERCIALE', 39, 18);
+    pdf.text(copy.title, 39, 18);
     pdf.setFontSize(9);
     pdf.text(reference, 196, 12, { align: 'right' });
     pdf.setFontSize(8);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(`Émise le ${formatOfferGenerationDate(new Date())}`, 196, 19, { align: 'right' });
+    pdf.text(`${copy.issuedOn} ${formatOfferGenerationDate(new Date(), language)}`, 196, 19, { align: 'right' });
     pdf.setTextColor(24, 33, 50);
 
-    [[14, 'PROPOSITION ADRESSÉE À', input.client?.name || input.project.clientName || 'CLIENT À RENSEIGNER', input.client?.representedBy ? `À l’attention de ${input.client.representedBy}` : 'Interlocuteur à renseigner'],
-      [108, 'PROJET', title || 'NOUVEAU PROJET', input.project.contractType || 'Offre Commerciale']]
+    [[14, copy.proposalAddressedTo, input.client?.name || input.project.clientName || copy.clientMissing, input.client?.representedBy ? `${copy.attention} ${input.client.representedBy}` : copy.contactMissing],
+      [108, copy.project, title || copy.newProject, copy.contractType]]
       .forEach(([xValue, label, primary, secondary]) => {
         const x = Number(xValue);
         pdf.setFillColor(243, 246, 250);
@@ -425,86 +566,119 @@ export async function generateProjectDocument(
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(6.2);
     pdf.setTextColor(113, 128, 150);
-    pdf.text('NOTRE PROPOSITION', 18, 69);
+    pdf.text(copy.ourProposal, 18, 69);
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(7.5);
     pdf.setTextColor(23, 38, 58);
-    pdf.text(line(input.project.description || 'Prestation à renseigner.', 105, 5), 18, 75);
-    detailRow('Navire', input.project.primaryVesselName || '-', 132, 68, 59);
-    detailRow('Période', [formatDate(input.project.startsOn), formatDate(input.project.endsOn)].filter(Boolean).join(' - ') || '-', 132, 76, 59);
+    pdf.text(line(projectDescriptionToPlainText(input.project.description) || copy.serviceMissing, 105, 5), 18, 75);
+    detailRow(copy.vessel, input.project.primaryVesselName || '-', 132, 68, 59);
+    detailRow(copy.period, [formatDate(input.project.startsOn, language), formatDate(input.project.endsOn, language)].filter(Boolean).join(' - ') || '-', 132, 76, 59);
     if (shouldDisplayCommercialOfferRoute(input.project.deliveryPort, input.project.redeliveryPort)) {
-      detailRow('Route', [input.project.deliveryPort, input.project.redeliveryPort].filter(Boolean).join(' - ') || '-', 132, 84, 59);
+      detailRow(copy.route, [input.project.deliveryPort, input.project.redeliveryPort].filter(Boolean).join(' - ') || '-', 132, 84, 59);
     }
 
     pdf.setDrawColor(216, 226, 237);
     pdf.rect(14, 106, 88, 82);
     pdf.rect(108, 106, 88, 82);
-    sectionHeading('1', 'Cadre opérationnel', 18, 111);
+    sectionHeading('1', copy.operationalFramework, 18, 111);
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(6.2);
     pdf.setTextColor(113, 128, 150);
-    pdf.text('PÉRIMÈTRE PROPOSÉ', 18, 124);
+    pdf.text(copy.proposedScope, 18, 124);
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(7.1);
     pdf.setTextColor(23, 38, 58);
-    pdf.text(line(input.project.operationArea || 'Zone d’opération à renseigner', 78, 3), 18, 130);
-    detailRow('Type de contrat', input.project.contractType || 'Offre Commerciale', 18, 145, 78);
-    detailRow('Livraison', [input.project.deliveryPort, formatDate(input.project.deliveryAt)].filter(Boolean).join(' - ') || '-', 18, 153, 78);
-    detailRow('Redélivraison', [input.project.redeliveryPort, formatDate(input.project.redeliveryAt)].filter(Boolean).join(' - ') || '-', 18, 161, 78);
-    detailRow('Durée ferme', duration ? `${duration} jours calendaires` : '-', 18, 169, 78);
-    detailRow('Carburant', supplytime.box19_special_fuel || '-', 18, 177, 78);
+    pdf.text(line(input.project.operationArea || copy.operationAreaMissing, 78, 3), 18, 130);
+    detailRow(language === 'en' ? 'Contract type' : 'Type de contrat', copy.contractType, 18, 145, 78);
+    detailRow(copy.delivery, [input.project.deliveryPort, formatDate(input.project.deliveryAt, language)].filter(Boolean).join(' - ') || '-', 18, 153, 78);
+    detailRow(copy.redelivery, [input.project.redeliveryPort, formatDate(input.project.redeliveryAt, language)].filter(Boolean).join(' - ') || '-', 18, 161, 78);
+    if (duration) {
+      detailRow(copy.firmDuration, `${duration} ${copy.calendarDays}`, 18, 169, 78);
+    }
+    detailRow(copy.fuel, translateProjectOfferStandardText(supplytime.box19_special_fuel || '-', language), 18, duration ? 177 : 169, 78);
 
-    sectionHeading('2', 'Conditions commerciales', 112, 111);
-    detailRow('Mobilisation', formatMoney(contract?.mobilisationFee, contract?.feeCurrency || '') || '-', 112, 126, 78);
-    detailRow('Démobilisation', formatMoney(contract?.demobilisationFee, contract?.feeCurrency || '') || '-', 112, 136, 78);
-    detailRow('Opération', formatMoney(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit || '') || '-', 112, 146, 78);
-    detailRow('Extension', formatMoney(contract?.extensionHire, contract?.hireCurrency || '', contract?.hireUnit || '') || '-', 112, 156, 78);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(6.2);
-    pdf.setTextColor(113, 128, 150);
-    pdf.text('FACTURATION', 112, 172);
-    pdf.text('PAIEMENT', 151, 172);
-    pdf.setFontSize(6.7);
-    pdf.setTextColor(35, 59, 87);
-    pdf.text(line(supplytime.box22_invoice_remittance || '-', 34, 2), 112, 178);
-    pdf.text(line(supplytime.box23_payment || '-', 39, 2), 151, 178);
+    sectionHeading('2', copy.commercialTerms, 112, 111);
+    if (conditionsMode === 'free_text') {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(6.2);
+      pdf.setTextColor(113, 128, 150);
+      pdf.text(copy.descriptionOfTerms, 112, 127);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7.2);
+      pdf.setTextColor(35, 59, 87);
+      pdf.text(line(conditionsDescription ? copy.termsDetailedBelow : copy.serviceMissing, 74, 4), 112, 136);
+    } else {
+      detailRow(copy.mobilisation, formatMoney(contract?.mobilisationFee, contract?.feeCurrency || '', '', language) || '-', 112, 126, 78);
+      detailRow(copy.demobilisation, formatMoney(contract?.demobilisationFee, contract?.feeCurrency || '', '', language) || '-', 112, 136, 78);
+      detailRow(copy.operation, formatMoney(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit || '', language) || '-', 112, 146, 78);
+      detailRow(copy.extension, formatMoney(contract?.extensionHire, contract?.hireCurrency || '', contract?.hireUnit || '', language) || '-', 112, 156, 78);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(6.2);
+      pdf.setTextColor(113, 128, 150);
+      pdf.text(copy.invoicing, 112, 172);
+      pdf.text(copy.payment, 151, 172);
+      pdf.setFontSize(6.7);
+      pdf.setTextColor(35, 59, 87);
+      pdf.text(line(supplytime.box22_invoice_remittance || '-', 34, 2), 112, 178);
+      pdf.text(line(supplytime.box23_payment || '-', 39, 2), 151, 178);
+    }
+
+    const addRichCanvasPages = (canvas: HTMLCanvasElement, startY: number): number => {
+      const widthMm = 182;
+      const mmPerPixel = widthMm / canvas.width;
+      let sourceY = 0;
+      let targetY = startY;
+      while (sourceY < canvas.height) {
+        if (279 - targetY < 24) {
+          pdf.addPage();
+          targetY = 18;
+        }
+        const availableHeightMm = 279 - targetY;
+        const sourceHeight = Math.min(
+          canvas.height - sourceY,
+          Math.max(1, Math.floor(availableHeightMm / mmPerPixel)),
+        );
+        const pageCanvas = sourceY === 0 && sourceHeight === canvas.height
+          ? canvas
+          : document.createElement('canvas');
+        if (pageCanvas !== canvas) {
+          pageCanvas.width = canvas.width;
+          pageCanvas.height = sourceHeight;
+          pageCanvas.getContext('2d')?.drawImage(
+            canvas,
+            0,
+            sourceY,
+            canvas.width,
+            sourceHeight,
+            0,
+            0,
+            canvas.width,
+            sourceHeight,
+          );
+        }
+        const renderedHeightMm = sourceHeight * mmPerPixel;
+        pdf.addImage(pageCanvas.toDataURL('image/png'), 'PNG', 14, targetY, widthMm, renderedHeightMm, undefined, 'FAST');
+        sourceY += sourceHeight;
+        targetY += renderedHeightMm + 6;
+      }
+      return targetY;
+    };
 
     const reserveLines = reserves.flatMap((reserve) => line(`- ${reserve}`, 169, 2)).slice(0, 6);
     const reserveHeight = reserves.length > 0 ? 10 + reserveLines.length * 4 : 0;
     let contentY = 194;
 
-    if (includedServiceRows.length > 0) {
-      const estimatedDescriptionHeight = 12 + includedServiceRows.reduce((height, [, value]) => (
-        height + Math.max(8, (pdf.splitTextToSize(value, 116) as string[]).length * 3.2 + 4)
-      ), 0);
-      if (contentY + estimatedDescriptionHeight + reserveHeight + 52 > 279) {
+    if (richConditionRows.length > 0) {
+      if (contentY + reserveHeight + 72 > 279) {
         pdf.addPage();
         contentY = 18;
       }
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(7);
       pdf.setTextColor(18, 61, 104);
-      pdf.text('PRESTATIONS INCLUSES DANS LES CONDITIONS COMMERCIALES', 14, contentY + 5);
-      autoTable(pdf, {
-        body: includedServiceRows,
-        columnStyles: {
-          0: { cellWidth: 48, fontStyle: 'bold', textColor: [35, 59, 87] },
-          1: { cellWidth: 134, textColor: [35, 59, 87] },
-        },
-        margin: { bottom: 18, left: 14, right: 14, top: 18 },
-        startY: contentY + 8,
-        styles: {
-          cellPadding: 2.4,
-          font: 'helvetica',
-          fontSize: 6.5,
-          lineColor: [216, 226, 237],
-          lineWidth: 0.15,
-          overflow: 'linebreak',
-          valign: 'top',
-        },
-        theme: 'grid',
-      });
-      contentY = ((pdf as typeof pdf & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || contentY) + 6;
+      pdf.text(conditionsMode === 'free_text' ? copy.commercialTerms.toLocaleUpperCase(language === 'en' ? 'en-GB' : 'fr-FR') : copy.includedServices, 14, contentY + 5);
+      const richCanvas = await renderProjectPdfRichText(richConditionRows);
+      contentY = addRichCanvasPages(richCanvas, contentY + 8);
     }
 
     if (reserves.length > 0) {
@@ -518,7 +692,7 @@ export async function generateProjectDocument(
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(6.5);
       pdf.setTextColor(139, 90, 8);
-      pdf.text('RÉSERVES COMMERCIALES', 18, contentY + 6);
+      pdf.text(copy.commercialReserves, 18, contentY + 6);
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(6.5);
       pdf.setTextColor(107, 85, 43);
@@ -526,7 +700,7 @@ export async function generateProjectDocument(
       contentY += reserveHeight + 8;
     }
 
-    let signatureY = includedServiceRows.length === 0 && reserves.length === 0 ? 202 : contentY;
+    let signatureY = richConditionRows.length === 0 && reserves.length === 0 ? 202 : contentY;
     if (signatureY + 42 > 279) {
       pdf.addPage();
       signatureY = 18;
@@ -539,35 +713,35 @@ export async function generateProjectDocument(
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(8);
     pdf.setTextColor(23, 60, 102);
-    pdf.text('Armateur', 18, signatureY + 7);
-    pdf.text('Client', 109, signatureY + 7);
+    pdf.text(copy.owner, 18, signatureY + 7);
+    pdf.text(copy.client, 109, signatureY + 7);
     pdf.setFontSize(7.2);
     pdf.setTextColor(35, 59, 87);
-    pdf.text(emitterName || 'Émetteur à renseigner', 18, signatureY + 14);
+    pdf.text(emitterName || copy.emitterMissing, 18, signatureY + 14);
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(6.7);
     pdf.setTextColor(80, 97, 120);
-    pdf.text(input.emitter?.functionLabel || 'Fonction à renseigner', 18, signatureY + 20);
+    pdf.text(input.emitter?.functionLabel || copy.functionMissing, 18, signatureY + 20);
     if (signatureBytes) {
       pdf.addImage(signatureBytes, 'PNG', 18, signatureY + 23, 34, Math.min(16, signatureHeight - 25), undefined, 'FAST');
     } else {
-      pdf.text('Signature non renseignée', 18, signatureY + 29);
+      pdf.text(copy.signatureMissing, 18, signatureY + 29);
     }
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(7.2);
     pdf.setTextColor(35, 59, 87);
-    pdf.text('BON POUR ACCORD', 109, signatureY + 14);
+    pdf.text(copy.agreed, 109, signatureY + 14);
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(6.5);
     pdf.setTextColor(80, 97, 120);
-    ['NOM ET QUALITÉ', 'SIGNATURE', 'Date ET CACHET'].forEach((label, index) => {
+    [copy.nameAndCapacity, copy.signature, copy.dateAndStamp].forEach((label, index) => {
       const labelY = signatureY + 22 + index * 8;
       pdf.text(label, 109, labelY);
       pdf.setDrawColor(190, 202, 216);
       pdf.line(132, labelY, 191, labelY);
     });
 
-    const generatedOn = `Offre générée le ${formatOfferGenerationDate(new Date())}`;
+    const generatedOn = `${copy.generatedOn} ${formatOfferGenerationDate(new Date(), language)}`;
     pdf.setFont('helvetica', 'italic');
     pdf.setFontSize(8);
     pdf.setTextColor(92, 111, 124);
@@ -615,14 +789,14 @@ export async function generateProjectDocument(
     const bytes = await merged.save({ useObjectStreams: true });
     return {
       blob: new Blob([bytes as BlobPart], { type: 'application/pdf' }),
-      fileName: buildGeneratedDocumentFileName(kind, input.project),
+      fileName: buildGeneratedDocumentFileName(kind, input.project, language),
       mimeType: 'application/pdf',
     };
   }
 
   return {
     blob: pdf.output('blob'),
-    fileName: buildGeneratedDocumentFileName(kind, input.project),
+    fileName: buildGeneratedDocumentFileName(kind, input.project, language),
     mimeType: 'application/pdf',
   };
 }
@@ -822,252 +996,21 @@ export function buildBareboatTemplateFields({
   };
 }
 
-interface TowagePdfBox {
-  bottom: number;
-  left: number;
-  right: number;
-  top: number;
-}
-
-const TOWAGE_SOURCE_WIDTH = 993;
-const TOWAGE_SOURCE_HEIGHT = 1404;
-
-function towagePdfBox(page: PDFPage, box: TowagePdfBox) {
-  const { width, height } = page.getSize();
-  return {
-    height: ((box.bottom - box.top) / TOWAGE_SOURCE_HEIGHT) * height,
-    width: ((box.right - box.left) / TOWAGE_SOURCE_WIDTH) * width,
-    x: (box.left / TOWAGE_SOURCE_WIDTH) * width,
-    y: height - (box.bottom / TOWAGE_SOURCE_HEIGHT) * height,
-  };
-}
-
-function towagePdfText(value: string): string {
-  return value
-    .replace(/[\u00a0\u202f]/g, ' ')
-    .replace(/[\u2010\u2011\u2012\u2013\u2014]/g, '-')
-    .trim();
-}
-
-function wrapTowagePdfText(font: PDFFont, value: string, size: number, maxWidth: number): string[] {
-  return towagePdfText(value).split('\n').flatMap((paragraph) => {
-    if (!paragraph.trim()) return [];
-    const lines: string[] = [];
-    let line = '';
-    paragraph.trim().split(/\s+/).forEach((word) => {
-      const candidate = line ? `${line} ${word}` : word;
-      if (!line || font.widthOfTextAtSize(candidate, size) <= maxWidth) {
-        line = candidate;
-      } else {
-        lines.push(line);
-        line = word;
-      }
-    });
-    if (line) lines.push(line);
-    return lines;
-  });
-}
-
-function drawTowagePdfText(
-  page: PDFPage,
-  font: PDFFont,
-  value: string,
-  box: TowagePdfBox,
-  requestedSize = 8,
-  align: 'left' | 'center' = 'left',
-) {
-  if (!value.trim()) return;
-  const bounds = towagePdfBox(page, box);
-  const padding = 4;
-  let size = requestedSize;
-  let lines = wrapTowagePdfText(font, value, size, bounds.width - padding * 2);
-  while (size > 5 && lines.length * size * 1.18 > bounds.height - padding * 2) {
-    size -= 0.25;
-    lines = wrapTowagePdfText(font, value, size, bounds.width - padding * 2);
+async function generateStyledContractDocument(
+  kind: 'towage_contract' | 'bareboat_charter',
+  input: ProjectDocumentGenerationInput,
+): Promise<GeneratedProjectDocument> {
+  const isTowage = kind === 'towage_contract';
+  const values = isTowage ? buildTowageTemplateFields(input) : buildBareboatTemplateFields(input);
+  if (!isTowage) {
+    values.CONTRACT_PLACE_AND_DATE = `${values.CONTRACT_PLACE}, le ${values.CONTRACT_DATE_LONG}`;
+    values.SIGNATURE_STATEMENT = `Fait à ${values.CONTRACT_PLACE}, le ${values.CONTRACT_DATE_LONG}`;
   }
-  const lineHeight = size * 1.18;
-  lines.slice(0, Math.max(1, Math.floor((bounds.height - padding * 2) / lineHeight))).forEach((line, index) => {
-    const lineWidth = font.widthOfTextAtSize(line, size);
-    page.drawText(line, {
-      x: align === 'center' ? bounds.x + (bounds.width - lineWidth) / 2 : bounds.x + padding,
-      y: bounds.y + bounds.height - padding - size - index * lineHeight,
-      size,
-      font,
-    });
-  });
-}
-
-function drawTowageSignature(
-  page: PDFPage,
-  font: PDFFont,
-  name: string,
-  date: string,
-  signature: PDFImage | null,
-  box: TowagePdfBox,
-) {
-  const bounds = towagePdfBox(page, box);
-  drawTowagePdfText(page, font, [name, date].filter(Boolean).join('\n'), box, 8.5);
-  if (!signature) return;
-  const natural = signature.scale(1);
-  const maximumWidth = bounds.width * 0.42;
-  const maximumHeight = bounds.height * 0.55;
-  const ratio = Math.min(maximumWidth / natural.width, maximumHeight / natural.height, 1);
-  page.drawImage(signature, {
-    x: bounds.x + 6,
-    y: bounds.y + 8,
-    width: natural.width * ratio,
-    height: natural.height * ratio,
-  });
-}
-
-async function generateTowageContract(input: ProjectDocumentGenerationInput): Promise<GeneratedProjectDocument> {
-  const { PDFDocument, StandardFonts } = await import('pdf-lib');
-  const [templateBytes, signatureBytes] = await Promise.all([
-    loadAssetBytes('/templates/contrat-remorquage-bbtm.pdf'),
-    input.emitter?.signatureUrl
-      ? loadAssetBytes(input.emitter.signatureUrl).catch(() => null)
-      : Promise.resolve(null),
-  ]);
-  const document = await PDFDocument.load(templateBytes);
-  const regular = await document.embedFont(StandardFonts.Helvetica);
-  const bold = await document.embedFont(StandardFonts.HelveticaBold);
-  let signature: PDFImage | null = null;
-  if (signatureBytes) {
-    try {
-      signature = input.emitter?.signatureMimeType === 'image/jpeg'
-        ? await document.embedJpg(signatureBytes)
-        : await document.embedPng(signatureBytes);
-    } catch {
-      signature = null;
-    }
-  }
-  const values = buildTowageTemplateFields(input);
-  const pages = document.getPages();
-  pages.forEach((page) => {
-    drawTowagePdfText(page, bold, values.DOCUMENT_CODE, { left: 236, top: 96, right: 346, bottom: 160 }, 8, 'center');
-    drawTowagePdfText(page, bold, values.PROJECT_CODE, { left: 349, top: 96, right: 461, bottom: 160 }, 15, 'center');
-    drawTowagePdfText(page, bold, values.CONTRACT_DATE_SHORT, { left: 752, top: 60, right: 873, bottom: 93 }, 8.5, 'center');
-  });
-
-  const firstPage = pages[0];
-  drawTowagePdfText(firstPage, regular, values.CONTRACT_DATE_LONG, { left: 496, top: 207, right: 872, bottom: 228 }, 8.5);
-  drawTowagePdfText(firstPage, regular, values.CHARTERER, { left: 120, top: 250, right: 494, bottom: 331 }, 8.5);
-  drawTowagePdfText(firstPage, regular, values.OWNER, { left: 496, top: 250, right: 872, bottom: 331 }, 8.5);
-  drawTowagePdfText(firstPage, regular, values.TOWED_VESSEL, { left: 120, top: 353, right: 494, bottom: 638 }, 7.5);
-  drawTowagePdfText(firstPage, regular, values.TUG, { left: 496, top: 353, right: 872, bottom: 638 }, 7.5);
-  drawTowagePdfText(firstPage, regular, values.TOWED_CONDITIONS, { left: 120, top: 660, right: 872, bottom: 701 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.PICKUP_PLACE, { left: 120, top: 723, right: 494, bottom: 743 }, 8);
-  drawTowagePdfText(firstPage, regular, values.DEPARTURE_WINDOW, { left: 496, top: 723, right: 872, bottom: 743 }, 8);
-  drawTowagePdfText(firstPage, regular, values.DESTINATION_PLACE, { left: 120, top: 765, right: 494, bottom: 785 }, 8);
-  drawTowagePdfText(firstPage, regular, values.ARRIVAL_WINDOW, { left: 496, top: 765, right: 872, bottom: 785 }, 8);
-  drawTowagePdfText(firstPage, regular, values.CONNECTION_TIME, { left: 120, top: 828, right: 494, bottom: 848 }, 8);
-  drawTowagePdfText(firstPage, regular, values.DISCONNECTION_TIME, { left: 496, top: 828, right: 872, bottom: 848 }, 8);
-  drawTowagePdfText(firstPage, regular, values.FIXED_PRICE, { left: 120, top: 870, right: 494, bottom: 911 }, 8);
-  drawTowagePdfText(firstPage, regular, values.OPTIONAL_COSTS, { left: 496, top: 870, right: 872, bottom: 911 }, 7.5);
-  drawTowagePdfText(firstPage, regular, values.PAYMENT_TERMS, { left: 120, top: 933, right: 494, bottom: 994 }, 7.5);
-  drawTowagePdfText(firstPage, regular, values.ADDITIONAL_CHARGES, { left: 496, top: 933, right: 872, bottom: 994 }, 7.5);
-  drawTowagePdfText(firstPage, regular, values.SPECIAL_CONDITIONS, { left: 120, top: 1016, right: 872, bottom: 1073 }, 8);
-  drawTowageSignature(firstPage, regular, values.CHARTERER_SIGNATORY, '', null, { left: 120, top: 1095, right: 494, bottom: 1251 });
-  drawTowageSignature(firstPage, regular, values.OWNER_SIGNATORY, values.SIGNATURE_DATE, signature, { left: 496, top: 1095, right: 872, bottom: 1251 });
-
-  if (pages[5]) {
-    drawTowageSignature(pages[5], regular, values.OWNER_SIGNATORY, values.SIGNATURE_DATE, signature, { left: 120, top: 442, right: 494, bottom: 647 });
-    drawTowageSignature(pages[5], regular, values.CHARTERER_SIGNATORY, '', null, { left: 496, top: 442, right: 872, bottom: 647 });
-  }
-
-  document.setTitle(buildGeneratedDocumentFileName('towage_contract', input.project));
-  document.setSubject(projectReference(input.project));
-  document.setCreator('SeaPilot');
-  const bytes = await document.save({ useObjectStreams: false });
-  return {
-    blob: new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' }),
-    fileName: buildGeneratedDocumentFileName('towage_contract', input.project),
-    mimeType: 'application/pdf',
-  };
-}
-
-async function generateBareboatCharter(input: ProjectDocumentGenerationInput): Promise<GeneratedProjectDocument> {
-  const { PDFDocument, StandardFonts } = await import('pdf-lib');
-  const [templateBytes, signatureBytes] = await Promise.all([
-    loadAssetBytes('/templates/contrat-affretement-bbtm.pdf'),
-    input.emitter?.signatureUrl
-      ? loadAssetBytes(input.emitter.signatureUrl).catch(() => null)
-      : Promise.resolve(null),
-  ]);
-  const templateDocument = await PDFDocument.load(templateBytes);
-  const document = await PDFDocument.create();
-  // Word leaves the fourth source page with a graphics state that clips later operators.
-  // Embedding every template page as an isolated form keeps the background vectorial and resets that state.
-  const templatePages = await document.embedPdf(templateDocument, templateDocument.getPageIndices());
-  templatePages.forEach((templatePage) => {
-    const page = document.addPage([templatePage.width, templatePage.height]);
-    page.drawPage(templatePage, {
-      height: templatePage.height,
-      width: templatePage.width,
-      x: 0,
-      y: 0,
-    });
-  });
-  const regular = await document.embedFont(StandardFonts.Helvetica);
-  const bold = await document.embedFont(StandardFonts.HelveticaBold);
-  let signature: PDFImage | null = null;
-  if (signatureBytes) {
-    try {
-      signature = input.emitter?.signatureMimeType === 'image/jpeg'
-        ? await document.embedJpg(signatureBytes)
-        : await document.embedPng(signatureBytes);
-    } catch {
-      signature = null;
-    }
-  }
-
-  const values = buildBareboatTemplateFields(input);
-  const pages = document.getPages();
-  pages.forEach((page) => {
-    drawTowagePdfText(page, bold, values.PROJECT_CODE, { left: 287, top: 83, right: 416, bottom: 142 }, 11, 'center');
-    drawTowagePdfText(page, regular, values.CONTRACT_DATE_SHORT, { left: 547, top: 60, right: 675, bottom: 82 }, 8.5, 'center');
-    drawTowagePdfText(page, regular, values.VESSEL_NAME, { left: 417, top: 112, right: 934, bottom: 142 }, 9, 'center');
-  });
-
-  const firstPage = pages[0];
-  drawTowagePdfText(firstPage, regular, `${values.CONTRACT_PLACE}, le ${values.CONTRACT_DATE_LONG}`, { left: 60, top: 191, right: 934, bottom: 215 }, 8.5);
-  drawTowagePdfText(firstPage, regular, values.CHARTERER, { left: 60, top: 238, right: 485, bottom: 376 }, 8.5);
-  drawTowagePdfText(firstPage, regular, values.OWNER, { left: 486, top: 238, right: 934, bottom: 376 }, 8.5);
-  drawTowagePdfText(firstPage, regular, values.VESSEL_IDENTITY, { left: 60, top: 399, right: 485, bottom: 513 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.VESSEL_DETAILS, { left: 486, top: 399, right: 934, bottom: 513 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.LAST_ADMIN_VISIT, { left: 60, top: 536, right: 485, bottom: 583 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.NAVIGATION_TITLES, { left: 486, top: 536, right: 934, bottom: 583 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.DELIVERY, { left: 60, top: 606, right: 485, bottom: 675 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.MOBILISATION, { left: 486, top: 606, right: 934, bottom: 675 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.REDELIVERY, { left: 60, top: 698, right: 485, bottom: 722 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.DEMOBILISATION, { left: 486, top: 698, right: 934, bottom: 722 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.MINIMUM_DURATION, { left: 60, top: 745, right: 485, bottom: 768 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.EXTENSIONS, { left: 486, top: 745, right: 934, bottom: 768 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.CHARTER_HIRE, { left: 60, top: 791, right: 485, bottom: 814 }, 7.75);
-  drawTowagePdfText(firstPage, regular, values.EARLY_TERMINATION, { left: 486, top: 791, right: 934, bottom: 814 }, 7.75);
-  drawTowagePdfText(firstPage, regular, values.INSURED_VALUE, { left: 60, top: 838, right: 485, bottom: 861 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.INSURANCE_PAYER, { left: 486, top: 838, right: 934, bottom: 861 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.APPLICABLE_LAW, { left: 60, top: 884, right: 485, bottom: 907 }, 8.25);
-  drawTowagePdfText(firstPage, regular, values.JURISDICTION, { left: 486, top: 884, right: 934, bottom: 907 }, 8.25);
-  drawTowageSignature(firstPage, regular, values.CHARTERER_SIGNATORY, '', null, { left: 60, top: 930, right: 485, bottom: 1083 });
-  drawTowageSignature(firstPage, regular, [values.OWNER_SIGNATORY, values.OWNER_SIGNATORY_FUNCTION].filter(Boolean).join('\n'), '', signature, { left: 486, top: 930, right: 934, bottom: 1083 });
-
-  const signaturePage = pages[3];
-  if (signaturePage) {
-    drawTowagePdfText(signaturePage, bold, `Fait à ${values.CONTRACT_PLACE}, le ${values.CONTRACT_DATE_LONG}`, { left: 60, top: 165, right: 934, bottom: 198 }, 9);
-    drawTowageSignature(signaturePage, regular, values.CHARTERER_SIGNATORY, '', null, { left: 60, top: 263, right: 496, bottom: 435 });
-    drawTowageSignature(signaturePage, regular, [values.OWNER_SIGNATORY, values.OWNER_SIGNATORY_FUNCTION].filter(Boolean).join('\n'), '', signature, { left: 497, top: 263, right: 934, bottom: 435 });
-  }
-
-  document.setTitle(buildGeneratedDocumentFileName('bareboat_charter', input.project));
-  document.setSubject(projectReference(input.project));
-  document.setCreator('SeaPilot');
-  const bytes = await document.save({ useObjectStreams: false });
-  return {
-    blob: new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' }),
-    fileName: buildGeneratedDocumentFileName('bareboat_charter', input.project),
-    mimeType: 'application/pdf',
-  };
+  const fileName = buildGeneratedDocumentFileName(kind, input.project);
+  const layout = buildStyledContract(isTowage ? 'towage' : 'bareboat', values, input.project.title, Boolean(input.emitter?.signatureUrl), input.project.contractType);
+  const { renderStyledContractPdf } = await import('./projectStyledContractPdf');
+  const blob = await renderStyledContractPdf(layout, fileName, projectReference(input.project), input.emitter?.signatureUrl, input.emitter?.signatureMimeType);
+  return { blob, fileName, mimeType: 'application/pdf' };
 }
 
 export function downloadGeneratedProjectDocument(document: GeneratedProjectDocument): void {

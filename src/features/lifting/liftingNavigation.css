@@ -1,0 +1,55 @@
+.lifting-fleet { margin: 0 0 22px; padding: 20px 20px 0; border: 1px solid var(--lev-border); border-radius: 12px; background: #fff; min-width: 0; }
+.lifting-fleet-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.lifting-fleet-label { font-size: 9px; font-weight: 800; letter-spacing: 1.5px; color: #8a6a30; }
+.lifting-fleet-heading h2 { margin: 5px 0 0; font-size: 16px; letter-spacing: -.3px; }
+.lifting-fleet-heading h2 span { font-size: 12px; font-weight: 400; color: var(--lev-muted); margin-left: 4px; }
+.lifting-fleet-scroll { display: flex; align-items: center; gap: 6px; }
+.lifting-fleet-scroll > span { color: var(--lev-muted); font-size: 11px; margin-right: 8px; white-space: nowrap; }
+.lifting-fleet-scroll button { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--lev-border); border-radius: 6px; color: var(--lev-navy); background: #fff; cursor: pointer; }
+.lifting-vessel-strip { display: flex; gap: 10px; overflow-x: auto; padding: 19px 2px 16px; scrollbar-width: thin; scrollbar-color: #bbcbd2 transparent; scroll-snap-type: x proximity; }
+.lifting-vessel-card { flex: 1 0 105px; max-width: 160px; min-width: 0; display: flex; flex-direction: column; align-items: center; border: 0; border-radius: 8px; padding: 0 0 5px; background: transparent; color: var(--lev-muted); cursor: pointer; scroll-snap-align: start; }
+.lifting-vessel-photo { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 86px; border: 1px solid #e5ecef; border-radius: 9px; background: #fff; transition: border-color .15s, box-shadow .15s; }
+.lifting-vessel-photo img { width: 100%; height: 100%; object-fit: contain; border-radius: 8px; padding: 5px; box-sizing: border-box; }
+.lifting-vessel-card strong { font-size: 10px; line-height: 1.5; margin-top: 10px; padding: 0 3px; text-align: center; max-width: 100%; }
+.lifting-vessel-card:hover .lifting-vessel-photo { border-color: #8aa2ac; box-shadow: 0 3px 10px #16394b12; }
+.lifting-vessel-card[aria-pressed=true] { color: var(--lev-navy); }
+.lifting-vessel-card[aria-pressed=true] .lifting-vessel-photo { border-color: #b98526; box-shadow: 0 0 0 2px #d5ab5066; }
+.lifting-vessel-check { position: absolute; right: 5px; top: 5px; display: grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; background: var(--lev-navy); color: #fff; }
+.lifting-vessel-placeholder { display: flex; flex-direction: column; align-items: center; gap: 5px; color: #8b9da5; }
+.lifting-vessel-placeholder small { font-size: 9px; }
+.lifting-fleet-context { display: flex; align-items: center; gap: 8px; border-top: 1px solid #edf1f3; padding: 11px 0; font-size: 11px; }
+.lifting-fleet-context > span:last-child { color: var(--lev-muted); margin-left: auto; }
+.lifting-context-dot { width: 6px; height: 6px; border-radius: 50%; background: #bd8a27; flex: none; }
+.lifting-fleet-empty { font-size: 12px; color: var(--lev-muted); }
+.lifting-view-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; flex: 1; max-width: 640px; padding: 5px; border: 1px solid #e4ebee; border-radius: 11px; background: #f1f5f6; }
+.lifting-view-switch button { display: flex; align-items: center; gap: 12px; border: 1px solid transparent; border-radius: 8px; padding: 13px 15px; background: transparent; color: var(--lev-muted); text-align: left; cursor: pointer; }
+.lifting-view-switch button[aria-pressed=true] { background: var(--lev-navy); border-color: var(--lev-navy); color: #fff; box-shadow: 0 3px 8px #16394b1a; }
+.lifting-view-switch button > svg { flex: none; }
+.lifting-view-switch button > span { display: flex; flex-direction: column; gap: 5px; }
+.lifting-view-switch strong { font-size: 12px; line-height: 1.4; }
+.lifting-view-switch small { font-size: 10px; font-weight: 400; opacity: .85; }
+.lifting-view-switch b { display: grid; place-items: center; margin-left: auto; padding: 3px 7px; border-radius: 5px; font-size: 11px; background: #dfe8ec; color: var(--lev-navy); }
+.lifting-view-switch button[aria-pressed=true] b { background: #ffffff24; color: #fff; }
+.lifting-content-heading .lifting-verifier { margin-left: auto; }
+.lifting-vessel-card:focus-visible, .lifting-fleet-scroll button:focus-visible, .lifting-view-switch button:focus-visible { outline: 3px solid #b98526; outline-offset: 3px; }
+@media (max-width: 1100px) {
+  .lifting-view-switch button { gap: 8px; padding: 12px 10px; }
+  .lifting-view-switch small { display: none; }
+}
+@media (max-width: 680px) {
+  .lifting-fleet { padding: 16px 12px 0; }
+  .lifting-fleet-heading h2 { font-size: 14px; }
+  .lifting-fleet-heading h2 span { display: block; margin: 4px 0 0; font-size: 11px; }
+  .lifting-fleet-scroll { gap: 4px; }
+  .lifting-fleet-scroll > span { display: none; }
+  .lifting-fleet-scroll button { width: 36px; height: 36px; }
+  .lifting-vessel-card { flex-basis: 104px; }
+  .lifting-fleet-context { flex-wrap: wrap; font-size: 10px; }
+  .lifting-fleet-context > span:last-child { width: 100%; margin-left: 14px; }
+  .lifting-view-switch { max-width: none; gap: 3px; padding: 4px; }
+  .lifting-view-switch button { gap: 7px; padding: 11px 8px; }
+  .lifting-view-switch button > svg { width: 18px; }
+  .lifting-view-switch strong { font-size: 11px; }
+  .lifting-view-switch b { font-size: 10px; padding: 3px 5px; }
+}
+@media (prefers-reduced-motion: reduce) { .lifting-vessel-photo { transition: none; } }

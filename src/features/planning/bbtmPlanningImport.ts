@@ -665,9 +665,9 @@ function coalescePeriods(cells: BbtmDailyCell[], catalog: BbtmCatalog): BbtmImpo
     }
 
     const warnings: string[] = [];
-    if (!person) warnings.push('Personne absente de SeaPilot');
-    else if (!person.active) warnings.push('Personne inactive dans SeaPilot');
-    if (cell.vesselName && !vessel) warnings.push('Navire/lieu absent de SeaPilot');
+    if (!person) warnings.push('Personne absente de BBTM');
+    else if (!person.active) warnings.push('Personne inactive dans BBTM');
+    if (cell.vesselName && !vessel) warnings.push('Navire/lieu absent de BBTM');
     const sourceKey = [cell.sheet, cell.row, cell.date, cell.kind, normalizeCode(cell.rawValue)].join(':');
     periods.push({
       sourceKey,
@@ -857,7 +857,7 @@ function buildPeoplePreview(cells: BbtmDailyCell[], catalog: BbtmCatalog): BbtmP
         matchedName: match?.name ?? '',
         active: match?.active ?? null,
         importable: Boolean(match),
-        warning: !match ? 'Personne absente de SeaPilot' : !match.active ? 'Personne inactive : import historique uniquement' : '',
+        warning: !match ? 'Personne absente de BBTM' : !match.active ? 'Personne inactive : import historique uniquement' : '',
       };
     })
     .sort((left, right) => left.sourceName.localeCompare(right.sourceName));
@@ -952,7 +952,7 @@ export function buildBbtmImportSql(preview: BbtmImportPreview): BbtmImportSqlBun
       .map((person) => [person.personKey, person.matchedName]),
   );
   const values = periods.map((period) => {
-    if (period.personId === null) throw new Error(`Période importable sans personne SeaPilot : ${period.sourceKey}`);
+    if (period.personId === null) throw new Error(`Période importable sans personne BBTM : ${period.sourceKey}`);
     if (period.vesselName && period.sailorStatus === 'En Mer' && !period.watchGroup) {
       throw new Error(`Affectation en mer sans bordée : ${period.sourceKey}`);
     }

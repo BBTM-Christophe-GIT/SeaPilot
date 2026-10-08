@@ -48,7 +48,7 @@ function drawReportLogo(doc: JsPdfType, logo: string, x: number, y: number, boxW
 }
 
 export function sanitizeQhsePdfText(value: string): string {
-  return value.replace(/[\u202f\u00a0]/g, ' ').replace(/SeaPilot/gi, 'Supabase').replace(/Supabase\s+Supabase/gi, 'Supabase').replace(/₂/g, '2').replace(/≥/g, '>=').replace(/≤/g, '<=');
+  return value.replace(/[\u202f\u00a0]/g, ' ').replace(/SeaPilot/gi, 'BBTM').replace(/Supabase\s+Supabase/gi, 'Supabase').replace(/₂/g, '2').replace(/≥/g, '>=').replace(/≤/g, '<=');
 }
 
 function pageScope(snapshot: QhseReportSnapshot): string {

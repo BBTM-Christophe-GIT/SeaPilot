@@ -62,6 +62,20 @@ from (
 cross join public.companies company
 where company.code = 'bbtm';
 
+insert into public.people (company_id, user_id, first_name, last_name)
+select company.id, profile.id, 'Action', 'Crew fixture'
+from public.companies company cross join public.profiles profile
+where company.code = 'bbtm' and profile.id in ('7b000000-0000-0000-0000-000000000001', '7b000000-0000-0000-0000-000000000002');
+insert into public.vessels (company_id, name)
+select id, 'ACTION CAPTAIN ASSIGNED VESSEL' from public.companies where code = 'bbtm';
+insert into public.planning_assignments (company_id, vessel_id, crew_person_id, starts_on, ends_on)
+select person.company_id, vessel.id, person.id, current_date - 1, current_date + 1
+from public.people person join public.vessels vessel on vessel.company_id = person.company_id
+where person.user_id in ('7b000000-0000-0000-0000-000000000001', '7b000000-0000-0000-0000-000000000002')
+  and vessel.name = 'ACTION CAPTAIN ASSIGNED VESSEL';
+update public.action_items set vessel_id = (select id from public.vessels where name = 'ACTION CAPTAIN ASSIGNED VESSEL')
+where title in ('ACTION-CAPTAIN-OPEN', 'ACTION-CAPTAIN-TO-CLOSE', 'ACTION-CAPTAIN-CLOSED');
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '7b000000-0000-0000-0000-000000000001', true);
 

@@ -333,6 +333,11 @@ Retour arrière : suivre `docs/deployment/planning-p0-v1.md`. Les colonnes d’e
 
 `202607160005_planning_reopen_archived.sql` étend la transition sécurisée `reopen` aux périodes archivées. Elle conserve la matrice d’autorisation, le motif obligatoire, le numéro de version et les instantanés publiés, retire uniquement le verrou courant et journalise le passage vers `modified_after_publication` ou `preparation`.
 
+`20260907200347_optimize_planning_history_read.sql` ajoute l’index global
+`planning_change_log_changed_at_read_idx` sur `planning_change_log.changed_at desc`. La lecture des 250 événements
+les plus récents peut ainsi parcourir le journal dans l’ordre demandé et s’arrêter dès que la page autorisée est
+complète, sans modifier le périmètre fonctionnel ni les politiques RLS existantes.
+
 Les références réglementaires ou internes sont descriptives. Elles ne sont pas présentées comme une interprétation juridique définitive.
 
 ## 6. Contrôles livrés

@@ -1,5 +1,6 @@
 import { CheckCircle2, FileText, Flag, Folder, Layers3, ListChecks, Ship, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { compareFleetNames } from '../fleet/fleetDisplay';
 import {
   createDefaultFleetCertificateDocumentPath,
   FleetCertificateDocumentFields,
@@ -76,7 +77,7 @@ export function FleetCertificateReportDialog({
   onGenerate: (selection: FleetCertificateReportSelection) => Promise<void>;
 }) {
   const vessels = useMemo(() => Array.from(new Set(certificates.map((certificate) => certificate.vesselName)))
-    .sort((left, right) => frenchSort.compare(left, right)), [certificates]);
+    .sort(compareFleetNames), [certificates]);
   const [scope, setScope] = useState<FleetCertificateReportScope>('fleet');
   const [path, setPath] = useState<FleetCertificateDocumentPath>(() => createDefaultFleetCertificateDocumentPath(certificates));
   const [categoryKey, setCategoryKey] = useState(() => certificates.slice().sort((left, right) => frenchSort.compare(left.categoryLabel, right.categoryLabel))[0]?.categoryKey || '');
@@ -171,7 +172,7 @@ export function FleetCertificateReportDialog({
               {vessels.map((vesselName) => {
                 const checked = selectedVesselNames.includes(vesselName);
                 const documentCount = certificates.filter((certificate) => certificate.vesselName === vesselName).length;
-                return <label className={checked ? 'is-active' : ''} key={vesselName}><input checked={checked} onChange={() => setSelectedVesselNames((current) => checked ? current.filter((name) => name !== vesselName) : [...current, vesselName].sort((left, right) => frenchSort.compare(left, right)))} type="checkbox" /><Ship size={17} /><span><b>{vesselName}</b><small>{documentCount} document{documentCount > 1 ? 's' : ''}</small></span></label>;
+                return <label className={checked ? 'is-active' : ''} key={vesselName}><input checked={checked} onChange={() => setSelectedVesselNames((current) => checked ? current.filter((name) => name !== vesselName) : [...current, vesselName].sort(compareFleetNames))} type="checkbox" /><Ship size={17} /><span><b>{vesselName}</b><small>{documentCount} document{documentCount > 1 ? 's' : ''}</small></span></label>;
               })}
             </div>
             {!selectedVesselNames.length ? <small className="fcx-report-selection-error">Sélectionnez au moins un navire.</small> : null}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { isSeaPilotLocalPreview, isSeaPilotPreviewHostname } from './previewMode';
 
-describe('SeaPilot preview mode', () => {
+describe('BBTM preview mode', () => {
   it('recognizes Vercel preview hosts owned by the BBTM app team', () => {
     expect(isSeaPilotPreviewHostname('sea-pilot-e8fmpzh4d-bbtm-app.vercel.app')).toBe(true);
     expect(isSeaPilotPreviewHostname('sea-pilot-git-planning-bbtm-app.vercel.app')).toBe(true);

@@ -10,32 +10,26 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ProjectTowedAssetWriteInput, ProjectWriteInput } from './projectMutations';
 import type { ClientRecord, ProjectVesselCertificateRecord, VesselRecord } from './projectQueries';
 import {
-  BAREBOAT_CONTRACT_TYPE,
+  isCharterContractType,
   BIMCO_CONTRACT_TYPE,
   COMMERCIAL_OFFER_CONTRACT_TYPE,
   DEFAULT_BAREBOAT_CONTRACT_FIELDS,
   normalizeProjectContractType,
   TOWAGE_CONTRACT_TYPE,
 } from './projectContractOptions';
-import { BIMCO_P144_FIELDS, BIMCO_P144_GROUPS } from './projectContractModels';
+import { BIMCO_P144_FIELDS, BIMCO_P144_BUSINESS_GROUPS } from './projectContractModels';
 import bimcoPage01Url from './assets/contract-previews/bimco-p144-page-01.png';
 import bimcoPage02Url from './assets/contract-previews/bimco-p144-page-02.png';
 import bimcoPage03Url from './assets/contract-previews/bimco-p144-page-03.png';
 import bimcoPage04Url from './assets/contract-previews/bimco-p144-page-04.png';
-import towagePage01Url from './assets/contract-previews/towage-contract-page-01.png';
-import towagePage02Url from './assets/contract-previews/towage-contract-page-02.png';
-import towagePage03Url from './assets/contract-previews/towage-contract-page-03.png';
-import towagePage04Url from './assets/contract-previews/towage-contract-page-04.png';
-import towagePage05Url from './assets/contract-previews/towage-contract-page-05.png';
-import towagePage06Url from './assets/contract-previews/towage-contract-page-06.png';
-import bareboatPage01Url from './assets/contract-previews/bareboat-charter-page-1.png';
-import bareboatPage02Url from './assets/contract-previews/bareboat-charter-page-2.png';
-import bareboatPage03Url from './assets/contract-previews/bareboat-charter-page-3.png';
-import bareboatPage04Url from './assets/contract-previews/bareboat-charter-page-4.png';
+import { ProjectStyledContractPreview } from './ProjectStyledContractPreview';
+import { buildStyledContract, contractPreviewFields } from './projectStyledContract';
 import {
   buildCommercialReserves,
   formatProjectDocumentEmitterName,
-  getCommercialIncludedServiceDescriptions,
+  getCommercialConditionsDescription,
+  getCommercialConditionsMode,
+  getCommercialIncludedServiceRichDescriptions,
   shouldDisplayCommercialOfferRoute,
   type ProjectDocumentEmitter,
 } from './projectCommercialOffer';
@@ -46,6 +40,11 @@ import {
   formatBareboatDate,
   localTodayIso,
 } from './projectBareboatContract';
+import {
+  projectDescriptionHasContent,
+  projectDescriptionToPlainText,
+  sanitizeProjectDescriptionHtml,
+} from './projectDescription';
 
 interface ProjectContractPreviewProps {
   client?: Pick<ClientRecord, 'address' | 'city' | 'country' | 'name' | 'postalCode' | 'representedBy' | 'siret'>;
@@ -67,16 +66,6 @@ interface PositionedValue {
 }
 
 const BIMCO_PAGE_URLS = [bimcoPage01Url, bimcoPage02Url, bimcoPage03Url, bimcoPage04Url] as const;
-const TOWAGE_PAGE_URLS = [
-  towagePage01Url,
-  towagePage02Url,
-  towagePage03Url,
-  towagePage04Url,
-  towagePage05Url,
-  towagePage06Url,
-] as const;
-const BAREBOAT_PAGE_URLS = [bareboatPage01Url, bareboatPage02Url, bareboatPage03Url, bareboatPage04Url] as const;
-
 const BIMCO_POSITIONED_VALUES: PositionedValue[] = [
   { page: 1, key: 'p144_box01_place_date', left: 10.2, top: 17.3, width: 80, height: 5.3 },
   { page: 1, key: 'p144_box02_owners', left: 10.2, top: 25.1, width: 42.5, height: 9.5 },
@@ -225,7 +214,7 @@ function buildBimcoValues({ client, form, vessel }: ProjectContractPreviewProps)
     p144_box12_mobilisation: saved.p144_box12_mobilisation || money(form.mobilisationFee, form.feeCurrency),
     p144_box15_demobilisation: saved.p144_box15_demobilisation || money(form.demobilisationFee, form.feeCurrency),
     p144_box16_operation_area: saved.p144_box16_operation_area || form.operationArea,
-    p144_box17_employment: saved.p144_box17_employment || form.description,
+    p144_box17_employment: saved.p144_box17_employment || projectDescriptionToPlainText(form.description),
     p144_box18_specialist_operations: saved.p144_box18_specialist_operations || specialistOperations,
     p144_box19_fuel: saved.p144_box19_fuel || saved.box19_special_fuel || '',
     p144_box20_charter_hire: saved.p144_box20_charter_hire || money(form.charterHire, form.hireCurrency, form.hireUnit),
@@ -359,7 +348,10 @@ function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectCon
     ? Math.max(1, Math.round((new Date(form.endsOn).getTime() - new Date(form.startsOn).getTime()) / 86_400_000) + 1)
     : null;
   const reserves = buildCommercialReserves(form.supplytimeData);
-  const includedServices = getCommercialIncludedServiceDescriptions(form.supplytimeData);
+  const conditionsMode = getCommercialConditionsMode(form.supplytimeData);
+  const conditionsDescription = getCommercialConditionsDescription(form.supplytimeData);
+  const includedServices = getCommercialIncludedServiceRichDescriptions(form.supplytimeData);
+  const descriptionHtml = sanitizeProjectDescriptionHtml(form.description);
   const emitterName = formatProjectDocumentEmitterName(emitter);
   return (
     <div className="project-offer-document">
@@ -373,12 +365,22 @@ function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectCon
         <div><small>PROJET</small><strong>{`${projectCode} - ${form.title || 'NOUVEAU PROJET'}`}</strong><span>{COMMERCIAL_OFFER_CONTRACT_TYPE}</span></div>
       </section>
       <section className="project-offer-summary">
-        <div><small>NOTRE PROPOSITION</small><p>{form.description || 'Décrivez la prestation et le dispositif opérationnel proposé.'}</p></div>
+        <div><small>NOTRE PROPOSITION</small>{descriptionHtml ? <div className="project-offer-rich-copy project-offer-description" dangerouslySetInnerHTML={{ __html: descriptionHtml }} /> : <p>Décrivez la prestation et le dispositif opérationnel proposé.</p>}</div>
         <dl><div><dt>NAVIRE</dt><dd>{vessel?.name || '—'}</dd></div><div><dt>PÉRIODE</dt><dd>{[compactDate(form.startsOn), compactDate(form.endsOn)].filter(Boolean).join(' - ') || '—'}</dd></div>{shouldDisplayCommercialOfferRoute(form.deliveryPort, form.redeliveryPort) ? <div><dt>ROUTE</dt><dd>{[form.deliveryPort, form.redeliveryPort].filter(Boolean).join(' → ') || '—'}</dd></div> : null}</dl>
       </section>
       <div className="project-offer-columns">
-        <section><h3><span>1</span>Cadre opérationnel</h3><small>Périmètre proposé</small><p>{form.operationArea || 'Zone d’opération à renseigner'}</p><dl><div><dt>TYPE DE CONTRAT</dt><dd>{COMMERCIAL_OFFER_CONTRACT_TYPE}</dd></div><div><dt>LIVRAISON</dt><dd>{[form.deliveryPort, compactDate(form.deliveryAt)].filter(Boolean).join(' - ') || '—'}</dd></div><div><dt>REDÉLIVRAISON</dt><dd>{[form.redeliveryPort, compactDate(form.redeliveryAt)].filter(Boolean).join(' - ') || '—'}</dd></div><div><dt>DURÉE FERME</dt><dd>{duration ? `${duration} jours calendaires` : '—'}</dd></div><div><dt>CARBURANT</dt><dd>{form.supplytimeData.box19_special_fuel || '—'}</dd></div></dl></section>
-        <section><h3><span>2</span>Conditions commerciales</h3><dl><div><dt>Mobilisation</dt><dd>{money(form.mobilisationFee, form.feeCurrency) || '—'}</dd></div>{includedServices.mobilisation ? <div className="project-offer-service-description"><dt>Prestation incluse</dt><dd>{includedServices.mobilisation}</dd></div> : null}<div><dt>Démobilisation</dt><dd>{money(form.demobilisationFee, form.feeCurrency) || '—'}</dd></div>{includedServices.demobilisation ? <div className="project-offer-service-description"><dt>Prestation incluse</dt><dd>{includedServices.demobilisation}</dd></div> : null}<div><dt>Opération</dt><dd>{money(form.charterHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div>{includedServices.charterHire ? <div className="project-offer-service-description"><dt>Prestation incluse</dt><dd>{includedServices.charterHire}</dd></div> : null}<div><dt>Extension</dt><dd>{money(form.extensionHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div></dl><footer><span>FACTURATION<br /><b>{form.supplytimeData.box22_invoice_remittance || '—'}</b></span><span>PAIEMENT<br /><b>{form.supplytimeData.box23_payment || '—'}</b></span></footer></section>
+        <section><h3><span>1</span>Cadre opérationnel</h3><small>Périmètre proposé</small><p>{form.operationArea || 'Zone d’opération à renseigner'}</p><dl><div><dt>TYPE DE CONTRAT</dt><dd>{COMMERCIAL_OFFER_CONTRACT_TYPE}</dd></div><div><dt>LIVRAISON</dt><dd>{[form.deliveryPort, compactDate(form.deliveryAt)].filter(Boolean).join(' - ') || '—'}</dd></div><div><dt>REDÉLIVRAISON</dt><dd>{[form.redeliveryPort, compactDate(form.redeliveryAt)].filter(Boolean).join(' - ') || '—'}</dd></div>{duration ? <div><dt>DURÉE FERME</dt><dd>{`${duration} jours calendaires`}</dd></div> : null}<div><dt>CARBURANT</dt><dd>{form.supplytimeData.box19_special_fuel || '—'}</dd></div></dl></section>
+        {conditionsMode === 'free_text' ? (
+          <section className="project-offer-free-conditions">
+            <h3><span>2</span>Conditions commerciales</h3>
+            <small>DESCRIPTION DES CONDITIONS</small>
+            {conditionsDescription ? (
+              <div className="project-offer-rich-copy" dangerouslySetInnerHTML={{ __html: conditionsDescription }} />
+            ) : <p>Conditions commerciales à renseigner.</p>}
+          </section>
+        ) : (
+          <section><h3><span>2</span>Conditions commerciales</h3><dl><div><dt>Mobilisation</dt><dd>{money(form.mobilisationFee, form.feeCurrency) || '—'}</dd></div>{includedServices.mobilisation ? <div className="project-offer-service-description"><dt>Prestation incluse</dt><dd className="project-offer-rich-copy" dangerouslySetInnerHTML={{ __html: includedServices.mobilisation }} /></div> : null}<div><dt>Démobilisation</dt><dd>{money(form.demobilisationFee, form.feeCurrency) || '—'}</dd></div>{includedServices.demobilisation ? <div className="project-offer-service-description"><dt>Prestation incluse</dt><dd className="project-offer-rich-copy" dangerouslySetInnerHTML={{ __html: includedServices.demobilisation }} /></div> : null}<div><dt>Opération</dt><dd>{money(form.charterHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div>{includedServices.charterHire ? <div className="project-offer-service-description"><dt>Prestation incluse</dt><dd className="project-offer-rich-copy" dangerouslySetInnerHTML={{ __html: includedServices.charterHire }} /></div> : null}<div><dt>Extension</dt><dd>{money(form.extensionHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div></dl><footer><span>FACTURATION<br /><b>{form.supplytimeData.box22_invoice_remittance || '—'}</b></span><span>PAIEMENT<br /><b>{form.supplytimeData.box23_payment || '—'}</b></span></footer></section>
+        )}
       </div>
       {reserves.length > 0 ? <aside><strong>RÉSERVES COMMERCIALES</strong><span>{reserves.map((reserve) => <span key={reserve}>{reserve}</span>)}</span></aside> : null}
       <section className="project-offer-signatures">
@@ -396,130 +398,6 @@ function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectCon
           <span>Date ET CACHET</span>
         </div>
       </section>
-    </div>
-  );
-}
-
-function TowageSignature({
-  className,
-  date,
-  name,
-  signatureUrl,
-}: {
-  className: string;
-  date?: string;
-  name: string;
-  signatureUrl?: string;
-}) {
-  return (
-    <span className={`towage-overlay towage-signature ${className}`}>
-      <span>{name}</span>
-      {date ? <span>{date}</span> : null}
-      {signatureUrl ? <img alt={`Signature de ${name}`} src={signatureUrl} /> : null}
-    </span>
-  );
-}
-
-function TowagePreview({ page, ...props }: ProjectContractPreviewProps & { page: number }) {
-  const values = buildTowageValues(props);
-  return (
-    <div className="project-contract-page project-towage-page">
-      <img alt={`Aperçu du contrat de remorquage, page ${page}`} src={TOWAGE_PAGE_URLS[page - 1]} />
-      <span className="towage-overlay document-code">{values.documentCode}</span>
-      <span className="towage-overlay project-code">{values.projectCode}</span>
-      <span className="towage-overlay header-date">{values.headerDate}</span>
-      {page === 1 ? (
-        <>
-          <span className="towage-overlay contract-date">{values.contractDate}</span>
-          <span className="towage-overlay charterer">{values.charterer}</span>
-          <span className="towage-overlay owner">{values.owner}</span>
-          <span className="towage-overlay towed">{values.towed}</span>
-          <span className="towage-overlay tug">{values.tug}</span>
-          <span className="towage-overlay conditions">{values.conditions}</span>
-          <span className="towage-overlay pickup">{values.pickup}</span>
-          <span className="towage-overlay departure">{values.departure}</span>
-          <span className="towage-overlay destination">{values.destination}</span>
-          <span className="towage-overlay arrival">{values.arrival}</span>
-          <span className="towage-overlay connection">{values.connection}</span>
-          <span className="towage-overlay disconnection">{values.disconnection}</span>
-          <span className="towage-overlay fixed-price">{values.fixedPrice}</span>
-          <span className="towage-overlay optional-costs">{values.optionalCosts}</span>
-          <span className="towage-overlay payment">{values.payment}</span>
-          <span className="towage-overlay additional">{values.additional}</span>
-          <span className="towage-overlay special">{values.special}</span>
-          <TowageSignature className="charterer-signatory" name={values.chartererSignatory} />
-          <TowageSignature className="owner-signatory" date={values.signatureDate} name={values.ownerSignatory} signatureUrl={values.ownerSignatureUrl} />
-        </>
-      ) : null}
-      {page === 6 ? (
-        <>
-          <TowageSignature className="page-six-owner-signatory" date={values.signatureDate} name={values.ownerSignatory} signatureUrl={values.ownerSignatureUrl} />
-          <TowageSignature className="page-six-charterer-signatory" name={values.chartererSignatory} />
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-function BareboatSignature({
-  className,
-  functionLabel,
-  name,
-  signatureUrl,
-}: {
-  className: string;
-  functionLabel?: string;
-  name: string;
-  signatureUrl?: string;
-}) {
-  return (
-    <span className={`bareboat-overlay bareboat-signature ${className}`}>
-      <span>{name}</span>
-      {functionLabel ? <span>{functionLabel}</span> : null}
-      {signatureUrl ? <img alt={`Signature de ${name}`} src={signatureUrl} /> : null}
-    </span>
-  );
-}
-
-function BareboatPreview({ page, values }: { page: number; values: ReturnType<typeof buildBareboatValues> }) {
-  return (
-    <div className="project-contract-page project-bareboat-page">
-      <img alt={`Aperçu du contrat d’affrètement, page ${page}`} src={BAREBOAT_PAGE_URLS[page - 1]} />
-      <span className="bareboat-overlay project-code">{values.projectCode}</span>
-      <span className="bareboat-overlay header-date">{values.headerDate}</span>
-      <span className="bareboat-overlay vessel-name">{values.vesselName}</span>
-      {page === 1 ? (
-        <>
-          <span className="bareboat-overlay contract-date">{values.contractDate}</span>
-          <span className="bareboat-overlay charterer">{values.charterer}</span>
-          <span className="bareboat-overlay owner">{values.owner}</span>
-          <span className="bareboat-overlay vessel-identity">{values.vesselIdentity}</span>
-          <span className="bareboat-overlay vessel-details">{values.vesselDetails}</span>
-          <span className="bareboat-overlay last-admin-visit">{values.lastAdminVisit}</span>
-          <span className="bareboat-overlay navigation-titles">{values.navigationTitles}</span>
-          <span className="bareboat-overlay delivery">{values.delivery}</span>
-          <span className="bareboat-overlay mobilisation">{values.mobilisation}</span>
-          <span className="bareboat-overlay redelivery">{values.redelivery}</span>
-          <span className="bareboat-overlay demobilisation">{values.demobilisation}</span>
-          <span className="bareboat-overlay minimum-duration">{values.minimumDuration}</span>
-          <span className="bareboat-overlay extensions">{values.extensions}</span>
-          <span className="bareboat-overlay charter-hire">{values.charterHire}</span>
-          <span className="bareboat-overlay early-termination">{values.earlyTermination}</span>
-          <span className="bareboat-overlay insured-value">{values.insuredValue}</span>
-          <span className="bareboat-overlay insurance-payer">{values.insurancePayer}</span>
-          <span className="bareboat-overlay applicable-law">{values.applicableLaw}</span>
-          <span className="bareboat-overlay jurisdiction">{values.jurisdiction}</span>
-          <BareboatSignature className="page-one-charterer-signatory" name={values.chartererSignatory} />
-          <BareboatSignature className="page-one-owner-signatory" functionLabel={values.ownerSignatoryFunction} name={values.ownerSignatory} signatureUrl={values.ownerSignatureUrl} />
-        </>
-      ) : null}
-      {page === 4 ? (
-        <>
-          <span className="bareboat-overlay signature-statement">{values.signatureStatement}</span>
-          <BareboatSignature className="page-four-charterer-signatory" name={values.chartererSignatory} />
-          <BareboatSignature className="page-four-owner-signatory" functionLabel={values.ownerSignatoryFunction} name={values.ownerSignatory} signatureUrl={values.ownerSignatureUrl} />
-        </>
-      ) : null}
     </div>
   );
 }
@@ -552,19 +430,18 @@ function BimcoPreview({ page, values }: { page: number; values: Record<string, s
 
 export function ProjectContractPreview(props: ProjectContractPreviewProps) {
   const contractType = normalizeProjectContractType(props.form.contractType);
-  const pageCount = contractType === BIMCO_CONTRACT_TYPE
-    ? 29
-    : contractType === TOWAGE_CONTRACT_TYPE
-      ? 6
-      : contractType === BAREBOAT_CONTRACT_TYPE
-        ? 4
-        : 1;
-  const [page, setPage] = useState(1);
-  useEffect(() => setPage(1), [contractType]);
-  const currentPage = Math.min(page, pageCount);
   const bimcoValues = useMemo(() => buildBimcoValues(props), [props]);
   const towageValues = useMemo(() => buildTowageValues(props), [props]);
   const bareboatValues = useMemo(() => buildBareboatValues(props), [props]);
+  const styledDocument = useMemo(() => {
+    if (contractType !== TOWAGE_CONTRACT_TYPE && !isCharterContractType(contractType)) return null;
+    const kind = contractType === TOWAGE_CONTRACT_TYPE ? 'towage' : 'bareboat';
+    return buildStyledContract(kind, contractPreviewFields(kind, kind === 'towage' ? towageValues : bareboatValues), props.form.title, Boolean(props.emitter?.signatureUrl), contractType);
+  }, [contractType, towageValues, bareboatValues, props.form.title, props.emitter?.signatureUrl]);
+  const pageCount = contractType === BIMCO_CONTRACT_TYPE ? 29 : styledDocument?.pages.length || 1;
+  const [page, setPage] = useState(1);
+  useEffect(() => setPage(1), [contractType]);
+  const currentPage = Math.min(page, pageCount);
   const completedBimcoFields = BIMCO_P144_FIELDS.filter((field) => bimcoValues[field.key]?.trim()).length;
   const basicCompletion = [props.form.title, props.form.clientId, props.form.primaryVesselId, props.form.deliveryAt, props.form.redeliveryAt]
     .filter(Boolean).length;
@@ -572,12 +449,12 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
     ? Math.round((completedBimcoFields / 34) * 100)
     : contractType === TOWAGE_CONTRACT_TYPE
       ? Math.round(((basicCompletion + Object.values(towageValues).filter((value) => String(value).trim()).length) / 27) * 100)
-      : contractType === BAREBOAT_CONTRACT_TYPE
+      : isCharterContractType(contractType)
         ? Math.round((Object.values(bareboatValues).filter((value) => String(value).trim()).length / Object.keys(bareboatValues).length) * 100)
-      : Math.round(((basicCompletion + [props.form.description, props.form.charterHire, props.form.mobilisationFee, props.form.supplytimeData.box23_payment].filter(Boolean).length) / 9) * 100);
+      : Math.round(((basicCompletion + [projectDescriptionHasContent(props.form.description), props.form.charterHire, props.form.mobilisationFee, props.form.supplytimeData.box23_payment].filter(Boolean).length) / 9) * 100);
   const safeCompletion = Math.max(0, Math.min(100, completion));
   const checklist = contractType === BIMCO_CONTRACT_TYPE
-    ? BIMCO_P144_GROUPS.map((group) => ({
+    ? BIMCO_P144_BUSINESS_GROUPS.map((group) => ({
         complete: group.fields.every((field) => Boolean(bimcoValues[field.key]?.trim())),
         label: group.label,
       }))
@@ -590,7 +467,7 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
           { label: 'Conditions particulières', complete: Boolean(props.form.supplytimeData.special_conditions) },
           { label: 'Signatures', complete: Boolean(towageValues.ownerSignatory && towageValues.chartererSignatory) },
         ]
-      : contractType === BAREBOAT_CONTRACT_TYPE
+      : isCharterContractType(contractType)
         ? [
             { label: 'Parties', complete: Boolean(props.form.clientId && props.form.ownerIdentity) },
             { label: 'Navire & titres', complete: Boolean(props.form.primaryVesselId && bareboatValues.lastAdminVisit && bareboatValues.navigationTitles) },
@@ -601,7 +478,7 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
           ]
       : [
           { label: 'Identification', complete: Boolean(props.form.title && props.form.clientId) },
-          { label: 'Périmètre', complete: Boolean(props.form.description && props.form.operationArea) },
+          { label: 'Périmètre', complete: projectDescriptionHasContent(props.form.description) && Boolean(props.form.operationArea) },
           { label: 'Planning', complete: Boolean(props.form.deliveryAt && props.form.redeliveryAt) },
           { label: 'Conditions commerciales', complete: Boolean(props.form.charterHire) },
           { label: 'Validation', complete: false },
@@ -626,8 +503,7 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
         </header>
         <div className="project-document-preview-canvas">
           {contractType === COMMERCIAL_OFFER_CONTRACT_TYPE ? <OfferPreview {...props} /> : null}
-          {contractType === TOWAGE_CONTRACT_TYPE ? <TowagePreview {...props} page={currentPage} /> : null}
-          {contractType === BAREBOAT_CONTRACT_TYPE ? <BareboatPreview page={currentPage} values={bareboatValues} /> : null}
+          {styledDocument ? <ProjectStyledContractPreview document={styledDocument} page={currentPage} signatureUrl={props.emitter?.signatureUrl} /> : null}
           {contractType === BIMCO_CONTRACT_TYPE ? <BimcoPreview page={currentPage} values={bimcoValues} /> : null}
         </div>
       </section>
@@ -637,7 +513,7 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
         <b>Champs obligatoires</b>
         <small>{`${checklist.filter((item) => item.complete).length} / ${checklist.length} sections complétées`}</small>
         <ul>{checklist.map((item) => <li className={item.complete ? 'is-complete' : undefined} key={item.label}>{item.complete ? <CheckCircle2 aria-hidden="true" size={14} /> : <Circle aria-hidden="true" size={14} />}<span>{item.label}</span></li>)}</ul>
-        <p><FileText aria-hidden="true" size={14} /> Document généré et conservé dans SeaPilot.</p>
+        <p><FileText aria-hidden="true" size={14} /> Document généré et conservé dans BBTM.</p>
       </aside>
     </div>
   );

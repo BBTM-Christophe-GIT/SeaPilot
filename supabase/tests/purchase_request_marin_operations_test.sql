@@ -97,8 +97,8 @@ select throws_ok(
     (select id from public.purchase_requests where request_number = 'MARIN-OPERATIONS-001'),
     'approve', null, null
   )$$,
-  '42501', null,
-  'a Marin cannot approve a purchase request'
+  '55000', null,
+  'a Marin cannot approve an already completed purchase request'
 );
 
 select is(

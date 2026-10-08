@@ -1,5 +1,9 @@
+import { compareFleetAssets } from '../fleet/fleetDisplay';
+import { fetchGenericCrewRows, type GenericCrewRow } from './planningGenericCrew';
+import { fetchPlanningFleetOrder } from './planningFleetOrder';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeProjectStatus, type ProjectStatus } from '../projects/projectStatus';
+import { projectDescriptionToPlainText } from '../projects/projectDescription';
 import { isPlanningDate, planningDateFromTimestamp, planningLocalDateTimeToUtc, utcToPlanningLocalDateTime } from './planningDates';
 import { reportPlanningTechnicalError, throwPlanningDataError } from './planningErrors';
 import { isPlanningGridStatus, type PlanningGridStatus } from './planningGrid';
@@ -12,7 +16,7 @@ import {
   requiredPlanningText,
 } from './planningValidation';
 
-const VESSEL_SELECT = 'id, name, acronym, registration_number, active';
+const VESSEL_SELECT = 'id, name, acronym, registration_number, active, length_overall';
 const PLANNING_READ_PAGE_SIZE = 1_000;
 const PLANNING_PERSON_SELECT =
   'id, first_name, last_name, function_label, grade_label, role_label, sailor_number, contract_type, hired_on, departed_on, birth_date, birth_place, identity_document_number, identity_document_type, deck_certificate_label, engine_certificate_label, active';
@@ -38,7 +42,7 @@ const PLANNING_RULE_SELECT =
 const PLANNING_PUBLICATION_SELECT =
   'id, vessel_id, scope_key, starts_on, ends_on, status, current_version, comment, submitted_at, submitted_by, submitted_by_name, validated_at, validated_by, validated_by_name, published_at, published_by, published_by_name, locked_at, locked_by, locked_by_name, updated_at, updated_by, updated_by_name';
 const PLANNING_HISTORY_SELECT =
-  'id, entity_kind, entity_id, action, payload, changed_by, changed_by_name, changed_at, vessel_id, starts_on, ends_on, summary';
+  'id, entity_kind, entity_id, action, changed_by, changed_by_name, changed_at, vessel_id, starts_on, ends_on, summary';
 const PLANNING_HANDOVER_SELECT =
   'id, vessel_id, handover_at, location, handover_duration_minutes, responsible_person_id, comments, status, created_by, updated_by, created_at, updated_at';
 const PLANNING_HANDOVER_POSITION_SELECT =
@@ -54,6 +58,7 @@ interface VesselRow {
   acronym: string | null;
   registration_number?: string | null;
   active: boolean;
+  length_overall?: string | null;
 }
 
 interface PlanningPersonRow {
@@ -86,6 +91,7 @@ interface PlanningBoardRowRow {
 }
 
 export interface PlanningAssignmentRow {
+  updated_at?: string;
   id: number;
   vessel_id: number;
   captain_person_id: number | null;
@@ -346,6 +352,7 @@ export interface PlanningVessel {
   acronym: string;
   registrationNumber?: string;
   active: boolean;
+  lengthOverall?: string | null;
 }
 
 export interface PlanningPerson {
@@ -378,6 +385,7 @@ export interface PlanningBoardRowRecord {
 }
 
 export interface PlanningAssignmentRecord {
+  updatedAt?: string;
   id: number;
   vesselId: number;
   vesselName: string;
@@ -649,9 +657,11 @@ export interface PlanningDerogationHistoryRecord {
 }
 
 export interface PlanningOverview {
+  fleetFunctionOrder?: string[];
   vessels: PlanningVessel[];
   people: PlanningPerson[];
   boardRows?: PlanningBoardRowRecord[];
+  genericCrewRows?: GenericCrewRow[];
   assignments: PlanningAssignmentRecord[];
   days: PlanningDayRecord[];
   periods: PlanningPeriodRecord[];
@@ -759,6 +769,7 @@ export interface SavePlanningAssignmentDayNoteInput {
 
 export interface SavePlanningAssignmentDayStateInput extends SavePlanningAssignmentDayNoteInput {
   status: PlanningGridStatus;
+  functionLabel?: string;
 }
 
 export interface PlanningGridMutationCell {
@@ -851,7 +862,8 @@ export function mapVesselRows(rows: VesselRow[]): PlanningVessel[] {
     acronym: row.acronym || '',
     registrationNumber: row.registration_number || '',
     active: row.active,
-  }));
+    lengthOverall: row.length_overall,
+  })).sort(compareFleetAssets);
 }
 
 export function mapPlanningPeopleRows(rows: PlanningPersonRow[]): PlanningPerson[] {
@@ -928,6 +940,7 @@ export function mapPlanningAssignmentRows(
 
 export function mapPlanningAssignmentOverviewRows(rows: PlanningAssignmentOverviewRow[]): PlanningAssignmentRecord[] {
   return rows.map((row) => ({
+    updatedAt: row.updated_at,
     id: row.id,
     vesselId: row.vessel_id,
     vesselName: row.vessel_name || `Navire #${row.vessel_id}`,
@@ -1017,7 +1030,7 @@ export function mapPlanningProjectRows(rows: PlanningProjectRow[]): PlanningProj
       title: row.title,
       startsOn: textOrEmpty(row.starts_on),
       endsOn: textOrEmpty(row.ends_on || row.starts_on),
-      description: textOrEmpty(row.description),
+      description: projectDescriptionToPlainText(row.description),
       clientName: textOrEmpty(row.client_name),
       primaryVesselId: row.primary_vessel_id,
       primaryVesselName: textOrEmpty(row.primary_vessel_name),
@@ -1260,7 +1273,7 @@ export async function fetchPlanningBoardRows(client: SupabaseClient): Promise<Pl
 export async function fetchPlanningAssignmentOverviewRows(
   client: SupabaseClient,
 ): Promise<PlanningAssignmentOverviewRow[]> {
-  const { data, error } = await client.rpc('planning_assignment_overview');
+  const { data, error } = await client.rpc('planning_assignment_overview_with_revisions');
 
   if (error) throwPlanningDataError('load-assignments', 'Impossible de charger les affectations.', error);
 
@@ -1268,15 +1281,16 @@ export async function fetchPlanningAssignmentOverviewRows(
 }
 
 export async function fetchPlanningDays(client: SupabaseClient): Promise<PlanningDayRecord[]> {
-  const { data, error } = await client
-    .from('planning_days')
-    .select(PLANNING_DAY_SELECT)
-    .order('work_date', { ascending: true })
-    .order('crew_name', { ascending: true });
-
-  if (error) throwPlanningDataError('load-days', 'Impossible de charger les journées du planning.', error);
-
-  return mapPlanningDayRows((data || []) as PlanningDayRow[]);
+  const rows: PlanningDayRow[] = [];
+  for (let start = 0; ; start += PLANNING_READ_PAGE_SIZE) {
+    const { data, error } = await client.from('planning_days').select(PLANNING_DAY_SELECT)
+      .order('work_date', { ascending: true }).order('crew_name', { ascending: true })
+      .order('id', { ascending: true }).range(start, start + PLANNING_READ_PAGE_SIZE - 1);
+    if (error) throwPlanningDataError('load-days', 'Impossible de charger les journées du planning.', error);
+    const page = (data || []) as PlanningDayRow[];
+    rows.push(...page);
+    if (page.length < PLANNING_READ_PAGE_SIZE) return mapPlanningDayRows(rows);
+  }
 }
 
 export async function fetchPlanningPeriods(client: SupabaseClient): Promise<PlanningPeriodRecord[]> {
@@ -1300,6 +1314,27 @@ export async function fetchPlanningPeriods(client: SupabaseClient): Promise<Plan
       return mapPlanningPeriodRows(rows);
     }
   }
+}
+
+// The server rechecks RLS and fingerprints the complete visible result on every
+// read. A cached result is never displayed before that validation, including
+// after a user, company or permission change on the same Supabase client.
+const planningPeriodCache = new WeakMap<SupabaseClient, { revision: string; periods: PlanningPeriodRecord[] }>();
+
+export async function fetchCachedPlanningPeriods(client: SupabaseClient): Promise<PlanningPeriodRecord[]> {
+  const previous = planningPeriodCache.get(client);
+  const { data, error } = await client.rpc('read_planning_periods', { p_known_revision: previous?.revision || null });
+  if (error) {
+    if (error.code === 'PGRST202' || error.code === '42883') return fetchPlanningPeriods(client);
+    throwPlanningDataError('load-periods', 'Impossible de charger les périodes du planning.', error);
+  }
+  const result = data as { revision: string; periods: PlanningPeriodRow[] | null } | null;
+  if (!result || typeof result.revision !== 'string') throw new Error('Réponse des périodes du planning invalide.');
+  if (result.periods === null && previous?.revision === result.revision) return previous.periods;
+  if (!Array.isArray(result.periods)) throw new Error('Les périodes du planning doivent être rechargées.');
+  const periods = mapPlanningPeriodRows(result.periods);
+  planningPeriodCache.set(client, { revision: result.revision, periods });
+  return periods;
 }
 
 export async function fetchPlanningProjects(client: SupabaseClient): Promise<PlanningProjectRecord[]> {
@@ -1478,6 +1513,8 @@ function mapPlanningReleaseSnapshot(snapshot: PlanningReleaseSnapshotRow | null)
 
 export interface FetchPlanningOverviewOptions {
   publishedOnly?: boolean;
+  includeHistory?: boolean;
+  cachedPeriods?: boolean;
 }
 
 export async function fetchPlanningOverview(
@@ -1485,7 +1522,7 @@ export async function fetchPlanningOverview(
   options: FetchPlanningOverviewOptions = {},
 ): Promise<PlanningOverview> {
   if (options.publishedOnly) {
-    const [[vessels, people, certificates, hrDocuments, annualReviews, rules, versions], snapshot] = await Promise.all([
+    const [[vessels, people, certificates, hrDocuments, annualReviews, rules, versions, fleetFunctionOrder], snapshot] = await Promise.all([
       Promise.all([
         fetchVessels(client),
         fetchPlanningPeople(client),
@@ -1494,6 +1531,7 @@ export async function fetchPlanningOverview(
         fetchPlanningAnnualReviews(client),
         fetchPlanningRules(client),
         fetchPlanningVersions(client),
+        fetchPlanningFleetOrder(client),
       ]),
       fetchLatestPlanningReleaseSnapshot(client),
     ]);
@@ -1501,6 +1539,7 @@ export async function fetchPlanningOverview(
     return {
       vessels,
       people,
+      fleetFunctionOrder,
       boardRows: [],
       ...releasedPlanning,
       certificates,
@@ -1514,28 +1553,32 @@ export async function fetchPlanningOverview(
     };
   }
 
-  const [vessels, people, boardRows, assignmentRows, days, periods, projects, certificates, hrDocuments, annualReviews, rules, versions, history, handovers] = await Promise.all([
+  const [vessels, people, boardRows, assignmentRows, days, periods, projects, certificates, hrDocuments, annualReviews, rules, versions, history, handovers, genericCrewRows, fleetFunctionOrder] = await Promise.all([
     fetchVessels(client),
     fetchPlanningPeople(client),
     fetchPlanningBoardRows(client),
     fetchPlanningAssignmentOverviewRows(client),
     fetchPlanningDays(client),
-    fetchPlanningPeriods(client),
+    options.cachedPeriods ? fetchCachedPlanningPeriods(client) : fetchPlanningPeriods(client),
     fetchPlanningProjects(client),
     fetchPlanningCertificates(client),
     fetchPlanningHrDocuments(client),
     fetchPlanningAnnualReviews(client),
     fetchPlanningRules(client),
     fetchPlanningVersions(client),
-    fetchPlanningHistory(client),
+    options.includeHistory === false ? Promise.resolve([]) : fetchPlanningHistory(client),
     fetchPlanningHandovers(client),
+    fetchGenericCrewRows(client),
+    fetchPlanningFleetOrder(client),
   ]);
 
   return {
     vessels,
     people,
+    fleetFunctionOrder,
     boardRows,
     assignments: mapPlanningAssignmentOverviewRows(assignmentRows),
+    genericCrewRows,
     days,
     periods,
     projects,
@@ -1704,14 +1747,37 @@ export async function savePlanningAssignmentDayState(
   const note = input.note.trim();
   if (!isPlanningGridStatus(input.status)) throw new Error('Le statut quotidien est invalide.');
   if (note.length > 32) throw new Error('Le commentaire quotidien ne peut pas dépasser 32 caractères.');
-  const { data, error } = await client.rpc('save_planning_assignment_day_state', {
+  const functionLabel = input.functionLabel === undefined ? undefined : requiredPlanningText(input.functionLabel, 'La fonction temporaire');
+  const { data, error } = await client.rpc(functionLabel === undefined ? 'save_planning_assignment_day_state' : 'save_planning_assignment_day_details', {
     p_assignment_id: assignmentId,
     p_work_date: input.workDate,
     p_status: input.status,
     p_note: note,
+    ...(functionLabel === undefined ? {} : { p_function_label: functionLabel }),
   });
   if (error) throwPlanningDataError('save-assignment-day-state', 'Impossible d’enregistrer le statut quotidien.', error);
   return typeof data === 'number' ? data : null;
+}
+
+export async function savePlanningAssignmentDayStates(
+  client: SupabaseClient,
+  input: Omit<SavePlanningAssignmentDayStateInput, 'workDate'> & { startsOn: string; endsOn: string },
+): Promise<void> {
+  const assignmentId = planningEntityId(input.assignmentId, "L'affectation");
+  assertPlanningDateRange(input.startsOn, input.endsOn);
+  const note = input.note.trim();
+  if (!isPlanningGridStatus(input.status)) throw new Error('Le statut quotidien est invalide.');
+  if (note.length > 32) throw new Error('Le commentaire quotidien ne peut pas dépasser 32 caractères.');
+  const functionLabel = input.functionLabel === undefined ? undefined : requiredPlanningText(input.functionLabel, 'La fonction temporaire');
+  const { error } = await client.rpc(functionLabel === undefined ? 'save_planning_assignment_day_states' : 'save_planning_assignment_day_details_range', {
+    p_assignment_id: assignmentId,
+    p_starts_on: input.startsOn,
+    p_ends_on: input.endsOn,
+    p_status: input.status,
+    p_note: note,
+    ...(functionLabel === undefined ? {} : { p_function_label: functionLabel }),
+  });
+  if (error) throwPlanningDataError('save-assignment-day-states', 'Impossible d’enregistrer les statuts quotidiens.', error);
 }
 
 function planningGridMutationPayload(cells: PlanningGridMutationCell[]) {

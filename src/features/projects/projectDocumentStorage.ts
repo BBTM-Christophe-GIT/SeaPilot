@@ -1,3 +1,4 @@
+import { projectDriveStorage } from './projectDriveStorage';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { GeneratedProjectDocument } from './projectDocumentGeneration';
 import type { ProjectGeneratedDocumentKind } from './projectDocumentTypes';
@@ -84,10 +85,9 @@ export async function createProjectDocumentBundle(
   const attachmentFolder = archive.folder('Pièces jointes');
   const downloadedAttachments = await Promise.all(input.attachments.map(async (attachment) => {
     if (!attachment.storageBucket || !attachment.storagePath) {
-      throw new Error(`La pièce jointe ${attachment.fileName} n’est pas disponible dans l’espace privé SeaPilot.`);
+      throw new Error(`La pièce jointe ${attachment.fileName} n’est pas disponible dans l’espace privé BBTM.`);
     }
-    const { data, error } = await client.storage
-      .from(attachment.storageBucket)
+    const { data, error } = await projectDriveStorage(client, attachment.storageBucket)
       .download(attachment.storagePath);
     if (error || !data) {
       throw new Error(error?.message || `Impossible de télécharger la pièce jointe ${attachment.fileName}.`);
@@ -120,14 +120,16 @@ export async function createProjectDocumentAccessUrl(
   },
 ): Promise<string> {
   if (document.storageBucket && document.storagePath) {
-    const { data, error } = await client.storage
-      .from(document.storageBucket)
+    const { data, error } = await projectDriveStorage(client, document.storageBucket)
       .createSignedUrl(document.storagePath, 300);
     if (error) throw new Error(error.message || 'Impossible de préparer l’accès au document Supabase.');
     if (!data?.signedUrl) throw new Error('Supabase n’a pas retourné de lien sécurisé pour ce document.');
     return data.signedUrl;
   }
-  if (document.sharePointWebUrl) return document.sharePointWebUrl;
+  if (document.sharePointWebUrl) {
+    const { data } = await projectDriveStorage(client, 'sharepoint').createSignedUrl(document.sharePointWebUrl, 300);
+    return data!.signedUrl;
+  }
   throw new Error('Ce document ne possède aucun emplacement de stockage exploitable.');
 }
 
@@ -152,14 +154,14 @@ export async function storeGeneratedProjectDocument(
     `r${input.revision || 1}`,
     `${crypto.randomUUID()}-${fileName}`,
   ].join('/');
-  const storage = client.storage.from(PROJECT_FILES_BUCKET);
+  const storage = projectDriveStorage(client, PROJECT_FILES_BUCKET);
   const { error: uploadError } = await storage.upload(storagePath, input.document.blob, {
     cacheControl: '3600',
     contentType: input.document.mimeType,
     upsert: false,
   });
   if (uploadError) {
-    throw new Error(uploadError.message || 'Le document n’a pas pu être envoyé vers SeaPilot.');
+    throw new Error(uploadError.message || 'Le document n’a pas pu être envoyé vers BBTM.');
   }
 
   try {
@@ -175,9 +177,9 @@ export async function storeGeneratedProjectDocument(
       target_revision: input.revision || 1,
       target_sha256: bytesToHex(digest),
     });
-    if (error) throw new Error(error.message || 'Le document n’a pas pu être rattaché au projet SeaPilot.');
+    if (error) throw new Error(error.message || 'Le document n’a pas pu être rattaché au projet BBTM.');
     const id = Number(data);
-    if (!Number.isInteger(id) || id <= 0) throw new Error('SeaPilot n’a pas confirmé le classement du document.');
+    if (!Number.isInteger(id) || id <= 0) throw new Error('BBTM n’a pas confirmé le classement du document.');
     return {
       fileName: input.document.fileName,
       folderPath: storagePath.slice(0, storagePath.lastIndexOf('/')),
@@ -211,14 +213,14 @@ export async function storeOperationDocument(
     String(input.planningOccurrenceId),
     `${crypto.randomUUID()}-${fileName}`,
   ].join('/');
-  const storage = client.storage.from(PROJECT_FILES_BUCKET);
+  const storage = projectDriveStorage(client, PROJECT_FILES_BUCKET);
   const { error: uploadError } = await storage.upload(storagePath, input.file, {
     cacheControl: '3600',
     contentType: mimeType,
     upsert: false,
   });
   if (uploadError) {
-    throw new Error(uploadError.message || `Le document ${input.file.name} n’a pas pu être envoyé vers SeaPilot.`);
+    throw new Error(uploadError.message || `Le document ${input.file.name} n’a pas pu être envoyé vers BBTM.`);
   }
 
   try {
@@ -236,7 +238,7 @@ export async function storeOperationDocument(
     });
     if (error) throw new Error(error.message || `Le document ${input.file.name} n’a pas pu être rattaché à l’opération.`);
     const id = Number(data);
-    if (!Number.isInteger(id) || id <= 0) throw new Error(`SeaPilot n’a pas confirmé le classement de ${input.file.name}.`);
+    if (!Number.isInteger(id) || id <= 0) throw new Error(`BBTM n’a pas confirmé le classement de ${input.file.name}.`);
     return {
       fileName: input.file.name,
       folderPath: storagePath.slice(0, storagePath.lastIndexOf('/')),
@@ -267,7 +269,7 @@ export async function storeOperationDocuments(
     } catch (error) {
       result.failed.push({
         fileName: file.name,
-        message: error instanceof Error ? error.message : 'Échec de l’enregistrement dans SeaPilot.',
+        message: error instanceof Error ? error.message : 'Échec de l’enregistrement dans BBTM.',
       });
     }
   }
@@ -297,7 +299,7 @@ export async function storeProjectAttachment(
     `${crypto.randomUUID()}-${fileName}`,
   ].join('/');
 
-  const storage = client.storage.from(PROJECT_FILES_BUCKET);
+  const storage = projectDriveStorage(client, PROJECT_FILES_BUCKET);
   const { error: uploadError } = await storage.upload(storagePath, input.draft.file, {
     cacheControl: '3600',
     contentType: mimeType,

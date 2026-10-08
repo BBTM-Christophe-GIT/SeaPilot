@@ -1,7 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { HumanResourcesPage } from './HumanResourcesPage';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
+import { HumanResourcesPage, HumanResourcesRoute } from './HumanResourcesPage';
+import { connectHrDrive, readHrDriveFile, writeHrDriveFile } from './hrDocumentDrive';
+vi.mock('./hrDocumentDrive', () => ({ connectHrDrive: vi.fn(), writeHrDriveFile: vi.fn(async (_client, id, name) => ({ drive_path: `person-${id}/${name}`, drive_sha256: 'a'.repeat(64) })), readHrDriveFile: vi.fn() }));
 import { openTrainingPlanReport } from './trainingPlanReport';
 
 vi.mock('./trainingPlanReport', async () => {
@@ -118,6 +121,8 @@ interface HrDocumentFixture {
   file_url: string | null;
   storage_bucket?: string | null;
   storage_path?: string | null;
+  drive_path?: string;
+  drive_sha256?: string;
   file_size_bytes?: number | null;
   mime_type?: string | null;
 }
@@ -211,6 +216,81 @@ function createClient(people: Array<Record<string, unknown>> = [activePerson, fo
 }
 
 describe('HumanResourcesPage', () => {
+  it('opens an accessible unassigned document chip for a manager', async () => {
+    render(<MemoryRouter initialEntries={['/modules/humanResources?document=12']}><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={createClient([activePerson], [unassignedDocument]) as never} currentPersonId={1} roles={['admin']} />} /></Routes></MemoryRouter>);
+    expect(await screen.findByRole('dialog', { name: 'Modifier Brevet pont a rattacher' })).toBeInTheDocument();
+  });
+
+  it('opens the linked person and document section instead of the connected record', async () => {
+    render(<MemoryRouter initialEntries={['/modules/humanResources?person=1&document=11']}><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={createClient([activePerson, yardManagerPerson]) as never} currentPersonId={3} roles={['admin']} />} /></Routes></MemoryRouter>);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await waitFor(() => expect(within(profile).getByRole('button', { name: 'Documents' })).toHaveAttribute('aria-current', 'page'));
+    expect(within(profile).getByText('Capitaine 200')).toBeInTheDocument();
+    expect(within(profile).getByRole('checkbox', { name: /Capitaine 200/ })).toBeChecked();
+  });
+
+  it('opens a contract chip on the linked person’s contract section', async () => {
+    render(<MemoryRouter initialEntries={['/modules/humanResources?person=1&section=contract']}><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={createClient() as never} currentPersonId={3} roles={['admin']} />} /></Routes></MemoryRouter>);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await waitFor(() => expect(within(profile).getByRole('button', { name: 'Contrat et dates' })).toHaveAttribute('aria-current', 'page'));
+  });
+
+  it.each(['capitaine', 'marin'] as const)('keeps an inaccessible linked RH person hidden for a real %s fixture', async (role) => {
+    render(<MemoryRouter initialEntries={['/modules/humanResources?person=999&document=11']}><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={createClient([activePerson], []) as never} currentPersonId={1} roles={[role]} />} /></Routes></MemoryRouter>);
+    await waitFor(() => expect(screen.queryByText('Chargement du personnel RH…')).not.toBeInTheDocument());
+    expect(screen.queryByRole('complementary', { name: 'Fiche RH de Jean MARTIN' })).not.toBeInTheDocument();
+  });
+
+  it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as const)('opens the connected person’s record by default for the %s profile', async (role) => {
+    const ownPerson = { ...activePerson, id: 3, user_id: 'own-user', first_name: 'Lea', last_name: 'ZULU' };
+    // The Marin fixture contains only the person allowed by the real read scope.
+    const people = role === 'marin' ? [ownPerson] : [activePerson, ownPerson];
+    render(<HumanResourcesPage client={createClient(people, []) as never} currentPersonId={3} roles={[role]} />);
+    expect(await screen.findByRole('complementary', { name: 'Fiche RH de Lea ZULU' })).toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Fiche RH de Jean MARTIN' })).not.toBeInTheDocument();
+    if (role !== 'marin') expect(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).toBeInTheDocument();
+  });
+
+  it('switches the automatic default when the connected identity arrives after the roster', async () => {
+    const client = createClient([activePerson, yardManagerPerson]);
+    const view = render(<HumanResourcesPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    view.rerender(<HumanResourcesPage client={client as never} currentPersonId={3} roles={['admin']} />);
+    expect(await screen.findByRole('complementary', { name: 'Fiche RH de Lea BUREAU' })).toBeInTheDocument();
+  });
+
+  it.each(['select', 'close'] as const)('preserves an explicit %s when the connected identity loads late', async (action) => {
+    const client = createClient([activePerson, yardManagerPerson]);
+    const view = render(<HumanResourcesPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    fireEvent.click(screen.getByRole('button', { name: action === 'select' ? 'Afficher la fiche de Jean MARTIN' : 'Fermer la fiche RH' }));
+    view.rerender(<HumanResourcesPage client={client as never} currentPersonId={3} roles={['admin']} />);
+    expect(await screen.findByRole('complementary', { name: action === 'select' ? 'Fiche RH de Jean MARTIN' : 'Fiche RH' })).toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Fiche RH de Lea BUREAU' })).not.toBeInTheDocument();
+  });
+
+  it.each([null, 999, 2])('keeps the visible roster fallback when the connected record is unavailable (%s)', async (currentPersonId) => {
+    render(<HumanResourcesPage client={createClient() as never} currentPersonId={currentPersonId} roles={['admin']} />);
+    expect(await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' })).toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Fiche RH de Paul DURAND' })).not.toBeInTheDocument();
+  });
+
+  it('returns to the connected record on each RH navigation and still allows other records afterwards', async () => {
+    const client = createClient([activePerson, yardManagerPerson]);
+    render(<MemoryRouter initialEntries={['/modules/humanResources']}><Link to="/modules/humanResources">RH / Brevets</Link><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={client as never} currentPersonId={3} roles={['admin']} />} /></Routes></MemoryRouter>);
+    await screen.findByRole('complementary', { name: 'Fiche RH de Lea BUREAU' });
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' }));
+    expect(screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('link', { name: 'RH / Brevets' }));
+    await screen.findByRole('complementary', { name: 'Fiche RH de Lea BUREAU' });
+    fireEvent.click(screen.getByRole('button', { name: 'Fermer la fiche RH' }));
+    expect(screen.getByRole('complementary', { name: 'Fiche RH' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('link', { name: 'RH / Brevets' }));
+    await screen.findByRole('complementary', { name: 'Fiche RH de Lea BUREAU' });
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' }));
+    expect(screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' })).toBeInTheDocument();
+  });
+
   it('shows the person deletion action only to Administrators', async () => {
     const user = userEvent.setup();
     const adminView = render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
@@ -434,6 +514,8 @@ describe('HumanResourcesPage', () => {
 
     const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
     const identitySection = within(profile).getByRole('button', { name: 'Identité et poste' });
+    expect(within(profile).queryByText('Actif', { exact: true })).not.toBeInTheDocument();
+    expect(within(profile).queryByText('Inactif', { exact: true })).not.toBeInTheDocument();
     const contractSection = within(profile).getByRole('button', { name: 'Contrat et dates' });
     const contactSection = within(profile).getByRole('button', { name: 'Coordonnées' });
     const emergencySection = within(profile).getByRole('button', { name: 'Contact urgence' });
@@ -531,7 +613,7 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).queryByLabelText('Échéance de Entretien Professionnel et d’Evaluation 2026')).not.toBeInTheDocument();
   });
 
-  it('adds a catalog document with an expiry date and the SPFx automatic file name', async () => {
+  it.each([false, true])('adds a catalog document with noExpiry=%s and the automatic file name', async (noExpiry) => {
     const user = userEvent.setup();
     const catalogRows = [
       {
@@ -549,21 +631,24 @@ describe('HumanResourcesPage', () => {
         file_name: 'Dérogation',
       },
     ];
+    catalogRows.push(...[{ id: 57, source_item_id: 57, name: 'Attestation de droits', category: 'Ressources Humaines', file_name: 'Attestation de droits' }, { id: 58, source_item_id: 58, name: 'Carte Vitale', category: 'Ressources Humaines', file_name: 'Carte Vitale' }]);
     const file = new File(['certificate'], 'scan-cfbs.pdf', { type: 'application/pdf' });
-    const storagePath = 'people/1/Jean MARTIN - CFBS - 2030.pdf';
+    const title = noExpiry ? 'Jean MARTIN - CFBS' : 'Jean MARTIN - CFBS - 2030';
+    const expiresOn = noExpiry ? null : '2030-06-30';
+    const storagePath = `person-1/${title}.pdf`;
     const createdDocument = {
       ...documents[1],
       id: 42,
       category_key: 'safety_training',
-      title: 'Jean MARTIN - CFBS - 2030',
+      title,
       status: 'valid',
       issued_on: null,
-      expires_on: '2030-06-30',
-      source_label: 'supabase',
+      expires_on: expiresOn,
+      source_label: 'google_drive',
       notes: null,
       file_url: null,
-      storage_bucket: 'hr-documents',
-      storage_path: storagePath,
+      storage_bucket: null,
+      storage_path: null, drive_path: storagePath, drive_sha256: 'a'.repeat(64),
       file_size_bytes: file.size,
       mime_type: 'application/pdf',
     };
@@ -597,26 +682,109 @@ describe('HumanResourcesPage', () => {
     const dialog = screen.getByRole('dialog', { name: 'Ajouter un document pour Jean MARTIN' });
     const derogationOption = within(dialog).getByRole('option', { name: 'Dérogation' });
     expect(derogationOption.closest('optgroup')).toHaveAttribute('label', 'Documents administratifs');
+    for (const name of ['Attestation de droits', 'Carte Vitale']) expect(within(dialog).getByRole('option', { name }).closest('optgroup')).toHaveAttribute('label', 'Documents administratifs');
     await user.selectOptions(within(dialog).getByLabelText('Brevet / document'), '25');
     fireEvent.change(within(dialog).getByLabelText("Date d'echeance"), { target: { value: '2030-06-30' } });
+    if (noExpiry) {
+      await user.click(within(dialog).getByLabelText('Sans date de péremption'));
+      expect(within(dialog).getByLabelText("Date d'echeance")).toBeDisabled();
+      expect(within(dialog).getByLabelText("Date d'echeance")).toHaveValue('');
+    }
     await user.upload(within(dialog).getByLabelText('Fichier'), file);
 
-    expect(within(dialog).getByLabelText('Nom genere')).toHaveValue('Jean MARTIN - CFBS - 2030.pdf');
+    expect(within(dialog).getByLabelText('Nom genere')).toHaveValue(`${title}.pdf`);
     expect(within(dialog).getByRole('button', { name: 'Creer le document' })).toBeEnabled();
     fireEvent.submit(dialog.querySelector('form') as HTMLFormElement);
 
-    await waitFor(() => expect(upload).toHaveBeenCalledWith(storagePath, file, { contentType: 'application/pdf', upsert: false }));
+    await waitFor(() => expect(writeHrDriveFile).toHaveBeenCalledWith(expect.anything(), 1, `${title}.pdf`, file));
+    expect(upload).not.toHaveBeenCalled();
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({
       category_key: 'safety_training',
-      expires_on: '2030-06-30',
-      storage_path: storagePath,
-      title: 'Jean MARTIN - CFBS - 2030',
+      expires_on: expiresOn,
+      storage_path: null, drive_path: storagePath, drive_sha256: 'a'.repeat(64),
+      title,
     }));
     expect(await screen.findByText('Document ajoute.')).toBeInTheDocument();
     expect(within(profile).getByText('CFBS')).toBeInTheDocument();
+    if (noExpiry) expect(within(profile).getByText('Sans échéance')).toBeInTheDocument();
   });
 
-  it('downloads one selected HR document with the stored file extension', async () => {
+  it('edits metadata without a new file and refreshes the category, dates and alert counts', async () => {
+    const user = userEvent.setup();
+    const baseClient = createClient([activePerson]);
+    const update = vi.fn().mockImplementation((payload) => ({
+      eq: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({
+        single: vi.fn().mockResolvedValue({ data: { ...documents[1], ...payload }, error: null }),
+      }) }),
+    }));
+    const client = { from: vi.fn((table: string) => table === 'hr_documents'
+      ? { ...createDocumentsSelect(), update } : baseClient.from(table)) };
+    render(<HumanResourcesPage client={client as never} roles={['direction']} />);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+    await user.click(within(profile).getByRole('button', { name: 'Modifier Capitaine 200' }));
+    const dialog = screen.getByRole('dialog', { name: 'Modifier Capitaine 200' });
+    expect(within(dialog).getByLabelText('Date de délivrance')).toHaveValue('2024-01-15');
+    expect(within(dialog).queryByLabelText('Fichier')).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('option', { name: 'Entretien Annuel' })).not.toBeInTheDocument();
+    await user.clear(within(dialog).getByLabelText('Nom du document'));
+    await user.type(within(dialog).getByLabelText('Nom du document'), 'Contrat signé');
+    await user.selectOptions(within(dialog).getByLabelText('Catégorie'), 'administrative');
+    await user.click(within(dialog).getByLabelText('Sans date de péremption'));
+    await user.type(within(dialog).getByLabelText('Notes'), 'Original reçu');
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
+    expect(await screen.findByText('Informations du document mises à jour.')).toBeInTheDocument();
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ title: 'Contrat signé', category_key: 'administrative', expires_on: null, status: 'valid', notes: 'Original reçu' }));
+    expect(within(profile).getByText('Contrat signé')).toBeInTheDocument();
+    expect(within(profile).getByText('Sans échéance')).toBeInTheDocument();
+    expect(screen.getByLabelText('Documents echus')).toHaveTextContent('0');
+  });
+
+  it.each([false, true])('confirms deletion and keeps the document visible on failure=%s', async (shouldFail) => {
+    const user = userEvent.setup();
+    const baseClient = createClient([activePerson]);
+    const deletedSingle = vi.fn().mockResolvedValue({ data: shouldFail ? null : { id: 11 }, error: shouldFail ? { message: 'Suppression refusée' } : null });
+    const deleteRow = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: deletedSingle }) }) });
+    const select = vi.fn().mockReturnValue({
+      order: vi.fn().mockResolvedValue({ data: documents, error: null }),
+      eq: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: documents[1], error: null }) }),
+    });
+    const client = { from: vi.fn((table: string) => table === 'hr_documents' ? { select, delete: deleteRow } : baseClient.from(table)) };
+    render(<HumanResourcesPage client={client as never} roles={['armement']} />);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+    await user.click(within(profile).getByRole('checkbox', { name: 'Sélectionner Capitaine 200' }));
+    await user.click(within(profile).getByRole('button', { name: 'Supprimer Capitaine 200' }));
+    let dialog = screen.getByRole('dialog', { name: 'Supprimer Capitaine 200' });
+    await user.click(within(dialog).getByRole('button', { name: 'Annuler' }));
+    expect(deleteRow).not.toHaveBeenCalled();
+    await user.click(within(profile).getByRole('button', { name: 'Supprimer Capitaine 200' }));
+    dialog = screen.getByRole('dialog', { name: 'Supprimer Capitaine 200' });
+    await user.click(within(dialog).getByRole('button', { name: 'Supprimer le document' }));
+    if (shouldFail) {
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('Suppression refusée');
+      expect(within(profile).getByText('Capitaine 200')).toBeInTheDocument();
+    } else {
+      expect(await screen.findByText('Document supprimé.')).toBeInTheDocument();
+      expect(within(profile).queryByText('Capitaine 200')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Telecharger' })).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Documents echus')).toHaveTextContent('0');
+    }
+  });
+
+  it.each(['marin', 'capitaine'] as const)('keeps document mutations hidden for a real %s role fixture', async (role) => {
+    const user = userEvent.setup();
+    render(<HumanResourcesPage client={createClient([activePerson]) as never} currentPersonId={1} roles={[role]} />);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+    expect(within(profile).getByText('Capitaine 200')).toBeInTheDocument();
+    expect(within(profile).queryByRole('button', { name: 'Ajouter un document' })).not.toBeInTheDocument();
+    expect(within(profile).queryByRole('button', { name: 'Modifier Capitaine 200' })).not.toBeInTheDocument();
+    expect(within(profile).queryByRole('button', { name: 'Supprimer Capitaine 200' })).not.toBeInTheDocument();
+    expect(within(profile).queryByRole('button', { name: 'Renouveler' })).not.toBeInTheDocument();
+  });
+
+  it('downloads one selected Drive document with its stored file extension', async () => {
     const user = userEvent.setup();
     const wordDocument: HrDocumentFixture = {
       ...documents[1],
@@ -625,10 +793,14 @@ describe('HumanResourcesPage', () => {
       title: 'Jean MARTIN - Contrat - 2030',
       file_url: 'https://sharepoint.test/documents/contrat-signe.docx?download=1',
       mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      drive_path: 'Jean MARTIN - c1-p1/scan.docx',
+      drive_sha256: 'a'.repeat(64),
+      file_size_bytes: 8,
     };
+    vi.mocked(readHrDriveFile).mockResolvedValue(new Blob(['document']));
     const fetchMock = vi.fn().mockResolvedValue({
       blob: () => Promise.resolve(new Blob(['document'])),
-      ok: true,
+      ok: true, headers: new Headers(),
     });
     const originalFetch = globalThis.fetch;
     const originalCreateObjectUrl = URL.createObjectURL;
@@ -652,7 +824,8 @@ describe('HumanResourcesPage', () => {
       await user.click(screen.getByRole('button', { name: 'Telecharger' }));
 
       await waitFor(() => expect(downloadedFileName).toBe('Jean MARTIN - Contrat - 2030.docx'));
-      expect(fetchMock).toHaveBeenCalledWith(wordDocument.file_url, { credentials: 'include' });
+      expect(readHrDriveFile).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 43 }));
+      expect(fetchMock).not.toHaveBeenCalled();
       expect(revokeObjectURL).toHaveBeenCalledWith('blob:document-rh');
     } finally {
       globalThis.fetch = originalFetch;
@@ -662,11 +835,15 @@ describe('HumanResourcesPage', () => {
     }
   });
 
-  it('downloads multiple selected HR documents as a ZIP archive', async () => {
+  it('downloads multiple selected Drive documents as a ZIP archive', async () => {
     const user = userEvent.setup();
+    vi.mocked(readHrDriveFile).mockClear();
+    vi.mocked(connectHrDrive).mockClear();
+    const driveDocuments = documents.map((document) => ({ ...document, drive_path: `Jean MARTIN - c1-p1/${document.id}.pdf`, drive_sha256: 'a'.repeat(64), file_size_bytes: 8 }));
+    vi.mocked(readHrDriveFile).mockResolvedValue(new Blob(['document'], { type: 'application/pdf' }));
     const fetchMock = vi.fn().mockResolvedValue({
       blob: () => Promise.resolve(new Blob(['document'], { type: 'application/pdf' })),
-      ok: true,
+      ok: true, headers: new Headers(),
     });
     const originalFetch = globalThis.fetch;
     const originalCreateObjectUrl = URL.createObjectURL;
@@ -679,7 +856,7 @@ describe('HumanResourcesPage', () => {
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
 
     try {
-      render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
+      render(<HumanResourcesPage client={createClient([activePerson], driveDocuments) as never} roles={['admin']} />);
 
       const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
       await user.click(within(profile).getByRole('button', { name: 'Documents' }));
@@ -690,7 +867,9 @@ describe('HumanResourcesPage', () => {
       expect(selectionBar).toHaveTextContent('2 document(s) selectionne(s)');
       await user.click(within(selectionBar).getByRole('button', { name: 'Telecharger' }));
 
-      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(readHrDriveFile).toHaveBeenCalledTimes(2));
+      expect(connectHrDrive).toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
       await waitFor(() => expect(screen.queryByRole('region', { name: 'Selection documentaire RH' })).not.toBeInTheDocument());
       expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
       expect(clickSpy).toHaveBeenCalledTimes(1);
@@ -701,6 +880,19 @@ describe('HumanResourcesPage', () => {
       Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: originalRevokeObjectUrl });
       clickSpy.mockRestore();
     }
+  });
+
+  it('keeps the selection and shows the Drive error when a download fails', async () => {
+    const user = userEvent.setup();
+    vi.mocked(readHrDriveFile).mockRejectedValueOnce(new Error('Fichier absent du dossier Google Drive.'));
+    const document = { ...documents[0], drive_path: 'Jean MARTIN - c1-p1/scan.pdf', drive_sha256: 'a'.repeat(64), file_size_bytes: 8 };
+    render(<HumanResourcesPage client={createClient([activePerson], [document]) as never} roles={['admin']} />);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+    await user.click(within(profile).getByRole('checkbox', { name: `Sélectionner ${document.title}` }));
+    await user.click(screen.getByRole('button', { name: 'Telecharger' }));
+    expect(await screen.findByText('Fichier absent du dossier Google Drive.')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Selection documentaire RH' })).toHaveTextContent('1 document(s) selectionne(s)');
   });
 
   it('uses controlled dropdowns for structured personnel fields and departure reasons', async () => {

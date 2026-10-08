@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeProjectStatus } from '../projects/projectStatus';
 import { compareProjectCodesNewestFirst } from '../../lib/projectCode';
 import { mapPlanningProjectRows, type PlanningProjectRecord } from './planningQueries';
+import { projectDescriptionToPlainText } from '../projects/projectDescription';
 
 export interface PlanningProjectCatalogRecord {
   id: number;
@@ -54,7 +55,7 @@ function mapCatalogRow(row: Record<string, unknown>): PlanningProjectCatalogReco
     title: String(row.title || ''),
     clientName: String(row.client_name || ''),
     status: normalizeProjectStatus(row.status),
-    description: String(row.description || ''),
+    description: projectDescriptionToPlainText(String(row.description || '')),
     startsOn: String(row.starts_on || ''),
     endsOn: String(row.ends_on || ''),
   };
@@ -123,6 +124,23 @@ export async function createAndSchedulePlanningProject(
   const row = firstRpcRow(data);
   const project = row ? mapPlanningProjectRows([row as never])[0] : undefined;
   if (!project) throw new Error("Le projet créé n'a pas pu être relu dans le Planning.");
+  return project;
+}
+
+export async function createQuickPlanningProject(
+  client: SupabaseClient,
+  input: { title: string; vesselId: number; startsOn: string },
+): Promise<PlanningProjectRecord> {
+  if (!input.title.trim()) throw new Error('Le nom du projet est obligatoire.');
+  const { data, error } = await client.rpc('planning_create_quick_project', {
+    target_title: input.title.trim(),
+    target_primary_vessel_id: input.vesselId,
+    target_starts_on: input.startsOn,
+  });
+  if (error) throw rpcError(error, 'Impossible de créer ce projet rapide.');
+  const row = firstRpcRow(data);
+  const project = row ? mapPlanningProjectRows([row as never])[0] : undefined;
+  if (!project) throw new Error('Le projet créé n’a pas pu être relu dans le planning.');
   return project;
 }
 

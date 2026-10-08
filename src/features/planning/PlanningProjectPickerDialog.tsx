@@ -1,12 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ChevronRight, FolderKanban, Info, LockKeyhole, Pencil, Plus, Search, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { daysBetween, formatPlanningDate } from './planningDates';
 import {
   fetchPlanningProjectCatalog,
+  createQuickPlanningProject,
   type PlanningProjectCatalogRecord,
 } from './planningProjectCatalog';
-import type { PlanningVessel } from './planningQueries';
+import type { PlanningProjectRecord, PlanningVessel } from './planningQueries';
+import './planningQuickProject.css';
 
 interface PlanningProjectPickerDialogProps {
   canCreateProject: boolean;
@@ -15,6 +17,7 @@ interface PlanningProjectPickerDialogProps {
   editable: boolean;
   onClose: () => void;
   onCreateProject: () => void;
+  onQuickProjectCreated: (project: PlanningProjectRecord) => void;
   onSelectProject: (project: PlanningProjectCatalogRecord) => void;
   vessel: PlanningVessel;
 }
@@ -39,6 +42,7 @@ export function PlanningProjectPickerDialog({
   editable,
   onClose,
   onCreateProject,
+  onQuickProjectCreated,
   onSelectProject,
   vessel,
 }: PlanningProjectPickerDialogProps) {
@@ -47,6 +51,28 @@ export function PlanningProjectPickerDialog({
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isQuickProject, setIsQuickProject] = useState(false);
+  const [title, setTitle] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
+  const canCreate = canCreateProject && editable;
+
+  async function submitQuickProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canCreate || savingRef.current || !title.trim()) return;
+    savingRef.current = true;
+    setIsSaving(true);
+    setErrorMessage('');
+    try {
+      const project = await createQuickPlanningProject(client, { title, vesselId: vessel.id, startsOn: date });
+      onQuickProjectCreated(project);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Impossible de créer ce projet rapide.');
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -92,13 +118,21 @@ export function PlanningProjectPickerDialog({
               {editable ? <Pencil aria-hidden="true" size={14} /> : <LockKeyhole aria-hidden="true" size={14} />}
               {editable ? 'Mode modification' : 'Mode lecture seule'}
             </em>
-            <button aria-label="Fermer" onClick={onClose} type="button">
+            <button aria-label="Fermer" disabled={isSaving} onClick={onClose} type="button">
               <X aria-hidden="true" size={20} />
             </button>
           </div>
         </header>
 
-        <main className="planning-project-picker-catalog">
+        {isQuickProject ? (
+          <form className="planning-quick-project-form" id="planning-quick-project" onSubmit={(event) => void submitQuickProject(event)}>
+            <h2>Projet rapide</h2>
+            <p>Indiquez le titre : le projet recevra automatiquement un numéro Pxxx et sera enregistré en brouillon.</p>
+            <label htmlFor="planning-quick-project-title">Titre du projet</label>
+            <input autoFocus disabled={isSaving} id="planning-quick-project-title" maxLength={300} onChange={(event) => setTitle(event.target.value)} required value={title} />
+            <small>Il apparaîtra sur {vessel.name} le {formatPlanningDate(date)}, pour une journée, et dans la liste des projets. Vous pourrez le compléter ensuite.</small>
+          </form>
+        ) : <main className="planning-project-picker-catalog">
           <div className="planning-project-picker-tools">
             <label>
               <Search aria-hidden="true" size={19} />
@@ -113,13 +147,17 @@ export function PlanningProjectPickerDialog({
             </label>
             <button
               className="is-create"
-              disabled={!canCreateProject}
+              disabled={!canCreate}
               onClick={onCreateProject}
               title={canCreateProject ? 'Créer un nouveau projet ou contrat' : 'Réservé aux profils Admin et Direction'}
               type="button"
             >
               <Plus aria-hidden="true" size={18} />
               Créer un nouveau projet
+            </button>
+            <button className="is-create" disabled={!canCreate} onClick={() => { setErrorMessage(''); setIsQuickProject(true); }} type="button">
+              <Plus aria-hidden="true" size={18} />
+              Projet rapide
             </button>
           </div>
 
@@ -160,20 +198,20 @@ export function PlanningProjectPickerDialog({
               })}
             </div>
           ) : null}
-        </main>
+        </main>}
 
         {errorMessage ? <p className="planning-project-picker-error" role="alert">{errorMessage}</p> : null}
         <footer>
-          <p><Info aria-hidden="true" size={17} />Chaque opération reste reliée au Projet/Contrat sélectionné.</p>
+          <p><Info aria-hidden="true" size={17} />{isQuickProject ? 'Après la création, vous restez sur le planning.' : 'Chaque opération reste reliée au Projet/Contrat sélectionné.'}</p>
           <span>
-            <button className="is-secondary" onClick={onClose} type="button">Annuler</button>
-            <button
+            <button className="is-secondary" disabled={isSaving} onClick={isQuickProject ? () => { setIsQuickProject(false); setErrorMessage(''); } : onClose} type="button">{isQuickProject ? 'Retour' : 'Annuler'}</button>
+            {isQuickProject ? <button disabled={!canCreate || isSaving || !title.trim()} form="planning-quick-project" type="submit">{isSaving ? 'Création…' : 'Créer le projet'}</button> : <button
               disabled={!editable || selectedProject === null}
               onClick={() => selectedProject && onSelectProject(selectedProject)}
               type="button"
             >
               Continuer
-            </button>
+            </button>}
           </span>
         </footer>
       </section>

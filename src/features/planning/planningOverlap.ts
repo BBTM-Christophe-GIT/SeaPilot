@@ -19,6 +19,7 @@ export function getPlanningConflicts(
   return getAllPlanningCrewEvents(overview)
     .filter((event) => (
       event.id !== candidate.id
+      && event.confirmationStatus !== 'cancelled' && event.kind !== 'annualReview'
       && planningPersonKey(event) === candidatePersonKey
       && normalizePlanningText(event.vessel) !== normalizePlanningText(candidate.vessel)
       && rangesOverlap(event.startsOn, event.endsOn, candidate.startsOn, candidate.endsOn)
@@ -36,6 +37,7 @@ export function getPlanningConflictDatesByEvent(
 ): Map<string, Set<string>> {
   const eventsByPerson = new Map<string, PlanningCrewEvent[]>();
   eventPool.forEach((event) => {
+    if (event.confirmationStatus === 'cancelled' || event.kind === 'annualReview') return;
     const key = planningPersonKey(event);
     eventsByPerson.set(key, [...(eventsByPerson.get(key) || []), event]);
   });

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { displayBrandName } from '../../lib/branding';
 import { AlertTriangle, CheckSquare, FileText, Upload } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -447,7 +448,7 @@ export function QhseDocumentsPage({ client, roles }: QhseDocumentsPageProps) {
                   <td>
                     <span className="action-status-chip">{displayText(document.status)}</span>
                   </td>
-                  <td>{displayText(document.sourceLabel)}</td>
+                  <td>{displayText(displayBrandName(document.sourceLabel))}</td>
                   <td>
                     {document.fileUrl ? (
                       <a className="hr-document-link" href={document.fileUrl} rel="noreferrer" target="_blank">

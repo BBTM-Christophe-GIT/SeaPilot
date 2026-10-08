@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { jsPDF } from 'jspdf';
 import type { WorkingTimeInterval } from './workingTimeModel';
 import type {
+  WorkingTimeActiveSignature,
   WorkingTimeSignatureSnapshot,
   WorkingTimeValidationEvent,
   WorkingTimeWorkspace,
@@ -11,6 +12,7 @@ import type {
 export interface WorkingTimePdfSignature {
   label: string;
   snapshot: WorkingTimeSignatureSnapshot | null;
+  profileSignature?: WorkingTimeActiveSignature | null;
   png: Uint8Array | null;
 }
 
@@ -30,14 +32,6 @@ interface DayPhase {
   startMinute: number;
   endMinute: number;
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: 'Brouillon',
-  awaiting_sailor_signature: 'Signature du marin attendue',
-  submitted: 'Soumis au contrôle',
-  validated: 'Validé',
-  reopened: 'Rouvert pour correction',
-};
 
 const CAUSE_LABELS: Record<string, string> = {
   unexpected_operation: 'Opération imprévue',
@@ -137,10 +131,22 @@ function fitText(document: jsPDF, value: string, width: number): string {
   return `${fitted}…`;
 }
 
-async function downloadSignature(client: SupabaseClient, snapshot: WorkingTimeSignatureSnapshot | null): Promise<Uint8Array | null> {
-  if (!snapshot) return null;
-  const { data, error } = await client.storage.from(snapshot.storageBucket).download(snapshot.storagePath);
-  if (error || !data) throw new Error(`Impossible de charger la signature figée de ${snapshot.signerName}.`);
+function vesselIdentity(vessel: WorkingTimeWorkspace['vessels'][number]): string {
+  const reference = vessel.imoNumber
+    ? `OMI ${vessel.imoNumber}`
+    : vessel.registrationNumber
+      ? vessel.registrationNumber
+      : '';
+  return [vessel.name, reference].filter(Boolean).join(' - ');
+}
+
+async function downloadSignature(
+  client: SupabaseClient,
+  signature: Pick<WorkingTimeSignatureSnapshot, 'storageBucket' | 'storagePath' | 'signerName'> | null,
+): Promise<Uint8Array | null> {
+  if (!signature) return null;
+  const { data, error } = await client.storage.from(signature.storageBucket).download(signature.storagePath);
+  if (error || !data) throw new Error(`Impossible de charger la signature de ${signature.signerName}.`);
   return new Uint8Array(await data.arrayBuffer());
 }
 
@@ -154,15 +160,20 @@ export async function prepareWorkingTimePdf(
     .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
   const sailor = latestSignatureEvent(audit, 'sailor_signed');
   const validator = latestSignatureEvent(audit, 'captain_validated');
+  // Approved XLSM imports may predate the register signature workflow. Reuse
+  // the holder's authorized profile image without creating a signature event.
+  const sailorProfile = !sailor && audit.some((event) => event.eventType === 'approved_import')
+    ? workspace.signatures.find((signature) => signature.personId === register.personId) || null
+    : null;
   const [sailorPng, validatorPng] = await Promise.all([
-    downloadSignature(client, sailor),
+    downloadSignature(client, sailor || (sailorProfile && { ...sailorProfile, signerName: register.personName })),
     downloadSignature(client, validator),
   ]);
   return {
     register,
     workspace,
     signatures: [
-      { label: 'Marin', snapshot: sailor, png: sailorPng },
+      { label: 'Marin', snapshot: sailor, profileSignature: sailorProfile, png: sailorPng },
       { label: 'Capitaine / validateur', snapshot: validator, png: validatorPng },
     ],
     audit,
@@ -179,10 +190,6 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
     && calculation.localWindowEndDate <= register.periodEnd);
   const comments = workspace.dayComments.filter((comment) => comment.personId === register.personId
     && comment.localWorkDate >= register.periodStart && comment.localWorkDate <= register.periodEnd);
-  const primaryVessel = workspace.vessels.find((item) => item.id === intervals.find((item) => item.vesselId)?.vesselId);
-  const approvedImport = input.audit.find((event) => event.eventType === 'approved_import');
-  const captainValidation = input.audit.find((event) => event.eventType === 'captain_validated');
-  const validatorName = approvedImport?.actorName || captainValidation?.actorName || 'Non renseigné';
   const gridDays = dateValues(register.periodStart, register.periodEnd);
 
   document.setFillColor(...SEA_BLUE);
@@ -196,17 +203,12 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
     ['Marin', register.personName],
     ['Fonction', register.functionLabel || 'Personnel maritime'],
     ['Mois', formatMonth(register.periodStart)],
-    ['Navire', primaryVessel?.name || 'Non renseigné'],
-    ['OMI', primaryVessel?.imoNumber || 'Non renseigné'],
-    ['Pavillon', primaryVessel?.flagState || 'Non renseigné'],
-    ['Capitaine / validateur', validatorName],
-    ['Statut', approvedImport ? 'Validé - import XLSM approuvé' : STATUS_LABELS[register.status] || register.status],
   ];
-  const metadataWidth = 70.75;
+  const metadataWidth = 283 / metadata.length;
   document.setFontSize(5.9);
   for (let index = 0; index < metadata.length; index += 1) {
-    const metadataX = 7 + (index % 4) * metadataWidth;
-    const metadataY = 12 + Math.floor(index / 4) * 10;
+    const metadataX = 7 + index * metadataWidth;
+    const metadataY = 12;
     document.setFillColor(...LIGHT_BLUE);
     document.setDrawColor(170, 191, 200);
     document.rect(metadataX, metadataY, metadataWidth, 9, 'FD');
@@ -222,10 +224,10 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
   document.setTextColor(45, 58, 66);
   document.setFont('helvetica', 'normal');
   document.setFontSize(6.2);
-  document.text('Veuillez marquer les périodes de travail par une plage continue. Les cases sont divisées en demi-heures.', 7, 34);
+  document.text('Veuillez marquer les périodes de travail par une plage continue. Les cases sont divisées en demi-heures.', 7, 24);
 
   const x = 7;
-  const tableTop = 37;
+  const tableTop = 27;
   const dateWidth = 10;
   const slotWidth = 2.55;
   const timelineWidth = slotWidth * 48;
@@ -264,7 +266,7 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
   document.setFontSize(4.6);
   for (let hour = 0; hour < 24; hour += 1) {
     const hourX = timelineX + hour * slotWidth * 2;
-    document.text(String(hour).padStart(2, '0'), hourX + slotWidth, tableTop + groupHeaderHeight + 3.5, { align: 'center' });
+    document.text(String(hour).padStart(2, '0'), hourX, tableTop + groupHeaderHeight + 3.5, { align: 'center' });
   }
   const headerText = (lines: string[], startX: number, width: number) => {
     document.setFontSize(4.4);
@@ -276,7 +278,7 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
   headerText(['Travail depuis repos 6 h', '/ repos total', 'sur 24 heures'], work24X, work24Width);
   headerText(['Travail / repos', 'sur toute période', 'de 7 jours'], work7X, work7Width);
 
-  const majorColumns = [x, timelineX, restX, commentX, work24X, work7X, tableRight];
+  const majorColumns = [x, restX, commentX, work24X, work7X, tableRight];
   majorColumns.forEach((columnX) => document.line(columnX, tableTop, columnX, tableBottom));
   document.line(work24X, tableTop + groupHeaderHeight, tableRight, tableTop + groupHeaderHeight);
   document.line(x, bodyTop, tableRight, bodyTop);
@@ -292,24 +294,33 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
       document.setLineDashPattern([], 0);
       document.setLineWidth(0.18);
     }
-    document.line(slotX, tableTop + groupHeaderHeight, slotX, tableBottom);
+    // Leave the number clear while keeping a short tick immediately above it.
+    document.line(slotX, tableTop + groupHeaderHeight, slotX, tableTop + groupHeaderHeight + 1.4);
+    document.line(slotX, bodyTop, slotX, bodyBottom);
+    document.line(slotX, tableBottom - 1.4, slotX, tableBottom);
   }
   document.setLineDashPattern([], 0);
 
   gridDays.forEach((day, dayIndex) => {
     const rowY = bodyTop + dayIndex * rowHeight;
-    const phases = phasesForDay(day, intervals);
+    const dayIntervals = intervals.filter((interval) => interval.localWorkDate === day);
+    const phases = phasesForDay(day, dayIntervals);
     const workedSeconds = phaseSeconds(phases);
     const dayCalculation = calculations
       .filter((calculation) => calculation.localWindowEndDate === day)
       .sort((left, right) => left.windowEnd.localeCompare(right.windowEnd)).at(-1);
     const dayComment = comments.find((comment) => comment.localWorkDate === day);
-    const intervalComments = Array.from(new Set(intervals
-      .filter((interval) => interval.localWorkDate === day && interval.comment)
+    const intervalComments = Array.from(new Set(dayIntervals
+      .filter((interval) => interval.comment)
       .map((interval) => interval.comment as string)));
-    const commentText = dayComment
+    const vesselLabels = Array.from(new Set(dayIntervals
+      .map((interval) => workspace.vessels.find((vessel) => vessel.id === interval.vesselId))
+      .filter((vessel): vessel is WorkingTimeWorkspace['vessels'][number] => Boolean(vessel))
+      .map(vesselIdentity)));
+    const operationalComment = dayComment
       ? `NON CONFORME - ${CAUSE_LABELS[dayComment.causeCategory || ''] || 'Cause'} - ${dayComment.comment}`
       : intervalComments.join(' / ');
+    const commentText = [...vesselLabels, operationalComment].filter(Boolean).join(' / ');
 
     document.setTextColor(23, 39, 50);
     phases.forEach((phase) => {
@@ -350,7 +361,7 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
   document.setFontSize(4.4);
   document.text('HEURES', x + 1.2, bodyBottom + 3.3);
   for (let hour = 0; hour < 24; hour += 1) {
-    document.text(String(hour).padStart(2, '0'), timelineX + hour * slotWidth * 2 + slotWidth, bodyBottom + 3.3, { align: 'center' });
+    document.text(String(hour).padStart(2, '0'), timelineX + hour * slotWidth * 2, bodyBottom + 3.3, { align: 'center' });
   }
 
   const signatureY = tableBottom + 2.5;
@@ -363,18 +374,26 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
     document.setFont('helvetica', 'bold');
     document.setFontSize(5.4);
     document.text(signature.label.toUpperCase(), signatureX + 1.5, signatureY + 3);
-    if (signature.snapshot && signature.png) {
+    if ((signature.snapshot || signature.profileSignature) && signature.png) {
       document.addImage(signature.png, 'PNG', signatureX + 1.5, signatureY + 4, 30, 8.5, undefined, 'FAST');
       document.setTextColor(23, 39, 50);
       document.setFont('helvetica', 'normal');
       document.setFontSize(5.4);
-      document.text(fitText(document, `${signature.snapshot.signerName} - ${signature.snapshot.signerRoles.join(', ')}`, 102), signatureX + 34, signatureY + 7.5);
-      document.text(`${formatDateTime(signature.snapshot.signedAt)} - signature v${signature.snapshot.versionNumber}`, signatureX + 34, signatureY + 11);
+      const signerName = index === 0
+        ? signature.snapshot?.signerName || register.personName
+        : signature.snapshot?.signerName || '';
+      document.text(fitText(document, signerName, 102), signatureX + 34, signatureY + 7.5);
+      if (index === 0 && signature.snapshot) {
+        document.text(`${formatDateTime(signature.snapshot.signedAt)} - signature v${signature.snapshot.versionNumber}`, signatureX + 34, signatureY + 11);
+      }
     } else {
       document.setTextColor(83, 107, 121);
       document.setFont('helvetica', 'normal');
       document.setFontSize(5.8);
-      document.text(approvedImport ? 'Non requise - XLSM déjà approuvé' : 'Signature non apposée', signatureX + 34, signatureY + 8.5);
+      if (index === 0) {
+        document.text(fitText(document, register.personName, 102), signatureX + 34, signatureY + 7.5);
+      }
+      document.text('Signature non apposée', signatureX + 34, signatureY + (index === 0 ? 11 : 8.5));
     }
   });
 

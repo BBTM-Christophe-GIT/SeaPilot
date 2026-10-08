@@ -1,6 +1,7 @@
 import type { PlanningOverview } from './planningQueries';
 import type { PlanningP13Data, PlanningWorkRestCheck } from './planningP13';
 import { buildPlanningExportRows, formatPlanningPerson, getAllPlanningCrewEvents } from './planningModel';
+import { splitPlanningEventByFunction } from './planningFunctions';
 
 export type PlanningExportFormat = 'xlsx' | 'pdf' | 'ics';
 export type PlanningExportKind = 'schedule' | 'sailor' | 'crew_list' | 'handover_sheet' | 'anomalies' | 'work_rest';
@@ -47,7 +48,11 @@ function filteredCrewEvents(context: PlanningExportContext) {
   return getAllPlanningCrewEvents(context.overview).filter((event) => selected(event.personId, context.personIds)
     && selected(event.vesselId, context.vesselIds)
     && event.confirmationStatus !== 'cancelled'
-    && within(event.startsOn, event.endsOn, context.startsOn, context.endsOn));
+    && within(event.startsOn, event.endsOn, context.startsOn, context.endsOn))
+    .flatMap((event) => splitPlanningEventByFunction(event).map((segment, index) => ({
+      ...segment, id: index === 0 ? event.id : `${event.id}-${segment.startsOn}`,
+    })))
+    .filter((event) => within(event.startsOn, event.endsOn, context.startsOn, context.endsOn));
 }
 
 function tablesFor(kind: PlanningExportKind, context: PlanningExportContext): PlanningExportTable[] {
@@ -184,7 +189,7 @@ async function pdfBlob(kind: PlanningExportKind, tables: PlanningExportTable[]):
   const document = new jsPDF({ compress: true, orientation: 'landscape', unit: 'mm', format: 'a4' });
   let cursor = 16;
   document.setFontSize(15);
-  document.text(`SeaPilot · ${EXPORT_LABELS[kind]}`, 14, 10);
+  document.text(`BBTM · ${EXPORT_LABELS[kind]}`, 14, 10);
   for (const table of tables) {
     document.setFontSize(11);
     document.text(table.name, 14, cursor);
@@ -239,7 +244,7 @@ function icsBlob(kind: PlanningExportKind, context: PlanningExportContext): Blob
       events.push({ uid: `rest-${check.id}@seapilot`, title: `${check.ruleLabel} · ${check.personName}`, description: check.detail, start: check.date, end: check.date });
     }
   }
-  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//SeaPilot//Planning P1.3//FR', 'CALSCALE:GREGORIAN'];
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//BBTM//Planning P1.3//FR', 'CALSCALE:GREGORIAN'];
   for (const event of events) {
     lines.push('BEGIN:VEVENT', `UID:${event.uid}`, `DTSTAMP:${icsDate(new Date().toISOString())}`, `DTSTART${event.start.length === 10 ? ';VALUE=DATE' : ''}:${icsDate(event.start)}`, `DTEND${event.end.length === 10 ? ';VALUE=DATE' : ''}:${icsDate(event.end, event.end.length === 10)}`, `SUMMARY:${icsEscape(event.title)}`, `DESCRIPTION:${icsEscape(event.description)}`, 'END:VEVENT');
   }

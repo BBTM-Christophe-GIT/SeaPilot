@@ -3,8 +3,11 @@ import type { PlanningOverview } from './planningQueries';
 import {
   buildPlanningCrewLanes,
   buildPlanningFleetLanes,
+  defaultPlanningVesselName,
+  buildPlanningProjectLanes,
   patchPlanningEvent,
   planningCrewEventType,
+  planningCrewEventTypeLabel,
   removePlanningEvent,
   replacePlanningProject,
 } from './planningViews';
@@ -37,6 +40,57 @@ const range = { start: '2026-07-06', end: '2026-07-19' };
 const emptyFilters = { vesselName: '', personName: '', eventType: '', status: '', responsible: '' };
 
 describe('planning P0.2 views', () => {
+  it('applies explicit surname/function sorting independently of posting periods and display format', () => {
+    const roles = ['Matelot', 'Maître Machine', "Maître d’Equipage", '2nd Capitaine', 'Chef Mécanicien', 'Capitaine'];
+    const people = roles.map((functionLabel, index) => ({ ...overview.people[0], id: index + 1, firstName: 'Jean', lastName: String.fromCharCode(65 + index), functionLabel }));
+    const data = { ...overview, people, periods: [], assignments: people.map((person, index) =>
+      ({ ...overview.assignments[0], id: index + 1, crewPersonId: person.id, crewName: `Jean ${person.lastName}`, startsOn: `2026-07-${String(12 - index).padStart(2, '0')}` })) };
+    const byName = buildPlanningCrewLanes(data, range, emptyFilters, 'people', undefined, { nameFormat: 'last_first', sortOrder: 'last_name' });
+    expect(byName.map((lane) => lane.label)).toEqual(['A Jean', 'B Jean', 'C Jean', 'D Jean', 'E Jean', 'F Jean']);
+    const byFunction = buildPlanningCrewLanes(data, range, emptyFilters, 'people', undefined, { nameFormat: 'first_last', sortOrder: 'function' });
+    expect(byFunction.map((lane) => lane.label)).toEqual(['Jean F', 'Jean E', 'Jean D', 'Jean C', 'Jean B', 'Jean A']);
+    expect(buildPlanningCrewLanes(data, range, { ...emptyFilters, personName: 'Jean A' }, 'people', undefined,
+      { nameFormat: 'last_first', sortOrder: 'function' }).map((lane) => lane.label)).toEqual(['A Jean']);
+    expect(byName[0].events[0].person).toBe('Jean A');
+  });
+  it('keeps empty active vessels in the project view without crew or location data', () => {
+    const lanes = buildPlanningProjectLanes(overview, range, emptyFilters);
+    expect(lanes.map((lane) => lane.label)).toEqual(['COTENTIN', 'SUROIT']);
+    expect(lanes[0].projects).toHaveLength(1);
+    expect(lanes[1].projects).toHaveLength(0);
+    expect(lanes.every((lane) => !lane.assignments.length && !lane.locations.length)).toBe(true);
+    expect(buildPlanningProjectLanes(overview, { start: '2027-01-01', end: '2027-01-31' }, emptyFilters)).toHaveLength(2);
+  });
+
+  it('includes empty active vessels for the field fleet selector', () => {
+    expect(buildPlanningFleetLanes({ ...overview, assignments: [], periods: [], projects: [] }, range, emptyFilters, [], true)
+      .map((lane) => lane.label)).toEqual(['COTENTIN', 'SUROIT']);
+    expect(buildPlanningFleetLanes(overview, range, { ...emptyFilters, vesselName: 'SUROIT' }, [], true)
+      .map((lane) => lane.label)).toEqual(['SUROIT']);
+  });
+
+  it('keeps the vessel header for a pending board row without any visible event', () => {
+    const data = { ...overview, assignments: [], periods: [], projects: [], boardRows: [{
+      id: 901, vesselId: 2, personId: 10, watchGroup: 'Bordée 1', functionLabel: 'Matelot', createdAt: '',
+    }] };
+    const pending = new Set([901]);
+    expect(buildPlanningFleetLanes(data, range, emptyFilters, []).map((lane) => lane.label)).toEqual([]);
+    expect(buildPlanningFleetLanes(data, range, emptyFilters, [], false, pending))
+      .toEqual([expect.objectContaining({ vesselId: 2, label: 'SUROIT', assignments: [], projects: [] })]);
+    for (const filters of [{ vesselName: 'COTENTIN' }, { personName: 'Autre MARIN' }, { status: 'En Mer' }]) {
+      expect(buildPlanningFleetLanes(data, range, { ...emptyFilters, ...filters }, [], false, pending)).toEqual([]);
+    }
+  });
+
+  it('filters multi-vessel projects to the selected vessel and retains historical project lanes', () => {
+    const source = { ...overview, projects: [{ ...overview.projects[0], vesselIds: [1, 2, 99], vesselNames: ['COTENTIN', 'SUROIT', 'HISTORIQUE'] }] };
+    const lanes = buildPlanningProjectLanes(source, range, { ...emptyFilters, vesselName: 'SUROIT' });
+    expect(lanes.map((lane) => lane.label)).toEqual(['SUROIT']);
+    expect(lanes[0].projects).toHaveLength(1);
+    expect(buildPlanningProjectLanes(source, range, emptyFilters).map((lane) => lane.label)).toEqual(['COTENTIN', 'HISTORIQUE', 'SUROIT']);
+    expect(buildPlanningProjectLanes(source, range, { ...emptyFilters, status: 'Annulé' }).every((lane) => !lane.projects.length)).toBe(true);
+  });
+
   it('builds fleet lanes only for vessels with visible crew and filters event metadata', () => {
     const lanes = buildPlanningFleetLanes(overview, range, { ...emptyFilters, eventType: 'transit', responsible: 'Jean MARTIN' });
     expect(lanes.map((lane) => lane.label)).toEqual(['COTENTIN']);
@@ -49,9 +103,17 @@ describe('planning P0.2 views', () => {
     const people = buildPlanningCrewLanes(overview, range, emptyFilters, 'people');
     const teams = buildPlanningCrewLanes(overview, range, emptyFilters, 'teams');
     expect(people).toEqual([expect.objectContaining({ label: 'Paul DURAND', personId: 10, watchGroup: 'Bordée 1' })]);
-    expect(teams).toEqual([expect.objectContaining({ label: 'Bordée 1' })]);
+    expect(teams).toEqual([expect.objectContaining({ label: 'Paul DURAND', personId: 10, detail: 'Bordée 1 · COTENTIN' })]);
     expect(getAllPlanningCrewEvents(overview).some((event) => event.id === 'day-400')).toBe(false);
     expect(planningCrewEventType(getAllPlanningCrewEvents(overview).find((event) => event.kind === 'period')!)).toBe('rest');
+  });
+
+  it('keeps RTT distinct from paid leave in personnel filters', () => {
+    const source = { ...overview, periods: overview.periods.map((period) => ({ ...period, sailorStatus: 'rtt' })) };
+    const lanes = buildPlanningCrewLanes(source, range, { ...emptyFilters, eventType: 'rtt' }, 'people');
+    expect(lanes.flatMap((lane) => lane.events).map((event) => event.status)).toEqual(['RTT']);
+    expect(planningCrewEventTypeLabel('rtt')).toBe('RTT');
+    expect(buildPlanningCrewLanes(source, range, { ...emptyFilters, eventType: 'leave' }, 'people').flatMap((lane) => lane.events)).toEqual([]);
   });
 
   it('uses the linked HR function in the personnel view when an assignment keeps an older role', () => {
@@ -142,5 +204,34 @@ describe('planning P0.2 views', () => {
     expect(patched.assignments[0]).toEqual(expect.objectContaining({ vesselName: 'SUROIT', confirmationStatus: 'confirmed', comments: 'Déplacée' }));
     expect(removePlanningEvent(patched, event).assignments).toHaveLength(0);
     expect(replacePlanningProject(overview, { ...overview.projects[0], status: 'Annulé' }).projects[0].status).toBe('Annulé');
+  });
+});
+
+
+describe('default vessel for real field profiles', () => {
+  it('selects the current assignment for a sailor and the responsible captain', () => {
+    const data = { ...overview, assignments: [{ ...overview.assignments[0], captainPersonId: 20 }] };
+    expect(defaultPlanningVesselName(data, 10, '2026-07-08')).toBe('COTENTIN');
+    expect(defaultPlanningVesselName(data, 20, '2026-07-08')).toBe('COTENTIN');
+    expect(defaultPlanningVesselName(data, 10, '2026-07-01')).toBe('');
+    expect(defaultPlanningVesselName(data, 10, '2026-07-20')).toBe('');
+    expect(defaultPlanningVesselName(data, null, '2026-07-08')).toBe('');
+  });
+
+  it('prefers a personal assignment and ignores cancelled assignments', () => {
+    const data = { ...overview, assignments: [
+      { ...overview.assignments[0], id: 102, vesselId: 2, crewPersonId: 30, captainPersonId: 10 },
+      overview.assignments[0],
+      { ...overview.assignments[0], id: 103, vesselId: 2, confirmationStatus: 'cancelled' as const },
+    ] };
+    expect(defaultPlanningVesselName(data, 10, '2026-07-08')).toBe('COTENTIN');
+  });
+
+  it('uses daily overrides and historical period-only assignments', () => {
+    const day = { ...overview.days[0], personId: 10, vesselId: 2, workDate: '2026-07-08', sailorStatus: 'En Mer', sourceLabel: 'sharepoint' };
+    expect(defaultPlanningVesselName({ ...overview, days: [day] }, 10, '2026-07-08')).toBe('SUROIT');
+    expect(defaultPlanningVesselName({ ...overview, days: [{ ...day, sailorStatus: 'Repos' }] }, 10, '2026-07-08')).toBe('');
+    const data = { ...overview, assignments: [], periods: [{ ...overview.periods[0], personId: 10, sailorStatus: 'En Mer' }] };
+    expect(defaultPlanningVesselName(data, 10, '2026-07-13')).toBe('COTENTIN');
   });
 });

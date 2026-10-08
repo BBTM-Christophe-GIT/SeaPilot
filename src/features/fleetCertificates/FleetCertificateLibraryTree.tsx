@@ -1,3 +1,4 @@
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import {
   CalendarPlus, ChevronRight, ChevronsDownUp, ChevronsUpDown, Download, FileText, Folder, RefreshCw, Ship, Trash2,
 } from 'lucide-react';
@@ -133,7 +134,7 @@ export function buildFleetCertificateLibraryTree(
         0,
       ),
     };
-  }).sort((left, right) => frenchSort.compare(left.name, right.name));
+  }).sort(compareFleetAssets);
 }
 
 function toggleKey(current: Set<string>, key: string): Set<string> {
@@ -211,7 +212,7 @@ export function FleetCertificateLibraryTree({
             <button aria-label={`Télécharger ${certificate.documentTitle}`} disabled={!hasFile} onClick={() => onDownload(certificate)} title={hasFile ? 'Télécharger' : 'Aucun fichier à télécharger'} type="button"><Download size={15} /></button>
           </div>
           <button aria-label={`Prévisualiser ${certificate.documentTitle}`} className="fcx-library-row" onClick={() => onSelect(certificate)} type="button">
-            <span><FileText size={17} /><span><b>{certificate.documentTitle}</b><small>{certificate.fileName || 'Aucun fichier joint'}</small><small className="fcx-mobile-doc-meta">{formatDate(certificate.expiresOn)} · {getFleetCertificateStatusLabel(state)}</small></span>{actionCount > 0 && <i className="fcx-action-count">{actionCount} à traiter</i>}</span>
+            <span><FileText size={17} /><span><b>{certificate.documentTitle}</b><small>{certificate.fileName || (certificate.status === 'pending_validation' ? 'Document reçu · À valider' : 'Aucun fichier joint')}</small><small className="fcx-mobile-doc-meta">{formatDate(certificate.expiresOn)} · {getFleetCertificateStatusLabel(state)}</small></span>{actionCount > 0 && <i className="fcx-action-count">{actionCount} à traiter</i>}</span>
             <span>{formatDate(certificate.expiresOn)}</span>
             <em className={state}>{getFleetCertificateStatusLabel(state)}</em>
           </button>
@@ -245,9 +246,11 @@ export function FleetCertificateLibraryTree({
             <ChevronRight className={vesselOpen ? 'is-open' : ''} size={17} />
             <span className="fcx-tree-icon vessel"><Ship size={17} /></span>
             <strong>{vessel.name}</strong>
-            {vessel.actionCount > 0 && <em className="fcx-action-count">{vessel.actionCount} à traiter</em>}
-            {vessel.expiredCount > 0 && <em>{vessel.expiredCount} échu{vessel.expiredCount > 1 ? 's' : ''}</em>}
-            <small>{vessel.documentCount} document{vessel.documentCount > 1 ? 's' : ''}</small>
+            <span className="fcx-tree-vessel-stats">
+              {vessel.actionCount > 0 && <em className="fcx-action-count">{vessel.actionCount} à traiter</em>}
+              {vessel.expiredCount > 0 && <em>{vessel.expiredCount} échu{vessel.expiredCount > 1 ? 's' : ''}</em>}
+              <small>{vessel.documentCount} document{vessel.documentCount > 1 ? 's' : ''}</small>
+            </span>
           </button>
           {vesselOpen && <div className="fcx-tree-children" role="group">
             {vessel.categories.map((category) => {

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { planningDateFromTimestamp, planningLocalDateTimeToUtc } from './planningDates';
 import { throwPlanningDataError } from './planningErrors';
+import { PLANNING_NOTIFICATIONS_CHANGED } from './planningLeaveNotifications';
 import { fetchPlanningManningMatrices } from './planningP11Queries';
 import type {
   PlanningAbsenceRecord,
@@ -21,7 +22,7 @@ const CONFLICT_HISTORY_SELECT = 'id, case_id, action, comment, payload, changed_
 interface AbsenceRow {
   id: number;
   person_id: number;
-  absence_type: PlanningAbsenceRecord['absenceType'];
+  absence_type: PlanningAbsenceRecord['absenceType'] | 'unavailability';
   starts_at: string;
   ends_at: string;
   reason: string;
@@ -106,7 +107,7 @@ export function mapPlanningAbsenceRows(rows: AbsenceRow[]): PlanningAbsenceRecor
   return rows.map((row) => ({
     id: row.id,
     personId: row.person_id,
-    absenceType: row.absence_type,
+    absenceType: row.absence_type === 'unavailability' ? 'leave' : row.absence_type,
     startsAt: row.starts_at,
     endsAt: row.ends_at,
     startsOn: planningDateFromTimestamp(row.starts_at),
@@ -237,10 +238,13 @@ export function reviewPlanningAbsence(
   if (action !== 'approve' && normalizedComment.length < 3) {
     throw new Error('Un commentaire d’au moins 3 caractères est obligatoire pour refuser ou annuler.');
   }
-  return callRpc(client, 'review-absence', 'Impossible de mettre à jour la demande d’absence.', 'review_planning_absence', {
+  return callRpc<number>(client, 'review-absence', 'Impossible de mettre à jour la demande d’absence.', 'review_planning_absence', {
     p_absence_id: planningEntityId(absenceId, 'La demande'),
     p_action: action,
     p_comment: normalizedComment || null,
+  }).then((id) => {
+    window.dispatchEvent(new Event(PLANNING_NOTIFICATIONS_CHANGED));
+    return id;
   });
 }
 
@@ -255,7 +259,7 @@ export function movePlanningApprovedAbsence(
   input: MovePlanningApprovedAbsenceInput,
 ): Promise<number> {
   assertPlanningDateTimeRange(input.startsAt, input.endsAt);
-  return callRpc(client, 'move-approved-absence', 'Impossible de déplacer ces vacances validées.', 'move_planning_approved_absence', {
+  return callRpc(client, 'move-approved-absence', 'Impossible de déplacer ces congés validés.', 'move_planning_approved_absence', {
     p_absence_id: planningEntityId(input.absenceId, 'La demande d’absence'),
     p_starts_at: planningLocalDateTimeToUtc(input.startsAt),
     p_ends_at: planningLocalDateTimeToUtc(input.endsAt),

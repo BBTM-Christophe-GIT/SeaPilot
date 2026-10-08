@@ -1,20 +1,55 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { previewSupabaseClient } from '../preview/previewSupabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { buildServiceNoteLinkGroups, groupServiceNotesByYear, resolveServiceNoteAudiencePeople, ServiceNotesPage } from './ServiceNotesPage';
 import type { ServiceNote, ServiceNoteLinkOption } from './serviceNoteQueries';
+import * as serviceNoteQueries from './serviceNoteQueries';
 
 function renderPage(roles: AppShellOutletContext['roles'] = ['admin']) {
   const context: AppShellOutletContext = {
     roles, client: previewSupabaseClient, previewMode: true,
-    currentPerson: { id: 9301, firstName: 'Arthur', lastName: 'DEMO', functionLabel: 'Capitaine', gradeLabel: 'Capitaine 500' },
+    currentPerson: { id: 9301, firstName: 'Arthur', lastName: 'DEMO', functionLabel: 'Capitaine', gradeLabel: 'Capitaine 500', active: true, hiredOn: '2020-01-01', departedOn: '' },
   };
   render(<MemoryRouter initialEntries={['/modules/serviceNotes']}><Routes><Route element={<Outlet context={context} />}><Route path="modules/serviceNotes" element={<ServiceNotesPage />} /></Route></Routes></MemoryRouter>);
 }
 
 describe('ServiceNotesPage', () => {
+  it('shows the corrected issue date in the library even when published later', async () => {
+    const notes = await serviceNoteQueries.fetchServiceNotes(previewSupabaseClient);
+    const fetchNotes = vi.spyOn(serviceNoteQueries, 'fetchServiceNotes').mockResolvedValueOnce(notes.map((note) => (
+      note.chronologyCode === 'NS 08-26'
+        ? { ...note, authoredOn: '2026-09-22', publishedAt: '2026-09-24T05:32:40Z', updatedAt: '2026-09-24T06:00:00Z' }
+        : note
+    )));
+    try {
+      renderPage();
+      const row = (await screen.findByText('NS 08-26')).closest('[role="listitem"]');
+      expect(row).toHaveTextContent('22/09/2026');
+      expect(row).not.toHaveTextContent('24/09/2026');
+    } finally {
+      fetchNotes.mockRestore();
+    }
+  });
+
+  it('keeps focus in the message when clicking and typing in a draft', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: /Brouillons/ }));
+    await user.click(screen.getByText('Organisation des exercices trimestriels'));
+    await user.click(await screen.findByRole('button', { name: 'Modifier' }));
+    const editor = await screen.findByRole('textbox', { name: 'Contenu' });
+
+    await user.click(editor);
+    expect(editor).toHaveFocus();
+    await user.keyboard('Bonjour, voici la note de service.');
+    expect(editor).toHaveTextContent('Bonjour, voici la note de service.');
+    expect(editor).toHaveFocus();
+    expect(screen.getByRole('combobox', { name: 'Style de paragraphe' })).not.toHaveFocus();
+  });
+
   it('shows the QHSE library and one common signing document', async () => {
     renderPage();
     expect(await screen.findByRole('heading', { name: 'Notes de Service' })).toBeInTheDocument();
@@ -145,9 +180,9 @@ describe('ServiceNotesPage', () => {
       lastRecalledChronologyCode: '', attachments: [], recipients: [], signatures: [],
     });
     const groups = groupServiceNotesByYear([
-      note('NS 99-25', '2025-12-31T10:00:00Z', 'SUROÎT'),
-      note('NS 02-26', '2026-09-03T10:00:00Z', 'KROKDUR'),
-      note('NS 09-26', '2026-09-02T10:00:00Z', 'GOURY'),
+      { ...note('NS 99-25', '2026-01-02T10:00:00Z', 'SUROÎT'), authoredOn: '2025-12-31' },
+      { ...note('NS 02-26', '2026-09-23T10:00:00Z', 'KROKDUR'), authoredOn: '2026-09-23' },
+      { ...note('NS 09-26', '2026-09-24T10:00:00Z', 'GOURY'), authoredOn: '2026-09-22' },
     ]);
     expect(groups.map((group) => group.year)).toEqual([2026, 2025]);
     expect(groups[0].notes.map((item) => item.chronologyCode)).toEqual(['NS 02-26', 'NS 09-26']);

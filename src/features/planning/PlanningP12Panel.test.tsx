@@ -1,8 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlanningP12Panel } from './PlanningP12Panel';
+import type { PlanningAbsenceBalanceContext } from './planningAbsenceBalance';
+import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveCounterPeriod, savePlanningLeaveRightsPeriod } from './planningAbsenceBalanceQueries';
+import type { PlanningAbsenceRecord, PlanningP12Data } from './planningP12';
 import type { PlanningOverview } from './planningQueries';
 import {
   deletePlanningAbsence,
@@ -21,6 +24,11 @@ vi.mock('./planningP12Queries', () => ({
   reviewPlanningAbsence: vi.fn(),
   savePlanningAbsence: vi.fn(),
   updatePlanningConflictCase: vi.fn(),
+}));
+vi.mock('./planningAbsenceBalanceQueries', () => ({
+  fetchPlanningAbsenceBalanceContext: vi.fn(),
+  savePlanningLeaveCounterPeriod: vi.fn(),
+  savePlanningLeaveRightsPeriod: vi.fn(),
 }));
 
 const client = {} as SupabaseClient;
@@ -43,6 +51,28 @@ const data = {
   conflictHistory: [],
   matrices: [],
 };
+
+const staffPerson = { ...overview.people[1], firstName: 'Sophie', lastName: 'HAMEL', functionLabel: 'Gestionnaire' };
+const staffOverview: PlanningOverview = { ...overview, people: [overview.people[0], staffPerson] };
+const rttRequests: PlanningAbsenceRecord[] = [
+  { ...data.absences[1], id: 40, absenceType: 'rtt', status: 'requested', startsAt: '2026-08-03T06:00:00Z', endsAt: '2026-08-05T16:00:00Z', startsOn: '2026-08-03', endsOn: '2026-08-05', reason: 'RTT de rentrée' },
+  { ...data.absences[1], id: 41, absenceType: 'rtt', status: 'approved', startsAt: '2026-08-10T06:00:00Z', endsAt: '2026-08-12T16:00:00Z', startsOn: '2026-08-10', endsOn: '2026-08-12', reason: 'RTT approuvés' },
+  { ...data.absences[1], id: 42, absenceType: 'rtt', status: 'rejected', startsAt: '2026-08-17T06:00:00Z', endsAt: '2026-08-18T16:00:00Z', startsOn: '2026-08-17', endsOn: '2026-08-18', reason: 'RTT refusés' },
+  { ...data.absences[1], id: 43, absenceType: 'rtt', status: 'cancelled', startsAt: '2026-08-20T06:00:00Z', endsAt: '2026-08-21T16:00:00Z', startsOn: '2026-08-20', endsOn: '2026-08-21', reason: 'RTT annulés' },
+];
+const rttData: PlanningP12Data = { ...data, absences: rttRequests };
+
+function staffBalances(entitlement = 8): PlanningAbsenceBalanceContext {
+  return { kind: 'leave_rtt', person: staffPerson, counterPeriods: [
+    { id: 1, counterType: 'leave', startsOn: '2026-06-01', endsOn: '2027-05-31', entitlement: 25 },
+    { id: 2, counterType: 'rtt', startsOn: '2026-06-01', endsOn: '2027-05-31', entitlement },
+  ], absences: rttRequests, crewCheckpoints: [], crewSources: { assignments: [], periods: [], days: [] } };
+}
+
+function balanceMetric(counter: 'Congés' | 'RTT', label: string): HTMLElement {
+  const term = within(screen.getByLabelText(`Compteur ${counter}`)).getByText(label, { selector: 'dt' });
+  return term.nextElementSibling as HTMLElement;
+}
 
 function renderPanel(overrides: Partial<React.ComponentProps<typeof PlanningP12Panel>> = {}) {
   const props: React.ComponentProps<typeof PlanningP12Panel> = {
@@ -74,6 +104,50 @@ describe('Planning P1.2 panel', () => {
     vi.mocked(reviewPlanningAbsence).mockResolvedValue(31);
     vi.mocked(ensurePlanningConflictCase).mockResolvedValue(40);
     vi.mocked(updatePlanningConflictCase).mockResolvedValue(40);
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockImplementation(async (_client, personId) => ({
+      kind: 'crew', person: overview.people.find((person) => person.id === personId)!, counterPeriods: [],
+      absences: data.absences.filter((absence) => absence.personId === personId), crewCheckpoints: [],
+      crewSources: {
+        assignments: overview.assignments.filter((assignment) => assignment.crewPersonId === personId),
+        periods: overview.periods.filter((period) => period.personId === personId),
+        days: overview.days.filter((day) => day.personId === personId),
+      },
+    }));
+    vi.mocked(savePlanningLeaveCounterPeriod).mockResolvedValue(undefined);
+    vi.mocked(savePlanningLeaveRightsPeriod).mockResolvedValue(undefined);
+  });
+
+  it('keeps keyboard focus in the absence dialog and closes with Escape', async () => {
+    const user = userEvent.setup();
+    const props = renderPanel({ initialTab: 'absences' });
+    await screen.findByText('Formation sécurité');
+    const dialog = screen.getByRole('dialog', { name: 'Absences et conflits' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    const close = within(dialog).getByRole('button', { name: 'Fermer' });
+    close.focus();
+    await user.tab({ shift: true });
+    expect(within(dialog).getByRole('button', { name: 'Supprimer la demande de Paul DURAND' })).toHaveFocus();
+    await user.tab();
+    expect(close).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(props.onClose).toHaveBeenCalledOnce();
+  });
+
+  it('prevents dismissal and duplicate actions while an absence decision is saving', async () => {
+    const user = userEvent.setup();
+    let finishReview!: (id: number) => void;
+    vi.mocked(reviewPlanningAbsence).mockReturnValue(new Promise((resolve) => { finishReview = resolve; }));
+    const props = renderPanel({ initialTab: 'absences' });
+    await screen.findByText('Formation sécurité');
+    await user.click(screen.getByRole('button', { name: 'Refuser' }));
+    expect(screen.getByRole('button', { name: 'Fermer' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Valider' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Actualiser les absences et conflits' })).toBeDisabled();
+    await user.keyboard('{Escape}');
+    expect(props.onClose).not.toHaveBeenCalled();
+    finishReview(31);
+    expect(await screen.findByText('Demande refusée.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fermer' })).toBeEnabled();
   });
 
   it('creates and approves absence requests while showing assignment impacts', async () => {
@@ -145,5 +219,121 @@ describe('Planning P1.2 panel', () => {
     renderPanel({ canDeleteAbsences: false, initialTab: 'absences' });
     await screen.findByText('Congés familiaux');
     expect(screen.queryByRole('button', { name: /Supprimer la demande/ })).not.toBeInTheDocument();
+  });
+
+  it('shows plural RTT decision labels and preserves the type and correct balances when a request is edited', async () => {
+    vi.mocked(fetchPlanningP12Data).mockResolvedValue(rttData);
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValue(staffBalances());
+    const user = userEvent.setup();
+    const props = renderPanel({ overview: staffOverview, initialTab: 'absences' });
+    await screen.findByText('RTT de rentrée');
+    for (const [request, status] of rttRequests.map((request, index) => [request, ['Demandés', 'Validés', 'Refusés', 'Annulés'][index]] as const)) {
+      const card = screen.getByText(request.reason).closest('article')!;
+      expect(within(card).getByText(status)).toBeVisible();
+      expect(within(card).getByText(/^RTT ·/)).toBeVisible();
+    }
+    const requestedCard = screen.getByText('RTT de rentrée').closest('article')!;
+    await user.click(within(requestedCard).getByRole('button', { name: 'Modifier' }));
+    const form = screen.getByRole('button', { name: 'Mettre à jour' }).closest('form')!;
+    expect(within(form).getByLabelText('Marin')).toHaveValue('11');
+    expect(within(form).getByLabelText('Type')).toHaveValue('rtt');
+    expect(within(form).getByLabelText('Début')).toHaveValue('2026-08-03T08:00');
+    expect(within(form).getByLabelText('Fin')).toHaveValue('2026-08-05T18:00');
+    await screen.findByLabelText('Compteur RTT');
+    expect(fetchPlanningAbsenceBalanceContext).toHaveBeenCalledWith(client, staffPerson.id);
+    expect(balanceMetric('RTT', 'Droits')).toHaveTextContent('8 j');
+    expect(balanceMetric('RTT', 'Jours validés')).toHaveTextContent('3 j');
+    expect(balanceMetric('RTT', 'En attente')).toHaveTextContent('0 j');
+    expect(balanceMetric('RTT', 'Solde disponible')).toHaveTextContent('5 j');
+    expect(balanceMetric('RTT', 'Cette demande')).toHaveTextContent('3 j');
+    expect(balanceMetric('RTT', 'Après validation')).toHaveTextContent('2 j');
+    expect(balanceMetric('Congés', 'Solde disponible')).toHaveTextContent('25 j');
+    fireEvent.change(within(form).getByLabelText('Fin'), { target: { value: '2026-08-04T18:00' } });
+    await user.clear(within(form).getByLabelText('Motif'));
+    await user.type(within(form).getByLabelText('Motif'), 'RTT réorganisés');
+    expect(balanceMetric('RTT', 'Cette demande')).toHaveTextContent('2 j');
+    expect(balanceMetric('RTT', 'Après validation')).toHaveTextContent('3 j');
+    await user.click(within(form).getByRole('button', { name: 'Mettre à jour' }));
+    await waitFor(() => expect(savePlanningAbsence).toHaveBeenCalledExactlyOnceWith(client, {
+      id: 40, personId: 11, absenceType: 'rtt', startsAt: '2026-08-03T08:00', endsAt: '2026-08-04T18:00', reason: 'RTT réorganisés',
+    }));
+    expect(props.onAuditChange).toHaveBeenCalledOnce();
+    expect(await screen.findByText('Demande d’absence enregistrée. Les impacts sont recalculés.')).toBeVisible();
+    expect(savePlanningLeaveCounterPeriod).not.toHaveBeenCalled();
+  });
+
+  it('isolates the rights editor from the absence form and cancels only the rights edit on Escape', async () => {
+    vi.mocked(fetchPlanningP12Data).mockResolvedValue(rttData);
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValueOnce(staffBalances()).mockResolvedValueOnce(staffBalances(9.5));
+    const user = userEvent.setup();
+    const props = renderPanel({ overview: staffOverview, initialTab: 'absences', range: { start: '2026-08-03', end: '2026-08-31' } });
+    await user.click(await screen.findByRole('button', { name: 'Nouvelle demande' }));
+    const form = screen.getByRole('button', { name: 'Envoyer la demande' }).closest('form')!;
+    await user.selectOptions(within(form).getByLabelText('Marin'), '11');
+    await user.selectOptions(within(form).getByLabelText('Type'), 'rtt');
+    await user.type(within(form).getByLabelText('Motif'), 'RTT à conserver');
+    await user.click(await screen.findByRole('button', { name: 'Périodes de Droits Congés' }));
+    const editor = screen.getByRole('dialog', { name: 'Périodes de Droits Congés' });
+    expect(editor.closest('form')).toBeNull();
+    expect(editor.querySelector('form')).not.toBeNull();
+    expect(form).not.toContainElement(editor);
+    expect(form.querySelector('form')).toBeNull();
+    expect(within(screen.getByRole('dialog', { name: 'Absences et conflits' })).getAllByRole('button', { name: 'Fermer' })[0]).toBeDisabled();
+    for (const tab of screen.getAllByRole('tab')) expect(tab).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Actualiser les absences et conflits' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Nouvelle demande' })).toBeDisabled();
+    const requestedCard = screen.getByText('RTT de rentrée').closest('article')!;
+    for (const action of ['Modifier', 'Valider', 'Refuser', 'Annuler la demande']) {
+      expect(within(requestedCard).getByRole('button', { name: action })).toBeDisabled();
+    }
+    for (const deletion of screen.getAllByRole('button', { name: 'Supprimer la demande de Sophie HAMEL' })) expect(deletion).toBeDisabled();
+    expect(within(form).getByLabelText('Marin')).toBeDisabled();
+    expect(within(form).getByLabelText('Type')).toBeDisabled();
+    expect(within(form).getByLabelText('Début')).toBeDisabled();
+    expect(within(form).getByLabelText('Fin')).toBeDisabled();
+    expect(within(form).getByLabelText('Motif')).toBeDisabled();
+    expect(within(form).getByRole('button', { name: 'Envoyer la demande' })).toBeDisabled();
+    const amount = within(editor).getByLabelText('Total RTT (jours)');
+    await user.clear(amount);
+    await user.type(amount, '9,5');
+    // An external submit event must also honor the parent form's edit guard.
+    fireEvent.submit(form);
+    expect(savePlanningAbsence).not.toHaveBeenCalled();
+    expect(savePlanningLeaveCounterPeriod).not.toHaveBeenCalled();
+    expect(savePlanningLeaveRightsPeriod).not.toHaveBeenCalled();
+    expect(amount).toHaveValue('9,5');
+    expect(editor).toBeVisible();
+    await user.keyboard('{Escape}');
+    expect(props.onClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: 'Périodes de Droits Congés' })).not.toBeInTheDocument();
+    for (const tab of screen.getAllByRole('tab')) expect(tab).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Actualiser les absences et conflits' })).toBeEnabled();
+    expect(within(requestedCard).getByRole('button', { name: 'Modifier' })).toBeEnabled();
+    expect(within(form).getByRole('button', { name: 'Envoyer la demande' })).toBeEnabled();
+    expect(within(form).getByLabelText('Marin')).toHaveValue('11');
+    expect(within(form).getByLabelText('Type')).toHaveValue('rtt');
+    expect(within(form).getByLabelText('Motif')).toHaveValue('RTT à conserver');
+    expect(balanceMetric('RTT', 'Droits')).toHaveTextContent('8 j');
+    await user.click(screen.getByRole('button', { name: 'Périodes de Droits Congés' }));
+    const nextEditor = screen.getByRole('dialog', { name: 'Périodes de Droits Congés' });
+    await user.clear(within(nextEditor).getByLabelText('Total RTT (jours)'));
+    await user.type(within(nextEditor).getByLabelText('Total RTT (jours)'), '9,5');
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(balanceMetric('RTT', 'Droits')).toHaveTextContent('9,5 j'));
+    expect(savePlanningLeaveRightsPeriod).toHaveBeenCalledExactlyOnceWith(client, {
+      personId: 11, startsOn: '2026-06-01', endsOn: '2027-05-31', leaveEntitlement: 25, rttEntitlement: 9.5,
+    });
+    expect(savePlanningAbsence).not.toHaveBeenCalled();
+    expect(props.onAuditChange).not.toHaveBeenCalled();
+    expect(props.onClose).not.toHaveBeenCalled();
+    expect(savePlanningLeaveCounterPeriod).not.toHaveBeenCalled();
+    expect(nextEditor).toBeVisible();
+    expect(within(nextEditor).getByRole('status')).toHaveTextContent(/Droits enregistrés/);
+    expect(within(form).getByRole('button', { name: 'Envoyer la demande' })).toBeDisabled();
+    await user.click(within(nextEditor).getByRole('button', { name: 'Fermer la fenêtre' }));
+    await user.click(within(form).getByRole('button', { name: 'Envoyer la demande' }));
+    await waitFor(() => expect(savePlanningAbsence).toHaveBeenCalledExactlyOnceWith(client, {
+      id: undefined, personId: 11, absenceType: 'rtt', startsAt: '2026-08-03T08:00', endsAt: '2026-08-03T18:00', reason: 'RTT à conserver',
+    }));
   });
 });

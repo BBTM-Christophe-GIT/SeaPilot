@@ -96,6 +96,15 @@ where action.title = 'ACTION-SUIVI-TRAITEMENT';
 
 select set_config('test.action_followup.id', (select id::text from public.action_items where title = 'ACTION-SUIVI-TRAITEMENT'), false);
 
+insert into public.vessels (company_id, name)
+select id, 'ACTION FOLLOWUP ASSIGNED VESSEL' from public.companies where code = 'bbtm';
+insert into public.planning_assignments (company_id, vessel_id, crew_person_id, starts_on, ends_on)
+select person.company_id, vessel.id, person.id, current_date - 1, current_date + 1
+from public.people person join public.vessels vessel on vessel.company_id = person.company_id
+where person.user_id = '7c350000-0000-0000-0000-000000000002' and vessel.name = 'ACTION FOLLOWUP ASSIGNED VESSEL';
+update public.action_items set vessel_id = (select id from public.vessels where name = 'ACTION FOLLOWUP ASSIGNED VESSEL')
+where id = current_setting('test.action_followup.id')::bigint;
+
 set local role authenticated;
 select set_config('request.jwt.claim.role', 'authenticated', true);
 select set_config('request.jwt.claim.sub', '7c350000-0000-0000-0000-000000000001', true);

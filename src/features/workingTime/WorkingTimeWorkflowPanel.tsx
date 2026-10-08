@@ -20,7 +20,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { compareHrFunctionLabels, normalizeHrFunctionLabel } from '../humanResources/peopleQueries';
 import type { RoleKey } from '../permissions/roles';
 import { todayPlanningDate } from '../planning/planningDates';
@@ -69,6 +69,7 @@ interface WorkingTimeWorkflowPanelProps {
   roles: RoleKey[];
   currentPerson: CurrentPersonSummary | null;
   range: WorkingTimeRange;
+  navigationTarget?: { personId: number; date: string } | null;
   previewMode?: boolean;
   refreshToken?: number;
   referenceDate?: string;
@@ -262,6 +263,7 @@ export function WorkingTimeWorkflowPanel({
   roles,
   currentPerson,
   range,
+  navigationTarget,
   previewMode = false,
   refreshToken = 0,
   referenceDate,
@@ -302,12 +304,13 @@ export function WorkingTimeWorkflowPanel({
   const [registerView, setRegisterView] = useState<'daily' | 'monthly'>('daily');
   const [rightPanelTab, setRightPanelTab] = useState<'compliance' | 'approvals'>('compliance');
   const [approvalNavigationTarget, setApprovalNavigationTarget] = useState<{ personId: number; date: string } | null>(null);
+  const consumedNavigationTarget = useRef('');
 
   const currentPersonId = workspace?.currentPersonId || currentPerson?.id || 0;
-  const isExactHrCaptain = currentPerson?.functionLabel === 'Capitaine';
+  const canActAsCaptain = currentPerson?.functionLabel === 'Capitaine' || workspace?.canActAsCaptain === true;
   const isSailorOnlyView = roles.includes('marin')
-    && !isExactHrCaptain
-    && !roles.some((role) => role === 'admin' || role === 'armement');
+    && !canActAsCaptain
+    && !roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
   const visibleRegisters = useMemo(
     () => workspace?.registers.filter((register) => !isSailorOnlyView || register.personId === currentPersonId) || [],
     [currentPersonId, isSailorOnlyView, workspace?.registers],
@@ -369,18 +372,14 @@ export function WorkingTimeWorkflowPanel({
   const selectedCatalogPerson = visibleReadablePeople.find((person) => person.personId === selectedPersonId) || null;
   const displayedMonthLabel = formatMonthLabel(range.start);
   const selectedIntervals = useMemo(
-    () => workspace?.intervals.filter((interval) => interval.personId === selectedPersonId
-      && interval.localWorkDate >= range.start
-      && interval.localWorkDate <= range.end) || [],
-    [range.end, range.start, selectedPersonId, workspace?.intervals],
+    () => workspace?.intervals.filter((interval) => interval.personId === selectedPersonId) || [],
+    [selectedPersonId, workspace?.intervals],
   );
   const selectedDayIntervals = useMemo(
     () => selectedIntervals.filter((interval) => interval.localWorkDate === selectedDay),
     [selectedDay, selectedIntervals],
   );
-  const selectedCalculations = useMemo(() => workspace?.calculations.filter((calculation) => calculation.personId === selectedPersonId
-    && calculation.localWindowEndDate >= range.start
-    && calculation.localWindowEndDate <= range.end) || [], [range.end, range.start, selectedPersonId, workspace?.calculations]);
+  const selectedCalculations = useMemo(() => workspace?.calculations.filter((calculation) => calculation.personId === selectedPersonId) || [], [selectedPersonId, workspace?.calculations]);
   const selectedCalculation = useMemo(
     () => workingTimeStatusCalculation(selectedCalculations, selectedIntervals, selectedDay),
     [selectedCalculations, selectedDay, selectedIntervals],
@@ -398,8 +397,12 @@ export function WorkingTimeWorkflowPanel({
     [selectedRollingImpactDetails],
   );
   const isOwnRegister = selectedRegister?.personId === currentPersonId;
-  const hasCaptainRole = isExactHrCaptain;
+  const hasCaptainRole = canActAsCaptain;
   const hasManagementValidationRole = roles.includes('admin') || roles.includes('armement');
+  const hasDirectionRole = roles.includes('direction');
+  const canManageApproval = (approval: WorkingTimeDayApproval) => currentPersonId > 0
+    && currentPersonId !== approval.personId
+    && (hasManagementValidationRole || (hasDirectionRole && approval.approverPersonId === null));
   const selectedDayApproval = useMemo(() => workspace?.dayApprovals.find((approval) => (
     approval.registerId === selectedRegister?.id && approval.localWorkDate === selectedDay
   )) || null, [selectedDay, selectedRegister?.id, workspace?.dayApprovals]);
@@ -413,16 +416,19 @@ export function WorkingTimeWorkflowPanel({
   );
   const pendingApprovals = useMemo(() => workspace?.dayApprovals
     .filter((approval) => approval.status === 'submitted'
-      && (approval.approverPersonId === currentPersonId || hasManagementValidationRole))
+      && ((hasCaptainRole && approval.approverPersonId === currentPersonId)
+        || (currentPersonId > 0 && currentPersonId !== approval.personId
+          && (hasManagementValidationRole || (hasDirectionRole && approval.approverPersonId === null)))))
     .sort((left, right) => left.localWorkDate.localeCompare(right.localWorkDate)) || [],
-  [currentPersonId, hasManagementValidationRole, workspace?.dayApprovals]);
+  [currentPersonId, hasCaptainRole, hasDirectionRole, hasManagementValidationRole, workspace?.dayApprovals]);
   const canEdit = Boolean(selectedRegister
     && selectedDayApproval?.status !== 'validated'
     && (
       (selectedDayApproval?.status === 'submitted'
-        && (selectedDayApproval.approverPersonId === currentPersonId || hasManagementValidationRole))
+        && ((hasCaptainRole && selectedDayApproval.approverPersonId === currentPersonId) || canManageApproval(selectedDayApproval)))
       || (!selectedDayApproval
         && entryWindowOpen
+        && (isOwnRegister || hasManagementValidationRole || isAssignedCaptainForSelectedDay)
         && visibleEditablePeople.some((person) => person.personId === selectedRegister.personId))
     ));
 
@@ -459,7 +465,7 @@ export function WorkingTimeWorkflowPanel({
   ));
   const canValidate = Boolean(
     selectedDayApproval?.status === 'submitted'
-      && ((hasManagementValidationRole && currentPersonId !== selectedDayApproval.personId)
+      && (canManageApproval(selectedDayApproval)
         || (hasCaptainRole && selectedDayApproval.approverPersonId === currentPersonId))
       && currentSignature
       && missingCaptainComments.length === 0,
@@ -470,14 +476,16 @@ export function WorkingTimeWorkflowPanel({
     setSelectedPersonId((current) => {
       if (current
         && visibleReadablePeople.some((person) => person.personId === current)
-        && (monthlyRegisterByPerson.has(current) || monthlyRegisters.length === 0)) return current;
+        && (monthlyRegisterByPerson.has(current) || monthlyRegisters.length === 0
+          || (navigationTarget?.personId === current
+            && consumedNavigationTarget.current === `${navigationTarget.personId}:${navigationTarget.date}`))) return current;
       return (monthlyRegisterByPerson.has(workspace.currentPersonId) ? workspace.currentPersonId : null)
         || monthlyRegisters[0]?.personId
         || visibleReadablePeople.find((person) => person.personId === workspace.currentPersonId)?.personId
         || visibleReadablePeople[0]?.personId
         || null;
     });
-  }, [currentPerson?.id, monthlyRegisterByPerson, monthlyRegisters, visibleEditablePeople, visibleReadablePeople, workspace]);
+  }, [currentPerson?.id, monthlyRegisterByPerson, monthlyRegisters, navigationTarget, visibleEditablePeople, visibleReadablePeople, workspace]);
 
   useEffect(() => {
     if (!workspace || !catalogPeople.length) return;
@@ -500,6 +508,25 @@ export function WorkingTimeWorkflowPanel({
     setEndsAt(`${initialDay}T00:00`);
     setPendingPhases([]);
   }, [localToday, range.end, range.start]);
+
+  useEffect(() => {
+    if (!navigationTarget || !workspace || isLoading
+      || navigationTarget.date < range.start || navigationTarget.date > range.end) return;
+    const targetKey = `${navigationTarget.personId}:${navigationTarget.date}`;
+    if (consumedNavigationTarget.current === targetKey) return;
+    consumedNavigationTarget.current = targetKey;
+    const person = visibleReadablePeople.find((candidate) => candidate.personId === navigationTarget.personId);
+    if (!person) return;
+    setPersonnelFilter(isVisibleForPersonnelFilter(person, 'departed', localToday) ? 'departed' : 'active');
+    setRegisterSearch('');
+    setSelectedPersonId(person.personId);
+    setSelectedDay(navigationTarget.date);
+    setStartsAt(`${navigationTarget.date}T00:00`);
+    setEndsAt(`${navigationTarget.date}T00:00`);
+    setRegisterView('daily');
+    setRightPanelTab('compliance');
+    setPendingPhases([]);
+  }, [isLoading, localToday, navigationTarget, range.end, range.start, visibleReadablePeople, workspace]);
 
   useEffect(() => {
     if (!approvalNavigationTarget
@@ -691,7 +718,9 @@ export function WorkingTimeWorkflowPanel({
       : intent === 'save-draft'
         ? 'Le brouillon a été enregistré sans validation.'
       : intent === 'submit-day'
-        ? isExactHrCaptain
+        ? !activeDayContext?.approverPersonId
+          ? 'La journée a été signée et transmise pour approbation à un Administrateur, à la Direction ou à l’Armement.'
+          : activeDayContext?.approverPersonId === currentPersonId
           ? 'La journée est signée : elle est validée si elle est conforme, sinon sa justification reste à compléter.'
           : 'La journée a été signée et transmise au capitaine de la bordée.'
         : 'La journée a été validée et clôturée. Les autres jours du mois restent ouverts.';
@@ -814,7 +843,7 @@ export function WorkingTimeWorkflowPanel({
                     <button aria-selected={rightPanelTab === 'approvals'} className={rightPanelTab === 'approvals' ? 'is-active' : ''} onClick={() => setRightPanelTab('approvals')} role="tab" type="button">Approbation{pendingApprovals.length ? <em>{pendingApprovals.length}</em> : null}</button>
                   </div>
                   {rightPanelTab === 'compliance' ? <>
-                    <article className="working-time-conformity-item"><FileClock aria-hidden="true" size={20} /><span>Travail sur 7 jours</span><strong>{compactDuration(selectedCalculation?.work7dSeconds)}</strong><small>{selectedRegister.workRestPolicyId ? 'Calcul serveur P1.3' : 'Politique requise'}</small></article>
+                    <article className="working-time-conformity-item"><FileClock aria-hidden="true" size={20} /><span>Travail sur 7 jours</span><strong>{compactDuration(selectedCalculation?.work7dSeconds)}</strong><small>{selectedCalculation?.workRestPolicyId ? 'Calcul serveur P1.3' : 'Politique requise'}</small></article>
                     <article className="working-time-conformity-item"><CalendarDays aria-hidden="true" size={20} /><span>Repos consécutif actuel</span><strong>{compactDuration(selectedCalculation?.longestRest24hSeconds)}</strong><small>Fenêtre glissante de 24 h</small></article>
                     <article className="working-time-conformity-item"><Bell aria-hidden="true" size={20} /><span>Alertes</span><strong>{nonCompliantDates.includes(selectedDay) ? selectedViolationDetails.length : 0}</strong><small>{nonCompliantDates.includes(selectedDay) && selectedViolationDetails[0] ? workingTimeViolationText(selectedViolationDetails[0]) : 'Aucune alerte détectée'}</small></article>
                     <SignatureCard imageUrl={subjectSignatureEvidence ? signatureUrls[signatureKey(subjectSignatureEvidence)] : undefined} label="Titulaire du registre" signature={subjectSignatureEvidence} />
@@ -878,12 +907,12 @@ export function WorkingTimeWorkflowPanel({
                       && (isOwnRegister || isAssignedCaptainForSelectedDay)}
                     showValidate={selectedDayApproval?.status === 'submitted'
                       && !nonCompliantDates.includes(selectedDay)
-                      && (selectedDayApproval.approverPersonId === currentPersonId || hasManagementValidationRole)}
+                      && ((hasCaptainRole && selectedDayApproval.approverPersonId === currentPersonId) || canManageApproval(selectedDayApproval))}
                     submitDisabled={!currentSignature
                       || (isAssignedCaptainForSelectedDay && !subjectSignature)}
                     validateDisabled={!canValidate}
                     />
-                    {!selectedIntervals.length ? <p className="working-time-empty">Aucune heure saisie.</p> : null}
+                    {!selectedIntervals.some((interval) => interval.localWorkDate >= range.start && interval.localWorkDate <= range.end) ? <p className="working-time-empty">Aucune heure saisie.</p> : null}
 
                     {voidCandidateId ? (
                     <div className="working-time-void-form">
@@ -918,7 +947,7 @@ export function WorkingTimeWorkflowPanel({
                       const violationDetails = workingTimeViolationDetails(selectedCalculations, selectedIntervals, date, workspace.policies);
                       const dateApproval = workspace.dayApprovals.find((approval) => approval.registerId === selectedRegister.id && approval.localWorkDate === date);
                       const canRespond = Boolean(dateApproval?.status === 'submitted'
-                        && (hasManagementValidationRole
+                        && (canManageApproval(dateApproval)
                           || (hasCaptainRole && dateApproval.approverPersonId === currentPersonId)));
                       const disabled = !canRespond;
                       const update = (field: keyof NonComplianceDraft, value: string) => setDayResponses((current) => ({
@@ -967,7 +996,7 @@ export function WorkingTimeWorkflowPanel({
                 {!currentSignature && isOwnRegister && !selectedDayApproval ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.</p> : null}
                 {!subjectSignature && isAssignedCaptainForSelectedDay && !selectedDayApproval ? <p className="working-time-message is-error">Le titulaire doit disposer d’une signature de profil active avant que le capitaine puisse valider sa journée.</p> : null}
                 {!currentSignature && isAssignedCaptainForSelectedDay && !selectedDayApproval ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.</p> : null}
-                {!currentSignature && selectedDayApproval?.status === 'submitted' && (hasCaptainRole || hasManagementValidationRole) ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur.</p> : null}
+                {!currentSignature && selectedDayApproval?.status === 'submitted' && (hasCaptainRole || canManageApproval(selectedDayApproval)) ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur.</p> : null}
                 {selectedDayApproval?.status === 'validated' ? <p className="working-time-validated-note"><BadgeCheck aria-hidden="true" size={18} />Journée validée et clôturée — les autres jours du mois restent ouverts.</p> : null}
               </article>
             ) : (

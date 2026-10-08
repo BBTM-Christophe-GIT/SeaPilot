@@ -44,11 +44,15 @@ Deux écarts restaient ouverts :
 - Le dialogue charge tous les éléments actifs de `stcw_certificates`, y compris les documents non STCW, et les groupe selon les catégories RH SeaPilot.
 - Les 54 types actifs de la liste SharePoint QHSE sont disponibles, y compris les catégories RH, médicales, levage et plan de formation.
 - Le champ SharePoint **Nom de Fichier** est conservé dans `stcw_certificates.file_name` et utilisé en priorité (`CFBS`, `CGO`, `CQALI`, `EM I`, `Visite Médicale`, etc.). Une table d’alias reste disponible pour les environnements qui n’ont pas encore appliqué la migration.
-- La date d’échéance et le fichier sont obligatoires. Le nom final est présenté avant l’enregistrement.
+- Le fichier est obligatoire. L’utilisateur choisit une échéance ou coche **Sans date de péremption** ; dans ce cas, `expires_on` vaut `NULL` et le nom généré ne contient pas d’année. Le nom final est présenté avant l’enregistrement.
 - Un document médical permet de saisir immédiatement l’aptitude, la veille passerelle et les restrictions.
 - L’objet est d’abord chargé dans le bucket privé avec `upsert: false`, puis sa ligne est créée dans `hr_documents`. Si l’écriture SQL échoue, l’objet chargé est supprimé.
 - Un conflit de nom produit un message métier et ne remplace jamais le fichier existant.
 - Le renouvellement utilise maintenant la même extraction SPFx du libellé documentaire avant de générer le nouveau nom.
+- Chaque document de l’onglet Documents dispose des actions **Modifier** et **Supprimer** pour les gestionnaires RH. La modification porte sur le nom, la catégorie, les dates de délivrance et de péremption, les notes et les informations médicales. Elle conserve le fichier et son chemin.
+- Retirer une échéance recalcule le statut documentaire, sans lever un état « Manquant » ou « Validation ». Une échéance peut être réintroduite ultérieurement.
+- La suppression demande une confirmation et retire la ligne, sa sélection et ses alertes. Pour un fichier du bucket `hr-documents`, le fichier est supprimé avant la ligne afin de respecter la politique Storage qui dépend de celle-ci. Une erreur de suppression SQL après celle du fichier reste visible et permet de réessayer. Pour un lien SharePoint, seule la référence SeaPilot est retirée.
+- Les entretiens annuels conservent leur parcours et leurs permissions dédiés.
 - Les lignes de la fiche affichent le libellé du document sans le préfixe collaborateur ni l’année, comme dans la référence visuelle.
 - Le téléchargement simple et le ZIP multi-documents existants sont conservés et couverts par des tests d’interaction.
 - Le mode de prévisualisation locale fournit un dossier RH entièrement synthétique pour vérifier ce parcours sans utiliser de données personnelles ni écrire dans Supabase.
@@ -67,8 +71,10 @@ Une indisponibilité temporaire du catalogue ne bloque pas la lecture de la fich
 ## Recette attendue
 
 1. Ouvrir une fiche RH avec un rôle de gestion et sélectionner l’onglet Documents.
-2. Cliquer sur **Ajouter un document**, choisir un type, une échéance et un fichier.
+2. Cliquer sur **Ajouter un document**, choisir un type, une échéance ou **Sans date de péremption**, puis un fichier.
 3. Vérifier le nom généré, enregistrer et contrôler le nouveau groupe ou la nouvelle ligne.
 4. Renouveler un fichier importé et confirmer qu’aucun préfixe collaborateur ni aucune année n’est dupliqué.
 5. Sélectionner un seul document puis plusieurs documents et vérifier respectivement le fichier direct et l’archive ZIP.
-6. Répéter la consultation avec un rôle marin et confirmer l’absence des actions d’écriture.
+6. Modifier la catégorie, les dates et les notes ; vérifier le regroupement, le statut et les compteurs après enregistrement.
+7. Annuler puis confirmer une suppression ; vérifier le retrait de la ligne et de sa sélection.
+8. Vérifier l’absence des actions documentaires d’écriture avec les fixtures des vrais rôles Marin et Capitaine, ainsi que les refus RLS du test `supabase/tests/hr_document_management_test.sql`.

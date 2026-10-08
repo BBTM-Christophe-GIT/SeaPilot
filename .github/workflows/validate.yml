@@ -8,6 +8,15 @@ on:
   pull_request:
 
 jobs:
+  windows-drive-launcher:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Test shared Windows Drive launcher
+        shell: powershell
+        run: ./scripts/drive/Test-SeaPilotDrive.ps1
+
   test-build:
     runs-on: ubuntu-latest
 
@@ -32,6 +41,9 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: Test lifting register import preparation
+        run: python3 -m unittest discover -s scripts -p test_prepare_lifting_inventory.py
 
       - name: Build
         run: pnpm build

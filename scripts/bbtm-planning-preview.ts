@@ -82,7 +82,7 @@ async function fetchSeaPilotCatalog(supabaseWorkdir: string): Promise<BbtmCatalo
     const payload = JSON.parse(stdout) as { rows?: Array<{ kind: string; rows: unknown[] }> };
     const people = (payload.rows?.find((row) => row.kind === 'people')?.rows || []) as BbtmCatalogPerson[];
     const vessels = (payload.rows?.find((row) => row.kind === 'vessels')?.rows || []) as BbtmCatalogVessel[];
-    if (!people.length || !vessels.length) throw new Error('Catalogue SeaPilot incomplet ou inaccessible.');
+    if (!people.length || !vessels.length) throw new Error('Catalogue BBTM incomplet ou inaccessible.');
     return { people, vessels };
   } finally {
     await rm(tempDirectory, { recursive: true, force: true });
@@ -91,7 +91,7 @@ async function fetchSeaPilotCatalog(supabaseWorkdir: string): Promise<BbtmCatalo
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  console.log('Lecture du classeur et du catalogue SeaPilot…');
+  console.log('Lecture du classeur et du catalogue BBTM…');
   const catalogPromise = options.catalogPath
     ? readFile(options.catalogPath, 'utf8').then((content) => JSON.parse(content) as BbtmCatalog)
     : fetchSeaPilotCatalog(options.supabaseWorkdir);

@@ -35,7 +35,7 @@ describe('QHSE report catalog and calculations', () => {
   it('keeps the report logo proportions and removes the product name from PDF copy', () => {
     expect(fitImageWithinBox(500, 500, 25, 13)).toEqual({ width: 13, height: 13 });
     expect(fitImageWithinBox(1000, 500, 20, 20)).toEqual({ width: 20, height: 10 });
-    expect(sanitizeQhsePdfText('Données SeaPilot · SeaPilot · CO₂')).toBe('Données Supabase · Supabase · CO2');
+    expect(sanitizeQhsePdfText('Données SeaPilot · SeaPilot · CO₂')).toBe('Données BBTM · BBTM · CO2');
   });
 
   it('builds page 25 fuel consumption and emissions from the DPR consumption field', () => {

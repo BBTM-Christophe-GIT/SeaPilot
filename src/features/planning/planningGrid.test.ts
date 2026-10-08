@@ -45,4 +45,11 @@ describe('Planning grid editing helpers', () => {
       { laneKey: 'target', workDate: '2026-08-04', personId: 9, vesselId: 8, status: 'A Terre', note: 'Dieppe', assignmentId: null },
     ]);
   });
+
+  it('separates and copies the function actually exercised', () => {
+    const source = { ...cell('source', '2026-07-14', 'En Mer'), functionLabel: '2nd Capitaine' };
+    const target = cell('target', '2026-07-16', 'En Mer');
+    expect(planningGridCellsShareSegment(source, { ...source, functionLabel: 'Capitaine' })).toBe(false);
+    expect(buildPlanningGridPaste([source], [target])[0]).toMatchObject({ functionLabel: '2nd Capitaine', workDate: '2026-07-16' });
+  });
 });

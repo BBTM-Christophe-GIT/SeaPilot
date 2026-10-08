@@ -1,6 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
+import { previewSupabaseClient } from '../preview/previewSupabaseClient';
 import { AdminPage } from './AdminPage';
 
 function createProfilesQuery(data: unknown[]) {
@@ -31,7 +33,11 @@ function createNavigationPermissionsQuery(data: unknown[] = []) {
   };
 }
 
-function createAdminClient(options: { profiles?: unknown[]; sources?: unknown[] } = {}) {
+function createPeopleQuery(data: unknown[] = []) {
+  return { select: () => ({ order: () => ({ range: async () => ({ data, error: null }) }) }) };
+}
+
+function createAdminClient(options: { profiles?: unknown[]; sources?: unknown[]; people?: unknown[] } = {}) {
   return {
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'profiles') {
@@ -67,12 +73,144 @@ function createAdminClient(options: { profiles?: unknown[]; sources?: unknown[] 
         return createNavigationPermissionsQuery();
       }
 
+      if (table === 'people') {
+        return createPeopleQuery(options.people);
+      }
+
       throw new Error(`Unexpected table ${table}`);
     }),
   };
 }
 
+function renderAdminPage(client: unknown, section = 'users') {
+  return render(
+    <MemoryRouter initialEntries={[`/modules/admin?preview=1&section=${section}`]}>
+      <AdminPage client={client as never} previewMode />
+    </MemoryRouter>,
+  );
+}
+
 describe('AdminPage', () => {
+  it('offers the shared fleet order in the Planning administration section', async () => {
+    renderAdminPage(previewSupabaseClient, 'planning');
+    const form = screen.getByRole('form', { name: 'Ordre des marins dans les bordées' });
+    await waitFor(() => expect(within(form).getByRole('checkbox')).toBeEnabled());
+    expect(form).toHaveTextContent('fonction temporaire');
+    expect(screen.getByRole('link', { name: 'Planning' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('heading', { name: 'Mes préférences Équipages' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/filtre actif/i)).not.toBeInTheDocument();
+  });
+
+  it('hides departed people in both tables by default and permits explicit deletion from the former filter', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const invoke = vi.fn().mockResolvedValue({ data: { message: 'Utilisateur supprimé.' }, error: null });
+    const client = {
+      ...createAdminClient({
+        profiles: [
+          { id: 'current', display_name: 'En Poste', email: 'current@example.test', user_roles: [] },
+          { id: 'former', display_name: 'Ancienne Collègue', email: 'former@example.test', user_roles: [{ role_key: 'marin' }] },
+        ],
+        people: [
+          { id: 1, user_id: 'current', first_name: 'En', last_name: 'Poste', email: 'current@example.test', active: true, hired_on: '2020-01-01', departed_on: null },
+          { id: 2, user_id: 'former', first_name: 'Ancienne', last_name: 'Collègue', email: 'former@example.test', active: true, hired_on: '2020-01-01', departed_on: '2025-12-18' },
+        ],
+      }),
+      functions: { invoke },
+    };
+    renderAdminPage(client);
+    const filter = await screen.findByRole('combobox', { name: 'Collaborateurs affichés' });
+    expect(filter).toHaveValue('current');
+    expect(screen.queryByText('Ancienne Collègue')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('table', { name: 'Comptes SeaPilot' })).getByText('En Poste')).toBeVisible();
+    expect(screen.getByLabelText("Nombre d'utilisateurs")).toHaveTextContent('1');
+    await user.selectOptions(filter, 'former');
+    const accounts = screen.getByRole('table', { name: 'Comptes SeaPilot' });
+    expect(within(accounts).getByText('Ancienne Collègue')).toBeVisible();
+    expect(within(screen.getByRole('table', { name: 'Collaborateurs sans compte ou sans adresse BBTM' })).getByText('Ancienne Collègue')).toBeVisible();
+    expect(screen.queryByText('En Poste')).not.toBeInTheDocument();
+    expect(invoke).not.toHaveBeenCalled();
+    await user.selectOptions(filter, 'all');
+    expect(screen.getByLabelText("Nombre d'utilisateurs")).toHaveTextContent('2');
+    await user.selectOptions(filter, 'former');
+    await user.click(screen.getByRole('button', { name: 'Supprimer former@example.test' }));
+    expect(invoke).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    await user.click(screen.getByRole('button', { name: 'Supprimer former@example.test' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('admin-manage-user', { body: { action: 'delete', userId: 'former' } }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Supprimer former@example.test' })).not.toBeInTheDocument());
+    expect(screen.getByText('Ancienne Collègue')).toBeVisible();
+    expect(screen.getByText('Sans compte')).toBeVisible();
+    expect(filter).toHaveValue('former');
+    confirm.mockRestore();
+  });
+
+  it('does not show an unfiltered account list when HR data cannot load', async () => {
+    const base = createAdminClient();
+    const client = { from: (table: string) => table === 'people'
+      ? { select: () => ({ order: () => ({ range: async () => ({ data: null, error: new Error('Denied') }) }) }) }
+      : base.from(table) };
+    renderAdminPage(client);
+    expect(await screen.findByText('Impossible de charger les utilisateurs.')).toBeVisible();
+    expect(screen.queryByRole('table', { name: 'Comptes SeaPilot' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Collaborateurs affichés' })).not.toBeInTheDocument();
+  });
+
+  it('loads administration with the isolated preview fixtures', async () => {
+    const user = userEvent.setup();
+    renderAdminPage(previewSupabaseClient);
+
+    expect(await screen.findByRole('heading', { name: 'Gestion des utilisateurs' })).toBeVisible();
+    expect(screen.getByText('admin@example.invalid')).toBeVisible();
+    expect(await screen.findByRole('table', { name: 'Collaborateurs sans compte ou sans adresse BBTM' })).toBeVisible();
+    expect(screen.queryByText('Impossible de charger les utilisateurs.')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Imports et migration' }));
+    expect(screen.getByText('Procédures — démonstration')).toBeVisible();
+  });
+
+  it('opens Drive setup from the section menu and preserves the other URL parameters', async () => {
+    const user = userEvent.setup();
+    renderAdminPage(createAdminClient());
+
+    await screen.findByRole('heading', { name: 'Gestion des utilisateurs' });
+    const documentsLink = screen.getByRole('link', { name: 'Documents et Google Drive' });
+    expect(documentsLink).toHaveAttribute('href', '/modules/admin?preview=1&section=documents');
+    await user.click(documentsLink);
+
+    expect(documentsLink).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('heading', { name: 'Un seul dossier SeaPilot pour ce PC' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Gestion des utilisateurs' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Installer le lanceur Windows' })).toHaveAttribute('href', '/connectors/seapilot-drive-windows.zip?v=2.7.0');
+    expect(screen.getByRole('link', { name: 'Installer le lanceur Windows' })).toHaveAttribute('download');
+    expect(screen.getByRole('button', { name: 'Sélectionner le dossier dans Windows' })).toBeDisabled();
+    expect(screen.queryByRole('link', { name: 'Configurer le dossier disciplinaire sur ce PC' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Utilisateurs' }));
+    expect(screen.getByRole('checkbox', { name: 'Admin pour admin@example.test' })).toBeChecked();
+    expect(screen.queryByRole('heading', { name: 'Un seul dossier SeaPilot pour ce PC' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the bookmarked Drive instructions available while administrative data is loading', () => {
+    const baseClient = createAdminClient();
+    const client = {
+      from: vi.fn().mockImplementation((table: string) => table === 'profiles'
+        ? { select: () => ({ order: () => new Promise(() => {}) }) }
+        : baseClient.from(table)),
+    };
+    renderAdminPage(client, 'documents');
+
+    expect(screen.getByRole('button', { name: 'Sélectionner le dossier dans Windows' })).toBeVisible();
+    expect(screen.getByRole('status')).toHaveTextContent('Version installée sur ce PC : indisponible en préversion');
+    expect(screen.getByRole('button', { name: 'Vérifier la version installée' })).toBeDisabled();
+  });
+
+  it('falls back to the users section for an unknown section URL', async () => {
+    renderAdminPage(createAdminClient(), 'unknown');
+
+    expect(await screen.findByRole('heading', { name: 'Gestion des utilisateurs' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Utilisateurs' })).toHaveAttribute('aria-current', 'page');
+  });
+
   it('invites a new user with a role and optional sailor link', async () => {
     const user = userEvent.setup();
     const invoke = vi.fn().mockResolvedValue({ data: { invitation: { invitationId: 7 } }, error: null });
@@ -94,6 +232,7 @@ describe('AdminPage', () => {
         if (table === 'people') {
           return {
             select: vi.fn().mockReturnValue({
+              order: () => ({ range: async () => ({ data: [], error: null }) }),
               eq: vi.fn().mockReturnValue({
                 is: vi.fn().mockReturnValue({
                   order: vi.fn().mockReturnValue({
@@ -116,11 +255,12 @@ describe('AdminPage', () => {
           };
         }
 
+        if (table === 'people') return createPeopleQuery();
         throw new Error(`Unexpected table ${table}`);
       }),
     };
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client);
 
     await user.click(await screen.findByRole('button', { name: 'Inviter un utilisateur' }));
     expect(screen.getByRole('dialog', { name: 'Inviter un utilisateur' })).toBeInTheDocument();
@@ -144,9 +284,10 @@ describe('AdminPage', () => {
   });
 
   it('renders users and their assigned roles', async () => {
+    const user = userEvent.setup();
     const client = createAdminClient();
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client);
 
     expect(await screen.findByRole('heading', { name: 'Gestion des utilisateurs' })).toBeInTheDocument();
     expect(screen.getByText('admin@example.test')).toBeInTheDocument();
@@ -155,6 +296,7 @@ describe('AdminPage', () => {
     expect(screen.getByRole('checkbox', { name: 'Marin pour admin@example.test' })).not.toBeChecked();
     expect(screen.getByRole('button', { name: 'Renvoyer le lien à admin@example.test' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Supprimer admin@example.test' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Accès et rôles' }));
     expect(screen.getByRole('checkbox', { name: 'Suivi du Temps de travail visible pour Marin' })).toBeChecked();
   });
 
@@ -169,7 +311,7 @@ describe('AdminPage', () => {
       functions: { invoke },
     };
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client);
 
     await user.click(await screen.findByRole('button', { name: 'Renvoyer le lien à admin@example.test' }));
 
@@ -191,7 +333,7 @@ describe('AdminPage', () => {
       functions: { invoke },
     };
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client);
 
     await user.click(await screen.findByRole('button', { name: 'Supprimer admin@example.test' }));
 
@@ -207,10 +349,9 @@ describe('AdminPage', () => {
   it('renders SharePoint import monitoring sources', async () => {
     const client = createAdminClient();
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client, 'imports');
 
-    expect(await screen.findByRole('heading', { name: 'Gestion des utilisateurs' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Suivi import SharePoint' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Suivi import SharePoint' })).toBeInTheDocument();
     expect(screen.getByLabelText('Sources SharePoint')).toHaveTextContent('1');
     expect(screen.getByText('RH - Personnel BBTM')).toBeInTheDocument();
     expect(screen.getByText('humanResources')).toBeInTheDocument();
@@ -247,11 +388,12 @@ describe('AdminPage', () => {
           return createNavigationPermissionsQuery();
         }
 
+        if (table === 'people') return createPeopleQuery();
         throw new Error(`Unexpected table ${table}`);
       }),
     };
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client);
 
     const directionCheckbox = await screen.findByRole('checkbox', { name: 'Direction pour admin@example.test' });
     await user.click(directionCheckbox);
@@ -293,11 +435,12 @@ describe('AdminPage', () => {
           return createNavigationPermissionsQuery();
         }
 
+        if (table === 'people') return createPeopleQuery();
         throw new Error(`Unexpected table ${table}`);
       }),
     };
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client);
 
     const marinCheckbox = await screen.findByRole('checkbox', { name: 'Marin pour marin@example.test' });
     await user.click(marinCheckbox);
@@ -325,16 +468,22 @@ describe('AdminPage', () => {
           return { ...createNavigationPermissionsQuery(), upsert };
         }
 
+        if (table === 'people') return createPeopleQuery();
         throw new Error(`Unexpected table ${table}`);
       }),
     };
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client, 'access');
 
     const projectsForSailor = await screen.findByRole('checkbox', { name: 'Projets visible pour Marin' });
     expect(screen.getByRole('checkbox', { name: 'Navires visible pour Admin' })).toBeChecked();
     expect(screen.getByText('Navires')).toBeInTheDocument();
     expect(projectsForSailor).not.toBeChecked();
+    for (const profile of ['Armement', 'Capitaine', 'Marin']) {
+      const restricted = screen.getByRole('checkbox', { name: `Sanctions Disciplinaires visible pour ${profile}` });
+      expect(restricted).not.toBeChecked(); expect(restricted).toBeDisabled();
+    }
+    expect(screen.getByRole('checkbox', { name: 'Sanctions Disciplinaires visible pour Direction' })).toBeEnabled();
 
     await user.click(projectsForSailor);
 
@@ -363,7 +512,7 @@ describe('AdminPage', () => {
       }),
     };
 
-    render(<AdminPage client={client as never} />);
+    renderAdminPage(client, 'action-plan');
     const toggle = await screen.findByRole('checkbox', { name: 'Afficher Modifier la fiche' });
     expect(toggle).toBeChecked();
     await user.click(toggle);

@@ -1,0 +1,66 @@
+.planning-absence-period-picker { grid-column:1/-1; min-width:0; }
+.planning-absence-period-picker .planning-absence-period-picker__trigger,.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__trigger { display:flex; align-items:center; gap:11px; width:100%; min-height:58px; padding:10px 13px; border:1px solid #cbdde9; border-radius:10px; background:#fff; color:#23485e; font:inherit; text-align:left; cursor:pointer; }
+.planning-absence-period-picker .planning-absence-period-picker__trigger:hover:not(:disabled),.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__trigger:hover:not(:disabled) { border-color:#a9c7d8; background:#f6fafc; }
+.planning-absence-period-picker__trigger > svg { flex-shrink:0; color:#46788e; }
+.planning-absence-period-picker__trigger > svg:last-child { margin-left:auto; }
+.planning-absence-period-picker__trigger > span { display:grid; gap:3px; min-width:0; }
+.planning-absence-period-picker__trigger strong { color:#1d3f55; font-size:14px; font-weight:650; line-height:1.35; overflow-wrap:anywhere; }
+.planning-absence-period-picker__label { color:#617a8d; font-size:12px; line-height:1.2; }
+.planning-absence-period-picker__trigger small { color:#6c8497; font-size:11px; font-weight:400; }
+.planning-absence-period-picker .planning-absence-period-picker__trigger:disabled,.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__trigger:disabled { background:#f4f7fa; color:#7b8e9c; opacity:.7; cursor:default; }
+.planning-absence-period-picker :is(button,select,input,summary):focus-visible,.planning-p12-form .planning-absence-period-picker :is(button,select,input,summary):focus-visible { outline:3px solid #70adca; outline-offset:2px; }
+.planning-absence-period-picker__panel { width:100%; max-width:700px; box-sizing:border-box; margin-top:9px; padding:16px; border:1px solid #c9dfe9; border-radius:12px; background:#fff; box-shadow:0 7px 22px #24496412; color:#264a60; }
+.planning-absence-period-picker__header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.planning-absence-period-picker__header h3 { margin:0; font-size:15px; font-weight:650; }
+.planning-absence-period-picker .planning-absence-period-picker__icon,.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__icon { display:inline-grid; flex-shrink:0; place-items:center; width:32px; min-height:32px; height:32px; padding:0; border:1px solid #d9e6ed; border-radius:7px; background:#fff; color:#356c85; cursor:pointer; }
+.planning-absence-period-picker .planning-absence-period-picker__icon:hover:not(:disabled),.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__icon:hover:not(:disabled) { background:#f0f6f9; }
+.planning-absence-period-picker__icon:disabled { opacity:.45; cursor:default; }
+.planning-absence-period-picker__help { margin:7px 0 13px; color:#6b8395; font-size:12px; line-height:1.45; }
+.planning-absence-period-picker__navigation { display:flex; align-items:center; justify-content:space-between; gap:9px; margin-bottom:9px; }
+.planning-absence-period-picker__navigation > div { display:flex; align-items:center; justify-content:center; gap:7px; }
+.planning-absence-period-picker .planning-absence-period-picker__navigation select { width:auto; min-width:0; max-width:145px; min-height:34px; padding:5px 7px; border:1px solid #d9e6ed; border-radius:7px; background:#fff; color:#2b5870; font:inherit; font-size:12px; font-weight:600; }
+.planning-absence-period-picker__months { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+.planning-absence-period-picker__months[data-months="1"] { grid-template-columns:minmax(0,1fr); }
+.planning-absence-period-picker__month { min-width:0; }
+.planning-absence-period-picker__month h4 { margin:3px 0 8px; color:#355d74; font-size:13px; font-weight:650; text-align:center; text-transform:capitalize; }
+.planning-absence-period-picker__week { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); }
+.planning-absence-period-picker__week [role="columnheader"] { padding:7px 0; color:#7b909e; font-size:11px; text-align:center; }
+.planning-absence-period-picker__cell,.planning-absence-period-picker__empty { min-width:0; height:34px; margin:1px 0; }
+.planning-absence-period-picker__cell[aria-selected="true"] { background:#eaf4f8; }
+.planning-absence-period-picker__cell.is-start { border-radius:8px 0 0 8px; }
+.planning-absence-period-picker__cell.is-end { border-radius:0 8px 8px 0; }
+.planning-absence-period-picker__cell.is-start.is-end { border-radius:8px; }
+.planning-absence-period-picker .planning-absence-period-picker__day,.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__day { display:block; width:100%; min-height:34px; height:34px; padding:0; border:0; border-radius:7px; background:transparent; color:#294d63; font:inherit; font-size:12px; font-weight:500; cursor:pointer; }
+.planning-absence-period-picker .planning-absence-period-picker__day:hover:not(:disabled),.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__day:hover:not(:disabled) { background:#dcebf2; }
+.planning-absence-period-picker .planning-absence-period-picker__day.is-boundary,.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__day.is-boundary { background:#237490; color:#fff; font-weight:650; }
+.planning-absence-period-picker .planning-absence-period-picker__day.is-boundary:hover:not(:disabled),.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__day.is-boundary:hover:not(:disabled) { background:#1b637c; }
+.planning-absence-period-picker__day[aria-current="date"]:not(.is-boundary) { color:#14728e; font-weight:750; text-decoration:underline; text-underline-offset:4px; }
+.planning-absence-period-picker__selection { display:grid; gap:3px; margin:13px 0 0; padding:9px 11px; border-radius:7px; background:#f2f7fa; color:#335f77; font-size:12px; font-weight:600; line-height:1.4; }
+.planning-absence-period-picker__selection small { color:#72899a; font-size:11px; font-weight:400; }
+.planning-absence-period-picker__hours { margin-top:12px; font-size:12px; }
+.planning-absence-period-picker__hours > summary { display:list-item; width:fit-content; padding:5px 0; color:#688395; font-size:11px; cursor:pointer; }
+.planning-absence-period-picker__hours > div { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:7px; }
+.planning-absence-period-picker .planning-absence-period-picker__hours label { display:grid; gap:5px; color:#607e90; font-size:11px; font-weight:500; }
+.planning-absence-period-picker .planning-absence-period-picker__hours input { width:100%; min-width:0; min-height:36px; padding:6px 9px; border:1px solid #d0e0e9; border-radius:7px; background:#fff; color:#294d63; font:inherit; font-size:12px; font-weight:400; }
+.planning-absence-period-picker__hours p { margin:8px 0 0; color:#718797; font-size:11px; line-height:1.4; }
+.planning-absence-period-picker__error { margin:12px 0 0; padding:9px 11px; border:1px solid #ecd0cd; border-radius:7px; background:#fff6f3; color:#965348; font-size:12px; line-height:1.45; }
+.planning-absence-period-picker__footer { display:flex; justify-content:flex-end; gap:9px; margin-top:14px; padding-top:12px; border-top:1px solid #e4edf2; }
+.planning-absence-period-picker .planning-absence-period-picker__footer button,.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__footer button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:38px; padding:8px 12px; border:1px solid #cbdde7; border-radius:8px; background:#fff; color:#38647c; font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+.planning-absence-period-picker .planning-absence-period-picker__footer button:hover:not(:disabled),.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__footer button:hover:not(:disabled) { background:#f0f6f9; }
+.planning-absence-period-picker .planning-absence-period-picker__footer .planning-absence-period-picker__apply,.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__footer .planning-absence-period-picker__apply { border-color:#237490; background:#237490; color:#fff; }
+.planning-absence-period-picker .planning-absence-period-picker__footer .planning-absence-period-picker__apply:hover:not(:disabled),.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__footer .planning-absence-period-picker__apply:hover:not(:disabled) { border-color:#1b637c; background:#1b637c; }
+@media(max-width:640px) {
+  .planning-absence-period-picker__panel { padding:12px; }
+  .planning-absence-period-picker__months { gap:12px; }
+  .planning-absence-period-picker__cell,.planning-absence-period-picker__empty { height:38px; }
+  .planning-absence-period-picker .planning-absence-period-picker__day,.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__day { height:38px; min-height:38px; }
+  .planning-absence-period-picker .planning-absence-period-picker__footer button,.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__footer button { min-height:42px; }
+}
+@media(max-width:380px) {
+  .planning-absence-period-picker__navigation { gap:4px; }
+  .planning-absence-period-picker__navigation > div { flex:1; min-width:0; gap:4px; }
+  .planning-absence-period-picker .planning-absence-period-picker__navigation .planning-absence-period-picker__icon,.planning-p12-form .planning-absence-period-picker .planning-absence-period-picker__navigation .planning-absence-period-picker__icon { width:28px; height:28px; min-height:28px; }
+  .planning-absence-period-picker .planning-absence-period-picker__navigation select { min-width:0; max-width:none; padding:5px 3px; font-size:11px; }
+  .planning-absence-period-picker .planning-absence-period-picker__navigation select:first-child { flex:1; width:0; }
+  .planning-absence-period-picker .planning-absence-period-picker__navigation select:last-child { flex:0 0 58px; width:58px; }
+}

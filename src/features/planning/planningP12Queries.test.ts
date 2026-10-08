@@ -16,6 +16,12 @@ function rpcClient(result: unknown = 42) {
 }
 
 describe('planning P1.2 absence query contracts', () => {
+  it('reads legacy unavailability as leave without changing its decision or dates', () => {
+    const [absence] = mapPlanningAbsenceRows([{
+      id: 44, person_id: 2, absence_type: 'unavailability', starts_at: '2026-09-19T06:00:00Z', ends_at: '2026-09-21T16:00:00Z', reason: 'Motif conservé', status: 'approved', requested_by: 'user', reviewed_by: 'manager', reviewed_at: '2026-09-01T10:00:00Z', review_comment: 'Accord', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
+    }]);
+    expect(absence).toMatchObject({ id: 44, personId: 2, absenceType: 'leave', startsAt: '2026-09-19T06:00:00Z', endsAt: '2026-09-21T16:00:00Z', status: 'approved', reason: 'Motif conservé', reviewedBy: 'manager', reviewComment: 'Accord' });
+  });
   it('maps UTC timestamps to Europe/Paris calendar dates', () => {
     const [absence] = mapPlanningAbsenceRows([{
       id: 1, person_id: 2, absence_type: 'leave', starts_at: '2026-10-24T22:30:00Z', ends_at: '2026-10-25T23:30:00Z', reason: 'Congés', status: 'requested', requested_by: 'user', reviewed_by: null, reviewed_at: null, review_comment: null, created_at: '2026-07-01T00:00:00Z', updated_at: '2026-07-01T00:00:00Z',

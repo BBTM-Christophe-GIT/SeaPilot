@@ -74,8 +74,8 @@ export async function generateDprPdf(
   pdf.setProperties({
     title: `Daily Progress Report - DPR-${report.number ?? 'BROUILLON'}`,
     subject: `${vessel} - ${formatDate(payload.reportDate)}`,
-    author: report.issuerName || 'SeaPilot',
-    creator: 'SeaPilot',
+    author: report.issuerName || 'BBTM',
+    creator: 'BBTM',
   });
   pdf.setDrawColor(15, 15, 15);
   pdf.setLineWidth(0.75);
@@ -177,7 +177,7 @@ export async function generateDprPdf(
 
   pdf.setFont('helvetica', 'italic');
   pdf.setFontSize(32);
-  const author = report.issuerName || 'Utilisateur SeaPilot';
+  const author = report.issuerName || 'Utilisateur BBTM';
   pdf.text(`Ce DPR a été rédigé par ${author} le ${formatAuthoredAt(report.updatedAt)}`, 920.68, 2647, { align: 'center' });
 
   return { blob: pdf.output('blob'), filename: dprPdfFilename(report, references) };

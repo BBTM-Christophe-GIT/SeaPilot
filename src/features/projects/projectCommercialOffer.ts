@@ -3,6 +3,11 @@ import {
   createWorkingTimeSignatureUrl,
   fetchWorkingTimeProfileSignatures,
 } from '../workingTime/workingTimeSignatureQueries';
+import {
+  sanitizeServiceNoteHtml,
+  serviceNoteBodyHasContent,
+  serviceNoteBodyToPlainText,
+} from '../serviceNotes/serviceNoteRichText';
 
 export const COMMERCIAL_RESERVE_AVAILABILITY_KEY = 'commercial_reserve_availability';
 export const COMMERCIAL_RESERVE_WEATHER_KEY = 'commercial_reserve_weather';
@@ -10,6 +15,10 @@ export const COMMERCIAL_RESERVE_OTHER_KEY = 'commercial_reserve_other';
 export const COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY = 'commercial_charter_hire_service_description';
 export const COMMERCIAL_MOBILISATION_DESCRIPTION_KEY = 'commercial_mobilisation_service_description';
 export const COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY = 'commercial_demobilisation_service_description';
+export const COMMERCIAL_CONDITIONS_MODE_KEY = 'commercial_conditions_mode';
+export const COMMERCIAL_CONDITIONS_DESCRIPTION_KEY = 'commercial_conditions_description';
+
+export type CommercialConditionsMode = 'structured' | 'free_text';
 
 export const COMMERCIAL_RESERVE_AVAILABILITY =
   'Sous réserve de disponibilité du navire et de validation technique et contractuelle.';
@@ -25,6 +34,12 @@ export interface ProjectDocumentEmitter {
 }
 
 export interface CommercialIncludedServiceDescriptions {
+  charterHire: string;
+  demobilisation: string;
+  mobilisation: string;
+}
+
+export interface CommercialIncludedServiceRichDescriptions {
   charterHire: string;
   demobilisation: string;
   mobilisation: string;
@@ -66,10 +81,37 @@ export function getCommercialIncludedServiceDescriptions(
   supplytimeData: Record<string, string>,
 ): CommercialIncludedServiceDescriptions {
   return {
-    charterHire: text(supplytimeData[COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY]),
-    demobilisation: text(supplytimeData[COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY]),
-    mobilisation: text(supplytimeData[COMMERCIAL_MOBILISATION_DESCRIPTION_KEY]),
+    charterHire: serviceNoteBodyToPlainText(supplytimeData[COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY] || ''),
+    demobilisation: serviceNoteBodyToPlainText(supplytimeData[COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY] || ''),
+    mobilisation: serviceNoteBodyToPlainText(supplytimeData[COMMERCIAL_MOBILISATION_DESCRIPTION_KEY] || ''),
   };
+}
+
+export function getCommercialIncludedServiceRichDescriptions(
+  supplytimeData: Record<string, string>,
+): CommercialIncludedServiceRichDescriptions {
+  const richText = (key: string) => {
+    const value = supplytimeData[key] || '';
+    return serviceNoteBodyHasContent(value) ? sanitizeServiceNoteHtml(value) : '';
+  };
+  return {
+    charterHire: richText(COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY),
+    demobilisation: richText(COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY),
+    mobilisation: richText(COMMERCIAL_MOBILISATION_DESCRIPTION_KEY),
+  };
+}
+
+export function getCommercialConditionsMode(
+  supplytimeData: Record<string, string>,
+): CommercialConditionsMode {
+  return supplytimeData[COMMERCIAL_CONDITIONS_MODE_KEY] === 'free_text' ? 'free_text' : 'structured';
+}
+
+export function getCommercialConditionsDescription(
+  supplytimeData: Record<string, string>,
+): string {
+  const value = supplytimeData[COMMERCIAL_CONDITIONS_DESCRIPTION_KEY] || '';
+  return serviceNoteBodyHasContent(value) ? sanitizeServiceNoteHtml(value) : '';
 }
 
 export function shouldDisplayCommercialOfferRoute(deliveryPort: string, redeliveryPort: string): boolean {

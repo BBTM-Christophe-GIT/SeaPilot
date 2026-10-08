@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { ClipboardCheck, Database, MailPlus, PanelLeft, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react';
+import { CalendarDays, ClipboardCheck, Database, FolderSync, MailPlus, PanelLeft, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { NAVIGATION_MODULES, type ModuleKey } from '../permissions/moduleAccess';
 import {
@@ -24,9 +25,29 @@ import {
   type SharePointImportSource,
 } from './adminQueries';
 import { InviteUserDialog } from './InviteUserDialog';
+import { AdminGoogleDriveSetup } from './AdminGoogleDriveSetup';
+import { AdminCollaboratorCoverage } from './AdminCollaboratorCoverage';
+import {
+  adminUserEmploymentStatus, fetchAdminCollaborators, filterAdminUsers, mapAdminCollaborators,
+  type AdminCollaboratorRow, type AdminPopulation,
+} from './adminCollaborators';
+import './adminSections.css';
+import { AdminCrewPreferences } from './AdminCrewPreferences';
+import { AdminFleetOrder } from './AdminFleetOrder';
+
+const ADMIN_SECTIONS = [
+  { key: 'users', label: 'Utilisateurs', icon: Users },
+  { key: 'access', label: 'Accès et rôles', icon: ShieldCheck },
+  { key: 'documents', label: 'Documents et Google Drive', icon: FolderSync },
+  { key: 'action-plan', label: 'Plan d’action', icon: ClipboardCheck },
+  { key: 'crew', label: 'Équipages', icon: Users },
+  { key: 'planning', label: 'Planning', icon: CalendarDays },
+  { key: 'imports', label: 'Imports et migration', icon: Database },
+] as const;
 
 interface AdminPageProps {
   client?: SupabaseClient;
+  previewMode?: boolean;
 }
 
 function sortRoles(roles: RoleKey[]): RoleKey[] {
@@ -63,8 +84,13 @@ function updateNavigationPermissions(
   );
 }
 
-export function AdminPage({ client = supabase }: AdminPageProps) {
+export function AdminPage({ client = supabase, previewMode = false }: AdminPageProps) {
+  const [searchParams] = useSearchParams();
+  const activeSection = ADMIN_SECTIONS.find((section) => section.key === searchParams.get('section'))?.key ?? 'users';
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [people, setPeople] = useState<AdminCollaboratorRow[]>([]);
+  const [population, setPopulation] = useState<AdminPopulation>('current');
+  const [directoryReady, setDirectoryReady] = useState(false);
   const [importSources, setImportSources] = useState<SharePointImportSource[]>([]);
   const [navigationPermissions, setNavigationPermissions] = useState<NavigationPermission[]>([]);
   const [actionPlanSettings, setActionPlanSettings] = useState<ActionPlanAdminSettings>({ editButtonEnabled: true });
@@ -81,6 +107,7 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
     let isMounted = true;
 
     setIsLoading(true);
+    setDirectoryReady(false);
     setErrorMessage(null);
 
     Promise.all([
@@ -88,10 +115,13 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
       fetchSharePointImportSources(client),
       fetchNavigationPermissions(client),
       fetchActionPlanAdminSettings(client).catch(() => ({ editButtonEnabled: true })),
+      fetchAdminCollaborators(client),
     ])
-      .then(([loadedUsers, loadedImportSources, loadedNavigationPermissions, loadedActionPlanSettings]) => {
+      .then(([loadedUsers, loadedImportSources, loadedNavigationPermissions, loadedActionPlanSettings, loadedPeople]) => {
         if (isMounted) {
           setUsers(loadedUsers);
+          setPeople(loadedPeople);
+          setDirectoryReady(true);
           setImportSources(loadedImportSources);
           setNavigationPermissions(loadedNavigationPermissions);
           setActionPlanSettings(loadedActionPlanSettings);
@@ -184,6 +214,7 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
     try {
       const message = await deleteSeaPilotUser(client, user.id);
       setUsers((currentUsers) => currentUsers.filter((candidate) => candidate.id !== user.id));
+      setPeople((currentPeople) => currentPeople.map((person) => person.user_id === user.id ? { ...person, user_id: null } : person));
       setStatusMessage(message);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Impossible de supprimer cet utilisateur.");
@@ -201,8 +232,9 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
     }
 
     try {
-      const loadedUsers = await fetchAdminUsers(client);
+      const [loadedUsers, loadedPeople] = await Promise.all([fetchAdminUsers(client), fetchAdminCollaborators(client)]);
       setUsers(loadedUsers);
+      setPeople(loadedPeople);
     } catch {
       setErrorMessage("Le compte a bien été créé, mais la liste des utilisateurs n'a pas pu être actualisée.");
     }
@@ -227,117 +259,157 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
     }
   }
 
-  if (isLoading) {
-    return <div className="admin-state">Chargement des utilisateurs...</div>;
-  }
+  const collaborators = mapAdminCollaborators(people, users);
+  const visibleUsers = filterAdminUsers(users, collaborators, population);
 
   return (
     <section className="admin-page">
-      <div className="admin-header">
-        <div>
-          <p className="module-family">Administration</p>
-          <h1>Gestion des utilisateurs</h1>
-        </div>
-        <div className="admin-header-actions">
-          <div className="admin-summary" aria-label="Nombre d'utilisateurs">
-            <Users aria-hidden="true" size={18} />
-            <strong>{users.length}</strong>
-          </div>
-          <button className="admin-primary-button" onClick={() => setIsInviteDialogOpen(true)} type="button">
-            <UserPlus aria-hidden="true" size={18} />
-            Inviter un utilisateur
-          </button>
-        </div>
-      </div>
+      <header className="admin-page-heading">
+        <p className="module-family">Paramètres de SeaPilot</p>
+        <h1>Administration</h1>
+        <p>Gérez les utilisateurs, les accès et les outils de votre équipe.</p>
+      </header>
+
+      <nav className="admin-section-menu" aria-label="Sections de l’administration">
+        {ADMIN_SECTIONS.map(({ key, label, icon: Icon }) => {
+          const params = new URLSearchParams(searchParams);
+          params.set('section', key);
+          return (
+            <Link key={key} to={{ search: `?${params.toString()}` }} aria-current={activeSection === key ? 'page' : undefined}>
+              <Icon aria-hidden="true" size={21} />
+              <span>{label}</span>
+            </Link>
+          );
+        })}
+      </nav>
 
       <div className="admin-notices" aria-live="polite">
         {statusMessage ? <p className="admin-success">{statusMessage}</p> : null}
         {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
       </div>
 
-      {users.length === 0 ? (
-        <div className="admin-state">Aucun profil utilisateur trouve.</div>
-      ) : (
-        <div className="admin-table-wrap">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th scope="col">Utilisateur</th>
-                {ROLE_KEYS.map((role) => (
-                  <th key={role} scope="col">
-                    {ROLE_LABELS[role]}
-                  </th>
-                ))}
-                <th scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => (
-                <tr key={user.id}>
-                  <th scope="row">
-                    <span className="admin-user-name">{user.displayName}</span>
-                    <span className="admin-user-email">{user.email}</span>
-                  </th>
-                  {ROLE_KEYS.map((role) => {
-                    const operationKey = `${user.id}:${role}`;
-                    const isSaving = savingRoleKey === operationKey;
+      {activeSection === 'crew' ? <AdminCrewPreferences client={client} /> : null}
 
-                    return (
-                      <td key={role}>
-                        <label className="role-toggle">
-                          <input
-                            aria-label={`${ROLE_LABELS[role]} pour ${user.email}`}
-                            checked={user.roles.includes(role)}
-                            disabled={savingRoleKey !== null || savingUserActionKey !== null}
-                            onChange={(event) => void handleRoleChange(user.id, role, event.target.checked)}
-                            type="checkbox"
-                          />
-                          <span aria-hidden="true">
-                            <ShieldCheck size={16} />
-                          </span>
-                          {isSaving ? <em>...</em> : null}
-                        </label>
-                      </td>
-                    );
-                  })}
-                  <td>
-                    <div className="admin-user-actions">
-                      <button
-                        aria-label={`Renvoyer le lien à ${user.email}`}
-                        className="admin-user-action-button"
-                        disabled={savingUserActionKey !== null}
-                        onClick={() => void handleResendAccess(user)}
-                        type="button"
-                      >
-                        <MailPlus aria-hidden="true" size={15} />
-                        {savingUserActionKey === `${user.id}:resend` ? 'Envoi…' : 'Renvoyer'}
-                      </button>
-                      <button
-                        aria-label={`Supprimer ${user.email}`}
-                        className="admin-user-action-button is-danger"
-                        disabled={savingUserActionKey !== null}
-                        onClick={() => void handleDeleteUser(user)}
-                        type="button"
-                      >
-                        <Trash2 aria-hidden="true" size={15} />
-                        {savingUserActionKey === `${user.id}:delete` ? 'Suppression…' : 'Supprimer'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {isLoading && activeSection !== 'documents' ? <div className="admin-state" role="status">Chargement des paramètres...</div> : null}
+
+      {activeSection === 'users' && !isLoading && directoryReady ? (
+        <>
+          <section className="admin-panel admin-population" aria-label="Population des collaborateurs">
+            <label htmlFor="admin-population">Collaborateurs affichés</label>
+            <select id="admin-population" value={population} onChange={(event) => setPopulation(event.target.value as AdminPopulation)}>
+              <option value="current">En poste</option>
+              <option value="former">Anciens collaborateurs</option>
+              <option value="all">Tous les collaborateurs</option>
+            </select>
+            <p className="admin-section-description">Ce filtre s’applique aux deux tableaux. Les comptes sans fiche RH restent accessibles dans la vue « En poste ».</p>
+          </section>
+          <AdminCollaboratorCoverage collaborators={collaborators} population={population} />
+        </>
+      ) : null}
+
+      <section className="admin-panel admin-users" hidden={activeSection !== 'users' || isLoading || !directoryReady} aria-labelledby="admin-users-title">
+        <div className="admin-header">
+          <div>
+            <h2 id="admin-users-title">Gestion des utilisateurs</h2>
+            <p className="admin-section-description">Invitez vos collaborateurs et attribuez leurs rôles.</p>
+          </div>
+          <div className="admin-header-actions">
+            <div className="admin-summary" aria-label="Nombre d'utilisateurs">
+              <Users aria-hidden="true" size={18} />
+              <strong>{visibleUsers.length}</strong>
+            </div>
+            <button className="admin-primary-button" onClick={() => setIsInviteDialogOpen(true)} type="button">
+              <UserPlus aria-hidden="true" size={18} />
+              Inviter un utilisateur
+            </button>
+          </div>
         </div>
-      )}
 
-      <section className="admin-navigation-access" aria-label="Acces de navigation par role">
+        {visibleUsers.length === 0 ? (
+          <div className="admin-state">Aucun compte utilisateur dans cette catégorie.</div>
+        ) : (
+          <div className="admin-table-wrap">
+            <table className="admin-table" aria-label="Comptes SeaPilot">
+              <thead>
+                <tr>
+                  <th scope="col">Utilisateur</th>
+                  {ROLE_KEYS.map((role) => (
+                    <th key={role} scope="col">
+                      {ROLE_LABELS[role]}
+                    </th>
+                  ))}
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleUsers.map((user) => (
+                  <tr key={user.id}>
+                    <th scope="row">
+                      <span className="admin-user-name">{user.displayName}</span>
+                      <span className="admin-user-email">{user.email}</span>
+                      {adminUserEmploymentStatus(user, collaborators) === 'former' ? <span className="admin-warning-chip">Ancien collaborateur</span> : null}
+                    </th>
+                    {ROLE_KEYS.map((role) => {
+                      const operationKey = `${user.id}:${role}`;
+                      const isSaving = savingRoleKey === operationKey;
+
+                      return (
+                        <td key={role}>
+                          <label className="role-toggle">
+                            <input
+                              aria-label={`${ROLE_LABELS[role]} pour ${user.email}`}
+                              checked={user.roles.includes(role)}
+                              disabled={savingRoleKey !== null || savingUserActionKey !== null}
+                              onChange={(event) => void handleRoleChange(user.id, role, event.target.checked)}
+                              type="checkbox"
+                            />
+                            <span aria-hidden="true">
+                              <ShieldCheck size={16} />
+                            </span>
+                            {isSaving ? <em>...</em> : null}
+                          </label>
+                        </td>
+                      );
+                    })}
+                    <td>
+                      <div className="admin-user-actions">
+                        <button
+                          aria-label={`Renvoyer le lien à ${user.email}`}
+                          className="admin-user-action-button"
+                          disabled={savingUserActionKey !== null}
+                          onClick={() => void handleResendAccess(user)}
+                          type="button"
+                        >
+                          <MailPlus aria-hidden="true" size={15} />
+                          {savingUserActionKey === `${user.id}:resend` ? 'Envoi…' : 'Renvoyer'}
+                        </button>
+                        <button
+                          aria-label={`Supprimer ${user.email}`}
+                          className="admin-user-action-button is-danger"
+                          disabled={savingUserActionKey !== null}
+                          onClick={() => void handleDeleteUser(user)}
+                          type="button"
+                        >
+                          <Trash2 aria-hidden="true" size={15} />
+                          {savingUserActionKey === `${user.id}:delete` ? 'Suppression…' : 'Supprimer'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="admin-panel admin-navigation-access" hidden={activeSection !== 'access' || isLoading} aria-label="Accès de navigation par rôle">
         <div className="admin-header admin-section-header">
           <div>
             <p className="module-family">Navigation</p>
-            <h2>Acces aux menus par role</h2>
+            <h2>Accès aux menus par rôle</h2>
             <p className="admin-section-description">
-              Ces regles pilotent les menus visibles et bloquent aussi les acces directs aux modules.
+              Choisissez les menus visibles pour chaque rôle. Ces règles s’appliquent aussi à l’accès direct aux modules.
             </p>
           </div>
           <div className="admin-summary" aria-label="Modules configurables">
@@ -376,8 +448,8 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
                         <label className="role-toggle">
                           <input
                             aria-label={`${module.label} visible pour ${ROLE_LABELS[role]}`}
-                            checked={permission?.isVisible || false}
-                            disabled={savingNavigationKey !== null}
+                            checked={(module.key === 'admin' && role !== 'admin') || (['disciplinary', 'organigramme'].includes(module.key) && !['admin', 'direction'].includes(role)) ? false : permission?.isVisible || false}
+                            disabled={savingNavigationKey !== null || (module.key === 'admin' && role !== 'admin') || (['disciplinary', 'organigramme'].includes(module.key) && !['admin', 'direction'].includes(role))}
                             onChange={(event) =>
                               void handleNavigationPermissionChange(role, module.key, event.target.checked)
                             }
@@ -398,7 +470,10 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
         </div>
       </section>
 
-      <section className="admin-action-plan-settings" aria-label="Réglages du Plan d'action">
+      {activeSection === 'documents' ? <AdminGoogleDriveSetup client={client} previewMode={previewMode} /> : null}
+      {activeSection === 'planning' ? <AdminFleetOrder client={client} /> : null}
+
+      <section className="admin-panel admin-action-plan-settings" hidden={activeSection !== 'action-plan' || isLoading} aria-label="Réglages du Plan d'action">
         <div className="admin-header admin-section-header">
           <div>
             <p className="module-family">Plan d&apos;action</p>
@@ -422,7 +497,7 @@ export function AdminPage({ client = supabase }: AdminPageProps) {
         </label>
       </section>
 
-      <section className="admin-import-monitor" aria-label="Suivi import SharePoint">
+      <section className="admin-panel admin-import-monitor" hidden={activeSection !== 'imports' || isLoading} aria-label="Suivi import SharePoint">
         <div className="admin-header admin-section-header">
           <div>
             <p className="module-family">Migration</p>

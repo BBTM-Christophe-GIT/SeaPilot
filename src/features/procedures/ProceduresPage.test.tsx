@@ -1,7 +1,27 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render as renderTestingLibrary, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { Link, MemoryRouter } from 'react-router-dom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProceduresPage } from './ProceduresPage';
+import { procedureDriveFilename } from './procedureDriveFiles';
+import { downloadProcedureListPdf } from './procedureListPdf';
+import { normalizeProcedureSearch, normalizeProcedureTags } from './procedureTags';
+
+function render(ui: Parameters<typeof renderTestingLibrary>[0], initialEntry = '/modules/procedures') {
+  return renderTestingLibrary(<MemoryRouter initialEntries={[initialEntry]}>{ui}</MemoryRouter>);
+}
+
+const drive = vi.hoisted(() => ({ connect: vi.fn(), write: vi.fn(), publish: vi.fn(), open: vi.fn(), read: vi.fn() }));
+vi.mock('./procedureDriveFiles', async importOriginal => ({ ...await importOriginal<typeof import('./procedureDriveFiles')>(), createProcedureFileStore: () => drive }));
+beforeEach(() => {
+  Object.values(drive).forEach(mock => mock.mockReset());
+  drive.connect.mockResolvedValue({ version: '2.3.0', endpoint: 'http://127.0.0.1:50000/session' });
+  drive.write.mockImplementation(async (input, file) => ({ path: procedureDriveFilename(input, file.name.match(/\.[^.]+$/)[0]), bytes: file.size, sha256: 'a'.repeat(64), mimeType: file.type }));
+  drive.publish.mockResolvedValue({ path: 'URG QSMS-OPS-01 4 - Procédure embarquement ROZEL.pdf', bytes: 100, sha256: 'a'.repeat(64) });
+  drive.open.mockResolvedValue(undefined);
+});
+vi.mock('./procedureListPdf', () => ({ downloadProcedureListPdf: vi.fn().mockResolvedValue(undefined) }));
+afterEach(() => vi.unstubAllGlobals());
 
 const baseMetadata = {
   category_label: 'Procédure d’urgence',
@@ -14,18 +34,18 @@ const baseMetadata = {
   document_number: 'QSMS-OPS-01',
   restrictions: '',
   annual_review: true,
-  approval_status: 'Document approuve',
   theme: 'URG',
   document_type: 'PRO',
   bridge_watch: true,
   version_label: '4',
+  tags: [],
 };
 
 const approvedProcedureRow = {
   id: 12,
   procedure_code: 'QSMS-OPS-01',
   title: 'Procédure embarquement ROZEL',
-  status: 'approved',
+  status: 'published',
   revision_label: 'Rev. 4',
   published_on: '2026-03-20',
   source_label: 'seapilot',
@@ -58,7 +78,7 @@ const publishedProcedureRow = {
   procedure_sharepoint_item_id: '12',
   procedure_code: 'QSMS-OPS-01',
   title: 'Procédure embarquement ROZEL.pdf',
-  status: 'approved',
+  status: 'published',
   revision_label: 'Rev. 4',
   published_on: '2026-03-20',
   source_label: 'seapilot',
@@ -79,41 +99,69 @@ const projectRows = [
   { id: 19, project_code: 'P264', title: 'PROJET ARCHIVÉ', archived_at: '2026-06-01T00:00:00Z' },
 ];
 
-function orderedResult(data: unknown[]) {
+function orderedResult(data: unknown[], error: Error | null = null) {
   const result = {
+    eq: vi.fn(() => result),
     order: vi.fn(() => result),
-    then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error: null }).then(resolve),
+    then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error }).then(resolve),
   };
   return result;
 }
 
-function createClient(options: { procedures?: unknown[]; publications?: unknown[]; projects?: unknown[]; created?: unknown; published?: unknown } = {}) {
+function createClient(options: { procedures?: unknown[]; publications?: unknown[]; projects?: unknown[]; vessels?: unknown[]; created?: unknown; published?: unknown; updateError?: Error; catalogue?: string[] } = {}) {
   const procedures = options.procedures ?? [approvedProcedureRow, draftProcedureRow];
   const publications = options.publications ?? [publishedProcedureRow];
   const projects = options.projects ?? projectRows;
+  const catalogue = (options.catalogue ?? ['Sécurité', 'Évacuation', 'Machine']).map(name => ({ name, active: true }));
+  const catalogueSelect = vi.fn().mockImplementation(() => orderedResult(catalogue.filter(row => row.active).map(({ name }) => ({ name }))));
+  function registerCatalogueTags(values: unknown) {
+    if (!Array.isArray(values)) return;
+    for (const name of normalizeProcedureTags(values as string[])) {
+      if (!catalogue.some(row => normalizeProcedureSearch(row.name) === normalizeProcedureSearch(name))) catalogue.push({ name, active: true });
+    }
+  }
+  const catalogueUpsert = vi.fn().mockImplementation((payload: { name: string; active: boolean }) => ({ select: vi.fn(() => ({ single: vi.fn(async () => {
+    const existing = catalogue.find(row => normalizeProcedureSearch(row.name) === normalizeProcedureSearch(payload.name));
+    if (existing) Object.assign(existing, payload);
+    else catalogue.push(payload);
+    return { data: { name: payload.name }, error: null };
+  }) })) }));
+  const catalogueUpdate = vi.fn().mockImplementation(() => ({ eq: vi.fn((_column: string, key: string) => ({ select: vi.fn(() => ({ single: vi.fn(async () => {
+    const existing = catalogue.find(row => normalizeProcedureSearch(row.name) === key)!;
+    existing.active = false;
+    return { data: { name: existing.name }, error: null };
+  }) })) })) }));
   const upload = vi.fn().mockResolvedValue({ error: null });
   const remove = vi.fn().mockResolvedValue({ error: null });
   const createSignedUrl = vi.fn().mockResolvedValue({ data: { signedUrl: 'https://storage.test/signed' }, error: null });
-  const procedureInsert = vi.fn().mockReturnValue({
+  const procedureInsert = vi.fn().mockImplementation((payload: Record<string, unknown>) => ({
     select: vi.fn().mockReturnValue({
-      single: vi.fn().mockResolvedValue({ data: options.created || approvedProcedureRow, error: null }),
+      single: vi.fn().mockImplementation(async () => { registerCatalogueTags(payload.tags); return { data: options.created || approvedProcedureRow, error: null }; }),
     }),
-  });
+  }));
   const publicationInsert = vi.fn().mockReturnValue({
     select: vi.fn().mockReturnValue({
       single: vi.fn().mockResolvedValue({ data: options.published || publishedProcedureRow, error: null }),
     }),
   });
-  const update = vi.fn().mockReturnValue({
-    eq: vi.fn().mockResolvedValue({ error: null }),
-  });
+  const createUpdate = (rows: unknown[]) => vi.fn().mockImplementation((payload: Record<string, unknown>) => ({
+    eq: vi.fn().mockImplementation((_column: string, id: number) => ({
+      select: vi.fn().mockReturnValue({ single: vi.fn().mockImplementation(async () => {
+        if (!options.updateError) registerCatalogueTags(payload.tags);
+        return { data: { ...rows.find(row => (row as { id: number }).id === id) as object, ...payload }, error: options.updateError || null };
+      }) }),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ error: options.updateError || null }).then(resolve),
+    })),
+  }));
+  const procedureUpdate = createUpdate(procedures);
+  const publicationUpdate = createUpdate(publications);
   const removeRow = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
   const from = vi.fn().mockImplementation((table: string) => {
     if (table === 'procedures') {
       return {
         select: vi.fn(() => orderedResult(procedures)),
         insert: procedureInsert,
-        update,
+        update: procedureUpdate,
         delete: removeRow,
       };
     }
@@ -121,7 +169,7 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
       return {
         select: vi.fn(() => orderedResult(publications)),
         insert: publicationInsert,
-        update,
+        update: publicationUpdate,
         delete: removeRow,
       };
     }
@@ -130,16 +178,422 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
         select: vi.fn(() => orderedResult(projects)),
       };
     }
+    if (table === 'vessels') return { select: vi.fn(() => orderedResult(options.vessels ?? [{ name: 'GOURY' }, { name: 'LE ROZEL' }, { name: 'LANDEMER' }])) };
+    if (table === 'procedure_tag_catalogue') return { select: catalogueSelect, upsert: catalogueUpsert, update: catalogueUpdate };
     throw new Error(`Unexpected table ${table}`);
   });
+  const rpc = vi.fn().mockResolvedValue({ data: options.published || publishedProcedureRow, error: null });
   const client = {
-    from,
+    rpc, from,
     storage: { from: vi.fn(() => ({ upload, remove, createSignedUrl })) },
   };
-  return { client, from, upload, createSignedUrl, procedureInsert, publicationInsert };
+  return { client, rpc, from, upload, createSignedUrl, procedureInsert, publicationInsert, procedureUpdate, publicationUpdate, catalogueSelect, catalogueUpsert, catalogueUpdate };
 }
 
 describe('ProceduresPage', () => {
+  it('opens the linked source information and follows another source link without remounting', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+    render(<><Link to="?procedure=12">Ouvrir la seconde fiche</Link><ProceduresPage client={client as never} roles={['direction']} /></>, '/modules/procedures?procedure=13');
+
+    const firstDialog = await screen.findByRole('dialog', { name: /Consigne machine provisoire/ });
+    expect(within(firstDialog).getByLabelText('Titre')).toHaveValue('Consigne machine provisoire');
+    await user.click(within(firstDialog).getByRole('button', { name: 'Fermer' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Ouvrir la seconde fiche' }));
+    expect(await screen.findByRole('dialog', { name: /Procédure embarquement ROZEL/ })).toBeInTheDocument();
+  });
+
+  it.each(['armement', 'capitaine', 'marin'] as const)('does not open source editing through a link for %s', async (role) => {
+    const { client, from } = createClient();
+    render(<ProceduresPage client={client as never} roles={[role]} />, '/modules/procedures?procedure=13');
+
+    await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL.pdf/ });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(from).not.toHaveBeenCalledWith('procedures');
+  });
+
+  it.each(['armement', 'capitaine', 'marin'] as const)('selects the linked accessible publication and keeps %s read-only', async (role) => {
+    const user = userEvent.setup();
+    const { client, from } = createClient();
+    render(<ProceduresPage client={client as never} roles={[role]} />, '/modules/procedures?document=32');
+
+    const title = await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL.pdf/ });
+    const dialog = await screen.findByRole('dialog', { name: 'Procédure embarquement ROZEL.pdf' });
+    expect(await within(dialog).findByTitle('Aperçu de Procédure embarquement ROZEL.pdf')).toHaveAttribute('src', 'https://storage.test/signed');
+    expect(title.closest('article')).toHaveClass('is-selected');
+    expect(screen.getByRole('heading', { name: 'Procédures publiées' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Modifier/ })).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Titre')).not.toBeInTheDocument();
+    expect(from).not.toHaveBeenCalledWith('procedures');
+    await user.click(within(dialog).getByLabelText('Fermer'));
+    await waitFor(() => expect(title.closest('article')).toHaveFocus());
+  });
+
+  it('reacts to another publication link and expands its collapsed chapter', async () => {
+    const user = userEvent.setup();
+    const secondPublication = { ...publishedProcedureRow, id: 33, title: 'Autre consigne publiée.pdf' };
+    const { client } = createClient({ publications: [publishedProcedureRow, secondPublication] });
+    render(<><Link to="?document=33">Ouvrir la seconde publication</Link><ProceduresPage client={client as never} roles={['armement']} /></>, '/modules/procedures?document=32');
+
+    const firstTitle = await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL.pdf/ });
+    const firstDialog = await screen.findByRole('dialog', { name: 'Procédure embarquement ROZEL.pdf' });
+    await user.click(within(firstDialog).getByLabelText('Fermer'));
+    await waitFor(() => expect(firstTitle.closest('article')).toHaveFocus());
+    const chapterToggle = firstTitle.closest('.procedure-chapter')!.querySelector('.procedure-chapter-heading') as HTMLElement;
+    await user.click(chapterToggle);
+    expect(chapterToggle).toHaveAttribute('aria-expanded', 'false');
+    await user.click(screen.getByRole('link', { name: 'Ouvrir la seconde publication' }));
+    const secondTitle = await screen.findByRole('button', { name: /Ouvrir.*Autre consigne publiée.pdf/ });
+    const secondDialog = await screen.findByRole('dialog', { name: secondPublication.title });
+    expect(await within(secondDialog).findByTitle(`Aperçu de ${secondPublication.title}`)).toBeInTheDocument();
+    await user.click(within(secondDialog).getByLabelText('Fermer'));
+    await waitFor(() => expect(secondTitle.closest('article')).toHaveFocus());
+    expect(secondTitle.closest('article')).toHaveClass('is-selected');
+    expect(screen.getByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL.pdf/ }).closest('article')).not.toHaveClass('is-selected');
+    expect(chapterToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('previews a published Drive PDF and releases its local URL when closed', async () => {
+    const user = userEvent.setup();
+    const createObjectURL = vi.fn(() => 'blob:http://localhost/published-procedure');
+    const revokeObjectURL = vi.fn();
+    const OriginalURL = URL;
+    vi.stubGlobal('URL', class extends OriginalURL {
+      static createObjectURL = createObjectURL;
+      static revokeObjectURL = revokeObjectURL;
+    });
+    const blob = new Blob(['%PDF-1.7'], { type: 'application/pdf' });
+    drive.read.mockResolvedValue(blob);
+    const { client } = createClient({ publications: [{ ...publishedProcedureRow, google_drive_path: 'publication.pdf', storage_bucket: null, storage_path: null }] });
+    render(<ProceduresPage client={client as never} roles={['marin']} />, '/modules/procedures?document=32');
+
+    const dialog = await screen.findByRole('dialog', { name: publishedProcedureRow.title });
+    expect(await within(dialog).findByTitle(`Aperçu de ${publishedProcedureRow.title}`)).toHaveAttribute('src', 'blob:http://localhost/published-procedure');
+    expect(drive.read).toHaveBeenCalledWith(expect.objectContaining({ id: 32, googleDrivePath: 'publication.pdf' }));
+    expect(createObjectURL).toHaveBeenCalledWith(blob);
+    await user.click(within(dialog).getByLabelText('Fermer'));
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:http://localhost/published-procedure');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('keeps the published detail window readable when its PDF is unavailable', async () => {
+    const { client } = createClient({ publications: [{ ...publishedProcedureRow, storage_bucket: null, storage_path: null }] });
+    render(<ProceduresPage client={client as never} roles={['capitaine']} />, '/modules/procedures?document=32');
+
+    const dialog = await screen.findByRole('dialog', { name: publishedProcedureRow.title });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Aucun fichier disponible pour ce document.');
+    expect(within(dialog).queryByTitle(`Aperçu de ${publishedProcedureRow.title}`)).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Titre')).not.toBeInTheDocument();
+  });
+
+  it('ignores a publication absent from the authorized library', async () => {
+    const { client } = createClient();
+    render(<ProceduresPage client={client as never} roles={['marin']} />, '/modules/procedures?document=999');
+
+    const title = await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL.pdf/ });
+    expect(title.closest('article')).not.toHaveClass('is-selected');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('ignores a source link that is absent from the authorized records', async () => {
+    const { client } = createClient();
+    render(<ProceduresPage client={client as never} roles={['admin']} />, '/modules/procedures?procedure=999');
+
+    await screen.findByRole('button', { name: /Ouvrir.*Consigne machine provisoire/ });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('assigns all twelve ISM themes and updates the suggested number when the theme changes', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ procedures: [{ ...approvedProcedureRow, theme: 'OPE', document_number: '18' }] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByRole('button', { name: 'Importer un fichier existant' })).toHaveAttribute('aria-pressed', 'true');
+    expect(dialog.getByRole('button', { name: 'Nouvelle Procédure' })).toHaveAttribute('aria-pressed', 'false');
+    expect(dialog.getByLabelText('Thème')).toHaveValue('GEN');
+    expect(dialog.getByLabelText('Numéro')).toHaveValue('01');
+    for (const [index, theme] of ['GEN', 'POL', 'RAC', 'DPA', 'AUT', 'REP', 'OPE', 'URG', 'SEC', 'TEC', 'SMS', 'VPC'].entries()) {
+      await user.selectOptions(dialog.getByLabelText('ISM Chapitre'), String(index + 1).padStart(2, '0'));
+      expect(dialog.getByLabelText('Thème')).toHaveValue(theme);
+      expect(dialog.getByLabelText('Numéro')).toHaveValue(theme === 'OPE' ? '19' : '01');
+    }
+    for (const chapter of ['13', 'uncontrolled', 'unassigned']) {
+      await user.selectOptions(dialog.getByLabelText('ISM Chapitre'), chapter);
+      expect(dialog.getByLabelText('Thème')).toHaveValue('');
+      await user.selectOptions(dialog.getByLabelText('Thème'), 'ADM');
+      expect(dialog.getByLabelText('Thème')).toHaveValue('ADM');
+    }
+  });
+
+  it('preserves an existing document until its chapter changes and keeps its number for the same theme', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ procedures: [{ ...approvedProcedureRow, theme: 'URG', document_number: '07.1' }] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByLabelText('Modifier Procédure embarquement ROZEL'));
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.queryByRole('group', { name: 'Type de document' })).not.toBeInTheDocument();
+    expect(dialog.getByRole('combobox', { name: 'Projet' })).toHaveValue(baseMetadata.project_name);
+    expect(dialog.getByLabelText('Numéro')).toHaveValue('07.1');
+    await user.selectOptions(dialog.getByLabelText('ISM Chapitre'), '08');
+    expect(dialog.getByLabelText('Numéro')).toHaveValue('07.1');
+    await user.selectOptions(dialog.getByLabelText('ISM Chapitre'), '10');
+    expect(dialog.getByLabelText('Thème')).toHaveValue('TEC');
+    expect(dialog.getByLabelText('Numéro')).toHaveValue('01');
+  });
+
+  it('creates a private Word source from the template without a manual upload', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new Uint8Array([80, 75, 3, 4, 42]).buffer }));
+    const { client, upload, procedureInsert } = createClient({ procedures: [], publications: [] });
+    render(<ProceduresPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
+    const dialog = within(screen.getByRole('dialog'));
+    await user.click(dialog.getByRole('button', { name: 'Nouvelle Procédure' }));
+    expect(dialog.getByRole('button', { name: 'Nouvelle Procédure' })).toHaveAttribute('aria-pressed', 'true');
+    expect(dialog.getByRole('button', { name: 'Importer un fichier existant' })).toHaveAttribute('aria-pressed', 'false');
+    expect(dialog.queryByRole('link', { name: /Télécharger/ })).not.toBeInTheDocument();
+    expect(dialog.queryByLabelText('Stockage du fichier')).not.toBeInTheDocument();
+    expect(dialog.getByLabelText('Version')).toHaveValue('A');
+    expect(dialog.getByRole('option', { name: 'Armement' })).toBeInTheDocument();
+    expect(dialog.queryByLabelText(/Fichier source modifiable/i)).not.toBeInTheDocument();
+    await user.type(dialog.getByLabelText('Titre'), 'Plan urgence');
+    await user.selectOptions(dialog.getByLabelText('ISM Chapitre'), '08');
+    await user.click(dialog.getByRole('button', { name: 'Ouvrir' }));
+    expect(await screen.findByText('Document QSMS ajouté.')).toBeInTheDocument();
+    expect(upload).not.toHaveBeenCalled();
+    expect(drive.write).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ name: 'URG 01 A - Plan urgence.docx', size: 5 }), expect.any(Object));
+    expect(drive.open).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(procedureInsert).toHaveBeenCalledWith(expect.objectContaining({ theme: 'URG', ism_chapter: '08', document_number: '01', source_file_name: 'URG 01 A - Plan urgence.docx' }));
+  });
+
+  it('keeps the dialog open on template failure and allows a retry', async () => {
+    const user = userEvent.setup();
+    const fetch = vi.fn().mockResolvedValueOnce({ ok: false }).mockResolvedValue({ ok: true, arrayBuffer: async () => new Uint8Array([80, 75, 3, 4]).buffer });
+    vi.stubGlobal('fetch', fetch);
+    const { client, upload, procedureInsert } = createClient({ procedures: [], publications: [] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
+    const dialog = within(screen.getByRole('dialog'));
+    await user.click(dialog.getByRole('button', { name: 'Nouvelle Procédure' }));
+    await user.type(dialog.getByLabelText('Titre'), 'Essai');
+    await user.click(dialog.getByRole('button', { name: 'Ouvrir' }));
+    expect(await dialog.findByRole('alert')).toHaveTextContent('modèle Procédure.docx est indisponible');
+    expect(upload).not.toHaveBeenCalled();
+    expect(procedureInsert).not.toHaveBeenCalled();
+    await user.click(dialog.getByRole('button', { name: 'Ouvrir' }));
+    expect(await screen.findByText('Document QSMS ajouté.')).toBeInTheDocument();
+  });
+
+  it('keeps the form and never registers metadata if the launcher cannot copy the source', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new Uint8Array([80, 75, 3, 4]).buffer }));
+    drive.write.mockRejectedValue(new Error('Drive indisponible'));
+    const { client, procedureInsert } = createClient({ procedures: [], publications: [] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
+    const dialog = within(screen.getByRole('dialog'));
+    await user.click(dialog.getByRole('button', { name: 'Nouvelle Procédure' }));
+    await user.type(dialog.getByLabelText('Titre'), 'Copie Drive');
+    await user.click(dialog.getByRole('button', { name: 'Ouvrir' }));
+    expect(await dialog.findByRole('alert')).toHaveTextContent('Drive indisponible');
+    expect(procedureInsert).not.toHaveBeenCalled();
+    expect(drive.open).not.toHaveBeenCalled();
+    expect(dialog.getByLabelText('Titre')).toHaveValue('Copie Drive');
+  });
+
+  it('restores the existing-file workflow when leaving template creation', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
+    const dialog = within(screen.getByRole('dialog'));
+    await user.click(dialog.getByRole('button', { name: 'Nouvelle Procédure' }));
+    await user.click(dialog.getByRole('button', { name: 'Importer un fichier existant' }));
+    expect(dialog.queryByText('Modèle Procédure.docx')).not.toBeInTheDocument();
+    expect(dialog.getByLabelText('Fichier à importer')).toBeRequired();
+  });
+
+  it('lists vessel-specific and common documents, exporting only the checked documents in the current scope', async () => {
+    const user = userEvent.setup();
+    const common = { ...approvedProcedureRow, id: 14, title: 'Procédure commune', vessel_name: null };
+    const { client } = createClient({ procedures: [approvedProcedureRow, draftProcedureRow, common] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Procédures QHSE' });
+    await user.selectOptions(screen.getByLabelText('Navire'), 'LE ROZEL');
+    expect(screen.getByText('Procédure commune')).toBeInTheDocument();
+    expect(screen.queryByText('Consigne machine provisoire')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Générer une liste des documents' }));
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByLabelText('Navire de la liste')).toHaveValue('LE ROZEL');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(2);
+    await user.click(dialog.getByLabelText('Inclure Procédure commune'));
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ vessel: 'LE ROZEL', library: 'sources', records: [expect.objectContaining({ id: 12 })] }));
+    await user.selectOptions(dialog.getByLabelText('Navire de la liste'), 'GOURY');
+    expect(dialog.queryByLabelText('Inclure Procédure embarquement ROZEL')).not.toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Tout désélectionner' }));
+    expect(dialog.getByRole('button', { name: 'Télécharger la liste PDF' })).toBeDisabled();
+    await user.click(dialog.getByRole('button', { name: 'Tout sélectionner' }));
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ vessel: 'GOURY', records: [expect.objectContaining({ id: 14 }), expect.objectContaining({ id: 13 })] }));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('groups documents by ISM and preserves selection and export when chapters are collapsed', async () => {
+    const user = userEvent.setup();
+    const common = { ...approvedProcedureRow, id: 14, title: 'Urgences communes', procedure_code: 'URG 2-A', vessel_name: '', ism_chapter: "08 - Préparation aux situations d’urgence" };
+    const { client } = createClient({ procedures: [{ ...approvedProcedureRow, procedure_code: 'URG 10-A' }, draftProcedureRow, common] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: 'Générer une liste des documents' }));
+    const dialog = within(screen.getByRole('dialog'));
+    const emergencyGroup = dialog.getByRole('rowgroup', { name: /^08 -/ });
+    expect(within(emergencyGroup).getAllByRole('checkbox').map(input => input.getAttribute('aria-label'))).toEqual([
+      'Inclure Urgences communes', 'Inclure Procédure embarquement ROZEL',
+    ]);
+    expect(dialog.getAllByRole('button', { expanded: true }).map(button => button.textContent?.slice(0, 2))).toEqual(['08', '10']);
+    await user.click(dialog.getByLabelText('Inclure Urgences communes'));
+    const emergencyChapter = dialog.getByRole('button', { name: /^08 -/ });
+    emergencyChapter.focus();
+    await user.keyboard('{Enter}');
+    expect(emergencyChapter).toHaveAttribute('aria-expanded', 'false');
+    expect(within(emergencyGroup).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(dialog.getByText('2 document(s) sélectionné(s)')).toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ records: [expect.objectContaining({ id: 12 }), expect.objectContaining({ id: 13 })] }));
+
+    await user.selectOptions(dialog.getByLabelText('Statut'), 'published');
+    expect(dialog.queryByRole('button', { name: /^10 -/ })).not.toBeInTheDocument();
+    expect(dialog.queryByRole('checkbox')).not.toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Tout sélectionner' }));
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ records: [expect.objectContaining({ id: 12 }), expect.objectContaining({ id: 14 })] }));
+    await user.click(dialog.getByRole('button', { name: 'Tout déplier' }));
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(2);
+    expect(dialog.getByLabelText('Inclure Urgences communes')).toBeChecked();
+    await user.click(dialog.getByRole('button', { name: 'Tout replier' }));
+    await user.click(dialog.getByRole('button', { name: 'Tout désélectionner' }));
+    expect(dialog.getByRole('button', { name: 'Télécharger la liste PDF' })).toBeDisabled();
+    await user.click(dialog.getByRole('button', { name: 'Tout déplier' }));
+    expect(dialog.getByLabelText('Inclure Urgences communes')).not.toBeChecked();
+    expect(dialog.getByLabelText('Inclure Procédure embarquement ROZEL')).not.toBeChecked();
+  });
+
+  it('combines vessel and status filters, preserving exclusions while exporting only visible selected documents', async () => {
+    const user = userEvent.setup();
+    const common = { ...approvedProcedureRow, id: 14, title: 'Procédure commune', vessel_name: null };
+    const { client } = createClient({ procedures: [approvedProcedureRow, draftProcedureRow, common] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: 'Générer une liste des documents' }));
+    const dialog = within(screen.getByRole('dialog'));
+    const status = dialog.getByRole('combobox', { name: 'Statut' });
+    expect(status).toHaveValue('');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(3);
+
+    await user.selectOptions(dialog.getByLabelText('Navire de la liste'), 'GOURY');
+    await user.selectOptions(status, 'published');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    expect(dialog.getByText(/1 document\(s\) disponible/)).toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ vessel: 'GOURY', records: [expect.objectContaining({ id: 14 })] }));
+    await user.click(dialog.getByRole('button', { name: 'Tout désélectionner' }));
+
+    await user.selectOptions(status, 'draft');
+    expect(dialog.getByLabelText('Inclure Consigne machine provisoire')).toBeChecked();
+    await user.click(dialog.getByRole('button', { name: 'Tout sélectionner' }));
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ records: [expect.objectContaining({ id: 13 })] }));
+    await user.selectOptions(status, '');
+    expect(dialog.getByLabelText('Inclure Procédure commune')).not.toBeChecked();
+    expect(dialog.getByLabelText('Inclure Consigne machine provisoire')).toBeChecked();
+    expect(dialog.getByText('1 document(s) sélectionné(s)')).toBeInTheDocument();
+
+    await user.selectOptions(status, 'review');
+    expect(dialog.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(dialog.getByText('Aucun document ne correspond aux filtres sélectionnés.')).toBeInTheDocument();
+    expect(dialog.getByRole('button', { name: 'Télécharger la liste PDF' })).toBeDisabled();
+    expect(dialog.getByRole('button', { name: 'Tout sélectionner' })).toBeDisabled();
+  });
+
+  it('combines ISM chapters with vessel and status, retaining exclusions across chapter changes', async () => {
+    const user = userEvent.setup();
+    const procedures = [
+      approvedProcedureRow,
+      draftProcedureRow,
+      { ...approvedProcedureRow, id: 14, title: 'Urgences communes', vessel_name: '', ism_chapter: "08 - Préparation aux situations d’urgence" },
+      { ...approvedProcedureRow, id: 15, title: 'Maintenance commune', vessel_name: '', ism_chapter: '10' },
+      { ...approvedProcedureRow, id: 16, title: 'Sans chapitre', vessel_name: '', ism_chapter: '' },
+      { ...approvedProcedureRow, id: 17, title: 'Document non contrôlé', vessel_name: '', ism_chapter: 'Documents non contrôlés' },
+    ];
+    const { client } = createClient({ procedures });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: 'Générer une liste des documents' }));
+    const dialog = within(screen.getByRole('dialog'));
+    const chapter = dialog.getByRole('combobox', { name: 'ISM Chapitre' });
+    expect(chapter).toHaveValue('');
+    await user.selectOptions(chapter, '08');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(2);
+    await user.selectOptions(dialog.getByLabelText('Navire de la liste'), 'GOURY');
+    await user.selectOptions(dialog.getByLabelText('Statut'), 'published');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    await user.click(dialog.getByRole('button', { name: 'Tout désélectionner' }));
+    await user.selectOptions(chapter, '10');
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    expect(dialog.getByLabelText('Inclure Maintenance commune')).toBeChecked();
+    await user.click(dialog.getByRole('button', { name: 'Tout sélectionner' }));
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ vessel: 'GOURY', records: [expect.objectContaining({ id: 15 })] }));
+    await user.selectOptions(chapter, '08');
+    expect(dialog.getByLabelText('Inclure Urgences communes')).not.toBeChecked();
+    expect(dialog.getByRole('button', { name: 'Télécharger la liste PDF' })).toBeDisabled();
+    await user.selectOptions(chapter, 'unassigned');
+    expect(dialog.getByRole('rowgroup', { name: 'ISM - Chapitre non renseigné' })).toBeInTheDocument();
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    expect(dialog.getByLabelText('Inclure Sans chapitre')).toBeChecked();
+    await user.selectOptions(chapter, 'uncontrolled');
+    expect(dialog.getByRole('rowgroup', { name: 'Documents non contrôlés' })).toBeInTheDocument();
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    expect(dialog.getByLabelText('Inclure Document non contrôlé')).toBeChecked();
+  });
+
+  it.each(['armement', 'capitaine', 'marin'] as const)('exports only published PDFs for a real %s role fixture', async (role) => {
+    const user = userEvent.setup();
+    const { client, from } = createClient();
+    render(<ProceduresPage client={client as never} roles={[role]} />);
+    await user.click(await screen.findByRole('button', { name: 'Générer une liste des documents' }));
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    await user.selectOptions(dialog.getByRole('combobox', { name: 'Statut' }), 'draft');
+    expect(dialog.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(dialog.getByRole('button', { name: 'Télécharger la liste PDF' })).toBeDisabled();
+    await user.selectOptions(dialog.getByRole('combobox', { name: 'Statut' }), 'published');
+    await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ library: 'published', records: [expect.objectContaining({ id: 32 })] }));
+    expect(from).not.toHaveBeenCalledWith('procedures');
+  });
+
+  it('offers fleet vessels without existing procedures and retains a legacy vessel when editing', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ vessels: [{ name: 'LANDEMER' }] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /Nouveau document/i }));
+    let dialog = within(screen.getByRole('dialog'));
+    const vessel = dialog.getByRole('combobox', { name: /^Navire/ });
+    expect(vessel).toHaveValue('');
+    expect(within(vessel).getByRole('option', { name: 'LANDEMER' })).toBeInTheDocument();
+    expect(within(vessel).queryByRole('option', { name: 'LE ROZEL' })).not.toBeInTheDocument();
+    await user.selectOptions(vessel, 'LANDEMER');
+    expect(vessel).toHaveValue('LANDEMER');
+    await user.click(dialog.getByRole('button', { name: 'Annuler' }));
+    await user.click(screen.getByLabelText('Modifier Procédure embarquement ROZEL'));
+    dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByRole('combobox', { name: /^Navire/ })).toHaveValue('LE ROZEL');
+  });
+
   it('uses the QSMS icon for every chapter and separates unassigned documents', async () => {
     const iconCases = [
       ['01', '01 - Généralités', 'info', 'blue'],
@@ -196,6 +650,8 @@ describe('ProceduresPage', () => {
     expect(screen.getAllByText('P145 - OIL SPILL SAIPEM COU').length).toBeGreaterThan(0);
     expect(screen.queryByText('PRO · URG · 4')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Nouveau document/i })).toBeEnabled();
+    expect(screen.queryByRole('link', { name: /installer le lanceur Windows/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /configurer le dossier synchronisé/i })).not.toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText('Projet'), 'P145 - OIL SPILL SAIPEM COU');
     expect(screen.getByText('Procédure embarquement ROZEL')).toBeInTheDocument();
@@ -230,10 +686,10 @@ describe('ProceduresPage', () => {
     },
   );
 
-  it('uploads a new editable source to the private Supabase bucket', async () => {
+  it('imports a new editable source into the synchronized Procedures folder', async () => {
     const user = userEvent.setup();
-    const created = { ...approvedProcedureRow, id: 44, title: 'Plan de préparation aux urgences', procedure_code: 'URG 08-A', document_number: '08' };
-    const { client, upload, procedureInsert } = createClient({ procedures: [], publications: [], created });
+    const created = { ...approvedProcedureRow, id: 44, title: 'Plan de préparation aux urgences', procedure_code: 'URG 08-A', document_number: '08', tags: ['Sécurité', 'Machine'] };
+    const { client, upload, procedureInsert } = createClient({ procedures: [], publications: [], created, catalogue: ['Évacuation'] });
     render(<ProceduresPage client={client as never} roles={['admin']} />);
 
     await screen.findByRole('heading', { name: 'Procédures QHSE' });
@@ -245,56 +701,409 @@ describe('ProceduresPage', () => {
     expect(within(dialog).queryByLabelText('Restrictions')).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText('Notes')).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText('Veille Passerelle')).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Statut d'approbation")).not.toBeInTheDocument();
     fireEvent.change(within(dialog).getByLabelText('Titre'), { target: { value: 'Plan de préparation aux urgences' } });
+    fireEvent.change(within(dialog).getByLabelText('Tags'), { target: { value: '  Sécurité; Machine, securite; ' } });
+    expect(within(dialog).getByText(/Séparez les tags par une virgule/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('list', { name: 'Tags du document' }).children).toHaveLength(2);
     await user.selectOptions(within(dialog).getByLabelText('Thème'), 'URG');
     fireEvent.change(within(dialog).getByLabelText('Numéro'), { target: { value: '08' } });
     fireEvent.change(within(dialog).getByLabelText('Version'), { target: { value: 'a' } });
-    fireEvent.change(within(dialog).getByLabelText('Projet'), { target: { value: 'P144 - GUARD VESSEL EMDT' } });
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: /^Navire/ }), 'LANDEMER');
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Projet' }), 'P144 - GUARD VESSEL EMDT');
     fireEvent.change(within(dialog).getByLabelText('Date diffusion'), { target: { value: '2026-09-02' } });
     await user.click(within(dialog).getByLabelText(/Revue annuelle/));
     expect(within(dialog).getByRole('heading', { name: 'URG 08-A - Plan de préparation aux urgences' })).toBeInTheDocument();
     expect(within(dialog).getByText('Échéance le 02/09/2027')).toBeInTheDocument();
-    const projectValues = Array.from(dialog.querySelectorAll('datalist option')).map((option) => option.getAttribute('value'));
+    const projectValues = within(within(dialog).getByRole('combobox', { name: 'Projet' })).getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
     expect(projectValues).toContain('P254 - NIVELAGE QUAI BOUGAINVILLE');
     expect(projectValues).not.toContain('P264 - PROJET ARCHIVÉ');
     const sourceFile = new File(['source'], 'urgence.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-    await user.upload(within(dialog).getByLabelText(/Fichier source modifiable/i), sourceFile);
+    await user.upload(within(dialog).getByLabelText('Fichier à importer'), sourceFile);
     fireEvent.submit(within(dialog).getByRole('button', { name: 'Enregistrer' }).closest('form') as HTMLFormElement);
 
     expect(await screen.findByText('Document QSMS ajouté.')).toBeInTheDocument();
-    expect(upload).toHaveBeenCalledWith(expect.stringMatching(/^sources\//), sourceFile, expect.objectContaining({ upsert: false }));
+    expect(upload).not.toHaveBeenCalled();
+    expect(drive.write).toHaveBeenCalledWith(expect.any(Object), sourceFile, expect.any(Object));
     expect(procedureInsert).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Plan de préparation aux urgences',
       procedure_code: 'URG 08-A',
       document_number: '08',
       version_label: 'A',
+      vessel_name: 'LANDEMER',
       project_name: 'P144 - GUARD VESSEL EMDT',
       annual_review: true,
-      source_storage_bucket: 'procedure-documents',
-      source_file_name: 'urgence.docx',
+      tags: ['Sécurité', 'Machine'],
+      source_storage_bucket: null,
+      source_google_drive_path: 'URG 08 A - Plan de préparation aux urgences.docx',
+      source_file_name: 'URG 08 A - Plan de préparation aux urgences.docx',
     }));
+    expect(screen.getByRole('list', { name: 'Tags de Plan de préparation aux urgences' })).toHaveTextContent('SécuritéMachine');
+    await user.click(screen.getByRole('button', { name: 'Nouveau document' }));
+    const nextDocument = within(screen.getByRole('dialog'));
+    const sharedChoices = within(nextDocument.getByRole('combobox', { name: 'Ajouter un tag pré-enregistré' }));
+    expect(sharedChoices.getByRole('option', { name: 'Sécurité' })).toBeInTheDocument();
+    expect(sharedChoices.getByRole('option', { name: 'Machine' })).toBeInTheDocument();
   });
 
-  it('publishes a selected PDF as a separate distribution record', async () => {
+  it('changes source tags in the editor and removes them, updating every linked PDF immediately', async () => {
     const user = userEvent.setup();
-    const { client, publicationInsert, upload } = createClient();
+    const source = { ...approvedProcedureRow, document_number: '01', tags: ['Sécurité', 'Machine'] };
+    const publications = [
+      { ...publishedProcedureRow, tags: source.tags },
+      { ...publishedProcedureRow, id: 33, title: 'Deuxième diffusion.pdf', tags: source.tags },
+    ];
+    const { client, procedureUpdate } = createClient({ procedures: [source], publications });
+    render(<ProceduresPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByLabelText('Modifier Procédure embarquement ROZEL'));
+    let dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByLabelText('Tags')).toHaveValue('Sécurité, Machine');
+    fireEvent.change(dialog.getByLabelText('Tags'), { target: { value: 'Évacuation, ÉVACUATION; Secours' } });
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Informations mises à jour.');
+    expect(procedureUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ tags: ['Évacuation', 'Secours'] }));
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('ÉvacuationSecours');
+    await user.click(screen.getByRole('button', { name: 'PDF publiés' }));
+    for (const publication of publications) {
+      expect(screen.getByRole('list', { name: `Tags de ${publication.title}` })).toHaveTextContent('ÉvacuationSecours');
+    }
+    fireEvent.change(screen.getByLabelText('Recherche de document'), { target: { value: 'EVACUATION' } });
+    expect(screen.getAllByRole('list', { name: /^Tags de / })).toHaveLength(2);
+    fireEvent.change(screen.getByLabelText('Recherche de document'), { target: { value: '' } });
+    await user.click(screen.getByRole('button', { name: 'Documents de travail' }));
+    await user.click(screen.getByLabelText('Modifier les tags Procédure embarquement ROZEL'));
+    dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    await user.click(dialog.getByLabelText('Retirer le tag Évacuation'));
+    await user.click(dialog.getByLabelText('Retirer le tag Secours'));
+    expect(dialog.getByLabelText('Tags')).toHaveValue('');
+    expect(dialog.getByRole('option', { name: 'Secours' })).toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Tags mis à jour.');
+    expect(procedureUpdate).toHaveBeenLastCalledWith({ tags: [] });
+    expect(screen.queryByRole('list', { name: /^Tags de / })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'PDF publiés' }));
+    expect(screen.queryByRole('list', { name: /^Tags de / })).not.toBeInTheDocument();
+  });
+
+  it.each(['admin', 'direction'] as const)('lets %s edit linked and standalone PDF tags without changing other publications', async role => {
+    const user = userEvent.setup();
+    const standalone = { ...publishedProcedureRow, id: 54, procedure_id: null, title: 'Document autonome.pdf', tags: ['Autonome'] };
+    const linkedCopy = { ...publishedProcedureRow, id: 33, title: 'Deuxième diffusion.pdf' };
+    const { client, procedureUpdate, publicationUpdate } = createClient({ procedures: [approvedProcedureRow], publications: [publishedProcedureRow, linkedCopy, standalone] });
+    render(<ProceduresPage client={client as never} roles={[role]} />);
+    await user.click(await screen.findByRole('button', { name: 'PDF publiés' }));
+    await user.click(screen.getByLabelText('Modifier les tags Procédure embarquement ROZEL.pdf'));
+    let dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    fireEvent.change(dialog.getByLabelText('Tags'), { target: { value: 'Énergie; Energie' } });
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Tags mis à jour.');
+    expect(procedureUpdate).toHaveBeenCalledWith({ tags: ['Énergie'] });
+    expect(publicationUpdate).not.toHaveBeenCalled();
+    expect(screen.getByRole('list', { name: 'Tags de Deuxième diffusion.pdf' })).toHaveTextContent('Énergie');
+    expect(screen.getByRole('list', { name: 'Tags de Document autonome.pdf' })).toHaveTextContent('Autonome');
+    await user.click(screen.getByLabelText('Modifier les tags Document autonome.pdf'));
+    dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    expect(dialog.getByLabelText('Tags')).toHaveValue('Autonome');
+    fireEvent.change(dialog.getByLabelText('Tags'), { target: { value: 'Formation' } });
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Tags mis à jour.');
+    expect(publicationUpdate).toHaveBeenCalledWith({ tags: ['Formation'] });
+    expect(procedureUpdate).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL.pdf' })).toHaveTextContent('Énergie');
+    expect(screen.getByRole('list', { name: 'Tags de Document autonome.pdf' })).toHaveTextContent('Formation');
+    await user.click(screen.getByRole('button', { name: 'Documents de travail' }));
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('Énergie');
+  });
+
+  it.each(['armement', 'capitaine', 'marin'] as const)('searches published tags for a real %s role fixture with case and accent insensitive matching', async role => {
+    const publications = [
+      { ...publishedProcedureRow, tags: ['Sécurité'] },
+      { ...publishedProcedureRow, id: 33, title: 'Consignes techniques.pdf', tags: ['sécurité à bord'] },
+    ];
+    const { client, from } = createClient({ procedures: [{ ...draftProcedureRow, tags: ['confidentiel'] }], publications });
+    render(<ProceduresPage client={client as never} roles={[role]} />);
+    await screen.findByText('Procédure embarquement ROZEL.pdf');
+    const search = screen.getByLabelText('Recherche de document');
+    expect(search).toHaveAttribute('placeholder', expect.stringContaining('tags'));
+    fireEvent.change(search, { target: { value: 'SECURITE' } });
+    expect(screen.getByText('Procédure embarquement ROZEL.pdf')).toBeInTheDocument();
+    expect(screen.getByText('Consignes techniques.pdf')).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: 'Sécurité À BORD' } });
+    expect(screen.queryByText('Procédure embarquement ROZEL.pdf')).not.toBeInTheDocument();
+    expect(screen.getByText('Consignes techniques.pdf')).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: 'confidentiel' } });
+    expect(screen.getByText('Aucun document ne correspond aux filtres.')).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: '' } });
+    expect(screen.queryByRole('button', { name: /Modifier/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nouveau document' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gérer les tags' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(from).not.toHaveBeenCalledWith('procedures');
+    expect(from).not.toHaveBeenCalledWith('procedure_tag_catalogue');
+  });
+
+  it('selects and removes pre-registered tags in new documents, source editors and published PDF editors', async () => {
+    const user = userEvent.setup();
+    const { client, procedureUpdate } = createClient({ procedures: [{ ...approvedProcedureRow, document_number: '01' }], catalogue: ['Rôle', 'MARPOL', 'Pollution', 'Incendie', 'THOMSEA'] });
+    render(<ProceduresPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: 'Nouveau document' }));
+    let dialog = within(screen.getByRole('dialog'));
+    let choices = dialog.getByRole('combobox', { name: 'Ajouter un tag pré-enregistré' });
+    for (const name of ['Rôle', 'MARPOL', 'Pollution', 'Incendie', 'THOMSEA']) expect(within(choices).getByRole('option', { name })).toBeInTheDocument();
+    await user.selectOptions(choices, 'Rôle');
+    expect(dialog.getByLabelText('Tags')).toHaveValue('Rôle');
+    expect(within(choices).queryByRole('option', { name: 'Rôle' })).not.toBeInTheDocument();
+    await user.click(dialog.getByLabelText('Retirer le tag Rôle'));
+    expect(dialog.getByLabelText('Tags')).toHaveValue('');
+    expect(within(choices).getByRole('option', { name: 'Rôle' })).toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Annuler' }));
+    await user.click(screen.getByLabelText('Modifier Procédure embarquement ROZEL'));
+    dialog = within(screen.getByRole('dialog'));
+    await user.selectOptions(dialog.getByRole('combobox', { name: 'Ajouter un tag pré-enregistré' }), 'Incendie');
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Informations mises à jour.');
+    expect(procedureUpdate).toHaveBeenCalledWith(expect.objectContaining({ tags: ['Incendie'] }));
+    await user.click(screen.getByRole('button', { name: 'PDF publiés' }));
+    await user.click(screen.getByLabelText('Modifier les tags Procédure embarquement ROZEL.pdf'));
+    dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    expect(dialog.getByLabelText('Tags')).toHaveValue('Incendie');
+    choices = dialog.getByRole('combobox', { name: 'Ajouter un tag pré-enregistré' });
+    expect(within(choices).queryByRole('option', { name: 'Incendie' })).not.toBeInTheDocument();
+    await user.selectOptions(choices, 'THOMSEA');
+    expect(dialog.getByLabelText('Tags')).toHaveValue('Incendie, THOMSEA');
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Tags mis à jour.');
+    expect(procedureUpdate).toHaveBeenLastCalledWith({ tags: ['Incendie', 'THOMSEA'] });
+  });
+
+  it('reuses newly saved free-entry tags across documents and excludes case or accent duplicates from choices', async () => {
+    const user = userEvent.setup();
+    const standalone = { ...publishedProcedureRow, id: 54, procedure_id: null, title: 'Document autonome.pdf' };
+    const { client, procedureUpdate, publicationUpdate } = createClient({ catalogue: ['Sécurité', 'securite', 'Évacuation'], publications: [publishedProcedureRow, standalone] });
     render(<ProceduresPage client={client as never} roles={['admin']} />);
-    await screen.findByText('Procédure embarquement ROZEL');
+    await user.click(await screen.findByLabelText('Modifier les tags Procédure embarquement ROZEL'));
+    let dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    let choices = dialog.getByRole('combobox', { name: 'Ajouter un tag pré-enregistré' });
+    expect(within(choices).getAllByRole('option')).toHaveLength(3);
+    fireEvent.change(dialog.getByLabelText('Tags'), { target: { value: 'SECURITE; Énergie solaire; ENERGIE SOLAIRE' } });
+    expect(within(choices).queryByRole('option', { name: 'Sécurité' })).not.toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Tags mis à jour.');
+    expect(procedureUpdate).toHaveBeenLastCalledWith({ tags: ['SECURITE', 'Énergie solaire'] });
+    await user.click(screen.getByLabelText('Modifier les tags Consigne machine provisoire'));
+    dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    choices = dialog.getByRole('combobox', { name: 'Ajouter un tag pré-enregistré' });
+    expect(within(choices).getAllByRole('option', { name: 'Énergie solaire' })).toHaveLength(1);
+    await user.selectOptions(choices, 'Énergie solaire');
+    expect(dialog.getByLabelText('Tags')).toHaveValue('Énergie solaire');
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Tags mis à jour.');
+    expect(procedureUpdate).toHaveBeenLastCalledWith({ tags: ['Énergie solaire'] });
+    await user.click(screen.getByRole('button', { name: 'Nouveau document' }));
+    dialog = within(screen.getByRole('dialog'));
+    expect(within(dialog.getByRole('combobox', { name: 'Ajouter un tag pré-enregistré' })).getAllByRole('option', { name: 'Énergie solaire' })).toHaveLength(1);
+    await user.click(dialog.getByRole('button', { name: 'Annuler' }));
+    await user.click(screen.getByRole('button', { name: 'PDF publiés' }));
+    await user.click(screen.getByLabelText('Modifier les tags Document autonome.pdf'));
+    dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    await user.selectOptions(dialog.getByRole('combobox', { name: 'Ajouter un tag pré-enregistré' }), 'Énergie solaire');
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Tags mis à jour.');
+    expect(publicationUpdate).toHaveBeenCalledWith({ tags: ['Énergie solaire'] });
+  });
 
-    await user.click(screen.getByLabelText('Publier Procédure embarquement ROZEL'));
-    const dialog = screen.getByRole('dialog', { name: 'Publier le PDF' });
-    const pdf = new File(['pdf'], 'procedure-approuvee.pdf', { type: 'application/pdf' });
-    await user.upload(within(dialog).getByLabelText(/PDF à diffuser/i), pdf);
-    await user.click(within(dialog).getByRole('button', { name: 'Publier' }));
+  it('keeps free entry and existing tag removal available while the catalogue loads', async () => {
+    const user = userEvent.setup();
+    const { client, catalogueSelect } = createClient({ procedures: [{ ...approvedProcedureRow, tags: ['Sécurité'] }] });
+    let finishLoad!: (value: { data: { name: string }[]; error: null }) => void;
+    const pendingLoad = new Promise<{ data: { name: string }[]; error: null }>(resolve => { finishLoad = resolve; });
+    const query = { eq: vi.fn(() => query), order: vi.fn(() => query), then: (resolve: (value: unknown) => unknown) => pendingLoad.then(resolve) };
+    catalogueSelect.mockReturnValue(query);
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByLabelText('Modifier les tags Procédure embarquement ROZEL'));
+    const dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    expect(dialog.getByText(/Chargement des tags pré-enregistrés/)).toBeInTheDocument();
+    expect(dialog.getByRole('combobox', { name: 'Ajouter un tag pré-enregistré' })).toBeDisabled();
+    expect(dialog.getByLabelText('Tags')).toBeEnabled();
+    await user.click(dialog.getByLabelText('Retirer le tag Sécurité'));
+    fireEvent.change(dialog.getByLabelText('Tags'), { target: { value: 'Saisie conservée' } });
+    finishLoad({ data: [{ name: 'Sécurité' }], error: null });
+    await dialog.findByRole('option', { name: 'Sécurité' });
+    expect(dialog.getByLabelText('Tags')).toHaveValue('Saisie conservée');
+    expect(dialog.getByRole('combobox', { name: 'Ajouter un tag pré-enregistré' })).toBeEnabled();
+    expect(dialog.queryByText(/Chargement des tags pré-enregistrés/)).not.toBeInTheDocument();
+  });
 
-    expect(upload).toHaveBeenCalledWith(expect.stringMatching(/^published\/12\//), pdf, expect.any(Object));
-    expect(publicationInsert).toHaveBeenCalledWith(expect.objectContaining({
-      procedure_id: 12,
-      storage_bucket: 'procedure-documents',
-      file_name: 'procedure-approuvee.pdf',
-      mime_type: 'application/pdf',
-    }));
+  it('explains catalogue loading errors and retries without clearing document tags or blocking free entry', async () => {
+    const user = userEvent.setup();
+    const { client, catalogueSelect } = createClient({ catalogue: ['Navigation'] });
+    catalogueSelect.mockImplementationOnce(() => orderedResult([], new Error('Catalogue inaccessible')));
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: 'Nouveau document' }));
+    const dialog = within(screen.getByRole('dialog'));
+    expect(await dialog.findByRole('alert')).toHaveTextContent('Impossible de charger les tags pré-enregistrés. La saisie libre reste disponible.');
+    expect(dialog.queryByText('Aucun tag pré-enregistré pour le moment.')).not.toBeInTheDocument();
+    expect(dialog.getByLabelText('Tags')).toBeEnabled();
+    fireEvent.change(dialog.getByLabelText('Tags'), { target: { value: 'Saisie conservée' } });
+    await user.click(dialog.getByRole('button', { name: 'Réessayer le chargement des tags' }));
+    await dialog.findByRole('option', { name: 'Navigation' });
+    expect(dialog.queryByRole('alert')).not.toBeInTheDocument();
+    expect(dialog.getByLabelText('Tags')).toHaveValue('Saisie conservée');
+    await user.selectOptions(dialog.getByRole('combobox', { name: 'Ajouter un tag pré-enregistré' }), 'Navigation');
+    expect(dialog.getByLabelText('Tags')).toHaveValue('Saisie conservée, Navigation');
+    expect(catalogueSelect).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['admin', 'direction'] as const)('lets %s add and delete catalogue tags without removing or reactivating assigned document tags', async role => {
+    const user = userEvent.setup();
+    const { client, catalogueUpsert, catalogueUpdate } = createClient({ procedures: [{ ...approvedProcedureRow, tags: ['Pollution'] }], publications: [{ ...publishedProcedureRow, tags: ['Pollution'] }], catalogue: ['MARPOL', 'Pollution'] });
+    render(<ProceduresPage client={client as never} roles={[role]} />);
+    await user.click(await screen.findByRole('button', { name: 'Gérer les tags' }));
+    let manager = within(screen.getByRole('dialog', { name: 'Gérer les tags' }));
+    expect(manager.getByText(/restent associés aux documents/)).toBeInTheDocument();
+    fireEvent.change(manager.getByLabelText('Nouveau tag'), { target: { value: '  THOMSEA  ' } });
+    await user.click(manager.getByRole('button', { name: 'Ajouter le tag' }));
+    await manager.findByText('Tag « THOMSEA » ajouté.');
+    expect(catalogueUpsert).toHaveBeenCalledWith({ name: 'THOMSEA', active: true }, { onConflict: 'name_key' });
+    expect(manager.getByRole('list', { name: 'Tags pré-enregistrés' })).toHaveTextContent('THOMSEA');
+    await user.click(manager.getByLabelText('Supprimer le tag Pollution'));
+    await manager.findByText('Tag « Pollution » supprimé de la liste.');
+    expect(catalogueUpdate).toHaveBeenCalledWith({ active: false });
+    expect(manager.queryByLabelText('Supprimer le tag Pollution')).not.toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('Pollution');
+    await user.click(manager.getByRole('button', { name: 'Terminer' }));
+    await user.click(screen.getByLabelText('Modifier les tags Procédure embarquement ROZEL'));
+    const tagsDialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    expect(tagsDialog.getByLabelText('Tags')).toHaveValue('Pollution');
+    expect(tagsDialog.queryByRole('option', { name: 'Pollution' })).not.toBeInTheDocument();
+    await user.click(tagsDialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Tags mis à jour.');
+    await user.click(screen.getByRole('button', { name: 'PDF publiés' }));
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL.pdf' })).toHaveTextContent('Pollution');
+    await user.click(screen.getByRole('button', { name: 'Nouveau document' }));
+    const nextDocument = within(screen.getByRole('dialog'));
+    expect(nextDocument.queryByRole('option', { name: 'Pollution' })).not.toBeInTheDocument();
+    expect(nextDocument.getByRole('option', { name: 'THOMSEA' })).toBeInTheDocument();
+    await user.click(nextDocument.getByRole('button', { name: 'Annuler' }));
+    await user.click(screen.getByRole('button', { name: 'Gérer les tags' }));
+    manager = within(screen.getByRole('dialog', { name: 'Gérer les tags' }));
+    fireEvent.change(manager.getByLabelText('Nouveau tag'), { target: { value: 'Pollution' } });
+    await user.click(manager.getByRole('button', { name: 'Ajouter le tag' }));
+    await manager.findByText('Tag « Pollution » ajouté.');
+    expect(manager.getAllByLabelText('Supprimer le tag Pollution')).toHaveLength(1);
+    await user.click(manager.getByRole('button', { name: 'Terminer' }));
+    await user.click(screen.getByRole('button', { name: 'Nouveau document' }));
+    expect(within(screen.getByRole('dialog')).getByRole('option', { name: 'Pollution' })).toBeInTheDocument();
+  });
+
+  it('keeps a document save successful when refreshing active catalogue tags fails and retries the catalogue separately', async () => {
+    const user = userEvent.setup();
+    const { client, catalogueSelect } = createClient({ catalogue: ['MARPOL'] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByLabelText('Modifier les tags Procédure embarquement ROZEL'));
+    const tagDialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    await tagDialog.findByRole('option', { name: 'MARPOL' });
+    catalogueSelect.mockImplementationOnce(() => orderedResult([], new Error('Catalogue indisponible')));
+    fireEvent.change(tagDialog.getByLabelText('Tags'), { target: { value: 'Manœuvre' } });
+    await user.click(tagDialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Tags mis à jour.');
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('Manœuvre');
+    await user.click(screen.getByRole('button', { name: 'Gérer les tags' }));
+    const manager = within(screen.getByRole('dialog', { name: 'Gérer les tags' }));
+    expect(await manager.findByRole('alert')).toHaveTextContent('Le document est enregistré, mais le rechargement des tags pré-enregistrés a échoué.');
+    expect(manager.getByRole('list', { name: 'Tags pré-enregistrés' })).toHaveTextContent('MARPOL');
+    expect(manager.queryByLabelText('Supprimer le tag Manœuvre')).not.toBeInTheDocument();
+    await user.click(manager.getByRole('button', { name: 'Réessayer le chargement des tags' }));
+    expect(await manager.findByLabelText('Supprimer le tag Manœuvre')).toBeInTheDocument();
+    expect(manager.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('retains tag edits after a save error and leaves the displayed tags unchanged', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient({ procedures: [{ ...approvedProcedureRow, tags: ['Sécurité'] }], updateError: new Error('Connexion indisponible') });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByLabelText('Modifier les tags Procédure embarquement ROZEL'));
+    const dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    fireEvent.change(dialog.getByLabelText('Tags'), { target: { value: 'Évacuation' } });
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    expect(await dialog.findByRole('alert')).toHaveTextContent('Connexion indisponible');
+    expect(dialog.getByLabelText('Tags')).toHaveValue('Évacuation');
+    expect(dialog.getByRole('button', { name: 'Enregistrer' })).toBeEnabled();
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('Sécurité');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('disables tag actions while saving and updates the library only after persistence succeeds', async () => {
+    const user = userEvent.setup();
+    const { client, procedureUpdate } = createClient({ procedures: [{ ...approvedProcedureRow, tags: ['Sécurité'] }] });
+    let finishSave!: (value: { data: { id: number }; error: null }) => void;
+    const pendingSave = new Promise<{ data: { id: number }; error: null }>(resolve => { finishSave = resolve; });
+    procedureUpdate.mockReturnValue({ eq: vi.fn(() => ({ select: vi.fn(() => ({ single: vi.fn(() => pendingSave) })) })) });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByLabelText('Modifier les tags Procédure embarquement ROZEL'));
+    const dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
+    fireEvent.change(dialog.getByLabelText('Tags'), { target: { value: 'Évacuation' } });
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    expect(dialog.getByRole('button', { name: 'Enregistrement…' })).toBeDisabled();
+    expect(dialog.getByRole('button', { name: 'Fermer' })).toBeDisabled();
+    expect(dialog.getByLabelText('Tags')).toBeDisabled();
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('Sécurité');
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { name: 'Modifier les tags' })).toBeInTheDocument();
+    finishSave({ data: { id: 12 }, error: null });
+    await screen.findByText('Tags mis à jour.');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('Évacuation');
+  });
+
+  it('converts the saved source and atomically registers its published PDF', async () => {
+    const user = userEvent.setup();
+    const { client, rpc, publicationInsert, upload } = createClient();
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByLabelText('Publier Procédure embarquement ROZEL'));
+    const dialog = within(screen.getByRole('dialog', { name: 'Confirmer la publication' }));
+    expect(dialog.queryByLabelText(/PDF à diffuser/i)).not.toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Oui, publier' }));
     expect(await screen.findByText(/PDF publié pour les profils Armement/i)).toBeInTheDocument();
+    expect(drive.publish).toHaveBeenCalledWith(expect.objectContaining({ id: 12 }));
+    expect(rpc).toHaveBeenCalledWith('publish_procedure_drive', { target_procedure: 12, pdf_path: 'URG QSMS-OPS-01 4 - Procédure embarquement ROZEL.pdf', pdf_bytes: 100, pdf_sha256: 'a'.repeat(64) });
+    expect(upload).not.toHaveBeenCalled();
+    expect(publicationInsert).not.toHaveBeenCalled();
+  });
+
+  it('does not publish or change lifecycle when PDF conversion fails', async () => {
+    drive.publish.mockRejectedValue(new Error('Word indisponible'));
+    const user = userEvent.setup();
+    const { client, rpc } = createClient();
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByLabelText('Publier Procédure embarquement ROZEL'));
+    await user.click(screen.getByRole('button', { name: 'Oui, publier' }));
+    expect(await screen.findByText('Word indisponible')).toBeInTheDocument();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('proposes the next number for a theme and blocks an existing combination', async () => {
+    const user = userEvent.setup();
+    const procedures = [
+      { ...approvedProcedureRow, id: 51, theme: 'OPE', document_number: '18', procedure_code: 'OPE 18-A' },
+      { ...approvedProcedureRow, id: 52, theme: 'OPE', document_number: '07.1', procedure_code: 'OPE 07.1-A' },
+    ];
+    const { client } = createClient({ procedures, publications: [] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+
+    await screen.findByRole('heading', { name: 'Procédures QHSE' });
+    await user.click(screen.getByRole('button', { name: /Nouveau document/i }));
+    const dialog = screen.getByRole('dialog');
+    await user.selectOptions(within(dialog).getByLabelText('Thème'), 'OPE');
+
+    expect(within(dialog).getByLabelText('Numéro')).toHaveValue('19');
+    expect(within(dialog).getByText(/Proposition pour OPE : 19/i)).toBeInTheDocument();
+
+    await user.clear(within(dialog).getByLabelText('Numéro'));
+    await user.type(within(dialog).getByLabelText('Numéro'), '07.1');
+    expect(within(dialog).getByText(/La combinaison OPE 07.1 existe déjà/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Enregistrer' })).toBeDisabled();
   });
 
   it('opens a document when its name is clicked', async () => {
@@ -313,6 +1122,20 @@ describe('ProceduresPage', () => {
       '_self',
       undefined,
     );
+    open.mockRestore();
+  });
+
+  it('launches the native Drive source and provides the authenticated Drive web link', async () => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const { client, createSignedUrl } = createClient({ procedures: [{ ...approvedProcedureRow,
+      source_google_drive_file_id: '1234567890abcdef', source_google_drive_path: 'source.docx' }], publications: [] });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: 'Ouvrir QSMS-OPS-01 Procédure embarquement ROZEL' }));
+    expect(drive.open).toHaveBeenCalledWith(expect.objectContaining({ id: 12, googleDrivePath: 'source.docx' }));
+    await user.click(screen.getByLabelText('Voir dans Drive Procédure embarquement ROZEL'));
+    expect(open).toHaveBeenLastCalledWith('https://drive.google.com/file/d/1234567890abcdef/view', '_blank', 'noopener,noreferrer');
+    expect(createSignedUrl).not.toHaveBeenCalled();
     open.mockRestore();
   });
 });

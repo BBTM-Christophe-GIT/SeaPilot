@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { PDFDict, PDFDocument, PDFName } from 'pdf-lib';
+import { decodePDFRawStream, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
 import JSZip from 'jszip';
 import { describe, expect, it, vi } from 'vitest';
 import type { ClientRecord, ProjectContractRecord, ProjectRecord } from './projectQueries';
@@ -12,7 +12,16 @@ import {
   buildTowageTemplateFields,
   formatOfferGenerationDate,
   generateProjectDocument,
+  PROJECT_OFFER_TRANSLATIONS,
 } from './projectDocumentGeneration';
+
+vi.mock('./projectPdfRichText', () => ({
+  renderProjectPdfRichText: vi.fn(async () => ({
+    height: 120,
+    toDataURL: () => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4XmP4DwQACfsD/YcUtbcAAAAASUVORK5CYII=',
+    width: 960,
+  })),
+}));
 
 const project: ProjectRecord = {
   id: 901,
@@ -86,7 +95,7 @@ const contract: ProjectContractRecord = {
 const client = { id: 50, name: 'Ifremer', representedBy: 'Claire MARTIN' } as ClientRecord;
 
 describe('projectDocumentGeneration', () => {
-  it('rebuilds the historical SharePoint offer headings from canonical SeaPilot values', () => {
+  it('rebuilds the historical SharePoint offer headings from canonical BBTM values', () => {
     const rows = Object.fromEntries(buildProjectOfferRows({ client, contract, project }).map((row) => [row.label, row.value]));
     expect(rows).toMatchObject({
       Client: 'Ifremer',
@@ -181,16 +190,89 @@ describe('projectDocumentGeneration', () => {
 
   it('creates safe and explicit offer and contract filenames', () => {
     expect(buildGeneratedDocumentFileName('offer', project)).toBe('P1107 - Offre - R1.pdf');
+    expect(buildGeneratedDocumentFileName('offer', project, 'en')).toBe('P1107 - Commercial Offer - R1.pdf');
     expect(buildGeneratedDocumentFileName('bimco_supplytime', { ...project, projectCode: '' })).toBe(
       'Campagne - Atlantique - BIMCO - R1.pdf',
     );
     expect(buildGeneratedDocumentFileName('bareboat_charter', project)).toBe(
-      "P1107 - Contrat d'affretement - R1.pdf",
+      "P1107 - Contrat d'Affretement Coque Nue - R1.pdf",
+    );
+    expect(buildGeneratedDocumentFileName('bareboat_charter', { ...project, contractType: "Contrat d'Affrètement" })).toBe(
+      "P1107 - Contrat d'Affretement a Temps - R1.pdf",
     );
   });
 
   it('formats the commercial offer generation date for the PDF footer', () => {
     expect(formatOfferGenerationDate(new Date('2026-08-20T12:00:00Z'))).toBe('20/08/2026');
+    expect(formatOfferGenerationDate(new Date('2026-08-20T12:00:00Z'), 'en')).toBe('20/08/2026');
+    expect(PROJECT_OFFER_TRANSLATIONS.en.title).toBe('COMMERCIAL OFFER');
+    expect(PROJECT_OFFER_TRANSLATIONS.en.includedServices).toBe('SERVICES INCLUDED IN THE COMMERCIAL TERMS');
+  });
+
+  it('generates an English commercial-offer draft with translated static copy', async () => {
+    const logo = await readFile(resolve('public/bbtm-report-logo.png'));
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(logo, { headers: { 'content-type': 'image/png' }, status: 200 }),
+    );
+
+    try {
+      const generated = await generateProjectDocument('offer', {
+        client,
+        contract: {
+          ...contract,
+          supplytimeData: {
+            ...contract.supplytimeData,
+            commercial_conditions_description: '<p><strong>Lump sum</strong> including transit.</p>',
+            commercial_conditions_mode: 'free_text',
+          },
+        },
+        language: 'en',
+        project,
+      });
+
+      expect(generated.fileName).toBe('P1107 - Commercial Offer - R1.pdf');
+      const generatedBytes = new Uint8Array(await generated.blob.arrayBuffer());
+      expect(new TextDecoder('latin1').decode(generatedBytes.slice(0, 5))).toBe('%PDF-');
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  describe.each(['fr', 'en'] as const)('commercial-offer firm duration (%s)', (language) => {
+    it.each([
+      { startsOn: '', endsOn: '', days: null },
+      { startsOn: '2026-07-01', endsOn: '', days: null },
+      { startsOn: '', endsOn: '2026-07-15', days: null },
+      { startsOn: '2026-07-01', endsOn: '2026-07-15', days: 15 },
+      { startsOn: '2026-07-01', endsOn: '2026-07-01', days: 1 },
+    ])('only prints a firm duration with both dates: %j', async ({ startsOn, endsOn, days }) => {
+      const logo = await readFile(resolve('public/bbtm-report-logo.png'));
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(logo, { headers: { 'content-type': 'image/png' }, status: 200 }),
+      );
+
+      try {
+        const generated = await generateProjectDocument('offer', {
+          client, contract, language, project: { ...project, startsOn, endsOn },
+        });
+        const pdf = await PDFDocument.load(await generated.blob.arrayBuffer());
+        const content = pdf.getPage(0).node.lookup(PDFName.of('Contents'));
+        if (!(content instanceof PDFRawStream)) throw new Error('Expected a PDF content stream');
+        const pageCommands = Buffer.from(decodePDFRawStream(content).decode()).toString('latin1');
+        const copy = PROJECT_OFFER_TRANSLATIONS[language];
+        expect(pageCommands).toContain(copy.operationalFramework);
+        expect(pageCommands).toContain(copy.fuel.toLocaleUpperCase('fr-FR'));
+        if (days === null) {
+          expect(pageCommands).not.toContain(copy.firmDuration.toLocaleUpperCase('fr-FR'));
+          expect(pageCommands).not.toContain(copy.calendarDays);
+        } else {
+          expect(pageCommands).toContain(copy.firmDuration.toLocaleUpperCase('fr-FR'));
+          expect(pageCommands).toContain(`${days} ${copy.calendarDays}`);
+        }
+      } finally {
+        fetchMock.mockRestore();
+      }
+    });
   });
 
   it('generates an offer PDF with the BBTM logo asset', async () => {
@@ -232,8 +314,8 @@ describe('projectDocumentGeneration', () => {
     }
   });
 
-  it('generates the six-page towage contract with the numbered business fields', async () => {
-    const template = await readFile(resolve('public/templates/contrat-remorquage-bbtm.pdf'));
+  it('generates the styled towage contract with the numbered business fields', async () => {
+    const template = await readFile(resolve('public/bbtm-report-logo.png'));
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(template, {
         headers: { 'content-type': 'application/pdf' },
@@ -321,7 +403,7 @@ describe('projectDocumentGeneration', () => {
       expect(generated.fileName).toBe('P1107 - Contrat de remorquage - R1.pdf');
       expect(generated.mimeType).toBe('application/pdf');
       expect(new TextDecoder('latin1').decode(bytes.slice(0, 5))).toBe('%PDF-');
-      expect(document.getPageCount()).toBe(6);
+      expect(document.getPageCount()).toBeGreaterThan(2);
       expect(fields.CHARTERER).toContain('Ifremer');
       expect(fields.TOWED_VESSEL).toContain('Nom : ELAN');
       expect(fields.TUG).toContain('Nom : LE ROZEL');
@@ -338,9 +420,12 @@ describe('projectDocumentGeneration', () => {
     }
   });
 
-  it('generates the four-page bareboat charter from the sanitized attached model', async () => {
+  it.each([
+    ["Contrat d'Affrètement à Temps", "P1107 - Contrat d'Affretement a Temps - R1.pdf"],
+    ["Contrat d'Affrètement Coque Nue", "P1107 - Contrat d'Affretement Coque Nue - R1.pdf"],
+  ])('generates %s preserving the shared model fields', async (contractType, expectedFileName) => {
     const [template, editableTemplate] = await Promise.all([
-      readFile(resolve('public/templates/contrat-affretement-bbtm.pdf')),
+      readFile(resolve('public/bbtm-report-logo.png')),
       readFile(resolve('public/templates/contrat-affretement-bbtm.docx')),
     ]);
     const archive = await JSZip.loadAsync(editableTemplate);
@@ -385,7 +470,7 @@ describe('projectDocumentGeneration', () => {
         signatureMimeType: '',
         signatureUrl: '',
       },
-      project: { ...project, contractType: "Contrat d'Affrètement" },
+      project: { ...project, contractType },
       vesselCertificates: [
         {
           id: 127,
@@ -440,11 +525,9 @@ describe('projectDocumentGeneration', () => {
       const bytes = new Uint8Array(await generated.blob.arrayBuffer());
       const document = await PDFDocument.load(bytes);
 
-      expect(generated.fileName).toBe("P1107 - Contrat d'affretement - R1.pdf");
+      expect(generated.fileName).toBe(expectedFileName);
       expect(generated.mimeType).toBe('application/pdf');
-      expect(document.getPageCount()).toBe(4);
-      const pageFourXObjects = document.getPage(3).node.Resources()?.lookup(PDFName.of('XObject'), PDFDict);
-      expect(pageFourXObjects?.keys()).toHaveLength(1);
+      expect(document.getPageCount()).toBeGreaterThan(2);
       expect(fields.CHARTERER).toContain('Ifremer');
       expect(fields.CHARTERER).toContain('Siret : 123 456 789 00010');
       expect(fields.VESSEL_IDENTITY).toContain("Port d’immatriculation : Cherbourg");

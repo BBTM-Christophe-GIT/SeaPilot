@@ -1,5 +1,6 @@
 import { ShipWheel, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import type { FormEvent } from 'react';
 import { formatPlanningPerson } from './planningModel';
 import { planningErrorMessage } from './planningErrors';
@@ -73,9 +74,8 @@ export function PlanningBoardingCertificateDialog({
   const people = useMemo(() => overview.people
     .map((person) => ({ id: person.id, label: formatPlanningPerson(person) }))
     .sort((left, right) => left.label.localeCompare(right.label, 'fr')), [overview.people]);
-  const vessels = useMemo<VesselOption[]>(() => overview.vessels
-    .map((vessel) => ({ id: vessel.id, label: vessel.acronym ? `${vessel.name} (${vessel.acronym})` : vessel.name }))
-    .sort((left, right) => left.label.localeCompare(right.label, 'fr')), [overview.vessels]);
+  const vessels = useMemo<VesselOption[]>(() => [...overview.vessels].sort(compareFleetAssets)
+    .map((vessel) => ({ id: vessel.id, label: vessel.acronym ? `${vessel.name} (${vessel.acronym})` : vessel.name })), [overview.vessels]);
   const [personId, setPersonId] = useState('');
   const [selectedVesselIds, setSelectedVesselIds] = useState<number[]>(() => vessels.map((vessel) => vessel.id));
   const [format, setFormat] = useState<BoardingCertificateFormat>('pdf');

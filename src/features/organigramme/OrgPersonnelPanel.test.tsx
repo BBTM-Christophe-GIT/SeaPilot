@@ -1,0 +1,117 @@
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { OrgPersonnelPanel } from './OrgPersonnelPanel';
+import { ORG_DEMO } from './organigrammeFixtures';
+import { buildOrgContactsPdf } from './organigrammeContactsPdf';
+import { downloadOrgBlob } from './organigrammeExport';
+
+vi.mock('./organigrammeContactsPdf', () => ({ buildOrgContactsPdf: vi.fn().mockResolvedValue(new Blob(['PDF'])) }));
+vi.mock('./organigrammeExport', () => ({ downloadOrgBlob: vi.fn() }));
+beforeEach(() => { vi.clearAllMocks(); vi.stubGlobal('URL', { createObjectURL: vi.fn(() => 'blob:contacts-test'), revokeObjectURL: vi.fn() }); });
+afterEach(() => vi.unstubAllGlobals());
+
+describe('OrgPersonnelPanel', () => {
+  it.each(['personnel', 'emergency'] as const)('renders the %s hierarchy with the President first and Prénom NOM column headings', (kind) => {
+    const people = [...ORG_DEMO.people, { id: 100, name: 'Adam DEBORDEAUX', firstName: 'Adam', lastName: 'DEBORDEAUX', functionLabel: 'Stagiaire', population: 'sedentary' }];
+    render(<OrgPersonnelPanel data={{ ...ORG_DEMO, people }} kind={kind} disabled={false} />);
+    const groups = screen.getAllByRole('heading', { level: 3 });
+    expect(groups[0]).toHaveTextContent('Président');
+    expect(groups.at(-1)).toHaveTextContent('Stagiaire');
+    expect(screen.getAllByRole('columnheader', { name: 'Prénom NOM' })).toHaveLength(groups.length);
+    expect(within(screen.getByRole('region', { name: 'Stagiaire' })).getByLabelText('Inclure Adam DEBORDEAUX')).toBeChecked();
+  });
+  it('selects a function, permits individual exceptions, and exports exactly that set', async () => {
+    render(<OrgPersonnelPanel data={ORG_DEMO} kind="personnel" disabled={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Tout désélectionner' }));
+    expect(screen.getByRole('button', { name: 'Exporter le personnel en PDF' })).toBeDisabled();
+    fireEvent.click(screen.getByLabelText('Inclure la fonction Capitaine'));
+    fireEvent.click(screen.getByLabelText('Inclure Élodie MARTIN'));
+    expect(screen.getByLabelText('Inclure la fonction Capitaine')).toBePartiallyChecked();
+    fireEvent.change(screen.getByLabelText('Rechercher une personne ou une fonction'), { target: { value: 'Alice' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Exporter le personnel en PDF' }));
+    await waitFor(() => expect(buildOrgContactsPdf).toHaveBeenCalled());
+    const documents = vi.mocked(buildOrgContactsPdf).mock.calls[0][0];
+    expect(documents[0].people.map((person) => person.id)).toEqual([8, 6]);
+    expect(downloadOrgBlob).toHaveBeenCalled();
+  });
+  it('keeps independent selections when changing sheets and after data refresh', async () => {
+    const { rerender } = render(<OrgPersonnelPanel data={ORG_DEMO} kind="emergency" disabled={false} />);
+    expect(screen.getByLabelText('Inclure Camille DUMONT')).toBeChecked();
+    expect(screen.getByLabelText('Inclure Élodie MARTIN')).not.toBeChecked();
+    fireEvent.click(screen.getByLabelText('Inclure Élodie MARTIN'));
+    fireEvent.click(screen.getByLabelText('Inclure Camille DUMONT'));
+    rerender(<OrgPersonnelPanel data={ORG_DEMO} kind="personnel" disabled={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Tout désélectionner' }));
+    fireEvent.click(screen.getByLabelText('Inclure Alice LAURENT'));
+    rerender(<OrgPersonnelPanel data={{ ...ORG_DEMO, people: ORG_DEMO.people.filter((person) => person.id !== 12) }} kind="emergency" disabled={false} />);
+    expect(screen.getByLabelText('Inclure Élodie MARTIN')).toBeChecked();
+    expect(screen.getByLabelText('Inclure Camille DUMONT')).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Exporter les deux listes' }));
+    await waitFor(() => expect(buildOrgContactsPdf).toHaveBeenCalled());
+    const documents = vi.mocked(buildOrgContactsPdf).mock.calls[0][0];
+    expect(documents.map((document) => document.kind)).toEqual(['personnel', 'emergency']);
+    expect(documents[0].people.map((person) => person.id)).toEqual([8]);
+    expect(documents[1].people.map((person) => person.id).sort((a, b) => a - b)).toEqual([2, 11]);
+    fireEvent.click(screen.getByRole('button', { name: 'Rétablir les sédentaires' }));
+    expect(screen.getByLabelText('Inclure Camille DUMONT')).toBeChecked();
+    expect(screen.getByLabelText('Inclure Élodie MARTIN')).not.toBeChecked();
+  });
+  it('warns about missing phones and blocks stale or loading data from export', () => {
+    render(<OrgPersonnelPanel data={{ ...ORG_DEMO, people: [{ ...ORG_DEMO.people[0], phone: null }] }} kind="emergency" disabled />);
+    expect(screen.getByText(/sans téléphone renseigné/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Exporter les urgences en PDF' })).toBeDisabled();
+    expect(screen.getByLabelText('Inclure Camille DUMONT')).toBeDisabled();
+  });
+  it('keeps six content choices independent between lists and sends each choice to the combined export', async () => {
+    const { rerender } = render(<OrgPersonnelPanel data={ORG_DEMO} kind="personnel" disabled={false} />);
+    const fields = screen.getByRole('group', { name: 'Informations à inclure' });
+    expect(within(fields).getAllByRole('checkbox')).toHaveLength(6);
+    fireEvent.click(within(fields).getByLabelText('Inclure les e-mails dans les exports'));
+    fireEvent.click(within(fields).getByLabelText('Inclure les navires dans les exports'));
+    fireEvent.click(within(fields).getByLabelText('Inclure les fonctions dans les exports'));
+    expect(screen.queryByRole('columnheader', { name: 'Email' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Président' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('columnheader', { name: 'Navire' }).length).toBeGreaterThan(0);
+    rerender(<OrgPersonnelPanel data={ORG_DEMO} kind="emergency" disabled={false} />);
+    expect(screen.getByLabelText('Inclure les e-mails dans les exports')).toBeChecked();
+    expect(screen.getByLabelText('Inclure les navires dans les exports')).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Exporter les deux listes' }));
+    await waitFor(() => expect(buildOrgContactsPdf).toHaveBeenCalled());
+    const documents = vi.mocked(buildOrgContactsPdf).mock.calls[0][0];
+    expect(documents[0].content).toMatchObject({ showEmails: false, showVessels: true, showFunctions: false });
+    expect(documents[1].content).toMatchObject({ showEmails: true, showVessels: false, showFunctions: true });
+  });
+  it('loads the saved default, preserves edits after a failed save and retries with the same selection', async () => {
+    const onSaveDefault = vi.fn().mockRejectedValueOnce(new Error('Sauvegarde refusée')).mockResolvedValueOnce(undefined);
+    const data = { ...ORG_DEMO, emergencyDefaultIds: [2] };
+    const { rerender } = render(<OrgPersonnelPanel data={data} kind="emergency" disabled={false} onSaveDefault={onSaveDefault} />);
+    expect(screen.getByLabelText('Inclure Élodie MARTIN')).toBeChecked();
+    expect(screen.getByLabelText('Inclure Camille DUMONT')).not.toBeChecked();
+    fireEvent.click(screen.getByLabelText('Inclure Alice LAURENT'));
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer comme liste par défaut' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sauvegarde refusée');
+    expect(screen.getByLabelText('Inclure Alice LAURENT')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer comme liste par défaut' }));
+    await screen.findByText('Liste d’urgence par défaut enregistrée pour l’entreprise.');
+    expect(onSaveDefault.mock.calls).toEqual([[[8, 2]], [[8, 2]]]);
+    rerender(<OrgPersonnelPanel data={{ ...data, emergencyDefaultIds: [8, 2] }} kind="emergency" disabled={false} onSaveDefault={onSaveDefault} />);
+    expect(screen.getByLabelText('Inclure Alice LAURENT')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Rétablir les sédentaires' }));
+    expect(screen.getByLabelText('Inclure Alice LAURENT')).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Charger la liste par défaut' }));
+    expect(screen.getByLabelText('Inclure Alice LAURENT')).toBeChecked();
+    expect(onSaveDefault).toHaveBeenCalledTimes(2);
+  });
+  it('blocks unavailable photos only when requested and respects an empty saved default', () => {
+    const { rerender } = render(<OrgPersonnelPanel data={{ ...ORG_DEMO, people: [{ ...ORG_DEMO.people[0], photoUnavailable: true }] }} kind="personnel" disabled={false} />);
+    const button = screen.getByRole('button', { name: 'Exporter le personnel en PDF' });
+    expect(button).toBeEnabled();
+    fireEvent.click(screen.getByLabelText('Inclure les photos dans les exports'));
+    expect(button).toBeDisabled();
+    fireEvent.click(screen.getByLabelText('Inclure les photos dans les exports'));
+    expect(button).toBeEnabled();
+    rerender(<OrgPersonnelPanel data={{ ...ORG_DEMO, emergencyDefaultIds: [] }} kind="emergency" disabled={false} />);
+    expect(screen.getByRole('button', { name: 'Exporter les urgences en PDF' })).toBeDisabled();
+    expect(screen.getByLabelText('Inclure Camille DUMONT')).not.toBeChecked();
+  });
+});

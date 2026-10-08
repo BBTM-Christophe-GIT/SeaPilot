@@ -744,9 +744,12 @@ function inferProcedureStatus(statusLabel: string | null): string {
     return 'draft';
   }
 
+  if (normalized.includes('publie')) {
+    return 'published';
+  }
+
   if (
     normalized.includes('approuv') ||
-    normalized.includes('publie') ||
     normalized.includes('valide') ||
     normalized.includes('applicable')
   ) {
@@ -873,7 +876,6 @@ function mapProcedurePayload(item: SharePointListItem, source: SharePointMigrati
     document_number: text(item, ['Numéro', 'Num_x00e9_ro', 'Numero', 'DocumentNumber']) || procedureCode,
     restrictions: text(item, ['Restrictions']),
     annual_review: booleanValue(item, ['Revue annuelle', 'Revue_x0020_annuelle', 'AnnualReview'], false),
-    approval_status: text(item, ['Statut d’approbation', "Statut d'approbation", 'Statut_x0020_d_x2019_approbation', 'ApprovalStatus']),
     theme: text(item, ['Thème', 'Th_x00e8_me', 'Theme']),
     document_type: text(item, ['Type document', 'Type_x0020_document', 'DocumentType']),
     bridge_watch: booleanValue(item, ['Veille Passerelle', 'Veille_x0020_Passerelle', 'BridgeWatch'], false),
@@ -909,7 +911,6 @@ function mapPublishedProcedurePayload(item: SharePointListItem, source: SharePoi
     document_number: text(item, ['Numéro', 'Num_x00e9_ro', 'Numero', 'DocumentNumber']) || procedureCode,
     restrictions: text(item, ['Restrictions']),
     annual_review: booleanValue(item, ['Revue annuelle', 'Revue_x0020_annuelle', 'AnnualReview'], false),
-    approval_status: text(item, ['Statut d’approbation', "Statut d'approbation", 'Statut_x0020_d_x2019_approbation', 'ApprovalStatus']),
     theme: text(item, ['Thème', 'Th_x00e8_me', 'Theme']),
     document_type: text(item, ['Type document', 'Type_x0020_document', 'DocumentType']),
     bridge_watch: booleanValue(item, ['Veille Passerelle', 'Veille_x0020_Passerelle', 'BridgeWatch'], false),

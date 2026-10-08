@@ -109,7 +109,13 @@ describe('planning timeline rules', () => {
 
   it('normalizes imported crew and project statuses', () => {
     expect(normalizePlanningStatus('Embarqué')).toBe('En Mer');
-    expect(planningStatusDisplayLabel('Vacance')).toBe('Vacances');
+    expect(planningStatusDisplayLabel('Vacance')).toBe('Congés');
+    expect(planningStatusDisplayLabel('Vacances')).toBe('Congés');
+    expect(normalizePlanningStatus('Congés')).toBe('Vacance');
+    expect(planningStatusTone('Congés')).toBe('vacation');
+    expect(normalizePlanningStatus(' rtt ')).toBe('RTT');
+    expect(planningStatusDisplayLabel('RTT')).toBe('RTT');
+    expect(planningStatusTone('RTT')).toBe('rest');
     expect(planningStatusDisplayLabel('Repos')).toBe('Repos');
     expect(normalizePlanningStatus('arrêt maladie')).toBe('Arrêt Maladie');
     expect(normalizePlanningStatus('accident du travail')).toBe('Accident du Travail');
@@ -205,10 +211,10 @@ describe('planning timeline rules', () => {
     ]));
   });
 
-  it('blocks work planned over an unavailability period', () => {
+  it.each(['Repos', 'RTT'])('blocks work planned over a %s period', (sailorStatus) => {
     const unavailableOverview: PlanningOverview = {
       ...overview,
-      periods: [{ ...overview.periods[0], sailorStatus: 'Repos' }],
+      periods: [{ ...overview.periods[0], sailorStatus }],
     };
     const controls = evaluatePlanningAssignment(unavailableOverview, {
       id: 'new',
@@ -396,6 +402,50 @@ describe('planning hierarchy and side panels', () => {
       expect.objectContaining({ vesselId: 13, vessel: 'Armement - Cherbourg', board: 'Armement' }),
     ]);
     expect(rows.filter((row) => row.type === 'vessel').map((row) => row.label)).toEqual(['Armement - Cherbourg']);
+  });
+
+  it.each([
+    ['before the visible range', '2026-07-01', '2026-07-05', false],
+    ['overlapping its first day', '2026-07-01', '2026-07-06', true],
+    ['in the following visible month', '2026-08-10', '2026-08-12', true],
+    ['overlapping its last day', '2026-08-23', '2026-09-01', true],
+    ['after the visible range', '2026-08-24', '2026-09-01', false],
+  ])('only shows a saved crew row with an assignment %s', (_label, startsOn, endsOn, visible) => {
+    const rows = buildPlanningCrewRows({
+      ...overview,
+      periods: [{ ...overview.periods[0], startsOn, endsOn }],
+      boardRows: [{ id: 90, vesselId: 1, personId: 1, watchGroup: 'Bordée 1', functionLabel: 'Capitaine', createdAt: '' }],
+    }, buildPlanningTimeline('2026-07-12', 'month'), { vesselName: '', personName: '' });
+    expect(rows.some((row) => row.type === 'person' && row.personId === 1)).toBe(visible);
+    expect(rows.some((row) => row.type === 'board')).toBe(true);
+  });
+
+  it('only shows explicitly pending empty rows in their own board and respects filters', () => {
+    const pendingOverview: PlanningOverview = {
+      ...overview,
+      periods: [],
+      boardRows: [
+        { id: 90, vesselId: 1, personId: 2, watchGroup: 'Bordée 1', functionLabel: 'Matelot', createdAt: '' },
+        { id: 91, vesselId: 1, personId: 2, watchGroup: 'Bordée 2', functionLabel: 'Matelot', createdAt: '' },
+      ],
+    };
+    const days = buildPlanningTimeline('2026-07-12', 'month');
+    const filters = { vesselName: '', personName: '' };
+    expect(buildPlanningCrewRows(pendingOverview, days, filters).filter((row) => row.type === 'person')).toEqual([]);
+    const options = { pendingBoardRowIds: new Set([91]) };
+    expect(buildPlanningCrewRows(pendingOverview, days, filters, [], options).filter((row) => row.type === 'person'))
+      .toEqual([expect.objectContaining({ personId: 2, board: 'Bordée 2', events: [], hasAnyRecords: false })]);
+    expect(buildPlanningCrewRows(pendingOverview, days, { ...filters, personName: 'Anne CAPITAINE' }, [], options)
+      .filter((row) => row.type === 'person')).toEqual([]);
+  });
+
+  it('hides a saved row when its only visible assignment is cancelled', () => {
+    const events = getAllPlanningCrewEvents(overview).map((event) => ({ ...event, confirmationStatus: 'cancelled' as const }));
+    const rows = buildPlanningCrewRows({
+      ...overview,
+      boardRows: [{ id: 90, vesselId: 1, personId: 1, watchGroup: 'Bordée 1', functionLabel: 'Capitaine', createdAt: '' }],
+    }, buildPlanningTimeline('2026-07-12', 'month'), { vesselName: '', personName: '' }, events);
+    expect(rows.filter((row) => row.type === 'person')).toEqual([]);
   });
 
   it('hides departed sailors even when an empty board row exists', () => {

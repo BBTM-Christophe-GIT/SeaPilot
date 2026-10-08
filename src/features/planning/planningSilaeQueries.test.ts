@@ -1,0 +1,112 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { describe, expect, it, vi } from 'vitest';
+import { fetchPlanningSilaeData } from './planningSilaeQueries';
+import { buildSilaeEmployee, buildSilaeRows } from './planningSilae';
+
+function mockClient(rows: Record<string, Record<string, unknown>[]>, failing = '') {
+  const calls: { table: string; start: number; end: number; filters: unknown[]; columns: string }[] = [];
+  const from = vi.fn((table: string) => {
+    let columns = '';
+    const filters: unknown[] = [];
+    const query = {
+      select: (value: string) => { columns = value; return query; },
+      order: vi.fn(() => query),
+      lte: (...args: unknown[]) => { filters.push(args); return query; },
+      range: async (start: number, end: number) => {
+        calls.push({ table, start, end, filters, columns });
+        return { data: rows[table]?.slice(start, end + 1) || [], error: table === failing ? { code: '42501' } : null };
+      },
+    };
+    return query;
+  });
+  return { client: { from } as unknown as SupabaseClient, calls };
+}
+
+describe('SILAE authenticated data reads', () => {
+  it('retains RTT as an approved absence source and ignores other decision states', async () => {
+    const { client } = mockClient({
+      hr_people: [{ id: 1, first_name: 'Pierre', last_name: 'AUGUIN', hired_on: '2020-01-01' }],
+      planning_absences: ['approved', 'requested', 'rejected', 'cancelled'].map((status, index) => ({
+        id: index + 1, person_id: 1, absence_type: 'rtt', starts_at: '2026-09-10T22:00:00Z', ends_at: '2026-09-12T22:00:00Z', status,
+      })),
+    });
+    const result = await fetchPlanningSilaeData(client, '2026-09');
+    expect(result.sources).toEqual([expect.objectContaining({ personId: 1, startsOn: '2026-09-11', endsOn: '2026-09-12', status: 'RTT', priority: 4 })]);
+  });
+
+  it('exports a daily second-captain function between captain periods from persisted records', async () => {
+    const { client } = mockClient({
+      people: [{ id: 1, first_name: 'Pierre', last_name: 'TEST', employee_number: '00004', function_label: 'Capitaine', enim_function_code: 'AA01A', enim_category: '15', active: true }],
+      vessels: [{ id: 10, name: 'GOURY', registration_number: '934968' }],
+      planning_assignments: [{ id: 20, crew_person_id: 1, vessel_id: 10, starts_on: '2026-09-01', ends_on: '2026-09-30', status_label: 'En Mer', assignment_role: 'Capitaine', confirmation_status: 'confirmed' }],
+      planning_days: [{ id: 30, person_id: 1, vessel_id: 10, work_date: '2026-09-14', sailor_status: 'En Mer', function_label: '2nd Capitaine', source_label: 'seapilot-assignment-note', slot365: 'assignment:20' }],
+    });
+    const data = await fetchPlanningSilaeData(client, '2026-09');
+    const employee = buildSilaeEmployee(data, data.people[0], '2026-09');
+    expect(employee.issues).toEqual([]);
+    expect(employee.periods).toMatchObject([
+      { startsOn: '2026-09-01', endsOn: '2026-09-13', functionLabel: 'Capitaine', enimFunctionCode: 'AA01A' },
+      { startsOn: '2026-09-14', endsOn: '2026-09-14', functionLabel: '2nd Capitaine', enimFunctionCode: 'CA01A', enimCategory: '12' },
+      { startsOn: '2026-09-15', endsOn: '2026-09-30', functionLabel: 'Capitaine', enimFunctionCode: 'AA01A' },
+    ]);
+    expect(buildSilaeRows([employee]).flat()).toContain('CA01A');
+    expect(data.people[0].functionLabel).toBe('Capitaine');
+  });
+  it('paginates each relation and preserves HR text codes with leading zeroes', async () => {
+    const { client, calls } = mockClient({
+      people: [{ id: 1, first_name: 'Pierre', last_name: 'AUGUIN', employee_number: '00004', enim_function_code: 'AA01A', enim_category: '05', active: true }],
+      planning_periods: Array.from({ length: 501 }, (_, i) => ({ id: i + 1, person_id: 1, starts_on: '2026-09-01', ends_on: '2026-09-02', sailor_status: 'Repos' })),
+    });
+    const data = await fetchPlanningSilaeData(client, '2026-09');
+    expect(data.sources).toHaveLength(501);
+    expect(data.people[0]).toMatchObject({ employeeNumber: '00004', enimCategory: '05' });
+    expect(calls.filter((call) => call.table === 'planning_periods').map(({ start, end }) => [start, end])).toEqual([[0, 499], [500, 999]]);
+    expect(calls.find((call) => call.table === 'planning_days')?.filters).toEqual([['work_date', '2026-09-30']]);
+    expect(calls.find((call) => call.table === 'people')?.columns).not.toMatch(/birth|bank|address|salary/);
+  });
+
+  it('filters cancelled assignments and orphan notes, resolves legacy names and uses exclusive absence ends', async () => {
+    const { client } = mockClient({
+      people: [{ id: 1, first_name: 'Pierre', last_name: 'AUGUIN' }],
+      planning_assignments: [{ id: 20, crew_person_id: 1, vessel_id: 10, starts_on: '2026-09-01', ends_on: '2026-09-30', status_label: 'En Mer', confirmation_status: 'cancelled' }],
+      planning_periods: [{ id: 1, crew_name: 'Pierre AUGUIN', vessel_id: 10, starts_on: '2026-09-01', ends_on: '2026-09-30', sailor_status: 'En Mer' }],
+      planning_days: [
+        { id: 1, person_id: 1, work_date: '2026-09-02', sailor_status: 'Repos', source_label: 'seapilot-assignment-note', slot365: 'assignment:20' },
+        { id: 2, person_id: 1, work_date: '2026-09-03', source_label: 'seapilot-vessel-location' },
+        { id: 3, person_id: 1, vessel_id: 10, work_date: '2026-09-04', sailor_status: 'A Terre' },
+      ],
+      planning_absences: [
+        { id: 1, person_id: 1, starts_at: '2026-09-10T22:00:00Z', ends_at: '2026-09-12T22:00:00Z', status: 'approved', absence_type: 'leave' },
+        { id: 2, person_id: 1, status: 'requested' },
+      ],
+    });
+    const data = await fetchPlanningSilaeData(client, '2026-09');
+    expect(data.sources).toHaveLength(3);
+    expect(data.sources[0]).toMatchObject({ personId: 1, priority: 1 });
+    expect(data.sources[1]).toMatchObject({ startsOn: '2026-09-04', priority: 3, status: 'A Terre' });
+    expect(data.sources[2]).toMatchObject({ startsOn: '2026-09-11', endsOn: '2026-09-12', priority: 4, status: 'Congés' });
+  });
+
+  it('fails closed when any data source is unreadable', async () => {
+    const { client } = mockClient({}, 'people');
+    await expect(fetchPlanningSilaeData(client, '2026-09')).rejects.toThrow('Impossible de charger les données SILAE (people)');
+  });
+
+  it('reads the dated function from assignments, periods and days without confusing it with RH or grade', async () => {
+    const { client, calls } = mockClient({
+      people: [{ id: 1, function_label: '2nd Capitaine', grade_label: 'Capitaine', enim_function_code: 'CA01A', enim_category: 12 }],
+      planning_assignments: [
+        { id: 1, crew_person_id: 1, starts_on: '2026-09-22', ends_on: '2026-10-06', assignment_role: 'Capitaine' },
+        { id: 2, crew_person_id: 1, starts_on: '2026-09-01', ends_on: '2026-09-30', assignment_role: 'Chef Mécanicien', confirmation_status: 'cancelled' },
+      ],
+      planning_periods: [{ id: 1, person_id: 1, starts_on: '2026-09-01', ends_on: '2026-09-08', function_label: '2nd Capitaine' }],
+      planning_days: [{ id: 1, person_id: 1, work_date: '2026-09-23', function_label: 'Capitaine' }],
+    });
+    const result = await fetchPlanningSilaeData(client, '2026-09');
+    expect(result.sources.map((s) => [s.priority, s.functionLabel])).toEqual([[1, '2nd Capitaine'], [2, 'Capitaine'], [3, 'Capitaine']]);
+    expect(result.people[0]).toMatchObject({ functionLabel: '2nd Capitaine', enimFunctionCode: 'CA01A', enimCategory: '12' });
+    expect(calls.find((c) => c.table === 'planning_assignments')?.columns).toContain('assignment_role');
+    expect(calls.find((c) => c.table === 'planning_periods')?.columns).toContain('function_label');
+    expect(calls.find((c) => c.table === 'planning_days')?.columns).toContain('function_label');
+  });
+});

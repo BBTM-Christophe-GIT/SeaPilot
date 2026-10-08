@@ -1,3 +1,176 @@
+# Sidebar compacte — contrôle visuel
+
+final result: passed
+
+## Sources et captures
+
+Preuves versionnées : `docs/design/compact-sidebar/` (référence normalisée, rendu, comparaisons et mobile).
+
+- Proposition 2 sélectionnée : `C:/Users/chris/.codex/generated_images/01a0cc7f-3df8-77d2-b655-b9c31069277e/exec-78030bc3-eaeb-4e12-bf1b-c15cd5b9ee4f.png` (768 × 2048).
+- Déclinaison avec toutes les rubriques ouvertes : `C:/Users/chris/.codex/generated_images/01a0cc7f-3df8-77d2-b655-b9c31069277e/exec-4324d817-bc00-4fdc-a757-e15fd718419b.png` (890 × 1767). Le panneau utile 474 × 1767 est normalisé à 286 × 1066 ; la marge blanche est exclue.
+- Dossier des preuves : `C:/Users/chris/.codex/visualizations/2026/09/23/01a0cc7f-3df8-77d2-b655-b9c31069277e/`.
+- Capture navigateur finale : `sidebar-desktop.png`, 286 × 1200, recadrée sur la sidebar d'un viewport CSS 1440 × 1200, devicePixelRatio 1.
+- Comparaison simultanée : `sidebar-comparison.png` ; détail des icônes : `register-icons-comparison.png`. Les deux regroupent référence et rendu dans une même image.
+- États complémentaires : `sidebar-mobile.png` (390 × 844, pointeur tactile) et `sidebar-collapsed.png` (82 × 1200).
+- État comparé : données de démonstration Admin, registre des exercices actif, toutes les rubriques ouvertes, notes acquittées. Cette préversion sert à contrôler la présentation, pas à valider les droits Marin/Capitaine.
+
+## Résultat et différences intentionnelles
+
+Aucun écart P0/P1/P2 restant. Fond bleu nuit continu, séparateurs fins, hiérarchie, rubriques colorées, sélection verte avec repère gauche et pied compact correspondent à la proposition retenue.
+
+- Typographie : Inter existante conservée (repli système), rubriques 14 px/700, liens 13,12 px/500 et interligne 1,4. Le texte reste plus grand que la maquette raster normalisée, pour conserver la lisibilité. Les titres complets restent accessibles par libellé et infobulle ; les libellés Levage peuvent revenir à la ligne.
+- Espacement : largeur existante 286 px ; en-tête 62 px, rubriques 34 px, liens au minimum 28 px et pied 43 px. Le contenu de navigation passe de 1371 à 1084 px à population identique. La hauteur supplémentaire face à la maquette est intentionnelle pour la lisibilité et les interactions.
+- Couleurs : fond `#0b1220`, texte secondaire `#cbd5e1`, rubriques vert/bleu/orange/violet/turquoise, surbrillance liée à la rubrique. Les couleurs bleu et violet ont été éclaircies pour des icônes sans fond. Focus clavier contrasté.
+- Assets : logo SeaPilot fourni conservé ; icônes standard Lucide existantes. Trois images générées distinctes : manille, câble seul sans boucle et crochet industriel, conformément à la dernière correction. PNG transparents optimisés à 128 × 128 (15,4 Ko au total), appliqués en masques de couleur ; contrôle des silhouettes à leur taille d'utilisation.
+- Contenu : routes et libellés applicatifs conservés, Planning et Administration restent des liens directs (la déclinaison générée les dupliquait). Aucun nouveau texte de note de mise à jour.
+
+## Historique de comparaison
+
+1. Premier rendu (`sidebar-compact-initial.png`) : P2, les grandes images générées perdaient la continuité de leurs traits en masque à 20 px. Le problème était visible dans les trois liens du registre.
+2. Correction : optimisation des assets de 1254 à 128 px, masque ajusté au cadrage des silhouettes, renforcement léger du trait. La capture a été reprise après rechargement.
+3. Comparaison finale (`sidebar-comparison.png` et `register-icons-comparison.png`) : câble sans œil, manille fermée par son axe et crochet différenciés ; hiérarchie et alignements cohérents. Aucun correctif visuel supplémentaire requis.
+
+## Vérifications fonctionnelles
+
+- Ouverture initiale des sept groupes, repli QHSE indépendant et restauration, mode réduit 82 px puis agrandissement.
+- Accès aux trois routes apparaux/remorques/grue et titres de pages vérifiés dans le navigateur.
+- Mobile 390 × 844 : volet 300 px, aucun débordement horizontal, pied accessible, cibles tactiles 44 px, fermeture du volet après navigation.
+- Aucun avertissement ni erreur dans la console navigateur lors du parcours.
+- 54 tests ciblés de navigation, permissions, routage et notes de mise à jour passent ; lint et build passent. Les permissions et protections de saisie ne sont pas modifiées.
+
+## Limites et suivi
+
+Les longs libellés RH gardent leur troncature et leur infobulle, comme dans l'application existante. Aucune simulation de rôle depuis une session Admin utilisée comme preuve pour les droits Marin/Capitaine ; les fixtures automatisées couvrent les règles existantes. Aucune migration ni modification RPC/RLS.
+
+
+---
+
+# Design QA — Notes de frais en accordéon et véhicule par défaut, v3.45.0
+
+final result: passed
+
+## Références et preuves
+
+- Source retenue : proposition 2, `docs/design/expense-accordion/reference.png`, 853 × 1844, copie de `C:/Users/chris/.codex/generated_images/01a0af87-c823-73b3-9443-252aa6df9c9d/exec-9b58d13a-c85e-4134-90b0-55f3ddbee2f2.png`.
+- Écran local `/modules/expenseNotes?preview=1`, données de démonstration. Les images suivantes sont dans `docs/design/expense-accordion/`.
+- Mobile : `mobile-top.png`, `mobile-bottom.png`, `vehicles-mobile.png` à 390 × 844 ; `mobile-320.png` à 320 × 740. La dernière capture montre volontairement un message de validation après tentative avec objet manquant, sans émission.
+- Ordinateur : `expense-desktop.png`, `mileage-desktop.png`, viewport 1440 × 1000. Informations ouvertes, autres sections selon l'état de saisie. Le panneau navigateur rend les captures desktop moins nettes ; les styles et dimensions ont aussi été contrôlés dans le DOM.
+- `comparison.png` : source ramenée proportionnellement à 390 px de large, puis haut et bas de la saisie mobile à la même densité. `controls-comparison.png` : recadrage des déplacements, sans étirement. Comparaisons complète et ciblée ouvertes et inspectées, ainsi que le carnet et le petit écran.
+
+## Fidélité et adaptations
+
+| Surface | Résultat |
+| --- | --- |
+| Typographie | Police existante du produit, titre 23 px, titres de sections 17 px, champs 16 px, libellés 14 px ; lecture et hiérarchie conservées. |
+| Disposition | Onglets segmentés puis Informations / Mon véhicule / Déplacements / Compléments. Résumés lorsque les sections sont repliées. Date sur la ligne du trajet, distance et montant côte à côte. Pied permanent avec total et action. |
+| Couleurs et formes | Fond blanc, texte marine, bordures discrètes, sélection et action bleues #215cc5, rayons de 6 à 9 px. |
+| Actifs | Icônes Lucide et en-tête AppDialog existants. Le faux logo dessiné dans la maquette n'est pas ajouté au produit. Aucun actif raster requis dans l'interface. |
+| Contenu | Libellés français, carburant/puissance dans le résumé véhicule, règles NDF et avertissement d'émission conservés. Identités et navires des captures sont des fixtures. |
+
+Écarts intentionnels : les contrôles mesurent au moins 44 px, contre environ 34 px dans la référence. Ce confort tactile ajoute du défilement ; Compléments reste accessible sous le trajet et le pied reste visible. Informations s'ouvre initialement pour les champs obligatoires ; Mon véhicule se replie après chargement du véhicule par défaut. Les champs Objet, Fonction et Période restent disponibles. Les justificatifs des captures diffèrent de l'exemple illustratif de la source ; aucune pièce réelle n'a été ajoutée.
+
+## Itérations et vérification finale
+
+- Titre agrandi et date déplacée sur la ligne « Trajet 1 » après comparaison pour rapprocher la hiérarchie et réduire l'encombrement.
+- Champs masqués retirés du cycle de focus du dialogue. Une tentative avec un champ obligatoire dans une section repliée ouvre la section et place le focus sur le premier champ invalide ; les données ne sont pas soumises.
+- Mesures mobiles : dialogue 390 × 844 puis 320 × 740, pied au bas du viewport ; aucun débordement horizontal des sections. Corps défilant, contrôles et boutons accessibles à 320 px. Les captures peuvent être mises à l'échelle par le panneau navigateur, les mesures CSS font foi.
+- Interactions : choix de Renault électrique par défaut dans le carnet, reprise dans une nouvelle note ; sélection de Peugeot Diesel, 80 km et 6,50 € de péages = 54,98 € ; repli/dépli des sections et conservation de la saisie. Console sans erreur pertinente. Pas d'émission réelle.
+- Tests : 59 tests ciblés (9 fichiers), lint ciblé et compilation production réussis. 73 assertions SQL transactionnelles vérifient les profils réels Marin/Capitaine/Armement/Direction/Admin, les choix successifs, le retrait, les deux sociétés, les refus d'accès et les snapshots historiques. Les fixtures ne changent pas les réglages des modules en production.
+- Audit final : comparaisons et captures finales inspectées, aucun P0/P1/P2 restant dans ce périmètre. Aucun point bloquant.
+
+---
+
+# Design QA — Notes de frais compactes et véhicules personnels, v3.44.0
+
+final result: passed
+
+## Références et preuves
+
+- Dépense : `docs/design/compact-expenses/expense-reference.png` (troisième proposition sélectionnée, 1448 × 1086).
+- Kilométrique : `docs/design/compact-expenses/mileage-reference.png` (adaptation, 1448 × 1086). La demande complémentaire ajoute ensuite le carnet de véhicules ; le sélecteur compact remplace les trois champs lorsque le véhicule est déjà enregistré.
+- Rendus navigateur : `expense-desktop.png` et `mileage-desktop.png` dans le même dossier, viewport CSS et images 1440 × 1000. Dépense vide ; kilométrique avec véhicule Diesel enregistré, trajet de 120 km et total 72,72 €. Données de démonstration, sans émission réelle.
+- Comparaison complète, source à gauche / rendu à droite : `expense-comparison.png`, `mileage-comparison.png` ; chaque vue est ajustée proportionnellement dans 720 × 540, sans déformation.
+- Comparaison focalisée sur les fenêtres : `expense-detail-comparison.png`, `mileage-detail-comparison.png` ; cadres recadrés puis ramenés à la même largeur de 720 px. Les différences de taille du canevas et de fond de page ne sont pas traitées comme des défauts.
+- Mobile : `expense-mobile.png`, `mileage-mobile.png`, viewport 390 × 844. Corps défilant, en-tête et total/action toujours visibles ; contenu mesuré à 373 px sans débordement horizontal. Le second état est volontairement défilé vers le trajet électrique et son montant de 45,50 €.
+
+## Vérification des surfaces et historique
+
+- Typographie : Inter/system existant, contrôles 14 px, libellés 13 px, hiérarchie titre/champs/aide conservée. Les captures desktop du panneau navigateur sont moins nettes que les maquettes générées ; contrôle complémentaire au format mobile et des styles DOM. Pas de police décorative ni d'actif raster ajouté à l'interface.
+- Disposition : fenêtre Dépense 860 × 533 px et kilométrique avec véhicule sélectionné 1040 × 804 px à ce viewport, sans défilement interne dans ces états. Justificatifs à droite, champs regroupés, description repliée. La note d'irréversibilité existante et le total restent visibles ; ils ne figuraient pas tous dans la maquette Dépense et sont conservés intentionnellement.
+- Couleurs : action principale bleue #0c5598, bordures discrètes, surface blanche, rayon 8 px. Icônes Lucide natives existantes, sans faux actifs dessinés.
+- Contenu : fonctions/période et véhicule restent des champs texte là où la maquette générée dessinait des chevrons. Le carnet personnel correspond à la demande complémentaire ; les données d'identité et navire sont des fixtures, pas celles de l'utilisateur.
+- Première recette mobile : [P2] la page sous la fenêtre restait défilable et ajoutait une barre horizontale. Correction : verrouillage du scroll du body uniquement pendant l'ouverture de cette fenêtre. Recapture mobile et mesures : aucun débordement horizontal du contenu ; pied à y=843 pour viewport de 844 px.
+- Recette finale : les comparaisons complètes/focalisées et les nouvelles captures mobiles ont été ouvertes et inspectées. Aucun P0/P1/P2 restant. Pas de question bloquante.
+
+## Interactions et validation
+
+- Navigateur : bascule Dépense/Indemnités, ouverture/repli de description, sélection véhicule Diesel/électrique, préremplissage, calcul de 120 km = 72,72 €, saisie électrique = 45,50 €, ajout d'un troisième véhicule de démonstration ; aucune erreur console relevée.
+- Tests : 46 tests ciblés frontend/service d'envoi/préversion ; 9 tests App passés isolément ; compilation production et lint des fichiers modifiés. L'exécution globale locale a été interrompue après un échec Projets non reproduit isolément, identique à celui du dernier CI de main (35225098373). Le test attend désormais le chargement asynchrone des documents après ouverture de l'onglet ; aucun code du module Projets n'a été modifié. Validation globale également confiée à CI.
+- Base : 46 assertions transactionnelles sur les rôles réels et deux sociétés, accès inter-comptes refusés, droits anonymes/inactifs refusés, propriété immuable et snapshot émis préservé après modification/retrait du véhicule. Audit Supabase : aucun signalement sur la nouvelle table ; signalements existants sur d'autres objets hors périmètre.
+- Limite volontaire : pas d'émission de faux justificatif à la comptabilité pendant la recette.
+
+---
+
+# Design QA — Plan d’action vertical, v3.39.13
+
+final result: passed
+
+## Cibles et comparaison
+
+- Source visuelle : `docs/design/action-plan-vertical-reference.png`, proposition 2 choisie par l’utilisateur (1 586 × 992 px).
+- Implémentation finale : `docs/design/action-plan-vertical-desktop.png`, URL locale `/modules/actionPlan?preview=1`, capture navigateur de 1 570 × 982 px pour un viewport CSS 1 585 × 992 ; la capture Chrome exclut les barres de défilement. Pas de changement de densité ni de mise à l’échelle des images.
+- État comparable : préversion Admin, GOURY sélectionné, 9 rapports, catégories Audits/Actions/Visites. Les titres, dates, responsables et statuts sont des données de démonstration distinctes de celles de la maquette.
+- Source et rendu ont été ouverts ensemble dans le même résultat de comparaison, en résolution originale, avant et après corrections. Inspection de la vue entière, puis lecture des zones navigation, catégories et fiche dans ces mêmes captures à leur résolution native.
+- Mobile : `docs/design/action-plan-vertical-mobile-navigation.png` et `docs/design/action-plan-vertical-mobile.png`, viewport CSS 390 × 844, capture de fiche 375 × 812 px. Tablette également inspectée à 1 024 × 900.
+
+## Constats corrigés
+
+1. [P1] Illustration déplacée au survol : le filtre de luminosité hérité du bouton créait un nouveau contenant pour l’image positionnée. Désactivation de ce filtre sur les boutons de navire. Recontrôle : illustration alignée à gauche et catégories dégagées, y compris lors de la sélection.
+2. [P2] Rotation involontaire de l’icône de catégorie : le style des accordéons retournait aussi la flèche Actions. Rotation limitée au chevron final ; les quatre pictogrammes conservent leur orientation.
+3. [P2] Liste trop haute : réduction des espacements, titres et sous-titres sur deux lignes, échéance conservée dans le libellé accessible et la fiche. Les groupes deviennent plus proches de la densité de la maquette.
+4. [P2] Fiche trop chargée : faits répartis sur deux colonnes, météo/manœuvre regroupées dans un contexte dépliable, suppression des répétitions responsable/échéance ; historique replacé dans le suivi. Les fonctions existantes restent disponibles.
+5. [P2] Petites cibles mobiles : hauteur minimale des boutons de catégorie portée à 32 px, espacement et retour à la ligne préservés. Recontrôle mobile : sélection catégorie puis rapport, fiche amenée à 75 px du haut, sans débordement horizontal.
+
+L’itération finale reprend les captures citées ci-dessus après ces corrections. Aucun P0/P1/P2 restant dans le périmètre de cette intégration.
+
+## Surfaces de fidélité
+
+| Surface | Vérification |
+| --- | --- |
+| Police | Inter et pile système du produit conservées. Titre 30 px, titre fiche 26 px, catégories colorées, corps plus léger, titre complet accessible lorsque la ligne est tronquée. |
+| Espacements | Trois panneaux blancs, rayons de 8 px, gouttières de 10 px, navigation verticale avec images à gauche et catégories sous le nom. Panneaux défilants pour les volumes réels. |
+| Couleurs | Bleu marine, sélection bleu pâle avec bordure gauche bleue ; violet audit, bleu action, turquoise visite, orange événement ; rouge retard et vert soldé. |
+| Images | Illustrations BBTM existantes pour les quatre navires et le Yard, chargement des six images confirmé. Bureaux illustrés par une image générée dédiée ; proportions conservées, pas d’étirement ni de substitut en CSS. |
+| Texte | « Yard - LE HAVRE » remplace explicitement « QUAI ». Noms réels des implantations conservés. Aucun chiffre fictif injecté dans la production. |
+
+## Écarts intentionnels
+
+- Le menu et l’en-tête globaux existants restent ceux de SeaPilot ; leur largeur et leurs groupes ouverts diffèrent de la maquette. Le changement porte sur le module Plan d’action.
+- La maquette simplifie le workflow. La fiche réelle conserve les commandes de traitement, les intervenants, les signatures et les pièces jointes ; son suivi complet est accessible par défilement.
+- La représentation du Yard utilise l’illustration BBTM du Yard du Havre conformément à la précision utilisateur, plutôt que la borne de quai générique de la maquette. Chaque bureau reste nommé afin de distinguer les implantations.
+- Aucun ajustement arbitraire des catégories ni des données réelles pour reproduire les nombres d’exemple.
+
+## Vérification fonctionnelle et technique
+
+- Navire, catégorie, recherche/statut, zéro résultat, réinitialisation « Tout afficher », Yard et bureaux vérifiés dans le navigateur.
+- Les six illustrations chargent correctement. Aucun débordement horizontal à 390, 1 024 et 1 585 px.
+- Création, correction, approbation, suivi et clôture contrôlés par tests de composants ; aucune écriture de test dans les rapports de production.
+- Profils Marin/Capitaine vérifiés avec leurs fixtures et le code des permissions, pas par simulation du profil Administrateur.
+- Console examinée : aucun diagnostic React ou ressource d’image manquante. Chrome a produit des messages de canal d’extension fermé, distingués des erreurs applicatives.
+- 97 tests ciblés passent ; validation complète GitHub et build suivis dans la pull request.
+
+## Checklist de livraison
+
+- [x] Source et rendu ouverts ensemble, puis nouvelle comparaison après corrections.
+- [x] Ordre de flotte, catégories, compteurs et cas sans données.
+- [x] Dispositions ordinateur, tablette et téléphone.
+- [x] Conservation des fonctions et des autorisations existantes.
+- [x] Preuves visuelles et documentation de déploiement enregistrées.
+
+Le précédent rapport reste disponible dans `docs/design/client-postal-location-qa.md`.
+
+---
+
 # Design QA — Création client assistée v3.23.2 (2026-08-30)
 
 ## Cibles et état comparés
@@ -915,5 +1088,251 @@ final result: passed
 1. Première proposition : parcours illustré par une carte, une flèche et un embranchement `OU`, supprimé à la demande de l’utilisateur.
 2. Deuxième passe : parcours compact avec quatre choix de contrat, retenu comme source visuelle.
 3. Implémentation finale : navigation contextuelle ajoutée pour chaque type et réaffichage des valeurs contractuelles sauvegardées ; comparaison combinée sans écart P0, P1 ou P2.
+
+final result: passed
+
+---
+
+# Fiche Projet — contrôle de la préversion
+
+Date : 25 septembre 2026. Route : `/modules/projects?preview=1`.
+
+## Références et captures
+
+- Source retenue : `docs/design/project-sheet-dossier-proposal.png`, 1622 × 970 px, proposition 2.
+- Adaptation P144 : `docs/design/project-sheet-p144-proposal.png`, 1487 × 1057 px.
+- Rendu P144 : `docs/design/project-sheet-p144-preview.png`, 1181 × 1038 px, région de la fiche, Offre & contrat / BIMCO.
+- Rendu P280 : `docs/design/project-sheet-p280-preview.png`, navigateur entier, Identité.
+- Rendu mobile : `docs/design/project-sheet-mobile-preview.png`, 390 × 844 px, Identité P280 après défilement.
+- Navigateurs : navigateur intégré Codex ; largeurs CSS 1760, 1280 et 390 px.
+
+Les sources et les captures ont été ouvertes ensemble dans une même entrée de
+comparaison. La maquette montre uniquement la fiche ; SeaPilot conserve son
+menu global, son ruban et le portefeuille. La comparaison porte donc sur la
+région de la fiche, à largeur relative identique, et non sur ces éléments externes.
+Les images de conception n'ont pas de densité CSS définie ; aucune égalité pixel
+à pixel n'est revendiquée. La capture complète P280 est réduite par le navigateur
+intégré : elle sert à contrôler la composition. La capture P144 et la vue mobile
+servent au contrôle lisible des textes, actions, séparateurs et retours à la ligne.
+Les données et dates P144 sont des exemples, contrairement aux libellés métier.
+
+## Constats et corrections
+
+- [P1, corrigé] L'ancienne grille interne réservait une deuxième colonne de
+  navigation, comprimant le contenu. Le conteneur interne est passé en bloc et
+  la fiche possède une seule grille de navigation/contenu. La capture P144 montre
+  les radios et les six rubriques sur toute la largeur utile.
+- [P2, corrigé] Les anciennes règles CSS écrasaient certains espacements et
+  maintenaient les encarts gris. Les sélecteurs sont limités à la fiche et ont
+  une priorité suffisante. P280 retrouve les trois groupes de la maquette ; les
+  valeurs sont présentées directement sur fond blanc.
+- [P2, corrigé] Le cumul menu global, portefeuille et navigation réduisait trop
+  la fiche à 1280 px. Le portefeuille passe au-dessus sous 1400 px. Sur mobile,
+  les champs passent sur une colonne et les cinq sections restent accessibles
+  dans une barre défilante. Aucun débordement horizontal de la page constaté à
+  390 px ; les noms longs et l'adresse restent lisibles dans la capture mobile.
+- [P2, corrigé] L'espacement hérité du parcours documentaire ajoutait des vides
+  excessifs. Les marges du sélecteur et du bloc d'émission ont été réduites. La
+  capture P144 finale montre la continuité entre offre, choix et rubriques.
+
+Les captures référencées sont postérieures à ces corrections. Aucun P0/P1/P2
+visuel restant n'a été relevé lors de la comparaison finale.
+
+## Fidélité contrôlée
+
+- Typographie : police existante de SeaPilot, titre dominant, sous-titres plus
+  sobres, valeurs lisibles et retours à la ligne sur les noms longs. La police
+  de la génération n'est pas introduite comme nouvelle dépendance.
+- Espacement : navigation pâle à gauche, en-tête séparé par un filet bleu,
+  groupes espacés et bandeau des conditions. Les informations et aides du
+  parcours documentaire existant sont conservées ; sa hauteur dépasse donc
+  légèrement celle du concept P144.
+- Couleurs : bleu SeaPilot pour les actions et l'état actif, fond blanc,
+  navigation bleu-gris clair et filets discrets. Focus clavier visible.
+- Images et icônes : icônes Lucide existantes ; logo officiel de l'application
+  conservé dans le menu global. Les logos décoratifs suggérés par ImageGen ne
+  sont pas intégrés. Aucune image métier ni illustration à reproduire.
+- Contenu : cinq sections principales ; aucune rubrique « Cases 1–12 » dans
+  la fiche. Six thèmes BIMCO dans la consultation et l'éditeur. Les références
+  numérotées restent présentes sur les champs de saisie et le document officiel.
+
+## Vérifications fonctionnelles
+
+- Choix P280 puis P144 depuis le portefeuille ; passage Identité / Offre & contrat.
+- Navigation dans les thèmes, tarifs multilignes et Signatures & annexes P144.
+- Ouverture de Modifier puis de l'étape BIMCO : six thèmes présents et champs
+  disponibles ; fermeture sans enregistrer.
+- Console du navigateur : aucune erreur ou alerte relevée durant ces parcours.
+- 76 tests ciblés : page Projets, regroupements BIMCO, éditeur, génération
+  documentaire et client de démonstration. Les 37 clés P144 apparaissent chacune
+  exactement une fois ; valeurs explicites, zéro, multilignes et anciens champs
+  sont couverts.
+- Vérification TypeScript, lint ciblé et compilation de production réussis.
+
+## Limites et suivi
+
+- Les conditions réelles P144 n'ont pas été extraites ni modifiées ; le mode
+  préversion est explicitement un jeu de démonstration.
+- Le contrôle mobile visuel détaillé porte sur l'identité P280 ; les six thèmes
+  P144 sont couverts par les essais de navigation sur ordinateur et automatisés.
+- [P3] Les pictogrammes des six thèmes peuvent être différenciés davantage lors
+  d'une prochaine itération, sans modifier la navigation ou les données.
+
+## Checklist finale
+
+- [x] Proposition 2 intégrée, bouton Densité supprimé.
+- [x] P144 regroupé par thèmes, stockage et génération conservés.
+- [x] Vues bureau et mobile contrôlées après corrections.
+- [x] Interactions principales et console vérifiées.
+- [x] Tests ciblés, lint et build réussis.
+
+final result: passed
+
+---
+
+# Design QA — prévisualisation Projet
+
+final result: passed
+
+## Périmètre et référence
+
+Une seule direction : le dossier Projet, avec identité persistante, six rubriques et vue d’ensemble orientée vers les prochaines actions. Référence : image `exec-f633be72-5dba-4afc-a68a-191f10e97ca4.png` retenue après l’audit du module existant.
+
+Comparaison visuelle effectuée avec la référence et le rendu côte à côte, même dossier P901 non modifié, même fenêtre de 1487 × 1058. Contrôles complémentaires à 1440 × 1024, 768 × 1024 et 390 × 844.
+
+Les preuves locales sont conservées dans le répertoire d’artefacts de ce chat, sous `projets-preview` : `comparison.png`, `01-overview-desktop.png`, `02-contract-desktop.png`, `03-billing-desktop.png`, `04-portfolio-desktop.png`, `05-mobile-overview.png`, `06-mobile-operation.png`, `07-tablet-contract.png`.
+
+## Contrôle des cinq surfaces
+
+| Surface | Résultat |
+| --- | --- |
+| Structure et hiérarchie | Navigation marine, en-tête du dossier, six rubriques, alerte prioritaire, grille opérations / activité et accès contrat / documents présents. Espacements verticaux corrigés après comparaison. |
+| Typographie et lisibilité | Hiérarchie titre / contexte / données conservée. Taille du tableau et de l’activité augmentée après le premier contrôle. Police Inter avec repli système. |
+| Couleurs et composants | Bleu d’action, fond marine, surfaces claires, alerte ambre, statuts distincts et sélection soulignée conformes à la direction. |
+| Images et icônes | Logo existant réutilisé ; fond noir intégré au panneau par mélange CSS. Icônes Lucide cohérentes avec la référence et le produit. Aucun visuel de substitution généré. |
+| Interactions et adaptation | Navigation, filtres, archives, formulaires, exports et historique utilisables. Sélecteur de rubriques sur mobile, panneaux empilés et défilement contenu des tableaux. |
+
+## Corrections et vérifications
+
+- Correction d’un débordement mobile causé par le libellé masqué de la colonne Actions ; largeur du document inférieure ou égale à la fenêtre après correction.
+- Navigation latérale fermée rendue invisible aux interactions sur mobile.
+- Fermeture du dialogue avec Échap vérifiée ; formulaire d’opération utilisable à 390 px.
+- Contrat complété et enregistré, PDF illustratif émis et retrouvé dans les documents.
+- Relevé recalculé après exclusion de la mobilisation : 110 300 € → 95 300 € ; export ZIP avec pièces déclenché avec succès.
+- Portefeuille filtré jusqu’à l’état vide, puis consultation du projet archivé.
+- Opération Rotation 03 ajoutée sur mobile et retrouvée dans l’historique avec les événements antérieurs.
+- Quatre tests automatisés passent : contrat local et conservation des pièces, archivage/restauration, ajout/filtrage des fichiers sans requête réseau, calcul de facturation avec centimes.
+- ESLint ciblé et compilation de production réussis. Aucune erreur JavaScript relevée pendant les parcours contrôlés. Les avertissements de taille de bundles concernent l’application existante.
+
+## Écarts conservés
+
+P3 : quelques différences de graisse, de taille des pictogrammes et de forme des badges par rapport à l’image générée. Le pied de navigation indique volontairement la démonstration et permet sa réinitialisation. Aucun point P0, P1 ou P2 restant dans le périmètre de prévisualisation.
+
+Cette validation concerne une interface avec données fictives. Les modèles contractuels complets, les règles DPR, les profils réels et les autorisations de production restent à raccorder et à vérifier lors de l’intégration définitive.
+
+---
+
+# Design QA — Projet : pilotage de flotte et facturation mensuelle
+
+## Périmètre
+
+Révision de la prévisualisation indépendante à la demande de l’utilisateur : deux mesures d’utilisation (prévu et réalisé), répartition des activités avant la liste, accès aux catalogues explicites, distinction entre avancement et archivage, et facturation complétée à partir de l’audit du module existant. La direction graphique du dossier est conservée.
+
+## Contrôle des cinq surfaces
+
+| Surface | Vérification |
+| --- | --- |
+| Structure | Indicateurs au-dessus des dossiers ; deux panneaux sur bureau, empilement sur téléphone. Dossier à six rubriques conservé, facturation à quatre sous-rubriques avec récapitulatif et exports. |
+| Typographie | Titres, libellés, valeurs et unités hiérarchisés. Nombre de jours et bases de calcul visibles ; états vides et périodes futures explicites. |
+| Couleurs | Bleu pour le prévu, vert pour le réalisé ; palette distincte pour les activités ; valeurs et textes redondants avec les couleurs. Fond marine et surfaces claires conservés. |
+| Graphiques et icônes | Barres calculées par navire, anneau calculé par nombre de missions. Logo existant et icônes Lucide ; aucun actif décoratif ajouté. |
+| Interactions et adaptation | Filtres, classement, navigation mensuelle, formulaires, archivage, pièces et exports vérifiés. Dialogue utilisable à 390 × 844 ; tableaux défilants dans leur conteneur. |
+
+## Corrections réalisées
+
+- Séparation du style du récapitulatif mensuel et de celui de l’ancienne synthèse pour éviter une grille parasite.
+- Rendu des octets PDF via PDF.js : le lecteur natif du navigateur intégré restait vide. Aperçu et pagination visibles après correction.
+- Libellé du fournisseur isolé de sa liste de suggestions pour conserver un nom accessible exact.
+- Réduction du graphique en anneau sur mobile sans recouvrement de sa légende.
+- Traitement des dates de relevé vides sans plantage ; génération bloquée tant que la période est invalide ou non enregistrée.
+- ZIP alimenté par des buffers pour un comportement identique dans le navigateur et les tests Node.
+
+## Vérifications
+
+- Bureau 1487 × 1058 et mobile 390 × 844, inspection des vues portefeuille, frais, aperçu PDF et formulaire fournisseur. Largeur document mobile mesurée ≤ 390 px, sans débordement global ; le tableau conserve son défilement local.
+- Filtrage par Antipollution : seul P904 ressort sur septembre. Changement de mois au clavier vers une période future : réalisé indisponible, aucun jour fictivement réalisé.
+- Ajout d’un frais sur mobile et retour au portefeuille ; fermeture des dialogues avec Échap.
+- 11 tests automatisés : conservation contrat/documents/historique, archive/restauration, ajout local de fichier, facturation indépendante par mois, frais avec pièce conservée après retrait, filtres et utilisation, chevauchements, archives historiques, période future, tarifs et compléments, devises, vrais PDF/fusion et contenu ZIP.
+- Lint ciblé et compilation de production réussis. La génération PDF réelle a été inspectée dans le navigateur intégré.
+
+Preuves dans le dossier d’artefacts `projets-preview` du chat : `09-portfolio-v2.png`, `10-billing-expenses-v2.png`, `12-billing-pdf-v2.png`, `13-mobile-expense-v2.png`, `14-mobile-portfolio-v2.png`.
+
+## Limites conservées
+
+Prévisualisation avec données fictives, modifications temporaires et catalogues en consultation. La parité des règles et générateurs de production, les données historiques réelles, les catalogues persistants et les droits réels par profil restent à raccorder lors de l’intégration définitive. Le périmètre fonctionnel et les écarts de la maquette sont décrits dans `docs/design/projects-workspace-preview.md`. Aucun écran de rôle simulé n’a servi de validation des comptes Marin/Capitaine.
+
+final result: passed
+
+## 2026-09-28 — Projet, intégration v3.60.0
+
+- Contrôle des composants de production via `/modules/projects?preview=1` : Clients, Navires, Remorqués et Catalogue ouvrent chacun leur propre gestion ; retour au portefeuille et conservation des filtres.
+- Facturation : modèle PDF existant rendu par PDF.js et inspecté visuellement, référence Loyers + Frais puis référence Prestations seules, quantité manuelle zéro préservée et nouvelle ligne initialisée automatiquement.
+- Portefeuille contrôlé en 1280 px et 390 px : graphiques mois/année avant la liste, commandes regroupées, absence de débordement horizontal de page à 390 px. Émulation restaurée après contrôle.
+- Les données de démonstration ne prouvent pas les autorisations : 17 assertions SQL exécutées avec profils Admin, Direction, Capitaine et Marin, localement puis sur la base déployée en transaction annulée. Aucun élargissement des partages Drive.
+- Conservation : comparaison exacte des lignes des 13 tables sauvegardées ; aucune ligne historique manquante ou modifiée. 45 projets, 69 opérations, 415 événements, 1 159 DPR ; 46 documents liés et une pièce sans rattachement sauvegardés et relus depuis Drive, taille/SHA-256/MD5 concordants. Originaux conservés.
+- Vérifications : 249 tests ciblés (les attentes de note de version ont été adaptées ; un test de contrat coque nue dépassant le délai local a réussi avec 20 s), suite Windows Drive réussie. Contrôles complémentaires de l’ouverture Drive web, lint et build de production avant livraison.
+- Preuve visuelle privée hors dépôt : `project-release-20260928/projects-desktop.png` dans le répertoire d’artefacts du chat. Les archives et manifestes privés ne sont pas commis.
+
+
+---
+
+# Design QA — Planning / demande de congés
+
+- Source visual truth: C:/Users/chris/AppData/Local/Temp/codex-clipboard-3fecfa2e-c98d-4d22-85de-17f85edd4c06.png
+- Implementation: http://127.0.0.1:5181/modules/planning?preview=1
+- Desktop viewport: 1440 × 1080 CSS px; devicePixelRatio 1.
+- Source: 2482 × 1333 pixels, normalized to 1231 × 661 for comparison.
+- Implementation region: 1231 × 626 pixels; full window: 1440 × 1080 pixels. No density scaling on final CDP captures.
+- State: Congés request for 28/09/2026, June 2026–May 2027 rights, demonstration totals 20 Congés / 0 RTT, approved 0, pending 0, request 1, projection 19. Demo data only; production totals remain unset.
+- Mobile viewport: 390 × 844 CSS px; devicePixelRatio 1.
+
+## Evidence
+
+Files are outside the repository at C:/Users/chris/.codex/visualizations/2026/10/02/01a0fb40-cf39-7e20-bb01-b0869a6cba25/:
+
+- planning-design-comparison.png: first normalized source/implementation pair.
+- planning-design-comparison-final.png: final normalized full-view comparison, reference above implementation.
+- planning-design-detail-comparison.png: focused Congés card, reference left / implementation right; labels, icon alignment, dates, gauge and values checked.
+- planning-balances-design-desktop-final.png and planning-request-design-desktop-final.png: final browser captures.
+- planning-request-design-mobile-final.png and planning-balances-design-mobile-final.png: final mobile header, management button, stacked card and gauge.
+
+## Comparison history
+
+1. P2: Recharts default margin clipped the right/bottom of the gauge. Fixed zero chart margins; final gauge is circular and fully contained.
+2. P2: Existing form button styles overrode the reference-size management button. Fixed scoped specificity, 16px text / 58px desktop target; mobile wraps into a 71px-high accessible target without overflow.
+3. P2: Gauge and decorative illustrations were visibly smaller than the reference. Fixed desktop gauge 200px, illustration slot 160×107 with reserved header space; mobile sizes remain contained.
+4. Final comparison confirms all preceding P2s resolved. No remaining actionable P0/P1/P2 findings.
+
+## Required fidelity surfaces
+
+- Typography: native Inter/system stack, navy 28px heading / 27px card titles, 14–16px labels and dates, 40px gauge values. Hierarchy and labels match. Browser capture softness affects the screenshot appearance, not computed font sizes. Mobile text wraps naturally.
+- Layout: white/light-blue container, two equal desktop cards, round icon badges, left gauge, right metrics, pending/request/projection dividers and full-width information strip. Container-based stacking protects the narrower P12 panel and mobile. DOM scrollWidth equals clientWidth for the mobile block and both cards.
+- Colors: turquoise Congés and violet RTT, navy headings, muted blue labels, orange pending and green approved icons, pale blue information strip. Solid data arcs retain truthful remaining/total proportions; the mock's decorative multitone arc is intentionally simplified.
+- Assets: two generated transparent PNG illustrations, 360×240 each, loaded at naturalWidth360, with clean alpha. Standard Lucide icons provide the closest existing icon family; the palm glyph is outlined rather than the mock's filled glyph (P3).
+- Copy/content: heading, subtitle, management action, period dates, all metrics and information text reproduce the reference. Null rights retain “À initialiser”; zero and negative amounts remain distinct.
+
+## Interaction and accessibility checks
+
+- Open request → choose Christophe → open separate rights window → save 20/0 demonstration totals → close → counters20/0, request1 and projection19.
+- Existing prior verification enrolled Adam with20/0 independently, leaving the selected request unchanged.
+- Mobile opens and closes the separate rights window; original request stays open. Cards scroll and controls remain reachable without horizontal overflow.
+- Charts are decorative to assistive technology; live meter exposes actual remaining/total text, including negative values, and null rights use status. Numeric dt/dd metrics are retained.
+- Real Marin/Capitaine auth fixtures verify own-account balances and no management actions; role simulation was not used as profile truth.
+- Browser console errors/warnings: none after fresh reload of final assets.
+- UI tests: 53 passed. Broader Planning suite: 640 passed plus two unrelated timeout cases passed on isolated rerun. SQL fixtures passed remotely and rolled back.
+
+## Follow-up polish
+
+P3 only: slight icon-fill differences and a simpler solid gauge arc. These preserve the provided composition and avoid misleading decorative percentages. Mobile has no reference mock; adaptation verified at390px.
 
 final result: passed

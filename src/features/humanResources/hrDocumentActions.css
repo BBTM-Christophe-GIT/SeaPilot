@@ -1,0 +1,96 @@
+.hr-document-management-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hr-document-management-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 30px;
+  min-height: 30px;
+  border: 1px solid #dce6f2;
+  border-radius: 6px;
+  padding: 5px;
+  color: #1763bd;
+  background: #fff;
+  font-size: 0.64rem;
+}
+
+.hr-document-management-actions button:last-child {
+  color: #b42335;
+}
+
+.hr-document-management-actions button:hover:not(:disabled) {
+  background: #f0f5fb;
+}
+
+.hr-document-management-actions button:focus-visible {
+  outline: 2px solid #1763bd;
+  outline-offset: 2px;
+}
+
+.hr-document-expiry-fields {
+  display: grid;
+  gap: 10px;
+}
+
+.hr-document-no-expiry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #253044;
+  font-size: 0.85rem;
+}
+
+.hr-document-no-expiry input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.hr-document-delete-explanation {
+  color: #253044;
+  line-height: 1.5;
+}
+
+.hr-renewal-dialog .hr-dialog-footer button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  border: 1px solid #cbd9ea;
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #213552;
+  background: #fff;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.hr-renewal-dialog .hr-dialog-footer button[type="submit"] {
+  border-color: #1763bd;
+  background: #1763bd;
+  color: #fff;
+}
+
+.hr-renewal-dialog .hr-dialog-footer button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hr-renewal-dialog .hr-dialog-footer button.hr-document-delete-confirm {
+  border-color: #b42335;
+  background: #b42335;
+  color: #fff;
+}
+
+@media (max-width: 760px) {
+  .hr-document-management-actions {
+    grid-column: 3;
+  }
+}

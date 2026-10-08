@@ -1,0 +1,151 @@
+// @vitest-environment node
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { PDFDocument } from 'pdf-lib';
+import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { buildOrgImage, buildOrgPdf, orgPdfGeometry } from './organigrammeExport';
+import { buildOrganigramme, type OrgOptions } from './organigrammeModel';
+import { ORG_DEMO, ORG_LINKS_DEMO, ORG_HIERARCHY_DEMO, ORG_VESSEL_FILTER_DEMO } from './organigrammeFixtures';
+import { layoutOrganigramme } from './organigrammeDiagram';
+
+const options: OrgOptions = { view: 'vessels', vesselIds: null, includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
+describe('organigramme exports', () => {
+  it('embeds portraits in PDF/SVG, omits them on request, and retains vessel illustrations', async () => {
+    const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));
+    const image = `data:image/png;base64,${Buffer.from(logo).toString('base64')}`;
+    const data = { ...ORG_DEMO, people: ORG_DEMO.people.map((person) => ({ ...person, photoUrl: image })), vessels: ORG_DEMO.vessels.map((vessel) => ({ ...vessel, iconDataUrl: image })) };
+    const imageCounts: number[] = [];
+    for (const showPhotos of [true, false]) {
+      const sections = buildOrganigramme(data, { ...options, showPhotos });
+      const diagram = layoutOrganigramme(sections);
+      expect(diagram.boxes.filter((box) => box.mediaKind === 'portrait')).toHaveLength(showPhotos ? 12 : 0);
+      expect(diagram.boxes.filter((box) => box.mediaKind === 'vessel' && box.image)).toHaveLength(2);
+      const svg = await (await buildOrgImage(sections, true, 'svg')).text();
+      expect((svg.match(/<image /g) || []).length).toBe(showPhotos ? 14 : 2);
+      const blob = await buildOrgPdf(sections, true, data.asOf, 'vessels', logo);
+      const task = getDocument({ data: new Uint8Array(await blob.arrayBuffer()) });
+      try {
+        const pdf = await task.promise; expect(pdf.numPages).toBe(1);
+        const operators = await (await pdf.getPage(1)).getOperatorList();
+        imageCounts.push(operators.fnArray.filter((fn) => fn === OPS.paintImageXObject).length);
+        expect(operators.fnArray.filter((fn) => fn === OPS.clip).length).toBe(showPhotos ? 12 : 0);
+      } finally { await task.destroy(); }
+    }
+    expect(imageCounts[0]).toBeGreaterThan(imageCounts[1]);
+    const noShips = buildOrganigramme(data, { ...options, showVessels: false });
+    expect(layoutOrganigramme(noShips, false).boxes.some((box) => box.mediaKind === 'vessel')).toBe(false);
+  });
+  it.each(['vessels', 'functions'] as const)('includes only selected contact and organization fields in %s PDF and SVG exports', async (view) => {
+    const data = { ...ORG_LINKS_DEMO, support: [...ORG_LINKS_DEMO.support, { id: 90, personId: 2, name: 'Référente externe', functionLabel: 'Conseil', category: 'external' as const, position: 4 }] };
+    const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));
+    for (const included of [true, false]) {
+      const selected = { ...options, view, showEmails: included, showPhones: included, showFunctions: included, showVessels: included, showWatches: included };
+      const sections = buildOrganigramme(data, selected);
+      const external = sections.find((section) => section.kind === 'external')!.columns.flatMap((column) => column.members);
+      expect(external.find((person) => person.name === 'Référente externe')?.email).toBe(included ? 'personne.2@example.invalid' : undefined);
+      expect(external.find((person) => person.name.includes('Cabinet comptable'))?.email).toBeUndefined();
+      const svg = await (await buildOrgImage(sections, included, 'svg')).text();
+      const blob = await buildOrgPdf(sections, included, data.asOf, view, logo);
+      const task = getDocument({ data: new Uint8Array(await blob.arrayBuffer()) });
+      try {
+        const content = await (await (await task.promise).getPage(1)).getTextContent();
+        const text = content.items.map((item) => 'str' in item ? item.str : '').join(' ');
+        for (const exported of [text, svg]) {
+          expect(exported).toContain('Élodie MARTIN');
+          for (const field of ['personne.2@example.invalid', '00 00 00 00 02', 'Capitaine', 'GOURY', 'Bordée 1']) {
+            if (included) expect(exported).toContain(field);
+            else expect(exported).not.toContain(field);
+          }
+        }
+      } finally { await task.destroy(); }
+    }
+  });
+  it('exports the selected populated ships in both PDF and SVG, without empty or excluded ships', async () => {
+    const sections = buildOrganigramme(ORG_VESSEL_FILTER_DEMO, { ...options, vesselIds: [2, 4, 1] });
+    const blob = await buildOrgPdf(sections, true, ORG_DEMO.asOf, 'vessels', new Uint8Array(await readFile('public/bbtm-report-logo.png')));
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const task = getDocument({ data: bytes.slice() });
+    try {
+      const pdf = await task.promise;
+      expect(pdf.numPages).toBe(1);
+      const content = await (await pdf.getPage(1)).getTextContent();
+      const text = content.items.map((item) => 'str' in item ? item.str : '').join(' ');
+      const svg = await (await buildOrgImage(sections, true, 'svg')).text();
+      for (const exported of [text, svg]) {
+        expect(exported).toContain('GOURY'); expect(exported).toContain('LE ROZEL');
+        expect(exported).toContain('Élodie MARTIN'); expect(exported).toContain('Alice LAURENT');
+        expect(exported).not.toContain('NAVIRE VIDE'); expect(exported).not.toContain('NAVIRE CÔTIER');
+        expect(exported).not.toContain('Chloé GARCIA');
+      }
+      if (process.env.ORG_EXPORT_QA_DIR) {
+        await mkdir(process.env.ORG_EXPORT_QA_DIR, { recursive: true });
+        await writeFile(join(process.env.ORG_EXPORT_QA_DIR, 'BBTM_Organigramme_selection_navires.pdf'), bytes);
+      }
+    } finally { await task.destroy(); }
+  });
+  it.each(['vessels', 'functions'] as const)('exports the complete %s chart on exactly one landscape page', async (view) => {
+    const sections = buildOrganigramme(ORG_HIERARCHY_DEMO, { ...options, view });
+    const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));
+    const blob = await buildOrgPdf(sections, true, ORG_DEMO.asOf, view, logo);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const pdf = await PDFDocument.load(bytes);
+    expect(pdf.getTitle()).toContain('REP 03-B');
+    expect(pdf.getPageCount()).toBe(1);
+    expect(pdf.getPages().every((page) => page.getWidth() > page.getHeight())).toBe(true);
+    expect(bytes.byteLength).toBeGreaterThan(10000);
+    const task = getDocument({ data: bytes.slice() });
+    try {
+      const document = await task.promise;
+      const content = await (await document.getPage(1)).getTextContent();
+      const text = content.items.map((item) => 'str' in item ? item.str : '').join(' ');
+      const svg = await (await buildOrgImage(sections, true, 'svg')).text();
+      for (const exported of [text, svg]) {
+        expect(exported).toContain('Camille DUMONT'); expect(exported).toContain('Président');
+        expect(exported).toContain('Louise FAURE'); expect(exported).toContain('Noé THOMAS');
+        expect(exported).not.toMatch(/Rang|Support/);
+      }
+    } finally { await task.destroy(); }
+    if (process.env.ORG_EXPORT_QA_DIR) {
+      await mkdir(process.env.ORG_EXPORT_QA_DIR, { recursive: true });
+      await writeFile(join(process.env.ORG_EXPORT_QA_DIR, `BBTM_Organigramme_${view}.pdf`), bytes);
+    }
+  });
+  it('keeps a wide fleet on one page and fits every card between header and footer', async () => {
+    const base = buildOrganigramme(ORG_LINKS_DEMO, options);
+    const template = base.find((section) => section.kind === 'vessel')!;
+    const fleet = Array.from({ length: 8 }, (_, index) => ({ ...template, key: `test-${index}`, label: `NAVIRE ${index + 1}` }));
+    const sections = [base[0], ...fleet, ...base.filter((section) => section.kind === 'external' || section.kind === 'relations')];
+    const diagram = layoutOrganigramme(sections);
+    const { width, height, scale, offsetX, offsetY } = orgPdfGeometry(diagram);
+    diagram.boxes.forEach((box) => {
+      expect(offsetX + box.x * scale).toBeGreaterThanOrEqual(12);
+      expect(offsetX + (box.x + box.width) * scale).toBeLessThanOrEqual(width - 12);
+      expect(offsetY + box.y * scale).toBeGreaterThanOrEqual(35);
+      expect(offsetY + (box.y + box.height) * scale).toBeLessThanOrEqual(height - 20);
+    });
+    const blob = await buildOrgPdf(sections, true, ORG_DEMO.asOf, 'vessels', new Uint8Array(await readFile('public/bbtm-report-logo.png')));
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const pdf = await PDFDocument.load(bytes);
+    expect(pdf.getPageCount()).toBe(1);
+    expect(pdf.getPages()[0].getWidth() * 25.4 / 72).toBeCloseTo(width, 1);
+    if (process.env.ORG_EXPORT_QA_DIR) await writeFile(join(process.env.ORG_EXPORT_QA_DIR, 'BBTM_Organigramme_flotte_8_navires.pdf'), bytes);
+  });
+  it('scales exceptional dimensions within the PDF page limits without adding pages', () => {
+    const geometry = orgPdfGeometry({ width: 100_000, height: 100_000, boxes: [], lines: [] });
+    expect(geometry.width).toBeLessThan(5080); expect(geometry.height).toBeLessThan(5080);
+    expect(geometry.scale * 100_000 + geometry.offsetY).toBeLessThanOrEqual(geometry.height - 20);
+    expect(geometry.scale * 100_000 + geometry.offsetX).toBeLessThanOrEqual(geometry.width - 12);
+  });
+  it('exports only diagram content in SVG with no vessels or PDF letterhead when disabled', async () => {
+    const sections = buildOrganigramme(ORG_LINKS_DEMO, { ...options, view: 'functions', showVessels: false });
+    const blob = await buildOrgImage(sections, false, 'svg');
+    const svg = await blob.text();
+    expect(blob.type).toContain('image/svg+xml');
+    expect(svg).toContain('Élodie MARTIN'); expect(svg).toContain('Cabinet comptable');
+    expect(svg).not.toContain('GOURY'); expect(svg).not.toContain('LE ROZEL');
+    expect(svg).toContain('Référente opérationnelle'); expect(svg).toContain('Liens');
+    expect(svg).not.toContain('REP 03-B'); expect(svg).not.toContain('87-Organigramme.docx');
+    if (process.env.ORG_EXPORT_QA_DIR) await writeFile(join(process.env.ORG_EXPORT_QA_DIR, 'BBTM_Organigramme_sans_navires.svg'), svg);
+  });
+});

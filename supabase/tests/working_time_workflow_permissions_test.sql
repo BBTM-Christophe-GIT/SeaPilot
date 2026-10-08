@@ -307,14 +307,13 @@ select set_config(
    where person_id = (select id from public.people where sailor_number = 'WF-DIR')
      and period_start = '2026-09-21'), true
 );
-select throws_ok(
+select lives_ok(
   $$select public.save_working_time_interval(
     current_setting('test.workflow.management_register_id')::bigint,
     '2026-09-21 08:00:00+02', '2026-09-21 16:00:00+02', 'Europe/Paris',
     null, null, 'Saisie administrateur'
   )$$,
-  '23514', 'WORKING_TIME_PLANNING_ASSIGNMENT_REQUIRED.',
-  'entry fields are derived from Planning, including for an administrator'
+  'an administrator can record actual work even when Planning has no assignment'
 );
 
 select set_config('request.jwt.claim.sub', '79000000-0000-0000-0000-000000000004', true);

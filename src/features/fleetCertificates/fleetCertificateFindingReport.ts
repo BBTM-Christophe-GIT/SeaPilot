@@ -114,11 +114,11 @@ function compareReportCategories(
 }
 
 export function sanitizeFleetReportText(value: string | null | undefined): string {
-  return (value || '').replace(/seapilot/gi, '').replace(/\s{2,}/g, ' ').trim();
+  return (value || '').replace(/seapilot/gi, 'BBTM').replace(/\s{2,}/g, ' ').trim();
 }
 
 export function sanitizeFleetReportRichText(value: string | null | undefined): string {
-  return sanitizeFleetFindingActionHtml((value || '').replace(/seapilot/gi, ''));
+  return sanitizeFleetFindingActionHtml((value || '').replace(/seapilot/gi, 'BBTM'));
 }
 
 function reportIsoDate(value: Date): string {

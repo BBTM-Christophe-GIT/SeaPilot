@@ -100,7 +100,7 @@ export function ServiceNoteDocument({ note, authorSignatureUrl = '', signatureUr
             })}
           </div>
         ) : (
-          <div className="service-note-empty-register"><Clock3 aria-hidden="true" size={24} /><strong>{note.sourceKind === 'sharepoint' ? 'Archive SharePoint' : 'Registre créé à la diffusion'}</strong><span>{note.sourceKind === 'sharepoint' ? 'Cette note historique précède la collecte de signatures SeaPilot.' : 'Les destinataires apparaîtront ici après publication.'}</span></div>
+          <div className="service-note-empty-register"><Clock3 aria-hidden="true" size={24} /><strong>{note.sourceKind === 'sharepoint' ? 'Archive SharePoint' : 'Registre créé à la diffusion'}</strong><span>{note.sourceKind === 'sharepoint' ? 'Cette note historique précède la collecte de signatures BBTM.' : 'Les destinataires apparaîtront ici après publication.'}</span></div>
         )}
         <footer>{note.sourceKind === 'sharepoint' ? 'Archive historique réputée signée · dates de signature non reportées.' : 'La date et la signature sont enregistrées sur ce document commun.'}</footer>
       </article>

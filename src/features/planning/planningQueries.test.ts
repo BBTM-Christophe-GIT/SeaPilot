@@ -9,6 +9,7 @@ import {
   deletePlanningBoardRow,
   fetchPlanningPeople,
   fetchPlanningPeriods,
+  fetchCachedPlanningPeriods,
   fetchPlanningOverview,
   fetchVessels,
   mapPlanningDayRows,
@@ -24,6 +25,7 @@ import {
   savePlanningHandover,
   savePlanningAssignmentDayNote,
   savePlanningAssignmentDayState,
+  savePlanningAssignmentDayStates,
   savePlanningVesselDayLocation,
   removePlanningGridCells,
   resolvePlanningGridConflictCells,
@@ -412,14 +414,15 @@ describe('fetchPlanningOverview', () => {
     const vesselOrder = vi.fn().mockResolvedValue({ data: [vesselRow], error: null });
     const peopleOrderByFirstName = vi.fn().mockResolvedValue({ data: [captainRow, crewRow], error: null });
     const peopleOrderByLastName = vi.fn().mockReturnValue({ order: peopleOrderByFirstName });
-    const daysOrderByCrew = vi.fn().mockResolvedValue({ data: [planningDayRow], error: null });
+    const daysRange = vi.fn().mockResolvedValue({ data: [planningDayRow], error: null });
+    const daysOrderByCrew = vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ range: daysRange }) });
     const daysOrderByDate = vi.fn().mockReturnValue({ order: daysOrderByCrew });
     const periodsRange = vi.fn().mockResolvedValue({ data: [planningPeriodRow], error: null });
     const periodsOrderById = vi.fn().mockReturnValue({ range: periodsRange });
     const periodsOrderByCrew = vi.fn().mockReturnValue({ order: periodsOrderById });
     const periodsOrderByStart = vi.fn().mockReturnValue({ order: periodsOrderByCrew });
     const rpc = vi.fn().mockImplementation((name: string) => Promise.resolve({
-      data: name === 'planning_assignment_overview' ? [assignmentOverviewRow] : [],
+      data: name === 'planning_assignment_overview_with_revisions' ? [assignmentOverviewRow] : [],
       error: null,
     }));
     const from = vi.fn().mockImplementation((table: string) => {
@@ -453,6 +456,12 @@ describe('fetchPlanningOverview', () => {
 
       if (table === 'planning_board_rows') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+      if (table === 'planning_fleet_display_settings') {
+        return { select: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) };
+      }
+      if (table === 'planning_generic_crew_rows') {
+        return { select: () => ({ order: () => ({ range: async () => ({ data: [], error: null }) }) }) };
       }
 
       if (table === 'planning_operations_view') {
@@ -492,7 +501,9 @@ describe('fetchPlanningOverview', () => {
     await expect(fetchPlanningOverview({ from, rpc } as never)).resolves.toEqual({
       vessels: mapVesselRows([vesselRow]),
       people: mapPlanningPeopleRows([captainRow, crewRow]),
+      fleetFunctionOrder: [],
       boardRows: [],
+      genericCrewRows: [],
       assignments: mapPlanningAssignmentOverviewRows([assignmentOverviewRow]),
       days: mapPlanningDayRows([planningDayRow]),
       periods: mapPlanningPeriodRows([planningPeriodRow]),
@@ -512,7 +523,7 @@ describe('fetchPlanningOverview', () => {
     expect(from).toHaveBeenCalledWith('people');
     expect(from).toHaveBeenCalledWith('planning_days');
     expect(from).toHaveBeenCalledWith('planning_periods');
-    expect(rpc).toHaveBeenCalledWith('planning_assignment_overview');
+    expect(rpc).toHaveBeenCalledWith('planning_assignment_overview_with_revisions');
     expect(peopleOrderByLastName).toHaveBeenCalledWith('last_name', { ascending: true });
     expect(peopleOrderByFirstName).toHaveBeenCalledWith('first_name', { ascending: true });
     expect(daysOrderByDate).toHaveBeenCalledWith('work_date', { ascending: true });
@@ -555,14 +566,14 @@ describe('fetchPlanningOverview', () => {
     const vesselOrder = vi.fn().mockResolvedValue({ data: [vesselRow], error: null });
     const peopleOrderByFirstName = vi.fn().mockResolvedValue({ data: [captainRow], error: null });
     const peopleOrderByLastName = vi.fn().mockReturnValue({ order: peopleOrderByFirstName });
-    const daysOrderByCrew = vi.fn().mockResolvedValue({ data: [], error: null });
+    const daysOrderByCrew = vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ range: vi.fn().mockResolvedValue({ data: [], error: null }) }) });
     const daysOrderByDate = vi.fn().mockReturnValue({ order: daysOrderByCrew });
     const periodsRange = vi.fn().mockResolvedValue({ data: [], error: null });
     const periodsOrderById = vi.fn().mockReturnValue({ range: periodsRange });
     const periodsOrderByCrew = vi.fn().mockReturnValue({ order: periodsOrderById });
     const periodsOrderByStart = vi.fn().mockReturnValue({ order: periodsOrderByCrew });
     const rpc = vi.fn().mockImplementation((name: string) => Promise.resolve({
-      data: name === 'planning_assignment_overview' ? [inactiveAssignmentOverviewRow] : [],
+      data: name === 'planning_assignment_overview_with_revisions' ? [inactiveAssignmentOverviewRow] : [],
       error: null,
     }));
     const from = vi.fn().mockImplementation((table: string) => {
@@ -596,6 +607,12 @@ describe('fetchPlanningOverview', () => {
 
       if (table === 'planning_board_rows') {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+      if (table === 'planning_fleet_display_settings') {
+        return { select: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) };
+      }
+      if (table === 'planning_generic_crew_rows') {
+        return { select: () => ({ order: () => ({ range: async () => ({ data: [], error: null }) }) }) };
       }
 
       if (table === 'planning_operations_view') {
@@ -635,7 +652,9 @@ describe('fetchPlanningOverview', () => {
     await expect(fetchPlanningOverview({ from, rpc } as never)).resolves.toEqual({
       vessels: mapVesselRows([vesselRow]),
       people: mapPlanningPeopleRows([captainRow]),
+      fleetFunctionOrder: [],
       boardRows: [],
+      genericCrewRows: [],
       assignments: [
         expect.objectContaining({
           captainName: 'Jean MARTIN',
@@ -1080,5 +1099,43 @@ describe('planning writes', () => {
 
     await expect(deletePlanningBoardRow({ rpc } as never, 77)).resolves.toBeUndefined();
     expect(rpc).toHaveBeenNthCalledWith(2, 'delete_planning_board_row', { p_row_id: 77 });
+  });
+});
+
+describe('Planning performance contracts', () => {
+  it('reuses complete periods only after the server validates their revision', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: { revision: 'scope-a:1', periods: [planningPeriodRow] }, error: null })
+      .mockResolvedValueOnce({ data: { revision: 'scope-a:1', periods: null }, error: null })
+      .mockResolvedValueOnce({ data: { revision: 'scope-b:2', periods: [] }, error: null });
+    const client = { rpc } as never;
+    const first = await fetchCachedPlanningPeriods(client);
+    expect(first).toHaveLength(1);
+    expect(await fetchCachedPlanningPeriods(client)).toBe(first);
+    expect(rpc).toHaveBeenNthCalledWith(2, 'read_planning_periods', { p_known_revision: 'scope-a:1' });
+    expect(await fetchCachedPlanningPeriods(client)).toEqual([]);
+  });
+
+  it('does not return cached periods after a permission error', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: { revision: 'allowed', periods: [planningPeriodRow] }, error: null })
+      .mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'denied' } });
+    const client = { rpc } as never;
+    await fetchCachedPlanningPeriods(client);
+    await expect(fetchCachedPlanningPeriods(client)).rejects.toThrow();
+  });
+
+  it('submits a complete period as one RPC without changing its boundaries', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 30, error: null });
+    await savePlanningAssignmentDayStates({ rpc } as never, {
+      assignmentId: 100, startsOn: '2026-09-01', endsOn: '2026-09-30', status: 'Vacance', note: ' Repos ',
+    });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('save_planning_assignment_day_states', {
+      p_assignment_id: 100, p_starts_on: '2026-09-01', p_ends_on: '2026-09-30', p_status: 'Vacance', p_note: 'Repos',
+    });
+    await expect(savePlanningAssignmentDayStates({ rpc } as never, {
+      assignmentId: 100, startsOn: '2026-09-30', endsOn: '2026-09-01', status: 'Vacance', note: '',
+    })).rejects.toThrow();
+    expect(rpc).toHaveBeenCalledOnce();
   });
 });

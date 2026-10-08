@@ -1,6 +1,13 @@
+import { ProjectPortfolioInsights } from './ProjectPortfolioInsights';
+import { localCalendarDate } from './projectPortfolioMetrics';
+import { useProjectFavorites } from './useProjectFavorites';
+import { ProjectHistory } from './ProjectHistory';
+import { FleetPage } from '../fleet/FleetPage';
+import './ProjectWorkspace.css';
+import './ProjectDesign.css';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { compareFleetNames } from '../fleet/fleetDisplay';
 import {
-  Archive,
   CalendarDays,
   CalendarPlus,
   ChevronLeft,
@@ -16,9 +23,8 @@ import {
   PackageCheck,
   Plus,
   RefreshCw,
+  Star,
   ReceiptText,
-  RotateCcw,
-  Rows3,
   Share2,
   Ship,
   Trash2,
@@ -38,12 +44,16 @@ import { ProjectBillingPanel } from './ProjectBillingPanel';
 import {
   BAREBOAT_CONTRACT_TYPE,
   BIMCO_CONTRACT_TYPE,
+  charterContractLabel,
+  isCharterContractType,
   normalizeProjectContractType,
   PROJECT_CONTRACT_TYPES,
   TOWAGE_CONTRACT_TYPE,
+  TIME_CHARTER_CONTRACT_TYPE,
 } from './projectContractOptions';
 import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
-import { archiveProject, deleteProjectPlanningOccurrence } from './projectMutations';
+import type { ProjectDocumentLanguage } from './projectDocumentGeneration';
+import { deleteProjectPlanningOccurrence } from './projectMutations';
 import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
 import { fetchProjectDocumentEmitter } from './projectCommercialOffer';
 import {
@@ -60,13 +70,15 @@ import {
   type ProjectsData,
   type ProjectsDataSource,
 } from './projectQueries';
-import { BIMCO_P144_GROUPS } from './projectContractModels';
+import { BIMCO_PROJECT_SECTIONS, type BimcoProjectSectionId } from './projectContractModels';
+import { buildProjectBimcoSections } from './projectBimcoSections';
+import './ProjectSheet.css';
 import {
-  buildSupplytimePreview,
   documentBelongsToProject,
   EMPTY_PROJECT_FILTERS,
   filterDocumentsForProjects,
   getProjectVesselNames,
+  isCurrentProject,
   projectMatchesFilters,
   resolveSelectedProject,
   sortProjects,
@@ -94,11 +106,12 @@ const EMPTY_PROJECTS_DATA: ProjectsData = {
 };
 
 const PROJECTS_PER_PAGE = 40;
-const PROJECT_DOCUMENTS_SHAREPOINT_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets';
+const PROJECT_DOCUMENTS_LEGACY_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets';
 
 type ProjectDocumentDownloadMode = 'document' | 'bundle';
 
 interface ProjectDocumentEmissionRequest {
+  contractType?: string;
   kind: ProjectGeneratedDocumentKind;
   planningOccurrenceId: number | null;
 }
@@ -107,7 +120,7 @@ function generatedDocumentKindForContract(contractType?: string | null): Project
   const normalized = normalizeProjectContractType(contractType);
   if (normalized === BIMCO_CONTRACT_TYPE) return 'bimco_supplytime';
   if (normalized === TOWAGE_CONTRACT_TYPE) return 'towage_contract';
-  if (normalized === BAREBOAT_CONTRACT_TYPE) return 'bareboat_charter';
+  if (isCharterContractType(normalized)) return 'bareboat_charter';
   return 'offer';
 }
 
@@ -219,15 +232,6 @@ function canManageProjects(roles: RoleKey[]): boolean {
   return roles.includes('admin') || roles.includes('direction');
 }
 
-function ProjectRibbonGroup({ children, label }: { children: React.ReactNode; label: string }) {
-  return (
-    <div aria-label={label} className="project-ribbon-group" role="group">
-      <div className="project-ribbon-actions">{children}</div>
-      <span className="project-ribbon-group-label">{label}</span>
-    </div>
-  );
-}
-
 function ProjectRibbonButton({
   icon,
   label,
@@ -256,6 +260,7 @@ type ProjectDetailTab =
   | 'operations'
   | 'billing'
   | 'offer-contract'
+  | 'history'
   | 'documents'
   | 'towage-parties'
   | 'towage-route'
@@ -265,15 +270,7 @@ type ProjectDetailTab =
   | 'bareboat-duration'
   | 'bareboat-terms'
   | 'bareboat-signatures'
-  | 'time-charter-vessel'
-  | 'time-charter-operations'
-  | 'time-charter-rates'
-  | 'time-charter-clauses'
-  | 'bimco-boxes-01-12'
-  | 'bimco-boxes-13-21'
-  | 'bimco-boxes-22-34'
-  | 'bimco-signatures'
-  | 'bimco-annexes';
+  | BimcoProjectSectionId;
 
 interface ProjectDetailTabDefinition {
   description?: string;
@@ -284,14 +281,15 @@ interface ProjectDetailTabDefinition {
 }
 
 const PROJECT_CONTRACT_VARIANTS: ReadonlyArray<{
+  contractType: string;
   documentKind: ProjectGeneratedDocumentKind;
   id: ProjectContractVariant;
   label: string;
 }> = [
-  { documentKind: 'towage_contract', id: 'towage', label: 'Contrat de remorquage' },
-  { documentKind: 'bareboat_charter', id: 'bareboat', label: 'Affrètement coque nue' },
-  { documentKind: 'bimco_supplytime', id: 'time-charter', label: 'Affrètement à temps' },
-  { documentKind: 'bimco_supplytime', id: 'bimco', label: 'BIMCO' },
+  { contractType: TOWAGE_CONTRACT_TYPE, documentKind: 'towage_contract', id: 'towage', label: 'Contrat de remorquage' },
+  { contractType: TIME_CHARTER_CONTRACT_TYPE, documentKind: 'bareboat_charter', id: 'time-charter', label: TIME_CHARTER_CONTRACT_TYPE },
+  { contractType: BAREBOAT_CONTRACT_TYPE, documentKind: 'bareboat_charter', id: 'bareboat', label: BAREBOAT_CONTRACT_TYPE },
+  { contractType: BIMCO_CONTRACT_TYPE, documentKind: 'bimco_supplytime', id: 'bimco', label: 'BIMCO' },
 ];
 
 const PROJECT_BASE_TABS: ProjectDetailTabDefinition[] = [
@@ -315,28 +313,23 @@ const PROJECT_CONTRACT_TABS: Record<ProjectContractVariant, ProjectDetailTabDefi
     { group: 'Affrètement coque nue', icon: PackageCheck, id: 'bareboat-signatures', label: 'Signatures' },
   ],
   'time-charter': [
-    { group: 'Affrètement à temps', icon: Ship, id: 'time-charter-vessel', label: 'Navire & période' },
-    { group: 'Affrètement à temps', icon: CalendarDays, id: 'time-charter-operations', label: 'Exploitation' },
-    { group: 'Affrètement à temps', icon: ReceiptText, id: 'time-charter-rates', label: 'Conditions tarifaires' },
-    { group: 'Affrètement à temps', icon: PackageCheck, id: 'time-charter-clauses', label: 'Clauses & signatures' },
+    { group: 'Affrètement à temps', icon: Ship, id: 'bareboat-vessel', label: 'Navire & livraison' },
+    { group: 'Affrètement à temps', icon: CalendarDays, id: 'bareboat-duration', label: 'Durée & loyers' },
+    { group: 'Affrètement à temps', icon: Info, id: 'bareboat-terms', label: 'Assurance & droit' },
+    { group: 'Affrètement à temps', icon: PackageCheck, id: 'bareboat-signatures', label: 'Signatures' },
   ],
-  bimco: [
-    { group: 'BIMCO', icon: ClipboardList, id: 'bimco-boxes-01-12', label: 'Cases 1–12' },
-    { group: 'BIMCO', icon: ClipboardList, id: 'bimco-boxes-13-21', label: 'Cases 13–21' },
-    { group: 'BIMCO', icon: ClipboardList, id: 'bimco-boxes-22-34', label: 'Cases 22–34' },
-    { group: 'BIMCO', icon: PackageCheck, id: 'bimco-signatures', label: 'Signatures' },
-    { group: 'BIMCO', icon: Files, id: 'bimco-annexes', label: 'Annexes' },
-  ],
+  bimco: BIMCO_PROJECT_SECTIONS.map((section) => ({
+    group: 'BIMCO', icon: section.id === 'bimco-pricing' ? ReceiptText : section.id === 'bimco-operations' ? Ship : FileText,
+    id: section.id, label: section.label,
+  })),
 };
 
 function projectContractVariant(contractType?: string | null): ProjectContractVariant | null {
-  const lowered = contractType?.trim().toLocaleLowerCase('fr-FR') || '';
-  if (lowered.includes('remorquage')) return 'towage';
-  if (lowered.includes('affrètement à temps')) return 'time-charter';
-  if (lowered.includes('coque nue') || lowered.includes("contrat d'affrètement") || lowered.includes('contrat d’affrètement')) {
-    return 'bareboat';
-  }
-  if (lowered.includes('bimco') || lowered.includes('supplytime')) return 'bimco';
+  const type = normalizeProjectContractType(contractType);
+  if (type === TOWAGE_CONTRACT_TYPE) return 'towage';
+  if (type === TIME_CHARTER_CONTRACT_TYPE) return 'time-charter';
+  if (type === BAREBOAT_CONTRACT_TYPE) return 'bareboat';
+  if (type === BIMCO_CONTRACT_TYPE) return 'bimco';
   return null;
 }
 
@@ -345,6 +338,7 @@ function projectDetailTabs(variant: ProjectContractVariant | null): ProjectDetai
     ...PROJECT_BASE_TABS,
     ...(variant ? PROJECT_CONTRACT_TABS[variant] : []),
     { icon: Files, id: 'documents', label: 'Documents' },
+    { icon: ClipboardList, id: 'history', label: 'Historique' },
   ];
 }
 
@@ -352,7 +346,9 @@ function ProjectDetailTabs({
   activeTab,
   onChange,
   tabs,
+  counts,
 }: {
+  counts: Record<string, number>;
   activeTab: ProjectDetailTab;
   onChange: (tab: ProjectDetailTab) => void;
   tabs: ProjectDetailTabDefinition[];
@@ -374,6 +370,7 @@ function ProjectDetailTabs({
           <div className="project-detail-tab-item" key={tab.id}>
             {startsGroup ? <span className="project-detail-tab-group">{tab.group}</span> : null}
             <button
+              aria-label={tab.label}
               aria-controls="project-detail-panel"
               aria-selected={activeTab === tab.id}
               id={`project-tab-${tab.id}`}
@@ -398,6 +395,7 @@ function ProjectDetailTabs({
             >
               <Icon aria-hidden="true" size={19} />
               <span>{tab.label}</span>
+              {counts[tab.id] !== undefined ? <small aria-hidden="true" className="project-sheet-tab-count">{counts[tab.id]}</small> : null}
             </button>
           </div>
         );
@@ -464,8 +462,7 @@ function ProjectDocuments({
   return (
     <>
       <p className="project-document-help">
-        SeaPilot ouvre en priorité la copie privée Supabase. Les documents non encore migrés utilisent leur lien SharePoint
-        d’origine et peuvent demander une authentification Microsoft 365.
+        Les fichiers sont classés dans SeaPilot / Projet / un dossier par projet. Le lanceur ouvre la copie Google Drive vérifiée ; les sources historiques restent conservées.
       </p>
       <ul className="project-document-list">
         {documents.map((document) => {
@@ -475,7 +472,7 @@ function ProjectDocuments({
             document.fileExtension || document.mimeType,
             formatFileSize(document.fileSizeBytes),
             document.sourceModifiedAt ? `modifié le ${formatDate(document.sourceModifiedAt)}` : '',
-            document.storageBucket && document.storagePath ? 'Stockage Supabase' : 'Source SharePoint',
+            'Document du projet',
           ].filter(Boolean);
 
           return (
@@ -500,10 +497,7 @@ function ProjectDocuments({
                   }}
                 />
               ) : linkState.status === 'available' ? (
-                <a href={linkState.href} rel="noreferrer" target="_blank">
-                  Ouvrir dans SharePoint
-                  <span className="sr-only"> : {document.fileName || document.title}</span>
-                </a>
+                <ProjectStoredDocumentLink client={client} document={{ fileName: document.fileName || document.title, sharePointWebUrl: linkState.href }} />
               ) : (
                 <span className="project-missing-link">
                   {linkState.status === 'missing' ? 'URL SharePoint absente' : 'URL SharePoint invalide ou non autorisée'}
@@ -582,22 +576,26 @@ function ProjectDocumentEmissionDialog({
   attachmentCount,
   definition,
   isBusy,
+  language,
   mode,
   onClose,
   onConfirm,
+  onLanguageChange,
   onModeChange,
 }: {
   attachmentCount: number;
   definition: (typeof PROJECT_DOCUMENT_TYPES)[number];
   isBusy: boolean;
+  language: ProjectDocumentLanguage;
   mode: ProjectDocumentDownloadMode;
   onClose: () => void;
   onConfirm: () => void;
+  onLanguageChange: (language: ProjectDocumentLanguage) => void;
   onModeChange: (mode: ProjectDocumentDownloadMode) => void;
 }) {
   return (
     <AppDialog
-      description={`Le document « ${definition.label} » sera généré depuis les informations enregistrées et classé dans l’espace privé SeaPilot.`}
+      description={`Le document « ${definition.label} » sera généré depuis les informations enregistrées et classé dans l’espace privé BBTM.`}
       eyebrow="Projet · Émission documentaire"
       footer={(
         <div className="app-dialog__actions">
@@ -614,6 +612,35 @@ function ProjectDocumentEmissionDialog({
       size="sm"
       title={`Émettre : ${definition.label}`}
     >
+      {definition.kind === 'offer' ? (
+        <div aria-label="Langue de l’offre commerciale" className="project-document-language-options" role="radiogroup">
+          <strong>Langue du document</strong>
+          <div>
+            <label className={language === 'fr' ? 'is-selected' : undefined}>
+              <input
+                checked={language === 'fr'}
+                disabled={isBusy}
+                name="project-document-language"
+                onChange={() => onLanguageChange('fr')}
+                type="radio"
+                value="fr"
+              />
+              <span><strong>Français</strong><small>Libellés et dates en français.</small></span>
+            </label>
+            <label className={language === 'en' ? 'is-selected' : undefined}>
+              <input
+                checked={language === 'en'}
+                disabled={isBusy}
+                name="project-document-language"
+                onChange={() => onLanguageChange('en')}
+                type="radio"
+                value="en"
+              />
+              <span><strong>English</strong><small>Traduction anglaise des libellés standards. Les textes libres restent modifiables tels que saisis.</small></span>
+            </label>
+          </div>
+        </div>
+      ) : null}
       <div aria-label="Contenu du téléchargement" className="project-document-delivery-options" role="radiogroup">
         <label className={mode === 'document' ? 'is-selected' : undefined}>
           <input
@@ -688,7 +715,7 @@ function ProjectDetail({
   deletingOccurrenceId: number | null;
   onDeleteOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   onEditOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
-  onGenerateDocument: (kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) => void;
+  onGenerateDocument: (kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null, contractType?: string) => void;
   onEditProject: () => void;
   onOpenPlanning: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   operationDocuments: ProjectOperationDocumentRecord[];
@@ -723,55 +750,45 @@ function ProjectDetail({
   const selectedContractDefinition = PROJECT_CONTRACT_VARIANTS.find((definition) => definition.id === selectedContractVariant);
   const selectedContractKind = selectedContractDefinition?.documentKind;
   const supplytime = contract?.supplytimeData || {};
-  const supplytimePreview = useMemo(() => buildSupplytimePreview(project, contract), [contract, project]);
-  const bimcoPreviewFields = supplytimePreview.flatMap((group) => group.fields);
-  const activeBimcoFields = activeTab === 'bimco-boxes-01-12'
-    ? bimcoPreviewFields.filter((field) => {
-        const boxNumber = Number(/^box(\d+)/.exec(field.key)?.[1]);
-        return boxNumber >= 1 && boxNumber <= 12;
-      })
-    : activeTab === 'bimco-boxes-13-21'
-      ? bimcoPreviewFields.filter((field) => {
-          const boxNumber = Number(/^box(\d+)/.exec(field.key)?.[1]);
-          return boxNumber >= 13 && boxNumber <= 21;
-        })
-      : activeTab === 'bimco-boxes-22-34'
-        ? bimcoPreviewFields.filter((field) => {
-            const boxNumber = Number(/^box(\d+)/.exec(field.key)?.[1]);
-            return boxNumber >= 22 && boxNumber <= 34;
-          })
-        : activeTab === 'bimco-signatures'
-          ? bimcoPreviewFields.filter((field) => field.key.startsWith('signature_'))
-          : [];
+  const bimcoSections = useMemo(() => buildProjectBimcoSections(project, contract), [project, contract]);
+  const activeBimcoSection = bimcoSections.find((section) => section.id === activeTab);
+  const contractTabs = selectedContractVariant ? PROJECT_CONTRACT_TABS[selectedContractVariant] : [];
+  const isContractSection = contractTabs.some((tab) => tab.id === activeTab);
+  const primaryTab = isContractSection ? 'offer-contract' : activeTab;
+  const documentCount = contractDocuments.length + projectDocuments.length + operationDocuments.length;
+  function openContractSection(tab: ProjectDetailTab) {
+    setActiveTab(tab);
+    window.requestAnimationFrame(() => document.getElementById('project-detail-panel')?.focus({ preventScroll: true }));
+  }
+  const contractNavigation = (
+    <nav aria-label="Rubriques du contrat" className="project-sheet-contract-links">
+      {contractTabs.map((tab) => {
+        const Icon = tab.icon;
+        return <button aria-current={activeTab === tab.id ? 'page' : undefined} key={tab.id} onClick={() => openContractSection(tab.id)} type="button">
+          <Icon aria-hidden="true" size={19} /><span>{tab.label}</span><ChevronRight aria-hidden="true" size={17} />
+        </button>;
+      })}
+    </nav>
+  );
   return (
-    <article className="project-detail project-contract-sheet" aria-label={`Détails du contrat ${project.projectCode || project.title}`}>
-      <header className="project-contract-header">
-        <div className="project-contract-identity">
-          <span className="project-contract-icon"><ClipboardList aria-hidden="true" size={22} /></span>
+    <article className="project-detail project-contract-sheet project-dossier" aria-label={`Détails du contrat ${project.projectCode || project.title}`}>
+      <div className="project-sheet-main">
+      <header className="project-sheet-header">
+        <div className="project-sheet-title-row">
           <div>
-            <div className="project-contract-title">
-              <h2>{project.projectCode ? `${project.projectCode} – ` : ''}{project.title}</h2>
-              <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
-            </div>
-            <dl className="project-contract-summary">
-              <DetailField label="Client" value={displayText(project.clientName)} />
-              <DetailField label="Type" value={displayText(project.contractType)} />
-              <DetailField label="Période" value={formatPeriod(projectStart, projectEnd)} />
-              <DetailField
-                label="Loyer du contrat"
-                value={formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || '', contract?.hireUnit)}
-              />
-            </dl>
+            <span className="project-sheet-eyebrow">{project.projectCode || 'Projet'}</span>
+            <h2>{project.title}</h2>
+            <p className="project-sheet-context">{project.clientName || 'Client à renseigner'}<span>·</span>{getProjectVesselNames(project).join(' · ') || 'Navire à renseigner'}</p>
           </div>
+          {isManager && !project.archivedAt ? <button className="project-sheet-edit" onClick={onEditProject} type="button"><Pencil aria-hidden="true" size={17} /> Modifier</button> : null}
         </div>
-        <div className="project-contract-header-actions">
-          {isManager && !project.archivedAt ? <button onClick={onEditProject} type="button"><Pencil aria-hidden="true" size={15} /> Modifier</button> : null}
-          <div className="project-contract-counts" aria-label="Indicateurs du contrat">
-            <span><small>Opérations</small><strong>{planningOccurrences.length}</strong></span>
-            <span><small>Documents</small><strong>{contractDocuments.length + projectDocuments.length + operationDocuments.length}</strong></span>
-          </div>
-        </div>
+        <dl className="project-sheet-summary">
+          <DetailField label="Période" value={formatPeriod(projectStart, projectEnd)} />
+          <DetailField label="Statut" value={project.archivedAt ? 'Archivé' : displayText(project.status)} />
+          <DetailField label="Type de contrat" value={displayText(isCharterContractType(project.contractType) ? normalizeProjectContractType(project.contractType) : project.contractType)} />
+        </dl>
       </header>
+      <ProjectDetailTabs activeTab={primaryTab} counts={{ operations: planningOccurrences.length, documents: documentCount }} onChange={setActiveTab} tabs={projectDetailTabs(null)} />
       {contractUnavailable ? (
         <p className="project-partial-state" role="status">
           Les informations contractuelles et BIMCO sont temporairement indisponibles. Les autres sections restent consultables.
@@ -783,37 +800,47 @@ function ProjectDetail({
       ) : null}
 
       <div className="project-detail-tabs-shell">
-        <ProjectDetailTabs activeTab={activeTab} onChange={setActiveTab} tabs={detailTabs} />
         <div
-          aria-labelledby={`project-tab-${activeTab}`}
+          aria-labelledby={`project-tab-${primaryTab}`}
           className="project-detail-tab-panel"
           id="project-detail-panel"
           role="tabpanel"
           tabIndex={0}
         >
 
+      {isContractSection ? (
+        <div className="project-sheet-contract-navigation">
+          <button className="project-sheet-back" onClick={() => openContractSection('offer-contract')} type="button"><ChevronLeft aria-hidden="true" size={16} /> Offre & contrat</button>
+          {contractNavigation}
+        </div>
+      ) : null}
       {activeTab === 'identification' ? (
-      <section aria-label="Identification" className="project-detail-section">
-        <dl className="project-detail-grid">
-          <DetailField label="Numéro" value={displayText(project.projectCode)} />
-          <DetailField label="Statut" value={displayText(project.status)} />
-          <DetailField label="Type de contrat" value={displayText(project.contractType)} />
-          <DetailField label="Affréteur / client" value={displayText(project.clientName)} />
-          <DetailField label="Armateur" value={displayText(contract?.ownerIdentity)} wide />
-          <DetailField label="Navire principal" value={displayText(project.primaryVesselName)} />
-          <DetailField label="Second navire" value={displayText(project.secondaryVesselName)} />
-          <DetailField label="Affectation du navire limitée à" value={displayText(contract?.vesselAssignmentLimit)} wide />
-          <DetailField label="Support ROV" value={project.isRovSupport ? 'Oui' : 'Non'} />
-          <DetailField label="Support plongée" value={project.isDivingSupport ? 'Oui' : 'Non'} />
-          {client ? (
-            <DetailField
-              label="Coordonnées client"
-              value={[client.code, client.email, client.phone, client.city, client.country].filter(Boolean).join(' · ') || 'Non renseignées'}
-              wide
-            />
-          ) : null}
-        </dl>
-      </section>
+        <section aria-label="Identification" className="project-detail-section project-sheet-identification">
+          <section className="project-sheet-group" aria-labelledby="project-parties-heading">
+            <h3 id="project-parties-heading"><Users aria-hidden="true" size={24} /> Client</h3>
+            <dl className="project-sheet-parties">
+              <DetailField label="Affréteur / client" value={displayText(project.clientName)} />
+              <DetailField label="Armateur" value={displayText(contract?.ownerIdentity)} />
+              {client ? <DetailField label="Coordonnées client" value={[client.code, client.email, client.phone, client.city, client.country].filter(Boolean).join(' · ') || 'Non renseignées'} wide /> : null}
+            </dl>
+          </section>
+          <section className="project-sheet-group" aria-labelledby="project-vessels-heading">
+            <h3 id="project-vessels-heading"><Ship aria-hidden="true" size={24} /> Navires & affectation</h3>
+            <dl className="project-sheet-vessels">
+              <DetailField label="Navire principal" value={displayText(project.primaryVesselName)} />
+              <DetailField label="Second navire" value={displayText(project.secondaryVesselName)} />
+              <DetailField label="Affectation du navire limitée à" value={displayText(contract?.vesselAssignmentLimit)} />
+            </dl>
+          </section>
+          <section className="project-sheet-conditions" aria-labelledby="project-conditions-heading">
+            <h3 id="project-conditions-heading"><FileText aria-hidden="true" size={24} /> Conditions de la mission</h3>
+            <dl>
+              <DetailField label="Loyer du contrat" value={formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || '', contract?.hireUnit)} />
+              <DetailField label="Support ROV" value={project.isRovSupport ? 'Oui' : 'Non'} />
+              <DetailField label="Support plongée" value={project.isDivingSupport ? 'Oui' : 'Non'} />
+            </dl>
+          </section>
+        </section>
       ) : null}
 
       {activeTab === 'offer-contract' ? (
@@ -878,13 +905,13 @@ function ProjectDetail({
             <Info aria-hidden="true" size={20} />
             <span>
               <strong>{selectedContractDefinition ? selectedContractDefinition.label : 'Aucun contrat sélectionné'}</strong>
-              <small>Les informations saisies restent consultables dans les rubriques dédiées à gauche.</small>
+              <small>Consultez les informations saisies dans les rubriques ci-dessous.</small>
             </span>
           </div>
           {isManager ? (
             <button
               disabled={!selectedContractKind || generatingDocument !== null}
-              onClick={() => selectedContractKind && onGenerateDocument(selectedContractKind, selectedOccurrenceId)}
+              onClick={() => selectedContractKind && onGenerateDocument(selectedContractKind, selectedOccurrenceId, selectedContractDefinition?.contractType)}
               type="button"
             >
               <Download aria-hidden="true" size={15} />
@@ -892,6 +919,10 @@ function ProjectDetail({
             </button>
           ) : null}
         </div>
+        {contractTabs.length > 0 ? <section className="project-sheet-contract-index" aria-label="Informations du contrat">
+          <h4>Informations du contrat</h4>
+          {contractNavigation}
+        </section> : null}
       </section>
       ) : null}
 
@@ -900,9 +931,9 @@ function ProjectDetail({
         <div className="project-section-heading">
           <div>
             <strong>Documents contractuels et modèles</strong>
-            <span>Consultez les pièces jointes privées du projet et les documents historiques SharePoint.</span>
+            <span>Pièces du projet classées par catégorie : HSE, Contrat, Facturation et Opérations. Les versions historiques sont conservées.</span>
           </div>
-          <a href={PROJECT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
+          <a href={PROJECT_DOCUMENTS_LEGACY_URL} rel="noreferrer" target="_blank">
             <ExternalLink aria-hidden="true" size={15} /> Ouvrir SharePoint
           </a>
         </div>
@@ -930,7 +961,7 @@ function ProjectDetail({
             <strong>Calendrier des opérations</strong>
             <span>Un contrat peut regrouper plusieurs opérations indépendantes dans le Planning.</span>
           </div>
-          <a href={PROJECT_DOCUMENTS_SHAREPOINT_URL} rel="noreferrer" target="_blank">
+          <a href={PROJECT_DOCUMENTS_LEGACY_URL} rel="noreferrer" target="_blank">
             <ExternalLink aria-hidden="true" size={15} /> Documents Projets
           </a>
         </div>
@@ -1019,8 +1050,10 @@ function ProjectDetail({
       </section>
       ) : null}
 
+      {activeTab === 'history' ? <ProjectHistory client={supabaseClient} projectId={project.id} /> : null}
       {activeTab === 'billing' ? (
         <ProjectBillingPanel
+          workspace
           client={supabaseClient}
           contract={contract}
           isManager={isManager}
@@ -1102,7 +1135,7 @@ function ProjectDetail({
 
       {activeTab === 'bareboat-duration' ? (
         <ProjectContractInformation
-          description="Les dates, la durée et les montants contractuels de l’affrètement coque nue."
+          description="Les dates, la durée et les montants contractuels de l’affrètement."
           fields={[
             { label: 'Lieu de signature', value: supplytime.bareboat_contract_place },
             { label: 'Date de signature', value: supplytime.bareboat_contract_date },
@@ -1134,7 +1167,7 @@ function ProjectDetail({
 
       {activeTab === 'bareboat-signatures' ? (
         <ProjectContractInformation
-          description="Les représentants qui signeront le contrat d’affrètement coque nue."
+          description="Les représentants qui signeront le contrat d’affrètement."
           fields={[
             { label: 'Signataire de l’affréteur', value: supplytime.bareboat_charterer_signatory || client?.representedBy },
             { label: 'Signataire du propriétaire', value: supplytime.bareboat_owner_signatory },
@@ -1144,86 +1177,15 @@ function ProjectDetail({
         />
       ) : null}
 
-      {activeTab === 'time-charter-vessel' ? (
+      {activeBimcoSection ? (
         <ProjectContractInformation
-          description="Le navire, les parties et la période retenue pour l’affrètement à temps."
-          fields={[
-            { label: 'Armateur', value: contract?.ownerIdentity, wide: true },
-            { label: 'Affréteur / client', value: project.clientName },
-            { label: 'Navire principal', value: project.primaryVesselName },
-            { label: 'Second navire', value: project.secondaryVesselName },
-            { label: 'Début d’affrètement', value: formatDate(projectStart) },
-            { label: 'Fin d’affrètement', value: formatDate(projectEnd) },
-          ]}
-          title="Navire & période"
-        />
-      ) : null}
-
-      {activeTab === 'time-charter-operations' ? (
-        <ProjectContractInformation
-          description="Le périmètre d’emploi et les capacités opérationnelles enregistrées pour le navire."
-          fields={[
-            { label: 'Zone d’opération', value: project.operationArea, wide: true },
-            { label: 'Affectation du navire limitée à', value: contract?.vesselAssignmentLimit, wide: true },
-            { label: 'Support ROV', value: project.isRovSupport ? 'Oui' : 'Non' },
-            { label: 'Support plongée', value: project.isDivingSupport ? 'Oui' : 'Non' },
-            { label: 'Fuel', value: supplytime.box19_special_fuel, wide: true },
-          ]}
-          title="Exploitation"
-        />
-      ) : null}
-
-      {activeTab === 'time-charter-rates' ? (
-        <ProjectContractInformation
-          description="Les montants et modalités tarifaires applicables à l’affrètement à temps."
-          fields={[
-            { label: 'Mobilisation', value: formatMoney(contract?.mobilisationFee ?? null, contract?.feeCurrency || 'EUR') },
-            { label: 'Démobilisation', value: formatMoney(contract?.demobilisationFee ?? null, contract?.feeCurrency || 'EUR') },
-            { label: 'Loyer d’affrètement', value: formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || 'EUR', contract?.hireUnit) },
-            { label: 'Loyer en prolongation', value: formatMoney(contract?.extensionHire ?? null, contract?.hireCurrency || 'EUR', contract?.hireUnit) },
-            { label: 'Modalités de paiement', value: supplytime.box23_payment, wide: true },
-          ]}
-          title="Conditions tarifaires"
-        />
-      ) : null}
-
-      {activeTab === 'time-charter-clauses' ? (
-        <ProjectContractInformation
-          description="Les prolongations, audits, clauses particulières et signatures enregistrés."
-          fields={[
-            { label: 'Nombre de prolongations', value: contract?.extensionCount },
-            { label: 'Durée de prolongation', value: [contract?.extensionDuration, contract?.extensionUnit].filter(Boolean).join(' ') },
-            { label: 'Période de reconduction', value: contract?.autoExtensionPeriod },
-            { label: 'Maximum de jours', value: contract?.maxExtensionDays },
-            { label: 'Période maximale d’audit', value: contract?.maxAuditPeriod },
-            { label: 'Clauses additionnelles', value: supplytime.box34_additional_clauses, wide: true },
-            { label: 'Signature armateur', value: supplytime.signature_owners },
-            { label: 'Signature affréteur', value: supplytime.signature_charterers },
-          ]}
-          title="Clauses & signatures"
-        />
-      ) : null}
-
-      {activeBimcoFields.length > 0 ? (
-        <ProjectContractInformation
-          description="Les données métier et les valeurs historiques enregistrées dans les cases du formulaire BIMCO."
-          fields={activeBimcoFields.map((field) => ({ label: field.label, value: field.value, wide: true }))}
-          title={detailTabs.find((tab) => tab.id === activeTab)?.label || 'BIMCO'}
-        />
-      ) : null}
-
-      {activeTab === 'bimco-annexes' ? (
-        <ProjectContractInformation
-          description="Les pièces et informations annexes conservées avec le contrat BIMCO."
-          fields={BIMCO_P144_GROUPS.find((group) => group.id === 'annexes')?.fields.map((field) => ({
-            label: field.label,
-            value: supplytime[field.key],
-            wide: true,
-          })) || []}
-          title="Annexes"
+          description="Les informations du contrat sont regroupées par sujet. Les valeurs enregistrées et les références du document sont conservées."
+          fields={activeBimcoSection.fields.map((field) => ({ label: field.label, value: field.value, wide: true }))}
+          title={activeBimcoSection.label}
         />
       ) : null}
         </div>
+      </div>
       </div>
     </article>
   );
@@ -1248,6 +1210,10 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   }, []);
   const [projectsData, setProjectsData] = useState<ProjectsData>(EMPTY_PROJECTS_DATA);
   const [filters, setFilters] = useState<ProjectFilterState>(EMPTY_PROJECT_FILTERS);
+  const [dossierOpen, setDossierOpen] = useState(false);
+  const [projectScope, setProjectScope] = useState<'current' | 'all' | 'favorites'>('current');
+  const favorites = useProjectFavorites(effectiveClient);
+  const [fleetCatalogOpen, setFleetCatalogOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -1259,17 +1225,16 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [serviceCatalogOpen, setServiceCatalogOpen] = useState(false);
   const [planningEditorOpen, setPlanningEditorOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [compactDensity, setCompactDensity] = useState(true);
   const [editingProject, setEditingProject] = useState<ProjectRecord | undefined>();
   const [editingOccurrence, setEditingOccurrence] = useState<ProjectPlanningOccurrenceRecord | undefined>();
   const [mutationMessage, setMutationMessage] = useState('');
   const [mutationError, setMutationError] = useState('');
   const [lastStoredDocument, setLastStoredDocument] = useState<StoredProjectDocument | null>(null);
-  const [isArchiving, setIsArchiving] = useState(false);
   const [deletingOccurrenceId, setDeletingOccurrenceId] = useState<number | null>(null);
   const [generatingDocument, setGeneratingDocument] = useState<ProjectGeneratedDocumentKind | null>(null);
   const [documentEmissionRequest, setDocumentEmissionRequest] = useState<ProjectDocumentEmissionRequest | null>(null);
   const [documentDownloadMode, setDocumentDownloadMode] = useState<ProjectDocumentDownloadMode>('document');
+  const [documentLanguage, setDocumentLanguage] = useState<ProjectDocumentLanguage>('fr');
   const deferredSearch = useDeferredValue(filters.search);
 
   useEffect(() => {
@@ -1324,9 +1289,15 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     () => deduplicateProjectDocuments(projectsData.contractDocuments),
     [projectsData.contractDocuments],
   );
+  const currentMonthStart = `${localCalendarDate().slice(0, 7)}-01`;
+  const currentProjects = useMemo(
+    () => projectsData.projects.filter((project) => isCurrentProject(project, projectsData.planningOccurrences, currentMonthStart)),
+    [projectsData.projects, projectsData.planningOccurrences, currentMonthStart],
+  );
   const filteredProjects = useMemo(
-    () => projectsData.projects.filter((project) => projectMatchesFilters(project, effectiveFilters)),
-    [effectiveFilters, projectsData.projects],
+    () => (projectScope === 'current' ? currentProjects : projectsData.projects).filter((project) =>
+      (projectScope !== 'favorites' || favorites.ids.has(project.id)) && projectMatchesFilters(project, effectiveFilters)),
+    [effectiveFilters, projectsData.projects, currentProjects, projectScope, favorites.ids],
   );
   const filteredProjectDocuments = useMemo(
     () => filterDocumentsForProjects(projectDocumentSet.documents, filteredProjects),
@@ -1369,10 +1340,11 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     [projectsData.clients, projectsData.projects],
   );
   const vesselOptions = useMemo(
-    () => uniqueSorted(projectsData.projects.flatMap((project) => getProjectVesselNames(project))),
+    () => uniqueSorted(projectsData.projects.flatMap((project) => getProjectVesselNames(project))).sort(compareFleetNames),
     [projectsData.projects],
   );
-  const selectedProject = resolveSelectedProject(filteredProjects, selectedProjectId);
+  const selectedProject = (dossierOpen ? projectsData.projects.find((project) => project.id === selectedProjectId) : undefined)
+    || resolveSelectedProject(filteredProjects, selectedProjectId);
   const selectedContract = selectedProject
     ? projectsData.projectContracts.find((contract) => contract.projectId === selectedProject.id && !contract.archivedAt)
     : undefined;
@@ -1403,6 +1375,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const documentEmissionDefinition = documentEmissionRequest
     ? PROJECT_DOCUMENT_TYPES.find((definition) => definition.kind === documentEmissionRequest.kind)
     : undefined;
+  const namedDocumentEmissionDefinition = documentEmissionDefinition?.kind === 'bareboat_charter'
+    ? { ...documentEmissionDefinition, label: charterContractLabel(documentEmissionRequest?.contractType || selectedProject?.contractType) }
+    : documentEmissionDefinition;
   const unresolvedDocumentCount = [...projectDocumentSet.documents, ...contractDocumentSet.documents].filter(
     (document) => document.projectId === null,
   ).length;
@@ -1441,27 +1416,11 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     setPlanningEditorOpen(true);
   }
 
-  function openProjectDocumentEmission(kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null) {
+  function openProjectDocumentEmission(kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null, contractType?: string) {
     setMutationError('');
     setDocumentDownloadMode('document');
-    setDocumentEmissionRequest({ kind, planningOccurrenceId });
-  }
-
-  async function archiveSelectedProject() {
-    if (!selectedProject || !window.confirm(`Archiver ${selectedProject.projectCode || selectedProject.title} ?`)) return;
-    setMutationError('');
-    setMutationMessage('');
-    setIsArchiving(true);
-    try {
-      await archiveProject(effectiveClient, selectedProject.id);
-      setSelectedProjectId(null);
-      setMutationMessage('Projet archivé dans Supabase.');
-      setLoadAttempt((attempt) => attempt + 1);
-    } catch (error) {
-      setMutationError(error instanceof Error ? error.message : "Impossible d’archiver le projet.");
-    } finally {
-      setIsArchiving(false);
-    }
+    setDocumentLanguage('fr');
+    setDocumentEmissionRequest({ kind, planningOccurrenceId, contractType });
   }
 
   async function deletePlanningOccurrence(occurrence: ProjectPlanningOccurrenceRecord) {
@@ -1469,7 +1428,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     const operationLabel = occurrence.description || `Occurrence #${occurrence.id}`;
     const confirmed = window.confirm(
       `Supprimer définitivement l’opération « ${operationLabel} » du Planning ?\n\n`
-      + 'Les documents déjà classés resteront conservés dans SeaPilot au niveau du projet.',
+      + 'Les documents déjà classés resteront conservés dans BBTM au niveau du projet.',
     );
     if (!confirmed) return;
 
@@ -1493,7 +1452,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         setEditingOccurrence(undefined);
       }
       setMutationMessage(
-        'Opération supprimée du Planning. Ses documents restent conservés dans SeaPilot.',
+        'Opération supprimée du Planning. Ses documents restent conservés dans BBTM.',
       );
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : "Impossible de supprimer l’opération.");
@@ -1506,6 +1465,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     kind: ProjectGeneratedDocumentKind,
     planningOccurrenceId: number | null,
     downloadMode: ProjectDocumentDownloadMode,
+    language: ProjectDocumentLanguage,
+    contractType?: string,
   ) {
     if (!selectedProject) return;
     setMutationError('');
@@ -1530,7 +1491,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         contract: selectedContract,
         emitter,
         occurrence,
-        project: selectedProject,
+        project: contractType ? { ...selectedProject, contractType } : selectedProject,
+        language,
         towedAsset: projectsData.towedAssets.find((asset) => asset.id === selectedContract?.towedAssetId),
         vessel: projectsData.vessels.find((vessel) => vessel.id === selectedProject.primaryVesselId),
         vesselCertificates,
@@ -1549,7 +1511,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         setLastStoredDocument(storedDocument);
         setLoadAttempt((attempt) => attempt + 1);
       } catch (storageError) {
-        warnings.push(storageError instanceof Error ? storageError.message : 'Le classement SeaPilot a échoué.');
+        warnings.push(storageError instanceof Error ? storageError.message : 'Le classement BBTM a échoué.');
       }
 
       let bundled = false;
@@ -1573,7 +1535,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       }
 
       const storageLabel = storedDocument
-        ? 'généré et classé dans l’espace privé SeaPilot'
+        ? 'généré et classé dans l’espace privé BBTM'
         : 'généré';
       const downloadLabel = bundled
         ? `téléchargé avec ${selectedProjectAttachments.length} pièce${selectedProjectAttachments.length > 1 ? 's' : ''} jointe${selectedProjectAttachments.length > 1 ? 's' : ''}`
@@ -1621,7 +1583,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   }
 
   return (
-    <section className="projects-page">
+    <section className={`projects-page project-design ${dossierOpen ? 'is-dossier' : 'is-portfolio'}`}>
       <header className="project-module-header">
         <div>
           <p className="module-family">MODULE</p>
@@ -1636,40 +1598,28 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         </div>
       </header>
 
-      <nav aria-label="Commandes du module Projets" className="project-command-ribbon">
-        <ProjectRibbonGroup label="Portefeuille">
-          <ProjectRibbonButton disabled={!isManager} icon={<Plus aria-hidden="true" size={20} />} label="Nouveau projet" onClick={() => openProjectEditor()} />
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<Pencil aria-hidden="true" size={20} />} label="Modifier le projet" onClick={() => selectedProject && openProjectEditor(selectedProject)} />
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || isArchiving} icon={<Archive aria-hidden="true" size={20} />} label="Archiver" onClick={archiveSelectedProject} />
-          <ProjectRibbonButton icon={<RefreshCw aria-hidden="true" size={20} />} label="Actualiser" onClick={() => setLoadAttempt((attempt) => attempt + 1)} />
-        </ProjectRibbonGroup>
-        <ProjectRibbonGroup label="Référentiels & opérations">
-          <ProjectRibbonButton disabled={!isManager} icon={<Users aria-hidden="true" size={20} />} label="Liste des clients" onClick={() => setClientCatalogOpen(true)} />
-          <ProjectRibbonButton disabled={!isManager} icon={<Ship aria-hidden="true" size={20} />} label="Liste des remorqués" onClick={() => setTowedAssetCatalogOpen(true)} />
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus aria-hidden="true" size={20} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
-        </ProjectRibbonGroup>
-        <ProjectRibbonGroup label="Documents">
-          <ProjectRibbonButton
-            disabled={!isManager || !selectedProject || generatingDocument !== null}
-            icon={<FileText aria-hidden="true" size={20} />}
-            label="Émettre le document"
-            onClick={() => openProjectDocumentEmission(
-              selectedGeneratedDocumentKind,
-              selectedGeneratedDocumentKind === 'offer' ? null : selectedPlanningOccurrences[0]?.id ?? null,
-            )}
-          />
-          <ProjectRibbonButton icon={<Share2 aria-hidden="true" size={20} />} label="Ouvrir SharePoint" onClick={() => window.open(PROJECT_DOCUMENTS_SHAREPOINT_URL, '_blank', 'noopener,noreferrer')} />
-        </ProjectRibbonGroup>
-        <ProjectRibbonGroup label="Facturation">
-          <ProjectRibbonLink icon={<ReceiptText aria-hidden="true" size={20} />} label="Éléments de facturation" to={billingElementsUrl()} />
-          <ProjectRibbonButton disabled={!isManager} icon={<PackageCheck aria-hidden="true" size={20} />} label="Liste des prestations" onClick={() => setServiceCatalogOpen(true)} />
-        </ProjectRibbonGroup>
-        <ProjectRibbonGroup label="Affichage">
-          <ProjectRibbonButton aria-pressed={filtersOpen} icon={<Filter aria-hidden="true" size={20} />} label="Filtres" onClick={() => setFiltersOpen((open) => !open)} />
-          <ProjectRibbonButton disabled={!hasActiveFilters} icon={<RotateCcw aria-hidden="true" size={20} />} label="Réinitialiser" onClick={resetFilters} />
-          <ProjectRibbonButton aria-pressed={compactDensity} icon={<Rows3 aria-hidden="true" size={20} />} label="Densité" onClick={() => setCompactDensity((compact) => !compact)} />
-        </ProjectRibbonGroup>
+      <nav aria-label="Commandes du module Projets" className="project-workspace-actions project-primary-commands">
+        <ProjectRibbonButton disabled={!isManager} icon={<Plus size={18} />} label="Nouveau projet" onClick={() => openProjectEditor()} />
+        <ProjectRibbonButton disabled={!isManager} icon={<Users size={18} />} label="Clients" onClick={() => setClientCatalogOpen(true)} />
+        <ProjectRibbonButton disabled={!isManager} icon={<Ship size={18} />} label="Navires" onClick={() => setFleetCatalogOpen(true)} />
+        <ProjectRibbonButton disabled={!isManager} icon={<Ship size={18} />} label="Remorqués" onClick={() => setTowedAssetCatalogOpen(true)} />
+        <ProjectRibbonButton disabled={!isManager} icon={<PackageCheck size={18} />} label="Catalogue de prestations" onClick={() => setServiceCatalogOpen(true)} />
+        <ProjectRibbonLink icon={<ReceiptText size={18} />} label="Éléments de facturation" to={billingElementsUrl()} />
+        <ProjectRibbonButton icon={<Filter size={18} />} label="Filtres" aria-pressed={filtersOpen} onClick={() => setFiltersOpen((open) => !open)} />
       </nav>
+      {!dossierOpen ? <ProjectPortfolioInsights client={effectiveClient} data={projectsData} /> : <nav className="project-workspace-actions project-dossier-actions" aria-label="Actions du dossier">
+        <button type="button" onClick={() => setDossierOpen(false)}><ChevronLeft size={16} /> Liste des projets</button>
+        <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus size={18} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
+        <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<FileText size={18} />} label="Émettre le document" onClick={() => openProjectDocumentEmission(selectedGeneratedDocumentKind, selectedGeneratedDocumentKind === 'offer' ? null : selectedPlanningOccurrences[0]?.id ?? null)} />
+        <ProjectRibbonButton icon={<Share2 size={18} />} label="Dossiers Google Drive" onClick={() => window.open('https://drive.google.com/drive/folders/1H5kB4ppiKQAm4hqhYjMHcP4pRZaTncj_', '_blank', 'noopener,noreferrer')} />
+        <label className="project-dossier-switcher">Projet<select aria-label="Changer de projet" value={selectedProject?.id || ''} onChange={(event) => setSelectedProjectId(Number(event.target.value))}>{projectsData.projects.map((project) => <option key={project.id} value={project.id}>{project.projectCode} – {project.title}</option>)}</select></label>
+      </nav>}
+      {!dossierOpen ? <div className="project-portfolio-scopes" aria-label="Classement des projets">
+        {([['current', 'Projets actuels'], ['all', 'Tous les projets']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={projectScope === value} onClick={() => { setProjectScope(value); setCurrentPage(0); }}>{label} <b>{value === 'current' ? currentProjects.length : projectsData.projects.length}</b></button>)}
+        <button type="button" aria-pressed={projectScope === 'favorites'} onClick={() => { setProjectScope('favorites'); setCurrentPage(0); }}><Star size={14} aria-hidden="true" /> Mes favoris <b>{favorites.loading ? '…' : projectsData.projects.filter((project) => favorites.ids.has(project.id)).length}</b></button>
+        <p>{projectScope === 'favorites' ? 'Vos projets favoris, personnels et accessibles depuis votre compte.' : projectScope === 'current' ? 'Projets et opérations du mois en cours ou à venir.' : 'Tous les projets, y compris les projets passés, archivés et sans date.'}</p>
+      </div> : null}
+      {favorites.error ? <p role="alert" className="project-favorites-error">{favorites.error} <button type="button" onClick={favorites.retry}>Réessayer les favoris</button></p> : null}
 
       {projectsData.warnings.length > 0 ? (
         <div className="project-partial-state" role="status">
@@ -1766,15 +1716,15 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       ) : filteredProjects.length === 0 ? (
         <div className="admin-state">
           <div>
-            <strong>Aucun projet ne correspond aux filtres.</strong>
-            <button className="project-inline-action" onClick={resetFilters} type="button">
-              Réinitialiser les filtres
+            <strong>{projectScope === 'favorites' && !favorites.ids.size ? (favorites.loading ? 'Chargement de vos favoris…' : 'Aucun projet favori. Utilisez l’étoile à côté d’un projet pour le retrouver ici.') : 'Aucun projet ne correspond aux filtres.'}</strong>
+            <button className="project-inline-action" onClick={() => { resetFilters(); if (projectScope === 'favorites') setProjectScope('all'); }} type="button">
+              {projectScope === 'favorites' ? 'Afficher tous les projets' : 'Réinitialiser les filtres'}
             </button>
           </div>
         </div>
       ) : (
-        <div className={`projects-read-layout project-contract-workspace${compactDensity ? ' is-compact' : ''}`}>
-          <section className="projects-panel project-list-panel" aria-labelledby="projects-list-title">
+        <div className={`projects-read-layout project-contract-workspace project-workspace-v2 ${dossierOpen ? 'is-dossier' : 'is-portfolio'}`}>
+          {!dossierOpen ? <section className="projects-panel project-list-panel" aria-labelledby="projects-list-title">
             <div className="project-contract-list-heading">
               <div>
                 <h2 id="projects-list-title">Portefeuille projet</h2>
@@ -1795,12 +1745,18 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                 const isSelected = selectedProject?.id === project.id;
                 const occurrences = projectsData.planningOccurrences.filter((occurrence) => occurrence.projectId === project.id);
                 return (
-                  <li className={isSelected ? 'is-selected' : undefined} key={project.id}>
+                  <li className={`project-portfolio-row${isSelected ? ' is-selected' : ''}`} key={project.id}>
+                    <button type="button" className="project-favorite-button" aria-pressed={favorites.ids.has(project.id)}
+                      aria-label={`${favorites.ids.has(project.id) ? 'Retirer des favoris' : 'Ajouter aux favoris'} : ${project.projectCode || project.title}`}
+                      title={favorites.ids.has(project.id) ? 'Retirer de mes favoris' : 'Ajouter à mes favoris'}
+                      disabled={favorites.loading || favorites.pending.has(project.id) || Boolean(favorites.error)} onClick={() => void favorites.toggle(project.id)}>
+                      <Star aria-hidden="true" size={19} fill={favorites.ids.has(project.id) ? 'currentColor' : 'none'} />
+                    </button>
                     <button
                       aria-label={`${project.projectCode || ''} ${project.title}`}
                       aria-pressed={isSelected}
                       className="project-select-button project-contract-list-row"
-                      onClick={() => setSelectedProjectId(project.id)}
+                      onClick={() => { setSelectedProjectId(project.id); setDossierOpen(true); }}
                       type="button"
                     >
                       <span className="project-contract-list-title">
@@ -1829,9 +1785,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                 </button>
               </nav>
             ) : null}
-          </section>
+          </section> : null}
 
-          {selectedProject ? (
+          {dossierOpen && selectedProject ? (
             <ProjectDetail
               client={selectedClient}
               supabaseClient={effectiveClient}
@@ -1857,18 +1813,22 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         </div>
       )}
 
-      {documentEmissionRequest && documentEmissionDefinition ? (
+      {documentEmissionRequest && namedDocumentEmissionDefinition ? (
         <ProjectDocumentEmissionDialog
           attachmentCount={selectedProjectAttachments.length}
-          definition={documentEmissionDefinition}
+          definition={namedDocumentEmissionDefinition}
           isBusy={generatingDocument !== null}
+          language={documentLanguage}
           mode={documentDownloadMode}
           onClose={() => setDocumentEmissionRequest(null)}
           onConfirm={() => void generateSelectedProjectDocument(
             documentEmissionRequest.kind,
             documentEmissionRequest.planningOccurrenceId,
             documentDownloadMode,
+            documentLanguage,
+            documentEmissionRequest.contractType,
           )}
+          onLanguageChange={setDocumentLanguage}
           onModeChange={setDocumentDownloadMode}
         />
       ) : null}
@@ -1884,6 +1844,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           onSaved={(result) => {
             setProjectEditorOpen(false);
             setSelectedProjectId(result.id);
+            setDossierOpen(true);
             setMutationMessage(`${result.projectCode || result.title} enregistré dans Supabase.`);
             setLoadAttempt((attempt) => attempt + 1);
           }}
@@ -1896,6 +1857,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           vessels={projectsData.vessels}
         />
       ) : null}
+      {fleetCatalogOpen ? <AppDialog title="Gestion des navires" size="xl" onClose={() => setFleetCatalogOpen(false)}><FleetPage client={effectiveClient} roles={effectiveRoles} /></AppDialog> : null}
       {clientCatalogOpen ? (
         <ClientCatalogDialog
           canManage={isManager}
@@ -1940,10 +1902,10 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                 : 'Opération ajoutée au Planning.',
             );
             if (uploads.stored.length > 0) {
-              setMutationMessage((message) => `${message} ${uploads.stored.length} document(s) classé(s) dans SeaPilot.`);
+              setMutationMessage((message) => `${message} ${uploads.stored.length} document(s) classé(s) dans BBTM.`);
             }
             if (uploads.failed.length > 0) {
-              setMutationError(`${uploads.failed.length} document(s) n’ont pas pu être classés dans SeaPilot.`);
+              setMutationError(`${uploads.failed.length} document(s) n’ont pas pu être classés dans BBTM.`);
             }
             setLoadAttempt((attempt) => attempt + 1);
           }}

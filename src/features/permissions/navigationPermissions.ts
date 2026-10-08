@@ -64,7 +64,9 @@ export function getVisibleModulesForPermissions(
 ): AppModule[] {
   const visibleKeys = new Set(
     permissions
-      .filter((permission) => permission.isVisible && roles.includes(permission.roleKey))
+      .filter((permission) => permission.isVisible && roles.includes(permission.roleKey)
+        && (permission.moduleKey !== 'admin' || permission.roleKey === 'admin')
+        && (!['disciplinary', 'organigramme'].includes(permission.moduleKey) || ['admin', 'direction'].includes(permission.roleKey)))
       .map((permission) => permission.moduleKey),
   );
 
@@ -115,6 +117,15 @@ export async function setNavigationPermission(
   moduleKey: ModuleKey,
   isVisible: boolean,
 ): Promise<void> {
+  if (moduleKey === 'admin' && isVisible && roleKey !== 'admin') {
+    throw new Error('L’administration est réservée aux administrateurs.');
+  }
+  if (moduleKey === 'disciplinary' && isVisible && !['admin', 'direction'].includes(roleKey)) {
+    throw new Error('Les sanctions disciplinaires sont réservées à Administration et Direction.');
+  }
+  if (moduleKey === 'organigramme' && isVisible && !['admin', 'direction'].includes(roleKey)) {
+    throw new Error('L’organigramme est réservé à Administrateur et Direction.');
+  }
   const { error } = await client.from('role_module_permissions').upsert(
     {
       role_key: roleKey,

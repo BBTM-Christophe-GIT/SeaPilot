@@ -8,6 +8,7 @@ import {
 
 interface ServiceNoteRichTextEditorProps {
   value: string;
+  disabled?: boolean;
   onChange: (value: string) => void;
   ariaLabel?: string;
   placeholder?: string;
@@ -19,6 +20,7 @@ type EditorCommand = 'bold' | 'italic' | 'underline' | 'insertUnorderedList' | '
 export function ServiceNoteRichTextEditor({
   value,
   onChange,
+  disabled = false,
   ariaLabel = 'Contenu',
   placeholder = 'Bonjour, rédigez ici votre note de service…',
   toolbarLabel = 'Mise en forme du message',
@@ -118,7 +120,8 @@ export function ServiceNoteRichTextEditor({
         aria-label={ariaLabel}
         aria-multiline="true"
         className="service-note-rich-content"
-        contentEditable
+        contentEditable={!disabled}
+        aria-disabled={disabled || undefined}
         data-placeholder={placeholder}
         onBlur={rememberSelection}
         onInput={emitValue}

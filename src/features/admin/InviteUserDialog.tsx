@@ -141,7 +141,7 @@ export function InviteUserDialog({ client, onClose, onInvited }: InviteUserDialo
       >
         <header className="admin-dialog-header">
           <div>
-            <p className="module-family">Accès SeaPilot</p>
+            <p className="module-family">Accès BBTM</p>
             <h2 id={titleId}>Inviter un utilisateur</h2>
           </div>
           <button aria-label="Fermer" className="admin-icon-button" onClick={onClose} type="button">
@@ -152,7 +152,7 @@ export function InviteUserDialog({ client, onClose, onInvited }: InviteUserDialo
         <p className="admin-dialog-description" id={descriptionId}>
           {manualActivationLink
             ? 'Le compte est créé. Transmettez maintenant son lien personnel d’activation.'
-            : 'SeaPilot enverra un lien personnel pour activer le compte et choisir un mot de passe.'}
+            : 'BBTM enverra un lien personnel pour activer le compte et choisir un mot de passe.'}
         </p>
 
         {manualActivationLink ? (
