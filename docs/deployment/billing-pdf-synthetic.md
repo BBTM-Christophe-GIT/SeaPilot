@@ -4,6 +4,8 @@ Version `3.71.1` applique le design **Tableau synthétique** choisi à l’expor
 
 Le bandeau bleu contient uniquement le logo et **Éléments de facturation**. Le projet, le mois, la période et la référence client sont indiqués juste dessous. Le navire reste en tête lorsqu’aucune ligne brute n’est exportée ; lorsque ces lignes sont incluses, leurs navires figurent dans le tableau.
 
+Depuis `3.71.6`, les rectangles bleus (bandeau, en-têtes de tableaux et total général) ainsi que les titres colorés utilisent **`#156082`**. Les fonds clairs, les textes et la mise en page sont conservés.
+
 **Loyers d'Affrètement** occupe la colonne de gauche. **Frais imputables** puis **Prestations BBTM** partagent la colonne de droite. **Détail des Opérations** reprend les lignes brutes sur toute la largeur, avec Date, Navire, Désignation, Prix unitaire HT, Quantité et Prix Total HT.
 
 Depuis `3.71.4`, lorsque plusieurs sections sont incluses, chaque sous-total apparaît à la fin de sa propre section, après toutes ses lignes : loyers d'affrètement, frais imputables, prestations BBTM et détail des opérations. Les frais conservent un sous-total distinct par devise. Seul le total général du mois reste dans le bandeau bleu inférieur, sans répétition des sous-totaux. Si une seule section de montants est exportée, son sous-total n'est pas affiché et seul le total général est conservé. Les opérations DPR visibles sans montants ne comptent pas comme une section monétaire supplémentaire. Les montants préparés par le calcul de facturation sont repris directement ; la mesure de la page inclut les hauteurs des pieds de section effectivement affichés.
