@@ -54,6 +54,20 @@ export async function saveLsaItem(client: SupabaseClient, vesselId: number, draf
   if (error) throw error;
 }
 
+export async function updateLsaItemExpiry(client: SupabaseClient, item: LsaItem, expiresOn: string) {
+  const { error } = await client.rpc('update_lsa_item_expiry', {
+    p_id: item.id, p_expires_on: expiresOn, p_expected_updated_at: item.updated_at,
+  });
+  if (error) throw error;
+}
+
+export async function deleteLsaItem(client: SupabaseClient, item: LsaItem) {
+  const { error } = await client.rpc('delete_lsa_item', {
+    p_id: item.id, p_expected_updated_at: item.updated_at,
+  });
+  if (error) throw error;
+}
+
 export async function downloadLsaDocument(client: SupabaseClient, document: { storage_bucket: string | null; storage_path: string | null }) {
   if (!document.storage_bucket || !document.storage_path) throw new Error('Aucun fichier associé.');
   const { data, error } = await client.storage.from(document.storage_bucket).download(document.storage_path);

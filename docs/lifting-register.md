@@ -200,3 +200,11 @@ Les fiches des apparaux et des remorques regroupent le type et le titre sur une 
 ## CMU dans la description de la fiche papier
 
 La fiche de contrôle papier PDF indique également la CMU sous la description de chaque matériel, en tonnes avec une virgule décimale (par exemple « CMU : 6,5 t »). Une valeur absente dans l’inventaire est indiquée « CMU : non renseignée ». Cette présentation s’applique aux apparaux et aux remorques.
+
+## Date de mise en service au démarrage du contrôle annuel — 9 octobre 2026
+
+Lors de la validation de **Nouveau contrôle annuel** dans le registre des apparaux, la date d’émission saisie devient la **Date de mise en service** de tous les apparaux actifs du navire ou site sélectionné dans la fenêtre. La mise à jour et la copie des matériels dans le nouveau contrôle se font dans la même transaction ; le registre est rechargé immédiatement. Les anciens contrôles conservent leurs snapshots et leurs dates. Les matériels supprimés, les autres navires et les remorques conservent leur date de mise en service.
+
+La création conserve les droits existants : Admin, Direction, Armement et Capitaine disposant de la dérogation explicite de vérificateur, avec contrôle de société et d’affectation au navire. Elle ne remplace pas physiquement le matériel : sa génération, ses certificats, sa dernière visite et son échéance restent inchangés ; la publication du contrôle continue de mettre à jour la dernière visite suivant les règles existantes.
+
+Appliquer `20261009073454_lifting_annual_commissioned_date.sql` avant livraison. Les tests de composants vérifient la date affichée après création et les nouveaux snapshots ; `supabase/tests/lifting_annual_commissioned_date_test.sql` vérifie les cinq profils réels, la dérogation du vérificateur, la séparation société/navire/remorque, les matériels inactifs, les rejets sans modification et la conservation des snapshots précédents, avec rollback.

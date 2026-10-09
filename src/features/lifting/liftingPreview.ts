@@ -125,6 +125,10 @@ export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspect
         const year = Number(String(args.p_issued_on).slice(0,4));
         const vessel = vessels.find((v) => v.id === args.p_vessel_id);
         if (!vessel || !items.some((item) => item.vessel_id === vessel.id && item.kind === args.p_kind && item.active)) return { data: null, error: { message: 'Ajoutez du matériel avant de démarrer un contrôle.' } };
+        const issuedOn = String(args.p_issued_on || ''); const expiresOn = String(args.p_expires_on || '');
+        if (!issuedOn || !expiresOn || expiresOn <= issuedOn) return { data: null, error: { message: 'Dates du contrôle invalides.' } };
+        if (args.p_kind === 'lifting') items.filter((item) => item.vessel_id === vessel.id && item.kind === 'lifting' && item.active)
+          .forEach((item) => Object.assign(item, { commissioned_on: issuedOn, updated_at: new Date().toISOString() }));
         const report: LiftingInspection = { id: nextReportId++,company_id:1,vessel_id:vessel.id,kind:args.p_kind as LiftingInspection['kind'],inspection_year:year,issued_on:String(args.p_issued_on),expires_on:String(args.p_expires_on),inspector_name:INSPECTOR,status:'draft',revision:1,vessel_snapshot:vessel,notes:'Démonstration',certificate_id:null,storage_path:null,published_at:null };
         reports.push(report);
         items.filter((i) => i.vessel_id === report.vessel_id && i.kind === report.kind && i.active).forEach((i) => entries.push({ id:nextEntryId++,inspection_id:report.id,item_id:i.id,item_snapshot:structuredClone(i),condition:'pending',checks:defaultChecks(i),checklist_version:2,observations:'' }));
