@@ -9,6 +9,50 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('interactive project billing preview', () => {
+  it('opens each reference directly from the shared module ribbon and restores keyboard focus', async () => {
+    const user = userEvent.setup();
+    render(<ProjectPreview />);
+    const ribbon = screen.getByRole('navigation', { name: 'Menu des projets' });
+    const references = within(ribbon).getByRole('group', { name: 'Catalogue' });
+
+    for (const label of ['Clients', 'Remorqués', 'Prestations']) {
+      const command = within(references).getByRole('button', { name: label });
+      await user.click(command);
+      expect(screen.getByRole('dialog', { name: `Référentiel — ${label}` })).toBeInTheDocument();
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(command).toHaveFocus();
+    }
+    expect(screen.getByTestId('billing-total')).toHaveTextContent(/10\s*955,00\s*€/);
+  });
+
+  it('preserves project editing, archive confirmation and reset from direct ribbon commands', async () => {
+    const user = userEvent.setup();
+    render(<ProjectPreview />);
+    const ribbon = screen.getByRole('navigation', { name: 'Menu des projets' });
+    const projects = within(ribbon).getByRole('group', { name: 'Projet' });
+    await user.click(within(projects).getByRole('button', { name: 'Nouveau projet' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Nouveau projet' })).getByRole('button', { name: 'Annuler' }));
+    await user.click(within(projects).getByRole('button', { name: 'Modifier le projet' }));
+    const editor = screen.getByRole('dialog', { name: 'Modifier le projet' });
+    expect(within(editor).getByLabelText('Nom du projet')).toHaveValue('Assistance offshore');
+    await user.click(within(editor).getByRole('button', { name: 'Annuler' }));
+    await user.click(within(projects).getByRole('button', { name: 'Archiver le projet' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Archiver le projet' })).getByRole('button', { name: 'Annuler' }));
+    expect(within(projects).getByRole('button', { name: 'Modifier le projet' })).toBeEnabled();
+
+    await user.click(within(projects).getByRole('button', { name: 'Archiver le projet' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Archiver le projet' })).getByRole('button', { name: 'Confirmer' }));
+    expect(within(projects).getByRole('button', { name: 'Modifier le projet' })).toBeDisabled();
+    expect(within(projects).getByRole('button', { name: 'Archiver le projet' })).toBeDisabled();
+    expect(within(projects).getByRole('button', { name: 'Nouveau projet' })).toBeEnabled();
+    await user.click(within(projects).getByRole('button', { name: 'Actualiser' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Données de démonstration actualisées.');
+    await user.click(within(projects).getByRole('button', { name: 'Réinitialiser la démonstration' }));
+    expect(within(projects).getByRole('button', { name: 'Modifier le projet' })).toBeEnabled();
+    expect(screen.getByTestId('billing-total')).toHaveTextContent(/10\s*955,00\s*€/);
+  });
+
   it('updates the export total when a DPR day and a full billing section are excluded', async () => {
     const user = userEvent.setup();
     render(<ProjectPreview />);

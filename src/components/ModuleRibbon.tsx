@@ -16,6 +16,7 @@ interface ModuleRibbonProps {
   ariaLabel: string;
   children: ReactNode;
   className?: string;
+  singleRow?: boolean;
 }
 
 export function ModuleRibbonCommand({ className = '', count = 0, icon, label, ...buttonProps }: ModuleRibbonCommandProps) {
@@ -46,9 +47,9 @@ export function ModuleRibbonGroup({ children, className = '', label }: ModuleRib
   );
 }
 
-export function ModuleRibbon({ ariaLabel, children, className = '' }: ModuleRibbonProps) {
+export function ModuleRibbon({ ariaLabel, children, className = '', singleRow = false }: ModuleRibbonProps) {
   return (
-    <nav aria-label={ariaLabel} className={`planning-module-toolbar${className ? ` ${className}` : ''}`}>
+    <nav aria-label={ariaLabel} className={`planning-module-toolbar${singleRow ? ' is-single-row' : ''}${className ? ` ${className}` : ''}`}>
       <div className="planning-ribbon-scroll">{children}</div>
     </nav>
   );

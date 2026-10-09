@@ -95,6 +95,9 @@ body.pp-preview-page {
 .pp-module-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 98px; padding: 10px 18px; background: var(--sp-surface, #ffffff); border: 1px solid var(--sp-border, #d8e0ea); border-radius: var(--sp-panel-radius, 8px); margin-bottom: 16px; }
 .pp-module-header p { margin-top: 4px; color: var(--sp-muted, #536276); font-size: 13px; }
 .pp-module-header small { display: block; color: var(--sp-primary, #0c5598); text-transform: uppercase; font-size: 10px; font-weight: 750; letter-spacing: .4px; margin-bottom: 3px; }
+.pp-module-ribbon { margin-bottom: 16px; }
+.pp-app .planning-ribbon-command:focus-visible { outline: 0; }
+.pp-app .planning-ribbon-command:disabled { opacity: .55; }
 .pp-header-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .pp-workspace { display: grid; grid-template-columns: 310px minmax(0, 1fr); align-items: stretch; gap: 16px; min-height: calc(100vh - 250px); }
 .pp-portfolio { background: var(--sp-surface, #ffffff); border: 1px solid var(--sp-border, #d8e0ea); border-radius: var(--sp-panel-radius, 8px); padding: 18px 16px; min-width: 0; }
@@ -377,7 +380,7 @@ body.pp-preview-page {
 
 @media print {
   body.pp-preview-page { background: var(--sp-surface, #ffffff); }
-  .pp-sidebar, .pp-topbar, .pp-module-header, .pp-portfolio, .pp-commandbar, .pp-demo-notice { display: none; }
+  .pp-sidebar, .pp-topbar, .pp-module-header, .pp-module-ribbon, .pp-portfolio, .pp-commandbar, .pp-demo-notice { display: none; }
   .pp-shell { margin: 0; }
   .pp-main { padding: 0; }
   .pp-workspace { display: block; }

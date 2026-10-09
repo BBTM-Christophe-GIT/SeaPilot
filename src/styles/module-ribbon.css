@@ -1,0 +1,214 @@
+/* Shared module ribbon: the Planning menu is the reference for grouped commands. */
+.planning-module-toolbar {
+  display: grid;
+  min-width: 0;
+  min-height: 154px;
+  border: 1px solid var(--sp-border, #d8e0ea);
+  border-radius: var(--sp-panel-radius, 8px);
+  background: var(--sp-surface, #fff);
+  box-shadow: var(--sp-shadow, 0 2px 8px rgb(24 33 50 / 4%));
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.planning-ribbon-utility {
+  display: flex;
+  min-width: 0;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--sp-border, #d8e0ea);
+  padding: 6px 9px 6px 11px;
+  background: var(--sp-surface-subtle, #fbfcfe);
+}
+
+.planning-ribbon-scroll {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-color: #9aacbf #edf2f7;
+  scrollbar-width: thin;
+}
+
+.planning-ribbon-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.planning-ribbon-scroll::-webkit-scrollbar-track {
+  background: #edf2f7;
+}
+
+.planning-ribbon-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid #edf2f7;
+  border-radius: 999px;
+  background: #9aacbf;
+}
+
+.planning-ribbon-group {
+  display: grid;
+  min-width: max-content;
+  flex: 0 0 auto;
+  grid-template-rows: minmax(0, 1fr) 20px;
+  border-right: 1px solid var(--sp-border, #d8e0ea);
+  padding: 3px 4px 0;
+}
+
+.planning-ribbon-group:last-child {
+  border-right: 0;
+}
+
+.planning-ribbon-group.is-empty {
+  min-width: 78px;
+}
+
+.planning-ribbon-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 78px;
+  grid-template-rows: repeat(2, 65px);
+  align-content: center;
+  gap: 2px;
+}
+
+.planning-module-toolbar.is-single-row {
+  min-height: 90px;
+}
+
+.planning-module-toolbar.is-single-row .planning-ribbon-actions {
+  grid-template-rows: 65px;
+}
+
+.planning-ribbon-group.is-empty .planning-ribbon-actions {
+  grid-auto-columns: 68px;
+}
+
+.planning-ribbon-group.is-centered .planning-ribbon-actions {
+  justify-content: center;
+}
+
+.planning-ribbon-group-label {
+  align-self: end;
+  overflow: hidden;
+  padding: 3px 5px 4px;
+  color: var(--sp-muted, #536276);
+  font-size: .56rem;
+  font-weight: 830;
+  letter-spacing: .045em;
+  line-height: 1;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.planning-ribbon-command {
+  display: grid;
+  position: relative;
+  width: 78px;
+  min-height: 65px;
+  grid-template-rows: 25px minmax(0, 1fr);
+  place-items: center;
+  align-content: center;
+  gap: 3px;
+  border: 1px solid transparent;
+  border-radius: var(--sp-control-radius, 6px);
+  padding: 5px 5px 4px;
+  color: var(--sp-text, #182132);
+  background: transparent;
+  font: inherit;
+  font-family: var(--sp-font, Inter, ui-sans-serif, system-ui, sans-serif);
+  cursor: pointer;
+}
+
+.planning-ribbon-command:hover,
+.planning-ribbon-command:focus-visible {
+  color: var(--sp-primary, #0c5598);
+  border-color: var(--sp-border-strong, #c7d2df);
+  outline: 0;
+  background: var(--sp-primary-soft, #eaf3fc);
+}
+
+.planning-ribbon-command:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--sp-focus, #0c66b7);
+}
+
+.planning-ribbon-command:disabled {
+  cursor: default;
+  opacity: .55;
+}
+
+.planning-ribbon-command-icon {
+  display: grid;
+  position: relative;
+  width: 28px;
+  height: 25px;
+  place-items: center;
+  color: var(--sp-primary, #0c5598);
+}
+
+.planning-ribbon-command-icon em {
+  display: grid;
+  position: absolute;
+  top: -5px;
+  right: -10px;
+  min-width: 17px;
+  height: 17px;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  padding: 0 3px;
+  color: #fff;
+  background: #ef4057;
+  font-size: .52rem;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.planning-ribbon-command-label {
+  display: -webkit-box;
+  overflow: hidden;
+  color: currentColor;
+  font-size: .58rem;
+  font-weight: 790;
+  line-height: 1.08;
+  text-align: center;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.planning-ribbon-command.is-utility {
+  display: inline-flex;
+  width: auto;
+  min-height: 30px;
+  grid-template-rows: none;
+  gap: 6px;
+  border-color: var(--sp-border, #d8e0ea);
+  border-radius: var(--sp-control-radius, 6px);
+  padding: 4px 9px;
+  background: #fff;
+}
+
+.planning-ribbon-command.is-utility .planning-ribbon-command-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.planning-ribbon-command.is-utility .planning-ribbon-command-label {
+  display: block;
+  font-size: .67rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .planning-module-toolbar {
+    min-height: 154px;
+  }
+}

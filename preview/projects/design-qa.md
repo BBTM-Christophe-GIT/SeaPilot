@@ -117,4 +117,81 @@ Captures ouvertes et contrôlées : [ordinateur](./evidence/billing-compact-desk
 
 Aucun P0/P1/P2 restant dans cette itération.
 
+## Itération : ruban Catalogue / Projet
+
+Demande du 9 octobre : remplacer les deux menus de l'en-tête par les commandes
+du même dessin que le Planning, documenter les règles communes de boutons,
+puis renommer Référentiels en Catalogue et privilégier une seule rangée.
+
+Références ouvertes : les captures utilisateur
+`codex-clipboard-6d326385-f56e-48d6-a2f4-0630a0391a62.png` et
+`codex-clipboard-bc487ce5-9f71-49c1-8ed7-6fbd1feaa740.png`.
+Le Planning fourni est une référence de dessin, avec ses propres commandes ;
+la demande suivante autorise explicitement une rangée au lieu de ses deux.
+
+- L'ancienne disposition à deux menus est remplacée par huit commandes
+  directement accessibles, dans les groupes Catalogue et Projet.
+- Le dessin vient de `ModuleRibbon` et du CSS Planning extrait dans
+  `src/styles/module-ribbon.css`, partagé entre application et préversion.
+  La variante `singleRow` est opt-in ; les rubans métier existants gardent
+  leur nombre de rangées et leurs adaptations spécifiques.
+- Tous les boutons mesurent 78 × 65 px et ont la même coordonnée verticale.
+  Le ruban mesure 90 px de haut, contre 157 px avec deux rangées.
+- Les handlers existants, l'archivage confirmé, les états désactivés et les
+  calculs de facturation sont conservés. Le ruban est exclu de l'impression.
+
+### Comparaison visuelle
+
+Capture à 1545 × 1000 CSS px, densité 1 ; le navigateur intégré produit une
+image de 1530 × 990 px. Cette image est remise à l'échelle du viewport avant
+le crop, avec les coordonnées DOM conservées dans
+[les mesures](./evidence/project-ribbon-capture.json).
+La référence de 1265 × 235 px est cadrée sur son ruban à x7/y72, 1252 × 157 px.
+Le ruban Projets a la même largeur de 1252 px et une hauteur de 90 px.
+
+La [comparaison complète](./evidence/project-ribbon-comparison.png) et la
+[comparaison rapprochée des commandes](./evidence/project-ribbon-controls-comparison.png)
+ont été ouvertes dans la même image. Les cinq surfaces ont été inspectées :
+
+- Typographie : même pile SeaPilot et règles du composant, libellés centrés
+  sur plusieurs lignes, noms de groupes en capitales. Le JPEG de preuve
+  est légèrement adouci par la capture ; la taille CSS est contrôlée dans le DOM.
+- Espacement : colonnes de 78 px, rangée de 65 px, caption de groupe de 20 px,
+  séparateurs verticaux et bordure extérieure conservés ; la rangée unique
+  est la différence demandée par l'utilisateur.
+- Couleurs : fond blanc et tokens communs, icônes `--sp-primary`, rayon de
+  commande de 6 px et focus commun ; aucune nouvelle palette indépendante.
+- Images et icônes : pictogrammes Lucide existants, sans actifs décoratifs
+  ou logo recréés. Les métaphores correspondent aux actions de Projets.
+- Contenu : libellés Catalogue / Projet et huit actions cohérents ; les
+  commandes propres au Planning ne sont pas copiées dans Projets.
+
+### Comportements et responsive
+
+- 100 tests de préversion et moteur de facturation passent, ainsi que les
+  105 tests Planning / permissions ; build de production réussi.
+- Les tests couvrent les trois catalogues, leur fermeture et le retour du
+  focus, nouveau/modification, archivage annulé et confirmé, actualisation
+  et réinitialisation de la démonstration.
+- Dans le navigateur intégré, Entrée ouvre Clients ; Échap ferme sa fenêtre
+  et rend le focus à Clients. Aucun avertissement ou erreur console.
+- À 1280 × 720, les huit boutons sont sur une seule rangée et la page ne
+  déborde pas. À 390 × 844, scrollWidth de page 375 px, conteneur de ruban
+  353 px et contenu 653 px ; les huit boutons restent alignés et accessibles
+  par défilement. Tab depuis la dernière commande fait défiler le ruban et
+  passe à la recherche du portefeuille. Viewport temporaire réinitialisé.
+- Les adaptations de Fleet/Certificats, Achats, DPR et Frais restent prioritaires
+  sur le socle partagé. Les fixtures Planning des vrais profils sont testées ;
+  aucune vue Marin/Capitaine simulée n'est utilisée pour établir les droits.
+
+Captures contrôlées : [ordinateur](./evidence/project-ribbon-desktop.jpg),
+[mobile](./evidence/project-ribbon-mobile.jpg).
+Charte : règles pour commandes de module, actions locales et confirmations,
+tokens, focus clavier, menus, états désactivés et défilement sur une seule rangée.
+
+Aucun P0/P1/P2 restant dans le périmètre. Les écarts de contenu entre Planning
+et Projets et la rangée unique sont attendus et explicitement demandés.
+Les parcours complets de production et leur intégration ne sont pas changés
+par cette préversion ; les vérifications ci-dessus portent sur cette itération.
+
 final result: passed

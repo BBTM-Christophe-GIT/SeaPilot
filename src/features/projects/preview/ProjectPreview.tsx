@@ -1,7 +1,7 @@
 import {
-  Archive, Bell, BookOpen, CalendarDays, Check, ChevronDown, ChevronRight,
+  Archive, Bell, CalendarDays, Check, ChevronDown, ChevronRight,
   ClipboardList, Download, FilePlus2, FileText, FolderKanban, Fuel, Home,
-  PackageCheck, Pencil, Plus, ReceiptText, RefreshCw, Save, Search, Settings2,
+  PackageCheck, Pencil, Plus, ReceiptText, RefreshCw, RotateCcw, Save, Search, Settings2,
   ShieldCheck, Ship, ShoppingCart, SlidersHorizontal, Trash2, Users, X,
   type LucideIcon,
 } from 'lucide-react';
@@ -9,6 +9,7 @@ import {
   useEffect, useId, useMemo, useRef, useState,
   type FormEvent, type ReactNode,
 } from 'react';
+import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../../components/ModuleRibbon';
 import {
   billingRawLineTotal, defaultProjectClientReference, generateBillingExportPackage,
   type BillingExportFormat, type ProjectBillingDocument, type ProjectBillingRawLine,
@@ -373,16 +374,21 @@ export function ProjectPreview() {
     <div className="pp-shell">
       <header className="pp-topbar"><span>Opérations <ChevronRight size={14} /> <strong>Projets</strong></span><div className="pp-header-actions"><span className="pp-demo-notice">Démonstration</span><Bell size={20} /><span className="pp-avatar">AD</span><span>Arthur DEMO<small className="pp-muted">Administration</small></span></div></header>
       <main className="pp-main">
-        <header className="pp-module-header"><div><small>MODULE</small><h1>Projets</h1><p>Contrats, opérations, facturation et documents.</p></div><div className="pp-header-actions">
-          {menuControl('references', 'Référentiels', BookOpen, ['Clients', 'Remorqués', 'Prestations'].map((label) => ({ label, action: () => catalog(label) })))}
-          {menuControl('project', 'Projet', FolderKanban, [
-            { label: 'Nouveau projet', icon: Plus, action: () => projectEditor(true) },
-            { label: 'Modifier le projet', icon: Pencil, action: () => projectEditor(), disabled: archived },
-            { label: 'Archiver le projet', icon: Archive, disabled: archived, action: () => setConfirm({ title: 'Archiver le projet', message: `Archiver ${demo.project.projectCode} dans la démonstration ?`, action: () => { update((current) => ({ ...current, project: { ...current.project, archivedAt: new Date().toISOString() } })); setShowArchived(true); notify('Projet archivé dans la démonstration.'); } }) },
-            { label: 'Actualiser', icon: RefreshCw, action: () => notify('Données de démonstration actualisées.') },
-            { label: 'Réinitialiser la démonstration', icon: RefreshCw, action: reset },
-          ])}
-        </div></header>
+        <header className="pp-module-header"><div><small>MODULE</small><h1>Projets</h1><p>Contrats, opérations, facturation et documents.</p></div></header>
+        <ModuleRibbon ariaLabel="Menu des projets" className="pp-module-ribbon" singleRow>
+          <ModuleRibbonGroup label="Catalogue">
+            <ModuleRibbonCommand icon={<Users aria-hidden="true" size={22} />} label="Clients" onClick={() => catalog('Clients')} />
+            <ModuleRibbonCommand icon={<Ship aria-hidden="true" size={22} />} label="Remorqués" onClick={() => catalog('Remorqués')} />
+            <ModuleRibbonCommand icon={<PackageCheck aria-hidden="true" size={22} />} label="Prestations" onClick={() => catalog('Prestations')} />
+          </ModuleRibbonGroup>
+          <ModuleRibbonGroup label="Projet">
+            <ModuleRibbonCommand icon={<Plus aria-hidden="true" size={22} />} label="Nouveau projet" onClick={() => projectEditor(true)} />
+            <ModuleRibbonCommand icon={<Pencil aria-hidden="true" size={22} />} label="Modifier le projet" disabled={archived} onClick={() => projectEditor()} />
+            <ModuleRibbonCommand icon={<Archive aria-hidden="true" size={22} />} label="Archiver le projet" disabled={archived} onClick={() => setConfirm({ title: 'Archiver le projet', message: `Archiver ${demo.project.projectCode} dans la démonstration ?`, action: () => { update((current) => ({ ...current, project: { ...current.project, archivedAt: new Date().toISOString() } })); setShowArchived(true); notify('Projet archivé dans la démonstration.'); } })} />
+            <ModuleRibbonCommand icon={<RefreshCw aria-hidden="true" size={22} />} label="Actualiser" onClick={() => notify('Données de démonstration actualisées.')} />
+            <ModuleRibbonCommand icon={<RotateCcw aria-hidden="true" size={22} />} label="Réinitialiser la démonstration" onClick={reset} />
+          </ModuleRibbonGroup>
+        </ModuleRibbon>
         <div className="pp-workspace">
           <aside className="pp-portfolio"><h2>Portefeuille</h2><label className="pp-search"><Search size={17} /><input aria-label="Rechercher un projet" placeholder="Rechercher un projet…" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
             <div className="pp-filter-row"><button className="pp-button" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(!filtersOpen)}><SlidersHorizontal size={17} />Filtres</button><button className="pp-button icon" aria-label="Réinitialiser les filtres" onClick={() => { setQuery(''); setStatusFilter(''); setShowArchived(false); }}><RefreshCw size={17} /></button><button className="pp-button icon" aria-label="Changer la densité" aria-pressed={compact} onClick={() => setCompact(!compact)}><Settings2 size={17} /></button></div>

@@ -14,9 +14,20 @@ le panneau offre 830 px, puis se répartissent sur trois ou deux colonnes selon
 l'espace disponible. Les labels restent visibles et les contrôles conservent
 les dimensions partagées SeaPilot.
 
+Les menus Référentiels et Projet sont remplacés par un ruban reprenant le
+dessin du Planning : icônes au-dessus des libellés, groupes séparés et nom de
+groupe en bas. Le groupe Catalogue donne accès aux clients, remorqués et
+prestations ; le groupe Projet rassemble ses cinq actions existantes. Toutes
+les commandes sont sur une seule rangée avec `ModuleRibbon singleRow`.
+Sur petit écran, seul le ruban défile horizontalement.
+Les règles des boutons et menus pour les pages sont documentées dans
+[la charte commune](../../docs/design/design-system.md).
+
 ## Parcours à essayer
 
 - Rechercher un projet, filtrer son statut et changer la densité du portefeuille.
+- Ouvrir Clients, Remorqués ou Prestations depuis Catalogue, puis fermer par Échap.
+- Utiliser Nouveau projet, Modifier, Archiver, Actualiser et Réinitialiser depuis le ruban.
 - Changer de dossier et de rubrique ; créer ou modifier un projet et ses opérations.
 - Sélectionner un mois : sa fiche est créée automatiquement lors de la première action.
 - Déplier les trois sections, exclure une journée ou une section et vérifier le total HT.
@@ -46,6 +57,7 @@ Avec pnpm 10.34.5 :
 
 ```powershell
 corepack pnpm test src/features/projects/preview/billingDemo.test.ts src/features/projects/preview/previewStorageClient.test.ts src/features/projects/preview/ProjectPreview.test.tsx src/features/projects/projectBilling.test.ts src/features/projects/projectBillingReferences.test.ts --pool=forks --maxWorkers=1
+corepack pnpm test src/features/planning/PlanningPage.test.tsx src/features/planning/planningPermissions.test.ts --pool=forks --maxWorkers=1
 corepack pnpm build
 ```
 
