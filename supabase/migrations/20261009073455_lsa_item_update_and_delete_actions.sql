@@ -129,4 +129,3 @@ revoke all on function public.delete_lsa_item(bigint,timestamptz) from public,an
 grant execute on function public.delete_lsa_item(bigint,timestamptz) to authenticated;
 
 notify pgrst,'reload schema';
-
