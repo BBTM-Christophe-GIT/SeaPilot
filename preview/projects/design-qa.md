@@ -117,11 +117,12 @@ Captures ouvertes et contrôlées : [ordinateur](./evidence/billing-compact-desk
 
 Aucun P0/P1/P2 restant dans cette itération.
 
-## Itération : ruban Catalogue / Projet
+## Itération : ruban Projet / Catalogue
 
 Demande du 9 octobre : remplacer les deux menus de l'en-tête par les commandes
 du même dessin que le Planning, documenter les règles communes de boutons,
-puis renommer Référentiels en Catalogue et privilégier une seule rangée.
+puis renommer Référentiels en Catalogue, privilégier une seule rangée et placer
+le groupe Projet avant Catalogue.
 
 Références ouvertes : les captures utilisateur
 `codex-clipboard-6d326385-f56e-48d6-a2f4-0630a0391a62.png` et
@@ -130,7 +131,7 @@ Le Planning fourni est une référence de dessin, avec ses propres commandes ;
 la demande suivante autorise explicitement une rangée au lieu de ses deux.
 
 - L'ancienne disposition à deux menus est remplacée par huit commandes
-  directement accessibles, dans les groupes Catalogue et Projet.
+  directement accessibles, dans les groupes Projet puis Catalogue.
 - Le dessin vient de `ModuleRibbon` et du CSS Planning extrait dans
   `src/styles/module-ribbon.css`, partagé entre application et préversion.
   La variante `singleRow` est opt-in ; les rubans métier existants gardent
@@ -163,7 +164,7 @@ ont été ouvertes dans la même image. Les cinq surfaces ont été inspectées 
   commande de 6 px et focus commun ; aucune nouvelle palette indépendante.
 - Images et icônes : pictogrammes Lucide existants, sans actifs décoratifs
   ou logo recréés. Les métaphores correspondent aux actions de Projets.
-- Contenu : libellés Catalogue / Projet et huit actions cohérents ; les
+- Contenu : libellés Projet / Catalogue et huit actions cohérents ; les
   commandes propres au Planning ne sont pas copiées dans Projets.
 
 ### Comportements et responsive
@@ -173,8 +174,9 @@ ont été ouvertes dans la même image. Les cinq surfaces ont été inspectées 
 - Les tests couvrent les trois catalogues, leur fermeture et le retour du
   focus, nouveau/modification, archivage annulé et confirmé, actualisation
   et réinitialisation de la démonstration.
-- Dans le navigateur intégré, Entrée ouvre Clients ; Échap ferme sa fenêtre
-  et rend le focus à Clients. Aucun avertissement ou erreur console.
+- Dans le navigateur intégré, Entrée ouvre un catalogue (Clients, puis
+  Prestations après inversion des groupes) ; Échap ferme sa fenêtre et rend
+  le focus au bouton d'origine. Aucun avertissement ou erreur console.
 - À 1280 × 720, les huit boutons sont sur une seule rangée et la page ne
   déborde pas. À 390 × 844, scrollWidth de page 375 px, conteneur de ruban
   353 px et contenu 653 px ; les huit boutons restent alignés et accessibles

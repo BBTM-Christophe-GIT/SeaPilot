@@ -376,17 +376,17 @@ export function ProjectPreview() {
       <main className="pp-main">
         <header className="pp-module-header"><div><small>MODULE</small><h1>Projets</h1><p>Contrats, opérations, facturation et documents.</p></div></header>
         <ModuleRibbon ariaLabel="Menu des projets" className="pp-module-ribbon" singleRow>
-          <ModuleRibbonGroup label="Catalogue">
-            <ModuleRibbonCommand icon={<Users aria-hidden="true" size={22} />} label="Clients" onClick={() => catalog('Clients')} />
-            <ModuleRibbonCommand icon={<Ship aria-hidden="true" size={22} />} label="Remorqués" onClick={() => catalog('Remorqués')} />
-            <ModuleRibbonCommand icon={<PackageCheck aria-hidden="true" size={22} />} label="Prestations" onClick={() => catalog('Prestations')} />
-          </ModuleRibbonGroup>
           <ModuleRibbonGroup label="Projet">
             <ModuleRibbonCommand icon={<Plus aria-hidden="true" size={22} />} label="Nouveau projet" onClick={() => projectEditor(true)} />
             <ModuleRibbonCommand icon={<Pencil aria-hidden="true" size={22} />} label="Modifier le projet" disabled={archived} onClick={() => projectEditor()} />
             <ModuleRibbonCommand icon={<Archive aria-hidden="true" size={22} />} label="Archiver le projet" disabled={archived} onClick={() => setConfirm({ title: 'Archiver le projet', message: `Archiver ${demo.project.projectCode} dans la démonstration ?`, action: () => { update((current) => ({ ...current, project: { ...current.project, archivedAt: new Date().toISOString() } })); setShowArchived(true); notify('Projet archivé dans la démonstration.'); } })} />
             <ModuleRibbonCommand icon={<RefreshCw aria-hidden="true" size={22} />} label="Actualiser" onClick={() => notify('Données de démonstration actualisées.')} />
             <ModuleRibbonCommand icon={<RotateCcw aria-hidden="true" size={22} />} label="Réinitialiser la démonstration" onClick={reset} />
+          </ModuleRibbonGroup>
+          <ModuleRibbonGroup label="Catalogue">
+            <ModuleRibbonCommand icon={<Users aria-hidden="true" size={22} />} label="Clients" onClick={() => catalog('Clients')} />
+            <ModuleRibbonCommand icon={<Ship aria-hidden="true" size={22} />} label="Remorqués" onClick={() => catalog('Remorqués')} />
+            <ModuleRibbonCommand icon={<PackageCheck aria-hidden="true" size={22} />} label="Prestations" onClick={() => catalog('Prestations')} />
           </ModuleRibbonGroup>
         </ModuleRibbon>
         <div className="pp-workspace">

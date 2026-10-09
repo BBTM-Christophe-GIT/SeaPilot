@@ -16,8 +16,8 @@ les dimensions partagées SeaPilot.
 
 Les menus Référentiels et Projet sont remplacés par un ruban reprenant le
 dessin du Planning : icônes au-dessus des libellés, groupes séparés et nom de
-groupe en bas. Le groupe Catalogue donne accès aux clients, remorqués et
-prestations ; le groupe Projet rassemble ses cinq actions existantes. Toutes
+groupe en bas. Le groupe Projet rassemble ses cinq actions existantes et
+précède Catalogue, qui donne accès aux clients, remorqués et prestations. Toutes
 les commandes sont sur une seule rangée avec `ModuleRibbon singleRow`.
 Sur petit écran, seul le ruban défile horizontalement.
 Les règles des boutons et menus pour les pages sont documentées dans
