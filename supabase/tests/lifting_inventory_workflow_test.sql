@@ -263,7 +263,6 @@ begin
   select id into vessel from public.vessels where name='LIFTING TEST VESSEL';
   select id into foreign_vessel from public.vessels where name='LIFTING OTHER VESSEL';
   select id into published from public.lifting_inspections where vessel_id=vessel and status='published' order by id limit 1;
-  select jsonb_agg(to_jsonb(i) order by id) into inventory_before from public.lifting_inventory i where vessel_id=vessel;
   select jsonb_agg(to_jsonb(r) order by id) into reports_before from public.lifting_inspections r where vessel_id=vessel;
   select jsonb_agg(to_jsonb(e) order by e.id) into entries_before from public.lifting_inspection_entries e join public.lifting_inspections r on r.id=e.inspection_id where r.vessel_id=vessel;
   select jsonb_agg(to_jsonb(c) order by id) into certificates_before from public.fleet_certificates c where vessel_id=vessel;
@@ -276,6 +275,8 @@ begin
   execute 'set local role authenticated';
   perform set_config('request.jwt.claim.sub','9e090000-0000-0000-0000-000000000001',true);
   draft:=public.start_lifting_inspection(vessel,'lifting','2031-03-05','2032-03-05');
+  -- Creation deliberately updates commissioning dates; deletion must preserve that inventory.
+  select jsonb_agg(to_jsonb(i) order by id) into inventory_before from public.lifting_inventory i where vessel_id=vessel;
   select id into entry from public.lifting_inspection_entries where inspection_id=draft order by id limit 1;
   revision:=public.save_lifting_inspection_entry(draft,entry,1,'repair',public.lifting_default_checks((select item_snapshot from public.lifting_inspection_entries where id=entry)),'Saved before deletion');
   foreach uid in array array['9e090000-0000-0000-0000-000000000004'::uuid,'9e090000-0000-0000-0000-000000000005'::uuid] loop
@@ -313,6 +314,7 @@ begin
   assert exists(select 1 from public.lifting_inspection_entries where id=entry and observations='Saved before deletion'),'Rejected deletion preserves saved work';
   perform public.delete_lifting_inspection_draft(draft,(select r.revision from public.lifting_inspections r where id=draft));
   assert not exists(select 1 from public.lifting_inspection_entries where inspection_id=draft),'Saved draft entries deleted';
+  assert inventory_before=(select jsonb_agg(to_jsonb(i) order by id) from public.lifting_inventory i where vessel_id=vessel),'Saved draft deletion preserves inventory';
   begin
     perform public.delete_lifting_inspection_draft(draft,2);
     raise exception 'Missing draft accepted';
@@ -321,9 +323,11 @@ begin
     perform set_config('request.jwt.claim.sub',uid::text,true);
     foreach kind in array array['lifting','towing'] loop
       draft:=public.start_lifting_inspection(vessel,kind,'2031-03-05','2032-03-05');
+      select jsonb_agg(to_jsonb(i) order by id) into inventory_before from public.lifting_inventory i where vessel_id=vessel;
       perform public.delete_lifting_inspection_draft(draft,1);
       assert not exists(select 1 from public.lifting_inspections where id=draft),'Manager draft removed';
       assert not exists(select 1 from public.lifting_inspection_entries where inspection_id=draft),'Manager draft entries removed';
+      assert inventory_before=(select jsonb_agg(to_jsonb(i) order by id) from public.lifting_inventory i where vessel_id=vessel),'Manager draft deletion preserves inventory';
     end loop;
   end loop;
   execute 'reset role';
@@ -399,7 +403,8 @@ begin
   perform set_config('request.jwt.claim.sub','9e090000-0000-0000-0000-000000000001',true);
   execute 'set local role authenticated';
   item:=public.save_lifting_item(vessel,'lifting','{"material_type":"Manilles","description":"Replacement fixture","commissioned_on":"2020-01-01","serial_number":"SERIAL","swl_tonnes":2,"notes":"Keep me"}');
-  report:=public.start_lifting_inspection(vessel,'lifting',today,today+365);
+  -- The old inspection predates replacement: creation now sets its commissioning date.
+  report:=public.start_lifting_inspection(vessel,'lifting',today-14,today-14+365);
   select id,item_snapshot into entry,before_snapshot from public.lifting_inspection_entries where inspection_id=report;
   select to_jsonb(i) into prior from public.lifting_inventory i where id=item;
   path:=c||'/'||vessel||'/'||item||'/1/'||gen_random_uuid()||'.png';

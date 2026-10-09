@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -7,29 +7,30 @@ import { createLsaPreviewClient } from './lsaPreview';
 import { fetchLsaRegister } from './lsaQueries';
 import { LSA_CATEGORIES } from './lsaModel';
 import { demoFleetVessels } from '../lifting/liftingPreview';
+import { annualExpiry, todayLocal } from '../lifting/liftingModel';
 import { getFleetCertificateCategoryOptions } from '../fleetCertificates/fleetCertificateCategories';
-import type { RoleKey } from '../permissions/roles';
+import { ROLE_KEYS, type RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 
-function renderLsaProfile(roles: RoleKey[], client = createLsaPreviewClient()) {
+function renderLsaProfile(roles: RoleKey[], client = createLsaPreviewClient(), initialEntries = ['/modules/lsa']) {
   // Synthetic data only; each profile uses its own non-preview role context without a session override.
   const context = { roles, client, previewMode: false, currentPerson: null } satisfies AppShellOutletContext;
-  return render(<MemoryRouter><Routes><Route element={<Outlet context={context} />}><Route index element={<LsaPage />} /></Route></Routes></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={initialEntries}><Routes><Route element={<Outlet context={context} />}><Route path="/modules/lsa" element={<LsaPage />} /></Route></Routes></MemoryRouter>);
 }
 
 describe('Registre LSA', () => {
-  it.each(['capitaine', 'marin'] as const)('opens the linked vessel and exact item history read-only for %s', async (role) => {
+  it.each(['capitaine', 'marin'] as const)('opens the linked vessel and exact item history without opening an edit dialog for %s', async (role) => {
     const client = createLsaPreviewClient();
     const vessel = demoFleetVessels[1];
     const register = await fetchLsaRegister(client, vessel.id);
     const item = register.items[1];
-    render(<MemoryRouter initialEntries={[`/modules/lsa?vessel=${vessel.id}&item=${item.id}`]}><LsaPage client={client} roles={[role]} /></MemoryRouter>);
+    renderLsaProfile([role], client, [`/modules/lsa?vessel=${vessel.id}&item=${item.id}`]);
 
     await waitFor(() => expect(screen.getByRole('button', { name: vessel.name })).toHaveAttribute('aria-pressed', 'true'), { timeout: 5000 });
     await waitFor(() => expect(document.getElementById(`lsa-item-${item.id}`)?.querySelector('details')).toHaveAttribute('open'), { timeout: 5000 });
     expect(document.querySelectorAll('.lsa-details[open]')).toHaveLength(1);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Modifier/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Modifier ${item.document_title}` })).toBeEnabled();
   });
 
   it('follows another item link in the mounted register without opening an edit dialog', async () => {
@@ -101,10 +102,10 @@ describe('Registre LSA', () => {
     expect(screen.getByText('Aucun document de contrôle pour cette sélection.')).toBeInTheDocument();
   });
 
-  it('persists an edited item in the selected vessel and keeps it after reloading', async () => {
+  it.each(ROLE_KEYS)('persists an edited item in the selected vessel and keeps it after reloading for %s', async (role) => {
     const user = userEvent.setup();
     const client = createLsaPreviewClient();
-    render(<MemoryRouter><LsaPage client={client} roles={['armement']} /></MemoryRouter>);
+    renderLsaProfile([role], client);
     await user.click(await screen.findByRole('button', { name: 'Modifier EPIRB - 01' }));
     const dialog = within(screen.getByRole('dialog'));
     await user.clear(dialog.getByLabelText('Marque'));
@@ -117,13 +118,162 @@ describe('Registre LSA', () => {
     expect(register.items.find((item) => item.document_title === 'EPIRB - 01')?.brand).toBe('Ocean Signal');
   });
 
-  it.each(['capitaine', 'marin'] as const)('allows the %s profile to create a numbered item while keeping existing items read-only', async (role) => {
+  it.each(ROLE_KEYS)('offers all actions on every card and updates only the selected expiry for %s', async (role) => {
+    const user = userEvent.setup();
+    const client = createLsaPreviewClient();
+    const vessel = demoFleetVessels.find((entry) => entry.acronym === 'SUR')!;
+    const original = (await fetchLsaRegister(client, vessel.id)).items;
+    const item = original.find((entry) => entry.document_title === 'EPIRB - 01')!;
+    const rpc = vi.spyOn(client, 'rpc');
+    renderLsaProfile([role], client);
+    await screen.findByText('4 / 4 matériels affichés');
+
+    for (const entry of original) {
+      const card = within(document.getElementById(`lsa-item-${entry.id}`)!);
+      for (const action of ['Mettre à jour', 'Modifier', 'Supprimer']) {
+        expect(card.getByRole('button', { name: `${action} ${entry.document_title}` })).toBeEnabled();
+      }
+    }
+    await user.click(screen.getByRole('button', { name: `Mettre à jour ${item.document_title}` }));
+    const dialogElement = screen.getByRole('dialog', { name: 'Mettre à jour l’échéance' });
+    const dialog = within(dialogElement);
+    const date = dialog.getByLabelText('Date d’échéance');
+    expect(date).toHaveValue(annualExpiry(todayLocal()));
+    expect(date).toBeRequired();
+    expect(dialogElement.querySelectorAll('input, select, textarea')).toHaveLength(1);
+    expect(dialog.getByText(item.document_title)).toBeInTheDocument();
+    fireEvent.change(date, { target: { value: '2028-02-12' } });
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+
+    await screen.findByText('Échéance LSA mise à jour.');
+    await screen.findByText('4 / 4 matériels affichés');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(rpc).toHaveBeenCalledWith('update_lsa_item_expiry', {
+      p_id: item.id, p_expires_on: '2028-02-12', p_expected_updated_at: item.updated_at,
+    });
+    expect(rpc).not.toHaveBeenCalledWith('save_lsa_item', expect.anything());
+    const saved = (await fetchLsaRegister(client, vessel.id)).items;
+    const savedItem = saved.find((entry) => entry.id === item.id)!;
+    expect(savedItem).toEqual({ ...item, expires_on: '2028-02-12', updated_at: savedItem.updated_at });
+    expect(saved.filter((entry) => entry.id !== item.id)).toEqual(original.filter((entry) => entry.id !== item.id));
+    const card = within(document.getElementById(`lsa-item-${item.id}`)!);
+    expect(card.getByText(/12\/02\/2028/)).toBeInTheDocument();
+  });
+
+  it('recomputes the expiry from the current Paris date whenever the update dialog opens', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-09T21:30:00Z'));
+      const user = userEvent.setup();
+      const client = createLsaPreviewClient();
+      const rpc = vi.spyOn(client, 'rpc');
+      renderLsaProfile(['marin'], client);
+      await user.click(await screen.findByRole('button', { name: 'Mettre à jour EPIRB - 01' }));
+      let dialog = within(screen.getByRole('dialog', { name: 'Mettre à jour l’échéance' }));
+      expect(dialog.getByLabelText('Date d’échéance')).toHaveValue('2027-10-09');
+      fireEvent.change(dialog.getByLabelText('Date d’échéance'), { target: { value: '2029-03-15' } });
+      await user.click(dialog.getByRole('button', { name: 'Annuler' }));
+      expect(rpc).not.toHaveBeenCalledWith('update_lsa_item_expiry', expect.anything());
+
+      // Paris has crossed midnight although the UTC calendar date is still October 9.
+      vi.setSystemTime(new Date('2026-10-09T22:30:00Z'));
+      await user.click(screen.getByRole('button', { name: 'Mettre à jour EPIRB - 01' }));
+      dialog = within(screen.getByRole('dialog', { name: 'Mettre à jour l’échéance' }));
+      expect(dialog.getByLabelText('Date d’échéance')).toHaveValue('2027-10-10');
+      fireEvent.change(dialog.getByLabelText('Date d’échéance'), { target: { value: '' } });
+      await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+      expect(rpc).not.toHaveBeenCalledWith('update_lsa_item_expiry', expect.anything());
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(ROLE_KEYS)('deletes the selected item only after confirmation for %s', async (role) => {
+    const user = userEvent.setup();
+    const client = createLsaPreviewClient();
+    const vessel = demoFleetVessels.find((entry) => entry.acronym === 'SUR')!;
+    const original = (await fetchLsaRegister(client, vessel.id)).items;
+    const item = original.find((entry) => entry.document_title === 'EPIRB - 01')!;
+    const rpc = vi.spyOn(client, 'rpc');
+    renderLsaProfile([role], client);
+    await user.click(await screen.findByRole('button', { name: `Supprimer ${item.document_title}` }));
+    let dialog = within(screen.getByRole('dialog', { name: 'Supprimer le matériel LSA' }));
+    expect(dialog.getByText(item.document_title)).toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Annuler' }));
+    expect(rpc).not.toHaveBeenCalledWith('delete_lsa_item', expect.anything());
+    expect((await fetchLsaRegister(client, vessel.id)).items).toEqual(original);
+
+    await user.click(screen.getByRole('button', { name: `Supprimer ${item.document_title}` }));
+    dialog = within(screen.getByRole('dialog', { name: 'Supprimer le matériel LSA' }));
+    await user.click(dialog.getByRole('button', { name: 'Supprimer' }));
+    await screen.findByText('Matériel LSA supprimé.');
+    await screen.findByText('3 / 3 matériels affichés');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: item.document_title })).not.toBeInTheDocument();
+    expect(rpc).toHaveBeenCalledWith('delete_lsa_item', { p_id: item.id, p_expected_updated_at: item.updated_at });
+    expect((await fetchLsaRegister(client, vessel.id)).items).toEqual(original.filter((entry) => entry.id !== item.id));
+  });
+
+  it('preserves the proposed expiry and original record after a refused update and allows retry', async () => {
+    const user = userEvent.setup();
+    const client = createLsaPreviewClient();
+    const vesselId = demoFleetVessels.find((entry) => entry.acronym === 'SUR')!.id;
+    const original = (await fetchLsaRegister(client, vesselId)).items;
+    const originalRpc = client.rpc.bind(client);
+    let attempts = 0;
+    vi.spyOn(client, 'rpc').mockImplementation((name, args) => name === 'update_lsa_item_expiry' && ++attempts === 1
+      ? Promise.resolve({ data: null, error: { message: 'Échéance non enregistrée. Réessayez.' } }) as unknown as ReturnType<typeof client.rpc>
+      : originalRpc(name, args));
+    renderLsaProfile(['marin'], client);
+    await user.click(await screen.findByRole('button', { name: 'Mettre à jour EPIRB - 01' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Mettre à jour l’échéance' }));
+    fireEvent.change(dialog.getByLabelText('Date d’échéance'), { target: { value: '2028-06-05' } });
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    expect(await dialog.findByRole('alert')).toHaveTextContent('Échéance non enregistrée. Réessayez.');
+    expect(dialog.getByLabelText('Date d’échéance')).toHaveValue('2028-06-05');
+    expect(dialog.getByRole('button', { name: 'Enregistrer' })).toBeEnabled();
+    expect((await fetchLsaRegister(client, vesselId)).items).toEqual(original);
+
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Échéance LSA mise à jour.');
+    expect(attempts).toBe(2);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect((await fetchLsaRegister(client, vesselId)).items.find((entry) => entry.document_title === 'EPIRB - 01')?.expires_on).toBe('2028-06-05');
+  });
+
+  it('keeps the record and deletion confirmation after a refused deletion and allows retry', async () => {
+    const user = userEvent.setup();
+    const client = createLsaPreviewClient();
+    const vesselId = demoFleetVessels.find((entry) => entry.acronym === 'SUR')!.id;
+    const original = (await fetchLsaRegister(client, vesselId)).items;
+    const originalRpc = client.rpc.bind(client);
+    let attempts = 0;
+    vi.spyOn(client, 'rpc').mockImplementation((name, args) => name === 'delete_lsa_item' && ++attempts === 1
+      ? Promise.resolve({ data: null, error: { message: 'Suppression refusée. Réessayez.' } }) as unknown as ReturnType<typeof client.rpc>
+      : originalRpc(name, args));
+    renderLsaProfile(['capitaine'], client);
+    await user.click(await screen.findByRole('button', { name: 'Supprimer EPIRB - 01' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Supprimer le matériel LSA' }));
+    await user.click(dialog.getByRole('button', { name: 'Supprimer' }));
+    expect(await dialog.findByRole('alert')).toHaveTextContent('Suppression refusée. Réessayez.');
+    expect(dialog.getByRole('button', { name: 'Supprimer' })).toBeEnabled();
+    expect((await fetchLsaRegister(client, vesselId)).items).toEqual(original);
+
+    await user.click(dialog.getByRole('button', { name: 'Supprimer' }));
+    await screen.findByText('Matériel LSA supprimé.');
+    expect(attempts).toBe(2);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect((await fetchLsaRegister(client, vesselId)).items).toHaveLength(original.length - 1);
+  });
+
+  it.each(['capitaine', 'marin'] as const)('allows the %s profile to create a numbered item and act on existing items', async (role) => {
     const user = userEvent.setup();
     const client = createLsaPreviewClient();
     const rpc = vi.spyOn(client, 'rpc');
     renderLsaProfile([role], client);
     await screen.findByText('4 / 4 matériels affichés');
-    expect(screen.queryByRole('button', { name: /^Modifier/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^Modifier / })).toHaveLength(4);
     await user.click(screen.getByRole('button', { name: 'Ajouter un matériel' }));
     const dialog = within(screen.getByRole('dialog', { name: 'Fiche matériel LSA' }));
     await user.selectOptions(dialog.getByLabelText('Désignation'), '13');
@@ -140,12 +290,12 @@ describe('Registre LSA', () => {
       p_expected_updated_at: null,
     });
     expect(await screen.findByRole('heading', { name: 'Feu à main - 02' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Modifier/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Modifier Feu à main - 02' })).toBeEnabled();
     const register = await fetchLsaRegister(client, vesselId);
     expect(register.items.find((item) => item.document_title === 'Feu à main - 02')?.brand).toBe(`Marque ${role}`);
   });
 
-  it.each(['capitaine', 'marin'] as const)('keeps historical inventory readable and denies creation according to server access for %s', async (role) => {
+  it.each(['capitaine', 'marin'] as const)('keeps historical inventory readable and denies all mutations according to server access for %s', async (role) => {
     const user = userEvent.setup();
     const client = createLsaPreviewClient();
     const currentVessel = demoFleetVessels.find((vessel) => vessel.acronym === 'SUR')!;
@@ -170,7 +320,7 @@ describe('Registre LSA', () => {
 
     await user.click(screen.getByRole('button', { name: historicalVessel.name }));
     await screen.findByText('Chargement du registre…');
-    // A true result for the preceding vessel must not enable creation while the new scope is pending.
+    // A true result for the preceding vessel must not enable mutations while the new scope is pending.
     expect(addButton).toBeDisabled();
     await user.click(addButton);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -183,11 +333,22 @@ describe('Registre LSA', () => {
     expect(addButton).toBeDisabled();
     await user.click(addButton);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(rpc.mock.calls.some(([name]) => name === 'lsa_next_item_number' || name === 'save_lsa_item')).toBe(false);
-    expect(screen.queryByRole('button', { name: /^Modifier/ })).not.toBeInTheDocument();
+    for (const action of ['Mettre à jour', 'Modifier', 'Supprimer']) {
+      const buttons = screen.getAllByRole('button', { name: new RegExp(`^${action} `) });
+      expect(buttons).toHaveLength(historicalRegister.items.length);
+      for (const button of buttons) {
+        expect(button).toBeDisabled();
+        await user.click(button);
+      }
+    }
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(rpc.mock.calls.some(([name]) => ['lsa_next_item_number', 'save_lsa_item', 'update_lsa_item_expiry', 'delete_lsa_item'].includes(name))).toBe(false);
 
     await user.click(screen.getByRole('button', { name: currentVessel.name }));
     await waitFor(() => expect(addButton).toBeEnabled());
+    for (const action of ['Mettre à jour', 'Modifier', 'Supprimer']) {
+      expect(screen.getByRole('button', { name: `${action} EPIRB - 01` })).toBeEnabled();
+    }
   });
 
   it.each([
@@ -202,6 +363,8 @@ describe('Registre LSA', () => {
     if (!roles.length) {
       expect(screen.queryByRole('button', { name: 'Ajouter un matériel' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /^Modifier/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Mettre à jour/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Supprimer/ })).not.toBeInTheDocument();
     }
   });
 
@@ -273,12 +436,8 @@ describe('Registre LSA', () => {
     await user.click(screen.getByRole('button', { name: 'Ajouter un matériel' }));
     expect(within(screen.getByRole('dialog')).queryByRole('option', { name: /Feu modifié/ })).not.toBeInTheDocument();
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Annuler' }));
-    if (role === 'admin') {
-      await user.click(screen.getByRole('button', { name: 'Modifier Feu modifié - 01' }));
-      expect(within(screen.getByRole('dialog')).getByRole('option', { name: 'Feu modifié (archivé)' })).toBeInTheDocument();
-    } else {
-      expect(screen.queryByRole('button', { name: /^Modifier/ })).not.toBeInTheDocument();
-    }
+    await user.click(screen.getByRole('button', { name: 'Modifier Feu modifié - 01' }));
+    expect(within(screen.getByRole('dialog')).getByRole('option', { name: 'Feu modifié (archivé)' })).toBeInTheDocument();
   });
 
 });
