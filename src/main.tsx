@@ -5,6 +5,7 @@ import App from './App';
 import { AuthProvider } from './features/auth/AuthProvider';
 import './styles/index.css';
 import './styles/design-tokens.css';
+import './styles/module-ribbon.css';
 import './styles/module-design.css';
 
 window.addEventListener('vite:preloadError', (event) => {

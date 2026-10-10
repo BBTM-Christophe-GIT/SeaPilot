@@ -13,6 +13,18 @@
   ],
   "rewrites": [
     {
+      "source": "/preview/projects",
+      "destination": "/preview/projects/index.html"
+    },
+    {
+      "source": "/preview/projects/",
+      "destination": "/preview/projects/index.html"
+    },
+    {
+      "source": "/preview/projects/index.html",
+      "destination": "/preview/projects/index.html"
+    },
+    {
       "source": "/previews/projects",
       "destination": "/previews/projects.html"
     },

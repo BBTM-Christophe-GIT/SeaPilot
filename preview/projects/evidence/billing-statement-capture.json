@@ -1,0 +1,127 @@
+{
+  "desktop": {
+    "actions": [
+      {
+        "label": "Prévisualiser le PDF",
+        "width": 135.046875,
+        "x": 1192,
+        "y": 1632.6875
+      },
+      {
+        "label": "Exporter le PDF",
+        "width": 142.953125,
+        "x": 1335.046875,
+        "y": 1632.6875
+      }
+    ],
+    "columns": "552px 320px",
+    "density": 1,
+    "documentSize": [
+      1530,
+      1767
+    ],
+    "panel": {
+      "height": 1056.0625,
+      "width": 320,
+      "x": 1175,
+      "y": 633.625
+    },
+    "viewport": [
+      1545,
+      1000
+    ]
+  },
+  "selection": {
+    "checkboxes": [
+      {
+        "checked": false,
+        "label": "Inclure Loyers D’affrètement dans le PDF"
+      },
+      {
+        "checked": false,
+        "label": "Inclure Services refacturables dans le PDF"
+      },
+      {
+        "checked": false,
+        "label": "Inclure Prestation BBTM dans le PDF"
+      },
+      {
+        "checked": true,
+        "label": "Inclure Saisie brute dans le PDF"
+      }
+    ],
+    "density": 1,
+    "documentSize": [
+      1530,
+      1767
+    ],
+    "panel": {
+      "height": 1056.0625,
+      "width": 320,
+      "x": 1175,
+      "y": 633.625
+    },
+    "screenSections": [
+      "Loyers D’affrètement",
+      "Services refacturables2 frais",
+      "Prestation BBTM1 prestation",
+      "Saisie brute0 ligne"
+    ],
+    "scroll": [
+      0,
+      622
+    ],
+    "total": "0,00 €",
+    "viewport": [
+      1545,
+      1000
+    ]
+  },
+  "mobile": {
+    "actions": [
+      {
+        "label": "Prévisualiser le PDF",
+        "width": 139.546875,
+        "x": 40,
+        "y": 1012.25
+      },
+      {
+        "label": "Exporter le PDF",
+        "width": 147.453125,
+        "x": 187.546875,
+        "y": 1012.25
+      }
+    ],
+    "documentSize": [
+      375,
+      375
+    ],
+    "panel": {
+      "height": 1056.0625,
+      "width": 329,
+      "x": 23,
+      "y": 1173.1875
+    },
+    "screenSections": [
+      "Loyers D’affrètement",
+      "Services refacturables2 frais",
+      "Prestation BBTM1 prestation",
+      "Saisie brute0 ligne"
+    ],
+    "total": "1 355,00 €",
+    "viewport": [
+      390,
+      844
+    ]
+  },
+  "exports": {
+    "pdfSelectionTotal": "340,00 €",
+    "pdfPages": 1,
+    "zipEntries": [
+      "01-Elements-de-facturation.pdf",
+      "02-2026-10-06---DEMO-068---Gasoil.pdf",
+      "03-2026-10-07---DEMO-104---Frais-de-port.pdf"
+    ],
+    "consoleWarningsOrErrors": 0
+  }
+}

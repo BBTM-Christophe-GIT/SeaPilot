@@ -4,6 +4,8 @@ import {
   archiveClient,
   archiveProject,
   archiveProjectTowedAsset,
+  reactivateProject,
+  setProjectStatus,
   deleteProjectPlanningOccurrence,
   saveProjectPlanningOccurrence,
   fetchProjectCatalogOptions,
@@ -17,6 +19,33 @@ import {
 } from './projectMutations';
 
 describe('projectMutations', () => {
+  it('reactivates and updates only a valid project status through controlled RPCs', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+    await reactivateProject({ rpc } as never, 880);
+    await setProjectStatus({ rpc } as never, 880, 'Stand-by météo');
+    expect(rpc.mock.calls).toEqual([
+      ['projects_reactivate', { target_project_id: 880 }],
+      ['projects_set_status', { target_project_id: 880, target_status: 'Stand-by météo' }],
+    ]);
+  });
+
+  it('rejects invalid project ids and closure labels before lifecycle RPCs', async () => {
+    const rpc = vi.fn();
+    for (const id of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+      await expect(archiveProject({ rpc } as never, id)).rejects.toThrow('Le projet est obligatoire.');
+      await expect(reactivateProject({ rpc } as never, id)).rejects.toThrow('Le projet est obligatoire.');
+      await expect(setProjectStatus({ rpc } as never, id, 'Validé')).rejects.toThrow('Le projet est obligatoire.');
+    }
+    for (const status of ['Clôturé', 'Clôturer', '', 'validé', 'Validé ']) await expect(setProjectStatus({ rpc } as never, 880, status)).rejects.toThrow('Le statut du projet est invalide.');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('surfaces lifecycle RPC failures without retrying an ambiguous write', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { message: 'Projet inaccessible' } });
+    await expect(reactivateProject({ rpc } as never, 880)).rejects.toThrow('Projet inaccessible');
+    await expect(setProjectStatus({ rpc } as never, 880, 'Validé')).rejects.toThrow('Projet inaccessible');
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
   it('persists absent project and contract dates as null without requiring a vessel', async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: { id: 902, project_code: 'P902', title: 'Projet sans dates', updated_at: '2026-09-22T10:00:00Z' },

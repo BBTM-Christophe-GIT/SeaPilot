@@ -11,6 +11,9 @@ export default defineConfig({
         projectsPreview: fileURLToPath(
           new URL("./previews/projects.html", import.meta.url),
         ),
+        projectsBillingPreview: fileURLToPath(
+          new URL("./preview/projects/index.html", import.meta.url),
+        ),
       },
     },
   },

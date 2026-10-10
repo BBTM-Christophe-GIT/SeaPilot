@@ -339,6 +339,7 @@ describe('App', () => {
       currentUserName: 'Administrateur',
       references: {
         projects: [{ id: 880, code: 'P-2026-014', title: 'Campagne Atlantique 2026' }],
+        activeProjects: [{ id: 880, code: 'P-2026-014', title: 'Campagne Atlantique 2026' }],
         vessels: [{ id: 12, name: 'COTENTIN' }],
         people: [], exerciseTypes: [], portReasons: [],
       },

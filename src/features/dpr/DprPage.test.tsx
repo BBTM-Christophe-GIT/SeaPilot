@@ -43,6 +43,7 @@ const dashboard: DprDashboardData = {
   currentUserId: 'user-1', currentUserName: 'Camille Marin', currentPersonId: 12, reports: [report, submittedReport],
   references: {
     projects: [{ id: 144, code: 'P144', title: 'Guard Vessel EMDT' }],
+    activeProjects: [{ id: 144, code: 'P144', title: 'Guard Vessel EMDT' }],
     vessels: [{ id: 3, name: 'GOURY' }],
     people: [{ id: 12, firstName: 'Pierre', lastName: 'LEPRETRE', name: 'Pierre LEPRETRE', functionLabel: 'Capitaine', gradeLabel: 'Capitaine', roleLabel: 'Navigant', crewFunction: 'captain', isSedentary: false, isDprValidator: true }],
     planningCrewPersonIds: [12],
@@ -228,7 +229,7 @@ describe('DprPage Phase 7', () => {
     const user = userEvent.setup();
     mocks.fetchDashboard.mockResolvedValueOnce({
       ...dashboard,
-      references: { ...dashboard.references, projects: [] },
+      references: { ...dashboard.references, projects: [], activeProjects: [] },
     });
     mocks.fetchEntryContext.mockResolvedValue({
       issuerPersonId: 12,
@@ -248,6 +249,66 @@ describe('DprPage Phase 7', () => {
     const projectSelect = screen.getAllByLabelText('PROJET').at(-1) as HTMLSelectElement;
     expect(projectSelect).toHaveValue('60');
     expect(projectSelect.selectedOptions[0]).toHaveTextContent('P268 — ETPO FORT BOYARD');
+  });
+
+  it('keeps closed DPRs visible but excludes their projects from filters and new entry, including stale prefill', async () => {
+    const user = userEvent.setup();
+    const closedProject = { id: 144, code: 'P144', title: 'Guard Vessel EMDT', archivedAt: '2026-10-10T10:00:00Z' };
+    const activeProject = { id: 145, code: 'P145', title: 'Nouvelle mission' };
+    mocks.fetchDashboard.mockResolvedValue({ ...dashboard, references: {
+      ...dashboard.references, projects: [closedProject, activeProject], activeProjects: [activeProject],
+    } });
+    mocks.fetchEntryContext.mockResolvedValue({
+      issuerPersonId: 12, issuerName: 'Pierre LEPRETRE', vesselId: 3, projectId: 144,
+      project: closedProject, people: dashboard.references.people, crewPersonIds: [12], watchGroup: 'Bordée A',
+    });
+    render(<DprPage client={{} as never} roles={['direction']} />);
+    await screen.findByRole('heading', { name: 'Daily Progress Report' });
+    expect(screen.getByText('DPR-1056')).toBeInTheDocument();
+    expect(screen.getByText('2 DPR affiché(s)')).toBeInTheDocument();
+    const filter = screen.getByLabelText('PROJET');
+    expect(within(filter).queryByRole('option', { name: /P144/ })).not.toBeInTheDocument();
+    expect(within(filter).getByRole('option', { name: /P145/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Saisir un DPR' }));
+    const projectSelect = within(screen.getByRole('dialog')).getByLabelText('PROJET');
+    expect(projectSelect).toHaveValue('__dock_project__');
+    expect(within(projectSelect).queryByRole('option', { name: /P144/ })).not.toBeInTheDocument();
+    expect(within(projectSelect).getByRole('option', { name: /P145/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.anything(), null,
+      expect.objectContaining({ projectId: null, unlistedProjectName: 'Navire à quai' })));
+  });
+
+  it('preserves the original closed project when editing a DPR and offers active projects for a change', async () => {
+    const user = userEvent.setup();
+    const closedProject = { id: 144, code: 'P144', title: 'Guard Vessel EMDT', archivedAt: '2026-10-10T10:00:00Z' };
+    const activeProject = { id: 145, code: 'P145', title: 'Nouvelle mission' };
+    mocks.fetchDashboard.mockResolvedValue({ ...dashboard, reports: [{ ...report, status: 'reopened' }], references: {
+      ...dashboard.references, projects: [closedProject, activeProject], activeProjects: [activeProject],
+    } });
+    mocks.fetchEntryContext.mockResolvedValue({
+      issuerPersonId: 12, issuerName: 'Pierre LEPRETRE', vesselId: 3, projectId: null,
+      project: null, people: dashboard.references.people, crewPersonIds: [12], watchGroup: 'Bordée A',
+    });
+    mocks.save.mockResolvedValue(1056);
+    render(<DprPage client={{} as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: 'Modifier' }));
+    let projectSelect = within(screen.getByRole('dialog')).getByLabelText('PROJET');
+    expect(projectSelect).toHaveValue('144');
+    expect(within(projectSelect).getByRole('option', { name: /P144/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.anything(), 1056,
+      expect.objectContaining({ projectId: 144 })));
+    await screen.findByText('Brouillon enregistré.');
+    projectSelect = within(screen.getByRole('dialog')).getByLabelText('PROJET');
+    await user.selectOptions(projectSelect, '145');
+    expect(projectSelect).toHaveValue('145');
+    expect(within(projectSelect).queryByRole('option', { name: /P144/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await waitFor(() => expect(mocks.save).toHaveBeenLastCalledWith(expect.anything(), 1056,
+      expect.objectContaining({ projectId: 145 })));
   });
 
   it('searches and selects Escale ports from the department-grouped catalog', async () => {
