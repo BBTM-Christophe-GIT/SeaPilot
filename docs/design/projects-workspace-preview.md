@@ -1,5 +1,14 @@
 # Module Projet — interface intégrée et prévisualisation
 
+## Actions des opérations — version 3.71.11
+
+**Nouvelle opération** est placé sous le tableau de l'onglet Opérations, y compris
+lorsqu'aucune opération n'est encore associée au projet. Le bouton ouvre le même
+formulaire avec le dossier sélectionné ; ses droits et son blocage pour les
+projets clôturés sont conservés. Il est retiré du ruban, comme la commande Navires.
+La gestion des navires reste accessible depuis le module Navires de la navigation
+principale ; les sélecteurs de navires des formulaires restent inchangés.
+
 ## Bandeau et statut — version 3.71.10
 
 Le bandeau existant conserve le code, le titre, le contexte client/navire, la

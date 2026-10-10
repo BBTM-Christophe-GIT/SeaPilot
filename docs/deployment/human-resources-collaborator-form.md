@@ -35,6 +35,16 @@ La carte **Marins par fonction** n’utilise plus le booléen technique `people.
 
 Le raccourci **Voir les anciens** permet de basculer immédiatement vers cette population. Le panneau repliable **Filtres** propose également les vues **En poste**, **Anciens** et **Tous**, ainsi que les filtres collaborateur, fonction, catégorie documentaire, statut et échéance. Le libellé « Actif » n’est plus répété dans les lignes de la liste.
 
+## Fiche collaborateur PDF
+
+Le menu **…** en haut à droite de chaque fiche RH propose **Fiche Collaborateur** à tous les profils qui peuvent consulter cette personne. La fenêtre permet de sélectionner une section complète ou chaque information individuellement, puis de télécharger la fiche en PDF A4. Le nom du collaborateur identifie toujours le document.
+
+Toutes les informations accessibles sont sélectionnées à l'ouverture. Les listes **Documents**, **Visites médicales** et **Entretien Annuel** apparaissent dans la fenêtre et dans le PDF lorsque leurs colonnes sont sélectionnées. Les dates, statuts, habilitations, aptitude médicale, veille à la passerelle et restrictions peuvent être inclus séparément. Les longues listes sont réparties sur plusieurs pages avec en-tête et pagination.
+
+La section **Signature** est exclue des choix et du PDF. L'export réutilise les documents du collaborateur et les sections déjà autorisées au profil connecté, sans lecture supplémentaire ni modification des données. Les détails médicaux sont limités à la section **Santé et habilitations** ; la liste générale des documents ne les réintroduit pas lorsqu'ils sont décochés. La suppression d'une personne reste réservée à l'Administrateur.
+
+Aucune migration, dépendance ou variable d'environnement supplémentaire n'est nécessaire. Les tests couvrent la sélection, les listes, les exports longs, les erreurs de génération et les fixtures propres aux profils Marin et Capitaine.
+
 ## Déploiement
 
 - Aucune nouvelle variable d’environnement n’est requise.

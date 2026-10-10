@@ -472,7 +472,7 @@ describe('ProjectsPage', () => {
     await user.click(screen.getByRole('button', { name: 'P1086 Campagne Atlantique 2026' }));
     expect(screen.queryByRole('button', { name: 'Modifier le statut de P1086' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Nouvelle opération' })).toBeDisabled();
+    expect(within(screen.getByRole('region', { name: 'Opérations' })).getByRole('button', { name: 'Nouvelle opération' })).toBeDisabled();
     expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_archive');
     expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_reactivate');
     expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_set_status');
@@ -629,7 +629,7 @@ describe('ProjectsPage', () => {
     await user.click(within(screen.getByRole('dialog', { name: 'Clôturer le projet' })).getByRole('button', { name: 'Clôturer' }));
     expect(await screen.findByRole('heading', { name: 'Campagne Atlantique 2026' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Modifier le statut du dossier P1086' })).toHaveTextContent('Clôturé');
-    expect(screen.getByRole('button', { name: 'Nouvelle opération' })).toBeDisabled();
+    expect(within(screen.getByRole('region', { name: 'Opérations' })).getByRole('button', { name: 'Nouvelle opération' })).toBeDisabled();
     expect(within(screen.getByLabelText('Changer de projet')).getByRole('option', { name: /Clôturé/ })).toBeDisabled();
     await user.click(screen.getByRole('tab', { name: /Opérations/ }));
     expect(screen.getByText('Rotation 1')).toBeVisible();
@@ -672,6 +672,8 @@ describe('ProjectsPage', () => {
     expect(ribbon.getAllByRole('group').map((group) => group.getAttribute('aria-label'))).toEqual(['Projet', 'Catalogue', 'Documents']);
     expect(within(ribbon.getByRole('group', { name: 'Projet' })).getByRole('button', { name: 'Nouveau projet' })).toBeEnabled();
     expect(within(ribbon.getByRole('group', { name: 'Catalogue' })).getByRole('button', { name: 'Clients' })).toBeEnabled();
+    expect(ribbon.queryByRole('button', { name: 'Nouvelle opération' })).not.toBeInTheDocument();
+    expect(ribbon.queryByRole('button', { name: 'Navires' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Portefeuille projet' })).toBeVisible();
     expect(screen.getByRole('article', { name: /Détails du contrat/ })).toBeVisible();
     expect(screen.getByRole('link', { name: 'Éléments de facturation' }))
@@ -772,9 +774,10 @@ describe('ProjectsPage', () => {
     expect(screen.getByText('Clauses particulières Atlantique')).toBeInTheDocument();
     expect(screen.queryByText('Données structurées consultées dans Supabase')).not.toBeInTheDocument();
     expect(screen.queryByText('Source structurée · Supabase')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Nouvelle opération' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nouvelle opération' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: 'Opérations' }));
+    expect(within(screen.getByRole('region', { name: 'Opérations' })).getByRole('button', { name: 'Nouvelle opération' })).toBeVisible();
     expect(within(screen.getByLabelText('Informations du projet')).getByText(/12.000 EUR \/ jour/)).toBeVisible();
     expect(screen.queryByText('Clauses particulières Atlantique')).not.toBeInTheDocument();
 
@@ -1233,13 +1236,28 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('dialog', { name: 'Créer un projet' })).toBeInTheDocument();
   });
 
-  it('adds independent planning occurrences to the selected project through the secure RPC', async () => {
+  it.each([false, true])('adds independent planning occurrences from below the operations table through the secure RPC (empty table: %s)', async (emptyTable) => {
     const user = userEvent.setup();
-    const { client, rpc } = createClient({}, { data: [{ id: 1301 }], error: null });
+    const { client, rpc } = createClient(emptyTable ? { planning_projects: { data: [], error: null } } : {}, { data: [{ id: 1301 }], error: null });
+    if (emptyTable) {
+      const previousRpc = rpc.getMockImplementation()!;
+      rpc.mockImplementation((functionName: string) => functionName === 'projects_planning_occurrences'
+        ? Promise.resolve({ data: [], error: null })
+        : previousRpc(functionName));
+    }
     render(<ProjectsPage client={client as never} roles={['direction']} />);
 
     await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
-    await user.click(screen.getByRole('button', { name: 'Nouvelle opération' }));
+    const operations = within(screen.getByRole('region', { name: 'Opérations' }));
+    const newOperation = operations.getByRole('button', { name: 'Nouvelle opération' });
+    expect(newOperation).toBeEnabled();
+    if (emptyTable) {
+      expect(operations.queryByRole('table')).not.toBeInTheDocument();
+      expect(operations.getByText('Aucune opération Planning n’est encore associée à ce contrat.')).toBeVisible();
+    } else {
+      expect(operations.getByRole('table').compareDocumentPosition(newOperation) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    }
+    await user.click(newOperation);
     fireEvent.change(screen.getByLabelText('Début *'), { target: { value: '2026-09-01' } });
     fireEvent.change(screen.getByLabelText('Fin *'), { target: { value: '2026-09-05' } });
     await user.clear(screen.getByLabelText('Description / mission'));
