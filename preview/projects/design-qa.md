@@ -197,3 +197,72 @@ Les parcours complets de production et leur intégration ne sont pas changés
 par cette préversion ; les vérifications ci-dessus portent sur cette itération.
 
 final result: passed
+
+## Itération : Relevé du mois
+
+Demande du 10 octobre : reprendre le volet de facturation actuel dans la
+préversion, avec quatre choix de contenu. L'utilisateur précise que les cases
+sélectionnent seulement le PDF, comme dans le volet actuel.
+
+Référence ouverte : capture utilisateur
+`C:/Users/chris/AppData/Local/Temp/codex-clipboard-f8ce86ca-2488-44a0-8915-700fe62aac7f.png`,
+460 × 1347 px. Le volet rendu et la référence ont été ouverts ensemble dans
+[la comparaison complète](./evidence/billing-statement-comparison.png) et
+[la comparaison des contrôles](./evidence/billing-statement-controls-comparison.png).
+Les deux cartes sont normalisées à 320 px de large. L'état comparable est :
+seule Saisie brute cochée, montants nuls, référence vide, PDF standard.
+
+### Comparaison visuelle
+
+- Typographie : pile et tailles SeaPilot, titre/mois, sous-totaux et total
+  hiérarchisés ; libellés lisibles à 320 px sans troncature des choix.
+- Espacement : carte de 320 px à droite des tableaux dès 860 px de conteneur ;
+  sur petit écran, carte avant les tableaux. La carte normalisée est plus haute
+  d'environ 90 px que la référence, avec les contrôles partagés et l'explication
+  explicite des choix PDF. Les deux actions finales restent sur une rangée.
+- Couleurs et surfaces : tokens `--sp-*`, bordures/rayons communs et fonds discrets ;
+  le bouton principal reprend la charte actuelle au lieu du bleu de l'ancien volet.
+- Icônes : CalendarDays, Save, FileText et Download de Lucide ; aucune nouvelle
+  image décorative ni modification du logo.
+- Contenu : même ordre que le volet source, avec les intitulés demandés
+  Loyers D’affrètement, Services refacturables, Prestation BBTM et Saisie brute.
+  Les libellés accessibles gardent Prévisualiser le PDF et Exporter le PDF/ZIP,
+  tandis que les libellés visibles sont compacts pour conserver une rangée.
+
+Capture ordinateur à 1545 × 1000 CSS px, densité 1. La capture pleine page fait
+1530 × 1767 px et supprime la place du scrollbar, ce qui décale de 15 px la colonne
+à droite pendant la capture. Le cadrage de comparaison tient compte de ce décalage ;
+ce n'est pas un débordement de l'interface. Les mesures sont conservées dans
+[le relevé de capture](./evidence/billing-statement-capture.json).
+
+### Fonctionnement et responsive
+
+- Les quatre cases sont centralisées dans le volet. Les quatre sections restent
+  à l'écran quand elles sont décochées ; Saisie brute est accessible même vide.
+  Les exclusions individuelles sont conservées après une désélection de section.
+- Les calculs et les trois exports réutilisent le moteur existant ; les devises
+  restent séparées. La référence suit le projet et le contenu PDF effectif,
+  avec les lignes brutes filtrées par période et navire.
+- 105 tests concernés passent dans cinq fichiers (préversion, stockage de
+  démonstration, moteur de facturation et références). ESLint ciblé et build
+  de production réussis. Aucun changement de droits, RPC/RLS ou base de données.
+- Dans le navigateur, désélection des loyers/frais/BBTM : total 0 € et tableaux
+  toujours visibles. Sélection BBTM seule avec Saisie brute vide : total 340 €,
+  vrai PDF rendu sur une page puis téléchargement PDF réussi. Le détail DPR
+  sans prix de loyer est conservé par les règles actuelles du moteur.
+- Export ZIP vérifié : PDF de facturation et deux justificatifs de démonstration.
+  Aucun avertissement ni erreur console sur ces parcours.
+- À 390 × 844 CSS px, page clientWidth/scrollWidth 375/375 px, volet de 329 px.
+  Les actions sont sur une rangée, et Espace sur la case des loyers modifie le
+  total à 1 355 € sans masquer leur tableau. Viewport temporaire réinitialisé.
+
+Captures ouvertes et contrôlées : [ordinateur](./evidence/billing-statement-desktop.jpg),
+[sélection PDF](./evidence/billing-statement-selection.jpg),
+[mobile](./evidence/billing-statement-mobile.jpg) et
+[aperçu PDF](./evidence/billing-statement-pdf.jpg).
+
+Aucun P0/P1/P2 restant dans le périmètre. Les renommages, les boutons sur une
+rangée et l'adaptation aux tokens communs sont les écarts attendus par rapport
+au volet source.
+
+final result: passed

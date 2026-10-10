@@ -168,6 +168,13 @@ body.pp-preview-page {
 .pp-billing-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
 .pp-billing-controls .pp-field { gap: 2px; }
 .pp-billing-controls.calendar-period { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.pp-billing-layout { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 16px; min-width: 0; }
+.pp-billing-sections { min-width: 0; }
+@container (min-width: 860px) {
+  .pp-billing-layout { grid-template-columns: minmax(0, 1fr) 320px; }
+  .pp-billing-layout > .pp-billing-statement { grid-column: 2; grid-row: 1; }
+  .pp-billing-sections { grid-column: 1; grid-row: 1; }
+}
 @container (max-width: 1110px) {
   .pp-billing-title { flex: 1 0 100%; }
 }
@@ -409,7 +416,7 @@ body.pp-preview-page {
 .pp-app .pp-dialog-header .pp-button { min-height: 30px; }
 .pp-app .pp-table .pp-button.icon { min-height: 27px; }
 @container (min-width: 830px) {
-  .pp-billing-controls.custom-period { grid-template-columns: minmax(132px, 1fr) minmax(124px, 1fr) minmax(124px, 1fr) minmax(100px, .85fr) minmax(136px, 1.1fr) minmax(170px, 1.35fr); }
+  .pp-billing-controls.custom-period { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .pp-app .pp-billing-controls input, .pp-app .pp-billing-controls select { padding-inline: 8px; }
 }
 @container (max-width: 620px) {

@@ -3,12 +3,43 @@ import { describe, expect, it } from 'vitest';
 import { billingOperationRows, billingServicesTotal, type ProjectBillingRawLine } from '../projectBilling';
 import {
   INITIAL_BILLING_OPTIONS,
+  billingDemoReferenceKey,
   billingDemoRange,
   buildBillingView,
   createDemoProjects,
 } from './billingDemo';
 
 describe('project billing interactive preview', () => {
+  it('shares a reference for an empty raw section whether selected or not and across months', () => {
+    const demo = createDemoProjects()[0];
+    demo.period.includeRawInPdf = true;
+    const key = billingDemoReferenceKey(demo, INITIAL_BILLING_OPTIONS);
+    expect(key).toBe('264:7');
+    demo.period.includeRawInPdf = false;
+    expect(billingDemoReferenceKey(demo, INITIAL_BILLING_OPTIONS)).toBe(key);
+    expect(billingDemoReferenceKey(demo, { ...INITIAL_BILLING_OPTIONS, month: '2026-11', periodMode: 'calendar-month' })).toBe(key);
+  });
+
+  it('scopes a raw reference only when its selected lines fall inside the export period', () => {
+    const demo = createDemoProjects()[0];
+    demo.period.includeRawInPdf = true;
+    demo.rawLines = [{
+      id: 1, billingPeriodId: demo.period.id, serviceCatalogId: null,
+      vesselName: 'JERSEY', vesselId: 2, serviceDate: '2026-10-07',
+      designation: 'Service local', unitAmountHt: 15, quantity: 1,
+    }];
+    expect(billingDemoReferenceKey(demo, INITIAL_BILLING_OPTIONS)).toBe('264:15');
+    expect(billingDemoReferenceKey(demo, { ...INITIAL_BILLING_OPTIONS, endDate: '2026-10-06' })).toBe('264:7');
+    demo.period.includeRawInPdf = false;
+    expect(billingDemoReferenceKey(demo, INITIAL_BILLING_OPTIONS)).toBe('264:7');
+  });
+
+  it('isolates references belonging to different projects with the same PDF content', () => {
+    const [first, second] = createDemoProjects();
+    expect(billingDemoReferenceKey(first, INITIAL_BILLING_OPTIONS)).toBe('264:7');
+    expect(billingDemoReferenceKey(second, INITIAL_BILLING_OPTIONS)).toBe('263:7');
+  });
+
   it('reuses the production totals for the selected four DPR days and monthly costs', () => {
     const demo = createDemoProjects()[0];
     const view = buildBillingView(demo, INITIAL_BILLING_OPTIONS);

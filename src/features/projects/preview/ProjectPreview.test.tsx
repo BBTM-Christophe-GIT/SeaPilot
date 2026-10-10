@@ -9,6 +9,61 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('interactive project billing preview', () => {
+  it('selects the four PDF sections from the statement while keeping all screen sections accessible', async () => {
+    const user = userEvent.setup();
+    render(<ProjectPreview />);
+    const statement = screen.getByRole('complementary', { name: 'Relevé du mois' });
+    const selection = within(statement).getByRole('group', { name: 'Contenu du PDF' });
+    expect(within(selection).getAllByRole('checkbox')).toHaveLength(4);
+    expect(within(statement).getByText('octobre 2026')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Loyers & journées DPR/ })).not.toBeInTheDocument();
+
+    for (const [label, total] of [
+      ['Loyers D’affrètement', /1\s*355,00\s*€/],
+      ['Services refacturables', /340,00\s*€/],
+      ['Prestation BBTM', /0,00\s*€/],
+      ['Saisie brute', /0,00\s*€/],
+    ] as const) {
+      await user.click(within(selection).getByRole('checkbox', { name: `Inclure ${label} dans le PDF` }));
+      expect(screen.getByTestId('billing-total')).toHaveTextContent(total);
+      expect(screen.getByRole('button', { name: new RegExp(`^${label}`) })).toBeInTheDocument();
+    }
+    expect(screen.getByRole('checkbox', { name: 'Inclure la journée du 2026-10-05' })).toBeChecked();
+    await user.click(within(selection).getByRole('checkbox', { name: 'Inclure Loyers D’affrètement dans le PDF' }));
+    expect(screen.getByTestId('billing-total')).toHaveTextContent(/9\s*600,00\s*€/);
+  });
+
+  it('keeps a reference when empty raw inclusion changes and resolves references when raw lines leave the date range', async () => {
+    const user = userEvent.setup();
+    render(<ProjectPreview />);
+    const reference = screen.getByLabelText('Référence client');
+    await user.clear(reference);
+    await user.type(reference, 'SANS-BRUTE');
+    await user.tab();
+    await user.click(screen.getByRole('checkbox', { name: 'Inclure Saisie brute dans le PDF' }));
+    expect(reference).toHaveValue('SANS-BRUTE');
+    await user.click(screen.getByRole('checkbox', { name: 'Inclure Saisie brute dans le PDF' }));
+    expect(reference).toHaveValue('SANS-BRUTE');
+
+    await user.click(screen.getByRole('button', { name: 'Ajouter' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Ajouter une ligne brute' }));
+    const editor = screen.getByRole('dialog', { name: 'Ajouter une ligne brute' });
+    await user.type(within(editor).getByLabelText('Désignation libre'), 'Prestation du 8 octobre');
+    fireEvent.change(within(editor).getByLabelText('Date'), { target: { value: '2026-10-08' } });
+    await user.clear(within(editor).getByLabelText('Prix unitaire HT'));
+    await user.type(within(editor).getByLabelText('Prix unitaire HT'), '125');
+    await user.click(within(editor).getByRole('button', { name: 'Enregistrer' }));
+    // A newly selected PDF content has no saved reference yet.
+    expect(reference).toHaveValue('');
+    await user.clear(reference);
+    await user.type(reference, 'AVEC-BRUTE');
+    await user.tab();
+    fireEvent.change(screen.getByLabelText('Fin'), { target: { value: '2026-10-07' } });
+    expect(reference).toHaveValue('SANS-BRUTE');
+    fireEvent.change(screen.getByLabelText('Fin'), { target: { value: '2026-10-08' } });
+    expect(reference).toHaveValue('AVEC-BRUTE');
+  });
+
   it('opens each reference directly from the shared module ribbon and restores keyboard focus', async () => {
     const user = userEvent.setup();
     render(<ProjectPreview />);
@@ -62,7 +117,7 @@ describe('interactive project billing preview', () => {
     expect(screen.getByTestId('billing-total')).toHaveTextContent(/8\s*555,00\s*€/);
     expect(screen.getByRole('checkbox', { name: 'Inclure la journée du 2026-10-05' })).not.toBeChecked();
 
-    await user.click(screen.getByRole('checkbox', { name: 'Inclure Prestations BBTM dans le PDF' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Inclure Prestation BBTM dans le PDF' }));
     expect(screen.getByTestId('billing-total')).toHaveTextContent(/8\s*215,00\s*€/);
     expect(screen.getByRole('heading', { name: /^P264 — Assistance offshore/ })).toHaveTextContent('Validé');
   });
@@ -114,8 +169,8 @@ describe('interactive project billing preview', () => {
     render(<ProjectPreview />);
     fireEvent.change(screen.getByLabelText('Mois de facturation'), { target: { value: '2026-11' } });
     expect(screen.getByRole('button', { name: 'Ajouter' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Aperçu' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Exporter' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Prévisualiser le PDF' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Exporter le PDF' })).toBeEnabled();
 
     await user.click(screen.getByRole('button', { name: 'Ajouter' }));
     await user.click(screen.getByRole('menuitem', { name: 'Ajouter un frais' }));
@@ -139,11 +194,11 @@ describe('interactive project billing preview', () => {
     await user.click(screen.getByRole('button', { name: /^P264 — Assistance offshore/ }));
     expect(screen.getByLabelText('Référence client')).toHaveValue('DEMO-NOVEMBRE');
 
-    await user.click(screen.getByRole('checkbox', { name: 'Inclure Prestations BBTM dans le PDF' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Inclure Prestation BBTM dans le PDF' }));
     await user.clear(screen.getByLabelText('Référence client'));
     await user.type(screen.getByLabelText('Référence client'), 'DEMO-SANS-BBTM');
     await user.tab();
-    await user.click(screen.getByRole('checkbox', { name: 'Inclure Prestations BBTM dans le PDF' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Inclure Prestation BBTM dans le PDF' }));
     expect(screen.getByLabelText('Référence client')).toHaveValue('DEMO-NOVEMBRE');
 
     fireEvent.change(screen.getByLabelText('Mois de facturation'), { target: { value: '2026-11' } });

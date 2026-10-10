@@ -17,6 +17,7 @@ import {
   type ProjectBillingService,
   type ProjectChargeableExpense,
 } from '../projectBilling';
+import { billingReferenceScope } from '../projectBillingReferences';
 import type {
   ProjectContractRecord,
   ProjectPlanningOccurrenceRecord,
@@ -482,4 +483,14 @@ export function buildBillingView(demo: DemoProject, options: BillingDemoOptions)
     missingDates,
     exportInput,
   };
+}
+
+/** References follow the PDF content for a project, independently of its billing month. */
+export function billingDemoReferenceKey(demo: DemoProject, options: BillingDemoOptions): string {
+  const input = buildBillingView(demo, options).exportInput;
+  const scope = billingReferenceScope({
+    ...input.period,
+    includeRawInPdf: input.period.includeRawInPdf !== false && (input.rawLines?.length ?? 0) > 0,
+  });
+  return `${demo.project.id}:${scope}`;
 }
