@@ -1,7 +1,7 @@
 // @vitest-environment node
 import JSZip from 'jszip';
-import { decodePDFRawStream, PDFArray, PDFDocument, PDFRawStream } from 'pdf-lib';
-import { describe, expect, it } from 'vitest';
+import { decodePDFRawStream, PDFArray, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildCollaboratorSheetPdf,
   buildCollaboratorSheetSections,
@@ -38,6 +38,9 @@ const certificate: HrDocumentRecord = {
   medicalRestriction: '', medicalBridgeWatch: null,
 };
 const annualReview: HrDocumentRecord = { ...certificate, id: 12, categoryKey: 'annual_review', title: 'ANNUALREPORT' };
+const administrativeDocument: HrDocumentRecord = { ...certificate, id: 13, categoryKey: 'administrative', title: 'ADMINISTRATIVEREPORT' };
+const pngPhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC';
+const jpegPhoto = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAADAAIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDn6KKK+sPmD//Z';
 const allSections = new Set([
   'identity', 'contract', 'contact', 'emergency', 'administrative', 'health', 'clothing', 'signature', 'annualReviews', 'documents',
 ]);
@@ -51,7 +54,7 @@ function selectAll(sections: CollaboratorSheetSection[]): CollaboratorSheetSelec
 async function inspectPdf(blob: Blob): Promise<{ pdf: PDFDocument; content: string }> {
   const pdf = await PDFDocument.load(await blob.arrayBuffer());
   const content = pdf.context.enumerateIndirectObjects().flatMap(([, object]) => {
-    if (!(object instanceof PDFRawStream)) return [];
+    if (!(object instanceof PDFRawStream) || object.dict.get(PDFName.of('Subtype'))?.toString() === '/Image') return [];
     return [new TextDecoder('windows-1252').decode(decodePDFRawStream(object).decode())];
   }).join('\n');
   return { pdf, content };
@@ -68,6 +71,11 @@ function pageContent(pdf: PDFDocument, pageIndex: number): string {
       Uint8Array.from(hex.match(/../g) || [], (byte) => parseInt(byte, 16)),
     ));
   }).join('\n');
+}
+
+function imageCount(pdf: PDFDocument): number {
+  return pdf.context.enumerateIndirectObjects().filter(([, object]) => object instanceof PDFRawStream
+    && object.dict.get(PDFName.of('Subtype'))?.toString() === '/Image').length;
 }
 
 describe('collaborator sheet data and visibility', () => {
@@ -92,6 +100,37 @@ describe('collaborator sheet data and visibility', () => {
     expect(sections.find((section) => section.key === 'documents')?.table?.rows.map((row) => row.title)).toEqual(['CERTIFICATEREPORT', 'VISITREPORT']);
     expect(sections.find((section) => section.key === 'annualReviews')?.table?.rows.map((row) => row.title)).toEqual(['ANNUALREPORT']);
     expect(JSON.stringify(sections)).not.toMatch(/OTHERPERSONVISIT|UNASSIGNEDREPORT|secret\/path|private-hr/);
+  });
+
+  it('lists certificates and medical visits by category with only the four requested columns and excludes administrative files', () => {
+    const sections = buildCollaboratorSheetSections(person, [
+      medicalDocument, administrativeDocument, annualReview, certificate,
+      { ...certificate, id: 15, categoryKey: 'engine', title: 'Machine Z' },
+      { ...certificate, id: 16, categoryKey: 'engine', title: 'Machine A', expiresOn: '2027-01-01' },
+      { ...certificate, id: 17, categoryKey: 'engine', title: 'Machine A', expiresOn: '2026-01-01' },
+      { ...certificate, id: 18, categoryKey: 'engine', title: 'Machine A', expiresOn: '2026-01-01', status: 'valid' },
+      { ...certificate, id: 19, categoryKey: 'certificate', title: 'Certificat' },
+    ], new Set(['annualReviews', 'documents']));
+    const documentSection = sections.find((section) => section.key === 'documents')!;
+    expect(documentSection.label).toBe('Brevets et visites médicales');
+    expect(documentSection.table?.columns.map((column) => column.key)).toEqual(['title', 'category', 'expiresOn', 'status']);
+    expect(documentSection.table?.rows.map((row) => [row.category, row.title, row.expiresOn, row.status])).toEqual([
+      ['Certificats', 'Certificat', '15/08/2026', 'À renouveler'],
+      ['Machine', 'Machine A', '01/01/2026', 'À renouveler'],
+      ['Machine', 'Machine A', '01/01/2026', 'À jour'],
+      ['Machine', 'Machine A', '01/01/2027', 'À renouveler'],
+      ['Machine', 'Machine Z', '15/08/2026', 'À renouveler'],
+      ['Pont', 'CERTIFICATEREPORT', '15/08/2026', 'À renouveler'],
+      ['Visite Médicale', 'VISITREPORT', '15/08/2026', 'À renouveler'],
+    ]);
+    expect(JSON.stringify(documentSection)).not.toMatch(/issuedOn|sourceLabel|notes|ADMINISTRATIVEREPORT|ANNUALREPORT/);
+    const annualSection = sections.find((section) => section.key === 'annualReviews')!;
+    expect(annualSection.table?.columns.map((column) => column.key)).toEqual([
+      'title', 'category', 'issuedOn', 'expiresOn', 'status', 'sourceLabel', 'notes',
+    ]);
+    expect(annualSection.table?.rows[0]).toMatchObject({
+      title: 'ANNUALREPORT', issuedOn: '15/01/2025', sourceLabel: 'RH', notes: 'PUBLICCERTIFICATENOTE',
+    });
   });
 
   it('uses the stored ENIM classification before the derived function default', () => {
@@ -177,20 +216,89 @@ describe('collaborator sheet PDF', () => {
     expect(content).not.toMatch(/PRIVATERESTRICTION|PRIVATEMEDICALNOTE/);
   });
 
+  it('omits administrative files and removed document columns even when stale selection keys request them', async () => {
+    const sections = buildCollaboratorSheetSections(person, [certificate, administrativeDocument], new Set(['documents']));
+    const generated = await buildCollaboratorSheetPdf(person, sections, {
+      documents: ['title', 'category', 'expiresOn', 'status', 'issuedOn', 'sourceLabel', 'notes'],
+    });
+    const { content } = await inspectPdf(generated.blob);
+    expect(content).toContain('Brevets et visites médicales');
+    expect(content).toContain('CERTIFICATEREPORT');
+    expect(content).toContain('Pont');
+    expect(content).toContain('15/08/2026');
+    expect(content).not.toMatch(/ADMINISTRATIVEREPORT|PUBLICCERTIFICATENOTE|15\/01\/2025|Source|Notes/);
+  });
+
+  it.each([['PNG', pngPhoto], ['JPEG', jpegPhoto]])('places an available %s photo to the left of the report title and name by default', async (_format, photoUrl) => {
+    const sections = buildCollaboratorSheetSections(person, [], new Set(['identity']));
+    const generated = await buildCollaboratorSheetPdf({ ...person, photoUrl }, sections, { identity: ['employeeNumber'] });
+    const { pdf } = await inspectPdf(generated.blob);
+    const content = pageContent(pdf, 0);
+    expect(imageCount(pdf)).toBeGreaterThan(0);
+    const titleX = Number(content.match(/([\d.]+) [\d.]+ Td\s+\(Fiche Collaborateur\) Tj/)?.[1]);
+    const nameX = Number(content.match(/([\d.]+) [\d.]+ Td\s+\(Luc MARTIN\) Tj/)?.[1]);
+    const imagePlacement = content.match(/([\d.]+) 0 0 [\d.]+ ([\d.]+) [\d.]+ cm\s+\/I\d+ Do/);
+    expect(imagePlacement).not.toBeNull();
+    expect(Number(imagePlacement?.[2]) + Number(imagePlacement?.[1])).toBeLessThan(titleX);
+    expect(nameX).toBe(titleX);
+    expect(titleX).toBeGreaterThan(100);
+    expect(content).toContain('00051');
+  });
+
+  it('omits the photo when its option is disabled and retains the full report identity', async () => {
+    const sections = buildCollaboratorSheetSections(person, [], new Set(['identity']));
+    const generated = await buildCollaboratorSheetPdf({ ...person, photoUrl: pngPhoto }, sections, {
+      identity: ['employeeNumber'],
+    }, new Date('2026-10-10T12:00:00Z'), { includePhoto: false });
+    const { pdf } = await inspectPdf(generated.blob);
+    expect(imageCount(pdf)).toBe(0);
+    const content = pageContent(pdf, 0);
+    expect(content).toContain('Luc MARTIN');
+    expect(Number(content.match(/([\d.]+) [\d.]+ Td\s+\(Fiche Collaborateur\) Tj/)?.[1])).toBeLessThan(50);
+  });
+
+  it.each([
+    ['absent', {}],
+    ['unavailable', { photoUrl: pngPhoto, photoUnavailable: true }],
+    ['corrupt PNG', { photoUrl: 'data:image/png;base64,not-an-image' }],
+    ['corrupt JPEG', { photoUrl: 'data:image/jpeg;base64,AAAA' }],
+    ['remote URL', { photoUrl: 'https://private.example.test/photo.jpg' }],
+    ['unsupported format', { photoUrl: 'data:image/svg+xml;base64,PHN2Zy8+' }],
+  ] as const)('keeps exporting an %s photo record without fetching additional resources', async (_label, photoFields) => {
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    try {
+      const photoPerson = { ...person, ...photoFields };
+      const sections = buildCollaboratorSheetSections(photoPerson, [], new Set(['identity']));
+      const generated = await buildCollaboratorSheetPdf(photoPerson, sections, { identity: ['employeeNumber'] });
+      const { pdf } = await inspectPdf(generated.blob);
+      expect(imageCount(pdf)).toBe(0);
+      expect(pageContent(pdf, 0)).toContain('Luc MARTIN');
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('wraps long content across pages and numbers every page', async () => {
     const longDocuments = Array.from({ length: 55 }, (_, index) => ({
-      ...certificate, id: index + 100, title: `REPORT${index + 1}`,
-      notes: `LONGNOTE${index + 1} ` + 'Compte rendu complet des formations et renouvellements. '.repeat(12),
+      ...certificate, id: index + 100,
+      title: `LONGREPORT${String(index + 1).padStart(2, '0')} ` + 'Compte rendu complet des formations et renouvellements. '.repeat(12),
     }));
     const sections = buildCollaboratorSheetSections({ ...person, postalAddress: 'Adresse complète. '.repeat(100) }, longDocuments, new Set(['contact', 'documents']));
-    const generated = await buildCollaboratorSheetPdf(person, sections, selectAll(sections), new Date('2026-10-10T12:00:00Z'));
+    const generated = await buildCollaboratorSheetPdf({ ...person, photoUrl: pngPhoto }, sections, selectAll(sections), new Date('2026-10-10T12:00:00Z'));
     const { pdf, content } = await inspectPdf(generated.blob);
     expect(pdf.getPageCount()).toBeGreaterThan(2);
-    expect(content).toContain('LONGNOTE1');
-    expect(content).toContain('LONGNOTE55');
+    expect(content).toContain('LONGREPORT01');
+    expect(content).toContain('LONGREPORT55');
     expect(content).toContain(`Page 1 / ${pdf.getPageCount()}`);
     expect(content).toContain(`Page ${pdf.getPageCount()} / ${pdf.getPageCount()}`);
     expect(content.match(/Fiche Collaborateur/g)?.length).toBe(pdf.getPageCount());
+    expect(imageCount(pdf)).toBe(1);
+    for (let page = 0; page < pdf.getPageCount(); page += 1) {
+      expect(pageContent(pdf, page)).toMatch(/\/I\d+ Do/);
+      expect(pageContent(pdf, page)).toContain('Luc MARTIN');
+    }
   });
 
   it('uses a safe filename and explicitly renders an empty document list', async () => {
@@ -198,7 +306,7 @@ describe('collaborator sheet PDF', () => {
     const generated = await buildCollaboratorSheetPdf({ ...person, firstName: 'Luc/<>', lastName: 'MARTIN : "Test"' }, sections, { documents: ['title'] }, new Date('2026-10-10T12:00:00Z'));
     expect(generated.fileName).toBe('Fiche-Collaborateur-Luc-MARTIN-Test-2026-10-10.pdf');
     const { content } = await inspectPdf(generated.blob);
-    expect(content).toContain('Aucun document');
+    expect(content).toContain('Aucun brevet ni visite médicale enregistré.');
   });
 });
 
@@ -240,16 +348,16 @@ describe('multiple collaborator sheets export', () => {
   it('starts each grouped sheet on a new page and preserves its identity and complete pagination across long lists', async () => {
     const secondPerson = { ...person, id: 8, firstName: 'Anne', lastName: 'DURAND' };
     const longDocuments = Array.from({ length: 35 }, (_, index) => ({
-      ...certificate, id: index + 100, title: `FIRSTREPORT${index + 1}`,
-      notes: `FIRSTNOTE${index + 1} ` + 'Compte rendu des formations et renouvellements. '.repeat(10),
+      ...certificate, id: index + 100,
+      title: `FIRSTREPORT${String(index + 1).padStart(2, '0')} ` + 'Compte rendu des formations et renouvellements. '.repeat(10),
     }));
     const sections = buildCollaboratorSheetSections(person, longDocuments, new Set(['documents']));
-    const selection = { documents: ['title', 'notes'], contact: ['phone'], health: ['notes'] };
+    const selection = { documents: ['title'], contact: ['phone'], health: ['notes'] };
     const firstSheet = await buildCollaboratorSheetPdf(person, sections, selection);
     const firstPageCount = (await inspectPdf(firstSheet.blob)).pdf.getPageCount();
     const generated = await buildCollaboratorSheetsExport([person, secondPerson], [
       ...longDocuments,
-      { ...certificate, id: 200, personId: secondPerson.id, title: 'SECONDREPORT', notes: 'SECONDNOTE' },
+      { ...certificate, id: 200, personId: secondPerson.id, title: 'SECONDREPORT', notes: 'REMOVEDSECONDNOTE' },
       { ...certificate, id: 201, personId: 9, title: 'UNSELECTEDREPORT' },
     ], new Set(['documents']), selection, 'combined', new Date('2026-10-10T12:00:00Z'));
     const { pdf, content } = await inspectPdf(generated.blob);
@@ -262,17 +370,43 @@ describe('multiple collaborator sheets export', () => {
       expect(text).toContain('Luc MARTIN');
       expect(text).toContain(`Page ${page + 1} / ${firstPageCount}`);
       expect(text).toContain('Fiche 1 / 2');
-      expect(text).not.toMatch(/Anne DURAND|SECONDREPORT|SECONDNOTE/);
+      expect(text).not.toMatch(/Anne DURAND|SECONDREPORT|REMOVEDSECONDNOTE/);
     }
-    expect(pageContent(pdf, firstPageCount - 1)).toContain('FIRSTNOTE35');
+    expect(pageContent(pdf, firstPageCount - 1)).toContain('FIRSTREPORT35');
     const secondPage = pageContent(pdf, firstPageCount);
     expect(secondPage).toContain('Anne DURAND');
     expect(secondPage).toContain('SECONDREPORT');
-    expect(secondPage).toContain('SECONDNOTE');
+    expect(secondPage).not.toContain('REMOVEDSECONDNOTE');
     expect(secondPage).toContain('Page 1 / 1');
     expect(secondPage).toContain('Fiche 2 / 2');
-    expect(secondPage).not.toMatch(/Luc MARTIN|FIRSTREPORT|FIRSTNOTE/);
+    expect(secondPage).not.toMatch(/Luc MARTIN|FIRSTREPORT/);
     expect(content).not.toMatch(/PRIVATE|0123456789|UNSELECTEDREPORT/);
+  });
+
+  it.each([
+    ['separate', true], ['separate', false], ['combined', true], ['combined', false],
+  ] as const)('applies the shared photo option to each %s export with includePhoto=%s', async (mode, includePhoto) => {
+    const people = [{ ...person, photoUrl: pngPhoto }, { ...person, id: 8, firstName: 'Anne', lastName: 'DURAND', photoUrl: jpegPhoto }];
+    const generated = await buildCollaboratorSheetsExport(people, [], new Set(['identity']), {
+      identity: ['employeeNumber'],
+    }, mode, new Date('2026-10-10T12:00:00Z'), { includePhoto });
+    if (mode === 'separate') {
+      const archive = await JSZip.loadAsync(await generated.blob.arrayBuffer());
+      const names = Object.keys(archive.files);
+      expect(names).toHaveLength(2);
+      for (const name of names) {
+        const { pdf } = await inspectPdf(new Blob([await archive.file(name)!.async('arraybuffer')]));
+        expect(imageCount(pdf) > 0).toBe(includePhoto);
+        expect(/\/I\d+ Do/.test(pageContent(pdf, 0))).toBe(includePhoto);
+      }
+    } else {
+      const { pdf } = await inspectPdf(generated.blob);
+      expect(pdf.getPageCount()).toBe(2);
+      expect(/\/I\d+ Do/.test(pageContent(pdf, 0))).toBe(includePhoto);
+      expect(/\/I\d+ Do/.test(pageContent(pdf, 1))).toBe(includePhoto);
+      expect(pageContent(pdf, 0)).toContain('Luc MARTIN');
+      expect(pageContent(pdf, 1)).toContain('Anne DURAND');
+    }
   });
 
   it.each(['separate', 'combined'] as const)('rejects empty people and selections outside available sections for %s exports', async (mode) => {

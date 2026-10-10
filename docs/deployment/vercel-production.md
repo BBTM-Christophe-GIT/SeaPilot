@@ -1,5 +1,14 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.71.13`, build `2026-10-10.006`, renomme la liste PDF Documents en
+Brevets et visites médicales : quatre colonnes, classement par catégorie et
+exclusion des fichiers administratifs. Les entretiens annuels et la section
+Santé conservent leurs informations. La case Inclure la photo permet d'afficher
+ou d'omettre la photo disponible à gauche du titre et du nom, dans les fiches
+individuelles et les exports en lot. Les données et droits existants sont
+conservés, sans lecture supplémentaire. Aucune migration, dépendance ou
+configuration nouvelle. Voir [les fiches collaborateurs](./human-resources-collaborator-form.md).
+
 Version `3.71.12`, build `2026-10-10.005`, ajoute Exporter les fiches dans la liste
 RH : sélection de plusieurs collaborateurs et choix entre une archive contenant
 un PDF par personne et un PDF regroupé. Les champs sélectionnés et les droits de

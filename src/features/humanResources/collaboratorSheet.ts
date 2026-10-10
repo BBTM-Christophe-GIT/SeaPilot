@@ -26,6 +26,9 @@ export interface CollaboratorSheetSection {
 
 export type CollaboratorSheetSelection = Record<string, string[]>;
 export type CollaboratorSheetsExportMode = 'separate' | 'combined';
+export interface CollaboratorSheetPdfOptions {
+  includePhoto?: boolean;
+}
 
 const FIELD_DEFINITIONS = {
   identity: [
@@ -68,7 +71,7 @@ const SECTION_LABELS: Record<SectionKey, string> = {
   identity: 'Identité et poste', contract: 'Contrat et dates', contact: 'Coordonnées',
   emergency: 'Contact urgence', administrative: 'Documents administratifs',
   health: 'Santé et habilitations', clothing: 'Tenues et mensurations',
-  annualReviews: 'Entretien Annuel', documents: 'Documents',
+  annualReviews: 'Entretien Annuel', documents: 'Brevets et visites médicales',
 };
 
 const DOCUMENT_COLUMNS = [
@@ -77,6 +80,9 @@ const DOCUMENT_COLUMNS = [
   { key: 'status', label: 'Statut' }, { key: 'sourceLabel', label: 'Source' },
   { key: 'notes', label: 'Notes' },
 ];
+
+const CERTIFICATE_COLUMNS = DOCUMENT_COLUMNS.filter((column) => ['title', 'category', 'expiresOn', 'status'].includes(column.key));
+const documentCollator = new Intl.Collator('fr-FR', { sensitivity: 'base', numeric: true });
 
 const MEDICAL_COLUMNS = [
   { key: 'title', label: 'Visite médicale' }, { key: 'issuedOn', label: 'Date visite' },
@@ -166,12 +172,22 @@ export function buildCollaboratorSheetSections(
           emptyLabel: 'Aucune visite médicale enregistrée.',
         };
       } else if (key === 'annualReviews' || key === 'documents') {
+        const listedDocuments = ownDocuments.filter((document) => key === 'annualReviews'
+          ? document.categoryKey === 'annual_review'
+          : document.categoryKey !== 'annual_review' && document.categoryKey !== 'administrative');
+        if (key === 'documents') {
+          listedDocuments.sort((left, right) => documentCollator.compare(getHrDocumentCategoryLabel(left.categoryKey), getHrDocumentCategoryLabel(right.categoryKey))
+            || documentCollator.compare(left.title, right.title)
+            || left.expiresOn.localeCompare(right.expiresOn)
+            || left.id - right.id);
+        }
         section.table = {
-          columns: DOCUMENT_COLUMNS.map((column) => ({ ...column })),
-          rows: ownDocuments
-            .filter((document) => (document.categoryKey === 'annual_review') === (key === 'annualReviews'))
-            .map(documentRow),
-          emptyLabel: key === 'annualReviews' ? 'Aucun entretien annuel enregistré.' : 'Aucun document enregistré.',
+          columns: (key === 'documents' ? CERTIFICATE_COLUMNS : DOCUMENT_COLUMNS).map((column) => ({ ...column })),
+          rows: listedDocuments.map((document) => {
+            const row = documentRow(document);
+            return key === 'documents' ? Object.fromEntries(CERTIFICATE_COLUMNS.map((column) => [column.key, row[column.key]])) : row;
+          }),
+          emptyLabel: key === 'annualReviews' ? 'Aucun entretien annuel enregistré.' : 'Aucun brevet ni visite médicale enregistré.',
         };
       }
       return section;
@@ -190,7 +206,7 @@ export function selectCollaboratorSheetSections(
     const allowedFields = new Set<string>(FIELD_DEFINITIONS[key].map(([fieldKey]) => fieldKey));
     const fields = section.fields.filter((field) => allowedFields.has(field.key) && chosenKeys.has(field.key));
     const allowedColumns = new Set(
-      (key === 'health' ? MEDICAL_COLUMNS : key === 'documents' || key === 'annualReviews' ? DOCUMENT_COLUMNS : [])
+      (key === 'health' ? MEDICAL_COLUMNS : key === 'documents' ? CERTIFICATE_COLUMNS : key === 'annualReviews' ? DOCUMENT_COLUMNS : [])
         .map((column) => column.key),
     );
     const columns = section.table?.columns.filter((column) => allowedColumns.has(column.key) && chosenKeys.has(column.key)) || [];
@@ -221,6 +237,7 @@ export async function buildCollaboratorSheetPdf(
   sections: CollaboratorSheetSection[],
   selection: CollaboratorSheetSelection,
   generatedOn = new Date(),
+  options: CollaboratorSheetPdfOptions = {},
 ): Promise<{ blob: Blob; fileName: string }> {
   const selectedSections = selectCollaboratorSheetSections(sections, selection);
   if (!selectedSections.length) throw new Error('Sélectionnez au moins une information à inclure dans la fiche.');
@@ -229,10 +246,31 @@ export async function buildCollaboratorSheetPdf(
   const navy: [number, number, number] = [23, 32, 51];
   const blue: [number, number, number] = [21, 96, 130];
   const pale: [number, number, number] = [238, 244, 250];
+  // Portraits were loaded through the existing RH permissions. Never resolve a
+  // storage path or remote URL here; an unavailable image must not block a sheet.
+  let portrait: { data: string; format: 'PNG' | 'JPEG'; x: number; y: number; width: number; height: number } | undefined;
+  const photoFormat = /^data:image\/(jpeg|png);base64,/i.exec(person.photoUrl || '')?.[1];
+  if (options.includePhoto !== false && !person.photoUnavailable && photoFormat && person.photoUrl) {
+    try {
+      const properties = pdf.getImageProperties(person.photoUrl);
+      if (properties.width > 0 && properties.height > 0) {
+        const scale = 22 / Math.max(properties.width, properties.height);
+        const width = properties.width * scale;
+        const height = properties.height * scale;
+        const image = { data: person.photoUrl, format: photoFormat.toLowerCase() === 'png' ? 'PNG' as const : 'JPEG' as const,
+          x: 15 + (22 - width) / 2, y: 10 + (22 - height) / 2, width, height };
+        pdf.addImage(image.data, image.format, image.x, image.y, image.width, image.height);
+        portrait = image;
+      }
+    } catch {
+      // Keep the text-only header if the cached portrait cannot be decoded.
+    }
+  }
+  const headerLeft = portrait ? 43 : 15;
   const personName = formatPersonName(person) || 'Collaborateur';
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(10);
-  const nameLines = pdf.splitTextToSize(personName, 180) as string[];
+  const nameLines = pdf.splitTextToSize(personName, 195 - headerLeft) as string[];
   const bodyTop = Math.max(40, 28 + nameLines.length * 4.2);
   const margin = { left: 15, right: 15, top: bodyTop, bottom: 20 };
   const styles = {
@@ -286,10 +324,11 @@ export async function buildCollaboratorSheetPdf(
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(16);
     pdf.setTextColor(...navy);
-    pdf.text('Fiche Collaborateur', 15, 17);
+    if (portrait && page > 1) pdf.addImage(portrait.data, portrait.format, portrait.x, portrait.y, portrait.width, portrait.height);
+    pdf.text('Fiche Collaborateur', headerLeft, 17);
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(10);
-    pdf.text(nameLines, 15, 24);
+    pdf.text(nameLines, headerLeft, 24);
     pdf.setDrawColor(...blue);
     pdf.line(15, bodyTop - 5, 195, bodyTop - 5);
     pdf.setFontSize(7);
@@ -311,6 +350,7 @@ export async function buildCollaboratorSheetsExport(
   selection: CollaboratorSheetSelection,
   mode: CollaboratorSheetsExportMode,
   generatedOn = new Date(),
+  options: CollaboratorSheetPdfOptions = {},
 ): Promise<{ blob: Blob; fileName: string }> {
   const peopleById = new Map<number, PersonRecord>();
   people.forEach((person) => { if (!peopleById.has(person.id)) peopleById.set(person.id, person); });
@@ -331,7 +371,7 @@ export async function buildCollaboratorSheetsExport(
     const archive = new JSZip();
     // Render sequentially so a large selection does not retain every PDF renderer at once.
     for (const { person, sections } of sheets) {
-      const generated = await buildCollaboratorSheetPdf(person, sections, selection, generatedOn);
+      const generated = await buildCollaboratorSheetPdf(person, sections, selection, generatedOn, options);
       const name = formatPersonName(person) || 'Collaborateur';
       archive.file(
         `Fiche-Collaborateur-${safeFileNamePart(name)}-ID${person.id}-${parisDateKey(generatedOn)}.pdf`,
@@ -348,7 +388,7 @@ export async function buildCollaboratorSheetsExport(
   const combined = await PDFDocument.create();
   const footerFont = await combined.embedFont(StandardFonts.Helvetica);
   for (const [index, { person, sections }] of sheets.entries()) {
-    const generated = await buildCollaboratorSheetPdf(person, sections, selection, generatedOn);
+    const generated = await buildCollaboratorSheetPdf(person, sections, selection, generatedOn, options);
     const source = await PDFDocument.load(await generated.blob.arrayBuffer());
     const pages = await combined.copyPages(source, source.getPageIndices());
     // A sheet keeps its own name and page count, and always starts on a fresh page.

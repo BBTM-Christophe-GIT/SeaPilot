@@ -39,7 +39,11 @@ Le raccourci **Voir les anciens** permet de basculer immédiatement vers cette p
 
 Le menu **…** en haut à droite de chaque fiche RH propose **Fiche Collaborateur** à tous les profils qui peuvent consulter cette personne. La fenêtre permet de sélectionner une section complète ou chaque information individuellement, puis de télécharger la fiche en PDF A4. Le nom du collaborateur identifie toujours le document.
 
-Toutes les informations accessibles sont sélectionnées à l'ouverture. Les listes **Documents**, **Visites médicales** et **Entretien Annuel** apparaissent dans la fenêtre et dans le PDF lorsque leurs colonnes sont sélectionnées. Les dates, statuts, habilitations, aptitude médicale, veille à la passerelle et restrictions peuvent être inclus séparément. Les longues listes sont réparties sur plusieurs pages avec en-tête et pagination.
+Toutes les informations accessibles sont sélectionnées à l'ouverture. La liste **Brevets et visites médicales** propose uniquement **Document**, **Catégorie**, **Échéance** et **Statut**. Elle exclut les fichiers de catégorie **Documents administratifs** et les entretiens annuels, puis classe les éléments par catégorie et par titre. Les dates d'émission, sources et notes n'apparaissent plus dans cette liste, même si une ancienne sélection les demandait. La section **Documents administratifs** contenant les champs d'identité du collaborateur reste disponible selon ses droits.
+
+Les listes **Visites médicales** et **Entretien Annuel** conservent leurs colonnes et apparaissent dans la fenêtre et dans le PDF lorsque leurs informations sont sélectionnées. Les dates, statuts, habilitations, aptitude médicale, veille à la passerelle et restrictions peuvent être inclus séparément. Les longues listes sont réparties sur plusieurs pages avec en-tête et pagination.
+
+La case **Inclure la photo**, cochée à l'ouverture, permet de choisir si la photo disponible doit apparaître à gauche de **Fiche Collaborateur** et du prénom et nom, sur chaque page. Décocher cette case conserve le titre et le nom, sans photo. Une photo absente ou indisponible n'empêche pas l'export. Ce choix est indépendant des sections et ne permet pas de générer une fiche sans information sélectionnée.
 
 La section **Signature** est exclue des choix et du PDF. L'export réutilise les documents du collaborateur et les sections déjà autorisées au profil connecté, sans lecture supplémentaire ni modification des données. Les détails médicaux sont limités à la section **Santé et habilitations** ; la liste générale des documents ne les réintroduit pas lorsqu'ils sont décochés. La suppression d'une personne reste réservée à l'Administrateur.
 
@@ -52,8 +56,8 @@ avec un PDF par personne dans une seule archive, ou **Fiches regroupées (PDF)**
 avec une nouvelle page au début de chaque fiche. Les personnes sont identifiées
 sur leurs pages ; les homonymes conservent des noms de fichiers distincts.
 
-Les choix de sections et d'informations s'appliquent à toutes les fiches. Le
-sélecteur d'aperçu permet de consulter les valeurs d'un collaborateur sélectionné
+Les choix de sections, d'informations et d'inclusion de la photo s'appliquent à
+toutes les fiches. Le sélecteur d'aperçu permet de consulter les valeurs d'un collaborateur sélectionné
 sans changer les informations choisies. Aucun fichier n'est généré si aucune
 personne ou aucune information n'est sélectionnée. La génération bloque une
 seconde soumission et laisse les choix disponibles après une erreur.

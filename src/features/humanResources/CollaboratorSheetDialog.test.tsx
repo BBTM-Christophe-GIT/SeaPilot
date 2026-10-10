@@ -72,6 +72,7 @@ const documents = mapHrDocumentRows([
     medical_restriction: 'Restriction autre collaborateur',
   }),
   documentRow({ id: 16, person_id: null, title: 'Document à rattacher' }),
+  documentRow({ id: 17, category_key: 'administrative', title: 'Pièce administrative exclue' }),
 ]);
 
 const allSectionKeys = new Set([
@@ -124,7 +125,8 @@ describe('CollaboratorSheetDialog — multiple collaborators', () => {
     expect(within(dialog).getByRole('checkbox', { name: 'Sélectionner Camille DUPONT (n° 7)' })).not.toBeChecked();
     expect(within(dialog).getByRole('checkbox', { name: 'Sélectionner Alex MARTIN (n° 8)' })).not.toBeChecked();
     expect(within(dialog).getByRole('checkbox', { name: 'Identité et poste : Matricule' })).toBeChecked();
-    expect(within(dialog).getByRole('checkbox', { name: 'Documents : Document' })).toBeChecked();
+    expect(within(dialog).getByRole('checkbox', { name: 'Brevets et visites médicales : Document' })).toBeChecked();
+    expect(within(dialog).getByRole('checkbox', { name: 'Inclure la photo' })).toBeChecked();
     expect(within(dialog).queryByRole('checkbox', { name: /signature|Santé et habilitations/i })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('combobox', { name: 'Aperçu du collaborateur' })).not.toBeInTheDocument();
     expect(within(dialog).queryByText('camille@example.invalid')).not.toBeInTheDocument();
@@ -140,15 +142,19 @@ describe('CollaboratorSheetDialog — multiple collaborators', () => {
     choosePerson(dialog);
     choosePerson(dialog, secondPerson);
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Identité et poste : Email' }));
-    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Documents : Notes' }));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Brevets et visites médicales : Échéance' }));
+    const informationCount = within(dialog).getByText(/^\d+ informations? sélectionnées?$/).textContent;
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Inclure la photo' }));
+    expect(within(dialog).getByText(/^\d+ informations? sélectionnées?$/)).toHaveTextContent(informationCount!);
 
-    expect(within(dialog).getByRole('table', { name: 'Liste Documents' })).toHaveTextContent('Brevet Capitaine 200');
+    expect(within(dialog).getByRole('table', { name: 'Liste Brevets et visites médicales' })).toHaveTextContent('Brevet Capitaine 200');
     fireEvent.change(within(dialog).getByRole('combobox', { name: 'Aperçu du collaborateur' }), { target: { value: '8' } });
-    expect(within(dialog).getByRole('table', { name: 'Liste Documents' })).toHaveTextContent('Brevet autre collaborateur');
-    expect(within(dialog).getByRole('table', { name: 'Liste Documents' })).not.toHaveTextContent('Brevet Capitaine 200');
+    expect(within(dialog).getByRole('table', { name: 'Liste Brevets et visites médicales' })).toHaveTextContent('Brevet autre collaborateur');
+    expect(within(dialog).getByRole('table', { name: 'Liste Brevets et visites médicales' })).not.toHaveTextContent('Brevet Capitaine 200');
     expect(within(dialog).getByRole('table', { name: 'Liste des visites médicales' })).toHaveTextContent('Restriction autre collaborateur');
     expect(within(dialog).getByRole('checkbox', { name: 'Identité et poste : Email' })).not.toBeChecked();
-    expect(within(dialog).getByRole('checkbox', { name: 'Documents : Notes' })).not.toBeChecked();
+    expect(within(dialog).getByRole('checkbox', { name: 'Brevets et visites médicales : Échéance' })).not.toBeChecked();
+    expect(within(dialog).getByRole('checkbox', { name: 'Inclure la photo' })).not.toBeChecked();
     expect(within(dialog).queryByText('Document à rattacher')).not.toBeInTheDocument();
 
     choosePerson(dialog, secondPerson);
@@ -176,9 +182,9 @@ describe('CollaboratorSheetDialog — multiple collaborators', () => {
   });
 
   it.each([
-    ['separate', 'Fiches séparées (ZIP)', 'Fiches-collaborateurs.zip', 'application/zip'],
-    ['combined', 'Fiches regroupées (PDF)', 'Fiches-collaborateurs.pdf', 'application/pdf'],
-  ] as const)('exports selected collaborators in %s mode using their shared choices and the returned filename', async (mode, label, fileName, type) => {
+    ['separate', 'Fiches séparées (ZIP)', 'Fiches-collaborateurs.zip', 'application/zip', true],
+    ['combined', 'Fiches regroupées (PDF)', 'Fiches-collaborateurs.pdf', 'application/pdf', false],
+  ] as const)('exports selected collaborators in %s mode using their shared choices and the returned filename', async (mode, label, fileName, type, includePhoto) => {
     const clickedLinks: Array<{ download: string; href: string }> = [];
     generateBulk.mockResolvedValue({ blob: new Blob(['export'], { type }), fileName });
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { clickedLinks.push({ download: this.download, href: this.href }); });
@@ -187,13 +193,14 @@ describe('CollaboratorSheetDialog — multiple collaborators', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Sélectionner tous les collaborateurs' }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Tout désélectionner' }));
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Identité et poste : Prénom' }));
-    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Documents : Document' }));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Brevets et visites médicales : Document' }));
     fireEvent.click(within(dialog).getByRole('radio', { name: label }));
+    if (!includePhoto) fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Inclure la photo' }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Exporter les fiches' }));
 
     expect(await within(dialog).findByRole('status')).toHaveTextContent('Les fiches collaborateurs ont été exportées.');
     expect(generateBulk).toHaveBeenCalledOnce();
-    expect(generateBulk).toHaveBeenCalledWith(people, documents, allowedSections, { identity: ['firstName'], documents: ['title'] }, mode);
+    expect(generateBulk).toHaveBeenCalledWith(people, documents, allowedSections, { identity: ['firstName'], documents: ['title'] }, mode, undefined, { includePhoto });
     expect(generatePdf).not.toHaveBeenCalled();
     expect(clickedLinks).toEqual([{ download: fileName, href: 'blob:collaborator-sheet' }]);
     expect(document.querySelector('a[download]')).not.toBeInTheDocument();
@@ -213,7 +220,7 @@ describe('CollaboratorSheetDialog — multiple collaborators', () => {
     expect(within(dialog).getByText('MATRICULE-MIS-A-JOUR')).toBeInTheDocument();
     expect(within(dialog).getByRole('checkbox', { name: 'Sélectionner Alex MARTIN (n° 8)' }).closest('label')).toHaveTextContent('MATRICULE-MIS-A-JOUR');
     expect(within(dialog).queryByRole('checkbox', { name: 'Sélectionner Camille DUPONT (n° 7)' })).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole('checkbox', { name: 'Documents : Document' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('checkbox', { name: 'Brevets et visites médicales : Document' })).not.toBeInTheDocument();
     fireEvent.submit(dialog);
     await waitFor(() => expect(generateBulk).toHaveBeenCalledOnce());
     expect(generateBulk.mock.calls[0][0]).toEqual([updatedPerson]);
@@ -260,6 +267,7 @@ describe('CollaboratorSheetDialog — multiple collaborators', () => {
     expect(generateBulk).toHaveBeenCalledOnce();
     expect(dialog).toHaveAttribute('aria-busy', 'true');
     within(dialog).getAllByRole('checkbox').forEach((checkbox) => expect(checkbox).toBeDisabled());
+    expect(within(dialog).getByRole('checkbox', { name: 'Inclure la photo' })).toBeDisabled();
     within(dialog).getAllByRole('radio').forEach((radio) => expect(radio).toBeDisabled());
     expect(within(dialog).getByRole('searchbox', { name: 'Rechercher un collaborateur' })).toBeDisabled();
     expect(within(dialog).getByRole('combobox', { name: 'Aperçu du collaborateur' })).toBeDisabled();
@@ -298,7 +306,11 @@ describe('CollaboratorSheetDialog', () => {
     expect(within(dialog).getByText('00007')).toBeInTheDocument();
     within(dialog).getAllByRole('checkbox').forEach((checkbox) => expect(checkbox).toBeChecked());
     expect(within(dialog).getByRole('table', { name: 'Liste des visites médicales' })).toHaveTextContent('Port de lunettes');
-    expect(within(dialog).getByRole('table', { name: 'Liste Documents' })).toHaveTextContent('Brevet Capitaine 200');
+    expect(within(dialog).getByRole('table', { name: 'Liste Brevets et visites médicales' })).toHaveTextContent('Brevet Capitaine 200');
+    const certificateTable = within(dialog).getByRole('table', { name: 'Liste Brevets et visites médicales' });
+    expect(within(certificateTable).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Document', 'Catégorie', 'Échéance', 'Statut']);
+    expect(within(certificateTable).queryByText('Pièce administrative exclue')).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('checkbox', { name: /Brevets et visites médicales : (Date émission|Source|Notes)/ })).not.toBeInTheDocument();
     expect(within(dialog).getByRole('table', { name: 'Liste Entretien Annuel' })).toHaveTextContent('Entretien annuel 2026');
     expect(within(dialog).queryByRole('checkbox', { name: /signature/i })).not.toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Générer le PDF' })).toBeEnabled();
@@ -323,9 +335,9 @@ describe('CollaboratorSheetDialog', () => {
     expect(within(medicalTable).queryByText('Port de lunettes')).not.toBeInTheDocument();
     expect(within(medicalTable).getByRole('columnheader', { name: 'Aptitude' })).toBeInTheDocument();
 
-    await user.click(within(dialog).getByRole('checkbox', { name: 'Inclure la section Documents' }));
-    expect(within(dialog).queryByRole('table', { name: 'Liste Documents' })).not.toBeInTheDocument();
-    expect(within(dialog).getByRole('checkbox', { name: 'Documents : Document' })).not.toBeChecked();
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Inclure la section Brevets et visites médicales' }));
+    expect(within(dialog).queryByRole('table', { name: 'Liste Brevets et visites médicales' })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('checkbox', { name: 'Brevets et visites médicales : Document' })).not.toBeChecked();
     expect(within(dialog).getByRole('table', { name: 'Liste Entretien Annuel' })).toBeInTheDocument();
   });
 
@@ -333,7 +345,7 @@ describe('CollaboratorSheetDialog', () => {
     const dialog = renderDialog(new Set(['identity', 'documents']));
 
     expect(within(dialog).getByRole('checkbox', { name: 'Inclure la section Identité et poste' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('checkbox', { name: 'Inclure la section Documents' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('checkbox', { name: 'Inclure la section Brevets et visites médicales' })).toBeInTheDocument();
     expect(within(dialog).queryByRole('checkbox', { name: /Santé et habilitations/ })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('checkbox', { name: /Contact urgence/ })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('checkbox', { name: /Entretien Annuel/ })).not.toBeInTheDocument();
@@ -352,6 +364,7 @@ describe('CollaboratorSheetDialog', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Tout désélectionner' }));
 
     expect(within(dialog).getByRole('button', { name: 'Générer le PDF' })).toBeDisabled();
+    expect(within(dialog).getByRole('checkbox', { name: 'Inclure la photo' })).toBeChecked();
     expect(within(dialog).getByRole('status')).toHaveTextContent('Sélectionnez au moins une information');
     fireEvent.submit(dialog);
     expect(generatePdf).not.toHaveBeenCalled();
@@ -361,7 +374,7 @@ describe('CollaboratorSheetDialog', () => {
     expect(within(dialog).getByRole('button', { name: 'Générer le PDF' })).toBeEnabled();
   });
 
-  it('downloads the generated PDF using the chosen information and supplied filename', async () => {
+  it.each([true, false])('downloads the generated PDF using the chosen information, filename and includePhoto=%s', async (includePhoto) => {
     const user = userEvent.setup();
     const clickedLinks: Array<{ download: string; href: string }> = [];
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
@@ -370,14 +383,15 @@ describe('CollaboratorSheetDialog', () => {
     const dialog = renderDialog();
     await user.click(within(dialog).getByRole('button', { name: 'Tout désélectionner' }));
     await user.click(within(dialog).getByRole('checkbox', { name: 'Identité et poste : Prénom' }));
-    await user.click(within(dialog).getByRole('checkbox', { name: 'Documents : Document' }));
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Brevets et visites médicales : Document' }));
+    if (!includePhoto) await user.click(within(dialog).getByRole('checkbox', { name: 'Inclure la photo' }));
     await user.click(within(dialog).getByRole('button', { name: 'Générer le PDF' }));
 
     expect(await within(dialog).findByRole('status')).toHaveTextContent('La fiche collaborateur PDF a été générée.');
     expect(generatePdf).toHaveBeenCalledOnce();
     expect(generatePdf).toHaveBeenCalledWith(person, expect.any(Array), {
       identity: ['firstName'], documents: ['title'],
-    });
+    }, undefined, { includePhoto });
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
     expect(clickedLinks).toEqual([{ download: 'Fiche-Camille-DUPONT.pdf', href: 'blob:collaborator-sheet' }]);
     expect(document.querySelector('a[download]')).not.toBeInTheDocument();
@@ -418,6 +432,7 @@ describe('CollaboratorSheetDialog', () => {
     expect(within(dialog).getByRole('button', { name: 'Tout sélectionner' })).toBeDisabled();
     expect(within(dialog).getByRole('button', { name: 'Tout désélectionner' })).toBeDisabled();
     within(dialog).getAllByRole('checkbox').forEach((checkbox) => expect(checkbox).toBeDisabled());
+    expect(within(dialog).getByRole('checkbox', { name: 'Inclure la photo' })).toBeDisabled();
 
     fireEvent.submit(dialog);
     fireEvent.keyDown(dialog, { key: 'Escape' });
