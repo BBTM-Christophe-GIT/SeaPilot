@@ -1,6 +1,7 @@
 # Vérification visuelle de la préversion
 
-Date : 8 octobre 2026. final result: passed
+Dernière itération : 10 octobre 2026. Validation locale réussie ; les résultats
+des itérations précédentes ci-dessous décrivent leurs états respectifs.
 
 ## Source et état comparés
 
@@ -242,7 +243,8 @@ ce n'est pas un débordement de l'interface. Les mesures sont conservées dans
   Les exclusions individuelles sont conservées après une désélection de section.
 - Les calculs et les trois exports réutilisent le moteur existant ; les devises
   restent séparées. La référence suit le projet et le contenu PDF effectif,
-  avec les lignes brutes filtrées par période et navire.
+  avec les lignes brutes filtrées par période et conservant leur affectation
+  propre de navire.
 - 105 tests concernés passent dans cinq fichiers (préversion, stockage de
   démonstration, moteur de facturation et références). ESLint ciblé et build
   de production réussis. Aucun changement de droits, RPC/RLS ou base de données.
@@ -264,5 +266,91 @@ Captures ouvertes et contrôlées : [ordinateur](./evidence/billing-statement-de
 Aucun P0/P1/P2 restant dans le périmètre. Les renommages, les boutons sur une
 rangée et l'adaptation aux tokens communs sont les écarts attendus par rapport
 au volet source.
+
+final result: passed
+
+## Itération : calendrier visible et commandes locales
+
+Demandes du 10 octobre : déplacer les champs de période sur la ligne du titre,
+sélectionner le mois courant à l'ouverture, supprimer les commandes globales,
+ajouter les actions propres aux quatre sections et les deux accès au catalogue.
+Les précisions suivantes imposent un calendrier visible sans fenêtre et placent
+Navire sous Facturation mensuelle.
+
+Référence de la ligne de champs : capture utilisateur
+`C:/Users/chris/AppData/Local/Temp/codex-clipboard-81ba7221-c4df-4e70-8e52-b1f882b52b94.png`,
+2788 × 118 px avant redimensionnement. Elle décrit les champs à déplacer ; les
+positions finales suivent les précisions ultérieures de l'utilisateur.
+
+### Disposition et charte
+
+- Dès 870 px de panneau, titre, Mois, Période, Début et Fin sont sur une rangée.
+  Navire est sous le titre, et le calendrier occupe le reste de cette seconde
+  rangée. À une largeur inférieure, il garde toute la largeur disponible.
+- Le calendrier contient les trois mois autour du mois sélectionné. Ses mois
+  sont côte à côte dès 620 px de calendrier, puis empilés sur petit écran.
+  Les jours sélectionnés et les bornes utilisent les tokens SeaPilot, avec
+  focus visible et nom accessible comprenant le jour et la date complète.
+- Les cases du calendrier ont une hauteur minimale de 30 px en disposition
+  dense à trois colonnes, 40 px en disposition étroite et 44 px sur pointeur
+  tactile. Cette adaptation concerne les jours du calendrier ; les commandes
+  habituelles conservent leurs dimensions partagées.
+- Ajouter et Catalogue des prestations se regroupent à côté du titre de leur
+  section quand la place le permet. Ajouter une ligne et Dupliquer la ligne
+  sont côte à côte sous le tableau Saisie brute. Les groupes gardent une rangée et
+  défilent localement si nécessaire. Les menus de ligne restent accessibles
+  sans être coupés par le cadre du tableau.
+
+### Comportements contrôlés
+
+- L'ouverture et la réinitialisation sélectionnent le mois de la date du jour,
+  du premier au dernier jour. Les fixtures métier restent datées d'octobre 2026.
+  Le mois entier affiche 16 005 € HT pour P264 ; la période du 5 au 8 octobre
+  retrouve 10 955 € HT. Ce changement de total vient de la période initiale.
+- Le calendrier ne comporte ni déclencheur ni fenêtre. Premier clic : début
+  d'une nouvelle période ; deuxième clic : fin incluse ; troisième clic :
+  nouvelle sélection. Le sens inverse, le passage entre mois, les changements
+  externes de mois/dates et la navigation clavier sont couverts.
+- Le complément des jours sans DPR utilise les lignes synthétiques du moteur
+  existant, « 24/24 Operation » et le tarif applicable à chaque date. Le contrôle
+  du 12–13 octobre conserve le DPR réel du 12 exclu et complète le 13 à 2 650 €.
+  Retirer le complément conserve l'exclusion du DPR réel.
+- Ajouter est disponible dans Services refacturables et Prestation BBTM.
+  Ajouter une ligne et Dupliquer la ligne sont sous le tableau Saisie brute. La copie
+  reprend la dernière ligne ajoutée du mois, même si une autre est sélectionnée,
+  sans changer sa date ou ses données métier, avec un identifiant distinct.
+  Les cas vide, archivé et export en cours désactivent les actions concernées.
+- Les deux boutons Catalogue des prestations ouvrent le même catalogue fictif
+  existant en consultation. Échap ferme la fenêtre et restitue le focus.
+  Les accès globaux du ruban conservent leur fonctionnement.
+- Les quatre cases du Relevé du mois restent des choix PDF seulement. Les
+  sections restent visibles, les exclusions sont conservées et les lignes
+  brutes gardent leur navire propre dans la période retenue. Aucun changement
+  de moteur de production, droit, RPC/RLS ou base de données.
+
+### Navigateur et validation finale
+
+- À 1545 × 1000 CSS px, clientWidth/scrollWidth de page : 1530/1530 px.
+  Le calendrier mesure 671 px et ses trois mois environ 218 px chacun.
+  Navire reste dans la colonne de 205 px sous le titre.
+- À 390 × 844 CSS px, clientWidth/scrollWidth de page : 375/375 px ; calendrier
+  de 329 px, mois empilés, jours d'environ 45,6 × 40 px. La sélection du
+  28 septembre au 3 octobre affiche les six jours attendus. Le viewport
+  temporaire est réinitialisé après vérification.
+- L'ajout puis la duplication d'une ligne à 2 × 62,50 € produisent deux lignes
+  identiques de 125 € et un total de 11 205 € sur la période du 5–8 octobre.
+  Le menu de ligne et l'annulation de suppression ont été contrôlés.
+- Après déplacement des commandes sous le tableau brut, les deux boutons
+  gardent la même ordonnée. Une nouvelle duplication produit trois lignes
+  identiques et un total de 11 330 €. Le PDF sélectionné se rend dans l'aperçu.
+- Aucun avertissement ou erreur console sur les parcours examinés.
+- Les six fichiers concernés passent : 117 tests, ESLint ciblé et build de
+  production avec pnpm 10.34.5. Les 16 tests de préversion et le build ont été
+  relancés après le déplacement des boutons sous le tableau : réussis.
+  Le déploiement du commit poussé est contrôlé ensuite et suivi dans la PR.
+
+Les défauts de calendrier trop étroit sur mobile et de menu coupé par le cadre
+du tableau ont été corrigés dans cette itération. Les captures de contrôle
+restent hors du dépôt ; aucun nouvel actif de preuve n'est ajouté.
 
 final result: passed

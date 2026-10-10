@@ -1,6 +1,6 @@
 import {
-  Archive, Bell, CalendarDays, Check, ChevronDown, ChevronRight,
-  ClipboardList, Download, FilePlus2, FileText, FolderKanban, Fuel, Home,
+  Archive, Bell, BookOpen, CalendarDays, Check, ChevronDown, ChevronRight,
+  ClipboardList, Copy, Download, FilePlus2, FileText, FolderKanban, Fuel, Home,
   PackageCheck, Pencil, Plus, ReceiptText, RefreshCw, RotateCcw, Save, Search, Settings2,
   ShieldCheck, Ship, ShoppingCart, SlidersHorizontal, Trash2, Users, X,
   type LucideIcon,
@@ -20,8 +20,9 @@ import { PROJECT_STATUSES } from '../projectStatus';
 import { compareFleetNames } from '../../fleet/fleetDisplay';
 import PreviewPdf from './PreviewPdf';
 import BillingStatement, { type BillingSectionField } from './BillingStatement';
+import BillingPeriodCalendar from './BillingPeriodCalendar';
 import {
-  billingDemoReferenceKey, buildBillingView, createDemoProjects, INITIAL_BILLING_OPTIONS,
+  billingDemoRange, billingDemoReferenceKey, buildBillingView, createCurrentBillingOptions, createDemoProjects, INITIAL_BILLING_OPTIONS,
   type BillingDemoOptions, type DemoExpense, type DemoOperation, type DemoProject,
 } from './billingDemo';
 
@@ -119,7 +120,7 @@ export function ProjectPreview() {
   const [references, setReferences] = useState<Record<string, string>>(() => initialReferences(createDemoProjects()));
   const [selectedId, setSelectedId] = useState(264);
   const [tab, setTab] = useState<Tab>(() => new URLSearchParams(window.location.search).get('tab') === 'operations' ? 'operations' : 'billing');
-  const [options, setOptions] = useState<BillingDemoOptions>({ ...INITIAL_BILLING_OPTIONS });
+  const [options, setOptions] = useState<BillingDemoOptions>(createCurrentBillingOptions);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -127,7 +128,7 @@ export function ProjectPreview() {
   const [compact, setCompact] = useState(false);
   const [menu, setMenu] = useState('');
   const [selection, setSelection] = useState<Selection>(null);
-  const [expanded, setExpanded] = useState({ operations: true, expenses: false, services: false, raw: false });
+  const [expanded, setExpanded] = useState({ operations: true, expenses: false, services: false, raw: true });
   const [editor, setEditor] = useState<Editor | null>(null);
   const [dialog, setDialog] = useState<{ title: string; content: ReactNode } | null>(null);
   const [confirm, setConfirm] = useState<{ title: string; message: string; action: () => void } | null>(null);
@@ -188,23 +189,28 @@ export function ProjectPreview() {
   function chooseMonth(month: string) {
     if (!month) return;
     setOptions((current) => {
-      const nextOptions = { ...current, month, completeMissingDays: false };
+      const nextOptions = { ...current, month, periodMode: 'calendar-month' as const, completeMissingDays: false };
+      Object.assign(nextOptions, billingDemoRange(nextOptions));
       const nextDemo = { ...base, ...(months[monthKey(selectedId, month)] ?? emptyMonth(base, month)) };
       return { ...nextOptions, clientReference: references[billingDemoReferenceKey(nextDemo, nextOptions)] ?? defaultProjectClientReference(demo.project) };
     });
     setSelection(null); setPreviewUrl('');
   }
   function notify(message: string) { setToast(message); }
+  function chooseRange(startDate: string, endDate: string) {
+    setOptions((current) => ({ ...current, periodMode: 'custom', startDate, endDate, completeMissingDays: false }));
+    setPreviewUrl('');
+  }
   function reset() {
     const fresh = createDemoProjects(); setDemos(fresh); setMonths(initialMonths(fresh)); setReferences(initialReferences(fresh));
-    setSelectedId(264); setOptions({ ...INITIAL_BILLING_OPTIONS }); setSelection(null);
+    setSelectedId(264); setOptions(createCurrentBillingOptions()); setSelection(null);
     setQuery(''); setStatusFilter(''); setShowArchived(false); setPreviewUrl(''); setProofs({});
     notify('Les données de démonstration ont été réinitialisées.');
   }
-  function menuControl(id: string, label: string, Icon: LucideIcon, items: MenuItem[], primary = false, disabled = false) {
+  function menuControl(id: string, label: string, Icon: LucideIcon, items: MenuItem[], primary = false, disabled = false, accessibleLabel = label) {
     return <div className="pp-menu-wrap">
-      <button type="button" className={`pp-button ${primary ? 'primary' : ''}`} disabled={disabled} aria-haspopup="menu" aria-expanded={menu === id} onClick={() => setMenu(menu === id ? '' : id)}><Icon size={18} />{label}<ChevronDown size={14} /></button>
-      {menu === id && <div role="menu" aria-label={label} className="pp-menu" onKeyDown={(event) => {
+      <button type="button" className={`pp-button ${primary ? 'primary' : ''}`} disabled={disabled} aria-label={accessibleLabel} aria-haspopup="menu" aria-expanded={menu === id} onClick={() => setMenu(menu === id ? '' : id)}><Icon size={18} />{label}<ChevronDown size={14} /></button>
+      {menu === id && <div role="menu" aria-label={accessibleLabel} className="pp-menu" onKeyDown={(event) => {
         if (event.key === 'Escape') { setMenu(''); (event.currentTarget.previousElementSibling as HTMLElement)?.focus(); }
         if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
@@ -311,16 +317,20 @@ export function ProjectPreview() {
     ], note: 'Montants en EUR. La case Saisie brute contrôle l’inclusion de toutes les lignes dans le PDF.', submit(data) {
       if (number(data, 'quantity') <= 0) return 'La quantité doit être supérieure à zéro.';
       const period = ensurePeriod(demo).period;
-      const next: ProjectBillingRawLine = { id: line?.id ?? Date.now(), billingPeriodId: period.id, serviceCatalogId: null, serviceDate: text(data, 'date'), designation: text(data, 'designation'), vesselName: text(data, 'vessel'), vesselId: null, unitAmountHt: number(data, 'price'), quantity: number(data, 'quantity'), includeInPdf: true };
+      const next: ProjectBillingRawLine = { id: line?.id ?? Math.max(Date.now(), ...demo.rawLines.map((item) => item.id)) + 1, billingPeriodId: period.id, serviceCatalogId: null, serviceDate: text(data, 'date'), designation: text(data, 'designation'), vesselName: text(data, 'vessel'), vesselId: null, unitAmountHt: number(data, 'price'), quantity: number(data, 'quantity'), includeInPdf: line?.includeInPdf !== false };
       update((current) => ({ ...current, period, rawLines: line ? current.rawLines.map((item) => item.id === line.id ? next : item) : [...current.rawLines, next] }));
       setExpanded((current) => ({ ...current, raw: true })); setSelection({ kind: 'raw', id: next.id }); notify('Ligne brute enregistrée dans la démonstration.');
     } });
   }
-  function saveParameters() {
-    if (!options.month || view.endDate < view.startDate) { notify('Vérifiez la période avant de l’enregistrer.'); return; }
-    setReferences((current) => ({ ...current, [currentReferenceKey]: options.clientReference.trim() }));
-    update((current) => ensurePeriod(current));
-    notify('Paramètres enregistrés dans la démonstration.');
+  function duplicateRawLine() {
+    const previous = demo.rawLines.at(-1);
+    if (!previous || archived || busy) return;
+    const period = ensurePeriod(demo).period;
+    const copy = { ...previous, id: Math.max(Date.now(), ...demo.rawLines.map((item) => item.id)) + 1, billingPeriodId: period.id };
+    update((current) => ({ ...current, period, rawLines: [...current.rawLines, copy] }));
+    setExpanded((current) => ({ ...current, raw: true }));
+    setSelection({ kind: 'raw', id: copy.id });
+    notify('La dernière ligne a été dupliquée à l’identique.');
   }
   function removeSelection() {
     if (!selection) return;
@@ -367,15 +377,41 @@ export function ProjectPreview() {
     } catch (error) { notify(error instanceof Error ? error.message : 'L’export est indisponible.'); }
     finally { setBusy(false); }
   }
-  function catalog(label: string) {
+  function catalog(label: string, title = `Référentiel — ${label}`) {
     const items = label === 'Clients' ? demos.map((item) => item.project.clientName) : label === 'Remorqués' ? ['Ponton Démonstration', 'Barge Atlantique'] : ['Assistance technique — 85,00 € HT', 'Services portuaires', 'SPREAD ANTIPOLLUTION'];
-    setDialog({ title: `Référentiel — ${label}`, content: <div className="pp-dialog-body"><p className="pp-muted">Extrait du catalogue de démonstration.</p><ul>{[...new Set(items)].map((item) => <li key={item}>{item}</li>)}</ul></div> });
+    setDialog({ title, content: <div className="pp-dialog-body"><p className="pp-muted">Extrait du catalogue de démonstration.</p><ul>{[...new Set(items)].map((item) => <li key={item}>{item}</li>)}</ul></div> });
   }
   function updateInclusion(field: BillingSectionField, included: boolean) {
     update((current) => ({ ...ensurePeriod(current), period: { ...ensurePeriod(current).period, [field]: included } }));
   }
   function accordionHeading(id: keyof typeof expanded, label: string, Icon: LucideIcon, amount: number | Map<string, number>, subtitle?: string) {
-    return <div className="pp-accordion-header"><button type="button" aria-expanded={expanded[id]} onClick={() => setExpanded((current) => ({ ...current, [id]: !current[id] }))}><Icon size={21} /><strong>{label}</strong>{subtitle && <small>{subtitle}</small>}</button><strong>{amount instanceof Map ? currencyAmounts(amount) : money(amount, id === 'operations' ? demo.contract.hireCurrency || 'EUR' : 'EUR')} HT</strong><button type="button" aria-label={`${expanded[id] ? 'Replier' : 'Déplier'} ${label}`} onClick={() => setExpanded((current) => ({ ...current, [id]: !current[id] }))}><ChevronDown size={18} style={{ transform: expanded[id] ? 'rotate(180deg)' : undefined }} /></button></div>;
+    const completionLabel = `Compléter les ${view.missingDates.length} jours sans DPR avec « 24/24 Operation » au tarif contractuel applicable à chaque journée`;
+    return <div className="pp-accordion-header">
+      <button type="button" aria-expanded={expanded[id]} onClick={() => setExpanded((current) => ({ ...current, [id]: !current[id] }))}><Icon size={21} /><strong>{label}</strong>{subtitle && <small>{subtitle}</small>}</button>
+      {id === 'operations' && view.missingDates.length > 0 && <button type="button" className="pp-button pp-heading-action" disabled={archived || busy} aria-pressed={options.completeMissingDays ?? false} aria-label={options.completeMissingDays ? 'Retirer les journées complétées' : completionLabel} title={completionLabel} onClick={() => { setOptions((current) => ({ ...current, completeMissingDays: !current.completeMissingDays })); setPreviewUrl(''); }}>{options.completeMissingDays ? 'Retirer le complément' : `Compléter ${view.missingDates.length} jours`}</button>}
+      <strong>{amount instanceof Map ? currencyAmounts(amount) : money(amount, id === 'operations' ? demo.contract.hireCurrency || 'EUR' : 'EUR')} HT</strong>
+      <button type="button" aria-label={`${expanded[id] ? 'Replier' : 'Déplier'} ${label}`} onClick={() => setExpanded((current) => ({ ...current, [id]: !current[id] }))}><ChevronDown size={18} style={{ transform: expanded[id] ? 'rotate(180deg)' : undefined }} /></button>
+      {id !== 'operations' && <div className="pp-heading-actions">
+        {(id === 'expenses' || id === 'services') && <button type="button" className="pp-button" disabled={archived || busy} aria-label={id === 'expenses' ? 'Ajouter un frais' : 'Ajouter une prestation BBTM'} onClick={() => id === 'expenses' ? expenseEditor() : serviceEditor()}><Plus size={17} />Ajouter</button>}
+        {(id === 'services' || id === 'raw') && <button type="button" className="pp-button" disabled={busy} onClick={() => catalog('Prestations', 'Catalogue des prestations')}><BookOpen size={17} />Catalogue des prestations</button>}
+      </div>}
+    </div>;
+  }
+  function billingRowActions(kind: 'expense' | 'service' | 'raw') {
+    const item = kind === 'expense' ? selectedExpense : kind === 'service' ? selectedService : selectedRawLine;
+    const addLabel = kind === 'expense' ? 'Ajouter un frais' : kind === 'service' ? 'Ajouter une prestation BBTM' : 'Ajouter une ligne';
+    const actionsLabel = kind === 'expense' ? 'Actions du frais sélectionné' : kind === 'service' ? 'Actions de la prestation sélectionnée' : 'Actions de la ligne brute sélectionnée';
+    return <div className="pp-section-actions" role="toolbar" aria-label={kind === 'expense' ? 'Actions des services refacturables' : kind === 'service' ? 'Actions des prestations BBTM' : 'Actions de la saisie brute'}>
+      {kind === 'raw' && <div className="pp-section-create-actions">
+        <button type="button" className="pp-button" aria-label={addLabel} disabled={archived || busy} onClick={() => rawLineEditor()}><Plus size={17} />Ajouter une ligne</button>
+        <button type="button" className="pp-button" disabled={archived || busy || !demo.rawLines.length} onClick={duplicateRawLine}><Copy size={17} />Dupliquer la ligne</button>
+      </div>}
+      {menuControl(`row-${kind}`, 'Actions de la ligne', Settings2, [
+        { label: 'Modifier la ligne sélectionnée', icon: Pencil, action: () => kind === 'expense' ? expenseEditor(selectedExpense) : kind === 'service' ? serviceEditor(selectedService?.id) : rawLineEditor(selectedRawLine) },
+        ...(kind === 'expense' ? [{ label: 'Ajouter un justificatif', icon: FilePlus2, action: () => upload.current?.click() }] : []),
+        { label: 'Supprimer la ligne', icon: Trash2, danger: true, action: removeSelection },
+      ], false, archived || busy || !item, actionsLabel)}
+    </div>;
   }
   const filtered = demos.filter(({ project }) => (showArchived || !project.archivedAt) && (!statusFilter || project.status === statusFilter) && `${project.projectCode} ${project.title} ${project.clientName} ${project.primaryVesselName}`.toLocaleLowerCase('fr').includes(query.toLocaleLowerCase('fr')));
 
@@ -418,20 +454,19 @@ export function ProjectPreview() {
             <div className="pp-content" id={`pp-panel-${tab}`} role="tabpanel" aria-labelledby={`pp-tab-${tab}`}>
               {tab === 'billing' && <>
                 <div className="pp-billing-header">
-                  <div className="pp-billing-title"><h2>Facturation mensuelle</h2><label className="pp-field pp-billing-month"><input aria-label="Mois de facturation" type="month" value={options.month} onChange={(event) => chooseMonth(event.target.value)} /></label></div>
-                  <div className="pp-commandbar pp-billing-commandbar" aria-label="Commandes de facturation">
-                  {menuControl('add', 'Ajouter', Plus, [{ label: 'Ajouter un frais', icon: Fuel, action: () => expenseEditor() }, { label: 'Ajouter une prestation BBTM', icon: PackageCheck, action: () => serviceEditor() }, { label: 'Ajouter une ligne brute', icon: FilePlus2, action: () => rawLineEditor() }], false, archived || busy)}
-                  {menuControl('edit', 'Modifier', Pencil, [{ label: 'Modifier la ligne sélectionnée', icon: Pencil, action: () => selectedExpense ? expenseEditor(selectedExpense) : selectedRawLine ? rawLineEditor(selectedRawLine) : serviceEditor(selectedService?.id) }, { label: 'Ajouter un justificatif', icon: FilePlus2, action: () => upload.current?.click(), disabled: !selectedExpense }, { label: 'Supprimer la ligne', icon: Trash2, danger: true, action: removeSelection }], false, archived || busy || (!selectedExpense && !selectedService && !selectedRawLine))}
-                  {menuControl('save', 'Enregistrer', Save, [{ label: 'Enregistrer les paramètres', icon: Save, action: saveParameters }], false, busy || archived)}
+                  <h2>Facturation mensuelle</h2>
+                  <label className="pp-field pp-billing-vessel">Navire<select disabled={busy} value={options.vesselName} onChange={(event) => { setOptions((current) => ({ ...current, vesselName: event.target.value })); setPreviewUrl(''); }}><option value="">Navire de l’opération</option>{[...new Set(demo.operations.map((operation) => operation.primaryVesselName))].sort(compareFleetNames).map((value) => <option key={value}>{value}</option>)}</select></label>
+                  <div className="pp-month-and-calendar">
+                    <label className="pp-field pp-billing-month">Mois<input aria-label="Mois de facturation" type="month" disabled={busy} value={options.month} onChange={(event) => chooseMonth(event.target.value)} /></label>
                   </div>
+                  <label className="pp-field">Période<select disabled={busy} value={options.periodMode} onChange={(event) => { setOptions((current) => ({ ...current, periodMode: event.target.value as BillingDemoOptions['periodMode'], completeMissingDays: false })); setPreviewUrl(''); }}><option value="calendar-month">Mois calendaire</option><option value="custom">Personnalisée</option></select></label>
+                  <label className="pp-field">Début<input type="date" disabled={busy} value={view.startDate} onChange={(event) => chooseRange(event.target.value, view.endDate)} /></label>
+                  <label className="pp-field">Fin<input type="date" disabled={busy} value={view.endDate} onChange={(event) => chooseRange(view.startDate, event.target.value)} /></label>
+                  <BillingPeriodCalendar month={options.month} startDate={view.startDate} endDate={view.endDate} disabled={busy} onRangeChange={chooseRange} />
+
                 </div>
                 {!saved && <p className="pp-demo-notice" role="status">La fiche du mois sera créée automatiquement à la première action.</p>}
-                <div className={`pp-billing-controls ${options.periodMode === 'custom' ? 'custom-period' : 'calendar-period'}`}>
-                  <label className="pp-field">Période<select value={options.periodMode} onChange={(event) => { setOptions((current) => ({ ...current, periodMode: event.target.value as BillingDemoOptions['periodMode'], completeMissingDays: false })); setPreviewUrl(''); }}><option value="calendar-month">Mois calendaire</option><option value="custom">Personnalisée</option></select></label>
-                  {options.periodMode === 'custom' && <><label className="pp-field">Début<input type="date" value={options.startDate} onChange={(event) => setOptions((current) => ({ ...current, startDate: event.target.value, completeMissingDays: false }))} /></label><label className="pp-field">Fin<input type="date" value={options.endDate} onChange={(event) => setOptions((current) => ({ ...current, endDate: event.target.value, completeMissingDays: false }))} /></label></>}
-                  <label className="pp-field">Navire<select value={options.vesselName} onChange={(event) => setOptions((current) => ({ ...current, vesselName: event.target.value }))}><option value="">Navire de l’opération</option>{[...new Set(demo.operations.map((operation) => operation.primaryVesselName))].sort(compareFleetNames).map((value) => <option key={value}>{value}</option>)}</select></label>
-                </div>
-                {view.endDate < view.startDate ? <p role="alert">La fin de période doit suivre le début.</p> : view.missingDates.length > 0 && <label className="pp-include"><input type="checkbox" checked={options.completeMissingDays ?? false} onChange={(event) => setOptions((current) => ({ ...current, completeMissingDays: event.target.checked }))} />Compléter les {view.missingDates.length} jours sans DPR avec « 24/24 Operation » au tarif applicable.</label>}
+                {view.endDate < view.startDate && <p role="alert">La fin de période doit suivre le début.</p>}
                 <div className="pp-billing-layout">
                 <BillingStatement
                   month={options.month}
@@ -456,9 +491,9 @@ export function ProjectPreview() {
                 />
                 <div className="pp-billing-sections">
                 <section className="pp-accordion">{accordionHeading('operations', 'Loyers D’affrètement', CalendarDays, view.operationTotal)}{expanded.operations && <div className="pp-table-wrap"><table className="pp-table"><thead><tr><th>PDF</th><th>Date</th><th>Opération</th><th>Loyer HT</th></tr></thead><tbody>{view.rows.map((row) => <tr key={row.key}><td><input type="checkbox" aria-label={`Inclure la journée du ${row.dpr.reportDate}`} disabled={busy} checked={row.included} onChange={() => update((current) => ({ ...current, period: { ...current.period, excludedOperationKeys: row.included ? [...(current.period.excludedOperationKeys ?? []), row.key] : (current.period.excludedOperationKeys ?? []).filter((value) => value !== row.key) } }))} /></td><td>{date(row.dpr.reportDate)}</td><td>{row.operation}{row.comments && <small className="pp-muted">{row.comments}</small>}</td><td>{money(row.amountHt)}</td></tr>)}{!view.rows.length && <tr><td colSpan={4}>Aucun DPR pour cette période et ce navire.</td></tr>}</tbody></table></div>}</section>
-                <section className="pp-accordion">{accordionHeading('expenses', 'Services refacturables', Fuel, view.expenseTotalsByCurrency, `${demo.expenses.length} frais`)}{expanded.expenses && <div className="pp-table-wrap"><table className="pp-table"><thead><tr><th>PDF</th><th>Fournisseur / spécialité</th><th>Date / facture</th><th>Montant HT</th><th>Pièces</th></tr></thead><tbody>{demo.expenses.map((expense) => <tr key={expense.id} className={selectedExpense?.id === expense.id ? 'pp-selected-row' : ''} onClick={() => setSelection({ kind: 'expense', id: expense.id })}><td><input type="checkbox" aria-label={`Inclure le frais ${expense.supplier}`} disabled={busy} checked={expense.includeInPdf !== false} onChange={(event) => update((current) => ({ ...current, expenses: current.expenses.map((item) => item.id === expense.id ? { ...item, includeInPdf: event.target.checked } : item) }))} /></td><td><label><input type="radio" name="billing-row" aria-label={`Sélectionner ${expense.supplier}`} checked={selectedExpense?.id === expense.id} onChange={() => setSelection({ kind: 'expense', id: expense.id })} /> {expense.supplier}</label><small className="pp-muted">{expense.supplierSpecialties.join(' · ')}</small></td><td>{date(expense.invoiceDate)}<small className="pp-muted">{expense.invoiceNumber}</small></td><td>{money(expense.amountHt, expense.currency)}</td><td>{expense.attachmentName || proofs[expense.id] ? <a href="#justificatif" onClick={(event) => { event.preventDefault(); void showProof(expense); }}>1 fichier</a> : 'Aucune pièce'}</td></tr>)}{!demo.expenses.length && <tr><td colSpan={5}>Aucun frais pour ce mois. Utilisez Ajouter dans la barre de commandes.</td></tr>}</tbody></table></div>}</section>
-                <section className="pp-accordion">{accordionHeading('services', 'Prestation BBTM', PackageCheck, view.serviceTotal, `${demo.services.length} prestation${demo.services.length > 1 ? 's' : ''}`)}{expanded.services && <div className="pp-table-wrap"><table className="pp-table"><thead><tr><th>Catégorie</th><th>Prix unitaire HT</th><th>Unités</th><th>Total HT</th></tr></thead><tbody>{view.services.map((service) => <tr key={service.id} className={selectedService?.id === service.id ? 'pp-selected-row' : ''} onClick={() => setSelection({ kind: 'service', id: service.id })}><td><label><input type="radio" name="billing-row" aria-label={`Sélectionner ${service.category}`} checked={selectedService?.id === service.id} onChange={() => setSelection({ kind: 'service', id: service.id })} /> {service.category}</label></td><td>{money(service.unitAmountHt)}</td><td>{service.quantity}</td><td>{money(service.unitAmountHt * service.quantity)}</td></tr>)}{!demo.services.length && <tr><td colSpan={4}>Aucune prestation pour ce mois.</td></tr>}</tbody></table></div>}</section>
-                <section className="pp-accordion">{accordionHeading('raw', 'Saisie brute', FilePlus2, view.rawTotal, `${demo.rawLines.length} ligne${demo.rawLines.length > 1 ? 's' : ''}`)}{expanded.raw && <div className="pp-table-wrap"><table className="pp-table"><thead><tr><th>Date</th><th>Désignation</th><th>Navire</th><th>Quantité</th><th>Prix unitaire HT</th><th>Total HT</th></tr></thead><tbody>{demo.rawLines.map((line) => <tr key={line.id} className={selectedRawLine?.id === line.id ? 'pp-selected-row' : ''} onClick={() => setSelection({ kind: 'raw', id: line.id })}><td>{date(line.serviceDate)}</td><td><label><input type="radio" name="billing-row" aria-label={`Sélectionner ${line.designation}`} checked={selectedRawLine?.id === line.id} onChange={() => setSelection({ kind: 'raw', id: line.id })} />{line.designation}</label></td><td>{line.vesselName || '—'}</td><td>{line.quantity}</td><td>{money(line.unitAmountHt)}</td><td>{money(billingRawLineTotal(line))}</td></tr>)}{!demo.rawLines.length && <tr><td colSpan={6}>Ajoutez une ligne brute depuis la barre de commandes.</td></tr>}</tbody></table></div>}</section>
+                <section className="pp-accordion">{accordionHeading('expenses', 'Services refacturables', Fuel, view.expenseTotalsByCurrency, `${demo.expenses.length} frais`)}{expanded.expenses && <>{billingRowActions('expense')}<div className="pp-table-wrap"><table className="pp-table"><thead><tr><th>PDF</th><th>Fournisseur / spécialité</th><th>Date / facture</th><th>Montant HT</th><th>Pièces</th></tr></thead><tbody>{demo.expenses.map((expense) => <tr key={expense.id} className={selectedExpense?.id === expense.id ? 'pp-selected-row' : ''} onClick={() => setSelection({ kind: 'expense', id: expense.id })}><td><input type="checkbox" aria-label={`Inclure le frais ${expense.supplier}`} disabled={busy} checked={expense.includeInPdf !== false} onChange={(event) => update((current) => ({ ...current, expenses: current.expenses.map((item) => item.id === expense.id ? { ...item, includeInPdf: event.target.checked } : item) }))} /></td><td><label><input type="radio" name="billing-row" aria-label={`Sélectionner ${expense.supplier}`} checked={selectedExpense?.id === expense.id} onChange={() => setSelection({ kind: 'expense', id: expense.id })} /> {expense.supplier}</label><small className="pp-muted">{expense.supplierSpecialties.join(' · ')}</small></td><td>{date(expense.invoiceDate)}<small className="pp-muted">{expense.invoiceNumber}</small></td><td>{money(expense.amountHt, expense.currency)}</td><td>{expense.attachmentName || proofs[expense.id] ? <a href="#justificatif" onClick={(event) => { event.preventDefault(); void showProof(expense); }}>1 fichier</a> : 'Aucune pièce'}</td></tr>)}{!demo.expenses.length && <tr><td colSpan={5}>Aucun frais pour ce mois. Utilisez le bouton Ajouter de cette section.</td></tr>}</tbody></table></div></>}</section>
+                <section className="pp-accordion">{accordionHeading('services', 'Prestation BBTM', PackageCheck, view.serviceTotal, `${demo.services.length} prestation${demo.services.length > 1 ? 's' : ''}`)}{expanded.services && <>{billingRowActions('service')}<div className="pp-table-wrap"><table className="pp-table"><thead><tr><th>Catégorie</th><th>Prix unitaire HT</th><th>Unités</th><th>Total HT</th></tr></thead><tbody>{view.services.map((service) => <tr key={service.id} className={selectedService?.id === service.id ? 'pp-selected-row' : ''} onClick={() => setSelection({ kind: 'service', id: service.id })}><td><label><input type="radio" name="billing-row" aria-label={`Sélectionner ${service.category}`} checked={selectedService?.id === service.id} onChange={() => setSelection({ kind: 'service', id: service.id })} /> {service.category}</label></td><td>{money(service.unitAmountHt)}</td><td>{service.quantity}</td><td>{money(service.unitAmountHt * service.quantity)}</td></tr>)}{!demo.services.length && <tr><td colSpan={4}>Aucune prestation pour ce mois.</td></tr>}</tbody></table></div></>}</section>
+                <section className="pp-accordion">{accordionHeading('raw', 'Saisie brute', FilePlus2, view.rawTotal, `${demo.rawLines.length} ligne${demo.rawLines.length > 1 ? 's' : ''}`)}{expanded.raw && <><div className="pp-table-wrap"><table className="pp-table"><thead><tr><th>Date</th><th>Désignation</th><th>Navire</th><th>Quantité</th><th>Prix unitaire HT</th><th>Total HT</th></tr></thead><tbody>{demo.rawLines.map((line) => <tr key={line.id} className={selectedRawLine?.id === line.id ? 'pp-selected-row' : ''} onClick={() => setSelection({ kind: 'raw', id: line.id })}><td>{date(line.serviceDate)}</td><td><label><input type="radio" name="billing-row" aria-label={`Sélectionner ${line.designation}`} checked={selectedRawLine?.id === line.id} onChange={() => setSelection({ kind: 'raw', id: line.id })} />{line.designation}</label></td><td>{line.vesselName || '—'}</td><td>{line.quantity}</td><td>{money(line.unitAmountHt)}</td><td>{money(billingRawLineTotal(line))}</td></tr>)}{!demo.rawLines.length && <tr><td colSpan={6}>Utilisez Ajouter une ligne pour commencer la saisie.</td></tr>}</tbody></table></div>{billingRowActions('raw')}</>}</section>
                 </div>
 
                 </div>

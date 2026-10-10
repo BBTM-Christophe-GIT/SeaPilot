@@ -93,6 +93,13 @@ export const INITIAL_BILLING_OPTIONS: BillingDemoOptions = {
   completeMissingDays: false,
 };
 
+/** The preview opens on the user's current calendar month; fixture dates stay stable. */
+export function createCurrentBillingOptions(today = new Date()): BillingDemoOptions {
+  const month = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const options: BillingDemoOptions = { ...INITIAL_BILLING_OPTIONS, month, periodMode: 'calendar-month' };
+  return { ...options, ...billingDemoRange(options) };
+}
+
 function makeProject(id: number, title: string, clientName: string, status: string): ProjectRecord {
   return {
     id,
