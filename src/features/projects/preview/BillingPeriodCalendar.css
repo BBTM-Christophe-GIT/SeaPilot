@@ -1,4 +1,4 @@
-.pp-period-calendar { min-width: 0; container-type: inline-size; }
+.pp-period-calendar { min-width: 0; width: 60%; container-type: inline-size; zoom: .6; }
 .pp-period-calendar-months { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .pp-period-calendar-month { min-width: 0; overflow: hidden; padding: 8px 4px; border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); }
 .pp-period-calendar-month h3 { margin: 0 0 4px; color: var(--sp-muted); font-size: 14px; line-height: 1.5; text-align: center; text-transform: capitalize; }

@@ -8,27 +8,57 @@ projets, opérations, DPR et justificatifs fictifs. Les changements sont conserv
 en mémoire pendant la session ; actualiser la page réinitialise les exemples.
 Elle ne lit ni n'écrit de données Supabase et ne remplace pas le module existant.
 
-L'en-tête regroupe Facturation mensuelle, Mois, Période, Début et Fin sur une
-rangée dès que le panneau offre 870 px. Navire se place sous le titre. Le
-calendrier reste visible à côté, sans fenêtre à ouvrir : il présente les mois
-précédent, sélectionné et suivant. À l'ouverture ou après réinitialisation,
-le mois de la date du jour et tous ses jours sont sélectionnés. Choisir un
-autre mois sélectionne à nouveau ce mois entier.
+L'en-tête place Navire sous Facturation mensuelle, puis Mois sous Navire.
+Les champs Période, Début et Fin sont retirés : la période se sélectionne dans
+le calendrier visible, sans fenêtre à ouvrir. Dès 870 px de panneau, les trois
+calendriers occupent la colonne à droite du titre et des deux champs ; en
+dessous, ils passent sous ces champs. Ils présentent les mois précédent,
+sélectionné et suivant, avec une réduction de 40 % de leur géométrie par
+rapport à l'itération précédente. Les commandes et champs habituels conservent
+leurs dimensions partagées. À l'ouverture ou après réinitialisation, le mois
+de la date du jour et tous ses jours sont sélectionnés. Choisir un autre mois
+sélectionne à nouveau ce mois entier.
 
 Un premier clic sur un jour commence une période ; le second la termine,
 bornes incluses, même entre deux mois ou dans l'ordre inverse. Le clic suivant
-commence une nouvelle période. Les champs Début et Fin restent utilisables.
-Le calendrier propose un seul arrêt Tab, les flèches déplacent le focus et
-Entrée ou Espace sélectionnent un jour. Les trois mois sont côte à côte dès
-620 px de largeur de calendrier et s'empilent en dessous.
+commence une nouvelle période. La plage sélectionnée est indiquée sous les
+calendriers. Le calendrier propose un seul arrêt Tab, les flèches déplacent
+le focus et Entrée ou Espace sélectionnent un jour. Les trois mois se placent
+côte à côte ou s'empilent selon la largeur disponible.
 
 La barre globale Ajouter / Modifier / Enregistrer est supprimée. Les sections
 conservent leurs actions locales : complément des jours sans DPR pour les
-loyers, Ajouter pour les frais et prestations, Ajouter une ligne et Dupliquer
-la ligne côte à côte sous le tableau Saisie brute. Les en-têtes Prestation BBTM
+loyers, Ajouter immédiatement après les titres Services refacturables et
+Prestation BBTM, Ajouter une ligne et Dupliquer la ligne côte à côte sous le
+tableau Saisie brute. Les nombres de lignes se placent sous leur titre ; les
+sous-totaux restent séparés, à droite. Les en-têtes Prestation BBTM
 et Saisie brute proposent chacun Catalogue des prestations, qui ouvre le catalogue fictif
-existant en consultation. Les menus Actions de la ligne permettent de modifier
-ou supprimer la sélection et d'ajouter un justificatif à un frais.
+existant en consultation. Dans Services refacturables, Prestation BBTM et
+Saisie brute, deux petits boutons Supprimer et Modifier se placent au début de
+chaque ligne. Ils agissent directement sur cette ligne, sans menu Actions de
+la ligne ni sélection préalable. Supprimer ouvre une confirmation ; Modifier
+reprend l'éditeur existant pour les frais et prestations et l'édition dans le
+tableau pour les lignes brutes. Ajouter une ligne ouvre directement une ligne
+vierge dans le tableau Saisie brute. Son
+édition se fait dans le tableau avec Enregistrer et Annuler, sans fenêtre.
+Le brouillon ne modifie les données métier, les totaux et le PDF qu'après son
+enregistrement ; les validations existantes sont conservées. La date de début
+sélectionnée, le navire choisi, une quantité de 1 et un prix de 0 sont proposés,
+avec la désignation vide à compléter. Modifier une ligne brute utilise la même
+édition dans le tableau. Annuler ou Échap abandonne le brouillon ; pendant
+l'édition, Ajouter une ligne, Dupliquer la ligne et les commandes des lignes brutes sont
+désactivés pour conserver une seule saisie en cours. Replier puis rouvrir
+Saisie brute conserve les valeurs du brouillon.
+
+La fenêtre Ajouter un service refacturable permet de joindre un ou plusieurs
+fichiers. Plusieurs sélections successives complètent la liste des pièces ;
+chaque fichier peut être retiré avant Enregistrer. Annuler laisse les données
+et pièces déjà enregistrées inchangées. Modifier un service retrouve ses pièces.
+La colonne Pièces affiche leur nombre et ouvre la liste, depuis laquelle chaque
+fichier peut être consulté. Les pièces restent locales à la session de cette
+préversion. Les règles d'export existantes s'appliquent : PDF standard pour la
+synthèse, PDF avec annexes pour les pièces PDF et ZIP pour tous les fichiers
+des frais inclus dans le contenu sélectionné.
 
 Le volet « Relevé du mois » reprend les sous-totaux, le total sélectionné HT,
 les quatre choix de contenu du PDF, la référence client et les formats d'export.
@@ -53,14 +83,16 @@ Les règles des boutons et menus pour les pages sont documentées dans
 - Utiliser Nouveau projet, Modifier, Archiver, Actualiser et Réinitialiser depuis le ruban.
 - Changer de dossier et de rubrique ; créer ou modifier un projet et ses opérations.
 - Sélectionner un mois : sa fiche est créée automatiquement lors de la première action.
-- Cliquer sur deux jours du calendrier visible pour définir une période, puis revenir à Mois calendaire.
+- Cliquer sur deux jours du calendrier visible pour définir une période, puis changer Mois pour sélectionner un mois entier.
 - Déplier Loyers D’affrètement, Services refacturables, Prestation BBTM et Saisie brute.
 - Dans le relevé, sélectionner le contenu du PDF et vérifier les sous-totaux et le total HT.
 - Exclure une journée ou un frais dans son tableau ; décocher et recocher sa section conserve ce choix.
 - Compléter les jours sans DPR avec « 24/24 Operation », puis retirer le complément.
-- Ajouter ou modifier un frais ou une prestation et joindre un justificatif local.
+- Ajouter ou modifier un frais ou une prestation ; dans la fenêtre du frais, sélectionner plusieurs pièces, en retirer une avant Enregistrer ou annuler l'ensemble.
+- Ouvrir le nombre de fichiers d'un frais dans la colonne Pièces, puis consulter chaque justificatif.
+- Utiliser Supprimer ou Modifier au début d'une ligne de frais, prestation ou saisie brute ; annuler ou confirmer une suppression.
 - Ouvrir Catalogue des prestations depuis Prestation BBTM ou Saisie brute, puis fermer par Échap.
-- Ajouter une ligne brute datée, avec son navire, sa quantité et son prix unitaire.
+- Cliquer sur Ajouter une ligne sous Saisie brute, compléter la ligne vierge avec date, désignation, navire, quantité et prix unitaire, puis Enregistrer ou Annuler dans le tableau.
 - Dupliquer la dernière ligne ajoutée : date, désignation, navire, quantité, tarif et choix PDF sont recopiés à l'identique, avec un nouvel identifiant.
 - Saisir une référence client, enregistrée à la sortie du champ ou avec Enregistrer la référence.
 - Afficher le vrai PDF, exporter le PDF standard, le PDF avec annexes ou le ZIP.
@@ -95,7 +127,7 @@ elle ne crée ni n'envoie de facture.
 Avec pnpm 10.34.5 :
 
 ```powershell
-corepack pnpm test src/features/projects/preview/billingDemo.test.ts src/features/projects/preview/previewStorageClient.test.ts src/features/projects/preview/ProjectPreview.test.tsx src/features/projects/preview/BillingPeriodCalendar.test.tsx src/features/projects/projectBilling.test.ts src/features/projects/projectBillingReferences.test.ts --pool=forks --maxWorkers=1
+corepack pnpm test src/features/projects/preview/billingDemo.test.ts src/features/projects/preview/previewStorageClient.test.ts src/features/projects/preview/ProjectPreview.test.tsx src/features/projects/preview/BillingPeriodCalendar.test.tsx src/features/projects/preview/BillingRawLineDraft.test.tsx src/features/projects/projectBilling.test.ts src/features/projects/projectBillingReferences.test.ts --pool=forks --maxWorkers=1
 corepack pnpm test src/features/planning/PlanningPage.test.tsx src/features/planning/planningPermissions.test.ts --pool=forks --maxWorkers=1
 corepack pnpm build
 ```

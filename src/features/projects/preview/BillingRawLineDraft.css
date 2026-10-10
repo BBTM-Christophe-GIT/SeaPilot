@@ -1,0 +1,28 @@
+.pp-app .pp-raw-draft { background: var(--sp-primary-soft); }
+.pp-app .pp-raw-draft input,
+.pp-app .pp-raw-draft select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  padding: 6px 8px;
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  font: inherit;
+}
+.pp-app .pp-raw-draft input:focus-visible,
+.pp-app .pp-raw-draft select:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+}
+.pp-app .pp-raw-draft td:nth-child(2) { min-width: 132px; }
+.pp-app .pp-raw-draft td:nth-child(3) { min-width: 180px; }
+.pp-app .pp-raw-draft td:nth-child(4) { min-width: 130px; }
+.pp-app .pp-raw-draft td:nth-child(5),
+.pp-app .pp-raw-draft td:nth-child(6) { min-width: 90px; }
+.pp-app .pp-raw-draft-actions { display: flex; align-items: center; gap: 8px; }
+.pp-app .pp-raw-draft-actions > span { margin-right: auto; }
+.pp-app .pp-raw-draft-error { margin: 8px 0 0; color: var(--sp-text); }
+@media (pointer: coarse) {
+  .pp-app .pp-raw-draft input, .pp-app .pp-raw-draft select { min-height: 44px; }
+}

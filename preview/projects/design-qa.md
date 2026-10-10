@@ -354,3 +354,168 @@ du tableau ont été corrigés dans cette itération. Les captures de contrôle
 restent hors du dépôt ; aucun nouvel actif de preuve n'est ajouté.
 
 final result: passed
+
+## Itération : calendriers réduits et saisie brute dans le tableau
+
+Nouvelles demandes du 10 octobre : supprimer Période, Début et Fin, déplacer
+Mois sous Navire, réduire les calendriers de 40 %, placer Ajouter immédiatement
+à côté des titres Services refacturables et Prestation BBTM et créer une ligne
+brute vierge dans le tableau au clic sur Ajouter une ligne, sans fenêtre.
+La dernière précision de l'utilisateur désigne ce bouton comme déclencheur de
+la création ; le titre Saisie brute conserve son rôle de dépliage.
+
+### Disposition et comportements contrôlés
+
+- Le titre, Navire puis Mois forment la colonne gauche de l'en-tête dès 870 px
+  de panneau. Le calendrier reste visible dans la colonne droite ; il passe
+  sous les deux champs sur petit écran. Aucune saisie manuelle Période, Début
+  ou Fin ne subsiste dans cet en-tête.
+- Les calendriers présentent toujours les trois mois et sélectionnent le mois
+  courant entier à l'ouverture. La plage personnalisée s'obtient par deux clics
+  sur des jours, bornes incluses, et changer Mois sélectionne ce mois entier.
+- La géométrie du calendrier seule utilise un facteur de 0,6, soit une réduction
+  de 40 %. Cette adaptation demandée concerne ses dimensions, espacements,
+  textes et cases ; les champs, commandes et couleurs partagés ne sont pas
+  réduits. Les dimensions rendues ont été mesurées sur ordinateur et mobile.
+- Les boutons Ajouter suivent directement le titre de leur section, avec le
+  nombre de lignes sous le titre. Les sous-totaux sont repoussés à droite sans
+  entraîner ces boutons. Les deux accès Catalogue des prestations restent
+  présents, et les commandes Ajouter une ligne / Dupliquer la ligne restent
+  sous le tableau Saisie brute.
+- Ajouter une ligne place un brouillon vierge et éditable directement dans le
+  tableau. Enregistrer et Annuler y sont accessibles sans fenêtre ; modifier
+  une ligne utilise la même édition. Les validations existantes précèdent
+  l'enregistrement, et un brouillon n'affecte ni totaux ni contenu PDF.
+  La désignation vide reçoit le focus ; la date de début sélectionnée, le
+  navire choisi, une quantité de 1 et un prix de 0 sont proposés. Annuler ou
+  Échap abandonne le brouillon. Ajouter, Dupliquer et les commandes de ligne brute
+  sont désactivés tant que cette édition reste ouverte. Replier puis rouvrir
+  Saisie brute conserve les valeurs en cours.
+- Dupliquer la ligne conserve la copie de la dernière ligne enregistrée à
+  l'identique, avec un identifiant distinct. Les exclusions individuelles,
+  les quatre choix PDF, les tarifs journaliers et les exports conservent leurs
+  règles métier.
+
+### Validation de cette itération
+
+- Les sept fichiers concernés passent : 120 tests, ESLint ciblé et build de
+  production avec pnpm 10.34.5. Les tests de brouillon vérifient notamment
+  la validation et le clavier ; les tests de préversion couvrent l'édition
+  directe, la conservation des valeurs et la duplication des lignes.
+- À 1545 × 1000 CSS px, clientWidth/scrollWidth de page : 1530/1530 px.
+  Le calendrier mesure 402,6 × 160,8 px, contre 671 × 266,8 px avant cette
+  itération : sa largeur est réduite de 40 % et sa hauteur d'environ 40 %,
+  avec l'arrondi du rendu. Ses trois mois font environ 131 × 145,2 px chacun.
+  Navire et Mois ont la même largeur de 205 px, Mois directement sous Navire.
+  Les trois anciens champs sont absents. Ajouter suit le titre de section
+  avec un espace de 10 px, sans déplacement vers le sous-total.
+- À 390 × 844 CSS px, clientWidth/scrollWidth de page : 375/375 px.
+  Le calendrier mesure 197,4 px de large ; les trois mois sont empilés avec
+  cette même largeur. Les deux premiers font 157,2 px de haut et le dernier
+  181,2 px. Ajouter suit son titre à la même hauteur avec un espace de 9 px.
+  La page ne présente aucun débordement horizontal.
+- Le clic sur Ajouter une ligne ne crée aucune fenêtre. Il affiche les
+  champs dans le tableau, avec désignation vide focalisée, date du début
+  sélectionné, GOURY, quantité 1 et prix 0. Enregistrer sans désignation
+  est refusé sans modifier le total. Une saisie à 2 × 62,50 € conserve le
+  total de 10 955 € tant qu'elle reste un brouillon ; replier puis rouvrir
+  la section conserve les champs saisis.
+- Enregistrer puis Dupliquer produit deux lignes identiques de 125 € et un
+  total de 11 205 € sur la période du 5–8 octobre. Sur mobile, Ajouter puis
+  Échap abandonne le nouveau brouillon et conserve ce total, sans débordement.
+
+Le déploiement du commit poussé est contrôlé après publication et suivi dans
+la PR. Les captures de contrôle restent hors du dépôt ; aucun nouvel actif
+de preuve n'est ajouté. Les réductions de dimensions, suppressions de champs
+et changements de déclencheur suivent les précisions de l'utilisateur.
+
+final result: passed
+
+## Itération : commandes au début de chaque ligne
+
+Nouvelle précision du 10 octobre : remplacer Actions de la ligne par de petits
+boutons Supprimer et Modifier au début de chaque ligne dans Services
+refacturables, Prestation BBTM et Saisie brute.
+
+### Disposition et comportements contrôlés
+
+- Chaque ligne des trois tableaux propose ses deux commandes directement,
+  sans menu ni sélection préalable de la ligne. Les boutons utilisent les
+  icônes et états partagés, avec des noms accessibles distincts.
+- Supprimer conserve la confirmation existante et agit sur la ligne du
+  bouton cliqué. Annuler laisse les données et totaux inchangés.
+- Modifier conserve l'éditeur existant des frais et prestations. Une ligne
+  brute s'édite directement dans le tableau, avec Enregistrer et Annuler.
+- Ajouter reste immédiatement après le titre des services et prestations,
+  les accès Catalogue des prestations restent dans leurs en-têtes et Ajouter
+  une ligne / Dupliquer la ligne restent sous le tableau Saisie brute.
+- Les validations, désactivations pendant une saisie brute, règles de calcul,
+  inclusions PDF et possibilités de joindre un justificatif sont conservées.
+
+### Validation de cette itération
+
+- Sur ordinateur, Modifier un frais ou une prestation ouvre son éditeur et
+  Annuler conserve les données. Supprimer le frais Port puis Annuler cible
+  bien cette ligne. Ajouter une ligne brute, Enregistrer puis Dupliquer
+  s'effectue sans fenêtre.
+- À 1545 × 1000 et 390 × 844 CSS px, les commandes Modifier des trois tableaux
+  sont dans la première cellule de leur ligne. Les boutons Ajouter restent
+  auprès des titres, les catalogues dans les en-têtes et les commandes de
+  création/duplication sous Saisie brute.
+- Le build de production final et ESLint ciblé passent. La suite complète
+  de tests est contrôlée dans l'itération des pièces multiples ci-dessous.
+
+Le déploiement du commit poussé est contrôlé après publication et suivi dans
+la PR. Aucun nouvel actif de preuve n'est ajouté au dépôt.
+
+final result: passed
+
+## Itération : plusieurs pièces par service refacturable
+
+Dernière demande du 10 octobre : proposer l'ajout d'une ou plusieurs pièces
+dans la fenêtre Ajouter un service refacturable.
+
+### Disposition et comportements contrôlés
+
+- Le sélecteur de fichiers de l'éditeur de frais accepte plusieurs pièces
+  dans une sélection. Plusieurs sélections successives complètent la liste
+  sans remplacer les fichiers précédents.
+- La liste de pièces choisies permet de retirer un fichier avant Enregistrer.
+  Annuler n'ajoute ni frais ni fichier et ne change pas les pièces d'un frais
+  existant. Modifier retrouve les pièces précédemment enregistrées.
+- La colonne Pièces affiche le nombre de fichiers et ouvre leur liste ; chaque
+  pièce propose son propre accès pour la consulter. Les pièces supplémentaires
+  restent associées au bon frais et locales à la session de démonstration.
+- Les exports passent tous les documents du frais au moteur existant et
+  respectent les inclusions de section et de ligne. Le PDF standard contient
+  la synthèse, le PDF avec annexes fusionne les pièces PDF, et le ZIP contient
+  toutes les pièces incluses, y compris les formats non PDF.
+- Les boutons de ligne, les commandes Ajouter près des titres, les catalogues
+  et les commandes sous Saisie brute conservent leur disposition demandée.
+
+### Validation de cette itération
+
+- Sur ordinateur, la sélection multiple accepte deux fichiers dans l'éditeur
+  et Enregistrer produit un compteur de deux pièces. Modifier, retirer une
+  pièce puis Annuler retrouve les deux fichiers enregistrés. La consultation
+  d'une facture PDF rend sa page dans la visionneuse ; Échap ferme la fenêtre
+  et le focus reste stable.
+- Sur mobile à 390 × 844 CSS px, clientWidth/scrollWidth de page : 375/375 px,
+  fenêtre de 351 px de large. Retirer une pièce remet le focus sur le champ de
+  fichiers ; Échap annule l'édition et conserve les deux pièces enregistrées.
+  Aucun débordement horizontal de page sur ces parcours.
+- Le ZIP téléchargé contient cinq entrées : synthèse, deux pièces de
+  démonstration et deux pièces locales. Les octets des deux fichiers locaux
+  correspondent exactement à ceux sélectionnés. Le PDF avec annexes contient
+  cinq pages : synthèse et quatre pages de pièces PDF.
+- Les sept fichiers concernés passent : 123 tests, ESLint ciblé et build de
+  production avec pnpm 10.34.5. La suite finale vérifie les commandes directes,
+  la saisie brute dans le tableau, les pièces multiples et leur conservation,
+  ainsi que les règles et exports existants.
+
+Le déploiement du commit poussé est contrôlé après publication et suivi dans
+la PR. Les captures et archives de contrôle restent hors du dépôt ; aucun
+nouvel actif de preuve n'est ajouté. Aucun moteur de production, droit ou
+schéma de données n'est modifié.
+
+final result: passed

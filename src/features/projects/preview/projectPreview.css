@@ -158,13 +158,12 @@ body.pp-preview-page {
 .pp-button.danger:hover:not(:disabled) { background: #fff1f1; }
 .pp-button.icon { padding: 8px; width: var(--sp-control-height, 40px); flex-shrink: 0; }
 
-.pp-billing-header { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 8px; margin-bottom: 16px; }
+.pp-billing-header { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 8px; margin-bottom: 16px; }
 .pp-billing-header > h2 { grid-column: 1 / -1; font-size: 20px; }
 .pp-billing-header > .pp-billing-calendar { grid-column: 1 / -1; }
 .pp-billing-vessel { grid-column: 1 / -1; }
 .pp-billing-header .pp-field { gap: 2px; }
-.pp-month-and-calendar { grid-column: 1 / -1; display: flex; align-items: end; gap: 6px; min-width: 0; }
-.pp-billing-month { flex: 1; min-width: 0; }
+.pp-billing-month { grid-column: 1 / -1; min-width: 0; }
 .pp-section-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 0 12px 12px; }
 .pp-table-wrap + .pp-section-actions { padding-top: 12px; }
 .pp-section-create-actions { display: flex; align-items: center; gap: 8px; max-width: 100%; overflow-x: auto; padding-bottom: 2px; }
@@ -180,11 +179,11 @@ body.pp-preview-page {
   .pp-billing-sections { grid-column: 1; grid-row: 1; }
 }
 @container (min-width: 870px) {
-  .pp-billing-header { grid-template-columns: 205px minmax(140px, 1.1fr) minmax(145px, 1.1fr) repeat(2, minmax(126px, 1fr)); gap: 8px 12px; }
-  .pp-billing-header > h2 { grid-column: 1; grid-row: 1; align-self: center; margin-top: 18px; white-space: nowrap; }
+  .pp-billing-header { grid-template-columns: 205px minmax(0, 1fr); gap: 8px 12px; }
+  .pp-billing-header > h2 { grid-column: 1; grid-row: 1; margin: 0; white-space: nowrap; }
   .pp-billing-vessel { grid-column: 1; grid-row: 2; align-self: start; }
-  .pp-month-and-calendar { grid-column: 2; grid-row: 1; }
-  .pp-billing-header > .pp-billing-calendar { grid-column: 2 / -1; grid-row: 2; }
+  .pp-billing-month { grid-column: 1; grid-row: 3; }
+  .pp-billing-header > .pp-billing-calendar { grid-column: 2; grid-row: 1 / span 3; }
   .pp-app .pp-billing-header input, .pp-app .pp-billing-header select { padding-inline: 6px; }
 }
 .pp-field { min-width: 0; display: flex; flex-direction: column; gap: 4px; color: var(--sp-muted, #536276); font-size: 11px; font-weight: 550; }
@@ -209,6 +208,16 @@ body.pp-preview-page {
 .pp-table td > small { display: block; margin-top: 2px; color: var(--sp-muted, #536276); font-size: 11px; }
 .pp-table .pp-button.icon { width: 27px; min-height: 27px; padding: 4px; border-color: transparent; background: transparent; }
 .pp-table .pp-button.icon:hover { background: var(--sp-primary-soft, #eaf3fc); }
+.pp-table .pp-row-actions-cell { width: 1%; white-space: nowrap; }
+.pp-row-actions, .pp-row-proof { display: inline-flex; align-items: center; gap: 4px; }
+.pp-row-proof { gap: 8px; white-space: nowrap; }
+.pp-proof-link { border: 0; padding: 4px 0; color: var(--sp-primary); background: transparent; font: inherit; text-align: left; text-decoration: underline; text-underline-offset: 2px; }
+.pp-expense-attachments { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--sp-border); }
+.pp-expense-attachments > .pp-muted { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.pp-attachment-list { list-style: none; margin: 12px 0 0; padding: 0; }
+.pp-attachment-list li { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--sp-border); }
+.pp-attachment-list li > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.pp-attachment-list li > .pp-button { flex-shrink: 0; }
 .pp-table .pp-status { font-size: 10px; padding: 3px 9px; }
 .pp-table .pp-money { white-space: nowrap; text-align: right; }
 .pp-table .pp-check-column { width: 52px; text-align: center; }
@@ -217,7 +226,9 @@ body.pp-preview-page {
 .pp-billing-sections .pp-accordion { overflow: visible; }
 .pp-accordion-header { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; width: 100%; min-height: 49px; background: var(--sp-surface, #ffffff); border-radius: var(--sp-control-radius, 6px); padding: 11px 14px; color: var(--sp-text, #182132); }
 .pp-accordion-header > button { display: inline-flex; align-items: center; gap: 10px; min-width: 0; border: 0; padding: 0; color: inherit; background: transparent; font-weight: 700; text-align: left; font-size: 13px; }
-.pp-accordion-header > button:first-child { flex: 1 1 158px; flex-wrap: wrap; }
+.pp-accordion-header > button:first-child { flex: 0 1 auto; }
+.pp-accordion-label { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.pp-accordion-label small { font-size: 11px; font-weight: 450; color: var(--sp-muted); }
 .pp-accordion-header > strong { order: 2; margin-left: auto; }
 .pp-accordion-header > button:last-of-type { order: 3; }
 .pp-heading-actions { display: flex; align-items: center; gap: 8px; order: 1; min-width: 0; max-width: 100%; overflow-x: auto; padding-bottom: 2px; }
@@ -359,7 +370,7 @@ body.pp-preview-page {
   .pp-commandbar .pp-button { padding: 8px 9px; min-height: var(--sp-control-height, 40px); }
   .pp-commandbar > .pp-menu-wrap + .pp-menu-wrap { border: 0; padding: 0; }
   .pp-accordion-header { gap: 9px; padding: 10px; }
-  .pp-accordion-header > button:first-child { font-size: 12px; flex-basis: 100%; }
+  .pp-accordion-header > button:first-child { font-size: 12px; }
   .pp-accordion-header > button:first-child > svg { width: 19px; height: 19px; }
   .pp-include { margin-left: 29px; margin-right: auto; font-size: 10px; }
   .pp-accordion-header strong { font-size: 12px; }
@@ -438,6 +449,7 @@ body.pp-preview-page {
   .pp-app .pp-button, .pp-app .pp-menu-item, .pp-app .pp-search,
   .pp-app .pp-field input:not([type="checkbox"]):not([type="radio"]),
   .pp-app .pp-field select, .pp-app .pp-section-heading > select { min-height: 44px; }
+  .pp-app .pp-table .pp-button.icon { width: 44px; min-height: 44px; }
 }
 @media (max-width: 720px) {
   .pp-app .pp-module-header h1 { font-size: 24px; }

@@ -21,6 +21,8 @@ import { compareFleetNames } from '../../fleet/fleetDisplay';
 import PreviewPdf from './PreviewPdf';
 import BillingStatement, { type BillingSectionField } from './BillingStatement';
 import BillingPeriodCalendar from './BillingPeriodCalendar';
+import BillingRawLineDraft, { type BillingRawLineDraftValues, type BillingRawLineValues } from './BillingRawLineDraft';
+import BillingExpenseAttachments, { createExpenseAttachments, EXPENSE_ATTACHMENT_ACCEPT, type ExpenseAttachment } from './BillingExpenseAttachments';
 import {
   billingDemoRange, billingDemoReferenceKey, buildBillingView, createCurrentBillingOptions, createDemoProjects, INITIAL_BILLING_OPTIONS,
   type BillingDemoOptions, type DemoExpense, type DemoOperation, type DemoProject,
@@ -30,8 +32,9 @@ type Tab = 'identity' | 'operations' | 'billing' | 'contract' | 'documents';
 type Selection = { kind: 'operation' | 'expense' | 'service' | 'raw'; id: number } | null;
 type MenuItem = { label: string; icon?: LucideIcon; action: () => void; disabled?: boolean; danger?: boolean };
 type FormField = { name: string; label: string; value?: string | number; type?: string; required?: boolean; options?: string[] };
-type Editor = { title: string; fields: FormField[]; submit: (data: FormData) => string | void; note?: string };
+type Editor = { title: string; fields: FormField[]; submit: (data: FormData, attachments: ExpenseAttachment[]) => string | void; note?: string; attachments?: ExpenseAttachment[] };
 type MonthData = Pick<DemoProject, 'period' | 'expenses' | 'services' | 'rawLines'>;
+type RawLineDraft = { scope: string; line?: ProjectBillingRawLine; values: BillingRawLineDraftValues };
 
 const demoVesselNames = ['GOURY', 'JERSEY', 'BBTM Pioneer'].sort(compareFleetNames);
 
@@ -94,9 +97,10 @@ function Dialog({ title, children, onClose }: { title: string; children: ReactNo
 }
 function EditorDialog({ editor, onClose }: { editor: Editor; onClose: () => void }) {
   const [error, setError] = useState('');
+  const [attachments, setAttachments] = useState(editor.attachments ?? []);
   return <Dialog title={editor.title} onClose={onClose}>
     <form onSubmit={(event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault(); const result = editor.submit(new FormData(event.currentTarget));
+      event.preventDefault(); const result = editor.submit(new FormData(event.currentTarget), attachments);
       if (result) setError(result); else onClose();
     }}>
       <div className="pp-dialog-body">
@@ -107,6 +111,7 @@ function EditorDialog({ editor, onClose }: { editor: Editor; onClose: () => void
             : field.type === 'textarea' ? <textarea name={field.name} defaultValue={field.value} rows={3} />
               : <input name={field.name} type={field.type || 'text'} defaultValue={field.value} required={field.required} min={field.type === 'number' ? 0 : undefined} step={field.type === 'number' ? '0.001' : undefined} />}
         </label>)}</div>
+        {editor.attachments !== undefined && <BillingExpenseAttachments value={attachments} onChange={setAttachments} />}
         {error && <p role="alert">{error}</p>}
       </div>
       <footer className="pp-dialog-actions"><button className="pp-button" type="button" onClick={onClose}>Annuler</button><button className="pp-button primary" type="submit"><Save size={17} />Enregistrer</button></footer>
@@ -128,6 +133,7 @@ export function ProjectPreview() {
   const [compact, setCompact] = useState(false);
   const [menu, setMenu] = useState('');
   const [selection, setSelection] = useState<Selection>(null);
+  const [rawDraft, setRawDraft] = useState<RawLineDraft | null>(null);
   const [expanded, setExpanded] = useState({ operations: true, expenses: false, services: false, raw: true });
   const [editor, setEditor] = useState<Editor | null>(null);
   const [dialog, setDialog] = useState<{ title: string; content: ReactNode } | null>(null);
@@ -138,10 +144,12 @@ export function ProjectPreview() {
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const [previewFileName, setPreviewFileName] = useState('');
   const [format, setFormat] = useState<BillingExportFormat>('merged-pdf');
-  const [proofs, setProofs] = useState<Record<number, { blob: Blob; name: string }>>({});
+  const [proofs, setProofs] = useState<Record<number, ExpenseAttachment[]>>({});
   const upload = useRef<HTMLInputElement>(null);
+  const uploadExpenseId = useRef<number | null>(null);
   const base = demos.find((item) => item.project.id === selectedId) ?? demos[0];
   const key = monthKey(base.project.id, options.month);
+  const activeRawDraft = rawDraft?.scope === key ? rawDraft : null;
   const monthly = months[key] ?? emptyMonth(base, options.month);
   const demo = { ...base, ...monthly };
   const view = useMemo(() => buildBillingView(demo, options), [demo, options]);
@@ -179,7 +187,7 @@ export function ProjectPreview() {
   }
   function chooseProject(id: number) {
     const item = demos.find((value) => value.project.id === id)!;
-    setSelectedId(id); setSelection(null); setMenu(''); setPreviewUrl('');
+    setSelectedId(id); setSelection(null); setRawDraft(null); setMenu(''); setPreviewUrl('');
     setOptions((current) => {
       const nextOptions = { ...current, vesselName: item.project.primaryVesselName, completeMissingDays: false };
       const nextDemo = { ...item, ...(months[monthKey(id, current.month)] ?? emptyMonth(item, current.month)) };
@@ -194,7 +202,7 @@ export function ProjectPreview() {
       const nextDemo = { ...base, ...(months[monthKey(selectedId, month)] ?? emptyMonth(base, month)) };
       return { ...nextOptions, clientReference: references[billingDemoReferenceKey(nextDemo, nextOptions)] ?? defaultProjectClientReference(demo.project) };
     });
-    setSelection(null); setPreviewUrl('');
+    setSelection(null); setRawDraft(null); setPreviewUrl('');
   }
   function notify(message: string) { setToast(message); }
   function chooseRange(startDate: string, endDate: string) {
@@ -203,7 +211,7 @@ export function ProjectPreview() {
   }
   function reset() {
     const fresh = createDemoProjects(); setDemos(fresh); setMonths(initialMonths(fresh)); setReferences(initialReferences(fresh));
-    setSelectedId(264); setOptions(createCurrentBillingOptions()); setSelection(null);
+    setSelectedId(264); setOptions(createCurrentBillingOptions()); setSelection(null); setRawDraft(null);
     setQuery(''); setStatusFilter(''); setShowArchived(false); setPreviewUrl(''); setProofs({});
     notify('Les données de démonstration ont été réinitialisées.');
   }
@@ -264,7 +272,7 @@ export function ProjectPreview() {
     } });
   }
   function expenseEditor(expense?: DemoExpense) {
-    setEditor({ title: expense ? 'Modifier le frais imputable' : 'Ajouter un frais imputable', fields: [
+    setEditor({ title: expense ? 'Modifier le frais imputable' : 'Ajouter un frais imputable', attachments: expense ? expenseProofs(expense) : [], fields: [
       { name: 'supplier', label: 'Fournisseur', value: expense?.supplier ?? '', required: true },
       { name: 'specialty', label: 'Spécialité', value: expense?.supplierSpecialties.join(' · ') ?? '' },
       { name: 'category', label: 'Catégorie', value: expense?.category ?? 'other', options: ['fuel', 'port', 'water', 'other'] },
@@ -276,10 +284,12 @@ export function ProjectPreview() {
       { name: 'quantity', label: 'Quantité', value: expense?.quantity ?? '', type: 'number' },
       { name: 'unit', label: 'Unité', value: expense?.unit ?? '', options: ['', 'Unité', 'm²', 'm³', 'L'] },
       { name: 'comments', label: 'Commentaires', value: expense?.comments ?? '', type: 'textarea' },
-    ], submit(data) {
+    ], submit(data, attachments) {
       if (number(data, 'amount') <= 0) return 'Le montant HT doit être supérieur à zéro.';
       const period = ensurePeriod(demo).period;
-      const next: DemoExpense = { id: expense?.id ?? Date.now(), billingPeriodId: period.id, supplier: text(data, 'supplier'), supplierSpecialties: text(data, 'specialty') ? [text(data, 'specialty')] : [], category: text(data, 'category') as DemoExpense['category'], nature: '', invoiceDate: text(data, 'date'), invoiceNumber: text(data, 'invoice'), amountHt: number(data, 'amount'), amountTtc: text(data, 'ttc') ? number(data, 'ttc') : null, currency: text(data, 'currency'), quantity: text(data, 'quantity') ? number(data, 'quantity') : null, unit: text(data, 'unit'), comments: text(data, 'comments'), dprReportId: null, includeInPdf: expense?.includeInPdf !== false, attachmentName: expense?.attachmentName ?? '' };
+      const expenseId = expense?.id ?? Math.max(Date.now(), ...Object.values(months).flatMap((month) => month.expenses.map((item) => item.id)), ...Object.keys(proofs).map(Number)) + 1;
+      const next: DemoExpense = { id: expenseId, billingPeriodId: period.id, supplier: text(data, 'supplier'), supplierSpecialties: text(data, 'specialty') ? [text(data, 'specialty')] : [], category: text(data, 'category') as DemoExpense['category'], nature: '', invoiceDate: text(data, 'date'), invoiceNumber: text(data, 'invoice'), amountHt: number(data, 'amount'), amountTtc: text(data, 'ttc') ? number(data, 'ttc') : null, currency: text(data, 'currency'), quantity: text(data, 'quantity') ? number(data, 'quantity') : null, unit: text(data, 'unit'), comments: text(data, 'comments'), dprReportId: null, includeInPdf: expense?.includeInPdf !== false, attachmentName: attachments[0]?.name ?? '' };
+      setProofs((current) => ({ ...current, [next.id]: attachments }));
       update((current) => ({ ...current, period, expenses: expense ? current.expenses.map((item) => item.id === expense.id ? next : item) : [...current.expenses, next] }));
       setExpanded((current) => ({ ...current, expenses: true })); setSelection({ kind: 'expense', id: next.id }); notify('Frais enregistré dans la démonstration.');
     } });
@@ -308,23 +318,36 @@ export function ProjectPreview() {
     update((current) => { const next = ensurePeriod(current); return { ...next, period: { ...next.period, clientReference: reference } }; });
   }
   function rawLineEditor(line?: ProjectBillingRawLine, catalogItem?: { category: string; amount: number; vessel: string }) {
-    setEditor({ title: line ? 'Modifier la ligne brute' : 'Ajouter une ligne brute', fields: [
-      { name: 'designation', label: 'Désignation libre', value: line?.designation ?? catalogItem?.category ?? '', required: true },
-      { name: 'date', label: 'Date', value: line?.serviceDate ?? view.startDate, type: 'date', required: true },
-      { name: 'vessel', label: 'Navire', value: line?.vesselName ?? catalogItem?.vessel ?? options.vesselName, options: ['', ...['GOURY', 'JERSEY', 'BBTM Pioneer'].sort(compareFleetNames)] },
-      { name: 'quantity', label: 'Quantité', value: line?.quantity ?? 1, type: 'number', required: true },
-      { name: 'price', label: 'Prix unitaire HT', value: line?.unitAmountHt ?? catalogItem?.amount ?? 0, type: 'number', required: true },
-    ], note: 'Montants en EUR. La case Saisie brute contrôle l’inclusion de toutes les lignes dans le PDF.', submit(data) {
-      if (number(data, 'quantity') <= 0) return 'La quantité doit être supérieure à zéro.';
-      const period = ensurePeriod(demo).period;
-      const next: ProjectBillingRawLine = { id: line?.id ?? Math.max(Date.now(), ...demo.rawLines.map((item) => item.id)) + 1, billingPeriodId: period.id, serviceCatalogId: null, serviceDate: text(data, 'date'), designation: text(data, 'designation'), vesselName: text(data, 'vessel'), vesselId: null, unitAmountHt: number(data, 'price'), quantity: number(data, 'quantity'), includeInPdf: line?.includeInPdf !== false };
-      update((current) => ({ ...current, period, rawLines: line ? current.rawLines.map((item) => item.id === line.id ? next : item) : [...current.rawLines, next] }));
-      setExpanded((current) => ({ ...current, raw: true })); setSelection({ kind: 'raw', id: next.id }); notify('Ligne brute enregistrée dans la démonstration.');
+    if (archived || busy || activeRawDraft) return;
+    setRawDraft({ scope: key, line, values: {
+      designation: line?.designation ?? catalogItem?.category ?? '',
+      serviceDate: line?.serviceDate ?? view.startDate,
+      vesselName: line?.vesselName ?? catalogItem?.vessel ?? options.vesselName,
+      quantity: String(line?.quantity ?? 1),
+      unitAmountHt: String(line?.unitAmountHt ?? catalogItem?.amount ?? 0),
     } });
+    setExpanded((current) => ({ ...current, raw: true }));
+  }
+  function saveRawLine(values: BillingRawLineValues) {
+    if (!activeRawDraft || archived || busy) return;
+    const line = activeRawDraft.line;
+    const period = ensurePeriod(demo).period;
+    const next: ProjectBillingRawLine = {
+      ...values,
+      id: line?.id ?? Math.max(Date.now(), ...demo.rawLines.map((item) => item.id)) + 1,
+      billingPeriodId: period.id,
+      serviceCatalogId: line?.serviceCatalogId ?? null,
+      vesselId: line?.vesselName === values.vesselName ? line.vesselId ?? null : null,
+      includeInPdf: line?.includeInPdf !== false,
+    };
+    update((current) => ({ ...current, period, rawLines: line ? current.rawLines.map((item) => item.id === line.id ? next : item) : [...current.rawLines, next] }));
+    setRawDraft(null);
+    setSelection({ kind: 'raw', id: next.id });
+    notify('Ligne brute enregistrée dans la démonstration.');
   }
   function duplicateRawLine() {
     const previous = demo.rawLines.at(-1);
-    if (!previous || archived || busy) return;
+    if (!previous || archived || busy || activeRawDraft) return;
     const period = ensurePeriod(demo).period;
     const copy = { ...previous, id: Math.max(Date.now(), ...demo.rawLines.map((item) => item.id)) + 1, billingPeriodId: period.id };
     update((current) => ({ ...current, period, rawLines: [...current.rawLines, copy] }));
@@ -332,31 +355,43 @@ export function ProjectPreview() {
     setSelection({ kind: 'raw', id: copy.id });
     notify('La dernière ligne a été dupliquée à l’identique.');
   }
-  function removeSelection() {
-    if (!selection) return;
-    const label = selectedExpense?.supplier ?? selectedService?.category ?? selectedRawLine?.designation ?? selectedOperation?.title ?? '';
+  function removeSelection(target: Selection = selection) {
+    if (!target || archived || busy || (target.kind === 'raw' && activeRawDraft)) return;
+    const label = target.kind === 'expense' ? demo.expenses.find((item) => item.id === target.id)?.supplier
+      : target.kind === 'service' ? demo.services.find((item) => item.id === target.id)?.category
+        : target.kind === 'raw' ? demo.rawLines.find((item) => item.id === target.id)?.designation
+          : demo.operations.find((item) => item.id === target.id)?.title;
+    if (label === undefined) return;
     setConfirm({ title: 'Confirmer la suppression', message: `Supprimer « ${label} » de la démonstration ?`, action: () => {
       update((current) => ({ ...current,
-        operations: selection.kind === 'operation' ? current.operations.filter((item) => item.id !== selection.id) : current.operations,
-        expenses: selection.kind === 'expense' ? current.expenses.filter((item) => item.id !== selection.id) : current.expenses,
-        services: selection.kind === 'service' ? current.services.filter((item) => item.id !== selection.id) : current.services,
-        rawLines: selection.kind === 'raw' ? current.rawLines.filter((item) => item.id !== selection.id) : current.rawLines,
+        operations: target.kind === 'operation' ? current.operations.filter((item) => item.id !== target.id) : current.operations,
+        expenses: target.kind === 'expense' ? current.expenses.filter((item) => item.id !== target.id) : current.expenses,
+        services: target.kind === 'service' ? current.services.filter((item) => item.id !== target.id) : current.services,
+        rawLines: target.kind === 'raw' ? current.rawLines.filter((item) => item.id !== target.id) : current.rawLines,
       })); setSelection(null); notify('Ligne supprimée dans la démonstration.');
     } });
   }
-  async function proofBlob(expense: DemoExpense) {
-    if (proofs[expense.id]) return proofs[expense.id].blob;
+  function expenseProofs(expense: DemoExpense): ExpenseAttachment[] {
+    return proofs[expense.id] ?? (expense.attachmentName ? [{ id: `demo-${expense.id}`, name: expense.attachmentName }] : []);
+  }
+  async function proofBlob(expense: DemoExpense, attachment: ExpenseAttachment) {
+    if (attachment.blob) return attachment.blob;
     const { jsPDF } = await import('jspdf');
     const pdf = new jsPDF(); pdf.setFontSize(19); pdf.text('JUSTIFICATIF DE DEMONSTRATION', 15, 25);
     pdf.setFontSize(12); pdf.text([expense.supplier, expense.invoiceNumber, date(expense.invoiceDate), `Montant HT : ${money(expense.amountHt, expense.currency)}`, 'Document fictif pour tester les annexes de la preversion.'], 15, 45);
     return pdf.output('blob');
   }
-  async function showProof(expense: DemoExpense) {
-    const blob = await proofBlob(expense);
+  async function showProof(expense: DemoExpense, attachment: ExpenseAttachment) {
+    const blob = await proofBlob(expense, attachment);
     const url = URL.createObjectURL(blob);
-    const fileName = proofs[expense.id]?.name || expense.attachmentName || 'Justificatif.pdf';
+    const fileName = attachment.name;
+    const isPdf = blob.type === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
     setPreviewFileName(fileName); setPreviewBlob(blob); setPreviewUrl(url);
-    setDialog({ title: fileName, content: blob.type.startsWith('image/') ? <div className="pp-dialog-body"><img className="pp-proof-image" src={url} alt={`Justificatif ${expense.supplier}`} /></div> : null });
+    setDialog({ title: fileName, content: blob.type.startsWith('image/') ? <div className="pp-dialog-body"><img className="pp-proof-image" src={url} alt={`Justificatif ${expense.supplier}`} /></div> : isPdf ? null : <div className="pp-dialog-body"><p>{fileName}</p><p className="pp-muted">Téléchargez cette pièce pour l’ouvrir avec votre application.</p></div> });
+  }
+  function showExpenseProofs(expense: DemoExpense) {
+    setPreviewUrl(''); setPreviewBlob(null);
+    setDialog({ title: `Pièces jointes — ${expense.supplier}`, content: <div className="pp-dialog-body"><ul className="pp-attachment-list">{expenseProofs(expense).map((attachment) => <li key={attachment.id}><span>{attachment.name}</span><button type="button" className="pp-button" aria-label={`Ouvrir ${attachment.name}`} onClick={() => void showProof(expense, attachment)}>Ouvrir</button></li>)}</ul></div> });
   }
   async function exportBilling(mode: 'preview' | 'download', selectedFormat = format) {
     if (view.endDate < view.startDate) { notify('Vérifiez la période avant l’export.'); return; }
@@ -365,11 +400,12 @@ export function ProjectPreview() {
       const exportDemo = ensurePeriod(demo);
       if (!saved) update(() => exportDemo);
       const exportView = buildBillingView(exportDemo, options);
-      const documents: ProjectBillingDocument[] = exportDemo.expenses.filter((expense) => expense.includeInPdf !== false && (expense.attachmentName || proofs[expense.id]) && exportDemo.period.includeExpensesInPdf).map((expense) => ({ id: expense.id, billingPeriodId: exportDemo.period.id, chargeableExpenseId: expense.id, documentKind: 'chargeable_expense', bucketName: 'local-demo', objectPath: String(expense.id), fileName: proofs[expense.id]?.name || expense.attachmentName, mimeType: proofs[expense.id]?.blob.type || 'application/pdf', fileSizeBytes: proofs[expense.id]?.blob.size || 0 }));
+      const exportedProofs = exportDemo.expenses.filter((expense) => expense.includeInPdf !== false && exportDemo.period.includeExpensesInPdf).flatMap((expense) => expenseProofs(expense).map((attachment) => ({ expense, attachment, path: `${expense.id}/${attachment.id}` })));
+      const documents: ProjectBillingDocument[] = exportedProofs.map(({ expense, attachment, path }, index) => ({ id: index + 1, billingPeriodId: exportDemo.period.id, chargeableExpenseId: expense.id, documentKind: 'chargeable_expense', bucketName: 'local-demo', objectPath: path, fileName: attachment.name, mimeType: attachment.blob ? attachment.blob.type || 'application/octet-stream' : 'application/pdf', fileSizeBytes: attachment.blob?.size || 0 }));
       const localClient = createPreviewStorageClient(async (path) => {
-        const expense = exportDemo.expenses.find((item) => item.id === Number(path));
-        if (!expense) throw new Error('Justificatif de démonstration introuvable.');
-        return proofBlob(expense);
+        const proof = exportedProofs.find((item) => item.path === path);
+        if (!proof) throw new Error('Justificatif de démonstration introuvable.');
+        return proofBlob(proof.expense, proof.attachment);
       });
       const result = await generateBillingExportPackage(localClient, exportView.exportInput, documents, mode === 'preview' ? 'pdf' : selectedFormat);
       if (mode === 'preview') { setPreviewFileName(`${demo.project.projectCode}-Demonstration.pdf`); setPreviewBlob(result.blob); setPreviewUrl(URL.createObjectURL(result.blob)); setDialog({ title: 'Aperçu des éléments de facturation', content: null }); }
@@ -387,30 +423,30 @@ export function ProjectPreview() {
   function accordionHeading(id: keyof typeof expanded, label: string, Icon: LucideIcon, amount: number | Map<string, number>, subtitle?: string) {
     const completionLabel = `Compléter les ${view.missingDates.length} jours sans DPR avec « 24/24 Operation » au tarif contractuel applicable à chaque journée`;
     return <div className="pp-accordion-header">
-      <button type="button" aria-expanded={expanded[id]} onClick={() => setExpanded((current) => ({ ...current, [id]: !current[id] }))}><Icon size={21} /><strong>{label}</strong>{subtitle && <small>{subtitle}</small>}</button>
+      <button type="button" aria-expanded={expanded[id]} onClick={() => setExpanded((current) => ({ ...current, [id]: !current[id] }))}><Icon size={21} /><span className="pp-accordion-label"><strong>{label}</strong>{subtitle && <small>{subtitle}</small>}</span></button>
+      {(id === 'expenses' || id === 'services') && <button type="button" className="pp-button pp-heading-action" disabled={archived || busy} aria-label={id === 'expenses' ? 'Ajouter un frais' : 'Ajouter une prestation BBTM'} onClick={() => id === 'expenses' ? expenseEditor() : serviceEditor()}><Plus size={17} />Ajouter</button>}
       {id === 'operations' && view.missingDates.length > 0 && <button type="button" className="pp-button pp-heading-action" disabled={archived || busy} aria-pressed={options.completeMissingDays ?? false} aria-label={options.completeMissingDays ? 'Retirer les journées complétées' : completionLabel} title={completionLabel} onClick={() => { setOptions((current) => ({ ...current, completeMissingDays: !current.completeMissingDays })); setPreviewUrl(''); }}>{options.completeMissingDays ? 'Retirer le complément' : `Compléter ${view.missingDates.length} jours`}</button>}
       <strong>{amount instanceof Map ? currencyAmounts(amount) : money(amount, id === 'operations' ? demo.contract.hireCurrency || 'EUR' : 'EUR')} HT</strong>
       <button type="button" aria-label={`${expanded[id] ? 'Replier' : 'Déplier'} ${label}`} onClick={() => setExpanded((current) => ({ ...current, [id]: !current[id] }))}><ChevronDown size={18} style={{ transform: expanded[id] ? 'rotate(180deg)' : undefined }} /></button>
-      {id !== 'operations' && <div className="pp-heading-actions">
-        {(id === 'expenses' || id === 'services') && <button type="button" className="pp-button" disabled={archived || busy} aria-label={id === 'expenses' ? 'Ajouter un frais' : 'Ajouter une prestation BBTM'} onClick={() => id === 'expenses' ? expenseEditor() : serviceEditor()}><Plus size={17} />Ajouter</button>}
-        {(id === 'services' || id === 'raw') && <button type="button" className="pp-button" disabled={busy} onClick={() => catalog('Prestations', 'Catalogue des prestations')}><BookOpen size={17} />Catalogue des prestations</button>}
+      {(id === 'services' || id === 'raw') && <div className="pp-heading-actions">
+        <button type="button" className="pp-button" disabled={busy} onClick={() => catalog('Prestations', 'Catalogue des prestations')}><BookOpen size={17} />Catalogue des prestations</button>
       </div>}
     </div>;
   }
-  function billingRowActions(kind: 'expense' | 'service' | 'raw') {
-    const item = kind === 'expense' ? selectedExpense : kind === 'service' ? selectedService : selectedRawLine;
-    const addLabel = kind === 'expense' ? 'Ajouter un frais' : kind === 'service' ? 'Ajouter une prestation BBTM' : 'Ajouter une ligne';
-    const actionsLabel = kind === 'expense' ? 'Actions du frais sélectionné' : kind === 'service' ? 'Actions de la prestation sélectionnée' : 'Actions de la ligne brute sélectionnée';
-    return <div className="pp-section-actions" role="toolbar" aria-label={kind === 'expense' ? 'Actions des services refacturables' : kind === 'service' ? 'Actions des prestations BBTM' : 'Actions de la saisie brute'}>
-      {kind === 'raw' && <div className="pp-section-create-actions">
-        <button type="button" className="pp-button" aria-label={addLabel} disabled={archived || busy} onClick={() => rawLineEditor()}><Plus size={17} />Ajouter une ligne</button>
-        <button type="button" className="pp-button" disabled={archived || busy || !demo.rawLines.length} onClick={duplicateRawLine}><Copy size={17} />Dupliquer la ligne</button>
-      </div>}
-      {menuControl(`row-${kind}`, 'Actions de la ligne', Settings2, [
-        { label: 'Modifier la ligne sélectionnée', icon: Pencil, action: () => kind === 'expense' ? expenseEditor(selectedExpense) : kind === 'service' ? serviceEditor(selectedService?.id) : rawLineEditor(selectedRawLine) },
-        ...(kind === 'expense' ? [{ label: 'Ajouter un justificatif', icon: FilePlus2, action: () => upload.current?.click() }] : []),
-        { label: 'Supprimer la ligne', icon: Trash2, danger: true, action: removeSelection },
-      ], false, archived || busy || !item, actionsLabel)}
+  function billingLineActions(kind: 'expense' | 'service' | 'raw', id: number, label: string, onEdit: () => void) {
+    const subject = kind === 'expense' ? `le frais ${label}` : kind === 'service' ? `la prestation ${label}` : `la ligne brute ${label}`;
+    const disabled = archived || busy || (kind === 'raw' && Boolean(activeRawDraft));
+    return <td className="pp-row-actions-cell"><div className="pp-row-actions">
+      <button type="button" className="pp-button icon danger" disabled={disabled} aria-label={`Supprimer ${subject}`} title={`Supprimer ${subject}`} onClick={(event) => { event.stopPropagation(); removeSelection({ kind, id }); }}><Trash2 size={16} /></button>
+      <button type="button" className="pp-button icon" disabled={disabled} aria-label={`Modifier ${subject}`} title={`Modifier ${subject}`} onClick={(event) => { event.stopPropagation(); onEdit(); }}><Pencil size={16} /></button>
+    </div></td>;
+  }
+  function rawCreateActions() {
+    return <div className="pp-section-actions" role="toolbar" aria-label="Actions de la saisie brute">
+      <div className="pp-section-create-actions">
+        <button type="button" className="pp-button" disabled={archived || busy || Boolean(activeRawDraft)} onClick={() => rawLineEditor()}><Plus size={17} />Ajouter une ligne</button>
+        <button type="button" className="pp-button" disabled={archived || busy || Boolean(activeRawDraft) || !demo.rawLines.length} onClick={duplicateRawLine}><Copy size={17} />Dupliquer la ligne</button>
+      </div>
     </div>;
   }
   const filtered = demos.filter(({ project }) => (showArchived || !project.archivedAt) && (!statusFilter || project.status === statusFilter) && `${project.projectCode} ${project.title} ${project.clientName} ${project.primaryVesselName}`.toLocaleLowerCase('fr').includes(query.toLocaleLowerCase('fr')));
@@ -456,12 +492,7 @@ export function ProjectPreview() {
                 <div className="pp-billing-header">
                   <h2>Facturation mensuelle</h2>
                   <label className="pp-field pp-billing-vessel">Navire<select disabled={busy} value={options.vesselName} onChange={(event) => { setOptions((current) => ({ ...current, vesselName: event.target.value })); setPreviewUrl(''); }}><option value="">Navire de l’opération</option>{[...new Set(demo.operations.map((operation) => operation.primaryVesselName))].sort(compareFleetNames).map((value) => <option key={value}>{value}</option>)}</select></label>
-                  <div className="pp-month-and-calendar">
-                    <label className="pp-field pp-billing-month">Mois<input aria-label="Mois de facturation" type="month" disabled={busy} value={options.month} onChange={(event) => chooseMonth(event.target.value)} /></label>
-                  </div>
-                  <label className="pp-field">Période<select disabled={busy} value={options.periodMode} onChange={(event) => { setOptions((current) => ({ ...current, periodMode: event.target.value as BillingDemoOptions['periodMode'], completeMissingDays: false })); setPreviewUrl(''); }}><option value="calendar-month">Mois calendaire</option><option value="custom">Personnalisée</option></select></label>
-                  <label className="pp-field">Début<input type="date" disabled={busy} value={view.startDate} onChange={(event) => chooseRange(event.target.value, view.endDate)} /></label>
-                  <label className="pp-field">Fin<input type="date" disabled={busy} value={view.endDate} onChange={(event) => chooseRange(view.startDate, event.target.value)} /></label>
+                  <label className="pp-field pp-billing-month">Mois<input aria-label="Mois de facturation" type="month" disabled={busy} value={options.month} onChange={(event) => chooseMonth(event.target.value)} /></label>
                   <BillingPeriodCalendar month={options.month} startDate={view.startDate} endDate={view.endDate} disabled={busy} onRangeChange={chooseRange} />
 
                 </div>
@@ -491,18 +522,64 @@ export function ProjectPreview() {
                 />
                 <div className="pp-billing-sections">
                 <section className="pp-accordion">{accordionHeading('operations', 'Loyers D’affrètement', CalendarDays, view.operationTotal)}{expanded.operations && <div className="pp-table-wrap"><table className="pp-table"><thead><tr><th>PDF</th><th>Date</th><th>Opération</th><th>Loyer HT</th></tr></thead><tbody>{view.rows.map((row) => <tr key={row.key}><td><input type="checkbox" aria-label={`Inclure la journée du ${row.dpr.reportDate}`} disabled={busy} checked={row.included} onChange={() => update((current) => ({ ...current, period: { ...current.period, excludedOperationKeys: row.included ? [...(current.period.excludedOperationKeys ?? []), row.key] : (current.period.excludedOperationKeys ?? []).filter((value) => value !== row.key) } }))} /></td><td>{date(row.dpr.reportDate)}</td><td>{row.operation}{row.comments && <small className="pp-muted">{row.comments}</small>}</td><td>{money(row.amountHt)}</td></tr>)}{!view.rows.length && <tr><td colSpan={4}>Aucun DPR pour cette période et ce navire.</td></tr>}</tbody></table></div>}</section>
-                <section className="pp-accordion">{accordionHeading('expenses', 'Services refacturables', Fuel, view.expenseTotalsByCurrency, `${demo.expenses.length} frais`)}{expanded.expenses && <>{billingRowActions('expense')}<div className="pp-table-wrap"><table className="pp-table"><thead><tr><th>PDF</th><th>Fournisseur / spécialité</th><th>Date / facture</th><th>Montant HT</th><th>Pièces</th></tr></thead><tbody>{demo.expenses.map((expense) => <tr key={expense.id} className={selectedExpense?.id === expense.id ? 'pp-selected-row' : ''} onClick={() => setSelection({ kind: 'expense', id: expense.id })}><td><input type="checkbox" aria-label={`Inclure le frais ${expense.supplier}`} disabled={busy} checked={expense.includeInPdf !== false} onChange={(event) => update((current) => ({ ...current, expenses: current.expenses.map((item) => item.id === expense.id ? { ...item, includeInPdf: event.target.checked } : item) }))} /></td><td><label><input type="radio" name="billing-row" aria-label={`Sélectionner ${expense.supplier}`} checked={selectedExpense?.id === expense.id} onChange={() => setSelection({ kind: 'expense', id: expense.id })} /> {expense.supplier}</label><small className="pp-muted">{expense.supplierSpecialties.join(' · ')}</small></td><td>{date(expense.invoiceDate)}<small className="pp-muted">{expense.invoiceNumber}</small></td><td>{money(expense.amountHt, expense.currency)}</td><td>{expense.attachmentName || proofs[expense.id] ? <a href="#justificatif" onClick={(event) => { event.preventDefault(); void showProof(expense); }}>1 fichier</a> : 'Aucune pièce'}</td></tr>)}{!demo.expenses.length && <tr><td colSpan={5}>Aucun frais pour ce mois. Utilisez le bouton Ajouter de cette section.</td></tr>}</tbody></table></div></>}</section>
-                <section className="pp-accordion">{accordionHeading('services', 'Prestation BBTM', PackageCheck, view.serviceTotal, `${demo.services.length} prestation${demo.services.length > 1 ? 's' : ''}`)}{expanded.services && <>{billingRowActions('service')}<div className="pp-table-wrap"><table className="pp-table"><thead><tr><th>Catégorie</th><th>Prix unitaire HT</th><th>Unités</th><th>Total HT</th></tr></thead><tbody>{view.services.map((service) => <tr key={service.id} className={selectedService?.id === service.id ? 'pp-selected-row' : ''} onClick={() => setSelection({ kind: 'service', id: service.id })}><td><label><input type="radio" name="billing-row" aria-label={`Sélectionner ${service.category}`} checked={selectedService?.id === service.id} onChange={() => setSelection({ kind: 'service', id: service.id })} /> {service.category}</label></td><td>{money(service.unitAmountHt)}</td><td>{service.quantity}</td><td>{money(service.unitAmountHt * service.quantity)}</td></tr>)}{!demo.services.length && <tr><td colSpan={4}>Aucune prestation pour ce mois.</td></tr>}</tbody></table></div></>}</section>
-                <section className="pp-accordion">{accordionHeading('raw', 'Saisie brute', FilePlus2, view.rawTotal, `${demo.rawLines.length} ligne${demo.rawLines.length > 1 ? 's' : ''}`)}{expanded.raw && <><div className="pp-table-wrap"><table className="pp-table"><thead><tr><th>Date</th><th>Désignation</th><th>Navire</th><th>Quantité</th><th>Prix unitaire HT</th><th>Total HT</th></tr></thead><tbody>{demo.rawLines.map((line) => <tr key={line.id} className={selectedRawLine?.id === line.id ? 'pp-selected-row' : ''} onClick={() => setSelection({ kind: 'raw', id: line.id })}><td>{date(line.serviceDate)}</td><td><label><input type="radio" name="billing-row" aria-label={`Sélectionner ${line.designation}`} checked={selectedRawLine?.id === line.id} onChange={() => setSelection({ kind: 'raw', id: line.id })} />{line.designation}</label></td><td>{line.vesselName || '—'}</td><td>{line.quantity}</td><td>{money(line.unitAmountHt)}</td><td>{money(billingRawLineTotal(line))}</td></tr>)}{!demo.rawLines.length && <tr><td colSpan={6}>Utilisez Ajouter une ligne pour commencer la saisie.</td></tr>}</tbody></table></div>{billingRowActions('raw')}</>}</section>
+                <section className="pp-accordion">
+                  {accordionHeading('expenses', 'Services refacturables', Fuel, view.expenseTotalsByCurrency, `${demo.expenses.length} frais`)}
+                  {expanded.expenses && <div className="pp-table-wrap"><table className="pp-table">
+                    <thead><tr><th>Actions</th><th>PDF</th><th>Fournisseur / spécialité</th><th>Date / facture</th><th>Montant HT</th><th>Pièces</th></tr></thead>
+                    <tbody>{demo.expenses.map((expense) => <tr key={expense.id} className={selectedExpense?.id === expense.id ? 'pp-selected-row' : ''} onClick={() => setSelection({ kind: 'expense', id: expense.id })}>
+                      {billingLineActions('expense', expense.id, expense.supplier, () => expenseEditor(expense))}
+                      <td><input type="checkbox" aria-label={`Inclure le frais ${expense.supplier}`} disabled={busy} checked={expense.includeInPdf !== false} onChange={(event) => update((current) => ({ ...current, expenses: current.expenses.map((item) => item.id === expense.id ? { ...item, includeInPdf: event.target.checked } : item) }))} /></td>
+                      <td><label><input type="radio" name="billing-row" aria-label={`Sélectionner ${expense.supplier}`} checked={selectedExpense?.id === expense.id} onChange={() => setSelection({ kind: 'expense', id: expense.id })} /> {expense.supplier}</label><small className="pp-muted">{expense.supplierSpecialties.join(' · ')}</small></td>
+                      <td>{date(expense.invoiceDate)}<small className="pp-muted">{expense.invoiceNumber}</small></td><td>{money(expense.amountHt, expense.currency)}</td>
+                      <td><div className="pp-row-proof">{expenseProofs(expense).length ? <button type="button" className="pp-proof-link" aria-label={`Voir les ${expenseProofs(expense).length} pièces de ${expense.supplier}`} onClick={(event) => { event.stopPropagation(); showExpenseProofs(expense); }}>{expenseProofs(expense).length} fichier{expenseProofs(expense).length > 1 ? 's' : ''}</button> : <span>Aucune pièce</span>}<button type="button" className="pp-button icon" disabled={archived || busy} aria-label={`Ajouter un justificatif à ${expense.supplier}`} title={`Ajouter un justificatif à ${expense.supplier}`} onClick={(event) => { event.stopPropagation(); uploadExpenseId.current = expense.id; upload.current?.click(); }}><FilePlus2 size={16} /></button></div></td>
+                    </tr>)}{!demo.expenses.length && <tr><td colSpan={6}>Aucun frais pour ce mois. Utilisez le bouton Ajouter de cette section.</td></tr>}</tbody>
+                  </table></div>}
+                </section>
+                <section className="pp-accordion">
+                  {accordionHeading('services', 'Prestation BBTM', PackageCheck, view.serviceTotal, `${demo.services.length} prestation${demo.services.length > 1 ? 's' : ''}`)}
+                  {expanded.services && <div className="pp-table-wrap"><table className="pp-table">
+                    <thead><tr><th>Actions</th><th>Catégorie</th><th>Prix unitaire HT</th><th>Unités</th><th>Total HT</th></tr></thead>
+                    <tbody>{view.services.map((service) => <tr key={service.id} className={selectedService?.id === service.id ? 'pp-selected-row' : ''} onClick={() => setSelection({ kind: 'service', id: service.id })}>
+                      {billingLineActions('service', service.id, service.category, () => serviceEditor(service.id))}
+                      <td><label><input type="radio" name="billing-row" aria-label={`Sélectionner ${service.category}`} checked={selectedService?.id === service.id} onChange={() => setSelection({ kind: 'service', id: service.id })} /> {service.category}</label></td><td>{money(service.unitAmountHt)}</td><td>{service.quantity}</td><td>{money(service.unitAmountHt * service.quantity)}</td>
+                    </tr>)}{!demo.services.length && <tr><td colSpan={5}>Aucune prestation pour ce mois.</td></tr>}</tbody>
+                  </table></div>}
+                </section>
+                <section className="pp-accordion">
+                  {accordionHeading('raw', 'Saisie brute', FilePlus2, view.rawTotal, `${demo.rawLines.length} ligne${demo.rawLines.length > 1 ? 's' : ''}`)}
+                  {expanded.raw && <>
+                    <div className="pp-table-wrap"><table className="pp-table">
+                      <thead><tr><th>Actions</th><th>Date</th><th>Désignation</th><th>Navire</th><th>Quantité</th><th>Prix unitaire HT</th><th>Total HT</th></tr></thead>
+                      <tbody>{demo.rawLines.filter((line) => line.id !== activeRawDraft?.line?.id).map((line) => <tr key={line.id} className={selectedRawLine?.id === line.id ? 'pp-selected-row' : ''} onClick={() => setSelection({ kind: 'raw', id: line.id })}>
+                        {billingLineActions('raw', line.id, line.designation, () => rawLineEditor(line))}
+                        <td>{date(line.serviceDate)}</td><td><label><input type="radio" name="billing-row" aria-label={`Sélectionner ${line.designation}`} checked={selectedRawLine?.id === line.id} onChange={() => setSelection({ kind: 'raw', id: line.id })} />{line.designation}</label></td>
+                        <td>{line.vesselName || '—'}</td><td>{line.quantity}</td><td>{money(line.unitAmountHt)}</td><td>{money(billingRawLineTotal(line))}</td>
+                      </tr>)}{!demo.rawLines.length && !activeRawDraft && <tr><td colSpan={7}>Utilisez Ajouter une ligne pour commencer la saisie.</td></tr>}</tbody>
+                      {activeRawDraft && <BillingRawLineDraft key={activeRawDraft.line?.id ?? 'new'} initialValues={activeRawDraft.values} vesselNames={demoVesselNames} editing={Boolean(activeRawDraft.line)} disabled={archived || busy} onChange={(values) => setRawDraft((current) => current ? { ...current, values } : null)} onSave={saveRawLine} onCancel={() => setRawDraft(null)} />}
+                    </table></div>
+                    {rawCreateActions()}
+                  </>}
+                </section>
                 </div>
 
                 </div>
-                <input ref={upload} type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx" aria-label="Ajouter un justificatif" onChange={(event) => { const file = event.target.files?.[0]; if (file && selectedExpense) { setProofs((current) => ({ ...current, [selectedExpense.id]: { blob: file, name: file.name } })); update((current) => ({ ...current, expenses: current.expenses.map((expense) => expense.id === selectedExpense.id ? { ...expense, attachmentName: file.name } : expense) })); notify('Justificatif ajouté à la démonstration locale.'); } event.currentTarget.value = ''; }} />
+                <input ref={upload} type="file" hidden multiple accept={EXPENSE_ATTACHMENT_ACCEPT} aria-label="Ajouter un justificatif" onChange={(event) => {
+                  const files = Array.from(event.target.files ?? []);
+                  const expenseId = uploadExpenseId.current;
+                  const expense = demo.expenses.find((item) => item.id === expenseId);
+                  if (files.length && expense && !archived && !busy) {
+                    const attachments = [...expenseProofs(expense), ...createExpenseAttachments(files)];
+                    setProofs((current) => ({ ...current, [expense.id]: attachments }));
+                    update((current) => ({ ...current, expenses: current.expenses.map((item) => item.id === expense.id ? { ...item, attachmentName: attachments[0]?.name ?? '' } : item) }));
+                    notify('Pièces jointes ajoutées à la démonstration locale.');
+                  }
+                  uploadExpenseId.current = null; event.currentTarget.value = '';
+                }} />
               </>}
               {tab === 'operations' && <><div className="pp-section-heading"><div><h2>Opérations</h2><p className="pp-muted">Chaque opération est indépendante et liée au Planning.</p></div></div><div className="pp-commandbar"><button className="pp-button primary" disabled={archived} onClick={() => operationEditor()}><Plus size={18} />Nouvelle opération</button>{menuControl('operation', 'Opération sélectionnée', CalendarDays, [{ label: 'Modifier l’opération', icon: Pencil, action: () => operationEditor(selectedOperation) }, { label: 'Ouvrir dans Planning', icon: CalendarDays, action: () => setDialog({ title: 'Occurrence Planning — démonstration', content: <div className="pp-dialog-body"><h3>{selectedOperation?.title}</h3><p>{date(selectedOperation?.startsOn ?? '')} – {date(selectedOperation?.endsOn ?? '')}</p><p>{selectedOperation?.primaryVesselName}</p><Status value={selectedOperation?.status ?? 'Non validé'} /></div> }) }, { label: 'Supprimer l’opération', icon: Trash2, danger: true, action: removeSelection }], false, !selectedOperation || archived)}</div><div className="pp-table-wrap"><table className="pp-table"><thead><tr><th>Mission</th><th>Période</th><th>Navire</th><th>Loyer</th><th>Documents</th><th>Statut</th></tr></thead><tbody>{[...demo.operations].sort((a, b) => a.startsOn.localeCompare(b.startsOn)).map((operation) => <tr key={operation.id} className={selectedOperation?.id === operation.id ? 'pp-selected-row' : ''} onClick={() => setSelection({ kind: 'operation', id: operation.id })}><td><label><input type="radio" name="operation" aria-label={`Sélectionner ${operation.title}`} checked={selectedOperation?.id === operation.id} onChange={() => setSelection({ kind: 'operation', id: operation.id })} /><strong>{operation.title}</strong></label></td><td>{date(operation.startsOn)}<small className="pp-muted">{date(operation.endsOn)}</small></td><td>{operation.primaryVesselName}</td><td>{money(operation.charterHire ?? 0)} / jour<small className="pp-muted">{operation.charterHireOverride ? 'Tarif personnalisé' : 'Barème contractuel copié'}</small></td><td>{operation.documentCount} fichier{operation.documentCount > 1 ? 's' : ''}</td><td><Status value={operation.status} /></td></tr>)}</tbody></table></div></>}
               {tab === 'identity' && <><h2>Identité du projet</h2><dl className="pp-grid-two">{[['Client', demo.project.clientName], ['Navire principal', demo.project.primaryVesselName], ['Livraison', `${date(demo.project.startsOn)} — ${demo.project.deliveryPort}`], ['Restitution', `${date(demo.project.endsOn)} — ${demo.project.redeliveryPort}`], ['Zone d’opération', demo.project.operationArea], ['Type de contrat', demo.project.contractType]].map(([label, value]) => <div key={label}><dt className="pp-muted">{label}</dt><dd>{value}</dd></div>)}</dl><p>{demo.project.description}</p><p className="pp-muted">La modification du dossier est accessible dans le menu Projet.</p></>}
               {tab === 'contract' && <><h2>Offre & contrat</h2><p className="pp-muted">L’offre commerciale est facultative et indépendante du contrat.</p><div className="pp-commandbar">{menuControl('contract', 'Documents', FileText, [{ label: 'Prévisualiser le contrat', action: () => setDialog({ title: `${demo.project.contractType} — démonstration`, content: <div className="pp-dialog-body"><h3>{demo.project.projectCode} — {demo.project.title}</h3><p>Armateur : {demo.contract.ownerIdentity}</p><p>Affréteur : {demo.project.clientName}</p><p>Navire : {demo.project.primaryVesselName}</p><p>Livraison : {date(demo.project.startsOn)}</p><p>Restitution : {date(demo.project.endsOn)}</p><p>Loyer : {money(demo.contract.charterHire ?? 0)} / jour</p><p className="pp-muted">Résumé de démonstration. La génération contractuelle complète reste celle du module existant.</p></div> }) }, { label: 'Consulter l’offre commerciale', action: () => setDialog({ title: 'Offre commerciale — démonstration', content: <div className="pp-dialog-body"><h3>{demo.project.title}</h3><p>Client : {demo.project.clientName}</p><p>Loyer proposé : {money(demo.contract.charterHire ?? 0)} / jour</p><p className="pp-muted">Cette consultation est indépendante du choix et de l’enregistrement du contrat.</p></div> }) }])}</div><h3>Contrat retenu</h3><p><strong>{demo.project.contractType}</strong></p><p>Navire : {demo.project.primaryVesselName}</p><p>Loyer contractuel : {money(demo.contract.charterHire ?? 0)} / jour</p><p className="pp-muted">Le type de contrat est enregistré depuis Modifier le projet.</p></>}
-              {tab === 'documents' && <><h2>Documents du projet</h2><div className="pp-commandbar">{menuControl('documents', 'Documents', FileText, [{ label: 'Aperçu des éléments de facturation', action: () => void exportBilling('preview'), disabled: busy }, { label: 'Ouvrir SharePoint', action: () => window.open('https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets', '_blank', 'noopener,noreferrer') }])}</div><p className="pp-muted">Pièces de démonstration associées aux frais du mois.</p><ul>{demo.expenses.filter((expense) => expense.attachmentName || proofs[expense.id]).map((expense) => <li key={expense.id}><a href="#justificatif" onClick={(event) => { event.preventDefault(); void showProof(expense); }}>{proofs[expense.id]?.name || expense.attachmentName}</a> — {expense.supplier}</li>)}</ul></>}
+              {tab === 'documents' && <><h2>Documents du projet</h2><div className="pp-commandbar">{menuControl('documents', 'Documents', FileText, [{ label: 'Aperçu des éléments de facturation', action: () => void exportBilling('preview'), disabled: busy }, { label: 'Ouvrir SharePoint', action: () => window.open('https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets', '_blank', 'noopener,noreferrer') }])}</div><p className="pp-muted">Pièces de démonstration associées aux frais du mois.</p><ul>{demo.expenses.flatMap((expense) => expenseProofs(expense).map((attachment) => <li key={`${expense.id}/${attachment.id}`}><button type="button" className="pp-proof-link" onClick={() => void showProof(expense, attachment)}>{attachment.name}</button> — {expense.supplier}</li>))}</ul></>}
             </div>
           </section>
         </div>
@@ -512,6 +589,6 @@ export function ProjectPreview() {
     {toast && <div className="pp-toast" role="status"><Check size={18} />{toast}</div>}
     {editor && <EditorDialog editor={editor} onClose={() => setEditor(null)} />}
     {confirm && <Dialog title={confirm.title} onClose={() => setConfirm(null)}><div className="pp-dialog-body"><p>{confirm.message}</p></div><footer className="pp-dialog-actions"><button className="pp-button" onClick={() => setConfirm(null)}>Annuler</button><button className="pp-button danger" onClick={() => { confirm.action(); setConfirm(null); }}>Confirmer</button></footer></Dialog>}
-    {dialog && <Dialog title={dialog.title} onClose={() => { setDialog(null); setPreviewUrl(''); setPreviewBlob(null); }}>{dialog.content ?? (previewBlob && <PreviewPdf blob={previewBlob} />)}<footer className="pp-dialog-actions">{previewUrl && <a className="pp-button" href={previewUrl} download={previewFileName}><Download size={17} />{previewBlob?.type.startsWith('image/') ? 'Télécharger la pièce' : 'Télécharger le PDF'}</a>}<button className="pp-button" onClick={() => { setDialog(null); setPreviewUrl(''); setPreviewBlob(null); }}>Fermer</button></footer></Dialog>}
+    {dialog && <Dialog key={dialog.title} title={dialog.title} onClose={() => { setDialog(null); setPreviewUrl(''); setPreviewBlob(null); }}>{dialog.content ?? (previewBlob && <PreviewPdf blob={previewBlob} />)}<footer className="pp-dialog-actions">{previewUrl && <a className="pp-button" href={previewUrl} download={previewFileName}><Download size={17} />{previewBlob?.type === 'application/pdf' || previewFileName.toLowerCase().endsWith('.pdf') ? 'Télécharger le PDF' : 'Télécharger la pièce'}</a>}<button className="pp-button" onClick={() => { setDialog(null); setPreviewUrl(''); setPreviewBlob(null); }}>Fermer</button></footer></Dialog>}
   </div>;
 }
