@@ -23,6 +23,8 @@ begin
   assert not has_function_privilege('anon','public.save_lsa_item(bigint,jsonb,bigint,timestamptz)','EXECUTE'), 'Anonymous write RPC';
   assert not has_function_privilege('anon','public.lsa_next_item_number(bigint,bigint)','EXECUTE'), 'Anonymous number preview RPC';
   assert not has_function_privilege('anon','public.lsa_can_add_item(bigint)','EXECUTE'), 'Anonymous creation capability RPC';
+  assert not has_function_privilege('anon','public.update_lsa_item_expiry(bigint,date,timestamptz)','EXECUTE'), 'Anonymous expiry RPC';
+  assert not has_function_privilege('anon','public.delete_lsa_item(bigint,timestamptz)','EXECUTE'), 'Anonymous deletion RPC';
   assert has_function_privilege('authenticated','public.lsa_can_add_item(bigint)','EXECUTE'), 'Creation capability unavailable to client';
   assert not has_function_privilege('authenticated','private.can_access_lsa_vessel(bigint,bigint)','EXECUTE'), 'Private scope helper exposed';
   select id into strict company from public.companies where code='bbtm';
@@ -77,6 +79,13 @@ begin
     expired_saved:=public.save_lsa_item(vessel,payload||jsonb_build_object('expires_on',current_date-2));
     assert exists(select 1 from public.lsa_items where id=expired_saved and expires_on=current_date-2), role_name||' expired equipment hidden after creation';
     select updated_at into current_revision from public.lsa_items where id=saved;
+    perform public.save_lsa_item(vessel,payload||'{"notes":"Edited fixture","brand":"Ocean","model":"Test","serial_number":"SN-001"}',saved,current_revision);
+    assert (select notes='Edited fixture' and brand='Ocean' and model='Test' and serial_number='SN-001' from public.lsa_items where id=saved), role_name||' cannot edit inventory';
+    begin
+      perform public.save_lsa_item(vessel,payload,saved,current_revision);
+      raise exception 'Stale update accepted';
+    exception when serialization_failure then null; end;
+    select updated_at into current_revision from public.lsa_items where id=saved;
     begin
       perform public.save_lsa_item(foreign_vessel,payload);
       raise exception 'Cross-company write accepted';
@@ -101,10 +110,17 @@ begin
       assert not public.lsa_can_add_item(unassigned), role_name||' unassigned vessel capability allowed';
       assert not public.lsa_can_add_item(inactive_vessel), role_name||' inactive vessel capability allowed';
       begin
-        perform public.save_lsa_item(vessel,payload||'{"notes":"Unauthorized edit"}',saved,current_revision);
-        raise exception 'Onboard profile edited inventory';
+        perform public.save_lsa_item(unassigned,payload,hidden_item,current_revision);
+        raise exception 'Onboard profile edited unassigned inventory';
       exception when insufficient_privilege then null; end;
-      assert (select notes='LSA fixture' from public.lsa_items where id=saved), 'Denied edit changed equipment';
+      begin
+        perform public.update_lsa_item_expiry(hidden_item,current_date+365,current_revision);
+        raise exception 'Onboard profile renewed unassigned inventory';
+      exception when insufficient_privilege then null; end;
+      begin
+        perform public.delete_lsa_item(hidden_item,current_revision);
+        raise exception 'Onboard profile deleted unassigned inventory';
+      exception when insufficient_privilege then null; end;
       begin
         perform public.save_lsa_item(unassigned,payload);
         raise exception 'Onboard profile added unassigned inventory';
@@ -133,6 +149,18 @@ begin
         raise exception 'Formerly assigned profile added inventory';
       exception when insufficient_privilege then null; end;
       begin
+        perform public.save_lsa_item(vessel,payload,saved,current_revision);
+        raise exception 'Formerly assigned profile edited inventory';
+      exception when insufficient_privilege then null; end;
+      begin
+        perform public.update_lsa_item_expiry(saved,current_date+365,current_revision);
+        raise exception 'Formerly assigned profile renewed inventory';
+      exception when insufficient_privilege then null; end;
+      begin
+        perform public.delete_lsa_item(saved,current_revision);
+        raise exception 'Formerly assigned profile deleted inventory';
+      exception when insufficient_privilege then null; end;
+      begin
         perform public.lsa_next_item_number(vessel,designation);
         raise exception 'Formerly assigned profile previewed counter';
       exception when insufficient_privilege then null; end;
@@ -140,13 +168,6 @@ begin
       update public.planning_assignments set ends_at=((current_date+1)::timestamp+interval '23 hours 59 minutes 59 seconds') at time zone 'Europe/Paris'
       where crew_person_id=person and vessel_id=vessel;
       execute 'set local role authenticated';
-    else
-      perform public.save_lsa_item(vessel,payload||'{"notes":"Edited fixture","brand":"Ocean","model":"Test","serial_number":"SN-001"}',saved,current_revision);
-      assert (select notes='Edited fixture' and brand='Ocean' and model='Test' and serial_number='SN-001' from public.lsa_items where id=saved), 'Update lost';
-      begin
-        perform public.save_lsa_item(vessel,payload,saved,current_revision);
-        raise exception 'Stale update accepted';
-      exception when serialization_failure then null; end;
     end if;
     if role_name in ('admin','capitaine') then
       catalog_type:=public.save_lsa_catalog_entry('type',jsonb_build_object('name','LSA profile type '||role_name));
@@ -187,6 +208,14 @@ begin
     begin
       perform public.save_lsa_item(vessel,payload);
       raise exception 'Disabled module accepted write';
+    exception when insufficient_privilege then null; end;
+    begin
+      perform public.update_lsa_item_expiry(saved,current_date+365,current_revision);
+      raise exception 'Disabled module accepted renewal';
+    exception when insufficient_privilege then null; end;
+    begin
+      perform public.delete_lsa_item(saved,current_revision);
+      raise exception 'Disabled module accepted deletion';
     exception when insufficient_privilege then null; end;
     begin
       perform public.lsa_next_item_number(vessel,designation);

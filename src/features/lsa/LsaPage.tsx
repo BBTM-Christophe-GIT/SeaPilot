@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Download, FileCheck2, LifeBuoy, Package, Pencil, Plus, Search } from 'lucide-react';
+import { Download, FileCheck2, LifeBuoy, Package, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
+import { AppDialog } from '../../components/AppDialog';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
 import { LiftingVesselFilter } from '../lifting/LiftingVesselFilter';
-import { canManageLifting, formatLiftingDate, liftingDeadline, type LiftingVessel } from '../lifting/liftingModel';
+import { formatLiftingDate, liftingDeadline, type LiftingVessel } from '../lifting/liftingModel';
 import { LiftingDueBadge, useLiftingToday } from '../lifting/LiftingLifecycle';
 import { saveLiftingBlob } from '../lifting/liftingPdf';
 import { LsaItemForm } from './LsaItemForm';
+import { LsaExpiryForm } from './LsaExpiryForm';
 import { LsaCatalogDialog } from './LsaCatalogDialog';
 import { blankLsaDraft, canAddLsaItem, canManageLsaCatalog, categorizeLsaItems, compareLsaNames, lsaTypeKey, lsaVersionStatus, matchesLsaItem, type LsaCatalog, type LsaItem } from './lsaModel';
-import { downloadLsaDocument, fetchLsaCatalog, fetchLsaCreateAccess, fetchLsaRegister, fetchLsaVessels, saveLsaItem } from './lsaQueries';
+import { deleteLsaItem, downloadLsaDocument, fetchLsaCatalog, fetchLsaCreateAccess, fetchLsaRegister, fetchLsaVessels, saveLsaItem, updateLsaItemExpiry } from './lsaQueries';
 import { createLsaPreviewClient } from './lsaPreview';
 import '../lifting/lifting.css';
 import '../lifting/liftingNavigation.css';
@@ -40,7 +42,6 @@ export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: Ro
   const canManageCatalog = canManageLsaCatalog(profileRoles);
   const [catalog, setCatalog] = useState<LsaCatalog>({ types: [], designations: [] });
   const [catalogOpen, setCatalogOpen] = useState(false);
-  const manager = canManageLifting(profileRoles);
   const [vessels, setVessels] = useState<LiftingVessel[]>([]);
   const [vesselId, setVesselId] = useState(context?.liftingVesselId || 0);
   const [register, setRegister] = useState(emptyRegister);
@@ -56,6 +57,10 @@ export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: Ro
   const [year, setYear] = useState('');
   const [view, setView] = useState<'inventory' | 'reports'>('inventory');
   const [editor, setEditor] = useState<{ item?: LsaItem } | null>(null);
+  const [expiryItem, setExpiryItem] = useState<LsaItem | null>(null);
+  const [deleteItem, setDeleteItem] = useState<LsaItem | null>(null);
+  const dialogOpen = !!editor || !!expiryItem || !!deleteItem || catalogOpen;
+  const canActOnItems = canAddItem && !loading && addAccess.vesselId === vesselId && addAccess.allowed;
   const today = useLiftingToday();
   const { versions, events } = register;
   const items = categorizeLsaItems(register.items, catalog);
@@ -135,10 +140,10 @@ export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: Ro
 
   return <section className="lifting-page lsa-page">
     <header className="lifting-heading"><div><p className="lifting-eyebrow">LSA · ÉQUIPEMENTS DE SAUVETAGE</p><h1>Registre LSA</h1><p>Les équipements de sauvetage, leurs échéances et leurs documents de contrôle.</p></div><LifeBuoy size={32} aria-hidden="true" /></header>
-    <LiftingVesselFilter vessels={vessels} value={vesselId} includeYard={false} disabled={busy || !!editor || catalogOpen} onChange={(id) => {
+    <LiftingVesselFilter vessels={vessels} value={vesselId} includeYard={false} disabled={busy || dialogOpen} onChange={(id) => {
       setVesselId(id); context?.setLiftingVesselId?.(id); setQuery(''); setCategory(''); setYear(''); setNotice('');
     }} />
-    {error && !editor && <div className="lifting-error" role="alert">{error}<button onClick={() => setRefresh((value) => value + 1)}>Recharger</button></div>}
+    {error && !dialogOpen && <div className="lifting-error" role="alert">{error}<button onClick={() => setRefresh((value) => value + 1)}>Recharger</button></div>}
     {notice && <p className="lifting-notice" role="status">{notice}</p>}
     <div className="lifting-summary">
       <div><strong>{items.length}</strong><span>matériels en inventaire</span></div>
@@ -186,7 +191,11 @@ export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: Ro
                 </details>
               </div>
               {item.storage_path && <button className="lifting-icon-button" aria-label={`Télécharger ${item.document_title}`} disabled={busy} onClick={() => void act(async () => saveLiftingBlob(await downloadLsaDocument(db, item), item.file_name || `${item.document_title}.pdf`))}><Download size={18} /></button>}
-              {manager && <button className="lifting-icon-button" aria-label={`Modifier ${item.document_title}`} disabled={busy} onClick={() => { setError(''); setEditor({ item }); }}><Pencil size={17} /></button>}
+              {canAddItem && <div className="lsa-item-actions">
+                <button className="secondary-button" aria-label={`Mettre à jour ${item.document_title}`} disabled={busy || !canActOnItems} onClick={() => { setError(''); setExpiryItem(item); }}><RefreshCw size={16} /> Mettre à jour</button>
+                <button className="lifting-icon-button" title="Modifier" aria-label={`Modifier ${item.document_title}`} disabled={busy || !canActOnItems} onClick={() => { setError(''); setEditor({ item }); }}><Pencil size={17} /></button>
+                <button className="lifting-icon-button is-danger" title="Supprimer" aria-label={`Supprimer ${item.document_title}`} disabled={busy || !canActOnItems} onClick={() => { setError(''); setDeleteItem(item); }}><Trash2 size={17} /></button>
+              </div>}
             </article>)}</div>
           </section>;
         })}
@@ -199,6 +208,16 @@ export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: Ro
     {editor && <LsaItemForm item={editor.item} client={db} vesselId={vesselId} catalog={catalog} initial={editor.item || blankLsaDraft()} busy={busy} error={error} onClose={() => { setEditor(null); setError(''); }} onSave={(draft) => void act(async () => {
       await saveLsaItem(db, vesselId, draft, editor.item); setEditor(null); setRefresh((value) => value + 1); setNotice('Matériel LSA enregistré.');
     })} />}
+    {expiryItem && <LsaExpiryForm item={expiryItem} busy={busy} error={error} onClose={() => { setExpiryItem(null); setError(''); }} onSave={(expiresOn) => void act(async () => {
+      await updateLsaItemExpiry(db, expiryItem, expiresOn); setExpiryItem(null); setRefresh((value) => value + 1); setNotice('Échéance LSA mise à jour.');
+    })} />}
+    {deleteItem && <AppDialog title="Supprimer le matériel LSA" size="sm" isBusy={busy} onClose={() => { setDeleteItem(null); setError(''); }}
+      footer={<><button type="button" className="secondary-button" disabled={busy} onClick={() => { setDeleteItem(null); setError(''); }}>Annuler</button><button type="button" className="primary-button lifting-delete-button" disabled={busy} onClick={() => void act(async () => {
+        await deleteLsaItem(db, deleteItem); setDeleteItem(null); setRefresh((value) => value + 1); setNotice('Matériel LSA supprimé.');
+      })}>{busy ? 'Suppression…' : 'Supprimer'}</button></>}>
+      <p>Confirmer la suppression de <strong>{deleteItem.document_title || deleteItem.title}</strong> du registre ?</p>
+      {error && <p className="lifting-error" role="alert">{error}</p>}
+    </AppDialog>}
     {catalogOpen && <LsaCatalogDialog client={db} catalog={catalog} onChange={setCatalog} onClose={() => { setCatalogOpen(false); setRefresh((value) => value + 1); }} />}
   </section>;
 }

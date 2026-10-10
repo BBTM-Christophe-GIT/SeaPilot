@@ -32,7 +32,7 @@ export function LiftingItemForm({ initial, kind, busy, error, onClose, onSave }:
   </AppDialog>;
 }
 
-export function LiftingStartForm({ vessels, initialVesselId, busy, error, onClose, onSave }: { vessels: LiftingVessel[]; initialVesselId: number; busy: boolean; error: string; onClose: () => void; onSave: (vesselId: number, issued: string, expires: string) => void }) {
+export function LiftingStartForm({ vessels, initialVesselId, kind = 'lifting', busy, error, onClose, onSave }: { vessels: LiftingVessel[]; initialVesselId: number; kind?: LiftingKind; busy: boolean; error: string; onClose: () => void; onSave: (vesselId: number, issued: string, expires: string) => void }) {
   const [vesselId, setVesselId] = useState(initialVesselId);
   const [issued, setIssued] = useState(todayLocal());
   const [expires, setExpires] = useState(annualExpiry(issued));
@@ -46,6 +46,7 @@ export function LiftingStartForm({ vessels, initialVesselId, busy, error, onClos
       <label>Date d’échéance<input type="date" required min={issued} value={expires} onChange={(e) => setExpires(e.target.value)} /></label>
     </div>
     <p>Vérificateur : <strong>Antoine MONCEAUX</strong></p>
+    {kind === 'lifting' && <p className="lifting-muted">La date d’émission sera appliquée à la date de mise en service de tous les apparaux actifs du navire ou site sélectionné.</p>}
     <p className="lifting-muted">Vous pouvez démarrer un nouveau contrôle avant l’échéance du précédent, y compris la même année. Une échéance d’un an est proposée et reste ajustable. Le PDF final sera classé dans « Certificats flotte ».</p>
     {error && <p className="lifting-error" role="alert">{error}</p>}
   </AppDialog>;

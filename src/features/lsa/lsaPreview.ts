@@ -40,6 +40,18 @@ export function createLsaPreviewClient(): SupabaseClient {
       if (name === 'lsa_available_vessels') return { data: vessels, error: null };
       if (name === 'lsa_can_add_item') return { data: vessels.some((vessel) => vessel.id === args.p_vessel_id), error: null };
       if (name === 'lsa_next_item_number') return { data: (counters.get(`${args.p_vessel_id}:${args.p_designation_id}`) || 0) + 1, error: null };
+      if (name === 'update_lsa_item_expiry' || name === 'delete_lsa_item') {
+        const index = items.findIndex((item) => item.id === args.p_id);
+        const item = items[index];
+        if (!item || item.updated_at !== args.p_expected_updated_at) return { data: null, error: { message: 'Fiche modifiée ou inaccessible. Rechargez le registre avant de réessayer.' } };
+        if (name === 'delete_lsa_item') items.splice(index, 1);
+        else {
+          if (!args.p_expires_on) return { data: null, error: { message: 'Renseignez une date d’échéance.' } };
+          item.expires_on = String(args.p_expires_on);
+          item.updated_at = stamp();
+        }
+        return { data: item.id, error: null };
+      }
       if (name === 'save_lsa_catalog_entry') {
         const entry = args.p_entry as Record<string, unknown>;
         const collection = args.p_kind === 'type' ? catalog.types : catalog.designations;

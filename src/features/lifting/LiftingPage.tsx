@@ -180,7 +180,7 @@ export function LiftingPage({ client, roles, section = 'lifting' }: { client?: S
       saveLiftingBlob(pdf.blob, pdf.filename); setPaperOpen(false);
       setNotice(`Fiche papier de ${pdf.itemCount} ${pdf.itemCount === 1 ? 'matériel' : 'matériels'} téléchargée pour ${current.vessel.name}.`);
     })} />}
-    {startOpen && canStart && section !== 'crane' && <LiftingStartForm vessels={vessels} initialVesselId={vesselId} busy={busy} error={error} onClose={() => { setStartOpen(false); setError(''); }} onSave={(selectedVesselId, issued, expires) => void act(async () => {
+    {startOpen && canStart && section !== 'crane' && <LiftingStartForm vessels={vessels} initialVesselId={vesselId} kind={section} busy={busy} error={error} onClose={() => { setStartOpen(false); setError(''); }} onSave={(selectedVesselId, issued, expires) => void act(async () => {
       const id = await startLiftingInspection(db, selectedVesselId, section, issued, expires);
       pendingInspection.current = { id, vesselId: selectedVesselId, kind: section };
       setStartOpen(false);

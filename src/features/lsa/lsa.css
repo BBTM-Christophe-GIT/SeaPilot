@@ -1,5 +1,11 @@
 .lsa-page .lifting-register-filters > label:first-child { max-width: 340px; }
 .lsa-page .lifting-id { font-size: 12px; }
+.lsa-item-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.lsa-item-actions > .secondary-button { min-height: 44px; padding: 7px 10px; font-size: 11px; }
+@media (max-width: 900px) {
+  .lsa-page .lifting-item { flex-wrap: wrap; }
+  .lsa-item-actions { margin-left: auto; }
+}
 .lsa-details { margin-top: 12px; font-size: 12px; line-height: 1.6; }
 .lsa-details summary { cursor: pointer; font-weight: 650; }
 .lsa-details dl { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

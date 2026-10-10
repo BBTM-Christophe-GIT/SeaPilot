@@ -96,13 +96,15 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
   clientAudits: documentaryAuditGuide('Audit Client'),
   lsa: {
     purpose: 'Retrouver les équipements de sauvetage et leurs documents dans le Registre LSA.',
-    access: 'Marin et Capitaine consultent les données de leur périmètre autorisé. Administration, Direction et Armement peuvent ajouter et modifier les fiches de leur société.',
+    access: 'Administration, Direction, Armement, Capitaine et Marin peuvent ajouter, mettre à jour, modifier et supprimer les fiches de leurs navires autorisés. Les actions sont désactivées sur les navires historiques accessibles uniquement en consultation.',
     steps: [
       { title: 'Choisir un navire', detail: 'Dans Registres → Registre LSA, sélectionnez la carte du navire comme dans le Registre des Remorques.' },
       { title: 'Filtrer l’inventaire', detail: 'Choisissez Gilets de Sauvetage, GMDSS, Navigation, Pyrotechnie ou Survie. La recherche porte aussi sur la marque, le modèle et le numéro de série.' },
+      { title: 'Mettre à jour une échéance', detail: 'Sur la fiche, cliquez sur Mettre à jour. La fenêtre propose la date du jour plus un an ; modifiez-la si nécessaire, puis enregistrez. Seule la date d’échéance est mise à jour.' },
+      { title: 'Modifier ou supprimer un matériel', detail: 'Le crayon ouvre la fiche complète. La corbeille demande confirmation avant de retirer le matériel de l’inventaire ; ses documents et son historique sont conservés.' },
       { title: 'Consulter les documents', detail: 'Ouvrez Documents de contrôle, puis filtrez par année. Téléchargez les fichiers avec la flèche. Détails et historique conserve les notes et les événements de renouvellement de chaque fiche.' },
     ],
-    reminders: ['Les quatre catégories ont quitté Certificats flotte après vérification de leur copie.', 'Les désignations sont classées par type et par ordre alphabétique. Le numéro est automatique pour chaque désignation et chaque navire.', 'Les administrateurs peuvent adapter l’arborescence depuis Gérer les désignations. Les éléments archivés restent conservés sur les fiches.', 'L’alarme se déclenche à J−90 de la date d’échéance. Les documents en attente de validation gardent leur statut. Une échéance absente reste à renseigner.'],
+    reminders: ['Les quatre catégories ont quitté Certificats flotte après vérification de leur copie.', 'Les désignations sont classées par type et par ordre alphabétique. Le numéro est automatique pour chaque désignation et chaque navire.', 'Administration et Capitaine peuvent adapter l’arborescence depuis Gérer les désignations. Les éléments archivés restent conservés sur les fiches.', 'L’alarme se déclenche à J−90 de la date d’échéance. Les documents en attente de validation gardent leur statut. Une échéance absente reste à renseigner.'],
   },
   emergencyExercises: {
     purpose: 'Consulter les exercices d’urgence issus des Daily Progress Reports et télécharger le carnet annuel individuel.',
@@ -311,6 +313,7 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
     steps: [
       { title: 'Choisir le registre et le navire', detail: 'Dans le menu Registres, ouvrez Registre des Apparaux de levage ou Registre des Remorques, puis sélectionnez le navire. Examen à Fond - Grue donne accès aux certificats existants.' },
       { title: 'Consulter le registre', detail: 'Vérifiez l’identification de l’équipement, ses caractéristiques et les informations de contrôle disponibles.' },
+      { title: 'Créer un contrôle annuel', detail: 'Les profils habilités utilisent Nouveau contrôle annuel et choisissent le navire ainsi que la date d’émission. Dans le registre des apparaux, cette date est appliquée à la Date de mise en service de tous les apparaux actifs du navire sélectionné à l’enregistrement du nouveau contrôle.' },
       { title: 'Ouvrir un rapport', detail: 'Dans la liste des rapports, filtrez par année si nécessaire, puis ouvrez le contrôle souhaité ou téléchargez son PDF.' },
     ],
     reminders: ['Un PDF brouillon n’est pas un rapport finalisé : vérifiez son statut et sa date d’échéance.', 'Signalez toute anomalie constatée à votre responsable.'],
