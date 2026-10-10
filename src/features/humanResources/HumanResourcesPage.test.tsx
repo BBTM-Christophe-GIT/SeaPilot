@@ -360,7 +360,7 @@ describe('HumanResourcesPage', () => {
     expect(within(dialog).getByRole('checkbox', { name: 'Identité et poste : Matricule' })).toBeChecked();
     expect(within(dialog).queryByRole('checkbox', { name: /signature/i })).not.toBeInTheDocument();
     expect(within(dialog).getByRole('table', { name: 'Liste des visites médicales' })).toHaveTextContent('Visite medicale');
-    expect(within(dialog).getByRole('table', { name: 'Liste Documents' })).toHaveTextContent('Capitaine 200');
+    expect(within(dialog).getByRole('table', { name: 'Liste Brevets et visites médicales' })).toHaveTextContent('Capitaine 200');
     expect(dialog.closest('form')?.parentElement?.closest('form')).toBeNull();
     await user.click(within(dialog).getByText('Fermer', { selector: 'button' }));
     expect(screen.queryByRole('dialog', { name: 'Fiche Collaborateur' })).not.toBeInTheDocument();

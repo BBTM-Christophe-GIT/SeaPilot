@@ -44,6 +44,9 @@
 }
 
 .hr-sheet-section:has(.hr-sheet-documents) { grid-column: 1 / -1; }
+.hr-sheet-photo { margin-bottom: var(--sp-space-4); }
+.hr-sheet-photo strong { display: block; font-weight: 600; }
+.hr-sheet-photo small { display: block; margin-top: var(--sp-space-1); color: var(--sp-muted); }
 .hr-sheet-section legend { padding: 0 var(--sp-space-2); color: var(--sp-heading); font-weight: 700; }
 .hr-sheet-section label { display: flex; align-items: flex-start; gap: var(--sp-space-2); cursor: pointer; overflow-wrap: anywhere; }
 .hr-sheet-section input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 18px; margin: 2px 0 0; accent-color: var(--sp-primary); }

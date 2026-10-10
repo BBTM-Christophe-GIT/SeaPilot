@@ -33,6 +33,7 @@ export function CollaboratorSheetDialog({ person, people, documents, visibleSect
   const [previewPersonId, setPreviewPersonId] = useState<number | null>(null);
   const [peopleSearch, setPeopleSearch] = useState('');
   const [exportMode, setExportMode] = useState<CollaboratorSheetsExportMode>('separate');
+  const [includePhoto, setIncludePhoto] = useState(true);
   const exportModeName = useId();
   const selectedPeople = useMemo(() => people?.filter((candidate) => selectedPersonIds.has(candidate.id)) || [], [people, selectedPersonIds]);
   const previewPerson = isBulk
@@ -78,8 +79,8 @@ export function CollaboratorSheetDialog({ person, people, documents, visibleSect
     setFeedback(null);
     try {
       const { blob, fileName } = isBulk
-        ? await buildCollaboratorSheetsExport(selectedPeople, documents, visibleSectionKeys, selection, exportMode)
-        : await buildCollaboratorSheetPdf(person, sections, selection);
+        ? await buildCollaboratorSheetsExport(selectedPeople, documents, visibleSectionKeys, selection, exportMode, undefined, { includePhoto })
+        : await buildCollaboratorSheetPdf(person, sections, selection, undefined, { includePhoto });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -152,6 +153,10 @@ export function CollaboratorSheetDialog({ person, people, documents, visibleSect
           {previewPerson ? <label className="hr-sheet-preview"><span>Aperçu du collaborateur</span><select disabled={isGenerating} onChange={(event) => setPreviewPersonId(Number(event.target.value))} value={previewPerson.id}>{selectedPeople.map((candidate) => <option key={candidate.id} value={candidate.id}>{formatPersonName(candidate)}</option>)}</select></label> : null}
         </div>
       ) : null}
+      <fieldset className="hr-sheet-section hr-sheet-photo" disabled={isGenerating}>
+        <legend>Photo</legend>
+        <label><input aria-label="Inclure la photo" checked={includePhoto} onChange={(event) => { if (generatingRef.current) return; setIncludePhoto(event.target.checked); setFeedback(null); }} type="checkbox" /><span><strong>Inclure la photo</strong><small>À gauche du titre et du nom, lorsqu’une photo est disponible.</small></span></label>
+      </fieldset>
       <div className="hr-sheet-toolbar">
         <p>{selectedCount} information{selectedCount > 1 ? 's' : ''} sélectionnée{selectedCount > 1 ? 's' : ''}</p>
         <div>
