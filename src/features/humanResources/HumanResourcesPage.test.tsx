@@ -6,6 +6,12 @@ import { HumanResourcesPage, HumanResourcesRoute } from './HumanResourcesPage';
 import { connectHrDrive, readHrDriveFile, writeHrDriveFile } from './hrDocumentDrive';
 vi.mock('./hrDocumentDrive', () => ({ connectHrDrive: vi.fn(), writeHrDriveFile: vi.fn(async (_client, id, name) => ({ drive_path: `person-${id}/${name}`, drive_sha256: 'a'.repeat(64) })), readHrDriveFile: vi.fn() }));
 import { openTrainingPlanReport } from './trainingPlanReport';
+import { buildCollaboratorSheetPdf } from './collaboratorSheet';
+
+vi.mock('./collaboratorSheet', async () => {
+  const actual = await vi.importActual<typeof import('./collaboratorSheet')>('./collaboratorSheet');
+  return { ...actual, buildCollaboratorSheetPdf: vi.fn().mockResolvedValue({ blob: new Blob(['pdf']), fileName: 'Fiche-Collaborateur.pdf' }) };
+});
 
 vi.mock('./trainingPlanReport', async () => {
   const actual = await vi.importActual<typeof import('./trainingPlanReport')>('./trainingPlanReport');
@@ -295,12 +301,61 @@ describe('HumanResourcesPage', () => {
     const user = userEvent.setup();
     const adminView = render(<HumanResourcesPage client={createClient() as never} roles={['admin']} />);
     await user.click(await screen.findByRole('button', { name: 'Autres actions' }));
-    expect(screen.getByRole('button', { name: 'Supprimer la personne' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Supprimer la personne' })).toBeInTheDocument();
     adminView.unmount();
 
     render(<HumanResourcesPage client={createClient() as never} roles={['armement']} />);
-    await screen.findByRole('heading', { name: 'Ressources humaines' });
-    expect(screen.queryByRole('button', { name: 'Supprimer la personne' })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Autres actions' }));
+    expect(screen.queryByRole('menuitem', { name: 'Supprimer la personne' })).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Fiche Collaborateur' })).toBeInTheDocument();
+  });
+
+  it.each(['admin', 'armement', 'direction', 'marin', 'capitaine'] as const)('opens the collaborator PDF choices from the real %s fixture', async (role) => {
+    const user = userEvent.setup();
+    render(<HumanResourcesPage client={createClient([activePerson], documents) as never} currentPersonId={1} roles={[role]} />);
+    await user.click(await screen.findByRole('button', { name: 'Autres actions' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Fiche Collaborateur' }));
+    const dialog = screen.getByRole('dialog', { name: 'Fiche Collaborateur' });
+    expect(within(dialog).getByRole('checkbox', { name: 'Identité et poste : Matricule' })).toBeChecked();
+    expect(within(dialog).queryByRole('checkbox', { name: /signature/i })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('table', { name: 'Liste des visites médicales' })).toHaveTextContent('Visite medicale');
+    expect(within(dialog).getByRole('table', { name: 'Liste Documents' })).toHaveTextContent('Capitaine 200');
+    expect(dialog.closest('form')?.parentElement?.closest('form')).toBeNull();
+    await user.click(within(dialog).getByText('Fermer', { selector: 'button' }));
+    expect(screen.queryByRole('dialog', { name: 'Fiche Collaborateur' })).not.toBeInTheDocument();
+  });
+
+  it('exports the PDF without submitting the surrounding RH editor or writing person data', async () => {
+    const client = createClient([activePerson], documents);
+    const user = userEvent.setup();
+    const originalCreateObjectURL = URL.createObjectURL;
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const originalSetTimeout = window.setTimeout.bind(window) as typeof window.setTimeout;
+    const revokeTimers: ReturnType<typeof window.setTimeout>[] = [];
+    const timer = vi.spyOn(window, 'setTimeout').mockImplementation((handler, timeout, ...args) => {
+      // Vitest resolves the Node timer overload while this browser timer returns a number.
+      const handle = originalSetTimeout(handler, timeout, ...args) as unknown as ReturnType<typeof window.setTimeout>;
+      if (timeout === 30_000) revokeTimers.push(handle);
+      return handle;
+    });
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: () => 'blob:collaborator-pdf' });
+    vi.mocked(buildCollaboratorSheetPdf).mockClear();
+    try {
+      render(<HumanResourcesPage client={client as never} roles={['admin']} />);
+      await user.click(await screen.findByRole('button', { name: 'Autres actions' }));
+      await user.click(screen.getByRole('menuitem', { name: 'Fiche Collaborateur' }));
+      const queryCount = client.from.mock.calls.length;
+      fireEvent.submit(screen.getByRole('dialog', { name: 'Fiche Collaborateur' }));
+      expect(await screen.findByText('La fiche collaborateur PDF a été générée.')).toBeInTheDocument();
+      expect(buildCollaboratorSheetPdf).toHaveBeenCalledOnce();
+      expect(client.from).toHaveBeenCalledTimes(queryCount);
+      expect(screen.queryByText('Impossible de modifier cette fiche RH.')).not.toBeInTheDocument();
+    } finally {
+      click.mockRestore();
+      revokeTimers.forEach((handle) => window.clearTimeout(handle));
+      timer.mockRestore();
+      Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: originalCreateObjectURL });
+    }
   });
 
   it('renders the RH dashboard with active collaborators, document metrics and category summaries', async () => {

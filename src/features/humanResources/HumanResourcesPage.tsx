@@ -30,9 +30,10 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { useLocation, useOutletContext } from 'react-router-dom';
+import { AppContextMenu, AppContextMenuItem, type AppContextMenuPosition } from '../../components/AppContextMenu';
 import { supabase } from '../../lib/supabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
@@ -87,6 +88,7 @@ import {
   type WorkforceExitBreakdown,
 } from './peopleQueries';
 import { buildTrainingPlanReport, openTrainingPlanReport } from './trainingPlanReport';
+import { CollaboratorSheetDialog } from './CollaboratorSheetDialog';
 import { ProfileSignaturePanel } from '../workingTime/ProfileSignaturePanel';
 import { updateAnnualReviewDueDate } from '../annualReviews/annualReviewQueries';
 
@@ -2926,6 +2928,13 @@ function PersonDetailsPanel({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isActionsOpen, setIsActionsOpen] = useState(false);
+  const [actionsPosition, setActionsPosition] = useState<AppContextMenuPosition>({ x: 0, y: 0 });
+  const actionsButtonRef = useRef<HTMLButtonElement>(null);
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const closeActions = useCallback(() => {
+    setIsActionsOpen(false);
+    actionsButtonRef.current?.focus();
+  }, []);
   const [form, setForm] = useState<UpdatePersonDetailsInput>(() => buildPersonDetailsForm(person));
   const [medicalForms, setMedicalForms] = useState<Record<number, MedicalDetailsForm>>(() =>
     buildMedicalDetailsForms(documents),
@@ -2943,6 +2952,7 @@ function PersonDetailsPanel({
     setActiveSectionKey(initialSectionKey && visibleSectionKeys.has(initialSectionKey) ? initialSectionKey : availableSections[0]?.key || 'identity');
     setIsEditing(false);
     setIsActionsOpen(false);
+    setIsSheetOpen(false);
   }, [person, initialSectionKey]);
 
   useEffect(() => {
@@ -3374,34 +3384,45 @@ function PersonDetailsPanel({
                   Modifier
                 </button>
               ) : null}
-              {canDelete ? (
                 <div className="hr-profile-actions-menu">
                   <button
                     aria-expanded={isActionsOpen}
+                    aria-haspopup="menu"
                     aria-label="Autres actions"
                     className="hr-profile-icon-button"
-                    onClick={() => setIsActionsOpen((isOpen) => !isOpen)}
+                    onClick={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setActionsPosition({ x: rect.right, y: rect.bottom + 6 });
+                      setIsActionsOpen((isOpen) => !isOpen);
+                    }}
+                    ref={actionsButtonRef}
                     type="button"
                   >
                     <MoreHorizontal aria-hidden="true" size={19} />
                   </button>
                   {isActionsOpen ? (
-                    <div className="hr-profile-actions-popover">
-                      <button
+                    <AppContextMenu label="Actions du collaborateur" onClose={closeActions} position={actionsPosition}>
+                      <AppContextMenuItem disabled={isSaving} onSelect={() => {
+                        closeActions();
+                        setIsSheetOpen(true);
+                      }}>
+                        <FileDown aria-hidden="true" size={15} />
+                        Fiche Collaborateur
+                      </AppContextMenuItem>
+                      {canDelete ? <AppContextMenuItem
+                        danger
                         disabled={isSaving}
-                        onClick={() => {
-                          setIsActionsOpen(false);
+                        onSelect={() => {
+                          closeActions();
                           void onDelete();
                         }}
-                        type="button"
                       >
                         <Trash2 aria-hidden="true" size={15} />
                         Supprimer la personne
-                      </button>
-                    </div>
+                      </AppContextMenuItem> : null}
+                    </AppContextMenu>
                   ) : null}
                 </div>
-              ) : null}
             </>
           )}
           {canClose ? (
@@ -3450,6 +3471,13 @@ function PersonDetailsPanel({
           <div className="hr-profile-editor-content">{renderActiveSection()}</div>
         </main>
       </div>
+      {isSheetOpen ? <CollaboratorSheetDialog
+        documents={documents}
+        key={person.id}
+        onClose={() => setIsSheetOpen(false)}
+        person={person}
+        visibleSectionKeys={visibleSectionKeys}
+      /> : null}
     </form>
   );
 }
