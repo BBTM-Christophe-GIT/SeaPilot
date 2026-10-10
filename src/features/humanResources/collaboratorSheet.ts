@@ -25,6 +25,7 @@ export interface CollaboratorSheetSection {
 }
 
 export type CollaboratorSheetSelection = Record<string, string[]>;
+export type CollaboratorSheetsExportMode = 'separate' | 'combined';
 
 const FIELD_DEFINITIONS = {
   identity: [
@@ -299,5 +300,73 @@ export async function buildCollaboratorSheetPdf(
   return {
     blob: pdf.output('blob'),
     fileName: `Fiche-Collaborateur-${safeFileNamePart(personName)}-${parisDateKey(generatedOn)}.pdf`,
+  };
+}
+
+/** Export only the supplied, authorized people using the same field validation as a single sheet. */
+export async function buildCollaboratorSheetsExport(
+  people: PersonRecord[],
+  documents: HrDocumentRecord[],
+  visibleSectionKeys: ReadonlySet<string>,
+  selection: CollaboratorSheetSelection,
+  mode: CollaboratorSheetsExportMode,
+  generatedOn = new Date(),
+): Promise<{ blob: Blob; fileName: string }> {
+  const peopleById = new Map<number, PersonRecord>();
+  people.forEach((person) => { if (!peopleById.has(person.id)) peopleById.set(person.id, person); });
+  const uniquePeople = [...peopleById.values()];
+  if (!uniquePeople.length) throw new Error('Sélectionnez au moins un collaborateur à exporter.');
+  if (mode !== 'separate' && mode !== 'combined') throw new Error('Choisissez un format d’export valide.');
+  const sheets = uniquePeople.map((person) => ({
+    person,
+    sections: buildCollaboratorSheetSections(person, documents, visibleSectionKeys),
+  }));
+  if (sheets.some(({ sections }) => !selectCollaboratorSheetSections(sections, selection).length)) {
+    throw new Error('Sélectionnez au moins une information à inclure dans la fiche.');
+  }
+  const baseFileName = `Fiches-Collaborateurs-${sheets.length}-${parisDateKey(generatedOn)}`;
+
+  if (mode === 'separate') {
+    const { default: JSZip } = await import('jszip');
+    const archive = new JSZip();
+    // Render sequentially so a large selection does not retain every PDF renderer at once.
+    for (const { person, sections } of sheets) {
+      const generated = await buildCollaboratorSheetPdf(person, sections, selection, generatedOn);
+      const name = formatPersonName(person) || 'Collaborateur';
+      archive.file(
+        `Fiche-Collaborateur-${safeFileNamePart(name)}-ID${person.id}-${parisDateKey(generatedOn)}.pdf`,
+        await generated.blob.arrayBuffer(),
+      );
+    }
+    return {
+      blob: new Blob([await archive.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' })], { type: 'application/zip' }),
+      fileName: `${baseFileName}.zip`,
+    };
+  }
+
+  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
+  const combined = await PDFDocument.create();
+  const footerFont = await combined.embedFont(StandardFonts.Helvetica);
+  for (const [index, { person, sections }] of sheets.entries()) {
+    const generated = await buildCollaboratorSheetPdf(person, sections, selection, generatedOn);
+    const source = await PDFDocument.load(await generated.blob.arrayBuffer());
+    const pages = await combined.copyPages(source, source.getPageIndices());
+    // A sheet keeps its own name and page count, and always starts on a fresh page.
+    // Its position in the grouped document distinguishes sheet pagination from the total selection.
+    const sheetLabel = `Fiche ${index + 1} / ${sheets.length}`;
+    for (const page of pages) {
+      combined.addPage(page);
+      page.drawText(sheetLabel, {
+        x: (page.getWidth() - footerFont.widthOfTextAtSize(sheetLabel, 7)) / 2,
+        y: page.getHeight() - 290 * 72 / 25.4,
+        size: 7,
+        font: footerFont,
+        color: rgb(75 / 255, 93 / 255, 114 / 255),
+      });
+    }
+  }
+  return {
+    blob: new Blob([new Uint8Array(await combined.save()).buffer], { type: 'application/pdf' }),
+    fileName: `${baseFileName}.pdf`,
   };
 }

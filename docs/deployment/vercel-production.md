@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.71.12`, build `2026-10-10.005`, ajoute Exporter les fiches dans la liste
+RH : sélection de plusieurs collaborateurs et choix entre une archive contenant
+un PDF par personne et un PDF regroupé. Les champs sélectionnés et les droits de
+lecture existants s'appliquent à chaque fiche. L'export individuel est conservé.
+Aucune migration, dépendance ou configuration nouvelle. Voir
+[les fiches collaborateurs](./human-resources-collaborator-form.md).
+
 Version `3.71.11`, build `2026-10-10.004`, place Nouvelle opération sous le tableau
 de l'onglet Opérations et retire Nouvelle opération et Navires du ruban Projets.
 Le formulaire et les règles d'accès existants sont conservés. Cette livraison

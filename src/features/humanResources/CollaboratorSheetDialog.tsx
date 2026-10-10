@@ -1,12 +1,14 @@
 import { FileDown } from 'lucide-react';
-import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AppDialog } from '../../components/AppDialog';
 import {
   buildCollaboratorSheetPdf,
   buildCollaboratorSheetSections,
+  buildCollaboratorSheetsExport,
   type CollaboratorSheetSection,
   type CollaboratorSheetSelection,
+  type CollaboratorSheetsExportMode,
 } from './collaboratorSheet';
 import { formatPersonName, type HrDocumentRecord, type PersonRecord } from './peopleQueries';
 import './collaboratorSheet.css';
@@ -19,20 +21,47 @@ function initialSelection(sections: CollaboratorSheetSection[]): CollaboratorShe
   return Object.fromEntries(sections.map((section) => [section.key, sectionOptions(section).map((field) => field.key)]));
 }
 
-export function CollaboratorSheetDialog({ person, documents, visibleSectionKeys, onClose }: {
+export function CollaboratorSheetDialog({ person, people, documents, visibleSectionKeys, onClose }: {
   person: PersonRecord;
+  people?: PersonRecord[];
   documents: HrDocumentRecord[];
   visibleSectionKeys: ReadonlySet<string>;
   onClose: () => void;
 }) {
-  const sections = useMemo(() => buildCollaboratorSheetSections(person, documents, visibleSectionKeys), [person, documents, visibleSectionKeys]);
+  const isBulk = people !== undefined;
+  const [selectedPersonIds, setSelectedPersonIds] = useState<ReadonlySet<number>>(() => new Set());
+  const [previewPersonId, setPreviewPersonId] = useState<number | null>(null);
+  const [peopleSearch, setPeopleSearch] = useState('');
+  const [exportMode, setExportMode] = useState<CollaboratorSheetsExportMode>('separate');
+  const exportModeName = useId();
+  const selectedPeople = useMemo(() => people?.filter((candidate) => selectedPersonIds.has(candidate.id)) || [], [people, selectedPersonIds]);
+  const previewPerson = isBulk
+    ? selectedPeople.find((candidate) => candidate.id === previewPersonId) || selectedPeople[0]
+    : person;
+  const sections = useMemo(() => buildCollaboratorSheetSections(previewPerson || people?.[0] || person, documents, visibleSectionKeys), [previewPerson, people, person, documents, visibleSectionKeys]);
+  const searchedPeople = useMemo(() => {
+    const query = peopleSearch.trim().toLocaleLowerCase('fr-FR');
+    return (people || []).filter((candidate) => `${formatPersonName(candidate)} ${candidate.employeeNumber}`.toLocaleLowerCase('fr-FR').includes(query));
+  }, [people, peopleSearch]);
   const [selection, setSelection] = useState<CollaboratorSheetSelection>(() => initialSelection(sections));
   const [isGenerating, setIsGenerating] = useState(false);
   const generatingRef = useRef(false);
   const [feedback, setFeedback] = useState<{ text: string; error: boolean } | null>(null);
   const selectedCount = sections.reduce((total, section) => total + sectionOptions(section).filter((field) => selection[section.key]?.includes(field.key)).length, 0);
 
+  function togglePerson(personId: number) {
+    if (generatingRef.current) return;
+    setFeedback(null);
+    setSelectedPersonIds((current) => {
+      const next = new Set(current);
+      if (next.has(personId)) next.delete(personId);
+      else next.add(personId);
+      return next;
+    });
+  }
+
   function toggleField(sectionKey: string, fieldKey: string) {
+    if (generatingRef.current) return;
     setFeedback(null);
     setSelection((current) => {
       const keys = current[sectionKey] || [];
@@ -43,12 +72,14 @@ export function CollaboratorSheetDialog({ person, documents, visibleSectionKeys,
   async function generate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     event.stopPropagation();
-    if (!selectedCount || generatingRef.current) return;
+    if (!selectedCount || (isBulk && !selectedPeople.length) || generatingRef.current) return;
     generatingRef.current = true;
     setIsGenerating(true);
     setFeedback(null);
     try {
-      const { blob, fileName } = await buildCollaboratorSheetPdf(person, sections, selection);
+      const { blob, fileName } = isBulk
+        ? await buildCollaboratorSheetsExport(selectedPeople, documents, visibleSectionKeys, selection, exportMode)
+        : await buildCollaboratorSheetPdf(person, sections, selection);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -60,9 +91,9 @@ export function CollaboratorSheetDialog({ person, documents, visibleSectionKeys,
         link.remove();
         window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
       }
-      setFeedback({ text: 'La fiche collaborateur PDF a été générée.', error: false });
+      setFeedback({ text: isBulk ? 'Les fiches collaborateurs ont été exportées.' : 'La fiche collaborateur PDF a été générée.', error: false });
     } catch {
-      setFeedback({ text: 'Impossible de générer la fiche collaborateur. Réessayez.', error: true });
+      setFeedback({ text: isBulk ? 'Impossible d’exporter les fiches collaborateurs. Réessayez.' : 'Impossible de générer la fiche collaborateur. Réessayez.', error: true });
     } finally {
       generatingRef.current = false;
       setIsGenerating(false);
@@ -70,16 +101,16 @@ export function CollaboratorSheetDialog({ person, documents, visibleSectionKeys,
   }
 
   return createPortal(
-    <div className="hr-sheet-dialog">
+    <div className={`hr-sheet-dialog${isBulk ? ' hr-sheet-dialog--bulk' : ''}`}>
     <AppDialog
-      description="Sélectionnez les informations à inclure dans le PDF. La signature est exclue."
-      eyebrow={formatPersonName(person)}
+      description={isBulk ? 'Sélectionnez les collaborateurs et le format d’export. Les informations choisies s’appliquent à chaque fiche. La signature est exclue.' : 'Sélectionnez les informations à inclure dans le PDF. La signature est exclue.'}
+      eyebrow={isBulk ? 'Ressources humaines' : formatPersonName(person)}
       footer={(
         <div className="app-dialog__actions">
           <button className="sp-button sp-button--secondary" disabled={isGenerating} onClick={onClose} type="button">Fermer</button>
-          <button className="sp-button sp-button--primary" disabled={!selectedCount || isGenerating} type="submit">
+          <button className="sp-button sp-button--primary" disabled={!selectedCount || (isBulk && !selectedPeople.length) || isGenerating} type="submit">
             <FileDown aria-hidden="true" size={18} />
-            {isGenerating ? 'Génération…' : 'Générer le PDF'}
+            {isGenerating ? 'Génération…' : isBulk ? 'Exporter les fiches' : 'Générer le PDF'}
           </button>
         </div>
       )}
@@ -88,8 +119,39 @@ export function CollaboratorSheetDialog({ person, documents, visibleSectionKeys,
       onClose={onClose}
       onSubmit={generate}
       size="xl"
-      title="Fiche Collaborateur"
+      title={isBulk ? 'Fiches collaborateurs' : 'Fiche Collaborateur'}
     >
+      {isBulk ? (
+        <div className="hr-sheet-bulk">
+          <fieldset className="hr-sheet-section hr-sheet-people" disabled={isGenerating}>
+            <legend>Collaborateurs</legend>
+            <div className="hr-sheet-toolbar">
+              <p>{selectedPeople.length} collaborateur{selectedPeople.length > 1 ? 's' : ''} sélectionné{selectedPeople.length > 1 ? 's' : ''} sur {people.length}</p>
+              <div>
+                <button className="sp-button sp-button--secondary" disabled={isGenerating || !people.length} onClick={() => { if (generatingRef.current) return; setSelectedPersonIds(new Set(people.map((candidate) => candidate.id))); setFeedback(null); }} type="button">Sélectionner tous les collaborateurs</button>
+                <button className="sp-button sp-button--secondary" disabled={isGenerating || !selectedPeople.length} onClick={() => { if (generatingRef.current) return; setSelectedPersonIds(new Set()); setFeedback(null); }} type="button">Désélectionner les collaborateurs</button>
+              </div>
+            </div>
+            <label className="hr-sheet-search"><span>Rechercher un collaborateur</span><input onChange={(event) => setPeopleSearch(event.target.value)} placeholder="Nom ou matricule" type="search" value={peopleSearch} /></label>
+            <div className="hr-sheet-people-list">
+              {searchedPeople.map((candidate) => (
+                <label key={candidate.id}>
+                  <input aria-label={`Sélectionner ${formatPersonName(candidate)} (n° ${candidate.id})`} checked={selectedPersonIds.has(candidate.id)} onChange={() => togglePerson(candidate.id)} type="checkbox" />
+                  <span><strong>{formatPersonName(candidate)}</strong><small>{[candidate.employeeNumber, candidate.functionLabel].filter(Boolean).join(' · ') || 'Matricule non renseigné'}</small></span>
+                </label>
+              ))}
+            </div>
+            {!searchedPeople.length ? <p className="hr-sheet-empty">{people.length ? 'Aucun collaborateur ne correspond à la recherche.' : 'Aucun collaborateur disponible.'}</p> : null}
+            {!selectedPeople.length ? <p role="status">Sélectionnez au moins un collaborateur pour exporter les fiches.</p> : null}
+          </fieldset>
+          <fieldset className="hr-sheet-section hr-sheet-export-mode" disabled={isGenerating}>
+            <legend>Format d’export</legend>
+            <label><input aria-label="Fiches séparées (ZIP)" checked={exportMode === 'separate'} name={exportModeName} onChange={() => { if (generatingRef.current) return; setExportMode('separate'); setFeedback(null); }} type="radio" value="separate" /><span><strong>Fiches séparées (ZIP)</strong><small>Une archive contenant un PDF distinct par collaborateur.</small></span></label>
+            <label><input aria-label="Fiches regroupées (PDF)" checked={exportMode === 'combined'} name={exportModeName} onChange={() => { if (generatingRef.current) return; setExportMode('combined'); setFeedback(null); }} type="radio" value="combined" /><span><strong>Fiches regroupées (PDF)</strong><small>Un PDF réunissant les fiches, chacune sur ses propres pages.</small></span></label>
+          </fieldset>
+          {previewPerson ? <label className="hr-sheet-preview"><span>Aperçu du collaborateur</span><select disabled={isGenerating} onChange={(event) => setPreviewPersonId(Number(event.target.value))} value={previewPerson.id}>{selectedPeople.map((candidate) => <option key={candidate.id} value={candidate.id}>{formatPersonName(candidate)}</option>)}</select></label> : null}
+        </div>
+      ) : null}
       <div className="hr-sheet-toolbar">
         <p>{selectedCount} information{selectedCount > 1 ? 's' : ''} sélectionnée{selectedCount > 1 ? 's' : ''}</p>
         <div>
@@ -126,7 +188,7 @@ export function CollaboratorSheetDialog({ person, documents, visibleSectionKeys,
                 {section.fields.map((field) => (
                   <label key={field.key}>
                     <input aria-label={`${section.label} : ${field.label}`} checked={selection[section.key]?.includes(field.key) || false} onChange={() => toggleField(section.key, field.key)} type="checkbox" />
-                    <span><strong>{field.label}</strong><small>{field.value || 'Non renseigné'}</small></span>
+                    <span><strong>{field.label}</strong>{previewPerson ? <small>{field.value || 'Non renseigné'}</small> : null}</span>
                   </label>
                 ))}
               </div>
@@ -141,7 +203,7 @@ export function CollaboratorSheetDialog({ person, documents, visibleSectionKeys,
                       </label>
                     ))}
                   </div>
-                  {section.table.rows.length && columns.length ? (
+                  {previewPerson && section.table.rows.length && columns.length ? (
                     <div className="hr-sheet-table-scroll" role="region" aria-label={`Aperçu ${section.label}`} tabIndex={0}>
                       <table>
                         <caption>{section.key === 'health' ? 'Liste des visites médicales' : `Liste ${section.label}`}</caption>
@@ -149,7 +211,7 @@ export function CollaboratorSheetDialog({ person, documents, visibleSectionKeys,
                         <tbody>{section.table.rows.map((row, index) => <tr key={index}>{columns.map((column) => <td key={column.key}>{row[column.key] || 'Non renseigné'}</td>)}</tr>)}</tbody>
                       </table>
                     </div>
-                  ) : <p className="hr-sheet-empty">{section.table.rows.length ? 'Sélectionnez les informations de la liste à inclure.' : section.table.emptyLabel}</p>}
+                  ) : <p className="hr-sheet-empty">{!previewPerson ? 'Sélectionnez un collaborateur pour afficher un aperçu.' : section.table.rows.length ? 'Sélectionnez les informations de la liste à inclure.' : section.table.emptyLabel}</p>}
                 </div>
               ) : null}
             </fieldset>

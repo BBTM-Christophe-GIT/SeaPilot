@@ -1,9 +1,11 @@
 // @vitest-environment node
-import { decodePDFRawStream, PDFDocument, PDFRawStream } from 'pdf-lib';
+import JSZip from 'jszip';
+import { decodePDFRawStream, PDFArray, PDFDocument, PDFRawStream } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 import {
   buildCollaboratorSheetPdf,
   buildCollaboratorSheetSections,
+  buildCollaboratorSheetsExport,
   selectCollaboratorSheetSections,
   type CollaboratorSheetSection,
   type CollaboratorSheetSelection,
@@ -53,6 +55,19 @@ async function inspectPdf(blob: Blob): Promise<{ pdf: PDFDocument; content: stri
     return [new TextDecoder('windows-1252').decode(decodePDFRawStream(object).decode())];
   }).join('\n');
   return { pdf, content };
+}
+
+function pageContent(pdf: PDFDocument, pageIndex: number): string {
+  const contents = pdf.getPage(pageIndex).node.Contents();
+  const streams = contents instanceof PDFArray ? contents.asArray() : contents ? [contents] : [];
+  return streams.map((entry) => {
+    const stream = pdf.context.lookup(entry);
+    if (!(stream instanceof PDFRawStream)) return '';
+    const content = new TextDecoder('windows-1252').decode(decodePDFRawStream(stream).decode());
+    return content.replace(/<([0-9a-f]+)>/gi, (_, hex: string) => new TextDecoder('windows-1252').decode(
+      Uint8Array.from(hex.match(/../g) || [], (byte) => parseInt(byte, 16)),
+    ));
+  }).join('\n');
 }
 
 describe('collaborator sheet data and visibility', () => {
@@ -184,5 +199,89 @@ describe('collaborator sheet PDF', () => {
     expect(generated.fileName).toBe('Fiche-Collaborateur-Luc-MARTIN-Test-2026-10-10.pdf');
     const { content } = await inspectPdf(generated.blob);
     expect(content).toContain('Aucun document');
+  });
+});
+
+describe('multiple collaborator sheets export', () => {
+  it('packages one PDF per unique ID, preserving homonyms and restricting each sheet to its own authorized data', async () => {
+    const homonym = { ...person, id: 8, employeeNumber: '00052' };
+    const people = [person, homonym, { ...person, firstName: 'DUPLICATEMUSTNOTREPLACE' }];
+    const documents = [
+      certificate, medicalDocument,
+      { ...certificate, id: 30, personId: homonym.id, title: 'SECONDREPORT' },
+      { ...certificate, id: 31, personId: null, title: 'UNASSIGNEDREPORT' },
+      { ...certificate, id: 32, personId: 9, title: 'UNSELECTEDREPORT' },
+    ];
+    const generated = await buildCollaboratorSheetsExport(people, documents, new Set(['identity', 'documents']), {
+      identity: ['employeeNumber', 'signature'], documents: ['title', 'notes', 'restriction'], health: ['restriction', 'notes'],
+    }, 'separate', new Date('2026-10-10T22:30:00Z'));
+    expect(generated.fileName).toBe('Fiches-Collaborateurs-2-2026-10-11.zip');
+    expect(generated.blob.type).toBe('application/zip');
+    const archive = await JSZip.loadAsync(await generated.blob.arrayBuffer());
+    const names = Object.keys(archive.files);
+    expect(names).toEqual([
+      'Fiche-Collaborateur-Luc-MARTIN-ID7-2026-10-11.pdf',
+      'Fiche-Collaborateur-Luc-MARTIN-ID8-2026-10-11.pdf',
+    ]);
+    const first = await inspectPdf(new Blob([await archive.file(names[0])!.async('arraybuffer')]));
+    const second = await inspectPdf(new Blob([await archive.file(names[1])!.async('arraybuffer')]));
+    expect(first.pdf.getPageCount()).toBe(1);
+    expect(first.content).toContain('00051');
+    expect(first.content).toContain('CERTIFICATEREPORT');
+    expect(first.content).toContain('VISITREPORT');
+    expect(first.content).not.toMatch(/SECONDREPORT|00052|PRIVATE|DUPLICATEMUSTNOTREPLACE|UNASSIGNEDREPORT|UNSELECTEDREPORT|signature/i);
+    expect(second.content).toContain('00052');
+    expect(second.content).toContain('SECONDREPORT');
+    expect(second.content).not.toMatch(/CERTIFICATEREPORT|VISITREPORT|00051|PRIVATE|UNASSIGNEDREPORT|UNSELECTEDREPORT/i);
+    expect(people[0]).toBe(person);
+    expect(documents[0]).toBe(certificate);
+  });
+
+  it('starts each grouped sheet on a new page and preserves its identity and complete pagination across long lists', async () => {
+    const secondPerson = { ...person, id: 8, firstName: 'Anne', lastName: 'DURAND' };
+    const longDocuments = Array.from({ length: 35 }, (_, index) => ({
+      ...certificate, id: index + 100, title: `FIRSTREPORT${index + 1}`,
+      notes: `FIRSTNOTE${index + 1} ` + 'Compte rendu des formations et renouvellements. '.repeat(10),
+    }));
+    const sections = buildCollaboratorSheetSections(person, longDocuments, new Set(['documents']));
+    const selection = { documents: ['title', 'notes'], contact: ['phone'], health: ['notes'] };
+    const firstSheet = await buildCollaboratorSheetPdf(person, sections, selection);
+    const firstPageCount = (await inspectPdf(firstSheet.blob)).pdf.getPageCount();
+    const generated = await buildCollaboratorSheetsExport([person, secondPerson], [
+      ...longDocuments,
+      { ...certificate, id: 200, personId: secondPerson.id, title: 'SECONDREPORT', notes: 'SECONDNOTE' },
+      { ...certificate, id: 201, personId: 9, title: 'UNSELECTEDREPORT' },
+    ], new Set(['documents']), selection, 'combined', new Date('2026-10-10T12:00:00Z'));
+    const { pdf, content } = await inspectPdf(generated.blob);
+    expect(generated.fileName).toBe('Fiches-Collaborateurs-2-2026-10-10.pdf');
+    expect(generated.blob.type).toBe('application/pdf');
+    expect(firstPageCount).toBeGreaterThan(2);
+    expect(pdf.getPageCount()).toBe(firstPageCount + 1);
+    for (let page = 0; page < firstPageCount; page += 1) {
+      const text = pageContent(pdf, page);
+      expect(text).toContain('Luc MARTIN');
+      expect(text).toContain(`Page ${page + 1} / ${firstPageCount}`);
+      expect(text).toContain('Fiche 1 / 2');
+      expect(text).not.toMatch(/Anne DURAND|SECONDREPORT|SECONDNOTE/);
+    }
+    expect(pageContent(pdf, firstPageCount - 1)).toContain('FIRSTNOTE35');
+    const secondPage = pageContent(pdf, firstPageCount);
+    expect(secondPage).toContain('Anne DURAND');
+    expect(secondPage).toContain('SECONDREPORT');
+    expect(secondPage).toContain('SECONDNOTE');
+    expect(secondPage).toContain('Page 1 / 1');
+    expect(secondPage).toContain('Fiche 2 / 2');
+    expect(secondPage).not.toMatch(/Luc MARTIN|FIRSTREPORT|FIRSTNOTE/);
+    expect(content).not.toMatch(/PRIVATE|0123456789|UNSELECTEDREPORT/);
+  });
+
+  it.each(['separate', 'combined'] as const)('rejects empty people and selections outside available sections for %s exports', async (mode) => {
+    await expect(buildCollaboratorSheetsExport([], [], allSections, { identity: ['employeeNumber'] }, mode))
+      .rejects.toThrow('Sélectionnez au moins un collaborateur');
+    await expect(buildCollaboratorSheetsExport([person], [], allSections, {}, mode))
+      .rejects.toThrow('Sélectionnez au moins une information');
+    await expect(buildCollaboratorSheetsExport([person], [medicalDocument], new Set(['identity']), {
+      identity: ['unknown'], health: ['restriction'], signature: ['image'],
+    }, mode)).rejects.toThrow('Sélectionnez au moins une information');
   });
 });

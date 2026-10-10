@@ -6,11 +6,15 @@ import { HumanResourcesPage, HumanResourcesRoute } from './HumanResourcesPage';
 import { connectHrDrive, readHrDriveFile, writeHrDriveFile } from './hrDocumentDrive';
 vi.mock('./hrDocumentDrive', () => ({ connectHrDrive: vi.fn(), writeHrDriveFile: vi.fn(async (_client, id, name) => ({ drive_path: `person-${id}/${name}`, drive_sha256: 'a'.repeat(64) })), readHrDriveFile: vi.fn() }));
 import { openTrainingPlanReport } from './trainingPlanReport';
-import { buildCollaboratorSheetPdf } from './collaboratorSheet';
+import { buildCollaboratorSheetPdf, buildCollaboratorSheetsExport } from './collaboratorSheet';
 
 vi.mock('./collaboratorSheet', async () => {
   const actual = await vi.importActual<typeof import('./collaboratorSheet')>('./collaboratorSheet');
-  return { ...actual, buildCollaboratorSheetPdf: vi.fn().mockResolvedValue({ blob: new Blob(['pdf']), fileName: 'Fiche-Collaborateur.pdf' }) };
+  return {
+    ...actual,
+    buildCollaboratorSheetPdf: vi.fn().mockResolvedValue({ blob: new Blob(['pdf']), fileName: 'Fiche-Collaborateur.pdf' }),
+    buildCollaboratorSheetsExport: vi.fn().mockResolvedValue({ blob: new Blob(['zip']), fileName: 'Fiches-Collaborateurs.zip' }),
+  };
 });
 
 vi.mock('./trainingPlanReport', async () => {
@@ -205,7 +209,18 @@ function createDocumentsSelect(data: HrDocumentFixture[] = documents) {
   };
 }
 
-function createClient(people: Array<Record<string, unknown>> = [activePerson, formerPerson], hrDocuments: HrDocumentFixture[] = documents) {
+interface HrVisibilityRuleFixture {
+  scope: 'function' | 'document_type' | 'section';
+  item_key: string;
+  item_label: string;
+  visible_to_roles: string[];
+}
+
+function createClient(
+  people: Array<Record<string, unknown>> = [activePerson, formerPerson],
+  hrDocuments: HrDocumentFixture[] = documents,
+  visibilityRules: HrVisibilityRuleFixture[] = [],
+) {
   return {
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'people') {
@@ -216,9 +231,35 @@ function createClient(people: Array<Record<string, unknown>> = [activePerson, fo
         return createDocumentsSelect(hrDocuments);
       }
 
+      if (table === 'hr_visibility_rules') {
+        return createOrderedSelect(visibilityRules);
+      }
+
       throw new Error(`Unexpected table ${table}`);
     }),
   };
+}
+
+async function withoutBrowserDownload(test: () => Promise<void>) {
+  const originalCreateObjectURL = Object.getOwnPropertyDescriptor(URL, 'createObjectURL');
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  const originalSetTimeout = window.setTimeout.bind(window) as typeof window.setTimeout;
+  const revokeTimers: ReturnType<typeof window.setTimeout>[] = [];
+  const timer = vi.spyOn(window, 'setTimeout').mockImplementation((handler, timeout, ...args) => {
+    const handle = originalSetTimeout(handler, timeout, ...args) as unknown as ReturnType<typeof window.setTimeout>;
+    if (timeout === 30_000) revokeTimers.push(handle);
+    return handle;
+  });
+  Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: () => 'blob:collaborator-sheets' });
+  try {
+    await test();
+  } finally {
+    click.mockRestore();
+    revokeTimers.forEach((handle) => window.clearTimeout(handle));
+    timer.mockRestore();
+    if (originalCreateObjectURL) Object.defineProperty(URL, 'createObjectURL', originalCreateObjectURL);
+    else Reflect.deleteProperty(URL, 'createObjectURL');
+  }
 }
 
 describe('HumanResourcesPage', () => {
@@ -356,6 +397,133 @@ describe('HumanResourcesPage', () => {
       timer.mockRestore();
       Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: originalCreateObjectURL });
     }
+  });
+
+  it.each(['admin', 'direction', 'armement'] as const)('offers batch sheets for the real %s roster without including former collaborators by default', async (role) => {
+    const user = userEvent.setup();
+    render(<HumanResourcesPage client={createClient([activePerson, yardManagerPerson, formerPerson], documents) as never} roles={[role]} />);
+    await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' });
+    await user.click(screen.getByRole('button', { name: 'Exporter les fiches' }));
+    const dialog = screen.getByRole('dialog', { name: 'Fiches collaborateurs' });
+    expect(within(dialog).getByRole('checkbox', { name: 'Sélectionner Jean MARTIN (n° 1)' })).not.toBeChecked();
+    expect(within(dialog).getByRole('checkbox', { name: 'Sélectionner Lea BUREAU (n° 3)' })).not.toBeChecked();
+    expect(within(dialog).queryByRole('checkbox', { name: /Sélectionner Paul DURAND/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: /^Fiches séparées \(ZIP\)/ })).toBeChecked();
+    expect(within(dialog).getByRole('button', { name: 'Exporter les fiches' })).toBeDisabled();
+  });
+
+  it.each(['search', 'former', 'function'] as const)('limits batch sheet choices to the %s-filtered roster', async (filter) => {
+    const user = userEvent.setup();
+    render(<HumanResourcesPage client={createClient([activePerson, yardManagerPerson, formerPerson], documents) as never} roles={['admin']} />);
+    await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' });
+    if (filter === 'search') {
+      await user.type(screen.getByRole('textbox', { name: 'Recherche RH' }), 'BUREAU');
+    } else {
+      await user.click(screen.getByRole('button', { name: 'Afficher les filtres' }));
+      if (filter === 'former') await user.selectOptions(screen.getByRole('combobox', { name: 'Population' }), 'former');
+      else await user.selectOptions(screen.getByRole('combobox', { name: 'Fonction' }), 'yard-manager-le-havre');
+    }
+    await user.click(screen.getByRole('button', { name: 'Exporter les fiches' }));
+    const dialog = screen.getByRole('dialog', { name: 'Fiches collaborateurs' });
+    const personChoices = within(dialog).getAllByRole('checkbox', { name: /^Sélectionner .+ \(n° / });
+    expect(personChoices).toHaveLength(1);
+    expect(personChoices[0]).toHaveAccessibleName(filter === 'former' ? 'Sélectionner Paul DURAND (n° 2)' : 'Sélectionner Lea BUREAU (n° 3)');
+    expect(within(dialog).queryByRole('checkbox', { name: /Sélectionner Jean MARTIN/ })).not.toBeInTheDocument();
+  });
+
+  it('disables the batch action when no collaborator matches the roster search', async () => {
+    const user = userEvent.setup();
+    render(<HumanResourcesPage client={createClient([activePerson], []) as never} roles={['admin']} />);
+    await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' });
+    await user.type(screen.getByRole('textbox', { name: 'Recherche RH' }), 'NobodyMatches');
+    expect(screen.getByRole('button', { name: 'Exporter les fiches' })).toBeDisabled();
+    expect(screen.queryByRole('dialog', { name: 'Fiches collaborateurs' })).not.toBeInTheDocument();
+  });
+
+  it('exports only selected sheets in the chosen combined mode without new RH queries or writes', async () => {
+    await withoutBrowserDownload(async () => {
+      const user = userEvent.setup();
+      const rpc = vi.fn();
+      const client = { ...createClient([activePerson, yardManagerPerson, formerPerson], documents), rpc };
+      vi.mocked(buildCollaboratorSheetsExport).mockClear();
+      vi.mocked(buildCollaboratorSheetPdf).mockClear();
+      render(<HumanResourcesPage client={client as never} roles={['admin']} />);
+      await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' });
+      const queryCount = client.from.mock.calls.length;
+      await user.click(screen.getByRole('button', { name: 'Exporter les fiches' }));
+      const dialog = screen.getByRole('dialog', { name: 'Fiches collaborateurs' });
+      await user.click(within(dialog).getByRole('button', { name: 'Sélectionner tous les collaborateurs' }));
+      await user.click(within(dialog).getByRole('checkbox', { name: 'Sélectionner Jean MARTIN (n° 1)' }));
+      await user.click(within(dialog).getByRole('radio', { name: /^Fiches regroupées \(PDF\)/ }));
+      await user.click(within(dialog).getByRole('button', { name: 'Exporter les fiches' }));
+      expect(await within(dialog).findByText('Les fiches collaborateurs ont été exportées.')).toBeInTheDocument();
+      expect(buildCollaboratorSheetsExport).toHaveBeenCalledOnce();
+      const [exportPeople, exportDocuments, visibleSectionKeys, selection, mode] = vi.mocked(buildCollaboratorSheetsExport).mock.calls[0];
+      expect(exportPeople.map((person) => person.id)).toEqual([3]);
+      expect(exportDocuments.map((document) => document.id)).toEqual([10, 11]);
+      expect(visibleSectionKeys.has('identity')).toBe(true);
+      expect(selection.identity).toContain('employeeNumber');
+      expect(mode).toBe('combined');
+      expect(buildCollaboratorSheetPdf).not.toHaveBeenCalled();
+      expect(client.from).toHaveBeenCalledTimes(queryCount);
+      expect(rpc).not.toHaveBeenCalled();
+    });
+  });
+
+  it('keeps the real Captain batch within its loaded watch and configured function, document and section visibility', async () => {
+    await withoutBrowserDownload(async () => {
+      const user = userEvent.setup();
+      const watchMate = { ...activePerson, id: 7, user_id: 'watch-mate', first_name: 'Paul', last_name: 'DURAND', function_label: 'Matelot Qualifié' };
+      const hiddenFunctionMate = { ...activePerson, id: 8, user_id: 'other-watch-mate', first_name: 'Luc', last_name: 'LEGRAND', function_label: 'Matelot Polyvalent' };
+      // A real Capitaine receives only its own/watch records from RLS, never office-wide personnel.
+      const watchDocuments = [...documents, { ...documents[0], id: 20, person_id: 7, person_name: 'Paul DURAND', title: 'Visite Paul' }];
+      const visibilityRules: HrVisibilityRuleFixture[] = [
+        { scope: 'function', item_key: 'matelot-polyvalent', item_label: 'Matelot polyvalent', visible_to_roles: ['admin', 'direction', 'armement'] },
+        { scope: 'document_type', item_key: 'deck', item_label: 'Pont', visible_to_roles: ['admin', 'direction', 'armement'] },
+        { scope: 'section', item_key: 'contact', item_label: 'Coordonnées', visible_to_roles: ['admin', 'direction', 'armement'] },
+      ];
+      const rpc = vi.fn();
+      const client = { ...createClient([activePerson, watchMate, hiddenFunctionMate], watchDocuments, visibilityRules), rpc };
+      vi.mocked(buildCollaboratorSheetsExport).mockClear();
+      render(<HumanResourcesPage client={client as never} currentPersonId={1} roles={['capitaine']} />);
+      await screen.findByText(/Ma bordée/);
+      expect(screen.queryByRole('button', { name: 'Afficher la fiche de Luc LEGRAND' })).not.toBeInTheDocument();
+      const queryCount = client.from.mock.calls.length;
+      await user.click(screen.getByRole('button', { name: 'Exporter les fiches' }));
+      const dialog = screen.getByRole('dialog', { name: 'Fiches collaborateurs' });
+      expect(within(dialog).getAllByRole('checkbox', { name: /^Sélectionner .+ \(n° / })).toHaveLength(2);
+      expect(within(dialog).queryByRole('checkbox', { name: /Luc LEGRAND/ })).not.toBeInTheDocument();
+      expect(within(dialog).queryByText('Coordonnées')).not.toBeInTheDocument();
+      expect(within(dialog).queryByRole('checkbox', { name: /Coordonnées :/ })).not.toBeInTheDocument();
+      expect(within(dialog).queryByText('Capitaine 200', { selector: 'td' })).not.toBeInTheDocument();
+      await user.click(within(dialog).getByRole('button', { name: 'Sélectionner tous les collaborateurs' }));
+      await user.click(within(dialog).getByRole('button', { name: 'Exporter les fiches' }));
+      expect(await within(dialog).findByText('Les fiches collaborateurs ont été exportées.')).toBeInTheDocument();
+      const [exportPeople, exportDocuments, visibleSectionKeys, selection, mode] = vi.mocked(buildCollaboratorSheetsExport).mock.calls[0];
+      expect(exportPeople.map((person) => person.id).sort()).toEqual([1, 7]);
+      expect(exportDocuments.map((document) => document.id)).toEqual([10, 20]);
+      expect(visibleSectionKeys.has('contact')).toBe(false);
+      expect(selection.contact).toBeUndefined();
+      expect(mode).toBe('separate');
+      expect(client.from).toHaveBeenCalledTimes(queryCount);
+      expect(rpc).not.toHaveBeenCalled();
+    });
+  });
+
+  it('keeps a real Marin on its individual sheet without exposing the batch roster', async () => {
+    const user = userEvent.setup();
+    // The self-service queries and RLS return only this real Marin's own record/documents.
+    render(<HumanResourcesPage client={createClient([activePerson], documents) as never} currentPersonId={1} roles={['marin']} />);
+    await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    expect(screen.queryByRole('button', { name: 'Exporter les fiches' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Autres actions' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Fiche Collaborateur' }));
+    const dialog = screen.getByRole('dialog', { name: 'Fiche Collaborateur' });
+    expect(within(dialog).getByRole('button', { name: 'Générer le PDF' })).toBeEnabled();
+    expect(within(dialog).queryByRole('checkbox', { name: /^Sélectionner .+ \(n° / })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Fiches collaborateurs' })).not.toBeInTheDocument();
   });
 
   it('renders the RH dashboard with active collaborators, document metrics and category summaries', async () => {
