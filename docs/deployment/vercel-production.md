@@ -1,5 +1,36 @@
 # SeaPilot Vercel Production Notes
 
+## Portefeuille Projets — contrôle avant publication du 10 octobre 2026
+
+La clôture réversible et les actions des cartes Projets conservent le parcours
+**Nouveau projet** actuellement publié. `ProjectEditors.tsx`, ses étapes,
+champs, valeurs par défaut, validations, contrats, première opération et pièces
+jointes sont inchangés. `saveProject`, la RPC `projects_save`, l'attribution
+atomique du numéro P et la création rapide Planning restent identiques. Le
+statut **Clôturé** est un état d'archivage ; il n'entre pas dans les cinq statuts
+autorisés à la création. Après création, le nouveau dossier est sélectionné et
+ouvert comme auparavant.
+
+Le contrôle compare ces fichiers avec le commit de production `247a5696`,
+repris dans la branche de livraison pour conserver les évolutions LSA et levage
+déjà publiées. Le formulaire rendu depuis ce déploiement et celui de la
+préversion ont les mêmes champs, étapes, valeurs initiales et commandes. Ce
+contrôle visuel utilise les données de démonstration ; les droits réels et les
+écritures sont vérifiés séparément par les fixtures authentifiées.
+
+`supabase/tests/project_creation_preservation_test.sql` vérifie 50 assertions
+sur sept vrais profils authentifiés et deux sociétés : création minimale et
+complète, numéro P, contrat unique, tarifs, première opération, création rapide
+Planning, validation et refus des écritures non autorisées. Un échec du contrat
+ne laisse ni projet partiel ni numéro consommé. Le test s'exécute dans une
+transaction intégralement annulée ; aucun projet de test n'est créé en production.
+
+La migration `20261010071337_project_closure_reactivation.sql` est appliquée
+avant le client. Elle ne change aucune RPC de création ni la numérotation.
+La fixture DPR de `App.test.tsx` fournit désormais le catalogue des projets
+actifs attendu par le lecteur DPR. Les résultats de CI et l'identité exacte du
+déploiement de production sont consignés dans la pull request de livraison.
+
 Version `3.71.7` ajoute **Mettre à jour**, **Modifier** et **Supprimer** sur chaque fiche LSA pour les cinq profils, dans leur périmètre autorisé. La mise à jour porte uniquement sur l’échéance, proposée à aujourd’hui + un an et modifiable. La suppression logique conserve les documents et l’historique. Le nouveau contrôle annuel des apparaux applique sa date d’émission à la date de mise en service de tous les apparaux actifs du navire avant création des snapshots. Appliquer `20261009073454_lifting_annual_commissioned_date.sql` et `20261009073455_lsa_item_update_and_delete_actions.sql` avant le client. Voir [les actions LSA](./lsa-profile-actions.md) et [le registre de levage](../lifting-register.md).
 
 Version `3.71.6` applique le bleu **`#156082`** aux rectangles et titres colorés du PDF Éléments de facturation. Les fonds clairs, les informations, les sous-totaux et la page A4 paysage sont conservés. Aucune migration, dépendance ou configuration nouvelle. Voir [billing-pdf-synthetic.md](./billing-pdf-synthetic.md).
