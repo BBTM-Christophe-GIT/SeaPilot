@@ -2,7 +2,6 @@ import { ProjectPortfolioInsights } from './ProjectPortfolioInsights';
 import { localCalendarDate } from './projectPortfolioMetrics';
 import { useProjectFavorites } from './useProjectFavorites';
 import { ProjectHistory } from './ProjectHistory';
-import { FleetPage } from '../fleet/FleetPage';
 import './ProjectWorkspace.css';
 import './ProjectDesign.css';
 import './ProjectsProductionWorkspace.css';
@@ -707,6 +706,7 @@ function ProjectDetail({
   deletingOccurrenceId,
   onDeleteOccurrence,
   onEditOccurrence,
+  onNewOperation,
   onGenerateDocument,
   onChangeStatus,
   statusMenuOpen,
@@ -730,6 +730,7 @@ function ProjectDetail({
   deletingOccurrenceId: number | null;
   onDeleteOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   onEditOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
+  onNewOperation: () => void;
   onGenerateDocument: (kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null, contractType?: string) => void;
   onChangeStatus: (event: React.MouseEvent<HTMLButtonElement>) => void;
   statusMenuOpen: boolean;
@@ -1036,6 +1037,11 @@ function ProjectDetail({
         ) : (
           <p className="project-section-empty">Aucune opération Planning n’est encore associée à ce contrat.</p>
         )}
+        <div className="sp-toolbar project-operations-footer">
+          <button className="sp-button sp-button--primary" disabled={!isManager || Boolean(project.archivedAt)} onClick={onNewOperation} type="button">
+            <CalendarPlus aria-hidden="true" size={18} /> Nouvelle opération
+          </button>
+        </div>
       </section>
       ) : null}
 
@@ -1203,7 +1209,6 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [dossierOpen, setDossierOpen] = useState(false);
   const [projectScope, setProjectScope] = useState<'current' | 'all' | 'favorites'>('current');
   const favorites = useProjectFavorites(effectiveClient);
-  const [fleetCatalogOpen, setFleetCatalogOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -1654,12 +1659,10 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       <ModuleRibbon ariaLabel="Commandes du module Projets" className="project-production-ribbon" singleRow>
         <ModuleRibbonGroup label="Projet">
           <ProjectRibbonButton disabled={!isManager || changingProjectState} icon={<Plus size={22} />} label="Nouveau projet" onClick={() => openProjectEditor()} />
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus size={22} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
           <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || changingProjectState} icon={<Archive size={22} />} label="Archiver le projet" onClick={() => { if (selectedProject) { setMutationError(''); setClosingProject(selectedProject); } }} />
         </ModuleRibbonGroup>
         <ModuleRibbonGroup label="Catalogue">
           <ProjectRibbonButton disabled={!isManager} icon={<Users size={22} />} label="Clients" onClick={() => setClientCatalogOpen(true)} />
-          <ProjectRibbonButton disabled={!isManager} icon={<Ship size={22} />} label="Navires" onClick={() => setFleetCatalogOpen(true)} />
           <ProjectRibbonButton disabled={!isManager} icon={<Ship size={22} />} label="Remorqués" onClick={() => setTowedAssetCatalogOpen(true)} />
           <ProjectRibbonButton disabled={!isManager} icon={<PackageCheck size={22} />} label="Prestations" aria-label="Catalogue de prestations" onClick={() => setServiceCatalogOpen(true)} />
         </ModuleRibbonGroup>
@@ -1870,6 +1873,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               isManager={isManager}
               onDeleteOccurrence={(occurrence) => void deletePlanningOccurrence(occurrence)}
               onEditOccurrence={openPlanningEditor}
+              onNewOperation={() => openPlanningEditor()}
               onGenerateDocument={openProjectDocumentEmission}
               onChangeStatus={(event) => openProjectStatus(selectedProject, event, true)}
               statusMenuOpen={statusMenu?.project.id === selectedProject.id && statusMenu.inDossier}
@@ -1940,7 +1944,6 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           vessels={projectsData.vessels}
         />
       ) : null}
-      {fleetCatalogOpen ? <AppDialog title="Gestion des navires" size="xl" onClose={() => setFleetCatalogOpen(false)}><FleetPage client={effectiveClient} roles={effectiveRoles} /></AppDialog> : null}
       {clientCatalogOpen ? (
         <ClientCatalogDialog
           canManage={isManager}

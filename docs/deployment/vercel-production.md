@@ -1,5 +1,13 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.71.11`, build `2026-10-10.004`, place Nouvelle opération sous le tableau
+de l'onglet Opérations et retire Nouvelle opération et Navires du ruban Projets.
+Le formulaire et les règles d'accès existants sont conservés. Cette livraison
+intègre également la fiche collaborateur PDF de la PR 379, avec sélection des
+sections et colonnes autorisées au profil connecté. Aucune migration, dépendance
+ou configuration nouvelle. Voir [les actions des opérations](../design/projects-workspace-preview.md)
+et [la fiche collaborateur PDF](./human-resources-collaborator-form.md).
+
 Version `3.71.10`, build `2026-10-10.003`, ouvre directement le menu de statut
 depuis les pastilles du portefeuille et du dossier Projets. La confirmation de
 clôture et les contrôles serveur existants sont conservés. Le bandeau ajoute
