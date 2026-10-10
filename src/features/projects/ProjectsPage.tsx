@@ -6,12 +6,14 @@ import { FleetPage } from '../fleet/FleetPage';
 import './ProjectWorkspace.css';
 import './ProjectDesign.css';
 import './ProjectsProductionWorkspace.css';
+import './ProjectStatusMenu.css';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetNames } from '../fleet/fleetDisplay';
 import {
   CalendarDays,
   CalendarPlus,
   Archive,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -34,9 +36,10 @@ import {
   Trash2,
   Users,
 } from 'lucide-react';
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { AppDialog } from '../../components/AppDialog';
+import { AppContextMenu, AppContextMenuItem, type AppContextMenuPosition } from '../../components/AppContextMenu';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
@@ -134,9 +137,11 @@ function displayText(value: string | number | null | undefined): string {
   return value === '' || value === null || value === undefined ? 'Non renseigné' : String(value);
 }
 
-function ProjectStatusPill({ project, canManage, busy, onChange, inDossier = false }: { project: ProjectRecord; canManage: boolean; busy: boolean; onChange: () => void; inDossier?: boolean }) {
+function ProjectStatusPill({ project, canManage, busy, onChange, menuOpen = false, inDossier = false }: { project: ProjectRecord; canManage: boolean; busy: boolean; onChange: (event: React.MouseEvent<HTMLButtonElement>) => void; menuOpen?: boolean; inDossier?: boolean }) {
   const label = project.archivedAt ? 'Clôturé' : displayText(project.status);
-  return canManage ? <button className="project-status-chip project-status-button" disabled={busy} aria-label={`${inDossier ? 'Modifier le statut du dossier' : 'Modifier le statut de'} ${project.projectCode || project.title}`} onClick={onChange} type="button">{label}<ChevronDown aria-hidden="true" size={13} /></button>
+  return canManage ? <button className="project-status-chip project-status-button" disabled={busy} aria-label={`${inDossier ? 'Modifier le statut du dossier' : 'Modifier le statut de'} ${project.projectCode || project.title}`} aria-haspopup="menu" aria-expanded={menuOpen} onClick={onChange} onMouseDown={(event) => { if (menuOpen) event.stopPropagation(); }} onKeyDown={(event) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); event.currentTarget.click(); }
+  }} type="button">{label}<ChevronDown aria-hidden="true" size={13} /></button>
     : <span className="project-status-chip">{label}</span>;
 }
 
@@ -265,7 +270,6 @@ function ProjectRibbonLink({ icon, label, to }: { icon: React.ReactNode; label: 
 
 type ProjectContractVariant = 'towage' | 'bareboat' | 'time-charter' | 'bimco';
 type ProjectDetailTab =
-  | 'identification'
   | 'operations'
   | 'billing'
   | 'offer-contract'
@@ -302,7 +306,6 @@ const PROJECT_CONTRACT_VARIANTS: ReadonlyArray<{
 ];
 
 const PROJECT_BASE_TABS: ProjectDetailTabDefinition[] = [
-  { icon: Users, id: 'identification', label: 'Identité' },
   { icon: CalendarDays, id: 'operations', label: 'Opérations' },
   { icon: ReceiptText, id: 'billing', label: 'Facturation' },
   { icon: FileText, id: 'offer-contract', label: 'Offre & contrat' },
@@ -706,6 +709,7 @@ function ProjectDetail({
   onEditOccurrence,
   onGenerateDocument,
   onChangeStatus,
+  statusMenuOpen,
   changingProjectState,
   onOpenPlanning,
   operationDocuments,
@@ -727,7 +731,8 @@ function ProjectDetail({
   onDeleteOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   onEditOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   onGenerateDocument: (kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null, contractType?: string) => void;
-  onChangeStatus: () => void;
+  onChangeStatus: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  statusMenuOpen: boolean;
   changingProjectState: boolean;
   onOpenPlanning: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   operationDocuments: ProjectOperationDocumentRecord[];
@@ -735,7 +740,7 @@ function ProjectDetail({
   towedAsset?: ProjectTowedAssetRecord;
   vessels: ProjectsData['vessels'];
 }) {
-  const [activeTab, setActiveTab] = useState<ProjectDetailTab>('identification');
+  const [activeTab, setActiveTab] = useState<ProjectDetailTab>('operations');
   const savedContractVariant = projectContractVariant(project.contractType);
   const [selectedContractVariant, setSelectedContractVariant] = useState<ProjectContractVariant | null>(savedContractVariant);
   const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<number | null>(planningOccurrences[0]?.id ?? null);
@@ -751,7 +756,7 @@ function ProjectDetail({
   }, [planningOccurrences, project.id]);
   useEffect(() => {
     setSelectedContractVariant(savedContractVariant);
-    setActiveTab('identification');
+    setActiveTab('operations');
   }, [project.id, savedContractVariant]);
   useEffect(() => {
     if (!detailTabs.some((tab) => tab.id === activeTab)) {
@@ -786,7 +791,7 @@ function ProjectDetail({
   return (
     <article className="project-detail project-contract-sheet project-dossier" aria-label={`Détails du contrat ${project.projectCode || project.title}`}>
       <div className="project-sheet-main">
-      <header className="project-sheet-header">
+      <header aria-label="Informations du projet" className="project-sheet-header">
         <div className="project-sheet-title-row">
           <div>
             <span className="project-sheet-eyebrow">{project.projectCode || 'Projet'}</span>
@@ -796,8 +801,9 @@ function ProjectDetail({
         </div>
         <dl className="project-sheet-summary">
           <DetailField label="Période" value={formatPeriod(projectStart, projectEnd)} />
-          <div className="project-detail-field"><dt>Statut</dt><dd><ProjectStatusPill project={project} canManage={isManager} busy={changingProjectState} onChange={onChangeStatus} inDossier /></dd></div>
+          <div className="project-detail-field"><dt>Statut</dt><dd><ProjectStatusPill project={project} canManage={isManager} busy={changingProjectState} onChange={onChangeStatus} menuOpen={statusMenuOpen} inDossier /></dd></div>
           <DetailField label="Type de contrat" value={displayText(isCharterContractType(project.contractType) ? normalizeProjectContractType(project.contractType) : project.contractType)} />
+          <DetailField label="Loyer du contrat" value={formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || '', contract?.hireUnit)} />
         </dl>
       </header>
       <ProjectDetailTabs activeTab={primaryTab} counts={{ operations: planningOccurrences.length, documents: documentCount }} onChange={setActiveTab} tabs={projectDetailTabs(null)} />
@@ -826,35 +832,6 @@ function ProjectDetail({
           {contractNavigation}
         </div>
       ) : null}
-      {activeTab === 'identification' ? (
-        <section aria-label="Identification" className="project-detail-section project-sheet-identification">
-          <section className="project-sheet-group" aria-labelledby="project-parties-heading">
-            <h3 id="project-parties-heading"><Users aria-hidden="true" size={24} /> Client</h3>
-            <dl className="project-sheet-parties">
-              <DetailField label="Affréteur / client" value={displayText(project.clientName)} />
-              <DetailField label="Armateur" value={displayText(contract?.ownerIdentity)} />
-              {client ? <DetailField label="Coordonnées client" value={[client.code, client.email, client.phone, client.city, client.country].filter(Boolean).join(' · ') || 'Non renseignées'} wide /> : null}
-            </dl>
-          </section>
-          <section className="project-sheet-group" aria-labelledby="project-vessels-heading">
-            <h3 id="project-vessels-heading"><Ship aria-hidden="true" size={24} /> Navires & affectation</h3>
-            <dl className="project-sheet-vessels">
-              <DetailField label="Navire principal" value={displayText(project.primaryVesselName)} />
-              <DetailField label="Second navire" value={displayText(project.secondaryVesselName)} />
-              <DetailField label="Affectation du navire limitée à" value={displayText(contract?.vesselAssignmentLimit)} />
-            </dl>
-          </section>
-          <section className="project-sheet-conditions" aria-labelledby="project-conditions-heading">
-            <h3 id="project-conditions-heading"><FileText aria-hidden="true" size={24} /> Conditions de la mission</h3>
-            <dl>
-              <DetailField label="Loyer du contrat" value={formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || '', contract?.hireUnit)} />
-              <DetailField label="Support ROV" value={project.isRovSupport ? 'Oui' : 'Non'} />
-              <DetailField label="Support plongée" value={project.isDivingSupport ? 'Oui' : 'Non'} />
-            </dl>
-          </section>
-        </section>
-      ) : null}
-
       {activeTab === 'offer-contract' ? (
       <section aria-label="Offre et contrat" className="project-detail-section project-offer-contract-panel">
         <div className="project-context-heading">
@@ -1239,7 +1216,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [planningEditorOpen, setPlanningEditorOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showClosedProjects, setShowClosedProjects] = useState(false);
-  const [statusDialog, setStatusDialog] = useState<{ project: ProjectRecord; closing: boolean } | null>(null);
+  const [closingProject, setClosingProject] = useState<ProjectRecord | null>(null);
+  const [statusMenu, setStatusMenu] = useState<{ project: ProjectRecord; position: AppContextMenuPosition; trigger: HTMLButtonElement; inDossier: boolean } | null>(null);
   const [changingProjectState, setChangingProjectState] = useState(false);
   const [editingProject, setEditingProject] = useState<ProjectRecord | undefined>();
   const [editingOccurrence, setEditingOccurrence] = useState<ProjectPlanningOccurrenceRecord | undefined>();
@@ -1439,10 +1417,31 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     setProjectEditorOpen(true);
   }
 
-  function openProjectStatus(project: ProjectRecord) {
+  const closeProjectStatusMenu = useCallback(() => {
+    statusMenu?.trigger.focus({ preventScroll: true });
+    setStatusMenu(null);
+  }, [statusMenu]);
+
+  useEffect(() => {
+    if (!statusMenu) return;
+    function closeOnViewportChange(event: Event) {
+      if (event.type === 'scroll' && event.target instanceof Element && event.target.closest('.project-status-dropdown')) return;
+      closeProjectStatusMenu();
+    }
+    window.addEventListener('scroll', closeOnViewportChange, true);
+    window.addEventListener('resize', closeOnViewportChange);
+    return () => {
+      window.removeEventListener('scroll', closeOnViewportChange, true);
+      window.removeEventListener('resize', closeOnViewportChange);
+    };
+  }, [statusMenu, closeProjectStatusMenu]);
+
+  function openProjectStatus(project: ProjectRecord, event: React.MouseEvent<HTMLButtonElement>, inDossier = false) {
     if (!isManager || changingProjectState) return;
+    if (statusMenu?.trigger === event.currentTarget) { closeProjectStatusMenu(); return; }
     setMutationError('');
-    setStatusDialog({ project, closing: false });
+    const bounds = event.currentTarget.getBoundingClientRect();
+    setStatusMenu({ project, position: { x: bounds.left, y: bounds.bottom + 4 }, trigger: event.currentTarget, inDossier });
   }
 
   async function changeProjectState(project: ProjectRecord, action: 'close' | 'reactivate' | 'status', status?: string) {
@@ -1454,7 +1453,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       if (action === 'close') await archiveProject(effectiveClient, project.id);
       else if (action === 'reactivate') await reactivateProject(effectiveClient, project.id);
       else await setProjectStatus(effectiveClient, project.id, status ?? '');
-      setStatusDialog(null);
+      setClosingProject(null);
       setMutationMessage(`${project.projectCode || project.title} ${action === 'close' ? 'clôturé. Ses opérations et documents restent conservés.' : action === 'reactivate' ? 'réactivé.' : `mis à jour : ${status}.`}`);
       setLoadAttempt((attempt) => attempt + 1);
     } catch (error) {
@@ -1656,7 +1655,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         <ModuleRibbonGroup label="Projet">
           <ProjectRibbonButton disabled={!isManager || changingProjectState} icon={<Plus size={22} />} label="Nouveau projet" onClick={() => openProjectEditor()} />
           <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus size={22} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || changingProjectState} icon={<Archive size={22} />} label="Archiver le projet" onClick={() => { if (selectedProject) { setMutationError(''); setStatusDialog({ project: selectedProject, closing: true }); } }} />
+          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || changingProjectState} icon={<Archive size={22} />} label="Archiver le projet" onClick={() => { if (selectedProject) { setMutationError(''); setClosingProject(selectedProject); } }} />
         </ModuleRibbonGroup>
         <ModuleRibbonGroup label="Catalogue">
           <ProjectRibbonButton disabled={!isManager} icon={<Users size={22} />} label="Clients" onClick={() => setClientCatalogOpen(true)} />
@@ -1709,7 +1708,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           }} includeIcon />
         </span>
       ) : null}
-      {mutationError && !statusDialog ? <p className="form-error" role="alert">{mutationError}</p> : null}
+      {mutationError && !closingProject ? <p className="form-error" role="alert">{mutationError}</p> : null}
 
       {projectsData.projects.length === 0 ? (
         <div className="admin-state">Aucun projet n’est disponible dans Supabase.</div>
@@ -1836,7 +1835,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                       </span>
                     </button>
                     <div className="project-portfolio-row-actions">
-                      <ProjectStatusPill project={project} canManage={isManager} busy={changingProjectState} onChange={() => openProjectStatus(project)} />
+                      <ProjectStatusPill project={project} canManage={isManager} busy={changingProjectState} menuOpen={statusMenu?.project.id === project.id && !statusMenu.inDossier} onChange={(event) => openProjectStatus(project, event)} />
                       {isManager ? <button type="button" className="project-card-modify" disabled={Boolean(project.archivedAt) || changingProjectState} aria-label={`Modifier ${project.projectCode || project.title}`} onClick={() => openProjectEditor(project)}><Pencil aria-hidden="true" size={14} />Modifier</button> : null}
                     </div>
                   </li>
@@ -1872,7 +1871,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               onDeleteOccurrence={(occurrence) => void deletePlanningOccurrence(occurrence)}
               onEditOccurrence={openPlanningEditor}
               onGenerateDocument={openProjectDocumentEmission}
-              onChangeStatus={() => openProjectStatus(selectedProject)}
+              onChangeStatus={(event) => openProjectStatus(selectedProject, event, true)}
+              statusMenuOpen={statusMenu?.project.id === selectedProject.id && statusMenu.inDossier}
               changingProjectState={changingProjectState}
               onOpenPlanning={(occurrence) => window.location.assign(planningOperationUrl(occurrence.id))}
               operationDocuments={selectedOperationDocuments}
@@ -1906,11 +1906,14 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         />
       ) : null}
 
-      {statusDialog ? <AppDialog title={statusDialog.closing ? 'Clôturer le projet' : `Modifier le statut de ${statusDialog.project.projectCode || statusDialog.project.title}`} size="sm" isBusy={changingProjectState} onClose={() => setStatusDialog(null)} description={statusDialog.closing ? `Clôturer ${statusDialog.project.projectCode || statusDialog.project.title} ? Le projet sera archivé. Ses opérations restent visibles dans le calendrier et son historique est conservé.` : undefined} footer={statusDialog.closing ? <div className="app-dialog__actions"><button type="button" className="is-secondary" disabled={changingProjectState} onClick={() => setStatusDialog(null)}>Annuler</button><button type="button" className="is-primary" disabled={changingProjectState} onClick={() => void changeProjectState(statusDialog.project, 'close')}>{changingProjectState ? 'Traitement…' : 'Clôturer'}</button></div> : undefined}>
-        {!statusDialog.closing ? <div className="project-status-options">{statusDialog.project.archivedAt ? <button type="button" disabled={changingProjectState} onClick={() => void changeProjectState(statusDialog.project, 'reactivate')}><RotateCcw aria-hidden="true" size={17} />Réactiver le projet</button> : <>
-          {PROJECT_STATUSES.map((status) => <button key={status} type="button" aria-pressed={statusDialog.project.status === status} disabled={changingProjectState || statusDialog.project.status === status} onClick={() => void changeProjectState(statusDialog.project, 'status', status)}>{status}</button>)}
-          <button type="button" disabled={changingProjectState} onClick={() => setStatusDialog((current) => current ? { ...current, closing: true } : null)}><Archive aria-hidden="true" size={17} />Clôturer</button>
-        </>}</div> : null}
+      {statusMenu ? <div className="project-status-dropdown" onKeyDown={(event) => { if (event.key === 'Tab') closeProjectStatusMenu(); }}><AppContextMenu label={`Statut de ${statusMenu.project.projectCode || statusMenu.project.title}`} position={statusMenu.position} onClose={closeProjectStatusMenu}>
+        {statusMenu.project.archivedAt ? <AppContextMenuItem disabled={changingProjectState} onSelect={() => { const project = statusMenu.project; closeProjectStatusMenu(); void changeProjectState(project, 'reactivate'); }}><RotateCcw aria-hidden="true" size={17} />Réactiver le projet</AppContextMenuItem> : <>
+          {PROJECT_STATUSES.map((status) => <AppContextMenuItem key={status} disabled={changingProjectState} onSelect={() => { const project = statusMenu.project; closeProjectStatusMenu(); if (project.status !== status) void changeProjectState(project, 'status', status); }}><span>{status}</span>{statusMenu.project.status === status ? <><Check aria-hidden="true" className="project-status-current-check" size={16} /><span className="sr-only">, statut actuel</span></> : null}</AppContextMenuItem>)}
+          <div className="app-context-menu__separator" role="separator" />
+          <AppContextMenuItem disabled={changingProjectState} onSelect={() => { const project = statusMenu.project; closeProjectStatusMenu(); setClosingProject(project); }}><Archive aria-hidden="true" size={17} />Clôturer</AppContextMenuItem>
+        </>}
+      </AppContextMenu></div> : null}
+      {closingProject ? <AppDialog title="Clôturer le projet" size="sm" isBusy={changingProjectState} onClose={() => setClosingProject(null)} description={`Clôturer ${closingProject.projectCode || closingProject.title} ? Le projet sera archivé. Ses opérations restent visibles dans le calendrier et son historique est conservé.`} footer={<div className="app-dialog__actions"><button type="button" className="is-secondary" disabled={changingProjectState} onClick={() => setClosingProject(null)}>Annuler</button><button type="button" className="is-primary" disabled={changingProjectState} onClick={() => void changeProjectState(closingProject, 'close')}>{changingProjectState ? 'Traitement…' : 'Clôturer'}</button></div>}>
         {mutationError ? <p className="form-error" role="alert">{mutationError}</p> : null}
       </AppDialog> : null}
 

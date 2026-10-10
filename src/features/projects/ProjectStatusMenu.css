@@ -1,0 +1,26 @@
+.projects-page.project-design .project-status-dropdown .app-context-menu {
+  border-color: var(--sp-border);
+  border-radius: var(--sp-panel-radius);
+  background: var(--sp-surface);
+  box-shadow: var(--sp-shadow);
+  font-family: var(--sp-font);
+}
+.projects-page.project-design .project-status-dropdown .app-context-menu button {
+  min-height: var(--sp-control-height);
+  border-radius: var(--sp-control-radius);
+  color: var(--sp-text);
+}
+.projects-page.project-design .project-status-dropdown .app-context-menu button:hover,
+.projects-page.project-design .project-status-dropdown .app-context-menu button:focus-visible {
+  background: var(--sp-primary-soft);
+  color: var(--sp-primary);
+}
+.projects-page.project-design .project-status-dropdown .app-context-menu button:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: -2px;
+}
+.project-status-current-check { margin-left: auto; color: var(--sp-primary); }
+.projects-page.project-design .project-status-dropdown .app-context-menu__separator { background: var(--sp-border); }
+@media (pointer: coarse) {
+  .projects-page.project-design .project-status-dropdown .app-context-menu button { min-height: 44px; }
+}
