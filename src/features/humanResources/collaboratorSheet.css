@@ -63,6 +63,9 @@
 .hr-sheet-table-scroll caption { text-align: left; padding: var(--sp-space-3); font-weight: 600; color: var(--sp-heading); }
 .hr-sheet-table-scroll th, .hr-sheet-table-scroll td { min-width: 100px; padding: var(--sp-space-2) var(--sp-space-3); border-top: 1px solid var(--sp-border); vertical-align: top; overflow-wrap: anywhere; }
 .hr-sheet-table-scroll th { background: var(--sp-primary-soft); color: var(--sp-heading); }
+.hr-sheet-dialog .hr-sheet-documents-table thead th { background: var(--sp-surface); }
+.hr-sheet-dialog .hr-sheet-category-row th { background: var(--sp-surface-subtle); font-weight: 700; }
+.hr-sheet-dialog .hr-sheet-table-scroll td.hr-sheet-document-name { padding-left: var(--sp-space-6); }
 .hr-sheet-empty, .hr-sheet-feedback { color: var(--sp-muted); line-height: 1.5; }
 
 .hr-sheet-bulk { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--sp-space-4); margin-bottom: var(--sp-space-4); }

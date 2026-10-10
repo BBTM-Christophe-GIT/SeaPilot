@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CollaboratorSheetDialog } from './CollaboratorSheetDialog';
 import { buildCollaboratorSheetPdf, buildCollaboratorSheetsExport } from './collaboratorSheet';
-import { mapHrDocumentRows, mapPersonRows } from './peopleQueries';
+import { mapHrDocumentRows, mapPersonRows, type HrDocumentTypeOption } from './peopleQueries';
 
 vi.mock('./collaboratorSheet', async () => {
   const actual = await vi.importActual<typeof import('./collaboratorSheet')>('./collaboratorSheet');
@@ -27,6 +27,10 @@ const secondPerson = mapPersonRows([{
   employee_number: '00008', email: 'alex@example.invalid', active: true,
 } as Parameters<typeof mapPersonRows>[0][number]])[0];
 const people = [person, secondPerson];
+const documentTypes: HrDocumentTypeOption[] = [
+  { id: 501, sourceItemId: 501, name: 'Brevet de capitaine 200', fileName: 'BC200', categoryKey: 'deck', categoryLabel: 'Pont' },
+  { id: 502, sourceItemId: 502, name: 'Brevet de mécanicien 250 kW', fileName: 'MEC250', categoryKey: 'engine', categoryLabel: 'Machine' },
+];
 
 type DocumentRow = Parameters<typeof mapHrDocumentRows>[0][number];
 
@@ -200,10 +204,41 @@ describe('CollaboratorSheetDialog — multiple collaborators', () => {
 
     expect(await within(dialog).findByRole('status')).toHaveTextContent('Les fiches collaborateurs ont été exportées.');
     expect(generateBulk).toHaveBeenCalledOnce();
-    expect(generateBulk).toHaveBeenCalledWith(people, documents, allowedSections, { identity: ['firstName'], documents: ['title'] }, mode, undefined, { includePhoto });
+    expect(generateBulk).toHaveBeenCalledWith(people, documents, allowedSections, { identity: ['firstName'], documents: ['title'] }, mode, undefined, { includePhoto }, undefined);
     expect(generatePdf).not.toHaveBeenCalled();
     expect(clickedLinks).toEqual([{ download: fileName, href: 'blob:collaborator-sheet' }]);
     expect(document.querySelector('a[download]')).not.toBeInTheDocument();
+  });
+
+  it('previews catalog names under category parents and forwards the same loaded catalog with shared choices to batch generation', async () => {
+    const catalogDocuments = mapHrDocumentRows([
+      documentRow({ title: 'Camille DUPONT - BC200 - 2026.pdf' }),
+      documentRow({ id: 21, person_id: 8, person_name: 'Alex MARTIN', category_key: 'engine', title: 'Alex MARTIN - MEC250 - 2026.pdf' }),
+    ]);
+    const allowedSections = new Set(['documents']);
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(<CollaboratorSheetDialog documents={catalogDocuments} documentTypes={documentTypes} onClose={vi.fn()} people={people} person={person} visibleSectionKeys={allowedSections} />);
+    const dialog = screen.getByRole('dialog', { name: 'Fiches collaborateurs' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Sélectionner tous les collaborateurs' }));
+    let table = within(dialog).getByRole('table', { name: 'Liste Brevets et visites médicales' });
+    expect(within(table).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Document', 'Échéance', 'Statut']);
+    expect(within(table).getByRole('rowheader', { name: 'Pont' })).toHaveAttribute('colspan', '3');
+    expect(table).toHaveTextContent('Brevet de capitaine 200');
+    expect(table).not.toHaveTextContent('BC200');
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Brevets et visites médicales : Échéance' }));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Inclure la photo' }));
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Aperçu du collaborateur' }), { target: { value: '8' } });
+    table = within(dialog).getByRole('table', { name: 'Liste Brevets et visites médicales' });
+    expect(table).toHaveTextContent('Brevet de mécanicien 250 kW');
+    expect(within(table).getByRole('rowheader', { name: 'Machine' })).toHaveAttribute('colspan', '2');
+    expect(table).not.toHaveTextContent('MEC250');
+    expect(within(dialog).getByRole('checkbox', { name: 'Brevets et visites médicales : Échéance' })).not.toBeChecked();
+    expect(within(dialog).getByRole('checkbox', { name: 'Inclure la photo' })).not.toBeChecked();
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Fiches regroupées (PDF)' }));
+    fireEvent.submit(dialog);
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('Les fiches collaborateurs ont été exportées.');
+    expect(generateBulk).toHaveBeenCalledWith(people, catalogDocuments, allowedSections,
+      { documents: ['category', 'title', 'status'] }, 'combined', undefined, { includePhoto: false }, documentTypes);
   });
 
   it('derives selected records and permissions from current props instead of exporting removed or stale records', async () => {
@@ -299,6 +334,53 @@ function renderDialog(visibleSectionKeys: ReadonlySet<string> = allSectionKeys, 
 }
 
 describe('CollaboratorSheetDialog', () => {
+  it('shows one category parent per group with document children and switches to a flat list when category is deselected', () => {
+    const dialog = renderDialog(new Set(['documents']));
+    let table = within(dialog).getByRole('table', { name: 'Liste Brevets et visites médicales' });
+    expect(table).toHaveClass('hr-sheet-documents-table');
+    expect(within(table).getAllByRole('rowheader').map((header) => header.textContent)).toEqual(['Pont', 'Visite Médicale']);
+    expect(within(table).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Document', 'Échéance', 'Statut']);
+    const firstGroup = table.querySelectorAll('tbody')[0];
+    expect(firstGroup.querySelectorAll('tr')).toHaveLength(2);
+    expect(firstGroup.querySelectorAll('tr')[0]).toHaveTextContent('Pont');
+    expect(firstGroup.querySelectorAll('tr')[1]).toHaveTextContent('Brevet Capitaine 200');
+    expect(firstGroup.querySelectorAll('tr')[1]).not.toHaveTextContent('Pont');
+
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Brevets et visites médicales : Catégorie' }));
+    table = within(dialog).getByRole('table', { name: 'Liste Brevets et visites médicales' });
+    expect(within(table).queryByRole('rowheader')).not.toBeInTheDocument();
+    expect(table.querySelectorAll('tbody')).toHaveLength(1);
+    expect(table.querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(table).toHaveTextContent('Brevet Capitaine 200');
+    expect(table).toHaveTextContent('Visite médicale annuelle');
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tout désélectionner' }));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Brevets et visites médicales : Catégorie' }));
+    table = within(dialog).getByRole('table', { name: 'Liste Brevets et visites médicales' });
+    expect(within(table).getAllByRole('rowheader').map((header) => header.textContent)).toEqual(['Pont', 'Visite Médicale']);
+    expect(table.querySelectorAll('tbody td')).toHaveLength(0);
+    expect(table).not.toHaveTextContent('Brevet Capitaine 200');
+    expect(table).not.toHaveTextContent('Visite médicale annuelle');
+    expect(within(dialog).getByRole('button', { name: 'Générer le PDF' })).toBeEnabled();
+  });
+
+  it('passes the individually previewed full catalog names to PDF generation', async () => {
+    const catalogDocuments = mapHrDocumentRows([documentRow({ title: 'Camille DUPONT - BC200 - 2026.pdf' })]);
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(<CollaboratorSheetDialog documents={catalogDocuments} documentTypes={documentTypes} onClose={vi.fn()} person={person} visibleSectionKeys={new Set(['documents'])} />);
+    const dialog = screen.getByRole('dialog', { name: 'Fiche Collaborateur' });
+    const table = within(dialog).getByRole('table', { name: 'Liste Brevets et visites médicales' });
+    expect(table).toHaveTextContent('Brevet de capitaine 200');
+    expect(table).not.toHaveTextContent('BC200');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tout désélectionner' }));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Brevets et visites médicales : Document' }));
+    fireEvent.submit(dialog);
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('La fiche collaborateur PDF a été générée.');
+    const [, sections, selection] = generatePdf.mock.calls[0];
+    expect(sections[0].table?.rows[0].title).toBe('Brevet de capitaine 200');
+    expect(selection).toEqual({ documents: ['title'] });
+  });
+
   it('starts with all available information selected and shows documents and medical visits without signature choices', () => {
     const dialog = renderDialog();
 
@@ -308,7 +390,7 @@ describe('CollaboratorSheetDialog', () => {
     expect(within(dialog).getByRole('table', { name: 'Liste des visites médicales' })).toHaveTextContent('Port de lunettes');
     expect(within(dialog).getByRole('table', { name: 'Liste Brevets et visites médicales' })).toHaveTextContent('Brevet Capitaine 200');
     const certificateTable = within(dialog).getByRole('table', { name: 'Liste Brevets et visites médicales' });
-    expect(within(certificateTable).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Document', 'Catégorie', 'Échéance', 'Statut']);
+    expect(within(certificateTable).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Document', 'Échéance', 'Statut']);
     expect(within(certificateTable).queryByText('Pièce administrative exclue')).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('checkbox', { name: /Brevets et visites médicales : (Date émission|Source|Notes)/ })).not.toBeInTheDocument();
     expect(within(dialog).getByRole('table', { name: 'Liste Entretien Annuel' })).toHaveTextContent('Entretien annuel 2026');

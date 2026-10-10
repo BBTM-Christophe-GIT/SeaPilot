@@ -1617,6 +1617,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
           canClose={!isMarinView}
           client={effectiveClient}
           documents={selectedPersonDocuments}
+          documentTypes={documentTypes}
           isManager={isManager}
           isSaving={isSaving}
           onClose={() => setSelectedPersonId(null)}
@@ -1638,6 +1639,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
       {isBulkSheetOpen && !isMarinView && visiblePeople.length ? (
         <CollaboratorSheetDialog
           documents={roleVisibleDocuments}
+          documentTypes={documentTypes}
           onClose={() => setIsBulkSheetOpen(false)}
           people={visiblePeople}
           person={visiblePeople[0]}
@@ -2066,6 +2068,7 @@ function PersonProfileCard({
   canClose = true,
   client,
   documents,
+  documentTypes,
   isManager,
   isSaving,
   onClose,
@@ -2091,6 +2094,7 @@ function PersonProfileCard({
   canClose?: boolean;
   client: SupabaseClient;
   documents: HrDocumentRecord[];
+  documentTypes: HrDocumentTypeOption[];
   isManager: boolean;
   isSaving: boolean;
   onClose: () => void;
@@ -2139,6 +2143,7 @@ function PersonProfileCard({
         canEditAnnualReviewDueDate={canEditAnnualReviewDueDate}
         client={client}
         documents={documents}
+        documentTypes={documentTypes}
         isManager={isManager}
         isSaving={isSaving}
         missingCount={missingCount}
@@ -2891,6 +2896,7 @@ function PersonDetailsPanel({
   canEditAnnualReviewDueDate,
   client,
   documents,
+  documentTypes,
   isManager,
   isSaving,
   missingCount,
@@ -2919,6 +2925,7 @@ function PersonDetailsPanel({
   canEditAnnualReviewDueDate: boolean;
   client: SupabaseClient;
   documents: HrDocumentRecord[];
+  documentTypes: HrDocumentTypeOption[];
   isManager: boolean;
   isSaving: boolean;
   missingCount: number;
@@ -3489,6 +3496,7 @@ function PersonDetailsPanel({
       </div>
       {isSheetOpen ? <CollaboratorSheetDialog
         documents={documents}
+        documentTypes={documentTypes}
         key={person.id}
         onClose={() => setIsSheetOpen(false)}
         person={person}
