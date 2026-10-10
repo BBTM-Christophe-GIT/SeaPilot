@@ -62,7 +62,17 @@ Réserver `sp-button` aux actions du contenu, aux formulaires et aux confirmatio
 
 Les barres d'actions locales, comme celle de la facturation mensuelle, gardent leur disposition compacte horizontale. Privilégier également une seule ligne de boutons et, si nécessaire, un défilement horizontal contenu sur petit écran. Le ruban organise les commandes du module ; il ne remplace pas chaque barre d'actions située dans son contenu.
 
-Un bouton du contenu peut placer une icône à gauche du texte. Les actions destructrices gardent leur traitement et leur confirmation existants. Les boutons qui n'affichent qu'une icône sont réservés aux actions locales déjà explicites dans leur contexte ; ils ont un nom accessible et une cible de taille suffisante. Ne pas transformer un statut, un onglet ou une cellule du Planning en bouton d'action ordinaire.
+Un bouton du contenu peut placer une icône à gauche du texte. Les actions destructrices gardent leur traitement et leur confirmation existants. Les boutons qui n'affichent qu'une icône sont réservés aux actions locales déjà explicites dans leur contexte ; ils ont un nom accessible et une cible de taille suffisante. Les onglets et cellules du Planning conservent leur rôle métier ; une pastille de statut interactive suit l'exception explicite du portefeuille Projets ci-dessous.
+
+### Actions contextuelles des cartes Projet
+
+Le portefeuille Projets place Modifier et Favori sur chaque carte pour agir directement sur ce projet, indépendamment du dossier sélectionné. Modifier garde un libellé visible ; Favori peut utiliser une étoile, avec un nom accessible comprenant l'action et le projet, ainsi que `aria-pressed`. Séparer ces commandes du bouton qui sélectionne la carte : aucun `button` ne contient un autre bouton, une pastille interactive ou une commande de favori.
+
+Les cartes reprennent le dessin dense existant : Modifier et les pastilles interactives peuvent mesurer 32 px de haut sur ordinateur. Les commandes de carte conservent une cible d'au moins 44 px au pointeur tactile, y compris l'étoile. Cette exception locale ne réduit ni les boutons ordinaires de 40 px ni les commandes du ruban. Le focus utilise les tokens communs, et les états chargement/désactivé restent visibles.
+
+À la demande explicite de l'utilisateur, la pastille de statut Projet peut devenir un vrai bouton pour ouvrir le choix de statut. Elle conserve la forme et le sens de la pastille métier, son libellé, ses couleurs de statut et un indicateur d'ouverture. La préversion utilise un menu avec `aria-haspopup` et `aria-expanded` ; le module réel utilise son dialogue existant. Le libellé accessible identifie le projet, Échap ferme le choix et le focus revient au déclencheur. Les comptes qui ne peuvent pas gérer le projet voient le statut en lecture seule.
+
+Le choix reprend les cinq statuts métier existants et une commande Clôturer, confirmée. Clôturé est l'affichage d'un projet archivé, pas un nouveau statut métier ; Réactiver conserve le statut précédent. Ces actions, leurs droits et leurs contrôles serveur sont documentés et testés comme des changements fonctionnels autorisés, distincts d'une simple harmonisation des boutons.
 
 ### États, clavier et petits écrans
 
@@ -86,4 +96,4 @@ Les adaptations des anciens sélecteurs sont une transition. Un nouveau module d
 
 Les urgences, validations, statuts Planning, couleurs des catégories et graphiques conservent leur sens et leur légende. Les PDF, rapports imprimés, courriers, éditeurs de document et modèles A4 conservent leur typographie et leur géométrie propres. Ne pas modifier la taille des cases des grilles temporelles ni rendre visible un titre volontairement masqué.
 
-Une correction de design ne change aucun libellé, action, workflow, donnée, accès, RPC ou règle RLS. La photo du compte utilise le portrait RH privé existant, puis la photo déjà associée au compte ; en son absence ou en cas d'échec, les initiales restent affichées.
+Une correction strictement visuelle ne change aucun libellé, action, workflow, donnée, accès, RPC ou règle RLS. Une demande explicite portant sur le fonctionnement, comme les statuts interactifs et la clôture/réactivation des projets, se traite avec ses contrôles et validations métier. La photo du compte utilise le portrait RH privé existant, puis la photo déjà associée au compte ; en son absence ou en cas d'échec, les initiales restent affichées.

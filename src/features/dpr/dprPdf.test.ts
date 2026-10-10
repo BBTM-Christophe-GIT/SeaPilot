@@ -30,6 +30,7 @@ const report: DprReportRecord = {
 
 const references: DprReferenceData = {
   projects: [{ id: 144, code: 'P144', title: 'Guard Vessel EMDT' }],
+  activeProjects: [{ id: 144, code: 'P144', title: 'Guard Vessel EMDT' }],
   vessels: [{ id: 3, name: 'GOURY' }],
   people: [],
   planningCrewPersonIds: [],

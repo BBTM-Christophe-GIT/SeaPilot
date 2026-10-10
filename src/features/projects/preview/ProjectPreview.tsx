@@ -2,7 +2,7 @@ import {
   Archive, Bell, BookOpen, CalendarDays, Check, ChevronDown, ChevronRight,
   ClipboardList, Copy, Download, FilePlus2, FileText, FolderKanban, Fuel, Home,
   PackageCheck, Pencil, Plus, ReceiptText, RefreshCw, RotateCcw, Save, Search, Settings2,
-  ShieldCheck, Ship, ShoppingCart, SlidersHorizontal, Trash2, Users, X,
+  ShieldCheck, Ship, ShoppingCart, SlidersHorizontal, Star, Trash2, Users, X,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -70,7 +70,7 @@ const emptyMonth = (demo: DemoProject, month: string): MonthData => ({
 const initialReferences = (demos: DemoProject[]) => Object.fromEntries(demos.map((demo) => [billingDemoReferenceKey(demo, { ...INITIAL_BILLING_OPTIONS, vesselName: demo.project.primaryVesselName }), demo.period.clientReference]));
 const currencyAmounts = (amounts: Map<string, number>) => amounts.size ? [...amounts].sort(([a], [b]) => a.localeCompare(b)).map(([currency, value]) => money(value, currency)).join(' · ') : money(0);
 function Status({ value }: { value: string }) {
-  const tone = value === 'Validé' ? 'validated' : value === 'Facturé' ? 'invoiced' : value === 'Stand-by météo' ? 'weather' : 'unvalidated';
+  const tone = value === 'Clôturé' ? 'closed' : value === 'Validé' ? 'validated' : value === 'Facturé' ? 'invoiced' : value === 'Stand-by météo' ? 'weather' : 'unvalidated';
   return <span className={`pp-status ${tone}`}>{value}</span>;
 }
 function Dialog({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
@@ -130,6 +130,8 @@ export function ProjectPreview() {
   const [statusFilter, setStatusFilter] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [favorites, setFavorites] = useState<Set<number>>(() => new Set());
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [compact, setCompact] = useState(false);
   const [menu, setMenu] = useState('');
   const [selection, setSelection] = useState<Selection>(null);
@@ -212,13 +214,11 @@ export function ProjectPreview() {
   function reset() {
     const fresh = createDemoProjects(); setDemos(fresh); setMonths(initialMonths(fresh)); setReferences(initialReferences(fresh));
     setSelectedId(264); setOptions(createCurrentBillingOptions()); setSelection(null); setRawDraft(null);
-    setQuery(''); setStatusFilter(''); setShowArchived(false); setPreviewUrl(''); setProofs({});
+    setQuery(''); setStatusFilter(''); setShowArchived(false); setFavorites(new Set()); setFavoritesOnly(false); setMenu(''); setPreviewUrl(''); setProofs({});
     notify('Les données de démonstration ont été réinitialisées.');
   }
-  function menuControl(id: string, label: string, Icon: LucideIcon, items: MenuItem[], primary = false, disabled = false, accessibleLabel = label) {
-    return <div className="pp-menu-wrap">
-      <button type="button" className={`pp-button ${primary ? 'primary' : ''}`} disabled={disabled} aria-label={accessibleLabel} aria-haspopup="menu" aria-expanded={menu === id} onClick={() => setMenu(menu === id ? '' : id)}><Icon size={18} />{label}<ChevronDown size={14} /></button>
-      {menu === id && <div role="menu" aria-label={accessibleLabel} className="pp-menu" onKeyDown={(event) => {
+  function menuItems(id: string, accessibleLabel: string, items: MenuItem[]) {
+    return menu === id && <div role="menu" aria-label={accessibleLabel} className="pp-menu" onKeyDown={(event) => {
         if (event.key === 'Escape') { setMenu(''); (event.currentTarget.previousElementSibling as HTMLElement)?.focus(); }
         if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
@@ -226,23 +226,61 @@ export function ProjectPreview() {
         const index = nodes.indexOf(document.activeElement as HTMLButtonElement);
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? nodes.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + nodes.length) % nodes.length;
         nodes[next]?.focus();
-      }}>{items.map((item) => { const ItemIcon = item.icon; return <button role="menuitem" type="button" className={`pp-menu-item ${item.danger ? 'danger' : ''}`} key={item.label} disabled={item.disabled} onClick={() => { setMenu(''); item.action(); }}>{ItemIcon && <ItemIcon size={17} />}{item.label}</button>; })}</div>}
+      }}>{items.map((item) => { const ItemIcon = item.icon; return <button role="menuitem" type="button" className={`pp-menu-item ${item.danger ? 'danger' : ''}`} key={item.label} disabled={item.disabled} onClick={() => { setMenu(''); item.action(); }}>{ItemIcon && <ItemIcon size={17} />}{item.label}</button>; })}</div>;
+  }
+  function menuControl(id: string, label: string, Icon: LucideIcon, items: MenuItem[], primary = false, disabled = false, accessibleLabel = label) {
+    return <div className="pp-menu-wrap">
+      <button type="button" className={`pp-button ${primary ? 'primary' : ''}`} disabled={disabled} aria-label={accessibleLabel} aria-haspopup="menu" aria-expanded={menu === id} onClick={() => setMenu(menu === id ? '' : id)}><Icon size={18} />{label}<ChevronDown size={14} /></button>
+      {menuItems(id, accessibleLabel, items)}
     </div>;
   }
-  function projectEditor(create = false) {
+  function setProjectState(id: number, change: (project: DemoProject['project']) => DemoProject['project']) {
+    setDemos((current) => current.map((item) => item.project.id === id ? { ...item, project: change(item.project) } : item));
+    if (id === selectedId) setPreviewUrl('');
+  }
+  function closeProject(id: number, archiveCommand = false) {
+    const project = demos.find((item) => item.project.id === id)?.project;
+    if (!project || project.archivedAt || busy) return;
+    setConfirm({ title: archiveCommand ? 'Archiver le projet' : 'Clôturer le projet', message: `Clôturer ${project.projectCode} ? Le projet sera archivé et pourra être réactivé.`, action: () => {
+      setProjectState(id, (current) => ({ ...current, archivedAt: new Date().toISOString() }));
+      if (id === selectedId) { setRawDraft(null); setSelection(null); }
+      notify(`${project.projectCode} est clôturé. Ses données sont conservées.`);
+    } });
+  }
+  function statusControl(project: DemoProject['project'], location: 'card' | 'detail') {
+    const id = `project-status-${location}-${project.id}`;
+    const accessibleLabel = `Modifier le statut de ${project.projectCode}`;
+    const items: MenuItem[] = project.archivedAt ? [{ label: 'Réactiver le projet', icon: RotateCcw, action: () => {
+      setProjectState(project.id, (current) => ({ ...current, archivedAt: '' }));
+      notify(`${project.projectCode} a été réactivé avec le statut ${project.status}.`);
+    } }] : [
+      ...PROJECT_STATUSES.map((status) => ({ label: status, icon: project.status === status ? Check : undefined, action: () => setProjectState(project.id, (current) => ({ ...current, status })) })),
+      { label: 'Clôturer', icon: Archive, action: () => closeProject(project.id) },
+    ];
+    return <div className="pp-menu-wrap pp-project-status-menu">
+      <button type="button" className="pp-status-button" disabled={busy} aria-label={accessibleLabel} aria-haspopup="menu" aria-expanded={menu === id} onClick={() => setMenu(menu === id ? '' : id)}><Status value={project.archivedAt ? 'Clôturé' : project.status} /><ChevronDown size={13} /></button>
+      {menuItems(id, accessibleLabel, items)}
+    </div>;
+  }
+  function toggleFavorite(id: number) {
+    setFavorites((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  }
+  function projectEditor(create = false, targetId = selectedId) {
+    const target = demos.find((item) => item.project.id === targetId) ?? demo;
+    if (!create && (target.project.archivedAt || busy)) return;
     setEditor({ title: create ? 'Nouveau projet' : 'Modifier le projet', note: 'Les modifications de cette préversion restent dans la démonstration.', fields: [
-      { name: 'title', label: 'Nom du projet', value: create ? '' : demo.project.title, required: true },
-      { name: 'client', label: 'Client', value: create ? '' : demo.project.clientName, required: true },
-      { name: 'vessel', label: 'Navire principal', value: create ? 'GOURY' : demo.project.primaryVesselName, options: demoVesselNames, required: true },
-      { name: 'contract', label: 'Type de contrat', value: create ? 'BIMCO' : demo.project.contractType, options: ['BIMCO', 'Contrat de remorquage', 'Affrètement coque nue', 'Affrètement à temps'] },
-      { name: 'start', label: 'Livraison', value: create ? '2026-10-08T08:00' : demo.project.deliveryAt, type: 'datetime-local', required: true },
-      { name: 'end', label: 'Restitution', value: create ? '2026-10-23T18:00' : demo.project.redeliveryAt, type: 'datetime-local', required: true },
-      { name: 'hire', label: 'Loyer contractuel EUR / jour', value: create ? 2400 : demo.contract.charterHire ?? 0, type: 'number', required: true },
-      { name: 'status', label: 'Statut', value: create ? 'Non validé' : demo.project.status, options: [...PROJECT_STATUSES] },
+      { name: 'title', label: 'Nom du projet', value: create ? '' : target.project.title, required: true },
+      { name: 'client', label: 'Client', value: create ? '' : target.project.clientName, required: true },
+      { name: 'vessel', label: 'Navire principal', value: create ? 'GOURY' : target.project.primaryVesselName, options: demoVesselNames, required: true },
+      { name: 'contract', label: 'Type de contrat', value: create ? 'BIMCO' : target.project.contractType, options: [...new Set(['BIMCO', 'Contrat de remorquage', 'Affrètement coque nue', 'Affrètement à temps', ...(!create && target.project.contractType ? [target.project.contractType] : [])])] },
+      { name: 'start', label: 'Livraison', value: create ? '2026-10-08T08:00' : target.project.deliveryAt, type: 'datetime-local', required: true },
+      { name: 'end', label: 'Restitution', value: create ? '2026-10-23T18:00' : target.project.redeliveryAt, type: 'datetime-local', required: true },
+      { name: 'hire', label: 'Loyer contractuel EUR / jour', value: create ? 2400 : target.contract.charterHire ?? 0, type: 'number', required: true },
+      { name: 'status', label: 'Statut', value: create ? 'Non validé' : target.project.status, options: [...PROJECT_STATUSES] },
     ], submit(data) {
       if (text(data, 'end') < text(data, 'start')) return 'La restitution doit suivre la livraison.';
-      const project = { ...demo.project, title: text(data, 'title'), clientName: text(data, 'client'), primaryVesselName: text(data, 'vessel'), contractType: text(data, 'contract'), deliveryAt: text(data, 'start'), redeliveryAt: text(data, 'end'), startsOn: text(data, 'start').slice(0, 10), endsOn: text(data, 'end').slice(0, 10), status: text(data, 'status') };
-      const contract = { ...demo.contract, charterHire: number(data, 'hire') };
+      const project = { ...target.project, title: text(data, 'title'), clientName: text(data, 'client'), primaryVesselName: text(data, 'vessel'), contractType: text(data, 'contract'), deliveryAt: text(data, 'start'), redeliveryAt: text(data, 'end'), startsOn: text(data, 'start').slice(0, 10), endsOn: text(data, 'end').slice(0, 10), status: text(data, 'status') };
+      const contract = { ...target.contract, charterHire: number(data, 'hire') };
       if (create) {
         const id = Math.max(...demos.map((item) => item.project.id)) + 1;
         project.id = id; project.projectCode = `P${id}`; project.archivedAt = '';
@@ -252,7 +290,10 @@ export function ProjectPreview() {
         const created: DemoProject = { project, contract, operations: [operation], dprs: [], period, expenses: [], services: [], rawLines: [] };
         setDemos((current) => [...current, created]); setSelectedId(id); setSelection(null); setQuery('');
         setOptions((current) => ({ ...current, clientReference: '', vesselName: project.primaryVesselName }));
-      } else update((current) => ({ ...current, project, contract }));
+      } else {
+        setDemos((current) => current.map((item) => item.project.id === targetId ? { ...item, project, contract } : item));
+        if (targetId === selectedId) setPreviewUrl('');
+      }
       notify(create ? 'Projet et première opération créés dans la démonstration.' : 'Projet modifié. Les loyers des opérations existantes sont conservés.');
     } });
   }
@@ -449,7 +490,10 @@ export function ProjectPreview() {
       </div>
     </div>;
   }
-  const filtered = demos.filter(({ project }) => (showArchived || !project.archivedAt) && (!statusFilter || project.status === statusFilter) && `${project.projectCode} ${project.title} ${project.clientName} ${project.primaryVesselName}`.toLocaleLowerCase('fr').includes(query.toLocaleLowerCase('fr')));
+  const filtered = demos.filter(({ project }) => (showArchived || !project.archivedAt)
+    && (!statusFilter || (project.archivedAt ? 'Clôturé' : project.status) === statusFilter)
+    && (!favoritesOnly || favorites.has(project.id))
+    && `${project.projectCode} ${project.title} ${project.clientName} ${project.primaryVesselName}`.toLocaleLowerCase('fr').includes(query.toLocaleLowerCase('fr')));
 
   return <div className={`pp-app ${compact ? 'pp-compact' : ''}`}>
     <aside className="pp-sidebar"><div className="pp-brand"><img src="/previews/project-brand.png" alt="SeaPilot by BBTM" /></div>
@@ -465,9 +509,7 @@ export function ProjectPreview() {
         <ModuleRibbon ariaLabel="Menu des projets" className="pp-module-ribbon" singleRow>
           <ModuleRibbonGroup label="Projet">
             <ModuleRibbonCommand icon={<Plus aria-hidden="true" size={22} />} label="Nouveau projet" onClick={() => projectEditor(true)} />
-            <ModuleRibbonCommand icon={<Pencil aria-hidden="true" size={22} />} label="Modifier le projet" disabled={archived} onClick={() => projectEditor()} />
-            <ModuleRibbonCommand icon={<Archive aria-hidden="true" size={22} />} label="Archiver le projet" disabled={archived} onClick={() => setConfirm({ title: 'Archiver le projet', message: `Archiver ${demo.project.projectCode} dans la démonstration ?`, action: () => { update((current) => ({ ...current, project: { ...current.project, archivedAt: new Date().toISOString() } })); setShowArchived(true); notify('Projet archivé dans la démonstration.'); } })} />
-            <ModuleRibbonCommand icon={<RefreshCw aria-hidden="true" size={22} />} label="Actualiser" onClick={() => notify('Données de démonstration actualisées.')} />
+            <ModuleRibbonCommand icon={<Archive aria-hidden="true" size={22} />} label="Archiver le projet" disabled={archived || busy} onClick={() => closeProject(demo.project.id, true)} />
             <ModuleRibbonCommand icon={<RotateCcw aria-hidden="true" size={22} />} label="Réinitialiser la démonstration" onClick={reset} />
           </ModuleRibbonGroup>
           <ModuleRibbonGroup label="Catalogue">
@@ -477,14 +519,18 @@ export function ProjectPreview() {
           </ModuleRibbonGroup>
         </ModuleRibbon>
         <div className="pp-workspace">
-          <aside className="pp-portfolio"><h2>Portefeuille</h2><label className="pp-search"><Search size={17} /><input aria-label="Rechercher un projet" placeholder="Rechercher un projet…" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-            <div className="pp-filter-row"><button className="pp-button" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(!filtersOpen)}><SlidersHorizontal size={17} />Filtres</button><button className="pp-button icon" aria-label="Réinitialiser les filtres" onClick={() => { setQuery(''); setStatusFilter(''); setShowArchived(false); }}><RefreshCw size={17} /></button><button className="pp-button icon" aria-label="Changer la densité" aria-pressed={compact} onClick={() => setCompact(!compact)}><Settings2 size={17} /></button></div>
-            {filtersOpen && <div className="pp-billing-controls"><label className="pp-field">Statut<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">Tous</option>{PROJECT_STATUSES.map((value) => <option key={value}>{value}</option>)}</select></label><label className="pp-include"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />Voir les archives</label></div>}
+          <aside className="pp-portfolio" aria-label="Portefeuille"><h2>Portefeuille</h2><label className="pp-search"><Search size={17} /><input aria-label="Rechercher un projet" placeholder="Rechercher un projet…" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+            <div className="pp-filter-row"><button className="pp-button" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(!filtersOpen)}><SlidersHorizontal size={17} />Filtres</button><button className="pp-button icon" aria-label="Réinitialiser les filtres" onClick={() => { setQuery(''); setStatusFilter(''); setShowArchived(false); setFavoritesOnly(false); }}><RefreshCw size={17} /></button><button className="pp-button icon" aria-label="Changer la densité" aria-pressed={compact} onClick={() => setCompact(!compact)}><Settings2 size={17} /></button></div>
+            {filtersOpen && <div className="pp-billing-controls pp-project-filters"><label className="pp-field">Statut<select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); if (event.target.value === 'Clôturé') setShowArchived(true); }}><option value="">Tous</option>{PROJECT_STATUSES.map((value) => <option key={value}>{value}</option>)}<option>Clôturé</option></select></label><label className="pp-include"><input type="checkbox" checked={showArchived} onChange={(event) => { setShowArchived(event.target.checked); if (!event.target.checked && statusFilter === 'Clôturé') setStatusFilter(''); }} />Afficher les projets clôturés</label><label className="pp-include"><input type="checkbox" checked={favoritesOnly} onChange={(event) => setFavoritesOnly(event.target.checked)} />Favoris uniquement</label></div>}
             <p className="pp-muted">{filtered.length} projet{filtered.length > 1 ? 's' : ''}</p>
-            <div className="pp-contracts">{filtered.map(({ project, operations }) => <button className={`pp-project-item ${project.id === selectedId ? 'selected' : ''}`} key={project.id} aria-pressed={project.id === selectedId} onClick={() => chooseProject(project.id)}><strong>{project.projectCode} — {project.title}</strong><span>{project.clientName}</span><div><Status value={project.status} /><small>{project.archivedAt ? 'Archivé' : `${operations.length} opération${operations.length > 1 ? 's' : ''}`}</small></div></button>)}{!filtered.length && <p className="pp-empty">Aucun projet ne correspond aux filtres.</p>}</div>
+            <div className="pp-contracts">{filtered.map(({ project, operations }) => <article className={`pp-project-item ${project.id === selectedId ? 'selected' : ''}`} key={project.id} aria-label={`Projet ${project.projectCode}`} onClick={(event) => { if (!(event.target as Element).closest('button')) chooseProject(project.id); }}>
+              <button type="button" className="pp-project-select" aria-pressed={project.id === selectedId} onClick={() => chooseProject(project.id)}><strong>{project.projectCode} — {project.title}</strong><span>{project.clientName}</span><small>{operations.length} opération{operations.length > 1 ? 's' : ''}</small></button>
+              <div className="pp-project-card-footer">{statusControl(project, 'card')}</div>
+              <div className="pp-project-card-actions"><button type="button" className="pp-button pp-project-modify" disabled={Boolean(project.archivedAt) || busy} aria-label={`Modifier ${project.projectCode}`} title={`Modifier ${project.projectCode}`} onClick={() => projectEditor(false, project.id)}><Pencil size={14} />Modifier</button><button type="button" className="pp-button icon pp-project-favorite" aria-label={`${favorites.has(project.id) ? 'Retirer' : 'Ajouter'} ${project.projectCode} ${favorites.has(project.id) ? 'des' : 'aux'} favoris`} aria-pressed={favorites.has(project.id)} title={favorites.has(project.id) ? 'Retirer des favoris' : 'Ajouter aux favoris'} onClick={() => toggleFavorite(project.id)}><Star size={16} fill={favorites.has(project.id) ? 'currentColor' : 'none'} /></button></div>
+            </article>)}{!filtered.length && <p className="pp-empty">Aucun projet ne correspond aux filtres.</p>}</div>
           </aside>
           <section className="pp-detail" aria-label="Dossier du projet">
-            <header className="pp-project-header"><h2>{demo.project.projectCode} — {demo.project.title} <Status value={demo.project.status} />{archived && <small>Archivé</small>}</h2><p className="pp-project-meta">{demo.project.clientName}<span>•</span>{demo.project.contractType}<span>•</span>{date(demo.project.startsOn)} – {date(demo.project.endsOn)}<span>•</span>Loyer contractuel : {money(demo.contract.charterHire ?? 0)} / jour</p>
+            <header className="pp-project-header"><div className="pp-project-heading"><h2>{demo.project.projectCode} — {demo.project.title}</h2>{statusControl(demo.project, 'detail')}</div><p className="pp-project-meta">{demo.project.clientName}<span>•</span>{demo.project.contractType}<span>•</span>{date(demo.project.startsOn)} – {date(demo.project.endsOn)}<span>•</span>Loyer contractuel : {money(demo.contract.charterHire ?? 0)} / jour</p>
               <div className="pp-tabs" role="tablist" aria-label="Rubriques du projet">{tabs.map(({ id, label, icon: Icon }, index) => <button key={id} id={`pp-tab-${id}`} role="tab" aria-selected={tab === id} aria-controls={`pp-panel-${id}`} tabIndex={tab === id ? 0 : -1} className={`pp-tab ${tab === id ? 'active' : ''}`} onClick={() => { setTab(id); setMenu(''); setSelection(null); }} onKeyDown={(event) => { const offset = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0; if (!offset) return; event.preventDefault(); const next = tabs[(index + offset + tabs.length) % tabs.length].id; setTab(next); setSelection(null); document.getElementById(`pp-tab-${next}`)?.focus(); }}><Icon size={20} />{label}</button>)}</div>
             </header>
             <div className="pp-content" id={`pp-panel-${tab}`} role="tabpanel" aria-labelledby={`pp-tab-${tab}`}>
@@ -578,7 +624,7 @@ export function ProjectPreview() {
               </>}
               {tab === 'operations' && <><div className="pp-section-heading"><div><h2>Opérations</h2><p className="pp-muted">Chaque opération est indépendante et liée au Planning.</p></div></div><div className="pp-commandbar"><button className="pp-button primary" disabled={archived} onClick={() => operationEditor()}><Plus size={18} />Nouvelle opération</button>{menuControl('operation', 'Opération sélectionnée', CalendarDays, [{ label: 'Modifier l’opération', icon: Pencil, action: () => operationEditor(selectedOperation) }, { label: 'Ouvrir dans Planning', icon: CalendarDays, action: () => setDialog({ title: 'Occurrence Planning — démonstration', content: <div className="pp-dialog-body"><h3>{selectedOperation?.title}</h3><p>{date(selectedOperation?.startsOn ?? '')} – {date(selectedOperation?.endsOn ?? '')}</p><p>{selectedOperation?.primaryVesselName}</p><Status value={selectedOperation?.status ?? 'Non validé'} /></div> }) }, { label: 'Supprimer l’opération', icon: Trash2, danger: true, action: removeSelection }], false, !selectedOperation || archived)}</div><div className="pp-table-wrap"><table className="pp-table"><thead><tr><th>Mission</th><th>Période</th><th>Navire</th><th>Loyer</th><th>Documents</th><th>Statut</th></tr></thead><tbody>{[...demo.operations].sort((a, b) => a.startsOn.localeCompare(b.startsOn)).map((operation) => <tr key={operation.id} className={selectedOperation?.id === operation.id ? 'pp-selected-row' : ''} onClick={() => setSelection({ kind: 'operation', id: operation.id })}><td><label><input type="radio" name="operation" aria-label={`Sélectionner ${operation.title}`} checked={selectedOperation?.id === operation.id} onChange={() => setSelection({ kind: 'operation', id: operation.id })} /><strong>{operation.title}</strong></label></td><td>{date(operation.startsOn)}<small className="pp-muted">{date(operation.endsOn)}</small></td><td>{operation.primaryVesselName}</td><td>{money(operation.charterHire ?? 0)} / jour<small className="pp-muted">{operation.charterHireOverride ? 'Tarif personnalisé' : 'Barème contractuel copié'}</small></td><td>{operation.documentCount} fichier{operation.documentCount > 1 ? 's' : ''}</td><td><Status value={operation.status} /></td></tr>)}</tbody></table></div></>}
               {tab === 'identity' && <><h2>Identité du projet</h2><dl className="pp-grid-two">{[['Client', demo.project.clientName], ['Navire principal', demo.project.primaryVesselName], ['Livraison', `${date(demo.project.startsOn)} — ${demo.project.deliveryPort}`], ['Restitution', `${date(demo.project.endsOn)} — ${demo.project.redeliveryPort}`], ['Zone d’opération', demo.project.operationArea], ['Type de contrat', demo.project.contractType]].map(([label, value]) => <div key={label}><dt className="pp-muted">{label}</dt><dd>{value}</dd></div>)}</dl><p>{demo.project.description}</p><p className="pp-muted">La modification du dossier est accessible dans le menu Projet.</p></>}
-              {tab === 'contract' && <><h2>Offre & contrat</h2><p className="pp-muted">L’offre commerciale est facultative et indépendante du contrat.</p><div className="pp-commandbar">{menuControl('contract', 'Documents', FileText, [{ label: 'Prévisualiser le contrat', action: () => setDialog({ title: `${demo.project.contractType} — démonstration`, content: <div className="pp-dialog-body"><h3>{demo.project.projectCode} — {demo.project.title}</h3><p>Armateur : {demo.contract.ownerIdentity}</p><p>Affréteur : {demo.project.clientName}</p><p>Navire : {demo.project.primaryVesselName}</p><p>Livraison : {date(demo.project.startsOn)}</p><p>Restitution : {date(demo.project.endsOn)}</p><p>Loyer : {money(demo.contract.charterHire ?? 0)} / jour</p><p className="pp-muted">Résumé de démonstration. La génération contractuelle complète reste celle du module existant.</p></div> }) }, { label: 'Consulter l’offre commerciale', action: () => setDialog({ title: 'Offre commerciale — démonstration', content: <div className="pp-dialog-body"><h3>{demo.project.title}</h3><p>Client : {demo.project.clientName}</p><p>Loyer proposé : {money(demo.contract.charterHire ?? 0)} / jour</p><p className="pp-muted">Cette consultation est indépendante du choix et de l’enregistrement du contrat.</p></div> }) }])}</div><h3>Contrat retenu</h3><p><strong>{demo.project.contractType}</strong></p><p>Navire : {demo.project.primaryVesselName}</p><p>Loyer contractuel : {money(demo.contract.charterHire ?? 0)} / jour</p><p className="pp-muted">Le type de contrat est enregistré depuis Modifier le projet.</p></>}
+              {tab === 'contract' && <><h2>Offre & contrat</h2><p className="pp-muted">L’offre commerciale est facultative et indépendante du contrat.</p><div className="pp-commandbar">{menuControl('contract', 'Documents', FileText, [{ label: 'Prévisualiser le contrat', action: () => setDialog({ title: `${demo.project.contractType} — démonstration`, content: <div className="pp-dialog-body"><h3>{demo.project.projectCode} — {demo.project.title}</h3><p>Armateur : {demo.contract.ownerIdentity}</p><p>Affréteur : {demo.project.clientName}</p><p>Navire : {demo.project.primaryVesselName}</p><p>Livraison : {date(demo.project.startsOn)}</p><p>Restitution : {date(demo.project.endsOn)}</p><p>Loyer : {money(demo.contract.charterHire ?? 0)} / jour</p><p className="pp-muted">Résumé de démonstration. La génération contractuelle complète reste celle du module existant.</p></div> }) }, { label: 'Consulter l’offre commerciale', action: () => setDialog({ title: 'Offre commerciale — démonstration', content: <div className="pp-dialog-body"><h3>{demo.project.title}</h3><p>Client : {demo.project.clientName}</p><p>Loyer proposé : {money(demo.contract.charterHire ?? 0)} / jour</p><p className="pp-muted">Cette consultation est indépendante du choix et de l’enregistrement du contrat.</p></div> }) }])}</div><h3>Contrat retenu</h3><p><strong>{demo.project.contractType}</strong></p><p>Navire : {demo.project.primaryVesselName}</p><p>Loyer contractuel : {money(demo.contract.charterHire ?? 0)} / jour</p><p className="pp-muted">Le type de contrat est enregistré depuis le bouton Modifier de la carte du projet.</p></>}
               {tab === 'documents' && <><h2>Documents du projet</h2><div className="pp-commandbar">{menuControl('documents', 'Documents', FileText, [{ label: 'Aperçu des éléments de facturation', action: () => void exportBilling('preview'), disabled: busy }, { label: 'Ouvrir SharePoint', action: () => window.open('https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets', '_blank', 'noopener,noreferrer') }])}</div><p className="pp-muted">Pièces de démonstration associées aux frais du mois.</p><ul>{demo.expenses.flatMap((expense) => expenseProofs(expense).map((attachment) => <li key={`${expense.id}/${attachment.id}`}><button type="button" className="pp-proof-link" onClick={() => void showProof(expense, attachment)}>{attachment.name}</button> — {expense.supplier}</li>))}</ul></>}
             </div>
           </section>

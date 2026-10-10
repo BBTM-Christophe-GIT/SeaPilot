@@ -10,6 +10,8 @@ import { compareFleetNames } from '../fleet/fleetDisplay';
 import {
   CalendarDays,
   CalendarPlus,
+  Archive,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -23,6 +25,7 @@ import {
   PackageCheck,
   Plus,
   RefreshCw,
+  RotateCcw,
   Star,
   ReceiptText,
   Share2,
@@ -53,7 +56,8 @@ import {
 } from './projectContractOptions';
 import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import type { ProjectDocumentLanguage } from './projectDocumentGeneration';
-import { deleteProjectPlanningOccurrence } from './projectMutations';
+import { archiveProject, deleteProjectPlanningOccurrence, reactivateProject, setProjectStatus } from './projectMutations';
+import { PROJECT_STATUSES } from './projectStatus';
 import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
 import { fetchProjectDocumentEmitter } from './projectCommercialOffer';
 import {
@@ -126,6 +130,12 @@ function generatedDocumentKindForContract(contractType?: string | null): Project
 
 function displayText(value: string | number | null | undefined): string {
   return value === '' || value === null || value === undefined ? 'Non renseigné' : String(value);
+}
+
+function ProjectStatusPill({ project, canManage, busy, onChange }: { project: ProjectRecord; canManage: boolean; busy: boolean; onChange: () => void }) {
+  const label = project.archivedAt ? 'Clôturé' : displayText(project.status);
+  return canManage ? <button className="project-status-chip project-status-button" disabled={busy} aria-label={`Modifier le statut de ${project.projectCode || project.title}`} onClick={onChange} type="button">{label}<ChevronDown aria-hidden="true" size={13} /></button>
+    : <span className="project-status-chip">{label}</span>;
 }
 
 function formatDate(value: string): string {
@@ -696,7 +706,8 @@ function ProjectDetail({
   onDeleteOccurrence,
   onEditOccurrence,
   onGenerateDocument,
-  onEditProject,
+  onChangeStatus,
+  changingProjectState,
   onOpenPlanning,
   operationDocuments,
   planningOccurrences,
@@ -717,7 +728,8 @@ function ProjectDetail({
   onDeleteOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   onEditOccurrence: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   onGenerateDocument: (kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null, contractType?: string) => void;
-  onEditProject: () => void;
+  onChangeStatus: () => void;
+  changingProjectState: boolean;
   onOpenPlanning: (occurrence: ProjectPlanningOccurrenceRecord) => void;
   operationDocuments: ProjectOperationDocumentRecord[];
   planningOccurrences: ProjectPlanningOccurrenceRecord[];
@@ -782,11 +794,10 @@ function ProjectDetail({
             <h2>{project.title}</h2>
             <p className="project-sheet-context">{project.clientName || 'Client à renseigner'}<span>·</span>{getProjectVesselNames(project).join(' · ') || 'Navire à renseigner'}</p>
           </div>
-          {isManager && !project.archivedAt ? <button className="project-sheet-edit" onClick={onEditProject} type="button"><Pencil aria-hidden="true" size={17} /> Modifier</button> : null}
         </div>
         <dl className="project-sheet-summary">
           <DetailField label="Période" value={formatPeriod(projectStart, projectEnd)} />
-          <DetailField label="Statut" value={project.archivedAt ? 'Archivé' : displayText(project.status)} />
+          <div className="project-detail-field"><dt>Statut</dt><dd><ProjectStatusPill project={project} canManage={isManager} busy={changingProjectState} onChange={onChangeStatus} /></dd></div>
           <DetailField label="Type de contrat" value={displayText(isCharterContractType(project.contractType) ? normalizeProjectContractType(project.contractType) : project.contractType)} />
         </dl>
       </header>
@@ -1228,6 +1239,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [serviceCatalogOpen, setServiceCatalogOpen] = useState(false);
   const [planningEditorOpen, setPlanningEditorOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [showClosedProjects, setShowClosedProjects] = useState(false);
+  const [statusDialog, setStatusDialog] = useState<{ project: ProjectRecord; closing: boolean } | null>(null);
+  const [changingProjectState, setChangingProjectState] = useState(false);
   const [editingProject, setEditingProject] = useState<ProjectRecord | undefined>();
   const [editingOccurrence, setEditingOccurrence] = useState<ProjectPlanningOccurrenceRecord | undefined>();
   const [mutationMessage, setMutationMessage] = useState('');
@@ -1297,10 +1311,19 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     () => projectsData.projects.filter((project) => isCurrentProject(project, projectsData.planningOccurrences, currentMonthStart)),
     [projectsData.projects, projectsData.planningOccurrences, currentMonthStart],
   );
+  const availableProjects = useMemo(
+    () => projectsData.projects.filter((project) => showClosedProjects || !project.archivedAt),
+    [projectsData.projects, showClosedProjects],
+  );
+  const currentAvailableProjects = useMemo(
+    () => currentProjects.filter((project) => showClosedProjects || !project.archivedAt),
+    [currentProjects, showClosedProjects],
+  );
   const filteredProjects = useMemo(
-    () => (projectScope === 'current' ? currentProjects : projectsData.projects).filter((project) =>
-      (projectScope !== 'favorites' || favorites.ids.has(project.id)) && projectMatchesFilters(project, effectiveFilters)),
-    [effectiveFilters, projectsData.projects, currentProjects, projectScope, favorites.ids],
+    () => (projectScope === 'current' ? currentAvailableProjects : availableProjects).filter((project) =>
+      (projectScope !== 'favorites' || favorites.ids.has(project.id))
+      && projectMatchesFilters(project.archivedAt ? { ...project, status: 'Clôturé' } : project, effectiveFilters)),
+    [effectiveFilters, availableProjects, currentAvailableProjects, projectScope, favorites.ids],
   );
   const filteredProjectDocuments = useMemo(
     () => filterDocumentsForProjects(projectDocumentSet.documents, filteredProjects),
@@ -1331,7 +1354,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     [filteredClients, filteredContractDocuments, filteredProjectDocuments, filteredProjects, projectsData],
   );
   const statusOptions = useMemo(
-    () => uniqueSorted(projectsData.projects.map((project) => project.status)),
+    () => uniqueSorted([...projectsData.projects.map((project) => project.status), 'Clôturé']),
     [projectsData.projects],
   );
   const clientOptions = useMemo(
@@ -1388,7 +1411,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const pageCount = Math.max(1, Math.ceil(filteredProjects.length / PROJECTS_PER_PAGE));
   const safePage = Math.min(currentPage, pageCount - 1);
   const visibleProjects = filteredProjects.slice(safePage * PROJECTS_PER_PAGE, (safePage + 1) * PROJECTS_PER_PAGE);
-  const hasActiveFilters = Object.values(filters).some(Boolean);
+  const hasActiveFilters = showClosedProjects || Object.values(filters).some(Boolean);
   const contractTypeOptions = useMemo(
     () => uniqueSorted([
       ...PROJECT_CONTRACT_TYPES,
@@ -1400,17 +1423,46 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   function updateFilterValue(key: keyof ProjectFilterState, value: string) {
     setCurrentPage(0);
     setFilters((currentFilters) => ({ ...currentFilters, [key]: value }));
+    if (key === 'status' && value === 'Clôturé') { setShowClosedProjects(true); setProjectScope('all'); }
   }
 
   function resetFilters() {
     setCurrentPage(0);
     setFilters(EMPTY_PROJECT_FILTERS);
+    setShowClosedProjects(false);
   }
 
   function openProjectEditor(project?: ProjectRecord) {
+    if (!isManager || changingProjectState || project?.archivedAt) return;
     setMutationError('');
+    if (project && selectedProject) setSelectedProjectId((current) => current ?? selectedProject.id);
     setEditingProject(project);
     setProjectEditorOpen(true);
+  }
+
+  function openProjectStatus(project: ProjectRecord) {
+    if (!isManager || changingProjectState) return;
+    setMutationError('');
+    setStatusDialog({ project, closing: false });
+  }
+
+  async function changeProjectState(project: ProjectRecord, action: 'close' | 'reactivate' | 'status', status?: string) {
+    if (!isManager || changingProjectState || (action !== 'reactivate' && project.archivedAt)) return;
+    setChangingProjectState(true);
+    setMutationError('');
+    setMutationMessage('');
+    try {
+      if (action === 'close') await archiveProject(effectiveClient, project.id);
+      else if (action === 'reactivate') await reactivateProject(effectiveClient, project.id);
+      else await setProjectStatus(effectiveClient, project.id, status ?? '');
+      setStatusDialog(null);
+      setMutationMessage(`${project.projectCode || project.title} ${action === 'close' ? 'clôturé. Ses opérations et documents restent conservés.' : action === 'reactivate' ? 'réactivé.' : `mis à jour : ${status}.`}`);
+      setLoadAttempt((attempt) => attempt + 1);
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : 'Impossible de modifier le projet.');
+    } finally {
+      setChangingProjectState(false);
+    }
   }
 
   function openPlanningEditor(occurrence?: ProjectPlanningOccurrenceRecord) {
@@ -1602,7 +1654,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
       </header>
 
       <nav aria-label="Commandes du module Projets" className="project-workspace-actions project-primary-commands">
-        <ProjectRibbonButton disabled={!isManager} icon={<Plus size={18} />} label="Nouveau projet" onClick={() => openProjectEditor()} />
+        <ProjectRibbonButton disabled={!isManager || changingProjectState} icon={<Plus size={18} />} label="Nouveau projet" onClick={() => openProjectEditor()} />
         <ProjectRibbonButton disabled={!isManager} icon={<Users size={18} />} label="Clients" onClick={() => setClientCatalogOpen(true)} />
         <ProjectRibbonButton disabled={!isManager} icon={<Ship size={18} />} label="Navires" onClick={() => setFleetCatalogOpen(true)} />
         <ProjectRibbonButton disabled={!isManager} icon={<Ship size={18} />} label="Remorqués" onClick={() => setTowedAssetCatalogOpen(true)} />
@@ -1615,12 +1667,12 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus size={18} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
         <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<FileText size={18} />} label="Émettre le document" onClick={() => openProjectDocumentEmission(selectedGeneratedDocumentKind, selectedGeneratedDocumentKind === 'offer' ? null : selectedPlanningOccurrences[0]?.id ?? null)} />
         <ProjectRibbonButton icon={<Share2 size={18} />} label="Dossiers Google Drive" onClick={() => window.open('https://drive.google.com/drive/folders/1H5kB4ppiKQAm4hqhYjMHcP4pRZaTncj_', '_blank', 'noopener,noreferrer')} />
-        <label className="project-dossier-switcher">Projet<select aria-label="Changer de projet" value={selectedProject?.id || ''} onChange={(event) => setSelectedProjectId(Number(event.target.value))}>{projectsData.projects.map((project) => <option key={project.id} value={project.id}>{project.projectCode} – {project.title}</option>)}</select></label>
+        <label className="project-dossier-switcher">Projet<select aria-label="Changer de projet" disabled={changingProjectState} value={selectedProject?.id || ''} onChange={(event) => setSelectedProjectId(Number(event.target.value))}>{projectsData.projects.filter((project) => !project.archivedAt || project.id === selectedProject?.id).map((project) => <option key={project.id} value={project.id} disabled={Boolean(project.archivedAt)}>{project.projectCode} – {project.title}{project.archivedAt ? ' (Clôturé)' : ''}</option>)}</select></label>
       </nav>}
       {!dossierOpen ? <div className="project-portfolio-scopes" aria-label="Classement des projets">
-        {([['current', 'Projets actuels'], ['all', 'Tous les projets']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={projectScope === value} onClick={() => { setProjectScope(value); setCurrentPage(0); }}>{label} <b>{value === 'current' ? currentProjects.length : projectsData.projects.length}</b></button>)}
-        <button type="button" aria-pressed={projectScope === 'favorites'} onClick={() => { setProjectScope('favorites'); setCurrentPage(0); }}><Star size={14} aria-hidden="true" /> Mes favoris <b>{favorites.loading ? '…' : projectsData.projects.filter((project) => favorites.ids.has(project.id)).length}</b></button>
-        <p>{projectScope === 'favorites' ? 'Vos projets favoris, personnels et accessibles depuis votre compte.' : projectScope === 'current' ? 'Projets et opérations du mois en cours ou à venir.' : 'Tous les projets, y compris les projets passés, archivés et sans date.'}</p>
+        {([['current', 'Projets actuels'], ['all', 'Tous les projets']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={projectScope === value} onClick={() => { setProjectScope(value); setCurrentPage(0); }}>{label} <b>{value === 'current' ? currentAvailableProjects.length : availableProjects.length}</b></button>)}
+        <button type="button" aria-pressed={projectScope === 'favorites'} onClick={() => { setProjectScope('favorites'); setCurrentPage(0); }}><Star size={14} aria-hidden="true" /> Mes favoris <b>{favorites.loading ? '…' : availableProjects.filter((project) => favorites.ids.has(project.id)).length}</b></button>
+        <p>{projectScope === 'favorites' ? 'Vos projets favoris, personnels et accessibles depuis votre compte.' : projectScope === 'current' ? 'Projets et opérations du mois en cours ou à venir.' : `Tous les projets passés et sans date${showClosedProjects ? ', y compris les projets clôturés' : ''}.`}</p>
       </div> : null}
       {favorites.error ? <p role="alert" className="project-favorites-error">{favorites.error} <button type="button" onClick={favorites.retry}>Réessayer les favoris</button></p> : null}
 
@@ -1697,6 +1749,11 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           Projet jusqu’au
           <input onChange={(event) => updateFilterValue('dateTo', event.target.value)} type="date" value={filters.dateTo} />
         </label>
+        <label className="project-closed-filter"><input type="checkbox" checked={showClosedProjects} onChange={(event) => {
+          setShowClosedProjects(event.target.checked); setCurrentPage(0);
+          if (event.target.checked) setProjectScope('all');
+          else if (filters.status === 'Clôturé') setFilters((current) => ({ ...current, status: '' }));
+        }} />Afficher les projets clôturés</label>
         <button disabled={!hasActiveFilters} onClick={resetFilters} type="button">
           Réinitialiser
         </button>
@@ -1712,11 +1769,11 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           }} includeIcon />
         </span>
       ) : null}
-      {mutationError ? <p className="form-error" role="alert">{mutationError}</p> : null}
+      {mutationError && !statusDialog ? <p className="form-error" role="alert">{mutationError}</p> : null}
 
       {projectsData.projects.length === 0 ? (
         <div className="admin-state">Aucun projet n’est disponible dans Supabase.</div>
-      ) : filteredProjects.length === 0 ? (
+      ) : filteredProjects.length === 0 && !dossierOpen ? (
         <div className="admin-state">
           <div>
             <strong>{projectScope === 'favorites' && !favorites.ids.size ? (favorites.loading ? 'Chargement de vos favoris…' : 'Aucun projet favori. Utilisez l’étoile à côté d’un projet pour le retrouver ici.') : 'Aucun projet ne correspond aux filtres.'}</strong>
@@ -1764,13 +1821,16 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                     >
                       <span className="project-contract-list-title">
                         <strong>{project.projectCode ? `${project.projectCode} – ` : ''}{project.title}</strong>
-                        <span className="project-status-chip">{project.archivedAt ? 'Archivé' : displayText(project.status)}</span>
                       </span>
                       <span className="project-contract-list-meta">
                         <span>{displayText(project.clientName)}</span>
                         <small>{occurrences.length} opération(s)</small>
                       </span>
                     </button>
+                    <div className="project-portfolio-row-actions">
+                      <ProjectStatusPill project={project} canManage={isManager} busy={changingProjectState} onChange={() => openProjectStatus(project)} />
+                      {isManager ? <button type="button" className="project-card-modify" disabled={Boolean(project.archivedAt) || changingProjectState} aria-label={`Modifier ${project.projectCode || project.title}`} onClick={() => openProjectEditor(project)}><Pencil aria-hidden="true" size={14} />Modifier</button> : null}
+                    </div>
                   </li>
                 );
               })}
@@ -1804,7 +1864,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               onDeleteOccurrence={(occurrence) => void deletePlanningOccurrence(occurrence)}
               onEditOccurrence={openPlanningEditor}
               onGenerateDocument={openProjectDocumentEmission}
-              onEditProject={() => openProjectEditor(selectedProject)}
+              onChangeStatus={() => openProjectStatus(selectedProject)}
+              changingProjectState={changingProjectState}
               onOpenPlanning={(occurrence) => window.location.assign(planningOperationUrl(occurrence.id))}
               operationDocuments={selectedOperationDocuments}
               planningOccurrences={selectedPlanningOccurrences}
@@ -1837,6 +1898,14 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         />
       ) : null}
 
+      {statusDialog ? <AppDialog title={statusDialog.closing ? 'Clôturer le projet' : `Modifier le statut de ${statusDialog.project.projectCode || statusDialog.project.title}`} size="sm" isBusy={changingProjectState} onClose={() => setStatusDialog(null)} description={statusDialog.closing ? `Clôturer ${statusDialog.project.projectCode || statusDialog.project.title} ? Le projet sera archivé. Ses opérations restent visibles dans le calendrier et son historique est conservé.` : undefined} footer={statusDialog.closing ? <div className="app-dialog__actions"><button type="button" className="is-secondary" disabled={changingProjectState} onClick={() => setStatusDialog(null)}>Annuler</button><button type="button" className="is-primary" disabled={changingProjectState} onClick={() => void changeProjectState(statusDialog.project, 'close')}>{changingProjectState ? 'Traitement…' : 'Clôturer'}</button></div> : undefined}>
+        {!statusDialog.closing ? <div className="project-status-options">{statusDialog.project.archivedAt ? <button type="button" disabled={changingProjectState} onClick={() => void changeProjectState(statusDialog.project, 'reactivate')}><RotateCcw aria-hidden="true" size={17} />Réactiver le projet</button> : <>
+          {PROJECT_STATUSES.map((status) => <button key={status} type="button" aria-pressed={statusDialog.project.status === status} disabled={changingProjectState || statusDialog.project.status === status} onClick={() => void changeProjectState(statusDialog.project, 'status', status)}>{status}</button>)}
+          <button type="button" disabled={changingProjectState} onClick={() => setStatusDialog((current) => current ? { ...current, closing: true } : null)}><Archive aria-hidden="true" size={17} />Clôturer</button>
+        </>}</div> : null}
+        {mutationError ? <p className="form-error" role="alert">{mutationError}</p> : null}
+      </AppDialog> : null}
+
       {projectEditorOpen ? (
         <ProjectEditor
           client={effectiveClient}
@@ -1847,16 +1916,15 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           onClose={() => setProjectEditorOpen(false)}
           onSaved={(result) => {
             setProjectEditorOpen(false);
-            setSelectedProjectId(result.id);
-            setDossierOpen(true);
+            if (!editingProject) { setSelectedProjectId(result.id); setDossierOpen(true); }
             setMutationMessage(`${result.projectCode || result.title} enregistré dans Supabase.`);
             setLoadAttempt((attempt) => attempt + 1);
           }}
           project={editingProject}
           projectAttachments={editingProject
-            ? selectedOperationDocuments.filter((document) => document.documentType === 'project_attachment')
+            ? projectsData.operationDocuments.filter((document) => document.projectId === editingProject.id && document.documentType === 'project_attachment')
             : []}
-          statuses={statusOptions}
+          statuses={[...PROJECT_STATUSES]}
           towedAssets={projectsData.towedAssets}
           vessels={projectsData.vessels}
         />

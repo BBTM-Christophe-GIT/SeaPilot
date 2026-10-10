@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { normalizeProjectStatus } from './projectStatus';
+import { normalizeProjectStatus, PROJECT_STATUSES } from './projectStatus';
 import { DEFAULT_PROJECT_FUEL_TERMS, DEFAULT_PROJECT_OWNER_IDENTITY } from './projectContractOptions';
 
 export interface ProjectMutationResult {
@@ -365,8 +365,26 @@ export async function saveClient(client: SupabaseClient, input: ClientWriteInput
 }
 
 export async function archiveProject(client: SupabaseClient, projectId: number): Promise<void> {
+  validateProjectId(projectId);
   const { error } = await client.rpc('projects_archive', { target_project_id: projectId });
   if (error) throw mutationError(error, "Impossible d’archiver le projet.");
+}
+
+function validateProjectId(projectId: number): void {
+  if (!Number.isSafeInteger(projectId) || projectId <= 0) throw new Error('Le projet est obligatoire.');
+}
+
+export async function reactivateProject(client: SupabaseClient, projectId: number): Promise<void> {
+  validateProjectId(projectId);
+  const { error } = await client.rpc('projects_reactivate', { target_project_id: projectId });
+  if (error) throw mutationError(error, 'Impossible de réactiver le projet.');
+}
+
+export async function setProjectStatus(client: SupabaseClient, projectId: number, status: string): Promise<void> {
+  validateProjectId(projectId);
+  if (!PROJECT_STATUSES.some((value) => value === status)) throw new Error('Le statut du projet est invalide.');
+  const { error } = await client.rpc('projects_set_status', { target_project_id: projectId, target_status: status });
+  if (error) throw mutationError(error, 'Impossible de modifier le statut du projet.');
 }
 
 export function validateProjectPlanningOccurrenceInput(input: ProjectPlanningOccurrenceWriteInput): string[] {

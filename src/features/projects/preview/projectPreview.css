@@ -111,18 +111,30 @@ body.pp-preview-page {
 .pp-filter-row > :last-child { margin-left: auto; }
 .pp-filter-row .pp-button { min-height: var(--sp-control-height, 40px); font-size: 12px; }
 .pp-contracts { margin-top: 12px; display: grid; gap: 4px; }
-.pp-project-item { display: block; position: relative; width: 100%; padding: 13px 15px; text-align: left; border: 1px solid var(--sp-border, #d8e0ea); border-radius: var(--sp-control-radius, 6px); color: var(--pp-ink); background: var(--sp-surface, #ffffff); }
+.pp-project-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; position: relative; width: 100%; padding: 13px 15px; text-align: left; border: 1px solid var(--sp-border, #d8e0ea); border-radius: var(--sp-control-radius, 6px); color: var(--pp-ink); background: var(--sp-surface, #ffffff); cursor: pointer; }
 .pp-project-item:hover { border-color: var(--sp-border-strong, #c7d2df); background: var(--sp-surface-subtle, #fbfcfe); }
 .pp-project-item.selected { background: var(--sp-primary-soft, #eaf3fc); border-color: var(--sp-primary-soft, #eaf3fc); box-shadow: inset 4px 0 var(--sp-primary, #0c5598); }
 .pp-project-item strong { display: block; font-size: 15px; font-weight: 750; margin-bottom: 3px; }
-.pp-project-item > span:not(.pp-status), .pp-project-item > p { color: var(--sp-muted, #536276); font-size: 12px; }
-.pp-project-item > div { display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-top: 6px; }
-.pp-project-item > div > span:last-child:not(.pp-status) { color: var(--sp-muted, #536276); font-size: 11px; }
+.pp-project-select { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 0; border: 0; border-radius: 3px; text-align: left; color: inherit; background: transparent; min-width: 0; }
+.pp-project-select strong { grid-column: 1 / -1; }
+.pp-project-select span { min-width: 0; color: var(--sp-muted, #536276); font-size: 12px; }
+.pp-project-select small { color: var(--sp-muted, #536276); font-size: 11px; align-self: end; }
+.pp-project-card-footer, .pp-project-card-actions { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.pp-project-card-actions { justify-content: flex-end; }
+.pp-project-item .pp-project-card-actions .pp-button { min-height: 32px; padding: 5px 7px; font-size: 11px; gap: 4px; }
+.pp-project-item .pp-project-card-actions .pp-button.icon { width: 32px; padding: 5px; }
+.pp-project-favorite[aria-pressed="true"] { color: var(--sp-primary, #0c5598); background: var(--sp-primary-soft, #eaf3fc); border-color: var(--sp-primary, #0c5598); }
+.pp-project-filters .pp-include { margin: 0; }
+.pp-project-status-menu { min-width: 0; }
+.pp-project-status-menu .pp-menu { left: 0; right: auto; }
+.pp-status-button { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; border: 0; border-radius: 30px; padding: 0 2px 0 0; background: transparent; color: var(--sp-muted, #536276); }
+.pp-status-button:hover { background: var(--sp-primary-soft, #eaf3fc); }
 .pp-status { display: inline-flex; white-space: nowrap; align-items: center; justify-content: center; min-height: 23px; border-radius: 30px; padding: 3px 13px; font-size: 11px; font-weight: 650; background: #e6edf5; color: #3d536d; }
 .pp-status.validated { background: #d0f1df; color: #146637; }
 .pp-status.unvalidated { background: #ffdddd; color: #b52525; }
 .pp-status.weather { background: #fff0ca; color: #90600a; }
 .pp-status.invoiced { background: #dceaff; color: #0b59ab; }
+.pp-status.closed { background: var(--sp-surface-muted, #e6edf5); color: var(--sp-muted, #536276); }
 
 .pp-detail { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .pp-project-header { background: var(--sp-surface, #ffffff); border: 1px solid var(--sp-border, #d8e0ea); border-radius: var(--sp-panel-radius, 8px); padding: 19px 18px 0; min-width: 0; }
@@ -351,9 +363,12 @@ body.pp-preview-page {
   .pp-contracts { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-top: 9px; }
   .pp-project-item { padding: 10px; }
   .pp-project-item strong { font-size: 11px; line-height: 1.35; }
-  .pp-project-item > span:not(.pp-status), .pp-project-item > p { font-size: 10px; }
-  .pp-project-item > div { gap: 5px; flex-wrap: wrap; }
-  .pp-project-item > div > span:last-child:not(.pp-status) { font-size: 9px; }
+  .pp-project-select span { font-size: 10px; }
+  .pp-project-select small { font-size: 9px; }
+  .pp-project-select { grid-template-columns: 1fr; }
+  .pp-project-card-footer, .pp-project-card-actions { gap: 5px; }
+  .pp-project-card-footer { grid-column: 1 / -1; }
+  .pp-project-card-actions { grid-column: 1 / -1; justify-content: flex-start; }
   .pp-project-item .pp-status { font-size: 9px; padding: 2px 8px; min-height: 20px; }
   .pp-detail { gap: 10px; }
   .pp-project-header { padding: 15px 13px 0; }
@@ -394,10 +409,10 @@ body.pp-preview-page {
 @media (max-width: 420px) {
   .pp-contracts { grid-template-columns: 1fr; }
   .pp-project-item { padding: 9px 11px; }
-  .pp-project-item > div { position: absolute; right: 10px; bottom: 10px; margin: 0; }
-  .pp-project-item > div > span:last-child:not(.pp-status) { display: none; }
+  .pp-project-card-footer, .pp-project-card-actions { grid-column: auto; }
+  .pp-project-card-actions { justify-content: flex-end; }
+  .pp-project-select { grid-template-columns: minmax(0, 1fr) auto; }
   .pp-project-item strong { max-width: calc(100% - 5px); font-size: 12px; }
-  .pp-project-item > p { max-width: calc(100% - 75px); }
   .pp-topbar .pp-header-actions .pp-button { display: none; }
   .pp-project-header h2 { font-size: 18px; }
   .pp-grid-two { grid-template-columns: 1fr; }
@@ -450,6 +465,8 @@ body.pp-preview-page {
   .pp-app .pp-field input:not([type="checkbox"]):not([type="radio"]),
   .pp-app .pp-field select, .pp-app .pp-section-heading > select { min-height: 44px; }
   .pp-app .pp-table .pp-button.icon { width: 44px; min-height: 44px; }
+  .pp-app .pp-project-item .pp-project-card-actions .pp-button, .pp-app .pp-status-button { min-height: 44px; }
+  .pp-app .pp-project-item .pp-project-card-actions .pp-button.icon { width: 44px; }
 }
 @media (max-width: 720px) {
   .pp-app .pp-module-header h1 { font-size: 24px; }

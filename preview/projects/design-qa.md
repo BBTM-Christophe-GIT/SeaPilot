@@ -1,7 +1,8 @@
 # Vérification visuelle de la préversion
 
-Dernière itération : 10 octobre 2026. Validation locale réussie ; les résultats
-des itérations précédentes ci-dessous décrivent leurs états respectifs.
+Dernière itération : 10 octobre 2026. Validation du portefeuille et du cycle
+de vie des projets en cours ; les résultats des itérations précédentes
+ci-dessous décrivent leurs états respectifs.
 
 ## Source et état comparés
 
@@ -517,5 +518,83 @@ Le déploiement du commit poussé est contrôlé après publication et suivi dan
 la PR. Les captures et archives de contrôle restent hors du dépôt ; aucun
 nouvel actif de preuve n'est ajouté. Aucun moteur de production, droit ou
 schéma de données n'est modifié.
+
+final result: passed
+
+## Itération : portefeuille, favoris et clôture/réactivation
+
+Demandes du 10 octobre : retirer Actualiser et Modifier du ruban, placer Modifier
+et Favori sur chaque carte, ouvrir le choix de statut depuis la pastille et
+ajouter Clôturer, avec projets clôturés masqués par défaut et réactivation.
+Les itérations précédentes conservent leurs preuves ; la réduction du ruban
+et les changements de cycle de vie décrits ici sont des demandes ultérieures.
+
+### Disposition et fonctionnement
+
+- Dans la préversion, Projet conserve Nouveau projet, Archiver le projet et
+  Réinitialiser la démonstration, devant les trois commandes Catalogue.
+  Modifier cible directement la carte cliquée, sans sélection préalable.
+  L'étoile utilise un nom accessible et `aria-pressed` ; ses favoris restent
+  en mémoire pour la session et sont effacés par la réinitialisation.
+- Les pastilles ouvrent Brouillon, Non validé, Validé, Stand-by météo et Facturé,
+  ainsi que Clôturer. La clôture est confirmée et renseigne l'archivage, en
+  conservant le statut précédent et les données. Clôturé est un état dérivé,
+  pas une valeur supplémentaire de `PROJECT_STATUSES`. La pastille d'un
+  projet clôturé propose Réactiver le projet.
+- Les projets clôturés sont masqués par défaut. Afficher les projets clôturés
+  permet de les retrouver, et Favoris uniquement limite les cartes marquées.
+  Les commandes sont distinctes du bouton de sélection, sans imbrication.
+  Le dessin dense utilise 32 px sur ordinateur et des cibles de 44 px au
+  pointeur tactile, avec focus commun et états désactivés.
+- Le module réel reprend les actions ciblées et les pastilles interactives
+  pour les comptes autorisés. Ses favoris personnels existants restent
+  persistants ; Tous, Actuels et Mes favoris excluent les projets clôturés
+  tant que leur affichage n'est pas demandé. Les lecteurs conservent un
+  statut non interactif, et la clôture empêche les modifications ordinaires.
+- La migration `20261010071337_project_closure_reactivation.sql` ajoute
+  `projects_reactivate` et `projects_set_status`, avec les gardes admin/direction
+  et d'entreprise existantes. La réactivation conserve le statut métier.
+  Les rattachements lors de la création ou modification d'un DPR sont
+  contrôlés côté serveur : une nouvelle affectation nécessite un projet actif.
+  Un ancien DPR conserve son projet clôturé si son rattachement ne change pas.
+  Le contexte d'entrée ne préremplit que des projets actifs.
+- Les catalogues actifs Planning gardent leur filtrage existant. Les listes
+  de choix DPR et QHSE excluent également les projets clôturés ; les opérations
+  du calendrier, anciens DPR, libellés historiques et PDF restent consultables.
+  La clôture ne supprime pas l'historique. La préversion autonome n'utilise
+  pas ces RPC ni des données réelles.
+
+### Validation réalisée
+
+- 135 tests préversion/facturation/client de démonstration, 54 tests Projets
+  et mutations, et 33 tests DPR/QHSE passent. Le test du cycle de vie couvre
+  deux mois de facturation ; il dispose de 45 secondes. La préparation des
+  données du test de duplication ne saisit plus chaque caractère, en
+  conservant toutes ses assertions et ses actions de duplication/modification.
+- 64 assertions SQL passent avec admin, direction, Marin, Capitaine, une
+  autre entreprise et une adhésion inactive. Le test termine par ROLLBACK,
+  puis l'absence de toutes ses fixtures est vérifiée. Le test existant des
+  libellés DPR et de la flotte publiée passe aussi avec les profils authentifiés.
+  Le verrou SQL contre une clôture concurrente est relu ; aucun essai sur
+  deux sessions concurrentes n'est revendiqué.
+- La migration est appliquée en local et sur SeaPilot Supabase, sous la
+  version `20261010071337`. Les droits d'exécution et gardes actives sont
+  vérifiés après application. Les tables, historiques et statuts métier
+  partagés ne sont pas modifiés par la migration.
+- ESLint des fichiers concernés et build de production passent. Les
+  avertissements de taille des bundles et imports dynamiques existants
+  restent présents.
+- Le navigateur confirme Modifier P263 sans changer le dossier P264,
+  favoris, clôture, masquage par défaut, filtre et retour au statut précédent.
+  Décocher Afficher les projets clôturés efface aussi le filtre Statut=Clôturé.
+  Aucun bouton imbriqué, débordement de page ou erreur console n'est constaté.
+- Les vérifications des droits réels s'appuient sur le code, les gardes serveur
+  et les fixtures de profils ; les vues Marin/Capitaine simulées ne constituent
+  pas une preuve de ces droits.
+
+Le déploiement du commit poussé sera contrôlé après publication et suivi dans
+la PR. Les captures de contrôle restent hors du dépôt. Les règles de calcul
+et d'export de facturation sont conservées ; cette itération ajoute des RPC
+et contrôles métier de cycle de vie et ne se limite pas à un changement visuel.
 
 final result: passed

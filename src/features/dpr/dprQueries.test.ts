@@ -44,6 +44,19 @@ describe('DPR Supabase commands', () => {
     expect(context.project).toEqual({ id: 60, code: 'P268', title: 'ETPO FORT BOYARD' });
   });
 
+  it('does not prefill a closed project from an older Planning context response', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: {
+      issuerPersonId: 28, issuerName: 'Gary LEFEVRE', vesselId: 3, projectId: 60,
+      project: { id: 60, code: 'P268', title: 'Projet clôturé', archivedAt: '2026-10-10T10:00:00Z' },
+      people: [], crewPersonIds: [],
+    }, error: null });
+    const context = await fetchDprEntryContext({ rpc } as never, '2026-10-10', 3);
+    expect(context.projectId).toBeNull();
+    expect(context.project).toBeNull();
+    expect(context.vesselId).toBe(3);
+    expect(context.issuerName).toBe('Gary LEFEVRE');
+  });
+
   it('loads only the DPRs created by the Marin dashboard user', async () => {
     const reports = queryResult([{
       id: 42,
@@ -99,7 +112,7 @@ describe('DPR Supabase commands', () => {
     const empty = queryResult([]);
     const rpc = vi.fn().mockImplementation((name: string) => Promise.resolve({
       data: name === 'dpr_report_projects'
-        ? [{ id: 60, project_code: 'P268', title: 'Current project' }, { id: 61, project_code: 'P144', title: 'Historical project' }]
+        ? [{ id: 60, project_code: 'P268', title: 'Current project', archived_at: null }, { id: 61, project_code: 'P144', title: 'Historical project', archived_at: '2026-10-10T10:00:00Z' }]
         : { project: { id: 60, code: 'P268', title: 'Current project' }, people: [] },
       error: null,
     }));
@@ -111,9 +124,30 @@ describe('DPR Supabase commands', () => {
     const dashboard = await fetchDprDashboard(client as never);
     expect(dashboard.reports.map((report) => report.projectCode)).toEqual(['P268', 'P144']);
     expect(dashboard.references.projects).toHaveLength(2);
+    expect(dashboard.references.activeProjects.map((project) => project.id)).toEqual([60]);
+    expect(dashboard.references.projects.find((project) => project.id === 61)?.archivedAt).toBe('2026-10-10T10:00:00Z');
     expect(rpc).toHaveBeenCalledWith('dpr_report_projects');
     rpc.mockImplementation((name: string) => Promise.resolve({ data: [], error: name === 'dpr_report_projects' ? { message: 'Permission denied' } : null }));
     await expect(fetchDprDashboard(client as never)).rejects.toEqual({ message: 'Permission denied' });
+  });
+
+  it('keeps closed project labels in office DPR reports while excluding them from entry choices', async () => {
+    const projects = queryResult([
+      { id: 60, project_code: 'P268', title: 'Projet actif', archived_at: null },
+      { id: 61, project_code: 'P144', title: 'Projet clôturé', archived_at: '2026-10-10T10:00:00Z' },
+    ]);
+    const reports = queryResult([{ id: 1, project_id: 61, report_date: '2025-01-01', status: 'validated' }]);
+    const empty = queryResult([]);
+    const from = vi.fn((table: string) => table === 'projects' ? projects : table === 'dpr_reports' ? reports : empty);
+    const rpc = vi.fn().mockImplementation((name: string) => Promise.resolve({
+      data: name === 'dpr_report_projects' ? [] : { projectId: null, project: null, people: [] }, error: null,
+    }));
+    const client = { auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null } }) }, from, rpc };
+    const result = await fetchDprDashboard(client as never);
+    expect(projects.select).toHaveBeenCalledWith('id,project_code,title,archived_at');
+    expect(result.references.activeProjects.map((project) => project.id)).toEqual([60]);
+    expect(result.references.projects).toHaveLength(2);
+    expect(result.reports[0]).toMatchObject({ projectCode: 'P144', projectTitle: 'Projet clôturé' });
   });
 
   it('saves the complete six-step payload through the transactional RPC', async () => {

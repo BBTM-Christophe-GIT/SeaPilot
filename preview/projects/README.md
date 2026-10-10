@@ -69,18 +69,42 @@ ne masquent aucune section à l'écran.
 
 Les menus Référentiels et Projet sont remplacés par un ruban reprenant le
 dessin du Planning : icônes au-dessus des libellés, groupes séparés et nom de
-groupe en bas. Le groupe Projet rassemble ses cinq actions existantes et
-précède Catalogue, qui donne accès aux clients, remorqués et prestations. Toutes
+groupe en bas. Le groupe Projet conserve Nouveau projet, Archiver le projet et
+Réinitialiser la démonstration. Modifier et Actualiser sont retirés du ruban.
+Projet précède Catalogue, qui donne accès aux clients, remorqués et prestations. Toutes
 les commandes sont sur une seule rangée avec `ModuleRibbon singleRow`.
 Sur petit écran, seul le ruban défile horizontalement.
 Les règles des boutons et menus pour les pages sont documentées dans
 [la charte commune](../../docs/design/design-system.md).
 
+Chaque carte du portefeuille propose Modifier et une étoile de favori.
+Modifier ouvre directement le projet de cette carte, même si un autre dossier
+est sélectionné. Les favoris de la préversion sont conservés en mémoire pour
+la session et effacés par Réinitialiser la démonstration. La pastille de statut
+ouvre les cinq statuts existants : Brouillon, Non validé, Validé, Stand-by météo
+et Facturé, ainsi que Clôturer. La clôture est confirmée, archive le projet
+sans remplacer son dernier statut métier et conserve ses données. Les projets
+clôturés sont masqués par défaut ; Afficher les projets clôturés permet de les
+retrouver, puis leur pastille propose Réactiver le projet. Favoris uniquement
+limite la liste aux projets marqués. Les boutons de carte restent distincts
+du bouton de sélection, sans boutons imbriqués.
+
+Dans l'application réelle, les mêmes actions ciblées et pastilles de statut
+s'appliquent aux comptes autorisés. Les favoris existants restent personnels
+et persistants ; les vues Tous, Actuels et Mes favoris masquent les projets
+clôturés jusqu'à l'activation du filtre. La clôture repose sur l'archivage et
+la réactivation retrouve le dernier statut métier. Les sélecteurs pour de
+nouveaux rattachements Planning, DPR et QHSE proposent les projets actifs ;
+les opérations et DPR historiques restent consultables et exportables.
+Ces comportements persistants sont distincts de la démonstration en mémoire.
+
 ## Parcours à essayer
 
 - Rechercher un projet, filtrer son statut et changer la densité du portefeuille.
 - Ouvrir Clients, Remorqués ou Prestations depuis Catalogue, puis fermer par Échap.
-- Utiliser Nouveau projet, Modifier, Archiver, Actualiser et Réinitialiser depuis le ruban.
+- Utiliser Nouveau projet, Archiver et Réinitialiser depuis le ruban.
+- Modifier directement une carte, marquer son étoile et utiliser Favoris uniquement.
+- Ouvrir sa pastille de statut, changer le statut ou confirmer Clôturer ; afficher les projets clôturés puis réactiver le projet.
 - Changer de dossier et de rubrique ; créer ou modifier un projet et ses opérations.
 - Sélectionner un mois : sa fiche est créée automatiquement lors de la première action.
 - Cliquer sur deux jours du calendrier visible pour définir une période, puis changer Mois pour sélectionner un mois entier.
@@ -129,12 +153,19 @@ Avec pnpm 10.34.5 :
 ```powershell
 corepack pnpm test src/features/projects/preview/billingDemo.test.ts src/features/projects/preview/previewStorageClient.test.ts src/features/projects/preview/ProjectPreview.test.tsx src/features/projects/preview/BillingPeriodCalendar.test.tsx src/features/projects/preview/BillingRawLineDraft.test.tsx src/features/projects/projectBilling.test.ts src/features/projects/projectBillingReferences.test.ts --pool=forks --maxWorkers=1
 corepack pnpm test src/features/planning/PlanningPage.test.tsx src/features/planning/planningPermissions.test.ts --pool=forks --maxWorkers=1
+corepack pnpm test src/features/projects/ProjectsPage.test.tsx src/features/projects/projectMutations.test.ts src/features/projects/projectQueries.test.ts src/features/projects/projectStatus.test.ts --pool=forks --maxWorkers=1
 corepack pnpm build
 ```
 
 La visionneuse utilise le PDF généré et `pdfjs-dist`, déjà présent dans le projet,
-pour fonctionner aussi sans visionneuse PDF native du navigateur. Aucun nouvel
-accès, service, secret ou changement de base de données n'est nécessaire.
+pour fonctionner aussi sans visionneuse PDF native du navigateur. La préversion
+reste autonome et ne requiert aucun accès à une base de données. Le module réel
+utilise la migration
+[`20261010071337_project_closure_reactivation.sql`](../../supabase/migrations/20261010071337_project_closure_reactivation.sql)
+pour les RPC `projects_reactivate` et `projects_set_status`, avec les contrôles
+admin/direction et d'entreprise existants. Cette migration conserve les statuts
+métier et protège également les rattachements DPR à un projet actif ; elle ne
+supprime pas les opérations ou DPR historiques.
 
 La disposition navy/blanc du shell est une exception visuelle propre à la
 maquette choisie par l'utilisateur. Les commandes et panneaux reprennent les

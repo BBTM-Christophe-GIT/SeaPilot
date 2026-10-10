@@ -247,8 +247,8 @@ export function DprPage({ client, roles }: DprPageProps) {
     const context = await fetchDprEntryContext(db, reportDate, vesselId);
     const next = structuredClone(basePayload);
     next.reportDate = reportDate;
-    next.projectId = context.projectId;
-    next.unlistedProjectName = context.projectId === null && context.vesselId !== null ? DOCK_PROJECT_NAME : '';
+    next.projectId = context.project?.archivedAt ? null : context.projectId;
+    next.unlistedProjectName = next.projectId === null && context.vesselId !== null ? DOCK_PROJECT_NAME : '';
     next.vesselId = context.vesselId;
     next.validatorPersonId = null;
     next.crewMembers = context.crewPersonIds.flatMap((personId, index) => {
@@ -264,6 +264,9 @@ export function DprPage({ client, roles }: DprPageProps) {
         projects: context.project && !current.references.projects.some((project) => project.id === context.project?.id)
           ? [...current.references.projects, context.project].sort((left, right) => left.code.localeCompare(right.code, 'fr'))
           : current.references.projects,
+        activeProjects: context.project && !context.project.archivedAt && !current.references.activeProjects.some((project) => project.id === context.project?.id)
+          ? [...current.references.activeProjects, context.project].sort((left, right) => left.code.localeCompare(right.code, 'fr'))
+          : current.references.activeProjects,
         people: context.people,
         planningCrewPersonIds: context.crewPersonIds,
       },
@@ -303,6 +306,9 @@ export function DprPage({ client, roles }: DprPageProps) {
           projects: context.project && !current.references.projects.some((project) => project.id === context.project?.id)
             ? [...current.references.projects, context.project].sort((left, right) => left.code.localeCompare(right.code, 'fr'))
             : current.references.projects,
+          activeProjects: context.project && !context.project.archivedAt && !current.references.activeProjects.some((project) => project.id === context.project?.id)
+            ? [...current.references.activeProjects, context.project].sort((left, right) => left.code.localeCompare(right.code, 'fr'))
+            : current.references.activeProjects,
           people: context.people,
           planningCrewPersonIds: context.crewPersonIds,
         },
@@ -531,7 +537,7 @@ export function DprPage({ client, roles }: DprPageProps) {
       <section className="dpr-master" aria-label="Liste des DPR">
         <div className="dpr-native__filters">
           <Field label="NAVIRE"><select value={filters.vesselId} onChange={(event) => setFilters({ ...filters, vesselId: event.target.value })}><option value="">Tous</option>{dashboard?.references.vessels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-          <Field label="PROJET"><select value={filters.projectId} onChange={(event) => setFilters({ ...filters, projectId: event.target.value })}><option value="">Tous</option>{dashboard?.references.projects.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.title}</option>)}</select></Field>
+          <Field label="PROJET"><select value={filters.projectId} onChange={(event) => setFilters({ ...filters, projectId: event.target.value })}><option value="">Tous</option>{dashboard?.references.activeProjects.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.title}</option>)}</select></Field>
           <Field label="STATUT"><select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value as DprFilters['status'] })}><option value="">Tous</option>{Object.entries(STATUS_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></Field>
           <Field label="PÉRIODE"><div className="dpr-period"><input aria-label="Date de début" type="date" value={filters.dateFrom} onChange={(event) => setFilters({ ...filters, dateFrom: event.target.value })}/><input aria-label="Date de fin" type="date" value={filters.dateTo} onChange={(event) => setFilters({ ...filters, dateTo: event.target.value })}/></div></Field>
           <Field label="RECHERCHE"><div className="dpr-search"><Search size={15}/><input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="DPR, navire, auteur…"/></div></Field>
@@ -586,7 +592,7 @@ export function DprPage({ client, roles }: DprPageProps) {
           <main className="dpr-step">
             {(notice || error) && <div className={error ? 'dpr-message dpr-message--error dpr-modal__message' : 'dpr-message dpr-modal__message'} role={error ? 'alert' : 'status'}>{error || notice}</div>}
             <div className="dpr-step__title"><b>{step + 1}.</b><h3>{STEPS[step][0]}</h3><span>— {STEPS[step][1]}</span></div>
-            {step === 0 && <StepProject payload={payload} references={dashboard.references} issuer={issuerName || report?.issuerName || dashboard.currentUserName} editable={editable} update={updatePayload} onDateChange={(value) => void updateReportDate(value)} onVesselChange={async (vesselId) => {
+            {step === 0 && <StepProject payload={payload} references={dashboard.references} retainedProject={report?.projectId !== null && report?.projectId !== undefined ? dashboard.references.projects.find((project) => project.id === report.projectId) || { id: report.projectId, code: report.projectCode, title: report.projectTitle } : null} issuer={issuerName || report?.issuerName || dashboard.currentUserName} editable={editable} update={updatePayload} onDateChange={(value) => void updateReportDate(value)} onVesselChange={async (vesselId) => {
               setBusy(true); setError('');
               try {
                 const next = await applyPlanningDefaults(payload.reportDate, payload, vesselId);
@@ -622,8 +628,11 @@ export function DprPage({ client, roles }: DprPageProps) {
 
 interface StepProps { payload: DprFormPayload; editable: boolean; update: (recipe: (current: DprFormPayload) => void) => void }
 
-function StepProject({ payload, references, issuer, editable, update, onDateChange, onVesselChange }: StepProps & { references: DprReferenceData; issuer: string; onDateChange: (value: string) => void; onVesselChange: (value: number | null) => Promise<void> }) {
+function StepProject({ payload, references, retainedProject, issuer, editable, update, onDateChange, onVesselChange }: StepProps & { references: DprReferenceData; retainedProject: DprReferenceData['projects'][number] | null; issuer: string; onDateChange: (value: string) => void; onVesselChange: (value: number | null) => Promise<void> }) {
   const [manualNames, setManualNames] = useState('');
+  const selectableProjects = retainedProject && payload.projectId === retainedProject.id && !references.activeProjects.some((project) => project.id === retainedProject.id)
+    ? [...references.activeProjects, retainedProject]
+    : references.activeProjects;
   const otherPersonIds = useMemo(() => new Set(payload.otherPeople.flatMap((person) => person.personId === null ? [] : [person.personId])), [payload.otherPeople]);
   const planningCrewIds = useMemo(() => new Set(references.planningCrewPersonIds || []), [references.planningCrewPersonIds]);
   const availableOtherPeople = useMemo(() => references.people.filter((person) => planningCrewIds.has(person.id)
@@ -684,7 +693,7 @@ function StepProject({ payload, references, issuer, editable, update, onDateChan
         if (project?.code.trim().toUpperCase() !== 'P144') {
           current.portCalls[0].reasons = current.portCalls[0].reasons.filter((reason) => !DPR_PORT_CALL_CATEGORIES.some((item) => item.key === reason));
         }
-      })}><option value="">Sélectionner…</option><option value={DOCK_PROJECT_VALUE}>{DOCK_PROJECT_NAME}</option><option value={TRANSIT_PROJECT_VALUE}>{TRANSIT_PROJECT_NAME}</option>{payload.unlistedProjectName && payload.unlistedProjectName !== DOCK_PROJECT_NAME && payload.unlistedProjectName !== TRANSIT_PROJECT_NAME ? <option value={UNLISTED_PROJECT_VALUE}>{payload.unlistedProjectName}</option> : null}{references.projects.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.title}</option>)}</select></Field>
+      })}><option value="">Sélectionner…</option><option value={DOCK_PROJECT_VALUE}>{DOCK_PROJECT_NAME}</option><option value={TRANSIT_PROJECT_VALUE}>{TRANSIT_PROJECT_NAME}</option>{payload.unlistedProjectName && payload.unlistedProjectName !== DOCK_PROJECT_NAME && payload.unlistedProjectName !== TRANSIT_PROJECT_NAME ? <option value={UNLISTED_PROJECT_VALUE}>{payload.unlistedProjectName}</option> : null}{selectableProjects.map((item) => <option disabled={Boolean(item.archivedAt)} key={item.id} value={item.id}>{item.code} — {item.title}</option>)}</select></Field>
       <Field label="NAVIRE"><select disabled={!editable} value={payload.vesselId ?? ''} onChange={(event) => void onVesselChange(event.target.value ? Number(event.target.value) : null)}><option value="">Sélectionner…</option>{references.vessels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
       <Field label="ÉMETTEUR"><input value={issuer} disabled/></Field>
     </div></section>

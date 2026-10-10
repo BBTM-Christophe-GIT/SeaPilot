@@ -9,7 +9,7 @@ import type {
   IncidentLevel,
 } from './dprFormModel.ts';
 
-export interface DprProjectOption { id: number; code: string; title: string }
+export interface DprProjectOption { id: number; code: string; title: string; archivedAt?: string }
 export interface DprVesselOption { id: number; name: string }
 export interface DprPersonOption {
   id: number;
@@ -34,7 +34,10 @@ export interface DprEntryContext {
   crewPersonIds: number[];
 }
 export interface DprReferenceData {
+  /** Complete labels for existing DPRs and exports, including closed projects. */
   projects: DprProjectOption[];
+  /** Only projects available for a new or changed assignment. */
+  activeProjects: DprProjectOption[];
   vessels: DprVesselOption[];
   people: DprPersonOption[];
   planningCrewPersonIds: number[];
@@ -165,7 +168,7 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { ownRe
 
   const [reportResult, projectResult, reportProjectResult, vesselResult, exerciseResult, reasonResult, entryContext] = await Promise.all([
     reportPromise,
-    client.from('projects').select('id,project_code,title').order('project_code'),
+    client.from('projects').select('id,project_code,title,archived_at').order('project_code'),
     client.rpc('dpr_report_projects'),
     client.from('vessels').select('id,name,length_overall').order('name'),
     client.from('emergency_exercise_types').select('key,label').eq('active', true).order('display_order'),
@@ -186,6 +189,7 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { ownRe
   const projectRows = [...(projectResult.data || []), ...((reportProjectResult.data || []) as Array<{ id: number; project_code: string; title: string }>)];
   const catalogProjects = [...new Map(projectRows.map((row) => [Number(row.id), {
     id: Number(row.id), code: text(row.project_code), title: text(row.title),
+    ...(text((row as { archived_at?: unknown }).archived_at) ? { archivedAt: text((row as { archived_at?: unknown }).archived_at) } : {}),
   }])).values()].sort((left, right) => left.code.localeCompare(right.code, 'fr'));
   const projects = entryContext.project && !catalogProjects.some((project) => project.id === entryContext.project?.id)
     ? [...catalogProjects, entryContext.project].sort((left, right) => left.code.localeCompare(right.code, 'fr'))
@@ -222,7 +226,7 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { ownRe
   return {
     reports, currentUserId: profile.id, currentUserName: profile.name, currentPersonId: profile.personId, currentPersonFunction: profile.functionLabel,
     references: {
-      projects, vessels, people: entryContext.people, planningCrewPersonIds: entryContext.crewPersonIds,
+      projects, activeProjects: projects.filter((project) => !project.archivedAt), vessels, people: entryContext.people, planningCrewPersonIds: entryContext.crewPersonIds,
       exerciseTypes: (exerciseResult.data || []).map((row) => ({ key: text(row.key), label: text(row.label) })),
       portReasons: (reasonResult.data || []).map((row) => ({ key: text(row.key), label: text(row.label) })),
     },
@@ -245,7 +249,9 @@ export async function fetchDprEntryContext(client: SupabaseClient, reportDate: s
   const projectRow = row.project && typeof row.project === 'object'
     ? row.project as Record<string, unknown>
     : null;
-  const projectId = numberOrNull(projectRow?.id ?? row.projectId);
+  const projectId = text(projectRow?.archivedAt ?? projectRow?.archived_at)
+    ? null
+    : numberOrNull(projectRow?.id ?? row.projectId);
   return {
     issuerPersonId: numberOrNull(row.issuerPersonId),
     issuerName: text(row.issuerName) || 'Utilisateur BBTM',

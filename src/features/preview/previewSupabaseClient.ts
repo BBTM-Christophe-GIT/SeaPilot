@@ -2802,12 +2802,13 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     }, error: null });
   }
   if (functionName === 'dpr_report_projects') {
-    return Promise.resolve({ data: previewRows('projects').map(({ id, project_code, title }) => ({ id, project_code, title })), error: null });
+    return Promise.resolve({ data: previewRows('projects').map(({ id, project_code, title, archived_at }) => ({ id, project_code, title, archived_at: archived_at ?? null })), error: null });
   }
   if (functionName === 'dpr_entry_context') {
     const reportDate = String(args.target_date || '2026-08-01');
     const requestedVesselId = args.target_vessel_id === null || args.target_vessel_id === undefined ? 9201 : Number(args.target_vessel_id);
     const isGoury = requestedVesselId === 1;
+    const selectedProject = previewRows('projects').find((project) => Number(project.id) === (isGoury ? 144 : 9001) && !project.archived_at);
     const people = previewRows('people')
       .filter((person) => person.active && (!person.hired_on || String(person.hired_on) <= reportDate) && (!person.departed_on || String(person.departed_on) >= reportDate))
       .map((person) => ({
@@ -2823,8 +2824,8 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
         issuerPersonId: 9301,
         issuerName: 'Arthur DEMO',
         vesselId: requestedVesselId,
-        projectId: isGoury ? 144 : 9001,
-        project: isGoury ? { id: 144, code: 'P144', title: 'EMDT - GOURY' } : { id: 9001, code: 'P901', title: 'Campagne Atlantique — démonstration' },
+        projectId: selectedProject?.id ?? null,
+        project: selectedProject ? { id: selectedProject.id, code: selectedProject.project_code, title: selectedProject.title, archivedAt: null } : null,
         watchGroup: 'Bordée 1',
         people,
         crewPersonIds: [9301, 9303, 9304],
@@ -2852,7 +2853,7 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   }
   if (functionName === 'planning_project_catalog') {
     return createPreviewQuery({
-      data: previewRows('projects').map((project) => ({
+      data: previewRows('projects').filter((project) => !project.archived_at).map((project) => ({
         id: project.id,
         project_code: project.project_code,
         title: project.title,

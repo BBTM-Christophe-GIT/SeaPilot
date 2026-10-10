@@ -418,18 +418,152 @@ describe('ProjectsPage', () => {
     const user = userEvent.setup();
     render(<ProjectsPage client={client as never} roles={['direction']} />);
     expect(await screen.findByRole('button', { name: /P2 Projet 2/ })).toBeVisible();
-    expect(screen.getByRole('button', { name: /Projets actuels 2/ })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: /P3 Projet 3/ })).toBeVisible();
+    expect(screen.getByRole('button', { name: /Projets actuels 1/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: /P3 Projet 3/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /P1 Projet 1/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Archives/ })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Période'), { target: { value: '2026-08' } });
     expect(screen.queryByRole('button', { name: /P1 Projet 1/ })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Tous les projets 4/ }));
+    await user.click(screen.getByRole('button', { name: /Tous les projets 3/ }));
     expect(screen.getByRole('button', { name: /P1 Projet 1/ })).toBeVisible();
     expect(screen.getByRole('button', { name: /P4 Projet 4/ })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Filtres' }));
+    await user.click(screen.getByLabelText('Afficher les projets clôturés'));
+    expect(screen.getByRole('button', { name: /Tous les projets 4/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /P3 Projet 3/ })).toBeVisible();
     await user.click(screen.getByRole('button', { name: /P3 Projet 3/ }));
     await user.click(screen.getByRole('button', { name: 'Liste des projets' }));
     expect(screen.getByRole('button', { name: /Tous les projets 4/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('edits the exact portfolio card without selecting or opening its dossier', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient({}, { data: { id: 881, project_code: 'P1087', title: 'Manche modifiée', updated_at: '2026-07-16T08:00:00Z' }, error: null });
+    const page = render(<ProjectsPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: 'P1086 Campagne Atlantique 2026' }));
+    await user.click(screen.getByRole('button', { name: 'Liste des projets' }));
+    expect(screen.getByRole('button', { name: 'P1086 Campagne Atlantique 2026' })).toHaveAttribute('aria-pressed', 'true');
+    expect(page.container.querySelector('button button')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Modifier P1087' }));
+    const editor = within(screen.getByRole('dialog', { name: 'Modifier le projet' }));
+    expect(editor.getByLabelText('Nom du projet *')).toHaveValue('Campagne Manche 2026');
+    await user.clear(editor.getByLabelText('Nom du projet *'));
+    await user.type(editor.getByLabelText('Nom du projet *'), 'Manche modifiée');
+    await user.click(editor.getByRole('button', { name: 'Enregistrer le projet' }));
+    expect(await screen.findByText('P1087 enregistré dans Supabase.')).toBeVisible();
+    expect(rpc).toHaveBeenCalledWith('projects_save', expect.objectContaining({ target_project_id: 881, target_title: 'Manche modifiée', target_primary_vessel_id: 13, target_client_id: 51 }));
+    expect(screen.getByRole('heading', { name: 'Portefeuille projet' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'P1086 Campagne Atlantique 2026' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it.each(['marin', 'capitaine'] as const)('keeps project lifecycle actions read-only for the real %s role fixture', async (role) => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient();
+    const page = render(<ProjectsPage client={client as never} roles={[role]} />);
+    await screen.findByRole('button', { name: 'P1086 Campagne Atlantique 2026' });
+    expect(screen.queryByRole('button', { name: 'Modifier P1086' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modifier le statut de P1086' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nouveau projet' })).toBeDisabled();
+    expect(page.container.querySelector('button button')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'P1086 Campagne Atlantique 2026' }));
+    expect(screen.queryByRole('button', { name: 'Modifier le statut de P1086' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nouvelle opération' })).toBeDisabled();
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_archive');
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_reactivate');
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_set_status');
+  });
+
+  it('hides closed favorites and reactivates a filtered historical project through its status pill', async () => {
+    const user = userEvent.setup();
+    const rows = [{ ...atlantiqueProjectRow, archived_at: '2026-07-15T10:00:00Z' as string | null }, mancheProjectRow];
+    const { client, rpc } = createClient({ projects: { data: rows, error: null }, project_favorites: { data: [{ project_id: 880 }, { project_id: 881 }], error: null } });
+    const previousRpc = rpc.getMockImplementation()!;
+    rpc.mockImplementation((name: string) => {
+      if (name === 'projects_reactivate') { rows[0].archived_at = null; return Promise.resolve({ data: null, error: null }); }
+      return previousRpc(name);
+    });
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    await screen.findByRole('button', { name: 'P1087 Campagne Manche 2026' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /Mes favoris 1/ })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: /Mes favoris 1/ }));
+    expect(screen.queryByRole('button', { name: 'P1086 Campagne Atlantique 2026' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Tous les projets 1/ }));
+    expect(screen.queryByRole('button', { name: 'P1086 Campagne Atlantique 2026' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Filtres' }));
+    await user.click(screen.getByLabelText('Afficher les projets clôturés'));
+    const row = screen.getByRole('button', { name: 'P1086 Campagne Atlantique 2026' }).closest('li')!;
+    expect(within(row).getByRole('button', { name: 'Modifier P1086' })).toBeDisabled();
+    expect(within(row).getByRole('button', { name: 'Modifier le statut de P1086' })).toHaveTextContent('Clôturé');
+    await user.click(screen.getByRole('button', { name: 'P1086 Campagne Atlantique 2026' }));
+    expect(within(screen.getByLabelText('Changer de projet')).getByRole('option', { name: /P1086.*Clôturé/ })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Modifier le statut de P1086' }));
+    await user.click(screen.getByRole('button', { name: 'Réactiver le projet' }));
+    expect(await screen.findByText('P1086 réactivé.')).toBeVisible();
+    expect(rpc).toHaveBeenCalledWith('projects_reactivate', { target_project_id: 880 });
+    expect(screen.getByRole('button', { name: 'Modifier le statut de P1086' })).not.toHaveTextContent('Clôturé');
+    await user.click(screen.getByRole('tab', { name: /Opérations/ }));
+    expect(screen.getByText('Rotation 1')).toBeVisible();
+    expect(screen.getByText('Rotation 2')).toBeVisible();
+  });
+
+  it('updates only the status and keeps a failed closure visible with its data unchanged', async () => {
+    const user = userEvent.setup();
+    const rows = [{ ...atlantiqueProjectRow }, mancheProjectRow];
+    const { client, rpc } = createClient({ projects: { data: rows, error: null } });
+    const previousRpc = rpc.getMockImplementation()!;
+    rpc.mockImplementation((name: string, args?: { target_status?: string }) => {
+      if (name === 'projects_set_status') { rows[0].status = args!.target_status!; return Promise.resolve({ data: null, error: null }); }
+      if (name === 'projects_archive') return Promise.resolve({ data: null, error: { message: 'Clôture refusée' } });
+      return previousRpc(name);
+    });
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    await screen.findByRole('button', { name: 'Modifier le statut de P1086' });
+    await user.click(screen.getByRole('button', { name: 'Modifier le statut de P1086' }));
+    await user.click(screen.getByRole('button', { name: 'Stand-by météo' }));
+    expect(await screen.findByText('P1086 mis à jour : Stand-by météo.')).toBeVisible();
+    expect(rpc).toHaveBeenCalledWith('projects_set_status', { target_project_id: 880, target_status: 'Stand-by météo' });
+    expect(screen.getByRole('button', { name: 'Modifier le statut de P1086' })).toHaveTextContent('Stand-by météo');
+    await user.click(screen.getByRole('button', { name: 'Modifier le statut de P1086' }));
+    await user.click(screen.getByRole('button', { name: 'Clôturer' }));
+    await user.click(screen.getByRole('button', { name: 'Annuler' }));
+    expect(rpc).not.toHaveBeenCalledWith('projects_archive', expect.anything());
+    await user.click(screen.getByRole('button', { name: 'Modifier le statut de P1086' }));
+    await user.click(screen.getByRole('button', { name: 'Clôturer' }));
+    const confirmation = within(screen.getByRole('dialog', { name: 'Clôturer le projet' }));
+    await user.click(confirmation.getByRole('button', { name: 'Clôturer' }));
+    expect(await confirmation.findByRole('alert')).toHaveTextContent('Clôture refusée');
+    expect(screen.getByRole('button', { name: 'Modifier le statut de P1086' })).toHaveTextContent('Stand-by météo');
+    expect(rows[0].archived_at).toBeNull();
+    expect(rpc).toHaveBeenCalledWith('projects_archive', { target_project_id: 880 });
+  });
+
+  it('keeps the dossier history when its last active project is closed and removes it from selection lists', async () => {
+    const user = userEvent.setup();
+    const row = { ...atlantiqueProjectRow, archived_at: null as string | null };
+    const { client, rpc } = createClient({ projects: { data: [row], error: null } });
+    const previousRpc = rpc.getMockImplementation()!;
+    rpc.mockImplementation((name: string) => {
+      if (name === 'projects_archive') { row.archived_at = '2026-07-15T12:00:00Z'; return Promise.resolve({ data: null, error: null }); }
+      return previousRpc(name);
+    });
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: 'P1086 Campagne Atlantique 2026' }));
+    await user.click(screen.getByRole('button', { name: 'Modifier le statut de P1086' }));
+    await user.click(screen.getByRole('button', { name: 'Clôturer' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Clôturer le projet' })).getByRole('button', { name: 'Clôturer' }));
+    expect(await screen.findByRole('heading', { name: 'Campagne Atlantique 2026' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Modifier le statut de P1086' })).toHaveTextContent('Clôturé');
+    expect(screen.getByRole('button', { name: 'Nouvelle opération' })).toBeDisabled();
+    expect(within(screen.getByLabelText('Changer de projet')).getByRole('option', { name: /Clôturé/ })).toBeDisabled();
+    await user.click(screen.getByRole('tab', { name: /Opérations/ }));
+    expect(screen.getByText('Rotation 1')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Liste des projets' }));
+    expect(screen.queryByRole('button', { name: 'P1086 Campagne Atlantique 2026' })).not.toBeInTheDocument();
+    expect(screen.getByText('Aucun projet ne correspond aux filtres.')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Filtres' }));
+    await user.click(screen.getByLabelText('Afficher les projets clôturés'));
+    expect(screen.getByRole('button', { name: 'P1086 Campagne Atlantique 2026' })).toBeVisible();
   });
 
   it('filters projects and associated indicators by status, client, vessel, period and search', async () => {

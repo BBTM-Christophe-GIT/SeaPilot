@@ -229,7 +229,7 @@ export interface QhseReportSeed {
 }
 
 export async function fetchQhseReportProjectOptions(client: SupabaseClient): Promise<QhseReportProjectOption[]> {
-  const result = await client.from('projects').select('id,project_code,title').order('project_code');
+  const result = await client.from('projects').select('id,project_code,title').is('archived_at', null).order('project_code');
   if (result.error) throw result.error;
   return (result.data || []).map((row) => ({
     id: Number(row.id),

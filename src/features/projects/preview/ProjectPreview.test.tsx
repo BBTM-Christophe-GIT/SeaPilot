@@ -32,6 +32,12 @@ function renderCustomBillingPreview() {
   selectBillingPeriod('2026-10-05', '2026-10-08');
 }
 
+function displayedProjectStatus(projectCode: string) {
+  return within(screen.getByRole('region', { name: 'Dossier du projet' })).getByRole('button', {
+    name: `Modifier le statut de ${projectCode}`,
+  });
+}
+
 describe('interactive project billing preview', () => {
   it('opens the current calendar month and replaces the global editing bar with section commands', () => {
     render(<ProjectPreview />);
@@ -169,34 +175,141 @@ describe('interactive project billing preview', () => {
     expect(screen.getByTestId('billing-total')).toHaveTextContent(/10\s*955,00\s*€/);
   });
 
-  it('preserves project editing, archive confirmation and reset from direct ribbon commands', async () => {
+  it('keeps project creation and archive in the ribbon while editing from a card and resetting closed projects', async () => {
     const user = userEvent.setup();
     renderCustomBillingPreview();
     const ribbon = screen.getByRole('navigation', { name: 'Menu des projets' });
     const projects = within(ribbon).getByRole('group', { name: 'Projet' });
+    const portfolio = screen.getByRole('complementary', { name: 'Portefeuille' });
+    expect(within(projects).queryByRole('button', { name: 'Modifier le projet' })).not.toBeInTheDocument();
+    expect(within(projects).queryByRole('button', { name: 'Actualiser' })).not.toBeInTheDocument();
     await user.click(within(projects).getByRole('button', { name: 'Nouveau projet' }));
     await user.click(within(screen.getByRole('dialog', { name: 'Nouveau projet' })).getByRole('button', { name: 'Annuler' }));
-    await user.click(within(projects).getByRole('button', { name: 'Modifier le projet' }));
+    await user.click(screen.getByRole('button', { name: 'Modifier P264' }));
     const editor = screen.getByRole('dialog', { name: 'Modifier le projet' });
     expect(within(editor).getByLabelText('Nom du projet')).toHaveValue('Assistance offshore');
     await user.click(within(editor).getByRole('button', { name: 'Annuler' }));
     await user.click(within(projects).getByRole('button', { name: 'Archiver le projet' }));
     await user.click(within(screen.getByRole('dialog', { name: 'Archiver le projet' })).getByRole('button', { name: 'Annuler' }));
-    expect(within(projects).getByRole('button', { name: 'Modifier le projet' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Modifier P264' })).toBeEnabled();
 
     await user.click(within(projects).getByRole('button', { name: 'Archiver le projet' }));
     await user.click(within(screen.getByRole('dialog', { name: 'Archiver le projet' })).getByRole('button', { name: 'Confirmer' }));
-    expect(within(projects).getByRole('button', { name: 'Modifier le projet' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /^P264 — Assistance offshore/ })).not.toBeInTheDocument();
     expect(within(projects).getByRole('button', { name: 'Archiver le projet' })).toBeDisabled();
     expect(within(projects).getByRole('button', { name: 'Nouveau projet' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Ajouter une ligne' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Dupliquer la ligne' })).toBeDisabled();
-    await user.click(within(projects).getByRole('button', { name: 'Actualiser' }));
-    expect(screen.getByRole('status')).toHaveTextContent('Données de démonstration actualisées.');
+    await user.click(screen.getByRole('button', { name: 'Filtres' }));
+    await user.selectOptions(within(portfolio).getByLabelText('Statut'), 'Clôturé');
+    expect(screen.getByRole('checkbox', { name: 'Afficher les projets clôturés' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Modifier P264' })).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: 'Afficher les projets clôturés' }));
+    expect(within(portfolio).getByLabelText('Statut')).toHaveValue('');
+    expect(screen.queryByRole('button', { name: 'Modifier P264' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Afficher les projets clôturés' }));
+    expect(screen.getByRole('button', { name: /^P264 — Assistance offshore/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Modifier P264' })).toBeDisabled();
     await user.click(within(projects).getByRole('button', { name: 'Réinitialiser la démonstration' }));
-    expect(within(projects).getByRole('button', { name: 'Modifier le projet' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Modifier P264' })).toBeEnabled();
     expect(screen.getByTestId('billing-total')).toHaveTextContent(/16\s*005,00\s*€/);
   });
+
+  it('edits the clicked project without changing the selection and filters projects by their own favourite state', async () => {
+    const user = userEvent.setup();
+    renderCustomBillingPreview();
+    await user.click(screen.getByRole('button', { name: 'Modifier P263' }));
+    const editor = screen.getByRole('dialog', { name: 'Modifier le projet' });
+    expect(within(editor).getByLabelText('Nom du projet')).toHaveValue('Remorquage côtier');
+    expect(within(editor).getByLabelText('Client')).toHaveValue('Client Atlantique');
+    expect(within(editor).getByLabelText('Type de contrat')).toHaveValue('Remorquage');
+    fireEvent.change(within(editor).getByLabelText('Nom du projet'), { target: { value: 'Remorquage ciblé' } });
+    await user.click(within(editor).getByRole('button', { name: 'Enregistrer' }));
+    expect(screen.getByRole('heading', { name: /^P264 — Assistance offshore/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^P263 — Remorquage ciblé/ })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('billing-total')).toHaveTextContent(/10\s*955,00\s*€/);
+
+    const favourite = screen.getByRole('button', { name: 'Ajouter P263 aux favoris' });
+    expect(favourite).toHaveAttribute('aria-pressed', 'false');
+    await user.click(favourite);
+    expect(screen.getByRole('button', { name: 'Retirer P263 des favoris' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('heading', { name: /^P264 — Assistance offshore/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Filtres' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Favoris uniquement' }));
+    expect(screen.getByRole('button', { name: /^P263 — Remorquage ciblé/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^P264 — Assistance offshore/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^P262 — Inspection de quai/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Retirer P263 des favoris' }));
+    expect(screen.getByText('Aucun projet ne correspond aux filtres.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^P264 — Assistance offshore/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Favoris uniquement' }));
+    expect(screen.getByRole('button', { name: 'Ajouter P263 aux favoris' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: /^P264 — Assistance offshore/ })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: 'Modifier P263' }));
+    const savedEditor = screen.getByRole('dialog', { name: 'Modifier le projet' });
+    expect(within(savedEditor).getByLabelText('Type de contrat')).toHaveValue('Remorquage');
+    await user.click(within(savedEditor).getByRole('button', { name: 'Annuler' }));
+  });
+
+  it('changes the project status, closes it with confirmation and reopens it without losing monthly billing data', async () => {
+    const user = userEvent.setup();
+    renderCustomBillingPreview();
+    const portfolio = screen.getByRole('complementary', { name: 'Portefeuille' });
+    await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
+    let editor = screen.getByRole('rowgroup', { name: 'Saisie de la ligne brute' });
+    fireEvent.change(within(editor).getByLabelText('Désignation libre'), { target: { value: 'Saisie conservée' } });
+    fireEvent.change(within(editor).getByLabelText('Prix unitaire HT'), { target: { value: '125' } });
+    await user.click(within(editor).getByRole('button', { name: 'Enregistrer' }));
+    fireEvent.change(screen.getByLabelText('Référence client'), { target: { value: 'RAW-CONSERVE' } });
+    fireEvent.blur(screen.getByLabelText('Référence client'));
+
+    fireEvent.change(screen.getByLabelText('Mois de facturation'), { target: { value: '2026-11' } });
+    await user.click(screen.getByRole('button', { name: 'Ajouter un frais' }));
+    editor = screen.getByRole('dialog', { name: 'Ajouter un frais imputable' });
+    fireEvent.change(within(editor).getByLabelText('Fournisseur'), { target: { value: 'Fournisseur conservé' } });
+    fireEvent.change(within(editor).getByLabelText('Montant HT', { exact: true }), { target: { value: '50' } });
+    await user.click(within(editor).getByRole('button', { name: 'Enregistrer' }));
+    fireEvent.change(screen.getByLabelText('Référence client'), { target: { value: 'NOV-CLOTURE' } });
+    fireEvent.blur(screen.getByLabelText('Référence client'));
+    expect(screen.getByTestId('billing-total')).toHaveTextContent(/50,00\s*€/);
+
+    await user.click(within(portfolio).getByRole('button', { name: 'Modifier le statut de P264' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Stand-by météo' }));
+    expect(displayedProjectStatus('P264')).toHaveTextContent('Stand-by météo');
+    await user.click(within(portfolio).getByRole('button', { name: 'Modifier le statut de P264' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Clôturer' }));
+    let confirmation = screen.getByRole('dialog', { name: 'Clôturer le projet' });
+    await user.click(within(confirmation).getByRole('button', { name: 'Annuler' }));
+    expect(screen.getByRole('button', { name: /^P264 — Assistance offshore/ })).toBeInTheDocument();
+    await user.click(within(portfolio).getByRole('button', { name: 'Modifier le statut de P264' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Clôturer' }));
+    confirmation = screen.getByRole('dialog', { name: 'Clôturer le projet' });
+    await user.click(within(confirmation).getByRole('button', { name: 'Confirmer' }));
+    expect(screen.queryByRole('button', { name: /^P264 — Assistance offshore/ })).not.toBeInTheDocument();
+    expect(displayedProjectStatus('P264')).toHaveTextContent('Clôturé');
+    expect(screen.getByRole('button', { name: 'Ajouter une ligne' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Dupliquer la ligne' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ajouter un frais' })).toBeDisabled();
+    expect(screen.getByTestId('billing-total')).toHaveTextContent(/50,00\s*€/);
+    expect(screen.getByLabelText('Référence client')).toHaveValue('NOV-CLOTURE');
+
+    await user.click(screen.getByRole('button', { name: 'Filtres' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Afficher les projets clôturés' }));
+    expect(screen.getByRole('button', { name: 'Modifier P264' })).toBeDisabled();
+    await user.click(within(portfolio).getByRole('button', { name: 'Modifier le statut de P264' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Réactiver le projet' }));
+    expect(displayedProjectStatus('P264')).toHaveTextContent('Stand-by météo');
+    expect(screen.getByRole('button', { name: 'Modifier P264' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Ajouter une ligne' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Ajouter un frais' })).toBeEnabled();
+    expect(screen.getByTestId('billing-total')).toHaveTextContent(/50,00\s*€/);
+    expect(screen.getByLabelText('Référence client')).toHaveValue('NOV-CLOTURE');
+    expect(screen.getByRole('row', { name: /Fournisseur conservé/ })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Mois de facturation'), { target: { value: '2026-10' } });
+    expect(screen.getByRole('row', { name: /Saisie conservée/ })).toBeInTheDocument();
+    expect(screen.getByLabelText('Référence client')).toHaveValue('RAW-CONSERVE');
+    expect(screen.getByTestId('billing-total')).toHaveTextContent(/16\s*130,00\s*€/);
+  }, 45_000); // This flow covers two billing months, closure and reactivation.
 
   it('updates the export total when a DPR day and a full billing section are excluded', async () => {
     const user = userEvent.setup();
@@ -209,7 +322,7 @@ describe('interactive project billing preview', () => {
 
     await user.click(screen.getByRole('checkbox', { name: 'Inclure Prestation BBTM dans le PDF' }));
     expect(screen.getByTestId('billing-total')).toHaveTextContent(/8\s*215,00\s*€/);
-    expect(screen.getByRole('heading', { name: /^P264 — Assistance offshore/ })).toHaveTextContent('Validé');
+    expect(displayedProjectStatus('P264')).toHaveTextContent('Validé');
   });
 
   it('edits and deletes the expense whose row action is used rather than the selected supplier', async () => {
@@ -297,7 +410,7 @@ describe('interactive project billing preview', () => {
     await user.click(screen.getByRole('button', { name: /^P263 — Remorquage côtier/ }));
     expect(screen.getByTestId('billing-total')).toHaveTextContent(/3\s*600,00\s*€/);
     expect(screen.getByRole('checkbox', { name: 'Inclure la journée du 2026-10-05' })).toBeChecked();
-    expect(screen.getByRole('heading', { name: /^P263 — Remorquage côtier/ })).toHaveTextContent('Non validé');
+    expect(displayedProjectStatus('P263')).toHaveTextContent('Non validé');
 
     await user.click(screen.getByRole('tab', { name: 'Opérations' }));
     const towingRow = screen.getByRole('row', { name: /Remorquage côtier.*GOURY/ });
@@ -578,13 +691,11 @@ describe('interactive project billing preview', () => {
     const addLine = async (designation: string, date: string, vessel: string, quantity: string, price: string) => {
       await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
       const editor = screen.getByRole('rowgroup', { name: 'Saisie de la ligne brute' });
-      await user.type(within(editor).getByLabelText('Désignation libre'), designation);
+      fireEvent.change(within(editor).getByLabelText('Désignation libre'), { target: { value: designation } });
       fireEvent.change(within(editor).getByLabelText('Date'), { target: { value: date } });
       await user.selectOptions(within(editor).getByLabelText('Navire'), vessel);
-      await user.clear(within(editor).getByLabelText('Quantité'));
-      await user.type(within(editor).getByLabelText('Quantité'), quantity);
-      await user.clear(within(editor).getByLabelText('Prix unitaire HT'));
-      await user.type(within(editor).getByLabelText('Prix unitaire HT'), price);
+      fireEvent.change(within(editor).getByLabelText('Quantité'), { target: { value: quantity } });
+      fireEvent.change(within(editor).getByLabelText('Prix unitaire HT'), { target: { value: price } });
       await user.click(within(editor).getByRole('button', { name: 'Enregistrer' }));
     };
     await addLine('Première saisie', '2026-10-06', 'GOURY', '1', '50');
@@ -610,10 +721,8 @@ describe('interactive project billing preview', () => {
     expect(within(editor).getByLabelText('Navire')).toHaveValue('JERSEY');
     expect(within(editor).getByLabelText('Quantité')).toHaveValue(2);
     expect(within(editor).getByLabelText('Prix unitaire HT')).toHaveValue(62.5);
-    await user.clear(within(editor).getByLabelText('Désignation libre'));
-    await user.type(within(editor).getByLabelText('Désignation libre'), 'Dernière saisie modifiée');
-    await user.clear(within(editor).getByLabelText('Prix unitaire HT'));
-    await user.type(within(editor).getByLabelText('Prix unitaire HT'), '70');
+    fireEvent.change(within(editor).getByLabelText('Désignation libre'), { target: { value: 'Dernière saisie modifiée' } });
+    fireEvent.change(within(editor).getByLabelText('Prix unitaire HT'), { target: { value: '70' } });
     await user.click(within(editor).getByRole('button', { name: 'Enregistrer' }));
     const modified = screen.getByRole('row', { name: /Dernière saisie modifiée/ });
     expect(within(modified).getByText('140,00 €')).toBeInTheDocument();

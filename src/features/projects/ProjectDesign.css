@@ -50,6 +50,19 @@
 .project-design .project-primary-commands .project-ribbon-command-icon svg { width: 21px; height: 21px; }
 .project-design .project-portfolio-row { display: flex; align-items: stretch; }
 .project-design .project-portfolio-row > .project-select-button { flex: 1; min-width: 0; width: auto; }
+.project-design .project-portfolio-row-actions { display: flex; align-items: center; gap: 8px; padding: 8px 16px 8px 0; flex-shrink: 0; }
+.project-design .project-card-modify, .project-design .project-status-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; border: 1px solid var(--sp-border, #d8e0ea); border-radius: var(--sp-control-radius, 6px); background: var(--sp-surface, #fff); color: var(--sp-primary, #0c5598); padding: 5px 8px; font: inherit; font-size: 12px; cursor: pointer; }
+.project-design .project-status-button { border-radius: 30px; background: var(--sp-primary-soft, #eaf3fc); }
+.project-design .project-card-modify:hover:not(:disabled), .project-design .project-status-button:hover:not(:disabled) { border-color: var(--sp-primary, #0c5598); }
+.project-design .project-card-modify:disabled, .project-design .project-status-button:disabled { opacity: .5; cursor: not-allowed; }
+.project-design .project-card-modify:focus-visible, .project-design .project-status-button:focus-visible { outline: 3px solid var(--sp-focus, #0c66b7); outline-offset: 2px; }
+.project-design .project-closed-filter { display: flex; align-items: center; gap: 8px; align-self: center; }
+.project-design .project-closed-filter input { width: 16px; height: 16px; min-height: 0; margin: 0; accent-color: var(--sp-primary, #0c5598); }
+.project-status-options { display: grid; gap: 8px; }
+.project-status-options button { display: flex; align-items: center; gap: 8px; min-height: var(--sp-control-height, 40px); border: 1px solid var(--sp-border, #d8e0ea); border-radius: var(--sp-control-radius, 6px); padding: 8px 12px; background: var(--sp-surface, #fff); color: var(--sp-primary, #0c5598); text-align: left; font: inherit; cursor: pointer; }
+.project-status-options button[aria-pressed='true'] { background: var(--sp-primary-soft, #eaf3fc); }
+.project-status-options button:disabled { opacity: .55; cursor: not-allowed; }
+.project-status-options button:focus-visible { outline: 3px solid var(--sp-focus, #0c66b7); outline-offset: 2px; }
 .project-design .project-portfolio-row > .project-favorite-button { display: flex; align-items: center; justify-content: center; flex: 0 0 44px; padding: 8px; border: 0; background: transparent; color: #7b8da4; cursor: pointer; }
 .project-design .project-favorite-button[aria-pressed='true'] { color: #b97806; }
 .project-design .project-favorite-button:hover:not(:disabled) { background: #fff5dc; }
@@ -148,6 +161,8 @@
   .project-design .project-sheet-summary { gap: 12px; }
 }
 @media (max-width: 760px) {
+  .project-design .project-portfolio-row { flex-wrap: wrap; }
+  .project-design .project-portfolio-row-actions { flex-basis: 100%; justify-content: flex-end; padding: 0 14px 12px; }
   .projects-page.project-design .project-workspace-actions { gap: 6px; }
   .projects-page.project-design > .project-workspace-actions:not(.project-dossier-actions) { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; }
   .projects-page.project-design > .project-workspace-actions:not(.project-dossier-actions) > * { flex-shrink: 0; }
@@ -169,4 +184,8 @@
   .project-design .project-billing-expense-cards td:nth-child(7) { grid-area: 6 / 2; text-align: left; }
   .project-design .project-billing-expense-cards td:nth-child(8) { grid-area: 7 / 2; }
   .project-design .project-billing-expense-cards td:nth-child(9) { grid-area: 8 / 2; margin-top: 6px; }
+}
+
+@media (pointer: coarse) {
+  .project-design .project-card-modify, .project-design .project-status-button, .project-status-options button { min-height: 44px; }
 }
