@@ -6,11 +6,12 @@ import {
   buildCollaboratorSheetPdf,
   buildCollaboratorSheetSections,
   buildCollaboratorSheetsExport,
+  groupCollaboratorSheetRows,
   type CollaboratorSheetSection,
   type CollaboratorSheetSelection,
   type CollaboratorSheetsExportMode,
 } from './collaboratorSheet';
-import { formatPersonName, type HrDocumentRecord, type PersonRecord } from './peopleQueries';
+import { formatPersonName, type HrDocumentRecord, type HrDocumentTypeOption, type PersonRecord } from './peopleQueries';
 import './collaboratorSheet.css';
 
 function sectionOptions(section: CollaboratorSheetSection) {
@@ -21,10 +22,11 @@ function initialSelection(sections: CollaboratorSheetSection[]): CollaboratorShe
   return Object.fromEntries(sections.map((section) => [section.key, sectionOptions(section).map((field) => field.key)]));
 }
 
-export function CollaboratorSheetDialog({ person, people, documents, visibleSectionKeys, onClose }: {
+export function CollaboratorSheetDialog({ person, people, documents, documentTypes, visibleSectionKeys, onClose }: {
   person: PersonRecord;
   people?: PersonRecord[];
   documents: HrDocumentRecord[];
+  documentTypes?: readonly HrDocumentTypeOption[];
   visibleSectionKeys: ReadonlySet<string>;
   onClose: () => void;
 }) {
@@ -39,7 +41,7 @@ export function CollaboratorSheetDialog({ person, people, documents, visibleSect
   const previewPerson = isBulk
     ? selectedPeople.find((candidate) => candidate.id === previewPersonId) || selectedPeople[0]
     : person;
-  const sections = useMemo(() => buildCollaboratorSheetSections(previewPerson || people?.[0] || person, documents, visibleSectionKeys), [previewPerson, people, person, documents, visibleSectionKeys]);
+  const sections = useMemo(() => buildCollaboratorSheetSections(previewPerson || people?.[0] || person, documents, visibleSectionKeys, documentTypes), [previewPerson, people, person, documents, visibleSectionKeys, documentTypes]);
   const searchedPeople = useMemo(() => {
     const query = peopleSearch.trim().toLocaleLowerCase('fr-FR');
     return (people || []).filter((candidate) => `${formatPersonName(candidate)} ${candidate.employeeNumber}`.toLocaleLowerCase('fr-FR').includes(query));
@@ -79,7 +81,7 @@ export function CollaboratorSheetDialog({ person, people, documents, visibleSect
     setFeedback(null);
     try {
       const { blob, fileName } = isBulk
-        ? await buildCollaboratorSheetsExport(selectedPeople, documents, visibleSectionKeys, selection, exportMode, undefined, { includePhoto })
+        ? await buildCollaboratorSheetsExport(selectedPeople, documents, visibleSectionKeys, selection, exportMode, undefined, { includePhoto }, documentTypes)
         : await buildCollaboratorSheetPdf(person, sections, selection, undefined, { includePhoto });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -171,6 +173,9 @@ export function CollaboratorSheetDialog({ person, people, documents, visibleSect
           const options = sectionOptions(section);
           const count = options.filter((field) => selection[section.key]?.includes(field.key)).length;
           const columns = section.table?.columns.filter((column) => selection[section.key]?.includes(column.key)) || [];
+          const isGrouped = section.table?.groupBy === 'category' && columns.some((column) => column.key === 'category');
+          const displayedColumns = isGrouped ? columns.filter((column) => column.key !== 'category') : columns;
+          const groups = isGrouped && section.table ? groupCollaboratorSheetRows(section.table.rows) : [];
           return (
             <fieldset className="hr-sheet-section" disabled={isGenerating} key={section.key}>
               <legend>
@@ -210,10 +215,17 @@ export function CollaboratorSheetDialog({ person, people, documents, visibleSect
                   </div>
                   {previewPerson && section.table.rows.length && columns.length ? (
                     <div className="hr-sheet-table-scroll" role="region" aria-label={`Aperçu ${section.label}`} tabIndex={0}>
-                      <table>
+                      <table className={section.key === 'documents' ? 'hr-sheet-documents-table' : undefined}>
                         <caption>{section.key === 'health' ? 'Liste des visites médicales' : `Liste ${section.label}`}</caption>
-                        <thead><tr>{columns.map((column) => <th key={column.key} scope="col">{column.label}</th>)}</tr></thead>
-                        <tbody>{section.table.rows.map((row, index) => <tr key={index}>{columns.map((column) => <td key={column.key}>{row[column.key] || 'Non renseigné'}</td>)}</tr>)}</tbody>
+                        <thead><tr>{(displayedColumns.length ? displayedColumns : columns).map((column) => <th key={column.key} scope="col">{column.label}</th>)}</tr></thead>
+                        {isGrouped ? groups.map((group) => (
+                          <tbody key={group.label}>
+                            <tr className="hr-sheet-category-row"><th colSpan={Math.max(1, displayedColumns.length)} scope="rowgroup">{group.label}</th></tr>
+                            {displayedColumns.length ? group.rows.map((row, index) => (
+                              <tr key={index}>{displayedColumns.map((column) => <td className={column.key === 'title' ? 'hr-sheet-document-name' : undefined} key={column.key}>{row[column.key] || 'Non renseigné'}</td>)}</tr>
+                            )) : null}
+                          </tbody>
+                        )) : <tbody>{section.table.rows.map((row, index) => <tr key={index}>{displayedColumns.map((column) => <td key={column.key}>{row[column.key] || 'Non renseigné'}</td>)}</tr>)}</tbody>}
                       </table>
                     </div>
                   ) : <p className="hr-sheet-empty">{!previewPerson ? 'Sélectionnez un collaborateur pour afficher un aperçu.' : section.table.rows.length ? 'Sélectionnez les informations de la liste à inclure.' : section.table.emptyLabel}</p>}

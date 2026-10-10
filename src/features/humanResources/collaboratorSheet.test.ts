@@ -6,11 +6,12 @@ import {
   buildCollaboratorSheetPdf,
   buildCollaboratorSheetSections,
   buildCollaboratorSheetsExport,
+  groupCollaboratorSheetRows,
   selectCollaboratorSheetSections,
   type CollaboratorSheetSection,
   type CollaboratorSheetSelection,
 } from './collaboratorSheet';
-import type { HrDocumentRecord, PersonRecord } from './peopleQueries';
+import type { HrDocumentRecord, HrDocumentTypeOption, PersonRecord } from './peopleQueries';
 
 const person: PersonRecord = {
   id: 7, userId: 'marin-7', firstName: 'Luc', lastName: 'MARTIN', email: 'private-email@example.test',
@@ -39,6 +40,15 @@ const certificate: HrDocumentRecord = {
 };
 const annualReview: HrDocumentRecord = { ...certificate, id: 12, categoryKey: 'annual_review', title: 'ANNUALREPORT' };
 const administrativeDocument: HrDocumentRecord = { ...certificate, id: 13, categoryKey: 'administrative', title: 'ADMINISTRATIVEREPORT' };
+const documentTypes: HrDocumentTypeOption[] = [
+  { id: 501, sourceItemId: 501, name: 'Certificat de formation de base à la sécurité', fileName: 'CFBS', categoryKey: 'safety_training', categoryLabel: 'Formation de Sécurité' },
+  { id: 502, sourceItemId: 502, name: 'Certificat médical d’aptitude à la navigation maritime', fileName: 'Visite Médicale', categoryKey: 'medical_visit', categoryLabel: 'Visite Médicale' },
+  { id: 503, sourceItemId: 503, name: 'Brevet de mécanicien 250 kW', fileName: 'MEC250', categoryKey: 'engine', categoryLabel: 'Machine' },
+  { id: 504, sourceItemId: 504, name: 'Attestation de qualification avancée à la lutte contre l’incendie', fileName: 'Z-TRAIN', categoryKey: 'safety_training', categoryLabel: 'Formation de Sécurité' },
+  { id: 505, sourceItemId: 505, name: 'Formation de base avancée', fileName: 'A-TRAIN', categoryKey: 'safety_training', categoryLabel: 'Formation de Sécurité' },
+  { id: 506, sourceItemId: 506, name: 'CQALI - Certificat de qualification avancée à la lutte contre l’incendie', fileName: 'CQALI', categoryKey: 'safety_training', categoryLabel: 'Formation de Sécurité' },
+  { id: 507, sourceItemId: 507, name: 'LEMS — HSE Induction', fileName: 'LEMS - HSE Induction', categoryKey: 'safety_induction', categoryLabel: 'Safety Induction' },
+];
 const pngPhoto = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC';
 const jpegPhoto = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAADAAIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDn6KKK+sPmD//Z';
 const allSections = new Set([
@@ -113,7 +123,7 @@ describe('collaborator sheet data and visibility', () => {
     ], new Set(['annualReviews', 'documents']));
     const documentSection = sections.find((section) => section.key === 'documents')!;
     expect(documentSection.label).toBe('Brevets et visites médicales');
-    expect(documentSection.table?.columns.map((column) => column.key)).toEqual(['title', 'category', 'expiresOn', 'status']);
+    expect(documentSection.table?.columns.map((column) => column.key)).toEqual(['category', 'title', 'expiresOn', 'status']);
     expect(documentSection.table?.rows.map((row) => [row.category, row.title, row.expiresOn, row.status])).toEqual([
       ['Certificats', 'Certificat', '15/08/2026', 'À renouveler'],
       ['Machine', 'Machine A', '01/01/2026', 'À renouveler'],
@@ -131,6 +141,83 @@ describe('collaborator sheet data and visibility', () => {
     expect(annualSection.table?.rows[0]).toMatchObject({
       title: 'ANNUALREPORT', issuedOn: '15/01/2025', sourceLabel: 'RH', notes: 'PUBLICCERTIFICATENOTE',
     });
+  });
+
+  it('uses full catalog names after removing the collaborator, year and file extension without mutating source records', () => {
+    const storedDocuments = [
+      { ...certificate, id: 21, categoryKey: 'safety_training', title: 'Luc MARTIN - cfbs - 2026.PDF' },
+      { ...medicalDocument, id: 22, title: 'luc martin - VISITE MEDICALE - 2026.PdF' },
+      { ...certificate, id: 23, categoryKey: 'engine', title: 'Luc MARTIN - MEC250 - 2026.pdf' },
+      { ...certificate, id: 24, categoryKey: 'safety_training', title: 'Luc MARTIN - CERTIFICAT DE FORMATION DE BASE A LA SECURITE - 2026.pdf' },
+      { ...administrativeDocument, id: 25, title: 'Luc MARTIN - ADMIN-ALIAS - 2026.pdf' },
+    ];
+    const sourceDocuments = structuredClone(storedDocuments);
+    const sourceCatalog = structuredClone(documentTypes);
+    const sections = buildCollaboratorSheetSections(person, storedDocuments, new Set(['documents']), documentTypes);
+    const documentSection = sections[0];
+    expect(documentSection.table?.rows.map((row) => row.title)).toEqual([
+      'Certificat de formation de base à la sécurité',
+      'Certificat de formation de base à la sécurité',
+      'Brevet de mécanicien 250 kW',
+      'Certificat médical d’aptitude à la navigation maritime',
+    ]);
+    expect(documentSection.table?.columns.map((column) => column.label)).toEqual(['Catégorie', 'Document', 'Échéance', 'Statut']);
+    expect(JSON.stringify(documentSection)).not.toMatch(/ADMIN-ALIAS|Luc MARTIN|2026\.pdf/i);
+    expect(storedDocuments).toEqual(sourceDocuments);
+    expect(documentTypes).toEqual(sourceCatalog);
+  });
+
+  it('sorts by category and the displayed full name rather than by the stored abbreviation', () => {
+    const sections = buildCollaboratorSheetSections(person, [
+      { ...certificate, id: 30, categoryKey: 'safety_training', title: 'Luc MARTIN - A-TRAIN - 2026.pdf' },
+      { ...certificate, id: 31, categoryKey: 'safety_training', title: 'Luc MARTIN - Z-TRAIN - 2026.pdf' },
+      { ...certificate, id: 32, categoryKey: 'engine', title: 'Luc MARTIN - MEC250 - 2026.pdf' },
+      { ...medicalDocument, id: 33, title: 'Luc MARTIN - Visite Médicale - 2026.pdf' },
+    ], new Set(['documents']), documentTypes);
+    expect(sections[0].table?.rows.map((row) => [row.category, row.title])).toEqual([
+      ['Formation de Sécurité', 'Attestation de qualification avancée à la lutte contre l’incendie'],
+      ['Formation de Sécurité', 'Formation de base avancée'],
+      ['Machine', 'Brevet de mécanicien 250 kW'],
+      ['Visite Médicale', 'Certificat médical d’aptitude à la navigation maritime'],
+    ]);
+  });
+
+  it('preserves cleaned unknown, ambiguous and category-mismatched names instead of inventing a catalog match', () => {
+    const ambiguousCatalog = [
+      ...documentTypes,
+      { ...documentTypes[0], id: 601, name: 'Formation de sûreté spécifique', fileName: 'AMBIGU' },
+      { ...documentTypes[0], id: 602, name: 'Formation de sécurité spécifique', fileName: 'AMBIGU' },
+    ];
+    const sections = buildCollaboratorSheetSections(person, [
+      { ...certificate, id: 41, categoryKey: 'safety_training', title: 'Luc MARTIN - Brevet inconnu détaillé - 2026.pdf' },
+      { ...certificate, id: 42, categoryKey: 'safety_training', title: 'Luc MARTIN - AMBIGU - 2026.pdf' },
+      { ...certificate, id: 43, categoryKey: 'deck', title: 'Luc MARTIN - CFBS - 2026.pdf' },
+    ], new Set(['documents']), ambiguousCatalog);
+    expect(sections[0].table?.rows.map((row) => row.title)).toEqual(['AMBIGU', 'Brevet inconnu détaillé', 'CFBS']);
+    expect(JSON.stringify(sections)).not.toMatch(/Formation de sûreté spécifique|Formation de sécurité spécifique|Certificat de formation de base à la sécurité/);
+  });
+
+  it('resolves the confirmed CQUALI spelling as CQALI only in its catalog category and retains the complete catalog title', () => {
+    const sections = buildCollaboratorSheetSections(person, [
+      { ...certificate, id: 51, categoryKey: 'safety_training', title: 'Luc MARTIN - CQUALI - 2026.pdf' },
+      { ...certificate, id: 52, categoryKey: 'safety_training', title: 'Luc MARTIN - cquali - 2026.pdf' },
+      { ...certificate, id: 53, categoryKey: 'safety_training', title: 'Luc MARTIN - CQALI - 2026.pdf' },
+      { ...certificate, id: 54, categoryKey: 'deck', title: 'Luc MARTIN - CQUALI - 2026.pdf' },
+    ], new Set(['documents']), documentTypes);
+    expect(sections[0].table?.rows.map((row) => row.title)).toEqual([
+      documentTypes[5].name, documentTypes[5].name, documentTypes[5].name, 'CQUALI',
+    ]);
+  });
+
+  it('resolves the confirmed historical HSE Induction name to its complete LEMS catalog name in the same category', () => {
+    const sections = buildCollaboratorSheetSections(person, [
+      { ...certificate, id: 55, categoryKey: 'safety_induction', title: 'Luc MARTIN - HSE Induction - 2026.pdf' },
+      { ...certificate, id: 56, categoryKey: 'safety_induction', title: 'Luc MARTIN - hse induction - 2026.PDF' },
+      { ...certificate, id: 57, categoryKey: 'deck', title: 'Luc MARTIN - HSE Induction - 2026.pdf' },
+    ], new Set(['documents']), documentTypes);
+    expect(sections[0].table?.rows.map((row) => [row.category, row.title])).toEqual([
+      ['Pont', 'HSE Induction'], ['Safety Induction', documentTypes[6].name], ['Safety Induction', documentTypes[6].name],
+    ]);
   });
 
   it('uses the stored ENIM classification before the derived function default', () => {
@@ -174,9 +261,93 @@ describe('collaborator sheet data and visibility', () => {
     expect(selected.find((section) => section.key === 'health')?.table?.rows[0]).toEqual({ issuedOn: '15/01/2025', expiresOn: '15/08/2026' });
     expect(JSON.stringify(selected)).not.toMatch(/PRIVATE|FORGEDSIGNATURE|signature/);
   });
+
+  it('revalidates grouping against the document schema and selected category without allowing forged grouping in other sections', () => {
+    const sections = buildCollaboratorSheetSections(person, [certificate, medicalDocument, annualReview], allSections);
+    const documentSection = sections.find((section) => section.key === 'documents')!;
+    expect(documentSection.table?.groupBy).toBe('category');
+    const grouped = selectCollaboratorSheetSections(sections, { documents: ['category', 'title'] });
+    expect(grouped[0].table?.groupBy).toBe('category');
+    const flat = selectCollaboratorSheetSections(sections, { documents: ['title'] });
+    expect(flat[0].table?.groupBy).toBeUndefined();
+    expect(flat[0].table?.rows[0]).toEqual({ title: 'CERTIFICATEREPORT' });
+
+    const annualSection = sections.find((section) => section.key === 'annualReviews')!;
+    annualSection.table!.groupBy = 'category';
+    const healthSection = sections.find((section) => section.key === 'health')!;
+    healthSection.table!.groupBy = 'category';
+    healthSection.table!.columns.push({ key: 'category', label: 'Catégorie forgée' });
+    healthSection.table!.rows[0].category = 'FORGEDCATEGORY';
+    const revalidated = selectCollaboratorSheetSections(sections, {
+      annualReviews: ['category', 'title'], health: ['category', 'title'], documents: ['unknown'],
+    });
+    expect(revalidated).toHaveLength(2);
+    revalidated.forEach((section) => expect(section.table?.groupBy).toBeUndefined());
+    expect(revalidated.find((section) => section.key === 'health')?.table?.columns.map((column) => column.key)).toEqual(['title']);
+    expect(JSON.stringify(revalidated)).not.toContain('FORGEDCATEGORY');
+  });
+
+  it('groups category parents once while retaining every sorted child row without changing the source list', () => {
+    const sections = buildCollaboratorSheetSections(person, [
+      certificate, { ...certificate, id: 62, title: 'SECONDREPORT' }, medicalDocument,
+    ], new Set(['documents']));
+    const rows = sections[0].table!.rows;
+    const original = structuredClone(rows);
+    const groups = groupCollaboratorSheetRows(rows);
+    expect(groups.map((group) => [group.label, group.rows.map((row) => row.title)])).toEqual([
+      ['Pont', ['CERTIFICATEREPORT', 'SECONDREPORT']], ['Visite Médicale', ['VISITREPORT']],
+    ]);
+    expect(rows).toEqual(original);
+  });
 });
 
 describe('collaborator sheet PDF', () => {
+  it('renders each category as one parent before its document children and preserves flat or parent-only selections', async () => {
+    const sections = buildCollaboratorSheetSections(person, [
+      { ...certificate, id: 70, categoryKey: 'engine', title: 'ENGINEONE' },
+      { ...certificate, id: 71, title: 'DECKONE' },
+      { ...certificate, id: 72, title: 'DECKTWO' },
+    ], new Set(['documents']));
+    const generatedOn = new Date('2026-10-10T12:00:00Z');
+    const grouped = await buildCollaboratorSheetPdf(person, sections, { documents: ['category', 'title', 'expiresOn', 'status'] }, generatedOn);
+    const groupedContent = pageContent((await inspectPdf(grouped.blob)).pdf, 0);
+    expect(groupedContent.match(/\(Machine\) Tj/g)).toHaveLength(1);
+    expect(groupedContent.match(/\(Pont\) Tj/g)).toHaveLength(1);
+    expect(groupedContent.indexOf('(Machine) Tj')).toBeLessThan(groupedContent.indexOf('(ENGINEONE) Tj'));
+    expect(groupedContent.indexOf('(Pont) Tj')).toBeLessThan(groupedContent.indexOf('(DECKONE) Tj'));
+    expect(groupedContent).toContain('DECKTWO');
+    expect(groupedContent).toContain('15/08/2026');
+
+    const flat = await buildCollaboratorSheetPdf(person, sections, { documents: ['title', 'expiresOn', 'status'] }, generatedOn);
+    const flatContent = pageContent((await inspectPdf(flat.blob)).pdf, 0);
+    expect(flatContent).toContain('DECKONE');
+    expect(flatContent).not.toMatch(/\(Machine\) Tj|\(Pont\) Tj/);
+
+    const parents = await buildCollaboratorSheetPdf(person, sections, { documents: ['category'] }, generatedOn);
+    const parentContent = pageContent((await inspectPdf(parents.blob)).pdf, 0);
+    expect(parentContent.match(/\(Machine\) Tj/g)).toHaveLength(1);
+    expect(parentContent.match(/\(Pont\) Tj/g)).toHaveLength(1);
+    expect(parentContent).not.toMatch(/ENGINEONE|DECKONE|DECKTWO|15\/08\/2026|À renouveler/);
+  });
+
+  it('keeps category parents with child rows and repeats the parent context when a long group continues onto another page', async () => {
+    const storedDocuments = Array.from({ length: 70 }, (_, index) => ({
+      ...certificate, id: 200 + index, title: `PAGEDREPORT${String(index + 1).padStart(2, '0')}`,
+    }));
+    const sections = buildCollaboratorSheetSections(person, storedDocuments, new Set(['documents']));
+    const generated = await buildCollaboratorSheetPdf(person, sections, { documents: ['category', 'title', 'expiresOn', 'status'] });
+    const { pdf } = await inspectPdf(generated.blob);
+    expect(pdf.getPageCount()).toBeGreaterThan(1);
+    for (let page = 0; page < pdf.getPageCount(); page += 1) {
+      const content = pageContent(pdf, page);
+      expect(content).toContain('(Pont) Tj');
+      expect(content).toMatch(/PAGEDREPORT\d+/);
+      expect(content.indexOf('(Pont) Tj')).toBeLessThan(content.indexOf('PAGEDREPORT'));
+      expect(content).toContain(`Page ${page + 1} / ${pdf.getPageCount()}`);
+    }
+    expect(pageContent(pdf, pdf.getPageCount() - 1)).toContain('PAGEDREPORT70');
+  });
+
   it('renders only selected fields and document columns while retaining the minimal report identity', async () => {
     const sections = buildCollaboratorSheetSections(person, [certificate, medicalDocument], allSections);
     const generated = await buildCollaboratorSheetPdf(person, sections, {
@@ -311,6 +482,56 @@ describe('collaborator sheet PDF', () => {
 });
 
 describe('multiple collaborator sheets export', () => {
+  it.each(['separate', 'combined'] as const)('uses the same full document names as individual sheets and honors selected columns in %s exports', async (mode) => {
+    const secondPerson = { ...person, id: 8, firstName: 'Anne', lastName: 'DURAND' };
+    const storedDocuments = [
+      { ...certificate, id: 81, categoryKey: 'safety_training', title: 'Luc MARTIN - Z-TRAIN - 2026.pdf' },
+      { ...medicalDocument, id: 82, title: 'Luc MARTIN - Visite Médicale - 2026.pdf' },
+      { ...certificate, id: 83, personId: 8, personName: 'Anne DURAND', categoryKey: 'engine', title: 'Anne DURAND - MEC250 - 2026.pdf' },
+      { ...administrativeDocument, id: 84, title: 'Luc MARTIN - ADMINALIAS - 2026.pdf' },
+    ];
+    const selection = { documents: ['category', 'title'], identity: ['employeeNumber'] };
+    const generatedOn = new Date('2026-10-10T12:00:00Z');
+    const visibleSectionKeys = new Set(['identity', 'documents']);
+    const firstSections = buildCollaboratorSheetSections(person, storedDocuments, visibleSectionKeys, documentTypes);
+    const individual = await buildCollaboratorSheetPdf(person, firstSections, selection, generatedOn, { includePhoto: false });
+    const expectedFirst = pageContent((await inspectPdf(individual.blob)).pdf, 0);
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    try {
+      const generated = await buildCollaboratorSheetsExport([person, secondPerson], storedDocuments, visibleSectionKeys,
+        selection, mode, generatedOn, { includePhoto: false }, documentTypes);
+      let firstContent: string;
+      let secondContent: string;
+      if (mode === 'separate') {
+        const archive = await JSZip.loadAsync(await generated.blob.arrayBuffer());
+        const names = Object.keys(archive.files);
+        const first = await inspectPdf(new Blob([await archive.file(names[0])!.async('arraybuffer')]));
+        const second = await inspectPdf(new Blob([await archive.file(names[1])!.async('arraybuffer')]));
+        firstContent = pageContent(first.pdf, 0);
+        secondContent = pageContent(second.pdf, 0);
+        expect(firstContent).toBe(expectedFirst);
+      } else {
+        const { pdf } = await inspectPdf(generated.blob);
+        expect(pdf.getPageCount()).toBe(2);
+        firstContent = pageContent(pdf, 0);
+        secondContent = pageContent(pdf, 1);
+      }
+      expect(firstContent).toContain('Attestation de qualification avancée');
+      expect(firstContent).toContain('Certificat médical');
+      expect(secondContent).toContain('Brevet de mécanicien 250 kW');
+      expect(firstContent).not.toMatch(/Z-TRAIN|Visite Médicale -|ADMINALIAS|15\/08\/2026|À renouveler|MEC250/);
+      expect(secondContent).not.toMatch(/MEC250|Z-TRAIN|Certificat médical|15\/08\/2026|À renouveler/);
+      [firstContent, secondContent].forEach((content) => {
+        expect(content).toContain('Page 1 / 1');
+        expect(content).not.toMatch(/Fiche \d+ \/ \d+/);
+      });
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('packages one PDF per unique ID, preserving homonyms and restricting each sheet to its own authorized data', async () => {
     const homonym = { ...person, id: 8, employeeNumber: '00052' };
     const people = [person, homonym, { ...person, firstName: 'DUPLICATEMUSTNOTREPLACE' }];
@@ -369,7 +590,7 @@ describe('multiple collaborator sheets export', () => {
       const text = pageContent(pdf, page);
       expect(text).toContain('Luc MARTIN');
       expect(text).toContain(`Page ${page + 1} / ${firstPageCount}`);
-      expect(text).toContain('Fiche 1 / 2');
+      expect(text).not.toMatch(/Fiche \d+ \/ \d+/);
       expect(text).not.toMatch(/Anne DURAND|SECONDREPORT|REMOVEDSECONDNOTE/);
     }
     expect(pageContent(pdf, firstPageCount - 1)).toContain('FIRSTREPORT35');
@@ -378,9 +599,10 @@ describe('multiple collaborator sheets export', () => {
     expect(secondPage).toContain('SECONDREPORT');
     expect(secondPage).not.toContain('REMOVEDSECONDNOTE');
     expect(secondPage).toContain('Page 1 / 1');
-    expect(secondPage).toContain('Fiche 2 / 2');
+    expect(secondPage).not.toMatch(/Fiche \d+ \/ \d+/);
     expect(secondPage).not.toMatch(/Luc MARTIN|FIRSTREPORT/);
     expect(content).not.toMatch(/PRIVATE|0123456789|UNSELECTEDREPORT/);
+    expect(content).not.toMatch(/Fiche \d+ \/ \d+/);
   });
 
   it.each([
@@ -406,6 +628,11 @@ describe('multiple collaborator sheets export', () => {
       expect(/\/I\d+ Do/.test(pageContent(pdf, 1))).toBe(includePhoto);
       expect(pageContent(pdf, 0)).toContain('Luc MARTIN');
       expect(pageContent(pdf, 1)).toContain('Anne DURAND');
+      for (let page = 0; page < pdf.getPageCount(); page += 1) {
+        const content = pageContent(pdf, page);
+        expect(content).toContain('Page 1 / 1');
+        expect(content).not.toMatch(/Fiche \d+ \/ \d+/);
+      }
     }
   });
 

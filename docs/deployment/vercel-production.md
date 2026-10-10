@@ -1,5 +1,27 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.71.14`, build `2026-10-10.007`, présente Brevets et visites médicales
+en arborescence dans l'aperçu et le PDF : catégorie au rang 1, documents en
+retrait au rang 2, classés par catégorie puis nom complet affiché. Les champs
+Catégorie, Document, Échéance et Statut restent sélectionnables séparément :
+sans Catégorie, le tableau est plat ; avec Catégorie seule, il présente
+uniquement les lignes parents. Les en-têtes Document, Échéance et Statut ont un fond blanc ;
+les lignes catégories conservent un fond clair distinct. Le libellé historique
+HSE Induction correspond à LEMS — HSE Induction lorsqu'une correspondance unique
+existe dans la même catégorie, sans renommage de fichier ni écriture en base.
+Les intitulés complets viennent du catalogue
+documentaire déjà chargé lorsque les alias du document et sa catégorie donnent
+une correspondance unique. Les titres inconnus ou ambigus restent nettoyés,
+sans intitulé inventé. L'ancien sigle erroné CQUALI correspond à CQALI pour
+afficher le Certificat de Qualification Avancée à la Lutte contre l'Incendie
+du catalogue, sans renommage de fichier ni écriture en base.
+La case Inclure la photo et les droits existants sont
+conservés pour la fiche individuelle, le ZIP et le PDF regroupé, sans lecture
+supplémentaire ni modification des données. Le pied de page du PDF regroupé
+conserve la date et Page x / y, sans décompte Fiche x / n.
+Aucune migration, dépendance ou
+configuration nouvelle. Voir [les fiches collaborateurs](./human-resources-collaborator-form.md).
+
 Version `3.71.13`, build `2026-10-10.006`, renomme la liste PDF Documents en
 Brevets et visites médicales : quatre colonnes, classement par catégorie et
 exclusion des fichiers administratifs. Les entretiens annuels et la section

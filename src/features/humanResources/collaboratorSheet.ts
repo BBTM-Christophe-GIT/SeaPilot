@@ -1,9 +1,11 @@
 import {
   formatPersonName,
   getHrDocumentCategoryLabel,
+  getHrDocumentDisplayName,
   getHrEnimClassification,
   normalizeHrFunctionLabel,
   type HrDocumentRecord,
+  type HrDocumentTypeOption,
   type PersonRecord,
 } from './peopleQueries';
 
@@ -21,6 +23,7 @@ export interface CollaboratorSheetSection {
     columns: Array<{ key: string; label: string }>;
     rows: Array<Record<string, string>>;
     emptyLabel: string;
+    groupBy?: 'category';
   };
 }
 
@@ -81,7 +84,7 @@ const DOCUMENT_COLUMNS = [
   { key: 'notes', label: 'Notes' },
 ];
 
-const CERTIFICATE_COLUMNS = DOCUMENT_COLUMNS.filter((column) => ['title', 'category', 'expiresOn', 'status'].includes(column.key));
+const CERTIFICATE_COLUMNS = ['category', 'title', 'expiresOn', 'status'].map((key) => DOCUMENT_COLUMNS.find((column) => column.key === key)!);
 const documentCollator = new Intl.Collator('fr-FR', { sensitivity: 'base', numeric: true });
 
 const MEDICAL_COLUMNS = [
@@ -122,6 +125,36 @@ function documentRow(document: HrDocumentRecord): Record<string, string> {
   };
 }
 
+function normalizeDocumentName(value: string): string {
+  const normalized = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('fr-FR').replace(/[’']/g, ' ').replace(/\s+/g, ' ').trim();
+  // Historical labels confirmed by the user; catalogue matching still requires the same category.
+  if (normalized === 'cquali') return 'cqali';
+  if (normalized === 'hse induction') return 'lems - hse induction';
+  return normalized;
+}
+
+function certificateTitle(document: HrDocumentRecord, person: PersonRecord, documentTypes: readonly HrDocumentTypeOption[]): string {
+  const displayName = getHrDocumentDisplayName({ ...document, personName: document.personName || formatPersonName(person) });
+  const normalizedName = normalizeDocumentName(displayName);
+  const names = new Set(documentTypes.filter((type) => type.categoryKey === document.categoryKey
+    && (normalizeDocumentName(type.fileName) === normalizedName || normalizeDocumentName(type.name) === normalizedName))
+    .map((type) => type.name.trim()).filter(Boolean));
+  // A title is not a catalogue ID: keep unknown or ambiguous labels rather than guessing a qualification.
+  return names.size === 1 ? [...names][0] : valueOrEmpty(displayName);
+}
+
+export function groupCollaboratorSheetRows(rows: Array<Record<string, string>>): Array<{ label: string; rows: Array<Record<string, string>> }> {
+  const groups = new Map<string, Array<Record<string, string>>>();
+  rows.forEach((row) => {
+    const label = row.category || EMPTY_VALUE;
+    const group = groups.get(label) || [];
+    group.push(row);
+    groups.set(label, group);
+  });
+  return [...groups].map(([label, groupRows]) => ({ label, rows: groupRows }));
+}
+
 function medicalRow(document: HrDocumentRecord): Record<string, string> {
   const restriction = document.medicalRestriction.trim();
   return {
@@ -143,6 +176,7 @@ export function buildCollaboratorSheetSections(
   person: PersonRecord,
   documents: HrDocumentRecord[],
   visibleSectionKeys: ReadonlySet<string>,
+  documentTypes: readonly HrDocumentTypeOption[] = [],
 ): CollaboratorSheetSection[] {
   const ownDocuments = documents.filter((document) => document.personId === person.id);
   const classification = getHrEnimClassification(person.functionLabel);
@@ -175,16 +209,20 @@ export function buildCollaboratorSheetSections(
         const listedDocuments = ownDocuments.filter((document) => key === 'annualReviews'
           ? document.categoryKey === 'annual_review'
           : document.categoryKey !== 'annual_review' && document.categoryKey !== 'administrative');
+        const documentRows: Array<{ document: HrDocumentRecord; row: Record<string, string> }> = listedDocuments.map((document) => ({ document, row: {
+          ...documentRow(document),
+          ...(key === 'documents' ? { title: certificateTitle(document, person, documentTypes) } : {}),
+        } }));
         if (key === 'documents') {
-          listedDocuments.sort((left, right) => documentCollator.compare(getHrDocumentCategoryLabel(left.categoryKey), getHrDocumentCategoryLabel(right.categoryKey))
-            || documentCollator.compare(left.title, right.title)
-            || left.expiresOn.localeCompare(right.expiresOn)
-            || left.id - right.id);
+          documentRows.sort((left, right) => documentCollator.compare(left.row.category, right.row.category)
+            || documentCollator.compare(left.row.title, right.row.title)
+            || left.document.expiresOn.localeCompare(right.document.expiresOn)
+            || left.document.id - right.document.id);
         }
         section.table = {
           columns: (key === 'documents' ? CERTIFICATE_COLUMNS : DOCUMENT_COLUMNS).map((column) => ({ ...column })),
-          rows: listedDocuments.map((document) => {
-            const row = documentRow(document);
+          ...(key === 'documents' ? { groupBy: 'category' as const } : {}),
+          rows: documentRows.map(({ row }) => {
             return key === 'documents' ? Object.fromEntries(CERTIFICATE_COLUMNS.map((column) => [column.key, row[column.key]])) : row;
           }),
           emptyLabel: key === 'annualReviews' ? 'Aucun entretien annuel enregistré.' : 'Aucun brevet ni visite médicale enregistré.',
@@ -212,6 +250,7 @@ export function selectCollaboratorSheetSections(
     const columns = section.table?.columns.filter((column) => allowedColumns.has(column.key) && chosenKeys.has(column.key)) || [];
     const table = section.table && columns.length > 0 ? {
       columns,
+      ...(key === 'documents' && columns.some((column) => column.key === 'category') ? { groupBy: 'category' as const } : {}),
       rows: section.table.rows.map((row) => Object.fromEntries(columns.map((column) => [column.key, row[column.key] || EMPTY_VALUE]))),
       emptyLabel: section.table.emptyLabel,
     } : undefined;
@@ -298,19 +337,35 @@ export async function buildCollaboratorSheetPdf(
       y = finalY() + 4;
     }
     if (section.table) {
-      const { columns, rows, emptyLabel } = section.table;
+      const { columns, rows, emptyLabel, groupBy } = section.table;
       const weights: Record<string, number> = { title: 2, category: 1.5, sourceLabel: 1.2, issuedOn: 1.5, expiresOn: 1.5, status: 1.2, aptitude: 1.4, bridgeWatch: 1.5, restriction: 1.6, notes: 2 };
-      const totalWeight = columns.reduce((total, column) => total + (weights[column.key] || 1), 0);
-      autoTable(pdf, {
-        startY: y, margin, theme: 'grid', styles: { ...styles, fontSize: 7.5, cellPadding: 2 },
-        head: [columns.map((column) => column.label)],
-        body: rows.length
-          ? rows.map((row) => columns.map((column) => row[column.key]))
-          : [[{ content: emptyLabel, colSpan: columns.length }]],
-        headStyles: { fillColor: blue, textColor: 255, fontStyle: 'bold' },
-        columnStyles: Object.fromEntries(columns.map((column, index) => [index, { cellWidth: 180 * (weights[column.key] || 1) / totalWeight }])),
-      });
-      y = finalY() + 4;
+      const renderRows = (tableColumns: typeof columns, tableRows: typeof rows, category?: string) => {
+        const widthColumns = tableColumns.length ? tableColumns : [{ key: 'category', label: 'Catégorie' }];
+        const totalWeight = widthColumns.reduce((total, column) => total + (weights[column.key] || 1), 0);
+        autoTable(pdf, {
+          startY: y, margin, theme: 'grid', rowPageBreak: 'avoid', styles: { ...styles, fontSize: 7.5, cellPadding: 2 },
+          head: [
+            ...(category !== undefined ? [[{ content: category, colSpan: widthColumns.length, styles: { fillColor: pale, textColor: blue, fontStyle: 'bold' as const } }]] : []),
+            ...(tableColumns.length ? [tableColumns.map((column) => column.label)] : []),
+          ],
+          body: tableColumns.length
+            ? tableRows.length ? tableRows.map((row) => tableColumns.map((column) => ({
+              content: row[column.key],
+              ...(category !== undefined && column.key === 'title' ? { styles: { cellPadding: { top: 2, right: 2, bottom: 2, left: 5 } } } : {}),
+            }))) : [[{ content: emptyLabel, colSpan: tableColumns.length }]]
+            : [],
+          headStyles: { fillColor: section.key === 'documents' ? 255 : blue, textColor: section.key === 'documents' ? navy : 255, fontStyle: 'bold' },
+          columnStyles: Object.fromEntries(widthColumns.map((column, index) => [index, { cellWidth: 180 * (weights[column.key] || 1) / totalWeight }])),
+        });
+        y = finalY() + 4;
+      };
+      if (groupBy === 'category' && rows.length) {
+        const childColumns = columns.filter((column) => column.key !== 'category');
+        groupCollaboratorSheetRows(rows).forEach((group) => renderRows(childColumns, group.rows, group.label));
+      } else {
+        const childColumns = groupBy === 'category' ? columns.filter((column) => column.key !== 'category') : columns;
+        renderRows(childColumns.length ? childColumns : columns, rows);
+      }
     }
     y += 4;
   });
@@ -351,6 +406,7 @@ export async function buildCollaboratorSheetsExport(
   mode: CollaboratorSheetsExportMode,
   generatedOn = new Date(),
   options: CollaboratorSheetPdfOptions = {},
+  documentTypes: readonly HrDocumentTypeOption[] = [],
 ): Promise<{ blob: Blob; fileName: string }> {
   const peopleById = new Map<number, PersonRecord>();
   people.forEach((person) => { if (!peopleById.has(person.id)) peopleById.set(person.id, person); });
@@ -359,7 +415,7 @@ export async function buildCollaboratorSheetsExport(
   if (mode !== 'separate' && mode !== 'combined') throw new Error('Choisissez un format d’export valide.');
   const sheets = uniquePeople.map((person) => ({
     person,
-    sections: buildCollaboratorSheetSections(person, documents, visibleSectionKeys),
+    sections: buildCollaboratorSheetSections(person, documents, visibleSectionKeys, documentTypes),
   }));
   if (sheets.some(({ sections }) => !selectCollaboratorSheetSections(sections, selection).length)) {
     throw new Error('Sélectionnez au moins une information à inclure dans la fiche.');
@@ -384,25 +440,15 @@ export async function buildCollaboratorSheetsExport(
     };
   }
 
-  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
+  const { PDFDocument } = await import('pdf-lib');
   const combined = await PDFDocument.create();
-  const footerFont = await combined.embedFont(StandardFonts.Helvetica);
-  for (const [index, { person, sections }] of sheets.entries()) {
+  for (const { person, sections } of sheets) {
     const generated = await buildCollaboratorSheetPdf(person, sections, selection, generatedOn, options);
     const source = await PDFDocument.load(await generated.blob.arrayBuffer());
     const pages = await combined.copyPages(source, source.getPageIndices());
     // A sheet keeps its own name and page count, and always starts on a fresh page.
-    // Its position in the grouped document distinguishes sheet pagination from the total selection.
-    const sheetLabel = `Fiche ${index + 1} / ${sheets.length}`;
     for (const page of pages) {
       combined.addPage(page);
-      page.drawText(sheetLabel, {
-        x: (page.getWidth() - footerFont.widthOfTextAtSize(sheetLabel, 7)) / 2,
-        y: page.getHeight() - 290 * 72 / 25.4,
-        size: 7,
-        font: footerFont,
-        color: rgb(75 / 255, 93 / 255, 114 / 255),
-      });
     }
   }
   return {

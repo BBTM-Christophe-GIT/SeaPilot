@@ -220,6 +220,7 @@ function createClient(
   people: Array<Record<string, unknown>> = [activePerson, formerPerson],
   hrDocuments: HrDocumentFixture[] = documents,
   visibilityRules: HrVisibilityRuleFixture[] = [],
+  documentTypes?: Array<Record<string, unknown>>,
 ) {
   return {
     from: vi.fn().mockImplementation((table: string) => {
@@ -233,6 +234,12 @@ function createClient(
 
       if (table === 'hr_visibility_rules') {
         return createOrderedSelect(visibilityRules);
+      }
+
+      if (table === 'stcw_certificates' && documentTypes) {
+        const orderByName = vi.fn().mockResolvedValue({ data: documentTypes, error: null });
+        const orderByCategory = vi.fn().mockReturnValue({ order: orderByName });
+        return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ order: orderByCategory }) }) };
       }
 
       throw new Error(`Unexpected table ${table}`);
@@ -397,6 +404,47 @@ describe('HumanResourcesPage', () => {
       timer.mockRestore();
       Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: originalCreateObjectURL });
     }
+  });
+
+  it.each(['individual', 'bulk'] as const)('reuses the loaded catalog for full names in the %s PDF export without another query', async (mode) => {
+    await withoutBrowserDownload(async () => {
+      const user = userEvent.setup();
+      const loadedDocuments = [{ ...documents[1], category_key: 'safety_training', title: 'Jean MARTIN - CFBS - 2026.pdf' }];
+      const fullName = 'CFBS - Certificat de formation de base à la sécurité';
+      const catalogRows = [{ id: 501, source_item_id: 501, name: fullName, category: 'Formation de Sécurité', file_name: 'CFBS' }];
+      const client = createClient([activePerson], loadedDocuments, [], catalogRows);
+      vi.mocked(buildCollaboratorSheetPdf).mockClear();
+      vi.mocked(buildCollaboratorSheetsExport).mockClear();
+      render(<HumanResourcesPage client={client as never} roles={['admin']} />);
+      await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' });
+      const queryCount = client.from.mock.calls.length;
+      expect(client.from.mock.calls.filter(([table]) => table === 'stcw_certificates')).toHaveLength(1);
+      if (mode === 'individual') {
+        await user.click(screen.getByRole('button', { name: 'Autres actions' }));
+        await user.click(screen.getByRole('menuitem', { name: 'Fiche Collaborateur' }));
+      } else {
+        await user.click(screen.getByRole('button', { name: 'Exporter les fiches' }));
+      }
+      const dialog = screen.getByRole('dialog', { name: mode === 'individual' ? 'Fiche Collaborateur' : 'Fiches collaborateurs' });
+      if (mode === 'bulk') await user.click(within(dialog).getByRole('button', { name: 'Sélectionner tous les collaborateurs' }));
+      const table = within(dialog).getByRole('table', { name: 'Liste Brevets et visites médicales' });
+      expect(table).toHaveTextContent(fullName);
+      expect(table).not.toHaveTextContent('Jean MARTIN - CFBS - 2026.pdf');
+      expect(within(table).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Document', 'Échéance', 'Statut']);
+      await user.click(within(dialog).getByRole('checkbox', { name: 'Brevets et visites médicales : Échéance' }));
+      fireEvent.submit(dialog);
+      await within(dialog).findByText(mode === 'individual' ? 'La fiche collaborateur PDF a été générée.' : 'Les fiches collaborateurs ont été exportées.');
+      if (mode === 'individual') {
+        const [, sections, selection] = vi.mocked(buildCollaboratorSheetPdf).mock.calls[0];
+        expect(sections.find((section) => section.key === 'documents')?.table?.rows[0].title).toBe(fullName);
+        expect(selection.documents).not.toContain('expiresOn');
+      } else {
+        const [, , , selection, , , , exportedCatalog] = vi.mocked(buildCollaboratorSheetsExport).mock.calls[0];
+        expect(exportedCatalog).toEqual([expect.objectContaining({ name: fullName, fileName: 'CFBS', categoryKey: 'safety_training' })]);
+        expect(selection.documents).not.toContain('expiresOn');
+      }
+      expect(client.from).toHaveBeenCalledTimes(queryCount);
+    });
   });
 
   it.each(['admin', 'direction', 'armement'] as const)('offers batch sheets for the real %s roster without including former collaborators by default', async (role) => {

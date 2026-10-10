@@ -39,7 +39,17 @@ Le raccourci **Voir les anciens** permet de basculer immédiatement vers cette p
 
 Le menu **…** en haut à droite de chaque fiche RH propose **Fiche Collaborateur** à tous les profils qui peuvent consulter cette personne. La fenêtre permet de sélectionner une section complète ou chaque information individuellement, puis de télécharger la fiche en PDF A4. Le nom du collaborateur identifie toujours le document.
 
-Toutes les informations accessibles sont sélectionnées à l'ouverture. La liste **Brevets et visites médicales** propose uniquement **Document**, **Catégorie**, **Échéance** et **Statut**. Elle exclut les fichiers de catégorie **Documents administratifs** et les entretiens annuels, puis classe les éléments par catégorie et par titre. Les dates d'émission, sources et notes n'apparaissent plus dans cette liste, même si une ancienne sélection les demandait. La section **Documents administratifs** contenant les champs d'identité du collaborateur reste disponible selon ses droits.
+Toutes les informations accessibles sont sélectionnées à l'ouverture. La liste **Brevets et visites médicales** propose uniquement les champs **Catégorie**, **Document**, **Échéance** et **Statut**, dans cet ordre. Elle exclut les fichiers de catégorie **Documents administratifs** et les entretiens annuels, puis classe les éléments par catégorie et par nom complet affiché. Les dates d'émission, sources et notes n'apparaissent plus dans cette liste, même si une ancienne sélection les demandait. La section **Documents administratifs** contenant les champs d'identité du collaborateur reste disponible selon ses droits.
+
+Dans l'aperçu et le PDF, la liste apparaît en arborescence : chaque **catégorie** forme une ligne parent de rang 1 et ses **documents** apparaissent en retrait au rang 2, avec leur nom complet, échéance et statut lorsqu'ils sont sélectionnés. Les quatre champs restent sélectionnables séparément. Lorsque **Catégorie** est décochée, l'export présente un tableau plat contenant uniquement les colonnes choisies. Si seule **Catégorie** est sélectionnée, il affiche uniquement les lignes parents, sans documents, dates ni statuts. Cette présentation s'applique aussi aux fiches séparées et regroupées.
+
+Les en-têtes **Document**, **Échéance** et **Statut** ont un fond blanc dans l'aperçu et le PDF ; les catégories gardent un fond clair distinct pour repérer les groupes.
+
+Le nom complet d'un brevet vient du catalogue documentaire déjà chargé : les alias **Nom de Fichier** (`fileName`) et **Nom** (`name`) sont rapprochés du titre nettoyé du document, avec sa catégorie exacte. Lorsqu'une correspondance unique est disponible, le PDF affiche le nom du catalogue au lieu du sigle. Sans correspondance, ou en cas d'ambiguïté, il conserve le titre nettoyé sans inventer un intitulé. Cette présentation s'applique à la fiche individuelle comme aux fiches séparées et regroupées ; elle ne modifie ni le fichier ni les données enregistrées et ne déclenche aucune lecture supplémentaire.
+
+Les anciennes lignes portant le sigle erroné **CQUALI** sont rapprochées de **CQALI** dans le catalogue pour afficher **Certificat de Qualification Avancée à la Lutte contre l'Incendie**, lorsque la correspondance est unique dans la même catégorie. Cette correction concerne uniquement l'affichage du PDF : aucun fichier n'est renommé et aucune donnée n'est écrite en base.
+
+Le libellé historique **HSE Induction** est rapproché de **LEMS — HSE Induction**, conformément au choix de l'utilisateur, lorsque le catalogue fournit une correspondance unique dans la même catégorie ; les fichiers et données enregistrés restent inchangés.
 
 Les listes **Visites médicales** et **Entretien Annuel** conservent leurs colonnes et apparaissent dans la fenêtre et dans le PDF lorsque leurs informations sont sélectionnées. Les dates, statuts, habilitations, aptitude médicale, veille à la passerelle et restrictions peuvent être inclus séparément. Les longues listes sont réparties sur plusieurs pages avec en-tête et pagination.
 
@@ -55,6 +65,10 @@ profil connecté. Il propose deux formats au choix : **Fiches séparées (ZIP)**
 avec un PDF par personne dans une seule archive, ou **Fiches regroupées (PDF)**,
 avec une nouvelle page au début de chaque fiche. Les personnes sont identifiées
 sur leurs pages ; les homonymes conservent des noms de fichiers distincts.
+
+Le pied de page conserve la date de génération et la pagination **Page x / y**
+de chaque collaborateur. Le PDF regroupé n'ajoute aucun décompte **Fiche x / n**,
+y compris lorsqu'un seul collaborateur est exporté.
 
 Les choix de sections, d'informations et d'inclusion de la photo s'appliquent à
 toutes les fiches. Le sélecteur d'aperçu permet de consulter les valeurs d'un collaborateur sélectionné
