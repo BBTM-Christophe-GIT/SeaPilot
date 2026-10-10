@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectBillingRawLines } from './ProjectBillingRawLines';
@@ -53,6 +53,58 @@ beforeEach(() => {
 });
 
 describe('raw project billing lines', () => {
+  it('creates one blank inline draft on the first opening and preserves the draft across later openings', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ProjectBillingRawLines {...props()} initializeBlankOnOpen={false} />);
+    expect(screen.queryByLabelText('Désignation, ligne 1')).not.toBeInTheDocument();
+    rerender(<ProjectBillingRawLines {...props()} initializeBlankOnOpen />);
+    expect(screen.getAllByLabelText(/^Désignation, ligne/)).toHaveLength(1);
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('');
+    expect(screen.getByLabelText('Date, ligne 1')).toHaveValue('2026-10-01');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
+    change('Désignation, ligne 1', 'Brouillon conservé');
+    rerender(<ProjectBillingRawLines {...props()} initializeBlankOnOpen={false} />);
+    rerender(<ProjectBillingRawLines {...props()} initializeBlankOnOpen />);
+    expect(screen.getAllByLabelText(/^Désignation, ligne/)).toHaveLength(1);
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Brouillon conservé');
+    await user.click(screen.getByRole('button', { name: 'Supprimer la ligne 1' }));
+    rerender(<ProjectBillingRawLines {...props()} initializeBlankOnOpen={false} />);
+    rerender(<ProjectBillingRawLines {...props()} initializeBlankOnOpen />);
+    expect(screen.queryByLabelText('Désignation, ligne 1')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('');
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onDelete).not.toHaveBeenCalled();
+  });
+
+  it('does not insert a blank line on opening when a saved row already exists or after that row is deleted', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { rerender } = render(<ProjectBillingRawLines {...props([savedLine])} initializeBlankOnOpen />);
+    expect(screen.getAllByLabelText(/^Désignation, ligne/)).toHaveLength(1);
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    await user.click(screen.getByRole('button', { name: 'Supprimer la ligne 1' }));
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith(savedLine.id));
+    rerender(<ProjectBillingRawLines {...props()} initializeBlankOnOpen={false} />);
+    rerender(<ProjectBillingRawLines {...props()} initializeBlankOnOpen />);
+    expect(screen.queryByLabelText('Désignation, ligne 1')).not.toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it('only initializes the empty section once editing is allowed and global work has finished', () => {
+    const { rerender } = render(<ProjectBillingRawLines {...props()} isManager={false} initializeBlankOnOpen />);
+    expect(screen.queryByLabelText('Désignation, ligne 1')).not.toBeInTheDocument();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    rerender(<ProjectBillingRawLines {...props()} disabled initializeBlankOnOpen />);
+    expect(screen.queryByLabelText('Désignation, ligne 1')).not.toBeInTheDocument();
+    rerender(<ProjectBillingRawLines {...props()} initializeBlankOnOpen />);
+    expect(screen.getAllByLabelText(/^Désignation, ligne/)).toHaveLength(1);
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it.each(['vessel', 'office'] as const)('keeps the saved vessel name visible after a fleet rename or reclassification to %s', async (assetKind) => {
     const user = userEvent.setup();
     const line = { ...savedLine, vesselId: 102, vesselName: 'NOM HISTORIQUE' };
@@ -78,14 +130,87 @@ describe('raw project billing lines', () => {
     expect(screen.queryByRole('combobox', { name: /Prestation du catalogue/ })).not.toBeInTheDocument();
     expect(screen.queryByText('Saisie manuelle')).not.toBeInTheDocument();
     const add = screen.getByRole('button', { name: 'Ajouter une ligne' });
+    const duplicate = screen.getByRole('button', { name: 'Dupliquer la ligne' });
     const lastRow = screen.getByLabelText('Désignation, ligne 4').closest('tr')!;
     expect(lastRow.compareDocumentPosition(add) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(lastRow.compareDocumentPosition(duplicate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(add.compareDocumentPosition(screen.getByText(/Total des lignes HT/)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeVisible();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
-    await user.click(screen.getByRole('button', { name: 'Catalogue de prestations' }));
+    await user.click(screen.getByRole('button', { name: 'Catalogue des prestations' }));
     expect(onCatalogOpen).toHaveBeenCalledOnce();
+  });
+
+  it('puts the accessible delete and edit buttons at the beginning of each row and edits without opening a dialog', async () => {
+    const user = userEvent.setup();
+    render(<ProjectBillingRawLines {...props([savedLine])} />);
+    const row = screen.getByLabelText('Désignation, ligne 1').closest('tr')!;
+    const firstCell = within(row).getAllByRole('cell')[0];
+    expect(within(firstCell).getByRole('button', { name: 'Supprimer la ligne 1' })).toBeVisible();
+    await user.click(within(firstCell).getByRole('button', { name: 'Modifier la ligne 1' }));
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveFocus();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
+    await user.type(screen.getByLabelText('Désignation, ligne 1'), ' supplémentaire');
+    expect(screen.getByRole('button', { name: 'Enregistrer la ligne 1' })).toBeEnabled();
+  });
+
+  it('duplicates every displayed value of a saved catalogue line as an independent unsaved row', async () => {
+    const user = userEvent.setup();
+    const linkedLine = { ...savedLine, serviceCatalogId: 7, vesselId: 102, vesselName: 'NOM HISTORIQUE', serviceDate: '2026-10-09' };
+    render(<ProjectBillingRawLines {...props([linkedLine])} />);
+    change('Prix unitaire HT, ligne 1', '123.45');
+    change('Quantité, ligne 1', '2.375');
+    await user.click(screen.getByRole('button', { name: 'Dupliquer la ligne' }));
+    expect(screen.getByLabelText('Date, ligne 2')).toHaveValue('2026-10-09');
+    expect(screen.getByLabelText('Navire, ligne 2')).toHaveDisplayValue('NOM HISTORIQUE');
+    expect(screen.getByLabelText('Désignation, ligne 2')).toHaveValue('Assistance');
+    expect(screen.getByLabelText('Prix unitaire HT, ligne 2')).toHaveValue(123.45);
+    expect(screen.getByLabelText('Quantité, ligne 2')).toHaveValue(2.375);
+    expect(screen.getByRole('button', { name: 'Enregistrer la ligne 2' })).toBeEnabled();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 2' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({
+      serviceCatalogId: 7, vesselId: 102, vesselName: 'NOM HISTORIQUE', serviceDate: '2026-10-09',
+      designation: 'Assistance', unitAmountHt: 123.45, quantity: 2.375, includeInPdf: true,
+    }, undefined));
+    change('Quantité, ligne 2', '9');
+    expect(screen.getByLabelText('Quantité, ligne 1')).toHaveValue(2.375);
+  });
+
+  it('duplicates the previous unsaved row without creating a blank row or saving either draft', async () => {
+    const user = userEvent.setup();
+    render(<ProjectBillingRawLines {...props([savedLine])} />);
+    await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
+    change('Date, ligne 2', '2026-10-15');
+    change('Désignation, ligne 2', 'Manutention libre');
+    change('Prix unitaire HT, ligne 2', '12.75');
+    change('Quantité, ligne 2', '3.125');
+    await user.click(screen.getByRole('button', { name: 'Dupliquer la ligne' }));
+    expect(screen.getByLabelText('Date, ligne 3')).toHaveValue('2026-10-15');
+    expect(screen.getByLabelText('Désignation, ligne 3')).toHaveValue('Manutention libre');
+    expect(screen.getByLabelText('Prix unitaire HT, ligne 3')).toHaveValue(12.75);
+    expect(screen.getByLabelText('Quantité, ligne 3')).toHaveValue(3.125);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Supprimer la ligne 3' }));
+    expect(screen.getByLabelText('Désignation, ligne 2')).toHaveValue('Manutention libre');
+    expect(onDelete).not.toHaveBeenCalled();
+  });
+
+  it('disables duplication without a source row or during a global operation', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ProjectBillingRawLines {...props()} />);
+    expect(screen.getByRole('button', { name: 'Dupliquer la ligne' })).toBeDisabled();
+    rerender(<ProjectBillingRawLines {...props([savedLine])} disabled />);
+    expect(screen.getByRole('button', { name: 'Dupliquer la ligne' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Modifier la ligne 1' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Dupliquer la ligne' }));
+    expect(screen.getAllByLabelText(/^Désignation, ligne/)).toHaveLength(1);
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it('prefills a catalogue choice while preserving date and manual quantity', async () => {
@@ -176,9 +301,10 @@ describe('raw project billing lines', () => {
     await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
     expect(screen.getByLabelText('Désignation, ligne 1')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Dupliquer la ligne' })).toBeDisabled();
     const acknowledged = { ...savedLine, id: 20, serviceDate: '2026-10-01', designation: 'Manutention', unitAmountHt: 0, quantity: 1 };
     rerender(<ProjectBillingRawLines {...props([acknowledged])} />);
-    resolveSave(acknowledged);
+    await act(async () => resolveSave(acknowledged));
     await waitFor(() => expect(screen.getAllByLabelText(/^Désignation, ligne/)).toHaveLength(1));
     expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Manutention');
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
@@ -259,6 +385,8 @@ describe('raw project billing lines', () => {
     }
     expect(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Ajouter une ligne' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Dupliquer la ligne' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modifier la ligne 1' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Enregistrer la ligne 1' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Supprimer la ligne 1' })).not.toBeInTheDocument();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();

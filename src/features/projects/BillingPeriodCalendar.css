@@ -1,0 +1,42 @@
+.billing-period-calendar { min-width: 0; width: 100%; container-type: inline-size; }
+.billing-period-calendar-months { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.billing-period-calendar-month { min-width: 0; overflow: hidden; padding: 8px 4px; border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); }
+.billing-period-calendar-month h3 { margin: 0 0 4px; color: var(--sp-muted); font-size: 14px; line-height: 1.5; text-align: center; text-transform: capitalize; }
+.billing-period-calendar-month h3.is-current { color: var(--sp-primary); }
+.billing-period-calendar-week,
+.billing-period-calendar-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.billing-period-calendar-week { margin-bottom: 4px; color: var(--sp-muted); font-size: 10px; text-align: center; }
+.billing-period-calendar-day {
+  min-width: 0;
+  min-height: 24px;
+  padding: 2px;
+  border: 1px solid transparent;
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.billing-period-calendar-day.is-selected { background: var(--sp-primary-soft); color: var(--sp-primary); }
+.billing-period-calendar-day.is-boundary { background: var(--sp-primary); color: var(--sp-surface); }
+.billing-period-calendar-day:hover:not(:disabled) { border-color: var(--sp-border-strong); background: var(--sp-primary-soft); color: var(--sp-primary); }
+.billing-period-calendar-day:disabled { opacity: .55; cursor: not-allowed; }
+.billing-period-calendar-day:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: -2px; }
+.billing-period-calendar-selection { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding-top: 8px; font-size: 12px; line-height: 1.5; }
+.billing-period-calendar-selection span { color: var(--sp-muted); }
+
+@container (min-width: 360px) {
+  .billing-period-calendar-months { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .billing-period-calendar-month { padding: 4px 2px; }
+  .billing-period-calendar-month h3 { font-size: 11px; }
+  .billing-period-calendar-week { font-size: 8px; }
+  .billing-period-calendar-day { min-height: 24px; font-size: 12px; }
+}
+@media (pointer: coarse) {
+  .billing-period-calendar-months { grid-template-columns: minmax(0, 1fr); }
+  .billing-period-calendar-month { overflow-x: auto; }
+  .billing-period-calendar-week,
+  .billing-period-calendar-days { min-width: 308px; }
+  .billing-period-calendar-day { min-width: 44px; min-height: 44px; }
+}

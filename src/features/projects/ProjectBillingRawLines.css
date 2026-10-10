@@ -6,8 +6,7 @@
 
 .project-billing-raw-heading {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
   flex-wrap: wrap;
   gap: var(--sp-space-4);
   padding: var(--sp-space-4);
@@ -15,7 +14,8 @@
 
 .project-billing-raw-heading strong { color: var(--sp-heading); }
 .project-billing-raw-heading p {
-  margin: var(--sp-space-2) 0 0;
+  flex-basis: 100%;
+  margin: 0;
   color: var(--sp-muted);
   font-size: var(--sp-subtitle-size);
   line-height: 1.5;
@@ -24,9 +24,14 @@
 .project-billing-raw-toolbar,
 .project-billing-raw-row-buttons {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-space-2);
+}
+
+.project-billing-raw-icon-button {
+  width: var(--sp-control-height);
+  flex: 0 0 var(--sp-control-height);
+  padding: 0;
 }
 
 .project-billing-raw-scroll {
@@ -62,13 +67,14 @@
 }
 
 .project-billing-raw-table tbody tr:last-child td { border-bottom: 0; }
-.project-billing-raw-table th:first-child { width: 152px; }
-.project-billing-raw-table th:nth-child(2) { width: 180px; }
-.project-billing-raw-table th:nth-child(3) { min-width: 260px; }
-.project-billing-raw-table th:nth-child(4) { width: 144px; }
-.project-billing-raw-table th:nth-child(5) { width: 116px; }
-.project-billing-raw-table th:nth-child(6) { width: 136px; }
-.project-billing-raw-table th:last-child { width: 208px; }
+.project-billing-raw-table th:first-child { width: 112px; }
+.project-billing-raw-table th:nth-child(2) { width: 152px; }
+.project-billing-raw-table th:nth-child(3) { width: 180px; }
+.project-billing-raw-table th:nth-child(4) { min-width: 260px; }
+.project-billing-raw-table th:nth-child(5) { width: 144px; }
+.project-billing-raw-table th:nth-child(6) { width: 116px; }
+.project-billing-raw-table th:nth-child(7) { width: 136px; }
+.project-billing-raw-table th:last-child { width: 176px; }
 
 .project-billing-raw-table input:not([type="checkbox"]),
 .project-billing-raw-table select,
@@ -137,7 +143,14 @@
   gap: var(--sp-space-2);
 }
 
-.project-billing-raw-add { padding: var(--sp-space-4); }
+.project-billing-raw-add {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-space-2);
+  overflow-x: auto;
+  padding: var(--sp-space-4);
+}
+.project-billing-raw-add button { flex: 0 0 auto; white-space: nowrap; }
 .project-billing-raw-actions small,
 .project-billing-raw-error,
 .project-billing-raw-empty { color: var(--sp-muted); }
@@ -158,7 +171,6 @@
 @media (max-width: 720px) {
   .project-billing-raw-toolbar { width: 100%; }
   .project-billing-raw-toolbar button { flex: 1 1 180px; }
-  .project-billing-raw-add button { width: 100%; }
   .project-billing-raw-catalog-new { width: 100%; }
   .project-billing-raw-catalog-form-actions button { flex: 1 1 140px; }
 }
@@ -166,4 +178,5 @@
 @media (pointer: coarse) {
   .project-billing-raw-lines :is(button, select, input:not([type="checkbox"])) { min-height: 44px; }
   .project-billing-raw-catalog-button { flex-basis: 44px; }
+  .project-billing-raw-icon-button { width: 44px; flex-basis: 44px; }
 }

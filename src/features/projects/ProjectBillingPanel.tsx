@@ -1,4 +1,6 @@
 import './ProjectWorkspace.css';
+import './ProjectBillingPanel.css';
+import BillingPeriodCalendar from './BillingPeriodCalendar';
 import { ProjectPdfPreview } from './ProjectPdfPreview';
 import { ProjectBillingRawLines } from './ProjectBillingRawLines';
 import { billingReferenceScope, billingReferenceScopeLabel, fetchBillingReferences, saveBillingReference, type BillingReference } from './projectBillingReferences';
@@ -6,18 +8,20 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetNames } from '../fleet/fleetDisplay';
 import {
   CalendarRange,
+  ChevronDown,
   Download,
   ExternalLink,
   FilePlus2,
   FileText,
   Fuel,
   PackageCheck,
+  Pencil,
   Plus,
   ReceiptText,
   Save,
   Trash2,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { AppDialog } from '../../components/AppDialog';
 import { ServiceProviderEditorDialog } from '../serviceProviders/ServiceProviderEditorDialog';
 import { ServiceProviderPicker } from '../serviceProviders/ServiceProviderPicker';
@@ -118,7 +122,8 @@ const ALL_BILLING_SECTIONS: ProjectBillingSectionVisibility = {
 };
 
 function currentMonth(): string {
-  return new Date().toISOString().slice(0, 7);
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 }
 
 function monthRange(month: string): { start: string; end: string } {
@@ -201,7 +206,7 @@ export function ProjectBillingPanel({
   workspace?: boolean;
   vessels?: VesselRecord[];
 }) {
-  const [billingView, setBillingView] = useState<'hire' | 'expenses' | 'services' | 'raw' | 'followup'>('hire');
+  const [expandedSections, setExpandedSections] = useState({ hire: true, expenses: false, services: false, raw: false, followup: false });
   const [rawLinesDirty, setRawLinesDirty] = useState(false);
   const defaultMonth = initialMonth?.slice(0, 7) || currentMonth();
   const [data, setData] = useState<ProjectBillingData>(EMPTY_DATA);
@@ -213,7 +218,9 @@ export function ProjectBillingPanel({
   const [expenseEditor, setExpenseEditor] = useState<{
     id?: number;
     draft: BillingExpenseDraft;
+    files: File[];
   } | null>(null);
+  const serviceInputs = useRef(new Map<string, HTMLSelectElement>());
   const [serviceProviders, setServiceProviders] = useState<ServiceProvider[]>([]);
   const [providerEditor, setProviderEditor] = useState<ServiceProviderDraft | null>(null);
   const [periodMode, setPeriodMode] = useState<BillingPeriodMode>('calendar-month');
@@ -227,6 +234,7 @@ export function ProjectBillingPanel({
   const initializedServices = useRef('');
   const [serviceDrafts, setServiceDrafts] = useState<BillingServiceLineDraft[]>([]);
   const [serviceCatalogOpen, setServiceCatalogOpen] = useState(false);
+  const [serviceCatalogMode, setServiceCatalogMode] = useState<'view' | 'create'>('view');
   const [exportFormat, setExportFormat] = useState<BillingExportFormat>('pdf');
   const [legacyReferenceScope, setLegacyReferenceScope] = useState<number | null>(null);
   const [references, setReferences] = useState<BillingReference[]>([]);
@@ -289,6 +297,7 @@ export function ProjectBillingPanel({
     setCompleteMissingDays(false);
     setServiceDrafts([]);
     setRawLinesDirty(false);
+    setExpenseEditor(null);
     void reload();
     void reloadServiceProviders();
     return () => { contextRevision.current += 1; };
@@ -319,6 +328,8 @@ export function ProjectBillingPanel({
     [data.rawLines, selectedPeriod?.id],
   );
   const expenseTotal = periodExpenses.reduce((sum, expense) => sum + expense.amountHt, 0);
+  const expenseTotalsByCurrency = new Map<string, number>();
+  periodExpenses.forEach((expense) => expenseTotalsByCurrency.set(expense.currency, (expenseTotalsByCurrency.get(expense.currency) || 0) + expense.amountHt));
   const providerCategories = useMemo(
     () => Array.from(new Set(serviceProviders.map((provider) => provider.category).filter((category) => category !== 'Non classé'))).sort((left, right) => left.localeCompare(right, 'fr')),
     [serviceProviders],
@@ -458,6 +469,7 @@ export function ProjectBillingPanel({
   }, [defaultServiceQuantity, periodServices.length, serviceCatalog]);
 
   function selectMonth(month: string) {
+    if (!/^\d{4}-\d{2}$/.test(month.slice(0, 7))) return;
     setRawLinesDirty(false);
     contextRevision.current += 1;
     autoCreatedPeriodId.current = null;
@@ -471,10 +483,12 @@ export function ProjectBillingPanel({
     setPeriodDraft({ ...billingDraft(project, period), periodMonth: normalized });
     setLegacyReferenceScope(period ? billingReferenceScope({ ...period, includeRawInPdf: period.includeRawInPdf !== false && (data.rawLines || []).some((line) => line.billingPeriodId === period.id) }) : null);
     setReferenceDrafts({});
+    setExpenseEditor(null);
     const range = monthRange(normalized);
     setCustomStart(range.start);
     setCustomEnd(range.end);
     setCompleteMissingDays(false);
+    setPeriodMode('calendar-month');
     setPreviewBlob(null);
   }
 
@@ -642,6 +656,18 @@ export function ProjectBillingPanel({
         ...current,
         expenses: [saved, ...current.expenses.filter((expense) => expense.id !== saved.id)],
       }));
+      // Keep the saved expense ID on retry so partial attachment failures cannot create a duplicate expense.
+      const pendingFiles = [...expenseEditor.files];
+      setExpenseEditor((current) => current ? { ...current, id: saved.id } : null);
+      for (const file of pendingFiles) {
+        const document = await uploadProjectBillingDocument(client, {
+          projectId: project.id, billingPeriodId: period.id, expenseId: saved.id,
+          file: billingExpenseAttachmentName(file, saved), kind: 'chargeable_expense',
+        });
+        if (revision !== contextRevision.current) return;
+        setData((current) => ({ ...current, documents: [document, ...current.documents] }));
+        setExpenseEditor((current) => current ? { ...current, files: current.files.filter((pending) => pending !== file) } : null);
+      }
       setExpenseEditor(null);
       setMessage('Frais imputable enregistré.');
     } catch (caught) {
@@ -653,11 +679,13 @@ export function ProjectBillingPanel({
   }
 
   function openExpenseEditor(expense?: ProjectChargeableExpense) {
+    setError('');
     const draft = expenseDraft(selectedMonth, expense);
     const provider = serviceProviders.find((item) => item.name.localeCompare(draft.supplier, 'fr', { sensitivity: 'base' }) === 0);
     const specialties = draft.supplierSpecialties.length ? draft.supplierSpecialties : provider ? serviceProviderSpecialtyNames(provider) : [];
     setExpenseEditor({
       id: expense?.id,
+      files: [],
       draft: {
         ...draft,
         category: 'other',
@@ -665,6 +693,10 @@ export function ProjectBillingPanel({
         supplierSpecialties: specialties,
       },
     });
+  }
+  function openServiceCatalog(mode: 'view' | 'create' = 'view') {
+    setServiceCatalogMode(mode);
+    setServiceCatalogOpen(true);
   }
 
   async function submitProvider(event: FormEvent<HTMLFormElement>) {
@@ -803,25 +835,25 @@ export function ProjectBillingPanel({
     }
   }
 
-  async function uploadDocument(file: File, expense: ProjectChargeableExpense) {
-    if (!selectedPeriod || busy) return;
+  async function uploadDocument(files: File[], expense: ProjectChargeableExpense) {
+    if (!isManager || !selectedPeriod || busy || !files.length) return;
+    const revision = contextRevision.current;
     setBusy('upload');
     setError('');
     try {
-      const renamedFile = billingExpenseAttachmentName(file, expense);
-      const document = await uploadProjectBillingDocument(client, {
-        projectId: project.id,
-        billingPeriodId: selectedPeriod.id,
-        expenseId: expense.id,
-        file: renamedFile,
-        kind: 'chargeable_expense',
-      });
-      setData((current) => ({ ...current, documents: [document, ...current.documents] }));
-      setMessage('Document stocké dans l’espace privé du projet.');
+      for (const file of files) {
+        const document = await uploadProjectBillingDocument(client, {
+          projectId: project.id, billingPeriodId: selectedPeriod.id, expenseId: expense.id,
+          file: billingExpenseAttachmentName(file, expense), kind: 'chargeable_expense',
+        });
+        if (revision !== contextRevision.current) return;
+        setData((current) => ({ ...current, documents: [document, ...current.documents] }));
+      }
+      setMessage('Documents stockés dans l’espace privé du projet.');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Impossible d’ajouter ce document.');
+      if (revision === contextRevision.current) setError(caught instanceof Error ? caught.message : 'Impossible d’ajouter ce document.');
     } finally {
-      setBusy('');
+      if (revision === contextRevision.current) setBusy('');
     }
   }
 
@@ -946,13 +978,30 @@ export function ProjectBillingPanel({
     <input checked={completeMissingDays} onChange={(event) => setCompleteMissingDays(event.target.checked)} type="checkbox" />
     <span>Compléter les {missingDates.length} jour{missingDates.length > 1 ? 's' : ''} sans DPR avec « 24/24 Operation » au tarif contractuel applicable à chaque journée.</span>
   </label> : <p className="project-billing-range-complete">Tous les jours de la période disposent d’un DPR.</p>;
+  const completionButton = missingDates.length ? <button type="button" className="sp-button sp-button--secondary project-billing-complete-button" aria-pressed={completeMissingDays} disabled={Boolean(busy)} onClick={() => setCompleteMissingDays((current) => !current)}>
+    Compléter les {missingDates.length} jour{missingDates.length > 1 ? 's' : ''} sans DPR avec « 24/24 Operation » au tarif contractuel applicable à chaque journée.
+  </button> : null;
+  function sectionHeader(id: keyof typeof expandedSections, label: string, icon: ReactNode, actions?: ReactNode, total?: ReactNode) {
+    return <header className="project-billing-section-header">
+      <button className="project-billing-section-toggle" type="button" aria-expanded={expandedSections[id]} aria-controls={`billing-content-${id}`} onClick={() => setExpandedSections((current) => ({ ...current, [id]: !current[id] }))}>
+        {icon}<strong>{label}</strong><ChevronDown aria-hidden="true" size={16} className={expandedSections[id] ? 'is-expanded' : undefined} />
+      </button>
+      {actions ? <div className="project-billing-section-commands">{actions}</div> : null}
+      {total ? <strong className="project-billing-section-total">{total}</strong> : null}
+    </header>;
+  }
 
   return (
     <section aria-label="Facturation mensuelle" className={`project-billing ${workspace ? 'is-workspace' : ''}`}>
-      <div className="project-section-heading">
+      {workspace ? <div className="project-billing-compact-header">
+        <h2>Facturation mensuelle</h2>
+        <label className="project-billing-vessel">Navire<select disabled={Boolean(busy)} onChange={(event) => { setVesselFilter(event.target.value); setCompleteMissingDays(false); setPreviewBlob(null); }} value={vesselFilter}><option value="">Navire de l’opération</option>{vesselOptions.map((vessel) => <option key={vessel}>{vessel}</option>)}</select></label>
+        {showMonthSelector ? <label className="project-billing-month">Mois<input disabled={Boolean(busy)} onChange={(event) => selectMonth(event.target.value)} type="month" value={selectedMonth} /></label> : null}
+        <BillingPeriodCalendar month={selectedMonth} startDate={exportRange.start} endDate={exportRange.end} disabled={Boolean(busy)} onRangeChange={(start, end) => { setCustomStart(start); setCustomEnd(end); setPeriodMode('custom'); setCompleteMissingDays(false); setPreviewBlob(null); }} />
+      </div> : <div className="project-section-heading">
         <div>
-          <strong>{workspace ? 'Préparer la facturation' : 'Facturation mensuelle'}</strong>
-          <span>{workspace ? 'Un dossier mensuel, du DPR aux justificatifs, jusqu’au suivi de paiement.' : 'Une fiche indépendante par contrat et par mois. Le statut global du projet reste inchangé.'}</span>
+          <strong>Facturation mensuelle</strong>
+          <span>Une fiche indépendante par contrat et par mois. Le statut global du projet reste inchangé.</span>
         </div>
         {showMonthSelector && !workspace ? (
           <label className="project-billing-month">
@@ -960,23 +1009,17 @@ export function ProjectBillingPanel({
             <input onChange={(event) => selectMonth(event.target.value)} type="month" value={selectedMonth} />
           </label>
         ) : null}
-      </div>
+      </div>}
 
       {message ? <p className="project-billing-message" role="status">{message}</p> : null}
-      {error ? <p className="project-billing-error" role="alert">{error}</p> : null}
-      {workspace ? <div className="project-billing-period-bar">
-        {showMonthSelector ? <label>Mois de facturation<input onChange={(event) => selectMonth(event.target.value)} type="month" value={selectedMonth} /></label> : null}
-        {periodControls}
-      </div> : null}
+      {error && !expenseEditor ? <p className="project-billing-error" role="alert">{error}</p> : null}
       <div className={workspace ? 'project-billing-workspace-layout' : 'project-billing-stack'}>
       <div className="project-billing-workspace-main">
       {workspace ? <>
-        <nav className="project-billing-workspace-tabs" aria-label="Rubriques de facturation">
-          {([['hire', 'Loyers & DPR', hireDays.length], ['expenses', 'Frais refacturables', periodExpenses.length], ['services', 'Prestations BBTM', serviceDrafts.length], ['raw', 'Saisie brute', periodRawLines.length], ['followup', 'Suivi & pièces', periodDocuments.filter((document) => document.documentKind !== 'chargeable_expense').length]] as const).map(([id, label, count]) => <button key={id} type="button" aria-pressed={billingView === id} aria-controls={`billing-view-${id}`} onClick={() => setBillingView(id)}>{label}<span>{count}</span></button>)}
-        </nav>
-        <article id="billing-view-hire" className="project-billing-card" hidden={billingView !== 'hire'}>
-          <header><CalendarRange size={20} aria-hidden="true" /><div><strong>Loyers & DPR</strong><small>Journées, opérations et tarifs contractuels.</small></div></header>
-          <div className="project-billing-hire-completion">{missingDayControl}</div>
+        <article id="billing-view-hire" className="project-billing-card">
+          {sectionHeader('hire', 'Loyers d’affrètement', <CalendarRange size={20} aria-hidden="true" />, completionButton, money(hireDays.reduce((sum, dpr) => sum + dayAmount(dpr), 0), hireCurrency))}
+          <div id="billing-content-hire" hidden={!expandedSections.hire}>
+          {!missingDates.length ? <div className="project-billing-hire-completion">{missingDayControl}</div> : null}
           <div className="project-billing-table-scroll"><table className="project-billing-hire-table"><thead><tr><th>PDF</th><th>Date</th><th>Navire</th><th>Opération</th><th>Montant HT</th></tr></thead><tbody>
             {hireDays.map((dpr) => {
               const key = billingOperationKey(dpr);
@@ -985,10 +1028,12 @@ export function ProjectBillingPanel({
             })}
             {!hireDays.length ? <tr><td colSpan={5} className="project-billing-empty">{dprsLoading ? 'Chargement des DPR…' : 'Aucun DPR pour cette période.'}</td></tr> : null}
           </tbody></table></div>
+          </div>
         </article>
       </> : null}
-      {visibleSections.billingElements ? <article id="billing-view-followup" className="project-billing-card" hidden={workspace && billingView !== 'followup'}>
-        <header><ReceiptText size={20} /><strong>Suivi de la facture du mois</strong></header>
+      {visibleSections.billingElements ? <article id="billing-view-followup" className="project-billing-card">
+        {workspace ? sectionHeader('followup', 'Suivi de la facture et pièces', <ReceiptText aria-hidden="true" size={20} />) : <header><ReceiptText size={20} /><strong>Suivi de la facture du mois</strong></header>}
+        <div id="billing-content-followup" hidden={workspace && !expandedSections.followup}>
         <div className="project-billing-export-controls">
           <label>Numéro de facture<input disabled={!isManager || Boolean(busy)} value={periodDraft.invoiceNumber} onChange={(event) => editInvoiceDraft({ invoiceNumber: event.target.value })} /></label>
           <label>Date d’émission<input type="date" disabled={!isManager || Boolean(busy)} value={periodDraft.invoiceIssuedOn} onChange={(event) => editInvoiceDraft({ invoiceIssuedOn: event.target.value })} /></label>
@@ -1008,23 +1053,29 @@ export function ProjectBillingPanel({
             void uploadProjectBillingDocument(client, { projectId: project.id, billingPeriodId: selectedPeriod.id, file, kind: 'client_invoice' }).then((document) => { setData((current) => ({ ...current, documents: [document, ...current.documents] })); setMessage('Facture classée dans Google Drive.'); }).catch((caught: unknown) => setError(caught instanceof Error ? caught.message : 'Classement impossible.')).finally(() => setBusy(''));
           }} /></label> : null}
         </div>
+        </div>
       </article> : null}
 
-      {visibleSections.services ? <article id="billing-view-expenses" className="project-billing-card" hidden={workspace && billingView !== 'expenses'}>
-        <header className="project-billing-card-heading">
+      {visibleSections.services ? <article id="billing-view-expenses" className="project-billing-card">
+        {workspace ? sectionHeader('expenses', 'Services refacturables', <Fuel aria-hidden="true" size={20} />, isManager ? <button className="sp-button sp-button--secondary" disabled={Boolean(busy)} onClick={() => { setExpandedSections((current) => ({ ...current, expenses: true })); openExpenseEditor(); }} type="button"><Plus aria-hidden="true" size={16} /> Ajouter</button> : undefined, expenseTotalsByCurrency.size ? [...expenseTotalsByCurrency].map(([currency, total]) => <span key={currency}>{money(total, currency)}</span>) : money(0)) : <header className="project-billing-card-heading">
           <div><Fuel aria-hidden="true" size={20} /><span><strong>Services refacturables</strong><small>{money(expenseTotal)} HT sur la période</small></span></div>
           <div className="project-billing-card-actions">
             {isManager ? <button disabled={Boolean(busy)} onClick={() => openExpenseEditor()} type="button"><Plus aria-hidden="true" size={16} /> Ajouter un frais</button> : null}
           </div>
-        </header>
+        </header>}
+        <div id="billing-content-expenses" hidden={workspace && !expandedSections.expenses}>
         <div className="project-billing-table-scroll">
-          <table className={workspace ? 'project-billing-expense-cards' : undefined}>
-            <thead><tr><th>Fournisseur</th><th>Spécialités</th><th>PDF</th><th>Date</th><th>Facture</th><th>Montant HT</th><th>État</th><th>Pièces</th><th>Actions</th></tr></thead>
+          <table className="project-billing-expense-table">
+            <thead><tr><th>Actions</th><th>Fournisseur</th><th>Spécialités</th><th>PDF</th><th>Date</th><th>Facture</th><th>Montant HT</th><th>État</th><th>Pièces</th></tr></thead>
             <tbody>
               {periodExpenses.map((expense) => {
                 const documents = periodDocuments.filter((document) => document.chargeableExpenseId === expense.id);
                 return (
                   <tr key={expense.id}>
+                    <td><div className="project-billing-row-actions">
+                      {isManager ? <button aria-label={`Supprimer ${expense.invoiceNumber || expense.supplier}`} className="sp-button sp-button--secondary is-danger project-billing-row-icon" disabled={Boolean(busy)} onClick={() => void removeExpense(expense)} type="button"><Trash2 aria-hidden="true" size={14} /></button> : null}
+                      {isManager ? <button aria-label={`Modifier ${expense.invoiceNumber || expense.supplier}`} className="sp-button sp-button--secondary project-billing-row-icon" disabled={Boolean(busy)} onClick={() => openExpenseEditor(expense)} type="button"><Pencil aria-hidden="true" size={14} /></button> : null}
+                    </div></td>
                     <td>{expense.supplier}</td>
                     <td>{billingExpenseSpecialtyLabel(expense)}</td>
                     <td><input aria-label={`Inclure le frais ${expense.invoiceNumber || expense.supplier} dans le PDF`} checked={expense.includeInPdf !== false} disabled={!isManager || Boolean(busy)} onChange={() => void toggleExpensePdf(expense)} type="checkbox" /></td>
@@ -1054,20 +1105,17 @@ export function ProjectBillingPanel({
                               accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"
                               disabled={Boolean(busy)}
                               onChange={(event) => {
-                                const file = event.target.files?.[0];
-                                if (file) void uploadDocument(file, expense);
+                                const files = Array.from(event.target.files || []);
+                                if (files.length) void uploadDocument(files, expense);
                                 event.currentTarget.value = '';
                               }}
                               type="file"
+                              multiple
                             />
                           </label>
                         ) : null}
                       </div>
                     </td>
-                    <td><div className="project-billing-row-actions">
-                      {isManager ? <button onClick={() => openExpenseEditor(expense)} type="button">Modifier</button> : null}
-                      {isManager ? <button aria-label={`Supprimer ${expense.invoiceNumber || expense.supplier}`} className="is-danger" disabled={Boolean(busy)} onClick={() => void removeExpense(expense)} type="button"><Trash2 aria-hidden="true" size={14} /></button> : null}
-                    </div></td>
                   </tr>
                 );
               })}
@@ -1075,10 +1123,11 @@ export function ProjectBillingPanel({
             </tbody>
           </table>
         </div>
+        </div>
       </article> : null}
 
-      {visibleSections.bbtm ? <article id="billing-view-services" className="project-billing-card" hidden={workspace && billingView !== 'services'}>
-        <header className="project-billing-card-heading">
+      {visibleSections.bbtm ? <article id="billing-view-services" className="project-billing-card">
+        {workspace ? sectionHeader('services', 'Prestations BBTM', <PackageCheck aria-hidden="true" size={20} />, isManager ? <><button className="sp-button sp-button--secondary" disabled={Boolean(busy)} onClick={() => { setExpandedSections((current) => ({ ...current, services: true })); addServiceDraft(); }} type="button"><Plus aria-hidden="true" size={16} /> Ajouter</button><button className="sp-button sp-button--secondary" disabled={Boolean(busy)} onClick={() => openServiceCatalog()} type="button"><PackageCheck aria-hidden="true" size={16} /> Catalogue des prestations</button></> : undefined, money(billingServicesTotal(serviceForExport))) : <header className="project-billing-card-heading">
           <div>
             <PackageCheck aria-hidden="true" size={20} />
             <span>
@@ -1092,21 +1141,26 @@ export function ProjectBillingPanel({
               <button disabled={Boolean(busy)} onClick={addServiceDraft} type="button"><Plus aria-hidden="true" size={16} /> Ajouter une prestation</button>
             ) : null}
           </div>
-        </header>
+        </header>}
+        <div id="billing-content-services" hidden={workspace && !expandedSections.services}>
         {project.projectCode.trim().toUpperCase() === 'P144' && calculatedServiceDrafts.some((service) => automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) !== null)
           ? <p className="project-billing-auto-quantity">Spread Antipollution · P144 : jours du mois − jours 24/24 Weather Stand-by. La quantité est calculée automatiquement, y compris pour les journées sans DPR.</p>
           : <p className="project-billing-auto-quantity">Quantité proposée automatiquement : {defaultServiceQuantity} journée(s) de DPR 24/24 Operation et Crew Change. Chaque quantité reste modifiable avant export ; les journées sans DPR ne sont pas comptées.</p>}
         <div className="project-billing-service-list">
           {calculatedServiceDrafts.map((service, index) => (
             <div className="project-billing-service-grid" key={service.key}>
+              {isManager ? <div className="project-billing-service-row-actions">
+                <button aria-label={`Supprimer la prestation ${service.category}`} className="sp-button sp-button--secondary is-danger project-billing-row-icon" disabled={Boolean(busy)} onClick={() => void removeService(service)} type="button"><Trash2 aria-hidden="true" size={15} /></button>
+                <button aria-label={`Modifier la prestation ${service.category}`} className="sp-button sp-button--secondary project-billing-row-icon" disabled={Boolean(busy)} onClick={() => serviceInputs.current.get(service.key)?.focus()} type="button"><Pencil aria-hidden="true" size={15} /></button>
+              </div> : null}
               <label className="project-billing-service-category">
                 Catégorie
                 <span>
-                  <select aria-label={`Catégorie de la prestation ${index + 1}`} disabled={!isManager} onChange={(event) => selectServiceCategory(service.key, Number(event.target.value))} value={service.serviceCatalogId ?? ''}>
+                  <select ref={(node) => { if (node) serviceInputs.current.set(service.key, node); else serviceInputs.current.delete(service.key); }} aria-label={`Catégorie de la prestation ${index + 1}`} disabled={!isManager || Boolean(busy)} onChange={(event) => selectServiceCategory(service.key, Number(event.target.value))} value={service.serviceCatalogId ?? ''}>
                     {!serviceCatalog.some((entry) => entry.id === service.serviceCatalogId) && service.category ? <option value={service.serviceCatalogId ?? ''}>{service.category}</option> : null}
                     {serviceCatalog.map((entry) => <option key={entry.id} value={entry.id}>{entry.category}{entry.vesselName ? ` — ${entry.vesselName}` : ''}</option>)}
                   </select>
-                  {isManager ? <button aria-label="Ajouter une catégorie de prestation" onClick={() => setServiceCatalogOpen(true)} title="Ajouter une catégorie" type="button"><Plus aria-hidden="true" size={17} /></button> : null}
+                  {isManager ? <button aria-label="Ajouter une catégorie de prestation" onClick={() => openServiceCatalog('create')} title="Ajouter une catégorie" type="button"><Plus aria-hidden="true" size={17} /></button> : null}
                 </span>
               </label>
               <label>
@@ -1120,15 +1174,17 @@ export function ProjectBillingPanel({
               <label>Montant total HT<input disabled value={money(service.unitAmountHt * service.quantity)} /></label>
               {isManager ? <div className="project-billing-service-actions">
                 <button disabled={Boolean(busy)} onClick={() => void saveService(service)} type="button"><Save aria-hidden="true" size={15} /> Enregistrer</button>
-                <button aria-label={`Supprimer la prestation ${service.category}`} className="is-danger" disabled={Boolean(busy)} onClick={() => void removeService(service)} type="button"><Trash2 aria-hidden="true" size={15} /></button>
               </div> : null}
             </div>
           ))}
           {!serviceDrafts.length ? <p className="project-billing-empty">Aucune prestation BBTM pour cette période.</p> : null}
         </div>
+        </div>
       </article> : null}
 
-      <article id="billing-view-raw" className="project-billing-card" hidden={visibleSections.raw === false || (workspace && billingView !== 'raw')}>
+      <article id="billing-view-raw" className="project-billing-card" hidden={visibleSections.raw === false}>
+        {workspace ? sectionHeader('raw', 'Saisie brute', <FilePlus2 aria-hidden="true" size={20} />, isManager ? <button className="sp-button sp-button--secondary" disabled={Boolean(busy)} onClick={() => openServiceCatalog()} type="button"><PackageCheck aria-hidden="true" size={16} /> Catalogue des prestations</button> : undefined, money(billingRawLinesTotal(periodRawLines))) : null}
+        <div id="billing-content-raw" hidden={workspace && !expandedSections.raw}>
         <ProjectBillingRawLines
           key={`${project.id}-${selectedMonth}`}
           lines={periodRawLines}
@@ -1139,17 +1195,20 @@ export function ProjectBillingPanel({
           initialDate={`${selectedMonth}-01`}
           onSave={saveRawLine}
           onDelete={removeRawLine}
-          onCatalogOpen={() => setServiceCatalogOpen(true)}
+          onCatalogOpen={() => openServiceCatalog()}
           onCatalogCreate={createCatalogEntry}
           onDirtyChange={setRawLinesDirty}
+          showHeading={!workspace}
+          initializeBlankOnOpen={workspace && expandedSections.raw && visibleSections.raw !== false}
         />
+        </div>
       </article>
 
       </div>
       {visibleSections.billingElements ? <article className="project-billing-card project-billing-export" aria-label="Export du relevé mensuel">
         <header><CalendarRange aria-hidden="true" size={20} /><div><strong>{workspace ? 'Relevé du mois' : 'Éléments de facturation'}</strong><span>{workspace ? new Date(`${selectedMonth}-01T12:00:00`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : 'Le tableau Opérations reste toujours visible ; cette sélection concerne uniquement les loyers.'}</span></div></header>
         {workspace ? <div className="project-billing-summary" aria-label="Totaux sélectionnés pour l’export">
-          <dl><div><dt>Loyers & DPR</dt><dd>{dprsLoading ? '…' : money(includedHireTotal, hireCurrency)}</dd></div><div><dt>Frais refacturables</dt><dd>{expenseByCurrency.size ? [...expenseByCurrency].map(([currency, total]) => <span key={currency}>{money(total, currency)}</span>) : money(0)}</dd></div><div><dt>Prestations BBTM</dt><dd>{money(includedServiceTotal)}</dd></div><div><dt>Saisie brute</dt><dd>{money(includedRawTotal)}</dd></div></dl>
+          <dl><div><dt>Loyers d’affrètement</dt><dd>{dprsLoading ? '…' : money(includedHireTotal, hireCurrency)}</dd></div><div><dt>Services refacturables</dt><dd>{expenseByCurrency.size ? [...expenseByCurrency].map(([currency, total]) => <span key={currency}>{money(total, currency)}</span>) : money(0)}</dd></div><div><dt>Prestations BBTM</dt><dd>{money(includedServiceTotal)}</dd></div><div><dt>Saisie brute</dt><dd>{money(includedRawTotal)}</dd></div></dl>
           <div className="project-billing-summary-total"><span>Total sélectionné HT</span>{[...totalsByCurrency].map(([currency, total]) => <strong key={currency}>{dprsLoading ? '…' : money(total, currency)}</strong>)}</div>
         </div> : null}
         <fieldset className="project-export-selection"><legend>Contenu du PDF</legend>
@@ -1212,12 +1271,23 @@ export function ProjectBillingPanel({
             <label>Quantité<input min="0" onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, quantity: event.target.value ? Number(event.target.value) : null } } : null)} step="0.001" type="number" value={expenseEditor.draft.quantity ?? ''} /></label>
             <label>Unité<input list="project-billing-units" onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, unit: event.target.value } } : null)} placeholder="Choisir ou saisir une unité" value={expenseEditor.draft.unit} /></label>
             <label className="is-wide">Commentaires<textarea onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, comments: event.target.value } } : null)} rows={3} value={expenseEditor.draft.comments} /></label>
+            <div className="project-billing-expense-attachments is-wide">
+              <label>Pièces jointes<input aria-label="Pièces jointes du service refacturable" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx" disabled={busy === 'expense'} type="file" multiple onChange={(event) => {
+                const files = Array.from(event.currentTarget.files || []);
+                setExpenseEditor((current) => current ? { ...current, files: [...current.files, ...files] } : null);
+                event.currentTarget.value = '';
+              }} /></label>
+              <small>Ajoutez un ou plusieurs justificatifs ; ils seront conservés avec ce service et disponibles dans l’export.</small>
+              {expenseEditor.files.length ? <ul>{expenseEditor.files.map((file, index) => <li key={`${file.name}-${index}`}><span>{file.name}</span><button aria-label={`Retirer la pièce ${file.name}`} className="sp-button sp-button--secondary project-billing-row-icon" type="button" disabled={busy === 'expense'} onClick={() => setExpenseEditor((current) => current ? { ...current, files: current.files.filter((_, fileIndex) => fileIndex !== index) } : null)}><Trash2 aria-hidden="true" size={15} /></button></li>)}</ul> : null}
+              {expenseEditor.id ? periodDocuments.filter((document) => document.chargeableExpenseId === expenseEditor.id).map((document) => <button type="button" disabled={Boolean(busy)} key={document.id} onClick={() => void openDocument(document)}><FileText aria-hidden="true" size={15} />{document.fileName}</button>) : null}
+            </div>
+            {error ? <p className="project-billing-error is-wide" role="alert">{error}</p> : null}
             <datalist id="project-billing-units">{unitOptions.map((unit) => <option key={unit} value={unit} />)}</datalist>
           </div>
         </AppDialog>
       ) : null}
       {providerEditor ? <ServiceProviderEditorDialog categories={providerCategories} draft={providerEditor} isSaving={busy === 'provider'} onChange={setProviderEditor} onClose={() => setProviderEditor(null)} onSubmit={submitProvider} serviceTypes={providerServiceTypes} /> : null}
-      {serviceCatalogOpen ? <ServiceCatalogDialog canManage={isManager} client={client} vessels={vessels} initialMode="create" onChanged={(entries) => setServiceCatalog(entries)} onClose={() => setServiceCatalogOpen(false)} /> : null}
+      {serviceCatalogOpen ? <ServiceCatalogDialog canManage={isManager} client={client} vessels={vessels} initialMode={serviceCatalogMode} onChanged={(entries) => setServiceCatalog(entries)} onClose={() => setServiceCatalogOpen(false)} /> : null}
     </section>
   );
 }

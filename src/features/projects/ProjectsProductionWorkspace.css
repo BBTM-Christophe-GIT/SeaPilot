@@ -1,0 +1,118 @@
+/* Approved project workspace, using the real dossier and shared SeaPilot chrome. */
+.projects-page.project-design.project-production > .project-module-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-panel-radius);
+  background: var(--sp-surface);
+}
+.projects-page.project-design.project-production .project-module-header .module-family { display: block; color: var(--sp-primary); }
+.projects-page.project-design.project-production .project-module-header h1 { font-size: var(--sp-title-size, 28px); }
+.projects-page.project-design.project-production .project-production-ribbon { width: 100%; }
+.projects-page.project-design.project-production .project-production-ribbon .planning-ribbon-command-icon svg { width: 22px; height: 22px; }
+.projects-page.project-design.project-production .project-production-ribbon a { text-decoration: none; }
+.projects-page.project-design.project-production .project-workspace-v2 {
+  display: grid !important;
+  grid-template-columns: 290px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  overflow: visible;
+  min-width: 0;
+}
+.projects-page.project-design.project-production .project-workspace-v2 .project-list-panel {
+  display: grid;
+  align-content: start;
+  width: 100%;
+  min-width: 0;
+  min-height: 480px;
+  padding: 16px;
+  gap: 12px;
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-panel-radius);
+  background: var(--sp-surface);
+}
+.projects-page.project-design.project-production .project-contract-list-heading {
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  border: 0;
+}
+.projects-page.project-design.project-production .project-contract-list-heading h2 { font-size: 20px; text-transform: none; letter-spacing: normal; }
+.projects-page.project-design.project-production .project-contract-list-heading input { width: 100%; min-width: 0; }
+.projects-page.project-design.project-production .project-portfolio-toolbar { display: flex; align-items: center; gap: 8px; }
+.projects-page.project-design.project-production .project-portfolio-scopes { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; }
+.projects-page.project-design.project-production .project-portfolio-scopes button { padding: 8px; min-height: 40px; font-size: 11px; flex: 1 0 auto; }
+.projects-page.project-design.project-production .project-portfolio-scopes button[aria-pressed='true'] { color: var(--sp-primary); background: var(--sp-primary-soft); border-color: var(--sp-border-strong); }
+.projects-page.project-design.project-production .project-portfolio-scopes p { font-size: 11px; line-height: 1.5; }
+.projects-page.project-design.project-production .projects-filter-panel { display: grid; grid-template-columns: minmax(0, 1fr); padding: 12px; margin: 0; gap: 12px; }
+.projects-page.project-design.project-production .projects-filter-panel > label { min-width: 0; }
+.projects-page.project-design.project-production .project-catalog-list > li { min-width: 0; width: 100%; }
+.projects-page.project-design.project-production .project-catalog-list { display: grid; gap: 8px; max-height: none; padding: 0; overflow: visible; }
+.projects-page.project-design.project-production .project-portfolio-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 0;
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  overflow: hidden;
+  background: var(--sp-surface);
+}
+.projects-page.project-design.project-production .project-portfolio-row.is-selected { border-color: var(--sp-primary); background: var(--sp-primary-soft); box-shadow: inset 3px 0 var(--sp-primary); }
+.projects-page.project-design.project-production .project-portfolio-row > .project-select-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-column: 1 / -1;
+  grid-row: 1;
+  padding: 12px;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+.projects-page.project-design.project-production .project-contract-list-title strong { font-size: 13px; line-height: 1.5; color: var(--sp-heading); }
+.projects-page.project-design.project-production .project-contract-list-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: 12px; }
+.projects-page.project-design.project-production .project-contract-list-meta small { font-size: 11px; }
+.projects-page.project-design.project-production .project-portfolio-row-actions { display: flex; flex-wrap: wrap; grid-column: 1; grid-row: 2; gap: 6px; padding: 0 0 10px 12px; min-width: 0; }
+.projects-page.project-design.project-production .project-portfolio-row > .project-favorite-button { grid-column: 2; grid-row: 2; padding: 6px; width: 40px; min-height: 40px; align-self: end; color: var(--sp-muted); }
+.projects-page.project-design.project-production .project-favorite-button[aria-pressed='true'] { color: var(--sp-primary); }
+.projects-page.project-design.project-production .project-workspace-v2 .project-dossier { min-width: 0; width: 100%; padding: 20px; border-color: var(--sp-border); }
+.projects-page.project-design.project-production .project-dossier-empty { padding: 24px; min-height: 220px; }
+.projects-page.project-design.project-production .project-dossier-empty p { color: var(--sp-muted); }
+.projects-page.project-design.project-production .project-sheet-header { padding-bottom: 16px; }
+.projects-page.project-design.project-production .project-sheet-title-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.projects-page.project-design.project-production .project-sheet-header h2 { font-size: 26px; }
+.projects-page.project-design.project-production .project-sheet-eyebrow { color: var(--sp-primary); }
+.projects-page.project-design.project-production .project-sheet-context { color: var(--sp-muted); }
+.projects-page.project-design.project-production .project-sheet-summary { margin-top: 12px; gap: 12px 20px; }
+.projects-page.project-design.project-production .project-detail-tabs { margin-bottom: 20px; }
+.projects-page.project-design.project-production .project-list-panel .admin-state { min-height: 0; padding: 16px 0; }
+.projects-page.project-design.project-production .project-list-panel .admin-state > div { display: grid; gap: 12px; font-size: 13px; }
+@media (max-width: 1100px) {
+  .projects-page.project-design.project-production .project-workspace-v2 { grid-template-columns: 250px minmax(0, 1fr); gap: 12px; }
+  .projects-page.project-design.project-production .project-workspace-v2 .project-list-panel { padding: 12px; }
+}
+@media (max-width: 850px) {
+  .projects-page.project-design.project-production .project-workspace-v2 { grid-template-columns: minmax(0, 1fr); }
+  .projects-page.project-design.project-production .project-workspace-v2 .project-list-panel { min-height: 0; }
+  .projects-page.project-design.project-production .project-catalog-list { display: flex; overflow-x: auto; max-height: none; }
+  .projects-page.project-design.project-production .project-catalog-list > li { min-width: 240px; flex: 0 0 240px; }
+  .projects-page.project-design.project-production .project-portfolio-scopes button { flex: 0 0 auto; }
+  .projects-page.project-design.project-production .project-contract-list-heading { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; }
+  .projects-page.project-design.project-production > .project-module-header { flex-wrap: wrap; }
+  .projects-page.project-design.project-production .project-compact-metrics { flex-wrap: wrap; }
+  .projects-page.project-design.project-production .project-workspace-v2 .project-dossier { padding: 16px; }
+}
+@media (max-width: 520px) {
+  .projects-page.project-design.project-production .project-contract-list-heading { grid-template-columns: minmax(0, 1fr); }
+  .projects-page.project-design.project-production .project-sheet-header h2 { font-size: 22px; }
+}
+@media (pointer: coarse) {
+  .projects-page.project-design.project-production .project-card-modify,
+  .projects-page.project-design.project-production .project-status-button,
+  .projects-page.project-design.project-production .project-portfolio-row > .project-favorite-button { min-height: 44px; }
+}

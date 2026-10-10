@@ -1,5 +1,46 @@
 # Module Projet — interface intégrée et prévisualisation
 
+## Interface validée intégrée — version 3.71.9
+
+La présentation validée dans `/preview/projects/` est désormais reprise dans le
+module réel `/modules/projects`. La préversion autonome reste une démonstration
+fictive ; la route normale charge les projets, contrats, DPR, documents et droits
+du compte connecté. `/modules/projects?preview=1` permet de vérifier ces mêmes
+composants avec le client de démonstration existant.
+
+Le ruban partagé avec Planning regroupe les commandes sur une ligne, dans l'ordre
+**Projet**, **Catalogue**, **Documents**. Le portefeuille reste à gauche du dossier
+et conserve sa recherche, ses filtres, ses favoris et les actions de chaque carte.
+Le dossier choisi reste ouvert pendant le filtrage du portefeuille. Les projets
+clôturés restent masqués par défaut et peuvent être réactivés depuis le filtre.
+
+La facturation présente Navire puis Mois sous son titre, avec trois calendriers
+visibles pour les mois précédent, choisi et suivant. Le mois civil courant est
+sélectionné à l'ouverture ; deux clics définissent une période inclusive, même
+entre deux mois. Les champs Période, Début et Fin sont remplacés par ce calendrier.
+Les rubriques Loyers d'affrètement, Services refacturables, Prestations BBTM et
+Saisie brute se déplient indépendamment sans perdre leurs brouillons. Le suivi
+de la facture et les pièces existantes restent accessibles dans une rubrique dédiée.
+
+Les actions locales restent près de leur titre. Les jours sans DPR sont complétés
+avec le tarif contractuel applicable à chaque journée. Les services acceptent
+plusieurs justificatifs ; après un échec partiel, la reprise conserve le service
+enregistré et ne renvoie que les pièces restantes. La saisie brute propose une
+ligne vierge à sa première ouverture, puis Ajouter une ligne et Dupliquer la
+ligne sous le tableau. Modifier et Supprimer sont placés au début des lignes.
+
+Le volet Relevé du mois conserve les totaux, les quatre choix de contenu PDF, la
+référence client par contenu, l'aperçu et les formats d'export existants. Les cases
+du volet ne masquent aucune rubrique à l'écran. Les tableaux défilent dans leur
+propre zone et la disposition se replie sur une colonne aux petites largeurs.
+
+Cette intégration ne change ni l'assistant Nouveau projet, ni ses validations,
+ni la numérotation, les contrats, les RPC/RLS, les calculs, les modèles PDF ou les
+chemins de stockage. Les contrôles de création incluent également le parcours
+Planning. Aucun changement de schéma ou de configuration n'est nécessaire.
+
+## Historique de la première présentation
+
 La proposition est intégrée aux composants de production depuis la version 3.60.0. `/previews/projects.html` redirige vers `/modules/projects?preview=1`, avec le client de démonstration existant. La route normale `/modules/projects` utilise le compte et les droits réels. Les anciennes sources de la maquette restent conservées dans `src/features/projectPreview` ; elles ne remplacent plus les PDF de production.
 
 ## Organisation
