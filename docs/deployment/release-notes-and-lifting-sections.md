@@ -12,6 +12,16 @@ L'ancien lien `/modules/lifting` redirige vers les apparaux. Les trois routes h�
 
 ## Demande enregistrée et comportement des notes
 
+Le 10 octobre 2026, la note `3.71.8-project-portfolio-closure` est ajoutée à la
+demande de l'utilisateur pour le module Projets. Elle vise Administrateur et
+Direction, les profils gestionnaires du module, et présente les actions des
+cartes, favoris personnels, changement de statut, clôture, filtre et
+réactivation. Elle rappelle la conservation du parcours Nouveau projet et des
+opérations au calendrier. Les notes déjà publiées et leurs identifiants sont
+conservés ; leur état de lecture n'est pas réinitialisé. La note décrit les
+fonctionnalités de l'application publiée ; les prototypes de facturation restent
+dans la préversion autonome.
+
 À la demande explicite de l'utilisateur, ajouter une note au catalogue `src/features/releaseNotes/releaseNotesCatalog.ts`. Ne pas produire automatiquement une note à chaque changement. La première note décrit cette version.
 
 Après connexion, une nouvelle note ouvre la fenêtre « Note de mise à jour ». Toutes les notes non lues s'y succèdent de la plus récente à la plus ancienne : date décroissante, puis version décroissante pour une même date. Cet ordre s'applique aussi à l'historique.

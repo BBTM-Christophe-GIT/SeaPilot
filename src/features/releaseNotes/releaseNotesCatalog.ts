@@ -100,6 +100,20 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       'La fonction affichée à bord suit la fonction RH ou celle définie dans la bordée. L’intitulé de Direction & Armement est conservé séparément.',
     ],
   },
+  {
+    id: '3.71.8-project-portfolio-closure',
+    version: '3.71.8',
+    publishedOn: '2026-10-10',
+    title: 'Projets : modifier, retrouver et clôturer vos dossiers',
+    roles: ['admin', 'direction'],
+    changes: [
+      'Chaque carte du portefeuille propose un bouton Modifier. Utilisez l’étoile pour retrouver un projet dans vos favoris personnels ; modifier une autre carte conserve le dossier que vous consultez.',
+      'Cliquez sur la pastille du statut pour changer directement le statut du projet ou choisir Clôturer.',
+      'Clôturer archive le projet et le retire des listes de saisie. Ses opérations déjà planifiées restent visibles dans le calendrier, et ses documents et DPR historiques sont conservés.',
+      'Les projets clôturés sont masqués par défaut. Le filtre Afficher les projets clôturés permet de les retrouver ; cliquez sur leur pastille puis sur Réactiver le projet pour restaurer leur statut précédent.',
+      'La saisie d’un nouveau projet conserve les mêmes étapes et règles : champs, validations, numérotation automatique, contrat et première opération.',
+    ],
+  },
 ];
 
 export function chronologicalNotes(notes: readonly ReleaseNote[]): ReleaseNote[] {

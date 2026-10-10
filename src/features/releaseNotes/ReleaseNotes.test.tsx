@@ -25,10 +25,15 @@ describe('ReleaseNotes', () => {
     const store = memoryStore();
     render(<ReleaseNotes client={{} as never} roles={[role]} storeOverride={store} />);
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getAllByRole('heading', { level: 3 })[0]).toHaveTextContent(role === 'armement' ? 'Préparez vos bordées' : 'Un portefeuille Projets plus clair');
-    if (role === 'armement') expect(within(dialog).queryByText('Personnalisez vos organigrammes et vos listes de contacts')).not.toBeInTheDocument();
+    expect(within(dialog).getAllByRole('heading', { level: 3 })[0]).toHaveTextContent(role === 'armement' ? 'Préparez vos bordées' : 'Projets : modifier, retrouver et clôturer vos dossiers');
+    if (role === 'armement') {
+      expect(within(dialog).queryByText('Personnalisez vos organigrammes et vos listes de contacts')).not.toBeInTheDocument();
+      expect(within(dialog).queryByText('Projets : modifier, retrouver et clôturer vos dossiers')).not.toBeInTheDocument();
+    }
     await userEvent.click(within(dialog).getByRole('button', { name: 'Ok' }));
     expect(store.save).toHaveBeenCalledWith(expect.arrayContaining(['3.56.0-planning-generic-crew']), true);
+    if (role === 'armement') expect(store.save.mock.calls[0][0]).not.toContain('3.71.8-project-portfolio-closure');
+    else expect(store.save.mock.calls[0][0]).toContain('3.71.8-project-portfolio-closure');
   });
   it.each<RoleKey>(['marin', 'capitaine'])('excludes the organigramme note from the %s profile', async (role) => {
     const note = RELEASE_NOTES.find((item) => item.id === '3.59.0-organigramme-exports-contacts')!;

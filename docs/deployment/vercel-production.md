@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.71.8`, build `2026-10-10.001`, ajoute à la demande de l'utilisateur une
+note de mise à jour Projets pour Administrateur et Direction : Modifier sur les
+cartes, favoris, statut, clôture réversible et conservation du parcours Nouveau
+projet. Les notes antérieures et leurs accusés de lecture restent disponibles.
+Aucune migration, dépendance ou configuration nouvelle. Voir [les notes de mise
+à jour](./release-notes-and-lifting-sections.md).
+
 ## Portefeuille Projets — contrôle avant publication du 10 octobre 2026
 
 La clôture réversible et les actions des cartes Projets conservent le parcours
