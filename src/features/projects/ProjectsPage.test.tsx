@@ -502,13 +502,83 @@ describe('ProjectsPage', () => {
     await user.click(screen.getByRole('button', { name: 'P1086 Campagne Atlantique 2026' }));
     expect(within(screen.getByLabelText('Changer de projet')).getByRole('option', { name: /P1086.*Clôturé/ })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Modifier le statut de P1086' }));
-    await user.click(screen.getByRole('button', { name: 'Réactiver le projet' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('menuitem', { name: 'Réactiver le projet' }));
     expect(await screen.findByText('P1086 réactivé.')).toBeVisible();
     expect(rpc).toHaveBeenCalledWith('projects_reactivate', { target_project_id: 880 });
     expect(screen.getByRole('button', { name: 'Modifier le statut de P1086' })).not.toHaveTextContent('Clôturé');
     await user.click(screen.getByRole('tab', { name: /Opérations/ }));
     expect(screen.getByText('Rotation 1')).toBeVisible();
     expect(screen.getByText('Rotation 2')).toBeVisible();
+  });
+
+  it('opens an anchored status menu on both pills and closes it with keyboard or an outside click', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient({ projects: { data: [{ ...atlantiqueProjectRow, status: 'Validé' }], error: null } });
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    const cardPill = await screen.findByRole('button', { name: 'Modifier le statut de P1086' });
+    expect(cardPill).toHaveAttribute('aria-haspopup', 'menu');
+    expect(cardPill).toHaveAttribute('aria-expanded', 'false');
+    await user.click(cardPill);
+    const menu = within(await screen.findByRole('menu'));
+    expect(cardPill).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(menu.getByRole('menuitem', { name: /^Validé\s*, statut actuel$/ })).toBeInTheDocument();
+    await waitFor(() => expect(menu.getByRole('menuitem', { name: 'Brouillon' })).toHaveFocus());
+    await user.keyboard('{ArrowDown}');
+    expect(menu.getByRole('menuitem', { name: 'Non validé' })).toHaveFocus();
+    await user.keyboard('{End}');
+    expect(menu.getByRole('menuitem', { name: 'Clôturer' })).toHaveFocus();
+    await user.keyboard('{Home}');
+    expect(menu.getByRole('menuitem', { name: 'Brouillon' })).toHaveFocus();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(cardPill).toHaveFocus());
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(cardPill).toHaveAttribute('aria-expanded', 'false');
+
+    const dossierPill = screen.getByRole('button', { name: 'Modifier le statut du dossier P1086' });
+    await user.click(dossierPill);
+    expect(dossierPill).toHaveAttribute('aria-expanded', 'true');
+    expect(cardPill).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('heading', { name: 'Campagne Atlantique 2026' }));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(dossierPill).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(dossierPill);
+    fireEvent.scroll(window);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    await user.click(cardPill);
+    fireEvent.resize(window);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+    await user.click(dossierPill);
+    await user.click(screen.getByRole('menuitem', { name: /^Validé\s*, statut actuel$/ }));
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_set_status');
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_archive');
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_reactivate');
+  });
+
+  it('keeps the saved status on both pills when a dossier menu update fails', async () => {
+    const user = userEvent.setup();
+    const row = { ...atlantiqueProjectRow, status: 'Validé' };
+    const { client, rpc } = createClient({ projects: { data: [row], error: null } });
+    const previousRpc = rpc.getMockImplementation()!;
+    rpc.mockImplementation((name: string) => name === 'projects_set_status'
+      ? Promise.resolve({ data: null, error: { message: 'Statut refusé' } })
+      : previousRpc(name));
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    const dossierPill = await screen.findByRole('button', { name: 'Modifier le statut du dossier P1086' });
+    await user.click(dossierPill);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('menuitem', { name: 'Stand-by météo' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Statut refusé');
+    expect(rpc).toHaveBeenCalledWith('projects_set_status', { target_project_id: 880, target_status: 'Stand-by météo' });
+    expect(screen.getByRole('button', { name: 'Modifier le statut de P1086' })).toHaveTextContent('Validé');
+    expect(dossierPill).toHaveTextContent('Validé');
+    expect(row.status).toBe('Validé');
+    expect(row.archived_at).toBeNull();
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_save');
   });
 
   it('updates only the status and keeps a failed closure visible with its data unchanged', async () => {
@@ -524,16 +594,17 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} roles={['direction']} />);
     await screen.findByRole('button', { name: 'Modifier le statut de P1086' });
     await user.click(screen.getByRole('button', { name: 'Modifier le statut de P1086' }));
-    await user.click(screen.getByRole('button', { name: 'Stand-by météo' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('menuitem', { name: 'Stand-by météo' }));
     expect(await screen.findByText('P1086 mis à jour : Stand-by météo.')).toBeVisible();
     expect(rpc).toHaveBeenCalledWith('projects_set_status', { target_project_id: 880, target_status: 'Stand-by météo' });
     expect(screen.getByRole('button', { name: 'Modifier le statut de P1086' })).toHaveTextContent('Stand-by météo');
     await user.click(screen.getByRole('button', { name: 'Modifier le statut de P1086' }));
-    await user.click(screen.getByRole('button', { name: 'Clôturer' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Clôturer' }));
     await user.click(screen.getByRole('button', { name: 'Annuler' }));
     expect(rpc).not.toHaveBeenCalledWith('projects_archive', expect.anything());
     await user.click(screen.getByRole('button', { name: 'Modifier le statut de P1086' }));
-    await user.click(screen.getByRole('button', { name: 'Clôturer' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Clôturer' }));
     const confirmation = within(screen.getByRole('dialog', { name: 'Clôturer le projet' }));
     await user.click(confirmation.getByRole('button', { name: 'Clôturer' }));
     expect(await confirmation.findByRole('alert')).toHaveTextContent('Clôture refusée');
@@ -554,7 +625,7 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} roles={['direction']} />);
     await user.click(await screen.findByRole('button', { name: 'P1086 Campagne Atlantique 2026' }));
     await user.click(screen.getByRole('button', { name: 'Modifier le statut de P1086' }));
-    await user.click(screen.getByRole('button', { name: 'Clôturer' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Clôturer' }));
     await user.click(within(screen.getByRole('dialog', { name: 'Clôturer le projet' })).getByRole('button', { name: 'Clôturer' }));
     expect(await screen.findByRole('heading', { name: 'Campagne Atlantique 2026' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Modifier le statut du dossier P1086' })).toHaveTextContent('Clôturé');
@@ -616,6 +687,39 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('button', { name: 'Remorqués' })).toBeInTheDocument();
   });
 
+  it('shows only the contractual hire alongside period, status and contract type in the permanent project banner', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: 'P1086 Campagne Atlantique 2026' }));
+    const bannerElement = screen.getByLabelText('Informations du projet');
+    const banner = within(bannerElement);
+    expect(Array.from(bannerElement.querySelectorAll('dt')).map((field) => field.textContent)).toEqual([
+      'Période', 'Statut', 'Type de contrat', 'Loyer du contrat',
+    ]);
+    expect(banner.getByRole('heading', { name: 'Campagne Atlantique 2026' })).toBeVisible();
+    expect(banner.getByText('SUPPLYTIME 2017')).toBeVisible();
+    expect(banner.getByText(/12.000 EUR \/ jour/)).toBeVisible();
+    expect(bannerElement).toHaveTextContent('Ifremer');
+    expect(bannerElement).toHaveTextContent('COTENTIN');
+    expect(bannerElement).toHaveTextContent('juil. 2026');
+    expect(banner.queryByText('Armateur BBTM, Brest')).not.toBeInTheDocument();
+    expect(banner.queryByText(/contact@ifremer/)).not.toBeInTheDocument();
+    expect(banner.queryByText('Europe occidentale')).not.toBeInTheDocument();
+    expect(banner.queryByText('Support ROV')).not.toBeInTheDocument();
+    expect(banner.queryByText('Support plongée')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Identité' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Opérations' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('Rotation 1')).toBeVisible();
+    await user.click(screen.getByRole('tab', { name: 'Documents' }));
+    expect(banner.getByText(/12.000 EUR \/ jour/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'P1087 Campagne Manche 2026' }));
+    expect(screen.getByRole('tab', { name: 'Opérations' })).toHaveAttribute('aria-selected', 'true');
+    const otherBanner = within(screen.getByLabelText('Informations du projet'));
+    expect(otherBanner.getByRole('heading', { name: 'Campagne Manche 2026' })).toBeVisible();
+    expect(otherBanner.getByText('Loyer du contrat').closest('div')).toHaveTextContent('Non renseigné');
+  });
+
   it('selects a project and exposes contract-aware read-only sections as accessible tabs', async () => {
     const user = userEvent.setup();
     const { client, createSignedUrl, from } = createClient({
@@ -651,7 +755,6 @@ describe('ProjectsPage', () => {
     expect(projectButton).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('tablist', { name: 'Sections du projet' })).toBeInTheDocument();
     expect(screen.getAllByRole('tab').map((tab) => tab.getAttribute('aria-label'))).toEqual([
-      'Identité',
       'Opérations',
       'Facturation',
       'Offre & contrat',
@@ -659,8 +762,8 @@ describe('ProjectsPage', () => {
       'Historique',
     ]);
     expect(screen.queryByRole('tab', { name: 'Document contractuel' })).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Identité' })).toHaveAttribute('aria-selected', 'true');
-    await user.click(screen.getByRole('tab', { name: 'Opérations' }));
+    expect(screen.queryByRole('tab', { name: 'Identité' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Opérations' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('Rotation 1')).toBeInTheDocument();
     expect(screen.getAllByText(/12.000 EUR \/ jour/).length).toBeGreaterThan(0);
 
@@ -671,8 +774,8 @@ describe('ProjectsPage', () => {
     expect(screen.queryByText('Source structurée · Supabase')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Nouvelle opération' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('tab', { name: 'Identité' }));
-    expect(screen.getAllByText('Armateur BBTM, Brest').length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('tab', { name: 'Opérations' }));
+    expect(within(screen.getByLabelText('Informations du projet')).getByText(/12.000 EUR \/ jour/)).toBeVisible();
     expect(screen.queryByText('Clauses particulières Atlantique')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: 'Documents' }));
@@ -875,7 +978,8 @@ describe('ProjectsPage', () => {
 
     expect(await screen.findByText(/Consultation partielle/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
-    expect(screen.getByRole('tab', { name: 'Identité' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Opérations' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('tab', { name: 'Identité' })).not.toBeInTheDocument();
     expect(screen.getByText(/informations contractuelles et BIMCO sont temporairement indisponibles/)).toBeInTheDocument();
   });
 
@@ -947,8 +1051,8 @@ describe('ProjectsPage', () => {
     await user.click(await screen.findByRole('button', { name: 'P144 EMDT - GOURY' }));
     await screen.findByRole('heading', { name: 'EMDT - GOURY' });
     expect(screen.getByRole('article', { name: 'Détails du contrat P144' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Client' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Navires & affectation' })).toBeInTheDocument();
+    expect(within(screen.getByLabelText('Informations du projet')).getByText('Loyer du contrat')).toBeVisible();
+    expect(screen.getByRole('tab', { name: 'Opérations' })).toHaveAttribute('aria-selected', 'true');
     await user.click(screen.getByRole('tab', { name: 'Offre & contrat' }));
     expect(screen.queryByText(/Cases \d/)).not.toBeInTheDocument();
     for (const [section, value] of [
@@ -964,7 +1068,7 @@ describe('ProjectsPage', () => {
       expect(screen.getByText(value)).toBeInTheDocument();
       expect(screen.getByRole('tab', { name: 'Offre & contrat' })).toHaveAttribute('aria-selected', 'true');
     }
-    await user.click(screen.getByRole('tab', { name: 'Identité' }));
+    await user.click(screen.getByRole('tab', { name: 'Opérations' }));
     expect(screen.queryByText('Annexe P144 conservée')).not.toBeInTheDocument();
   });
 

@@ -1,5 +1,13 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.71.10`, build `2026-10-10.003`, ouvre directement le menu de statut
+depuis les pastilles du portefeuille et du dossier Projets. La confirmation de
+clôture et les contrôles serveur existants sont conservés. Le bandeau ajoute
+uniquement le loyer contractuel ; l'onglet Identité est retiré et Opérations
+devient l'onglet initial. Les données et l'assistant Nouveau projet restent
+inchangés. Aucune migration, dépendance ou configuration nouvelle.
+Voir [le bandeau et le statut](../design/projects-workspace-preview.md).
+
 Version `3.71.9`, build `2026-10-10.002`, intègre la nouvelle interface Projets
 dans la route réelle `/modules/projects` : ruban Planning, portefeuille et dossier
 côte à côte, calendriers permanents et commandes locales de facturation. La

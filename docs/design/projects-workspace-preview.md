@@ -1,5 +1,21 @@
 # Module Projet — interface intégrée et prévisualisation
 
+## Bandeau et statut — version 3.71.10
+
+Le bandeau existant conserve le code, le titre, le contexte client/navire, la
+période, le statut et le type de contrat. Il ajoute uniquement **Loyer du contrat**,
+avec le montant, la devise et l'unité contractuels. L'onglet Identité est retiré
+et le dossier s'ouvre sur Opérations. Les autres informations d'identité ne sont
+pas affichées dans le bandeau ; les données, l'éditeur du projet et les PDF
+existants restent conservés.
+
+La pastille de statut du portefeuille ou du dossier ouvre directement la liste
+des cinq statuts existants. Le menu reprend le composant commun `AppContextMenu`,
+le clavier, la fermeture extérieure et le retour du focus à la pastille. Choisir
+le statut actuel ne déclenche aucune écriture. Clôturer garde sa confirmation ;
+Réactiver conserve le statut précédent. Les droits et RPC existants sont
+inchangés. Aucun changement de schéma ou de configuration n'est nécessaire.
+
 ## Interface validée intégrée — version 3.71.9
 
 La présentation validée dans `/preview/projects/` est désormais reprise dans le
