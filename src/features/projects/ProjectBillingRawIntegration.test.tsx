@@ -110,6 +110,23 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('raw billing workspace integration', () => {
+  it('opens directly on one blank row without persisting it, then adds another row only on request', async () => {
+    const user = userEvent.setup();
+    render(panel());
+    await ready();
+    expect(screen.queryByLabelText('Désignation, ligne 1')).not.toBeInTheDocument();
+    await openRaw(user);
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('');
+    expect(screen.queryByLabelText('Désignation, ligne 2')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^Saisie brute/ }));
+    await openRaw(user);
+    expect(screen.queryByLabelText('Désignation, ligne 2')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
+    expect(screen.getByLabelText('Désignation, ligne 2')).toHaveValue('');
+    expect(mocks.ensurePeriod).not.toHaveBeenCalled();
+    expect(mocks.saveRaw).not.toHaveBeenCalled();
+  });
   it('distinguishes vessel-specific catalogue categories in the BBTM selector', async () => {
     mocks.catalog.mockResolvedValue([{ ...catalog[0], vesselId: 1, vesselName: 'GOURY' }, { ...catalog[0], id: 9, vesselId: 2, vesselName: 'SUROIT', unitAmountHt: 125 }]);
     const user = userEvent.setup();
@@ -127,7 +144,6 @@ describe('raw billing workspace integration', () => {
     render(panel());
     await ready();
     await openRaw(user);
-    await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
     fireEvent.change(screen.getByLabelText('Date, ligne 1'), { target: { value: '2026-09-12' } });
     fireEvent.change(screen.getByLabelText('Quantité, ligne 1'), { target: { value: '2.5' } });
     await user.click(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' }));
@@ -159,7 +175,6 @@ describe('raw billing workspace integration', () => {
     render(panel());
     await ready();
     await openRaw(user);
-    await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
     await user.click(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' }));
     await user.click(screen.getByRole('button', { name: 'Nouvelle prestation' }));
     await user.type(screen.getByLabelText('Désignation de la nouvelle prestation'), 'Assistance');
@@ -178,7 +193,6 @@ describe('raw billing workspace integration', () => {
     const view = render(panel());
     await ready();
     await openRaw(user);
-    await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
     fillManual('Brouillon conservé', '12.5', '3');
     const props = { client, project, operations: [], isManager: true, initialMonth: '2026-09', workspace: true };
     view.rerender(<ProjectBillingPanel {...props} visibleSections={{ services: true, bbtm: true, billingElements: true, raw: false }} />);
@@ -199,7 +213,6 @@ describe('raw billing workspace integration', () => {
     render(panel(p144));
     await ready();
     await openRaw(user);
-    await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
     expect(screen.getByLabelText('Date, ligne 1')).toHaveValue('2026-09-01');
     expect(screen.getByLabelText('Quantité, ligne 1')).toHaveValue(1);
     fillManual('Spread Antipollution', '32.50', '2.125');
@@ -222,7 +235,6 @@ describe('raw billing workspace integration', () => {
     render(panel());
     await ready();
     await openRaw(user);
-    await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
     await user.click(screen.getByRole('button', { name: 'Choisir dans le catalogue, ligne 1' }));
     await user.click(within(screen.getByRole('dialog', { name: 'Choisir une prestation' })).getByRole('button', { name: 'Choisir Assistance' }));
     expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Assistance');
@@ -251,7 +263,6 @@ describe('raw billing workspace integration', () => {
     render(panel());
     await ready();
     await openRaw(user);
-    await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
     fillManual();
     await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
     await ready();
@@ -274,7 +285,6 @@ describe('raw billing workspace integration', () => {
     expect(screen.getByRole('checkbox', { name: 'Inclure la saisie brute' })).toBeChecked();
     expect(screen.getByLabelText('Référence client')).toHaveValue('REFERENCE-7');
     await openRaw(user);
-    await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
     fillManual();
     expect(screen.getByLabelText('Référence client')).toHaveValue('REFERENCE-7');
     await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
@@ -327,7 +337,6 @@ describe('raw billing workspace integration', () => {
     render(panel());
     await ready();
     await openRaw(user);
-    await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
     fillManual('Ligne à reprendre');
     await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Enregistrement brut refusé.');
@@ -377,18 +386,17 @@ describe('raw billing workspace integration', () => {
     render(panel());
     await ready();
     await openRaw(user);
-    await user.click(screen.getByRole('button', { name: 'Ajouter une ligne' }));
     fillManual('Réponse septembre tardive');
     await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
     await waitFor(() => expect(phase === 'creation' ? mocks.ensurePeriod : mocks.saveRaw).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getByLabelText('Mois de facturation', { exact: true }), { target: { value: '2026-10' } });
+    fireEvent.change(screen.getByLabelText('Mois', { exact: true }), { target: { value: '2026-10' } });
     await waitFor(() => expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Ligne octobre'));
     await act(async () => {
       if (phase === 'creation') pendingPeriod.resolve(canonicalSeptember);
       else pendingLine.resolve(rawLine({ designation: 'Réponse septembre tardive' }));
     });
     await ready();
-    expect(screen.getByLabelText('Mois de facturation', { exact: true })).toHaveValue('2026-10');
+    expect(screen.getByLabelText('Mois', { exact: true })).toHaveValue('2026-10');
     expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Ligne octobre');
     expect(screen.queryByLabelText('Désignation, ligne 2')).not.toBeInTheDocument();
     expect(within(selectedTotal()).getByText(/300,00\s*€/)).toBeVisible();
@@ -398,7 +406,7 @@ describe('raw billing workspace integration', () => {
     expect(mocks.export.mock.calls[0][1].period).toMatchObject({ id: 20, invoiceNumber: 'FACTURE-OCTOBRE', periodMonth: '2026-10-01' });
     expect(mocks.export.mock.calls[0][1].rawLines).toEqual([octoberLine]);
     if (phase === 'write') {
-      fireEvent.change(screen.getByLabelText('Mois de facturation', { exact: true }), { target: { value: '2026-09' } });
+      fireEvent.change(screen.getByLabelText('Mois', { exact: true }), { target: { value: '2026-09' } });
       await waitFor(() => expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Réponse septembre tardive'));
       await ready();
       await user.click(screen.getByRole('button', { name: 'Prévisualiser le PDF' }));

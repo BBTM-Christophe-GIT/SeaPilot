@@ -5,6 +5,7 @@ import { ProjectHistory } from './ProjectHistory';
 import { FleetPage } from '../fleet/FleetPage';
 import './ProjectWorkspace.css';
 import './ProjectDesign.css';
+import './ProjectsProductionWorkspace.css';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetNames } from '../fleet/fleetDisplay';
 import {
@@ -36,6 +37,7 @@ import {
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { AppDialog } from '../../components/AppDialog';
+import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
@@ -132,9 +134,9 @@ function displayText(value: string | number | null | undefined): string {
   return value === '' || value === null || value === undefined ? 'Non renseigné' : String(value);
 }
 
-function ProjectStatusPill({ project, canManage, busy, onChange }: { project: ProjectRecord; canManage: boolean; busy: boolean; onChange: () => void }) {
+function ProjectStatusPill({ project, canManage, busy, onChange, inDossier = false }: { project: ProjectRecord; canManage: boolean; busy: boolean; onChange: () => void; inDossier?: boolean }) {
   const label = project.archivedAt ? 'Clôturé' : displayText(project.status);
-  return canManage ? <button className="project-status-chip project-status-button" disabled={busy} aria-label={`Modifier le statut de ${project.projectCode || project.title}`} onClick={onChange} type="button">{label}<ChevronDown aria-hidden="true" size={13} /></button>
+  return canManage ? <button className="project-status-chip project-status-button" disabled={busy} aria-label={`${inDossier ? 'Modifier le statut du dossier' : 'Modifier le statut de'} ${project.projectCode || project.title}`} onClick={onChange} type="button">{label}<ChevronDown aria-hidden="true" size={13} /></button>
     : <span className="project-status-chip">{label}</span>;
 }
 
@@ -248,18 +250,15 @@ function ProjectRibbonButton({
   ...buttonProps
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon: React.ReactNode; label: string }) {
   return (
-    <button className="project-ribbon-command" type="button" {...buttonProps}>
-      <span className="project-ribbon-command-icon">{icon}</span>
-      <span className="project-ribbon-command-label">{label}</span>
-    </button>
+    <ModuleRibbonCommand icon={icon} label={label} {...buttonProps} />
   );
 }
 
 function ProjectRibbonLink({ icon, label, to }: { icon: React.ReactNode; label: string; to: string }) {
   return (
-    <a className="project-ribbon-command" href={to}>
-      <span className="project-ribbon-command-icon">{icon}</span>
-      <span className="project-ribbon-command-label">{label}</span>
+    <a className="planning-ribbon-command" href={to}>
+      <span className="planning-ribbon-command-icon">{icon}</span>
+      <span className="planning-ribbon-command-label">{label}</span>
     </a>
   );
 }
@@ -797,7 +796,7 @@ function ProjectDetail({
         </div>
         <dl className="project-sheet-summary">
           <DetailField label="Période" value={formatPeriod(projectStart, projectEnd)} />
-          <div className="project-detail-field"><dt>Statut</dt><dd><ProjectStatusPill project={project} canManage={isManager} busy={changingProjectState} onChange={onChangeStatus} /></dd></div>
+          <div className="project-detail-field"><dt>Statut</dt><dd><ProjectStatusPill project={project} canManage={isManager} busy={changingProjectState} onChange={onChangeStatus} inDossier /></dd></div>
           <DetailField label="Type de contrat" value={displayText(isCharterContractType(project.contractType) ? normalizeProjectContractType(project.contractType) : project.contractType)} />
         </dl>
       </header>
@@ -1369,7 +1368,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     () => uniqueSorted(projectsData.projects.flatMap((project) => getProjectVesselNames(project))).sort(compareFleetNames),
     [projectsData.projects],
   );
-  const selectedProject = (dossierOpen ? projectsData.projects.find((project) => project.id === selectedProjectId) : undefined)
+  const selectedProject = projectsData.projects.find((project) => project.id === selectedProjectId)
     || resolveSelectedProject(filteredProjects, selectedProjectId);
   const selectedContract = selectedProject
     ? projectsData.projectContracts.find((contract) => contract.projectId === selectedProject.id && !contract.archivedAt)
@@ -1638,7 +1637,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   }
 
   return (
-    <section className={`projects-page project-design ${dossierOpen ? 'is-dossier' : 'is-portfolio'}`}>
+    <section className={`projects-page project-design project-production ${dossierOpen ? 'is-dossier' : 'is-portfolio'}`}>
       <header className="project-module-header">
         <div>
           <p className="module-family">MODULE</p>
@@ -1653,27 +1652,29 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         </div>
       </header>
 
-      <nav aria-label="Commandes du module Projets" className="project-workspace-actions project-primary-commands">
-        <ProjectRibbonButton disabled={!isManager || changingProjectState} icon={<Plus size={18} />} label="Nouveau projet" onClick={() => openProjectEditor()} />
-        <ProjectRibbonButton disabled={!isManager} icon={<Users size={18} />} label="Clients" onClick={() => setClientCatalogOpen(true)} />
-        <ProjectRibbonButton disabled={!isManager} icon={<Ship size={18} />} label="Navires" onClick={() => setFleetCatalogOpen(true)} />
-        <ProjectRibbonButton disabled={!isManager} icon={<Ship size={18} />} label="Remorqués" onClick={() => setTowedAssetCatalogOpen(true)} />
-        <ProjectRibbonButton disabled={!isManager} icon={<PackageCheck size={18} />} label="Catalogue de prestations" onClick={() => setServiceCatalogOpen(true)} />
-        <ProjectRibbonLink icon={<ReceiptText size={18} />} label="Éléments de facturation" to={billingElementsUrl()} />
-        <ProjectRibbonButton icon={<Filter size={18} />} label="Filtres" aria-pressed={filtersOpen} onClick={() => setFiltersOpen((open) => !open)} />
-      </nav>
-      {!dossierOpen ? <ProjectPortfolioInsights client={effectiveClient} data={projectsData} /> : <nav className="project-workspace-actions project-dossier-actions" aria-label="Actions du dossier">
+      <ModuleRibbon ariaLabel="Commandes du module Projets" className="project-production-ribbon" singleRow>
+        <ModuleRibbonGroup label="Projet">
+          <ProjectRibbonButton disabled={!isManager || changingProjectState} icon={<Plus size={22} />} label="Nouveau projet" onClick={() => openProjectEditor()} />
+          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus size={22} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
+          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || changingProjectState} icon={<Archive size={22} />} label="Archiver le projet" onClick={() => { if (selectedProject) { setMutationError(''); setStatusDialog({ project: selectedProject, closing: true }); } }} />
+        </ModuleRibbonGroup>
+        <ModuleRibbonGroup label="Catalogue">
+          <ProjectRibbonButton disabled={!isManager} icon={<Users size={22} />} label="Clients" onClick={() => setClientCatalogOpen(true)} />
+          <ProjectRibbonButton disabled={!isManager} icon={<Ship size={22} />} label="Navires" onClick={() => setFleetCatalogOpen(true)} />
+          <ProjectRibbonButton disabled={!isManager} icon={<Ship size={22} />} label="Remorqués" onClick={() => setTowedAssetCatalogOpen(true)} />
+          <ProjectRibbonButton disabled={!isManager} icon={<PackageCheck size={22} />} label="Prestations" aria-label="Catalogue de prestations" onClick={() => setServiceCatalogOpen(true)} />
+        </ModuleRibbonGroup>
+        <ModuleRibbonGroup label="Documents">
+          <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<FileText size={22} />} label="Émettre le document" onClick={() => openProjectDocumentEmission(selectedGeneratedDocumentKind, selectedGeneratedDocumentKind === 'offer' ? null : selectedPlanningOccurrences[0]?.id ?? null)} />
+          <ProjectRibbonButton icon={<Share2 size={22} />} label="Dossiers Google Drive" onClick={() => window.open('https://drive.google.com/drive/folders/1H5kB4ppiKQAm4hqhYjMHcP4pRZaTncj_', '_blank', 'noopener,noreferrer')} />
+          <ProjectRibbonLink icon={<ReceiptText size={22} />} label="Éléments de facturation" to={billingElementsUrl()} />
+        </ModuleRibbonGroup>
+      </ModuleRibbon>
+      <ProjectPortfolioInsights client={effectiveClient} data={projectsData} />
+      {dossierOpen ? <nav className="project-workspace-actions project-dossier-actions" aria-label="Actions du dossier">
         <button type="button" onClick={() => setDossierOpen(false)}><ChevronLeft size={16} /> Liste des projets</button>
-        <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt)} icon={<CalendarPlus size={18} />} label="Nouvelle opération" onClick={() => openPlanningEditor()} />
-        <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<FileText size={18} />} label="Émettre le document" onClick={() => openProjectDocumentEmission(selectedGeneratedDocumentKind, selectedGeneratedDocumentKind === 'offer' ? null : selectedPlanningOccurrences[0]?.id ?? null)} />
-        <ProjectRibbonButton icon={<Share2 size={18} />} label="Dossiers Google Drive" onClick={() => window.open('https://drive.google.com/drive/folders/1H5kB4ppiKQAm4hqhYjMHcP4pRZaTncj_', '_blank', 'noopener,noreferrer')} />
         <label className="project-dossier-switcher">Projet<select aria-label="Changer de projet" disabled={changingProjectState} value={selectedProject?.id || ''} onChange={(event) => setSelectedProjectId(Number(event.target.value))}>{projectsData.projects.filter((project) => !project.archivedAt || project.id === selectedProject?.id).map((project) => <option key={project.id} value={project.id} disabled={Boolean(project.archivedAt)}>{project.projectCode} – {project.title}{project.archivedAt ? ' (Clôturé)' : ''}</option>)}</select></label>
-      </nav>}
-      {!dossierOpen ? <div className="project-portfolio-scopes" aria-label="Classement des projets">
-        {([['current', 'Projets actuels'], ['all', 'Tous les projets']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={projectScope === value} onClick={() => { setProjectScope(value); setCurrentPage(0); }}>{label} <b>{value === 'current' ? currentAvailableProjects.length : availableProjects.length}</b></button>)}
-        <button type="button" aria-pressed={projectScope === 'favorites'} onClick={() => { setProjectScope('favorites'); setCurrentPage(0); }}><Star size={14} aria-hidden="true" /> Mes favoris <b>{favorites.loading ? '…' : availableProjects.filter((project) => favorites.ids.has(project.id)).length}</b></button>
-        <p>{projectScope === 'favorites' ? 'Vos projets favoris, personnels et accessibles depuis votre compte.' : projectScope === 'current' ? 'Projets et opérations du mois en cours ou à venir.' : `Tous les projets passés et sans date${showClosedProjects ? ', y compris les projets clôturés' : ''}.`}</p>
-      </div> : null}
+      </nav> : null}
       {favorites.error ? <p role="alert" className="project-favorites-error">{favorites.error} <button type="button" onClick={favorites.retry}>Réessayer les favoris</button></p> : null}
 
       {projectsData.warnings.length > 0 ? (
@@ -1698,67 +1699,6 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         </aside>
       ) : null}
 
-      {filtersOpen ? <div className="planning-filter-panel projects-filter-panel" aria-label="Filtres contrats">
-        <label>
-          Recherche projets
-          <input
-            onChange={(event) => updateFilterValue('search', event.target.value)}
-            placeholder="Projet, client, navire, zone…"
-            type="search"
-            value={filters.search}
-          />
-        </label>
-        <label>
-          Filtre statut projet
-          <select onChange={(event) => updateFilterValue('status', event.target.value)} value={filters.status}>
-            <option value="">Tous les statuts</option>
-            {statusOptions.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Filtre client projet
-          <select onChange={(event) => updateFilterValue('clientName', event.target.value)} value={filters.clientName}>
-            <option value="">Tous les clients</option>
-            {clientOptions.map((clientName) => (
-              <option key={clientName} value={clientName}>
-                {clientName}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Filtre navire projet
-          <select onChange={(event) => updateFilterValue('vesselName', event.target.value)} value={filters.vesselName}>
-            <option value="">Tous les navires</option>
-            {vesselOptions.map((vesselName) => (
-              <option key={vesselName} value={vesselName}>
-                {vesselName}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Projet depuis
-          <input onChange={(event) => updateFilterValue('dateFrom', event.target.value)} type="date" value={filters.dateFrom} />
-        </label>
-        <label>
-          Projet jusqu’au
-          <input onChange={(event) => updateFilterValue('dateTo', event.target.value)} type="date" value={filters.dateTo} />
-        </label>
-        <label className="project-closed-filter"><input type="checkbox" checked={showClosedProjects} onChange={(event) => {
-          setShowClosedProjects(event.target.checked); setCurrentPage(0);
-          if (event.target.checked) setProjectScope('all');
-          else if (filters.status === 'Clôturé') setFilters((current) => ({ ...current, status: '' }));
-        }} />Afficher les projets clôturés</label>
-        <button disabled={!hasActiveFilters} onClick={resetFilters} type="button">
-          Réinitialiser
-        </button>
-      </div> : null}
-
       {mutationMessage ? <p className="project-mutation-success" role="status">{mutationMessage}</p> : null}
       {lastStoredDocument ? (
         <span className="project-stored-document-link">
@@ -1773,18 +1713,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
 
       {projectsData.projects.length === 0 ? (
         <div className="admin-state">Aucun projet n’est disponible dans Supabase.</div>
-      ) : filteredProjects.length === 0 && !dossierOpen ? (
-        <div className="admin-state">
-          <div>
-            <strong>{projectScope === 'favorites' && !favorites.ids.size ? (favorites.loading ? 'Chargement de vos favoris…' : 'Aucun projet favori. Utilisez l’étoile à côté d’un projet pour le retrouver ici.') : 'Aucun projet ne correspond aux filtres.'}</strong>
-            <button className="project-inline-action" onClick={() => { resetFilters(); if (projectScope === 'favorites') setProjectScope('all'); }} type="button">
-              {projectScope === 'favorites' ? 'Afficher tous les projets' : 'Réinitialiser les filtres'}
-            </button>
-          </div>
-        </div>
       ) : (
         <div className={`projects-read-layout project-contract-workspace project-workspace-v2 ${dossierOpen ? 'is-dossier' : 'is-portfolio'}`}>
-          {!dossierOpen ? <section className="projects-panel project-list-panel" aria-labelledby="projects-list-title">
+          <section className="projects-panel project-list-panel" aria-labelledby="projects-list-title">
             <div className="project-contract-list-heading">
               <div>
                 <h2 id="projects-list-title">Portefeuille projet</h2>
@@ -1800,6 +1731,83 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                 />
               </label>
             </div>
+            <div className="project-portfolio-toolbar">
+              <button type="button" className="sp-button sp-button--secondary" aria-expanded={filtersOpen} aria-controls="projects-portfolio-filters" onClick={() => setFiltersOpen((open) => !open)}><Filter aria-hidden="true" size={16} />Filtres</button>
+              <button type="button" className="sp-button sp-button--secondary" aria-label="Réinitialiser les filtres" disabled={!hasActiveFilters} onClick={resetFilters}><RotateCcw aria-hidden="true" size={16} /></button>
+            </div>
+            <div className="project-portfolio-scopes" aria-label="Classement des projets">
+              {([['current', 'Projets actuels'], ['all', 'Tous les projets']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={projectScope === value} onClick={() => { setProjectScope(value); setCurrentPage(0); }}>{label} <b>{value === 'current' ? currentAvailableProjects.length : availableProjects.length}</b></button>)}
+              <button type="button" aria-pressed={projectScope === 'favorites'} onClick={() => { setProjectScope('favorites'); setCurrentPage(0); }}><Star size={14} aria-hidden="true" /> Mes favoris <b>{favorites.loading ? '…' : availableProjects.filter((project) => favorites.ids.has(project.id)).length}</b></button>
+              <p>{projectScope === 'favorites' ? 'Vos projets favoris, personnels et accessibles depuis votre compte.' : projectScope === 'current' ? 'Projets et opérations du mois en cours ou à venir.' : `Tous les projets passés et sans date${showClosedProjects ? ', y compris les projets clôturés' : ''}.`}</p>
+            </div>
+      {filtersOpen ? <div id="projects-portfolio-filters" className="planning-filter-panel projects-filter-panel" aria-label="Filtres contrats">
+              <label>
+                Recherche projets
+                <input
+                  onChange={(event) => updateFilterValue('search', event.target.value)}
+                  placeholder="Projet, client, navire, zone…"
+                  type="search"
+                  value={filters.search}
+                />
+              </label>
+              <label>
+                Filtre statut projet
+                <select onChange={(event) => updateFilterValue('status', event.target.value)} value={filters.status}>
+                  <option value="">Tous les statuts</option>
+                  {statusOptions.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Filtre client projet
+                <select onChange={(event) => updateFilterValue('clientName', event.target.value)} value={filters.clientName}>
+                  <option value="">Tous les clients</option>
+                  {clientOptions.map((clientName) => (
+                    <option key={clientName} value={clientName}>
+                      {clientName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Filtre navire projet
+                <select onChange={(event) => updateFilterValue('vesselName', event.target.value)} value={filters.vesselName}>
+                  <option value="">Tous les navires</option>
+                  {vesselOptions.map((vesselName) => (
+                    <option key={vesselName} value={vesselName}>
+                      {vesselName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Projet depuis
+                <input onChange={(event) => updateFilterValue('dateFrom', event.target.value)} type="date" value={filters.dateFrom} />
+              </label>
+              <label>
+                Projet jusqu’au
+                <input onChange={(event) => updateFilterValue('dateTo', event.target.value)} type="date" value={filters.dateTo} />
+              </label>
+              <label className="project-closed-filter"><input type="checkbox" checked={showClosedProjects} onChange={(event) => {
+                setShowClosedProjects(event.target.checked); setCurrentPage(0);
+                if (event.target.checked) setProjectScope('all');
+                else if (filters.status === 'Clôturé') setFilters((current) => ({ ...current, status: '' }));
+              }} />Afficher les projets clôturés</label>
+              <button disabled={!hasActiveFilters} onClick={resetFilters} type="button">
+                Réinitialiser
+              </button>
+            </div> : null}
+      {filteredProjects.length === 0 ? (<div className="admin-state">
+                <div>
+                  <strong>{projectScope === 'favorites' && !favorites.ids.size ? (favorites.loading ? 'Chargement de vos favoris…' : 'Aucun projet favori. Utilisez l’étoile à côté d’un projet pour le retrouver ici.') : 'Aucun projet ne correspond aux filtres.'}</strong>
+                  <button className="project-inline-action" onClick={() => { resetFilters(); if (projectScope === 'favorites') setProjectScope('all'); }} type="button">
+                    {projectScope === 'favorites' ? 'Afficher tous les projets' : 'Réinitialiser les filtres'}
+                  </button>
+                </div>
+              </div>) : null}
             <ul className="project-catalog-list">
               {visibleProjects.map((project) => {
                 const isSelected = selectedProject?.id === project.id;
@@ -1848,9 +1856,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                 </button>
               </nav>
             ) : null}
-          </section> : null}
+          </section>
 
-          {dossierOpen && selectedProject ? (
+          {selectedProject ? (
             <ProjectDetail
               client={selectedClient}
               supabaseClient={effectiveClient}
@@ -1874,7 +1882,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               towedAsset={selectedTowedAsset}
               vessels={projectsData.vessels}
             />
-          ) : null}
+          ) : <section className="projects-panel project-dossier-empty" aria-label="Dossier du projet"><h2>Sélectionnez un projet</h2><p>Choisissez un projet dans le portefeuille pour consulter son dossier.</p></section>}
         </div>
       )}
 

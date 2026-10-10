@@ -310,6 +310,49 @@ describe('automatic monthly billing creation', () => {
     expect(mocks.savePeriod).not.toHaveBeenCalled();
   });
 
+  it('stores several attachments from the expense dialog against the saved expense', async () => {
+    const user = userEvent.setup();
+    render(panel());
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Ajouter un frais' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Ajouter un frais imputable' });
+    await user.click(within(dialog).getByRole('combobox', { name: 'Fournisseur' }));
+    await user.click(within(dialog).getByRole('option', { name: /FOURNISSEUR RECETTE/ }));
+    fireEvent.change(within(dialog).getByLabelText('Montant HT'), { target: { value: '150' } });
+    const first = new File(['invoice'], 'facture.pdf', { type: 'application/pdf' });
+    const second = new File(['proof'], 'preuve.png', { type: 'image/png' });
+    await user.upload(within(dialog).getByLabelText('Pièces jointes du service refacturable'), [first, second]);
+    expect(within(dialog).getByText('facture.pdf')).toBeVisible();
+    expect(within(dialog).getByText('preuve.png')).toBeVisible();
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer le frais' }));
+    await waitFor(() => expect(mocks.upload).toHaveBeenCalledTimes(2));
+    for (const call of mocks.upload.mock.calls) expect(call).toEqual([client, expect.objectContaining({ projectId: 145, billingPeriodId: 10, expenseId: 30, kind: 'chargeable_expense', file: expect.any(File) })]);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(mocks.saveExpense).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries only pending attachments after an upload failure without creating another expense', async () => {
+    mocks.upload.mockResolvedValueOnce({ id: 40, billingPeriodId: 10, chargeableExpenseId: 30, documentKind: 'chargeable_expense', fileName: 'first.pdf' });
+    mocks.upload.mockRejectedValueOnce(new Error('Pièce refusée.'));
+    const user = userEvent.setup();
+    render(panel());
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Ajouter un frais' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Ajouter un frais imputable' });
+    await user.click(within(dialog).getByRole('combobox', { name: 'Fournisseur' }));
+    await user.click(within(dialog).getByRole('option', { name: /FOURNISSEUR RECETTE/ }));
+    fireEvent.change(within(dialog).getByLabelText('Montant HT'), { target: { value: '150' } });
+    await user.upload(within(dialog).getByLabelText('Pièces jointes du service refacturable'), [new File(['a'], 'first.pdf', { type: 'application/pdf' }), new File(['b'], 'second.pdf', { type: 'application/pdf' })]);
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer le frais' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Pièce refusée.');
+    expect(within(dialog).queryByRole('button', { name: 'Retirer la pièce first.pdf' })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Retirer la pièce second.pdf' })).toBeVisible();
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer le frais' }));
+    await waitFor(() => expect(mocks.upload).toHaveBeenCalledTimes(3));
+    expect(mocks.saveExpense.mock.calls[1][4]).toBe(30);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
   it('reports a refused creation, keeps the draft and allows retry', async () => {
     mocks.ensurePeriod.mockRejectedValueOnce(new Error('Création de la fiche refusée.'));
     const user = userEvent.setup();

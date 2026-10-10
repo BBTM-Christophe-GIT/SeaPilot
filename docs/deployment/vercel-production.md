@@ -1,5 +1,14 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.71.9`, build `2026-10-10.002`, intègre la nouvelle interface Projets
+dans la route réelle `/modules/projects` : ruban Planning, portefeuille et dossier
+côte à côte, calendriers permanents et commandes locales de facturation. La
+préversion autonome `/preview/projects/` reste disponible comme démonstration.
+Les formulaires Nouveau projet, les calculs, les exports et les droits existants
+sont conservés. Les services acceptent plusieurs justificatifs avec reprise des
+seules pièces échouées. Aucune migration, dépendance ou configuration nouvelle.
+Voir [l'interface intégrée](../design/projects-workspace-preview.md).
+
 Version `3.71.8`, build `2026-10-10.001`, ajoute à la demande de l'utilisateur une
 note de mise à jour Projets pour Administrateur et Direction : Modifier sur les
 cartes, favoris, statut, clôture réversible et conservation du parcours Nouveau

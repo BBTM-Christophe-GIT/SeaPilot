@@ -2,6 +2,12 @@
 
 Route : `/preview/projects/` (également `/preview/projects/index.html`).
 
+Depuis la version 3.71.9, l'organisation validée est également intégrée aux
+composants métier de `/modules/projects`. Cette entrée autonome reste une
+démonstration sans données réelles. Voir
+[`projects-workspace-preview.md`](../../docs/design/projects-workspace-preview.md)
+pour le comportement du module de production.
+
 Cette entrée Vite indépendante présente la maquette choisie avec le portefeuille,
 les cinq rubriques et les commandes locales de facturation. Elle utilise des
 projets, opérations, DPR et justificatifs fictifs. Les changements sont conservés

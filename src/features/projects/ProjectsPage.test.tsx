@@ -372,7 +372,7 @@ describe('ProjectsPage', () => {
     expect(insights.queryByText('Navire à quai')).not.toBeInTheDocument();
   });
 
-  it('adds and removes a personal favorite without opening its dossier, and restores it on reload', async () => {
+  it('adds and removes a personal favorite without changing the selected dossier, and restores it on reload', async () => {
     const stored: { project_id: number }[] = [];
     const { client, rpc } = createClient({ project_favorites: { data: stored, error: null } });
     rpc.mockImplementation(async (_name: string, args?: { target_project: number; favorite: boolean }) => {
@@ -384,9 +384,11 @@ describe('ProjectsPage', () => {
     const view = render(<ProjectsPage client={client as never} roles={['direction']} />);
     const star = await screen.findByRole('button', { name: 'Ajouter aux favoris : P1086' });
     await waitFor(() => expect(star).toBeEnabled());
+    const initialDossierTitle = within(screen.getByRole('article', { name: /Détails du contrat/ })).getByRole('heading', { level: 2 }).textContent!;
     fireEvent.click(star);
     await screen.findByRole('button', { name: 'Retirer des favoris : P1086' });
     expect(screen.getByRole('heading', { name: 'Portefeuille projet' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: initialDossierTitle })).toBeVisible();
     expect(rpc).toHaveBeenCalledWith('projects_set_favorite', { target_project: 880, favorite: true });
     view.unmount();
     render(<ProjectsPage client={client as never} roles={['direction']} />);
@@ -436,7 +438,7 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('button', { name: /Tous les projets 4/ })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('edits the exact portfolio card without selecting or opening its dossier', async () => {
+  it('edits the exact portfolio card while preserving the displayed dossier', async () => {
     const user = userEvent.setup();
     const { client, rpc } = createClient({}, { data: { id: 881, project_code: 'P1087', title: 'Manche modifiée', updated_at: '2026-07-16T08:00:00Z' }, error: null });
     const page = render(<ProjectsPage client={client as never} roles={['direction']} />);
@@ -454,6 +456,7 @@ describe('ProjectsPage', () => {
     expect(rpc).toHaveBeenCalledWith('projects_save', expect.objectContaining({ target_project_id: 881, target_title: 'Manche modifiée', target_primary_vessel_id: 13, target_client_id: 51 }));
     expect(screen.getByRole('heading', { name: 'Portefeuille projet' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'P1086 Campagne Atlantique 2026' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('heading', { name: 'Campagne Atlantique 2026' })).toBeVisible();
   });
 
   it.each(['marin', 'capitaine'] as const)('keeps project lifecycle actions read-only for the real %s role fixture', async (role) => {
@@ -463,6 +466,7 @@ describe('ProjectsPage', () => {
     await screen.findByRole('button', { name: 'P1086 Campagne Atlantique 2026' });
     expect(screen.queryByRole('button', { name: 'Modifier P1086' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier le statut de P1086' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modifier le statut du dossier P1086' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Nouveau projet' })).toBeDisabled();
     expect(page.container.querySelector('button button')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'P1086 Campagne Atlantique 2026' }));
@@ -553,7 +557,7 @@ describe('ProjectsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Clôturer' }));
     await user.click(within(screen.getByRole('dialog', { name: 'Clôturer le projet' })).getByRole('button', { name: 'Clôturer' }));
     expect(await screen.findByRole('heading', { name: 'Campagne Atlantique 2026' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Modifier le statut de P1086' })).toHaveTextContent('Clôturé');
+    expect(screen.getByRole('button', { name: 'Modifier le statut du dossier P1086' })).toHaveTextContent('Clôturé');
     expect(screen.getByRole('button', { name: 'Nouvelle opération' })).toBeDisabled();
     expect(within(screen.getByLabelText('Changer de projet')).getByRole('option', { name: /Clôturé/ })).toBeDisabled();
     await user.click(screen.getByRole('tab', { name: /Opérations/ }));
@@ -593,6 +597,12 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} roles={['direction']} />);
 
     await screen.findByRole('heading', { name: 'Projets' });
+    const ribbon = within(screen.getByRole('navigation', { name: 'Commandes du module Projets' }));
+    expect(ribbon.getAllByRole('group').map((group) => group.getAttribute('aria-label'))).toEqual(['Projet', 'Catalogue', 'Documents']);
+    expect(within(ribbon.getByRole('group', { name: 'Projet' })).getByRole('button', { name: 'Nouveau projet' })).toBeEnabled();
+    expect(within(ribbon.getByRole('group', { name: 'Catalogue' })).getByRole('button', { name: 'Clients' })).toBeEnabled();
+    expect(screen.getByRole('heading', { name: 'Portefeuille projet' })).toBeVisible();
+    expect(screen.getByRole('article', { name: /Détails du contrat/ })).toBeVisible();
     expect(screen.getByRole('link', { name: 'Éléments de facturation' }))
       .toHaveAttribute('href', '/modules/billingElements');
     expect(screen.getByRole('button', { name: 'Catalogue de prestations' })).toBeInTheDocument();
@@ -637,7 +647,8 @@ describe('ProjectsPage', () => {
     const projectButton = screen.getByRole('button', { name: /P1086 Campagne Atlantique 2026/ });
     await user.click(projectButton);
 
-    expect(projectButton).not.toBeInTheDocument();
+    expect(projectButton).toBeVisible();
+    expect(projectButton).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('tablist', { name: 'Sections du projet' })).toBeInTheDocument();
     expect(screen.getAllByRole('tab').map((tab) => tab.getAttribute('aria-label'))).toEqual([
       'Identité',
@@ -675,7 +686,7 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('tab', { name: 'Facturation' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByLabelText('Inclure les frais et leurs pièces dans l’export')).toBeInTheDocument();
     expect(screen.getByLabelText('Inclure les prestations BBTM')).toBeInTheDocument();
-    expect(within(screen.getByText('Prestation BBTM').closest('article')!).queryAllByRole('checkbox')).toHaveLength(0);
+    expect(within(screen.getByRole('button', { name: /^Prestations BBTM/ }).closest('article')!).queryAllByRole('checkbox')).toHaveLength(0);
     expect(within(screen.getByRole('group', { name: 'Contenu du PDF' })).getAllByRole('checkbox')).toHaveLength(4);
     expect(screen.getByLabelText('Inclure la saisie brute')).toBeInTheDocument();
     expect(screen.queryByLabelText('Inclure cette prestation dans le PDF')).not.toBeInTheDocument();
@@ -703,7 +714,7 @@ describe('ProjectsPage', () => {
     });
   });
 
-  it('preserves billing drafts between workspaces and keeps export options together', async () => {
+  it('preserves billing drafts when independently folding sections and keeps export options together', async () => {
     const user = userEvent.setup();
     const { client } = createClient({
       project_billing_periods: { data: [{ id: 501, project_id: 880, period_month: '2026-07-01', invoice_number: 'F-2026-07', include_operations_in_pdf: true, include_expenses_in_pdf: true, include_bbtm_in_pdf: true }], error: null },
@@ -712,9 +723,10 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} roles={['direction']} />);
     await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
     await user.click(screen.getByRole('tab', { name: 'Facturation' }));
-    expect(screen.getByRole('button', { name: /^Loyers & DPR/ })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.queryByRole('button', { name: 'Ajouter un frais' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^Suivi & pièces/ }));
+    expect(screen.getByRole('button', { name: /^Loyers d’affrètement/ })).toHaveAttribute('aria-expanded', 'true');
+    const expenseSection = within(screen.getByRole('button', { name: /^Services refacturables/ }).closest('article')!);
+    expect(expenseSection.getByRole('button', { name: 'Ajouter' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^Suivi de la facture et pièces/ }));
     await waitFor(() => expect(screen.getByLabelText('Numéro de facture')).toHaveValue('F-2026-07'));
     await user.clear(screen.getByLabelText('Numéro de facture'));
     await user.type(screen.getByLabelText('Numéro de facture'), 'F-2026-07-CORR');
@@ -728,9 +740,14 @@ describe('ProjectsPage', () => {
     await user.clear(within(exportPanel).getByLabelText('Référence client'));
     await user.type(within(exportPanel).getByLabelText('Référence client'), 'COMMANDE-007');
     await user.selectOptions(within(exportPanel).getByLabelText('Fichier'), 'zip');
-    await user.click(screen.getByRole('button', { name: /^Frais refacturables/ }));
-    expect(screen.getByRole('button', { name: 'Ajouter un frais' })).toBeEnabled();
-    await user.click(screen.getByRole('button', { name: /^Suivi & pièces/ }));
+    await user.click(screen.getByRole('button', { name: /^Prestations BBTM/ }));
+    expect(screen.getByRole('button', { name: /^Prestations BBTM/ })).toHaveAttribute('aria-expanded', 'false');
+    await user.click(screen.getByRole('button', { name: /^Services refacturables/ }));
+    expect(expenseSection.getByRole('button', { name: 'Ajouter' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^Suivi de la facture et pièces/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByLabelText('Numéro de facture')).toHaveValue('F-2026-07-CORR');
+    await user.click(screen.getByRole('button', { name: /^Suivi de la facture et pièces/ }));
+    await user.click(screen.getByRole('button', { name: /^Suivi de la facture et pièces/ }));
     expect(screen.getByLabelText('Numéro de facture')).toHaveValue('F-2026-07-CORR');
     await user.click(screen.getByRole('button', { name: /^Prestations BBTM/ }));
     expect(screen.getByLabelText('Nombre d’unités')).toHaveValue(7);
@@ -751,6 +768,7 @@ describe('ProjectsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Liste des projets' }));
     expect(screen.getByRole('searchbox', { name: 'Rechercher un contrat' })).toHaveValue('Atlantique');
     expect(screen.queryByRole('button', { name: /P1087 Campagne Manche/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Campagne Manche 2026' })).toBeVisible();
   });
 
   it('searches suppliers by specialty and opens the Supabase company dialog', async () => {
@@ -799,8 +817,9 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} roles={['direction']} />);
     await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
     await user.click(screen.getByRole('tab', { name: 'Facturation' }));
-    await user.click(screen.getByRole('button', { name: /^Frais refacturables/ }));
-    const addExpenseButton = await screen.findByRole('button', { name: 'Ajouter un frais' });
+    await user.click(screen.getByRole('button', { name: /^Services refacturables/ }));
+    const expenseSection = within(screen.getByRole('button', { name: /^Services refacturables/ }).closest('article')!);
+    const addExpenseButton = expenseSection.getByRole('button', { name: 'Ajouter' });
     await waitFor(() => expect(addExpenseButton).toBeEnabled());
     await user.click(addExpenseButton);
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectBillingPanel } from './ProjectBillingPanel';
@@ -39,6 +39,29 @@ function renderPanel(projectRecord = project, workspace = false) {
 }
 
 describe('P144 Spread Antipollution monthly rule', () => {
+  it('selects a custom range in the permanent calendar while retaining the whole-month P144 quantity', async () => {
+    const user = userEvent.setup();
+    renderPanel(project, true);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Prévisualiser le PDF' })).toBeEnabled());
+    const calendar = screen.getByRole('region', { name: 'Calendrier de facturation' });
+    expect(within(calendar).getAllByRole('button', { pressed: true })).toHaveLength(30);
+    expect(within(calendar).getByRole('heading', { name: 'août 2026' })).toBeVisible();
+    expect(within(calendar).getByRole('heading', { name: 'octobre 2026' })).toBeVisible();
+    expect(screen.queryByLabelText('Période')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Début')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Fin')).not.toBeInTheDocument();
+    await user.click(within(calendar).getByRole('button', { name: 'mardi 15 septembre 2026' }));
+    await waitFor(() => expect(within(calendar).getByRole('button', { name: 'dimanche 20 septembre 2026' })).toBeEnabled());
+    await user.click(within(calendar).getByRole('button', { name: 'dimanche 20 septembre 2026' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Prévisualiser le PDF' })).toBeEnabled());
+    expect(within(calendar).getAllByRole('button', { pressed: true })).toHaveLength(6);
+    await user.click(screen.getByRole('button', { name: 'Prévisualiser le PDF' }));
+    await waitFor(() => expect(mocks.export).toHaveBeenCalledWith({}, expect.objectContaining({
+      startDate: '2026-09-15', endDate: '2026-09-20',
+      services: [expect.objectContaining({ quantity: 29, unitAmountHt: 92.58 })], monthlyDprs: dprs,
+    }), [], 'pdf'));
+    expect(mocks.export.mock.calls[0][1].dprs).toHaveLength(6);
+  });
   it('recalculates an existing 28-unit line to 29, including a missing DPR day and excluded weather rent', async () => {
     renderPanel(project, true);
     await waitFor(() => expect(screen.getByLabelText('Nombre d’unités')).toHaveValue(29));

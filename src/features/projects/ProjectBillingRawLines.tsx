@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { PackageCheck, Plus, Save, Trash2 } from 'lucide-react';
+import { Copy, PackageCheck, Pencil, Plus, Save, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { billingRawLineTotal } from './projectBilling';
@@ -13,6 +13,8 @@ interface ProjectBillingRawLinesProps {
   vessels?: VesselRecord[];
   isManager: boolean;
   disabled?: boolean;
+  showHeading?: boolean;
+  initializeBlankOnOpen?: boolean;
   initialDate: string;
   onSave: (draft: BillingRawLineDraft, id?: number) => Promise<ProjectBillingRawLine>;
   onDelete: (id: number) => Promise<void>;
@@ -37,6 +39,14 @@ interface RawLineRow {
 }
 
 const euros = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
+
+function blankValues(initialDate: string): RawLineValues {
+  return {
+    serviceCatalogId: null, serviceDate: initialDate, designation: '',
+    vesselId: null, vesselName: '',
+    unitAmountHt: '0', quantity: '1', includeInPdf: true,
+  };
+}
 
 function draftFromLine(line: ProjectBillingRawLine): BillingRawLineDraft {
   return {
@@ -87,7 +97,7 @@ function totalForValues(values: RawLineValues): number {
   return billingRawLineTotal({ unitAmountHt, quantity });
 }
 
-export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager, disabled = false, initialDate, onSave, onDelete, onCatalogOpen, onCatalogCreate, onDirtyChange }: ProjectBillingRawLinesProps) {
+export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager, disabled = false, showHeading = true, initializeBlankOnOpen = false, initialDate, onSave, onDelete, onCatalogOpen, onCatalogCreate, onDirtyChange }: ProjectBillingRawLinesProps) {
   const [rows, setRows] = useState<RawLineRow[]>(() => lines.map(rowFromLine));
   const [catalogRowKey, setCatalogRowKey] = useState<string | null>(null);
   const [catalogQuery, setCatalogQuery] = useState('');
@@ -98,7 +108,9 @@ export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager
   const catalogCreatePending = useRef(false);
   const catalogSearchRef = useRef<HTMLInputElement>(null);
   const catalogDesignationRef = useRef<HTMLInputElement>(null);
+  const designationRefs = useRef(new Map<string, HTMLInputElement>());
   const nextKey = useRef(0);
+  const initializedBlankOnOpen = useRef(false);
   const deletedIds = useRef(new Set<number>());
   const dirty = rows.some(isDirty);
   const total = rows.reduce((sum, row) => sum + totalForValues(row.values), 0);
@@ -149,6 +161,15 @@ export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager
     });
   }, [lines]);
 
+  useEffect(() => {
+    if (!initializeBlankOnOpen || initializedBlankOnOpen.current || !isManager || disabled) return;
+    initializedBlankOnOpen.current = true;
+    if (rows.length || lines.length) return;
+    nextKey.current += 1;
+    const row: RawLineRow = { key: `new-${nextKey.current}`, values: blankValues(initialDate) };
+    setRows((current) => current.length ? current : [row]);
+  }, [initializeBlankOnOpen, isManager, disabled, rows.length, lines.length, initialDate]);
+
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => {
     if (!catalogRowKey) return;
@@ -163,13 +184,18 @@ export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager
   }
 
   function addRow() {
+    if (!isManager || disabled || catalogSaving) return;
     nextKey.current += 1;
-    const values: RawLineValues = {
-      serviceCatalogId: null, serviceDate: initialDate, designation: '',
-      vesselId: null, vesselName: '',
-      unitAmountHt: '0', quantity: '1', includeInPdf: true,
-    };
+    const values = blankValues(initialDate);
     setRows((current) => [...current, { key: `new-${nextKey.current}`, values }]);
+  }
+
+  function duplicateLastRow() {
+    const source = rows.at(-1);
+    if (!isManager || disabled || catalogSaving || !source || source.pending) return;
+    nextKey.current += 1;
+    const duplicate: RawLineRow = { key: `new-${nextKey.current}`, values: { ...source.values } };
+    setRows((current) => [...current, duplicate]);
   }
 
   function selectCatalog(entry: ProjectServiceCatalogEntry) {
@@ -265,19 +291,24 @@ export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager
   }
 
   return <section className="project-billing-raw-lines" aria-label="Saisie brute">
-    <div className="project-billing-raw-heading">
-      <div><strong>Saisie brute</strong><p>Choisissez une prestation du catalogue ou saisissez votre ligne librement.</p></div>
+    {showHeading ? <div className="project-billing-raw-heading">
+      <strong>Saisie brute</strong>
       {isManager ? <div className="project-billing-raw-toolbar">
-        <button className="sp-button sp-button--secondary" disabled={disabled || catalogSaving} onClick={onCatalogOpen} type="button"><PackageCheck aria-hidden="true" size={16} /> Catalogue de prestations</button>
+        <button className="sp-button sp-button--secondary" disabled={disabled || catalogSaving} onClick={onCatalogOpen} type="button"><PackageCheck aria-hidden="true" size={16} /> Catalogue des prestations</button>
       </div> : null}
-    </div>
+      <p>Choisissez une prestation du catalogue ou saisissez votre ligne librement.</p>
+    </div> : null}
     <div className="project-billing-raw-scroll" role="region" aria-label="Tableau de saisie brute" tabIndex={0}>
       <table className="project-billing-raw-table">
-        <thead><tr><th scope="col">Date</th><th scope="col">Navire</th><th scope="col">Désignation</th><th scope="col">Prix unitaire HT</th><th scope="col">Quantité</th><th scope="col">Prix Total HT</th><th scope="col">Actions</th></tr></thead>
+        <thead><tr><th scope="col">Actions</th><th scope="col">Date</th><th scope="col">Navire</th><th scope="col">Désignation</th><th scope="col">Prix unitaire HT</th><th scope="col">Quantité</th><th scope="col">Prix Total HT</th><th scope="col">Enregistrement</th></tr></thead>
         <tbody>{rows.map((row, index) => {
           const number = index + 1;
           const locked = !isManager || disabled || Boolean(row.pending) || catalogSaving;
           return <tr key={row.key}>
+            <td>{isManager ? <div className="project-billing-raw-row-buttons">
+              <button aria-label={`Supprimer la ligne ${number}`} className="sp-button sp-button--secondary project-billing-raw-icon-button" disabled={locked} onClick={() => void deleteRow(row)} title="Supprimer la ligne" type="button"><Trash2 aria-hidden="true" size={15} /></button>
+              <button aria-label={`Modifier la ligne ${number}`} className="sp-button sp-button--secondary project-billing-raw-icon-button" disabled={locked} onClick={() => designationRefs.current.get(row.key)?.focus()} title="Modifier la ligne" type="button"><Pencil aria-hidden="true" size={15} /></button>
+            </div> : null}</td>
             <td><input aria-label={`Date, ligne ${number}`} disabled={locked} onChange={(event) => updateRow(row.key, { serviceDate: event.target.value })} required type="date" value={row.values.serviceDate} /></td>
             <td><select aria-label={`Navire, ligne ${number}`} disabled={locked} onChange={(event) => updateRow(row.key, vesselChoice(event.target.value, row.values.vesselName))} value={row.values.vesselId ?? ''}>
               <option value="">Sans navire</option>
@@ -287,7 +318,7 @@ export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager
             <td className="project-billing-raw-designation">
               <div className="project-billing-raw-designation-input">
                 <button aria-label={`Choisir dans le catalogue, ligne ${number}`} aria-haspopup="dialog" aria-expanded={catalogRowKey === row.key} className="sp-button sp-button--secondary project-billing-raw-catalog-button" disabled={locked} onClick={() => { setCatalogQuery(''); setCatalogMode('pick'); setCatalogRowKey(row.key); }} title="Choisir dans le catalogue" type="button"><Plus aria-hidden="true" size={17} /></button>
-                <input aria-label={`Désignation, ligne ${number}`} disabled={locked} maxLength={120} onChange={(event) => updateRow(row.key, { designation: event.target.value, serviceCatalogId: null })} placeholder="Désignation libre" required type="text" value={row.values.designation} />
+                <input aria-label={`Désignation, ligne ${number}`} disabled={locked} maxLength={120} onChange={(event) => updateRow(row.key, { designation: event.target.value, serviceCatalogId: null })} placeholder="Désignation libre" ref={(input) => { if (input) designationRefs.current.set(row.key, input); else designationRefs.current.delete(row.key); }} required type="text" value={row.values.designation} />
               </div>
             </td>
             <td><input aria-label={`Prix unitaire HT, ligne ${number}`} disabled={locked} inputMode="decimal" min="0" onChange={(event) => updateRow(row.key, { unitAmountHt: event.target.value })} required step="0.01" type="number" value={row.values.unitAmountHt} /></td>
@@ -296,18 +327,18 @@ export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager
             <td><div className="project-billing-raw-actions">
               {isManager ? <div className="project-billing-raw-row-buttons">
                 <button aria-label={`Enregistrer la ligne ${number}`} className="sp-button sp-button--secondary" disabled={locked || !isDirty(row)} onClick={() => void saveRow(row)} type="button"><Save aria-hidden="true" size={15} />{row.pending === 'save' ? 'Enregistrement…' : 'Enregistrer'}</button>
-                <button aria-label={`Supprimer la ligne ${number}`} className="sp-button sp-button--secondary" disabled={locked} onClick={() => void deleteRow(row)} type="button"><Trash2 aria-hidden="true" size={15} /></button>
               </div> : null}
               {row.pending === 'delete' ? <small role="status">Suppression…</small> : null}
               {isDirty(row) && !row.pending ? <small>Non enregistrée</small> : null}
               {row.error ? <p className="project-billing-raw-error" role="alert">{row.error}</p> : null}
             </div></td>
           </tr>;
-        })}{!rows.length ? <tr><td className="project-billing-raw-empty" colSpan={7}>Aucune ligne de saisie brute pour cette période.</td></tr> : null}</tbody>
+        })}{!rows.length ? <tr><td className="project-billing-raw-empty" colSpan={8}>Aucune ligne de saisie brute pour cette période.</td></tr> : null}</tbody>
       </table>
     </div>
     {isManager ? <div className="project-billing-raw-add">
       <button className="sp-button sp-button--primary" disabled={disabled || catalogSaving} onClick={addRow} type="button"><Plus aria-hidden="true" size={16} /> Ajouter une ligne</button>
+      <button className="sp-button sp-button--secondary" disabled={disabled || catalogSaving || !rows.length || Boolean(rows.at(-1)?.pending)} onClick={duplicateLastRow} type="button"><Copy aria-hidden="true" size={16} /> Dupliquer la ligne</button>
     </div> : null}
     <div className="project-billing-raw-summary"><span>Total des lignes HT{dirty ? ' · modifications à enregistrer' : ''}</span><strong>{euros.format(total)}</strong></div>
     {catalogRow ? <div onKeyDown={(event) => { if (event.key === 'Escape' || event.key === 'Tab') event.stopPropagation(); }} onSubmit={(event) => event.stopPropagation()}>
