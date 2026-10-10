@@ -757,6 +757,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
   const [filters, setFilters] = useState<HrFilterState>(EMPTY_FILTERS);
   const [form, setForm] = useState<PersonFormState>(EMPTY_FORM);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isBulkSheetOpen, setIsBulkSheetOpen] = useState(false);
   // undefined follows the connected person's default; null is an explicit close.
   const [selectedPersonId, setSelectedPersonId] = useState<number | null | undefined>(initialPersonId);
   const [documentCreationPersonId, setDocumentCreationPersonId] = useState<number | null>(null);
@@ -1448,6 +1449,11 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
           </div>
           <span className={isManager ? 'hr-mode-write' : 'hr-mode-read'}>{isManager ? 'Modification' : 'Lecture seule'}</span>
         </div>
+        <div className="sp-toolbar">
+          <button className="sp-button sp-button--secondary" disabled={!visiblePeople.length} onClick={() => setIsBulkSheetOpen(true)} type="button">
+            <FileDown aria-hidden="true" size={18} /> Exporter les fiches
+          </button>
+        </div>
         <div className="hr-filter-panel">
           <label className="hr-search-field">
             <span className="hr-visually-hidden">Recherche</span>
@@ -1628,6 +1634,16 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
           visibleSectionKeys={visibleSectionKeys}
         />
       </div>
+
+      {isBulkSheetOpen && !isMarinView && visiblePeople.length ? (
+        <CollaboratorSheetDialog
+          documents={roleVisibleDocuments}
+          onClose={() => setIsBulkSheetOpen(false)}
+          people={visiblePeople}
+          person={visiblePeople[0]}
+          visibleSectionKeys={visibleSectionKeys}
+        />
+      ) : null}
 
       {isCreateOpen ? (
         <CreatePersonDialog

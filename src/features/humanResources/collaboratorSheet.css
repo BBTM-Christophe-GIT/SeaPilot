@@ -18,6 +18,8 @@
 .hr-sheet-dialog .app-dialog__footer .sp-button--primary:hover:not(:disabled) { background: var(--sp-primary-hover); }
 .hr-sheet-dialog .sp-button:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 3px; }
 .hr-sheet-dialog .sp-button:disabled { opacity: .55; cursor: not-allowed; }
+.hr-sheet-dialog--bulk .app-dialog__actions { display: flex; flex-wrap: nowrap; gap: var(--sp-space-2); overflow-x: auto; }
+.hr-sheet-dialog--bulk .app-dialog__actions .sp-button { flex: 0 0 auto; white-space: nowrap; }
 
 .hr-sheet-toolbar {
   display: flex;
@@ -60,11 +62,39 @@
 .hr-sheet-table-scroll th { background: var(--sp-primary-soft); color: var(--sp-heading); }
 .hr-sheet-empty, .hr-sheet-feedback { color: var(--sp-muted); line-height: 1.5; }
 
+.hr-sheet-bulk { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--sp-space-4); margin-bottom: var(--sp-space-4); }
+.hr-sheet-bulk .hr-sheet-toolbar > div { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; }
+.hr-sheet-bulk .hr-sheet-toolbar .sp-button { flex: 0 0 auto; white-space: nowrap; }
+.hr-sheet-people .hr-sheet-search, .hr-sheet-preview { display: grid; gap: var(--sp-space-2); color: var(--sp-text); font-weight: 600; }
+.hr-sheet-search input, .hr-sheet-preview select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--sp-control-height);
+  padding: var(--sp-space-2) var(--sp-space-3);
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  font: inherit;
+  font-weight: 400;
+}
+.hr-sheet-preview { grid-column: 1 / -1; grid-template-columns: auto minmax(0, 1fr); align-items: center; }
+.hr-sheet-preview select:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 3px; }
+.hr-sheet-people-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-space-2); max-height: 240px; overflow-y: auto; margin-top: var(--sp-space-3); }
+.hr-sheet-people-list label, .hr-sheet-export-mode label { min-height: var(--sp-control-height); padding: var(--sp-space-2) 0; }
+.hr-sheet-people-list strong, .hr-sheet-export-mode strong { display: block; font-weight: 600; }
+.hr-sheet-people-list small, .hr-sheet-export-mode small { display: block; margin-top: var(--sp-space-1); color: var(--sp-muted); line-height: 1.5; }
+.hr-sheet-export-mode input[type="radio"] { width: 18px; height: 18px; flex: 0 0 18px; margin: 2px 0 0; accent-color: var(--sp-primary); }
+
 @media (max-width: 720px) {
   .hr-sheet-sections, .hr-sheet-fields { grid-template-columns: minmax(0, 1fr); }
   .hr-sheet-toolbar > div { width: 100%; }
+  .hr-sheet-bulk, .hr-sheet-people-list, .hr-sheet-preview { grid-template-columns: minmax(0, 1fr); }
+  .hr-sheet-dialog--bulk .app-dialog__actions { justify-content: flex-start; }
 }
 
 @media (pointer: coarse) {
   .hr-sheet-section label, .hr-sheet-dialog .sp-button { min-height: 44px; }
+  .hr-sheet-search input, .hr-sheet-preview select { min-height: 44px; }
 }

@@ -43,7 +43,27 @@ Toutes les informations accessibles sont sélectionnées à l'ouverture. Les lis
 
 La section **Signature** est exclue des choix et du PDF. L'export réutilise les documents du collaborateur et les sections déjà autorisées au profil connecté, sans lecture supplémentaire ni modification des données. Les détails médicaux sont limités à la section **Santé et habilitations** ; la liste générale des documents ne les réintroduit pas lorsqu'ils sont décochés. La suppression d'une personne reste réservée à l'Administrateur.
 
-Aucune migration, dépendance ou variable d'environnement supplémentaire n'est nécessaire. Les tests couvrent la sélection, les listes, les exports longs, les erreurs de génération et les fixtures propres aux profils Marin et Capitaine.
+### Export de plusieurs collaborateurs
+
+Le bouton **Exporter les fiches**, au-dessus de la liste RH, permet de cocher
+plusieurs collaborateurs parmi ceux affichés par les filtres et autorisés au
+profil connecté. Il propose deux formats au choix : **Fiches séparées (ZIP)**,
+avec un PDF par personne dans une seule archive, ou **Fiches regroupées (PDF)**,
+avec une nouvelle page au début de chaque fiche. Les personnes sont identifiées
+sur leurs pages ; les homonymes conservent des noms de fichiers distincts.
+
+Les choix de sections et d'informations s'appliquent à toutes les fiches. Le
+sélecteur d'aperçu permet de consulter les valeurs d'un collaborateur sélectionné
+sans changer les informations choisies. Aucun fichier n'est généré si aucune
+personne ou aucune information n'est sélectionnée. La génération bloque une
+seconde soumission et laisse les choix disponibles après une erreur.
+
+Cet export utilise les mêmes personnes, documents et sections déjà chargés et
+autorisés que la fiche individuelle, sans lecture supplémentaire ni écriture RH.
+Le profil Marin conserve son export individuel ; le profil Capitaine sélectionne
+uniquement les collaborateurs que son compte réel peut consulter.
+
+Aucune migration, dépendance ou variable d'environnement supplémentaire n'est nécessaire. Les tests couvrent la sélection, les deux formats, les homonymes, les listes, les exports longs, les erreurs de génération et les fixtures propres aux profils Marin et Capitaine.
 
 ## Déploiement
 
