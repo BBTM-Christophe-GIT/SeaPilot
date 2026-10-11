@@ -1316,8 +1316,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   }],
   working_time_day_approvals: [],
   working_time_profile_signatures: [
-    { id: 9831, person_id: 9301, version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', mime_type: 'image/png', file_size_bytes: 12480, sha256: 'a'.repeat(64), valid_from: '2026-01-01T00:00:00Z', valid_to: null, created_at: '2026-01-01T00:00:00Z' },
-    { id: 9832, person_id: 9304, version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9304/preview.png', mime_type: 'image/png', file_size_bytes: 10960, sha256: 'b'.repeat(64), valid_from: '2026-01-01T00:00:00Z', valid_to: null, created_at: '2026-01-01T00:00:00Z' },
+    { id: 9831, company_id: 1, person_id: 9301, version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9301/preview.png', mime_type: 'image/png', file_size_bytes: 12480, sha256: 'a'.repeat(64), valid_from: '2026-01-01T00:00:00Z', valid_to: null, created_at: '2026-01-01T00:00:00Z' },
+    { id: 9832, company_id: 1, person_id: 9304, version_number: 1, storage_bucket: 'working-time-signatures', storage_path: '1/9304/preview.png', mime_type: 'image/png', file_size_bytes: 10960, sha256: 'b'.repeat(64), valid_from: '2026-01-01T00:00:00Z', valid_to: null, created_at: '2026-01-01T00:00:00Z' },
   ],
   working_time_validations: [{
     id: 9841, register_id: 9802, event_type: 'sailor_signed', previous_status: 'awaiting_sailor_signature', new_status: 'submitted',

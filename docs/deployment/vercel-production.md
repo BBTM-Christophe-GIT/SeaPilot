@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.71.15`, build `2026-10-11.002`, corrige les registres mensuels
+travail/repos : une seule case Capitaine / Valideur pour le titulaire Capitaine,
+dernière signature de profil rechargée à l'export et titre du tableau dégagé.
+La migration de lecture accélère septembre avec les mêmes périmètres Marin et
+Capitaine. Voir [la correction des registres](./working-time-monthly-register-fixes.md)
+pour la migration appliquée, les contrôles des droits et les mesures serveur.
+
 Version `3.71.14`, build `2026-10-10.007`, présente Brevets et visites médicales
 en arborescence dans l'aperçu et le PDF : catégorie au rang 1, documents en
 retrait au rang 2, classés par catégorie puis nom complet affiché. Les champs
