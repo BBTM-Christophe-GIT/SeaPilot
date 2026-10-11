@@ -24,19 +24,21 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
   const pdf = new jsPDF({ compress: true, orientation: 'landscape', unit: 'pt', format: 'a4' });
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 24;
+  const margin = 17;
   const width = pageWidth - margin * 2;
-  const blue = [21, 96, 130] as const;
-  const ink = [26, 37, 55] as const;
+  const blue = [7, 39, 78] as const;
+  const ink = [35, 67, 106] as const;
+  const pale = [241, 246, 250] as const;
+  const border = [175, 202, 224] as const;
+  const grid = [218, 230, 240] as const;
   const white = [255, 255, 255] as const;
-  const columnGap = 16;
+  const columnGap = 11;
   const halfWidth = (width - columnGap) / 2;
   const rightX = margin + halfWidth + columnGap;
   const hasRightColumn = content.expenseRows !== null || content.serviceRows !== null;
   const showSectionSubtotals = content.totals.filter((total) => !total.final).length > 1;
   const setColor = (method: 'setFillColor' | 'setTextColor', color: readonly [number, number, number]) => {
-    // jsPDF rounds numeric fill and text channels differently. Decimal strings
-    // preserve the requested blue consistently without changing other colors.
+    // Use the same exact navy for text and filled shapes.
     const channels = color === blue ? color.map((channel) => (channel / 255).toFixed(8)) : color;
     Reflect.apply(pdf[method], pdf, channels);
   };
@@ -57,10 +59,10 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
     pdf.text(line, x, top + size + index * size * 1.2, { align });
   });
   const operationColumns: Column[] = [
-    { label: 'Date', ratio: 0.15 },
-    { label: 'Opération', ratio: content.includeOperationAmounts ? 0.26 : 0.36 },
-    ...(content.includeOperationAmounts ? [{ label: 'Montant HT', ratio: 0.20, align: 'right' as const }] : []),
-    { label: 'Commentaires', ratio: content.includeOperationAmounts ? 0.39 : 0.49 },
+    { label: 'Date', ratio: 0.16 },
+    { label: 'Opération', ratio: content.includeOperationAmounts ? 0.31 : 0.40 },
+    ...(content.includeOperationAmounts ? [{ label: 'Montant HT', ratio: 0.185, align: 'right' as const }] : []),
+    { label: 'Commentaires', ratio: content.includeOperationAmounts ? 0.345 : 0.44 },
   ];
   const expenseColumns: Column[] = [
     { label: 'Société', ratio: 0.36 },
@@ -102,17 +104,17 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
     { label: 'Prix Total HT', ratio: 0.15, align: 'right' },
   ];
   const measureTotal = (
-    total: BillingPdfContent['totals'][number], blockWidth: number, scale: number, final = false,
+    total: BillingPdfContent['totals'][number], blockWidth: number, scale: number, final = false, summary = false,
   ) => {
-    const padding = (final ? 8 : 4.5) * scale;
-    const labelSize = (final ? 10 : 8.5) * scale;
-    const amountSize = (final ? 12 : 9.5) * scale;
+    const padding = (summary ? 3 : final ? 11 : 7) * scale;
+    const labelSize = (summary ? 10 : final ? 13 : 10.5) * scale;
+    const amountSize = (summary ? 11.5 : final ? 16 : 12) * scale;
     const label = final ? total.label : 'Sous-total ' + total.label + ' HT';
-    const labels = wrap(label, blockWidth * 0.60 - padding * 2, labelSize, true);
-    const amounts = total.amounts.map((amount) => wrap(amount, blockWidth * 0.40 - padding * 2, amountSize, true));
+    const labels = wrap(label, blockWidth * 0.64 - padding * 2, labelSize, !summary);
+    const amounts = total.amounts.map((amount) => wrap(amount, blockWidth * 0.36 - padding * 2, amountSize, true));
     return {
-      labels, amounts, final, width: blockWidth, padding, labelSize, amountSize,
-      height: padding * 2 + Math.max(
+      labels, amounts, final, summary, width: blockWidth, padding, labelSize, amountSize,
+      height: padding * 2 + (final ? 12 * scale : 0) + Math.max(
         labels.length * labelSize * 1.2,
         amounts.reduce((sum, lines) => sum + lines.length * amountSize * 1.2, 0),
       ),
@@ -125,11 +127,13 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
     return total ? measureTotal(total, sectionWidth, scale) : null;
   };
   const measureTable = (title: string, rows: string[][], columns: Column[], tableWidth: number, scale: number) => {
-    const padding = 3.5 * scale;
-    const bodySize = 9 * scale;
-    const headerSize = 8.3 * scale;
-    const titleSize = 11.5 * scale;
-    const titleHeight = title ? titleSize * 1.2 + 5 * scale : 0;
+    const padding = 7 * scale;
+    const bodySize = 9.2 * scale;
+    const headerSize = 8 * scale;
+    const titleSize = 17 * scale;
+    const inset = title ? 11 * scale : 0;
+    const titleHeight = title ? 43 * scale : 0;
+    tableWidth -= inset * 2;
     const widths = columns.map((column) => column.ratio * tableWidth);
     const headers = columns.map((column, index) => wrap(column.label, widths[index] - padding * 2, headerSize, true));
     const headerHeight = Math.max(...headers.map((lines) => lines.length)) * headerSize * 1.2 + padding * 2;
@@ -139,52 +143,56 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
     });
     const subtotal = title ? measureSectionTotal(title, tableWidth, scale) : null;
     return {
-      title, columns, widths, headers, measuredRows, padding, bodySize, headerSize, titleSize,
+      title, columns, widths, headers, measuredRows, padding, bodySize, headerSize, titleSize, inset,
       titleHeight, headerHeight, subtotal,
       height: titleHeight + headerHeight + measuredRows.reduce((sum, row) => sum + row.height, 0)
-        + (subtotal?.height || 0),
+        + (subtotal?.height || 0) + inset,
       width: tableWidth,
     };
   };
   const measureExpenses = (scale: number) => {
-    const padding = 3.5 * scale;
-    const titleSize = 11.5 * scale;
-    const titleHeight = titleSize * 1.2 + 5 * scale;
-    const specialtySize = 10 * scale;
-    const groupGap = 5 * scale;
+    const padding = 7 * scale;
+    const inset = 11 * scale;
+    const innerWidth = halfWidth - inset * 2;
+    const titleSize = 17 * scale;
+    const titleHeight = 43 * scale;
+    const specialtySize = 12 * scale;
+    const groupGap = 11 * scale;
     const groups = orderedExpenseGroups.map(({ specialty, suppliers }) => {
-      const lines = wrap(specialty, halfWidth - padding * 2, specialtySize, true);
-      const headingHeight = lines.length * specialtySize * 1.2 + padding * 2;
+      const lines = wrap(specialty, innerWidth, specialtySize, true);
+      const headingHeight = lines.length * specialtySize * 1.2 + 7 * scale;
       const invoices = suppliers.flatMap(([supplier, rows]) => rows.map((invoice) => [supplier, ...invoice]));
-      const table = measureTable('', invoices, expenseColumns, halfWidth, scale);
+      const table = measureTable('', invoices, expenseColumns, innerWidth, scale);
       return { lines, headingHeight, table, height: headingHeight + table.height };
     });
     // Preserve the empty expense section and its invoice column headings.
-    const emptyTable = groups.length ? null : measureTable('', [], expenseColumns, halfWidth, scale);
-    const subtotal = measureSectionTotal('Frais imputables', halfWidth, scale);
+    const emptyTable = groups.length ? null : measureTable('', [], expenseColumns, innerWidth, scale);
+    const subtotal = measureSectionTotal('Frais imputables', innerWidth, scale);
     return {
-      titleSize, titleHeight, padding, specialtySize, groupGap, groups, emptyTable, subtotal,
+      titleSize, titleHeight, padding, specialtySize, groupGap, groups, emptyTable, subtotal, inset, innerWidth,
       height: titleHeight + groups.reduce((sum, group) => sum + group.height, 0)
-        + Math.max(0, groups.length - 1) * groupGap + (emptyTable?.height || 0) + (subtotal?.height || 0),
+        + Math.max(0, groups.length - 1) * groupGap + (emptyTable?.height || 0) + (subtotal?.height || 0) + inset,
     };
   };
   const measure = (scale: number) => {
     const gap = 12 * scale;
+    const documentTitleSize = 27 * scale;
     const projectSize = 12 * scale;
-    const metaSize = 9.5 * scale;
-    const monthSize = 11 * scale;
-    const leftMetaWidth = width * 0.60 - columnGap;
-    const rightMetaWidth = width * 0.40;
-    const project = wrap(content.projectLabel, leftMetaWidth, projectSize, true);
-    const period = wrap(content.periodLabel, leftMetaWidth, metaSize);
+    const metaSize = 11.5 * scale;
+    const monthSize = 23 * scale;
+    const leftMetaWidth = width * 0.70 - 85 * scale - columnGap;
+    const rightMetaWidth = width * 0.30 - 20 * scale;
+    const documentHeading = wrap('Éléments de facturation', leftMetaWidth, documentTitleSize, true);
+    const project = wrap(content.projectLabel, leftMetaWidth, projectSize);
+    const period = wrap(content.periodLabel, rightMetaWidth, metaSize);
     const month = wrap(content.monthLabel, rightMetaWidth, monthSize, true);
     const reference = wrap('Référence client : ' + content.clientReference, rightMetaWidth, metaSize);
     const vessel = content.vesselName === null ? [] : wrap('Navire : ' + content.vesselName, rightMetaWidth, metaSize);
-    const metadataTop = 68 + gap;
-    const leftHeight = project.length * projectSize * 1.2 + 4 * scale + period.length * metaSize * 1.2;
-    const rightHeight = month.length * monthSize * 1.2 + 4 * scale
-      + (reference.length + vessel.length) * metaSize * 1.2 + (vessel.length ? 4 * scale : 0);
-    const tablesTop = metadataTop + Math.max(leftHeight, rightHeight) + gap;
+    const metadataTop = margin + 1;
+    const leftHeight = documentHeading.length * documentTitleSize * 1.2 + project.length * projectSize * 1.2 + 4 * scale;
+    const rightHeight = month.length * monthSize * 1.2 + 8 * scale
+      + (period.length + reference.length + vessel.length) * metaSize * 1.2 + (vessel.length ? 4 * scale : 0);
+    const tablesTop = metadataTop + Math.max(leftHeight, rightHeight, 71 * scale) + gap;
     const operations = content.operationRows === null ? null
       : measureTable("Loyers d'Affrètement", content.operationRows, operationColumns, hasRightColumn ? halfWidth : width, scale);
     const expenses = content.expenseRows === null ? null
@@ -200,14 +208,19 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
     const raw = content.rawRows.length ? measureTable('Détail des Opérations', content.rawRows, rawColumns, width, scale) : null;
     const rawTop = columnBottom + columnGapAfter;
     const totalsTop = raw ? rawTop + raw.height + gap : columnBottom + columnGapAfter;
+    const summaryInset = 11 * scale;
+    const summaryWidth = halfWidth - summaryInset * 2;
+    const summary = showSectionSubtotals ? content.totals.filter((total) => !total.final)
+      .map((total) => measureTotal(total, summaryWidth, scale, false, true)) : [];
     const totals = content.totals.filter((total) => total.final)
-      .map((total) => measureTotal(total, width, scale, true));
-    const totalsHeight = totals.reduce((sum, total) => sum + total.height, 0)
+      .map((total) => measureTotal(total, summaryWidth, scale, true));
+    const totalsHeight = summaryInset * 2 + summary.reduce((sum, total) => sum + total.height, 0)
+      + (summary.length ? 10 * scale : 0) + totals.reduce((sum, total) => sum + total.height, 0)
       + Math.max(0, totals.length - 1) * gap;
     return {
-      scale, gap, projectSize, metaSize, monthSize, project, period, month, reference, vessel,
+      scale, gap, documentTitleSize, documentHeading, projectSize, metaSize, monthSize, project, period, month, reference, vessel,
       metadataTop, operations, expenses, services, tablesTop, servicesTop, raw, rawTop,
-      totals, totalsTop, totalsHeight, bottom: totalsTop + totalsHeight,
+      summary, summaryInset, totals, totalsTop, totalsHeight, bottom: totalsTop + totalsHeight,
     };
   };
   // Measure every wrapped cell before drawing. Dense exports reduce spacing and
@@ -226,11 +239,9 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
       }
     }
   }
-  fill(blue);
-  pdf.rect(margin, margin, width, 44, 'F');
   let objectUrl: string | null = null;
   try {
-    const response = await fetch('/bbtm-logo.png');
+    const response = await fetch('/bbtm-report-logo.png');
     if (!response.ok) throw new Error('Logo unavailable');
     objectUrl = URL.createObjectURL(await response.blob());
     const logo = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -247,37 +258,47 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
       context.drawImage(logo, 0, 0);
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
       for (let index = 0; index < pixels.data.length; index += 4) {
-        pixels.data[index] = 255 - pixels.data[index];
-        pixels.data[index + 1] = 255 - pixels.data[index + 1];
-        pixels.data[index + 2] = 255 - pixels.data[index + 2];
+        const inkCoverage = 1 - pixels.data[index] / 255;
+        blue.forEach((channel, offset) => {
+          pixels.data[index + offset] = 255 - inkCoverage * (255 - channel);
+        });
       }
       context.putImageData(pixels, 0, 0);
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin + 8, margin + 6, 32, 32);
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin + 9 * layout.scale, margin + 2, 50 * layout.scale, 50 * layout.scale);
     }
   } catch {
     // The financial content remains available if the logo cannot be decoded.
   } finally {
     if (objectUrl) URL.revokeObjectURL(objectUrl);
   }
-  font(23, true, white);
-  pdf.text('Éléments de facturation', margin + 51, margin + 30);
-  font(layout.projectSize, true);
-  drawLines(layout.project, margin, layout.metadataTop, layout.projectSize);
-  font(layout.metaSize);
-  drawLines(layout.period, margin, layout.metadataTop + layout.project.length * layout.projectSize * 1.2 + 4 * layout.scale, layout.metaSize);
+  const projectX = margin + 78 * layout.scale;
+  font(layout.documentTitleSize, true, blue);
+  drawLines(layout.documentHeading, projectX, layout.metadataTop, layout.documentTitleSize);
+  const subtitleTop = layout.metadataTop + layout.documentHeading.length * layout.documentTitleSize * 1.2 + 4 * layout.scale;
+  font(layout.projectSize, false, blue);
+  drawLines(layout.project, projectX, subtitleTop, layout.projectSize);
+  pdf.setDrawColor(...border);
+  pdf.setLineWidth(0.8);
+  pdf.line(margin + width * 0.70, layout.metadataTop, margin + width * 0.70, layout.tablesTop - layout.gap);
   font(layout.monthSize, true, blue);
   drawLines(layout.month, pageWidth - margin, layout.metadataTop, layout.monthSize, 'right');
-  const referenceTop = layout.metadataTop + layout.month.length * layout.monthSize * 1.2 + 4 * layout.scale;
+  const periodTop = layout.metadataTop + layout.month.length * layout.monthSize * 1.2 + 4 * layout.scale;
+  font(layout.metaSize, false, [104, 128, 155]);
+  drawLines(layout.period, pageWidth - margin, periodTop, layout.metaSize, 'right');
+  const referenceTop = periodTop + layout.period.length * layout.metaSize * 1.2 + 4 * layout.scale;
   font(layout.metaSize);
   drawLines(layout.reference, pageWidth - margin, referenceTop, layout.metaSize, 'right');
   drawLines(layout.vessel, pageWidth - margin, referenceTop + layout.reference.length * layout.metaSize * 1.2 + 4 * layout.scale, layout.metaSize, 'right');
   const drawTotal = (total: ReturnType<typeof measureTotal>, x: number, top: number) => {
-    fill(total.final ? blue : [234, 243, 253]);
-    pdf.rect(x, top, total.width, total.height, 'F');
-    const color = total.final ? white : ink;
-    font(total.labelSize, true, color);
-    drawLines(total.labels, x + total.padding, top + total.padding, total.labelSize);
-    let amountTop = top + total.padding;
+    fill(pale);
+    if (total.final) {
+      fill([205, 223, 235]);
+      pdf.roundedRect(x, top, total.width, total.height, 3 * layout.scale, 3 * layout.scale, 'F');
+    } else pdf.rect(x, top, total.width, total.height, 'F');
+    const color = blue;
+    font(total.labelSize, !total.summary, color);
+    drawLines(total.labels, x + total.padding, top + total.padding + (total.final ? 6 * layout.scale : 0), total.labelSize);
+    let amountTop = top + total.padding + (total.final ? 6 * layout.scale : 0);
     font(total.amountSize, true, color);
     total.amounts.forEach((lines) => {
       drawLines(lines, x + total.width - total.padding, amountTop, total.amountSize, 'right');
@@ -285,23 +306,29 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
     });
   };
   const drawTable = (table: ReturnType<typeof measureTable>, x: number, top: number) => {
+    const frameX = x;
+    const innerX = x + table.inset;
     if (table.title) {
       font(table.titleSize, true, blue);
-      drawLines([table.title], x, top, table.titleSize);
+      drawLines([table.title], innerX, top + 8 * layout.scale, table.titleSize);
+      pdf.setDrawColor(81, 143, 186);
+      pdf.setLineWidth(0.8 * layout.scale);
+      pdf.line(innerX, top + 32 * layout.scale, innerX + table.width, top + 32 * layout.scale);
     }
+    x = innerX;
     let y = top + table.titleHeight;
-    fill(blue);
+    fill(pale);
     pdf.rect(x, y, table.width, table.headerHeight, 'F');
     let cellX = x;
-    font(table.headerSize, true, white);
+    font(table.headerSize, true, blue);
     table.columns.forEach((column, index) => {
       const align = column.align || 'left';
       drawLines(table.headers[index], align === 'right' ? cellX + table.widths[index] - table.padding : cellX + table.padding, y + table.padding, table.headerSize, align);
       cellX += table.widths[index];
     });
     y += table.headerHeight;
-    table.measuredRows.forEach((row, rowIndex) => {
-      fill(rowIndex % 2 ? [242, 246, 250] : white);
+    table.measuredRows.forEach((row) => {
+      fill(white);
       pdf.rect(x, y, table.width, row.height, 'F');
       font(table.bodySize);
       cellX = x;
@@ -312,7 +339,7 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
       });
       y += row.height;
     });
-    pdf.setDrawColor(205, 216, 231);
+    pdf.setDrawColor(...grid);
     pdf.setLineWidth(0.4 * layout.scale);
     const gridTop = top + table.titleHeight;
     pdf.rect(x, gridTop, table.width, y - gridTop);
@@ -328,17 +355,26 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
       pdf.line(x, rowY, x + table.width, rowY);
     });
     if (table.subtotal) drawTotal(table.subtotal, x, y);
+    if (table.title) {
+      pdf.setDrawColor(...border);
+      pdf.setLineWidth(0.7 * layout.scale);
+      pdf.roundedRect(frameX, top, table.width + table.inset * 2, table.height,
+        4 * layout.scale, 4 * layout.scale, 'S');
+    }
   };
   const drawExpenses = (tree: ReturnType<typeof measureExpenses>, x: number, top: number) => {
+    const frameX = x;
+    x += tree.inset;
     font(tree.titleSize, true, blue);
-    drawLines(['Frais imputables'], x, top, tree.titleSize);
+    drawLines(['Frais imputables'], x, top + 8 * layout.scale, tree.titleSize);
+    pdf.setDrawColor(81, 143, 186);
+    pdf.setLineWidth(0.8 * layout.scale);
+    pdf.line(x, top + 32 * layout.scale, x + tree.innerWidth, top + 32 * layout.scale);
     let y = top + tree.titleHeight;
     tree.groups.forEach((group, groupIndex) => {
       if (groupIndex) y += tree.groupGap;
-      fill([234, 243, 253]);
-      pdf.rect(x, y, halfWidth, group.headingHeight, 'F');
       font(tree.specialtySize, true, blue);
-      drawLines(group.lines, x + tree.padding, y + tree.padding, tree.specialtySize);
+      drawLines(group.lines, x, y, tree.specialtySize);
       y += group.headingHeight;
       drawTable(group.table, x, y);
       y += group.table.height;
@@ -348,14 +384,33 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
       y += tree.emptyTable.height;
     }
     if (tree.subtotal) drawTotal(tree.subtotal, x, y);
+    pdf.setDrawColor(...border);
+    pdf.setLineWidth(0.7 * layout.scale);
+    pdf.roundedRect(frameX, top, halfWidth, tree.height, 4 * layout.scale, 4 * layout.scale, 'S');
   };
   if (layout.operations) drawTable(layout.operations, margin, layout.tablesTop);
   if (layout.expenses) drawExpenses(layout.expenses, rightX, layout.tablesTop);
   if (layout.services) drawTable(layout.services, rightX, layout.servicesTop);
   if (layout.raw) drawTable(layout.raw, margin, layout.rawTop);
-  let totalY = layout.totalsTop;
+  fill(pale);
+  pdf.setDrawColor(...border);
+  pdf.setLineWidth(0.7 * layout.scale);
+  pdf.roundedRect(rightX, layout.totalsTop, halfWidth, layout.totalsHeight,
+    4 * layout.scale, 4 * layout.scale, 'FD');
+  let totalY = layout.totalsTop + layout.summaryInset;
+  layout.summary.forEach((total) => {
+    drawTotal(total, rightX + layout.summaryInset, totalY);
+    totalY += total.height;
+  });
+  if (layout.summary.length) {
+    pdf.setDrawColor(81, 143, 186);
+    pdf.setLineWidth(0.8 * layout.scale);
+    pdf.line(rightX + layout.summaryInset, totalY + 4 * layout.scale,
+      pageWidth - margin - layout.summaryInset, totalY + 4 * layout.scale);
+    totalY += 10 * layout.scale;
+  }
   layout.totals.forEach((total) => {
-    drawTotal(total, margin, totalY);
+    drawTotal(total, rightX + layout.summaryInset, totalY);
     totalY += total.height + layout.gap;
   });
   pdf.setProperties({ title: content.documentTitle, subject: 'Export BBTM des éléments de facturation' });
