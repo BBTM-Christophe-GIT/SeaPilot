@@ -1,5 +1,6 @@
 import { SeaPilotLogo } from '../../components/SeaPilotLogo';
 import { UserAvatar } from '../../components/UserAvatar';
+import { PersonalPlanningCalendar } from '../planning/PersonalPlanningCalendar';
 import { fetchDisciplinaryNotifications, markDisciplinaryNotificationRead, DISCIPLINARY_NOTIFICATIONS_CHANGED, type DisciplinaryNotification } from '../disciplinary/disciplinaryWorkflow';
 import { LiftingOperationsIcon } from '../lifting/LiftingIcons';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -219,6 +220,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const [liftingVesselId, setLiftingVesselId] = useState(0);
   const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isPersonalCalendarOpen, setIsPersonalCalendarOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState('');
   const signOutPending = useRef(false);
@@ -766,6 +768,10 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
               {isUserMenuOpen ? (
                 <div className="user-menu-popover" role="menu">
                   <span>{userEmail}</span>
+                  <button className="personal-calendar-menu-button" onClick={() => { setIsPersonalCalendarOpen(true); setIsUserMenuOpen(false); }} role="menuitem" type="button">
+                    <CalendarDays aria-hidden="true" size={16} />
+                    Ajouter mon planning (.ics)
+                  </button>
                   {previewMode ? (
                     <span className="preview-mode-menu-note">Aucune donnée de production n’est utilisée.</span>
                   ) : (
@@ -783,6 +789,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
           </div>
         </header>
 
+        <PersonalPlanningCalendar client={client} isOpen={isPersonalCalendarOpen} key={sessionUserId || 'preview'} onClose={() => setIsPersonalCalendarOpen(false)} previewMode={previewMode} />
         <main className="content-area">
           {isRequestedModuleDenied ? (
             <div className="auth-loading">Acces refuse pour ce module.</div>
