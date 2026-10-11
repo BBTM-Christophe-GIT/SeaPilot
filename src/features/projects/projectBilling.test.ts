@@ -942,7 +942,7 @@ describe('raw billing lines', () => {
     };
   }
 
-  it('places each currency-preserving subtotal after its section and only the final invoice total below all four sections', async () => {
+  it('places each currency-preserving subtotal after its section and repeats them above the final invoice total', async () => {
     const exportInput = subtotalExportInput();
     const snapshot = JSON.stringify(exportInput);
     const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Logo indisponible'));
@@ -953,7 +953,10 @@ describe('raw billing lines', () => {
       const section = (title: string) => {
         const start = elements.findIndex((element) => element.value === title);
         expect(start).toBeGreaterThanOrEqual(0);
-        const next = elements.findIndex((element, index) => index > start && titles.includes(element.value));
+        const footer = elements.findIndex((element, index) => index > start && element.value === `Sous-total ${title} HT`);
+        const next = elements.findIndex((element, index) => index > start && (
+          titles.includes(element.value) || (index > footer && element.value.startsWith('Sous-total '))
+        ));
         return elements.slice(start, next < 0 ? elements.length : next);
       };
       const amounts = (items: typeof elements) => items.filter((element) => /^[\d ]+,\d{2} (?:€|[A-Z]{3})$/.test(element.value));
@@ -971,7 +974,7 @@ describe('raw billing lines', () => {
         expect(subtotalIndex).toBeGreaterThan(1);
         const subtotal = rows.slice(subtotalIndex);
         expect(subtotal.map((element) => element.value).join(' ')).toContain(`Sous-total ${title} HT`);
-        expect(visibleText.split(`Sous-total ${title} HT`)).toHaveLength(2);
+        expect(visibleText.split(`Sous-total ${title} HT`)).toHaveLength(3);
         expect(subtotal[0].y).toBeLessThan(Math.min(...rows.slice(0, subtotalIndex).map((element) => element.y)));
         expect(amounts(subtotal).map((element) => element.value)).toEqual(subtotalAmounts[title]);
         const onRight = title === 'Frais imputables' || title === 'Prestations BBTM';
@@ -979,7 +982,7 @@ describe('raw billing lines', () => {
         for (const amount of amounts(subtotal)) expect(amount.x).toBeGreaterThan(subtotal[0].x);
         subtotals.set(title, subtotal);
       }
-      expect(elements.filter((element) => element.value.startsWith('Sous-total '))).toHaveLength(4);
+      expect(elements.filter((element) => element.value.startsWith('Sous-total '))).toHaveLength(8);
       for (const [previous, next] of [
         ['Frais imputables', 'Prestations BBTM'], ["Loyers d'Affrètement", 'Détail des Opérations'],
         ['Prestations BBTM', 'Détail des Opérations'], ['Détail des Opérations', 'Total facture du mois HT'],
@@ -989,6 +992,20 @@ describe('raw billing lines', () => {
       const final = section('Total facture du mois HT');
       expect(elements.filter((element) => element.value === 'Total facture du mois HT')).toHaveLength(1);
       expect(amounts(final).map((element) => element.value)).toEqual(['12,00 CAD', '144,00 €', '165,00 USD']);
+      const summaryStart = elements.reduce((last, element, index) => (
+        element.value === "Sous-total Loyers d'Affrètement HT" ? index : last
+      ), -1);
+      const summary = elements.slice(summaryStart, elements.indexOf(final[0]));
+      expect(summary.filter((element) => element.value.startsWith('Sous-total ')).map((element) => element.value))
+        .toEqual(titles.slice(0, -1).map((title) => `Sous-total ${title} HT`));
+      expect(amounts(summary).map((element) => element.value)).toEqual([
+        '125,00 USD', '12,00 CAD', '35,00 €', '40,00 USD', '39,00 €', '70,00 €',
+      ]);
+      for (const element of summary.filter((item) => item.value.startsWith('Sous-total '))) {
+        expect(element.x).toBeGreaterThan(pdf.getPage(0).getWidth() / 2);
+        expect(element.y).toBeLessThan(Math.min(...subtotals.get('Détail des Opérations')!.map((item) => item.y)));
+        expect(element.y).toBeGreaterThan(final[0].y);
+      }
       expect(final[0].y).toBeLessThan(Math.min(...elements.slice(0, elements.indexOf(final[0])).map((element) => element.y)));
       for (const value of ['LOYER-LIGNE-1', 'LOYER-LIGNE-2', 'BBTM-LIGNE-1', 'BBTM-LIGNE-2', 'DETAIL-LIGNE-1', 'DETAIL-LIGNE-2', ...exportInput.expenses.map((expense) => expense.invoiceNumber)]) {
         expect(elements.filter((element) => element.value === value)).toHaveLength(1);
@@ -1250,9 +1267,9 @@ describe('raw billing lines', () => {
       expect(visibleText.includes('100,00 USD')).toBe(includeHires);
       expect(visibleText.includes("Sous-total Loyers d'Affrètement HT")).toBe(includeHires);
       expect(visibleText.includes('Sous-total Prestations BBTM HT')).toBe(includeBbtm);
-      expect(visibleText.split('Sous-total Frais imputables HT')).toHaveLength(2);
-      expect(visibleText.split('Sous-total Détail des Opérations HT')).toHaveLength(2);
-      expect(elements.filter((element) => element.value.startsWith('Sous-total '))).toHaveLength(2 + Number(includeHires) + Number(includeBbtm));
+      expect(visibleText.split('Sous-total Frais imputables HT')).toHaveLength(3);
+      expect(visibleText.split('Sous-total Détail des Opérations HT')).toHaveLength(3);
+      expect(elements.filter((element) => element.value.startsWith('Sous-total '))).toHaveLength(2 * (2 + Number(includeHires) + Number(includeBbtm)));
       const hireTitleIndex = elements.findIndex((element) => element.value === "Loyers d'Affrètement");
       if (includeHires || includeBbtm) {
         expect(hireTitleIndex).toBeGreaterThanOrEqual(0);
@@ -1293,7 +1310,7 @@ describe('raw billing lines', () => {
       expect(visibleText).toContain('DETAIL-OVERRIDE');
       expect(visibleText).toContain('50,00 €');
       expect(visibleText).not.toContain('750,00 €');
-      expect(elements.filter((element) => element.value.startsWith('Sous-total '))).toHaveLength(2);
+      expect(elements.filter((element) => element.value.startsWith('Sous-total '))).toHaveLength(4);
       expect(visibleText).toContain('Sous-total Frais imputables HT');
       expect(visibleText).toContain('Sous-total Détail des Opérations HT');
       expect(visibleText).not.toContain('Sous-total Loyers');
@@ -1326,7 +1343,7 @@ describe('raw billing lines', () => {
       for (const omitted of ['DPR-EXCLU', 'FRAIS-EXCLUS', 'FACTURE-EXCLUE', 'BBTM-EXCLUE']) expect(searchableText).not.toContain(omitted);
       if (includeSections) {
         for (const retained of ['FRAIS-INCLUS', 'FACTURE-INCLUSE', 'BBTM-INCLUSE', 'DETAIL-GLOBAL', '191,00 €']) expect(searchableText).toContain(retained.replace(/\s/g, ''));
-        for (const title of ["Loyers d'Affrètement", 'Frais imputables', 'Prestations BBTM', 'Détail des Opérations']) expect(visibleText.split(`Sous-total ${title} HT`)).toHaveLength(2);
+        for (const title of ["Loyers d'Affrètement", 'Frais imputables', 'Prestations BBTM', 'Détail des Opérations']) expect(visibleText.split(`Sous-total ${title} HT`)).toHaveLength(3);
       } else {
         for (const omitted of ['FRAIS-INCLUS', 'FACTURE-INCLUSE', 'BBTM-INCLUSE', 'DETAIL-GLOBAL', 'Détail des Opérations']) expect(searchableText).not.toContain(omitted.replace(/\s/g, ''));
         expect(visibleText).toContain('100,00 €');
