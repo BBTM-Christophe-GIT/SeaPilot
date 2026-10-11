@@ -12,8 +12,9 @@ export function documentaryReportData(input: DocumentaryAuditReportInput) {
   const findings = input.findingId ? visible.filter((x) => x.id === input.findingId) : visible;
   if (input.findingId && findings.length !== 1) throw new Error('Cet écart n’appartient pas au dossier sélectionné.');
   const entries = findings.map((finding) => ({ finding, events: input.events.filter((x) => x.findingId === finding.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)) }));
+  const auditFiles = input.findingId || input.audit.kind === 'ecmid' ? [] : input.audit.files;
   const files = [
-    ...(input.findingId ? [] : input.audit.files.map((file) => ({ file, context: 'Documents du dossier d’audit' }))),
+    ...auditFiles.map((file) => ({ file, context: 'Documents du dossier d’audit' })),
     ...entries.flatMap(({ finding, events }) => [
       ...finding.files.map((file) => ({ file, context: `${finding.reference || 'Écart'} · Constat` })),
       ...events.flatMap((event) => event.files.map((file) => ({ file, context: `${finding.reference || 'Écart'} · ${DOCUMENTARY_STATUS_LABELS[event.status]} · ${event.actorName} · ${formatAuditDate(auditReportTimestampDay(event.createdAt))}` }))),
@@ -21,7 +22,7 @@ export function documentaryReportData(input: DocumentaryAuditReportInput) {
   ];
   const slug = input.site.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-');
   const reference = input.findingId ? `-ecart-${(findings[0].reference || findings[0].id).replace(/[^a-zA-Z0-9]+/g, '-')}` : '';
-  return { entries, files, filename: `audit-${input.audit.kind}-${slug}-${input.audit.year}${reference}.pdf` };
+  return { entries, files, auditFiles, filename: `audit-${input.audit.kind}-${slug}-${input.audit.year}${reference}.pdf` };
 }
 async function loadFile(input: DocumentaryAuditReportInput, file: AuditAttachment): Promise<Blob> {
   if (input.loadFile) return input.loadFile(file);
@@ -91,7 +92,7 @@ export async function buildDocumentaryAuditReport(input: DocumentaryAuditReportI
   if (input.audit.title) paragraph(input.audit.title, true);
   paragraph(`Date de l’audit : ${input.audit.auditedOn ? formatAuditDate(input.audit.auditedOn) : 'Non renseignée'} · Auditeur : ${input.audit.auditorName || 'Non renseigné'}`);
   if (!input.findingId) {
-    await evidence(input.audit.files, 'Documents constituant l’audit');
+    await evidence(data.auditFiles, 'Documents constituant l’audit');
     paragraph(`${data.entries.length} écart(s) enregistré(s).`, true);
     if (data.entries.length) table(['Référence / type', 'Constat', 'État / responsable'], data.entries.map(({ finding }) => [clean(`${finding.reference || '—'}\n${DOCUMENTARY_FINDING_LABELS[finding.category]}`), clean(finding.description), clean(`${DOCUMENTARY_STATUS_LABELS[finding.status]}\n${finding.assigneeLabel}`)]));
   }

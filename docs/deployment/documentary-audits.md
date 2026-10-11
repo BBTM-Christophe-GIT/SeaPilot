@@ -36,6 +36,8 @@ Une fois rattachée, une preuve doit rester dans son dossier, son constat ou son
 
 Le rapport du dossier rassemble la liste des écarts visibles, leurs responsables et échéances, tout l’historique autorisé et les preuves du constat, du traitement et de la clôture. L’export **un seul écart** reprend exclusivement ce constat et son historique ; il exclut les documents annuels et les autres écarts du dossier.
 
+Dans **eCMID**, **Exporter le rapport PDF** inclut tous les écarts autorisés du dossier et leurs pièces jointes, même lorsqu’un filtre réduit la liste affichée. Les documents de l’onglet **Documents**, par exemple `RZL - eCMID.pdf`, sont exclus du rapport : ils ne sont ni listés, ni téléchargés pour cet export, ni ajoutés en annexe ou comme fichiers originaux intégrés. Ils restent conservés et téléchargeables séparément depuis le dossier. Les exports complets OVID, Audit ISM Externe et Audit Client continuent d’inclure leurs documents de dossier.
+
 Les photos sont visibles dans les pages du rapport. Les pages des PDF joints sont ajoutées après une couverture d’annexe. Tous les fichiers originaux, y compris Word, Excel, PowerPoint, CSV et photos, sont aussi attachés dans le PDF et restent récupérables avec un lecteur gérant les pièces jointes. Le téléchargement privé est effectué au moment de l’export ; aucune URL temporaire n’est enregistrée dans le rapport. Un fichier inaccessible, vide ou un PDF protégé/invalide bloque l’export avec une explication, afin de ne pas produire un rapport incomplet.
 
 ## Autorisations et API
