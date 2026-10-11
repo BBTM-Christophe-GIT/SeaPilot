@@ -358,6 +358,50 @@ describe('DocumentaryAuditsPage', () => {
     } finally { click.mockRestore(); }
   });
 
+  it.each(['remark', 'pending'] as const)('exports every accessible eCMID finding and its history despite the %s filter, while keeping original dossier downloads separate', async (filter) => {
+    fixture = createDocumentaryAuditPreviewData('ecmid');
+    const audit = fixture.audits[0];
+    const originalFile = audit.files[0];
+    const base = fixture.findings[0];
+    const findings: DocumentaryFinding[] = [
+      { ...base, id: 'minor-open', reference: 'MIN-01', category: 'minor', description: 'Écart mineur ouvert.' },
+      { ...base, id: 'major-closed', reference: 'MAJ-01', category: 'major', description: 'Écart majeur clôturé.', status: 'closed', closedAt: '2026-10-01T10:00:00Z' },
+      { ...base, id: 'remark-open', reference: 'REM-01', category: 'remark', description: 'Remarque ouverte.', dueOn: null, treatmentDelayValue: null, treatmentDelayUnit: null },
+      { ...base, id: 'finding-resolved', reference: 'F-02', category: 'finding', description: 'Finding traité.', status: 'resolved', resolvedAt: '2026-10-01T10:00:00Z' },
+    ];
+    const otherFinding: DocumentaryFinding = { ...base, id: 'other-dossier', auditId: fixture.audits[1].id, reference: 'HORS-01', description: 'Écart d’un autre dossier.' };
+    fixture.findings = [...findings, otherFinding];
+    fixture.events = fixture.findings.map((finding) => ({
+      id: `history-${finding.id}`, findingId: finding.id, actorId: 'auditor-account', actorName: 'Arthur AUDITEUR',
+      createdAt: '2026-10-01T10:00:00Z', status: finding.status, treatment: `Historique de ${finding.reference}`, files: [],
+    }));
+    const history = fixture.events.filter((event) => event.findingId !== otherFinding.id);
+    const user = userEvent.setup();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    try {
+      mount('ecmid');
+      await openFindings(user);
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Filtrer les écarts' }), filter);
+      const displayed = filter === 'remark' ? ['REM-01'] : ['MIN-01', 'REM-01', 'F-02'];
+      expect(screen.getAllByRole('article', { name: /^(MIN|MAJ|REM|F)-/ }).map((card) => card.getAttribute('aria-label'))).toEqual(displayed);
+
+      await user.click(screen.getByRole('button', { name: 'Exporter le rapport PDF' }));
+      await waitFor(() => expect(report.download).toHaveBeenCalledOnce());
+      const exported = report.download.mock.calls[0][0];
+      expect(exported).toMatchObject({ audit, site: fixture.sites[0], findingId: undefined, loadFile: expect.any(Function) });
+      expect(exported.findings).toEqual(findings);
+      expect(exported.events).toEqual(history);
+      expect(filesApi.download).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole('button', { name: /^Documents/ }));
+      await user.click(screen.getByRole('button', { name: `Télécharger ${originalFile.fileName}` }));
+      await waitFor(() => expect(filesApi.download).toHaveBeenCalledWith(expect.anything(), originalFile));
+      expect(click).toHaveBeenCalledOnce();
+      expect((click.mock.instances[0] as HTMLAnchorElement).download).toBe(originalFile.fileName);
+      expect(report.download).toHaveBeenCalledOnce();
+    } finally { click.mockRestore(); }
+  });
+
   it('rejects invalid selected attachments without submitting a mutation', async () => {
     const user = userEvent.setup(); mount();
     await user.click(await screen.findByRole('button', { name: 'Ajouter des documents' }));
