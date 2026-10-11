@@ -31,6 +31,7 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
   const pale = [241, 246, 250] as const;
   const border = [175, 202, 224] as const;
   const cardBorder = [224, 232, 239] as const;
+  const summaryBackground = [244, 248, 252] as const;
   const grid = [218, 230, 240] as const;
   const white = [255, 255, 255] as const;
   const columnGap = 11;
@@ -291,7 +292,7 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
   drawLines(layout.reference, pageWidth - margin, referenceTop, layout.metaSize, 'right');
   drawLines(layout.vessel, pageWidth - margin, referenceTop + layout.reference.length * layout.metaSize * 1.2 + 4 * layout.scale, layout.metaSize, 'right');
   const drawTotal = (total: ReturnType<typeof measureTotal>, x: number, top: number) => {
-    fill(total.summary ? white : pale);
+    fill(total.summary ? summaryBackground : pale);
     if (total.final) {
       fill([205, 223, 235]);
       pdf.roundedRect(x, top, total.width, total.height, 3 * layout.scale, 3 * layout.scale, 'F');
@@ -393,9 +394,9 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
   if (layout.expenses) drawExpenses(layout.expenses, rightX, layout.tablesTop);
   if (layout.services) drawTable(layout.services, rightX, layout.servicesTop);
   if (layout.raw) drawTable(layout.raw, margin, layout.rawTop);
-  fill(white);
-  pdf.setDrawColor(...cardBorder);
-  pdf.setLineWidth(0.35 * layout.scale);
+  fill(summaryBackground);
+  pdf.setDrawColor(...border);
+  pdf.setLineWidth(0.6 * layout.scale);
   pdf.roundedRect(rightX, layout.totalsTop, halfWidth, layout.totalsHeight,
     3 * layout.scale, 3 * layout.scale, 'FD');
   let totalY = layout.totalsTop + layout.summaryInset;
