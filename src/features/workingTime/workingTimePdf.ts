@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { jsPDF } from 'jspdf';
 import type { WorkingTimeInterval } from './workingTimeModel';
+import { fetchLatestWorkingTimePdfSignatures, isWorkingTimeCaptainRegister, resolveWorkingTimePdfSigners } from './workingTimePdfSignatures';
 import type {
   WorkingTimeActiveSignature,
   WorkingTimeSignatureSnapshot,
@@ -119,10 +120,6 @@ function phaseSeconds(phases: DayPhase[]): number {
   return phases.reduce((total, phase) => total + (phase.endMinute - phase.startMinute) * 60, 0);
 }
 
-function latestSignatureEvent(events: WorkingTimeValidationEvent[], eventType: string) {
-  return events.find((event) => event.eventType === eventType)?.signatureSnapshot || null;
-}
-
 function fitText(document: jsPDF, value: string, width: number): string {
   if (!value) return '';
   if (document.getTextWidth(value) <= width) return value;
@@ -138,6 +135,12 @@ function vesselIdentity(vessel: WorkingTimeWorkspace['vessels'][number]): string
       ? vessel.registrationNumber
       : '';
   return [vessel.name, reference].filter(Boolean).join(' - ');
+}
+
+function signatureProfileName(workspace: WorkingTimeWorkspace, personId: number | undefined): string {
+  const person = [...workspace.readablePeople, ...workspace.editablePeople]
+    .find((candidate) => candidate.personId === personId);
+  return person ? `${person.firstName} ${person.lastName}`.trim() : '';
 }
 
 async function downloadSignature(
@@ -158,24 +161,21 @@ export async function prepareWorkingTimePdf(
   const audit = workspace.validations
     .filter((event) => event.registerId === register.id)
     .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
-  const sailor = latestSignatureEvent(audit, 'sailor_signed');
-  const validator = latestSignatureEvent(audit, 'captain_validated');
-  // Approved XLSM imports may predate the register signature workflow. Reuse
-  // the holder's authorized profile image without creating a signature event.
-  const sailorProfile = !sailor && audit.some((event) => event.eventType === 'approved_import')
-    ? workspace.signatures.find((signature) => signature.personId === register.personId) || null
-    : null;
-  const [sailorPng, validatorPng] = await Promise.all([
-    downloadSignature(client, sailor || (sailorProfile && { ...sailorProfile, signerName: register.personName })),
-    downloadSignature(client, validator),
-  ]);
+  const signers = resolveWorkingTimePdfSigners(workspace, register, audit);
+  const profiles = await fetchLatestWorkingTimePdfSignatures(client, register.companyId,
+    signers.flatMap((signer) => signer.personId ? [signer.personId] : []));
+  const signatures = await Promise.all(signers.map(async (signer): Promise<WorkingTimePdfSignature> => {
+    const profileSignature = profiles.find((profile) => profile.personId === signer.personId) || null;
+    // The export uses the latest image. Immutable snapshots still retain the
+    // version and date that proved the actual workflow decision.
+    const image = profileSignature ? { ...profileSignature, signerName: signer.signerName } : signer.snapshot;
+    return { label: signer.label, snapshot: signer.snapshot, profileSignature,
+      png: await downloadSignature(client, image) };
+  }));
   return {
     register,
     workspace,
-    signatures: [
-      { label: 'Marin', snapshot: sailor, profileSignature: sailorProfile, png: sailorPng },
-      { label: 'Capitaine / validateur', snapshot: validator, png: validatorPng },
-    ],
+    signatures,
     audit,
   };
 }
@@ -183,6 +183,7 @@ export async function prepareWorkingTimePdf(
 export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<WorkingTimeGeneratedPdf> {
   const document = new jsPDF({ compress: true, format: 'a4', orientation: 'landscape', unit: 'mm' });
   const { register, workspace } = input;
+  const isCaptainRegister = isWorkingTimeCaptainRegister(register);
   const intervals = workspace.intervals.filter((interval) => interval.personId === register.personId
     && interval.localWorkDate >= register.periodStart && interval.localWorkDate <= register.periodEnd);
   const calculations = workspace.calculations.filter((calculation) => calculation.personId === register.personId
@@ -200,7 +201,7 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
   document.text('REGISTRE MENSUEL DES HEURES DE TRAVAIL ET DE REPOS', 7, 6.8);
 
   const metadata = [
-    ['Marin', register.personName],
+    [isCaptainRegister ? 'Capitaine' : 'Marin', register.personName],
     ['Fonction', register.functionLabel || 'Personnel maritime'],
     ['Mois', formatMonth(register.periodStart)],
   ];
@@ -279,7 +280,12 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
   headerText(['Travail / repos', 'sur toute période', 'de 7 jours'], work7X, work7Width);
 
   const majorColumns = [x, restX, commentX, work24X, work7X, tableRight];
-  majorColumns.forEach((columnX) => document.line(columnX, tableTop, columnX, tableBottom));
+  majorColumns.forEach((columnX) => document.line(
+    columnX,
+    columnX === work7X ? tableTop + groupHeaderHeight : tableTop,
+    columnX,
+    tableBottom,
+  ));
   document.line(work24X, tableTop + groupHeaderHeight, tableRight, tableTop + groupHeaderHeight);
   document.line(x, bodyTop, tableRight, bodyTop);
 
@@ -365,35 +371,42 @@ export async function buildWorkingTimePdf(input: WorkingTimePdfInput): Promise<W
   }
 
   const signatureY = tableBottom + 2.5;
-  input.signatures.forEach((signature, index) => {
-    const signatureX = index === 0 ? 7 : 150;
+  const signatures = isCaptainRegister
+    ? input.signatures.slice(0, 1)
+    : input.signatures;
+  signatures.forEach((signature, index) => {
+    const isHolderSignature = isCaptainRegister || index === 0;
+    const signatureX = isCaptainRegister || index > 0 ? 150 : 7;
     document.setDrawColor(170, 191, 200);
     document.setFillColor(250, 252, 253);
     document.roundedRect(signatureX, signatureY, 140, 15, 1.2, 1.2, 'FD');
     document.setTextColor(65, 93, 108);
     document.setFont('helvetica', 'bold');
     document.setFontSize(5.4);
-    document.text(signature.label.toUpperCase(), signatureX + 1.5, signatureY + 3);
+    document.text(isCaptainRegister ? 'CAPITAINE / VALIDEUR' : signature.label.toUpperCase(), signatureX + 1.5, signatureY + 3);
     if ((signature.snapshot || signature.profileSignature) && signature.png) {
       document.addImage(signature.png, 'PNG', signatureX + 1.5, signatureY + 4, 30, 8.5, undefined, 'FAST');
       document.setTextColor(23, 39, 50);
       document.setFont('helvetica', 'normal');
       document.setFontSize(5.4);
-      const signerName = index === 0
-        ? signature.snapshot?.signerName || register.personName
-        : signature.snapshot?.signerName || '';
+      const profileSignerName = signatureProfileName(workspace, signature.profileSignature?.personId);
+      const historicalSignerName = !signature.profileSignature
+        || signature.profileSignature.personId === signature.snapshot?.signerPersonId
+        ? signature.snapshot?.signerName || ''
+        : '';
+      const signerName = profileSignerName || (isHolderSignature ? register.personName : historicalSignerName);
       document.text(fitText(document, signerName, 102), signatureX + 34, signatureY + 7.5);
-      if (index === 0 && signature.snapshot) {
-        document.text(`${formatDateTime(signature.snapshot.signedAt)} - signature v${signature.snapshot.versionNumber}`, signatureX + 34, signatureY + 11);
+      if (isHolderSignature && signature.snapshot) {
+        document.text(`Validation enregistrée le ${formatDateTime(signature.snapshot.signedAt)}`, signatureX + 34, signatureY + 11);
       }
     } else {
       document.setTextColor(83, 107, 121);
       document.setFont('helvetica', 'normal');
       document.setFontSize(5.8);
-      if (index === 0) {
+      if (isHolderSignature) {
         document.text(fitText(document, register.personName, 102), signatureX + 34, signatureY + 7.5);
       }
-      document.text('Signature non apposée', signatureX + 34, signatureY + (index === 0 ? 11 : 8.5));
+      document.text('Signature non apposée', signatureX + 34, signatureY + (isHolderSignature ? 11 : 8.5));
     }
   });
 
