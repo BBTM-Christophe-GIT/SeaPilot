@@ -113,6 +113,67 @@ select is((select count(*) from storage.objects object join signer_refs fixture 
   where fixture.sailor_number='SIG-CAPTAIN-2' and object.bucket_id='working-time-signatures'),
   1::bigint,'the actual daily validator image is readable through Storage RLS');
 reset role;
+
+-- The production timeout was caused by checking Captain rights on every
+-- unrelated register before deciding whether it names this signature's signer.
+insert into public.people(company_id,first_name,last_name,function_label,sailor_number,active)
+select company_id,'Bulk','UNRELATED','Matelot','SIG-BULK',true from signer_refs where sailor_number='SIG-CAPTAIN-1';
+insert into public.working_time_registers(company_id,person_id,period_kind,period_start,period_end)
+select person.company_id,person.id,'weekly',date '1980-01-07'+7*n,date '1980-01-13'+7*n
+from public.people person cross join generate_series(0,2199) n where person.sailor_number='SIG-BULK';
+insert into public.vessels(company_id,name,acronym,active)
+select company_id,'SIGNER PERF VESSEL','SPV',true from signer_refs where sailor_number='SIG-CAPTAIN-1';
+insert into public.planning_assignments(company_id,vessel_id,captain_person_id,crew_person_id,starts_on,ends_on,
+  starts_at,ends_at,assignment_role,status_label,confirmation_status,watch_group,source_label)
+select subject.company_id,vessel.id,captain.person_id,subject.person_id,'2026-09-01','2026-09-30',
+  '2026-09-01 00:00:00+02','2026-09-30 23:59:00+02',
+  case when subject.sailor_number='SIG-CAPTAIN-1' then 'Capitaine' else 'Matelot' end,
+  'En Mer','confirmed','Bordée Signer','signer-performance-fixture'
+from signer_refs subject cross join signer_refs captain
+join public.vessels vessel on vessel.company_id=captain.company_id and vessel.acronym='SPV'
+where captain.sailor_number='SIG-CAPTAIN-1' and subject.sailor_number in ('SIG-CAPTAIN-1','SIG-MARIN-1','SIG-MARIN-2','SIG-MARIN-3');
+
+create function pg_temp.verify_signer_read_performance()
+returns setof text language plpgsql security invoker as $$
+declare actor_id uuid; actor_label text; started_at timestamptz; rows_read bigint;
+begin
+  for actor_id,actor_label in values
+    ('78840000-0000-0000-0000-000000000004'::uuid,'real Captain'),
+    ('78840000-0000-0000-0000-000000000003'::uuid,'real Marin') loop
+    perform set_config('request.jwt.claim.sub',actor_id::text,true);
+    started_at := clock_timestamp();
+    perform signature.id,signature.person_id,signature.version_number,signature.storage_bucket,signature.storage_path,
+      signature.mime_type,signature.file_size_bytes,signature.sha256,signature.valid_from
+    from public.working_time_profile_signatures signature
+    where signature.valid_to is null and signature.person_id in (
+      select (person->>'person_id')::bigint from jsonb_array_elements(
+        public.working_time_entry_context('2026-09-01','2026-09-30')->'readable_people'
+      ) person
+    ) order by signature.version_number desc,signature.id;
+    get diagnostics rows_read=row_count;
+    return next extensions.is(rows_read,case when actor_label='real Captain' then 4::bigint else 1::bigint end,
+      actor_label || ' active signature query keeps its actual role scope');
+    return next extensions.ok(clock_timestamp()-started_at < interval '8 seconds',
+      actor_label || ' active signature query remains below timeout with 2200 unrelated registers');
+    started_at := clock_timestamp();
+    perform signature.id,signature.person_id,signature.version_number,signature.storage_bucket,signature.storage_path,
+      signature.mime_type,signature.file_size_bytes,signature.sha256,signature.valid_from
+    from public.working_time_profile_signatures signature
+    where signature.valid_to is null and signature.person_id in (
+      select person_id from signer_refs where sailor_number in ('SIG-MARIN-3','SIG-CAPTAIN-2')
+    ) order by signature.version_number desc,signature.id;
+    get diagnostics rows_read=row_count;
+    return next extensions.is(rows_read,2::bigint,
+      actor_label || ' export can read the subject and actual daily validator latest images');
+    return next extensions.ok(clock_timestamp()-started_at < interval '8 seconds',
+      actor_label || ' export signature query remains below timeout with unrelated registers');
+  end loop;
+end;
+$$;
+set local role authenticated;
+select * from pg_temp.verify_signer_read_performance();
+reset role;
+
 update public.company_memberships set active=false where user_id='78840000-0000-0000-0000-000000000003';
 set local role authenticated;
 select is((select count(*) from public.working_time_profile_signatures where id=(select signature_id from signer_refs where sailor_number='SIG-CAPTAIN-2')),
