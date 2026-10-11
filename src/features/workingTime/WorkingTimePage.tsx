@@ -4,7 +4,7 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
-import { addPlanningDays, isPlanningDate, todayPlanningDate } from '../planning/planningDates';
+import { addPlanningDays, isPlanningDate } from '../planning/planningDates';
 import { getPlanningPermissions } from '../planning/planningPermissions';
 import { PlanningP13Panel, type P13Tab } from '../planning/PlanningP13Panel';
 import { createPlanningPreviewOverview } from '../planning/planningPreviewData';
@@ -15,6 +15,7 @@ import { WorkingTimeWorkflowPanel } from './WorkingTimeWorkflowPanel';
 import { WorkingTimeComplianceReport } from './WorkingTimeComplianceReport';
 import { WorkingTimeHseKpiPanel } from './WorkingTimeHseKpiPanel';
 import { WorkingTimeImportWizard } from './WorkingTimeImportWizard';
+import { workingTimeApprovalTodayDate } from './workingTimeApprovalWindow';
 
 interface WorkingTimePageProps {
   client?: SupabaseClient;
@@ -82,7 +83,7 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
   const permissions = getPlanningPermissions(effectiveRoles);
   const usesLivePlanning = effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
   const canReceiveManagementAlerts = effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
-  const referenceDate = useMemo(() => todayPlanningDate(), []);
+  const referenceDate = useMemo(() => workingTimeApprovalTodayDate(), []);
   const previewOverview = useMemo(
     () => previewMode ? createPlanningPreviewOverview(referenceDate) : undefined,
     [previewMode, referenceDate],

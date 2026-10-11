@@ -14,6 +14,7 @@ export function useWorkingTimeWorkspace(
   refreshToken = 0,
 ) {
   const [workspace, setWorkspace] = useState<WorkingTimeWorkspace | null>(null);
+  const [loadedRange, setLoadedRange] = useState<WorkingTimeRange | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const requestId = useRef(0);
@@ -25,7 +26,10 @@ export function useWorkingTimeWorkspace(
     setErrorMessage(null);
     try {
       const nextWorkspace = await fetchWorkingTimeWorkspace(client, range);
-      if (requestId.current === currentRequestId) setWorkspace(nextWorkspace);
+      if (requestId.current === currentRequestId) {
+        setWorkspace(nextWorkspace);
+        setLoadedRange({ start: range.start, end: range.end });
+      }
       return true;
     } catch (error) {
       if (requestId.current === currentRequestId) setErrorMessage(workingTimeErrorMessage(error));
@@ -38,6 +42,7 @@ export function useWorkingTimeWorkspace(
   useEffect(() => {
     if (!enabled) {
       setWorkspace(null);
+      setLoadedRange(null);
       setErrorMessage(null);
       return;
     }
@@ -45,5 +50,5 @@ export function useWorkingTimeWorkspace(
     return () => { requestId.current += 1; };
   }, [enabled, refreshToken, reload]);
 
-  return { workspace, isLoading, errorMessage, reload };
+  return { workspace, loadedRange, isLoading, errorMessage, reload };
 }
