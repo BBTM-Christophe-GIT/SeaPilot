@@ -30,6 +30,7 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
   const ink = [35, 67, 106] as const;
   const pale = [241, 246, 250] as const;
   const border = [175, 202, 224] as const;
+  const cardBorder = [224, 232, 239] as const;
   const grid = [218, 230, 240] as const;
   const white = [255, 255, 255] as const;
   const columnGap = 11;
@@ -290,7 +291,7 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
   drawLines(layout.reference, pageWidth - margin, referenceTop, layout.metaSize, 'right');
   drawLines(layout.vessel, pageWidth - margin, referenceTop + layout.reference.length * layout.metaSize * 1.2 + 4 * layout.scale, layout.metaSize, 'right');
   const drawTotal = (total: ReturnType<typeof measureTotal>, x: number, top: number) => {
-    fill(pale);
+    fill(total.summary ? white : pale);
     if (total.final) {
       fill([205, 223, 235]);
       pdf.roundedRect(x, top, total.width, total.height, 3 * layout.scale, 3 * layout.scale, 'F');
@@ -356,10 +357,10 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
     });
     if (table.subtotal) drawTotal(table.subtotal, x, y);
     if (table.title) {
-      pdf.setDrawColor(...border);
-      pdf.setLineWidth(0.7 * layout.scale);
+      pdf.setDrawColor(...cardBorder);
+      pdf.setLineWidth(0.35 * layout.scale);
       pdf.roundedRect(frameX, top, table.width + table.inset * 2, table.height,
-        4 * layout.scale, 4 * layout.scale, 'S');
+        3 * layout.scale, 3 * layout.scale, 'S');
     }
   };
   const drawExpenses = (tree: ReturnType<typeof measureExpenses>, x: number, top: number) => {
@@ -384,19 +385,19 @@ export async function renderBillingPdf(content: BillingPdfContent): Promise<Blob
       y += tree.emptyTable.height;
     }
     if (tree.subtotal) drawTotal(tree.subtotal, x, y);
-    pdf.setDrawColor(...border);
-    pdf.setLineWidth(0.7 * layout.scale);
-    pdf.roundedRect(frameX, top, halfWidth, tree.height, 4 * layout.scale, 4 * layout.scale, 'S');
+    pdf.setDrawColor(...cardBorder);
+    pdf.setLineWidth(0.35 * layout.scale);
+    pdf.roundedRect(frameX, top, halfWidth, tree.height, 3 * layout.scale, 3 * layout.scale, 'S');
   };
   if (layout.operations) drawTable(layout.operations, margin, layout.tablesTop);
   if (layout.expenses) drawExpenses(layout.expenses, rightX, layout.tablesTop);
   if (layout.services) drawTable(layout.services, rightX, layout.servicesTop);
   if (layout.raw) drawTable(layout.raw, margin, layout.rawTop);
-  fill(pale);
-  pdf.setDrawColor(...border);
-  pdf.setLineWidth(0.7 * layout.scale);
+  fill(white);
+  pdf.setDrawColor(...cardBorder);
+  pdf.setLineWidth(0.35 * layout.scale);
   pdf.roundedRect(rightX, layout.totalsTop, halfWidth, layout.totalsHeight,
-    4 * layout.scale, 4 * layout.scale, 'FD');
+    3 * layout.scale, 3 * layout.scale, 'FD');
   let totalY = layout.totalsTop + layout.summaryInset;
   layout.summary.forEach((total) => {
     drawTotal(total, rightX + layout.summaryInset, totalY);
