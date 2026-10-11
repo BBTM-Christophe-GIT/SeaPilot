@@ -6,7 +6,6 @@ import * as queries from './personalCalendarQueries';
 
 vi.mock('./personalCalendarQueries', () => ({
   fetchPlanningCalendarSubscription: vi.fn(),
-  fetchPersonalPlanningIcs: vi.fn(),
   createPlanningCalendarSubscription: vi.fn(),
   revokePlanningCalendarSubscription: vi.fn(),
 }));
@@ -19,7 +18,6 @@ beforeEach(() => {
   vi.mocked(queries.fetchPlanningCalendarSubscription).mockResolvedValue({ active: false, eligible: true, created_at: null });
   vi.mocked(queries.createPlanningCalendarSubscription).mockResolvedValue({ url, createdAt: '2026-10-11T00:00:00Z' });
   vi.mocked(queries.revokePlanningCalendarSubscription).mockResolvedValue(undefined);
-  vi.mocked(queries.fetchPersonalPlanningIcs).mockResolvedValue('BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n');
 });
 
 function renderDialog(previewMode = false) {
@@ -49,7 +47,6 @@ describe('PersonalPlanningCalendar', () => {
     await screen.findByRole('button', { name: 'Remplacer le lien d’abonnement' });
     expect(screen.getByText(/vous n’avez rien à refaire/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Télécharger/ })).not.toBeInTheDocument();
-    expect(queries.fetchPersonalPlanningIcs).not.toHaveBeenCalled();
     expect(queries.createPlanningCalendarSubscription).not.toHaveBeenCalled();
   });
 

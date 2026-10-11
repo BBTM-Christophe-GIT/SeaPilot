@@ -1,6 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadAppEnv } from '../../lib/env';
-import { serializePlanningCalendar, type PlanningCalendarFeed } from '../../../supabase/functions/planning-calendar/ics.ts';
 
 export interface PlanningCalendarSubscription {
   active: boolean;
@@ -32,11 +31,4 @@ export async function createPlanningCalendarSubscription(client: SupabaseClient)
 export async function revokePlanningCalendarSubscription(client: SupabaseClient): Promise<void> {
   const { error } = await client.rpc('revoke_planning_calendar_subscription');
   if (error) throw new Error('Impossible de désactiver votre abonnement. Réessayez.');
-}
-
-export async function fetchPersonalPlanningIcs(client: SupabaseClient): Promise<string> {
-  const { data, error } = await client.rpc('personal_planning_calendar');
-  if (error || !data) throw new Error('Impossible de télécharger votre planning. Réessayez.');
-  try { return serializePlanningCalendar(data as PlanningCalendarFeed); }
-  catch { throw new Error('Impossible de télécharger votre planning. Réessayez.'); }
 }

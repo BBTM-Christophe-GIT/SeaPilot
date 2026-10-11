@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildPlanningCalendarUrl, createPlanningCalendarSubscription, fetchPersonalPlanningIcs, fetchPlanningCalendarSubscription, revokePlanningCalendarSubscription } from './personalCalendarQueries';
+import { buildPlanningCalendarUrl, createPlanningCalendarSubscription, fetchPlanningCalendarSubscription, revokePlanningCalendarSubscription } from './personalCalendarQueries';
 
 describe('personal calendar queries', () => {
   it('uses only caller-scoped RPCs, never a supplied person identifier', async () => {
@@ -12,9 +12,7 @@ describe('personal calendar queries', () => {
     expect(rpc).toHaveBeenLastCalledWith('create_planning_calendar_subscription');
     await revokePlanningCalendarSubscription(client);
     expect(rpc).toHaveBeenLastCalledWith('revoke_planning_calendar_subscription');
-    rpc.mockResolvedValue({ data: { calendar_name: 'Mon planning', published_at: '2026-10-11T08:00:00Z', revision: 2, events: [] }, error: null });
-    expect(await fetchPersonalPlanningIcs(client)).toContain('BEGIN:VCALENDAR\r\n');
-    expect(rpc).toHaveBeenLastCalledWith('personal_planning_calendar');
+    expect(rpc).toHaveBeenCalledTimes(3);
   });
 
   it('builds a capability URL and rejects malformed tokens or insecure remote origins', () => {
@@ -26,6 +24,7 @@ describe('personal calendar queries', () => {
   it('does not expose database error messages or token content in errors', async () => {
     const client = { rpc: vi.fn().mockResolvedValue({ data: null, error: { message: 'secret details' } }) } as never;
     await expect(createPlanningCalendarSubscription(client)).rejects.toThrow('Impossible de créer');
-    await expect(fetchPersonalPlanningIcs(client)).rejects.toThrow('Impossible de télécharger');
+    await expect(fetchPlanningCalendarSubscription(client)).rejects.toThrow('Impossible de charger');
+    await expect(revokePlanningCalendarSubscription(client)).rejects.toThrow('Impossible de désactiver');
   });
 });

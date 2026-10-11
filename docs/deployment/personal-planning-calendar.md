@@ -1,6 +1,6 @@
 # Calendrier personnel du planning
 
-Version frontend : **3.72.0**.
+Version frontend : **3.72.0**, build **2026-10-11.003**.
 
 Le menu du compte, sous l’adresse de l’utilisateur, propose **Ajouter mon planning (.ics)**.
 La fenêtre crée un lien d’abonnement personnel à ajouter une seule fois à un calendrier.
@@ -45,6 +45,12 @@ n’est accordé à ces RPC. Les helpers non filtrés restent privés.
 
 La préversion affiche la fenêtre avec les actions désactivées et n’appelle aucun service de production.
 Les profils Marin et Capitaine sont validés avec des fixtures distinctes et les règles SQL, conformément à `AGENTS.md`.
+
+Le frontend ne doit pas importer les sources des fonctions Edge : `.vercelignore` exclut le dossier
+`supabase/` du build Vercel. Le téléchargement statique inutilisé et son import du sérialiseur ICS ont été
+retirés ; les RPC d’abonnement restent inchangées. Le sérialiseur est conservé dans la fonction Edge
+qui fournit le calendrier actualisé. Le contrôle TypeScript est également exécuté sur une copie du frontend
+sans le dossier `supabase/` pour vérifier cette contrainte de déploiement.
 
 Validation du 11 octobre 2026 : 43 tests Vitest ciblés (menu, dialogue, RPC, ICS et handler),
 73 assertions pgTAP transactionnelles, lint des fichiers modifiés et build de production réussis.
