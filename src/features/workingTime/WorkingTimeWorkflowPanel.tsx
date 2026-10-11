@@ -20,10 +20,9 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { compareHrFunctionLabels, normalizeHrFunctionLabel } from '../humanResources/peopleQueries';
 import type { RoleKey } from '../permissions/roles';
-import { todayPlanningDate } from '../planning/planningDates';
 import type { CurrentPersonSummary } from '../profiles/profileQueries';
 import type { WorkingTimeInterval } from './workingTimeModel';
 import {
@@ -63,6 +62,11 @@ import {
 } from './workingTimeEntryWindow';
 import { WorkingTimeMonthlyView } from './WorkingTimeMonthlyView';
 import { useWorkingTimeWorkspace } from './useWorkingTimeWorkspace';
+import {
+  workingTimeApprovalTodayDate,
+  workingTimeCaptainApprovalDateAllowed,
+  workingTimeCaptainApprovalStartDate,
+} from './workingTimeApprovalWindow';
 
 interface WorkingTimeWorkflowPanelProps {
   client: SupabaseClient;
@@ -276,7 +280,8 @@ export function WorkingTimeWorkflowPanel({
 }: WorkingTimeWorkflowPanelProps) {
   const canBrowseWithoutProfile = roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
   const enabled = Boolean((currentPerson || canBrowseWithoutProfile) && range.start && range.end && range.start <= range.end);
-  const { workspace, isLoading, errorMessage, reload } = useWorkingTimeWorkspace(client, enabled, range, refreshToken);
+  const { workspace, loadedRange, isLoading, errorMessage, reload } = useWorkingTimeWorkspace(client, enabled, range, refreshToken);
+  const selectedRangeLoaded = loadedRange?.start === range.start && loadedRange?.end === range.end;
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(currentPerson?.id || null);
   const [registerSearch, setRegisterSearch] = useState('');
   const [startsAt, setStartsAt] = useState(`${range.start}T00:00`);
@@ -299,7 +304,7 @@ export function WorkingTimeWorkflowPanel({
   const [isAutoCreatingRegister, setIsAutoCreatingRegister] = useState(false);
   const [autoRegisterAttempt, setAutoRegisterAttempt] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const localToday = useMemo(() => referenceDate || todayPlanningDate(), [referenceDate]);
+  const localToday = referenceDate || workingTimeApprovalTodayDate();
   const [selectedDay, setSelectedDay] = useState(() => workingTimeInitialDay(range, localToday));
   const [registerView, setRegisterView] = useState<'daily' | 'monthly'>('daily');
   const [rightPanelTab, setRightPanelTab] = useState<'compliance' | 'approvals'>('compliance');
@@ -371,6 +376,7 @@ export function WorkingTimeWorkflowPanel({
   const isDayContextLoading = Boolean(selectedDayContextKey && resolvedDayContextKey !== selectedDayContextKey);
   const selectedCatalogPerson = visibleReadablePeople.find((person) => person.personId === selectedPersonId) || null;
   const displayedMonthLabel = formatMonthLabel(range.start);
+  const displayedMonthInSentence = displayedMonthLabel.toLocaleLowerCase('fr-FR');
   const selectedIntervals = useMemo(
     () => workspace?.intervals.filter((interval) => interval.personId === selectedPersonId) || [],
     [selectedPersonId, workspace?.intervals],
@@ -400,9 +406,15 @@ export function WorkingTimeWorkflowPanel({
   const hasCaptainRole = canActAsCaptain;
   const hasManagementValidationRole = roles.includes('admin') || roles.includes('armement');
   const hasDirectionRole = roles.includes('direction');
-  const canManageApproval = (approval: WorkingTimeDayApproval) => currentPersonId > 0
+  const canManageApproval = useCallback((approval: WorkingTimeDayApproval) => currentPersonId > 0
     && currentPersonId !== approval.personId
-    && (hasManagementValidationRole || (hasDirectionRole && approval.approverPersonId === null));
+    && (hasManagementValidationRole || (hasDirectionRole && approval.approverPersonId === null)),
+  [currentPersonId, hasDirectionRole, hasManagementValidationRole]);
+  const canApproveDay = useCallback((approval: WorkingTimeDayApproval) => canManageApproval(approval)
+    || (hasCaptainRole && approval.approverPersonId === currentPersonId
+      && workingTimeCaptainApprovalDateAllowed(approval.localWorkDate, localToday)),
+  [canManageApproval, currentPersonId, hasCaptainRole, localToday]);
+  const captainApprovalStartDate = workingTimeCaptainApprovalStartDate(localToday);
   const selectedDayApproval = useMemo(() => workspace?.dayApprovals.find((approval) => (
     approval.registerId === selectedRegister?.id && approval.localWorkDate === selectedDay
   )) || null, [selectedDay, selectedRegister?.id, workspace?.dayApprovals]);
@@ -415,17 +427,14 @@ export function WorkingTimeWorkflowPanel({
       && activeDayContext?.approverPersonId === currentPersonId,
   );
   const pendingApprovals = useMemo(() => workspace?.dayApprovals
-    .filter((approval) => approval.status === 'submitted'
-      && ((hasCaptainRole && approval.approverPersonId === currentPersonId)
-        || (currentPersonId > 0 && currentPersonId !== approval.personId
-          && (hasManagementValidationRole || (hasDirectionRole && approval.approverPersonId === null)))))
+    .filter((approval) => approval.status === 'submitted' && canApproveDay(approval))
     .sort((left, right) => left.localWorkDate.localeCompare(right.localWorkDate)) || [],
-  [currentPersonId, hasCaptainRole, hasDirectionRole, hasManagementValidationRole, workspace?.dayApprovals]);
+  [canApproveDay, workspace?.dayApprovals]);
   const canEdit = Boolean(selectedRegister
     && selectedDayApproval?.status !== 'validated'
     && (
       (selectedDayApproval?.status === 'submitted'
-        && ((hasCaptainRole && selectedDayApproval.approverPersonId === currentPersonId) || canManageApproval(selectedDayApproval)))
+        && canApproveDay(selectedDayApproval))
       || (!selectedDayApproval
         && entryWindowOpen
         && (isOwnRegister || hasManagementValidationRole || isAssignedCaptainForSelectedDay)
@@ -465,14 +474,14 @@ export function WorkingTimeWorkflowPanel({
   ));
   const canValidate = Boolean(
     selectedDayApproval?.status === 'submitted'
-      && (canManageApproval(selectedDayApproval)
-        || (hasCaptainRole && selectedDayApproval.approverPersonId === currentPersonId))
+      && canApproveDay(selectedDayApproval)
       && currentSignature
       && missingCaptainComments.length === 0,
   );
 
   useEffect(() => {
     if (!workspace) return;
+    if (approvalNavigationTarget) return;
     setSelectedPersonId((current) => {
       if (current
         && visibleReadablePeople.some((person) => person.personId === current)
@@ -485,14 +494,14 @@ export function WorkingTimeWorkflowPanel({
         || visibleReadablePeople[0]?.personId
         || null;
     });
-  }, [currentPerson?.id, monthlyRegisterByPerson, monthlyRegisters, navigationTarget, visibleEditablePeople, visibleReadablePeople, workspace]);
+  }, [approvalNavigationTarget, currentPerson?.id, monthlyRegisterByPerson, monthlyRegisters, navigationTarget, visibleEditablePeople, visibleReadablePeople, workspace]);
 
   useEffect(() => {
-    if (!workspace || !catalogPeople.length) return;
+    if (!workspace || !catalogPeople.length || approvalNavigationTarget) return;
     setSelectedPersonId((current) => current && catalogPeople.some((person) => person.personId === current)
       ? current
       : catalogPeople[0].personId);
-  }, [catalogPeople, workspace]);
+  }, [approvalNavigationTarget, catalogPeople, workspace]);
 
   useEffect(() => {
     const selectedPerson = catalogPeople.find((person) => person.personId === selectedPersonId);
@@ -510,7 +519,7 @@ export function WorkingTimeWorkflowPanel({
   }, [localToday, range.end, range.start]);
 
   useEffect(() => {
-    if (!navigationTarget || !workspace || isLoading
+    if (!navigationTarget || !workspace || isLoading || !selectedRangeLoaded
       || navigationTarget.date < range.start || navigationTarget.date > range.end) return;
     const targetKey = `${navigationTarget.personId}:${navigationTarget.date}`;
     if (consumedNavigationTarget.current === targetKey) return;
@@ -526,18 +535,31 @@ export function WorkingTimeWorkflowPanel({
     setRegisterView('daily');
     setRightPanelTab('compliance');
     setPendingPhases([]);
-  }, [isLoading, localToday, navigationTarget, range.end, range.start, visibleReadablePeople, workspace]);
+  }, [isLoading, localToday, navigationTarget, range.end, range.start, selectedRangeLoaded, visibleReadablePeople, workspace]);
 
   useEffect(() => {
-    if (!approvalNavigationTarget
+    if (!approvalNavigationTarget) return;
+    if (errorMessage && !isLoading) {
+      setApprovalNavigationTarget(null);
+      return;
+    }
+    if (!workspace || isLoading || !selectedRangeLoaded
       || approvalNavigationTarget.date < range.start
       || approvalNavigationTarget.date > range.end) return;
+    const person = visibleReadablePeople.find((candidate) => candidate.personId === approvalNavigationTarget.personId);
+    if (!person || !monthlyRegisterByPerson.has(person.personId)) {
+      setActionError(`Le registre demandé pour ${displayedMonthInSentence} n’est pas accessible. Sélectionnez un autre marin ou actualisez la page.`);
+      setApprovalNavigationTarget(null);
+      return;
+    }
+    setPersonnelFilter(isVisibleForPersonnelFilter(person, 'departed', localToday) ? 'departed' : 'active');
+    setRegisterSearch('');
     setSelectedPersonId(approvalNavigationTarget.personId);
     setSelectedDay(approvalNavigationTarget.date);
     setRegisterView('daily');
     setRightPanelTab('approvals');
     setApprovalNavigationTarget(null);
-  }, [approvalNavigationTarget, range.end, range.start]);
+  }, [approvalNavigationTarget, displayedMonthInSentence, errorMessage, isLoading, localToday, monthlyRegisterByPerson, range.end, range.start, selectedRangeLoaded, visibleReadablePeople, workspace]);
 
   useEffect(() => {
     if (!workspace || !selectedRegister) {
@@ -581,7 +603,7 @@ export function WorkingTimeWorkflowPanel({
   }, [client, selectedDay, selectedRegister]);
 
   useEffect(() => {
-    if (!workspace || !currentPerson || isAutoCreatingRegister || isLoading) return;
+    if (!workspace || !selectedRangeLoaded || !currentPerson || isAutoCreatingRegister || isLoading) return;
     if (!roles.some((role) => role === 'marin' || role === 'capitaine')) return;
     if (monthlyRegisterByPerson.has(currentPerson.id)) return;
     const attemptKey = `${currentPerson.id}:${range.start}`;
@@ -595,7 +617,7 @@ export function WorkingTimeWorkflowPanel({
     }).then(() => reload()).catch((reason) => {
       setActionError(workingTimeErrorMessage(reason));
     }).finally(() => setIsAutoCreatingRegister(false));
-  }, [autoRegisterAttempt, client, currentPerson, isAutoCreatingRegister, isLoading, monthlyRegisterByPerson, range.start, reload, roles, workspace]);
+  }, [autoRegisterAttempt, client, currentPerson, isAutoCreatingRegister, isLoading, monthlyRegisterByPerson, range.start, reload, roles, selectedRangeLoaded, workspace]);
 
   useEffect(() => {
     if (previewMode || !workspace) {
@@ -733,12 +755,15 @@ export function WorkingTimeWorkflowPanel({
         });
       } else if (intent === 'validate-day') {
         if (!selectedDayApproval) throw new Error('Cette journée n’est pas soumise à approbation.');
+        if (!canApproveDay(selectedDayApproval)) throw new Error('Cette journée ne peut pas être approuvée par votre profil.');
         await validateWorkingTimeDay(client, selectedDayApproval.id);
       }
     }, successMessage);
   }
 
   function openPendingApproval(approval: WorkingTimeDayApproval) {
+    setActionError(null);
+    setRegisterSearch('');
     setApprovalNavigationTarget({ personId: approval.personId, date: approval.localWorkDate });
     if (approval.localWorkDate < range.start || approval.localWorkDate > range.end) {
       onNavigateDate?.(approval.localWorkDate);
@@ -855,6 +880,7 @@ export function WorkingTimeWorkflowPanel({
                     />
                     ) : null}
                   </> : <div className="working-time-approval-list" role="tabpanel">
+                    {hasCaptainRole && !hasManagementValidationRole && !hasDirectionRole ? <p>Vous pouvez approuver les journées du {formatSelectedDay(captainApprovalStartDate).toLocaleLowerCase('fr-FR')} au {formatSelectedDay(localToday).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
                     {pendingApprovals.length ? pendingApprovals.map((approval) => {
                       const person = workspace.readablePeople.find((candidate) => candidate.personId === approval.personId);
                       const vessel = workspace.vessels.find((candidate) => candidate.id === approval.vesselId);
@@ -871,6 +897,10 @@ export function WorkingTimeWorkflowPanel({
                     <div className="working-time-subheading"><div><h4>{formatSelectedDay(selectedDay)}</h4><span>Journée de travail</span></div><span>{selectedDayIntervals.length} période{selectedDayIntervals.length > 1 ? 's' : ''} enregistrée{selectedDayIntervals.length > 1 ? 's' : ''}</span></div>
                     {!selectedDayApproval && entryWindowGracePeriod ? <p className="working-time-message is-success">Le registre {displayedMonthLabel} reste ouvert à la saisie jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
                     {!selectedDayApproval && !entryWindowOpen ? <p className="working-time-message is-warning">Le registre {displayedMonthLabel} est clôturé pour la saisie. Il était modifiable jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
+                    {selectedDayApproval?.status === 'submitted' && hasCaptainRole
+                      && selectedDayApproval.approverPersonId === currentPersonId
+                      && !canManageApproval(selectedDayApproval) && !canApproveDay(selectedDayApproval)
+                      ? <p className="working-time-message is-warning">Cette journée est hors de votre période d’approbation, du {formatSelectedDay(captainApprovalStartDate).toLocaleLowerCase('fr-FR')} au {formatSelectedDay(localToday).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
                     <WorkingTimeEntryBoard
                     approverName={activeDayContext?.captainCandidates.find((candidate) => candidate.personId === activeDayContext.approverPersonId)?.name || null}
                     canEdit={canEdit}
@@ -907,7 +937,7 @@ export function WorkingTimeWorkflowPanel({
                       && (isOwnRegister || isAssignedCaptainForSelectedDay)}
                     showValidate={selectedDayApproval?.status === 'submitted'
                       && !nonCompliantDates.includes(selectedDay)
-                      && ((hasCaptainRole && selectedDayApproval.approverPersonId === currentPersonId) || canManageApproval(selectedDayApproval))}
+                      && canApproveDay(selectedDayApproval)}
                     submitDisabled={!currentSignature
                       || (isAssignedCaptainForSelectedDay && !subjectSignature)}
                     validateDisabled={!canValidate}
@@ -947,8 +977,7 @@ export function WorkingTimeWorkflowPanel({
                       const violationDetails = workingTimeViolationDetails(selectedCalculations, selectedIntervals, date, workspace.policies);
                       const dateApproval = workspace.dayApprovals.find((approval) => approval.registerId === selectedRegister.id && approval.localWorkDate === date);
                       const canRespond = Boolean(dateApproval?.status === 'submitted'
-                        && (canManageApproval(dateApproval)
-                          || (hasCaptainRole && dateApproval.approverPersonId === currentPersonId)));
+                        && canApproveDay(dateApproval));
                       const disabled = !canRespond;
                       const update = (field: keyof NonComplianceDraft, value: string) => setDayResponses((current) => ({
                         ...current,
@@ -1003,7 +1032,15 @@ export function WorkingTimeWorkflowPanel({
               <div className="working-time-register-detail working-time-empty">
                 <div>
                   <h3>{selectedCatalogPerson ? formatPerson(selectedCatalogPerson.firstName, selectedCatalogPerson.lastName) : 'Aucun marin sélectionné'}</h3>
-                  <p>{selectedCatalogPerson ? `Le registre mensuel de ${displayedMonthLabel} est en cours de création automatique.` : 'Sélectionnez un marin dans le catalogue.'}</p>
+                  <p>{errorMessage && !isLoading
+                    ? `Le registre mensuel pour ${displayedMonthInSentence} n’a pas pu être chargé.`
+                    : isLoading || !selectedRangeLoaded
+                    ? `Chargement du registre mensuel de ${displayedMonthInSentence}…`
+                    : selectedCatalogPerson && selectedPersonId === currentPersonId && isAutoCreatingRegister
+                      ? `Le registre mensuel pour ${displayedMonthInSentence} est en cours de création automatique.`
+                      : selectedCatalogPerson
+                        ? `Aucun registre mensuel pour ${displayedMonthInSentence} n’est disponible pour ce marin.`
+                        : 'Sélectionnez un marin dans le catalogue.'}</p>
                 </div>
               </div>
             )}
