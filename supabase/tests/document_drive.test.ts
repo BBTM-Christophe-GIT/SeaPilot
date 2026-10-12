@@ -9,12 +9,13 @@ function setup({user=true,allowed=true,mapping: value=document,signing=secret}:{
   let clock=Date.parse('2026-10-12T12:00:00Z');
   const rpc=vi.fn().mockResolvedValue({data:value,error:allowed?null:{code:'42501'}});
   const getUser=vi.fn().mockResolvedValue({data:{user:user?{id:'fixture-user'}:null},error:null});
-  const readDrive=vi.fn().mockImplementation(async()=>new Response('%PDF-x\n',{headers:{'Content-Type':'application/pdf','Set-Cookie':'upstream-secret','Location':'https://foreign.test'}}));
-  const handler=createDocumentDriveHandler({userClient:()=>({rpc,auth:{getUser}}) as never,readDrive,signingSecret:()=>signing,now:()=>clock});
+  const readDrive=vi.fn().mockImplementation(async()=>new Response('%PDF-x\n',{headers:{'Content-Type':'application/pdf','Content-Length':'7','Set-Cookie':'upstream-secret','Location':'https://foreign.test'}}));
+  const validateDrive=vi.fn().mockImplementation(async (value:DriveDocument)=>({...value,version:'1'}));
+  const handler=createDocumentDriveHandler({userClient:()=>({rpc,auth:{getUser}}) as never,readDrive,validateDrive,signingSecret:()=>signing,now:()=>clock});
   const request=(input: Record<string,unknown>={},authorization='Bearer fixture',origin?:string)=>new Request('https://instance.supabase.co/functions/v1/document-drive',{
     method:'POST',headers:{Authorization:authorization,...(origin?{Origin:origin}:{})},body:JSON.stringify({operation:'url',bucket:'fleet-certificates',path:'1/navire/file.pdf',...input}),
   });
-  return {rpc,getUser,readDrive,handler,request,advance:(ms:number)=>{clock+=ms;}};
+  return {rpc,getUser,readDrive,validateDrive,handler,request,advance:(ms:number)=>{clock+=ms;}};
 }
 
 describe('Drive access broker',()=>{
@@ -48,6 +49,37 @@ describe('Drive access broker',()=>{
     const response=await t.handler(t.request({operation:'download'})); expect(response.status).toBe(200); expect(response.headers.get('content-type')).toBe('application/octet-stream');
     expect(t.rpc).toHaveBeenCalledWith('document_drive_lookup',{target_bucket:'fleet-certificates',target_path:'1/navire/file.pdf'});
   });
+  it('reports current version metadata after authorization and includes it in signed URLs',async()=>{
+    const t=setup(); t.validateDrive.mockResolvedValue({...document,bytes:9000000,file_name:'Current.pdf',version:'42',md5:'b'.repeat(32)});
+    const info=await (await t.handler(t.request({operation:'info'}))).json();
+    expect(info).toEqual({drive_file_id:document.drive_file_id,bytes:9000000,file_name:'Current.pdf',mime_type:'application/pdf',version:'42',md5:'b'.repeat(32),chunkSize:4194304});
+    const url=await (await t.handler(t.request())).json(); expect(url.document.version).toBe('42'); expect(url.chunkSize).toBe(4194304);
+    expect(t.readDrive).not.toHaveBeenCalled();
+  });
+  it('rechecks JWT and RLS for every POST block and exposes only controlled transfer headers',async()=>{
+    const t=setup(); t.readDrive.mockResolvedValue(new Response('%PDF',{status:206,headers:{'Content-Type':'application/pdf','Content-Length':'4',
+      'Content-Range':'bytes 0-3/7','X-Document-Drive-Id':document.drive_file_id,'X-Document-Drive-Version':'1','X-Document-Drive-Bytes':'7','Set-Cookie':'private-upstream'}}));
+    const response=await t.handler(t.request({operation:'download',range:{start:0,end:3},version:'1'}));
+    expect(response.status).toBe(206); expect(response.headers.get('Content-Range')).toBe('bytes 0-3/7'); expect(response.headers.get('Content-Length')).toBe('4');
+    expect(response.headers.get('X-Document-Drive-Version')).toBe('1'); expect(response.headers.get('Set-Cookie')).toBeNull();
+    expect(t.readDrive).toHaveBeenCalledWith(document,{range:{start:0,end:3},version:'1'});
+    t.rpc.mockResolvedValue({data:null,error:{code:'42501'}});
+    expect((await t.handler(t.request({operation:'download',range:{start:4,end:6},version:'1'}))).status).toBe(403);
+    expect(t.getUser).toHaveBeenCalledTimes(2); expect(t.rpc).toHaveBeenCalledTimes(2); expect(t.readDrive).toHaveBeenCalledTimes(1);
+  });
+  it('keeps HMAC ranges bounded and binds an explicitly signed block and current version',async()=>{
+    const t=setup(); const {signedUrl}=await (await t.handler(t.request({range:{start:0,end:3}}))).json();
+    await t.handler(new Request(signedUrl,{headers:{Range:'bytes=0-3'}}));
+    expect(t.readDrive).toHaveBeenCalledWith(expect.objectContaining({version:'1'}),{range:{start:0,end:3},version:'1'});
+    for (const range of ['bytes=4-6','bytes=0-','bytes=0-4194304','bytes=0-1,4-5']) expect((await t.handler(new Request(signedUrl,{headers:{Range:range}}))).status).toBe(416);
+    t.advance(120000); expect((await t.handler(new Request(signedUrl,{headers:{Range:'bytes=0-3'}}))).status).toBe(401);
+  });
+  it('rejects malformed POST blocks and requires a version before requesting bytes',async()=>{
+    const t=setup();
+    for (const input of [{range:{start:-1,end:3},version:'1'},{range:{start:0,end:4194304},version:'1'},{range:{start:0,end:3}},
+      {range:{start:0.5,end:3},version:'1'},{range:{start:0,end:3},version:'unsafe'}]) expect((await t.handler(t.request({operation:'download',...input}))).status).toBe(400);
+    expect(t.rpc).not.toHaveBeenCalled(); expect(t.readDrive).not.toHaveBeenCalled();
+  });
   it('rejects malicious paths, unsafe filenames and foreign origins',async()=>{
     const t=setup();
     for (const input of [{path:'../private.pdf'},{bucket:'https://foreign.test'},{download:'bad\r\nInjected: header.pdf'},{expiresIn:-1}]) expect((await t.handler(t.request(input))).status).toBe(400);
@@ -66,7 +98,7 @@ describe('Drive access broker',()=>{
 describe('Google Drive reader',()=>{
   const env=(name:string)=>({GOOGLE_DRIVE_CLIENT_ID:'fixture-client',GOOGLE_DRIVE_CLIENT_SECRET:'fixture-secret',GOOGLE_DRIVE_REFRESH_TOKEN:'fixture-refresh'} as Record<string,string>)[name];
   const token=()=>new Response(JSON.stringify({access_token:'google-test-token',expires_in:3600}));
-  const metadata=(extra:Record<string,unknown>={})=>new Response(JSON.stringify({id:document.drive_file_id,name:document.file_name,mimeType:document.mime_type,size:String(document.bytes),...extra}));
+  const metadata=(extra:Record<string,unknown>={})=>new Response(JSON.stringify({id:document.drive_file_id,name:document.file_name,mimeType:document.mime_type,size:String(document.bytes),version:'1',...extra}));
   it('prefers the private Vercel broker, sends only its server credential and reuses a short token',async()=>{
     const broker='https://sea-pilot-ten.vercel.app/api/google-drive-token'; const brokerSecret='b'.repeat(64);
     const getEnv=(name:string)=>({GOOGLE_DRIVE_TOKEN_BROKER_URL:broker,GOOGLE_DRIVE_TOKEN_BROKER_SECRET:brokerSecret,GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON:'malformed-unused-json'} as Record<string,string>)[name]||env(name);
@@ -103,6 +135,7 @@ describe('Google Drive reader',()=>{
       .mockResolvedValueOnce(new Response(contents,{headers:{'Content-Type':'application/pdf'}}));
     const response=await createGoogleDriveReader(env,send)(document);
     expect(await response.text()).toBe(contents); expect(response.headers.get('X-SeaPilot-File-Name')).toBe('Current%20version.pdf');
+    expect(response.headers.get('Content-Length')).toBe(String(contents.length));
   });
   it('accepts case variants of the XLSM MIME without changing the binary format',async()=>{
     const workbook={...document,mime_type:'application/vnd.ms-excel.sheet.macroEnabled.12',file_name:'Planning.xlsm'};
@@ -113,6 +146,38 @@ describe('Google Drive reader',()=>{
   it('rejects a stream truncated or enlarged after the metadata read',async()=>{
     const send=vi.fn().mockResolvedValueOnce(token()).mockResolvedValueOnce(metadata()).mockResolvedValueOnce(new Response('too long body',{headers:{'Content-Type':'application/pdf'}}));
     const response=await createGoogleDriveReader(env,send)(document); await expect(response.text()).rejects.toThrow('La version Drive a changé');
+  });
+  it('buffers only the requested block and rechecks its current Drive version before responding',async()=>{
+    const send=vi.fn().mockResolvedValueOnce(token()).mockResolvedValueOnce(metadata())
+      .mockResolvedValueOnce(new Response('%PDF',{status:206,headers:{'Content-Type':'application/pdf','Content-Length':'4','Content-Range':'bytes 0-3/7'}}))
+      .mockResolvedValueOnce(metadata());
+    const response=await createGoogleDriveReader(env,send)(document,{range:{start:0,end:3},version:'1'});
+    expect(response.status).toBe(206); expect(await response.text()).toBe('%PDF');
+    expect(response.headers.get('Content-Length')).toBe('4'); expect(response.headers.get('Content-Range')).toBe('bytes 0-3/7');
+    expect(response.headers.get('X-Document-Drive-Version')).toBe('1'); expect(response.headers.get('X-Document-Drive-Id')).toBe(document.drive_file_id);
+    expect(send.mock.calls[2][1].headers.Range).toBe('bytes=0-3'); expect(send).toHaveBeenCalledTimes(4);
+  });
+  it('rejects version changes before and after fetching a block',async()=>{
+    const before=vi.fn().mockResolvedValueOnce(token()).mockResolvedValueOnce(metadata());
+    await expect(createGoogleDriveReader(env,before)(document,{range:{start:0,end:3},version:'2'})).rejects.toMatchObject({status:409}); expect(before).toHaveBeenCalledTimes(2);
+    const after=vi.fn().mockResolvedValueOnce(token()).mockResolvedValueOnce(metadata())
+      .mockResolvedValueOnce(new Response('%PDF',{status:206,headers:{'Content-Type':'application/pdf','Content-Length':'4','Content-Range':'bytes 0-3/7'}}))
+      .mockResolvedValueOnce(metadata({version:'2'}));
+    await expect(createGoogleDriveReader(env,after)(document,{range:{start:0,end:3},version:'1'})).rejects.toMatchObject({status:409});
+  });
+  it('rejects ignored, wrong and truncated Google ranges before exposing their bytes',async()=>{
+    for (const [status,contentRange,length,body] of [[200,'bytes 0-3/7','4','%PDF'],[206,'bytes 1-4/7','4','%PDF'],
+      [206,'bytes 0-3/7','5','%PDF'],[206,'bytes 0-3/7','4','%PD']] as const) {
+      const send=vi.fn().mockResolvedValueOnce(token()).mockResolvedValueOnce(metadata())
+        .mockResolvedValueOnce(new Response(body,{status,headers:{'Content-Type':'application/pdf','Content-Length':length,'Content-Range':contentRange}}));
+      await expect(createGoogleDriveReader(env,send)(document,{range:{start:0,end:3},version:'1'})).rejects.toMatchObject({status:409});
+    }
+  });
+  it('requires blocks for large whole downloads and rejects out-of-document ranges',async()=>{
+    const large=vi.fn().mockResolvedValueOnce(token()).mockResolvedValueOnce(metadata({size:String(4194305)}));
+    await expect(createGoogleDriveReader(env,large)(document)).rejects.toMatchObject({status:413}); expect(large).toHaveBeenCalledTimes(2);
+    const outside=vi.fn().mockResolvedValueOnce(token()).mockResolvedValueOnce(metadata());
+    await expect(createGoogleDriveReader(env,outside)(document,{range:{start:3,end:7},version:'1'})).rejects.toMatchObject({status:416});
   });
   it('authenticates a service account as a reader and keeps credentials off response bodies',async()=>{
     const keys=await crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);

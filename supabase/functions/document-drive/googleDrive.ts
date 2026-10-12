@@ -6,7 +6,20 @@ export interface DriveDocument {
   bytes: number;
   sha256: string;
   verified_at: string;
+  version?: string;
+  md5?: string;
 }
+
+export interface DriveRange { start: number; end: number }
+export interface DriveReadOptions { range?: DriveRange; version?: string }
+export const DRIVE_CHUNK_BYTES = 4 * 1024 * 1024;
+export const isDriveVersion = (value: unknown): value is string => typeof value==='string' && /^[0-9]{1,30}$/.test(value);
+export const isDriveRange = (value: unknown): value is DriveRange => {
+  if (!value || typeof value!=='object') return false;
+  const range=value as DriveRange;
+  return Number.isSafeInteger(range.start) && Number.isSafeInteger(range.end)
+    && range.start>=0 && range.end>=range.start && range.end-range.start+1<=DRIVE_CHUNK_BYTES;
+};
 
 export class DriveAccessError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }
@@ -126,7 +139,7 @@ export function createGoogleDriveReader(getEnv: (name: string)=>string|undefined
     const authorization=`Bearer ${await token()}`;
     const endpoint=`https://www.googleapis.com/drive/v3/files/${document.drive_file_id}`;
     let metadataResponse: Response;
-    try { metadataResponse=await send(`${endpoint}?fields=id,name,mimeType,size,trashed&supportsAllDrives=true`,{headers:{Authorization:authorization},signal:AbortSignal.timeout(30_000)}); }
+    try { metadataResponse=await send(`${endpoint}?fields=id,name,mimeType,size,version,md5Checksum,trashed&supportsAllDrives=true`,{headers:{Authorization:authorization},signal:AbortSignal.timeout(30_000)}); }
     catch { throw new DriveAccessError(502,'Google Drive ne répond pas.'); }
     if (!metadataResponse.ok) throw new DriveAccessError(metadataResponse.status===404?404:502,'Document Google Drive indisponible.');
     const metadata=await metadataResponse.json().catch(()=>null);
@@ -134,23 +147,37 @@ export function createGoogleDriveReader(getEnv: (name: string)=>string|undefined
     const bytes=Number(metadata?.size);
     if (!metadata || metadata.trashed===true || metadata.id!==document.drive_file_id || !mime
       || mimeFamily(mime)!==mimeFamily(document.mime_type.toLowerCase())
-      || !Number.isSafeInteger(bytes) || bytes<=0 || bytes>104857600) {
+      || !Number.isSafeInteger(bytes) || bytes<=0 || bytes>104857600 || !isDriveVersion(metadata.version)
+      || (metadata.md5Checksum!==undefined && (typeof metadata.md5Checksum!=='string' || !/^[a-f0-9]{32}$/i.test(metadata.md5Checksum)))) {
       throw new DriveAccessError(409,'Le document Drive est indisponible ou son format ne correspond plus à la référence vérifiée.');
     }
     const name=typeof metadata.name==='string' && metadata.name.length>0 && metadata.name.length<=255 && !/[/\\\u0000-\u001f\u007f]/.test(metadata.name)?metadata.name:document.file_name;
     // Hash/bytes in the database are the migration proof, not a version lock.
     // Continue to serve the current authorized version of this same Drive ID.
-    return {authorization,endpoint,current:{...document,mime_type:mime,bytes,file_name:name}};
+    return {authorization,endpoint,current:{...document,mime_type:mime,bytes,file_name:name,version:metadata.version,
+      md5:metadata.md5Checksum?metadata.md5Checksum.toLowerCase():undefined}};
   };
-  const read=async (document: DriveDocument): Promise<Response> => {
+  const read=async (document: DriveDocument,options: DriveReadOptions={}): Promise<Response> => {
+    if ((options.range!==undefined && !isDriveRange(options.range)) || (options.version!==undefined && !isDriveVersion(options.version))) {
+      throw new DriveAccessError(400,'Bloc Google Drive invalide.');
+    }
     const {authorization,endpoint,current}=await inspect(document);
+    if (options.version!==undefined && options.version!==current.version) throw new DriveAccessError(409,'La version Drive a changé pendant le téléchargement.');
+    const range=options.range;
+    if (range && range.end>=current.bytes) throw new DriveAccessError(416,'Bloc hors du document Google Drive.');
+    if (!range && current.bytes>DRIVE_CHUNK_BYTES) throw new DriveAccessError(413,'Ce document doit être téléchargé par blocs.');
+    const expectedBytes=range?range.end-range.start+1:current.bytes;
     let media: Response;
-    try { media=await send(`${endpoint}?alt=media&supportsAllDrives=true`,{headers:{Authorization:authorization},signal:AbortSignal.timeout(120_000)}); }
+    try { media=await send(`${endpoint}?alt=media&supportsAllDrives=true`,{headers:{Authorization:authorization,
+      ...(range?{Range:`bytes=${range.start}-${range.end}`}:{})},signal:AbortSignal.timeout(120_000)}); }
     catch { throw new DriveAccessError(502,'Téléchargement Google Drive indisponible.'); }
     if (!media.ok || !media.body) throw new DriveAccessError(media.status===404?404:502,'Document Google Drive indisponible.');
     const length=media.headers.get('content-length');
     const mime=(media.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
-    if ((length!==null && Number(length)!==current.bytes) || (mime && mime!=='application/octet-stream' && canonicalMime(mime,current.file_name)!==current.mime_type)) {
+    const contentRange=range?`bytes ${range.start}-${range.end}/${current.bytes}`:null;
+    if ((range && (media.status!==206 || media.headers.get('content-range')!==contentRange || length===null))
+      || (length!==null && (!/^[0-9]+$/.test(length) || Number(length)!==expectedBytes))
+      || (mime && mime!=='application/octet-stream' && canonicalMime(mime,current.file_name)!==current.mime_type)) {
       await media.body.cancel();
       throw new DriveAccessError(409,'Le document Drive a changé depuis sa vérification.');
     }
@@ -158,12 +185,25 @@ export function createGoogleDriveReader(getEnv: (name: string)=>string|undefined
     const bounded=media.body.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({
       transform(chunk,controller) {
         received+=chunk.byteLength;
-        if (received>current.bytes || received>104857600) throw new DriveAccessError(409,'La version Drive a changé pendant le téléchargement.');
+        if (received>expectedBytes || received>DRIVE_CHUNK_BYTES) throw new DriveAccessError(409,'La version Drive a changé pendant le téléchargement.');
         controller.enqueue(chunk);
       },
-      flush() { if (received!==current.bytes) throw new DriveAccessError(409,'Téléchargement Drive incomplet.'); },
+      flush() { if (received!==expectedBytes) throw new DriveAccessError(409,'Téléchargement Drive incomplet.'); },
     }));
-    return new Response(bounded,{headers:{'Content-Type':current.mime_type,'X-SeaPilot-File-Name':encodeURIComponent(current.file_name)}});
+    let body: BodyInit=bounded;
+    if (range) {
+      // Buffer one bounded block, never the complete large document. Recheck
+      // the Drive version before exposing any bytes from this block.
+      body=await new Response(bounded).arrayBuffer();
+      const after=(await inspect(document)).current;
+      if (after.version!==current.version || after.bytes!==current.bytes || after.mime_type!==current.mime_type
+        || after.file_name!==current.file_name || after.md5!==current.md5) throw new DriveAccessError(409,'La version Drive a changé pendant le téléchargement.');
+    }
+    return new Response(body,{status:range?206:200,headers:{'Content-Type':current.mime_type,'Content-Length':String(expectedBytes),
+      'X-SeaPilot-File-Name':encodeURIComponent(current.file_name),'X-Document-Drive-Version':current.version,'X-Document-Drive-Id':current.drive_file_id,
+      'X-Document-Drive-Bytes':String(current.bytes),'X-Document-Drive-Mime':current.mime_type,
+      'X-Document-Drive-Name':encodeURIComponent(current.file_name),...(current.md5?{'X-Document-Drive-Md5':current.md5}:{}),
+      ...(contentRange?{'Content-Range':contentRange}:{}),'Accept-Ranges':'bytes'}});
   };
   return Object.assign(read,{validate:async (document: DriveDocument): Promise<DriveDocument>=>(await inspect(document)).current});
 }

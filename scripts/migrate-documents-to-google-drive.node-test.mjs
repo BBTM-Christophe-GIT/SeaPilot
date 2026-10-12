@@ -181,6 +181,57 @@ test('a changed source immediately before DELETE aborts without deletion', async
   assert.ok(!cloud.events.includes('delete'));
 });
 
+test('pre-delete batch reads are concurrent and bounded, then mapping checks and DELETE remain sequential', async () => {
+  const records = Array.from({ length: 23 }, (_, index) => record({ source_path: `person/doc-${index}.pdf`,
+    source_id: `${String(index + 1).padStart(8, '0')}-1111-4111-8111-111111111111` }));
+  const driveCalls = new Map(), statCalls = new Map(), prechecked = new Set();
+  let active = 0, peak = 0, deletes = 0;
+  const read = async () => { active++; peak = Math.max(peak, active); await new Promise(resolve => setImmediate(resolve)); active--; };
+  const cloud = mockCloud(records, {
+    async verifyDrive(item) {
+      const count = (driveCalls.get(item.source_path) || 0) + 1; driveCalls.set(item.source_path, count);
+      if (count === 2) await read();
+    },
+    async statStorage(item) {
+      const count = (statCalls.get(item.source_path) || 0) + 1; statCalls.set(item.source_path, count);
+      if (count === 3) { await read(); prechecked.add(item.source_path); }
+      return cloud.deleted.has(item.source_path) ? null : snapshot(item);
+    },
+  });
+  const remove = cloud.removeStorage.bind(cloud);
+  cloud.removeStorage = async (bucket, batch) => {
+    assert.equal(active, 0); assert.ok(batch.every(item => prechecked.has(item.source_path)));
+    assert.deepEqual(cloud.events.slice(-2), ['mappings', 'checkpoint']);
+    deletes++; await remove(bucket, batch);
+  };
+  const journal = await runMigration(manifest(records), { ...options, concurrency: 3 }, cloud, () => { cloud.events.push('checkpoint'); });
+  assert.equal(peak, 3); assert.equal(prechecked.size, records.length); assert.equal(deletes, 2);
+  assert.ok(journal.records.every(item => item.status === 'purged'));
+});
+
+test('a failed concurrent pre-delete read drains in-flight reads and never journals a deletion attempt or issues DELETE', async () => {
+  const records = Array.from({ length: 6 }, (_, index) => record({ source_path: `person/doc-${index}.pdf`,
+    source_id: `${String(index + 1).padStart(8, '0')}-1111-4111-8111-111111111111` }));
+  const driveCalls = new Map(), checkpoints = [];
+  let active = 0, peak = 0;
+  const cloud = mockCloud(records, { async verifyDrive(item) {
+    const count = (driveCalls.get(item.source_path) || 0) + 1; driveCalls.set(item.source_path, count);
+    if (count === 2) {
+      active++; peak = Math.max(peak, active);
+      try {
+        await new Promise(resolve => setImmediate(resolve));
+        if (item.source_path === 'person/doc-1.pdf') throw new MigrationError('Pre-delete Drive verification failed');
+      } finally { active--; }
+    }
+  } });
+  await assert.rejects(runMigration(manifest(records), { ...options, concurrency: 3 }, cloud,
+    journal => { checkpoints.push(structuredClone(journal)); }), /Pre-delete Drive verification failed/);
+  assert.equal(peak, 3); assert.equal(active, 0);
+  assert.ok(!cloud.events.includes('delete') && !cloud.events.includes('purged'));
+  assert.equal(cloud.events.filter(event => event === 'mappings').length, 2);
+  assert.ok(checkpoints.every(journal => journal.records.every(item => !item.delete_attempted_at)));
+});
+
 test('an absent object cannot be treated as purged without DB or a matching attempted-deletion journal', async () => {
   const cloud = mockCloud(undefined, { statStorage: () => null });
   await assert.rejects(runMigration(manifest(), options, cloud), /objet absent/);

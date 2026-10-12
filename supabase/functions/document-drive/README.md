@@ -25,9 +25,14 @@ Déployer avec `verify_jwt = false` pour permettre les GET du lecteur PDF sans e
 ## Contrat
 
 - `document_drive_lookup(target_bucket, target_path)` retourne les métadonnées Drive autorisées, `null` pour une clé sans correspondance, ou `42501` pour une correspondance interdite ou inactive.
-- `POST {operation:"url", bucket, path, expiresIn?, download?:boolean|string}` retourne `{signedUrl}`. Le document courant est vérifié dans Drive avant émission du lien ; `expiresIn` est borné à 120 secondes.
-- `POST {operation:"download", bucket, path}` retourne un flux binaire `application/octet-stream`, compatible avec le SDK Supabase pour Word et Excel.
-- `GET ?ticket=…` retourne le flux avec son MIME documentaire actuel et un nom de fichier contrôlé. Aucune URL Google, aucun destinataire et aucun identifiant Drive arbitraire n'est accepté depuis le navigateur.
+- `POST {operation:"info", bucket, path}` retourne les métadonnées courantes autorisées : `{drive_file_id, bytes, mime_type, file_name, version, md5?, chunkSize:4194304}`.
+- `POST {operation:"url", bucket, path, expiresIn?, download?:boolean|string, range?}` retourne `{signedUrl, document, chunkSize:4194304}`. `document` décrit la version Drive courante ; `expiresIn` reste borné à 120 secondes.
+- `POST {operation:"download", bucket, path, range?:{start,end}, version?}` retourne un contenu binaire `application/octet-stream`, compatible avec le SDK Supabase pour Word et Excel. Un bloc exige `version` et une plage entière inclusive d'au plus **4 MiB**. Chaque POST revalide le JWT et la RLS.
+- `GET ?ticket=…` accepte `Range: bytes=start-end` sous le même ticket HMAC ; la version est celle signée dans `document.version`. Un ticket portant déjà une plage ne peut lire que cette plage. Aucune URL Google, aucun destinataire et aucun identifiant Drive arbitraire n'est accepté depuis le navigateur.
+
+Un document de plus de 4 MiB exige des blocs ; une requête complète retourne HTTP 413. Le client assemble les blocs dans l'ordre, contrôle les longueurs, l'identifiant et la version, puis crée le Blob pour lecture ou téléchargement. Chaque réponse partielle est HTTP 206 avec `Content-Range`, `Content-Length`, `X-Document-Drive-Id`, `X-Document-Drive-Version`, `X-Document-Drive-Bytes`, `X-Document-Drive-Mime`, `X-Document-Drive-Name` encodé URI et `X-Document-Drive-Md5` si disponible. Ces en-têtes sont exposés aux origines autorisées.
+
+Le lecteur impose le Range natif Google, la réponse 206 et les limites exactes. Il tamponne uniquement le bloc demandé, d'au plus 4 MiB, puis relit les métadonnées avant d'émettre ses octets. Un changement de version, volume, nom, MIME ou MD5 arrête le bloc avec HTTP 409 ; une plage hors du document retourne 416. Les contenus interrompus ou trop longs échouent. L'amont média reste limité à 120 secondes. La [limite du worker Supabase](https://supabase.com/docs/guides/functions/limits) est de 150 secondes sur Free et 400 sur les plans payants ; augmenter un timeout applicatif ne contourne pas cette limite. Le [Range Google](https://developers.google.com/workspace/drive/api/guides/manage-downloads#partial_download) concerne les PDF et Office binaires, sans conversion vers un document Google natif.
 
 Une absence de configuration Google, une autorisation Google expirée, un fichier supprimé ou un format invalide produit une erreur explicite. Une correspondance existante ne doit jamais provoquer un retour silencieux à une ancienne copie Storage.
 

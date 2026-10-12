@@ -15,10 +15,16 @@ function fixture({ mapped = true, denied = false } = {}) {
     data: mapped && !denied ? { drive_file_id: 'current-drive-file', mime_type: 'application/pdf' } : null,
     error: denied ? { code: '42501', message: 'Document inaccessible' } : null,
   });
-  const invoke = vi.fn().mockImplementation(async (_name: string, { body }: { body: { operation: string } }) => ({
-    data: body.operation === 'url' ? { signedUrl: 'https://example.supabase.co/functions/v1/document-drive?ticket=verified' }
-      : new Blob(['current file'], { type: 'application/octet-stream' }), error: null,
-  }));
+  const info = { drive_file_id: 'current-drive-file', mime_type: 'application/pdf', file_name: 'current.pdf', bytes: 'current file'.length,
+    version: '117', chunkSize: 4194304 };
+  const invoke = vi.fn().mockImplementation(async (_name: string, { body }: { body: { operation: string; range?: { start: number; end: number } } }) => {
+    if (body.operation === 'info') return { data: info, error: null };
+    if (body.operation === 'url') return { data: { signedUrl: 'https://example.supabase.co/functions/v1/document-drive?ticket=verified', document: info, chunkSize: info.chunkSize }, error: null };
+    return { data: new Blob(['current file'], { type: 'application/octet-stream' }), error: null,
+      response: new Response(null, { status: 206, headers: { 'Content-Range': `bytes ${body.range!.start}-${body.range!.end}/${info.bytes}`,
+        'Content-Length': String(info.bytes), 'X-Document-Drive-Id': info.drive_file_id, 'X-Document-Drive-Version': info.version,
+        'X-Document-Drive-Bytes': String(info.bytes), 'X-Document-Drive-Mime': info.mime_type, 'X-Document-Drive-Name': encodeURIComponent(info.file_name) } }) };
+  });
   const legacy = {
     download: vi.fn().mockResolvedValue({ data: new Blob(['old backup']), error: null }),
     createSignedUrl: vi.fn().mockResolvedValue({ data: { signedUrl: 'https://storage.example/old.pdf' }, error: null }),
@@ -45,7 +51,8 @@ describe('mobile readers of documents already linked to Drive', () => {
     expect((await downloadHrDocumentBlob(client as never, document)).size).toBe('current file'.length);
     expect(readHrDriveFile).not.toHaveBeenCalled();
     expect(legacy.download).not.toHaveBeenCalled();
-    expect(invoke).toHaveBeenCalledWith('document-drive', expect.objectContaining({ body: { operation: 'download', bucket: 'hr-documents', path: 'old/file.pdf' } }));
+    expect(invoke).toHaveBeenCalledWith('document-drive', expect.objectContaining({ body: { operation: 'download', bucket: 'hr-documents', path: 'old/file.pdf',
+      range: { start: 0, end: 'current file'.length - 1 }, version: '117' } }));
     expect(document.drivePath).toBe('person/file.pdf');
   });
 

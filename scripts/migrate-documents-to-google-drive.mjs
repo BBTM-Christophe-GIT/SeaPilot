@@ -428,7 +428,10 @@ export async function runMigration(manifest, options, cloud, checkpoint = async 
       for (let offset = 0; offset < records.length; offset += 20) {
         const batch = records.slice(offset, offset + 20);
         // Check the current Drive version and source metadata again immediately before this batch.
-        for (const record of batch) { await cloud.verifyDrive(record); assertStorageSnapshot(record, await cloud.statStorage(record)); }
+        await mapConcurrent(batch, options.concurrency || 4, async record => {
+          await cloud.verifyDrive(record);
+          assertStorageSnapshot(record, await cloud.statStorage(record));
+        });
         const currentMappings = await cloud.mappings();
         for (const record of batch) assertMapping(record, currentMappings.get(location(record)));
         const at = new Date().toISOString();
