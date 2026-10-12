@@ -7,6 +7,8 @@ import { pathToFileURL } from 'node:url';
 export const PROJECT_REF = 'szlvyrrmvdvhzixilymh';
 const MAX_BYTES = 104857600;
 const MAX_PROOF_AGE = 24 * 60 * 60 * 1000;
+const API_REQUEST_TIMEOUT_MS = 120000;
+const MEDIA_REQUEST_TIMEOUT_MS = 600000;
 const BUCKETS = new Set(['procedure-documents', 'fleet-certificates', 'hr-documents', 'project-files',
   'expense-note-pdfs', 'working-time-imports', 'documentary-audit-files', 'purchase-request-attachments',
   'lifting-certificates', 'annual-review-reports', 'vessel-visits']);
@@ -146,9 +148,9 @@ export function parseEnvFile(contents) {
   return env;
 }
 
-async function request(send, url, init = {}, label = 'Service', allowMissing = false) {
+async function request(send, url, init = {}, label = 'Service', allowMissing = false, timeoutMs = API_REQUEST_TIMEOUT_MS) {
   let response;
-  try { response = await send(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(120000) }); }
+  try { response = await send(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(timeoutMs) }); }
   catch { throw new MigrationError(`${label}: requête réseau interrompue.`); }
   if (allowMissing && response.status === 404) return null;
   requireProof(response.ok, `${label}: requête refusée (HTTP ${response.status}).`);
@@ -288,7 +290,7 @@ export function createMigrationCloud(env, send = fetch) {
     requireProof(metadata.id === id && metadata.trashed === false && Number(metadata.size) === bytes
       && (!expectedName || metadata.name === expectedName) && mimeFamily(canonicalMime(metadata.mimeType, metadata.name)) === mimeFamily(mime),
     'Drive: métadonnées courantes différentes de la preuve.');
-    const response = await request(send, `${endpoint}?alt=media&supportsAllDrives=true`, { headers: driveHeaders }, 'Contenu Drive');
+    const response = await request(send, `${endpoint}?alt=media&supportsAllDrives=true`, { headers: driveHeaders }, 'Contenu Drive', false, MEDIA_REQUEST_TIMEOUT_MS);
     const contentType = response.headers.get('content-type');
     requireProof(!contentType || mimeFamily(canonicalMime(contentType, metadata.name)) === mimeFamily(mime), 'Drive: format du contenu refusé.');
     const proof = await hashes(response, bytes, 'Drive');
@@ -320,7 +322,7 @@ export function createMigrationCloud(env, send = fetch) {
       return matches[0] || null;
     },
     async verifyStorage(record) {
-      const response = await request(send, `${base}/storage/v1/object/authenticated/${storagePath(record)}`, { headers }, 'Contenu Storage');
+      const response = await request(send, `${base}/storage/v1/object/authenticated/${storagePath(record)}`, { headers }, 'Contenu Storage', false, MEDIA_REQUEST_TIMEOUT_MS);
       const proof = await hashes(response, record.source_bytes, 'Storage');
       requireProof(proof.sha256 === record.source_sha256 && proof.md5 === record.source_md5, 'Storage: octets différents du snapshot source.');
       return proof;

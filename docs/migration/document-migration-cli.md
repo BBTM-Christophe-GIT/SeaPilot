@@ -4,6 +4,8 @@
 
 Le manifeste et la configuration privée doivent rester hors Git, par exemple dans `.data/storage-audit-2026-10-12/`. Le script masque les credentials, URLs et noms de documents dans ses sorties terminal. Les journaux contiennent des références métier et doivent recevoir les mêmes restrictions d’accès que le manifeste. Sur Windows, utiliser un dossier dont les ACL sont réservées à l’opérateur ; le mode `0600` du fichier ne remplace pas ces ACL.
 
+Chaque transfert de contenu Drive ou Storage dispose de dix minutes, y compris les archives sources. Les appels d’authentification, de métadonnées, de base de données et de suppression restent limités à deux minutes. Les vérifications de volume, MD5, SHA-256 et snapshot restent obligatoires avant toute activation ou purge.
+
 ## Contrat du manifeste
 
 Le projet est fixé à `szlvyrrmvdvhzixilymh`. Le manifeste JSON contient `project_id`, `count`, `expected_bytes`, `records`, `storage_snapshot_at`, `gateway_verified`, `gateway_verified_at`, `role_fixtures_verified_at`, `gateway_records_sha256`, `drive_permissions_verified_at` et `drive_permissions_records_sha256`.

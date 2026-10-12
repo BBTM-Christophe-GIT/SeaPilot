@@ -190,7 +190,13 @@ test('an absent object cannot be treated as purged without DB or a matching atte
   assert.equal(journal.records[0].status, 'purged'); assert.ok(!cloud.events.includes('delete'));
 });
 
-test('cloud helper reads and hashes actual current Drive and archive bytes and uses Storage DELETE API', async () => {
+test('cloud helper reads and hashes actual current Drive and archive bytes and uses Storage DELETE API', async t => {
+  const timeouts = new WeakMap();
+  t.mock.method(AbortSignal, 'timeout', milliseconds => {
+    const signal = new AbortController().signal;
+    timeouts.set(signal, milliseconds);
+    return signal;
+  });
   const newerBytes = Buffer.from('%PDF-1.7\nnewer Drive version\n');
   const item = record({ bytes: newerBytes.length, sha256: sha(newerBytes), archive_drive_file_id: 'archive_file_12345', archive_sha256: sha(pdf) });
   const calls = [];
@@ -215,6 +221,10 @@ test('cloud helper reads and hashes actual current Drive and archive bytes and u
   await cloud.removeStorage(item.source_bucket, [item]);
   assert.ok(calls.some(call => call.init.method === 'DELETE' && call.url.includes('/storage/v1/object/')));
   assert.ok(calls.every(call => call.init.redirect === 'error'));
+  const mediaCalls = calls.filter(call => call.url.includes('alt=media') || call.url.includes('/object/authenticated/'));
+  assert.equal(mediaCalls.length, 3); // Current Drive file, its source archive and Storage source.
+  assert.ok(mediaCalls.every(call => timeouts.get(call.init.signal) === 600000));
+  assert.ok(calls.filter(call => !mediaCalls.includes(call)).every(call => timeouts.get(call.init.signal) === 120000));
 });
 
 test('cloud helper rejects a current Drive version changed after manifest verification', async () => {
