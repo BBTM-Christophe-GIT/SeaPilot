@@ -61,6 +61,42 @@ export function recordsProofDigest(records) {
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
 
+/** Accept only the original complete content pass, never an applied/reused journal. */
+export function validateVerifiedJournal(manifest, journal, now = Date.now()) {
+  requireProof(journal?.project_id === PROJECT_REF && journal.mode === 'activate' && journal.apply === false
+    && (!Object.hasOwn(journal, 'verification_method') || journal.verification_method === 'full_content')
+    && journal.records_sha256 === recordsProofDigest(manifest.records), 'Journal vérifié: provenance ou digest incompatible.');
+  for (const field of ['started_at', 'verified_at', 'finished_at']) recentProof(journal[field], now, `Journal ${field}`);
+  requireProof(Date.parse(journal.started_at) <= Date.parse(journal.verified_at)
+    && Date.parse(journal.verified_at) <= Date.parse(journal.finished_at), 'Journal vérifié: chronologie incohérente.');
+  requireProof(Array.isArray(journal.records) && journal.records.length === manifest.count,
+    'Journal vérifié: vérification complète de tous les documents requise.');
+  const expected = new Map(manifest.records.map(record => [location(record), record])), proofs = new Map();
+  const checkContent = (proof, bytes, sha256, md5) => requireProof(proof && proof.bytes === bytes
+    && proof.sha256 === sha256 && MD5.test(proof.md5) && (!md5 || proof.md5 === md5), 'Journal vérifié: preuve de contenu différente ou incomplète.');
+  const checkDriveDate = proof => {
+    recentProof(proof?.verified_at, now, 'Journal Drive');
+    requireProof(Date.parse(proof.verified_at) >= Date.parse(journal.started_at) - 300000
+      && Date.parse(proof.verified_at) <= Date.parse(journal.finished_at) + 300000, 'Journal vérifié: date de contenu incohérente.');
+  };
+  for (const proof of journal.records) {
+    const record = proof && expected.get(location(proof));
+    requireProof(record && !proofs.has(location(proof)) && proof.status === 'verified'
+      && !Object.hasOwn(proof, 'delete_attempted_at') && !Object.hasOwn(proof, 'storage_deleted_at')
+      && !Object.hasOwn(proof, 'purged_at'), 'Journal vérifié: document absent, dupliqué, appliqué ou purgé.');
+    checkContent(proof.source, record.source_bytes, record.source_sha256, record.source_md5);
+    checkContent(proof.drive?.current, record.bytes, record.sha256,
+      record.sha256 === record.source_sha256 ? record.source_md5 : record.md5 || null);
+    checkDriveDate(proof.drive.current);
+    if (record.archive_drive_file_id) {
+      checkContent(proof.drive.archive, record.source_bytes, record.source_sha256, record.source_md5);
+      checkDriveDate(proof.drive.archive);
+    } else requireProof(proof.drive.archive === null, 'Journal vérifié: archive inattendue.');
+    proofs.set(location(record), proof);
+  }
+  return proofs;
+}
+
 export function validateManifest(manifest, { mode = 'activate', apply = false, projectRef, now = Date.now() } = {}) {
   requireProof(mode === 'activate' || mode === 'purge', 'Mode requis: activate ou purge.');
   requireProof(manifest?.project_id === PROJECT_REF, 'Le manifeste ne désigne pas le projet SeaPilot attendu.');
@@ -106,7 +142,7 @@ export function parseOptions(args) {
   const options = { mode: 'activate', apply: false, concurrency: 4 };
   let explicitDryRun = false;
   const names = { '--mode': 'mode', '--manifest': 'manifest', '--env-file': 'envFile', '--project-ref': 'projectRef',
-    '--journal': 'journal', '--concurrency': 'concurrency' };
+    '--journal': 'journal', '--concurrency': 'concurrency', '--verified-journal': 'verifiedJournal' };
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--help') return { help: true };
@@ -298,7 +334,30 @@ export function createMigrationCloud(env, send = fetch) {
       && (!expectedMd5 || proof.md5 === expectedMd5), 'Drive: hash courant différent de la preuve.');
     return { ...proof, verified_at: new Date().toISOString() };
   }
+  async function verifyNativeFile(id, bytes, sha256, md5, mime, expectedName) {
+    const metadata = await json(await request(send,
+      `https://www.googleapis.com/drive/v3/files/${id}?fields=id,name,mimeType,size,md5Checksum,sha256Checksum,trashed&supportsAllDrives=true`,
+      { headers: { Authorization: `Bearer ${await token()}` } }, 'Métadonnées Drive'), 'Métadonnées Drive');
+    requireProof(metadata.id === id && metadata.trashed === false && Number(metadata.size) === bytes
+      && (!expectedName || metadata.name === expectedName) && canonicalMime(metadata.mimeType, metadata.name) === mime
+      && typeof metadata.md5Checksum === 'string' && metadata.md5Checksum.toLowerCase() === md5
+      && typeof metadata.sha256Checksum === 'string' && metadata.sha256Checksum.toLowerCase() === sha256,
+    'Drive: métadonnées ou empreintes natives différentes de la preuve complète.');
+  }
   return {
+    async assertSourcesFrozen(records) {
+      const result = await json(await rest('rpc/document_drive_sources_frozen', { method: 'POST',
+        body: JSON.stringify({ p_records: records.map(({ source_bucket, source_path, source_id, source_sha256 }) =>
+          ({ source_bucket, source_path, source_id, source_sha256 })) }) }), 'Gel des sources');
+      requireProof(result === true, 'Gel des sources: ensemble, ID ou SHA-256 différent ou non renseigné.');
+    },
+    async verifyDriveMetadata(record, proof) {
+      const mime = canonicalMime(record.mime_type, record.file_name);
+      await verifyNativeFile(record.drive_file_id, record.bytes, record.sha256, proof.drive.current.md5, mime, record.file_name);
+      if (record.archive_drive_file_id) await verifyNativeFile(record.archive_drive_file_id, record.source_bytes,
+        record.source_sha256, record.source_md5, mime, null);
+      return structuredClone(proof.drive);
+    },
     async verifyDrive(record) {
       const mime = canonicalMime(record.mime_type, record.file_name);
       const current = await driveFile(record.drive_file_id, record.bytes, record.sha256, mime, record.file_name,
@@ -359,9 +418,19 @@ export function createMigrationCloud(env, send = fetch) {
 }
 
 /** All objects are verified before the first mutation; the journal is checkpointed before each DELETE. */
-export async function runMigration(manifest, options, cloud, checkpoint = async () => {}, progress = () => {}, previousJournal = null) {
+export async function runMigration(manifest, options, cloud, checkpoint = async () => {}, progress = () => {}, previousJournal = null, verifiedJournal = null) {
   const digest = validateManifest(manifest, options);
+  requireProof(!options.verifiedJournal || verifiedJournal, 'Journal vérifié explicitement demandé mais absent.');
+  requireProof(!verifiedJournal || options.verifiedJournal, 'La réutilisation exige --verified-journal explicite.');
+  const cached = verifiedJournal ? validateVerifiedJournal(manifest, verifiedJournal) : null;
+  if (cached) {
+    requireProof(typeof cloud.assertSourcesFrozen === 'function' && typeof cloud.verifyDriveMetadata === 'function',
+      'Journal vérifié: contrôle du gel ou des empreintes natives indisponible.');
+    await cloud.assertSourcesFrozen(manifest.records);
+  }
   const journal = { project_id: PROJECT_REF, mode: options.mode, apply: options.apply === true, records_sha256: digest,
+    verification_method: cached ? 'native_metadata_with_verified_journal' : 'full_content',
+    reused_content_verified_at: cached ? verifiedJournal.finished_at : undefined,
     started_at: new Date().toISOString(), records: [] };
   const previous = previousJournal?.records_sha256 === digest && previousJournal.project_id === PROJECT_REF && previousJournal.mode === 'purge'
     && previousJournal.apply === true ? new Map(previousJournal.records.map(record => [location(record), record])) : new Map();
@@ -375,14 +444,17 @@ export async function runMigration(manifest, options, cloud, checkpoint = async 
         'Activation refusée: une correspondance existante pointe ailleurs ou est désactivée.');
       requireProof(!mapping.purged_at || mapping.source_sha256 === record.source_sha256, 'Activation refusée: provenance déjà purgée différente.');
     }
-    const drive = await cloud.verifyDrive(record);
+    if (cached) requireProof(!mapping?.purged_at && !record.purged_at, 'Journal vérifié: source déjà purgée refusée.');
+    const cachedProof = cached?.get(location(record));
+    const drive = cached ? await cloud.verifyDriveMetadata(record, cachedProof) : await cloud.verifyDrive(record);
     const source = await cloud.statStorage(record);
     const proof = { source_bucket: record.source_bucket, source_path: record.source_path, drive, status: 'verified' };
     if (source) {
       assertStorageSnapshot(record, source);
-      proof.source = await cloud.verifyStorage(record);
+      proof.source = cached ? structuredClone(cachedProof.source) : await cloud.verifyStorage(record);
       assertStorageSnapshot(record, await cloud.statStorage(record));
     } else {
+      requireProof(!cached, 'Journal vérifié: source Storage absente, aucune reprise de purge autorisée.');
       const prior = previous.get(location(record));
       requireProof(options.mode === 'purge' && (validDate(mapping.purged_at) || validDate(prior?.delete_attempted_at)),
         'Storage: objet absent sans preuve antérieure de purge.');
@@ -398,10 +470,12 @@ export async function runMigration(manifest, options, cloud, checkpoint = async 
   if (!options.apply) { journal.finished_at = new Date().toISOString(); await checkpoint(journal); return journal; }
   // Recheck proof freshness after a long download pass, before any mutation.
   validateManifest(manifest, { ...options, now: Date.now() });
+  if (cached) { validateVerifiedJournal(manifest, verifiedJournal); await cloud.assertSourcesFrozen(manifest.records); }
   const journalMap = new Map(journal.records.map(record => [location(record), record]));
   if (options.mode === 'activate') {
     for (let offset = 0; offset < manifest.count; offset += 20) {
       const batch = manifest.records.slice(offset, offset + 20);
+      if (cached) { validateVerifiedJournal(manifest, verifiedJournal); await cloud.assertSourcesFrozen(manifest.records); }
       await cloud.activate(batch);
       for (const record of batch) journalMap.get(location(record)).status = 'activated';
       await checkpoint(journal);
@@ -429,9 +503,12 @@ export async function runMigration(manifest, options, cloud, checkpoint = async 
         const batch = records.slice(offset, offset + 20);
         // Check the current Drive version and source metadata again immediately before this batch.
         await mapConcurrent(batch, options.concurrency || 4, async record => {
-          await cloud.verifyDrive(record);
+          if (cached) await cloud.verifyDriveMetadata(record, cached.get(location(record)));
+          else await cloud.verifyDrive(record);
           assertStorageSnapshot(record, await cloud.statStorage(record));
         });
+        validateManifest(manifest, { ...options, now: Date.now() });
+        if (cached) { validateVerifiedJournal(manifest, verifiedJournal); await cloud.assertSourcesFrozen(manifest.records); }
         const currentMappings = await cloud.mappings();
         for (const record of batch) assertMapping(record, currentMappings.get(location(record)));
         const at = new Date().toISOString();
@@ -464,7 +541,7 @@ async function privateJournal(file, value) {
 async function main(args) {
   const options = parseOptions(args);
   if (options.help) {
-    console.log('pnpm exec node scripts/migrate-documents-to-google-drive.mjs --mode activate|purge --manifest <private.json> --env-file <private.env> [--apply --project-ref szlvyrrmvdvhzixilymh] [--journal <private.json>] [--concurrency 1..8]');
+    console.log('pnpm exec node scripts/migrate-documents-to-google-drive.mjs --mode activate|purge --manifest <private.json> --env-file <private.env> [--apply --project-ref szlvyrrmvdvhzixilymh] [--journal <private.json>] [--verified-journal <complete-private-dry-run.json>] [--concurrency 1..8]');
     return;
   }
   let manifest, env;
@@ -473,6 +550,15 @@ async function main(args) {
   validateManifest(manifest, options);
   const journalFile = resolve(options.journal || `${dirname(resolve(options.manifest))}/${basename(options.manifest, extname(options.manifest))}.${options.mode}.journal.json`);
   requireProof(journalFile !== resolve(options.manifest) && journalFile !== resolve(options.envFile), 'Le journal doit être distinct du manifeste et de la configuration.');
+  let verified = null;
+  if (options.verifiedJournal) {
+    const verifiedFile = resolve(options.verifiedJournal);
+    requireProof(verifiedFile !== journalFile && verifiedFile !== resolve(options.manifest) && verifiedFile !== resolve(options.envFile),
+      'Le journal vérifié doit être distinct du journal de sortie, du manifeste et de la configuration.');
+    try { verified = JSON.parse(await readFile(verifiedFile, 'utf8')); }
+    catch { throw new MigrationError('Impossible de lire le journal privé vérifié.'); }
+    validateVerifiedJournal(manifest, verified);
+  }
   let previous = null;
   try { previous = JSON.parse(await readFile(journalFile, 'utf8')); } catch { /* first run */ }
   const cloud = createMigrationCloud(env);
@@ -480,7 +566,7 @@ async function main(args) {
   let lastUpdate = 0;
   const journal = await runMigration(manifest, options, cloud, value => privateJournal(journalFile, value), (done, total, phase) => {
     if (Date.now() - lastUpdate > 10000 || done === total) { console.log(`${phase}: ${done}/${total}`); lastUpdate = Date.now(); }
-  }, previous);
+  }, previous, verified);
   console.log(`Terminé: ${journal.records.length} preuves vérifiées; journal privé enregistré.`);
 }
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

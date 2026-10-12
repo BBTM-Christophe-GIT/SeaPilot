@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { PROJECT_REF, MigrationError, validateManifest, recordsProofDigest, parseOptions, parseEnvFile,
-  createGoogleTokenSupplier, createMigrationCloud, assertStorageSnapshot, assertMapping, runMigration } from './migrate-documents-to-google-drive.mjs';
+  createGoogleTokenSupplier, createMigrationCloud, assertStorageSnapshot, assertMapping, runMigration, validateVerifiedJournal } from './migrate-documents-to-google-drive.mjs';
 
 const now = Date.now();
 const recent = new Date(now - 1000).toISOString();
@@ -27,6 +27,14 @@ function manifest(records = [record()], changes = {}) {
 }
 function mapping(item) { return { ...item, active: true, archive_drive_file_id: item.archive_drive_file_id ?? null }; }
 function snapshot(item) { return { id: item.source_id, updated_at: item.source_updated_at, metadata: { size: item.source_bytes, eTag: item.source_etag } }; }
+function verifiedJournal(records = [record()], changes = {}) {
+  return { project_id: PROJECT_REF, mode: 'activate', apply: false, records_sha256: recordsProofDigest(records),
+    started_at: new Date(now - 60000).toISOString(), verified_at: recent, finished_at: recent,
+    records: records.map(item => ({ source_bucket: item.source_bucket, source_path: item.source_path, status: 'verified',
+      source: { bytes: item.source_bytes, sha256: item.source_sha256, md5: item.source_md5 },
+      drive: { current: { bytes: item.bytes, sha256: item.sha256, md5: item.sha256 === item.source_sha256 ? item.source_md5 : 'c'.repeat(32), verified_at: recent },
+        archive: item.archive_drive_file_id ? { bytes: item.source_bytes, sha256: item.source_sha256, md5: item.source_md5, verified_at: recent } : null } })), ...changes };
+}
 const options = { mode: 'purge', apply: true, projectRef: PROJECT_REF, concurrency: 2 };
 const key = `${Buffer.from('{}').toString('base64url')}.${Buffer.from(JSON.stringify({ role: 'service_role' })).toString('base64url')}.testsignature123456789`;
 const broker = { GOOGLE_DRIVE_TOKEN_BROKER_URL: 'https://sea-pilot-ten.vercel.app/api/google-drive-token', GOOGLE_DRIVE_TOKEN_BROKER_SECRET: 's'.repeat(64) };
@@ -85,6 +93,47 @@ test('source snapshot detects replacements and handles multipart ETags without a
   assert.throws(() => assertStorageSnapshot(record({ source_md5: 'a'.repeat(32) }), snapshot(item)), /MD5/);
 });
 
+test('verified journal requires an original complete, fresh, unapplied activation pass with exact content proofs', () => {
+  const item = record(), data = manifest(), journal = verifiedJournal();
+  assert.equal(validateVerifiedJournal(data, journal, now).size, 1);
+  assert.equal(parseOptions(['--manifest', 'private.json', '--env-file', 'private.env', '--verified-journal', 'complete.json']).verifiedJournal, 'complete.json');
+  for (const changes of [{ project_id: 'other' }, { mode: 'purge' }, { apply: true },
+    { verification_method: 'native_metadata_with_verified_journal' }, { records_sha256: 'a'.repeat(64) },
+    { finished_at: null }, { records: [] }, { records: [...journal.records, ...journal.records] },
+    { started_at: new Date(now - 86400001).toISOString() }, { verified_at: new Date(now + 3600000).toISOString() },
+    { started_at: new Date(now).toISOString() }]) assert.throws(() => validateVerifiedJournal(data, { ...journal, ...changes }, now), MigrationError);
+  for (const status of ['activated', 'purged', 'already_purged', 'recover_pending_journal']) {
+    const changed = structuredClone(journal); changed.records[0].status = status;
+    assert.throws(() => validateVerifiedJournal(data, changed, now), MigrationError);
+  }
+  for (const field of ['delete_attempted_at', 'storage_deleted_at', 'purged_at']) {
+    const changed = structuredClone(journal); changed.records[0][field] = null;
+    assert.throws(() => validateVerifiedJournal(data, changed, now), MigrationError);
+  }
+  for (const [section, changes] of [['source', { bytes: item.source_bytes + 1 }], ['source', { sha256: 'a'.repeat(64) }],
+    ['source', { md5: null }], ['source', { md5: 'a'.repeat(32) }], ['current', { bytes: item.bytes + 1 }],
+    ['current', { sha256: 'a'.repeat(64) }], ['current', { md5: 'a'.repeat(32) }],
+    ['current', { verified_at: new Date(now - 86400001).toISOString() }]]) {
+    const changed = structuredClone(journal), proof = section === 'source' ? changed.records[0].source : changed.records[0].drive.current;
+    Object.assign(proof, changes); assert.throws(() => validateVerifiedJournal(data, changed, now), MigrationError);
+  }
+  const duplicate = [item, record({ source_path: 'person/other.pdf' })], dupJournal = verifiedJournal(duplicate);
+  dupJournal.records[1] = structuredClone(dupJournal.records[0]);
+  assert.throws(() => validateVerifiedJournal(manifest(duplicate), dupJournal, now), /dupliqué/);
+});
+
+test('verified journal requires complete archive proofs for every divergent Drive version', () => {
+  const item = record({ bytes: pdf.length + 1, sha256: 'b'.repeat(64), archive_drive_file_id: 'archive_file_12345', archive_sha256: sha(pdf) });
+  const data = manifest([item]), journal = verifiedJournal([item]);
+  assert.doesNotThrow(() => validateVerifiedJournal(data, journal, now));
+  for (const change of [null, { ...journal.records[0].drive.archive, bytes: 1 },
+    { ...journal.records[0].drive.archive, md5: 'a'.repeat(32) }, { ...journal.records[0].drive.archive, sha256: 'a'.repeat(64) },
+    { ...journal.records[0].drive.archive, verified_at: new Date(now - 86400001).toISOString() }]) {
+    const changed = structuredClone(journal); changed.records[0].drive.archive = change;
+    assert.throws(() => validateVerifiedJournal(data, changed, now), MigrationError);
+  }
+});
+
 test('active DB mappings must match the exact destination and proof', () => {
   const item = record();
   assert.doesNotThrow(() => assertMapping(item, mapping(item)));
@@ -138,6 +187,72 @@ function mockCloud(records = [record()], hooks = {}) {
     async markPurged(item, at) { events.push('purged'); rows.get(`${item.source_bucket}\0${item.source_path}`).purged_at = at; },
   };
 }
+
+function cachedCloud(records = [record()], hooks = {}) {
+  const cloud = mockCloud(records, hooks);
+  cloud.assertSourcesFrozen = async items => { cloud.events.push('freeze'); assert.deepEqual(items, records); await hooks.freeze?.(); };
+  cloud.verifyDriveMetadata = async (item, proof) => {
+    cloud.events.push(`native:${item.source_path}`); await hooks.native?.(item); return structuredClone(proof.drive);
+  };
+  cloud.verifyDrive = cloud.verifyStorage = async () => { throw new Error('Cached pass must never reread media or fall back'); };
+  return cloud;
+}
+
+test('cached activation validates every native file and unchanged frozen snapshot before its first upsert', async () => {
+  const records = [record(), record({ source_path: 'person/other.pdf', source_etag: '"multipart-2"' })];
+  const cloud = cachedCloud(records); cloud.rows.clear();
+  const result = await runMigration(manifest(records, { gateway_verified: false }),
+    { ...options, mode: 'activate', verifiedJournal: 'complete.json' }, cloud, undefined, undefined, null, verifiedJournal(records));
+  assert.equal(result.verification_method, 'native_metadata_with_verified_journal');
+  assert.ok(result.records.every(proof => proof.status === 'activated'));
+  assert.equal(cloud.events.filter(event => event.startsWith('native:')).length, records.length);
+  assert.equal(cloud.events.filter(event => event.startsWith('stat:')).length, records.length * 2);
+  assert.equal(cloud.events.filter(event => event === 'freeze').length, 3);
+  assert.ok(cloud.events.indexOf('activate') > cloud.events.lastIndexOf('freeze'));
+});
+
+test('cached pass fails closed on incomplete freeze, any native hash change, source replacement or purged mapping', async () => {
+  for (const hooks of [{ freeze: () => { throw new MigrationError('Freeze mismatch'); } },
+    { native: () => { throw new MigrationError('Native SHA mismatch'); } },
+    { statStorage: item => ({ ...snapshot(item), id: 'replaced' }) }, { statStorage: () => null }]) {
+    const cloud = cachedCloud(undefined, hooks); cloud.rows.clear();
+    await assert.rejects(runMigration(manifest(), { ...options, mode: 'activate', verifiedJournal: 'complete.json' },
+      cloud, undefined, undefined, null, verifiedJournal()), MigrationError);
+    assert.ok(!cloud.events.includes('activate') && !cloud.events.includes('delete'));
+  }
+  for (const changes of [{ active: false }, { purged_at: recent }]) {
+    const cloud = cachedCloud(); Object.assign([...cloud.rows.values()][0], changes);
+    await assert.rejects(runMigration(manifest(), { ...options, verifiedJournal: 'complete.json' },
+      cloud, undefined, undefined, null, verifiedJournal()), MigrationError);
+    assert.ok(!cloud.events.includes('delete'));
+  }
+  await assert.rejects(runMigration(manifest(), { ...options, verifiedJournal: 'missing.json' }, cachedCloud()), /absent/);
+});
+
+test('cached purge keeps attested access proofs, fresh native pre-delete checks, freeze and final mapping checks', async () => {
+  const cloud = cachedCloud();
+  await assert.rejects(runMigration(manifest(undefined, { gateway_verified: false }), { ...options, verifiedJournal: 'complete.json' },
+    cloud, undefined, undefined, null, verifiedJournal()), /passerelle/);
+  const result = await runMigration(manifest(), { ...options, verifiedJournal: 'complete.json' },
+    cloud, () => { cloud.events.push('checkpoint'); }, undefined, null, verifiedJournal());
+  assert.equal(result.records[0].status, 'purged');
+  assert.equal(cloud.events.filter(event => event.startsWith('native:')).length, 2);
+  assert.deepEqual(cloud.events.slice(cloud.events.indexOf('delete') - 3, cloud.events.indexOf('delete')), ['freeze', 'mappings', 'checkpoint']);
+  const changed = cachedCloud(undefined, { native: (() => { let count = 0; return () => { if (++count === 2) throw new MigrationError('Changed before DELETE'); }; })() });
+  await assert.rejects(runMigration(manifest(), { ...options, verifiedJournal: 'complete.json' }, changed, undefined, undefined, null, verifiedJournal()), /Changed before DELETE/);
+  assert.ok(!changed.events.includes('delete') && !changed.events.includes('purged'));
+});
+
+test('cached purge rechecks manifest access-proof age before each DELETE even when the content journal remains fresh', async t => {
+  let clock = now;
+  t.mock.method(Date, 'now', () => clock);
+  const data = manifest(undefined, { gateway_verified_at: new Date(now - 86400000 + 10000).toISOString() });
+  let nativeCalls = 0;
+  const cloud = cachedCloud(undefined, { native: () => { if (++nativeCalls === 2) clock = now + 20000; } });
+  await assert.rejects(runMigration(data, { ...options, verifiedJournal: 'complete.json' }, cloud,
+    undefined, undefined, null, verifiedJournal()), /gateway_verified_at/);
+  assert.ok(!cloud.events.includes('delete') && !cloud.events.includes('purged'));
+});
 
 test('dry-run verifies all binary proofs with zero activation, DELETE or purged_at mutation', async () => {
   const cloud = mockCloud();
@@ -286,4 +401,41 @@ test('cloud helper rejects a current Drive version changed after manifest verifi
     return Response.json({ id: item.drive_file_id, name: item.file_name, mimeType: 'application/pdf', size: String(item.bytes), trashed: false });
   });
   await assert.rejects(cloud.verifyDrive(item), /hash courant différent/);
+});
+
+test('native verification requires exact Google SHA256 and MD5, IDs, sizes, name and canonical MIME without media fallback', async () => {
+  const item = record({ bytes: pdf.length + 1, sha256: 'b'.repeat(64), archive_drive_file_id: 'archive_file_12345', archive_sha256: sha(pdf) });
+  const proof = verifiedJournal([item]).records[0];
+  const check = async (changes = {}, archiveChanges = {}) => {
+    const calls = [];
+    const cloud = createMigrationCloud({ SUPABASE_SERVICE_ROLE_KEY: key, ...broker }, async (url, init) => {
+      calls.push(url);
+      if (url === broker.GOOGLE_DRIVE_TOKEN_BROKER_URL) return Response.json({ access_token: 'test-token', expires_in: 600 });
+      if (url.includes('/rpc/')) {
+        assert.equal(init.method, 'POST');
+        assert.deepEqual(JSON.parse(init.body).p_records, [{ source_bucket: item.source_bucket, source_path: item.source_path,
+          source_id: item.source_id, source_sha256: item.source_sha256 }]);
+        return Response.json(true);
+      }
+      assert.ok(url.includes('sha256Checksum') && !url.includes('alt=media'));
+      const archive = url.includes(item.archive_drive_file_id);
+      return Response.json({ id: archive ? item.archive_drive_file_id : item.drive_file_id,
+        name: archive ? 'source-archive.pdf' : item.file_name, mimeType: 'application/pdf', trashed: false,
+        size: String(archive ? item.source_bytes : item.bytes), md5Checksum: archive ? item.source_md5 : proof.drive.current.md5,
+        sha256Checksum: archive ? item.source_sha256 : item.sha256, ...(archive ? archiveChanges : changes) });
+    });
+    await cloud.assertSourcesFrozen([item]);
+    const result = await cloud.verifyDriveMetadata(item, proof);
+    assert.deepEqual(result, proof.drive);
+    assert.equal(calls.filter(url => url.includes('/drive/v3/files/')).length, 2);
+  };
+  await check();
+  await check({ mimeType: 'application/octet-stream' });
+  for (const changes of [{ id: 'other_file_12345' }, { size: '1' }, { name: 'renamed.pdf' }, { trashed: true },
+    { mimeType: 'application/msword' }, { md5Checksum: null }, { md5Checksum: 'a'.repeat(32) },
+    { sha256Checksum: null }, { sha256Checksum: 'a'.repeat(64) }]) await assert.rejects(check(changes), /empreintes natives/);
+  for (const changes of [{ size: '1' }, { md5Checksum: null }, { md5Checksum: 'a'.repeat(32) },
+    { sha256Checksum: null }, { sha256Checksum: 'a'.repeat(64) }]) await assert.rejects(check({}, changes), /empreintes natives/);
+  const absent = createMigrationCloud({ SUPABASE_SERVICE_ROLE_KEY: key, ...broker }, async () => Response.json(false));
+  await assert.rejects(absent.assertSourcesFrozen([item]), /Gel des sources/);
 });
