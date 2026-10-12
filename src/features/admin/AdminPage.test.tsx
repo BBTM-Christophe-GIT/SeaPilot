@@ -39,6 +39,9 @@ function createPeopleQuery(data: unknown[] = []) {
 
 function createAdminClient(options: { profiles?: unknown[]; sources?: unknown[]; people?: unknown[] } = {}) {
   return {
+    rpc: vi.fn().mockResolvedValue({
+      data: { unrestricted_editing_enabled: false, can_use_unrestricted_editing: false }, error: null,
+    }),
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'profiles') {
         return createProfilesQuery(
@@ -91,6 +94,20 @@ function renderAdminPage(client: unknown, section = 'users') {
 }
 
 describe('AdminPage', () => {
+  it('places the account-specific working-time switch in Accès et rôles', async () => {
+    const client = createAdminClient();
+    renderAdminPage(client, 'access');
+    const settings = screen.getByRole('region', { name: 'Réglages du suivi du temps de travail' });
+    const toggle = within(settings).getByRole('switch', { name: 'Modification libre du suivi du temps de travail' });
+    await waitFor(() => expect(toggle).toBeEnabled());
+    expect(toggle).not.toBeChecked();
+    expect(settings).toHaveTextContent('Autorise uniquement Christophe MINASSIAN');
+    expect(screen.getByRole('link', { name: 'Accès et rôles' })).toHaveAttribute('aria-current', 'page');
+    expect(client.rpc).toHaveBeenCalledWith('working_time_get_edit_settings');
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Utilisateurs' }));
+    expect(screen.queryByRole('switch', { name: 'Modification libre du suivi du temps de travail' })).not.toBeInTheDocument();
+  });
+
   it('offers the shared fleet order in the Planning administration section', async () => {
     renderAdminPage(previewSupabaseClient, 'planning');
     const form = screen.getByRole('form', { name: 'Ordre des marins dans les bordées' });

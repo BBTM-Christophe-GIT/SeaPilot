@@ -34,6 +34,7 @@ import {
 import './adminSections.css';
 import { AdminCrewPreferences } from './AdminCrewPreferences';
 import { AdminFleetOrder } from './AdminFleetOrder';
+import { AdminWorkingTimeSettings } from './AdminWorkingTimeSettings';
 
 const ADMIN_SECTIONS = [
   { key: 'users', label: 'Utilisateurs', icon: Users },
@@ -402,6 +403,8 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
           </div>
         )}
       </section>
+
+      {activeSection === 'access' ? <AdminWorkingTimeSettings client={client} /> : null}
 
       <section className="admin-panel admin-navigation-access" hidden={activeSection !== 'access' || isLoading} aria-label="Accès de navigation par rôle">
         <div className="admin-header admin-section-header">

@@ -62,6 +62,8 @@ import {
 } from './workingTimeEntryWindow';
 import { WorkingTimeMonthlyView } from './WorkingTimeMonthlyView';
 import { useWorkingTimeWorkspace } from './useWorkingTimeWorkspace';
+import { fetchWorkingTimeEditSettings } from './workingTimeSettings';
+import { workingTimeCurrentValidationEvents, workingTimeRegisterSignatureSnapshots } from './workingTimeSignatureEvidence';
 import {
   workingTimeApprovalTodayDate,
   workingTimeCaptainApprovalDateAllowed,
@@ -297,6 +299,7 @@ export function WorkingTimeWorkflowPanel({
   const [isExporting, setIsExporting] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [canUseUnrestrictedEditing, setCanUseUnrestrictedEditing] = useState(false);
   const [personnelFilter, setPersonnelFilter] = useState<PersonnelFilter>('active');
   const [filterOpen, setFilterOpen] = useState(false);
   const [dayContext, setDayContext] = useState<WorkingTimeDayContext | null>(null);
@@ -403,6 +406,7 @@ export function WorkingTimeWorkflowPanel({
     [selectedRollingImpactDetails],
   );
   const isOwnRegister = selectedRegister?.personId === currentPersonId;
+  const unrestrictedEditing = canUseUnrestrictedEditing && roles.includes('admin');
   const hasCaptainRole = canActAsCaptain;
   const hasManagementValidationRole = roles.includes('admin') || roles.includes('armement');
   const hasDirectionRole = roles.includes('direction');
@@ -418,6 +422,7 @@ export function WorkingTimeWorkflowPanel({
   const selectedDayApproval = useMemo(() => workspace?.dayApprovals.find((approval) => (
     approval.registerId === selectedRegister?.id && approval.localWorkDate === selectedDay
   )) || null, [selectedDay, selectedRegister?.id, workspace?.dayApprovals]);
+  const selectedDayIsDraft = !selectedDayApproval || selectedDayApproval.status === 'draft';
   const entryWindowOpen = workingTimeEntryDateIsOpen(selectedDay, localToday);
   const entryWindowCutoff = workingTimeEntryCutoffDate(selectedDay);
   const entryWindowGracePeriod = workingTimeEntryIsInGracePeriod(selectedDay, localToday);
@@ -430,16 +435,28 @@ export function WorkingTimeWorkflowPanel({
     .filter((approval) => approval.status === 'submitted' && canApproveDay(approval))
     .sort((left, right) => left.localWorkDate.localeCompare(right.localWorkDate)) || [],
   [canApproveDay, workspace?.dayApprovals]);
-  const canEdit = Boolean(selectedRegister
+  const canEditWithNormalRules = Boolean(selectedRegister
     && selectedDayApproval?.status !== 'validated'
     && (
       (selectedDayApproval?.status === 'submitted'
         && canApproveDay(selectedDayApproval))
-      || (!selectedDayApproval
+      || (selectedDayIsDraft
         && entryWindowOpen
         && (isOwnRegister || hasManagementValidationRole || isAssignedCaptainForSelectedDay)
         && visibleEditablePeople.some((person) => person.personId === selectedRegister.personId))
     ));
+  const canEdit = Boolean(selectedRegister && (unrestrictedEditing || canEditWithNormalRules));
+
+  useEffect(() => {
+    let active = true;
+    setCanUseUnrestrictedEditing(false);
+    void fetchWorkingTimeEditSettings(client).then((settings) => {
+      if (active) setCanUseUnrestrictedEditing(settings.unrestrictedEditingEnabled && settings.canUseUnrestrictedEditing);
+    }).catch(() => {
+      // A failed settings read must never unlock a protected register.
+    });
+    return () => { active = false; };
+  }, [client, refreshToken]);
 
   const nonCompliantDates = useMemo(() => {
     if (!selectedRegister) return [];
@@ -450,13 +467,17 @@ export function WorkingTimeWorkflowPanel({
   const currentSignature = workspace?.signatures.find((signature) => signature.personId === currentPersonId);
   const subjectSignature = workspace?.signatures.find((signature) => signature.personId === selectedRegister?.personId);
   const selectedValidations = useMemo(
-    () => workspace?.validations.filter((validation) => validation.registerId === selectedRegister?.id) || [],
+    () => selectedRegister ? workingTimeCurrentValidationEvents(workspace?.validations || [], selectedRegister.id) : [],
     [selectedRegister?.id, workspace?.validations],
   );
-  const sailorSignatureSnapshot = selectedDayApproval?.subjectSignatureSnapshot
-    || selectedValidations.find((validation) => validation.eventType === 'sailor_signed')?.signatureSnapshot;
-  const validatorSignatureSnapshot = selectedDayApproval?.approverSignatureSnapshot
-    || selectedValidations.find((validation) => validation.eventType === 'captain_validated')?.signatureSnapshot;
+  const registerSignatureSnapshots = selectedRegister
+    ? workingTimeRegisterSignatureSnapshots(selectedRegister, selectedValidations) : null;
+  const sailorSignatureSnapshot = selectedDayApproval
+    ? selectedDayApproval.status !== 'draft' ? selectedDayApproval.subjectSignatureSnapshot : null
+    : registerSignatureSnapshots?.subject;
+  const validatorSignatureSnapshot = selectedDayApproval
+    ? selectedDayApproval.status === 'validated' ? selectedDayApproval.approverSignatureSnapshot : null
+    : registerSignatureSnapshots?.approver;
   const subjectSignatureEvidence = frozenSignatureEvidence(sailorSignatureSnapshot) || activeSignatureEvidence(subjectSignature);
   const validatorSignatureEvidence = frozenSignatureEvidence(validatorSignatureSnapshot)
     || activeSignatureEvidence(currentSignature);
@@ -472,8 +493,9 @@ export function WorkingTimeWorkflowPanel({
   const missingCaptainComments = nonCompliantDates.filter((date) => date === selectedDay && (
     !persistedCommentDates.has(date) && !nonComplianceComplete(dayResponses[date])
   ));
+  const hasUnrestrictedPendingChanges = unrestrictedEditing && (pendingPhases.length > 0 || editingIntervalId !== null);
   const canValidate = Boolean(
-    selectedDayApproval?.status === 'submitted'
+    !hasUnrestrictedPendingChanges && selectedDayApproval?.status === 'submitted'
       && canApproveDay(selectedDayApproval)
       && currentSignature
       && missingCaptainComments.length === 0,
@@ -735,10 +757,14 @@ export function WorkingTimeWorkflowPanel({
 
   function handleEntryAction(intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') {
     if (!selectedRegister) return;
+    if (intent === 'validate-day' && hasUnrestrictedPendingChanges) {
+      setActionError('Enregistrez les modifications avant de valider à nouveau la journée.');
+      return;
+    }
     const successMessage = intent === 'save-correction'
       ? 'La correction a été enregistrée.'
       : intent === 'save-draft'
-        ? 'Le brouillon a été enregistré sans validation.'
+        ? unrestrictedEditing ? 'Les périodes ont été enregistrées sans validation.' : 'Le brouillon a été enregistré sans validation.'
       : intent === 'submit-day'
         ? !activeDayContext?.approverPersonId
           ? 'La journée a été signée et transmise pour approbation à un Administrateur, à la Direction ou à l’Armement.'
@@ -895,8 +921,9 @@ export function WorkingTimeWorkflowPanel({
                 <section className="working-time-intervals" aria-label="Créneaux de travail">
                   {registerView === 'daily' ? <>
                     <div className="working-time-subheading"><div><h4>{formatSelectedDay(selectedDay)}</h4><span>Journée de travail</span></div><span>{selectedDayIntervals.length} période{selectedDayIntervals.length > 1 ? 's' : ''} enregistrée{selectedDayIntervals.length > 1 ? 's' : ''}</span></div>
-                    {!selectedDayApproval && entryWindowGracePeriod ? <p className="working-time-message is-success">Le registre {displayedMonthLabel} reste ouvert à la saisie jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
-                    {!selectedDayApproval && !entryWindowOpen ? <p className="working-time-message is-warning">Le registre {displayedMonthLabel} est clôturé pour la saisie. Il était modifiable jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
+                    {!unrestrictedEditing && selectedDayIsDraft && entryWindowGracePeriod ? <p className="working-time-message is-success">Le registre {displayedMonthLabel} reste ouvert à la saisie jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
+                    {!unrestrictedEditing && selectedDayIsDraft && !entryWindowOpen ? <p className="working-time-message is-warning">Le registre {displayedMonthLabel} est clôturé pour la saisie. Il était modifiable jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
+                    {unrestrictedEditing ? <p className="working-time-planning-context">Modification libre activée pour Christophe MINASSIAN.</p> : null}
                     {selectedDayApproval?.status === 'submitted' && hasCaptainRole
                       && selectedDayApproval.approverPersonId === currentPersonId
                       && !canManageApproval(selectedDayApproval) && !canApproveDay(selectedDayApproval)
@@ -904,6 +931,7 @@ export function WorkingTimeWorkflowPanel({
                     <WorkingTimeEntryBoard
                     approverName={activeDayContext?.captainCandidates.find((candidate) => candidate.personId === activeDayContext.approverPersonId)?.name || null}
                     canEdit={canEdit}
+                    unrestrictedEditing={unrestrictedEditing}
                     client={client}
                     comment={intervalComment}
                     editingIntervalId={editingIntervalId}
@@ -931,9 +959,9 @@ export function WorkingTimeWorkflowPanel({
                     rollingWindow={selectedRollingWindow}
                     startsAt={startsAt}
                     selectedDay={selectedDay}
-                    showSaveDraft={canEdit && !selectedDayApproval}
+                    showSaveDraft={canEdit && selectedDayIsDraft}
                     showSubmitToCaptain={canEdit
-                      && !selectedDayApproval
+                      && selectedDayIsDraft
                       && (isOwnRegister || isAssignedCaptainForSelectedDay)}
                     showValidate={selectedDayApproval?.status === 'submitted'
                       && !nonCompliantDates.includes(selectedDay)
@@ -946,8 +974,8 @@ export function WorkingTimeWorkflowPanel({
 
                     {voidCandidateId ? (
                     <div className="working-time-void-form">
-                      <label>Motif du retrait<input onChange={(event) => setVoidReason(event.target.value)} value={voidReason} /></label>
-                      <button disabled={isSaving || voidReason.trim().length < 2} onClick={() => void runAction(async () => {
+                      <label>{unrestrictedEditing ? 'Motif du retrait (facultatif)' : 'Motif du retrait'}<input onChange={(event) => setVoidReason(event.target.value)} value={voidReason} /></label>
+                      <button disabled={isSaving || (!unrestrictedEditing && voidReason.trim().length < 2)} onClick={() => void runAction(async () => {
                         await voidWorkingTimeInterval(client, voidCandidateId, voidReason);
                         setVoidCandidateId(null);
                         setVoidReason('');
@@ -1005,7 +1033,7 @@ export function WorkingTimeWorkflowPanel({
                             <label>Repos compensateur prévu<textarea disabled={disabled} onChange={(event) => update('compensatoryRestPlan', event.target.value)} value={response.compensatoryRestPlan} /></label>
                             <label className="is-wide">Commentaire obligatoire<textarea disabled={disabled} onChange={(event) => update('comment', event.target.value)} value={response.comment} /></label>
                           </div>
-                          {canRespond && dateApproval ? <button disabled={isSaving || !currentSignature || !nonComplianceComplete(response)} onClick={() => void runAction(
+                          {canRespond && dateApproval ? <button disabled={isSaving || hasUnrestrictedPendingChanges || !currentSignature || !nonComplianceComplete(response)} onClick={() => void runAction(
                             () => validateWorkingTimeDayWithComment(client, dateApproval.id, {
                               causeCategory: response.causeCategory as WorkingTimeNonComplianceCause,
                               operationalContext: response.operationalContext,
@@ -1021,12 +1049,12 @@ export function WorkingTimeWorkflowPanel({
                   </section>
                 ) : null}
 
-                {missingCaptainComments.length > 0 && selectedDayApproval?.status === 'submitted' ? <p className="working-time-message is-error">Justification de non-conformité incomplète pour le {selectedDay}.</p> : null}
-                {!currentSignature && isOwnRegister && !selectedDayApproval ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.</p> : null}
-                {!subjectSignature && isAssignedCaptainForSelectedDay && !selectedDayApproval ? <p className="working-time-message is-error">Le titulaire doit disposer d’une signature de profil active avant que le capitaine puisse valider sa journée.</p> : null}
-                {!currentSignature && isAssignedCaptainForSelectedDay && !selectedDayApproval ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.</p> : null}
+                {!unrestrictedEditing && missingCaptainComments.length > 0 && selectedDayApproval?.status === 'submitted' ? <p className="working-time-message is-error">Justification de non-conformité incomplète pour le {selectedDay}.</p> : null}
+                {!currentSignature && isOwnRegister && selectedDayIsDraft ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.</p> : null}
+                {!subjectSignature && isAssignedCaptainForSelectedDay && selectedDayIsDraft ? <p className="working-time-message is-error">Le titulaire doit disposer d’une signature de profil active avant que le capitaine puisse valider sa journée.</p> : null}
+                {!currentSignature && isAssignedCaptainForSelectedDay && selectedDayIsDraft ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.</p> : null}
                 {!currentSignature && selectedDayApproval?.status === 'submitted' && (hasCaptainRole || canManageApproval(selectedDayApproval)) ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur.</p> : null}
-                {selectedDayApproval?.status === 'validated' ? <p className="working-time-validated-note"><BadgeCheck aria-hidden="true" size={18} />Journée validée et clôturée — les autres jours du mois restent ouverts.</p> : null}
+                {selectedDayApproval?.status === 'validated' ? <p className="working-time-validated-note"><BadgeCheck aria-hidden="true" size={18} />{unrestrictedEditing ? 'Journée validée — une modification annulera sa validation et ses signatures actuelles.' : 'Journée validée et clôturée — les autres jours du mois restent ouverts.'}</p> : null}
               </article>
             ) : (
               <div className="working-time-register-detail working-time-empty">
