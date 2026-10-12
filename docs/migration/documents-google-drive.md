@@ -20,9 +20,10 @@ Le dossier existant `SeaPilot` accueille les dossiers métier suivants. Les fich
 | Achats | Année, demande, justificatifs |
 | Finances | Notes de frais par année et personne/navire |
 | Ressources Humaines | Personne, catégorie de document, temps de travail et entretiens par année |
+| Archives techniques privées | Documents sans référence métier ; accès limité au propriétaire et au lecteur serveur |
 | Sanctions Disciplinaires | Dossier distinct soumis aux droits spécifiques existants |
 
-Les noms nouveaux contiennent une référence métier ou un identifiant stable pour éviter les collisions. Une ancienne version Supabase différente est archivée dans Drive ; elle ne remplace jamais le fichier Drive courant. Les fichiers sans référence métier sont archivés comme documents à rapprocher.
+Les noms nouveaux contiennent une référence métier ou un identifiant stable pour éviter les collisions. Une ancienne version Supabase différente est archivée dans Drive ; elle ne remplace jamais le fichier Drive courant. Les trois fichiers sans référence métier sont conservés dans `Archives techniques privées` : l'héritage des permissions du dossier SeaPilot y est désactivé. Seuls le propriétaire et le compte lecteur serveur disposent d'un accès direct. Les profils applicatifs continuent de refuser ces fichiers tant qu'aucun rattachement métier ne les autorise.
 
 ## Accès applicatif
 
