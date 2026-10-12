@@ -66,6 +66,23 @@ Installer l’archive mise à jour une fois. Elle contient `Installer.cmd`, `Ins
 
 Depuis v3.42.1, chaque installation compile un `SeaPilotDrive-<identifiant>.exe` distinct avant de modifier l’enregistrement du protocole commun. Cela corrige CS0016 lorsqu’un ancien exécutable est encore utilisé. Aucun processus n’est arrêté : les transferts ouverts se terminent normalement. Une compilation échouée conserve la version précédemment enregistrée ; les anciens binaires restent disponibles dans le dossier d’installation.
 
+L'installateur 2.7.1 signale aussi le changement d'association au cache du Shell
+Windows après l'enregistrement de `seapilot-drive` avec `SHChangeNotify`,
+`SHCNE_ASSOCCHANGED` et `SHCNF_IDLIST | SHCNF_FLUSHNOWAIT`. Un navigateur déjà lancé
+peut continuer à ouvrir l'ancien exécutable après cette notification, alors que
+HKCU/HKCR désignent le nouveau. La diffusion commence sans attendre le traitement
+par les autres applications ; les transferts actifs se terminent normalement.
+Le lanceur ne ferme ni ne redémarre le navigateur. Recharger SeaPilot puis
+**Vérifier la version installée** pour ouvrir une nouvelle session et contrôler
+la version renvoyée par `health`. Le numéro proposé dans l'archive n'est pas une
+preuve d'installation. Si la version détectée reste ancienne, même quand
+l'installation s'est terminée sans avertissement, fermer puis rouvrir le
+navigateur et vérifier à nouveau la version. Ce cas a été observé avec Chrome
+déjà ouvert pendant l'installation 2.7.1. Si l'appel de notification échoue,
+l'installation et la conservation des réglages continuent avec un avertissement.
+Voir la [documentation Microsoft sur les notifications
+d'association](https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/nf-shlobj_core-shchangenotify).
+
 L’API 2.1.0 corrige l’échec de connexion après configuration lorsque Windows refuse le port choisi (socket 10013 : accès interdit, ou 10048 : port occupé). Le lanceur essaie jusqu’à 16 ports répartis dans la plage dynamique, au lieu de quitter dès le premier refus. Le navigateur découvre le port effectivement ouvert avec le même nonce, sans transmettre de jeton pendant cette recherche. L’ancien lanceur 2.0.0 reste compatible si son premier port est disponible ; installer l’archive 2.1.0 est nécessaire pour bénéficier du contournement. Aucun réglage de pare-feu ni réservation Windows n’est modifié.
 
 Après cette mise à jour, recharger SeaPilot puis ouvrir **Documents et Google Drive** : la vérification se lance automatiquement. Le chemin enregistré est conservé. Une connexion encore refusée doit être vérifiée dans les autorisations du navigateur pour l’ouverture du protocole et la connexion locale.
