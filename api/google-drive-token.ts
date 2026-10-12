@@ -70,7 +70,8 @@ export function createGoogleDriveTokenBroker({ getEnv, getOidcToken, send = fetc
   };
   return async (request: Request): Promise<Response> => {
     if (request.method !== 'POST') return new Response(null, { status: 405, headers: { ...RESPONSE_HEADERS, Allow: 'POST' } });
-    if (request.headers.has('origin') || request.headers.has('sec-fetch-mode')) return error(403, 'SERVER_REQUEST_REQUIRED');
+    // Node/Deno fetch may set Sec-Fetch-Mode without a browser origin.
+    if (request.headers.has('origin') || request.headers.has('sec-fetch-site')) return error(403, 'SERVER_REQUEST_REQUIRED');
     if (getEnv('VERCEL_ENV') !== 'production') return error(503, 'PRODUCTION_ONLY');
     const expected = getEnv('GOOGLE_DRIVE_TOKEN_BROKER_SECRET');
     if (!expected || !/^[\x21-\x7e]{43,256}$/.test(expected)) return error(503, 'BROKER_NOT_CONFIGURED');
@@ -79,7 +80,24 @@ export function createGoogleDriveTokenBroker({ getEnv, getOidcToken, send = fetc
     // Both buffers always contain 32 bytes; secret length does not change comparison timing.
     if (!timingSafeEqual(createHash('sha256').update(provided).digest(), createHash('sha256').update(expected).digest())) return error(401, 'BROKER_UNAUTHORIZED');
     const url = new URL(request.url);
-    if (url.pathname !== '/api/google-drive-token' || url.search || request.body !== null) return error(400, 'EMPTY_REQUEST_REQUIRED');
+    if (url.pathname !== '/api/google-drive-token' || url.search) return error(400, 'EMPTY_REQUEST_REQUIRED');
+    const length = request.headers.get('content-length');
+    if (length !== null && (!/^0+$/.test(length))) return error(400, 'EMPTY_REQUEST_REQUIRED');
+    // Vercel can provide a non-null stream for an empty POST. Inspect the stream
+    // without collecting it: the first byte rejects the request immediately.
+    if (request.body) {
+      const reader = request.body.getReader();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const expired = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Body timeout')), 2_000); });
+      try {
+        for (;;) {
+          const part = await Promise.race([reader.read(), expired]);
+          if (part.done) break;
+          if (part.value.byteLength !== 0) return error(400, 'EMPTY_REQUEST_REQUIRED');
+        }
+      } catch { return error(400, 'EMPTY_REQUEST_REQUIRED'); }
+      finally { clearTimeout(timer); void reader.cancel().catch(() => {}); }
+    }
     try {
       if (!cached || cached.expires <= now() + 60_000) {
         if (!refreshing) refreshing = refresh().finally(() => { refreshing = null; });

@@ -26,9 +26,9 @@ describe('Vercel Google Drive token broker', () => {
   it('rejects anonymous, wrong, browser and non-POST requests before obtaining an OIDC token', async () => {
     const t = setup();
     const requests: Record<string,string>[] = [{}, { Authorization: 'Bearer wrong' }, { Authorization: `Bearer ${secret}`, Origin: 'https://sea-pilot-ten.vercel.app' },
-      { Authorization: `Bearer ${secret}`, 'Sec-Fetch-Mode': 'cors' }];
+      { Authorization: `Bearer ${secret}`, 'Sec-Fetch-Site': 'same-origin' }];
     for (const headers of requests) {
-      expect((await t.handler(t.request({ headers }))).status).toBe(headers.Origin || 'Sec-Fetch-Mode' in headers ? 403 : 401);
+      expect((await t.handler(t.request({ headers }))).status).toBe(headers.Origin || 'Sec-Fetch-Site' in headers ? 403 : 401);
     }
     for (const method of ['GET', 'OPTIONS', 'PUT']) expect((await t.handler(t.request({ method }))).status).toBe(405);
     expect(t.getOidcToken).not.toHaveBeenCalled(); expect(t.send).not.toHaveBeenCalled();
@@ -43,6 +43,23 @@ describe('Vercel Google Drive token broker', () => {
     const t = setup(); expect((await t.handler(t.request({ body: JSON.stringify({ scope: ['https://www.googleapis.com/auth/drive'] }) }))).status).toBe(400);
     expect((await t.handler(new Request(`${t.request().url}?file=foreign`, t.request()))).status).toBe(400);
     expect(t.getOidcToken).not.toHaveBeenCalled();
+  });
+  it('accepts a server fetch mode and a non-null empty POST stream', async () => {
+    const t = setup();
+    const request = t.request({ headers: { Authorization: `Bearer ${secret}`, 'Sec-Fetch-Mode': 'cors', 'Content-Length': '0' },
+      body: new ReadableStream({ start(controller) { controller.close(); } }), duplex: 'half' } as RequestInit);
+    expect(request.body).not.toBeNull();
+    expect((await t.handler(request)).status).toBe(200);
+  });
+  it('rejects any nonempty stream even with a zero or omitted content length', async () => {
+    for (const length of [undefined, '0', '1', 'invalid']) {
+      const t = setup();
+      const headers: Record<string, string> = { Authorization: `Bearer ${secret}` };
+      if (length !== undefined) headers['Content-Length'] = length;
+      const request = t.request({ headers, body: new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([1])); controller.close(); } }), duplex: 'half' } as RequestInit);
+      expect((await t.handler(request)).status).toBe(400);
+      expect(t.getOidcToken).not.toHaveBeenCalled();
+    }
   });
   it('uses fixed STS and IAM endpoints and emits only the readonly ten-minute token without caching or CORS headers', async () => {
     const t = setup(); const response = await t.handler(t.request());
