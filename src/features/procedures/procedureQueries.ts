@@ -4,6 +4,7 @@ import { buildProcedureCode } from './procedureReview';
 import { buildGoogleDriveDesktopUri, googleDriveFileUrl, parseProcedureDriveLink } from './procedureGoogleDrive';
 import type { ProcedureDriveReceipt, ProcedureDriveSource } from './procedureDriveFiles';
 import { normalizeProcedureTags } from './procedureTags';
+import { hasDocumentDriveFile } from '../documents/documentDriveStorage';
 
 export const PROCEDURE_DOCUMENT_BUCKET = 'procedure-documents';
 
@@ -632,7 +633,8 @@ export async function getProcedureFileUrl(
     || !record.fileName.toLowerCase().endsWith('.pdf'))) {
     throw new Error('Seules les versions PDF publiées peuvent être ouvertes.');
   }
-  if (!('procedureId' in record) && record.googleDriveFileId) {
+  const migratedDriveFile = await hasDocumentDriveFile(client, record.storageBucket, record.storagePath);
+  if (!('procedureId' in record) && record.googleDriveFileId && !migratedDriveFile) {
     return action === 'open'
       ? buildGoogleDriveDesktopUri(record.googleDrivePath || '')
       : googleDriveFileUrl(record.googleDriveFileId);
@@ -644,5 +646,5 @@ export async function getProcedureFileUrl(
   const options = action === 'download' ? { download: record.fileName || true } : undefined;
   const { data, error } = await client.storage.from(record.storageBucket).createSignedUrl(record.storagePath, 300, options);
   if (error) throw error;
-  return action === 'open' ? buildProcedureDesktopUri(record, data.signedUrl) : data.signedUrl;
+  return action === 'open' && !migratedDriveFile ? buildProcedureDesktopUri(record, data.signedUrl) : data.signedUrl;
 }

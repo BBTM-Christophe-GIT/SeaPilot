@@ -12,7 +12,7 @@ function fixture(mapping: unknown = null) {
   query.insert = insert;
   const download = vi.fn().mockResolvedValue({ data: new Blob(['legacy']), error: null });
   const storage = { from: vi.fn(() => ({ download, remove: vi.fn() })) };
-  const rpc = vi.fn().mockResolvedValue({ data: { directory: 'Projet', folder: 'P144 – GUARD VESSEL EMDT', company_id: 1 }, error: null });
+  const rpc = vi.fn().mockImplementation(async (name: string) => ({ data: name === 'document_drive_lookup' ? null : { directory: 'Projet', folder: 'P144 – GUARD VESSEL EMDT', company_id: 1 }, error: null }));
   const client = { from: vi.fn(() => query), rpc, storage };
   return { client, insert, download };
 }

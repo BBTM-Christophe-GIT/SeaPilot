@@ -1,6 +1,7 @@
 import { loadPeoplePortraits } from './portraitMedia';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { readHrDriveFile, writeHrDriveFile } from './hrDocumentDrive';
+import { hasDocumentDriveFile } from '../documents/documentDriveStorage';
 import type { RoleKey } from '../permissions/roles';
 
 const PEOPLE_SELECT = [
@@ -1587,7 +1588,9 @@ export async function updateHrDocumentMedicalDetails(
 }
 
 export async function createHrDocumentSignedUrl(client: SupabaseClient, document: HrDocumentRecord): Promise<string> {
-  if (document.drivePath) return URL.createObjectURL(await readHrDriveFile(client, document));
+  if (document.drivePath && !await hasDocumentDriveFile(client, document.storageBucket, document.storagePath)) {
+    return URL.createObjectURL(await readHrDriveFile(client, document));
+  }
   if (document.storageBucket && document.storagePath) {
     const { data, error } = await client.storage.from(document.storageBucket).createSignedUrl(document.storagePath, 60);
 
@@ -1606,7 +1609,9 @@ export async function createHrDocumentSignedUrl(client: SupabaseClient, document
 }
 
 export async function downloadHrDocumentBlob(client: SupabaseClient, document: HrDocumentRecord): Promise<Blob> {
-  if (document.drivePath) return readHrDriveFile(client, document);
+  if (document.drivePath && !await hasDocumentDriveFile(client, document.storageBucket, document.storagePath)) {
+    return readHrDriveFile(client, document);
+  }
   if (document.storageBucket && document.storagePath) {
     const { data, error } = await client.storage.from(document.storageBucket).download(document.storagePath);
 

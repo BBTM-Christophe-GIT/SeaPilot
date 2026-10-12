@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { blobBase64, connectLocalDrive, localDriveRequest, supportsLocalDriveVersion } from '../documents/localDriveLauncher';
+import { hasDocumentDriveFile } from '../documents/documentDriveStorage';
 
 interface DriveReceipt { path: string; bytes: number; sha256: string; base64?: string }
 interface DriveFile { path: string; bytes: number; sha256: string; mime_type: string; drive_file_id?: string | null }
@@ -59,12 +60,13 @@ export function projectDriveStorage(client: SupabaseClient, bucket: string) {
     },
     async download(path: string) {
       const file = await lookup(path);
-      if (!file) return client.storage.from(bucket).download(path);
+      if (!file || await hasDocumentDriveFile(client, bucket, path)) return client.storage.from(bucket).download(path);
       return { data: await read(file), error: null };
     },
     async createSignedUrl(path: string, seconds: number) {
       const file = await lookup(path);
       if (!file) return bucket === 'sharepoint' ? { data: { signedUrl: path }, error: null } : client.storage.from(bucket).createSignedUrl(path, seconds);
+      if (await hasDocumentDriveFile(client, bucket, path)) return client.storage.from(bucket).createSignedUrl(path, seconds);
       if (file.drive_file_id && /^[a-zA-Z0-9_-]+$/.test(file.drive_file_id)) return { data: { signedUrl: `https://drive.google.com/file/d/${file.drive_file_id}/view` }, error: null };
       const signedUrl = URL.createObjectURL(await read(file));
       window.setTimeout(() => URL.revokeObjectURL(signedUrl), seconds * 1000);

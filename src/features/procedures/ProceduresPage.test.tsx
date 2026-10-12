@@ -182,7 +182,7 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
     if (table === 'procedure_tag_catalogue') return { select: catalogueSelect, upsert: catalogueUpsert, update: catalogueUpdate };
     throw new Error(`Unexpected table ${table}`);
   });
-  const rpc = vi.fn().mockResolvedValue({ data: options.published || publishedProcedureRow, error: null });
+  const rpc = vi.fn().mockImplementation(async (name: string) => ({ data: name === 'document_drive_lookup' ? null : options.published || publishedProcedureRow, error: null }));
   const client = {
     rpc, from,
     storage: { from: vi.fn(() => ({ upload, remove, createSignedUrl })) },
