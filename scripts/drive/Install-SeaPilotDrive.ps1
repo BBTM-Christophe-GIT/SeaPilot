@@ -23,6 +23,29 @@ New-Item -Path "$protocolKey\shell\open\command" -Force | Out-Null
 Set-Item -Path $protocolKey -Value 'URL:SeaPilot Google Drive'
 New-ItemProperty -Path $protocolKey -Name 'URL Protocol' -Value '' -PropertyType String -Force | Out-Null
 Set-Item -Path "$protocolKey\shell\open\command" -Value ('"' + $executable + '" "%1"')
+# Notify the Windows Shell after replacing the protocol command. A browser
+# already running can otherwise launch its cached former executable even though
+# HKCU/HKCR point to the newly compiled binary. Existing transfers keep running.
+try {
+    if (!('SeaPilotDriveInstallerShellNotification' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class SeaPilotDriveInstallerShellNotification {
+    [DllImport("shell32.dll", ExactSpelling = true)]
+    public static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
+}
+'@
+    }
+    # SHCNE_ASSOCCHANGED; SHCNF_IDLIST (0) | SHCNF_FLUSHNOWAIT (0x3000).
+    # Protocol association changes have no item arguments. Begin delivery without
+    # waiting for other applications to handle it, so installation stays responsive.
+    [SeaPilotDriveInstallerShellNotification]::SHChangeNotify(0x08000000, 0x00003000, [IntPtr]::Zero, [IntPtr]::Zero)
+} catch {
+    # The binary and protocol are already installed. An optional cache refresh
+    # failure must not interrupt preservation or configuration of the Drive root.
+    Write-Warning 'Le lanceur est installe, mais Windows n a pas pu actualiser son association. Fermez puis rouvrez le navigateur, rechargez SeaPilot et utilisez Verifier la version installee.'
+}
 if ($SyncRoot) {
     New-Item -Path 'HKCU:\Software\SeaPilot\Drive' -Force | Out-Null
     New-ItemProperty -Path 'HKCU:\Software\SeaPilot\Drive' -Name Root -Value $SyncRoot -PropertyType String -Force | Out-Null

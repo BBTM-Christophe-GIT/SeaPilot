@@ -1,12 +1,20 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { launcherOpenUri, localDrivePorts, localDriveRequest, supportsLocalDriveVersion } from './localDriveLauncher';
+import { launcherOpenUri, launcherRootOpenUri, localDrivePorts, localDriveRequest, supportsLocalDriveVersion } from './localDriveLauncher';
 
 vi.mock('../../lib/env', () => ({ loadAppEnv: () => ({ supabaseUrl: 'https://szlvyrrmvdvhzixilymh.supabase.co', supabaseAnonKey: 'public-test-key' }) }));
 const connection = { url: 'http://127.0.0.1:50000/session', expiresAt: Date.now() + 100000 };
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('common Windows launcher', () => {
+  it('encodes an authorized full root path without adding a second module directory', () => {
+    const path = 'Procedures PDF/Équipe/Version D/Consigne été.pdf';
+    const uri = launcherRootOpenUri(path);
+    const payload = uri.split('/').pop()!.replace(/-/g, '+').replace(/_/g, '/');
+    expect(new TextDecoder().decode(Uint8Array.from(atob(payload), ch => ch.charCodeAt(0)))).toBe(path);
+    for (const invalid of ['../file.pdf', '/file.pdf', 'C:\\file.docx', 'Procedures//file.docx', 'Procedures/file.docx.lnk',
+      'Procedures/file.exe', 'Procedures/NUL.docx', 'Procedures/file\n.docx']) expect(() => launcherRootOpenUri(invalid)).toThrow();
+  });
   it.each([
     ['2.5.0', '2.5.0', true], ['2.5.1', '2.5.0', true], ['2.6.0', '2.5.0', true],
     ['2.10.0', '2.6.0', true], ['2.4.9', '2.5.0', false], ['2.5.0', '2.5.1', false],

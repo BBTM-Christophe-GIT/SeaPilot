@@ -412,6 +412,11 @@ verify_jwt = true
 [functions.planning-calendar]
 verify_jwt = false
 
+# Authenticated POST requests validate the SeaPilot JWT in the handler. Browser
+# downloads use an HMAC capability expiring within 120 seconds.
+[functions.document-drive]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
