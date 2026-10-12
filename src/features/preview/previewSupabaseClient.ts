@@ -1471,6 +1471,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   ],
   planning_fleet_display_settings: [{ company_id: 1, function_order: [] }],
   action_plan_settings: [{ company_id: 1, edit_button_enabled: true, updated_at: '2026-09-06T18:00:00Z' }],
+  working_time_edit_settings: [{ company_id: 1, unrestricted_editing_enabled: false }],
   action_documents: [
     {
       id: 9871, action_item_id: 9861, action_sharepoint_item_id: 'preview-action-101',
@@ -2357,6 +2358,15 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     settings.updated_at = new Date().toISOString();
     if (!previewRows('action_plan_settings').length) PREVIEW_ROWS.action_plan_settings.push(settings);
     return createPreviewQuery({ data: settings, error: null });
+  }
+  if (functionName === 'working_time_get_edit_settings' || functionName === 'working_time_save_edit_settings') {
+    const settings = previewRows('working_time_edit_settings')[0];
+    if (functionName === 'working_time_save_edit_settings') {
+      settings.unrestricted_editing_enabled = args.p_unrestricted_editing_enabled === true;
+    }
+    // The demo account is not Christophe MINASSIAN. The real server decides who
+    // may use free editing; enabling the demo setting never simulates that grant.
+    return createPreviewQuery({ data: { ...settings, can_use_unrestricted_editing: false }, error: null });
   }
   if (functionName === 'save_planning_fleet_display_settings') {
     const settings = previewRows('planning_fleet_display_settings')[0];

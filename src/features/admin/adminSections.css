@@ -104,3 +104,20 @@
 .admin-root-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .admin-root-actions button:disabled { opacity: .5; cursor: not-allowed; }
 .admin-root-error { color: #9b1c1c; background: #fff1f1; padding: 14px; border-radius: 6px; }
+
+.admin-working-time-settings .admin-setting-card {
+  padding: var(--sp-space-4);
+  border-color: var(--sp-border);
+  border-radius: var(--sp-panel-radius);
+  background: var(--sp-surface);
+  box-shadow: var(--sp-shadow);
+}
+.admin-working-time-settings .admin-setting-card > span { min-width: 0; }
+.admin-working-time-settings .admin-setting-card strong { color: var(--sp-heading); }
+.admin-working-time-settings .admin-setting-card small { color: var(--sp-muted); line-height: 1.5; }
+.admin-working-time-settings .admin-setting-card input { height: var(--sp-control-height); right: var(--sp-space-4); }
+.admin-working-time-settings .admin-setting-card i { background: var(--sp-border-strong); }
+.admin-working-time-settings .admin-setting-card i::after { background: var(--sp-surface); box-shadow: var(--sp-shadow); }
+.admin-working-time-settings .admin-setting-card input:checked + i { background: var(--sp-primary); }
+.admin-working-time-settings .admin-setting-card input:focus-visible + i { outline-color: var(--sp-focus); }
+.admin-working-time-settings > [aria-live]:empty { display: none; }

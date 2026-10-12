@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { jsPDF } from 'jspdf';
 import type { WorkingTimeInterval } from './workingTimeModel';
+import { workingTimeCurrentValidationEvents, workingTimeRegisterSignatureSnapshots } from './workingTimeSignatureEvidence';
 import type {
   WorkingTimeActiveSignature,
   WorkingTimeSignatureSnapshot,
@@ -119,10 +120,6 @@ function phaseSeconds(phases: DayPhase[]): number {
   return phases.reduce((total, phase) => total + (phase.endMinute - phase.startMinute) * 60, 0);
 }
 
-function latestSignatureEvent(events: WorkingTimeValidationEvent[], eventType: string) {
-  return events.find((event) => event.eventType === eventType)?.signatureSnapshot || null;
-}
-
 function fitText(document: jsPDF, value: string, width: number): string {
   if (!value) return '';
   if (document.getTextWidth(value) <= width) return value;
@@ -158,11 +155,12 @@ export async function prepareWorkingTimePdf(
   const audit = workspace.validations
     .filter((event) => event.registerId === register.id)
     .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
-  const sailor = latestSignatureEvent(audit, 'sailor_signed');
-  const validator = latestSignatureEvent(audit, 'captain_validated');
+  const currentEvents = workingTimeCurrentValidationEvents(audit, register.id);
+  const { subject: sailor, approver: validator } = workingTimeRegisterSignatureSnapshots(register, currentEvents);
   // Approved XLSM imports may predate the register signature workflow. Reuse
   // the holder's authorized profile image without creating a signature event.
-  const sailorProfile = !sailor && audit.some((event) => event.eventType === 'approved_import')
+  const sailorProfile = !sailor && register.status === 'validated'
+    && currentEvents.some((event) => event.eventType === 'approved_import')
     ? workspace.signatures.find((signature) => signature.personId === register.personId) || null
     : null;
   const [sailorPng, validatorPng] = await Promise.all([

@@ -1,5 +1,13 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.72.1`, build `2026-10-12.001`, ajoute l’interrupteur de modification
+libre du suivi du temps de travail dans Administration → Accès et rôles.
+Le réglage est désactivé par défaut et son utilisation est réservée au compte
+Christophe MINASSIAN. Les corrections restent historisées ; les preuves de
+validation antérieures sont conservées comme historique lorsque les heures changent.
+La migration doit être appliquée avant le client. Voir
+[la modification libre du suivi du temps de travail](./working-time-free-edit.md).
+
 Version `3.71.14`, build `2026-10-10.007`, présente Brevets et visites médicales
 en arborescence dans l'aperçu et le PDF : catégorie au rang 1, documents en
 retrait au rang 2, classés par catégorie puis nom complet affiché. Les champs

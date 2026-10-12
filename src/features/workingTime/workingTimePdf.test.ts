@@ -121,6 +121,61 @@ describe('working-time PDF', () => {
     expect(download).not.toHaveBeenCalledWith(sailorProfile.storagePath);
   });
 
+  it.each(['draft', 'reopened'] as const)('does not present historical signatures or imported profile signatures on a %s register', async (status) => {
+    const download = vi.fn();
+    const client = { storage: { from: vi.fn(() => ({ download })) } } as unknown as SupabaseClient;
+    const prepared = await prepareWorkingTimePdf(client, { ...workspace, signatures: [sailorProfile] }, { ...register, status });
+
+    expect(download).not.toHaveBeenCalled();
+    expect(prepared.signatures).toEqual([
+      { label: 'Marin', snapshot: null, profileSignature: null, png: null },
+      { label: 'Capitaine / validateur', snapshot: null, png: null },
+    ]);
+    expect(prepared.audit).toEqual(workspace.validations);
+    const generated = await buildWorkingTimePdf(prepared);
+    const pageContent = generated.document.internal.pages.flat().join('\n');
+    expect(pageContent.match(/Signature non apposée/g)).toHaveLength(2);
+    expect(pageContent).not.toContain('Camille CAPITAINE');
+  });
+
+  it('keeps older signed evidence in audit without reusing it after the register is reopened and revalidated', async () => {
+    const download = vi.fn();
+    const client = { storage: { from: vi.fn(() => ({ download })) } } as unknown as SupabaseClient;
+    const reopenedWorkspace = {
+      ...workspace,
+      signatures: [sailorProfile],
+      validations: [{
+        ...workspace.validations[0], id: 503, eventType: 'reopened', previousStatus: 'validated', newStatus: 'reopened',
+        occurredAt: '2026-09-01T09:00:00Z',
+      }, ...workspace.validations],
+    };
+    const prepared = await prepareWorkingTimePdf(client, reopenedWorkspace, register);
+
+    expect(download).not.toHaveBeenCalled();
+    expect(prepared.signatures.every((signature) => !signature.snapshot && !signature.profileSignature && !signature.png)).toBe(true);
+    expect(prepared.audit).toEqual(reopenedWorkspace.validations);
+  });
+
+  it('uses only signatures from the new signing cycle following a reopening', async () => {
+    const download = vi.fn().mockResolvedValue({ data: new Blob(['png']), error: null });
+    const client = { storage: { from: vi.fn(() => ({ download })) } } as unknown as SupabaseClient;
+    const currentSnapshot = { ...snapshot, signedAt: '2026-09-02T09:00:00Z', storagePath: '1/20/new-signature.png' };
+    const prepared = await prepareWorkingTimePdf(client, {
+      ...workspace,
+      validations: [{
+        ...workspace.validations[2], id: 504, occurredAt: currentSnapshot.signedAt, signatureSnapshot: currentSnapshot,
+      }, {
+        ...workspace.validations[0], id: 503, eventType: 'reopened', previousStatus: 'validated', newStatus: 'reopened',
+        occurredAt: '2026-09-01T09:00:00Z',
+      }, ...workspace.validations],
+    }, { ...register, status: 'submitted' });
+
+    expect(download).toHaveBeenCalledOnce();
+    expect(download).toHaveBeenCalledWith(currentSnapshot.storagePath);
+    expect(prepared.signatures[0].snapshot).toEqual(currentSnapshot);
+    expect(prepared.signatures[1].snapshot).toBeNull();
+  });
+
   it.each([
     { role: 'marin', currentPersonId: 20 },
     { role: 'capitaine', currentPersonId: 10 },

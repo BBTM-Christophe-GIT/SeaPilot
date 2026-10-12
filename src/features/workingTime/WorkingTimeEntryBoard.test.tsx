@@ -41,6 +41,7 @@ function Harness({
   planningContextLoading = false,
   planningVesselId = 7,
   approverName = 'Camille CAPITAINE',
+  unrestrictedEditing = false,
 }: {
   onSubmit?: (phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') => void;
   saveDraft?: boolean;
@@ -51,6 +52,7 @@ function Harness({
   planningContextLoading?: boolean;
   planningVesselId?: number | null;
   approverName?: string | null;
+  unrestrictedEditing?: boolean;
 }) {
   const [startsAt, setStartsAt] = useState('2026-08-03T08:00');
   const [endsAt, setEndsAt] = useState('2026-08-03T12:00');
@@ -59,6 +61,7 @@ function Harness({
     <WorkingTimeEntryBoard
       approverName={approverName}
       canEdit
+      unrestrictedEditing={unrestrictedEditing}
       client={{} as SupabaseClient}
       comment=""
       editingIntervalId={null}
@@ -247,6 +250,45 @@ describe('WorkingTimeEntryBoard', () => {
     fireEvent.pointerUp(cells[16]);
 
     await waitFor(() => expect(screen.getByRole('textbox')).toBeRequired());
+  });
+
+  it('allows an unrestricted save without a comment when the server detects a violation', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    vi.mocked(fetchWorkingTimePhasesRecommendation).mockResolvedValue({
+      ...recommendation, status: 'non_conforme', violationCodes: ['work_24h'],
+    });
+    render(<Harness unrestrictedEditing onSubmit={onSubmit} />);
+
+    await waitFor(() => expect(screen.getByText('Non conforme', { selector: '.working-time-analysis-bar dd' })).toBeInTheDocument());
+    expect(screen.getByRole('textbox')).not.toBeRequired();
+    await user.click(screen.getByRole('button', { name: 'Enregistrer les périodes' }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.any(Array), 'save-draft');
+  });
+
+  it('does not block an unrestricted save when recommendation or planning context is unavailable', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    vi.mocked(fetchWorkingTimePhasesRecommendation).mockRejectedValue(new Error('Recommendation unavailable'));
+    render(<Harness unrestrictedEditing planningContextLoading onSubmit={onSubmit} />);
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Recommendation unavailable'));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer les périodes' }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.any(Array), 'save-draft');
+  });
+
+  it('still rejects a phase overlapping a saved interval during unrestricted editing', () => {
+    const interval: WorkingTimeInterval = {
+      id: 88, registerId: 5, companyId: 1, personId: 42, localWorkDate: '2026-08-03',
+      startsAt: new Date('2026-08-03T08:00').toISOString(), endsAt: new Date('2026-08-03T12:00').toISOString(),
+      timezoneName: 'Europe/Paris', utcOffsetMinutes: 120, vesselId: 7, watchGroup: 'Bordée 1',
+      comment: null, authorUserId: 'user', authorPersonId: 42, sourceType: 'manual',
+      sourceReference: null, sourceRecordKey: null,
+    };
+    render(<Harness unrestrictedEditing intervals={[interval]} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Une phase recouvre un créneau déjà enregistré.');
+    expect(screen.getByRole('button', { name: 'Enregistrer les périodes' })).toBeDisabled();
   });
 
   it('clears all pending periods without keeping the last active range', async () => {

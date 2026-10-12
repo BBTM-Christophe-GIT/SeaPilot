@@ -7,15 +7,19 @@ import {
   discardWorkingTimeDraft,
   fetchWorkingTimeDayContext,
   getOrCreateWorkingTimeRegister,
+  saveWorkingTimeInterval,
   saveWorkingTimePhases,
   submitWorkingTimeDay,
   validateWorkingTimeDay,
   validateWorkingTimeDayWithComment,
+  voidWorkingTimeInterval,
 } from './workingTimeQueries';
 import { useWorkingTimeWorkspace } from './useWorkingTimeWorkspace';
 import { WorkingTimeWorkflowPanel, workingTimeInitialDay } from './WorkingTimeWorkflowPanel';
+import { fetchWorkingTimeEditSettings } from './workingTimeSettings';
 
 vi.mock('./useWorkingTimeWorkspace', () => ({ useWorkingTimeWorkspace: vi.fn() }));
+vi.mock('./workingTimeSettings', () => ({ fetchWorkingTimeEditSettings: vi.fn() }));
 vi.mock('./workingTimeQueries', async (importOriginal) => {
   const original = await importOriginal<typeof import('./workingTimeQueries')>();
   return {
@@ -174,6 +178,7 @@ function renderPanel(
 describe('WorkingTimeWorkflowPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(fetchWorkingTimeEditSettings).mockResolvedValue({ unrestrictedEditingEnabled: false, canUseUnrestrictedEditing: false });
     reload.mockResolvedValue(true);
     vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue(defaultDayContext);
   });
@@ -935,5 +940,175 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByText(/Journée validée et clôturée/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Corriger' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Réouvrir' })).not.toBeInTheDocument();
+  });
+
+  it('lets an administrator correct an old validated interval with unrestricted editing enabled', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchWorkingTimeEditSettings).mockResolvedValue({ unrestrictedEditingEnabled: true, canUseUnrestrictedEditing: true });
+    const data = workspace('validated', 20);
+    data.dayApprovals = [submittedApproval({ status: 'validated', validatedAt: '2026-08-03T17:00:00Z' })];
+    data.editablePeople = [];
+    data.signatures = [];
+    renderPanel(['admin'], data, currentPerson, '2026-10-11', { personId: 20, date: '2026-08-03' });
+
+    const grid = screen.getByRole('grid', { name: 'Grille horaire du 2026-08-03' });
+    await waitFor(() => expect(grid).toHaveAttribute('aria-readonly', 'false'));
+    await user.click(within(grid).getByRole('gridcell', { name: /08:00, travail enregistré/ }));
+    await user.click(screen.getByRole('button', { name: 'Corriger' }));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la correction' }));
+
+    expect(saveWorkingTimeInterval).toHaveBeenCalledWith(client, expect.objectContaining({
+      registerId: 100, intervalId: 200, comment: null,
+    }));
+    expect(submitWorkingTimeDay).not.toHaveBeenCalled();
+    expect(validateWorkingTimeDay).not.toHaveBeenCalled();
+    expect(screen.getByText(/une modification annulera sa validation et ses signatures actuelles/)).toBeInTheDocument();
+  });
+
+  it('lets an administrator add periods on a validated day without signing or justifying', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchWorkingTimeEditSettings).mockResolvedValue({ unrestrictedEditingEnabled: true, canUseUnrestrictedEditing: true });
+    const data = workspace('validated', 20);
+    data.dayApprovals = [submittedApproval({ status: 'validated', validatedAt: '2026-08-03T17:00:00Z' })];
+    data.signatures = [];
+    renderPanel(['admin'], data, currentPerson, '2026-10-11', { personId: 20, date: '2026-08-03' });
+
+    const grid = screen.getByRole('grid', { name: 'Grille horaire du 2026-08-03' });
+    await waitFor(() => expect(grid).toHaveAttribute('aria-readonly', 'false'));
+    fireEvent.pointerDown(within(grid).getAllByRole('gridcell')[36]);
+    fireEvent.pointerUp(within(grid).getAllByRole('gridcell')[36]);
+    await user.click(screen.getByRole('button', { name: 'Enregistrer les périodes' }));
+
+    expect(saveWorkingTimePhases).toHaveBeenCalledWith(client, expect.objectContaining({
+      registerId: 100, comment: null,
+      phases: [{ startsAt: new Date('2026-08-03T18:00').toISOString(), endsAt: new Date('2026-08-03T18:30').toISOString() }],
+    }));
+    expect(submitWorkingTimeDay).not.toHaveBeenCalled();
+    expect(validateWorkingTimeDay).not.toHaveBeenCalled();
+  });
+
+  it('requires saving free edits before validating a submitted day to avoid a partial save and failed validation', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchWorkingTimeEditSettings).mockResolvedValue({ unrestrictedEditingEnabled: true, canUseUnrestrictedEditing: true });
+    const data = workspace('submitted', 20);
+    data.dayApprovals = [submittedApproval()];
+    renderPanel(['admin'], data, currentPerson, '2026-10-11', { personId: 20, date: '2026-08-03' });
+
+    const grid = screen.getByRole('grid', { name: 'Grille horaire du 2026-08-03' });
+    await waitFor(() => expect(screen.getByText('Modification libre activée pour Christophe MINASSIAN.')).toBeInTheDocument());
+    const validateButton = screen.getByRole('button', { name: 'Valider la journée' });
+    expect(validateButton).toBeEnabled();
+    fireEvent.pointerDown(within(grid).getAllByRole('gridcell')[36]);
+    fireEvent.pointerUp(within(grid).getAllByRole('gridcell')[36]);
+
+    expect(validateButton).toBeDisabled();
+    await user.click(validateButton);
+    expect(saveWorkingTimePhases).not.toHaveBeenCalled();
+    expect(validateWorkingTimeDay).not.toHaveBeenCalled();
+    const saveButton = screen.getByRole('button', { name: 'Enregistrer les périodes' });
+    expect(saveButton).toBeEnabled();
+    await user.click(saveButton);
+    expect(saveWorkingTimePhases).toHaveBeenCalledOnce();
+    expect(validateWorkingTimeDay).not.toHaveBeenCalled();
+  });
+
+  it('lets an administrator retire a validated interval without a reason in unrestricted mode', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchWorkingTimeEditSettings).mockResolvedValue({ unrestrictedEditingEnabled: true, canUseUnrestrictedEditing: true });
+    const data = workspace('validated', 20);
+    data.dayApprovals = [submittedApproval({ status: 'validated', validatedAt: '2026-08-03T17:00:00Z' })];
+    renderPanel(['admin'], data, currentPerson, '2026-10-11', { personId: 20, date: '2026-08-03' });
+
+    const grid = screen.getByRole('grid', { name: 'Grille horaire du 2026-08-03' });
+    await waitFor(() => expect(grid).toHaveAttribute('aria-readonly', 'false'));
+    await user.click(within(grid).getByRole('gridcell', { name: /08:00, travail enregistré/ }));
+    await user.click(screen.getByRole('button', { name: 'Retirer' }));
+    expect(screen.getByLabelText('Motif du retrait (facultatif)')).toHaveValue('');
+    await user.click(screen.getByRole('button', { name: 'Confirmer' }));
+
+    expect(voidWorkingTimeInterval).toHaveBeenCalledWith(client, 200, '');
+  });
+
+  it.each(['marin', 'capitaine', 'armement', 'direction'] as const)('does not unlock validated days for a real %s profile when the setting is enabled', async (role) => {
+    const user = userEvent.setup();
+    vi.mocked(fetchWorkingTimeEditSettings).mockResolvedValue({ unrestrictedEditingEnabled: true, canUseUnrestrictedEditing: true });
+    const ownRegister = role === 'marin';
+    const data = workspace('validated', ownRegister ? 10 : 20);
+    data.dayApprovals = [submittedApproval({
+      personId: ownRegister ? 10 : 20, status: 'validated', validatedAt: '2026-08-03T17:00:00Z',
+    })];
+    const person = { ...currentPerson, functionLabel: role === 'capitaine' ? 'Capitaine' : 'Matelot' };
+    renderPanel([role], data, person, '2026-10-11');
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+
+    expect(screen.getByRole('grid', { name: 'Grille horaire du 2026-08-03' })).toHaveAttribute('aria-readonly', 'true');
+    expect(screen.queryByRole('button', { name: 'Enregistrer les périodes' })).not.toBeInTheDocument();
+  });
+
+  it('keeps an administrator locked if the setting cannot be read', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchWorkingTimeEditSettings).mockRejectedValue(new Error('Settings unavailable'));
+    const data = workspace('validated', 20);
+    data.dayApprovals = [submittedApproval({ status: 'validated', validatedAt: '2026-08-03T17:00:00Z' })];
+    renderPanel(['admin'], data, currentPerson, '2026-10-11');
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+
+    expect(fetchWorkingTimeEditSettings).toHaveBeenCalledWith(client);
+    expect(screen.getByRole('grid', { name: 'Grille horaire du 2026-08-03' })).toHaveAttribute('aria-readonly', 'true');
+  });
+
+  it('does not unlock another administrator even when their display name matches Christophe MINASSIAN', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchWorkingTimeEditSettings).mockResolvedValue({ unrestrictedEditingEnabled: true, canUseUnrestrictedEditing: false });
+    const data = workspace('validated', 20);
+    data.dayApprovals = [submittedApproval({ status: 'validated', validatedAt: '2026-08-03T17:00:00Z' })];
+    renderPanel(['admin'], data, { ...currentPerson, firstName: 'Christophe', lastName: 'MINASSIAN' }, '2026-10-11');
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+
+    expect(screen.getByRole('grid', { name: 'Grille horaire du 2026-08-03' })).toHaveAttribute('aria-readonly', 'true');
+    expect(screen.queryByText('Modification libre activée pour Christophe MINASSIAN.')).not.toBeInTheDocument();
+  });
+
+  it('restores the validated-day lock when unrestricted editing is disabled and settings refresh', async () => {
+    vi.mocked(fetchWorkingTimeEditSettings).mockResolvedValueOnce({ unrestrictedEditingEnabled: true, canUseUnrestrictedEditing: true })
+      .mockResolvedValue({ unrestrictedEditingEnabled: false, canUseUnrestrictedEditing: true });
+    const data = workspace('validated', 20);
+    data.dayApprovals = [submittedApproval({ status: 'validated', validatedAt: '2026-08-03T17:00:00Z' })];
+    const target = { personId: 20, date: '2026-08-03' };
+    const rendered = renderPanel(['admin'], data, currentPerson, '2026-10-11', target);
+    const grid = screen.getByRole('grid', { name: 'Grille horaire du 2026-08-03' });
+    await waitFor(() => expect(grid).toHaveAttribute('aria-readonly', 'false'));
+
+    rendered.rerender(<WorkingTimeWorkflowPanel client={client} currentPerson={currentPerson}
+      navigationTarget={target} previewMode range={{ start: '2026-08-01', end: '2026-08-31' }}
+      referenceDate="2026-10-11" refreshToken={1} roles={['admin']} />);
+
+    await waitFor(() => expect(grid).toHaveAttribute('aria-readonly', 'true'));
+    expect(screen.queryByRole('button', { name: 'Enregistrer les périodes' })).not.toBeInTheDocument();
+  });
+
+  it('treats a reopened day approval as a draft without displaying old frozen signatures', async () => {
+    const user = userEvent.setup();
+    const data = workspace('reopened');
+    const oldSignature = {
+      signatureId: 88, signerPersonId: 10, signerName: 'Camille CAPITAINE', signerRoles: ['capitaine'],
+      signedAt: '2026-08-03T16:00:00Z', versionNumber: 99, storageBucket: 'working-time-signatures',
+      storagePath: '1/10/old-signature.png', mimeType: 'image/png', fileSizeBytes: 1234, sha256: 'c'.repeat(64),
+    };
+    data.dayApprovals = [submittedApproval({ personId: 10, status: 'draft', subjectSignatureSnapshot: oldSignature, approverSignatureSnapshot: oldSignature })];
+    data.validations = [{
+      id: 900, registerId: 100, eventType: 'captain_validated', previousStatus: 'submitted', newStatus: 'validated',
+      actorName: 'Camille CAPITAINE', actorRoles: ['capitaine'], signatureSnapshot: oldSignature,
+      intervalSnapshot: [], nonComplianceSnapshot: [], comment: '', occurredAt: '2026-08-03T17:00:00Z',
+    }];
+    renderPanel(['capitaine'], data);
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+
+    expect(screen.getByRole('grid', { name: 'Grille horaire du 2026-08-03' })).toHaveAttribute('aria-readonly', 'false');
+    expect(screen.getByRole('button', { name: 'Valider' })).toBeInTheDocument();
+    expect(screen.queryByText('Validation figée')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Signature de profil v99/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Valider' }));
+    expect(submitWorkingTimeDay).toHaveBeenCalledWith(client, { registerId: 100, localWorkDate: '2026-08-03' });
   });
 });
