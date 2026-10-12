@@ -8,6 +8,7 @@ const getEnv=(name: string)=>Deno.env.get(name);
 const reader=createGoogleDriveReader(getEnv);
 const extraOrigins=(getEnv('SEAPILOT_ALLOWED_ORIGINS')||'').split(',').map(v=>v.trim()).filter(Boolean);
 Deno.serve(createDocumentDriveHandler({
+  publicFunctionUrl:new URL('/functions/v1/document-drive',url).toString(),
   userClient:authorization=>createClient(url,anonKey,{global:{headers:{Authorization:authorization}},auth:{persistSession:false,autoRefreshToken:false}}),
   readDrive:reader,
   validateDrive:reader.validate,

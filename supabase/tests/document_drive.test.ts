@@ -11,14 +11,25 @@ function setup({user=true,allowed=true,mapping: value=document,signing=secret}:{
   const getUser=vi.fn().mockResolvedValue({data:{user:user?{id:'fixture-user'}:null},error:null});
   const readDrive=vi.fn().mockImplementation(async()=>new Response('%PDF-x\n',{headers:{'Content-Type':'application/pdf','Content-Length':'7','Set-Cookie':'upstream-secret','Location':'https://foreign.test'}}));
   const validateDrive=vi.fn().mockImplementation(async (value:DriveDocument)=>({...value,version:'1'}));
-  const handler=createDocumentDriveHandler({userClient:()=>({rpc,auth:{getUser}}) as never,readDrive,validateDrive,signingSecret:()=>signing,now:()=>clock});
-  const request=(input: Record<string,unknown>={},authorization='Bearer fixture',origin?:string)=>new Request('https://instance.supabase.co/functions/v1/document-drive',{
+  const handler=createDocumentDriveHandler({publicFunctionUrl:'https://instance.supabase.co/functions/v1/document-drive',userClient:()=>({rpc,auth:{getUser}}) as never,readDrive,validateDrive,signingSecret:()=>signing,now:()=>clock});
+  const request=(input: Record<string,unknown>={},authorization='Bearer fixture',origin?:string)=>new Request('https://instance.supabase.co/document-drive',{
     method:'POST',headers:{Authorization:authorization,...(origin?{Origin:origin}:{})},body:JSON.stringify({operation:'url',bucket:'fleet-certificates',path:'1/navire/file.pdf',...input}),
   });
   return {rpc,getUser,readDrive,validateDrive,handler,request,advance:(ms:number)=>{clock+=ms;}};
 }
 
 describe('Drive access broker',()=>{
+  it.each(['https://instance.supabase.co/document-drive?untrusted=1','http://document-drive:9999/document-drive?untrusted=1'])
+    ('issues the public gateway URL when the runtime receives an internal URL: %s',async(runtimeUrl)=>{
+      const t=setup(); const request=new Request(runtimeUrl,t.request());
+      request.headers.set('X-Forwarded-Host','foreign.test'); request.headers.set('X-Forwarded-Proto','http');
+      const response=await t.handler(request); expect(response.status).toBe(200);
+      const {signedUrl}=await response.json(); const url=new URL(signedUrl);
+      expect(url.origin).toBe('https://instance.supabase.co'); expect(url.pathname).toBe('/functions/v1/document-drive');
+      expect([...url.searchParams.keys()]).toEqual(['ticket']); expect(url.hash).toBe('');
+      const file=await t.handler(new Request(signedUrl)); expect(file.status).toBe(200);
+      expect(file.headers.get('Content-Type')).toBe('application/pdf'); expect(await file.text()).toBe('%PDF-x\n');
+    });
   it('requires a verified user before any reference lookup or file access',async()=>{
     const t=setup({user:false}); expect((await t.handler(t.request())).status).toBe(401); expect(t.rpc).not.toHaveBeenCalled(); expect(t.readDrive).not.toHaveBeenCalled();
     const a=setup(); expect((await a.handler(a.request({},''))).status).toBe(401); expect(a.getUser).not.toHaveBeenCalled();

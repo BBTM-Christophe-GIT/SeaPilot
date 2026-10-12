@@ -3,6 +3,7 @@ import { base64Url, fromBase64Url, isDriveDocument, isDriveRange, isDriveVersion
   DriveAccessError, type DriveDocument, type DriveReadOptions, type DriveRange } from './googleDrive.ts';
 
 interface Dependencies {
+  publicFunctionUrl: string;
   userClient: (authorization: string)=>SupabaseClient;
   readDrive: (document: DriveDocument,options?: DriveReadOptions)=>Promise<Response>;
   validateDrive?: (document: DriveDocument)=>Promise<DriveDocument>;
@@ -27,7 +28,7 @@ const safeName=(name: unknown): name is string=>typeof name==='string' && name.l
 const validLocation=(bucket: unknown,path: unknown): boolean=>typeof bucket==='string' && /^[a-z0-9][a-z0-9-]{0,99}$/.test(bucket)
   && typeof path==='string' && path.length>0 && path.length<=2000 && !/(^\/|(^|\/)\.\.?(\/|$)|[\u0000-\u001f\u007f])/.test(path);
 
-export function createDocumentDriveHandler({userClient,readDrive,validateDrive,signingSecret,allowedOrigins=DEFAULT_ORIGINS,now=Date.now}: Dependencies) {
+export function createDocumentDriveHandler({publicFunctionUrl,userClient,readDrive,validateDrive,signingSecret,allowedOrigins=DEFAULT_ORIGINS,now=Date.now}: Dependencies) {
   const signingKey=async () => {
     const secret=signingSecret();
     if (!secret || secret.length<32) throw new DriveAccessError(503,'Signature des liens Google Drive non configurée.');
@@ -112,7 +113,9 @@ export function createDocumentDriveHandler({userClient,readDrive,validateDrive,s
             exp:Math.floor(now()/1000)+Math.max(1,Math.min(120,Math.floor(input.expiresIn||120)))};
           const payload=base64Url(encoder.encode(JSON.stringify(ticket)));
           const signature=base64Url(new Uint8Array(await crypto.subtle.sign('HMAC',key,encoder.encode(payload))));
-          const url=new URL(request.url); url.search=''; url.searchParams.set('ticket',`${payload}.${signature}`);
+          // The Edge gateway strips /functions/v1 from request.url. Build the
+          // browser link from the configured public endpoint, never forwarded headers.
+          const url=new URL(publicFunctionUrl); url.search=''; url.hash=''; url.searchParams.set('ticket',`${payload}.${signature}`);
           return json(200,{signedUrl:url.toString(),document,chunkSize:DRIVE_CHUNK_BYTES});
         }
       } else return json(405,{error:'Méthode non autorisée.'});

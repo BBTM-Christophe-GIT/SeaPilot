@@ -27,6 +27,7 @@ Déployer avec `verify_jwt = false` pour permettre les GET du lecteur PDF sans e
 - `document_drive_lookup(target_bucket, target_path)` retourne les métadonnées Drive autorisées, `null` pour une clé sans correspondance, ou `42501` pour une correspondance interdite ou inactive.
 - `POST {operation:"info", bucket, path}` retourne les métadonnées courantes autorisées : `{drive_file_id, bytes, mime_type, file_name, version, md5?, chunkSize:4194304}`.
 - `POST {operation:"url", bucket, path, expiresIn?, download?:boolean|string, range?}` retourne `{signedUrl, document, chunkSize:4194304}`. `document` décrit la version Drive courante ; `expiresIn` reste borné à 120 secondes.
+  Le lien public utilise `SUPABASE_URL` et le chemin `/functions/v1/document-drive`. Le chemin interne reçu par le runtime et les en-têtes transmis ne déterminent jamais cette URL : la gateway peut retirer `/functions/v1` avant l'appel du handler.
 - `POST {operation:"download", bucket, path, range?:{start,end}, version?}` retourne un contenu binaire `application/octet-stream`, compatible avec le SDK Supabase pour Word et Excel. Un bloc exige `version` et une plage entière inclusive d'au plus **4 MiB**. Chaque POST revalide le JWT et la RLS.
 - `GET ?ticket=…` accepte `Range: bytes=start-end` sous le même ticket HMAC ; la version est celle signée dans `document.version`. Un ticket portant déjà une plage ne peut lire que cette plage. Aucune URL Google, aucun destinataire et aucun identifiant Drive arbitraire n'est accepté depuis le navigateur.
 
