@@ -305,6 +305,26 @@ $futureFolder = [SeaPilotDriveBridge]::EnsureDirectory($moduleRoot, 'Futur modul
 Set-Content -LiteralPath (Join-Path $futureFolder 'futur.docx') -Value 'future module fixture'
 $futureUri = (Make-Uri 'Futur module/futur.docx').Replace('://open/', '://root/open/')
 if ([SeaPilotDrive]::ResolvePath($moduleRoot, $futureUri) -ne (Join-Path $futureFolder 'futur.docx')) { throw 'Future module requires a new launcher.' }
+$templatePath = Join-Path $futureFolder 'modele.DOTX'
+Set-Content -LiteralPath $templatePath -Value 'non-macro Word template opening fixture'
+$templateUri = (Make-Uri 'Futur module/modele.DOTX').Replace('://open/', '://root/open/')
+if ([SeaPilotDrive]::ResolvePath($moduleRoot, $templateUri) -ne $templatePath) { throw 'Non-macro Word template did not resolve from the common root.' }
+foreach ($path in @('modele.dotm', 'macro.docm', 'macro.xlsm', 'run.exe', 'modele.dotx.exe')) {
+    Set-Content -LiteralPath (Join-Path $futureFolder $path) -Value 'unsafe format fixture'
+    $rootUri = (Make-Uri "Futur module/$path").Replace('://open/', '://root/open/')
+    $unsafeRejected = $false
+    try { [SeaPilotDrive]::ResolvePath($moduleRoot, $rootUri) | Out-Null } catch { $unsafeRejected = $true }
+    if (!$unsafeRejected) { throw "Unsafe format opened through common root: $path" }
+}
+foreach ($uri in @((Make-Uri 'Futur module/modele.DOTX'), (Make-Uri 'Futur module/modele.DOTX').Replace('://open/', '://disciplinary/open/'))) {
+    $templateRejected = $false
+    try { [SeaPilotDrive]::ResolvePath($moduleRoot, $uri) | Out-Null } catch { $templateRejected = $true }
+    if (!$templateRejected) { throw 'Template support escaped the common root opening route.' }
+}
+$templateWriteRejected = $false
+try { [SeaPilotProcedureFiles]::Write($futureFolder, 'another.dotx', [byte[]](1,2,3)) } catch { $templateWriteRejected = $true }
+if (!$templateWriteRejected -or (Test-Path -LiteralPath (Join-Path $futureFolder 'another.dotx'))) { throw 'Template opening unexpectedly enabled procedure template writing.' }
+Write-Output 'PASS: common root DOTX opening, macro/executable rejection and unchanged legacy routes and procedure writing.'
 if ([SeaPilotDriveBridge]::AllowedOrigin('https://sea-pilot-ten.vercel.app.evil.example') -or [SeaPilotDriveBridge]::AllowedOrigin('null')) { throw 'Foreign browser origin accepted.' }
 Write-Output 'PASS: automatic collaborator folders, stable identity, native writes, no overwrite, junction rejection and future module opening.'
 
@@ -461,7 +481,7 @@ try {
     for ($attempt = 0; $attempt -lt 20; $attempt++) {
         try { $health = Invoke-RestMethod -Uri "$endpoint/health" -Headers $allowedHeaders -TimeoutSec 2; $ready = $true; break } catch { $healthError = $_.Exception.Message; Start-Sleep -Milliseconds 150 }
     }
-    if (!$ready -or $health.version -ne '2.7.0' -or $health.nonce -ne $nonce) { throw "Native bridge failed to start (process exited: $($nativeProcess.HasExited)): $healthError" }
+    if (!$ready -or $health.version -ne '2.7.1' -or $health.nonce -ne $nonce) { throw "Native bridge failed to start (process exited: $($nativeProcess.HasExited)): $healthError" }
     foreach ($testUri in @("http://127.0.0.1:$port/wrong/health", "$endpoint/request")) {
         $denied = $false
         try { Invoke-RestMethod -Uri $testUri -Method Post -ContentType 'application/json' -Body '{}' -Headers $allowedHeaders -TimeoutSec 5 | Out-Null } catch { $denied = $true }
@@ -493,7 +513,7 @@ try {
             if (!$ready) { throw 'Installed launcher did not start.' }
             $replacement = Install-SeaPilotDriveBinary -InstallFolder $installTestFolder -Compiler $compiler -Sources $sources
             if ($replacement -eq $published -or !(Test-Path -LiteralPath $replacement)) { throw 'Update did not publish a separate executable.' }
-            if ((Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2).version -ne '2.7.0') { throw 'Update interrupted the running launcher.' }
+            if ((Invoke-RestMethod -Uri $nextEndpoint -Headers $allowedHeaders -TimeoutSec 2).version -ne '2.7.1') { throw 'Update interrupted the running launcher.' }
             $invalidSource = Join-Path $testRoot 'invalid.cs'
             Set-Content -LiteralPath $invalidSource -Value 'This is an intentionally invalid compiler fixture'
             $failed = $false

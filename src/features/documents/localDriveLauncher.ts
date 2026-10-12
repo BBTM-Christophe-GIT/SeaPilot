@@ -3,7 +3,7 @@ import { loadAppEnv } from '../../lib/env';
 
 export const DRIVE_MODULES = { procedures: 'Procedures', procedurePdfs: 'Procedures PDF', disciplinary: 'Sanctions Disciplinaires', chemicals: 'Produits Chimiques', humanResources: 'Ressources Humaines', projects: 'Projet' } as const;
 export type DriveModule = keyof typeof DRIVE_MODULES;
-export const LOCAL_DRIVE_DOWNLOAD_VERSION = '2.7.0';
+export const LOCAL_DRIVE_DOWNLOAD_VERSION = '2.7.1';
 export interface LocalDriveConnection { url: string; expiresAt: number; version?: string }
 export interface LocalDriveStatus { root: string | null; version: string; collaborators?: number; exists?: boolean; cancelled?: boolean }
 let connection: LocalDriveConnection | null = null;
@@ -45,6 +45,19 @@ async function findLocalDrive(firstPort: number, nonce: string): Promise<{ url: 
 
 export function launcherOpenUri(module: DriveModule, relativePath: string): string {
   const payload = btoa(Array.from(new TextEncoder().encode(`${DRIVE_MODULES[module]}/${relativePath}`), (byte) => String.fromCharCode(byte)).join('')).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `seapilot-drive://root/open/${payload}`;
+}
+
+/** A server-authorized path relative to the synchronized SeaPilot root. */
+export function launcherRootOpenUri(relativePath: string): string {
+  const parts = relativePath.split('/');
+  if (!relativePath || relativePath.length > 500 || !/\.(docx?|dotx|xlsx?|pptx?|odt|ods|odp|txt|pdf|png|jpe?g)$/i.test(relativePath)
+    || parts.some(part => !part || part === '.' || part === '..' || /[<>:"\\|?*\u0000-\u001f\u007f]/.test(part)
+      || /[. ]$/.test(part) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) {
+    throw new Error('Le chemin du document dans le dossier SeaPilot synchronisé est invalide.');
+  }
+  const payload = btoa(Array.from(new TextEncoder().encode(relativePath), byte => String.fromCharCode(byte)).join(''))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   return `seapilot-drive://root/open/${payload}`;
 }
 

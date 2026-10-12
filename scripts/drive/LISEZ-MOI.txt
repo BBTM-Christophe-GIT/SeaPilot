@@ -1,5 +1,5 @@
-SEAPILOT - LANCEUR WINDOWS COMMUN 2.7.0
-DOSSIERS PARTAGES GOOGLE DRIVE ET RACCOURCIS WINDOWS - 01/10/2026
+SEAPILOT - LANCEUR WINDOWS COMMUN 2.7.1
+OUVERTURE DES DOCUMENTS SYNCHRONISES ET MODELES WORD - 12/10/2026
 
 Une installation pour Procedures, Procedures PDF, Sanctions Disciplinaires, Produits Chimiques, Ressources Humaines, Projets et les futurs modules.
 
@@ -19,6 +19,7 @@ Classement : SeaPilot / Sanctions Disciplinaires / Prenom NOM - c<entreprise>-p<
 Le dossier est retrouve par son identifiant stable si le nom RH change. Aucun fichier existant n'est ecrase. Taille maximale : 25 Mo. Executables, documents a macros, traversees de chemins et jonctions sortantes refuses.
 
 Le lanceur ouvre les documents autorises dans leur application Windows et peut enregistrer les documents des modules autorises par SeaPilot. La connexion locale est temporaire (3 minutes), limitee a ce PC et aux origines SeaPilot prevues. Chaque ecriture verifie le compte SeaPilot et ses droits aupres du serveur. Aucun mot de passe ni jeton de connexion n'est memorise dans le lanceur. Aucun service ni demarrage automatique n'est installe.
+La version 2.7.1 ouvre aussi les modeles Word DOTX sans macros depuis leur chemin synchronise autorise, avec le protocole commun root/open. Cette extension concerne seulement l'ouverture : l'import, l'ecriture et la conversion des procedures conservent leurs formats existants. DOTM, DOCM, XLSM et les executables restent refuses par le protocole. Installer cette version pour ouvrir les modeles DOTX ; le dossier SeaPilot deja configure est conserve.
 
 Google Drive assure la synchronisation apres ecriture ou sauvegarde dans Office. Attendez qu'elle soit terminee avant d'utiliser les fichiers sur un autre PC.
 Les droits SeaPilot et les partages Google Drive sont independants. Retirez les partages Drive devenus injustifies et gerez les copies locales lors d'un changement d'habilitation. Le lanceur ne change pas les permissions Drive.

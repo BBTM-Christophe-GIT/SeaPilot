@@ -1,4 +1,5 @@
 import { StorageApiError, type SupabaseClient } from '@supabase/supabase-js';
+import { launcherRootOpenUri } from './localDriveLauncher';
 
 type BucketApi = ReturnType<SupabaseClient['storage']['from']>;
 type SignedOptions = Parameters<BucketApi['createSignedUrl']>[2];
@@ -11,6 +12,7 @@ type SignedEntry = { path: string | null; signedUrl: string | null; error: strin
 interface DriveReference {
   drive_file_id: string;
   mime_type: string;
+  drive_path?: string;
 }
 
 interface DriveDocumentInfo extends DriveReference {
@@ -98,6 +100,17 @@ async function lookupDocumentDriveFile(client: SupabaseClient, bucket: string, p
 /** Check the current user's access before choosing the gateway over a desktop-only reader. */
 export async function hasDocumentDriveFile(client: SupabaseClient, bucket?: string | null, path?: string | null): Promise<boolean> {
   return Boolean(bucket && path && await lookupDocumentDriveFile(client, bucket, path));
+}
+
+/** Resolve the desktop file only after the real user's business/RLS access check. */
+export async function getDocumentDriveDesktopUri(client: SupabaseClient, bucket?: string | null, path?: string | null): Promise<string | null> {
+  if (!bucket || !path) return null;
+  const reference = await lookupDocumentDriveFile(client, bucket, path);
+  if (!reference) return null;
+  if (typeof reference.drive_path !== 'string' || !reference.drive_path.startsWith('SeaPilot/')) {
+    throw new Error('Le chemin Google Drive autorisé du document est indisponible.');
+  }
+  return launcherRootOpenUri(reference.drive_path.slice('SeaPilot/'.length));
 }
 
 async function storageError(failure: unknown): Promise<StorageApiError> {

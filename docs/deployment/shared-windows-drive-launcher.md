@@ -1,10 +1,23 @@
-# Lanceur Windows commun — API 2.7.0
+# Lanceur Windows commun — API 2.7.1
+
+## Ouverture des procédures dans les applications de bureau (2.7.1)
+
+Le clic sur un document de procédures ouvre son fichier Drive synchronisé dans
+l'application Windows associée, après contrôle des droits SeaPilot. Les chemins
+complets des documents migrés sont conservés, y compris les sous-dossiers PDF.
+La version 2.7.1 ajoute l'ouverture des modèles Word `.dotx` par le protocole
+racine ; elle conserve le refus des formats à macros et exécutables. Ce format
+est réservé à l'ouverture et n'élargit pas les formats d'import ou de conversion.
+Les documents DOC/DOCX, XLS/XLSX et PDF restent compatibles avec les anciens
+lanceurs. Installer la nouvelle archive pour ouvrir également les modèles DOTX ;
+la racine et les documents existants sont conservés. Détails :
+[Procédures et Google Drive](procedures-google-drive.md).
 
 ## Dossier partagé et raccourcis Google Drive (2.7)
 
 Un dossier présent dans **Partagés avec moi** doit être ajouté à **Mon Drive** par chaque compte destinataire : sur [Google Drive Web](https://drive.google.com), clic droit sur **SeaPilot** → **Organiser → Ajouter un raccourci → Mon Drive**. Google documente [l'ajout de ces raccourcis](https://support.google.com/drive/answer/2375057?hl=fr) et leur [présentation Windows sous forme de fichiers `.lnk`](https://support.google.com/drive/answer/10864219?hl=fr). Attendre Google Drive pour ordinateur, puis vérifier SeaPilot dans l'Explorateur avec le compte autorisé. Le partage du dossier ne crée pas automatiquement son entrée dans le lecteur local des destinataires.
 
-Installer le lanceur **2.7.0** sur chaque PC concerné. Dans **Administration → Documents et Google Drive → Sélectionner le dossier dans Windows**, choisir **Choisir un dossier** ou **Choisir un raccourci (.lnk)** et sélectionner SeaPilot / SeaPilot.lnk. Le lanceur lit le lien Shell sans l'exécuter, suit également un parent Mon Drive / My Drive présenté comme un raccourci en [mode duplication](https://support.google.com/drive/answer/13401938?hl=fr), puis valide et prépare le dossier réel. L'option d'installation `-SeaPilotRoot` accepte les mêmes dossiers et raccourcis. Le dossier résolu est enregistré dans HKCU seulement après préparation réussie.
+Installer le lanceur **2.7.1** sur chaque PC concerné. Dans **Administration → Documents et Google Drive → Sélectionner le dossier dans Windows**, choisir **Choisir un dossier** ou **Choisir un raccourci (.lnk)** et sélectionner SeaPilot / SeaPilot.lnk. Le lanceur lit le lien Shell sans l'exécuter, suit également un parent Mon Drive / My Drive présenté comme un raccourci en [mode duplication](https://support.google.com/drive/answer/13401938?hl=fr), puis valide et prépare le dossier réel. L'option d'installation `-SeaPilotRoot` accepte les mêmes dossiers et raccourcis. Le dossier résolu est enregistré dans HKCU seulement après préparation réussie.
 
 La lettre de lecteur, Mon Drive / My Drive et la cible sont propres au compte et au PC. Aucun chemin du propriétaire ni identifiant `shortcuts-target-by-id` n'est fixé dans le code ou requis en configuration. Le chemin déjà accessible reste prioritaire. Si le compte Drive ou sa lettre de lecteur change, sélectionner à nouveau le dossier depuis ce PC. Un raccourci ne confère pas de permission supplémentaire ; les partages Google Drive existants restent nécessaires.
 
@@ -14,7 +27,7 @@ Validation Windows : vrais liens Shell vers un dossier partagé, parent Mon Driv
 
 ## Version installée et compatibilité — v3.61.3
 
-Administration → Documents et Google Drive affiche séparément la version proposée dans l’archive (actuellement 2.7.0) et la version du lanceur réellement démarré sur ce PC, reçue de son endpoint `health`. Une nouvelle connexion est ouverte à l’entrée de l’écran et avec **Vérifier la version installée**, pour ne pas réutiliser une session antérieure à une mise à jour. Une version ancienne reste affichée même si elle ne permet pas la configuration automatique. Sans réponse, l’interface indique **non détectée** ; la préversion n’inspecte jamais le PC et indique **indisponible en préversion**. Le numéro de l’archive ne sert jamais de preuve d’installation.
+Administration → Documents et Google Drive affiche séparément la version proposée dans l’archive (actuellement 2.7.1) et la version du lanceur réellement démarré sur ce PC, reçue de son endpoint `health`. Une nouvelle connexion est ouverte à l’entrée de l’écran et avec **Vérifier la version installée**, pour ne pas réutiliser une session antérieure à une mise à jour. Une version ancienne reste affichée même si elle ne permet pas la configuration automatique. Sans réponse, l’interface indique **non détectée** ; la préversion n’inspecte jamais le PC et indique **indisponible en préversion**. Le numéro de l’archive ne sert jamais de preuve d’installation.
 
 Le contrôle exige désormais une version minimale de la même API majeure, au lieu d’une liste fermée : Projets 2.5.0, RH 2.4.0, Procédures 2.3.0, Produits Chimiques 2.2.0 et configuration automatique 2.6.0. Cela corrige le refus de l’export PDF de facturation P144 avec le lanceur 2.6.0. Les versions majeures différentes, mal formées ou trop anciennes restent refusées. Le nonce de connexion et tous les contrôles d’autorisation, de chemin et de transfert sont conservés.
 

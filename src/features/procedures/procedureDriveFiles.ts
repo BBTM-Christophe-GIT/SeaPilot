@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { blobBase64, connectLocalDrive, localDriveRequest, supportsLocalDriveVersion, type LocalDriveConnection } from '../documents/localDriveLauncher';
+import { blobBase64, connectLocalDrive, launcherRootOpenUri, localDriveRequest, supportsLocalDriveVersion, type LocalDriveConnection } from '../documents/localDriveLauncher';
 import type { ProcedureInput, ProcedureRecord, PublishedProcedureRecord } from './procedureQueries';
-import { hasDocumentDriveFile } from '../documents/documentDriveStorage';
+import { getDocumentDriveDesktopUri, hasDocumentDriveFile } from '../documents/documentDriveStorage';
 
 export const PROCEDURE_IMPORT_TYPES = '.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.txt,.pdf';
 export const PROCEDURE_DRIVE_LIMIT = 25 * 1024 * 1024;
@@ -11,7 +11,7 @@ export interface ProcedureFileStore {
   connect: () => Promise<LocalDriveConnection>;
   write: (input: ProcedureInput, file: File, connection: LocalDriveConnection) => Promise<ProcedureDriveSource>;
   publish: (record: ProcedureRecord) => Promise<ProcedureDriveReceipt>;
-  open: (record: ProcedureRecord) => Promise<void>;
+  open: (record: ProcedureRecord | PublishedProcedureRecord) => Promise<void>;
   read: (record: ProcedureRecord | PublishedProcedureRecord) => Promise<Blob>;
 }
 
@@ -34,7 +34,7 @@ export function createProcedureFileStore(client: SupabaseClient): ProcedureFileS
     if (!supportsLocalDriveVersion(connection.version, '2.3.0')) throw new Error('Installez le lanceur SeaPilot 2.3 ou ultérieur depuis Administration → Documents et Google Drive. Votre dossier configuré sera conservé.');
     return connection;
   }
-  return {
+  const store: ProcedureFileStore = {
     connect,
     write: async (input, file, connection) => {
       if (!file.size || file.size > PROCEDURE_DRIVE_LIMIT) throw new Error('Le fichier doit peser entre 1 octet et 25 Mo.');
@@ -51,10 +51,18 @@ export function createProcedureFileStore(client: SupabaseClient): ProcedureFileS
       return result;
     },
     open: async record => {
-      if (await hasDocumentDriveFile(client, record.storageBucket, record.storagePath)) {
-        const { data, error } = await client.storage.from(record.storageBucket!).createSignedUrl(record.storagePath!, 300);
-        if (error || !data?.signedUrl) throw error || new Error('Le document Google Drive est indisponible.');
-        window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+      if ('procedureId' in record && (record.status !== 'published' || record.mimeType.toLowerCase() !== 'application/pdf'
+        || !record.fileName.toLowerCase().endsWith('.pdf'))) throw new Error('Seules les versions PDF publiées peuvent être ouvertes.');
+      const desktopUri = await getDocumentDriveDesktopUri(client, record.storageBucket, record.storagePath);
+      if (desktopUri) {
+        window.open(desktopUri, '_self');
+        return;
+      }
+      if ('procedureId' in record) {
+        const uri = launcherRootOpenUri(`Procedures PDF/${record.googleDrivePath || ''}`);
+        // The existing reader checks the publication's real scope, size and SHA-256.
+        await store.read(record);
+        window.open(uri, '_self');
         return;
       }
       await localDriveRequest(client, await connect(), { action: 'open', module: 'procedures', procedureId: record.id });
@@ -73,6 +81,7 @@ export function createProcedureFileStore(client: SupabaseClient): ProcedureFileS
       return new Blob([bytes], { type: record.mimeType });
     },
   };
+  return store;
 }
 
 export function showProcedureBlob(blob: Blob, filename: string, download: boolean) {

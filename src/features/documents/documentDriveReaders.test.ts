@@ -4,17 +4,18 @@ import { readHrDriveFile } from '../humanResources/hrDocumentDrive';
 import { createProcedureFileStore } from '../procedures/procedureDriveFiles';
 import { getProcedureFileUrl, type ProcedureRecord, type PublishedProcedureRecord } from '../procedures/procedureQueries';
 import { projectDriveStorage } from '../projects/projectDriveStorage';
-import { connectLocalDrive, localDriveRequest } from './localDriveLauncher';
+import { connectLocalDrive, launcherRootOpenUri, localDriveRequest } from './localDriveLauncher';
 import { installDocumentDriveStorage } from './documentDriveStorage';
 
 vi.mock('../humanResources/hrDocumentDrive', () => ({ readHrDriveFile: vi.fn(), writeHrDriveFile: vi.fn() }));
 vi.mock('./localDriveLauncher', async original => ({ ...await original<typeof import('./localDriveLauncher')>(), connectLocalDrive: vi.fn(), localDriveRequest: vi.fn() }));
 
 function fixture({ mapped = true, denied = false } = {}) {
-  const rpc = vi.fn().mockResolvedValue({
-    data: mapped && !denied ? { drive_file_id: 'current-drive-file', mime_type: 'application/pdf' } : null,
+  const rpc = vi.fn().mockImplementation(async (_name: string, { target_path }: { target_path: string }) => ({
+    data: mapped && !denied ? { drive_file_id: 'current-drive-file', mime_type: 'application/pdf',
+      drive_path: target_path.startsWith('published/') ? 'SeaPilot/Procedures PDF/Version D/current-publication.pdf' : 'SeaPilot/Procedures/current-source.docx' } : null,
     error: denied ? { code: '42501', message: 'Document inaccessible' } : null,
-  });
+  }));
   const info = { drive_file_id: 'current-drive-file', mime_type: 'application/pdf', file_name: 'current.pdf', bytes: 'current file'.length,
     version: '117', chunkSize: 4194304 };
   const invoke = vi.fn().mockImplementation(async (_name: string, { body }: { body: { operation: string; range?: { start: number; end: number } } }) => {
@@ -66,25 +67,29 @@ describe('mobile readers of documents already linked to Drive', () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
-  it('opens a migrated Word procedure in the browser without constructing an Office desktop protocol', async () => {
+  it('opens the synchronized migrated Word source while keeping preview and download on the authorized gateway', async () => {
     const { client, legacy } = fixture();
     const record = { googleDriveFileId: 'existing-source-id', googleDrivePath: 'current-source.docx', storageBucket: 'procedure-documents',
       storagePath: 'sources/old.docx', fileName: 'procedure.docx', mimeType: 'application/msword' } as ProcedureRecord;
-    expect(await getProcedureFileUrl(client as never, record, 'open')).toContain('https://example.supabase.co/functions/v1/document-drive');
+    expect(await getProcedureFileUrl(client as never, record, 'open')).toBe(launcherRootOpenUri('Procedures/current-source.docx'));
+    expect(await getProcedureFileUrl(client as never, record, 'preview')).toContain('https://example.supabase.co/functions/v1/document-drive');
     expect(await getProcedureFileUrl(client as never, record, 'download')).toContain('https://example.supabase.co/functions/v1/document-drive');
     expect(legacy.createSignedUrl).not.toHaveBeenCalled();
     expect(record.googleDriveFileId).toBe('existing-source-id');
   });
 
-  it('reads a migrated procedure source and its published PDF without connecting to the local launcher', async () => {
+  it('opens migrated sources and nested published PDFs in desktop apps and keeps binary reading available', async () => {
     const { client, legacy } = fixture();
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
     try {
       const store = createProcedureFileStore(client as never);
       const source = { id: 12, googleDrivePath: 'current-source.docx', storageBucket: 'procedure-documents', storagePath: 'sources/old.docx' } as ProcedureRecord;
-      const publication = { id: 32, procedureId: 12, googleDrivePath: 'current-publication.pdf', storageBucket: 'procedure-documents', storagePath: 'published/12/old.pdf' } as PublishedProcedureRecord;
+      const publication = { id: 32, procedureId: 12, status: 'published', fileName: 'current-publication.pdf', mimeType: 'application/pdf',
+        googleDrivePath: 'current-publication.pdf', storageBucket: 'procedure-documents', storagePath: 'published/12/old.pdf' } as PublishedProcedureRecord;
       await store.open(source);
-      expect(open).toHaveBeenCalledWith('https://example.supabase.co/functions/v1/document-drive?ticket=verified', '_blank', 'noopener,noreferrer');
+      expect(open).toHaveBeenCalledWith(launcherRootOpenUri('Procedures/current-source.docx'), '_self');
+      await store.open(publication);
+      expect(open).toHaveBeenLastCalledWith(launcherRootOpenUri('Procedures PDF/Version D/current-publication.pdf'), '_self');
       expect((await store.read(publication)).size).toBe('current file'.length);
       expect(connectLocalDrive).not.toHaveBeenCalled();
       expect(localDriveRequest).not.toHaveBeenCalled();
@@ -109,6 +114,7 @@ describe('mobile readers of documents already linked to Drive', () => {
     await expect(downloadHrDocumentBlob(client as never, document)).rejects.toMatchObject({ code: '42501' });
     const procedure = { googleDriveFileId: 'existing-source-id', storageBucket: 'procedure-documents', storagePath: 'sources/old.docx' } as ProcedureRecord;
     await expect(getProcedureFileUrl(client as never, procedure, 'open')).rejects.toMatchObject({ code: '42501' });
+    await expect(createProcedureFileStore(client as never).open(procedure)).rejects.toMatchObject({ code: '42501' });
     await expect(projectDriveStorage(client as never, 'project-files').download('projects/12/file.pdf')).rejects.toMatchObject({ code: '42501' });
     expect(readHrDriveFile).not.toHaveBeenCalled();
     expect(connectLocalDrive).not.toHaveBeenCalled();

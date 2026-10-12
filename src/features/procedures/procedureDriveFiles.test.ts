@@ -1,6 +1,7 @@
 import { createHash, webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createProcedureFileStore, procedureDriveFilename } from './procedureDriveFiles';
+import { launcherRootOpenUri } from '../documents/localDriveLauncher';
 import type { ProcedureInput, ProcedureRecord, PublishedProcedureRecord } from './procedureQueries';
 
 const bridge = vi.hoisted(() => ({ connect: vi.fn(), request: vi.fn() }));
@@ -66,5 +67,22 @@ describe('synchronized procedure files', () => {
     expect(bridge.request).toHaveBeenCalledWith(client, session, { action: 'read', module: 'procedures', publicationId: 51 });
     bridge.request.mockResolvedValue({ path: 'published.pdf', bytes: 6, sha256: hash, base64: btoa('broken') });
     await expect(createProcedureFileStore(client).read(record)).rejects.toThrow('vérifié');
+  });
+  it('opens a local published PDF in its desktop app only after the protected receipt is verified', async () => {
+    const record = { id: 51, procedureId: 42, status: 'published', googleDrivePath: 'published.pdf',
+      fileName: 'published.pdf', mimeType: 'application/pdf' } as PublishedProcedureRecord;
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    try {
+      bridge.request.mockResolvedValue({ path: 'published.pdf', bytes: 6, sha256: hash, base64: btoa('source') });
+      await createProcedureFileStore(client).open(record);
+      expect(bridge.request).toHaveBeenCalledWith(client, session, { action: 'read', module: 'procedures', publicationId: 51 });
+      expect(open).toHaveBeenCalledWith(launcherRootOpenUri('Procedures PDF/published.pdf'), '_self');
+      open.mockClear();
+      bridge.request.mockResolvedValue({ path: 'published.pdf', bytes: 6, sha256: hash, base64: btoa('broken') });
+      await expect(createProcedureFileStore(client).open(record)).rejects.toThrow('vérifié');
+      expect(open).not.toHaveBeenCalled();
+      await expect(createProcedureFileStore(client).open({ ...record, status: 'draft' })).rejects.toThrow('PDF publiées');
+      expect(open).not.toHaveBeenCalled();
+    } finally { open.mockRestore(); }
   });
 });

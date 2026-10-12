@@ -1125,17 +1125,100 @@ describe('ProceduresPage', () => {
     open.mockRestore();
   });
 
-  it('launches the native Drive source and provides the authenticated Drive web link', async () => {
+  it.each(['admin', 'direction'] as const)('launches the native Drive source for %s and provides the authenticated Drive web link', async role => {
     const user = userEvent.setup();
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
     const { client, createSignedUrl } = createClient({ procedures: [{ ...approvedProcedureRow,
       source_google_drive_file_id: '1234567890abcdef', source_google_drive_path: 'source.docx' }], publications: [] });
-    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    render(<ProceduresPage client={client as never} roles={[role]} />);
     await user.click(await screen.findByRole('button', { name: 'Ouvrir QSMS-OPS-01 Procédure embarquement ROZEL' }));
     expect(drive.open).toHaveBeenCalledWith(expect.objectContaining({ id: 12, googleDrivePath: 'source.docx' }));
     await user.click(screen.getByLabelText('Voir dans Drive Procédure embarquement ROZEL'));
     expect(open).toHaveBeenLastCalledWith('https://drive.google.com/file/d/1234567890abcdef/view', '_blank', 'noopener,noreferrer');
     expect(createSignedUrl).not.toHaveBeenCalled();
+    expect(drive.read).not.toHaveBeenCalled();
     open.mockRestore();
+  });
+
+  it.each(['admin', 'direction'] as const)('opens a migrated Office source in the desktop app for %s without downloading a copy', async role => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const { client, rpc, createSignedUrl } = createClient({ procedures: [approvedProcedureRow], publications: [] });
+    rpc.mockImplementation(async name => ({ data: name === 'document_drive_lookup' ? {
+      drive_file_id: 'authorized-current-source', drive_path: 'SeaPilot/Procedures/current-source.docx',
+      mime_type: approvedProcedureRow.source_mime_type,
+    } : publishedProcedureRow, error: null }));
+    try {
+      render(<ProceduresPage client={client as never} roles={[role]} />);
+      await user.click(await screen.findByRole('button', { name: 'Ouvrir QSMS-OPS-01 Procédure embarquement ROZEL' }));
+      await waitFor(() => expect(open).toHaveBeenCalledWith(
+        `seapilot-drive://root/open/${btoa('Procedures/current-source.docx').replace(/=+$/, '')}`,
+        '_self', undefined,
+      ));
+      expect(rpc).toHaveBeenCalledWith('document_drive_lookup', { target_bucket: 'procedure-documents', target_path: 'sources/source.docx' });
+      expect(createSignedUrl).not.toHaveBeenCalled();
+      expect(drive.read).not.toHaveBeenCalled();
+      expect(drive.open).not.toHaveBeenCalled();
+    } finally { open.mockRestore(); }
+  });
+
+  it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as const)('opens the synchronized published PDF in the desktop app for %s', async role => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const { client, createSignedUrl, from } = createClient({ publications: [{ ...publishedProcedureRow,
+      google_drive_path: 'publication.pdf', storage_bucket: null, storage_path: null }] });
+    try {
+      render(<ProceduresPage client={client as never} roles={[role]} />);
+      if (role === 'admin' || role === 'direction') await user.click(await screen.findByRole('button', { name: 'PDF publiés' }));
+      await user.click(await screen.findByRole('button', { name: 'Ouvrir QSMS-OPS-01 Procédure embarquement ROZEL.pdf' }));
+      await waitFor(() => expect(drive.open).toHaveBeenCalledWith(expect.objectContaining({ id: 32, procedureId: 12, googleDrivePath: 'publication.pdf' })));
+      expect(drive.read).not.toHaveBeenCalled();
+      expect(createSignedUrl).not.toHaveBeenCalled();
+      expect(open).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      if (role !== 'admin' && role !== 'direction') {
+        expect(from).not.toHaveBeenCalledWith('procedures');
+        expect(screen.queryByRole('button', { name: /^Modifier/ })).not.toBeInTheDocument();
+      }
+    } finally { open.mockRestore(); }
+  });
+
+  it.each(['armement', 'capitaine', 'marin'] as const)('opens a migrated published PDF by its authorized complete Drive path for %s', async role => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const { client, rpc, createSignedUrl, from } = createClient({ procedures: [] });
+    rpc.mockImplementation(async name => ({ data: name === 'document_drive_lookup' ? {
+      drive_file_id: 'authorized-current-publication', drive_path: 'SeaPilot/Procedures PDF/URG 01/A/current-publication.pdf',
+      mime_type: 'application/pdf',
+    } : publishedProcedureRow, error: null }));
+    try {
+      render(<ProceduresPage client={client as never} roles={[role]} />);
+      await user.click(await screen.findByRole('button', { name: 'Ouvrir QSMS-OPS-01 Procédure embarquement ROZEL.pdf' }));
+      await waitFor(() => expect(open).toHaveBeenCalledWith(
+        `seapilot-drive://root/open/${btoa('Procedures PDF/URG 01/A/current-publication.pdf').replace(/=+$/, '')}`,
+        '_self', undefined,
+      ));
+      expect(rpc).toHaveBeenCalledWith('document_drive_lookup', { target_bucket: 'procedure-documents', target_path: 'published/12/procedure.pdf' });
+      expect(from).not.toHaveBeenCalledWith('procedures');
+      expect(createSignedUrl).not.toHaveBeenCalled();
+      expect(drive.read).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    } finally { open.mockRestore(); }
+  });
+
+  it('shows a desktop opening failure without starting a browser download', async () => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const { client, createSignedUrl } = createClient({ procedures: [{ ...approvedProcedureRow,
+      source_google_drive_path: 'source.docx' }], publications: [] });
+    drive.open.mockRejectedValueOnce(new Error('Fichier absent du dossier synchronisé. Vérifiez Google Drive.'));
+    try {
+      render(<ProceduresPage client={client as never} roles={['admin']} />);
+      await user.click(await screen.findByRole('button', { name: 'Ouvrir QSMS-OPS-01 Procédure embarquement ROZEL' }));
+      expect(await screen.findByText('Fichier absent du dossier synchronisé. Vérifiez Google Drive.')).toHaveClass('form-error');
+      expect(createSignedUrl).not.toHaveBeenCalled();
+      expect(drive.read).not.toHaveBeenCalled();
+      expect(open).not.toHaveBeenCalled();
+    } finally { open.mockRestore(); }
   });
 });

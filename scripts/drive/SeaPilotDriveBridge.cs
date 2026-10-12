@@ -14,7 +14,7 @@ using System.Web.Script.Serialization;
 // No remote listener, startup service, saved login token, or arbitrary file reads.
 public static class SeaPilotDriveBridge
 {
-    public const string Version = "2.7.0";
+    public const string Version = "2.7.1";
     public const int ConnectionPortCount = 16;
     const int MaxBody = 72 * 1024 * 1024;
     const string Api = "https://szlvyrrmvdvhzixilymh.supabase.co";

@@ -21,7 +21,7 @@ describe('automatic PC Drive setup', () => {
     render(<StrictMode><AdminGoogleDriveSetup client={client} /></StrictMode>);
     expect(await screen.findByText('Google Drive est bien configuré')).toBeVisible();
     expect(screen.getByText('Version installée sur ce PC :')).toHaveTextContent('2.7.0');
-    expect(screen.getByText('Version proposée au téléchargement :')).toHaveTextContent('2.7.0');
+    expect(screen.getByText('Version proposée au téléchargement :')).toHaveTextContent('2.7.1');
     expect(screen.getByText('42 dossier(s) de collaborateurs en poste préparé(s).')).toBeVisible();
     expect(localDriveRequest).toHaveBeenCalledTimes(1);
     expect(localDriveRequest).toHaveBeenCalledWith(client, connection, { action: 'status' });

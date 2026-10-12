@@ -403,7 +403,7 @@ function PublicationPreviewDialog({ client, drive, publication, onClose, onDownl
           blobUrl = URL.createObjectURL(blob);
           url = blobUrl;
         } else {
-          url = await getProcedureFileUrl(client, publication, 'open');
+          url = await getProcedureFileUrl(client, publication, 'preview');
         }
         if (active) setPreview({ url, error: '', loading: false });
       } catch (error) {
@@ -685,8 +685,7 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
   async function handleOpen(record: ProcedureRecord | PublishedProcedureRecord) {
     try {
       if (record.googleDrivePath) {
-        if ('procedureId' in record) showProcedureBlob(await drive.read(record), record.fileName, false);
-        else await drive.open(record);
+        await drive.open(record);
         return;
       }
       const fileUrl = await getProcedureFileUrl(effectiveClient, record, 'open');

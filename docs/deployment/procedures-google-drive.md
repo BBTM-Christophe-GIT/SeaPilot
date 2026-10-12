@@ -2,13 +2,17 @@
 
 Les nouvelles sources et publications sont enregistrées dans Google Drive
 synchronisé. SeaPilot conserve leurs fiches, chemins relatifs et métadonnées.
-Les anciennes publications Supabase restent consultables.
+Les anciennes références Supabase des documents migrés sont conservées comme
+provenance et donnent accès au fichier Drive autorisé.
 
 ## Installation et dossiers automatiques
 
 1. Installer Google Drive pour ordinateur et connecter le compte autorisé.
-2. Télécharger le lanceur **2.3** depuis **Administration → Documents et Google
-   Drive**, extraire l'archive et exécuter `Installer.cmd` sur chaque PC.
+2. Télécharger le lanceur proposé depuis **Administration → Documents et Google
+   Drive**, extraire l'archive et exécuter `Installer.cmd` sur chaque PC qui n'en
+   dispose pas. Les opérations de procédures exigent au minimum la version 2.3 ;
+   un lanceur 2.6 déjà installé prend en charge l'ouverture des DOC/DOCX, XLS/XLSX
+   et PDF. Installer la version 2.7.1 pour ouvrir aussi les modèles Word DOTX.
 3. Configurer seulement la racine, par exemple `G:\Mon Drive\SeaPilot`.
 
 L'installation et la configuration créent les dossiers manquants :
@@ -78,6 +82,40 @@ adresses BBTM, sans invitation des adresses externes ni notification par e-mail.
 Les changements futurs d'habilitation nécessitent d'actualiser les ACL Drive.
 Aucun partage public n'est nécessaire.
 
+## Ouverture dans les applications de bureau
+
+Cliquer sur le nom d'une procédure ou sur **Ouvrir** ouvre le fichier synchronisé
+dans l'application Windows associée à son extension : Word pour DOC/DOCX/DOTX, Excel
+pour XLS/XLSX et le lecteur PDF par défaut pour les publications PDF. Le document
+Drive lui-même est ouvert, avec son chemin complet, y compris les sous-dossiers
+des publications migrées. Aucun téléchargement d'une copie de travail n'est
+déclenché par cette action. Les modifications enregistrées dans Office sont
+synchronisées par Google Drive, selon les droits du compte Google connecté.
+
+Pour les références migrées, `document_drive_lookup` vérifie les droits du vrai
+compte SeaPilot avant de fournir le chemin autorisé. Le préfixe `SeaPilot/` est
+retiré une seule fois pour construire l'URI `seapilot-drive://root/open/...`,
+relative à la racine configurée sur ce PC. Une référence refusée ou un chemin
+invalide n'ouvre aucun fichier et ne retombe pas sur une ancienne copie Supabase.
+Les publications enregistrées directement dans le dossier PDF synchronisé
+conservent leur contrôle de taille et d'empreinte avant l'ouverture.
+
+Google Drive pour ordinateur doit avoir terminé la synchronisation et le lanceur
+SeaPilot doit être enregistré sur le poste. Les lanceurs 2.6 et 2.7 ouvrent les
+DOC/DOCX, XLS/XLSX et PDF. L'archive 2.7.1 ajoute l'ouverture des modèles Word DOTX
+sans macros ; l'installation conserve la racine configurée. Les formats des
+opérations d'import, d'écriture et de conversion ne changent pas. Ce correctif
+ne nécessite aucune migration de base de données. Le navigateur peut demander d'autoriser l'ouverture
+du lanceur. Le lecteur PDF est celui choisi dans les applications par défaut de
+Windows.
+
+Le bouton **Télécharger** conserve sa fonction distincte. Sur mobile ou sur un
+appareil sans lanceur Windows, les documents migrés restent consultables avec
+l'aperçu de la publication accessible depuis sa notification ou avec
+**Télécharger**. L'aperçu utilise la passerelle Drive authentifiée et ne lance
+aucune application de bureau. Les publications disposant uniquement d'un chemin
+local continuent à nécessiter le lanceur pour leur aperçu dans SeaPilot.
+
 ## Déploiement et contrôles
 
 Appliquer `20260925072400_procedures_drive_workflow.sql` puis
@@ -107,6 +145,10 @@ tests vérifient les accès aux sources, les PDF en lecture seule, les reçus, l
 reprises et les chemins interdits. La conversion réelle Word a été vérifiée sur
 le modèle fourni, sans ajouter de document d'essai au dossier partagé.
 
-Les 118 sources Office transférées historiquement vers Drive et les publications
-Supabase ne sont pas déplacées par cette évolution. Les anciennes sauvegardes ne
-sont jamais réactivées automatiquement comme sources de travail.
+L'ouverture de bureau réutilise les fichiers Drive existants et leurs droits.
+Elle ne crée ni ne déplace de document. Les anciennes sauvegardes ne sont jamais
+réactivées automatiquement comme sources de travail. Les tests frontend couvrent
+les sources pour Administration/Direction, les PDF publiés pour
+Administration/Direction/Armement/Capitaine/Marin, les chemins migrés imbriqués,
+les erreurs d'ouverture et l'aperçu conservé depuis les notifications. Les règles
+RLS des sources et publications restent inchangées.

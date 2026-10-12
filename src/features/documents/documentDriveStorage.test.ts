@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { documentDriveStorage, installDocumentDriveStorage } from './documentDriveStorage';
+import { documentDriveStorage, getDocumentDriveDesktopUri, installDocumentDriveStorage } from './documentDriveStorage';
+import { launcherRootOpenUri } from './localDriveLauncher';
 
 const CHUNK_BYTES = 4 * 1024 * 1024;
 type DownloadRequest = { operation: string; path: string; range?: { start: number; end: number }; version?: string };
@@ -41,6 +42,19 @@ function fixture(mapping: Record<string, unknown> = {}) {
 const reference = { drive_file_id: 'verified-file', mime_type: 'application/pdf' };
 
 describe('verified document Drive routing', () => {
+  it.each(['Procedures/Été/source.docx', 'Procedures/Modèle.dotx', 'Procedures/Registre.xlsx', 'Procedures PDF/Publication/Version D/file.pdf'])
+    ('uses the full authorized synchronized path for desktop opening: %s', async relativePath => {
+      const { client, rpc, legacy, invoke } = fixture({ 'source.pdf': { ...reference, drive_path: `SeaPilot/${relativePath}` } });
+      expect(await getDocumentDriveDesktopUri(client as never, 'procedure-documents', 'source.pdf')).toBe(launcherRootOpenUri(relativePath));
+      expect(rpc).toHaveBeenCalledWith('document_drive_lookup', { target_bucket: 'procedure-documents', target_path: 'source.pdf' });
+      expect(legacy.createSignedUrl).not.toHaveBeenCalled(); expect(invoke).not.toHaveBeenCalled();
+    });
+  it.each([undefined, 'OtherRoot/file.docx', 'SeaPilot/../file.docx', 'SeaPilot/Procedures/file.exe', 'SeaPilot/Procedures/NUL.docx'])
+    ('refuses an invalid authorized desktop path without using a stale backup: %s', async drivePath => {
+      const { client, legacy, invoke } = fixture({ 'source.docx': { ...reference, drive_path: drivePath } });
+      await expect(getDocumentDriveDesktopUri(client as never, 'procedure-documents', 'source.docx')).rejects.toThrow();
+      expect(legacy.createSignedUrl).not.toHaveBeenCalled(); expect(invoke).not.toHaveBeenCalled();
+    });
   it('downloads a migrated document through the authenticated gateway without reading its obsolete copy', async () => {
     const { storage, invoke, legacy, rpc } = fixture({ 'versions/certificat.pdf': reference });
     const result = await storage.download('versions/certificat.pdf');

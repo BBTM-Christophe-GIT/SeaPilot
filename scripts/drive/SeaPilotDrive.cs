@@ -197,8 +197,13 @@ public static class SeaPilotDrive
         payload = payload.Replace('-', '+').Replace('_', '/');
         payload = payload.PadRight((payload.Length + 3) / 4 * 4, '=');
         string relative = new UTF8Encoding(false, true).GetString(Convert.FromBase64String(payload));
+        // Word's non-macro DOTX templates are opened from their registered Drive
+        // path only. The write/conversion APIs keep their existing format limits.
+        string allowedFormat = rootScope ? @"\.(docx?|dotx|xlsx?|pptx?|odt|ods|odp|txt|pdf|png|jpe?g)\z"
+            : disciplinary ? @"\.(docx?|xlsx?|pptx?|odt|ods|odp|txt|pdf|png|jpe?g)\z"
+            : @"\.(docx?|xlsx?|pptx?|odt|ods|odp|txt)\z";
         if (relative.Length == 0 || relative.Length > 500 || relative.Contains("\\")
-            || !Regex.IsMatch(relative, disciplinary || rootScope ? @"\.(docx?|xlsx?|pptx?|odt|ods|odp|txt|pdf|png|jpe?g)\z" : @"\.(docx?|xlsx?|pptx?|odt|ods|odp|txt)\z", RegexOptions.IgnoreCase))
+            || !Regex.IsMatch(relative, allowedFormat, RegexOptions.IgnoreCase))
             throw new ArgumentException("Format de fichier non autorise.");
         ValidateParts(relative);
         string fullRoot = Path.GetFullPath(root).TrimEnd('\\') + "\\";
