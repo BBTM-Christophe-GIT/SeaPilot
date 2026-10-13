@@ -148,6 +148,7 @@ body:has(.wtp) { margin: 0; background: var(--sp-canvas); }
 .wtp-rule-table table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .wtp-rule-table th, .wtp-rule-table td { padding: 10px; border-bottom: 1px solid var(--sp-border); text-align: left; }
 .wtp-rule-table th { background: var(--sp-canvas); }
+.wtp-amplitude-bounds { display: block; color: var(--sp-muted); }
 .wtp-policy-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; }
 .wtp-policy-edit { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; }
 .wtp-policy-edit button { padding: 4px 0; border: 0; color: var(--sp-primary); background: transparent; font-size: 12px; text-align: right; }

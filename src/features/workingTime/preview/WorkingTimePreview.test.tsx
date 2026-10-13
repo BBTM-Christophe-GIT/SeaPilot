@@ -277,4 +277,31 @@ describe('WorkingTimePreview real entry workflow', () => {
     expect(saved.phases.some((phase) => phase.startsAt === '2026-10-13T13:00' && phase.endsAt === '2026-10-13T20:00')).toBe(true);
     expect(saved.approval?.status).toBe('draft');
   });
+
+  it('shows the longest amplitude bounds and recalculates sequences from the continuous-rest threshold', async () => {
+    const user = userEvent.setup();
+    render(<WorkingTimePreview />);
+    await user.click(screen.getByRole('tab', { name: /mer 14 oct/ }));
+    selectClockRange('04:00', '07:30');
+    selectClockRange('12:00', '15:30');
+    selectClockRange('22:00', '23:30');
+
+    const analysis = screen.getByLabelText('Analyse de la saisie');
+    const amplitude = within(analysis).getByText('Amplitude entre repos').closest<HTMLElement>('.wtp-rule')!;
+    expect(within(amplitude).getByText('12 h 00')).toBeInTheDocument();
+    expect(within(amplitude).getByText('04:00–16:00')).toBeInTheDocument();
+    expect(graph()).toHaveAccessibleName(/Cumul : 10 h 00.*Aucun dépassement/);
+    expect(within(analysis).getByText('Historique incomplet — analyse à confirmer')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Modifier les seuils' }));
+    const dialog = screen.getByRole('dialog');
+    const continuousRest = within(dialog).getByRole('spinbutton', { name: /^Repos continu/ });
+    await user.clear(continuousRest);
+    await user.type(continuousRest, '7');
+    await user.click(within(dialog).getByRole('button', { name: 'Appliquer les seuils' }));
+    const warning = within(analysis).getByRole('heading', { name: 'Amplitude entre repos' }).closest('article')!;
+    expect(within(warning).getByText('20 h 00')).toBeInTheDocument();
+    expect(within(warning).getByText('+6 h 00')).toBeInTheDocument();
+    expect(graph()).toHaveAccessibleName(/Cumul : 10 h 00.*Aucun dépassement/);
+  });
 });

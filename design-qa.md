@@ -1452,3 +1452,40 @@ intentional difference from the source's two-hour labels.
   remain a production workflow.
 - Cycle averages and annual contingents require an agreed period/coverage model
   before adding their live visual checks. The leave/rest coefficient stays 1.05.
+
+## Amplitude follow-up: 14 October example
+
+The reported 20 h calendar-day amplitude joined 04:00–08:00, 12:00–16:00
+and 22:00–24:00 despite six hours of rest between 16:00 and 22:00.
+The preview now shows the longest work sequence between qualifying rests:
+**12 h, 04:00–16:00**; 22:00–24:00 starts another sequence. Rolling totals
+remain 10 h work and 14 h rest. The configured continuous-rest threshold
+controls the split, while midnight does not. Sequence starts before the
+rolling window are retained and work after its end is excluded.
+
+Verified through the in-app browser at the local preview route, with desktop
+1440 × 1024 and mobile 390 × 844 viewports. The three ranges were drawn in
+the entry grid. Editing continuous rest 6 → 7 → 6 h changed amplitude
+12 → 20 → 12 h with the rolling work total unchanged. Incomplete demo
+coverage retained its unconfirmed status. PDF inputs and exports are unchanged.
+
+| Browser check | Result |
+| --- | --- |
+| Route/title and meaningful content | Pass |
+| Framework error overlay | Absent |
+| Console warnings/errors | None |
+| Range and threshold interactions | Pass |
+| Desktop/mobile screenshot inspection | Pass |
+| Mobile document width | 375 px within 390 px viewport |
+
+Local screenshot evidence is saved outside the repository as
+`working-time-amplitude-12h.png` and `working-time-amplitude-mobile.jpg`
+in this task's visualization directory. Comparison with the user's supplied
+14 October screenshot confirms removal of the erroneous amplitude alert
+and addition of the measured sequence bounds, with existing controls intact.
+
+Automated validation: 211 module tests passed; the final projection/UI
+run passed all 35 tests including the additional analysis-end and threshold
+interaction cases. Targeted ESLint and the TypeScript/production build passed;
+the existing unrelated chunk-size/dynamic-import warnings remain. The preview still analyses the
+displayed rolling window, rather than every possible window in the register.

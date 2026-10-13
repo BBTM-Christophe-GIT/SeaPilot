@@ -24,7 +24,7 @@ Dans **Conformité → Modifier les seuils**, huit paramètres sont réglables :
 - repos continu minimal ;
 - nombre maximal de périodes de repos ;
 - intervalle maximal entre repos ;
-- amplitude maximale de la journée.
+- amplitude maximale entre deux repos continus suffisants.
 
 Passer le travail maximal de 12 à 14 heures supprime l'écart de l'exemple sans
 modifier ses heures. Le nombre de périodes peut être augmenté pour essayer un
@@ -43,6 +43,22 @@ de repos de six heures ne remet pas le cumul de travail à zéro. Les fenêtres
 glissantes de 24 h et de 168 h se terminent à la dernière période sélectionnée,
 ou à la dernière période enregistrée du jour lorsqu'il n'y a pas de sélection.
 La frise utilise l'horloge locale ; les calculs glissants utilisent le temps écoulé.
+
+L'amplitude est mesurée par séquence, avec un nouveau départ après un repos
+atteignant le seuil continu configuré (6 h initialement). La plus longue séquence
+comportant du travail dans la fenêtre de 24 h est affichée, avec ses bornes.
+Le calcul conserve le début réel d'une séquence engagée la veille ; ni minuit
+ni le début de la fenêtre ne la tronquent. Le travail futur après la fin de
+la fenêtre n'est pas inclus.
+
+Exemple du 14 octobre : 04:00–08:00, 12:00–16:00, 22:00–24:00. Le repos
+16:00–22:00 sépare les séquences 04:00–16:00 (12 h) et 22:00–24:00 (2 h).
+L'amplitude affichée est donc **12 h**, avec toujours **10 h de travail et 14 h
+de repos sur 24 h**. Un repos inférieur à 6 h ne sépare pas les séquences.
+Passer le seuil continu à 7 h produit une amplitude de 20 h dans cet exemple.
+Cette convention d'amplitude demandée pour la préversion n'efface pas les
+obligations de cumul de travail/repos de l'article L5623-5. Les résultats
+restent à confirmer lorsque l'historique ne couvre pas la fenêtre analysée.
 
 Le jeu fictif atteste une couverture du 6 octobre à 00:00 au 14 octobre à 00:00.
 En dehors de ces bornes, les règles restent « À confirmer » ; les jours sans
