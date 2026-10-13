@@ -3,8 +3,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchWorkingTimePhasesRecommendation, type WorkingTimePhaseInput } from './workingTimeQueries';
-import { WorkingTimeEntryBoard } from './WorkingTimeEntryBoard';
+import { fetchWorkingTimePhasesRecommendation, type WorkingTimeEntryRecommendation, type WorkingTimePhaseInput } from './workingTimeQueries';
+import { WorkingTimeEntryBoard, type WorkingTimeEntryGraphPreview } from './WorkingTimeEntryBoard';
 import type { WorkingTimeInterval } from './workingTimeModel';
 
 vi.mock('./workingTimeQueries', async (importOriginal) => {
@@ -31,6 +31,42 @@ const recommendation = {
   violationCodes: [],
 };
 
+const previewGraph: WorkingTimeEntryGraphPreview = {
+  workLimitMarkerMinute: null,
+  excessRanges: [],
+  windowLabel: '3 août, de 00 h à 24 h',
+  workTotalLabel: 'Projection de la saisie',
+  excessLabel: null,
+  isProjected: true,
+};
+
+function measureTimelineCells(cells: HTMLElement[]) {
+  cells.forEach((cell, slot) => {
+    vi.spyOn(cell, 'getBoundingClientRect').mockReturnValue({
+      x: 100 + slot * 20, y: 100, left: 100 + slot * 20, right: 100 + (slot + 1) * 20,
+      width: 20, height: 94, top: 100, bottom: 194, toJSON: () => ({}),
+    });
+  });
+}
+
+function capturedPointer(cell: HTMLElement) {
+  let captured = false;
+  const set = vi.fn(() => { captured = true; });
+  const release = vi.fn(() => { captured = false; });
+  Object.defineProperties(cell, {
+    setPointerCapture: { configurable: true, value: set },
+    hasPointerCapture: { configurable: true, value: () => captured },
+    releasePointerCapture: { configurable: true, value: release },
+  });
+  return { set, release };
+}
+
+function touchPointer(cell: HTMLElement, type: string, clientX: number) {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY: 150, button: 0 });
+  Object.defineProperties(event, { pointerId: { value: 17 }, pointerType: { value: 'touch' }, isPrimary: { value: true } });
+  fireEvent(cell, event);
+}
+
 function Harness({
   onSubmit = vi.fn(),
   saveDraft = false,
@@ -42,6 +78,8 @@ function Harness({
   planningVesselId = 7,
   approverName = 'Camille CAPITAINE',
   unrestrictedEditing = false,
+  previewGraph,
+  analysisStatus,
 }: {
   onSubmit?: (phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') => void;
   saveDraft?: boolean;
@@ -53,6 +91,8 @@ function Harness({
   planningVesselId?: number | null;
   approverName?: string | null;
   unrestrictedEditing?: boolean;
+  previewGraph?: WorkingTimeEntryGraphPreview;
+  analysisStatus?: WorkingTimeEntryRecommendation['status'];
 }) {
   const [startsAt, setStartsAt] = useState('2026-08-03T08:00');
   const [endsAt, setEndsAt] = useState('2026-08-03T12:00');
@@ -79,6 +119,8 @@ function Harness({
       periodEnd="2026-08-09"
       periodStart="2026-08-03"
       personId={42}
+      previewGraph={previewGraph}
+      analysisStatus={analysisStatus}
       pendingPhases={pendingPhases}
       planningVesselId={planningVesselId}
       planningContextLoading={planningContextLoading}
@@ -106,6 +148,78 @@ describe('WorkingTimeEntryBoard', () => {
     expect(await screen.findByText('4 h 00', { selector: '.working-time-analysis-bar dd' })).toBeInTheDocument();
     expect(screen.getByText('Conformité repos')).toBeInTheDocument();
     expect(screen.getByText('Conforme', { selector: '.working-time-analysis-bar dd' })).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /Projection en cours de saisie/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Journée de travail' })).not.toHaveClass('is-visual-preview');
+    expect(screen.getByRole('grid').querySelector('.working-time-preview-phase-labels')).not.toBeInTheDocument();
+  });
+
+  it('places optional phase labels over the grid without intercepting input', () => {
+    const { container } = render(<Harness previewGraph={{ ...previewGraph, phaseLabels: [
+      { startMinute: 360, endMinute: 720, label: '06:00–12:00', isPending: false },
+      { startMinute: 780, endMinute: 1200, label: '13:00–20:00', isPending: true },
+    ] }} />);
+
+    const labels = container.querySelector('.working-time-preview-phase-labels');
+    expect(labels).toHaveAttribute('aria-hidden', 'true');
+    expect(labels).toHaveStyle({ pointerEvents: 'none' });
+    expect(screen.getByText('06:00–12:00')).toHaveStyle({ left: '25%', width: '25%' });
+    expect(screen.getByText('13:00–20:00')).toHaveClass('is-pending');
+    expect(screen.getAllByRole('gridcell')).toHaveLength(48);
+  });
+
+  it('shows other rule alerts beside the graph and includes them in its accessible description', () => {
+    render(<Harness previewGraph={{ ...previewGraph, ruleAlerts: ['Repos sur 24 h : manque 2 h', 'Amplitude : dépassement de 1 h'] }} />);
+
+    expect(screen.getByText('Repos sur 24 h : manque 2 h')).toHaveClass('working-time-preview-rule-alert');
+    expect(screen.getByText('Amplitude : dépassement de 1 h')).toHaveClass('working-time-preview-rule-alert');
+    expect(screen.getByRole('img', { name: /Repos sur 24 h : manque 2 h.*Amplitude : dépassement de 1 h/ })).toBeInTheDocument();
+  });
+
+  it('shows the opt-in excess rail with its analysis window and threshold position', () => {
+    const previewGraph: WorkingTimeEntryGraphPreview = {
+      workLimitMarkerMinute: 19 * 60,
+      excessRanges: [{ startMinute: 19 * 60, endMinute: 20 * 60 }],
+      windowLabel: '13 octobre, de 00 h à 24 h',
+      workTotalLabel: '13 h de travail / seuil 12 h',
+      excessLabel: 'Dépassement de 1 h',
+      isProjected: true,
+    };
+    const { container } = render(<Harness previewGraph={previewGraph} />);
+
+    expect(screen.getByRole('region', { name: 'Journée de travail' })).toHaveClass('is-visual-preview');
+    expect(screen.getByRole('img', { name: /Projection en cours de saisie.*13 octobre.*Dépassement de 1 h.*Seuil atteint à 19 h 00/ })).toBeInTheDocument();
+    expect(screen.getByText('Seuil atteint à 19 h 00')).toBeInTheDocument();
+    expect(container.querySelector('.working-time-preview-excess-range')).toHaveStyle({ left: `${19 / 24 * 100}%`, width: `${1 / 24 * 100}%` });
+    expect(screen.getAllByRole('gridcell')).toHaveLength(48);
+  });
+
+  it('updates graph feedback from projected props without retaining a previous excess', () => {
+    const initial: WorkingTimeEntryGraphPreview = {
+      workLimitMarkerMinute: 19 * 60,
+      excessRanges: [{ startMinute: 19 * 60, endMinute: 20 * 60 }],
+      windowLabel: '13 octobre, de 00 h à 24 h',
+      workTotalLabel: '13 h de travail / seuil 12 h',
+      excessLabel: 'Dépassement de 1 h',
+      isProjected: true,
+    };
+    const { container, rerender } = render(<Harness previewGraph={initial} />);
+
+    rerender(<Harness previewGraph={{ ...initial, workLimitMarkerMinute: null, excessRanges: [], workTotalLabel: '11 h de travail / seuil 12 h', excessLabel: null }} />);
+
+    expect(screen.getByRole('img', { name: /11 h de travail.*Aucun dépassement/ })).toBeInTheDocument();
+    expect(container.querySelector('.working-time-preview-excess-range')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Seuil atteint à/)).not.toBeInTheDocument();
+  });
+
+  it('keeps server comment requirements when the preview overrides the visual status', async () => {
+    vi.mocked(fetchWorkingTimePhasesRecommendation).mockResolvedValue({
+      ...recommendation, status: 'non_conforme', violationCodes: ['work_24h'],
+    });
+    render(<Harness analysisStatus="conforme" />);
+
+    await waitFor(() => expect(screen.getByRole('textbox')).toBeRequired());
+    expect(screen.getByText('Conforme', { selector: '.working-time-compliance-badge' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Valider' })).toBeInTheDocument();
   });
 
   it('supports day navigation and keyboard slot selection', async () => {
@@ -131,6 +245,61 @@ describe('WorkingTimeEntryBoard', () => {
     fireEvent.pointerUp(cells[19]);
 
     expect(screen.getByText('08:00–10:00')).toBeInTheDocument();
+  });
+
+  it('extends a captured touch selection across cells in the visual preview', () => {
+    render(<Harness previewGraph={previewGraph} />);
+    const cells = screen.getAllByRole('gridcell');
+    measureTimelineCells(cells);
+    const capture = capturedPointer(cells[12]);
+
+    touchPointer(cells[12], 'pointerdown', 350);
+    touchPointer(cells[12], 'pointermove', 570);
+    touchPointer(cells[12], 'pointerup', 570);
+
+    expect(capture.set).toHaveBeenCalledWith(17);
+    expect(capture.release).toHaveBeenCalledWith(17);
+    expect(screen.getByText('06:00–12:00')).toBeInTheDocument();
+    expect(screen.getAllByText(/Période \d/)).toHaveLength(1);
+  });
+
+  it('commits the last tracked slot on release outside and leaves no armed preview drag', () => {
+    render(<Harness previewGraph={previewGraph} />);
+    const cells = screen.getAllByRole('gridcell');
+    measureTimelineCells(cells);
+    capturedPointer(cells[12]);
+
+    touchPointer(cells[12], 'pointerdown', 350);
+    touchPointer(cells[12], 'pointermove', 490);
+    touchPointer(cells[12], 'pointerup', 2000);
+    fireEvent.pointerEnter(cells[32]);
+
+    expect(screen.getByText('06:00–10:00')).toBeInTheDocument();
+    expect(cells[19]).toHaveAttribute('aria-selected', 'true');
+    expect(cells[32]).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('restores the previous selection on preview pointer cancellation without adding a period', () => {
+    render(<Harness previewGraph={previewGraph} />);
+    const cells = screen.getAllByRole('gridcell');
+    measureTimelineCells(cells);
+    const capture = capturedPointer(cells[12]);
+
+    touchPointer(cells[12], 'pointerdown', 350);
+    touchPointer(cells[12], 'pointermove', 570);
+    touchPointer(cells[12], 'pointercancel', 570);
+    fireEvent.pointerEnter(cells[32]);
+
+    expect(capture.release).toHaveBeenCalledWith(17);
+    expect(screen.queryByText('Période 1')).not.toBeInTheDocument();
+    expect(cells[12]).toHaveAttribute('aria-selected', 'false');
+    expect(cells[16]).toHaveAttribute('aria-selected', 'true');
+    expect(cells[32]).toHaveAttribute('aria-selected', 'false');
+
+    capturedPointer(cells[28]);
+    touchPointer(cells[28], 'pointerdown', 670);
+    touchPointer(cells[28], 'pointerup', 670);
+    expect(screen.getByText('14:00–14:30')).toBeInTheDocument();
   });
 
   it('removes manual planning fields and keeps the draft action permission-gated', async () => {

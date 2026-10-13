@@ -24,6 +24,17 @@ export interface WorkingTimeRollingWindowMarker {
   startLabel: string;
 }
 
+export interface WorkingTimeEntryGraphPreview {
+  workLimitMarkerMinute: number | null;
+  excessRanges: { startMinute: number; endMinute: number }[];
+  windowLabel: string;
+  workTotalLabel: string;
+  excessLabel: string | null;
+  isProjected: boolean;
+  phaseLabels?: { startMinute: number; endMinute: number; label: string; isPending: boolean }[];
+  ruleAlerts?: string[];
+}
+
 interface WorkingTimeEntryBoardProps {
   client: SupabaseClient;
   personId: number;
@@ -51,6 +62,8 @@ interface WorkingTimeEntryBoardProps {
   showValidate?: boolean;
   validateDisabled?: boolean;
   rollingWindow?: WorkingTimeRollingWindowMarker | null;
+  previewGraph?: WorkingTimeEntryGraphPreview;
+  analysisStatus?: WorkingTimeEntryRecommendation['status'];
   onStartsAtChange: (value: string) => void;
   onEndsAtChange: (value: string) => void;
   onCommentChange: (value: string) => void;
@@ -88,6 +101,11 @@ function formatDuration(seconds: number): string {
   const hours = Math.floor(safeSeconds / 3600);
   const minutes = Math.floor((safeSeconds % 3600) / 60);
   return `${hours} h ${pad(minutes)}`;
+}
+
+function minuteLabel(value: number): string {
+  const minutes = Math.max(0, Math.min(MINUTES_PER_DAY, Math.round(value)));
+  return `${pad(Math.floor(minutes / 60))} h ${pad(minutes % 60)}`;
 }
 
 function formatDateTime(value: string | null): string {
@@ -151,6 +169,8 @@ export function WorkingTimeEntryBoard({
   showValidate = false,
   validateDisabled = false,
   rollingWindow = null,
+  previewGraph,
+  analysisStatus,
   onStartsAtChange,
   onEndsAtChange,
   onCommentChange,
@@ -170,8 +190,10 @@ export function WorkingTimeEntryBoard({
   const [activePendingIndex, setActivePendingIndex] = useState<number | null>(null);
   const [selectedRecordedIntervalId, setSelectedRecordedIntervalId] = useState<number | null>(null);
   const dragStart = useRef<number | null>(null);
+  const previewDrag = useRef<{ pointerId: number; lastSlot: number; startsAt: string; endsAt: string } | null>(null);
   const dayButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const slotRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const timelineRef = useRef<HTMLDivElement | null>(null);
   const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
   const activePhase = validProposal(startsAt, endsAt) ? { startsAt, endsAt } : null;
   const combinedPhases = useMemo(() => {
@@ -266,6 +288,28 @@ export function WorkingTimeEntryBoard({
     onEndsAtChange(slotLocalValue(selectedDay, to));
   }
 
+  function previewSlotAtPointer(clientX: number, fallbackSlot: number): number {
+    const first = slotRefs.current[0]?.getBoundingClientRect();
+    const last = slotRefs.current[47]?.getBoundingClientRect();
+    const grid = timelineRef.current?.getBoundingClientRect();
+    const left = first && first.width > 0 ? first.left : grid?.left;
+    const right = last && last.width > 0 ? last.right : grid?.right;
+    if (left === undefined || right === undefined || right <= left || !Number.isFinite(clientX)) return fallbackSlot;
+    return Math.max(0, Math.min(47, Math.floor((clientX - left) / (right - left) * 48)));
+  }
+
+  function finishPreviewDrag(event: React.PointerEvent<HTMLButtonElement>, cancelled: boolean) {
+    const activeDrag = previewDrag.current;
+    if (!activeDrag || activeDrag.pointerId !== event.pointerId) return;
+    previewDrag.current = null;
+    dragStart.current = null;
+    if (cancelled) {
+      onStartsAtChange(activeDrag.startsAt);
+      onEndsAtChange(activeDrag.endsAt);
+    }
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
   function commitSlots(first: number, last: number) {
     if (!canEdit) return;
     const from = Math.max(0, Math.min(first, last));
@@ -337,14 +381,15 @@ export function WorkingTimeEntryBoard({
     slotRefs.current[target]?.focus();
   }
 
-  const status = recommendation?.status || 'sans_politique';
+  const serverStatus = recommendation?.status || 'sans_politique';
+  const status = analysisStatus ?? serverStatus;
   const statusLabel = status === 'conforme' ? 'Conforme' : status === 'alerte' ? 'Alerte' : status === 'non_conforme' ? 'Non conforme' : 'Politique requise';
   const maxRecommended = recommendation?.alreadyNonCompliant ? 0 : recommendation?.maxAdditionalSeconds || 0;
-  const commentRequired = !unrestrictedEditing && combinedPhases.length > 0 && (status === 'alerte' || status === 'non_conforme');
+  const commentRequired = !unrestrictedEditing && combinedPhases.length > 0 && (serverStatus === 'alerte' || serverStatus === 'non_conforme');
   const selectionBlocked = phasesOverlap || phasesConflictExisting || (!unrestrictedEditing && Boolean(recommendationError));
 
   return (
-    <section aria-labelledby="working-time-entry-title" className="working-time-entry-board">
+    <section aria-labelledby="working-time-entry-title" className={`working-time-entry-board${previewGraph ? ' is-visual-preview' : ''}`}>
       <header className="working-time-entry-heading">
         <div>
           <p>Saisie assistée</p>
@@ -352,7 +397,7 @@ export function WorkingTimeEntryBoard({
         </div>
         <span aria-live="polite" className={`working-time-compliance-badge is-${status}`}>
           {status === 'conforme' ? <CheckCircle2 aria-hidden="true" size={15} /> : <AlertTriangle aria-hidden="true" size={15} />}
-          {isCalculating ? 'Calcul…' : statusLabel}
+          {isCalculating && !analysisStatus ? 'Calcul…' : statusLabel}
         </span>
       </header>
 
@@ -369,7 +414,7 @@ export function WorkingTimeEntryBoard({
         <div className="working-time-timeline-panel">
           <div className="working-time-timeline-legend"><span><i className="is-existing" />Enregistré</span><span><i className="is-pending" />À enregistrer</span><span><i className="is-selected" />Plage active</span>{rollingWindow ? <small className="is-rolling-window"><i />24 h glissantes</small> : <small>Glissez plusieurs fois pour ajouter des périodes · pas de 30 min</small>}</div>
           <div className="working-time-timeline-track">
-            <div aria-label={`Grille horaire du ${selectedDay}`} aria-readonly={!canEdit} className="working-time-timeline" role="grid">
+            <div aria-label={`Grille horaire du ${selectedDay}`} aria-readonly={!canEdit} className="working-time-timeline" ref={timelineRef} role="grid">
               {Array.from({ length: 48 }, (_, slot) => {
                 const label = slotLocalValue(selectedDay, slot).slice(11);
                 const recordedInterval = recordedIntervalBySlot[slot];
@@ -383,15 +428,36 @@ export function WorkingTimeEntryBoard({
                     key={slot}
                     onKeyDown={(event) => handleSlotKeyDown(event, slot)}
                     onClick={() => { if (recordedInterval) setSelectedRecordedIntervalId(recordedInterval.id); }}
-                    onPointerDown={() => {
+                    onPointerDown={(event) => {
                       if (recordedInterval) { setSelectedRecordedIntervalId(recordedInterval.id); return; }
+                      if (previewGraph) {
+                        if (previewDrag.current || event.button !== 0) return;
+                        event.preventDefault();
+                        previewDrag.current = { pointerId: event.pointerId, lastSlot: slot, startsAt, endsAt };
+                        event.currentTarget.setPointerCapture?.(event.pointerId);
+                      }
                       dragStart.current = slot; setActivePendingIndex(null); selectSlots(slot, slot);
                     }}
-                    onPointerEnter={() => { if (dragStart.current !== null) selectSlots(dragStart.current, slot); }}
-                    onPointerUp={() => {
+                    onPointerEnter={() => { if (!previewGraph && dragStart.current !== null) selectSlots(dragStart.current, slot); }}
+                    onPointerMove={(event) => {
+                      const activeDrag = previewDrag.current;
+                      if (!previewGraph || !activeDrag || activeDrag.pointerId !== event.pointerId || dragStart.current === null) return;
+                      const targetSlot = previewSlotAtPointer(event.clientX, activeDrag.lastSlot);
+                      activeDrag.lastSlot = targetSlot;
+                      selectSlots(dragStart.current, targetSlot);
+                    }}
+                    onPointerUp={(event) => {
+                      if (previewGraph) {
+                        const activeDrag = previewDrag.current;
+                        if (activeDrag && activeDrag.pointerId === event.pointerId && dragStart.current !== null) commitSlots(dragStart.current, activeDrag.lastSlot);
+                        finishPreviewDrag(event, false);
+                        return;
+                      }
                       if (dragStart.current !== null) commitSlots(dragStart.current, slot);
                       dragStart.current = null;
                     }}
+                    onPointerCancel={(event) => { if (previewGraph) finishPreviewDrag(event, true); }}
+                    onLostPointerCapture={(event) => { if (previewGraph) finishPreviewDrag(event, true); }}
                     ref={(element) => { slotRefs.current[slot] = element; }}
                     role="gridcell"
                     type="button"
@@ -400,7 +466,36 @@ export function WorkingTimeEntryBoard({
                   </button>
                 );
               })}
+              {previewGraph?.phaseLabels?.length ? <div aria-hidden="true" className="working-time-preview-phase-labels" style={{ pointerEvents: 'none' }}>{previewGraph.phaseLabels.map((phase, index) => {
+                const start = Math.max(0, Math.min(MINUTES_PER_DAY, phase.startMinute));
+                const end = Math.max(start, Math.min(MINUTES_PER_DAY, phase.endMinute));
+                if (end <= start) return null;
+                return <span className={phase.isPending ? 'is-pending' : ''} key={`${phase.startMinute}-${phase.endMinute}-${index}`} style={{ left: `${start / MINUTES_PER_DAY * 100}%`, width: `${(end - start) / MINUTES_PER_DAY * 100}%` }}>{phase.label}</span>;
+              })}</div> : null}
             </div>
+            {previewGraph ? (
+              <div
+                aria-label={`${previewGraph.isProjected ? 'Projection en cours de saisie' : 'Analyse des périodes enregistrées'}. ${previewGraph.windowLabel}. ${previewGraph.workTotalLabel}. ${previewGraph.excessLabel || 'Aucun dépassement du seuil de travail sur cette fenêtre.'}${previewGraph.workLimitMarkerMinute !== null ? ` Seuil atteint à ${minuteLabel(previewGraph.workLimitMarkerMinute)}.` : ''}${previewGraph.ruleAlerts?.length ? ` ${previewGraph.ruleAlerts.join('. ')}.` : ''}`}
+                className="working-time-preview-graph"
+                role="img"
+              >
+                <div aria-hidden="true" className="working-time-preview-range-rail">
+                  {previewGraph.excessRanges.map((range, index) => {
+                    const start = Math.max(0, Math.min(MINUTES_PER_DAY, range.startMinute));
+                    const end = Math.max(start, Math.min(MINUTES_PER_DAY, range.endMinute));
+                    if (end <= start) return null;
+                    return <span className="working-time-preview-excess-range" key={`${range.startMinute}-${range.endMinute}-${index}`} style={{ left: `${start / MINUTES_PER_DAY * 100}%`, width: `${(end - start) / MINUTES_PER_DAY * 100}%` }} />;
+                  })}
+                  {previewGraph.workLimitMarkerMinute !== null ? <span className="working-time-preview-limit-marker" style={{ left: `${Math.max(0, Math.min(MINUTES_PER_DAY, previewGraph.workLimitMarkerMinute)) / MINUTES_PER_DAY * 100}%` }}><span>Seuil atteint à {minuteLabel(previewGraph.workLimitMarkerMinute)}</span></span> : null}
+                </div>
+                <div aria-hidden="true" className="working-time-preview-graph-summary">
+                  <span>{previewGraph.windowLabel}</span>
+                  <strong>{previewGraph.workTotalLabel}</strong>
+                  {previewGraph.excessLabel ? <em>{previewGraph.excessLabel}</em> : null}
+                  {previewGraph.ruleAlerts?.map((alert, index) => <span className="working-time-preview-rule-alert" key={`${alert}-${index}`}>{alert}</span>)}
+                </div>
+              </div>
+            ) : null}
             {rollingWindow ? (
               <div
                 aria-label="Impact des 24 heures glissantes"

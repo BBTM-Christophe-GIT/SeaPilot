@@ -1336,3 +1336,110 @@ Files are outside the repository at C:/Users/chris/.codex/visualizations/2026/10
 P3 only: slight icon-fill differences and a simpler solid gauge arc. These preserve the provided composition and avoid misleading decorative percentages. Mobile has no reference mock; adaptation verified at390px.
 
 final result: passed
+
+---
+
+# Préversion de saisie : comparaison visuelle
+
+final result: passed
+
+## Artifacts and normalization
+
+- Source visual truth: `docs/design/working-time-entry-preview/reference.png`.
+  Original generated image: 1487 × 1058 pixels, normalized to 1440 × 1024.
+- Implementation: `docs/design/working-time-entry-preview/desktop.png`.
+  Browser CSS viewport: 1440 × 1024. PNG captured at scale 2 (2880 × 2048),
+  then downsampled to 1440 × 1024 for comparison.
+- Focused comparison: `reference-chart.png` (1150 × 400) and
+  `desktop-chart.png` (1160 × 455), in the same evidence directory.
+  Both are crops of the normalized full views. Their boundaries follow the
+  actual editor and compliance regions, rather than forcing identical layouts.
+- Mobile evidence: `mobile.jpg` and `mobile-policy.jpg`, captured at a CSS
+  viewport of 390 × 844. Browser JPEG output is 375 × 812; the viewport and
+  document widths were also inspected directly. No mobile source mock exists.
+- Local route: `http://127.0.0.1:5192/previews/working-time.html`.
+
+The source and implementation images were opened together in the same comparison
+input, first as full views and then as focused chart/compliance views.
+
+## State and full-view comparison
+
+Arthur DEMO, 13 October 2026, day view, recorded 06:00–12:00 and pending
+13:00–20:00. Work total is 13 h, the threshold is 12 h, the excess is 1 h,
+the marker is at 19:00, and the excess rail covers 19:00–20:00.
+Rest values are 11 h total and 10 h continuous; seven-day work is 61 h and
+daily amplitude is 14 h. These values match the selected reference.
+
+The two-column composition, black shell, blue commands, turquoise work periods,
+red deviation card and separate hatched rail are preserved. The editor and
+compliance panel stay aligned; the main actions remain visible at the desktop
+viewport. Labels remain readable in the focused view and distinguish recorded
+and pending phases.
+
+Intentional adaptations follow repository requirements: use the existing logo,
+Inter/system font tokens, 78-pixel shared ModuleRibbon commands, hidden entry
+heading and 48-cell timeline geometry. The week strip sits inside the existing
+entry board. The explicit window label and cumulative value replace the mock's
+decorative arrow. The approval badge reflects actual demo state; an unsigned
+day does not show a fictitious waiting approval. The newly requested threshold
+editor and calendar-day total are added to the selected design.
+
+## Five fidelity surfaces
+
+- Typography: shared `--sp-font`, computed Inter/system stack, 14-pixel base.
+  Date and deviation totals establish hierarchy; supporting text is secondary.
+- Spacing/layout: shared panel/control radii and spacing; editor uses remaining
+  width, with a 290-pixel compliance panel. On mobile the panels stack and only
+  the ribbon, week strip and timeline scroll horizontally inside their containers.
+- Colors/tokens: shell computed `rgb(0, 0, 0)`; shared blue tokens for commands,
+  existing business colors for work and deviations. Text and pattern complement
+  color, including the accessible chart description.
+- Image quality: existing supplied SeaPilot logo and library icons; no generated
+  placeholder assets. Final PNG capture uses scale 2 to avoid the browser's
+  softer default JPEG evidence. Crops retain readable chart values.
+- Copy/content: demonstration identity and temporary storage are explicit.
+  Recorded/pending work, daily/gliding totals and unknown coverage are distinct.
+  Threshold changes never claim to select the legal regime automatically.
+
+## Comparison history and findings
+
+1. Initial desktop comparison found [P2] unnecessary horizontal scrollbars:
+   ribbon commands overrode the shared 78-pixel geometry with a 106-pixel
+   minimum, and the timeline's end label extended by one pixel. Removed the
+   conflicting minimum and moved the end label inside its container.
+   Post-fix DOM evidence: ribbon client/scroll widths 1163/1163, timeline
+   panel and track 817/817. Final desktop evidence shows no internal scrollbar.
+2. Focused comparison found [P2] missing visible time labels on the work bars.
+   Added an optional, pointer-transparent label overlay to the existing board.
+   Final `desktop-chart.png` shows 06:00–12:00 and 13:00–20:00 inside their bars.
+   Keyboard and pointer tests continue to pass; the default board has no overlay.
+3. Final full and focused comparisons have no remaining actionable P0/P1/P2
+   findings. The shared ribbon differs from the illustrative one-line mock by
+   design; it follows the repository's required component instead.
+
+## Browser interaction evidence
+
+- Desktop and mobile threshold editor: 12 → 14 h removes the excess rail and
+  warning while keeping 13 h of work. Changing permitted rest periods to three
+  is accepted. Modal content scrolls and its Apply button remains accessible.
+- Keyboard entry: adding 20:00–21:00 yields 14 h of work, 2 h excess and a
+  separate 15 h amplitude alert near the chart. Saving keeps these recorded
+  facts and clears the pending selection without approving the day.
+- Mobile document width 375 ≤ viewport width 390; timeline scroll width 600
+  stays inside its 325-pixel panel. There is no page-wide horizontal overflow.
+- Browser console: no warning/error after threshold, entry and save interactions.
+- Automatic checks: 204 working-time tests across 20 files; targeted ESLint;
+  TypeScript and production build successful. Existing build warnings about
+  other modules' chunk sizes/dynamic imports remain unrelated.
+- Real Marin/Capitaine verification uses role-gated code and existing profile
+  fixtures, including restricted policy administration and captain duty access.
+  This fictional standalone screen is not evidence of a real account's rights.
+
+## Follow-up polish and limits
+
+- No persistent threshold storage or production-policy change is included in this
+  preview. No exhaustive full-register compliance analysis is claimed.
+- The prototype uses demonstration signature states; actual account signatures
+  remain a production workflow.
+- Cycle averages and annual contingents require an agreed period/coverage model
+  before adding their live visual checks. The leave/rest coefficient stays 1.05.
