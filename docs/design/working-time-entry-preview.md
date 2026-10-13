@@ -68,6 +68,31 @@ et les RPC de production restent les autorités pour les vrais comptes.
 
 ## Parcours disponibles
 
+La vue **Depuis le dernier repos long**, accessible à côté de **24 h glissantes**,
+présente une lecture opérationnelle distincte. Elle commence à la fin du travail
+précédant le dernier repos atteignant le seuil continu configuré, puis s'arrête
+à la fin de la période de travail analysée. Elle affiche le travail, le repos
+calculé sur les plages saisies, le repos avant la reprise et l'amplitude de la
+dernière séquence, avec les dates si elle traverse minuit. Les périodes futures
+ne sont pas comptées. Sans départ identifiable, le début reste à confirmer ;
+avec un historique partiel, les valeurs affichées restent à confirmer.
+
+Exemple : le 13 octobre, 06:00–12:00 et 13:00–18:30 ; le 14 octobre,
+02:00–07:00 et 08:00–12:00. La nouvelle lecture commence le **13 à 18:30** :
+**17 h 30 observées, 9 h de travail, 8 h 30 de repos calculé**, dont 7 h 30
+avant la reprise. L'amplitude de la séquence du 14 est de 10 h, 02:00–12:00.
+Le repère de 24 h est le **14 à 18:30**, soit 6 h 30 après la fin observée.
+L'interface affiche « Période en cours » et ne suppose aucun repos futur.
+
+La vue glissante reste la vue initiale. Le compteur et le lien de retour
+permettent de consulter séparément les écarts sur 24 h / 7 jours. Dans cet
+exemple, la fenêtre du 13 à 12:00 au 14 à 12:00 contient toujours 14 h 30
+de travail et 9 h 30 de repos. La lecture depuis le repos long ne remplace
+ni ces contrôles, ni les commentaires et justifications requis pour la saisie.
+L'[observation de l'OIT sur les contrôles de repos](https://normlex.ilo.org/dyn/nrmlx_fr/f?p=NORMLEXPUB%3A13100%3A0%3A%3ANO%3A%3AP13100_COMMENT_ID%2CP13100_LANG_CODE%3A3240333%2Cen)
+explique pourquoi un contrôle limité aux fenêtres débutant au repos principal
+peut omettre des écarts sur d'autres périodes de 24 h.
+
 La sélection de plusieurs périodes, le clavier, le brouillon, la correction,
 le retrait motivé, la navigation jour/mois et le choix d'un membre de l'équipage
 fonctionnent en mémoire. La soumission d'une journée avec écarts demande une

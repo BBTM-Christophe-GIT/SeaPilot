@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
   CheckCircle2,
+  Clock3,
   PenLine,
   Save,
   Send,
@@ -33,6 +34,10 @@ export interface WorkingTimeEntryGraphPreview {
   isProjected: boolean;
   phaseLabels?: { startMinute: number; endMinute: number; label: string; isPending: boolean }[];
   ruleAlerts?: string[];
+  /** Optional informational copy for preview views that are not compliance checks. */
+  summaryLabel?: string;
+  contextNotes?: string[];
+  analysisStatusLabel?: string;
 }
 
 interface WorkingTimeEntryBoardProps {
@@ -383,7 +388,7 @@ export function WorkingTimeEntryBoard({
 
   const serverStatus = recommendation?.status || 'sans_politique';
   const status = analysisStatus ?? serverStatus;
-  const statusLabel = status === 'conforme' ? 'Conforme' : status === 'alerte' ? 'Alerte' : status === 'non_conforme' ? 'Non conforme' : 'Politique requise';
+  const statusLabel = previewGraph?.analysisStatusLabel ?? (status === 'conforme' ? 'Conforme' : status === 'alerte' ? 'Alerte' : status === 'non_conforme' ? 'Non conforme' : 'Politique requise');
   const maxRecommended = recommendation?.alreadyNonCompliant ? 0 : recommendation?.maxAdditionalSeconds || 0;
   const commentRequired = !unrestrictedEditing && combinedPhases.length > 0 && (serverStatus === 'alerte' || serverStatus === 'non_conforme');
   const selectionBlocked = phasesOverlap || phasesConflictExisting || (!unrestrictedEditing && Boolean(recommendationError));
@@ -396,7 +401,7 @@ export function WorkingTimeEntryBoard({
           <h4 id="working-time-entry-title">Journée de travail</h4>
         </div>
         <span aria-live="polite" className={`working-time-compliance-badge is-${status}`}>
-          {status === 'conforme' ? <CheckCircle2 aria-hidden="true" size={15} /> : <AlertTriangle aria-hidden="true" size={15} />}
+          {previewGraph?.analysisStatusLabel ? <Clock3 aria-hidden="true" size={15} /> : status === 'conforme' ? <CheckCircle2 aria-hidden="true" size={15} /> : <AlertTriangle aria-hidden="true" size={15} />}
           {isCalculating && !analysisStatus ? 'Calcul…' : statusLabel}
         </span>
       </header>
@@ -475,7 +480,7 @@ export function WorkingTimeEntryBoard({
             </div>
             {previewGraph ? (
               <div
-                aria-label={`${previewGraph.isProjected ? 'Projection en cours de saisie' : 'Analyse des périodes enregistrées'}. ${previewGraph.windowLabel}. ${previewGraph.workTotalLabel}. ${previewGraph.excessLabel || 'Aucun dépassement du seuil de travail sur cette fenêtre.'}${previewGraph.workLimitMarkerMinute !== null ? ` Seuil atteint à ${minuteLabel(previewGraph.workLimitMarkerMinute)}.` : ''}${previewGraph.ruleAlerts?.length ? ` ${previewGraph.ruleAlerts.join('. ')}.` : ''}`}
+                aria-label={`${previewGraph.isProjected ? 'Projection en cours de saisie' : 'Analyse des périodes enregistrées'}. ${previewGraph.windowLabel}. ${previewGraph.workTotalLabel}. ${previewGraph.excessLabel || previewGraph.summaryLabel || 'Aucun dépassement du seuil de travail sur cette fenêtre.'}${previewGraph.workLimitMarkerMinute !== null ? ` Seuil atteint à ${minuteLabel(previewGraph.workLimitMarkerMinute)}.` : ''}${previewGraph.ruleAlerts?.length ? ` ${previewGraph.ruleAlerts.join('. ')}.` : ''}${previewGraph.contextNotes?.length ? ` ${previewGraph.contextNotes.join('. ')}.` : ''}`}
                 className="working-time-preview-graph"
                 role="img"
               >
@@ -493,6 +498,7 @@ export function WorkingTimeEntryBoard({
                   <strong>{previewGraph.workTotalLabel}</strong>
                   {previewGraph.excessLabel ? <em>{previewGraph.excessLabel}</em> : null}
                   {previewGraph.ruleAlerts?.map((alert, index) => <span className="working-time-preview-rule-alert" key={`${alert}-${index}`}>{alert}</span>)}
+                  {previewGraph.contextNotes?.map((note, index) => <span className="working-time-preview-context-note" key={`${note}-${index}`}>{note}</span>)}
                 </div>
               </div>
             ) : null}

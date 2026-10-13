@@ -304,4 +304,60 @@ describe('WorkingTimePreview real entry workflow', () => {
     expect(within(warning).getByText('+6 h 00')).toBeInTheDocument();
     expect(graph()).toHaveAccessibleName(/Cumul : 10 h 00.*Aucun dépassement/);
   });
+
+  it('separates the period since the last long rest from rolling alerts without changing saved work', async () => {
+    const user = userEvent.setup();
+    render(<WorkingTimePreview />);
+    await user.click(screen.getByRole('button', { name: 'Retirer la période 1' }));
+    selectClockRange('13:00', '18:00');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await user.click(screen.getByRole('tab', { name: /mer 14 oct/ }));
+    selectClockRange('02:00', '06:30');
+    selectClockRange('08:00', '11:30');
+    expect(graph()).toHaveAccessibleName(/Cumul : 14 h 30.*Dépassement \+2 h 30/);
+
+    await user.click(screen.getByRole('button', { name: 'Depuis le dernier repos long' }));
+    expect(graph()).toHaveAccessibleName(/Période observée : 13 oct., 18:30 → 14 oct., 12:00.*Cumul depuis le repos long : 9 h 00/);
+    expect(graph()).toHaveAccessibleName(/Repos calculé : 8 h 30.*Repère de 24 h : 14 oct., 18:30.*bilan en cours/);
+    expect(graph()).not.toHaveAccessibleName(/Aucun dépassement|Seuil atteint|Dépassement \+/);
+    expect(screen.queryByText(/Seuil atteint à/)).not.toBeInTheDocument();
+    const analysis = screen.getByLabelText('Analyse de la saisie');
+    expect(within(analysis).getByText('Période en cours')).toBeInTheDocument();
+    expect(within(analysis).getByText(/17 h 30 observées/)).toBeInTheDocument();
+    expect(within(analysis).getByText('9 h 00')).toBeInTheDocument();
+    expect(within(analysis).getByText('8 h 30')).toBeInTheDocument();
+    expect(within(analysis).getByText('7 h 30')).toBeInTheDocument();
+    expect(within(analysis).queryByText(/Aucun écart|Conforme/)).not.toBeInTheDocument();
+    expect(within(analysis).getByRole('button', { name: 'Voir les 2 écarts sur 24 h / 7 jours' })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Commentaire'), 'Travail effectué — repos à examiner.');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    expect(await screen.findByText('Brouillon enregistré dans la préversion.')).toBeInTheDocument();
+    expect(graph()).toHaveAccessibleName(/Analyse des périodes enregistrées.*Cumul depuis le repos long : 9 h 00/);
+    await user.click(within(analysis).getByRole('button', { name: 'Voir les 2 écarts sur 24 h / 7 jours' }));
+    expect(graph()).toHaveAccessibleName(/Cumul : 14 h 30.*Dépassement \+2 h 30/);
+    expect(within(analysis).getByRole('heading', { name: 'Repos sur 24 h' })).toBeInTheDocument();
+    expect(within(grid()).getAllByRole('gridcell', { name: /travail enregistré/ })).toHaveLength(18);
+
+    await user.click(screen.getByRole('button', { name: 'Modifier les seuils' }));
+    const dialog = screen.getByRole('dialog');
+    const continuousRest = within(dialog).getByRole('spinbutton', { name: /^Repos continu/ });
+    await user.clear(continuousRest);
+    await user.type(continuousRest, '8');
+    await user.click(within(dialog).getByRole('button', { name: 'Appliquer les seuils' }));
+    await user.click(screen.getByRole('button', { name: 'Depuis le dernier repos long' }));
+    const sequence = within(analysis).getByText('Amplitude de la séquence').closest('div')!;
+    expect(sequence).toHaveTextContent('30 h 00');
+    expect(within(sequence).getByText('13 oct., 06:00 → 14 oct., 12:00')).toBeInTheDocument();
+  });
+
+  it('does not invent a long-rest period for a day without work', async () => {
+    const user = userEvent.setup();
+    render(<WorkingTimePreview />);
+    await user.click(screen.getByRole('tab', { name: /mer 14 oct/ }));
+    await user.click(screen.getByRole('button', { name: 'Depuis le dernier repos long' }));
+    expect(screen.getByText('Début de période à confirmer')).toBeInTheDocument();
+    expect(graph()).toHaveAccessibleName(/Période non identifiée/);
+    expect(graph()).not.toHaveAccessibleName(/Aucun dépassement/);
+  });
 });

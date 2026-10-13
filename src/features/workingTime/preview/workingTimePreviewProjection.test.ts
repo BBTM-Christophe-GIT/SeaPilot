@@ -282,6 +282,142 @@ describe('working time entry preview projection', () => {
     });
   });
 
+  it('adds an informational period since the last long rest without resetting rolling totals', () => {
+    const result = project({
+      selectedDate: '2026-10-14',
+      history: [phase('2026-10-13', '06:00', '12:00'), phase('2026-10-13', '13:00', '18:30')],
+      phases: [phase('2026-10-14', '02:00', '07:00'), phase('2026-10-14', '08:00', '12:00')],
+    });
+
+    expect(result.operationalPeriod).toMatchObject({
+      observedWindow: {
+        startsAt: '2026-10-13T18:30:00', endsAt: '2026-10-14T12:00:00',
+        hours: 17.5, workHours: 9, restHours: 8.5,
+      },
+      precedingRest: { startsAt: '2026-10-13T18:30:00', endsAt: '2026-10-14T02:00:00', hours: 7.5 },
+      amplitude: { startsAt: '2026-10-14T02:00:00', endsAt: '2026-10-14T12:00:00', hours: 10 },
+      horizonEndsAt: '2026-10-14T18:30:00', remainingHours: 6.5, historyCovered: true,
+    });
+    expect(result.operationalPeriod?.observedWindow.restSegments).toHaveLength(2);
+    expect(result.operationalPeriod).not.toHaveProperty('status');
+    expect(result.operationalPeriod).not.toHaveProperty('rules');
+    expect(result.window24).toMatchObject({
+      startsAt: '2026-10-13T12:00:00', endsAt: '2026-10-14T12:00:00',
+      workHours: 14.5, restHours: 9.5,
+    });
+    expect(result.rules.find((rule) => rule.key === 'max_work_24h')).toMatchObject({
+      actual: 14.5, deviation: 2.5, status: 'deviation',
+    });
+    expect(result.rules.find((rule) => rule.key === 'min_rest_24h')).toMatchObject({
+      actual: 9.5, deviation: 0.5, status: 'deviation',
+    });
+  });
+
+  it('does not start a new operational period after a rest shorter than the threshold', () => {
+    const result = project({
+      selectedDate: '2026-10-14',
+      history: [phase('2026-10-12', '06:00', '12:00'),
+        phase('2026-10-13', '06:00', '12:00'), phase('2026-10-13', '13:00', '20:01')],
+      phases: [phase('2026-10-14', '02:00', '07:00'), phase('2026-10-14', '08:00', '12:00')],
+    });
+
+    expect(result.operationalPeriod).toMatchObject({
+      observedWindow: { startsAt: '2026-10-12T12:00:00', hours: 48 },
+      precedingRest: { startsAt: '2026-10-12T12:00:00', endsAt: '2026-10-13T06:00:00', hours: 18 },
+      amplitude: { startsAt: '2026-10-13T06:00:00', endsAt: '2026-10-14T12:00:00', hours: 30 },
+      horizonEndsAt: '2026-10-13T12:00:00', remainingHours: 0,
+    });
+  });
+
+  it('uses the configured long-rest threshold for the period while preserving the rolling metrics', () => {
+    const input = {
+      selectedDate: '2026-10-14',
+      history: [phase('2026-10-12', '06:00', '12:00'),
+        phase('2026-10-13', '06:00', '12:00'), phase('2026-10-13', '13:00', '18:30')],
+      phases: [phase('2026-10-14', '02:00', '07:00'), phase('2026-10-14', '08:00', '12:00')],
+    };
+    const sixHours = project(input);
+    const eightHours = project({ ...input, policy: { minContinuousRestHours: 8 } });
+
+    expect(sixHours.operationalPeriod?.observedWindow.startsAt).toBe('2026-10-13T18:30:00');
+    expect(eightHours.operationalPeriod?.observedWindow.startsAt).toBe('2026-10-12T12:00:00');
+    expect(eightHours.operationalPeriod?.amplitude.hours).toBe(30);
+    expect(eightHours.window24).toEqual(sixHours.window24);
+    expect(eightHours.window7).toEqual(sixHours.window7);
+  });
+
+  it('keeps an entered overnight phase in its operational period with an exact qualifying rest', () => {
+    const result = project({
+      history: [phase('2026-10-13', '08:00', '16:00')],
+      phases: [phase('2026-10-13', '22:00', '06:00', '2026-10-14')],
+    });
+
+    expect(result.operationalPeriod).toMatchObject({
+      observedWindow: {
+        startsAt: '2026-10-13T16:00:00', endsAt: '2026-10-14T06:00:00',
+        hours: 14, workHours: 8, restHours: 6,
+      },
+      precedingRest: { hours: 6 },
+      amplitude: { startsAt: '2026-10-13T22:00:00', endsAt: '2026-10-14T06:00:00', hours: 8 },
+      horizonEndsAt: '2026-10-14T16:00:00', remainingHours: 10,
+    });
+  });
+
+  it('retains the candidate period but does not attest rest in an incomplete local history', () => {
+    const input = {
+      selectedDate: '2026-10-14', coverageComplete: false,
+      history: [phase('2026-10-13', '13:00', '18:30')],
+      phases: [phase('2026-10-14', '02:00', '07:00'), phase('2026-10-14', '08:00', '12:00')],
+    };
+    const unattested = project(input);
+    const partialCoverage = project({ ...input,
+      coverage: { startsAt: '2026-10-06T00:00', endsAt: '2026-10-14T00:00' },
+    });
+    const localCoverage = project({ ...input,
+      coverage: { startsAt: '2026-10-13T18:30', endsAt: '2026-10-14T12:00' },
+    });
+
+    expect(unattested.operationalPeriod).toMatchObject({ historyCovered: false,
+      observedWindow: { workHours: 9, restHours: 8.5 } });
+    expect(partialCoverage.operationalPeriod?.historyCovered).toBe(false);
+    expect(localCoverage.operationalPeriod?.historyCovered).toBe(true);
+    expect(localCoverage.coverageComplete).toBe(false);
+    expect(localCoverage.rules.find((rule) => rule.key === 'min_rest_7d')?.status).toBe('unknown');
+  });
+
+  it('excludes future recorded work and future rest from the operational view', () => {
+    const result = project({
+      selectedDate: '2026-10-14',
+      history: [phase('2026-10-13', '13:00', '18:30'),
+        phase('2026-10-14', '02:00', '07:00'), phase('2026-10-14', '08:00', '20:00'),
+        phase('2026-10-15', '02:00', '08:00')],
+      phases: [phase('2026-10-14', '08:00', '12:00')],
+    });
+
+    expect(result.operationalPeriod).toMatchObject({
+      observedWindow: { endsAt: '2026-10-14T12:00:00', hours: 17.5,
+        workHours: 9, restHours: 8.5, maxIntervalBetweenRestsHours: 5 },
+      amplitude: { endsAt: '2026-10-14T12:00:00', hours: 10 },
+      remainingHours: 6.5,
+    });
+    expect(result.operationalPeriod?.observedWindow.workSegments.at(-1)?.endsAt).toBe('2026-10-14T12:00:00');
+    expect(result.operationalPeriod?.observedWindow.restSegments.at(-1)?.endsAt).toBe('2026-10-14T08:00:00');
+  });
+
+  it('does not invent a preceding rest or a period on a day without observed work', () => {
+    const noPreviousWork = project({ phases: [phase('2026-10-13', '06:00', '12:00')] });
+    const emptyDay = project({ selectedDate: '2026-10-14',
+      history: [phase('2026-10-12', '08:00', '16:00'), phase('2026-10-13', '06:00', '12:00')],
+    });
+    const futureOnly = project({ selectedDate: '2026-10-14',
+      history: [phase('2026-10-13', '08:00', '16:00'), phase('2026-10-15', '06:00', '12:00')],
+    });
+
+    expect(noPreviousWork.operationalPeriod).toBeNull();
+    expect(emptyDay.operationalPeriod).toBeNull();
+    expect(futureOnly.operationalPeriod).toBeNull();
+  });
+
   it('does not claim compliant rest or a compliant week when history is incomplete', () => {
     const result = project({
       coverageComplete: false,

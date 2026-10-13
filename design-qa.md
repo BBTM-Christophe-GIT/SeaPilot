@@ -1489,3 +1489,49 @@ run passed all 35 tests including the additional analysis-end and threshold
 interaction cases. Targeted ESLint and the TypeScript/production build passed;
 the existing unrelated chunk-size/dynamic-import warnings remain. The preview still analyses the
 displayed rolling window, rather than every possible window in the register.
+
+## Long-rest operational view follow-up: 13–14 October
+
+The flow tested was the standalone working-time route → save 13 October
+06:00–12:00 and 13:00–18:30 → enter 14 October 02:00–07:00 and
+08:00–12:00 → select “Depuis le dernier repos long” → save and return
+to the rolling view. The operational period starts on 13 October at 18:30,
+shows 9 h work and 8 h 30 calculated rest across 17 h 30 observed, and
+states that the 24 h reference is still pending until 14 October at 18:30.
+It does not count future rest or declare rolling compliance.
+
+The in-app browser verified the local route at desktop 1440 × 1024 and
+mobile 390 × 844. The Browser plugin skill was unavailable; validation used
+the available unified computer-use browser API and its documented Playwright
+and CDP capabilities. Temporary viewport overrides were cleared afterwards.
+Evidence was saved outside the repository in the task's visualization directory:
+`working-time-long-rest-desktop.png` and `working-time-long-rest-mobile.png`.
+
+| Check | Result |
+| --- | --- |
+| Expected route/title and meaningful content | Pass |
+| Framework error overlay | Absent |
+| Console warnings/errors | None |
+| User's two-day example and operational totals | Pass |
+| Saved work retained when returning to rolling alerts | Pass |
+| Desktop/mobile rendering | Pass |
+| Mobile document width | 375 px within the 390 px viewport |
+
+Compared with the supplied screenshots, the new view intentionally removes
+red threshold markers and deviation bands from its graph, shows the requested
+18:30 start, and retains a visible link/count for the separate rolling alerts.
+The graph's original 48 half-hour input cells and hourly graduations remain.
+The side panel uses neutral “Période en cours” copy rather than a green
+compliance claim. Dates are included in sequence bounds crossing midnight;
+the corresponding metric wraps inside the side panel.
+
+Automated validation: all 223 module tests passed; targeted ESLint and the
+TypeScript/production build passed, with existing unrelated bundle warnings.
+The tests cover the real entry
+flow, the required comment before saving, threshold-driven changes in the
+operational period, future exclusion, partial-history status and unchanged
+rolling calculations. PDF generators receive neither
+the view selector nor its diagnostic values; their existing tests remain in
+the passing module suite. The leave/rest rate remains 1.05. This is an in-memory
+preview with illustrative policy settings, not a change to production rules
+or real-profile permissions.

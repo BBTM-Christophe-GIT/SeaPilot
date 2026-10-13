@@ -1,8 +1,8 @@
 /**
  * Advisory calculations for the standalone entry preview only.
  * These demo rules neither replace a vessel's applicable policy nor persist
- * compliance results. Unrecorded time is only treated as rest in a complete
- * demo fixture; incomplete histories are explicitly marked as unconfirmed.
+ * compliance results. Gaps are shown as calculated rest and only confirmed by
+ * attested demo coverage; incomplete histories are explicitly unconfirmed.
  */
 export interface PreviewWorkPhase {
   id?: string | number;
@@ -49,6 +49,17 @@ export interface PreviewWindow extends PreviewSegment {
   maxIntervalBetweenRestsHours: number;
   workSegments: PreviewSegment[];
   restSegments: PreviewSegment[];
+}
+
+/** Informational period since the latest qualifying rest; never a compliance result. */
+export interface PreviewOperationalPeriod {
+  observedWindow: PreviewWindow;
+  precedingRest: PreviewSegment;
+  amplitude: PreviewSegment;
+  horizonEndsAt: string;
+  remainingHours: number;
+  /** Attests this period only, independently of the seven-day history. */
+  historyCovered: boolean;
 }
 
 export type PreviewRuleKey =
@@ -98,6 +109,7 @@ export interface WorkingTimePreviewProjection {
   dailyAmplitudeHours: number;
   amplitudeSequences: PreviewSegment[];
   maximumAmplitudeSequence: PreviewSegment | null;
+  operationalPeriod: PreviewOperationalPeriod | null;
   dailyWorkHours: number;
   rules: PreviewRuleResult[];
   excessWorkSegments: PreviewSegment[];
@@ -216,6 +228,38 @@ function amplitudeSequences(work: readonly TimeRange[], bounds: TimeRange, restH
     .map(({ startMs, endMs }) => segment({ startMs, endMs }));
 }
 
+function latestOperationalPeriod(
+  work: readonly TimeRange[],
+  sequences: readonly PreviewSegment[],
+  selectedDay: TimeRange,
+  windowEnd: number,
+  restHours: number,
+  historyCovers: (bounds: TimeRange) => boolean,
+): PreviewOperationalPeriod | null {
+  const amplitude = sequences.filter((sequence) => work.some((range) => {
+    const selectedWork = intersect(range, selectedDay);
+    return selectedWork !== null && intersect(selectedWork, sequence) !== null;
+  })).at(-1);
+  if (!amplitude) return null;
+  const previousWork = work.filter((range) => range.endMs <= amplitude.startMs).at(-1);
+  if (!previousWork || (amplitude.startMs - previousWork.endMs) / HOUR_MS < restHours) return null;
+
+  const precedingRest = segment({ startMs: previousWork.endMs, endMs: amplitude.startMs });
+  const bounds = { startMs: precedingRest.startMs, endMs: windowEnd };
+  // Future recorded work is deliberately excluded, including from continuous-work metrics.
+  const observedWork = work.filter((range) => range.startMs < windowEnd)
+    .map((range) => ({ ...range, endMs: Math.min(range.endMs, windowEnd) }));
+  const horizonEnd = bounds.startMs + DAY_MS;
+  return {
+    observedWindow: windowMetrics(observedWork, bounds),
+    precedingRest,
+    amplitude,
+    horizonEndsAt: localIso(horizonEnd),
+    remainingHours: Math.max(0, (horizonEnd - windowEnd) / HOUR_MS),
+    historyCovered: historyCovers(bounds),
+  };
+}
+
 /**
  * Projects the entered phases together with retained history. The caller must
  * remove replaced phases from history first. The displayed rolling windows end
@@ -277,6 +321,16 @@ export function analyzeWorkingTimePreview(input: WorkingTimePreviewInput): Worki
       && window24.startMs >= coverageStart && window24.endMs <= coverageEnd
     : input.coverageComplete === true;
   const coverageComplete = windowsCovered && invalidPhases.length === 0;
+  const operationalPeriod = latestOperationalPeriod(
+    work, sequences, { startMs: dayStart, endMs: dayEnd }, windowEnd,
+    policy.minContinuousRestHours,
+    (bounds) => invalidPhases.length === 0 && (input.coverage
+      ? coverageStart !== null && coverageEnd !== null
+        && Number.isFinite(coverageStart) && Number.isFinite(coverageEnd)
+        && coverageEnd > coverageStart
+        && bounds.startMs >= coverageStart && bounds.endMs <= coverageEnd
+      : input.coverageComplete === true),
+  );
   const rules: PreviewRuleResult[] = [];
   const rule = (key: PreviewRuleKey, label: string, actual: number, limit: number,
     direction: PreviewRuleResult['direction'], window: PreviewRuleResult['window'],
@@ -303,7 +357,7 @@ export function analyzeWorkingTimePreview(input: WorkingTimePreviewInput): Worki
   rule('max_amplitude', 'Amplitude entre repos', dailyAmplitudeHours, policy.maxAmplitudeHours, 'maximum', '24h');
   return {
     policy, window24, window7, dailyAmplitudeHours, dailyWorkHours, rules,
-    amplitudeSequences: sequences, maximumAmplitudeSequence,
+    amplitudeSequences: sequences, maximumAmplitudeSequence, operationalPeriod,
     excessWorkSegments: exceededWork(window24.workSegments, policy.maxWork24Hours),
     coverageComplete, invalidPhases,
   };

@@ -185,6 +185,18 @@ describe('WorkingTimeEntryBoard', () => {
     expect(screen.getByRole('img', { name: /Repos sur 24 h : manque 2 h.*Amplitude : dépassement de 1 h/ })).toBeInTheDocument();
   });
 
+  it('describes an informational period without claiming no deviation or compliance', () => {
+    const { container } = render(<Harness previewGraph={{ ...previewGraph,
+      summaryLabel: 'Lecture opérationnelle · bilan en cours',
+      contextNotes: ['Repos calculé : 8 h 30', 'Repère de 24 h : 14 octobre, 18:30'],
+      analysisStatusLabel: 'Lecture opérationnelle',
+    }} />);
+    expect(screen.getByRole('img', { name: /Lecture opérationnelle · bilan en cours.*Repos calculé : 8 h 30.*Repère de 24 h/ })).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /Aucun dépassement/ })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Lecture opérationnelle')).toHaveLength(2);
+    expect(container.querySelector('.working-time-preview-excess-range')).not.toBeInTheDocument();
+  });
+
   it('shows the opt-in excess rail with its analysis window and threshold position', () => {
     const previewGraph: WorkingTimeEntryGraphPreview = {
       workLimitMarkerMinute: 19 * 60,
