@@ -61,30 +61,39 @@ describe('monthly factual working-time register', () => {
   });
 
   it('keeps both actual local boundaries visible when the clock goes back, without inventing a later end', () => {
-    vi.stubEnv('TZ', 'Europe/Paris');
-    try {
-      const recorded = [{ startsAt: '2026-10-25T02:45:00+02:00', endsAt: '2026-10-25T02:15:00+01:00' }];
-      const pending = [{ startsAt: '2026-10-25T02:30:00+02:00', endsAt: '2026-10-25T02:30:00+01:00' }];
-      const rows = buildWorkingTimeMonthRows(['2026-10-25', '2026-10-26'], recorded, pending);
-      expect(rows[0].recorded[0]).toMatchObject({ startMinute: 165, endMinute: 135, clockFold: true, label: '02:45 → 02:15 · heure répétée' });
-      expect(rows[0].recordedHours).toBe(0.5);
-      expect(rows[0].pending[0]).toMatchObject({ startMinute: 150, endMinute: 150, clockFold: true, label: '02:30 → 02:30 · heure répétée' });
-      expect(rows[0].pendingHours).toBe(1);
-      expect(rows[0].workHours).toBe(1);
+    const recorded = [{ startsAt: '2026-10-25T02:45:00+02:00', endsAt: '2026-10-25T02:15:00+01:00' }];
+    const pending = [{ startsAt: '2026-10-25T02:30:00+02:00', endsAt: '2026-10-25T02:30:00+01:00' }];
+    const rows = buildWorkingTimeMonthRows(['2026-10-25', '2026-10-26'], recorded, pending, 'Europe/Paris');
+    expect(rows[0].recorded[0]).toMatchObject({ startMinute: 165, endMinute: 135, clockFold: true, label: '02:45 → 02:15 · heure répétée' });
+    expect(rows[0].recordedHours).toBe(0.5);
+    expect(rows[0].pending[0]).toMatchObject({ startMinute: 150, endMinute: 150, clockFold: true, label: '02:30 → 02:30 · heure répétée' });
+    expect(rows[0].pendingHours).toBe(1);
+    expect(rows[0].workHours).toBe(1);
 
-      const { container } = render(<WorkingTimeMonthPreview days={['2026-10-25', '2026-10-26']} recorded={recorded} pending={pending} selectedDay="2026-10-25" onChooseDay={vi.fn()} />);
-      const foldBands = container.querySelectorAll<HTMLElement>('.wtp-month-phase.is-clock-fold');
-      expect(foldBands).toHaveLength(2);
-      expect(foldBands[0].style.left).toBe('9.375%');
-      expect(foldBands[0].style.width).toBe(`${30 / 14.4}%`);
-      expect(foldBands[1].style.width).toBe('0%');
-      expect(foldBands[0].title).toBe('Enregistré : 02:45 → 02:15 · heure répétée');
-      expect(screen.getByRole('img', { name: /dim. 25 oct.*02:45 → 02:15 · heure répétée.*02:30 → 02:30 · heure répétée.*total : 1 h 00/ })).toBeInTheDocument();
-      expect(container.querySelectorAll('.wtp-month-clock-note')).toHaveLength(1);
-      expect(screen.getByText(/Horaires locaux ·.*02:45 → 02:15.*0 h 30.*02:30 → 02:30.*1 h 00/)).toBeInTheDocument();
-      expect(screen.queryByText(/03:15|03:30/)).not.toBeInTheDocument();
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    const { container } = render(<WorkingTimeMonthPreview days={['2026-10-25', '2026-10-26']} recorded={recorded} pending={pending} selectedDay="2026-10-25" onChooseDay={vi.fn()} timezoneName="Europe/Paris" />);
+    const foldBands = container.querySelectorAll<HTMLElement>('.wtp-month-phase.is-clock-fold');
+    expect(foldBands).toHaveLength(2);
+    expect(foldBands[0].style.left).toBe('9.375%');
+    expect(foldBands[0].style.width).toBe(`${30 / 14.4}%`);
+    expect(foldBands[1].style.width).toBe('0%');
+    expect(foldBands[0].title).toBe('Enregistré : 02:45 → 02:15 · heure répétée');
+    expect(screen.getByRole('img', { name: /dim. 25 oct.*02:45 → 02:15 · heure répétée.*02:30 → 02:30 · heure répétée.*total : 1 h 00/ })).toBeInTheDocument();
+    expect(container.querySelectorAll('.wtp-month-clock-note')).toHaveLength(1);
+    expect(screen.getByText(/Horaires locaux ·.*02:45 → 02:15.*0 h 30.*02:30 → 02:30.*1 h 00/)).toBeInTheDocument();
+    expect(screen.queryByText(/03:15|03:30/)).not.toBeInTheDocument();
+    expect(buildWorkingTimeMonthRows(['2026-10-25'], recorded, pending, 'UTC')[0].recorded[0]).toMatchObject({
+      startMinute: 45, endMinute: 75, clockFold: false, label: '00:45–01:15',
+    });
+  });
+
+  it.each([
+    ['2026-03-29', '2026-03-28T23:00:00Z', '2026-03-29T22:00:00Z', 23],
+    ['2026-10-25', '2026-10-24T22:00:00Z', '2026-10-25T23:00:00Z', 25],
+  ])('clips civil-day boundaries in the explicit zone on the %s clock change', (day, startsAt, endsAt, hours) => {
+    const [row] = buildWorkingTimeMonthRows([day], [{ startsAt, endsAt }], [], 'Europe/Paris');
+    expect(row.workHours).toBe(hours);
+    expect(row.recorded[0]).toMatchObject({ startMinute: 0, endMinute: 1440 });
+    expect(row.recorded[0].startsAt).toBe(Date.parse(startsAt));
+    expect(row.recorded[0].endsAt).toBe(Date.parse(endsAt));
   });
 });

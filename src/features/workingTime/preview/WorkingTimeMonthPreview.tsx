@@ -23,6 +23,32 @@ export interface WorkingTimeMonthRow {
 }
 
 type TimeRange = { startsAt: number; endsAt: number };
+type LocalClock = { minute: number; offsetMilliseconds: number };
+
+function monthClock(timezoneName: string) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezoneName, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  });
+  return (instant: number): LocalClock => {
+    const parts = Object.fromEntries(formatter.formatToParts(instant).map((part) => [part.type, part.value]));
+    const localTimestamp = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second));
+    return { minute: Number(parts.hour) * 60 + Number(parts.minute), offsetMilliseconds: localTimestamp - Math.floor(instant / 1000) * 1000 };
+  };
+}
+
+/** Resolve civil-day boundaries in the selected zone, including 23/25-hour days. */
+function monthDayStart(day: string, localClock: (instant: number) => LocalClock): number {
+  const [year, month, date] = day.split('-').map(Number);
+  const localMidnight = Date.UTC(year, month - 1, date);
+  let instant = localMidnight;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const next = localMidnight - localClock(instant).offsetMilliseconds;
+    if (next === instant) break;
+    instant = next;
+  }
+  return instant;
+}
 
 function mergeRanges(phases: readonly WorkingTimePhaseInput[]): TimeRange[] {
   const ranges = phases.map((phase) => ({ startsAt: Date.parse(phase.startsAt), endsAt: Date.parse(phase.endsAt) }))
@@ -36,24 +62,23 @@ function mergeRanges(phases: readonly WorkingTimePhaseInput[]): TimeRange[] {
   }, []);
 }
 
-function clockMinute(instant: number, dayStart: number, dayEnd: number): number {
+function clockMinute(instant: number, dayStart: number, dayEnd: number, localClock: (instant: number) => LocalClock): number {
   if (instant <= dayStart) return 0;
   if (instant >= dayEnd) return 1440;
-  const date = new Date(instant);
-  return date.getHours() * 60 + date.getMinutes();
+  return localClock(instant).minute;
 }
 
 function clockLabel(minute: number): string {
   return `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
 }
 
-function clippedSegments(ranges: readonly TimeRange[], dayStart: number, dayEnd: number): MonthSegment[] {
+function clippedSegments(ranges: readonly TimeRange[], dayStart: number, dayEnd: number, localClock: (instant: number) => LocalClock): MonthSegment[] {
   return ranges.filter((range) => range.startsAt < dayEnd && range.endsAt > dayStart).map((range) => {
     const startsAt = Math.max(range.startsAt, dayStart);
     const endsAt = Math.min(range.endsAt, dayEnd);
-    const startMinute = clockMinute(startsAt, dayStart, dayEnd);
-    const endMinute = clockMinute(endsAt, dayStart, dayEnd);
-    const clockFold = new Date(endsAt).getTimezoneOffset() > new Date(startsAt).getTimezoneOffset();
+    const startMinute = clockMinute(startsAt, dayStart, dayEnd, localClock);
+    const endMinute = clockMinute(endsAt, dayStart, dayEnd, localClock);
+    const clockFold = localClock(endsAt).offsetMilliseconds < localClock(startsAt).offsetMilliseconds;
     const label = clockFold
       ? `${clockLabel(startMinute)} → ${clockLabel(endMinute)} · heure répétée`
       : `${clockLabel(startMinute)}–${clockLabel(endMinute)}`;
@@ -66,18 +91,19 @@ function elapsedHours(ranges: readonly TimeRange[]): number {
 }
 
 /** The month is a factual register: no repeated rolling-window compliance analysis. */
-export function buildWorkingTimeMonthRows(days: readonly string[], recorded: readonly WorkingTimePhaseInput[], pending: readonly WorkingTimePhaseInput[]): WorkingTimeMonthRow[] {
+export function buildWorkingTimeMonthRows(days: readonly string[], recorded: readonly WorkingTimePhaseInput[], pending: readonly WorkingTimePhaseInput[], timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone): WorkingTimeMonthRow[] {
   const recordedRanges = mergeRanges(recorded);
   const pendingRanges = mergeRanges(pending);
   const combinedRanges = mergeRanges([...recorded, ...pending]);
+  const localClock = monthClock(timezoneName);
   return days.map((day) => {
-    const dayStart = Date.parse(`${day}T00:00`);
-    const dayEnd = Date.parse(`${previewAddDays(day, 1)}T00:00`);
-    const saved = clippedSegments(recordedRanges, dayStart, dayEnd);
-    const draft = clippedSegments(pendingRanges, dayStart, dayEnd);
+    const dayStart = monthDayStart(day, localClock);
+    const dayEnd = monthDayStart(previewAddDays(day, 1), localClock);
+    const saved = clippedSegments(recordedRanges, dayStart, dayEnd, localClock);
+    const draft = clippedSegments(pendingRanges, dayStart, dayEnd, localClock);
     return {
       day, recorded: saved, pending: draft,
-      workHours: elapsedHours(clippedSegments(combinedRanges, dayStart, dayEnd)),
+      workHours: elapsedHours(clippedSegments(combinedRanges, dayStart, dayEnd, localClock)),
       recordedHours: elapsedHours(saved), pendingHours: elapsedHours(draft),
     };
   });
@@ -89,6 +115,7 @@ interface WorkingTimeMonthPreviewProps {
   pending: readonly WorkingTimePhaseInput[];
   selectedDay: string;
   onChooseDay: (day: string) => void;
+  timezoneName?: string;
 }
 
 const hourLabels = Array.from({ length: 25 }, (_, hour) => hour);
@@ -110,8 +137,8 @@ function DailyMonthGraph({ row, dateLabel }: { row: WorkingTimeMonthRow; dateLab
   </div>;
 }
 
-export function WorkingTimeMonthPreview({ days, recorded, pending, selectedDay, onChooseDay }: WorkingTimeMonthPreviewProps) {
-  const rows = useMemo(() => buildWorkingTimeMonthRows(days, recorded, pending), [days, recorded, pending]);
+export function WorkingTimeMonthPreview({ days, recorded, pending, selectedDay, onChooseDay, timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone }: WorkingTimeMonthPreviewProps) {
+  const rows = useMemo(() => buildWorkingTimeMonthRows(days, recorded, pending, timezoneName), [days, recorded, pending, timezoneName]);
   return <div className="wtp-month-preview">
     <div className="wtp-month-legend"><span><i className="is-recorded" />Enregistré</span><span><i className="is-pending" />À enregistrer</span><small>Pas de 30 min · une case vide n’atteste pas un repos.</small></div>
     <div className="wtp-month-scroll" tabIndex={0} role="region" aria-label="Tableau horaire mensuel, défilement horizontal">

@@ -11,6 +11,11 @@ Version client : **3.72.3**, build **2026-10-13.002**. La route réelle
 Les huit diagnostics visibles sont actualisés pendant la saisie. Le contrôle
 du travail de nuit conserve sa fenêtre et son seuil serveur existants.
 
+La migration et l'opération de réévaluation ont été appliquées en production le
+13 octobre 2026. **379 calculs complets non signés** du périmètre décrit ci-dessous
+utilisent désormais le moteur v4 ; les identifiants et preuves signées sont
+conservés. Le trigger de notification a été rétabli après la transaction.
+
 La frise affiche chaque heure et garde le pas de 30 minutes. Les bords des
 périodes non enregistrées s'ajustent par glissement ou au clavier, avec contrôle
 des collisions et annulation du glissement. Les brouillons sont isolés par marin
@@ -146,3 +151,9 @@ Vérification finale locale : **182 assertions SQL passent dans 8 suites**
 (22 calcul des journées, 13 réglages administrateur, 10 compatibilité des
 helpers, 13 Capitaine réel, 53 lecture/RLS Capitaine, 30 calcul serveur,
 21 recommandations Marin et 20 attribution/signatures).
+
+La préversion mensuelle accepte un fuseau explicite pour vérifier ses bornes
+civiles et les heures répétées sans dépendre du fuseau du worker de test.
+L'affichage conserve par défaut le fuseau local du navigateur. Les six tests
+mensuels passent dans des processus démarrés en UTC et Europe/Paris, y compris
+les journées de 23 et 25 heures et les bornes 02:45 → 02:15.
