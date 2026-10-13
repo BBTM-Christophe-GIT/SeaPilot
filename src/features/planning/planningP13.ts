@@ -17,6 +17,8 @@ export interface PlanningWorkRestPolicy {
   minRest7d: number;
   minConsecutiveRestHours: number;
   maxRestPeriods24h: number;
+  maxAmplitudeHours?: number;
+  maxIntervalBetweenRestsHours?: number;
   nightStartsAt: string;
   nightEndsAt: string;
   maxNightWork24h: number;

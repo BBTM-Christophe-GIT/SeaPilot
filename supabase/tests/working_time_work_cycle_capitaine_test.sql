@@ -1,6 +1,6 @@
 begin;
 
-select plan(10);
+select plan(13);
 
 insert into auth.users (id, email)
 values ('77900000-0000-0000-0000-000000000001', 'cycle-capitaine@example.invalid');
@@ -106,8 +106,8 @@ select is(
     ((current_date - 1)::text || ' 20:00:00+00')::timestamptz,
     'UTC', current_setting('test.cycle_vessel_id')::bigint, 'Bordée cycle', null
   )->>'work_24h_seconds')::numeric,
-  21600::numeric,
-  'the Capitaine recommendation counts only work after the completed six-hour rest'
+  28800::numeric,
+  'the Capitaine recommendation retains the largest relevant calculation day'
 );
 
 select is(
@@ -117,8 +117,8 @@ select is(
     ((current_date - 1)::text || ' 20:00:00+00')::timestamptz,
     'UTC', current_setting('test.cycle_vessel_id')::bigint, 'Bordée cycle', null
   )->>'available_24h_seconds')::numeric,
-  21600::numeric,
-  'six work hours remain available in the new twelve-hour cycle'
+  14400::numeric,
+  'the recommendation allowance uses the largest relevant twelve-hour day'
 );
 
 select is(
@@ -139,8 +139,8 @@ select is(
     ((current_date - 1)::text || ' 22:00:00+00')::timestamptz,
     'UTC', current_setting('test.cycle_vessel_id')::bigint, 'Bordée cycle', null
   )->'violation_codes'),
-  0,
-  'six consecutive rest hours satisfy conformity even when total rolling rest is only eight hours'
+  1,
+  'eight cumulative rest hours remain below ten even with six consecutive rest hours'
 );
 
 select is(
@@ -158,8 +158,8 @@ select is(
     ),
     'UTC', current_setting('test.cycle_vessel_id')::bigint, 'Bordée cycle', null
   )->>'work_24h_seconds')::numeric,
-  21600::numeric,
-  'multi-phase recommendations use the same reset counter'
+  28800::numeric,
+  'multi-phase recommendations retain the same largest relevant day'
 );
 
 select is(
@@ -177,8 +177,8 @@ select is(
     ),
     'UTC', current_setting('test.cycle_vessel_id')::bigint, 'Bordée cycle', null
   )->'violation_codes'),
-  0,
-  'multi-phase recommendations accept the same six-hour consecutive rest rule'
+  1,
+  'multi-phase recommendations enforce the independent ten-hour rest threshold'
 );
 
 select lives_ok(
@@ -204,8 +204,8 @@ select results_eq(
     ((current_date - 1)::text || ' 22:00:00+00')
   ),
   $$values (28800::numeric, 28800::numeric, 21600::numeric,
-      true, true, true, '{}'::text[], 3)$$,
-  'the authoritative stored calculation accepts the new cycle despite only eight rolling rest hours'
+      true, false, false, '{rest_24h}'::text[], 4)$$,
+  'the authoritative stored calculation keeps the independent cumulative-rest violation'
 );
 
 select is(
@@ -213,6 +213,32 @@ select is(
   'Capitaine',
   'the profile-specific scenario uses the exact HR Capitaine function'
 );
+
+select is(
+  (public.working_time_interval_recommendation(
+    current_setting('test.cycle_person_id')::bigint,
+    ((current_date - 1)::text || ' 14:00:00+00')::timestamptz,
+    ((current_date - 1)::text || ' 20:00:00+00')::timestamptz,
+    'UTC', current_setting('test.cycle_vessel_id')::bigint, 'Bordée cycle', null
+  )->>'current_day_work_seconds')::numeric,
+  21600::numeric,
+  'the real Capitaine receives the distinct current-day six-hour total'
+);
+select is(
+  (public.working_time_interval_recommendation(
+    current_setting('test.cycle_person_id')::bigint,
+    ((current_date - 1)::text || ' 14:00:00+00')::timestamptz,
+    ((current_date - 1)::text || ' 20:00:00+00')::timestamptz,
+    'UTC', current_setting('test.cycle_vessel_id')::bigint, 'Bordée cycle', null
+  )->>'current_day_starts_at')::timestamptz,
+  ((current_date - 1)::text || ' 08:00:00+00')::timestamptz,
+  'the real Capitaine receives the preceding rest-start bound, rather than work resumption'
+);
+select throws_ok($$
+  select public.save_planning_work_rest_policy(null,'Captain forbidden','company',null,
+    '2033-01-01',null,12,10,84,77,6,2,null,null,null,false,false,'Forbidden',14,14)
+$$, '42501', 'Seul un administrateur peut gérer les politiques de travail et repos.',
+  'a real Capitaine cannot change company conformity thresholds');
 
 select * from finish();
 rollback;

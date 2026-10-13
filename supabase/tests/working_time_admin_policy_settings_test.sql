@@ -1,11 +1,11 @@
 begin;
 
-select plan(9);
+select plan(13);
 
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.save_planning_work_rest_policy(bigint,text,text,bigint,date,date,numeric,numeric,numeric,numeric,numeric,integer,time,time,numeric,boolean,boolean,text)',
+    'public.save_planning_work_rest_policy(bigint,text,text,bigint,date,date,numeric,numeric,numeric,numeric,numeric,integer,time,time,numeric,boolean,boolean,text,numeric,numeric)',
     'EXECUTE'
   ),
   'authenticated users can invoke the controlled policy RPC'
@@ -13,20 +13,20 @@ select ok(
 select ok(
   not has_function_privilege(
     'anon',
-    'public.save_planning_work_rest_policy(bigint,text,text,bigint,date,date,numeric,numeric,numeric,numeric,numeric,integer,time,time,numeric,boolean,boolean,text)',
+    'public.save_planning_work_rest_policy(bigint,text,text,bigint,date,date,numeric,numeric,numeric,numeric,numeric,integer,time,time,numeric,boolean,boolean,text,numeric,numeric)',
     'EXECUTE'
   ),
   'anonymous users cannot invoke the policy RPC'
 );
 select ok(
   pg_get_functiondef(
-    'public.save_planning_work_rest_policy(bigint,text,text,bigint,date,date,numeric,numeric,numeric,numeric,numeric,integer,time,time,numeric,boolean,boolean,text)'::regprocedure
+    'public.save_planning_work_rest_policy(bigint,text,text,bigint,date,date,numeric,numeric,numeric,numeric,numeric,integer,time,time,numeric,boolean,boolean,text,numeric,numeric)'::regprocedure
   ) like '%has_company_role(target_company_id, array[''admin''])%',
   'the RPC checks the administrator role explicitly'
 );
 select ok(
   pg_get_functiondef(
-    'public.save_planning_work_rest_policy(bigint,text,text,bigint,date,date,numeric,numeric,numeric,numeric,numeric,integer,time,time,numeric,boolean,boolean,text)'::regprocedure
+    'public.save_planning_work_rest_policy(bigint,text,text,bigint,date,date,numeric,numeric,numeric,numeric,numeric,integer,time,time,numeric,boolean,boolean,text,numeric,numeric)'::regprocedure
   ) not like '%planning_user_can%',
   'delegated Planning permissions cannot grant policy administration'
 );
@@ -131,6 +131,32 @@ select lives_ok(
   $$,
   'admin can create a dated vessel-specific policy'
 );
+select is((select row(max_amplitude_hours,max_interval_between_rests_hours)::text
+  from public.planning_work_rest_policies where name='Global dated policy'), '(14.00,14.00)',
+  'legacy create calls receive fourteen-hour defaults for both new controls');
+select lives_ok($$
+  select public.save_planning_work_rest_policy(
+    (select id from public.planning_work_rest_policies where name='Global dated policy'),
+    'Global dated policy','company',null,'2031-01-01','2031-12-31',
+    12,11,72,96,6,2,'22:00','06:00',8,true,false,'Configured controls',16,12
+  )
+$$, 'the administrator changes both new thresholds in the same atomic policy save');
+select is((select row(max_amplitude_hours,max_interval_between_rests_hours)::text
+  from public.planning_work_rest_policies where name='Global dated policy'), '(16.00,12.00)',
+  'the new thresholds retain distinct administrator-entered values');
+select lives_ok($$
+  select public.save_planning_work_rest_policy(
+    (select id from public.planning_work_rest_policies where name='Global dated policy'),
+    'Global dated policy','company',null,'2031-01-01','2031-12-31',
+    12,11,72,96,6,2,'22:00','06:00',8,true,false,'Legacy client update'
+  );
+  do $preserve$ begin
+    if not exists(select 1 from public.planning_work_rest_policies where name='Global dated policy'
+      and max_amplitude_hours=16 and max_interval_between_rests_hours=12) then
+      raise exception 'Legacy update overwrote custom thresholds';
+    end if;
+  end $preserve$;
+$$, 'legacy update calls preserve the existing customized thresholds');
 
 select * from finish();
 rollback;

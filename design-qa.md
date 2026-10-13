@@ -1336,3 +1336,294 @@ Files are outside the repository at C:/Users/chris/.codex/visualizations/2026/10
 P3 only: slight icon-fill differences and a simpler solid gauge arc. These preserve the provided composition and avoid misleading decorative percentages. Mobile has no reference mock; adaptation verified at390px.
 
 final result: passed
+
+---
+
+# Préversion de saisie : comparaison visuelle
+
+final result: passed
+
+## Artifacts and normalization
+
+- Source visual truth: `docs/design/working-time-entry-preview/reference.png`.
+  Original generated image: 1487 × 1058 pixels, normalized to 1440 × 1024.
+- Implementation: `docs/design/working-time-entry-preview/desktop.png`.
+  Browser CSS viewport: 1440 × 1024. PNG captured at scale 2 (2880 × 2048),
+  then downsampled to 1440 × 1024 for comparison.
+- Focused comparison: `reference-chart.png` (1150 × 400) and
+  `desktop-chart.png` (1160 × 455), in the same evidence directory.
+  Both are crops of the normalized full views. Their boundaries follow the
+  actual editor and compliance regions, rather than forcing identical layouts.
+- Mobile evidence: `mobile.jpg` and `mobile-policy.jpg`, captured at a CSS
+  viewport of 390 × 844. Browser JPEG output is 375 × 812; the viewport and
+  document widths were also inspected directly. No mobile source mock exists.
+- Local route: `http://127.0.0.1:5192/previews/working-time.html`.
+
+The source and implementation images were opened together in the same comparison
+input, first as full views and then as focused chart/compliance views.
+
+## State and full-view comparison
+
+Arthur DEMO, 13 October 2026, day view, recorded 06:00–12:00 and pending
+13:00–20:00. Work total is 13 h, the threshold is 12 h, the excess is 1 h,
+the marker is at 19:00, and the excess rail covers 19:00–20:00.
+Rest values are 11 h total and 10 h continuous; seven-day work is 61 h and
+daily amplitude is 14 h. These values match the selected reference.
+
+The two-column composition, black shell, blue commands, turquoise work periods,
+red deviation card and separate hatched rail are preserved. The editor and
+compliance panel stay aligned; the main actions remain visible at the desktop
+viewport. Labels remain readable in the focused view and distinguish recorded
+and pending phases.
+
+Intentional adaptations follow repository requirements: use the existing logo,
+Inter/system font tokens, 78-pixel shared ModuleRibbon commands, hidden entry
+heading and 48-cell timeline geometry. The week strip sits inside the existing
+entry board. The explicit window label and cumulative value replace the mock's
+decorative arrow. The approval badge reflects actual demo state; an unsigned
+day does not show a fictitious waiting approval. The newly requested threshold
+editor and calendar-day total are added to the selected design.
+The user's subsequent request changes the axis to hourly labels (00 h–24 h),
+while retaining all 48 half-hour input cells. The final captures show this
+intentional difference from the source's two-hour labels.
+
+## Five fidelity surfaces
+
+- Typography: shared `--sp-font`, computed Inter/system stack, 14-pixel base.
+  Date and deviation totals establish hierarchy; supporting text is secondary.
+- Spacing/layout: shared panel/control radii and spacing; editor uses remaining
+  width, with a 290-pixel compliance panel. On mobile the panels stack and only
+  the ribbon, week strip and timeline scroll horizontally inside their containers.
+- Colors/tokens: shell computed `rgb(0, 0, 0)`; shared blue tokens for commands,
+  existing business colors for work and deviations. Text and pattern complement
+  color, including the accessible chart description.
+- Image quality: existing supplied SeaPilot logo and library icons; no generated
+  placeholder assets. Final PNG capture uses scale 2 to avoid the browser's
+  softer default JPEG evidence. Crops retain readable chart values.
+- Copy/content: demonstration identity and temporary storage are explicit.
+  Recorded/pending work, daily/gliding totals and unknown coverage are distinct.
+  Threshold changes never claim to select the legal regime automatically.
+
+## Comparison history and findings
+
+1. Initial desktop comparison found [P2] unnecessary horizontal scrollbars:
+   ribbon commands overrode the shared 78-pixel geometry with a 106-pixel
+   minimum, and the timeline's end label extended by one pixel. Removed the
+   conflicting minimum and moved the end label inside its container.
+   Post-fix DOM evidence: ribbon client/scroll widths 1163/1163, timeline
+   panel and track 817/817. Final desktop evidence shows no internal scrollbar.
+2. Focused comparison found [P2] missing visible time labels on the work bars.
+   Added an optional, pointer-transparent label overlay to the existing board.
+   Final `desktop-chart.png` shows 06:00–12:00 and 13:00–20:00 inside their bars.
+   Keyboard and pointer tests continue to pass; the default board has no overlay.
+3. Final full and focused comparisons have no remaining actionable P0/P1/P2
+   findings. The shared ribbon differs from the illustrative one-line mock by
+   design; it follows the repository's required component instead.
+4. After the hourly-graduation request, all 24 time labels were verified as
+   visible in the browser. Space at the end of the track separates 23 h from
+   24 h; the first label no longer clips at the left edge. Desktop track width
+   remains 817/817. Updated full/focused captures were compared again with the
+   reference; no new actionable P0/P1/P2 finding remains.
+
+## Browser interaction evidence
+
+- Desktop and mobile threshold editor: 12 → 14 h removes the excess rail and
+  warning while keeping 13 h of work. Changing permitted rest periods to three
+  is accepted. Modal content scrolls and its Apply button remains accessible.
+- Keyboard entry: adding 20:00–21:00 yields 14 h of work, 2 h excess and a
+  separate 15 h amplitude alert near the chart. Saving keeps these recorded
+  facts and clears the pending selection without approving the day.
+- Mobile document width 375 ≤ viewport width 390; timeline scroll width 616
+  stays inside its 325-pixel panel. There is no page-wide horizontal overflow.
+- Browser console: no warning/error after threshold, entry and save interactions.
+- Automatic checks: 204 working-time tests across 20 files, followed by 26/26
+  entry-board tests including the new hourly-graduation case; targeted ESLint;
+  TypeScript and production build successful. Existing build warnings about
+  other modules' chunk sizes/dynamic imports remain unrelated.
+- Real Marin/Capitaine verification uses role-gated code and existing profile
+  fixtures, including restricted policy administration and captain duty access.
+  This fictional standalone screen is not evidence of a real account's rights.
+
+## Follow-up polish and limits
+
+- No persistent threshold storage or production-policy change is included in this
+  preview. No exhaustive full-register compliance analysis is claimed.
+- The prototype uses demonstration signature states; actual account signatures
+  remain a production workflow.
+- Cycle averages and annual contingents require an agreed period/coverage model
+  before adding their live visual checks. The leave/rest coefficient stays 1.05.
+
+## Amplitude follow-up: 14 October example
+
+The reported 20 h calendar-day amplitude joined 04:00–08:00, 12:00–16:00
+and 22:00–24:00 despite six hours of rest between 16:00 and 22:00.
+The preview now shows the longest work sequence between qualifying rests:
+**12 h, 04:00–16:00**; 22:00–24:00 starts another sequence. Rolling totals
+remain 10 h work and 14 h rest. The configured continuous-rest threshold
+controls the split, while midnight does not. Sequence starts before the
+rolling window are retained and work after its end is excluded.
+
+Verified through the in-app browser at the local preview route, with desktop
+1440 × 1024 and mobile 390 × 844 viewports. The three ranges were drawn in
+the entry grid. Editing continuous rest 6 → 7 → 6 h changed amplitude
+12 → 20 → 12 h with the rolling work total unchanged. Incomplete demo
+coverage retained its unconfirmed status. PDF inputs and exports are unchanged.
+
+| Browser check | Result |
+| --- | --- |
+| Route/title and meaningful content | Pass |
+| Framework error overlay | Absent |
+| Console warnings/errors | None |
+| Range and threshold interactions | Pass |
+| Desktop/mobile screenshot inspection | Pass |
+| Mobile document width | 375 px within 390 px viewport |
+
+Local screenshot evidence is saved outside the repository as
+`working-time-amplitude-12h.png` and `working-time-amplitude-mobile.jpg`
+in this task's visualization directory. Comparison with the user's supplied
+14 October screenshot confirms removal of the erroneous amplitude alert
+and addition of the measured sequence bounds, with existing controls intact.
+
+Automated validation: 211 module tests passed; the final projection/UI
+run passed all 35 tests including the additional analysis-end and threshold
+interaction cases. Targeted ESLint and the TypeScript/production build passed;
+the existing unrelated chunk-size/dynamic-import warnings remain. The preview still analyses the
+displayed rolling window, rather than every possible window in the register.
+
+## Long-rest operational view follow-up: 13–14 October
+
+The flow tested was the standalone working-time route → save 13 October
+06:00–12:00 and 13:00–18:30 → enter 14 October 02:00–07:00 and
+08:00–12:00 → select “Depuis le dernier repos long” → save and return
+to the rolling view. The operational period starts on 13 October at 18:30,
+shows 9 h work and 8 h 30 calculated rest across 17 h 30 observed, and
+states that the 24 h reference is still pending until 14 October at 18:30.
+It does not count future rest or declare rolling compliance.
+
+The in-app browser verified the local route at desktop 1440 × 1024 and
+mobile 390 × 844. The Browser plugin skill was unavailable; validation used
+the available unified computer-use browser API and its documented Playwright
+and CDP capabilities. Temporary viewport overrides were cleared afterwards.
+Evidence was saved outside the repository in the task's visualization directory:
+`working-time-long-rest-desktop.png` and `working-time-long-rest-mobile.png`.
+
+| Check | Result |
+| --- | --- |
+| Expected route/title and meaningful content | Pass |
+| Framework error overlay | Absent |
+| Console warnings/errors | None |
+| User's two-day example and operational totals | Pass |
+| Saved work retained when returning to rolling alerts | Pass |
+| Desktop/mobile rendering | Pass |
+| Mobile document width | 375 px within the 390 px viewport |
+
+Compared with the supplied screenshots, the new view intentionally removes
+red threshold markers and deviation bands from its graph, shows the requested
+18:30 start, and retains a visible link/count for the separate rolling alerts.
+The graph's original 48 half-hour input cells and hourly graduations remain.
+The side panel uses neutral “Période en cours” copy rather than a green
+compliance claim. Dates are included in sequence bounds crossing midnight;
+the corresponding metric wraps inside the side panel.
+
+Automated validation: all 223 module tests passed; targeted ESLint and the
+TypeScript/production build passed, with existing unrelated bundle warnings.
+The tests cover the real entry
+flow, the required comment before saving, threshold-driven changes in the
+operational period, future exclusion, partial-history status and unchanged
+rolling calculations. PDF generators receive neither
+the view selector nor its diagnostic values; their existing tests remain in
+the passing module suite. The leave/rest rate remains 1.05. This is an in-memory
+preview with illustrative policy settings, not a change to production rules
+or real-profile permissions.
+
+## Working-time preview — calculation days, monthly graphs and resizable ranges (2026-10-13)
+
+Target flow: working-time preview → draw or resize pending periods → see the
+calculation day restart at the beginning of a qualifying rest → open the monthly
+register and return without losing the draft. The two analysis-mode buttons have
+been removed. The eight editable thresholds and leave/rest rate of 1.05 remain.
+
+Reference: 13 October 06:00–12:00 /13:00–18:30, followed by 14 October
+02:00–07:00 /08:00–12:00 /18:00–22:00. The user's clarified convention closes the
+preceding calculation day at12:00 (9 h work), then starts the next one at12:00
+(6 h rest +4 h work), rather than summing both work sequences against12 h.
+The rendered graph shows those exact bounds and no work-threshold marker at21:00.
+Raw24-hour rest and weekly/fractionation checks remain distinct; incomplete
+fixture coverage is explicitly unconfirmed. Earlier closed-day violations are
+retained in calculations and the relevant day's excess rail.
+
+The month has one graph for every calendar day (31 in October), a common00–24 h
+axis, saved/draft colors and union totals. Opening a date and switching months
+preserve pending work. Midnight clipping and repeated local hours are covered.
+The daily board exposes separate begin/end handles for every unsaved period,
+pointer capture with no grab jump, keyboard adjustments, collision clamping,
+30-minute minimum and cancellation rollback. Handles remain reachable at a shared
+boundary; vertically separate targets avoid overlap on a30-minute phase.
+Recorded corrections and read-only states retain their existing protection.
+The option remains disabled by default in the production component.
+
+Browser skill classification: Browser plugin skill not available; validation used
+the existing Codex in-app browser through its supported CUA Playwright/CDP APIs,
+with no new browser dependency. URL: http://127.0.0.1:5192/previews/working-time.html.
+Desktop1440×1024 and mobile-sized390×844: page identity, meaningful render, no
+framework overlay, graph calculations, month rows, pointer and keyboard actions
+verified. The first period's beginning was dragged13:00→12:30 and its end
+20:00→18:30, with the draft immediately reflected in the month graph. On the14th,
+its end was dragged07:00→08:00 (neighbor boundary), attempted08:30 (clamped), then
+returned to07:00 without losing another period. The clarified case was recreated
+through real controls, not state injection.
+
+Mobile finding fixed: the sticky date column in the wide month table propagated
+scrollable overflow to the page. `contain: layout paint` on the internal scroller
+keeps the page at375 CSS pixels plus its15-pixel scrollbar in the390-pixel
+viewport, while the960-pixel table scrolls internally. Keyboard horizontal
+scroll reached40 pixels with the date still visible. The day grid likewise
+scrolls inside its own panel. No clipping/overlap found in desktop rendering.
+A transient Vite HMR error occurred during an intermediate incomplete parent edit;
+its syntax was repaired and the full TypeScript/production build passed.
+
+Evidence is outside the repository:
+`C:/Users/chris/.codex/visualizations/2026/10/13/01a13407-dc83-7643-a05d-8c9b994c9c78/`
+with `working-time-calculation-day-desktop.png`,
+`working-time-calculation-day-mobile.png`, `working-time-month-desktop.png` and
+`working-time-month-mobile.png`. The screenshots show the restart at12:00,
+unsaved edge handles, monthly rows and responsive scroll containment.
+
+An attested final rest reaching the configured minimum also opens a day with
+zero work before any resumption. It starts at the last work's end and preserves
+earlier closed-day violations. An empty date without attested history cannot
+create this rest-only day. Exact-six-hour, adjustable-threshold and partial-
+coverage regressions cover this additional boundary.
+
+Automated checks:253 tests across21 module files passed, including real-profile
+fixtures, preview interactions, projection edge cases and PDF input coverage.
+Targeted ESLint and production build passed. Only saved hours/comments/signatures
+reach both PDF generators; automatic diagnostics and pending phases remain
+excluded. No SQL migration, credentials, dependency or production-policy change.
+The preview remains in-memory; native mobile touch and every possible historical
+window have not been certified by this rendered check.
+
+## Production integration — 13 October 2026
+
+The real `/modules/workingTime` route now uses the accepted daily graph and
+monthly per-day bands with persisted company/vessel thresholds. Local browser
+QA used the supported in-app browser and synthetic admin data only for layout;
+actual Marin/Capitaine authorization was checked separately by source and
+authenticated SQL/profile fixtures. No simulated admin role was used as evidence
+of real profile access.
+
+At 1440×1024, day/month navigation and direct “Modifier les seuils” opening the
+existing policy editor were checked. The editor loads the policy name and all
+nine numeric limits, including preserved night-work controls. Recorded/draft
+graph colors now agree across both views. An earlier closed-day breach is
+explicitly named “Journée précédente” beside a conforming current-day total.
+At 390×844, the page remains 375 CSS pixels plus the scrollbar; the 1440-pixel
+monthly table scrolls internally in a 304-pixel region and renders 31 daily
+graphs. No page-level horizontal overflow or framework error overlay appeared.
+
+Production regressions cover keyed draft retention, both adjustable edges,
+keyboard selection saving, read-only validated Marin controls, policy editing
+permissions, multi-day correction bands and unknown history. Saved register
+PDF inputs remain unchanged. Evidence is outside Git in the same visualization
+directory: `working-time-integrated-day-desktop.png` and
+`working-time-integrated-month-mobile.png`. Native phone hardware is untested.

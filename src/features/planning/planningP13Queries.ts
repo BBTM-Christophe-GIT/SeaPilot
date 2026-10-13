@@ -12,7 +12,7 @@ import type {
 } from './planningP13';
 import { planningEntityId, requiredPlanningText } from './planningValidation';
 
-const POLICY_SELECT = 'id, name, scope, vessel_id, effective_from, effective_to, max_work_24h, min_rest_24h, max_work_7d, min_rest_7d, min_consecutive_rest_hours, max_rest_periods_24h, night_starts_at, night_ends_at, max_night_work_24h, include_handover, active, notes, updated_at';
+const POLICY_SELECT = 'id, name, scope, vessel_id, effective_from, effective_to, max_work_24h, min_rest_24h, max_work_7d, min_rest_7d, min_consecutive_rest_hours, max_rest_periods_24h, max_amplitude_hours, max_interval_between_rests_hours, night_starts_at, night_ends_at, max_night_work_24h, include_handover, active, notes, updated_at';
 const NOTIFICATION_SELECT = 'id, notification_type, severity, title, body, entity_kind, entity_id, person_id, vessel_id, due_on, created_at, read_at';
 const DEPENDENCY_SELECT = 'id, dependency_type, predecessor_kind, predecessor_id, successor_kind, successor_id, lag_minutes, vessel_id, person_id, notes, active, created_at, updated_at';
 
@@ -29,6 +29,8 @@ interface PolicyRow {
   min_rest_7d: number | string;
   min_consecutive_rest_hours: number | string;
   max_rest_periods_24h: number | string;
+  max_amplitude_hours?: number | string | null;
+  max_interval_between_rests_hours?: number | string | null;
   night_starts_at: string;
   night_ends_at: string;
   max_night_work_24h: number | string;
@@ -82,6 +84,8 @@ export interface SavePlanningWorkRestPolicyInput {
   minRest7d: number;
   minConsecutiveRestHours: number;
   maxRestPeriods24h: number;
+  maxAmplitudeHours?: number;
+  maxIntervalBetweenRestsHours?: number;
   nightStartsAt: string;
   nightEndsAt: string;
   maxNightWork24h: number;
@@ -120,6 +124,8 @@ export function mapPlanningWorkRestPolicies(rows: PolicyRow[]): PlanningWorkRest
     minRest7d: numeric(row.min_rest_7d),
     minConsecutiveRestHours: numeric(row.min_consecutive_rest_hours),
     maxRestPeriods24h: numeric(row.max_rest_periods_24h),
+    maxAmplitudeHours: numeric(row.max_amplitude_hours ?? 14),
+    maxIntervalBetweenRestsHours: numeric(row.max_interval_between_rests_hours ?? 14),
     nightStartsAt: row.night_starts_at.slice(0, 5),
     nightEndsAt: row.night_ends_at.slice(0, 5),
     maxNightWork24h: numeric(row.max_night_work_24h),
@@ -211,7 +217,7 @@ export function savePlanningWorkRestPolicy(client: SupabaseClient, input: SavePl
     p_vessel_id: input.scope === 'vessel' ? input.vesselId : null,
     p_effective_from: input.effectiveFrom,
     p_effective_to: input.effectiveTo || null,
-    p_max_work_24h: bounded(input.maxWork24h, 0, 24, 'Le maximum de travail du cycle après repos de 6 h'),
+    p_max_work_24h: bounded(input.maxWork24h, 0, 24, 'Le maximum de travail par journée de calcul'),
     p_min_rest_24h: bounded(input.minRest24h, 0, 24, 'Le minimum de repos sur 24 h'),
     p_max_work_7d: bounded(input.maxWork7d, 0, 168, 'Le maximum de travail sur 7 jours'),
     p_min_rest_7d: bounded(input.minRest7d, 0, 168, 'Le minimum de repos sur 7 jours'),
@@ -223,6 +229,12 @@ export function savePlanningWorkRestPolicy(client: SupabaseClient, input: SavePl
     p_include_handover: input.includeHandover,
     p_active: input.active,
     p_notes: input.notes.trim() || null,
+    ...(input.maxAmplitudeHours === undefined ? {} : {
+      p_max_amplitude_hours: bounded(input.maxAmplitudeHours, 0.25, 24, 'L’amplitude maximale entre deux repos longs'),
+    }),
+    ...(input.maxIntervalBetweenRestsHours === undefined ? {} : {
+      p_max_interval_between_rests_hours: bounded(input.maxIntervalBetweenRestsHours, 0.25, 24, 'L’intervalle maximal entre deux repos'),
+    }),
   });
 }
 

@@ -57,6 +57,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof PlanningP13P
 
 describe('Planning P1.3 cockpit', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.mocked(fetchPlanningP13Data).mockResolvedValue(data);
     vi.mocked(refreshPlanningNotifications).mockResolvedValue(0);
     vi.mocked(savePlanningWorkRestPolicy).mockResolvedValue(2);
@@ -111,24 +112,54 @@ describe('Planning P1.3 cockpit', () => {
     expect(within(form).getByText(/suggestion d’import/i)).toBeInTheDocument();
     expect(within(form).getByLabelText('Portée')).toHaveValue('company');
     for (const label of [
-      'Travail max — cycle après repos de 6 h', 'Repos min — 24 h glissantes',
+      'Travail max — journée de calcul', 'Repos min — 24 h glissantes',
       'Travail max — 7 j glissants', 'Repos min — 7 j glissants',
       'Repos consécutif minimum', 'Périodes de repos max / 24 h',
-      'Travail de nuit maximum',
+      'Travail de nuit maximum', 'Amplitude max entre repos longs', 'Intervalle max entre deux repos',
     ]) expect(within(form).getByLabelText(label)).toHaveValue(null);
     expect(within(form).getByLabelText('Début de la fenêtre de nuit')).toHaveValue('');
     expect(within(form).getByLabelText('Fin de la fenêtre de nuit')).toHaveValue('');
     fireEvent.change(within(form).getByLabelText('Nom'), { target: { value: 'Politique direction' } });
     for (const [label, value] of [
-      ['Travail max — cycle après repos de 6 h', '12'], ['Repos min — 24 h glissantes', '11'],
+      ['Travail max — journée de calcul', '12'], ['Repos min — 24 h glissantes', '11'],
       ['Travail max — 7 j glissants', '72'], ['Repos min — 7 j glissants', '96'],
       ['Repos consécutif minimum', '6'], ['Périodes de repos max / 24 h', '2'],
-      ['Travail de nuit maximum', '8'],
+      ['Travail de nuit maximum', '8'], ['Amplitude max entre repos longs', '15.5'], ['Intervalle max entre deux repos', '13'],
     ]) fireEvent.change(within(form).getByLabelText(label), { target: { value } });
     fireEvent.change(within(form).getByLabelText('Début de la fenêtre de nuit'), { target: { value: '22:00' } });
     fireEvent.change(within(form).getByLabelText('Fin de la fenêtre de nuit'), { target: { value: '06:00' } });
     await user.click(within(form).getByRole('button', { name: 'Enregistrer' }));
-    await waitFor(() => expect(savePlanningWorkRestPolicy).toHaveBeenCalledWith(client, expect.objectContaining({ name: 'Politique direction', maxWork24h: 12, minRest7d: 96 })));
+    await waitFor(() => expect(savePlanningWorkRestPolicy).toHaveBeenCalledWith(client, expect.objectContaining({ name: 'Politique direction', maxWork24h: 12, minRest7d: 96, maxAmplitudeHours: 15.5, maxIntervalBetweenRestsHours: 13 })));
+  });
+
+  it('opens the requested persisted policy for an administrator and saves its nine thresholds', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchPlanningP13Data).mockResolvedValue({
+      ...data,
+      policies: [{ ...data.policies[0], maxAmplitudeHours: 16, maxIntervalBetweenRestsHours: 13.5 }],
+    });
+    renderPanel({ initialTab: 'rest', initialPolicyId: 1 });
+    const form = (await screen.findByRole('heading', { name: 'Modifier la politique' })).closest('form')!;
+    expect(within(form).getByLabelText('Amplitude max entre repos longs')).toHaveValue(16);
+    expect(within(form).getByLabelText('Intervalle max entre deux repos')).toHaveValue(13.5);
+    expect(within(form).getByLabelText('Travail de nuit maximum')).toHaveValue(8);
+    fireEvent.change(within(form).getByLabelText('Amplitude max entre repos longs'), { target: { value: '15' } });
+    await user.click(within(form).getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Politique de travail et repos enregistrée.');
+    expect(savePlanningWorkRestPolicy).toHaveBeenCalledWith(client, expect.objectContaining({
+      id: 1, maxAmplitudeHours: 15, maxIntervalBetweenRestsHours: 13.5, maxNightWork24h: 8,
+    }));
+    expect(screen.queryByRole('heading', { name: 'Modifier la politique' })).not.toBeInTheDocument();
+  });
+
+  it('does not open an editor for a real sailor permission fixture even with a requested policy id', async () => {
+    const user = userEvent.setup();
+    renderPanel({ initialTab: 'rest', initialPolicyId: 1, canManageWorkRestPolicies: false,
+      canViewDashboard: false, canManageDependencies: false });
+    await user.click(await screen.findByRole('button', { name: /Politique test/ }));
+    expect(screen.queryByRole('heading', { name: 'Modifier la politique' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Amplitude max entre repos longs')).not.toBeInTheDocument();
+    expect(savePlanningWorkRestPolicy).not.toHaveBeenCalled();
   });
 
   it('marks notifications read and creates a manual dependency', async () => {

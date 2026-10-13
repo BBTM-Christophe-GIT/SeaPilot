@@ -19,7 +19,7 @@ select matches(
     where attrelid = 'public.working_time_calculation_windows'::regclass
       and attname = 'work_24h_seconds'
   )),
-  '(?i)resets after a continuous rest of at least six hours',
+  '(?i)day closes at the START of a configured continuous rest',
   'the legacy work column documents the six-hour reset rule'
 );
 
@@ -34,8 +34,8 @@ select is(
        {"starts_at":"2026-09-01T14:00:00Z","ends_at":"2026-09-01T20:00:00Z"}
      ]'::jsonb
    )),
-  21600::numeric,
-  'exactly six continuous rest hours reset the counter before later work'
+  28800::numeric,
+  'exactly six continuous rest hours divide days while keeping the larger closed day'
 );
 
 select is(
@@ -76,8 +76,8 @@ select is(
      'UTC', null, null, null,
      '[{"starts_at":"2026-09-01T00:00:00Z","ends_at":"2026-09-01T08:00:00Z"}]'::jsonb
    )),
-  0::numeric,
-  'a completed trailing rest of at least six hours leaves a zero current counter'
+  28800::numeric,
+  'a completed trailing rest does not erase the relevant closed-day work total'
 );
 
 select is(
@@ -89,8 +89,8 @@ select is(
      '2026-09-01 00:00:00+00', '2026-09-01 08:00:00+00',
      '2026-09-01 14:00:00+00', '2026-09-01 20:00:00+00'
    )),
-  21600::numeric,
-  'single-interval recommendations apply the same six-hour reset rule'
+  28800::numeric,
+  'single-interval metrics retain the same largest relevant calculation day'
 );
 
 select is(
@@ -119,7 +119,7 @@ select ok(
 
 select matches(
   pg_get_functiondef('public.working_time_queue_non_compliance_notification(bigint)'::regprocedure),
-  '(?i)travail depuis repos 6 h',
+  '(?i)Travail maximal par journée de calcul',
   'notifications describe the reset work-cycle measure accurately'
 );
 

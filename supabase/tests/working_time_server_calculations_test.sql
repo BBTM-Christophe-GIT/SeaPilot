@@ -139,8 +139,8 @@ select is(
 select is(
   (select work_24h_seconds from public.working_time_calculation_windows
    where window_end = '2026-08-04 20:00:00+02' and timezone_name = 'Europe/Paris'),
-  0::numeric,
-  'a completed trailing six-hour rest resets the twelve-hour work counter to zero'
+  36000::numeric,
+  'a completed trailing six-hour rest preserves the larger closed calculation day'
 );
 select is(
   (select rest_24h_seconds from public.working_time_calculation_windows
@@ -185,7 +185,7 @@ select results_eq(
     from public.working_time_calculation_windows
     where window_end = '2026-08-04 20:00:00+02' and timezone_name = 'Europe/Paris'
   $$,
-  $$values (0::numeric, 36000::numeric, 50400::numeric, 554400::numeric)$$,
+  $$values (50400::numeric, 36000::numeric, 50400::numeric, 554400::numeric)$$,
   'changing an interval automatically recalculates every affected cycle and rolling window'
 );
 select is(
@@ -197,8 +197,8 @@ select is(
 select is(
   (select array_to_string(violation_codes, ',') from public.working_time_calculation_windows
    where window_end = '2026-08-04 20:00:00+02' and timezone_name = 'Europe/Paris'),
-  'work_7d,rest_7d',
-  'a completed consecutive rest removes only the rolling rest breach'
+  'work_7d,rest_7d,work_24h,rest_24h,amplitude',
+  'completed rest does not erase closed-day, cumulative-rest, or weekly violations'
 );
 
 select is(
@@ -233,7 +233,8 @@ update public.planning_work_rest_policies
 set max_work_24h = 14,
     min_rest_24h = 10,
     max_work_7d = 14,
-    min_rest_7d = 154
+    min_rest_7d = 154,
+    max_amplitude_hours = 18
 where name = 'Politique de test aux limites';
 
 select ok(

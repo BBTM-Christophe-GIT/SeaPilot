@@ -1,5 +1,14 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.72.3`, build `2026-10-13.002`, intègre la saisie et les diagnostics
+du temps de travail dans `/modules/workingTime` : graduations horaires, bords
+ajustables, brouillons conservés par marin et date, graphiques mensuels et seuils
+persistés depuis Conformité. Le moteur v4 clôt une journée au début du repos long
+et conserve les écarts des journées précédentes pertinentes. Appliquer
+`20261013153130_working_time_calculation_days_production.sql` avant le client.
+Les PDF du registre restent factuels et le coefficient congés/repos reste 1,05.
+Voir [les règles et contrôles de livraison](./working-time-entry-production.md).
+
 Version `3.72.2`, build `2026-10-13.001`, corrige les délais dépassés du suivi
 du temps de travail après connexion. Les contrôles historiques de capitaine sont
 évités pour les personnes sans fonction de capitaine dans leurs affectations ;

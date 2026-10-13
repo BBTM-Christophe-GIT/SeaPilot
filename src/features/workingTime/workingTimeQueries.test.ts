@@ -104,6 +104,23 @@ function workspaceClient() {
 }
 
 describe('working-time workflow queries', () => {
+  it('loads configured amplitude and rest-interval thresholds for the live conformity panel', async () => {
+    const { client, rows, queryCalls } = workspaceClient();
+    rows.planning_work_rest_policies = rows.planning_work_rest_policies.map((policy) => ({
+      ...(policy as Record<string, unknown>), max_amplitude_hours: '16', max_interval_between_rests_hours: '13.5',
+    }));
+    const workspace = await fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' });
+    expect(workspace.policies[0]).toMatchObject({ maxAmplitudeHours: 16, maxIntervalBetweenRestsHours: 13.5 });
+    expect(queryCalls).toContainEqual({ table: 'planning_work_rest_policies', method: 'select',
+      args: [expect.stringContaining('max_amplitude_hours,max_interval_between_rests_hours')] });
+  });
+
+  it('keeps 14-hour compatibility limits when an older policy fixture omits the added thresholds', async () => {
+    const { client } = workspaceClient();
+    const workspace = await fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' });
+    expect(workspace.policies[0]).toMatchObject({ maxAmplitudeHours: 14, maxIntervalBetweenRestsHours: 14 });
+  });
+
   it('loads validation history only for the displayed registers, including later register pages', async () => {
     const { client, rows, queryCalls } = workspaceClient();
     const register = rows.working_time_registers[0] as Record<string, unknown>;

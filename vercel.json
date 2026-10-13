@@ -13,6 +13,14 @@
   ],
   "rewrites": [
     {
+      "source": "/previews/working-time",
+      "destination": "/previews/working-time.html"
+    },
+    {
+      "source": "/previews/working-time.html",
+      "destination": "/previews/working-time.html"
+    },
+    {
       "source": "/preview/projects",
       "destination": "/preview/projects/index.html"
     },

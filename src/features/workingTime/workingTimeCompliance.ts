@@ -12,7 +12,7 @@ interface ViolationRule {
   label: string;
   thresholdKind: ThresholdKind;
   unit: ViolationUnit;
-  value: (calculation: WorkingTimeCalculationWindow) => number;
+  value: (calculation: WorkingTimeCalculationWindow, measurements: WindowMeasurements) => number | null;
   threshold: (policy: WorkingTimePolicyThresholds) => number;
   windowMilliseconds: number;
 }
@@ -26,15 +26,25 @@ export interface WorkingTimeViolationDetail {
   threshold: number | null;
   thresholdKind: ThresholdKind;
   unit: ViolationUnit;
-  value: number;
+  value: number | null;
+  windowStartsAt?: string;
+  windowEndsAt?: string;
+  reconstructedMeasurement?: boolean;
 }
 
 const HOURS_24 = 24 * 60 * 60 * 1000;
 const DAYS_7 = 7 * HOURS_24;
 
-const RULES: Record<WorkingTimeViolationCode, ViolationRule> = {
+interface MeasuredRange { start: number; end: number; workSeconds: number }
+interface WindowMeasurements {
+  amplitude: MeasuredRange | null;
+  restInterval: MeasuredRange | null;
+  calculationDay: MeasuredRange | null;
+}
+
+const RULES: Record<WorkingTimeViolationCode | 'amplitude' | 'rest_interval', ViolationRule> = {
   work_24h: {
-    label: 'Travail depuis le dernier repos de 6 h', thresholdKind: 'maximum', unit: 'hours',
+    label: 'Travail maximal par journée de calcul', thresholdKind: 'maximum', unit: 'hours',
     value: (calculation) => calculation.work24hSeconds / 3600,
     threshold: (policy) => policy.maxWork24h,
     windowMilliseconds: HOURS_24,
@@ -75,7 +85,63 @@ const RULES: Record<WorkingTimeViolationCode, ViolationRule> = {
     threshold: (policy) => policy.maxNightWork24h,
     windowMilliseconds: HOURS_24,
   },
+  amplitude: {
+    label: 'Amplitude entre repos', thresholdKind: 'maximum', unit: 'hours',
+    value: (_calculation, measurements) => measurements.amplitude
+      ? (measurements.amplitude.end - measurements.amplitude.start) / 3_600_000 : null,
+    threshold: (policy) => policy.maxAmplitudeHours ?? 14,
+    windowMilliseconds: HOURS_24,
+  },
+  rest_interval: {
+    label: 'Intervalle entre deux repos', thresholdKind: 'maximum', unit: 'hours',
+    value: (_calculation, measurements) => measurements.restInterval
+      ? (measurements.restInterval.end - measurements.restInterval.start) / 3_600_000 : null,
+    threshold: (policy) => policy.maxIntervalBetweenRestsHours ?? 14,
+    windowMilliseconds: HOURS_24,
+  },
 };
+
+/** Reconstruct only explanatory bounds; persisted violation codes remain authoritative. */
+function windowMeasurements(calculation: WorkingTimeCalculationWindow, intervals: WorkingTimeInterval[], minimumRestHours: number): WindowMeasurements {
+  const end = Date.parse(calculation.windowEnd);
+  const start = end - HOURS_24;
+  const ranges = intervals.filter((interval) => interval.personId === calculation.personId)
+    .map((interval) => ({ start: Date.parse(interval.startsAt), end: Math.min(end, Date.parse(interval.endsAt)) }))
+    .filter((range) => Number.isFinite(range.start) && Number.isFinite(range.end) && range.end > range.start)
+    .sort((left, right) => left.start - right.start)
+    .reduce<MeasuredRange[]>((merged, range) => {
+      const previous = merged.at(-1);
+      if (previous && range.start <= previous.end) {
+        previous.end = Math.max(previous.end, range.end);
+        previous.workSeconds = (previous.end - previous.start) / 1000;
+      } else merged.push({ ...range, workSeconds: (range.end - range.start) / 1000 });
+      return merged;
+    }, []);
+  const sequences = ranges.reduce<Array<MeasuredRange & { dayStart: number }>>((grouped, range) => {
+    const previous = grouped.at(-1);
+    if (previous && range.start - previous.end < minimumRestHours * 3_600_000) {
+      previous.end = range.end;
+      previous.workSeconds += range.workSeconds;
+    } else grouped.push({ ...range, dayStart: previous?.end ?? range.start });
+    return grouped;
+  }, []);
+  const relevant = sequences.flatMap((sequence, index) => {
+    const closed = index < sequences.length - 1 || end - sequence.end >= minimumRestHours * 3_600_000;
+    const dayEnd = closed ? sequence.end : end;
+    return dayEnd > start && sequence.dayStart < end ? [{ ...sequence, dayEnd }] : [];
+  });
+  const amplitude = relevant.reduce<MeasuredRange | null>((longest, sequence) => !longest
+    || sequence.end - sequence.start >= longest.end - longest.start ? sequence : longest, null);
+  const restInterval = ranges.filter((range) => range.end > start && range.start < end)
+    .reduce<MeasuredRange | null>((longest, range) => !longest
+      || range.end - range.start >= longest.end - longest.start ? range : longest, null);
+  const maximumDay = relevant.reduce<(typeof relevant)[number] | null>((maximum, sequence) => !maximum
+    || sequence.workSeconds >= maximum.workSeconds ? sequence : maximum, null);
+  const calculationDay = calculation.calculationVersion >= 4 && maximumDay
+    && Math.abs(maximumDay.workSeconds - calculation.work24hSeconds) < 1
+    ? { start: maximumDay.dayStart, end: maximumDay.dayEnd, workSeconds: maximumDay.workSeconds } : null;
+  return { amplitude, restInterval, calculationDay };
+}
 
 function calculationsForDay(calculations: WorkingTimeCalculationWindow[], day: string) {
   return calculations
@@ -106,27 +172,44 @@ function allViolationDetails(
     .filter((calculation) => calculation.isCompliant === false)
     .flatMap((calculation) => {
       const policy = policies.find((candidate) => candidate.id === calculation.workRestPolicyId) || null;
+      const needsMeasurements = calculation.violationCodes.some((code) => code === 'amplitude' || code === 'rest_interval'
+        || (code === 'work_24h' && calculation.calculationVersion >= 4));
+      const measurements = needsMeasurements ? windowMeasurements(calculation, intervals, policy?.minConsecutiveRestHours ?? 6)
+        : { amplitude: null, restInterval: null, calculationDay: null };
       return calculation.violationCodes.flatMap((code) => {
         const alarmDay = violationAlarmDay(calculation, code, intervals);
         if (!alarmDay) return [];
         const rule = RULES[code];
+        const measuredBounds = code === 'amplitude' ? measurements.amplitude
+          : code === 'rest_interval' ? measurements.restInterval
+            : code === 'work_24h' ? measurements.calculationDay : null;
+        const measuredValue = rule.value(calculation, measurements);
+        const threshold = policy ? rule.threshold(policy) : null;
+        // Incomplete loaded history cannot turn a server breach into a smaller, apparently valid measurement.
+        const value = (code === 'amplitude' || code === 'rest_interval') && measuredValue !== null
+          && threshold !== null && measuredValue <= threshold ? null : measuredValue;
         return [{
           alarmDay,
           calculation,
           code,
           label: rule.label,
           policyName: policy?.name || null,
-          threshold: policy ? rule.threshold(policy) : null,
+          threshold,
           thresholdKind: rule.thresholdKind,
           unit: rule.unit,
-          value: rule.value(calculation),
+          value,
+          ...((code === 'amplitude' || code === 'rest_interval' || measuredBounds) ? { reconstructedMeasurement: true } : {}),
+          ...(measuredBounds && value !== null ? {
+            windowStartsAt: new Date(measuredBounds.start).toISOString(),
+            windowEndsAt: new Date(measuredBounds.end).toISOString(),
+          } : {}),
         } satisfies WorkingTimeViolationDetail];
       });
     });
 }
 
 function breachMagnitude(detail: WorkingTimeViolationDetail): number {
-  if (detail.threshold === null) return 0;
+  if (detail.threshold === null || detail.value === null) return 0;
   return detail.thresholdKind === 'maximum'
     ? detail.value - detail.threshold
     : detail.threshold - detail.value;
@@ -198,6 +281,10 @@ function formatNumber(value: number): string {
 }
 
 export function workingTimeViolationText(detail: WorkingTimeViolationDetail): string {
+  if (detail.value === null) {
+    const limit = detail.threshold === null ? '' : ` / ${detail.thresholdKind} ${formatNumber(detail.threshold)} h`;
+    return `${detail.label} : mesure à confirmer${limit}`;
+  }
   const value = `${formatNumber(detail.value)}${detail.unit === 'hours' ? ' h' : ` période${detail.value > 1 ? 's' : ''}`}`;
   if (detail.threshold === null) return `${detail.label} : ${value}`;
   const threshold = `${formatNumber(detail.threshold)}${detail.unit === 'hours' ? ' h' : ''}`;
@@ -215,7 +302,12 @@ function formatWindowPart(value: Date, timezoneName: string): string {
 }
 
 export function workingTimeViolationWindowText(detail: WorkingTimeViolationDetail): string {
-  const windowEnd = new Date(detail.calculation.windowEnd);
-  const windowStart = new Date(windowEnd.getTime() - RULES[detail.code].windowMilliseconds);
-  return `Fenêtre d’analyse du ${formatWindowPart(windowStart, detail.calculation.timezoneName)} au ${formatWindowPart(windowEnd, detail.calculation.timezoneName)}.`;
+  const windowEnd = new Date(detail.windowEndsAt || detail.calculation.windowEnd);
+  const windowStart = detail.windowStartsAt ? new Date(detail.windowStartsAt)
+    : new Date(windowEnd.getTime() - RULES[detail.code].windowMilliseconds);
+  const label = detail.windowStartsAt
+    ? detail.code === 'work_24h' ? 'Journée de calcul'
+      : detail.code === 'amplitude' ? 'Séquence de travail' : 'Travail continu entre repos'
+    : 'Fenêtre d’analyse';
+  return `${label} du ${formatWindowPart(windowStart, detail.calculation.timezoneName)} au ${formatWindowPart(windowEnd, detail.calculation.timezoneName)}.${detail.reconstructedMeasurement ? ' Mesure reconstituée à partir de l’historique chargé ; couverture à confirmer.' : ''}`;
 }

@@ -183,6 +183,61 @@ describe('WorkingTimeWorkflowPanel', () => {
     vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue(defaultDayContext);
   });
 
+  it('keeps a real Marin draft through day and month navigation and adjusts both edges', async () => {
+    const user = userEvent.setup();
+    const data = workspace('draft');
+    renderPanel(['marin'], data, { ...currentPerson, functionLabel: 'Matelot' }, '2026-08-03');
+    const grid = screen.getByRole('grid', { name: 'Grille horaire du 2026-08-03' });
+    await waitFor(() => expect(grid).toHaveAttribute('aria-readonly', 'false'));
+    const cells = within(grid).getAllByRole('gridcell');
+    fireEvent.pointerDown(cells[36]);
+    fireEvent.pointerUp(cells[36]);
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Ajuster la fin de la période 1, 18:30' }), { key: 'ArrowRight' });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Ajuster le début de la période 1, 18:00' }), { key: 'ArrowRight' });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Ajuster la fin de la période 1, 19:00' }), { key: 'ArrowRight' });
+    expect(screen.getByRole('button', { name: 'Période 1 18:30–19:30' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /mar 04 août/ }));
+    expect(screen.queryByRole('group', { name: 'Périodes à enregistrer' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Mois' }));
+    expect(screen.getByRole('img', { name: /lun.*03 août.*à enregistrer : 18:30–19:30/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Jour' }));
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    expect(screen.getByRole('button', { name: 'Période 1 18:30–19:30' })).toBeInTheDocument();
+    expect(saveWorkingTimePhases).not.toHaveBeenCalled();
+  });
+
+  it('saves the active keyboard selection even before it is added to pending periods', async () => {
+    const user = userEvent.setup();
+    renderPanel(['marin'], workspace('draft'), { ...currentPerson, functionLabel: 'Matelot' }, '2026-08-03');
+    const grid = screen.getByRole('grid', { name: 'Grille horaire du 2026-08-03' });
+    await waitFor(() => expect(grid).toHaveAttribute('aria-readonly', 'false'));
+    fireEvent.keyDown(within(grid).getAllByRole('gridcell')[36], { key: 'ArrowRight', shiftKey: true });
+    expect(screen.queryByRole('button', { name: /Période 1/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    expect(saveWorkingTimePhases).toHaveBeenCalledWith(client, expect.objectContaining({
+      phases: [{ startsAt: new Date('2026-08-03T18:00').toISOString(), endsAt: new Date('2026-08-03T19:00').toISOString() }],
+    }));
+  });
+
+  it('opens the persisted policy from live compliance only for an administrator', async () => {
+    const user = userEvent.setup();
+    renderPanel(['admin'], workspace('draft'), currentPerson, '2026-08-03');
+    await user.click(screen.getByRole('button', { name: 'Modifier les seuils' }));
+    expect(onOpenWorkRest).toHaveBeenCalledWith(1);
+  });
+
+  it('shows consultation and no resize controls for a validated real Marin', async () => {
+    const user = userEvent.setup();
+    const data = workspace('validated');
+    data.dayApprovals = [submittedApproval({ personId: 10, status: 'validated' })];
+    renderPanel(['marin'], data, { ...currentPerson, functionLabel: 'Matelot' }, '2026-08-03');
+    expect(screen.getByRole('grid', { name: 'Grille horaire du 2026-08-03' })).toHaveAttribute('aria-readonly', 'true');
+    expect(screen.queryByRole('button', { name: 'Modifier les seuils' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Ajuster les périodes à enregistrer' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Consulter les seuils' }));
+    expect(onOpenWorkRest).toHaveBeenCalledWith(1);
+  });
+
   it('opens the linked readable sailor and day in Conformité for a real Capitaine profile', async () => {
     const user = userEvent.setup();
     const data = workspace('draft');
@@ -652,7 +707,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     const alarmRow = screen.getByRole('button', { name: /lun 17 août/ }).closest('tr');
     const impactRow = screen.getByRole('button', { name: /mar 18 août/ }).closest('tr');
     expect(alarmRow).toHaveClass('is-non-compliant');
-    expect(alarmRow).toHaveTextContent('Travail depuis le dernier repos de 6 h : 13 h / maximum 12 h');
+    expect(alarmRow).toHaveTextContent('Travail maximal par journée de calcul : 13 h / maximum 12 h');
     expect(alarmRow).not.toHaveTextContent('Compteur remis à zéro après chaque repos continu d’au moins 6 h.');
     expect(impactRow).not.toHaveClass('is-non-compliant');
     expect(impactRow).toHaveTextContent('Conforme');
@@ -662,7 +717,7 @@ describe('WorkingTimeWorkflowPanel', () => {
 
     await user.click(screen.getByRole('button', { name: /mar 18 août/ }));
     const rollingWindow = screen.getByRole('status', { name: 'Impact des 24 heures glissantes' });
-    expect(rollingWindow).toHaveTextContent('Travail depuis le dernier repos de 6 h : 13 h / maximum 12 h');
+    expect(rollingWindow).toHaveTextContent('Travail maximal par journée de calcul : 13 h / maximum 12 h');
     expect(rollingWindow).not.toHaveTextContent('Compteur remis à zéro après chaque repos continu d’au moins 6 h.');
     expect(rollingWindow).toHaveTextContent('Fenêtre d’analyse du lun 17 août à 06:30 au mar 18 août à 06:30.');
     expect(rollingWindow).toHaveTextContent('Alarme rattachée au lun 17 août.');

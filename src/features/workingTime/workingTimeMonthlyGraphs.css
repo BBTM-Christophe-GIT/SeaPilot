@@ -1,0 +1,39 @@
+/* Hourly register bands preserve the monthly table's existing business columns. */
+.working-time-monthly-view { min-width: 0; }
+.working-time-monthly-view .working-time-monthly-table-wrap { width: 100%; min-width: 0; max-width: 100%; contain: layout paint; overscroll-behavior-inline: contain; }
+.working-time-monthly-view .working-time-monthly-table-wrap:focus-visible { outline: 3px solid var(--sp-focus); outline-offset: 2px; }
+.working-time-monthly-view table { min-width: 1440px; }
+.working-time-monthly-view thead { z-index: 3; }
+.working-time-monthly-view thead > tr { background: inherit; }
+.working-time-monthly-view .working-time-month-graph-column { min-width: 640px; width: 640px; }
+.working-time-monthly-view th:first-child,
+.working-time-monthly-view td:first-child { position: sticky; left: 0; z-index: 2; min-width: 108px; white-space: nowrap; }
+.working-time-monthly-view th:first-child { background: inherit; }
+.working-time-monthly-view td:first-child { background: var(--sp-surface); border-right: 1px solid var(--sp-border); }
+.working-time-monthly-view tr.is-non-compliant td:first-child { background: #fff3f4; }
+.working-time-monthly-view td:first-child button { min-height: var(--sp-control-height); }
+.working-time-monthly-view td:first-child button:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; border-radius: var(--sp-control-radius); }
+.working-time-month-graph-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; color: var(--sp-muted); font-size: 12px; }
+.working-time-month-graph-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.working-time-month-graph-legend i { width: 16px; height: 16px; background: #17a6b8; }
+.working-time-month-graph-legend i.is-pending { background: #a4e4ed; }
+.working-time-month-graph-legend small { font-size: inherit; }
+.working-time-month-graph-axis { position: relative; height: 24px; margin-top: 8px; font-size: 10px; font-weight: 500; }
+.working-time-month-graph-axis span { position: absolute; bottom: 0; transform: translateX(-50%); white-space: nowrap; }
+.working-time-month-graph-axis span:first-child { transform: none; }
+.working-time-month-graph-axis span:last-child { transform: translateX(-100%); }
+.working-time-month-graph { position: relative; height: 36px; overflow: hidden; border: 1px solid var(--sp-border); background: var(--sp-canvas); }
+.working-time-month-graph-slots { position: absolute; z-index: 1; inset: 0; display: grid; grid-template-columns: repeat(48, minmax(0, 1fr)); pointer-events: none; }
+.working-time-month-graph-slots span { border-right: 1px solid var(--sp-border); }
+.working-time-month-graph-slots span:nth-child(even) { border-right-color: var(--sp-border-strong); }
+.working-time-month-graph-slots span:last-child { border-right: 0; }
+.working-time-month-graph-phase { position: absolute; inset-block: 0; display: flex; align-items: center; justify-content: center; padding: 0 4px; overflow: hidden; color: #fff; background: #17a6b8; box-shadow: inset 0 1px #087789, inset 0 -1px #087789; font-size: 10px; font-weight: 600; white-space: nowrap; }
+.working-time-month-graph-phase.is-pending { color: #07586a; background: #a4e4ed; }
+.working-time-month-graph-phase.is-clock-fold { min-width: 6px; border-inline: 1px dashed var(--sp-primary); background-image: repeating-linear-gradient(135deg, transparent 0, transparent 4px, #ffffff66 4px, #ffffff66 5px); }
+.working-time-month-graph-recorded,
+.working-time-month-graph-pending,
+.working-time-month-graph-note { display: block; margin-top: 4px; color: var(--sp-muted); font-size: 10px; }
+.working-time-month-graph-pending { color: var(--sp-primary); }
+@media (pointer: coarse) {
+  .working-time-monthly-view td:first-child button { min-height: 44px; }
+}

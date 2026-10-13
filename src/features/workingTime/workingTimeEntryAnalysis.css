@@ -1,0 +1,43 @@
+.working-time-workflow .working-time-live-compliance { display: grid; grid-column: 1 / -1; gap: 12px; min-width: 0; color: var(--sp-text); font-size: 12px; }
+.working-time-workflow .working-time-live-status { margin: 0; padding: 12px; border-radius: var(--sp-control-radius); color: var(--sp-muted); background: var(--sp-canvas); }
+.working-time-workflow .working-time-live-status.is-deviation { color: #9d2638; background: #fff0f2; }
+.working-time-workflow .working-time-live-policy { display: grid; gap: 8px; }
+.working-time-workflow .working-time-live-policy strong { overflow-wrap: anywhere; }
+.working-time-workflow .working-time-live-rule { display: flex; gap: 8px; min-width: 0; padding: 12px 0; border-top: 1px solid var(--sp-border); }
+.working-time-workflow .working-time-live-rule svg { flex-shrink: 0; color: var(--sp-muted); }
+.working-time-workflow .working-time-live-rule.is-ok svg { color: #409b63; }
+.working-time-workflow .working-time-live-rule.is-deviation { padding: 12px; border: 1px solid #f4c8cf; border-radius: var(--sp-control-radius); color: #9d2638; background: #fff0f2; }
+.working-time-workflow .working-time-live-rule.is-deviation svg { color: #9d2638; }
+.working-time-workflow .working-time-live-rule h5 { margin: 0 0 6px; font-size: 12px; font-weight: 500; }
+.working-time-workflow .working-time-live-rule strong { display: block; font-size: 16px; }
+.working-time-workflow .working-time-live-rule small, .working-time-workflow .working-time-live-rule b { display: block; margin-top: 4px; overflow-wrap: anywhere; }
+.working-time-workflow .working-time-live-compliance > small { color: var(--sp-muted); line-height: 1.5; }
+.working-time-workflow .working-time-timeline-track { min-width: 616px; padding-right: 16px; }
+.working-time-workflow .working-time-timeline-frame { position: relative; }
+.working-time-workflow .working-time-timeline { padding-left: 0; padding-right: 0; padding-bottom: 0; }
+.working-time-workflow .working-time-timeline button.is-occupied { background: #17a6b8; }
+.working-time-workflow .working-time-timeline button.is-pending { background: #a4e4ed; box-shadow: inset 0 1px #087789, inset 0 -1px #087789; }
+.working-time-workflow .working-time-timeline-legend i.is-existing { background: #17a6b8; }
+.working-time-workflow .working-time-timeline-legend i.is-pending { background: #a4e4ed; }
+.working-time-workflow .working-time-phase-resize-handles { position: absolute; bottom: 0; left: 0; right: 0; height: 44px; pointer-events: none; }
+.working-time-workflow .working-time-phase-resize-handle { position: absolute; z-index: 2; display: flex; align-items: center; justify-content: center; width: 18px; min-width: 18px; height: 22px; min-height: 22px; padding: 0; border: 0; border-radius: 0; background: transparent; cursor: ew-resize; touch-action: none; pointer-events: auto; }
+.working-time-workflow .working-time-phase-resize-handle.is-start { top: 0; }
+.working-time-workflow .working-time-phase-resize-handle.is-end { bottom: 0; transform: translateX(-100%); }
+.working-time-workflow .working-time-phase-resize-handle > span[aria-hidden] { width: 5px; height: 18px; border: 1px solid var(--sp-surface); border-radius: 3px; background: var(--sp-primary); box-shadow: 0 0 0 1px var(--sp-primary); }
+.working-time-workflow .working-time-phase-resize-handle:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: -2px; }
+.working-time-workflow .working-time-phase-resize-handle:disabled { opacity: .5; pointer-events: none; }
+.working-time-workflow .working-time-preview-phase-labels { position: absolute; bottom: 0; left: 0; width: 100%; height: 44px; pointer-events: none; }
+.working-time-workflow .working-time-preview-phase-labels span { position: absolute; display: flex; align-items: center; justify-content: center; height: 100%; overflow: hidden; color: white; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.working-time-workflow .working-time-preview-phase-labels span.is-pending { color: #07586a; }
+.working-time-workflow .working-time-preview-graph { padding-top: 16px; font-size: 12px; }
+.working-time-workflow .working-time-preview-range-rail { position: relative; height: 24px; margin-bottom: 20px; border: 1px solid var(--sp-border); border-radius: 2px; background: repeating-linear-gradient(90deg, var(--sp-canvas) 0, var(--sp-canvas) calc(100% / 48 - 1px), var(--sp-border) calc(100% / 48 - 1px), var(--sp-border) calc(100% / 48)); }
+.working-time-workflow .working-time-preview-excess-range { position: absolute; top: -1px; bottom: -1px; border: 1px solid #d43f55; background: repeating-linear-gradient(135deg, #fff0f2 0, #fff0f2 4px, #d43f55 4px, #d43f55 5px); }
+.working-time-workflow .working-time-preview-limit-marker { position: absolute; bottom: 0; height: 131px; border-left: 2px dashed #d43f55; pointer-events: none; }
+.working-time-workflow .working-time-preview-limit-marker span { position: absolute; top: -17px; left: -68px; width: 136px; padding: 0 5px; color: #9d2638; background: var(--sp-surface); font-size: 11px; font-weight: 700; text-align: center; }
+.working-time-workflow .working-time-preview-graph-summary { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.working-time-workflow .working-time-preview-graph-summary > span { flex-basis: 100%; color: var(--sp-primary); }
+.working-time-workflow .working-time-preview-graph-summary > .working-time-preview-context-note { color: var(--sp-muted); }
+.working-time-workflow .working-time-preview-graph-summary em { color: #9d2638; font-style: normal; font-weight: 700; }
+.working-time-workflow .working-time-preview-graph-summary > .working-time-preview-rule-alert { padding: 6px 10px; border-left: 3px solid #d43f55; color: #9d2638; background: #fff0f2; }
+@media (min-width: 1320px) { .working-time-workflow .working-time-register-detail:not(.is-monthly) { grid-template-columns: minmax(0, 1fr) 290px; } }
+@media (pointer: coarse) { .working-time-workflow .working-time-live-policy button { min-height: 44px; } }

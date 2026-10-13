@@ -70,6 +70,8 @@ export const WORKING_TIME_VIOLATION_CODES = [
   'work_7d',
   'rest_7d',
   'night_work_24h',
+  'amplitude',
+  'rest_interval',
 ] as const;
 
 export type WorkingTimeViolationCode = typeof WORKING_TIME_VIOLATION_CODES[number];
