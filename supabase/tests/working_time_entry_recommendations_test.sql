@@ -139,8 +139,8 @@ select is(
     '2026-10-01 08:00:00+02', '2026-10-01 12:00:00+02', 'Europe/Paris',
     current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', null
   )->>'max_additional_seconds')::numeric,
-  14400::numeric,
-  'the recommended additional duration stops at the first rolling limit'
+  7200::numeric,
+  'the recommended additional duration also stops at the configured amplitude limit'
 );
 select is(
   (public.working_time_interval_recommendation(
@@ -148,7 +148,7 @@ select is(
     '2026-10-01 08:00:00+02', '2026-10-01 12:00:00+02', 'Europe/Paris',
     current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', null
   )->>'latest_end_at')::timestamptz,
-  '2026-10-01 16:00:00+02'::timestamptz,
+  '2026-10-01 14:00:00+02'::timestamptz,
   'the latest compatible end is returned as an absolute timestamp'
 );
 select is(
@@ -166,8 +166,8 @@ select is(
     '2026-10-01 08:00:00+02', '2026-10-01 16:00:00+02', 'Europe/Paris',
     current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', null
   )->'violation_codes'),
-  0,
-  'equality with configured maxima and minima remains compliant'
+  1,
+  'the configured amplitude still applies when work and rest totals equal their thresholds'
 );
 select is(
   (select count(*)::integer from public.working_time_intervals where source_record_key = 'recommendation-existing'),

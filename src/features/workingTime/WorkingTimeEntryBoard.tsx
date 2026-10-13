@@ -70,6 +70,8 @@ interface WorkingTimeEntryBoardProps {
   previewGraph?: WorkingTimeEntryGraphPreview;
   /** Enables editing unsaved phase boundaries without changing recorded periods. */
   allowPhaseResize?: boolean;
+  /** The parent owns independent day drafts and restores them on navigation. */
+  preserveDayDrafts?: boolean;
   analysisStatus?: WorkingTimeEntryRecommendation['status'];
   onStartsAtChange: (value: string) => void;
   onEndsAtChange: (value: string) => void;
@@ -184,6 +186,7 @@ export function WorkingTimeEntryBoard({
   onCommentChange,
   onPendingPhasesChange = () => undefined,
   onSelectedDayChange = () => undefined,
+  preserveDayDrafts = false,
   onSubmit,
   onCancelEdit,
   onEditInterval = () => undefined,
@@ -288,7 +291,7 @@ export function WorkingTimeEntryBoard({
   }), [editingIntervalId, intervals, selectedDay]);
   const selectedRecordedInterval = intervals.find((interval) => interval.id === selectedRecordedIntervalId) || null;
 
-  useEffect(() => { setSelectedRecordedIntervalId(null); }, [selectedDay]);
+  useEffect(() => { setSelectedRecordedIntervalId(null); }, [personId, selectedDay]);
   useEffect(() => {
     dayButtonRefs.current.get(selectedDay)?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
   }, [selectedDay]);
@@ -440,6 +443,10 @@ export function WorkingTimeEntryBoard({
 
   function selectDay(day: string) {
     onSelectedDayChange(day);
+    if (preserveDayDrafts) {
+      setActivePendingIndex(null);
+      return;
+    }
     if (!validProposal(startsAt, endsAt)) {
       setActivePendingIndex(null);
       onStartsAtChange(`${day}T00:00`);

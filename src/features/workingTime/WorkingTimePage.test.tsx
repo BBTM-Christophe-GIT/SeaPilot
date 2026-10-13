@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RoleKey } from '../permissions/roles';
 import { PlanningP13Panel } from '../planning/PlanningP13Panel';
 import { EMPTY_PLANNING_OVERVIEW, usePlanningOverview } from '../planning/usePlanningOverview';
 import { WorkingTimePage } from './WorkingTimePage';
@@ -38,7 +39,7 @@ vi.mock('./WorkingTimeComplianceReport', () => ({
 const client = {} as SupabaseClient;
 const reload = vi.fn().mockResolvedValue(true);
 
-function renderPage(roles: Array<'admin' | 'marin'> = ['admin'], entry = '/') {
+function renderPage(roles: RoleKey[] = ['admin'], entry = '/') {
   return render(
     <MemoryRouter initialEntries={[entry]}>
       <WorkingTimePage
@@ -143,14 +144,36 @@ describe('WorkingTimePage', () => {
     expect(commandProps?.onOpenImport).toBeUndefined();
     expect(commandProps?.onOpenHse).toBeUndefined();
     expect(commandProps?.onOpenReport).toBeUndefined();
-    act(() => commandProps?.onOpenWorkRest?.());
+    act(() => commandProps?.onOpenWorkRest?.(5));
     expect(PlanningP13Panel).toHaveBeenCalledWith(expect.objectContaining({
       canManageWorkRestPolicies: false,
+      initialPolicyId: undefined,
       canViewWorkRest: true,
       canViewNotifications: false,
       visibleTabs: ['rest'],
     }), undefined);
     expect(screen.queryByTestId('xlsm-import-surface')).not.toBeInTheDocument();
+  });
+
+  it('opens the selected conformity policy directly and refreshes the working-time workspace after saving', async () => {
+    renderPage();
+    const commandProps = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0];
+    act(() => commandProps?.onOpenWorkRest?.(5));
+    const policyProps = vi.mocked(PlanningP13Panel).mock.calls.at(-1)?.[0];
+    expect(policyProps).toMatchObject({ initialPolicyId: 5, canManageWorkRestPolicies: true });
+    const previousRefresh = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0].refreshToken;
+    await act(async () => { await policyProps?.onAuditChange?.(); });
+    expect(reload).toHaveBeenCalledOnce();
+    expect(vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0].refreshToken).toBe((previousRefresh || 0) + 1);
+  });
+
+  it.each(['capitaine', 'direction', 'armement'] as const)('keeps the real %s profile policy surface read-only', (role) => {
+    renderPage([role]);
+    const commandProps = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0];
+    act(() => commandProps?.onOpenWorkRest?.(5));
+    expect(PlanningP13Panel).toHaveBeenLastCalledWith(expect.objectContaining({
+      canManageWorkRestPolicies: false, initialPolicyId: undefined,
+    }), undefined);
   });
 
   it('switches complete calendar months and refreshes both workspaces from the command bar callbacks', async () => {

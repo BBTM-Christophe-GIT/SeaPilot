@@ -55,6 +55,9 @@ import {
   workingTimeViolationWindowText,
 } from './workingTimeCompliance';
 import { WorkingTimeEntryBoard, type WorkingTimeRollingWindowMarker } from './WorkingTimeEntryBoard';
+import { buildWorkingTimeEntryAnalysis } from './workingTimeEntryAnalysis';
+import { WorkingTimeEntryCompliance } from './WorkingTimeEntryCompliance';
+import './workingTimeEntryAnalysis.css';
 import {
   workingTimeEntryCutoffDate,
   workingTimeEntryDateIsOpen,
@@ -85,7 +88,7 @@ interface WorkingTimeWorkflowPanelProps {
   onOpenImport?: () => void;
   onOpenHse?: () => void;
   onOpenReport?: () => void;
-  onOpenWorkRest?: () => void;
+  onOpenWorkRest?: (policyId?: number) => void;
 }
 
 type PersonnelFilter = 'active' | 'departed';
@@ -102,6 +105,18 @@ interface NonComplianceDraft {
   immediateAction: string;
   compensatoryRestPlan: string;
   comment: string;
+}
+
+interface EntryDraft {
+  startsAt: string;
+  endsAt: string;
+  comment: string;
+  editingIntervalId: number | null;
+  pending: WorkingTimePhaseInput[];
+}
+
+function emptyEntryDraft(day: string): EntryDraft {
+  return { startsAt: `${day}T00:00`, endsAt: `${day}T00:00`, comment: '', editingIntervalId: null, pending: [] };
 }
 
 interface SignatureEvidence {
@@ -284,13 +299,22 @@ export function WorkingTimeWorkflowPanel({
   const enabled = Boolean((currentPerson || canBrowseWithoutProfile) && range.start && range.end && range.start <= range.end);
   const { workspace, loadedRange, isLoading, errorMessage, reload } = useWorkingTimeWorkspace(client, enabled, range, refreshToken);
   const selectedRangeLoaded = loadedRange?.start === range.start && loadedRange?.end === range.end;
+  const localToday = referenceDate || workingTimeApprovalTodayDate();
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(currentPerson?.id || null);
+  const [selectedDay, setSelectedDay] = useState(() => workingTimeInitialDay(range, localToday));
   const [registerSearch, setRegisterSearch] = useState('');
-  const [startsAt, setStartsAt] = useState(`${range.start}T00:00`);
-  const [endsAt, setEndsAt] = useState(`${range.start}T00:00`);
-  const [intervalComment, setIntervalComment] = useState('');
-  const [editingIntervalId, setEditingIntervalId] = useState<number | null>(null);
-  const [pendingPhases, setPendingPhases] = useState<WorkingTimePhaseInput[]>([]);
+  const [entryDrafts, setEntryDrafts] = useState<Record<string, EntryDraft>>({});
+  const entryKey = `${selectedPersonId}:${selectedDay}`;
+  const draft = entryDrafts[entryKey] ?? emptyEntryDraft(selectedDay);
+  const { startsAt, endsAt, comment: intervalComment, editingIntervalId, pending: pendingPhases } = draft;
+  function updateEntryDraft(change: Partial<EntryDraft>) {
+    setEntryDrafts((current) => ({ ...current, [entryKey]: { ...(current[entryKey] ?? emptyEntryDraft(selectedDay)), ...change } }));
+  }
+  const setStartsAt = (value: string) => updateEntryDraft({ startsAt: value });
+  const setEndsAt = (value: string) => updateEntryDraft({ endsAt: value });
+  const setIntervalComment = (value: string) => updateEntryDraft({ comment: value });
+  const setEditingIntervalId = (value: number | null) => updateEntryDraft({ editingIntervalId: value });
+  const setPendingPhases = (value: WorkingTimePhaseInput[]) => updateEntryDraft({ pending: value });
   const [voidCandidateId, setVoidCandidateId] = useState<number | null>(null);
   const [voidReason, setVoidReason] = useState('');
   const [dayResponses, setDayResponses] = useState<Record<string, NonComplianceDraft>>({});
@@ -307,8 +331,6 @@ export function WorkingTimeWorkflowPanel({
   const [isAutoCreatingRegister, setIsAutoCreatingRegister] = useState(false);
   const [autoRegisterAttempt, setAutoRegisterAttempt] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const localToday = referenceDate || workingTimeApprovalTodayDate();
-  const [selectedDay, setSelectedDay] = useState(() => workingTimeInitialDay(range, localToday));
   const [registerView, setRegisterView] = useState<'daily' | 'monthly'>('daily');
   const [rightPanelTab, setRightPanelTab] = useState<'compliance' | 'approvals'>('compliance');
   const [approvalNavigationTarget, setApprovalNavigationTarget] = useState<{ personId: number; date: string } | null>(null);
@@ -405,6 +427,37 @@ export function WorkingTimeWorkflowPanel({
     () => rollingWindowMarker(selectedRollingImpactDetails),
     [selectedRollingImpactDetails],
   );
+  const entryPolicy = workspace?.policies.find((policy) => policy.id === (selectedCalculation?.workRestPolicyId || selectedRegister?.workRestPolicyId)) ?? null;
+  const projectedPhases = useMemo(() => {
+    const active = { startsAt, endsAt };
+    const valid = Number.isFinite(Date.parse(startsAt)) && Date.parse(endsAt) > Date.parse(startsAt);
+    return editingIntervalId ? (valid ? [active] : []) : pendingPhases.length ? pendingPhases : valid ? [active] : [];
+  }, [editingIntervalId, endsAt, pendingPhases, startsAt]);
+  const monthPendingPhases = Object.entries(entryDrafts)
+    .filter(([key]) => key.startsWith(`${selectedPersonId}:`))
+    .flatMap(([, savedDraft]) => savedDraft.editingIntervalId
+      ? Date.parse(savedDraft.endsAt) > Date.parse(savedDraft.startsAt) ? [{ startsAt: savedDraft.startsAt, endsAt: savedDraft.endsAt }] : []
+      : savedDraft.pending.length ? savedDraft.pending
+        : Date.parse(savedDraft.endsAt) > Date.parse(savedDraft.startsAt) ? [{ startsAt: savedDraft.startsAt, endsAt: savedDraft.endsAt }] : []);
+  const monthEditingIntervalIds = Object.entries(entryDrafts)
+    .filter(([key]) => key.startsWith(`${selectedPersonId}:`))
+    .flatMap(([, savedDraft]) => savedDraft.editingIntervalId ? [savedDraft.editingIntervalId] : []);
+  const entryAnalysis = useMemo(() => {
+    if (!entryPolicy || !selectedRangeLoaded || !selectedDay) return null;
+    const coverageStart = new Date(`${range.start}T00:00`); coverageStart.setDate(coverageStart.getDate() - 7);
+    const coverageEnd = new Date(`${range.end}T00:00`); coverageEnd.setDate(coverageEnd.getDate() + 8);
+    const previousDrafts = Object.entries(entryDrafts).filter(([key]) => key.startsWith(`${selectedPersonId}:`) && key.slice(key.indexOf(':') + 1) < selectedDay);
+    const replacedIds = new Set([editingIntervalId, ...previousDrafts.map(([, savedDraft]) => savedDraft.editingIntervalId)]);
+    const previousPhases = previousDrafts.flatMap(([, savedDraft]) => savedDraft.editingIntervalId
+      ? Date.parse(savedDraft.endsAt) > Date.parse(savedDraft.startsAt) ? [{ startsAt: savedDraft.startsAt, endsAt: savedDraft.endsAt }] : []
+      : savedDraft.pending.length ? savedDraft.pending
+        : Date.parse(savedDraft.endsAt) > Date.parse(savedDraft.startsAt) ? [{ startsAt: savedDraft.startsAt, endsAt: savedDraft.endsAt }] : [])
+      .map((phase) => ({ ...phase, isPending: true }));
+    return buildWorkingTimeEntryAnalysis({ selectedDate: selectedDay,
+      history: [...selectedIntervals.filter((interval) => !replacedIds.has(interval.id)), ...previousPhases], phases: projectedPhases,
+      policy: entryPolicy, coverage: { startsAt: coverageStart.toISOString(), endsAt: coverageEnd.toISOString() },
+    });
+  }, [editingIntervalId, entryDrafts, entryPolicy, projectedPhases, range.end, range.start, selectedDay, selectedPersonId, selectedIntervals, selectedRangeLoaded]);
   const isOwnRegister = selectedRegister?.personId === currentPersonId;
   const unrestrictedEditing = canUseUnrestrictedEditing && roles.includes('admin');
   const hasCaptainRole = canActAsCaptain;
@@ -493,7 +546,7 @@ export function WorkingTimeWorkflowPanel({
   const missingCaptainComments = nonCompliantDates.filter((date) => date === selectedDay && (
     !persistedCommentDates.has(date) && !nonComplianceComplete(dayResponses[date])
   ));
-  const hasUnrestrictedPendingChanges = unrestrictedEditing && (pendingPhases.length > 0 || editingIntervalId !== null);
+  const hasUnrestrictedPendingChanges = unrestrictedEditing && (projectedPhases.length > 0 || editingIntervalId !== null);
   const canValidate = Boolean(
     !hasUnrestrictedPendingChanges && selectedDayApproval?.status === 'submitted'
       && canApproveDay(selectedDayApproval)
@@ -535,9 +588,6 @@ export function WorkingTimeWorkflowPanel({
   useEffect(() => {
     const initialDay = workingTimeInitialDay(range, localToday);
     setSelectedDay(initialDay);
-    setStartsAt(`${initialDay}T00:00`);
-    setEndsAt(`${initialDay}T00:00`);
-    setPendingPhases([]);
   }, [localToday, range.end, range.start]);
 
   useEffect(() => {
@@ -552,11 +602,8 @@ export function WorkingTimeWorkflowPanel({
     setRegisterSearch('');
     setSelectedPersonId(person.personId);
     setSelectedDay(navigationTarget.date);
-    setStartsAt(`${navigationTarget.date}T00:00`);
-    setEndsAt(`${navigationTarget.date}T00:00`);
     setRegisterView('daily');
     setRightPanelTab('compliance');
-    setPendingPhases([]);
   }, [isLoading, localToday, navigationTarget, range.end, range.start, selectedRangeLoaded, visibleReadablePeople, workspace]);
 
   useEffect(() => {
@@ -597,7 +644,6 @@ export function WorkingTimeWorkflowPanel({
         compensatoryRestPlan: comment.compensatoryRestPlan,
         comment: comment.comment,
       }])));
-    setPendingPhases([]);
   }, [selectedRegister?.id, workspace]);
 
   useEffect(() => {
@@ -716,9 +762,7 @@ export function WorkingTimeWorkflowPanel({
 
   async function persistPendingSelection() {
     if (!selectedRegister) return;
-    const phases = editingIntervalId
-      ? [{ startsAt, endsAt }]
-      : pendingPhases;
+    const phases = projectedPhases;
     if (!phases.length) return;
     const common = {
       registerId: selectedRegister.id,
@@ -747,12 +791,12 @@ export function WorkingTimeWorkflowPanel({
   }
 
   function editInterval(interval: WorkingTimeInterval) {
-    setPendingPhases([]);
-    setEditingIntervalId(interval.id);
+    const targetKey = `${selectedPersonId}:${interval.localWorkDate}`;
+    setEntryDrafts((current) => ({ ...current, [targetKey]: {
+      pending: [], editingIntervalId: interval.id, startsAt: dateTimeLocal(interval.startsAt),
+      endsAt: dateTimeLocal(interval.endsAt), comment: interval.comment || '',
+    } }));
     setSelectedDay(interval.localWorkDate);
-    setStartsAt(dateTimeLocal(interval.startsAt));
-    setEndsAt(dateTimeLocal(interval.endsAt));
-    setIntervalComment(interval.comment || '');
   }
 
   function handleEntryAction(intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') {
@@ -773,7 +817,7 @@ export function WorkingTimeWorkflowPanel({
           : 'La journée a été signée et transmise au capitaine de la bordée.'
         : 'La journée a été validée et clôturée. Les autres jours du mois restent ouverts.';
     void runAction(async () => {
-      if (pendingPhases.length || editingIntervalId) await persistPendingSelection();
+      if (projectedPhases.length || editingIntervalId) await persistPendingSelection();
       if (intent === 'submit-day') {
         await submitWorkingTimeDay(client, {
           registerId: selectedRegister.id,
@@ -808,7 +852,7 @@ export function WorkingTimeWorkflowPanel({
           <span>Aide à la décision</span>
           <div>
             {onOpenHse ? <button onClick={onOpenHse} type="button"><BarChart3 aria-hidden="true" size={21} /><small>Exposition HSE / IMCA</small></button> : null}
-            {onOpenWorkRest ? <button onClick={onOpenWorkRest} type="button"><ShieldCheck aria-hidden="true" size={21} /><small>Contrôles travail et repos</small></button> : null}
+            {onOpenWorkRest ? <button onClick={() => onOpenWorkRest()} type="button"><ShieldCheck aria-hidden="true" size={21} /><small>Contrôles travail et repos</small></button> : null}
           </div>
         </div>
 
@@ -894,6 +938,9 @@ export function WorkingTimeWorkflowPanel({
                     <button aria-selected={rightPanelTab === 'approvals'} className={rightPanelTab === 'approvals' ? 'is-active' : ''} onClick={() => setRightPanelTab('approvals')} role="tab" type="button">Approbation{pendingApprovals.length ? <em>{pendingApprovals.length}</em> : null}</button>
                   </div>
                   {rightPanelTab === 'compliance' ? <>
+                    <WorkingTimeEntryCompliance projection={entryAnalysis?.projection ?? null}
+                      policyName={entryPolicy?.name} canManagePolicy={roles.includes('admin')}
+                      onOpenPolicy={onOpenWorkRest ? () => onOpenWorkRest(entryPolicy?.id) : undefined} />
                     <article className="working-time-conformity-item"><FileClock aria-hidden="true" size={20} /><span>Travail sur 7 jours</span><strong>{compactDuration(selectedCalculation?.work7dSeconds)}</strong><small>{selectedCalculation?.workRestPolicyId ? 'Calcul serveur P1.3' : 'Politique requise'}</small></article>
                     <article className="working-time-conformity-item"><CalendarDays aria-hidden="true" size={20} /><span>Repos consécutif actuel</span><strong>{compactDuration(selectedCalculation?.longestRest24hSeconds)}</strong><small>Fenêtre glissante de 24 h</small></article>
                     <article className="working-time-conformity-item"><Bell aria-hidden="true" size={20} /><span>Alertes</span><strong>{nonCompliantDates.includes(selectedDay) ? selectedViolationDetails.length : 0}</strong><small>{nonCompliantDates.includes(selectedDay) && selectedViolationDetails[0] ? workingTimeViolationText(selectedViolationDetails[0]) : 'Aucune alerte détectée'}</small></article>
@@ -929,6 +976,9 @@ export function WorkingTimeWorkflowPanel({
                       && !canManageApproval(selectedDayApproval) && !canApproveDay(selectedDayApproval)
                       ? <p className="working-time-message is-warning">Cette journée est hors de votre période d’approbation, du {formatSelectedDay(captainApprovalStartDate).toLocaleLowerCase('fr-FR')} au {formatSelectedDay(localToday).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
                     <WorkingTimeEntryBoard
+                    allowPhaseResize
+                    preserveDayDrafts
+                    previewGraph={entryAnalysis?.graph}
                     approverName={activeDayContext?.captainCandidates.find((candidate) => candidate.personId === activeDayContext.approverPersonId)?.name || null}
                     canEdit={canEdit}
                     unrestrictedEditing={unrestrictedEditing}
@@ -984,6 +1034,9 @@ export function WorkingTimeWorkflowPanel({
                     </div>
                     ) : null}
                   </> : <WorkingTimeMonthlyView
+                    pendingPhases={monthPendingPhases}
+                    editingIntervalId={editingIntervalId}
+                    editingIntervalIds={monthEditingIntervalIds}
                     calculations={selectedCalculations}
                     intervals={selectedIntervals}
                     nonCompliantDates={nonCompliantDates}

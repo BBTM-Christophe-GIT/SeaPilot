@@ -1602,3 +1602,28 @@ reach both PDF generators; automatic diagnostics and pending phases remain
 excluded. No SQL migration, credentials, dependency or production-policy change.
 The preview remains in-memory; native mobile touch and every possible historical
 window have not been certified by this rendered check.
+
+## Production integration — 13 October 2026
+
+The real `/modules/workingTime` route now uses the accepted daily graph and
+monthly per-day bands with persisted company/vessel thresholds. Local browser
+QA used the supported in-app browser and synthetic admin data only for layout;
+actual Marin/Capitaine authorization was checked separately by source and
+authenticated SQL/profile fixtures. No simulated admin role was used as evidence
+of real profile access.
+
+At 1440×1024, day/month navigation and direct “Modifier les seuils” opening the
+existing policy editor were checked. The editor loads the policy name and all
+nine numeric limits, including preserved night-work controls. Recorded/draft
+graph colors now agree across both views. An earlier closed-day breach is
+explicitly named “Journée précédente” beside a conforming current-day total.
+At 390×844, the page remains 375 CSS pixels plus the scrollbar; the 1440-pixel
+monthly table scrolls internally in a 304-pixel region and renders 31 daily
+graphs. No page-level horizontal overflow or framework error overlay appeared.
+
+Production regressions cover keyed draft retention, both adjustable edges,
+keyboard selection saving, read-only validated Marin controls, policy editing
+permissions, multi-day correction bands and unknown history. Saved register
+PDF inputs remain unchanged. Evidence is outside Git in the same visualization
+directory: `working-time-integrated-day-desktop.png` and
+`working-time-integrated-month-mobile.png`. Native phone hardware is untested.
