@@ -18,7 +18,7 @@ function project(overrides: Partial<WorkingTimePreviewInput> = {}) {
 }
 
 describe('working time entry preview projection', () => {
-  it('shows actual rolling work, explicit bounds and the chronological excess rail', () => {
+  it('keeps raw rolling totals while applying the legacy work threshold to calculation days', () => {
     const history = Array.from({ length: 6 }, (_, index) =>
       phase(`2026-10-${String(7 + index).padStart(2, '0')}`, '09:00', '17:00'));
     const result = project({
@@ -45,7 +45,7 @@ describe('working time entry preview projection', () => {
     ]);
   });
 
-  it('does not reset work or waive the total rest requirement after six hours off', () => {
+  it('starts another calculation day after six hours off without waiving rolling rest', () => {
     const result = project({
       phases: [phase('2026-10-13', '00:00', '08:00'), phase('2026-10-13', '14:00', '22:00')],
     });
@@ -59,9 +59,11 @@ describe('working time entry preview projection', () => {
       status: 'deviation', deviation: 2,
     });
     expect(result.rules.find((rule) => rule.key === 'max_work_24h')).toMatchObject({
-      status: 'deviation', deviation: 4,
+      actual: 8, status: 'unknown', deviation: 0,
     });
-    expect(result.excessWorkSegments[0].startsAt).toBe('2026-10-13T18:00:00');
+    expect(result.calculationDays.map((day) => day.workHours)).toEqual([8, 8]);
+    expect(result.latestCalculationDay).toMatchObject({ startsAt: '2026-10-13T08:00:00', workHours: 8, restHours: 6 });
+    expect(result.excessWorkSegments).toEqual([]);
   });
 
   it('retains identical rolling bounds and rule results when entered phases are saved', () => {
@@ -140,9 +142,8 @@ describe('working time entry preview projection', () => {
     expect(result.window24.workHours).toBe(14);
     expect(result.dailyWorkHours).toBe(10);
     expect(result.window24.workSegments).toHaveLength(2);
-    expect(result.excessWorkSegments).toMatchObject([
-      { startsAt: '2026-10-13T18:00:00', endsAt: '2026-10-13T20:00:00', hours: 2 },
-    ]);
+    expect(result.maximumCalculationDay?.workHours).toBe(10);
+    expect(result.excessWorkSegments).toEqual([]);
   });
 
   it('checks weekly work and weekly rest separately with independent limits', () => {
@@ -215,6 +216,168 @@ describe('working time entry preview projection', () => {
     });
   });
 
+  it('closes a calculation day at the beginning of long rest and starts the next at the same instant', () => {
+    const result = project({
+      selectedDate: '2026-10-14',
+      history: [phase('2026-10-13', '06:00', '12:00'), phase('2026-10-13', '13:00', '18:30')],
+      phases: [phase('2026-10-14', '02:00', '07:00'), phase('2026-10-14', '08:00', '12:00'),
+        phase('2026-10-14', '18:00', '22:00')],
+    });
+
+    expect(result.calculationDays).toMatchObject([
+      { startsAt: '2026-10-13T18:30:00', endsAt: '2026-10-14T12:00:00',
+        hours: 17.5, workHours: 9, restHours: 8.5, status: 'closed', remainingHours: 0,
+        workSequence: { startsAt: '2026-10-14T02:00:00', endsAt: '2026-10-14T12:00:00', hours: 10 },
+        historyCovered: true },
+      { startsAt: '2026-10-14T12:00:00', endsAt: '2026-10-14T22:00:00',
+        hours: 10, workHours: 4, restHours: 6, status: 'open', remainingHours: 14,
+        precedingRest: { startsAt: '2026-10-14T12:00:00', endsAt: '2026-10-14T18:00:00', hours: 6 },
+        horizonEndsAt: '2026-10-15T12:00:00', historyCovered: true },
+    ]);
+    expect(result.latestCalculationDay).toEqual(result.calculationDays[1]);
+    expect(result.maximumCalculationDay).toEqual(result.calculationDays[0]);
+    expect(result.window24).toMatchObject({
+      startsAt: '2026-10-13T22:00:00', endsAt: '2026-10-14T22:00:00',
+      workHours: 13, restHours: 11, longestRestHours: 6,
+    });
+    expect(result.rules.find((rule) => rule.key === 'max_work_24h')).toMatchObject({
+      label: 'Travail maximal par journée de calcul', actual: 9, limit: 12, status: 'ok', deviation: 0,
+    });
+    expect(result.excessWorkSegments).toEqual([]);
+    // Fractioning is a separate policy rule and is not waived by the reset.
+    expect(result.rules.find((rule) => rule.key === 'max_rest_periods')).toMatchObject({ actual: 3, status: 'deviation' });
+    expect(Object.keys(result.policy)).toHaveLength(8);
+    expect(result.policy.maxWork24Hours).toBe(12);
+  });
+
+  it('opens a zero-work day after exactly six attested hours without waiting for resumed work', () => {
+    const input = {
+      selectedDate: '2026-10-14',
+      history: [phase('2026-10-13', '12:00', '15:00'), phase('2026-10-13', '22:00', '18:00', '2026-10-14')],
+    };
+    const result = project(input);
+    expect(result.calculationDays).toMatchObject([
+      { startsAt: '2026-10-13T15:00:00', endsAt: '2026-10-14T18:00:00', workHours: 20, status: 'closed' },
+      { startsAt: '2026-10-14T18:00:00', endsAt: '2026-10-15T00:00:00', workHours: 0, restHours: 6,
+        workSequence: null, status: 'open', historyCovered: true, remainingHours: 18 },
+    ]);
+    expect(result.latestCalculationDay?.horizonEndsAt).toBe('2026-10-15T18:00:00');
+    expect(result.rules.find((rule) => rule.key === 'max_work_24h')).toMatchObject({ actual: 20, deviation: 8, status: 'deviation' });
+    const sevenHours = project({ ...input, policy: { minContinuousRestHours: 7 } });
+    expect(sevenHours.calculationDays).toHaveLength(1);
+    expect(sevenHours.latestCalculationDay).toMatchObject({ workHours: 20, restHours: 13, status: 'open' });
+  });
+
+  it('keeps the rest-only day when its preceding work lies before the rolling window', () => {
+    const result = project({ selectedDate: '2026-10-14', history: [phase('2026-10-13', '06:00', '18:00')] });
+    expect(result.amplitudeSequences).toEqual([]);
+    expect(result.calculationDays).toHaveLength(1);
+    expect(result.latestCalculationDay).toMatchObject({ startsAt: '2026-10-13T18:00:00',
+      endsAt: '2026-10-15T00:00:00', workHours: 0, restHours: 30, workSequence: null, status: 'open' });
+  });
+
+  it('does not start a rest-only day from a gap outside attested coverage', () => {
+    const result = project({ selectedDate: '2026-10-14', history: [phase('2026-10-13', '06:00', '18:00')],
+      coverage: { startsAt: '2026-10-06T00:00', endsAt: '2026-10-14T00:00' } });
+    expect(result.calculationDays).toEqual([]);
+    expect(result.latestCalculationDay).toBeNull();
+    expect(result.rules.find((rule) => rule.key === 'max_work_24h')?.status).toBe('unknown');
+  });
+
+  it('keeps five and a half hours of rest inside the same calculation day', () => {
+    const result = project({
+      selectedDate: '2026-10-14', history: [phase('2026-10-13', '13:00', '18:30')],
+      phases: [phase('2026-10-14', '02:00', '07:00'), phase('2026-10-14', '08:00', '12:00'),
+        phase('2026-10-14', '17:30', '22:00')],
+    });
+
+    expect(result.calculationDays).toHaveLength(1);
+    expect(result.latestCalculationDay).toMatchObject({ startsAt: '2026-10-13T18:30:00', workHours: 13.5, status: 'open' });
+    expect(result.rules.find((rule) => rule.key === 'max_work_24h')).toMatchObject({ actual: 13.5, deviation: 1.5, status: 'deviation' });
+    expect(result.excessWorkSegments).toMatchObject([{ startsAt: '2026-10-14T20:30:00', endsAt: '2026-10-14T22:00:00', hours: 1.5 }]);
+  });
+
+  it('uses the configured rest minimum to join or separate calculation days without changing rolling totals', () => {
+    const input = {
+      selectedDate: '2026-10-14', history: [phase('2026-10-13', '13:00', '18:30')],
+      phases: [phase('2026-10-14', '02:00', '07:00'), phase('2026-10-14', '08:00', '12:00'),
+        phase('2026-10-14', '18:00', '22:00')],
+    };
+    const sixHours = project(input);
+    const sevenHours = project({ ...input, policy: { minContinuousRestHours: 7 } });
+
+    expect(sixHours.calculationDays).toHaveLength(2);
+    expect(sevenHours.calculationDays).toHaveLength(1);
+    expect(sevenHours.latestCalculationDay).toMatchObject({ startsAt: '2026-10-13T18:30:00', workHours: 13, restHours: 14.5 });
+    expect(sevenHours.rules.find((rule) => rule.key === 'max_work_24h')).toMatchObject({ actual: 13, status: 'deviation', deviation: 1 });
+    expect(sevenHours.window24).toEqual(sixHours.window24);
+    expect(sevenHours.window7).toEqual(sixHours.window7);
+  });
+
+  it('retains a breached closed calculation day after work starts in a new day', () => {
+    const result = project({
+      selectedDate: '2026-10-14', history: [phase('2026-10-13', '12:00', '18:00')],
+      phases: [phase('2026-10-14', '00:00', '13:00'), phase('2026-10-14', '19:00', '21:00')],
+    });
+
+    expect(result.calculationDays).toMatchObject([
+      { startsAt: '2026-10-13T18:00:00', endsAt: '2026-10-14T13:00:00', workHours: 13, status: 'closed' },
+      { startsAt: '2026-10-14T13:00:00', endsAt: '2026-10-14T21:00:00', workHours: 2, status: 'open' },
+    ]);
+    expect(result.latestCalculationDay?.workHours).toBe(2);
+    expect(result.maximumCalculationDay?.workHours).toBe(13);
+    expect(result.rules.find((rule) => rule.key === 'max_work_24h')).toMatchObject({ actual: 13, deviation: 1, status: 'deviation' });
+    expect(result.excessWorkSegments).toMatchObject([{ startsAt: '2026-10-14T12:00:00', endsAt: '2026-10-14T13:00:00', hours: 1 }]);
+    expect(result.rules.find((rule) => rule.key === 'min_rest_24h')).toMatchObject({ actual: 9, deviation: 1, status: 'deviation' });
+  });
+
+  it('does not truncate calculation-day work at midnight or the rolling boundary', () => {
+    const result = project({
+      history: [phase('2026-10-12', '06:00', '12:00'), phase('2026-10-12', '18:00', '06:00', '2026-10-13')],
+      phases: [phase('2026-10-13', '10:00', '22:00')],
+    });
+
+    expect(result.window24.workHours).toBe(20);
+    expect(result.latestCalculationDay).toMatchObject({ startsAt: '2026-10-12T12:00:00', endsAt: '2026-10-13T22:00:00',
+      workHours: 24, restHours: 10, status: 'open' });
+    expect(result.rules.find((rule) => rule.key === 'max_work_24h')).toMatchObject({ actual: 24, deviation: 12 });
+    expect(result.excessWorkSegments).toMatchObject([{ startsAt: '2026-10-13T10:00:00', endsAt: '2026-10-13T22:00:00', hours: 12 }]);
+  });
+
+  it('retains and chronologically unions each calculation day’s excess', () => {
+    const result = project({
+      history: [phase('2026-10-12', '06:00', '12:00'), phase('2026-10-12', '18:00', '07:00', '2026-10-13')],
+      phases: [phase('2026-10-13', '13:00', '02:00', '2026-10-14')],
+    });
+
+    expect(result.calculationDays.map((day) => day.workHours)).toEqual([13, 13]);
+    expect(result.excessWorkSegments).toMatchObject([
+      { startsAt: '2026-10-13T06:00:00', endsAt: '2026-10-13T07:00:00', hours: 1 },
+      { startsAt: '2026-10-14T01:00:00', endsAt: '2026-10-14T02:00:00', hours: 1 },
+    ]);
+  });
+
+  it('does not attest a candidate day or a closing rest outside history coverage', () => {
+    const noPreviousWork = project({ phases: [phase('2026-10-13', '08:00', '12:00')] });
+    expect(noPreviousWork.latestCalculationDay).toMatchObject({ startsAt: '2026-10-13T08:00:00',
+      precedingRest: null, historyCovered: false, status: 'open' });
+    expect(noPreviousWork.rules.find((rule) => rule.key === 'max_work_24h')?.status).toBe('unknown');
+
+    const closingRestNotCovered = project({
+      selectedDate: '2026-10-14',
+      coverage: { startsAt: '2026-10-13T18:30', endsAt: '2026-10-14T12:00' },
+      history: [phase('2026-10-13', '13:00', '18:30')],
+      phases: [phase('2026-10-14', '02:00', '07:00'), phase('2026-10-14', '08:00', '12:00'),
+        phase('2026-10-14', '18:00', '22:00')],
+    });
+    expect(closingRestNotCovered.calculationDays[0]).toMatchObject({ status: 'closed', historyCovered: false });
+    expect(closingRestNotCovered.rules.find((rule) => rule.key === 'max_work_24h')?.status).toBe('unknown');
+
+    const knownBreach = project({ coverageComplete: false, phases: [phase('2026-10-13', '02:00', '15:00')] });
+    expect(knownBreach.latestCalculationDay?.historyCovered).toBe(false);
+    expect(knownBreach.rules.find((rule) => rule.key === 'max_work_24h')).toMatchObject({ status: 'deviation', actual: 13 });
+  });
+
   it('keeps shorter rests in a sequence and uses the configurable rest threshold', () => {
     const phases = [phase('2026-10-13', '04:00', '08:00'), phase('2026-10-13', '12:00', '16:00'),
       phase('2026-10-13', '22:00', '00:00', '2026-10-14')];
@@ -280,6 +443,9 @@ describe('working time entry preview projection', () => {
     expect(result.maximumAmplitudeSequence).toMatchObject({
       startsAt: '2026-10-13T04:00:00', endsAt: '2026-10-13T08:00:00', hours: 4,
     });
+    expect(result.latestCalculationDay).toMatchObject({
+      startsAt: '2026-10-13T04:00:00', endsAt: '2026-10-13T08:00:00', workHours: 4, status: 'open',
+    });
   });
 
   it('adds an informational period since the last long rest without resetting rolling totals', () => {
@@ -306,7 +472,7 @@ describe('working time entry preview projection', () => {
       workHours: 14.5, restHours: 9.5,
     });
     expect(result.rules.find((rule) => rule.key === 'max_work_24h')).toMatchObject({
-      actual: 14.5, deviation: 2.5, status: 'deviation',
+      actual: 11.5, deviation: 0, status: 'unknown',
     });
     expect(result.rules.find((rule) => rule.key === 'min_rest_24h')).toMatchObject({
       actual: 9.5, deviation: 0.5, status: 'deviation',
@@ -402,6 +568,7 @@ describe('working time entry preview projection', () => {
     });
     expect(result.operationalPeriod?.observedWindow.workSegments.at(-1)?.endsAt).toBe('2026-10-14T12:00:00');
     expect(result.operationalPeriod?.observedWindow.restSegments.at(-1)?.endsAt).toBe('2026-10-14T08:00:00');
+    expect(result.latestCalculationDay).toMatchObject({ endsAt: '2026-10-14T12:00:00', workHours: 9, restHours: 8.5, status: 'open' });
   });
 
   it('does not invent a preceding rest or a period on a day without observed work', () => {
@@ -457,6 +624,7 @@ describe('working time entry preview projection', () => {
   it('honors exact thresholds and a configured continuous-rest minimum without modifying the demo policy', () => {
     const result = project({
       policy: { minContinuousRestHours: 13 },
+      history: [phase('2026-10-12', '08:00', '18:00')],
       phases: [phase('2026-10-13', '08:00', '20:00')],
     });
 

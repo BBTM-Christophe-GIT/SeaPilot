@@ -1535,3 +1535,70 @@ the view selector nor its diagnostic values; their existing tests remain in
 the passing module suite. The leave/rest rate remains 1.05. This is an in-memory
 preview with illustrative policy settings, not a change to production rules
 or real-profile permissions.
+
+## Working-time preview — calculation days, monthly graphs and resizable ranges (2026-10-13)
+
+Target flow: working-time preview → draw or resize pending periods → see the
+calculation day restart at the beginning of a qualifying rest → open the monthly
+register and return without losing the draft. The two analysis-mode buttons have
+been removed. The eight editable thresholds and leave/rest rate of 1.05 remain.
+
+Reference: 13 October 06:00–12:00 /13:00–18:30, followed by 14 October
+02:00–07:00 /08:00–12:00 /18:00–22:00. The user's clarified convention closes the
+preceding calculation day at12:00 (9 h work), then starts the next one at12:00
+(6 h rest +4 h work), rather than summing both work sequences against12 h.
+The rendered graph shows those exact bounds and no work-threshold marker at21:00.
+Raw24-hour rest and weekly/fractionation checks remain distinct; incomplete
+fixture coverage is explicitly unconfirmed. Earlier closed-day violations are
+retained in calculations and the relevant day's excess rail.
+
+The month has one graph for every calendar day (31 in October), a common00–24 h
+axis, saved/draft colors and union totals. Opening a date and switching months
+preserve pending work. Midnight clipping and repeated local hours are covered.
+The daily board exposes separate begin/end handles for every unsaved period,
+pointer capture with no grab jump, keyboard adjustments, collision clamping,
+30-minute minimum and cancellation rollback. Handles remain reachable at a shared
+boundary; vertically separate targets avoid overlap on a30-minute phase.
+Recorded corrections and read-only states retain their existing protection.
+The option remains disabled by default in the production component.
+
+Browser skill classification: Browser plugin skill not available; validation used
+the existing Codex in-app browser through its supported CUA Playwright/CDP APIs,
+with no new browser dependency. URL: http://127.0.0.1:5192/previews/working-time.html.
+Desktop1440×1024 and mobile-sized390×844: page identity, meaningful render, no
+framework overlay, graph calculations, month rows, pointer and keyboard actions
+verified. The first period's beginning was dragged13:00→12:30 and its end
+20:00→18:30, with the draft immediately reflected in the month graph. On the14th,
+its end was dragged07:00→08:00 (neighbor boundary), attempted08:30 (clamped), then
+returned to07:00 without losing another period. The clarified case was recreated
+through real controls, not state injection.
+
+Mobile finding fixed: the sticky date column in the wide month table propagated
+scrollable overflow to the page. `contain: layout paint` on the internal scroller
+keeps the page at375 CSS pixels plus its15-pixel scrollbar in the390-pixel
+viewport, while the960-pixel table scrolls internally. Keyboard horizontal
+scroll reached40 pixels with the date still visible. The day grid likewise
+scrolls inside its own panel. No clipping/overlap found in desktop rendering.
+A transient Vite HMR error occurred during an intermediate incomplete parent edit;
+its syntax was repaired and the full TypeScript/production build passed.
+
+Evidence is outside the repository:
+`C:/Users/chris/.codex/visualizations/2026/10/13/01a13407-dc83-7643-a05d-8c9b994c9c78/`
+with `working-time-calculation-day-desktop.png`,
+`working-time-calculation-day-mobile.png`, `working-time-month-desktop.png` and
+`working-time-month-mobile.png`. The screenshots show the restart at12:00,
+unsaved edge handles, monthly rows and responsive scroll containment.
+
+An attested final rest reaching the configured minimum also opens a day with
+zero work before any resumption. It starts at the last work's end and preserves
+earlier closed-day violations. An empty date without attested history cannot
+create this rest-only day. Exact-six-hour, adjustable-threshold and partial-
+coverage regressions cover this additional boundary.
+
+Automated checks:253 tests across21 module files passed, including real-profile
+fixtures, preview interactions, projection edge cases and PDF input coverage.
+Targeted ESLint and production build passed. Only saved hours/comments/signatures
+reach both PDF generators; automatic diagnostics and pending phases remain
+excluded. No SQL migration, credentials, dependency or production-policy change.
+The preview remains in-memory; native mobile touch and every possible historical
+window have not been certified by this rendered check.

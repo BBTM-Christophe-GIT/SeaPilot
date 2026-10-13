@@ -50,8 +50,8 @@ describe('WorkingTimePreview real entry workflow', () => {
 
     await user.click(screen.getByRole('button', { name: 'Retirer la période 1' }));
 
-    expect(graph()).toHaveAccessibleName(/Analyse des périodes enregistrées.*Cumul : 11 h 00.*Aucun dépassement/);
-    // The rolling window also contains five hours of J-1; today's six hours stay recorded.
+    expect(graph()).toHaveAccessibleName(/Analyse des périodes enregistrées.*Cumul : 6 h 00/);
+    // Removing the draft preserves today's recorded work; J-1 is in a separate calculation day.
     expect(within(grid()).getAllByRole('gridcell', { name: /travail enregistré/ })).toHaveLength(12);
     expect(screen.queryByText(/Seuil atteint à/)).not.toBeInTheDocument();
     expect(within(grid()).getByRole('gridcell', { name: /^06:00, travail enregistré/ })).toBeInTheDocument();
@@ -115,7 +115,7 @@ describe('WorkingTimePreview real entry workflow', () => {
     await user.click(screen.getByRole('button', { name: 'Enregistrer la correction' }));
 
     expect(await screen.findByText('Brouillon enregistré dans la préversion.')).toBeInTheDocument();
-    expect(graph()).toHaveAccessibleName(/Cumul : 11 h 00/);
+    expect(graph()).toHaveAccessibleName(/Cumul : 4 h 00/);
     expect(within(grid()).getAllByRole('gridcell', { name: /travail enregistré/ })).toHaveLength(8);
     expect(within(grid()).getByRole('gridcell', { name: /^10:00, repos/ })).toBeInTheDocument();
     await user.click(within(grid()).getByRole('gridcell', { name: /^06:00, travail enregistré/ }));
@@ -218,7 +218,7 @@ describe('WorkingTimePreview real entry workflow', () => {
     render(<WorkingTimePreview />);
     await user.click(screen.getByRole('button', { name: 'Modifier les seuils' }));
     let dialog = screen.getByRole('dialog');
-    const dailyMaximum = within(dialog).getByRole('spinbutton', { name: /^Travail.*24 h/ });
+    const dailyMaximum = within(dialog).getByRole('spinbutton', { name: /^Travail.*journée de calcul/ });
     expect(dailyMaximum).toHaveValue(12);
     expect(within(dialog).getByRole('spinbutton', { name: /^Repos.*24 h/ })).toHaveValue(10);
     expect(within(dialog).getByRole('spinbutton', { name: /^Travail.*7 jours/ })).toHaveValue(84);
@@ -227,11 +227,12 @@ describe('WorkingTimePreview real entry workflow', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Appliquer les seuils' }));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(graph()).toHaveAccessibleName(/Cumul : 13 h 00.*Aucun dépassement/);
+    expect(graph()).toHaveAccessibleName(/Cumul : 13 h 00/);
+    expect(graph()).not.toHaveAccessibleName(/Dépassement \+/);
     expect(screen.queryByText(/Seuil atteint à/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Modifier les seuils' }));
     dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByRole('spinbutton', { name: /^Travail.*24 h/ })).toHaveValue(14);
+    expect(within(dialog).getByRole('spinbutton', { name: /^Travail.*journée de calcul/ })).toHaveValue(14);
     expect(within(dialog).getByRole('spinbutton', { name: /^Repos.*24 h/ })).toHaveValue(10);
     expect(within(dialog).getByRole('spinbutton', { name: /^Repos continu/ })).toHaveValue(6);
     const weeklyMaximum = within(dialog).getByRole('spinbutton', { name: /^Travail.*7 jours/ });
@@ -239,7 +240,8 @@ describe('WorkingTimePreview real entry workflow', () => {
     await user.type(weeklyMaximum, '60');
     await user.click(within(dialog).getByRole('button', { name: 'Appliquer les seuils' }));
 
-    expect(graph()).toHaveAccessibleName(/Cumul : 13 h 00.*Aucun dépassement/);
+    expect(graph()).toHaveAccessibleName(/Cumul : 13 h 00/);
+    expect(graph()).not.toHaveAccessibleName(/Dépassement \+/);
     const weeklyWarning = screen.getByRole('heading', { name: 'Travail sur 7 jours' }).closest('article')!;
     expect(within(weeklyWarning).getByText('61 h 00')).toBeInTheDocument();
     expect(within(weeklyWarning).getByText('maximum 60 h')).toBeInTheDocument();
@@ -290,7 +292,9 @@ describe('WorkingTimePreview real entry workflow', () => {
     const amplitude = within(analysis).getByText('Amplitude entre repos').closest<HTMLElement>('.wtp-rule')!;
     expect(within(amplitude).getByText('12 h 00')).toBeInTheDocument();
     expect(within(amplitude).getByText('04:00–16:00')).toBeInTheDocument();
-    expect(graph()).toHaveAccessibleName(/Cumul : 10 h 00.*Aucun dépassement/);
+    expect(graph()).toHaveAccessibleName(/Cumul : 2 h 00.*Aucun dépassement/);
+    expect(graph()).toHaveAccessibleName(/Journée clôturée : 13 oct., 12:00 → 14 oct., 16:00 · 8 h 00 de travail/);
+    expect(graph()).toHaveAccessibleName(/Repos au départ : 16:00–22:00 \(6 h 00\)/);
     expect(within(analysis).getByText('Historique incomplet — analyse à confirmer')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Modifier les seuils' }));
@@ -305,7 +309,7 @@ describe('WorkingTimePreview real entry workflow', () => {
     expect(graph()).toHaveAccessibleName(/Cumul : 10 h 00.*Aucun dépassement/);
   });
 
-  it('separates the period since the last long rest from rolling alerts without changing saved work', async () => {
+  it('closes a calculation day at the start of six hours of rest and begins the next at that same instant', async () => {
     const user = userEvent.setup();
     render(<WorkingTimePreview />);
     await user.click(screen.getByRole('button', { name: 'Retirer la période 1' }));
@@ -314,29 +318,58 @@ describe('WorkingTimePreview real entry workflow', () => {
     await user.click(screen.getByRole('tab', { name: /mer 14 oct/ }));
     selectClockRange('02:00', '06:30');
     selectClockRange('08:00', '11:30');
-    expect(graph()).toHaveAccessibleName(/Cumul : 14 h 30.*Dépassement \+2 h 30/);
+    selectClockRange('18:00', '21:30');
 
-    await user.click(screen.getByRole('button', { name: 'Depuis le dernier repos long' }));
-    expect(graph()).toHaveAccessibleName(/Période observée : 13 oct., 18:30 → 14 oct., 12:00.*Cumul depuis le repos long : 9 h 00/);
-    expect(graph()).toHaveAccessibleName(/Repos calculé : 8 h 30.*Repère de 24 h : 14 oct., 18:30.*bilan en cours/);
-    expect(graph()).not.toHaveAccessibleName(/Aucun dépassement|Seuil atteint|Dépassement \+/);
+    expect(screen.queryByRole('button', { name: /24 h glissantes/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Depuis le dernier repos long' })).not.toBeInTheDocument();
+    expect(graph()).toHaveAccessibleName(/Journée de calcul : 14 oct., 12:00 → 14 oct., 22:00.*Cumul : 4 h 00/);
+    expect(graph()).toHaveAccessibleName(/Journée clôturée : 13 oct., 18:30 → 14 oct., 12:00 · 9 h 00 de travail/);
+    expect(graph()).toHaveAccessibleName(/Repos au départ : 12:00–18:00 \(6 h 00\)/);
+    expect(graph()).toHaveAccessibleName(/Repère de 24 h : 15 oct., 12:00 · bilan en cours/);
+    expect(graph()).toHaveAccessibleName(/Travail sur 24 h glissantes : 13 h 00/);
+    expect(graph()).not.toHaveAccessibleName(/Seuil atteint|Dépassement \+/);
     expect(screen.queryByText(/Seuil atteint à/)).not.toBeInTheDocument();
-    const analysis = screen.getByLabelText('Analyse de la saisie');
-    expect(within(analysis).getByText('Période en cours')).toBeInTheDocument();
-    expect(within(analysis).getByText(/17 h 30 observées/)).toBeInTheDocument();
-    expect(within(analysis).getByText('9 h 00')).toBeInTheDocument();
-    expect(within(analysis).getByText('8 h 30')).toBeInTheDocument();
-    expect(within(analysis).getByText('7 h 30')).toBeInTheDocument();
-    expect(within(analysis).queryByText(/Aucun écart|Conforme/)).not.toBeInTheDocument();
-    expect(within(analysis).getByRole('button', { name: 'Voir les 2 écarts sur 24 h / 7 jours' })).toBeInTheDocument();
 
-    await user.type(screen.getByLabelText('Commentaire'), 'Travail effectué — repos à examiner.');
+    await user.click(screen.getByRole('button', { name: 'Modifier les seuils' }));
+    const dialog = screen.getByRole('dialog');
+    const continuousRest = within(dialog).getByRole('spinbutton', { name: /^Repos continu/ });
+    await user.clear(continuousRest);
+    await user.type(continuousRest, '7');
+    await user.click(within(dialog).getByRole('button', { name: 'Appliquer les seuils' }));
+
+    expect(graph()).toHaveAccessibleName(/Journée de calcul : 13 oct., 18:30 → 14 oct., 22:00.*Cumul : 13 h 00.*Dépassement \+1 h 00.*Seuil atteint à 21 h 00/);
+    expect(graph()).not.toHaveAccessibleName(/Journée clôturée : 13 oct., 18:30 → 14 oct., 12:00/);
+    expect(screen.getByRole('button', { name: /Période 3 18:00–22:00/ })).toBeInTheDocument();
+    expect(within(grid()).queryAllByRole('gridcell', { name: /travail enregistré/ })).toHaveLength(0);
+  });
+
+  it('keeps rolling rest deviations separate from calculation-day work and recalculates cross-day amplitude', async () => {
+    const user = userEvent.setup();
+    render(<WorkingTimePreview />);
+    await user.click(screen.getByRole('button', { name: 'Retirer la période 1' }));
+    selectClockRange('13:00', '18:00');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await user.click(screen.getByRole('tab', { name: /mer 14 oct/ }));
+    selectClockRange('02:00', '06:30');
+    selectClockRange('08:00', '11:30');
+
+    expect(graph()).toHaveAccessibleName(/Journée de calcul : 13 oct., 18:30 → 14 oct., 12:00.*Cumul : 9 h 00/);
+    expect(graph()).toHaveAccessibleName(/Travail sur 24 h glissantes : 14 h 30/);
+    expect(graph()).not.toHaveAccessibleName(/Seuil atteint|Dépassement \+/);
+    await user.click(screen.getByRole('button', { name: 'Contrôles travail et repos' }));
+    const controls = screen.getByRole('dialog', { name: 'Contrôles travail et repos' });
+    const restRow = within(controls).getByRole('row', { name: /Repos sur 24 h/ });
+    expect(restRow).toHaveTextContent('9 h 30');
+    expect(restRow).toHaveTextContent('minimum 10 h');
+    expect(restRow).toHaveTextContent('Écart');
+    const workRow = within(controls).getByRole('row', { name: /Travail maximal par journée de calcul/ });
+    expect(workRow).not.toHaveTextContent('Écart');
+    await user.click(within(controls).getByRole('button', { name: 'Fermer' }));
+
+    await user.type(screen.getByRole('textbox', { name: /^Commentaire/ }), 'Travail effectué — repos à examiner.');
     await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
     expect(await screen.findByText('Brouillon enregistré dans la préversion.')).toBeInTheDocument();
-    expect(graph()).toHaveAccessibleName(/Analyse des périodes enregistrées.*Cumul depuis le repos long : 9 h 00/);
-    await user.click(within(analysis).getByRole('button', { name: 'Voir les 2 écarts sur 24 h / 7 jours' }));
-    expect(graph()).toHaveAccessibleName(/Cumul : 14 h 30.*Dépassement \+2 h 30/);
-    expect(within(analysis).getByRole('heading', { name: 'Repos sur 24 h' })).toBeInTheDocument();
+    expect(graph()).toHaveAccessibleName(/Analyse des périodes enregistrées.*Cumul : 9 h 00/);
     expect(within(grid()).getAllByRole('gridcell', { name: /travail enregistré/ })).toHaveLength(18);
 
     await user.click(screen.getByRole('button', { name: 'Modifier les seuils' }));
@@ -345,19 +378,100 @@ describe('WorkingTimePreview real entry workflow', () => {
     await user.clear(continuousRest);
     await user.type(continuousRest, '8');
     await user.click(within(dialog).getByRole('button', { name: 'Appliquer les seuils' }));
-    await user.click(screen.getByRole('button', { name: 'Depuis le dernier repos long' }));
-    const sequence = within(analysis).getByText('Amplitude de la séquence').closest('div')!;
-    expect(sequence).toHaveTextContent('30 h 00');
-    expect(within(sequence).getByText('13 oct., 06:00 → 14 oct., 12:00')).toBeInTheDocument();
+    const analysis = screen.getByLabelText('Analyse de la saisie');
+    const amplitude = within(analysis).getByRole('heading', { name: 'Amplitude entre repos' }).closest('article')!;
+    expect(amplitude).toHaveTextContent('30 h 00');
+    expect(amplitude).toHaveTextContent('13 oct., 06:00 → 14 oct., 12:00');
+    expect(graph()).toHaveAccessibleName(/Cumul : 20 h 30.*Dépassement \+8 h 30/);
   });
 
-  it('does not invent a long-rest period for a day without work', async () => {
+  it('does not invent a calculation day or certify rest for a day without work', async () => {
     const user = userEvent.setup();
     render(<WorkingTimePreview />);
     await user.click(screen.getByRole('tab', { name: /mer 14 oct/ }));
-    await user.click(screen.getByRole('button', { name: 'Depuis le dernier repos long' }));
-    expect(screen.getByText('Début de période à confirmer')).toBeInTheDocument();
-    expect(graph()).toHaveAccessibleName(/Période non identifiée/);
+    expect(graph()).toHaveAccessibleName(/Journée de calcul : début à confirmer.*Cumul : 0 h 00.*Aucune journée de calcul identifiable pour ce jour/);
     expect(graph()).not.toHaveAccessibleName(/Aucun dépassement/);
+  });
+
+  it('shows recorded and pending daily graphs in the month table and preserves the draft when opening a day', async () => {
+    const user = userEvent.setup();
+    render(<WorkingTimePreview />);
+    await user.click(screen.getByRole('button', { name: 'Mois' }));
+
+    expect(screen.getByRole('heading', { level: 2, name: 'octobre 2026' })).toBeInTheDocument();
+    const table = screen.getByRole('table', { name: /Détail des heures du registre/ });
+    expect(within(table).getAllByRole('row')).toHaveLength(32);
+    expect(within(table).getAllByRole('img')).toHaveLength(31);
+    expect(within(table).getByRole('img', { name: /mar. 13 oct.*enregistré : 06:00–12:00.*à enregistrer : 13:00–20:00.*total : 13 h 00/ })).toBeInTheDocument();
+    expect(within(table).getByRole('img', { name: /mer. 14 oct.*aucune période saisie, repos non attesté/ })).toBeInTheDocument();
+
+    await user.click(within(table).getByRole('button', { name: /Ouvrir le mer. 14 oct./ }));
+    expect(screen.getByRole('heading', { level: 2, name: 'mercredi 14 octobre' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retirer la période 1' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Mois' }));
+    await user.click(screen.getByRole('button', { name: /Saisir le mar. 13 oct./ }));
+    expect(graph()).toHaveAccessibleName(/Projection en cours de saisie.*Cumul : 13 h 00/);
+    expect(screen.getByRole('button', { name: 'Retirer la période 1' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    expect(await screen.findByText('Brouillon enregistré dans la préversion.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Mois' }));
+    expect(screen.getByRole('img', { name: /mar. 13 oct.*enregistré : 06:00–12:00, 13:00–20:00.*total : 13 h 00/ })).toBeInTheDocument();
+    expect(screen.queryByText('dont 7 h 00 à enregistrer')).not.toBeInTheDocument();
+  });
+
+  it('adjusts both draft edges, recalculates the work limit and preserves adjusted hours through the month view and PDF save', async () => {
+    const user = userEvent.setup();
+    render(<WorkingTimePreview />);
+    const endHandle = screen.getByRole('button', { name: 'Ajuster la fin de la période 1, 20:00' });
+    endHandle.focus();
+    await user.keyboard('{ArrowLeft}');
+    expect(graph()).toHaveAccessibleName(/Cumul : 12 h 30.*Dépassement \+0 h 30.*Seuil atteint à 19 h 00/);
+    await user.keyboard('{ArrowLeft}');
+    expect(graph()).toHaveAccessibleName(/Cumul : 12 h 00/);
+    expect(screen.queryByText(/Seuil atteint à/)).not.toBeInTheDocument();
+    screen.getByRole('button', { name: 'Ajuster le début de la période 1, 13:00' }).focus();
+    await user.keyboard('{ArrowRight}');
+    expect(graph()).toHaveAccessibleName(/Cumul : 11 h 30/);
+    expect(screen.getByRole('button', { name: /Période 1 13:30–19:00/ })).toBeInTheDocument();
+    expect(within(grid()).getByRole('gridcell', { name: /^06:00, travail enregistré/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Mois' }));
+    expect(screen.getByRole('img', { name: /mar. 13 oct.*enregistré : 06:00–12:00.*à enregistrer : 13:30–19:00.*total : 11 h 30/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Export PDF' }));
+    await waitFor(() => expect(buildPdf).toHaveBeenCalledTimes(1));
+    const beforeSave = (buildPdf.mock.calls[0][0] as WorkingTimePreviewPdfInput).days.find((day) => day.date === '2026-10-13')!;
+    expect(beforeSave.phases).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', { name: /Saisir le mar. 13 oct./ }));
+    expect(screen.getByRole('button', { name: /Période 1 13:30–19:00/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ajuster la fin de la période 1, 19:00' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    expect(await screen.findByText('Brouillon enregistré dans la préversion.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Ajuster (?:le début|la fin)/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Export PDF' }));
+    await waitFor(() => expect(buildPdf).toHaveBeenCalledTimes(2));
+    const saved = (buildPdf.mock.calls[1][0] as WorkingTimePreviewPdfInput).days.find((day) => day.date === '2026-10-13')!;
+    expect(saved.phases).toHaveLength(2);
+    expect(saved.phases).toContainEqual(expect.objectContaining({ startsAt: '2026-10-13T13:30', endsAt: '2026-10-13T19:00' }));
+    expect(saved).not.toHaveProperty('rules');
+  });
+
+  it('keeps the monthly table when changing months and retains the original draft', async () => {
+    const user = userEvent.setup();
+    render(<WorkingTimePreview />);
+    await user.click(screen.getByRole('button', { name: 'Mois' }));
+    await user.click(screen.getByRole('button', { name: 'Mois suivant' }));
+
+    expect(screen.getByRole('button', { name: 'Mois' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('heading', { level: 2, name: 'novembre 2026' })).toBeInTheDocument();
+    expect(within(screen.getByRole('table', { name: /Détail des heures du registre/ })).getAllByRole('row')).toHaveLength(31);
+
+    await user.click(screen.getByRole('button', { name: 'Mois précédent' }));
+    expect(screen.getByRole('heading', { level: 2, name: 'octobre 2026' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /mar. 13 oct.*à enregistrer : 13:00–20:00.*total : 13 h 00/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Saisir le mar. 13 oct./ }));
+    expect(screen.getByRole('button', { name: 'Jour' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Retirer la période 1' })).toBeInTheDocument();
   });
 });

@@ -11,6 +11,7 @@ export interface PreviewWorkPhase {
 }
 
 export interface PreviewPolicy {
+  /** Legacy field name: effective work per calculation day, beginning at a long rest. */
   maxWork24Hours: number;
   minRest24Hours: number;
   minContinuousRestHours: number;
@@ -62,6 +63,18 @@ export interface PreviewOperationalPeriod {
   historyCovered: boolean;
 }
 
+/** A calculation day starts at the beginning of its preceding qualifying rest. */
+export interface PreviewCalculationDay extends PreviewWindow {
+  /** Null while the new day contains only an attested qualifying rest. */
+  workSequence: PreviewSegment | null;
+  precedingRest: PreviewSegment | null;
+  status: 'open' | 'closed';
+  horizonEndsAt: string;
+  remainingHours: number;
+  /** Also covers the qualifying rest that closes this day, when observed. */
+  historyCovered: boolean;
+}
+
 export type PreviewRuleKey =
   | 'max_work_24h'
   | 'min_rest_24h'
@@ -110,6 +123,9 @@ export interface WorkingTimePreviewProjection {
   amplitudeSequences: PreviewSegment[];
   maximumAmplitudeSequence: PreviewSegment | null;
   operationalPeriod: PreviewOperationalPeriod | null;
+  calculationDays: PreviewCalculationDay[];
+  latestCalculationDay: PreviewCalculationDay | null;
+  maximumCalculationDay: PreviewCalculationDay | null;
   dailyWorkHours: number;
   rules: PreviewRuleResult[];
   excessWorkSegments: PreviewSegment[];
@@ -260,14 +276,74 @@ function latestOperationalPeriod(
   };
 }
 
+function buildCalculationDays(
+  work: readonly TimeRange[],
+  sequences: readonly PreviewSegment[],
+  windowEnd: number,
+  restHours: number,
+  historyCovers: (bounds: TimeRange) => boolean,
+): PreviewCalculationDay[] {
+  const observedWork = work.filter((range) => range.startMs < windowEnd)
+    .map((range) => ({ ...range, endMs: Math.min(range.endMs, windowEnd) }));
+  const days: PreviewCalculationDay[] = sequences.map((workSequence) => {
+    const previousWork = observedWork.filter((range) => range.endMs <= workSequence.startMs).at(-1);
+    const precedingRest = previousWork && (workSequence.startMs - previousWork.endMs) / HOUR_MS >= restHours
+      ? segment({ startMs: previousWork.endMs, endMs: workSequence.startMs }) : null;
+    // The next long rest closes this day at the beginning of that rest. The
+    // same instant becomes the next day's start, even before work resumes.
+    const nextWork = observedWork.find((range) => range.startMs >= workSequence.endMs);
+    const followingRestEnd = nextWork?.startMs ?? windowEnd;
+    const closed = (followingRestEnd - workSequence.endMs) / HOUR_MS >= restHours;
+    const bounds = {
+      startMs: precedingRest?.startMs ?? workSequence.startMs,
+      endMs: closed ? workSequence.endMs : windowEnd,
+    };
+    const horizonEnd = bounds.startMs + DAY_MS;
+    return {
+      ...windowMetrics(observedWork, bounds),
+      workSequence,
+      precedingRest,
+      status: closed ? 'closed' : 'open',
+      horizonEndsAt: localIso(horizonEnd),
+      remainingHours: closed ? 0 : Math.max(0, (horizonEnd - bounds.endMs) / HOUR_MS),
+      historyCovered: precedingRest !== null && historyCovers({
+        startMs: bounds.startMs,
+        endMs: closed ? followingRestEnd : bounds.endMs,
+      }),
+    };
+  });
+  const lastWork = observedWork.at(-1);
+  if (lastWork && windowEnd > lastWork.endMs
+    && (windowEnd - lastWork.endMs) / HOUR_MS >= restHours) {
+    const bounds = { startMs: lastWork.endMs, endMs: windowEnd };
+    // An empty date alone never attests rest. With observed coverage, the new
+    // day already exists at the rest's beginning, before any work resumes.
+    if (historyCovers(bounds)) {
+      const horizonEnd = bounds.startMs + DAY_MS;
+      days.push({
+        ...windowMetrics(observedWork, bounds),
+        workSequence: null,
+        precedingRest: segment(bounds),
+        status: 'open',
+        horizonEndsAt: localIso(horizonEnd),
+        remainingHours: Math.max(0, (horizonEnd - bounds.endMs) / HOUR_MS),
+        historyCovered: true,
+      });
+    }
+  }
+  return days;
+}
+
 /**
  * Projects the entered phases together with retained history. The caller must
  * remove replaced phases from history first. The displayed rolling windows end
  * at the latest entered phase; with no entry, they end at the latest recorded
  * phase starting on the selected day, or at that day's end if it is empty.
  * Amplitude is the longest sequence touching the 24-hour window, with a new
- * sequence after the configured continuous rest. Work/rest totals never reset
- * at that rest and merge all overlaps independently of amplitude.
+ * sequence after the configured continuous rest. Calculation days start at the
+ * beginning of that rest and close at the next qualifying rest's beginning.
+ * Their work cap is independent of raw rolling work/rest totals, which never
+ * reset and merge all overlaps independently of amplitude.
  */
 export function analyzeWorkingTimePreview(input: WorkingTimePreviewInput): WorkingTimePreviewProjection {
   const dayStart = new Date(`${input.selectedDate}T00:00:00`).getTime();
@@ -321,30 +397,36 @@ export function analyzeWorkingTimePreview(input: WorkingTimePreviewInput): Worki
       && window24.startMs >= coverageStart && window24.endMs <= coverageEnd
     : input.coverageComplete === true;
   const coverageComplete = windowsCovered && invalidPhases.length === 0;
+  const historyCovers = (bounds: TimeRange) => invalidPhases.length === 0 && (input.coverage
+    ? coverageStart !== null && coverageEnd !== null
+      && Number.isFinite(coverageStart) && Number.isFinite(coverageEnd)
+      && coverageEnd > coverageStart
+      && bounds.startMs >= coverageStart && bounds.endMs <= coverageEnd
+    : input.coverageComplete === true);
+  const calculationDays = buildCalculationDays(work, sequences, windowEnd, policy.minContinuousRestHours, historyCovers);
+  const latestCalculationDay = calculationDays.at(-1) ?? null;
+  const maximumCalculationDay = calculationDays.reduce<PreviewCalculationDay | null>((largest, current) =>
+    !largest || current.workHours > largest.workHours ? current : largest, null);
   const operationalPeriod = latestOperationalPeriod(
     work, sequences, { startMs: dayStart, endMs: dayEnd }, windowEnd,
-    policy.minContinuousRestHours,
-    (bounds) => invalidPhases.length === 0 && (input.coverage
-      ? coverageStart !== null && coverageEnd !== null
-        && Number.isFinite(coverageStart) && Number.isFinite(coverageEnd)
-        && coverageEnd > coverageStart
-        && bounds.startMs >= coverageStart && bounds.endMs <= coverageEnd
-      : input.coverageComplete === true),
+    policy.minContinuousRestHours, historyCovers,
   );
   const rules: PreviewRuleResult[] = [];
   const rule = (key: PreviewRuleKey, label: string, actual: number, limit: number,
     direction: PreviewRuleResult['direction'], window: PreviewRuleResult['window'],
-    unit: PreviewRuleResult['unit'] = 'hours', requiresCompleteHistory = false) => {
+    unit: PreviewRuleResult['unit'] = 'hours', requiresCompleteHistory = false, covered = coverageComplete) => {
     const deviation = Math.max(0, direction === 'maximum' ? actual - limit : limit - actual);
     const canEstablishDeviation = deviation > EPSILON && !requiresCompleteHistory;
     rules.push({
       key, label, actual, limit, direction, window, unit,
       deviation: deviation > EPSILON ? deviation : 0,
-      status: coverageComplete ? (deviation > EPSILON ? 'deviation' : 'ok')
+      status: covered ? (deviation > EPSILON ? 'deviation' : 'ok')
         : (canEstablishDeviation ? 'deviation' : 'unknown'),
     });
   };
-  rule('max_work_24h', 'Travail sur 24 h', window24.workHours, policy.maxWork24Hours, 'maximum', '24h');
+  rule('max_work_24h', 'Travail maximal par journée de calcul', maximumCalculationDay?.workHours ?? 0,
+    policy.maxWork24Hours, 'maximum', '24h', 'hours', false,
+    calculationDays.length ? calculationDays.every((day) => day.historyCovered) : coverageComplete);
   rule('min_rest_24h', 'Repos sur 24 h', window24.restHours, policy.minRest24Hours, 'minimum', '24h');
   rule('min_continuous_rest', 'Repos continu', window24.longestRestHours,
     policy.minContinuousRestHours, 'minimum', '24h');
@@ -358,7 +440,8 @@ export function analyzeWorkingTimePreview(input: WorkingTimePreviewInput): Worki
   return {
     policy, window24, window7, dailyAmplitudeHours, dailyWorkHours, rules,
     amplitudeSequences: sequences, maximumAmplitudeSequence, operationalPeriod,
-    excessWorkSegments: exceededWork(window24.workSegments, policy.maxWork24Hours),
+    calculationDays, latestCalculationDay, maximumCalculationDay,
+    excessWorkSegments: mergeRanges(calculationDays.flatMap((day) => exceededWork(day.workSegments, policy.maxWork24Hours))).map(segment),
     coverageComplete, invalidPhases,
   };
 }

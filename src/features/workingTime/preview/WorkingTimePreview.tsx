@@ -8,8 +8,9 @@ import { UserAvatar } from '../../../components/UserAvatar';
 import { WorkingTimeEntryBoard, type WorkingTimeEntryGraphPreview } from '../WorkingTimeEntryBoard';
 import type { WorkingTimeInterval } from '../workingTimeModel';
 import type { WorkingTimePhaseInput } from '../workingTimeQueries';
-import { analyzeWorkingTimePreview, PREVIEW_DEMO_POLICY, type PreviewPolicy, type PreviewRuleResult, type WorkingTimePreviewProjection } from './workingTimePreviewProjection';
+import { analyzeWorkingTimePreview, PREVIEW_DEMO_POLICY, type PreviewPolicy, type PreviewRuleResult } from './workingTimePreviewProjection';
 import { createPreviewIntervals, PREVIEW_DATE, PREVIEW_LEAVE_REST_RATE, PREVIEW_PEOPLE, previewAddDays, previewDateTime, previewDuration, previewInterval, previewMonthDays } from './workingTimePreviewData';
+import { WorkingTimeMonthPreview } from './WorkingTimeMonthPreview';
 
 type DayStatus = 'draft' | 'signed' | 'validated' | 'reopened';
 interface DayDraft {
@@ -21,10 +22,10 @@ interface DayDraft {
 interface DayApproval { status: DayStatus; sailorSignedAt?: string; captainSignedAt?: string; justification?: string[] }
 type Dialog = 'crew' | 'rules' | 'hse' | 'report' | 'import' | 'void' | 'justify' | 'reopen' | 'policy' | null;
 const JUSTIFICATION_LABELS = ['Catégorie de cause', 'Contexte opérationnel', 'Action immédiate', 'Repos compensateur prévu', 'Commentaire obligatoire'];
-const MAIN_RULES = ['min_rest_24h', 'min_continuous_rest', 'max_work_7d', 'max_amplitude'];
+const MAIN_RULES = ['max_work_24h', 'min_rest_24h', 'min_continuous_rest', 'max_work_7d', 'max_amplitude'];
 const SIDEBAR_ITEMS = [{ label: 'Accueil', icon: Home, module: 'home' }, { label: 'QHSE', icon: ShieldCheck, module: 'qhse' }, { label: 'Opérations', icon: Activity, module: 'dpr' }, { label: 'Achats', icon: ShoppingCart, module: 'purchaseRequests' }, { label: 'Planning', icon: CalendarDays, module: 'planning' }];
 const POLICY_FIELDS: Array<{ key: keyof PreviewPolicy; label: string; maximum: number; periods?: boolean }> = [
-  { key: 'maxWork24Hours', label: 'Travail / 24 h', maximum: 24 },
+  { key: 'maxWork24Hours', label: 'Travail / journée de calcul', maximum: 24 },
   { key: 'minRest24Hours', label: 'Repos / 24 h', maximum: 24 },
   { key: 'minContinuousRestHours', label: 'Repos continu', maximum: 24 },
   { key: 'maxWork7DaysHours', label: 'Travail / 7 jours', maximum: 168 },
@@ -61,33 +62,6 @@ function segmentBounds(segment: { startsAt: string; endsAt: string }): string {
     : `${previewDateTime(segment.startsAt)} → ${previewDateTime(segment.endsAt)}`;
 }
 
-function OperationalPeriodSummary({ period, deviationCount, onShowRolling, onEditPolicy }: {
-  period: WorkingTimePreviewProjection['operationalPeriod'];
-  deviationCount: number;
-  onShowRolling: () => void;
-  onEditPolicy: () => void;
-}) {
-  return <div className="wtp-operational-summary">
-    <div className="wtp-status"><Clock3 size={20} /><div><strong>{period ? period.remainingHours > 0 ? 'Période en cours' : 'Repère de 24 h atteint' : 'Début de période à confirmer'}</strong>
-      <p>{period ? `Repère de 24 h : ${previewDateTime(period.horizonEndsAt)}.` : 'Un repos long encadré par deux périodes de travail est nécessaire pour identifier le départ.'}</p>
-      <p>{period?.remainingHours ? `Encore ${previewDuration(period.remainingHours)} avant ce repère. Le repos futur n’est pas compté.` : 'Cette lecture ne remplace pas le contrôle sur 24 h glissantes.'}</p>
-    </div></div>
-    {period ? <>
-      <p className="wtp-operational-window">{previewDateTime(period.observedWindow.startsAt)} → {previewDateTime(period.observedWindow.endsAt)}<br />{previewDuration(period.observedWindow.hours)} observées</p>
-      <dl className="wtp-operational-metrics">
-        <div><dt>Travail depuis le repos long</dt><dd>{previewDuration(period.observedWindow.workHours)}</dd></div>
-        <div><dt>Repos calculé sur les plages saisies</dt><dd>{previewDuration(period.observedWindow.restHours)}</dd></div>
-        <div><dt>Repos avant la reprise</dt><dd>{previewDuration(period.precedingRest.hours)}</dd></div>
-        <div><dt>Amplitude de la séquence</dt><dd>{previewDuration(period.amplitude.hours)}<small>{segmentBounds(period.amplitude)}</small></dd></div>
-      </dl>
-      {!period.historyCovered ? <p className="wtp-analysis-note">Historique incomplet · début du repos et valeurs à confirmer.</p> : null}
-    </> : null}
-    <button className="wtp-details sp-button" onClick={onShowRolling} type="button">{deviationCount ? `Voir ${deviationCount === 1 ? 'l’écart' : `les ${deviationCount} écarts`} sur 24 h / 7 jours` : 'Voir les contrôles sur 24 h / 7 jours'}<ChevronRight size={16} /></button>
-    <button className="wtp-details sp-button" onClick={onEditPolicy} type="button">Modifier les seuils</button>
-    <small className="wtp-analysis-note">Lecture de la période depuis le repos long. Le bilan glissant reste distinct.</small>
-  </div>;
-}
-
 export function WorkingTimePreview() {
   const [personId, setPersonId] = useState<number>(9301);
   const [selectedDay, setSelectedDay] = useState(PREVIEW_DATE);
@@ -103,7 +77,6 @@ export function WorkingTimePreview() {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [view, setView] = useState<'day' | 'month'>('day');
   const [sideTab, setSideTab] = useState<'rules' | 'approval'>('rules');
-  const [analysisView, setAnalysisView] = useState<'rolling' | 'operational'>('rolling');
   const [crewSearch, setCrewSearch] = useState('');
   const [showFormer, setShowFormer] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -129,18 +102,27 @@ export function WorkingTimePreview() {
   const approval = approvals[key] || { status: 'draft' as const };
   const canEdit = person.active && approval.status !== 'signed' && approval.status !== 'validated';
   const personIntervals = useMemo(() => intervals.filter((interval) => interval.personId === personId), [intervals, personId]);
+  const monthPendingPhases = useMemo(() => Object.entries(drafts)
+    .filter(([draftId]) => draftId.startsWith(`${personId}:`))
+    .flatMap(([draftId, dayDraft]) => {
+      const phase = { startsAt: dayDraft.startsAt, endsAt: dayDraft.endsAt };
+      if (editingIntervalId && draftId === draftKey(personId, selectedDay)) return validPhase(phase) ? [phase] : [];
+      return [...dayDraft.pending, ...(validPhase(phase) ? [phase] : [])];
+    }), [drafts, personId, selectedDay, editingIntervalId]);
   const activePhase = { startsAt: draft.startsAt, endsAt: draft.endsAt };
   const projectedPhases = editingIntervalId ? (validPhase(activePhase) ? [activePhase] : []) : [...draft.pending, ...(validPhase(activePhase) ? [activePhase] : [])];
   const projection = analyzeWorkingTimePreview({ selectedDate: selectedDay, history: personIntervals.filter((interval) => interval.id !== editingIntervalId), phases: projectedPhases, policy, coverage: DEMO_COVERAGE });
   const deviations = projection.rules.filter((rule) => rule.status === 'deviation');
+  const analysisConfirmed = projection.rules.every((rule) => rule.status !== 'unknown');
   const amplitude = projection.maximumAmplitudeSequence;
   const amplitudeBounds = amplitude ? segmentBounds(amplitude) : '';
+  const workDayBounds = projection.maximumCalculationDay ? segmentBounds(projection.maximumCalculationDay) : '';
   const workDeviation = deviations.find((rule) => rule.key === 'max_work_24h');
   const windowLabel = `${previewDateTime(projection.window24.startsAt)} → ${previewDateTime(projection.window24.endsAt)}`;
-  const firstExcess = projection.excessWorkSegments[0];
-  const operationalPeriod = projection.operationalPeriod;
+  const calculationDay = projection.latestCalculationDay;
   const dayStart = Date.parse(`${selectedDay}T00:00`);
   const dayEnd = Date.parse(`${previewAddDays(selectedDay, 1)}T00:00`);
+  const firstExcess = projection.excessWorkSegments.find((segment) => segment.startMs >= dayStart && segment.startMs < dayEnd);
   function phaseLabel(phase: WorkingTimePhaseInput, isPending: boolean) {
     const startMinute = localMinute(Date.parse(phase.startsAt), selectedDay);
     const endMinute = localMinute(Date.parse(phase.endsAt), selectedDay);
@@ -153,36 +135,31 @@ export function WorkingTimePreview() {
       ...personIntervals.filter((interval) => interval.id !== editingIntervalId && Date.parse(interval.startsAt) < dayEnd && Date.parse(interval.endsAt) > dayStart).map((interval) => phaseLabel(interval, false)),
       ...mergeDraftPhases(projectedPhases).filter((phase) => Date.parse(phase.startsAt) < dayEnd && Date.parse(phase.endsAt) > dayStart).map((phase) => phaseLabel(phase, true)),
     ],
-    workLimitMarkerMinute: firstExcess && firstExcess.startMs >= Date.parse(`${selectedDay}T00:00`) && firstExcess.startMs <= Date.parse(`${previewAddDays(selectedDay, 1)}T00:00`) ? localMinute(firstExcess.startMs, selectedDay) : null,
+    workLimitMarkerMinute: firstExcess && firstExcess.startMs >= dayStart ? localMinute(firstExcess.startMs, selectedDay) : null,
     excessRanges: projection.excessWorkSegments.filter((segment) => segment.endMs > Date.parse(`${selectedDay}T00:00`) && segment.startMs < Date.parse(`${previewAddDays(selectedDay, 1)}T00:00`)).map((segment) => ({ startMinute: localMinute(segment.startMs, selectedDay), endMinute: localMinute(segment.endMs, selectedDay) })),
-    windowLabel: `Fenêtre analysée : ${windowLabel}`,
-    workTotalLabel: `Cumul : ${previewDuration(projection.window24.workHours)}`,
+    windowLabel: calculationDay
+      ? `Journée de calcul : ${previewDateTime(calculationDay.startsAt)} → ${previewDateTime(calculationDay.endsAt)}`
+      : 'Journée de calcul : début à confirmer',
+    workTotalLabel: `Cumul : ${previewDuration(calculationDay?.workHours ?? 0)}`,
     excessLabel: workDeviation ? `Dépassement +${previewDuration(workDeviation.deviation)}` : null,
+    summaryLabel: calculationDay ? undefined : 'Aucune journée de calcul identifiable pour ce jour.',
+    contextNotes: calculationDay ? [
+      ...projection.calculationDays.filter((day) => day.status === 'closed').map((day) => `Journée clôturée : ${previewDateTime(day.startsAt)} → ${previewDateTime(day.endsAt)} · ${previewDuration(day.workHours)} de travail`),
+      ...(calculationDay.precedingRest ? [`Repos au départ : ${segmentBounds(calculationDay.precedingRest)} (${previewDuration(calculationDay.precedingRest.hours)})`] : []),
+      `Repère de 24 h : ${previewDateTime(calculationDay.horizonEndsAt)}${calculationDay.remainingHours > 0 ? ' · bilan en cours' : ' · repère atteint'}`,
+      `Travail sur 24 h glissantes : ${previewDuration(projection.window24.workHours)}`,
+      ...(!calculationDay.historyCovered ? ['Historique incomplet · début et valeurs à confirmer.'] : []),
+    ] : [],
     isProjected: projectedPhases.length > 0,
   };
-  if (analysisView === 'operational') {
-    graph.workLimitMarkerMinute = null;
-    graph.excessRanges = [];
-    graph.excessLabel = null;
-    graph.ruleAlerts = [];
-    graph.windowLabel = operationalPeriod
-      ? `Période observée : ${previewDateTime(operationalPeriod.observedWindow.startsAt)} → ${previewDateTime(operationalPeriod.observedWindow.endsAt)}`
-      : 'Période depuis le dernier repos long : début à confirmer';
-    graph.workTotalLabel = operationalPeriod ? `Cumul depuis le repos long : ${previewDuration(operationalPeriod.observedWindow.workHours)}` : 'Période non identifiée';
-    graph.summaryLabel = 'Lecture opérationnelle. Les contrôles glissants sont dans la vue 24 h glissantes.';
-    graph.contextNotes = operationalPeriod ? [
-      `Repos calculé : ${previewDuration(operationalPeriod.observedWindow.restHours)}`,
-      `Repère de 24 h : ${previewDateTime(operationalPeriod.horizonEndsAt)}${operationalPeriod.remainingHours > 0 ? ' · bilan en cours' : ' · repère atteint'}`,
-    ] : [];
-    graph.analysisStatusLabel = 'Lecture opérationnelle · bilan glissant distinct';
-  }
   const client = useMemo(() => ({
     rpc: async (name: string, args: Record<string, unknown>) => {
       if (name !== 'working_time_phases_recommendation') return { data: null, error: { message: 'Opération indisponible dans cette préversion.' } };
       const phases = (args.p_phases as Array<{ starts_at: string; ends_at: string }>).map((phase) => ({ startsAt: phase.starts_at, endsAt: phase.ends_at }));
       const result = analyzeWorkingTimePreview({ selectedDate: selectedDay, history: personIntervals.filter((interval) => interval.id !== args.p_exclude_interval_id), phases, policy, coverage: DEMO_COVERAGE });
       const failures = result.rules.filter((rule) => rule.status === 'deviation');
-      return { error: null, data: { status: failures.length ? 'non_conforme' : result.coverageComplete ? 'conforme' : 'sans_politique', policy_id: 1, policy_name: 'Règles de démonstration', already_non_compliant: failures.length > 0, work_24h_seconds: result.window24.workHours * 3600, work_7d_seconds: result.window7.workHours * 3600, rest_24h_seconds: result.window24.restHours * 3600, longest_rest_24h_seconds: result.window24.longestRestHours * 3600, available_24h_seconds: Math.max(0, policy.maxWork24Hours - result.window24.workHours) * 3600, available_7d_seconds: Math.max(0, policy.maxWork7DaysHours - result.window7.workHours) * 3600, max_additional_seconds: Math.max(0, Math.min(policy.maxWork24Hours - result.window24.workHours, policy.maxWork7DaysHours - result.window7.workHours)) * 3600, violation_codes: failures.map((rule) => rule.key) } };
+      const currentWork = result.latestCalculationDay?.workHours ?? 0;
+      return { error: null, data: { status: failures.length ? 'non_conforme' : result.rules.every((rule) => rule.status === 'ok') ? 'conforme' : 'sans_politique', policy_id: 1, policy_name: 'Règles de démonstration', already_non_compliant: failures.length > 0, work_24h_seconds: currentWork * 3600, work_7d_seconds: result.window7.workHours * 3600, rest_24h_seconds: result.window24.restHours * 3600, longest_rest_24h_seconds: result.window24.longestRestHours * 3600, available_24h_seconds: Math.max(0, policy.maxWork24Hours - currentWork) * 3600, available_7d_seconds: Math.max(0, policy.maxWork7DaysHours - result.window7.workHours) * 3600, max_additional_seconds: Math.max(0, Math.min(policy.maxWork24Hours - currentWork, policy.maxWork7DaysHours - result.window7.workHours)) * 3600, violation_codes: failures.map((rule) => rule.key) } };
     },
   }) as unknown as SupabaseClient, [personIntervals, selectedDay, policy]);
 
@@ -228,6 +205,7 @@ export function WorkingTimePreview() {
   function changeMonth(direction: number) {
     const date = new Date(`${selectedDay.slice(0, 7)}-01T12:00:00`); date.setMonth(date.getMonth() + direction);
     chooseDay(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`);
+    setView(view);
   }
   async function exportPdf(kind: 'register' | 'report') {
     setIsBusy(true);
@@ -300,15 +278,14 @@ export function WorkingTimePreview() {
             <div className="wtp-view-switch" aria-label="Vue du registre"><button aria-pressed={view === 'day'} onClick={() => setView('day')} type="button">Jour</button><button aria-pressed={view === 'month'} onClick={() => setView('month')} type="button">Mois</button></div>
           </div>
           {message ? <div className="wtp-feedback" role="status">{message}</div> : null}
-          <div className="wtp-workspace">
+          <div className={`wtp-workspace${view === 'month' ? ' is-month' : ''}`}>
             <section className="wtp-editor sp-panel">
-              <header className="wtp-day-heading"><h2>{dateLabel}</h2><div><small>Journée : {previewDuration(projection.dailyWorkHours)}</small><span>{stateLabel}</span></div></header>
-              {view === 'day' ? <div className="wtp-analysis-views" role="group" aria-label="Fenêtre de lecture"><button className="sp-button" aria-pressed={analysisView === 'rolling'} onClick={() => setAnalysisView('rolling')} type="button">24 h glissantes{deviations.length ? <span className="wtp-rolling-count">{deviations.length} {deviations.length === 1 ? 'écart' : 'écarts'}</span> : null}</button><button className="sp-button" aria-pressed={analysisView === 'operational'} onClick={() => setAnalysisView('operational')} type="button">Depuis le dernier repos long</button></div> : null}
-              {view === 'month' ? <div className="wtp-month-list"><h3>Détail des heures du registre</h3>{monthDays.map((day) => { const saved = personIntervals.filter((interval) => interval.localWorkDate === day); const result = analyzeWorkingTimePreview({ selectedDate: day, history: personIntervals, phases: [], policy, coverage: DEMO_COVERAGE }); return <button key={day} onClick={() => chooseDay(day)} type="button"><strong>{new Intl.DateTimeFormat('fr-FR', { day: 'numeric', weekday: 'short' }).format(new Date(`${day}T12:00`))}</strong><span>{saved.map((interval) => `${interval.startsAt.slice(11, 16)}–${interval.endsAt.slice(11, 16)}`).join(' · ') || 'Aucune période enregistrée'}</span><b>{previewDuration(result.dailyWorkHours)}</b></button>; })}</div> : <WorkingTimeEntryBoard
+              <header className="wtp-day-heading"><h2>{view === 'month' ? new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' }).format(new Date(`${selectedDay}T12:00`)) : dateLabel}</h2>{view === 'day' ? <div><small>Journée : {previewDuration(projection.dailyWorkHours)}</small><span>{stateLabel}</span></div> : null}</header>
+              {view === 'month' ? <WorkingTimeMonthPreview days={monthDays} recorded={personIntervals.filter((interval) => interval.id !== editingIntervalId)} pending={monthPendingPhases} selectedDay={selectedDay} onChooseDay={chooseDay} /> : <WorkingTimeEntryBoard
                 key={`${personId}:${selectedDay}`}
                 client={client} personId={personId} periodStart={weekStart < monthDays[0] ? monthDays[0] : weekStart} periodEnd={previewAddDays(weekStart, 6) > monthDays.at(-1)! ? monthDays.at(-1)! : previewAddDays(weekStart, 6)}
                 intervals={personIntervals} canEdit={canEdit} isSaving={false} startsAt={draft.startsAt} endsAt={draft.endsAt} planningVesselId={1} planningWatchGroup="Bordée 1" comment={draft.comment} editingIntervalId={editingIntervalId} pendingPhases={draft.pending} selectedDay={selectedDay} approverName="Camille DEMO" hasRecordedPeriods={personIntervals.some((interval) => interval.localWorkDate === selectedDay)} showSaveDraft showSubmitToCaptain={canEdit}
-                previewGraph={graph} analysisStatus={deviations.length ? 'non_conforme' : projection.coverageComplete ? 'conforme' : 'sans_politique'} nonCompliantDates={deviations.length ? [selectedDay] : []}
+                allowPhaseResize previewGraph={graph} analysisStatus={deviations.length ? 'non_conforme' : analysisConfirmed ? 'conforme' : 'sans_politique'} nonCompliantDates={deviations.length ? [selectedDay] : []}
                 onStartsAtChange={(value) => { if (!ignoreNavigationEdits.current) updateDraft({ startsAt: value }); }} onEndsAtChange={(value) => { if (!ignoreNavigationEdits.current) updateDraft({ endsAt: value }); }} onCommentChange={(value) => updateDraft({ comment: value })} onPendingPhasesChange={(pending) => updateDraft({ pending })} onSelectedDayChange={chooseDay} onSubmit={submit}
                 onCancelEdit={() => { setEditingIntervalId(null); updateDraft(draftBeforeCorrection || blankDraft(selectedDay)); setDraftBeforeCorrection(null); }}
                 onEditInterval={(interval) => { setDraftBeforeCorrection({ ...draft, pending: [...draft.pending] }); setEditingIntervalId(interval.id); updateDraft({ startsAt: interval.startsAt, endsAt: interval.endsAt, pending: [], comment: interval.comment || '' }); }}
@@ -319,13 +296,11 @@ export function WorkingTimePreview() {
             <aside className="wtp-analysis sp-panel" aria-label="Analyse de la saisie">
               <div className="wtp-side-tabs"><button aria-pressed={sideTab === 'rules'} onClick={() => setSideTab('rules')} type="button">Conformité</button><button aria-pressed={sideTab === 'approval'} onClick={() => setSideTab('approval')} type="button">Approbation{approval.status === 'signed' ? <b>1</b> : null}</button></div>
               {sideTab === 'rules' ? <>
-                {analysisView === 'operational' ? <OperationalPeriodSummary period={operationalPeriod} deviationCount={deviations.length} onShowRolling={() => setAnalysisView('rolling')} onEditPolicy={openPolicy} /> : <>
-                {deviations.length ? deviations.map((rule) => <article className="wtp-deviation" key={rule.key}><AlertTriangle size={20} /><div><h3>{rule.label}</h3><strong>{ruleValue(rule)}</strong>{rule.key === 'max_amplitude' && amplitudeBounds ? <span>{amplitudeBounds}</span> : null}<span>{ruleLimit(rule)}</span><b>{rule.direction === 'maximum' ? '+' : 'Manque '}{rule.unit === 'periods' ? rule.deviation : previewDuration(rule.deviation)}</b><button onClick={() => setDialog('rules')} type="button">Voir la fenêtre analysée <ChevronRight size={14} /></button></div></article>) : <div className={`wtp-status ${projection.coverageComplete ? 'is-ok' : ''}`}><CheckCircle2 size={20} />{projection.coverageComplete ? 'Aucun écart dans la fenêtre analysée' : 'Historique incomplet — analyse à confirmer'}</div>}
+                {deviations.length ? deviations.map((rule) => <article className="wtp-deviation" key={rule.key}><AlertTriangle size={20} /><div><h3>{rule.label}</h3><strong>{ruleValue(rule)}</strong>{rule.key === 'max_amplitude' && amplitudeBounds ? <span>{amplitudeBounds}</span> : rule.key === 'max_work_24h' && workDayBounds ? <span>{workDayBounds}</span> : null}<span>{ruleLimit(rule)}</span><b>{rule.direction === 'maximum' ? '+' : 'Manque '}{rule.unit === 'periods' ? rule.deviation : previewDuration(rule.deviation)}</b><button onClick={() => setDialog('rules')} type="button">Voir la fenêtre analysée <ChevronRight size={14} /></button></div></article>) : <div className={`wtp-status ${analysisConfirmed ? 'is-ok' : ''}`}><CheckCircle2 size={20} />{analysisConfirmed ? 'Aucun écart dans la fenêtre analysée' : 'Historique incomplet — analyse à confirmer'}</div>}
                 <div className="wtp-policy-edit"><h4>Seuils de la règle de démonstration</h4><button onClick={openPolicy} type="button">Modifier les seuils</button></div>
-                {projection.rules.filter((rule) => MAIN_RULES.includes(rule.key) && rule.status !== 'deviation').map((rule) => <div className="wtp-rule" key={rule.key}>{rule.status === 'ok' ? <CheckCircle2 size={20} /> : <Clock3 size={20} />}<span>{rule.label}</span><strong>{ruleValue(rule)}{rule.key === 'max_amplitude' && amplitudeBounds ? <small>{amplitudeBounds}</small> : null}<small>{ruleLimit(rule)}</small></strong></div>)}
+                {projection.rules.filter((rule) => MAIN_RULES.includes(rule.key) && rule.status !== 'deviation').map((rule) => <div className="wtp-rule" key={rule.key}>{rule.status === 'ok' ? <CheckCircle2 size={20} /> : <Clock3 size={20} />}<span>{rule.label}</span><strong>{ruleValue(rule)}{rule.key === 'max_amplitude' && amplitudeBounds ? <small>{amplitudeBounds}</small> : rule.key === 'max_work_24h' && workDayBounds ? <small>{workDayBounds}</small> : null}<small>{ruleLimit(rule)}</small></strong></div>)}
                 <button className="wtp-details sp-button" onClick={() => setDialog('rules')} type="button">Détails des règles<ChevronRight size={16} /></button>
                 <small className="wtp-analysis-note">{projectedPhases.length ? 'Projection de la saisie · ' : ''}Les règles illustrées ne remplacent pas la politique applicable au navire et au personnel.</small>
-                </>}
               </> : <div className="wtp-approval"><h3>{stateLabel}</h3><p>Marin : {person.name}</p><p>{approval.sailorSignedAt ? 'Signature de démonstration apposée' : 'Signature en attente'}</p><hr /><p>Approbateur : Camille DEMO</p><p>{approval.captainSignedAt ? 'Approbation de démonstration apposée' : 'Approbation en attente'}</p>{approval.status === 'signed' ? <button className="sp-button sp-button--primary" disabled={!projection.coverageComplete} onClick={approveDay} type="button">Valider la journée</button> : null}{deviations.length && approval.status === 'signed' ? <p>La justification ne rend pas la journée conforme. Les écarts restent à examiner.</p> : null}{approval.status === 'signed' || approval.status === 'validated' ? <button className="sp-button" onClick={() => { setReason(''); setDialog('reopen'); }} type="button">Réouvrir pour correction</button> : null}<details><summary>Historique des actions</summary>{history.length ? history.map((event, index) => <p key={index}>{event}</p>) : <p>Aucune action enregistrée.</p>}{archivedApprovals.filter((entry) => entry.personId === personId).map((entry, index) => <p key={`approval-${index}`}>Signature historisée · {entry.day} · marin : {entry.approval.sailorSignedAt || '—'} · capitaine : {entry.approval.captainSignedAt || '—'} · motif : {entry.reason}</p>)}{archivedIntervals.filter((entry) => entry.interval.personId === personId).map((entry) => <p key={`removed-${entry.interval.id}`}>Période retirée : {entry.interval.startsAt.slice(11, 16)}–{entry.interval.endsAt.slice(11, 16)} · {entry.interval.comment || ''} · motif : {entry.reason}</p>)}</details></div>}
             </aside>
           </div>
@@ -338,13 +313,13 @@ export function WorkingTimePreview() {
         setPolicy({ ...editablePolicy }); setDialog(null); setMessage('Seuils de démonstration appliqués. Les heures restent inchangées.');
       }} footer={<><button className="sp-button" onClick={() => setEditablePolicy({ ...PREVIEW_DEMO_POLICY })} type="button">Rétablir les seuils initiaux</button><button className="sp-button sp-button--primary" type="submit">Appliquer les seuils</button></>}>
         <div className="wtp-policy-fields">{POLICY_FIELDS.map((field) => <label className="wtp-field" key={field.key}>{field.label}<input type="number" min={field.periods ? 1 : 0.5} max={field.maximum} step={field.periods ? 1 : 0.5} required value={Number.isFinite(editablePolicy[field.key]) ? editablePolicy[field.key] : ''} onChange={(event) => setEditablePolicy((current) => ({ ...current, [field.key]: event.target.valueAsNumber }))} /><small>{field.periods ? 'périodes au maximum' : field.key.startsWith('min') ? 'heures au minimum' : 'heures au maximum'}</small></label>)}</div>
-        <p>Le repos continu minimal sépare les séquences d’amplitude. Les cumuls de travail et de repos restent calculés sur les fenêtres glissantes.</p>
+        <p>Un repos atteignant le minimum continu clôture la journée de calcul à son début. La journée suivante commence à ce même instant. Le repos sur 24 h et les cumuls sur 7 jours restent contrôlés séparément.</p>
         {policyError ? <p role="alert">{policyError}</p> : null}
       </AppDialog> : null}
       {dialog === 'crew' ? <AppDialog title="Équipage" onClose={() => setDialog(null)}><label className="wtp-search"><Search size={18} /><input aria-label="Rechercher un marin" placeholder="Rechercher un marin…" value={crewSearch} onChange={(event) => setCrewSearch(event.target.value)} /></label><div className="wtp-view-switch"><button aria-pressed={!showFormer} onClick={() => setShowFormer(false)} type="button">Personnel en poste</button><button aria-pressed={showFormer} onClick={() => setShowFormer(true)} type="button">Personnel ancien</button></div><div className="wtp-crew-list">{shownPeople.map((candidate) => <button key={candidate.id} onClick={() => choosePerson(candidate.id)} type="button"><UserAvatar initials={candidate.name.slice(0, 1) + 'D'} /><span><strong>{candidate.name}</strong><small>{candidate.function}</small></span></button>)}{!shownPeople.length ? <p>Aucun marin correspondant.</p> : null}</div></AppDialog> : null}
       {dialog === 'rules' || dialog === 'hse' || dialog === 'report' ? <AppDialog title={dialog === 'hse' ? 'Exposition HSE / IMCA' : dialog === 'report' ? 'Rapport de conformité' : 'Contrôles travail et repos'} onClose={() => setDialog(null)} size="lg" description={`24 h : ${windowLabel} · 7 jours : ${previewDateTime(projection.window7.startsAt)} → ${previewDateTime(projection.window7.endsAt)}`}>
         <p>Analyse indicative des données fictives. Le repos total, le repos continu et le fractionnement sont contrôlés séparément.</p>
-        <div className="wtp-rule-table"><table><thead><tr><th>Contrôle</th><th>Valeur</th><th>Seuil</th><th>Résultat</th></tr></thead><tbody>{projection.rules.map((rule) => <tr key={rule.key}><td>{rule.label}</td><td>{ruleValue(rule)}{rule.key === 'max_amplitude' && amplitudeBounds ? <small className="wtp-amplitude-bounds">{amplitudeBounds}</small> : null}</td><td>{ruleLimit(rule)}</td><td>{rule.status === 'deviation' ? 'Écart' : rule.status === 'unknown' ? 'À confirmer' : 'Respecté'}</td></tr>)}</tbody></table></div>
+        <div className="wtp-rule-table"><table><thead><tr><th>Contrôle</th><th>Valeur</th><th>Seuil</th><th>Résultat</th></tr></thead><tbody>{projection.rules.map((rule) => <tr key={rule.key}><td>{rule.label}</td><td>{ruleValue(rule)}{rule.key === 'max_amplitude' && amplitudeBounds ? <small className="wtp-amplitude-bounds">{amplitudeBounds}</small> : rule.key === 'max_work_24h' && workDayBounds ? <small className="wtp-amplitude-bounds">{workDayBounds}</small> : null}</td><td>{ruleLimit(rule)}</td><td>{rule.status === 'deviation' ? 'Écart' : rule.status === 'unknown' ? 'À confirmer' : 'Respecté'}</td></tr>)}</tbody></table></div>
         <p>L’amplitude affichée est la plus longue séquence touchant la fenêtre de 24 h, séparée de la suivante par au moins {policy.minContinuousRestHours} h de repos continu. Un passage à minuit ne remet pas le compteur à zéro.</p>
         <p>La moyenne de 11 h nécessite un cycle défini ; cette préversion ne l’assimile pas à un plafond quotidien.</p>
         {dialog === 'report' ? <button className="sp-button sp-button--primary" disabled={isBusy} onClick={() => void exportPdf('report')} type="button"><FileDown size={18} />Exporter les données factuelles en PDF</button> : null}

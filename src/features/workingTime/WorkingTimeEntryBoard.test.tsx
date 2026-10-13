@@ -40,6 +40,11 @@ const previewGraph: WorkingTimeEntryGraphPreview = {
   isProjected: true,
 };
 
+const unsavedPhases: WorkingTimePhaseInput[] = [
+  { startsAt: '2026-08-03T08:00', endsAt: '2026-08-03T12:00' },
+  { startsAt: '2026-08-03T14:00', endsAt: '2026-08-03T16:00' },
+];
+
 function measureTimelineCells(cells: HTMLElement[]) {
   cells.forEach((cell, slot) => {
     vi.spyOn(cell, 'getBoundingClientRect').mockReturnValue({
@@ -80,6 +85,11 @@ function Harness({
   unrestrictedEditing = false,
   previewGraph,
   analysisStatus,
+  allowPhaseResize = false,
+  initialPendingPhases = [],
+  canEdit = true,
+  isSaving = false,
+  editingIntervalId = null,
 }: {
   onSubmit?: (phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') => void;
   saveDraft?: boolean;
@@ -93,21 +103,27 @@ function Harness({
   unrestrictedEditing?: boolean;
   previewGraph?: WorkingTimeEntryGraphPreview;
   analysisStatus?: WorkingTimeEntryRecommendation['status'];
+  allowPhaseResize?: boolean;
+  initialPendingPhases?: WorkingTimePhaseInput[];
+  canEdit?: boolean;
+  isSaving?: boolean;
+  editingIntervalId?: number | null;
 }) {
-  const [startsAt, setStartsAt] = useState('2026-08-03T08:00');
-  const [endsAt, setEndsAt] = useState('2026-08-03T12:00');
-  const [pendingPhases, setPendingPhases] = useState<WorkingTimePhaseInput[]>([]);
+  const [startsAt, setStartsAt] = useState(initialPendingPhases.at(-1)?.startsAt || '2026-08-03T08:00');
+  const [endsAt, setEndsAt] = useState(initialPendingPhases.at(-1)?.endsAt || '2026-08-03T12:00');
+  const [pendingPhases, setPendingPhases] = useState<WorkingTimePhaseInput[]>(initialPendingPhases);
   return (
     <WorkingTimeEntryBoard
       approverName={approverName}
-      canEdit
+      canEdit={canEdit}
+      allowPhaseResize={allowPhaseResize}
       unrestrictedEditing={unrestrictedEditing}
       client={{} as SupabaseClient}
       comment=""
-      editingIntervalId={null}
+      editingIntervalId={editingIntervalId}
       endsAt={endsAt}
       intervals={intervals}
-      isSaving={false}
+      isSaving={isSaving}
       onCancelEdit={vi.fn()}
       onCommentChange={vi.fn()}
       onEndsAtChange={setEndsAt}
@@ -322,6 +338,171 @@ describe('WorkingTimeEntryBoard', () => {
     touchPointer(cells[28], 'pointerdown', 670);
     touchPointer(cells[28], 'pointerup', 670);
     expect(screen.getByText('14:00–14:30')).toBeInTheDocument();
+  });
+
+  it('keeps phase resizing opt-in and leaves the 48 grid cells unchanged', () => {
+    const { rerender, container } = render(<Harness initialPendingPhases={unsavedPhases} />);
+    expect(screen.queryByRole('group', { name: 'Ajuster les périodes à enregistrer' })).not.toBeInTheDocument();
+
+    rerender(<Harness allowPhaseResize initialPendingPhases={unsavedPhases} />);
+    expect(screen.getByRole('group', { name: 'Ajuster les périodes à enregistrer' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Ajuster (le début|la fin) de la période/ })).toHaveLength(4);
+    expect(screen.getAllByRole('gridcell')).toHaveLength(48);
+    expect(container.querySelector('button button')).not.toBeInTheDocument();
+    expect(screen.getByRole('grid').querySelector('.working-time-phase-resize-handle')).not.toBeInTheDocument();
+  });
+
+  it('resizes both edges of different unsaved periods and submits their updated times', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<Harness allowPhaseResize initialPendingPhases={unsavedPhases} onSubmit={onSubmit} previewGraph={previewGraph} />);
+    const cells = screen.getAllByRole('gridcell');
+    measureTimelineCells(cells);
+    const start = screen.getByRole('button', { name: 'Ajuster le début de la période 1, 08:00' });
+    const startCapture = capturedPointer(start);
+    // The pointer starts off-centre inside the handle and retains that offset.
+    touchPointer(start, 'pointerdown', 429);
+    touchPointer(start, 'pointermove', 389);
+    expect(screen.getByRole('button', { name: /Période 1 07:00–12:00/ })).toBeInTheDocument();
+    expect(cells[14]).toHaveClass('is-pending', 'is-selected');
+    touchPointer(start, 'pointerup', 389);
+    expect(startCapture.set).toHaveBeenCalledWith(17);
+    expect(startCapture.release).toHaveBeenCalledWith(17);
+
+    const end = screen.getByRole('button', { name: 'Ajuster la fin de la période 2, 16:00' });
+    capturedPointer(end);
+    touchPointer(end, 'pointerdown', 734);
+    touchPointer(end, 'pointermove', 774);
+    touchPointer(end, 'pointerup', 774);
+    expect(screen.getByRole('button', { name: /Période 2 14:00–17:00/ })).toBeInTheDocument();
+    expect(cells[33]).toHaveClass('is-pending', 'is-selected');
+    await user.click(screen.getByRole('button', { name: 'Valider' }));
+    expect(onSubmit).toHaveBeenCalledWith([
+      { startsAt: '2026-08-03T07:00', endsAt: '2026-08-03T12:00' },
+      { startsAt: '2026-08-03T14:00', endsAt: '2026-08-03T17:00' },
+    ], 'submit-day');
+    await waitFor(() => expect(fetchWorkingTimePhasesRecommendation).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      phases: [
+        { startsAt: new Date('2026-08-03T07:00').toISOString(), endsAt: new Date('2026-08-03T12:00').toISOString() },
+        { startsAt: new Date('2026-08-03T14:00').toISOString(), endsAt: new Date('2026-08-03T17:00').toISOString() },
+      ],
+    })));
+  });
+
+  it.each(['pointercancel', 'lostpointercapture', 'Escape'])('restores all periods and the previous active range on %s', (cancellation) => {
+    render(<Harness allowPhaseResize initialPendingPhases={unsavedPhases} previewGraph={previewGraph} />);
+    const cells = screen.getAllByRole('gridcell');
+    measureTimelineCells(cells);
+    const start = screen.getByRole('button', { name: 'Ajuster le début de la période 1, 08:00' });
+    const capture = capturedPointer(start);
+    touchPointer(start, 'pointerdown', 420);
+    touchPointer(start, 'pointermove', 380);
+    expect(screen.getByRole('button', { name: /Période 1 07:00–12:00/ })).toBeInTheDocument();
+    if (cancellation === 'Escape') fireEvent.keyDown(start, { key: 'Escape' });
+    else touchPointer(start, cancellation, 380);
+
+    expect(screen.getByRole('button', { name: /Période 1 08:00–12:00/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Période 2 14:00–16:00/ })).toBeInTheDocument();
+    expect(cells[16]).toHaveAttribute('aria-selected', 'false');
+    expect(cells[28]).toHaveAttribute('aria-selected', 'true');
+    expect(capture.release).toHaveBeenCalledWith(17);
+    touchPointer(start, 'pointermove', 340);
+    expect(screen.queryByRole('button', { name: /Période 1 06:00–12:00/ })).not.toBeInTheDocument();
+  });
+
+  it('keeps the timeline from creating another range during a captured resize', () => {
+    render(<Harness allowPhaseResize initialPendingPhases={unsavedPhases} previewGraph={previewGraph} />);
+    const cells = screen.getAllByRole('gridcell');
+    measureTimelineCells(cells);
+    const start = screen.getByRole('button', { name: 'Ajuster le début de la période 1, 08:00' });
+    capturedPointer(start);
+    touchPointer(start, 'pointerdown', 420);
+    touchPointer(start, 'pointermove', 380);
+    touchPointer(cells[36], 'pointerdown', 830);
+    touchPointer(cells[36], 'pointerup', 830);
+    touchPointer(start, 'pointerup', 380);
+
+    expect(screen.getByRole('button', { name: /Période 1 07:00–12:00/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Période 2 14:00–16:00/ })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Retirer la période/ })).toHaveLength(2);
+  });
+
+  it('adjusts phase boundaries by keyboard in 30-minute steps with a minimum 30-minute period', async () => {
+    const user = userEvent.setup();
+    render(<Harness allowPhaseResize initialPendingPhases={[unsavedPhases[0]]} />);
+    const start = screen.getByRole('button', { name: 'Ajuster le début de la période 1, 08:00' });
+    start.focus();
+    await user.keyboard('{ArrowRight}');
+    expect(start).toHaveAccessibleName('Ajuster le début de la période 1, 08:30');
+    expect(start).toHaveFocus();
+    await user.keyboard('{End}{ArrowRight}');
+    expect(screen.getByRole('button', { name: /Période 1 11:30–12:00/ })).toBeInTheDocument();
+
+    const end = screen.getByRole('button', { name: 'Ajuster la fin de la période 1, 12:00' });
+    end.focus();
+    await user.keyboard('{Home}{ArrowLeft}{ArrowRight}{ArrowDown}');
+    expect(screen.getByRole('button', { name: /Période 1 11:30–12:00/ })).toBeInTheDocument();
+  });
+
+  it('bounds pointer resizing at midnight and keeps the full-day phase intact', () => {
+    render(<Harness allowPhaseResize initialPendingPhases={[unsavedPhases[0]]} />);
+    measureTimelineCells(screen.getAllByRole('gridcell'));
+    const start = screen.getByRole('button', { name: 'Ajuster le début de la période 1, 08:00' });
+    capturedPointer(start);
+    touchPointer(start, 'pointerdown', 420);
+    touchPointer(start, 'pointermove', -1000);
+    touchPointer(start, 'pointerup', -1000);
+    expect(screen.getByRole('button', { name: /Période 1 00:00–12:00/ })).toBeInTheDocument();
+    const end = screen.getByRole('button', { name: 'Ajuster la fin de la période 1, 12:00' });
+    capturedPointer(end);
+    touchPointer(end, 'pointerdown', 580);
+    touchPointer(end, 'pointermove', 2000);
+    touchPointer(end, 'pointerup', 2000);
+    expect(end).toHaveAccessibleName('Ajuster la fin de la période 1, 24:00');
+    expect(screen.getAllByRole('gridcell').every((cell) => cell.classList.contains('is-pending'))).toBe(true);
+    expect(screen.getAllByRole('button', { name: /Retirer la période/ })).toHaveLength(1);
+  });
+
+  it('stops at recorded work and the other unsaved period without merging either period', async () => {
+    const user = userEvent.setup();
+    const interval: WorkingTimeInterval = {
+      id: 88, registerId: 5, companyId: 1, personId: 42, localWorkDate: '2026-08-03',
+      startsAt: new Date('2026-08-03T06:00').toISOString(), endsAt: new Date('2026-08-03T07:15').toISOString(),
+      timezoneName: 'Europe/Paris', utcOffsetMinutes: 120, vesselId: 7, watchGroup: 'Bordée 1',
+      comment: null, authorUserId: 'user', authorPersonId: 42, sourceType: 'manual',
+      sourceReference: null, sourceRecordKey: null,
+    };
+    render(<Harness allowPhaseResize initialPendingPhases={unsavedPhases} intervals={[interval]} />);
+    const start = screen.getByRole('button', { name: 'Ajuster le début de la période 1, 08:00' });
+    start.focus();
+    await user.keyboard('{Home}');
+    expect(start).toHaveAccessibleName('Ajuster le début de la période 1, 07:30');
+    const end = screen.getByRole('button', { name: 'Ajuster la fin de la période 1, 12:00' });
+    end.focus();
+    await user.keyboard('{End}');
+    expect(screen.getByRole('button', { name: /Période 1 07:30–14:00/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Période 2 14:00–16:00/ })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Retirer la période/ })).toHaveLength(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('gridcell', { name: /06:00, travail enregistré/ })).toHaveClass('is-occupied');
+  });
+
+  it.each([
+    { canEdit: false, isSaving: false, editingIntervalId: null },
+    { canEdit: true, isSaving: false, editingIntervalId: 88 },
+  ])('hides resize controls for read-only or recorded correction workflows (%j)', (permissions) => {
+    render(<Harness allowPhaseResize initialPendingPhases={unsavedPhases} {...permissions} />);
+    expect(screen.queryByRole('group', { name: 'Ajuster les périodes à enregistrer' })).not.toBeInTheDocument();
+  });
+
+  it('disables handles and further timeline selection while saving', () => {
+    render(<Harness allowPhaseResize initialPendingPhases={unsavedPhases} isSaving />);
+    const handles = screen.getAllByRole('button', { name: /Ajuster (le début|la fin) de la période/ });
+    expect(handles.every((handle) => (handle as HTMLButtonElement).disabled)).toBe(true);
+    expect(screen.getAllByRole('gridcell').every((cell) => (cell as HTMLButtonElement).disabled)).toBe(true);
+    touchPointer(handles[0], 'pointerdown', 420);
+    touchPointer(handles[0], 'pointermove', 380);
+    expect(screen.getByRole('button', { name: /Période 1 08:00–12:00/ })).toBeInTheDocument();
   });
 
   it('removes manual planning fields and keeps the draft action permission-gated', async () => {

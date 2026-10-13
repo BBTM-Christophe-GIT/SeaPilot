@@ -68,6 +68,8 @@ interface WorkingTimeEntryBoardProps {
   validateDisabled?: boolean;
   rollingWindow?: WorkingTimeRollingWindowMarker | null;
   previewGraph?: WorkingTimeEntryGraphPreview;
+  /** Enables editing unsaved phase boundaries without changing recorded periods. */
+  allowPhaseResize?: boolean;
   analysisStatus?: WorkingTimeEntryRecommendation['status'];
   onStartsAtChange: (value: string) => void;
   onEndsAtChange: (value: string) => void;
@@ -175,6 +177,7 @@ export function WorkingTimeEntryBoard({
   validateDisabled = false,
   rollingWindow = null,
   previewGraph,
+  allowPhaseResize = false,
   analysisStatus,
   onStartsAtChange,
   onEndsAtChange,
@@ -196,6 +199,18 @@ export function WorkingTimeEntryBoard({
   const [selectedRecordedIntervalId, setSelectedRecordedIntervalId] = useState<number | null>(null);
   const dragStart = useRef<number | null>(null);
   const previewDrag = useRef<{ pointerId: number; lastSlot: number; startsAt: string; endsAt: string } | null>(null);
+  const resizeDrag = useRef<{
+    pointerId: number;
+    index: number;
+    edge: 'start' | 'end';
+    lastSlot: number;
+    initialSlot: number;
+    pointerStartX: number;
+    phases: WorkingTimePhaseInput[];
+    startsAt: string;
+    endsAt: string;
+    activeIndex: number | null;
+  } | null>(null);
   const dayButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const slotRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const timelineRef = useRef<HTMLDivElement | null>(null);
@@ -286,7 +301,7 @@ export function WorkingTimeEntryBoard({
   }), [pendingPhases, selectedDay]);
 
   function selectSlots(first: number, last: number) {
-    if (!canEdit) return;
+    if (!canEdit || (allowPhaseResize && isSaving)) return;
     const from = Math.max(0, Math.min(first, last));
     const to = Math.min(48, Math.max(first, last) + 1);
     onStartsAtChange(slotLocalValue(selectedDay, from));
@@ -316,7 +331,7 @@ export function WorkingTimeEntryBoard({
   }
 
   function commitSlots(first: number, last: number) {
-    if (!canEdit) return;
+    if (!canEdit || (allowPhaseResize && isSaving)) return;
     const from = Math.max(0, Math.min(first, last));
     const to = Math.min(48, Math.max(first, last) + 1);
     const phase = { startsAt: slotLocalValue(selectedDay, from), endsAt: slotLocalValue(selectedDay, to) };
@@ -332,6 +347,81 @@ export function WorkingTimeEntryBoard({
       onStartsAtChange(merged[nextActiveIndex].startsAt);
       onEndsAtChange(merged[nextActiveIndex].endsAt);
     }
+  }
+
+  function boundarySlot(value: string): number | null {
+    const boundary = new Date(value);
+    const dayStart = new Date(slotLocalValue(selectedDay, 0)).getTime();
+    const dayEnd = new Date(slotLocalValue(selectedDay, 48)).getTime();
+    const time = boundary.getTime();
+    if (!Number.isFinite(time) || time < dayStart || time > dayEnd) return null;
+    return time === dayEnd ? 48 : boundary.getHours() * 2 + boundary.getMinutes() / 30;
+  }
+
+  function resizeSlotAtPointer(clientX: number, fallbackSlot: number, pointerStartX: number, initialSlot: number): number {
+    const first = slotRefs.current[0]?.getBoundingClientRect();
+    const last = slotRefs.current[47]?.getBoundingClientRect();
+    const grid = timelineRef.current?.getBoundingClientRect();
+    const left = first && first.width > 0 ? first.left : grid?.left;
+    const right = last && last.width > 0 ? last.right : grid?.right;
+    if (left === undefined || right === undefined || right <= left || !Number.isFinite(clientX)) return fallbackSlot;
+    return Math.max(0, Math.min(48, initialSlot + Math.round((clientX - pointerStartX) / (right - left) * 48)));
+  }
+
+  function resizePhaseBoundary(index: number, edge: 'start' | 'end', targetSlot: number) {
+    if (!allowPhaseResize || !canEdit || isSaving || editingIntervalId) return;
+    const phase = pendingPhases[index];
+    if (!phase) return;
+    // Restrict the moving edge to free half-hour boundaries. Keeping the other
+    // phases intact avoids silently merging or discarding an unsaved period.
+    const obstacles = [
+      ...pendingPhases.filter((_, phaseIndex) => phaseIndex !== index),
+      ...intervals,
+    ].map((obstacle) => ({ start: new Date(obstacle.startsAt).getTime(), end: new Date(obstacle.endsAt).getTime() }));
+    const permittedSlots = Array.from({ length: 49 }, (_, slot) => slot).filter((slot) => {
+      const candidate = { ...phase, [edge === 'start' ? 'startsAt' : 'endsAt']: slotLocalValue(selectedDay, slot) };
+      const start = new Date(candidate.startsAt).getTime();
+      const end = new Date(candidate.endsAt).getTime();
+      return validProposal(candidate.startsAt, candidate.endsAt) && end - start >= 30 * 60 * 1000
+        && !obstacles.some((obstacle) => start < obstacle.end && end > obstacle.start);
+    });
+    if (!permittedSlots.length) return;
+    const nearest = permittedSlots.reduce((best, slot) => Math.abs(slot - targetSlot) < Math.abs(best - targetSlot) ? slot : best);
+    const next = { ...phase, [edge === 'start' ? 'startsAt' : 'endsAt']: slotLocalValue(selectedDay, nearest) };
+    setActivePendingIndex(index);
+    onStartsAtChange(next.startsAt);
+    onEndsAtChange(next.endsAt);
+    if (next.startsAt !== phase.startsAt || next.endsAt !== phase.endsAt) {
+      onPendingPhasesChange(pendingPhases.map((candidate, phaseIndex) => phaseIndex === index ? next : candidate));
+    }
+  }
+
+  function finishPhaseResize(element: HTMLButtonElement, pointerId: number, cancelled: boolean) {
+    const activeDrag = resizeDrag.current;
+    if (!activeDrag || activeDrag.pointerId !== pointerId) return;
+    resizeDrag.current = null;
+    if (cancelled) {
+      onPendingPhasesChange(activeDrag.phases);
+      onStartsAtChange(activeDrag.startsAt);
+      onEndsAtChange(activeDrag.endsAt);
+      setActivePendingIndex(activeDrag.activeIndex);
+    }
+    if (element.hasPointerCapture?.(pointerId)) element.releasePointerCapture(pointerId);
+  }
+
+  function handleResizeKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, index: number, edge: 'start' | 'end', slot: number) {
+    if (event.key === 'Escape' && resizeDrag.current) {
+      event.preventDefault();
+      finishPhaseResize(event.currentTarget, resizeDrag.current.pointerId, true);
+      return;
+    }
+    if (resizeDrag.current) return;
+    const target = event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? slot - 1
+      : event.key === 'ArrowRight' || event.key === 'ArrowUp' ? slot + 1
+        : event.key === 'Home' ? 0 : event.key === 'End' ? 48 : null;
+    if (target === null) return;
+    event.preventDefault();
+    resizePhaseBoundary(index, edge, target);
   }
 
   function removePendingPhase(index: number) {
@@ -417,9 +507,10 @@ export function WorkingTimeEntryBoard({
 
       <div className="working-time-entry-layout">
         <div className="working-time-timeline-panel">
-          <div className="working-time-timeline-legend"><span><i className="is-existing" />Enregistré</span><span><i className="is-pending" />À enregistrer</span><span><i className="is-selected" />Plage active</span>{rollingWindow ? <small className="is-rolling-window"><i />24 h glissantes</small> : <small>Glissez plusieurs fois pour ajouter des périodes · pas de 30 min</small>}</div>
+          <div className="working-time-timeline-legend"><span><i className="is-existing" />Enregistré</span><span><i className="is-pending" />À enregistrer</span><span><i className="is-selected" />Plage active</span>{rollingWindow ? <small className="is-rolling-window"><i />24 h glissantes</small> : <small>{allowPhaseResize ? 'Glissez pour ajouter · ajustez les bords des périodes · pas de 30 min' : 'Glissez plusieurs fois pour ajouter des périodes · pas de 30 min'}</small>}</div>
           <div className="working-time-timeline-track">
-            <div aria-label={`Grille horaire du ${selectedDay}`} aria-readonly={!canEdit} className="working-time-timeline" ref={timelineRef} role="grid">
+            <div className="working-time-timeline-frame">
+            <div aria-label={`Grille horaire du ${selectedDay}`} aria-readonly={!canEdit || (allowPhaseResize && isSaving)} className="working-time-timeline" ref={timelineRef} role="grid">
               {Array.from({ length: 48 }, (_, slot) => {
                 const label = slotLocalValue(selectedDay, slot).slice(11);
                 const recordedInterval = recordedIntervalBySlot[slot];
@@ -429,11 +520,12 @@ export function WorkingTimeEntryBoard({
                     aria-label={`${label}, ${occupiedSlots[slot] ? 'travail enregistré, cliquer pour corriger ou retirer' : pendingSlots[slot] ? 'période à enregistrer' : 'repos'}${selectedSlots[slot] ? ', sélectionné' : ''}`}
                     aria-selected={selectedSlots[slot]}
                     className={className}
-                    disabled={!canEdit}
+                    disabled={!canEdit || (allowPhaseResize && isSaving)}
                     key={slot}
                     onKeyDown={(event) => handleSlotKeyDown(event, slot)}
                     onClick={() => { if (recordedInterval) setSelectedRecordedIntervalId(recordedInterval.id); }}
                     onPointerDown={(event) => {
+                      if (allowPhaseResize && (resizeDrag.current || isSaving)) return;
                       if (recordedInterval) { setSelectedRecordedIntervalId(recordedInterval.id); return; }
                       if (previewGraph) {
                         if (previewDrag.current || event.button !== 0) return;
@@ -477,6 +569,45 @@ export function WorkingTimeEntryBoard({
                 if (end <= start) return null;
                 return <span className={phase.isPending ? 'is-pending' : ''} key={`${phase.startMinute}-${phase.endMinute}-${index}`} style={{ left: `${start / MINUTES_PER_DAY * 100}%`, width: `${(end - start) / MINUTES_PER_DAY * 100}%` }}>{phase.label}</span>;
               })}</div> : null}
+            </div>
+            {allowPhaseResize && canEdit && !editingIntervalId && pendingPhases.length ? <div aria-label="Ajuster les périodes à enregistrer" className="working-time-phase-resize-handles" role="group">
+              {pendingPhases.flatMap((phase, index) => (['start', 'end'] as const).map((edge) => {
+                const value = edge === 'start' ? phase.startsAt : phase.endsAt;
+                const slot = boundarySlot(value);
+                if (slot === null) return null;
+                const timeLabel = slot === 48 ? '24:00' : value.slice(11, 16);
+                const edgeLabel = edge === 'start' ? 'début' : 'fin';
+                return <button
+                  aria-label={`Ajuster ${edge === 'start' ? 'le début' : 'la fin'} de la période ${index + 1}, ${timeLabel}`}
+                  className={`working-time-phase-resize-handle is-${edge}`}
+                  disabled={isSaving}
+                  key={`${index}-${edge}`}
+                  onKeyDown={(event) => handleResizeKeyDown(event, index, edge, slot)}
+                  onPointerDown={(event) => {
+                    if (isSaving || resizeDrag.current || previewDrag.current || event.button !== 0) return;
+                    event.preventDefault();
+                    resizeDrag.current = {
+                      pointerId: event.pointerId, index, edge, lastSlot: slot, initialSlot: slot, pointerStartX: event.clientX,
+                      phases: pendingPhases.map((candidate) => ({ ...candidate })), startsAt, endsAt, activeIndex: activePendingIndex,
+                    };
+                    event.currentTarget.setPointerCapture?.(event.pointerId);
+                    event.currentTarget.focus();
+                  }}
+                  onPointerMove={(event) => {
+                    const activeDrag = resizeDrag.current;
+                    if (!activeDrag || activeDrag.pointerId !== event.pointerId) return;
+                    activeDrag.lastSlot = resizeSlotAtPointer(event.clientX, activeDrag.lastSlot, activeDrag.pointerStartX, activeDrag.initialSlot);
+                    resizePhaseBoundary(activeDrag.index, activeDrag.edge, activeDrag.lastSlot);
+                  }}
+                  onPointerUp={(event) => finishPhaseResize(event.currentTarget, event.pointerId, false)}
+                  onPointerCancel={(event) => finishPhaseResize(event.currentTarget, event.pointerId, true)}
+                  onLostPointerCapture={(event) => finishPhaseResize(event.currentTarget, event.pointerId, true)}
+                  style={{ left: `${slot / 48 * 100}%` }}
+                  title={`Glissez pour ajuster ${edge === 'start' ? 'le' : 'la'} ${edgeLabel} · flèches : 30 min · Échap : annuler le glissement`}
+                  type="button"
+                ><span aria-hidden="true" /><span className="sr-only">{edge === 'start' ? 'Début' : 'Fin'}</span></button>;
+              }))}
+            </div> : null}
             </div>
             {previewGraph ? (
               <div
