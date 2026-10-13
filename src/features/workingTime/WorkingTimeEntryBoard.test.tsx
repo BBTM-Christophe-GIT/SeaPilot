@@ -167,6 +167,16 @@ describe('WorkingTimeEntryBoard', () => {
     expect(screen.getAllByRole('gridcell')).toHaveLength(48);
   });
 
+  it('provides an hourly graduation for all 24 hours while retaining half-hour preview cells', () => {
+    render(<Harness previewGraph={previewGraph} />);
+
+    const graduationLabels = Array.from(screen.getByRole('grid').querySelectorAll('time'))
+      .map((element) => element.textContent)
+      .filter(Boolean);
+    expect(graduationLabels).toEqual(Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}h`));
+    expect(screen.getAllByRole('gridcell')).toHaveLength(48);
+  });
+
   it('shows other rule alerts beside the graph and includes them in its accessible description', () => {
     render(<Harness previewGraph={{ ...previewGraph, ruleAlerts: ['Repos sur 24 h : manque 2 h', 'Amplitude : dépassement de 1 h'] }} />);
 

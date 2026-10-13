@@ -13,7 +13,9 @@ et une sélection de 13:00 à 20:00. Le cumul de 13 heures sur la fenêtre gliss
 du 12 octobre à 20:00 au 13 octobre à 20:00 dépasse le seuil de 12 heures :
 le repère apparaît à 19:00 et la bande d'écart couvre 19:00–20:00. Les valeurs
 sont recalculées dès la saisie, sans attendre la recommandation asynchrone.
-Le total de la journée et le cumul glissant sont affichés séparément.
+Le total de la journée et le cumul glissant sont affichés séparément. Les
+graduations apparaissent à chaque heure de 00 h à 24 h, tout en conservant les
+48 cellules de saisie de 30 minutes.
 
 Dans **Conformité → Modifier les seuils**, huit paramètres sont réglables :
 

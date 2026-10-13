@@ -1383,6 +1383,9 @@ entry board. The explicit window label and cumulative value replace the mock's
 decorative arrow. The approval badge reflects actual demo state; an unsigned
 day does not show a fictitious waiting approval. The newly requested threshold
 editor and calendar-day total are added to the selected design.
+The user's subsequent request changes the axis to hourly labels (00 h–24 h),
+while retaining all 48 half-hour input cells. The final captures show this
+intentional difference from the source's two-hour labels.
 
 ## Five fidelity surfaces
 
@@ -1416,6 +1419,11 @@ editor and calendar-day total are added to the selected design.
 3. Final full and focused comparisons have no remaining actionable P0/P1/P2
    findings. The shared ribbon differs from the illustrative one-line mock by
    design; it follows the repository's required component instead.
+4. After the hourly-graduation request, all 24 time labels were verified as
+   visible in the browser. Space at the end of the track separates 23 h from
+   24 h; the first label no longer clips at the left edge. Desktop track width
+   remains 817/817. Updated full/focused captures were compared again with the
+   reference; no new actionable P0/P1/P2 finding remains.
 
 ## Browser interaction evidence
 
@@ -1425,10 +1433,11 @@ editor and calendar-day total are added to the selected design.
 - Keyboard entry: adding 20:00–21:00 yields 14 h of work, 2 h excess and a
   separate 15 h amplitude alert near the chart. Saving keeps these recorded
   facts and clears the pending selection without approving the day.
-- Mobile document width 375 ≤ viewport width 390; timeline scroll width 600
+- Mobile document width 375 ≤ viewport width 390; timeline scroll width 616
   stays inside its 325-pixel panel. There is no page-wide horizontal overflow.
 - Browser console: no warning/error after threshold, entry and save interactions.
-- Automatic checks: 204 working-time tests across 20 files; targeted ESLint;
+- Automatic checks: 204 working-time tests across 20 files, followed by 26/26
+  entry-board tests including the new hourly-graduation case; targeted ESLint;
   TypeScript and production build successful. Existing build warnings about
   other modules' chunk sizes/dynamic imports remain unrelated.
 - Real Marin/Capitaine verification uses role-gated code and existing profile

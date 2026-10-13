@@ -65,18 +65,18 @@ body:has(.wtp) { margin: 0; background: var(--sp-canvas); }
 .wtp .working-time-timeline-legend i.is-pending { background: #a4e4ed; }
 .wtp .working-time-timeline-legend i.is-selected { border: 1px solid #087789; background: #d6f2f5; }
 .wtp .working-time-timeline-legend small { flex-basis: 100%; color: var(--sp-muted); font-size: 12px; }
-.wtp .working-time-timeline-track { min-width: 600px; padding: 28px 0 0; }
+.wtp .working-time-timeline-track { min-width: 616px; padding: 28px 16px 0 0; }
 .wtp .working-time-timeline { position: relative; display: grid; grid-template-columns: repeat(48, minmax(0, 1fr)); min-width: 600px; width: 100%; padding: 27px 0 0; }
 .wtp .working-time-preview-phase-labels { position: absolute; bottom: 0; left: 0; width: 100%; height: 60px; pointer-events: none; }
 .wtp .working-time-preview-phase-labels span { position: absolute; display: flex; align-items: center; justify-content: center; height: 100%; overflow: hidden; color: #fff; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .wtp .working-time-preview-phase-labels span.is-pending { color: #07586a; }
-.wtp .working-time-timeline::after { top: 9px; right: 0; color: var(--sp-muted); font-size: 11px; }
+.wtp .working-time-timeline::after { top: 9px; right: -14px; color: var(--sp-muted); font-size: 11px; }
 .wtp .working-time-timeline button { height: 60px; border-right: 1px solid #d8e0ea; color: var(--sp-text); background: #eff3f7; touch-action: none; }
 .wtp .working-time-timeline button.is-occupied { background: #17a6b8; }
 .wtp .working-time-timeline button.is-pending { background: #a4e4ed; box-shadow: inset 0 1px #087789, inset 0 -1px #087789; }
 .wtp .working-time-timeline button.is-selected { background: #83dce8; box-shadow: inset 0 2px #087789, inset 0 -2px #087789; }
 .wtp .working-time-timeline time { top: -22px; left: -3px; font-size: 10px; font-weight: 500; }
-.wtp .working-time-timeline button:nth-child(4n + 3) time { visibility: hidden; }
+.wtp .working-time-timeline button:first-child time { left: 0; }
 .wtp .working-time-preview-graph { padding-top: 16px; font-size: 12px; }
 .wtp .working-time-preview-range-rail { position: relative; height: 24px; margin-bottom: 20px; border: 1px solid var(--sp-border); border-radius: 2px; background: repeating-linear-gradient(90deg, #f6f8fb 0, #f6f8fb calc(100% / 48 - 1px), var(--sp-border) calc(100% / 48 - 1px), var(--sp-border) calc(100% / 48)); }
 .wtp .working-time-preview-excess-range { position: absolute; top: -1px; bottom: -1px; border: 1px solid #d43f55; background: repeating-linear-gradient(135deg, #fff0f2 0, #fff0f2 4px, #d43f55 4px, #d43f55 5px); }
