@@ -631,13 +631,26 @@ export async function fetchWorkingTimeWorkspace(
       : dayApprovalQuery.eq('person_id', emptyPersonScope);
   }
 
+  const registerPromise = allWorkspacePages(registerQuery);
+  // History only belongs to registers displayed for this period. Other reads
+  // can continue while registers load, without scanning every readable history.
+  const validationPromise = registerPromise.then(async (result) => {
+    assertResult(result.error, 'Impossible de charger les registres.');
+    const registerIds = [...new Set((result.data || [])
+      .filter((register) => register.period_start <= range.end && register.period_end >= range.start)
+      .map((register) => Number(register.id)))];
+    if (!registerIds.length) return { data: [], error: null };
+    return await client.from('working_time_validations').select(VALIDATION_SELECT)
+      .in('register_id', registerIds).order('occurred_at', { ascending: false }).limit(1000);
+  });
+
   const [registerResult, intervalResult, calculationResult, commentResult, signatureResult, validationResult, dayApprovalResult, vesselResult, policyResult] = await Promise.all([
-    allWorkspacePages(registerQuery),
+    registerPromise,
     allWorkspacePages(intervalQuery),
     allWorkspacePages(calculationQuery),
     allWorkspacePages(commentQuery),
     allWorkspacePages(signatureQuery),
-    client.from('working_time_validations').select(VALIDATION_SELECT).order('occurred_at', { ascending: false }).limit(1000),
+    validationPromise,
     allWorkspacePages(dayApprovalQuery),
     client.from('vessels').select('id,name,acronym,registration_number,imo_number,flag_state,length_overall').eq('active', true).order('name'),
     client.from('planning_work_rest_policies').select(POLICY_SELECT).order('effective_from', { ascending: false }),

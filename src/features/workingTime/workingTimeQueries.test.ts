@@ -17,16 +17,19 @@ function queryResult(data: unknown, onCall?: (method: string, args: unknown[]) =
   const result = { data, error: null };
   let from = 0;
   let to = 999;
+  const filters: Array<{ column: string; values: unknown[] }> = [];
   const query = new Proxy({}, {
     get(_target, property) {
       if (property === 'then') {
         return (resolve: (value: typeof result) => unknown) => Promise.resolve({
-          ...result, data: Array.isArray(data) ? data.slice(from, to + 1) : data,
+          ...result, data: Array.isArray(data) ? data.filter((row) => filters.every(({ column, values }) =>
+            values.includes(row[column]))).slice(from, to + 1) : data,
         }).then(resolve);
       }
       return (...args: unknown[]) => {
         onCall?.(String(property), args);
         if (property === 'range') [from, to] = args as [number, number];
+        if (property === 'in') filters.push({ column: args[0] as string, values: args[1] as unknown[] });
         return query;
       };
     },
@@ -101,6 +104,40 @@ function workspaceClient() {
 }
 
 describe('working-time workflow queries', () => {
+  it('loads validation history only for the displayed registers, including later register pages', async () => {
+    const { client, rows, queryCalls } = workspaceClient();
+    const register = rows.working_time_registers[0] as Record<string, unknown>;
+    rows.working_time_registers = Array.from({ length: 501 }, (_, index) => ({ ...register, id: index + 10 }));
+    rows.working_time_registers.push({ ...register, id: 900, period_start: '2026-07-01', period_end: '2026-07-31' });
+    const validation = rows.working_time_validations[0] as Record<string, unknown>;
+    rows.working_time_validations = [
+      { ...validation, id: 61, register_id: 900 },
+      { ...validation, id: 62, register_id: 999 },
+      validation,
+      { ...validation, id: 63, register_id: 510 },
+    ];
+
+    const workspace = await fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' });
+
+    expect(workspace.validations.map(({ id }) => id)).toEqual([60, 63]);
+    expect(queryCalls).toContainEqual({
+      table: 'working_time_validations', method: 'in',
+      args: ['register_id', Array.from({ length: 501 }, (_, index) => index + 10)],
+    });
+    expect(queryCalls).toContainEqual({ table: 'working_time_registers', method: 'range', args: [500, 999] });
+  });
+
+  it('does not read any validation history when the period has no registers', async () => {
+    const { client, rows } = workspaceClient();
+    rows.working_time_registers = [];
+
+    const workspace = await fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' });
+
+    expect(workspace.registers).toEqual([]);
+    expect(workspace.validations).toEqual([]);
+    expect(client.from).not.toHaveBeenCalledWith('working_time_validations');
+  });
+
   it('loads late-month violations and approvals beyond the API row cap', async () => {
     const { client, rows, queryCalls } = workspaceClient();
     const calculation = rows.working_time_calculation_windows[0] as Record<string, unknown>;

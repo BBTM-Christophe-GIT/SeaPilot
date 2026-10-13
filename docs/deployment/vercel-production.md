@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.72.2`, build `2026-10-13.001`, corrige les délais dépassés du suivi
+du temps de travail après connexion. Les contrôles historiques de capitaine sont
+évités pour les personnes sans fonction de capitaine dans leurs affectations ;
+les validations chargées sont limitées aux registres affichés. Appliquer
+`20261013072043_optimize_working_time_captain_access.sql` avant le client.
+Voir [les contrôles et mesures du correctif](./working-time-captain-read-performance.md).
+
 Version `3.72.1`, build `2026-10-12.001`, ajoute l’interrupteur de modification
 libre du suivi du temps de travail dans Administration → Accès et rôles.
 Le réglage est désactivé par défaut et son utilisation est réservée au compte
