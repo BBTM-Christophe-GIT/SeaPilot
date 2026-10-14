@@ -151,4 +151,3 @@ grant execute on function public.action_plan_followup_action_ids() to authentica
 -- mutation supplémentaire n'est exposée. Les fichiers liés suivent ces lecteurs.
 comment on function public.action_item_user_can_read(bigint) is 'Lecture métier existante ou fenêtre embarquement ±1 mois ; signalements discrimination/droits humains toujours privés. Aucun changement des writers.';
 notify pgrst, 'reload schema';
-
