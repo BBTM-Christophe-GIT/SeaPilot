@@ -30,6 +30,10 @@ vi.mock('./features/dpr/dprQueries.ts', () => ({
   createDprSignedUrl: dprQueriesMock.signedUrl,
 }));
 
+vi.mock('./features/medicalLogbook/MedicalLogbookPage', () => ({
+  MedicalLogbookPage: () => <h1>Registre de soins embarqué</h1>,
+}));
+
 function createAuthClient(session: { user: { id: string } } | null = null) {
   return {
     auth: {
@@ -73,6 +77,21 @@ function createIdPaginatedQuery(data: unknown[]) {
 }
 
 describe('App', () => {
+  it('opens the dedicated medical register route within the authenticated application', async () => {
+    vi.stubEnv('VITE_APP_BASE_URL', 'https://sea-pilot-ten.vercel.app');
+    supabaseMock.from.mockReset();
+    supabaseMock.from.mockImplementation((table: string) => {
+      if (table === 'user_roles') return { select: vi.fn().mockResolvedValue({ data: [{ role_key: 'admin' }], error: null }) };
+      if (table === 'role_module_permissions') return createNavigationPermissionsQuery();
+      if (table === 'people') return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
+      throw new Error(`Unexpected table ${table}`);
+    });
+    const client = createAuthClient({ user: { id: 'medical-admin-fixture' } });
+    render(<AuthProvider client={client as never}><MemoryRouter initialEntries={['/modules/medicalLogbook']}><App /></MemoryRouter></AuthProvider>);
+    expect(await screen.findByRole('heading', { name: 'Registre de soins embarqué' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Registre médical' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
+  });
   it('redirects private routes to the login page', async () => {
     const client = createAuthClient();
 

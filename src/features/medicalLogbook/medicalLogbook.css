@@ -1,0 +1,135 @@
+.medical-logbook-page {
+  --lev-navy: var(--sp-primary);
+  --lev-muted: var(--sp-muted);
+  --lev-border: var(--sp-border);
+  display: grid;
+  gap: var(--sp-space-4);
+  min-width: 0;
+  color: var(--sp-text);
+  font-family: var(--sp-font);
+}
+.medical-logbook-page .lifting-fleet { margin: 0; background: var(--sp-surface); border-color: var(--sp-border); border-radius: var(--sp-panel-radius); box-shadow: var(--sp-shadow); }
+.medical-logbook-page .lifting-fleet-label { color: var(--sp-muted); }
+.medical-logbook-page .lifting-vessel-photo { border-color: var(--sp-border); border-radius: var(--sp-panel-radius); background: var(--sp-surface); }
+.medical-logbook-page .lifting-vessel-card:hover .lifting-vessel-photo { border-color: var(--sp-border-strong); box-shadow: var(--sp-shadow); }
+.medical-logbook-page .lifting-vessel-card[aria-pressed=true] .lifting-vessel-photo { border-color: var(--sp-primary); box-shadow: 0 0 0 2px var(--sp-primary-soft); }
+.medical-logbook-page .lifting-vessel-check, .medical-logbook-page .lifting-context-dot { background: var(--sp-primary); }
+.medical-logbook-page .lifting-vessel-placeholder { color: var(--sp-muted); }
+.medical-logbook-page .lifting-fleet-context { border-color: var(--sp-border); }
+.medical-logbook-page .lifting-fleet-scroll button { min-height: var(--sp-control-height); min-width: var(--sp-control-height); color: var(--sp-primary); background: var(--sp-surface); border-color: var(--sp-border); }
+.medical-logbook-page .lifting-vessel-card:focus-visible, .medical-logbook-page .lifting-fleet-scroll button:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 3px; }
+.medical-logbook-page .sp-module-header { margin-bottom: 0; }
+.medical-logbook-page .sp-module-header h1 { margin: 0; }
+.medical-logbook-page .sp-module-header p { margin: var(--sp-space-2) 0 0; }
+.medical-preview-note, .medical-notice, .medical-feedback {
+  margin: 0;
+  padding: var(--sp-space-3) var(--sp-space-4);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-surface);
+}
+.medical-preview-note, .medical-readonly-note { color: var(--sp-muted); font-size: var(--sp-subtitle-size); }
+.medical-notice { background: var(--sp-primary-soft); }
+.medical-feedback { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-space-3); }
+.medical-error { margin: var(--sp-space-2) 0; font-weight: 600; }
+.medical-register { padding: 0; overflow: hidden; min-width: 0; }
+.medical-register-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-space-4);
+  padding: var(--sp-space-4);
+  border-bottom: 1px solid var(--sp-border);
+}
+.medical-register-heading h2 { margin: 0; font-size: 1.125rem; color: var(--sp-heading); }
+.medical-register-heading p { margin: var(--sp-space-1) 0 0; color: var(--sp-muted); font-size: var(--sp-subtitle-size); }
+.medical-register-heading > span { color: var(--sp-muted); font-size: var(--sp-subtitle-size); white-space: nowrap; }
+.medical-logbook-page .medical-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--sp-space-3);
+  padding: var(--sp-space-4);
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--sp-border);
+  border-radius: 0;
+  box-shadow: none;
+}
+.medical-filters label { display: grid; gap: var(--sp-space-2); font-size: var(--sp-subtitle-size); font-weight: 600; }
+.medical-search { flex: 1 1 240px; }
+.medical-search > span { display: flex; align-items: center; gap: var(--sp-space-2); }
+.medical-logbook-page input:not([type="checkbox"]), .medical-logbook-page select, .medical-inline-row textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--sp-control-height);
+  padding: var(--sp-space-2) var(--sp-space-3);
+  color: var(--sp-text);
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-control-radius);
+  font: inherit;
+  font-weight: 400;
+}
+.medical-inline-row textarea { resize: vertical; line-height: 1.5; min-height: 100px; }
+.medical-logbook-page .medical-archive-filter { display: flex; gap: var(--sp-space-2); min-height: var(--sp-control-height); align-items: center; }
+.medical-archive-filter input { width: 18px; height: 18px; accent-color: var(--sp-primary); }
+.medical-logbook-page :focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 3px; }
+.medical-empty { text-align: center; padding: var(--sp-space-6); margin: 0; }
+.medical-empty svg { color: var(--sp-primary); }
+.medical-empty h2, .medical-empty h3 { margin: var(--sp-space-3) 0; color: var(--sp-heading); }
+.medical-empty p { color: var(--sp-muted); margin: var(--sp-space-3) auto; max-width: 560px; line-height: 1.5; }
+.medical-table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.medical-table { border-collapse: collapse; width: 100%; min-width: 1050px; font-size: var(--sp-subtitle-size); table-layout: fixed; }
+.medical-table th, .medical-table td { text-align: left; vertical-align: top; padding: var(--sp-space-3); border-right: 1px solid var(--sp-border); border-bottom: 1px solid var(--sp-border); overflow-wrap: anywhere; }
+.medical-table th { background: var(--sp-surface-subtle); color: var(--sp-heading); font-weight: 600; }
+.medical-table th:nth-child(1) { width: 96px; }
+.medical-table th:nth-child(2) { width: 64px; }
+.medical-table th:nth-child(3) { width: 140px; }
+.medical-table th:nth-child(4), .medical-table th:nth-child(5) { width: 180px; }
+.medical-table th:nth-child(6), .medical-table th:nth-child(7) { width: 120px; }
+.medical-table th:nth-child(8) { width: 130px; }
+.medical-table:has(.medical-inline-row) { min-width: 1140px; }
+.medical-table:has(.medical-inline-row) th:nth-child(1) { width: 148px; }
+.medical-table:has(.medical-inline-row) th:nth-child(2) { width: 108px; }
+.medical-table :is(th, td):nth-child(-n+2) { white-space: nowrap; }
+.medical-table th:last-child, .medical-table td:last-child { border-right: 0; }
+.medical-table tbody tr:last-child td { border-bottom: 0; }
+.medical-table .is-archived { background: var(--sp-surface-subtle); }
+.medical-narrative, .medical-history-details dd { white-space: pre-wrap; line-height: 1.5; }
+.medical-archived-label { display: block; margin-top: var(--sp-space-2); color: var(--sp-muted); font-size: .75rem; }
+.medical-row-actions { display: grid; gap: var(--sp-space-2); }
+.medical-row-actions .sp-button { justify-content: flex-start; padding: var(--sp-space-2); width: 100%; }
+.medical-signature-preview { display: grid; gap: var(--sp-space-1); }
+.medical-signature-preview img { width: 100%; max-width: 240px; height: 56px; object-fit: contain; object-position: left center; }
+.medical-signature-preview small { color: var(--sp-muted); font-size: .75rem; }
+.medical-readonly-note { margin: 0; padding: var(--sp-space-3) var(--sp-space-4); border-top: 1px solid var(--sp-border); }
+.medical-inline-row { background: var(--sp-primary-soft); }
+.medical-inline-row td { padding: var(--sp-space-2); }
+.medical-logbook-page .medical-inline-row input, .medical-inline-row textarea { padding: var(--sp-space-2); font-size: .75rem; }
+.medical-logbook-page .medical-inline-row td:nth-child(-n+2) input { padding-inline: var(--sp-space-1); }
+.medical-logbook-page .medical-inline-row input[readonly] { background: var(--sp-surface-subtle); color: var(--sp-muted); }
+.medical-inline-actions, .medical-inline-signature { display: grid; gap: var(--sp-space-2); min-width: 0; }
+.medical-inline-actions .sp-button, .medical-inline-signature .sp-button { width: 100%; padding: var(--sp-space-2); font-size: .75rem; }
+.medical-inline-signature p { margin: 0; line-height: 1.5; }
+.medical-inline-signature a { color: var(--sp-primary); }
+.medical-inline-feedback td { white-space: normal; background: var(--sp-primary-soft); }
+.medical-inline-feedback p { margin: 0; color: var(--sp-muted); font-size: var(--sp-subtitle-size); line-height: 1.5; }
+.medical-inline-feedback p.medical-error { margin-top: var(--sp-space-2); color: var(--sp-text); }
+.medical-history-list { padding: 0; margin: 0; list-style: none; display: grid; gap: var(--sp-space-4); }
+.medical-history-list > li { padding: var(--sp-space-4); border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); }
+.medical-history-list > li > header { display: grid; gap: var(--sp-space-1); padding-bottom: var(--sp-space-3); border-bottom: 1px solid var(--sp-border); }
+.medical-history-list > li > header > span { color: var(--sp-muted); font-size: var(--sp-subtitle-size); }
+.medical-history-details { display: grid; gap: var(--sp-space-3); margin: var(--sp-space-3) 0 0; }
+.medical-history-details > div { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: var(--sp-space-3); }
+.medical-history-details dt { color: var(--sp-muted); font-size: var(--sp-subtitle-size); }
+.medical-history-details dd { margin: 0; overflow-wrap: anywhere; }
+.medical-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 720px) {
+  .medical-logbook-page { gap: var(--sp-space-3); }
+  .medical-register-heading, .medical-feedback { align-items: flex-start; flex-direction: column; gap: var(--sp-space-2); }
+  .medical-history-details > div { grid-template-columns: minmax(0, 1fr); gap: var(--sp-space-1); }
+}
+@media (pointer: coarse) {
+  .medical-logbook-page input:not([type="checkbox"]), .medical-logbook-page select { min-height: 44px; }
+}

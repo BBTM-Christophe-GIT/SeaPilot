@@ -728,7 +728,8 @@ export function HumanResourcesRoute(props: HumanResourcesPageProps) {
   const person = params.get('person');
   const documentId = Number(params.get('document')) || null;
   const personId = person === null ? undefined : /^\d+$/.test(person) && Number(person) > 0 ? Number(person) : null;
-  const section = documentId ? 'documents' : params.get('section') === 'contract' ? 'contract' : undefined;
+  const section = documentId ? 'documents' : params.get('section') === 'contract' ? 'contract'
+    : params.get('section') === 'signature' ? 'signature' : undefined;
   // A fresh navigation, including a click on the active RH link, starts on oneself.
   return <HumanResourcesPage key={location.key} {...props} initialPersonId={personId} initialDocumentId={documentId} initialSectionKey={section} />;
 }

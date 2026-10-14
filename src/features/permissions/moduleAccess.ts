@@ -8,6 +8,7 @@ export type ModuleKey =
   | 'chemicals'
   | 'emergencyExercises'
   | 'lsa'
+  | 'medicalLogbook'
   | 'certificates'
   | 'procedures'
   | 'serviceNotes'
@@ -70,6 +71,7 @@ export const APP_MODULES: AppModule[] = [
   { key: 'chemicals', label: 'Produits Chimiques', family: 'Registres', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   { key: 'emergencyExercises', label: 'Registre des Exercices', family: 'Registres', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   { key: 'lsa', label: 'Registre LSA', family: 'Registres', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  { key: 'medicalLogbook', label: 'Registre médical', family: 'Registres', navigationKind: 'submenu', allowedRoles: ['admin', 'capitaine'] },
   {
     key: 'certificates',
     label: 'Certificats flotte',

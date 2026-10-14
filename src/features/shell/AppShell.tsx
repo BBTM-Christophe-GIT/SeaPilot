@@ -23,6 +23,7 @@ import {
   FolderKanban,
   Gauge,
   Home,
+  HeartPulse,
   LayoutDashboard,
   Link2,
   LifeBuoy,
@@ -77,6 +78,7 @@ interface AppShellProps {
 }
 
 export interface AppShellOutletContext {
+  userId?: string;
   visibleModules?: AppModule[];
   roles: RoleKey[];
   client: SupabaseClient;
@@ -140,6 +142,7 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   chemicals: FlaskConical,
   emergencyExercises: BookOpenCheck,
   lsa: LifeBuoy,
+  medicalLogbook: HeartPulse,
   certificates: FileCheck2,
   procedures: FileText,
   serviceNotes: Mail,
@@ -794,7 +797,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
           {isRequestedModuleDenied ? (
             <div className="auth-loading">Acces refuse pour ce module.</div>
           ) : (
-            <Outlet context={{ roles, client, previewMode, currentPerson, visibleModules: activeVisibleModules, setLiftingNavigationBlocked, liftingVesselId, setLiftingVesselId } satisfies AppShellOutletContext} />
+            <Outlet context={{ userId: session?.user.id, roles, client, previewMode, currentPerson, visibleModules: activeVisibleModules, setLiftingNavigationBlocked, liftingVesselId, setLiftingVesselId } satisfies AppShellOutletContext} />
           )}
         </main>
       </div>

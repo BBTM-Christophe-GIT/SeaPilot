@@ -11,8 +11,8 @@ function VesselImage({ vessel }: { vessel: LiftingVessel }) {
     : <span className="lifting-vessel-placeholder"><Ship size={34} aria-hidden="true" /><small>Photo à venir</small></span>;
 }
 
-export function LiftingVesselFilter({ vessels, value, disabled, onChange, includeYard = true }: {
-  vessels: LiftingVessel[]; value: number; disabled: boolean; onChange: (id: number) => void; includeYard?: boolean;
+export function LiftingVesselFilter({ vessels, value, disabled, onChange, includeYard = true, contextLabel = 'Inventaire et rapports de contrôle' }: {
+  vessels: LiftingVessel[]; value: number; disabled: boolean; onChange: (id: number) => void; includeYard?: boolean; contextLabel?: string;
 }) {
   const row = useRef<HTMLDivElement>(null);
   const selected = vessels.find((vessel) => vessel.id === value);
@@ -32,6 +32,6 @@ export function LiftingVesselFilter({ vessels, value, disabled, onChange, includ
       </button>)}
       {!vessels.length && <p className="lifting-fleet-empty">Aucun navire accessible.</p>}
     </div>
-    <div className="lifting-fleet-context" aria-live="polite"><span className="lifting-context-dot" /><strong>{selected?.name || 'Aucune sélection'}</strong><span>Inventaire et rapports de contrôle</span></div>
+    <div className="lifting-fleet-context" aria-live="polite"><span className="lifting-context-dot" /><strong>{selected?.name || 'Aucune sélection'}</strong><span>{contextLabel}</span></div>
   </section>;
 }

@@ -66,6 +66,7 @@ export function getVisibleModulesForPermissions(
     permissions
       .filter((permission) => permission.isVisible && roles.includes(permission.roleKey)
         && (permission.moduleKey !== 'admin' || permission.roleKey === 'admin')
+        && (permission.moduleKey !== 'medicalLogbook' || ['admin', 'capitaine'].includes(permission.roleKey))
         && (!['disciplinary', 'organigramme'].includes(permission.moduleKey) || ['admin', 'direction'].includes(permission.roleKey)))
       .map((permission) => permission.moduleKey),
   );
@@ -119,6 +120,9 @@ export async function setNavigationPermission(
 ): Promise<void> {
   if (moduleKey === 'admin' && isVisible && roleKey !== 'admin') {
     throw new Error('L’administration est réservée aux administrateurs.');
+  }
+  if (moduleKey === 'medicalLogbook' && isVisible && !['admin', 'capitaine'].includes(roleKey)) {
+    throw new Error('Le registre médical est réservé aux administrateurs et aux capitaines de leur navire.');
   }
   if (moduleKey === 'disciplinary' && isVisible && !['admin', 'direction'].includes(roleKey)) {
     throw new Error('Les sanctions disciplinaires sont réservées à Administration et Direction.');

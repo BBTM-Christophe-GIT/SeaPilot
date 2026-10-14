@@ -53,6 +53,8 @@ describe('AppShell', () => {
     const registersButton = screen.getByRole('button', { name: 'Registres' });
     expect(registersButton.closest('section')).toHaveAttribute('data-family-theme', 'registers');
     expect(registersButton.closest('section')).toContainElement(screen.getByRole('link', { name: 'Produits Chimiques' }));
+    expect(registersButton.closest('section')).toContainElement(screen.getByRole('link', { name: 'Registre médical' }));
+    expect(screen.getByRole('link', { name: 'Registre médical' })).toHaveAttribute('href', '/modules/medicalLogbook');
     expect(qhseButton.closest('section')).not.toContainElement(screen.getByRole('link', { name: 'Produits Chimiques' }));
     expect(screen.getByRole('link', { name: 'KPI' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Planning' })).toBeInTheDocument();

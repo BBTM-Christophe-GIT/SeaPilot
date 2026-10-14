@@ -289,6 +289,13 @@ describe('HumanResourcesPage', () => {
     await waitFor(() => expect(within(profile).getByRole('button', { name: 'Contrat et dates' })).toHaveAttribute('aria-current', 'page'));
   });
 
+  it('opens the personal signature section from the medical register link', async () => {
+    render(<MemoryRouter initialEntries={['/modules/humanResources?person=1&section=signature']}><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={createClient() as never} currentPersonId={1} roles={['admin']} />} /></Routes></MemoryRouter>);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    await waitFor(() => expect(within(profile).getByRole('button', { name: 'Signature' })).toHaveAttribute('aria-current', 'page'));
+    expect(within(profile).getByRole('button', { name: 'Importer un PNG' })).toBeInTheDocument();
+  });
+
   it.each(['capitaine', 'marin'] as const)('keeps an inaccessible linked RH person hidden for a real %s fixture', async (role) => {
     render(<MemoryRouter initialEntries={['/modules/humanResources?person=999&document=11']}><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={createClient([activePerson], []) as never} currentPersonId={1} roles={[role]} />} /></Routes></MemoryRouter>);
     await waitFor(() => expect(screen.queryByText('Chargement du personnel RH…')).not.toBeInTheDocument());

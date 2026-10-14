@@ -1,13 +1,26 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { APP_MODULES } from './moduleAccess';
 import {
   getDefaultNavigationPermissions,
   getVisibleModulesForPermissions,
   mapNavigationPermissionRows,
   mergeNavigationPermissions,
+  setNavigationPermission,
 } from './navigationPermissions';
 
 describe('navigation permissions', () => {
+  it.each(['direction', 'armement', 'marin'] as const)('keeps medical records inaccessible to %s despite a visible permission', async (role) => {
+    expect(getVisibleModulesForPermissions([role], [{ moduleKey: 'medicalLogbook', roleKey: role, isVisible: true }])).toEqual([]);
+    const client = { from: vi.fn() };
+    await expect(setNavigationPermission(client as never, role, 'medicalLogbook', true)).rejects.toThrow('réservé');
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it.each(['admin', 'capitaine'] as const)('allows an authorized %s medical permission but respects its removal', (role) => {
+    expect(getVisibleModulesForPermissions([role], [{ moduleKey: 'medicalLogbook', roleKey: role, isVisible: true }]))
+      .toEqual([expect.objectContaining({ key: 'medicalLogbook', family: 'Registres' })]);
+    expect(getVisibleModulesForPermissions([role], [{ moduleKey: 'medicalLogbook', roleKey: role, isVisible: false }])).toEqual([]);
+  });
   it.each(['direction', 'armement', 'capitaine', 'marin'] as const)('keeps Administration inaccessible to %s even with a stale visible permission', (role) => {
     expect(getVisibleModulesForPermissions([role], [{ moduleKey: 'admin', roleKey: role, isVisible: true }])).toEqual([]);
   });
