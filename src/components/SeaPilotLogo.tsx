@@ -4,10 +4,10 @@ import { DEFAULT_APPLICATION_LOGO } from '../features/branding/applicationLogo';
 import './SeaPilotLogo.css';
 
 export function SeaPilotLogo() {
-  const { logoUrl, isCustom } = useApplicationLogo();
+  const { logoUrl } = useApplicationLogo();
   const [failedUrl, setFailedUrl] = useState('');
   const failed = failedUrl === logoUrl;
-  return <span className={`seapilot-logo${isCustom && !failed ? ' is-custom-logo' : ''}`}>
+  return <span className="seapilot-logo">
     <img src={failed ? DEFAULT_APPLICATION_LOGO : logoUrl} alt="SeaPilot by BBTM" onError={() => setFailedUrl(logoUrl)} />
   </span>;
 }

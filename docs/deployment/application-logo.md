@@ -4,7 +4,7 @@ Administration → Logo de l’application (`/modules/admin?section=branding`) p
 
 Formats acceptés : PNG, JPEG ou WebP, entre 1 octet et 2 Mo, au plus 4 096 pixels par côté et 8 millions de pixels au total. Un format horizontal est recommandé. Le client vérifie la signature du fichier et le décodage avant le transfert. Les SVG et les URL externes ne sont pas acceptés.
 
-Le même logo est utilisé dans le shell, à la connexion et sur les pages de mot de passe. Le client charge sa configuration au démarrage et au retour sur la fenêtre ; une image inaccessible revient au logo fourni. Les logos personnalisés conservent leurs proportions, y compris dans la navigation réduite.
+Le même logo est utilisé dans le shell, à la connexion et sur les pages de mot de passe. Le client charge sa configuration au démarrage et au retour sur la fenêtre ; une image inaccessible revient au logo fourni. Les logos personnalisés utilisent les mêmes dimensions et le même cadrage que le logo fourni : 144 pixels dans le menu, jusqu’à 280 pixels sur les écrans de connexion et de mot de passe, et 44 × 44 pixels dans le menu réduit. Les proportions sont conservées et le cadre masque les marges, comme pour le logo par défaut.
 
 ## Stockage et droits
 
