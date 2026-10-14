@@ -1,5 +1,51 @@
 # Vérification des documents de Benjamin BON
 
+## État après migration Vercel Blob
+
+Le 14 octobre 2026, **774 références** ont été activées dans Vercel Blob privé :
+**690 fichiers physiques et 84 alias**. Les originaux et historiques sont conservés.
+Les 76 références de Procédures activées correspondent à des PDF publiés ; les
+sources Word/Excel de ce module gardent leur circuit d'édition existant.
+
+Une session indépendante de Benjamin, créée sans envoi de mail et confirmée par
+Supabase Auth, a appelé `/api/documents` avec son JWT réel. Les **774 références
+ont été relues intégralement**, avec comparaison des octets, taille, MIME et
+SHA-256 aux preuves de transfert et au registre actif : aucun refus ni fallback.
+La preuve combine 746 lectures initiales et les 28 signatures relues après le
+fractionnement des consultations. Les métadonnées actives sont restées identiques.
+Les sessions de test ont été révoquées localement sans déconnecter ses appareils.
+
+Les signatures sont consultées par groupes de quatre pour respecter le délai
+PostgREST de huit secondes. Les permissions et l'ordre des réponses sont inchangés.
+Un refus ou une erreur de lecture d'une copie connue bloque l'action au lieu
+d'ouvrir une ancienne copie Storage, Drive ou Windows.
+
+Le cycle réel `prepare → PUT → complete → lookup → GET` a aussi été vérifié sans
+création de document métier. Le PUT direct utilise `x-api-version: 12`, comme
+le SDK Vercel installé : aperçu `inline`, téléchargement `attachment`, octets
+identiques. Les requêtes anonymes et tentatives de remplacement sont refusées.
+Chromium a effectivement affiché le PDF privé dans une iframe neutre : texte
+lisible, page 1/1, aucun téléchargement automatique. Ce contrôle concerne Chromium
+desktop ; aucun résultat sur téléphone physique n'en est déduit. Le fichier, son
+mapping et sa réservation d'essai ont été supprimés après contrôle d'identité.
+
+**19 fichiers restent sans copie migrée** : trois factures de projets introuvables
+et seize pièces jointes SharePoint d'Achats dont le fournisseur refuse la lecture.
+Ils restent référencés et recensés dans le rapport opérationnel privé, sans
+suppression, contenu fabriqué ou élargissement des partages. Le lien interne vers
+le brouillon de Procédure 65 ne constitue pas un fichier manquant. Les douze
+documents RH trouvés hors du dossier prévu ont été récupérés sans modifier les
+partages de leurs originaux ; leurs copies Blob suivent les droits RH métier.
+
+Les inventaires détaillés, noms de fichiers, liens privés, jetons et preuves
+restent hors Git. Le lecteur serveur des notes de frais applique aussi la
+priorité Blob ; sa vérification ne déclenche aucun envoi réel.
+
+## Vérification initiale avant la migration Blob
+
+Les sections ci-dessous décrivent l'audit initial Drive/Storage/Windows ; les
+comptages et limites de récupération ci-dessus constituent l'état courant.
+
 La vérification du 14 octobre 2026 complète la réparation du lecteur des
 certificats. Les droits sont contrôlés en lecture seule avec l'identité réelle
 de Benjamin et le rôle Postgres `authenticated`, puis les fichiers sont relus
