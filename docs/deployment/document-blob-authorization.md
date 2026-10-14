@@ -85,4 +85,3 @@ batch denial, reservation/proof guards, pending privacy, new RH and chemicals,
 working-time preview/commit, signature/project hash checks, procedure activation,
 obsolete RH alias rejection and existing-object replacement refusal. The entire
 fixture transaction rolls back.
-

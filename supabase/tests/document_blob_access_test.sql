@@ -256,6 +256,13 @@ begin
  assert public.procedure_drive_scope('read',null,publication.id) is not null,'Author can read the converted draft through the existing bridge';
  begin perform public.publish_procedure_blob(publication.id);raise exception 'Unverified PDF was published';
  exception when object_not_in_prerequisite_state then null;end;
+ perform set_config('request.jwt.claim.sub','bb140000-0000-4000-8000-000000000002',true);
+ perform set_config('request.jwt.claims','{"sub":"bb140000-0000-4000-8000-000000000002","role":"authenticated"}',true);
+ begin perform public.document_blob_upload_scope('procedure-publications-drive',publication.id::text,publication.file_name,'application/pdf',7,repeat('a',64));
+  raise exception 'Another Direction author reserved the Admin draft';
+ exception when insufficient_privilege then null;end;
+ perform set_config('request.jwt.claim.sub','bb140000-0000-4000-8000-000000000001',true);
+ perform set_config('request.jwt.claims','{"sub":"bb140000-0000-4000-8000-000000000001","role":"authenticated"}',true);
  reservation:=public.document_blob_upload_scope('procedure-publications-drive',publication.id::text,publication.file_name,'application/pdf',7,repeat('a',64));
  perform pg_temp.complete_blob(reservation);
  perform set_config('request.jwt.claim.sub','bb140000-0000-4000-8000-000000000005',true);
@@ -393,4 +400,3 @@ end $$;
 reset role;
 select 'PASS: real profile/company/RH boundaries; private batch; reserved idempotent uploads; service-only verified proof; pending uploader-only; no fake Storage rows; sources kept Drive' result;
 rollback;
-

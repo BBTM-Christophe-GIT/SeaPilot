@@ -1998,6 +1998,3 @@ begin
   end loop;
   return update_id;
 end $function$;
-
-
-
