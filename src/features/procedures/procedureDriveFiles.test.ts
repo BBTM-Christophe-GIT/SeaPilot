@@ -2,17 +2,19 @@ import { createHash, webcrypto } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createProcedureFileStore, procedureDriveFilename } from './procedureDriveFiles';
 import type { ProcedureInput, ProcedureRecord, PublishedProcedureRecord } from './procedureQueries';
+import { hasDocumentBlobFile } from '../documents/documentBlobStorage';
 
 const bridge = vi.hoisted(() => ({ connect: vi.fn(), request: vi.fn() }));
 vi.mock('../documents/localDriveLauncher', async importOriginal => ({
   ...await importOriginal<typeof import('../documents/localDriveLauncher')>(),
   connectLocalDrive: bridge.connect, localDriveRequest: bridge.request,
 }));
+vi.mock('../documents/documentBlobStorage', async original => ({ ...await original<typeof import('../documents/documentBlobStorage')>(), hasDocumentBlobFile: vi.fn().mockResolvedValue(false) }));
 const input = { theme: 'URG', documentNumber: '01', versionLabel: 'a', title: 'Essai : sécurité' } as ProcedureInput;
 const session = { version: '2.3.0', url: 'http://127.0.0.1:50000/session', expiresAt: 0 };
 const client = {} as never;
 const hash = createHash('sha256').update('source').digest('hex');
-beforeEach(() => { vi.stubGlobal('crypto', webcrypto); bridge.connect.mockReset().mockResolvedValue(session); bridge.request.mockReset(); });
+beforeEach(() => { vi.stubGlobal('crypto', webcrypto); bridge.connect.mockReset().mockResolvedValue(session); bridge.request.mockReset(); vi.mocked(hasDocumentBlobFile).mockReset().mockResolvedValue(false); });
 afterEach(() => vi.unstubAllGlobals());
 
 describe('synchronized procedure files', () => {
@@ -66,5 +68,22 @@ describe('synchronized procedure files', () => {
     expect(bridge.request).toHaveBeenCalledWith(client, session, { action: 'read', module: 'procedures', publicationId: 51 });
     bridge.request.mockResolvedValue({ path: 'published.pdf', bytes: 6, sha256: hash, base64: btoa('broken') });
     await expect(createProcedureFileStore(client).read(record)).rejects.toThrow('vérifié');
+  });
+  it('reads a migrated published PDF by its publication id without the Office launcher', async () => {
+    vi.mocked(hasDocumentBlobFile).mockResolvedValue(true);
+    const blob = new Blob(['published PDF'], { type: 'application/pdf' });
+    const download = vi.fn().mockResolvedValue({ data: blob, error: null });
+    const from = vi.fn(() => ({ download }));
+    const record = { id: 51, procedureId: 42, googleDrivePath: 'published.pdf', mimeType: 'application/pdf' } as PublishedProcedureRecord;
+    expect(await createProcedureFileStore({ storage: { from } } as never).read(record)).toBe(blob);
+    expect(from).toHaveBeenCalledWith('procedure-publications-drive');
+    expect(download).toHaveBeenCalledWith('51');
+    expect(bridge.connect).not.toHaveBeenCalled();
+  });
+  it('does not bypass a Blob refusal with a retained PDF on Windows', async () => {
+    const denied = { code: '42501', message: 'Document inaccessible' };
+    vi.mocked(hasDocumentBlobFile).mockRejectedValue(denied);
+    await expect(createProcedureFileStore(client).read({ id: 51, procedureId: 42 } as PublishedProcedureRecord)).rejects.toBe(denied);
+    expect(bridge.connect).not.toHaveBeenCalled();
   });
 });

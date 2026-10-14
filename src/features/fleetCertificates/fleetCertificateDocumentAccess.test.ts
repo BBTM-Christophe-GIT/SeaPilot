@@ -25,7 +25,8 @@ function certificate(path = insurancePath): FleetCertificateRecord {
 }
 
 function fixture({ denied = false } = {}) {
-  const rpc = vi.fn().mockImplementation(async (_name: string, { target_path }: { target_path: string }) => {
+  const rpc = vi.fn().mockImplementation(async (name: string, { target_path }: { target_path: string }) => {
+    if (name === 'document_blob_lookup') return { data: null, error: null };
     const file = files[target_path];
     return {
       data: file && !denied ? { drive_file_id: file.driveId, mime_type: 'application/pdf' } : null,
@@ -114,7 +115,8 @@ describe('fleet certificate access after the verified Drive migration', () => {
     await downloadFleetCertificateDocuments(client as never, [image]);
     expect(legacy.createSignedUrl).toHaveBeenCalledWith(image.storagePath, 300, undefined);
     expect(legacy.download).toHaveBeenCalledWith(image.storagePath, undefined, undefined);
-    expect(rpc).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc.mock.calls.every(([name]) => name === 'document_blob_lookup')).toBe(true);
     expect(invoke).not.toHaveBeenCalled();
   });
 

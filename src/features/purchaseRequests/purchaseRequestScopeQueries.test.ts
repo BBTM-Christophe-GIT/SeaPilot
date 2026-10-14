@@ -80,8 +80,8 @@ describe('purchase assignment read scope', () => {
   });
 
   it('preserves an external SharePoint attachment when it has no private storage address', async () => {
-    const client = { storage: { from: vi.fn() } } as unknown as SupabaseClient;
-    const attachment = { storageBucket: '', storagePath: '', downloadUrl: 'https://bbtm668.sharepoint.com/proof.pdf' } as PurchaseRequestAttachment;
+    const client = { rpc: vi.fn().mockResolvedValue({ data: null, error: null }), storage: { from: vi.fn() } } as unknown as SupabaseClient;
+    const attachment = { id: 18, storageBucket: '', storagePath: '', downloadUrl: 'https://bbtm668.sharepoint.com/proof.pdf' } as PurchaseRequestAttachment;
     expect(await createPurchaseRequestAttachmentUrl(client, attachment)).toBe(attachment.downloadUrl);
     expect(client.storage.from).not.toHaveBeenCalled();
   });

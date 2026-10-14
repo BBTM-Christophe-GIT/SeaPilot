@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { HumanResourcesPage, HumanResourcesRoute } from './HumanResourcesPage';
 import { connectHrDrive, readHrDriveFile, writeHrDriveFile } from './hrDocumentDrive';
-vi.mock('./hrDocumentDrive', () => ({ connectHrDrive: vi.fn(), writeHrDriveFile: vi.fn(async (_client, id, name) => ({ drive_path: `person-${id}/${name}`, drive_sha256: 'a'.repeat(64) })), readHrDriveFile: vi.fn() }));
+vi.mock('../documents/documentBlobStorage', async original => ({ ...await original<typeof import('../documents/documentBlobStorage')>(), hasDocumentBlobFile: vi.fn().mockResolvedValue(false) }));
+vi.mock('./hrDocumentDrive', () => ({ connectHrDrive: vi.fn(), writeHrDriveFile: vi.fn(async (_client, id, name) => ({ storage_bucket: 'hr-documents', storage_path: `people/${id}/fixture-${name}`, drive_path: null, drive_sha256: null })), readHrDriveFile: vi.fn() }));
 import { openTrainingPlanReport } from './trainingPlanReport';
 import { buildCollaboratorSheetPdf, buildCollaboratorSheetsExport } from './collaboratorSheet';
 
@@ -270,6 +271,45 @@ async function withoutBrowserDownload(test: () => Promise<void>) {
 }
 
 describe('HumanResourcesPage', () => {
+  it('opens a fresh document URL on each click with a popup created before signing', async () => {
+    const user = userEvent.setup();
+    const navigate = vi.fn();
+    const popup = { opener: {}, location: { replace: navigate }, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+    const createSignedUrl = vi.fn().mockResolvedValueOnce({ data: { signedUrl: 'https://example/fresh-1' }, error: null })
+      .mockResolvedValueOnce({ data: { signedUrl: 'https://example/fresh-2' }, error: null });
+    const client = { ...createClient([activePerson], [{ ...documents[1], storage_bucket: 'hr-documents', storage_path: 'people/1/document.pdf' }]),
+      rpc: vi.fn().mockResolvedValue({ data: null, error: null }), storage: { from: () => ({ createSignedUrl }) } };
+    try {
+      render(<HumanResourcesPage client={client as never} currentPersonId={1} roles={['marin']} />);
+      const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+      await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+      const documentButton = await within(profile).findByRole('button', { name: /^Capitaine 200/ });
+      fireEvent.click(documentButton);
+      expect(open).toHaveBeenCalledWith('', '_blank');
+      expect(popup.opener).toBeNull();
+      await waitFor(() => expect(navigate).toHaveBeenLastCalledWith('https://example/fresh-1'));
+      fireEvent.click(documentButton);
+      await waitFor(() => expect(navigate).toHaveBeenLastCalledWith('https://example/fresh-2'));
+      expect(createSignedUrl).toHaveBeenCalledTimes(2);
+    } finally { open.mockRestore(); }
+  });
+  it('closes the document popup on an access refusal and never uses a cached URL', async () => {
+    const popup = { opener: {}, location: { replace: vi.fn() }, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+    const createSignedUrl = vi.fn().mockResolvedValue({ data: null, error: new Error('Document inaccessible') });
+    const client = { ...createClient([activePerson], [{ ...documents[1], storage_bucket: 'hr-documents', storage_path: 'people/1/document.pdf' }]),
+      rpc: vi.fn().mockResolvedValue({ data: null, error: null }), storage: { from: () => ({ createSignedUrl }) } };
+    try {
+      render(<HumanResourcesPage client={client as never} currentPersonId={1} roles={['marin']} />);
+      const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+      fireEvent.click(within(profile).getByRole('button', { name: 'Documents' }));
+      fireEvent.click(within(profile).getByRole('button', { name: /^Capitaine 200/ }));
+      await screen.findByText('Document inaccessible');
+      expect(popup.close).toHaveBeenCalledOnce();
+      expect(popup.location.replace).not.toHaveBeenCalled();
+    } finally { open.mockRestore(); }
+  });
   it('opens an accessible unassigned document chip for a manager', async () => {
     render(<MemoryRouter initialEntries={['/modules/humanResources?document=12']}><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={createClient([activePerson], [unassignedDocument]) as never} currentPersonId={1} roles={['admin']} />} /></Routes></MemoryRouter>);
     expect(await screen.findByRole('dialog', { name: 'Modifier Brevet pont a rattacher' })).toBeInTheDocument();
@@ -913,7 +953,7 @@ describe('HumanResourcesPage', () => {
     const file = new File(['certificate'], 'scan-cfbs.pdf', { type: 'application/pdf' });
     const title = noExpiry ? 'Jean MARTIN - CFBS' : 'Jean MARTIN - CFBS - 2030';
     const expiresOn = noExpiry ? null : '2030-06-30';
-    const storagePath = `person-1/${title}.pdf`;
+    const storagePath = `people/1/fixture-${title}.pdf`;
     const createdDocument = {
       ...documents[1],
       id: 42,
@@ -922,11 +962,11 @@ describe('HumanResourcesPage', () => {
       status: 'valid',
       issued_on: null,
       expires_on: expiresOn,
-      source_label: 'google_drive',
+      source_label: 'seapilot_blob',
       notes: null,
       file_url: null,
-      storage_bucket: null,
-      storage_path: null, drive_path: storagePath, drive_sha256: 'a'.repeat(64),
+      storage_bucket: 'hr-documents',
+      storage_path: storagePath, drive_path: null, drive_sha256: null,
       file_size_bytes: file.size,
       mime_type: 'application/pdf',
     };
@@ -979,7 +1019,7 @@ describe('HumanResourcesPage', () => {
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({
       category_key: 'safety_training',
       expires_on: expiresOn,
-      storage_path: null, drive_path: storagePath, drive_sha256: 'a'.repeat(64),
+      storage_path: storagePath, drive_path: null, drive_sha256: null,
       title,
     }));
     expect(await screen.findByText('Document ajoute.')).toBeInTheDocument();
@@ -1113,7 +1153,7 @@ describe('HumanResourcesPage', () => {
     }
   });
 
-  it('downloads multiple selected Drive documents as a ZIP archive', async () => {
+  it('downloads multiple selected historical Drive documents as a ZIP archive without a Windows launcher', async () => {
     const user = userEvent.setup();
     vi.mocked(readHrDriveFile).mockClear();
     vi.mocked(connectHrDrive).mockClear();
@@ -1126,7 +1166,7 @@ describe('HumanResourcesPage', () => {
     const originalFetch = globalThis.fetch;
     const originalCreateObjectUrl = URL.createObjectURL;
     const originalRevokeObjectUrl = URL.revokeObjectURL;
-    const createObjectURL = vi.fn(() => 'blob:documents-rh');
+    const createObjectURL = vi.fn<(blob: Blob) => string>(() => 'blob:documents-rh');
     const revokeObjectURL = vi.fn();
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
     globalThis.fetch = fetchMock as typeof fetch;
@@ -1146,10 +1186,14 @@ describe('HumanResourcesPage', () => {
       await user.click(within(selectionBar).getByRole('button', { name: 'Telecharger' }));
 
       await waitFor(() => expect(readHrDriveFile).toHaveBeenCalledTimes(2));
-      expect(connectHrDrive).toHaveBeenCalled();
+      expect(connectHrDrive).not.toHaveBeenCalled();
       expect(fetchMock).not.toHaveBeenCalled();
       await waitFor(() => expect(screen.queryByRole('region', { name: 'Selection documentaire RH' })).not.toBeInTheDocument());
       expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+      const { default: JSZip } = await import('jszip');
+      const archive = await JSZip.loadAsync(await createObjectURL.mock.calls[0][0].arrayBuffer());
+      expect(Object.keys(archive.files)).toHaveLength(2);
+      for (const entry of Object.values(archive.files)) expect(await entry.async('string')).toBe('document');
       expect(clickSpy).toHaveBeenCalledTimes(1);
       expect(revokeObjectURL).toHaveBeenCalledWith('blob:documents-rh');
     } finally {

@@ -6,6 +6,29 @@ import { createChemicalPreviewClient, createChemicalPreviewFiles } from './chemi
 import { fetchChemicalWorkspace, saveChemicalProduct } from './chemicalQueries';
 vi.mock('../../lib/supabaseClient', () => ({supabase:{}}));
 describe('chemical inventory workflow', () => {
+  it('opens documents with a fresh URL and closes the popup on a refused second opening', async () => {
+    const client = createChemicalPreviewClient();
+    const fileStore = { ...createChemicalPreviewFiles(), createSignedUrl: vi.fn().mockResolvedValueOnce('https://example/fresh')
+      .mockRejectedValueOnce(new Error('Document inaccessible')) };
+    const popup = { opener: {}, location: { replace: vi.fn() }, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+    try {
+      render(<MemoryRouter><ChemicalsPage client={client} fileStore={fileStore}/></MemoryRouter>);
+      fireEvent.click(await screen.findByRole('button', { name: /DÉMONSTRATIONProduit exemple/ }));
+      const detail = screen.getByRole('dialog', { name: /Produit exemple/ });
+      fireEvent.change(within(detail).getByLabelText('Ajouter des pièces jointes'), { target: { files: [new File(['FDS'], 'fds.pdf', { type: 'application/pdf' })] } });
+      await within(detail).findByText('fds.pdf');
+      fireEvent.click(within(detail).getByRole('button', { name: 'Ouvrir' }));
+      expect(open).toHaveBeenCalledWith('', '_blank');
+      await waitFor(() => expect(popup.location.replace).toHaveBeenCalledWith('https://example/fresh'));
+      await waitFor(() => expect(within(detail).getByRole('button', { name: 'Ouvrir' })).toBeEnabled());
+      fireEvent.click(within(detail).getByRole('button', { name: 'Ouvrir' }));
+      await within(detail).findByText('Document inaccessible');
+      expect(fileStore.createSignedUrl).toHaveBeenCalledTimes(2);
+      expect(popup.close).toHaveBeenCalledOnce();
+      expect(popup.location.replace).toHaveBeenCalledTimes(1);
+    } finally { open.mockRestore(); }
+  });
   it('creates a product with decimal stock and selected pictograms, attaches a file, edits and deletes it', async () => {
     const client = createChemicalPreviewClient();
     render(<MemoryRouter><ChemicalsPage client={client} fileStore={createChemicalPreviewFiles()}/></MemoryRouter>);

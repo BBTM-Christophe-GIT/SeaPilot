@@ -46,7 +46,7 @@ describe('Google Drive source links', () => {
 
   it('keeps published PDFs on protected Supabase storage even if a caller supplies a Drive link', async () => {
     const createSignedUrl = vi.fn().mockResolvedValue({ data: { signedUrl: 'https://storage.test/published.pdf' }, error: null });
-    const client = { storage: { from: vi.fn(() => ({ createSignedUrl })) } };
+    const client = { rpc: vi.fn().mockResolvedValue({ data: null, error: null }), storage: { from: vi.fn(() => ({ createSignedUrl })) } };
     const record = { procedureId: 1, status: 'published', fileName: 'published.pdf', mimeType: 'application/pdf',
       storageBucket: 'procedure-documents', storagePath: 'published/test.pdf', googleDriveFileId: id, googleDrivePath: 'source.docx' };
     expect(await getProcedureFileUrl(client as never, record as never, 'open')).toBe('https://storage.test/published.pdf');

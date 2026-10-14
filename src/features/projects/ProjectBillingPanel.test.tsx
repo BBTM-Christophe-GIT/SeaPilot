@@ -5,11 +5,12 @@ import { ProjectBillingPanel } from './ProjectBillingPanel';
 import type { ProjectRecord } from './projectQueries';
 import type { ProjectBillingData, ProjectBillingDpr } from './projectBilling';
 
-const mocks = vi.hoisted(() => ({ data: vi.fn(), catalog: vi.fn(), dprs: vi.fn(), export: vi.fn(), saveService: vi.fn() }));
+const mocks = vi.hoisted(() => ({ data: vi.fn(), catalog: vi.fn(), dprs: vi.fn(), export: vi.fn(), saveService: vi.fn(), signDocument: vi.fn() }));
 vi.mock('./projectBilling', async original => ({
   ...await original<typeof import('./projectBilling')>(),
   fetchProjectBillingData: mocks.data, fetchProjectServiceCatalog: mocks.catalog, fetchProjectBillingDprs: mocks.dprs,
   generateBillingExportPackage: mocks.export, saveProjectBillingService: mocks.saveService,
+  signedProjectBillingDocumentUrl: mocks.signDocument,
 }));
 vi.mock('./projectBillingReferences', async original => ({ ...await original<typeof import('./projectBillingReferences')>(), fetchBillingReferences: vi.fn().mockResolvedValue([]) }));
 vi.mock('../serviceProviders/serviceProviders', async original => ({ ...await original<typeof import('../serviceProviders/serviceProviders')>(), fetchServiceProviders: vi.fn().mockResolvedValue([]) }));
@@ -39,6 +40,28 @@ function renderPanel(projectRecord = project, workspace = false) {
 }
 
 describe('P144 Spread Antipollution monthly rule', () => {
+  it('opens a fresh billing document URL at the click and closes the popup after a refusal', async () => {
+    mocks.data.mockResolvedValue({ ...data, documents: [{ id: 11, billingPeriodId: 1, chargeableExpenseId: null,
+      documentKind: 'client_invoice', bucketName: 'project-files', objectPath: 'projects/144/invoice.pdf',
+      fileName: 'Facture.pdf', mimeType: 'application/pdf', fileSizeBytes: 7 }] });
+    mocks.signDocument.mockResolvedValueOnce('https://example/fresh').mockRejectedValueOnce(new Error('Document inaccessible'));
+    const popup = { opener: {}, location: { replace: vi.fn() }, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+    try {
+      renderPanel();
+      const documentButton = await screen.findByRole('button', { name: 'Facture.pdf' });
+      fireEvent.click(documentButton);
+      expect(open).toHaveBeenCalledWith('', '_blank');
+      expect(popup.opener).toBeNull();
+      await waitFor(() => expect(popup.location.replace).toHaveBeenCalledWith('https://example/fresh'));
+      await waitFor(() => expect(documentButton).toBeEnabled());
+      fireEvent.click(documentButton);
+      await screen.findByText('Document inaccessible');
+      expect(mocks.signDocument).toHaveBeenCalledTimes(2);
+      expect(popup.close).toHaveBeenCalledOnce();
+      expect(popup.location.replace).toHaveBeenCalledTimes(1);
+    } finally { open.mockRestore(); }
+  });
   it('selects a custom range in the permanent calendar while retaining the whole-month P144 quantity', async () => {
     const user = userEvent.setup();
     renderPanel(project, true);

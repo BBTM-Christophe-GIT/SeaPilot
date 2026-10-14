@@ -1,4 +1,5 @@
 import { StorageApiError, type SupabaseClient } from '@supabase/supabase-js';
+import { documentBlobStorage } from './documentBlobStorage';
 
 type BucketApi = ReturnType<SupabaseClient['storage']['from']>;
 type SignedOptions = Parameters<BucketApi['createSignedUrl']>[2];
@@ -210,6 +211,6 @@ export function documentDriveStorage(client: SupabaseClient, bucket: string, leg
 export function installDocumentDriveStorage(client: SupabaseClient): void {
   if (installedClients.has(client)) return;
   const originalFrom = client.storage.from.bind(client.storage);
-  client.storage.from = (bucket: string) => documentDriveStorage(client, bucket, originalFrom(bucket));
+  client.storage.from = (bucket: string) => documentBlobStorage(client, bucket, documentDriveStorage(client, bucket, originalFrom(bucket)));
   installedClients.add(client);
 }

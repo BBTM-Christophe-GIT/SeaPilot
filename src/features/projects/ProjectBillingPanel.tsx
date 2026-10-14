@@ -860,9 +860,13 @@ export function ProjectBillingPanel({
   async function openDocument(document: ProjectBillingDocument) {
     setBusy(`open-${document.id}`);
     setError('');
+    const popup = window.open('', '_blank');
+    if (!popup) { setError('Autorisez les fenêtres contextuelles pour ouvrir le document.'); setBusy(''); return; }
+    popup.opener = null;
     try {
-      window.open(await signedProjectBillingDocumentUrl(client, document), '_blank', 'noopener,noreferrer');
+      popup.location.replace(await signedProjectBillingDocumentUrl(client, document));
     } catch (caught) {
+      popup.close();
       setError(caught instanceof Error ? caught.message : 'Impossible d’ouvrir ce document.');
     } finally {
       setBusy('');
@@ -1050,7 +1054,7 @@ export function ProjectBillingPanel({
             const file = event.target.files?.[0]; event.currentTarget.value = '';
             if (!file || !selectedPeriod) return;
             setBusy('invoice'); setError('');
-            void uploadProjectBillingDocument(client, { projectId: project.id, billingPeriodId: selectedPeriod.id, file, kind: 'client_invoice' }).then((document) => { setData((current) => ({ ...current, documents: [document, ...current.documents] })); setMessage('Facture classée dans Google Drive.'); }).catch((caught: unknown) => setError(caught instanceof Error ? caught.message : 'Classement impossible.')).finally(() => setBusy(''));
+            void uploadProjectBillingDocument(client, { projectId: project.id, billingPeriodId: selectedPeriod.id, file, kind: 'client_invoice' }).then((document) => { setData((current) => ({ ...current, documents: [document, ...current.documents] })); setMessage('Facture enregistrée dans SeaPilot.'); }).catch((caught: unknown) => setError(caught instanceof Error ? caught.message : 'Classement impossible.')).finally(() => setBusy(''));
           }} /></label> : null}
         </div>
         </div>

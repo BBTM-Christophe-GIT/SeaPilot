@@ -3,6 +3,9 @@
   "buildCommand": "corepack pnpm build",
   "framework": "vite",
   "outputDirectory": "dist",
+  "functions": {
+    "api/documents.ts": { "regions": ["cdg1"] }
+  },
   "headers": [
     {
       "source": "/vessels/bbtm/:path*",

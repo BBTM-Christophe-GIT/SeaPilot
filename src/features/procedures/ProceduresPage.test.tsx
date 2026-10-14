@@ -1,3 +1,4 @@
+import { createHash, webcrypto } from 'node:crypto';
 import { fireEvent, render as renderTestingLibrary, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter } from 'react-router-dom';
@@ -15,9 +16,11 @@ const drive = vi.hoisted(() => ({ connect: vi.fn(), write: vi.fn(), publish: vi.
 vi.mock('./procedureDriveFiles', async importOriginal => ({ ...await importOriginal<typeof import('./procedureDriveFiles')>(), createProcedureFileStore: () => drive }));
 beforeEach(() => {
   Object.values(drive).forEach(mock => mock.mockReset());
+  vi.stubGlobal('crypto', webcrypto);
   drive.connect.mockResolvedValue({ version: '2.3.0', endpoint: 'http://127.0.0.1:50000/session' });
   drive.write.mockImplementation(async (input, file) => ({ path: procedureDriveFilename(input, file.name.match(/\.[^.]+$/)[0]), bytes: file.size, sha256: 'a'.repeat(64), mimeType: file.type }));
-  drive.publish.mockResolvedValue({ path: 'URG QSMS-OPS-01 4 - Procédure embarquement ROZEL.pdf', bytes: 100, sha256: 'a'.repeat(64) });
+  drive.publish.mockResolvedValue({ path: 'URG QSMS-OPS-01 4 - Procédure embarquement ROZEL.pdf', bytes: 7, sha256: createHash('sha256').update('fixture').digest('hex') });
+  drive.read.mockResolvedValue(new Blob(['fixture'], { type: 'application/pdf' }));
   drive.open.mockResolvedValue(undefined);
 });
 vi.mock('./procedureListPdf', () => ({ downloadProcedureListPdf: vi.fn().mockResolvedValue(undefined) }));
@@ -183,7 +186,7 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
     throw new Error(`Unexpected table ${table}`);
   });
   const rpc = vi.fn().mockImplementation(async (name: string) => ({
-    data: name === 'document_drive_lookup' ? null : options.published || publishedProcedureRow, error: null,
+    data: ['document_drive_lookup', 'document_blob_lookup'].includes(name) ? null : name === 'prepare_procedure_blob_publication' ? { ...(options.published || publishedProcedureRow), status: 'draft' } : options.published || publishedProcedureRow, error: null,
   }));
   const client = {
     rpc, from,
@@ -1069,8 +1072,9 @@ describe('ProceduresPage', () => {
     await user.click(dialog.getByRole('button', { name: 'Oui, publier' }));
     expect(await screen.findByText(/PDF publié pour les profils Armement/i)).toBeInTheDocument();
     expect(drive.publish).toHaveBeenCalledWith(expect.objectContaining({ id: 12 }));
-    expect(rpc).toHaveBeenCalledWith('publish_procedure_drive', { target_procedure: 12, pdf_path: 'URG QSMS-OPS-01 4 - Procédure embarquement ROZEL.pdf', pdf_bytes: 100, pdf_sha256: 'a'.repeat(64) });
-    expect(upload).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith('prepare_procedure_blob_publication', { target_procedure: 12, pdf_path: 'URG QSMS-OPS-01 4 - Procédure embarquement ROZEL.pdf', pdf_bytes: 7, pdf_sha256: createHash('sha256').update('fixture').digest('hex') });
+    expect(upload).toHaveBeenCalledWith('32', expect.any(Blob), expect.objectContaining({ contentType: 'application/pdf', upsert: false }));
+    expect(rpc).toHaveBeenCalledWith('publish_procedure_blob', { target_publication: 32 });
     expect(publicationInsert).not.toHaveBeenCalled();
   });
 

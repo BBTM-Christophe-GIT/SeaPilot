@@ -1,9 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { blobBase64, connectLocalDrive, localDriveRequest, supportsLocalDriveVersion } from '../documents/localDriveLauncher';
+import { connectLocalDrive, localDriveRequest, supportsLocalDriveVersion } from '../documents/localDriveLauncher';
 import { hasDocumentDriveFile } from '../documents/documentDriveStorage';
+import { hasDocumentBlobFile } from '../documents/documentBlobStorage';
 
 interface DriveReceipt { path: string; bytes: number; sha256: string; base64?: string }
-interface DriveFile { path: string; bytes: number; sha256: string; mime_type: string; drive_file_id?: string | null }
+interface DriveFile { id: number; path: string; bytes: number; sha256: string; mime_type: string; drive_file_id?: string | null }
 export function projectDriveCategory(path: string): string {
   if (/\/generated\/offer\//.test(path)) return 'Offres';
   if (path.includes('/generated/')) return 'Contrat';
@@ -26,7 +27,7 @@ async function sha256(blob: Blob): Promise<string> {
 /** Logical legacy addresses stay stable. Drive receipts route reads without rewriting historical rows. */
 export function projectDriveStorage(client: SupabaseClient, bucket: string) {
   const lookup = async (path: string): Promise<DriveFile | null> => {
-    const { data, error } = await client.from('project_drive_files').select('path,bytes,sha256,mime_type,drive_file_id').eq('source_bucket', bucket).eq('source_path', path).maybeSingle();
+    const { data, error } = await client.from('project_drive_files').select('id,path,bytes,sha256,mime_type,drive_file_id').eq('source_bucket', bucket).eq('source_path', path).maybeSingle();
     if (error) throw error;
     return data;
   };
@@ -42,34 +43,25 @@ export function projectDriveStorage(client: SupabaseClient, bucket: string) {
       try {
         const projectId = Number(/^projects\/(\d+)\//.exec(path)?.[1]);
         if (!projectId || bucket !== 'project-files' || options.upsert) throw new Error('Emplacement de projet invalide.');
-        const session = await connection();
-        const { data: scope, error } = await client.rpc('projects_drive_scope', { target_project: projectId });
-        if (error) throw error;
-        if (scope?.directory !== 'Projet' || typeof scope.folder !== 'string' || !scope.folder
-          || /[\\/:<>"|?*]/.test(scope.folder) || /[. ]$/.test(scope.folder) || !scope.company_id) {
-          throw new Error('Le dossier Google Drive du projet est invalide.');
-        }
-        const drivePath = `${scope.folder}/${projectDriveCategory(path)}/${path.split('/').at(-1)}`;
-        const hash = await sha256(blob);
-        const receipt = await localDriveRequest<DriveReceipt>(client, session, { action: 'write', module: 'projects', projectId, path: drivePath, base64: await blobBase64(blob) });
-        if (receipt.path !== drivePath || receipt.bytes !== blob.size || receipt.sha256 !== hash) throw new Error('La copie Google Drive n’a pas été confirmée.');
-        const saved = await client.from('project_drive_files').insert({ project_id: projectId, company_id: scope.company_id, source_bucket: bucket, source_path: path, path: drivePath, bytes: blob.size, sha256: hash, mime_type: options.contentType || blob.type || 'application/octet-stream' });
-        if (saved.error) throw saved.error;
-        return { error: null };
-      } catch (error) { return { error: error instanceof Error ? error : new Error((error as { message?: string })?.message || 'Classement Google Drive impossible.') }; }
+        return await client.storage.from(bucket).upload(path, blob, {
+          ...options, upsert: false, metadata: { project_id: projectId, file_name: path.split('/').at(-1) },
+        });
+      } catch (error) { return { error: error instanceof Error ? error : new Error((error as { message?: string })?.message || 'Enregistrement du document impossible.') }; }
     },
     async download(path: string) {
       // Migrated documents use the same authorized gateway as the browser's
       // other libraries, before consulting a historical desktop receipt.
-      if (await hasDocumentDriveFile(client, bucket, path)) return client.storage.from(bucket).download(path);
+      if (bucket !== 'local-demo' && (await hasDocumentBlobFile(client, bucket, path) || await hasDocumentDriveFile(client, bucket, path))) return client.storage.from(bucket).download(path);
       const file = await lookup(path);
       if (!file) return client.storage.from(bucket).download(path);
+      if (await hasDocumentBlobFile(client, 'project-drive', String(file.id))) return client.storage.from('project-drive').download(String(file.id));
       return { data: await read(file), error: null };
     },
     async createSignedUrl(path: string, seconds: number) {
-      if (await hasDocumentDriveFile(client, bucket, path)) return client.storage.from(bucket).createSignedUrl(path, seconds);
+      if (bucket !== 'local-demo' && (await hasDocumentBlobFile(client, bucket, path) || await hasDocumentDriveFile(client, bucket, path))) return client.storage.from(bucket).createSignedUrl(path, seconds);
       const file = await lookup(path);
       if (!file) return bucket === 'sharepoint' ? { data: { signedUrl: path }, error: null } : client.storage.from(bucket).createSignedUrl(path, seconds);
+      if (await hasDocumentBlobFile(client, 'project-drive', String(file.id))) return client.storage.from('project-drive').createSignedUrl(String(file.id), seconds);
       if (file.drive_file_id && /^[a-zA-Z0-9_-]+$/.test(file.drive_file_id)) return { data: { signedUrl: `https://drive.google.com/file/d/${file.drive_file_id}/view` }, error: null };
       const signedUrl = URL.createObjectURL(await read(file));
       window.setTimeout(() => URL.revokeObjectURL(signedUrl), seconds * 1000);

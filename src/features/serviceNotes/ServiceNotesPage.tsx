@@ -11,7 +11,7 @@ import { fetchWorkingTimeProfileSignatures } from '../workingTime/workingTimeSig
 import { ServiceNoteDocument } from './ServiceNoteDocument';
 import { ServiceNoteRichTextEditor } from './ServiceNoteRichTextEditor';
 import {
-  buildOfficeDesktopUrl, createServiceNoteAttachmentUrl, createServiceNoteDraft, createServiceNoteSignatureUrl,
+  buildOfficeDesktopUrl, createServiceNoteAttachmentUrl, createServiceNoteDraft, createServiceNoteSignatureUrl, createServiceNoteSourceUrl,
   deleteServiceNoteAttachment, deleteServiceNoteDraft, fetchServiceNoteLinkOptions, fetchServiceNotes,
   fetchServiceNoteTargetingOptions, formatServiceNoteDate, linkServiceNoteRecord, publishServiceNote, recallServiceNote, saveServiceNoteDraft,
   signServiceNote, updateServiceNoteInformation, uploadServiceNoteAttachment,
@@ -576,6 +576,13 @@ export function ServiceNotesPage() {
   const [signatureUrls, setSignatureUrls] = useState<Map<number, string>>(new Map());
   const [authorSignatureUrl, setAuthorSignatureUrl] = useState('');
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
+  const documentAccess = useRef({ client, currentUserId });
+  documentAccess.current = { client, currentUserId };
+  const documentMounted = useRef(true);
+  useEffect(() => {
+    documentMounted.current = true;
+    return () => { documentMounted.current = false; };
+  }, []);
   const isManager = roles.includes('admin') || roles.includes('direction');
   const visibleNotes = useMemo(() => isManager
     ? notes
@@ -657,12 +664,36 @@ export function ServiceNotesPage() {
     finally { setIsBusy(false); }
   }
 
-  async function handleOpenAttachment(attachment: ServiceNoteAttachment) {
+  async function openDocument(resolveUrl: () => Promise<string>) {
+    setMessage('');
+    const access = documentAccess.current;
+    const tab = window.open('about:blank', '_blank');
+    if (!tab) {
+      setMessage('Autorisez les fenêtres contextuelles de SeaPilot pour ouvrir ce document.');
+      return;
+    }
+    tab.opener = null;
     try {
-      const url = await createServiceNoteAttachmentUrl(client, attachment);
-      if (!url) throw new Error(`Aucun fichier n’est disponible pour « ${attachment.displayName} ».`);
-      window.open(url, '_blank', 'noopener,noreferrer');
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Ouverture impossible.'); }
+      const url = await resolveUrl();
+      if (!documentMounted.current || documentAccess.current.client !== access.client
+        || documentAccess.current.currentUserId !== access.currentUserId) {
+        tab.close();
+        return;
+      }
+      if (!url) throw new Error('Aucun fichier n’est disponible pour ce document.');
+      if (!['http:', 'https:'].includes(new URL(url, window.location.href).protocol)) throw new Error('Le lien du document est invalide.');
+      tab.location.replace(url);
+    } catch (error) {
+      tab.close();
+      if (documentMounted.current && documentAccess.current.client === access.client
+        && documentAccess.current.currentUserId === access.currentUserId) {
+        setMessage(error instanceof Error ? error.message : 'Ouverture impossible.');
+      }
+    }
+  }
+
+  async function handleOpenAttachment(attachment: ServiceNoteAttachment) {
+    await openDocument(() => createServiceNoteAttachmentUrl(client, attachment));
   }
 
   async function handleSign() {
@@ -785,7 +816,10 @@ export function ServiceNotesPage() {
               {selectedNote.status === 'draft' && isManager ? <button className="is-danger" disabled={isBusy} onClick={() => void handleDeleteDraft()} type="button"><Trash2 size={16} /> Supprimer le brouillon</button> : null}
               {selectedNote.status === 'published' && selectedNote.id === latestPublishedNoteId && isManager ? <button className="is-recall" disabled={isBusy} onClick={() => void handleRecall()} type="button"><RotateCcw size={16} /> Rappeler</button> : null}
               {selectedNote.status === 'recalled' && isManager ? <button className="is-republish" disabled={isBusy || !hasActiveSignature} onClick={() => void handleRepublish()} title={!hasActiveSignature ? 'Une signature active est requise pour diffuser.' : undefined} type="button"><Send size={16} /> Diffuser à nouveau</button> : null}
-              {selectedNote.sourceWebUrl ? <a href={buildOfficeDesktopUrl(selectedNote.sourceWebUrl)}><ExternalLink size={16} /> Ouvrir dans Word</a> : null}
+              {selectedNote.sourceWebUrl ? <>
+                <button onClick={() => void openDocument(() => createServiceNoteSourceUrl(client, selectedNote))} type="button"><ExternalLink size={16} /> Ouvrir source</button>
+                <a href={buildOfficeDesktopUrl(selectedNote.sourceWebUrl)}><PenLine size={16} /> Ouvrir dans Word</a>
+              </> : null}
               <div className={`service-note-download-menu${isDownloadMenuOpen ? ' is-open' : ''}`}>
                 <button aria-expanded={isDownloadMenuOpen} aria-haspopup="menu" disabled={isBusy} onClick={() => setIsDownloadMenuOpen((open) => !open)} type="button"><Download size={16} /> Télécharger <ChevronDown size={14} /></button>
                 {isDownloadMenuOpen ? <div aria-label="Options de téléchargement" role="menu">

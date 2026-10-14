@@ -51,7 +51,7 @@ export async function addChemicalAttachment(client: SupabaseClient, files: Chemi
   const { data, error } = await client.from('chemical_attachments').insert({ id, company_id: product.company_id,
     product_id: product.id, ...stored, file_name: file.name, mime_type: mime, size_bytes: file.size, kind }).select('*').single();
   // An ambiguous network response may follow a committed insert. Do not erase a potentially referenced file.
-  if (error) throw new Error(`Le fichier est enregistré dans Google Drive : Produits Chimiques/${stored.drive_path}. Son référencement a échoué ; actualisez avant de réessayer. ${error.message}`);
+  if (error) throw new Error(`Le fichier est enregistré dans SeaPilot (référence ${id}). Son référencement a échoué ; actualisez avant de réessayer. ${error.message}`);
   return data as ChemicalAttachment;
 }
 export async function downloadChemicalAttachment(files: ChemicalFileStore, attachment: ChemicalAttachment): Promise<Blob> {
@@ -61,5 +61,5 @@ export async function removeChemicalAttachment(client: SupabaseClient, attachmen
   const { data, error } = await client.from('chemical_attachments').delete().eq('id', attachment.id).select('id').maybeSingle();
   if (error) throw error;
   if (!data) throw new Error('Cette pièce jointe a déjà été supprimée. Actualisez la liste.');
-  return 'Pièce retirée de l’inventaire. L’original est conservé dans Google Drive.';
+  return 'Pièce retirée de l’inventaire. L’original est conservé.';
 }

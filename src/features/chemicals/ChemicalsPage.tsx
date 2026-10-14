@@ -10,7 +10,6 @@ import { PICTOGRAMS, filterChemicals, productLabel, saveChemicalBlob, stockLabel
 import { addChemicalAttachment, deleteChemicalProduct, downloadChemicalAttachment, fetchChemicalWorkspace, removeChemicalAttachment, saveChemicalProduct } from './chemicalQueries';
 import { createChemicalPreviewClient, createChemicalPreviewFiles } from './chemicalPreview';
 import { createChemicalDrive, type ChemicalFileStore } from './chemicalDrive';
-import { launcherOpenUri } from '../documents/localDriveLauncher';
 import './chemicals.css';
 
 const messageOf = (error: unknown) => error && typeof error === 'object' && 'message' in error ? String(error.message) : 'Impossible de réaliser cette opération.';
@@ -79,6 +78,23 @@ export function ChemicalsPage({ client, fileStore }: { client?: SupabaseClient; 
       setNotice('Pièces jointes ajoutées.');
     });
   }
+  function openAttachment(attachment: ChemicalAttachment) {
+    if (busyRef.current) return;
+    const popup = window.open('', '_blank');
+    if (!popup) { setError('Autorisez les fenêtres contextuelles pour ouvrir le document.'); return; }
+    popup.opener = null;
+    void act(async () => {
+      try {
+        let url: string;
+        if (files.createSignedUrl) url = await files.createSignedUrl(attachment);
+        else {
+          url = URL.createObjectURL(await files.read(attachment));
+          window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
+        }
+        popup.location.replace(url);
+      } catch (failure) { popup.close(); throw failure; }
+    });
+  }
   return <section className="chem-page">
     <header className="chem-header"><div><div className="chem-eyebrow">QHSE / REGISTRE DE BORD</div><h1><FlaskConical size={27}/>Produits Chimiques</h1><p>Inventaires, stocks et fiches de données de sécurité de la flotte.</p></div>
       <div className="chem-header-actions"><button type="button" className="chem-secondary" disabled={loading || busy || !vessels.length} onClick={() => { setError(''); setExportVesselId(vesselId || vessels[0]?.id || 0); }}><Download size={17}/>Exporter en PDF</button><button type="button" className="chem-primary" disabled={loading || busy || !vessels.length} onClick={() => { setError(''); setDetailId(null); setEditor({}); }}><Plus size={18}/>Ajouter un produit</button></div>
@@ -101,24 +117,23 @@ export function ChemicalsPage({ client, fileStore }: { client?: SupabaseClient; 
       footer={<div className="app-dialog__actions"><button className="is-secondary" disabled={busy} onClick={() => setDetailId(null)} type="button">Fermer</button><button className="is-primary" disabled={busy} onClick={() => { setError(''); setEditor({ product: detail }); }} type="button"><Pencil size={16}/>Modifier le produit</button></div>}>
       {error ? <p className="chem-error" role="alert">{error}</p> : null}<div className="chem-detail-top"><div><small>Stock en litres</small><strong>{stockLabel(detail.stock_litres)}</strong></div><Pictograms product={detail}/></div>
       <dl className="chem-detail-grid">{([['Variante / format / UFI',detail.variant],['Compatibilité de stockage',detail.storage_compatibility],['Usage',detail.usage],['Emplacement',detail.storage_location],['Dangers',detail.hazards],['Conseils de prudence',detail.precautions],['EPI',detail.ppe],['Observations / source',detail.notes]]).map(([label,value]) => <div key={label}><dt>{label}</dt><dd>{value || 'À renseigner'}</dd></div>)}</dl>
-      <section className="chem-attachments"><h3><Paperclip size={18}/>FDS et pièces jointes · Google Drive</h3><p>Dossier : SeaPilot / Produits Chimiques / navire / produit.</p>{attachments.filter((a) => a.product_id === detail.id).map((a) => <div className="chem-attachment" key={a.id}><button disabled={busy} type="button" onClick={() => void act(async () => saveChemicalBlob(await downloadChemicalAttachment(files,a),a.file_name))}><Download size={16}/><span><b>{a.file_name}</b><small>{a.kind === 'fds' ? 'Fiche de données de sécurité' : 'Pièce jointe'} · {(a.size_bytes/1024).toFixed(0)} Ko · Google Drive</small></span></button>{!context?.previewMode ? <a className="chem-open-drive" href={launcherOpenUri('chemicals',a.drive_path)} title="Ouvrir le fichier Google Drive sur ce PC">Ouvrir</a> : null}<button type="button" aria-label={`Supprimer ${a.file_name}`} disabled={busy} onClick={() => { setError(''); setRemoval(a); }}><Trash2 size={16}/></button></div>)}
+      <section className="chem-attachments"><h3><Paperclip size={18}/>FDS et pièces jointes</h3><p>Documents du produit conservés dans SeaPilot.</p>{attachments.filter((a) => a.product_id === detail.id).map((a) => <div className="chem-attachment" key={a.id}><button disabled={busy} type="button" onClick={() => void act(async () => saveChemicalBlob(await downloadChemicalAttachment(files,a),a.file_name))}><Download size={16}/><span><b>{a.file_name}</b><small>{a.kind === 'fds' ? 'Fiche de données de sécurité' : 'Pièce jointe'} · {(a.size_bytes/1024).toFixed(0)} Ko</small></span></button>{!context?.previewMode ? <button className="chem-open-drive" type="button" disabled={busy} onClick={() => openAttachment(a)} title="Ouvrir le document">Ouvrir</button> : null}<button type="button" aria-label={`Supprimer ${a.file_name}`} disabled={busy} onClick={() => { setError(''); setRemoval(a); }}><Trash2 size={16}/></button></div>)}
         {!attachments.some((a) => a.product_id === detail.id) ? <p>Aucune pièce jointe. Ajoutez la fiche de données de sécurité du produit.</p> : null}
-        <div className="chem-upload"><label>Type de document<select disabled={busy} value={attachmentKind} onChange={(e) => setAttachmentKind(e.target.value as ChemicalAttachment['kind'])}><option value="fds">Fiche de données de sécurité</option><option value="other">Autre pièce jointe</option></select></label><label>Ajouter des pièces jointes<input type="file" multiple disabled={busy} accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx,.txt" onChange={(e) => { void upload(e.target.files,detail); e.target.value=''; }}/></label><small>Google Drive · PDF, images, DOCX, XLSX ou texte · 20 Mo par fichier. Lanceur Windows 2.2 requis.</small></div>
+        <div className="chem-upload"><label>Type de document<select disabled={busy} value={attachmentKind} onChange={(e) => setAttachmentKind(e.target.value as ChemicalAttachment['kind'])}><option value="fds">Fiche de données de sécurité</option><option value="other">Autre pièce jointe</option></select></label><label>Ajouter des pièces jointes<input type="file" multiple disabled={busy} accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx,.txt" onChange={(e) => { void upload(e.target.files,detail); e.target.value=''; }}/></label><small>PDF, images, DOCX, XLSX ou texte · 20 Mo par fichier.</small></div>
       </section>
     </AppDialog> : null}
     {removal ? <AppDialog title={'file_name' in removal ? 'Retirer la pièce jointe ?' : 'Supprimer le produit ?'} size="sm" isBusy={busy} onClose={() => { setRemoval(null); setError(''); }} footer={<div className="app-dialog__actions"><button type="button" className="is-secondary" disabled={busy} onClick={() => setRemoval(null)}>Annuler</button><button type="button" className="is-danger" disabled={busy} onClick={() => void act(async () => {
       if ('file_name' in removal) { const warning = await removeChemicalAttachment(db,removal); setWorkspace((old) => ({ ...old, attachments: old.attachments.filter((a) => a.id !== removal.id) })); setNotice(warning || 'Pièce jointe supprimée.'); }
       else { await deleteChemicalProduct(db,removal); setWorkspace((old) => ({ ...old, products: old.products.filter((p) => p.id !== removal.id) })); setDetailId(null); setNotice('Produit supprimé de l’inventaire.'); }
       setRemoval(null);
-    })}>{busy ? 'Suppression…' : 'Supprimer'}</button></div>}><p>{'file_name' in removal ? removal.file_name : `${productLabel(removal)} sera retiré de l’inventaire.`}</p><p>Les fichiers originaux restent dans le dossier Google Drive.</p>{error ? <p role="alert" className="chem-error">{error}</p> : null}</AppDialog> : null}
+    })}>{busy ? 'Suppression…' : 'Supprimer'}</button></div>}><p>{'file_name' in removal ? removal.file_name : `${productLabel(removal)} sera retiré de l’inventaire.`}</p><p>Les fichiers originaux sont conservés.</p>{error ? <p role="alert" className="chem-error">{error}</p> : null}</AppDialog> : null}
     {exportVesselId !== null ? <AppDialog title="Exporter l’inventaire en PDF" eyebrow="DOCUMENT BBTM" size="sm" isBusy={busy} onClose={() => { setExportVesselId(null); setError(''); }} footer={<div className="app-dialog__actions"><button type="button" className="is-secondary" disabled={busy} onClick={() => setExportVesselId(null)}>Annuler</button><button type="button" className="is-primary" disabled={busy || !exportVesselId} onClick={() => void act(async () => {
       const vessel = vessels.find((v) => v.id === exportVesselId); if (!vessel) throw new Error('Sélectionnez un navire.');
-      if (includeAttachments && attachments.some((a) => products.some((p) => p.id === a.product_id && p.vessel_id === vessel.id))) await files.connect();
       const { buildChemicalPdf, prepareChemicalPdf } = await import('./chemicalPdf');
       const result = await buildChemicalPdf(await prepareChemicalPdf(files,vessel,products,attachments,includeAttachments));
       saveChemicalBlob(result.blob,result.filename); setNotice('PDF BBTM généré.'); setExportVesselId(null);
     })}>{busy ? 'Génération…' : 'Télécharger le PDF'}</button></div>}>
-      {error ? <p className="chem-error" role="alert">{error}</p> : null}<label className="chem-field"><span>Navire</span><select disabled={busy} value={exportVesselId} onChange={(e) => setExportVesselId(Number(e.target.value))}>{vessels.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label><p>L’export contient tous les produits du navire choisi, indépendamment de la recherche affichée.</p><label className="chem-export-check"><input type="checkbox" checked={includeAttachments} disabled={busy} onChange={(e) => setIncludeAttachments(e.target.checked)}/><span><b>Inclure les pièces jointes</b><small>Les PDF et images sont ajoutés en annexe. Les autres formats sont incorporés comme fichiers joints au PDF. Le dossier Google Drive doit être synchronisé sur ce PC et le lanceur Windows 2.2 installé.</small></span></label>
+      {error ? <p className="chem-error" role="alert">{error}</p> : null}<label className="chem-field"><span>Navire</span><select disabled={busy} value={exportVesselId} onChange={(e) => setExportVesselId(Number(e.target.value))}>{vessels.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label><p>L’export contient tous les produits du navire choisi, indépendamment de la recherche affichée.</p><label className="chem-export-check"><input type="checkbox" checked={includeAttachments} disabled={busy} onChange={(e) => setIncludeAttachments(e.target.checked)}/><span><b>Inclure les pièces jointes</b><small>Les PDF et images sont ajoutés en annexe. Les autres formats sont incorporés comme fichiers joints au PDF.</small></span></label>
     </AppDialog> : null}
   </section>;
 }

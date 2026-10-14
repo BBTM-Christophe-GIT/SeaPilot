@@ -149,11 +149,11 @@ describe('verified document Drive routing', () => {
     expect(legacy.createSignedUrls).not.toHaveBeenCalled();
   });
 
-  it('installs once and preserves native upload and deletion methods', async () => {
+  it('installs once and preserves native uploads and deletions outside private document buckets', async () => {
     const { client, legacy, originalFrom } = fixture({ 'current.pdf': reference });
     installDocumentDriveStorage(client as never);
     installDocumentDriveStorage(client as never);
-    const bucket = client.storage.from('fleet-certificates');
+    const bucket = client.storage.from('application-branding');
     await bucket.upload('new.pdf', new Blob(['new']));
     await bucket.remove(['unmigrated.pdf']);
     expect(originalFrom).toHaveBeenCalledTimes(1);

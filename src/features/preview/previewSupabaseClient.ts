@@ -2103,6 +2103,11 @@ function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'document_blob_lookup') return createPreviewQuery({ data: null, error: null });
+  if (functionName === 'document_blob_lookup_batch') {
+    const paths = Array.isArray(args.target_paths) ? args.target_paths : [];
+    return createPreviewQuery({ data: paths.map((path) => ({ path, document: null, error: null })), error: null });
+  }
   if (functionName === 'assigned_vessel_read_scope') {
     // Local fixture: the connected demonstration user has a current vessel and
     // another assignment inside the calendar-month reading window.

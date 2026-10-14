@@ -9,7 +9,7 @@ export function createPreviewStorageClient(resolveLocalBlob: (path: string) => P
       const filters = new Set<string>();
       const query = {
         select(columns: string) {
-          if (columns !== 'path,bytes,sha256,mime_type,drive_file_id') throw new Error('Sélection inconnue dans la préversion.');
+          if (columns !== 'id,path,bytes,sha256,mime_type,drive_file_id') throw new Error('Sélection inconnue dans la préversion.');
           selected = true;
           return query;
         },

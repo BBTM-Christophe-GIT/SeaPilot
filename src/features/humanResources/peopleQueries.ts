@@ -2,6 +2,7 @@ import { loadPeoplePortraits } from './portraitMedia';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { readHrDriveFile, writeHrDriveFile } from './hrDocumentDrive';
 import { hasDocumentDriveFile } from '../documents/documentDriveStorage';
+import { hasDocumentBlobFile } from '../documents/documentBlobStorage';
 import type { RoleKey } from '../permissions/roles';
 
 const PEOPLE_SELECT = [
@@ -1437,13 +1438,11 @@ export async function createHrDocument(
     status: statusFromDueDate(input.dueDate),
     expires_on: optionalText(input.dueDate),
     requires_captain_validation: false,
-    source_label: 'google_drive',
+    source_label: 'seapilot_blob',
     ...drive,
     drive_file_id: null,
     notes: null,
     file_url: null,
-    storage_bucket: null,
-    storage_path: null,
     file_size_bytes: input.file.size,
     mime_type: input.file.type || null,
     medical_restriction: isMedicalVisit ? optionalText(input.medicalRestriction) : null,
@@ -1453,8 +1452,7 @@ export async function createHrDocument(
   const { data, error } = await client.from('hr_documents').insert(payload).select(HR_DOCUMENT_SELECT).single();
 
   if (error) {
-    // Preserve the verified Drive file so a failed metadata save never loses it.
-    throw new Error('Le fichier a été enregistré dans Drive, mais sa fiche RH n’a pas pu être enregistrée. Réessayez après avoir vérifié la connexion.');
+    throw new Error('Le fichier a été enregistré dans SeaPilot, mais sa fiche RH n’a pas pu être enregistrée. Réessayez après avoir vérifié la connexion.');
   }
 
   return mapHrDocumentRows([data as unknown as HrDocumentRow])[0];
@@ -1473,12 +1471,10 @@ export async function renewHrDocument(client: SupabaseClient, input: RenewHrDocu
     title: stripFileExtension(fileName),
     status: statusFromDueDate(input.dueDate),
     expires_on: optionalText(input.dueDate),
-    source_label: 'google_drive',
+    source_label: 'seapilot_blob',
     ...drive,
     drive_file_id: null,
     file_url: null,
-    storage_bucket: null,
-    storage_path: null,
     file_size_bytes: input.file.size,
     mime_type: input.file.type || null,
     renewed_at: new Date().toISOString(),
@@ -1496,8 +1492,7 @@ export async function renewHrDocument(client: SupabaseClient, input: RenewHrDocu
   const { data, error } = await client.from('hr_documents').update(payload).eq('id', input.document.id).select(HR_DOCUMENT_SELECT).single();
 
   if (error) {
-    // Preserve the verified Drive file so a failed metadata save never loses it.
-    throw new Error('Le fichier a été enregistré dans Drive, mais sa fiche RH n’a pas pu être enregistrée. Réessayez après avoir vérifié la connexion.');
+    throw new Error('Le fichier a été enregistré dans SeaPilot, mais sa fiche RH n’a pas pu être enregistrée. Réessayez après avoir vérifié la connexion.');
   }
 
   return mapHrDocumentRows([data as unknown as HrDocumentRow])[0];
@@ -1587,8 +1582,24 @@ export async function updateHrDocumentMedicalDetails(
   return mapHrDocumentRows([data as unknown as HrDocumentRow])[0];
 }
 
+async function hrBlobAddress(client: SupabaseClient, document: HrDocumentRecord) {
+  // A retained desktop reference remains the current version until renewal
+  // clears it. Its canonical storage address may still describe an older backup.
+  if (document.drivePath && await hasDocumentBlobFile(client, 'hr-drive', String(document.id))) return { bucket: 'hr-drive', path: String(document.id) };
+  if (document.storageBucket && document.storagePath && await hasDocumentBlobFile(client, document.storageBucket, document.storagePath)) {
+    return { bucket: document.storageBucket, path: document.storagePath };
+  }
+  return null;
+}
 export async function createHrDocumentSignedUrl(client: SupabaseClient, document: HrDocumentRecord): Promise<string> {
-  if (document.drivePath && !await hasDocumentDriveFile(client, document.storageBucket, document.storagePath)) {
+  const cloud = await hrBlobAddress(client, document);
+  if (cloud) {
+    const { data, error } = await client.storage.from(cloud.bucket).createSignedUrl(cloud.path, 120);
+    if (error || !data?.signedUrl) throw error || new Error('Le document RH est indisponible.');
+    return data.signedUrl;
+  }
+  if (document.drivePath && !await hasDocumentBlobFile(client, document.storageBucket, document.storagePath)
+    && !await hasDocumentDriveFile(client, document.storageBucket, document.storagePath)) {
     return URL.createObjectURL(await readHrDriveFile(client, document));
   }
   if (document.storageBucket && document.storagePath) {
@@ -1609,7 +1620,14 @@ export async function createHrDocumentSignedUrl(client: SupabaseClient, document
 }
 
 export async function downloadHrDocumentBlob(client: SupabaseClient, document: HrDocumentRecord): Promise<Blob> {
-  if (document.drivePath && !await hasDocumentDriveFile(client, document.storageBucket, document.storagePath)) {
+  const cloud = await hrBlobAddress(client, document);
+  if (cloud) {
+    const { data, error } = await client.storage.from(cloud.bucket).download(cloud.path);
+    if (error || !data) throw error || new Error('Le document RH est indisponible.');
+    return data;
+  }
+  if (document.drivePath && !await hasDocumentBlobFile(client, document.storageBucket, document.storagePath)
+    && !await hasDocumentDriveFile(client, document.storageBucket, document.storagePath)) {
     return readHrDriveFile(client, document);
   }
   if (document.storageBucket && document.storagePath) {
@@ -1625,7 +1643,7 @@ export async function downloadHrDocumentBlob(client: SupabaseClient, document: H
   const url = await createHrDocumentSignedUrl(client, document);
   let response: Response;
   try { response = await fetch(url, { credentials: 'include' }); }
-  catch { throw new Error(`Le fichier « ${document.title} » est encore sur SharePoint et n’est pas accessible depuis SeaPilot. Sa migration vers Drive reste à terminer.`); }
+  catch { throw new Error(`Le fichier « ${document.title} » est encore sur SharePoint et n’est pas accessible depuis SeaPilot. Sa copie dans SeaPilot reste à terminer.`); }
 
   if (!response.ok) {
     throw new Error(`Impossible de telecharger "${document.title}".`);

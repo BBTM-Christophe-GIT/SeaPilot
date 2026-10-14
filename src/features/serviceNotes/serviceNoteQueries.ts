@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { hasDocumentBlobFile } from '../documents/documentBlobStorage';
 import { getFleetCertificateCategory, getFleetCertificateCategoryParent } from '../fleetCertificates/fleetCertificateCategories';
 
 export const SERVICE_NOTE_FILE_BUCKET = 'service-note-files';
@@ -636,6 +637,14 @@ export async function resolveServiceNoteAttachmentAsset(
   client: SupabaseClient,
   attachment: ServiceNoteAttachment,
 ): Promise<ServiceNoteAttachmentAsset> {
+  if ((!attachment.storageBucket || !attachment.storagePath) && attachment.externalUrl
+    && await hasDocumentBlobFile(client, 'service-note-external', String(attachment.id))) {
+    return {
+      filename: attachmentFilename(attachment, '', attachment.externalUrl),
+      mimeType: attachment.mimeType || 'application/octet-stream',
+      storageBucket: 'service-note-external', storagePath: String(attachment.id), externalUrl: '',
+    };
+  }
   const linked = (!attachment.storageBucket || !attachment.storagePath)
     ? await resolveLinkedServiceNoteAttachment(client, attachment)
     : {};
@@ -683,6 +692,17 @@ export async function fetchServiceNoteAttachmentBlob(
     };
   }
   throw new Error(`Aucun fichier n’est disponible pour « ${attachment.displayName} ».`);
+}
+
+/** Resolve the original note at the click, including migrated historical DOCX files. */
+export async function createServiceNoteSourceUrl(client: SupabaseClient, note: ServiceNote): Promise<string> {
+  if (!note.sourceWebUrl) return '';
+  const path = String(note.id);
+  if (!await hasDocumentBlobFile(client, 'service-note-source', path)) return note.sourceWebUrl;
+  const { data, error } = await client.storage.from('service-note-source').createSignedUrl(path, 900);
+  assertResult(error, 'Impossible d’ouvrir le fichier source de cette note.');
+  if (!data?.signedUrl) throw new Error('Le fichier source de cette note est indisponible.');
+  return data.signedUrl;
 }
 
 export async function createServiceNoteSignatureUrl(client: SupabaseClient, snapshot: ServiceNoteSignatureSnapshot | null): Promise<string> {

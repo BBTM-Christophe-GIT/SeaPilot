@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { createHash, webcrypto } from 'node:crypto';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildProcedureDesktopUri,
   createProcedure,
@@ -13,6 +14,7 @@ import {
   type ProcedureInput,
   type ProcedureRecord,
 } from './procedureQueries';
+afterEach(() => vi.unstubAllGlobals());
 
 describe('procedure tags persistence', () => {
   const row = {
@@ -72,11 +74,43 @@ describe('procedure tags persistence', () => {
     expect(update).toHaveBeenCalledWith({ tags: [] });
   });
 
-  it('returns tags inherited by a Drive publication', async () => {
-    const rpc = vi.fn().mockResolvedValue({ data: row, error: null });
-    const result = await publishProcedure({ rpc } as never, { id: 12 } as ProcedureRecord, { path: 'Procedures/published/consigne.pdf', bytes: 10, sha256: 'a'.repeat(64) });
+  it('reserves a draft, uploads the exact converted PDF, then publishes inherited tags', async () => {
+    vi.stubGlobal('crypto', webcrypto);
+    const events: string[] = [];
+    const rpc = vi.fn().mockImplementation(async (name: string) => {
+      events.push(name);
+      return { data: name === 'document_blob_lookup' ? null : { ...row, status: name === 'prepare_procedure_blob_publication' ? 'draft' : 'published' }, error: null };
+    });
+    const upload = vi.fn().mockImplementation(async (_path: string, _file: File) => { events.push('upload'); return { error: null }; });
+    const read = vi.fn().mockResolvedValue(new Blob(['fixture'], { type: 'application/pdf' }));
+    const result = await publishProcedure({ rpc, storage: { from: () => ({ upload }) } } as never, { id: 12 } as ProcedureRecord,
+      { path: 'consigne.pdf', bytes: 7, sha256: createHash('sha256').update('fixture').digest('hex') }, read);
     expect(result.tags).toEqual(['Sécurité', 'Incendie']);
-    expect(rpc).toHaveBeenCalledWith('publish_procedure_drive', expect.objectContaining({ target_procedure: 12 }));
+    expect(events).toEqual(['prepare_procedure_blob_publication', 'document_blob_lookup', 'upload', 'publish_procedure_blob']);
+    expect(read).toHaveBeenCalledWith(expect.objectContaining({ id: 12, status: 'draft' }));
+    expect(upload).toHaveBeenCalledWith('12', expect.any(Blob), { contentType: 'application/pdf', upsert: false, metadata: { publication_id: 12, file_name: 'consigne.pdf' } });
+    expect(upload.mock.calls[0][1]).toMatchObject({ name: 'consigne.pdf', type: 'application/pdf' });
+  });
+  it.each(['changed bytes', 'failed upload'])('keeps a PDF pending when the transfer has %s', async failure => {
+    vi.stubGlobal('crypto', webcrypto);
+    const rpc = vi.fn().mockImplementation(async (name: string) => ({ data: name === 'document_blob_lookup' ? null : { ...row, status: 'draft' }, error: null }));
+    const upload = vi.fn().mockResolvedValue({ error: new Error('Transfert refusé') });
+    const read = vi.fn().mockResolvedValue(new Blob([failure === 'changed bytes' ? 'changed' : 'fixture']));
+    await expect(publishProcedure({ rpc, storage: { from: () => ({ upload }) } } as never, { id: 12 } as ProcedureRecord,
+      { path: 'consigne.pdf', bytes: 7, sha256: createHash('sha256').update('fixture').digest('hex') }, read)).rejects.toThrow();
+    expect(rpc).not.toHaveBeenCalledWith('publish_procedure_blob', expect.anything());
+    if (failure === 'changed bytes') expect(upload).not.toHaveBeenCalled();
+  });
+  it('retries activation of an already verified PDF without overwriting the Blob', async () => {
+    const mapping = { blob_pathname: 'documents/pending.pdf', bytes: 7, sha256: 'a'.repeat(64), file_name: 'consigne.pdf', mime_type: 'application/pdf' };
+    const rpc = vi.fn().mockImplementation(async (name: string) => ({ data: name === 'document_blob_lookup' ? mapping : { ...row, status: name === 'prepare_procedure_blob_publication' ? 'draft' : 'published' }, error: null }));
+    const from = vi.fn();
+    const read = vi.fn();
+    expect((await publishProcedure({ rpc, storage: { from } } as never, { id: 12 } as ProcedureRecord,
+      { path: 'consigne.pdf', bytes: 7, sha256: 'a'.repeat(64) }, read)).status).toBe('published');
+    expect(rpc).toHaveBeenCalledWith('publish_procedure_blob', { target_publication: 12 });
+    expect(from).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
   });
 });
 

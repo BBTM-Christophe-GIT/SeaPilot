@@ -27,3 +27,4 @@ __pycache__/
 .vercel
 .design-qa/
 .superdesign/tmp/
+.env*
