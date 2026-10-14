@@ -1,6 +1,7 @@
+import { deferred } from './workingTimeTestHelpers';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createElement } from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -47,6 +48,16 @@ beforeEach(() => {
 });
 
 describe('WorkingTimeComplianceReport', () => {
+  it('does not show or export a late report after its period changes', async () => {
+    const user = userEvent.setup(); const pending = deferred<WorkingTimeComplianceReportData>();
+    vi.mocked(fetchWorkingTimeComplianceReport).mockReturnValueOnce(pending.promise);
+    render(createElement(WorkingTimeComplianceReport, { client, initialYear: 2026 }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Générer le rapport' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Générer le rapport' }));
+    await user.selectOptions(screen.getByLabelText('Année'), '2025');
+    await act(async () => { pending.resolve(report); await pending.promise; });
+    expect(screen.getByRole('button', { name: 'Exporter le PDF' })).toBeDisabled();
+  });
   it('does not expose an import-specific timeout message in the compliance report', () => {
     expect(workingTimeComplianceErrorMessage(new Error('canceling statement due to statement timeout')))
       .toBe('La génération du rapport a dépassé le délai serveur. Réduisez le périmètre ou relancez la génération.');

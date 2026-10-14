@@ -218,3 +218,18 @@ export async function commitWorkingTimeImport(client: SupabaseClient, batchId: n
     remainingRows: asNumber(value.remaining_rows),
   };
 }
+
+/** Reconcile a lost commit response through RLS reads; preview itself mutates the batch. */
+export async function fetchWorkingTimeImportStatus(client: SupabaseClient, batchId: number): Promise<{ status: string; summary: WorkingTimeImportCommitSummary | null }> {
+  const { data, error } = await client.from('working_time_import_batches').select('id,status,import_summary,imported_at').eq('id', batchId).maybeSingle();
+  assertResult(error, 'Impossible de vérifier l’état de l’import.');
+  if (!data || Number(data.id) !== batchId) throw new Error('Cet import n’est pas accessible.');
+  const summary = data.import_summary as Record<string, unknown> | null;
+  const imported = data.status === 'imported' && typeof data.imported_at === 'string' && Number.isFinite(Date.parse(data.imported_at)) && summary && typeof summary === 'object';
+  return { status: String(data.status), summary: imported ? {
+    importedRows: asNumber(summary.imported_rows), importedIntervals: asNumber(summary.imported_intervals),
+    replacedRows: asNumber(summary.replaced_rows), replacedIntervals: asNumber(summary.replaced_intervals),
+    identicalRows: asNumber(summary.identical_rows), approvedRegisters: asNumber(summary.approved_registers),
+    blockedDuringCommit: asNumber(summary.blocked_during_commit), remainingRows: asNumber(summary.remaining_rows),
+  } : null };
+}

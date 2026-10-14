@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { CheckCircle2, FileSpreadsheet, LoaderCircle, Replace, ShieldAlert, Upload } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RoleKey } from '../permissions/roles';
 import {
   formatWorkingTimeImportPhases,
@@ -11,6 +11,7 @@ import {
   commitWorkingTimeImport,
   createWorkingTimeImportBatchAndUpload,
   fetchWorkingTimeImportPeople,
+  fetchWorkingTimeImportStatus,
   previewWorkingTimeImport,
   sha256WorkingTimeImportFile,
   type WorkingTimeImportEditableRow,
@@ -93,6 +94,20 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [commitUncertain, setCommitUncertain] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const operationId = useRef(0);
+  const revision = useRef(0);
+  const busyRef = useRef(false);
+
+  useEffect(() => {
+    operationId.current += 1;
+    revision.current += 1;
+    busyRef.current = false;
+    setBusy(false); setCommitting(false); setFile(null); setWorkbook(null); setRows([]);
+    setBatchId(null); setPreview(null); setPersonId(0); setCommitUncertain(false); setError(''); setSuccess('');
+    return () => { operationId.current += 1; };
+  }, [client, canImport]);
 
   useEffect(() => {
     if (!canImport) return;
@@ -104,8 +119,8 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
   const rowStatus = useMemo(() => new Map(preview?.rows.map((row) => [row.localWorkDate, row])), [preview]);
   const localErrors = rows.filter((row) => row.localError).length;
   const localWarnings = rows.filter((row) => row.localWarning).length;
-  const canCommit = Boolean(preview && !previewStale && preview.summary.readyRows > 0 && preview.summary.inconsistentRows === 0 && !busy);
-  const canControl = Boolean(personId && !localErrors && !busy && preview?.status !== 'imported');
+  const canCommit = Boolean(!commitUncertain && preview?.status === 'preview_ready' && !previewStale && preview.summary.readyRows > 0 && preview.summary.inconsistentRows === 0 && !busy);
+  const canControl = Boolean(!commitUncertain && personId && !localErrors && !busy && preview?.status !== 'imported');
   const actionMessage = !personId
     ? 'Sélectionnez la personne RH associée avant de lancer le contrôle.'
       : localErrors
@@ -123,11 +138,16 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
   if (!canImport) return null;
 
   const markChanged = () => {
-    setPreviewStale(Boolean(preview));
+    revision.current += 1;
+    setPreviewStale(Boolean(preview) || busyRef.current);
     setSuccess('');
   };
 
   const selectFile = async (selected: File | null) => {
+    const currentOperation = ++operationId.current;
+    revision.current += 1;
+    busyRef.current = false;
+    setBusy(false);
     setFile(selected);
     setWorkbook(null);
     setRows([]);
@@ -138,14 +158,17 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
     setError('');
     setSuccess('');
     setReplaceExistingDays(true);
+    setCommitUncertain(false);
     if (!selected) return;
     if (!selected.name.toLowerCase().endsWith('.xlsm') || selected.size > 20 * 1024 * 1024) {
       setError('Le fichier doit être un classeur XLSM de 20 Mo maximum.');
       return;
     }
     setBusy(true);
+    busyRef.current = true;
     try {
       const parsed = await parseWorkbook(selected);
+      if (currentOperation !== operationId.current) return;
       const match = people.find((person) => normalizeName(person.name) === normalizeName(parsed.detectedPersonName));
       setWorkbook(parsed);
       setPersonId(match?.id || 0);
@@ -160,9 +183,9 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
         localWarning: totalMismatchWarning(row.reportedWorkSeconds, row.detectedPhases),
       })));
     } catch (caught) {
-      setError(workingTimeImportErrorMessage(caught));
+      if (currentOperation === operationId.current) setError(workingTimeImportErrorMessage(caught));
     } finally {
-      setBusy(false);
+      if (currentOperation === operationId.current) { busyRef.current = false; setBusy(false); }
     }
   };
 
@@ -180,15 +203,21 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
   };
 
   const controlImport = async () => {
-    if (!file || !workbook || !personId || localErrors) return;
+    if (busyRef.current || commitUncertain || !file || !workbook || !personId || localErrors || preview?.status === 'imported') return;
+    const currentOperation = ++operationId.current;
+    const controlledRevision = revision.current;
+    busyRef.current = true;
     setBusy(true);
+    setPreviewStale(true);
     setError('');
     setSuccess('');
     try {
       let targetBatchId = batchId;
       if (!targetBatchId) {
         const hash = await sha256WorkingTimeImportFile(file);
+        if (currentOperation !== operationId.current) return;
         targetBatchId = (await createWorkingTimeImportBatchAndUpload(client, file, hash)).batchId;
+        if (currentOperation !== operationId.current) return;
         setBatchId(targetBatchId);
       }
       const result = await previewWorkingTimeImport(client, {
@@ -199,30 +228,63 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
         rows,
         replaceExistingDays,
       });
+      if (currentOperation !== operationId.current) return;
       setPreview(result);
-      setPreviewStale(false);
-      setSuccess('Contrôle serveur terminé. Vérifiez les statuts avant de valider l’import.');
+      const changed = controlledRevision !== revision.current;
+      setPreviewStale(changed);
+      if (!changed) setSuccess('Contrôle serveur terminé. Vérifiez les statuts avant de valider l’import.');
     } catch (caught) {
-      setError(workingTimeImportErrorMessage(caught));
+      if (currentOperation === operationId.current) setError(workingTimeImportErrorMessage(caught));
     } finally {
-      setBusy(false);
+      if (currentOperation === operationId.current) { busyRef.current = false; setBusy(false); }
     }
   };
 
   const commitImport = async () => {
-    if (!batchId || !canCommit) return;
+    if (busyRef.current || !batchId || !canCommit) return;
+    const currentOperation = ++operationId.current;
+    busyRef.current = true;
+    setCommitting(true);
     setBusy(true);
     setError('');
     setSuccess('');
     try {
       const summary = await commitWorkingTimeImport(client, batchId);
+      if (currentOperation !== operationId.current) return;
       setSuccess(`${summary.importedRows} journée(s) approuvée(s) importée(s), dont ${summary.replacedRows} remplacée(s). ${summary.identicalRows} journée(s) strictement identique(s) conservée(s) sans nouvel import.`);
       setPreview((current) => current ? { ...current, status: 'imported' } : current);
-      await onImported?.();
+      try { await onImported?.(); }
+      catch { if (currentOperation === operationId.current) setError('L’import est enregistré, mais l’actualisation du suivi est indisponible. Rechargez le suivi avant une nouvelle action.'); }
     } catch (caught) {
-      setError(workingTimeImportErrorMessage(caught));
+      if (currentOperation === operationId.current) {
+        setPreviewStale(true);
+        setCommitUncertain(true);
+        setError(`${workingTimeImportErrorMessage(caught)} Vérifiez l’état enregistré avant toute nouvelle validation.`);
+      }
     } finally {
-      setBusy(false);
+      if (currentOperation === operationId.current) { busyRef.current = false; setBusy(false); setCommitting(false); }
+    }
+  };
+  const reconcileImport = async () => {
+    if (!batchId || busyRef.current) return;
+    busyRef.current = true; setBusy(true);
+    const currentOperation = ++operationId.current;
+    try {
+      const state = await fetchWorkingTimeImportStatus(client, batchId);
+      if (currentOperation !== operationId.current) return;
+      if (state.status === 'imported' && state.summary) {
+        setPreview((current) => current ? { ...current, status: 'imported' } : current);
+        setSuccess(`${state.summary.importedRows} journée(s) approuvée(s) importée(s). Le résultat enregistré a été retrouvé sans relancer l’import.`);
+        setCommitUncertain(false); setError('');
+        try { await onImported?.(); } catch { if (currentOperation === operationId.current) setError('L’import est enregistré, mais l’actualisation du suivi est indisponible.'); }
+      } else if (state.status === 'preview_ready') {
+        setCommitUncertain(false); setPreviewStale(true);
+        setError('L’import n’est pas enregistré. Relancez le contrôle serveur avant de valider.');
+      } else setError('L’état de cet import ne permet pas une nouvelle validation. Vérifiez-le avant de poursuivre.');
+    } catch (caught) {
+      if (currentOperation === operationId.current) setError(workingTimeImportErrorMessage(caught));
+    } finally {
+      if (currentOperation === operationId.current) { busyRef.current = false; setBusy(false); }
     }
   };
 
@@ -242,11 +304,11 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
           <Upload aria-hidden="true" size={23} />
           <span>{file?.name || 'Déposer le classeur annuel XLSM'}</span>
           <small>20 Mo maximum · le code VBA n’est jamais lu ni exécuté</small>
-          <input accept=".xlsm,application/vnd.ms-excel.sheet.macroEnabled.12" onChange={(event) => void selectFile(event.target.files?.[0] || null)} type="file" />
+          <input accept=".xlsm,application/vnd.ms-excel.sheet.macroEnabled.12" disabled={committing} onChange={(event) => void selectFile(event.target.files?.[0] || null)} type="file" />
         </label>
         {workbook ? <div className="working-time-import-detection"><strong>{workbook.detectedPersonName}</strong><span>Année proposée {workbook.detectedYear} · {workbook.rows.length} journées · {formatHours(workbook.reportedWorkSeconds)} déclarées</span><span className="is-safe"><ShieldAlert aria-hidden="true" size={15} />Macro {workbook.macroPresent ? 'détectée et neutralisée' : 'absente'}</span></div> : null}
-        {workbook ? <label>Personne RH<select aria-label="Personne RH associée" onChange={(event) => { setPersonId(Number(event.target.value)); markChanged(); }} value={personId}><option value={0}>À associer…</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name} · {person.functionLabel}</option>)}</select></label> : null}
-        {workbook ? <label>Fuseau horaire<input onChange={(event) => { setTimezoneName(event.target.value); markChanged(); }} value={timezoneName} /></label> : null}
+        {workbook ? <label>Personne RH<select aria-label="Personne RH associée" disabled={committing || preview?.status === 'imported'} onChange={(event) => { setPersonId(Number(event.target.value)); markChanged(); }} value={personId}><option value={0}>À associer…</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name} · {person.functionLabel}</option>)}</select></label> : null}
+        {workbook ? <label>Fuseau horaire<input disabled={committing || preview?.status === 'imported'} onChange={(event) => { setTimezoneName(event.target.value); markChanged(); }} value={timezoneName} /></label> : null}
       </div>
 
       {workbook ? (
@@ -254,7 +316,7 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
           <label>
             <input
               checked={replaceExistingDays}
-              disabled={preview?.status === 'imported'}
+              disabled={committing || preview?.status === 'imported'}
               onChange={(event) => { setReplaceExistingDays(event.target.checked); markChanged(); }}
               type="checkbox"
             />
@@ -268,11 +330,12 @@ export function WorkingTimeImportWizard({ client, roles, onImported, parseWorkbo
 
       {error ? <p className="working-time-message is-error" role="alert">{error}</p> : null}
       {success ? <p className="working-time-message is-success" role="status"><CheckCircle2 aria-hidden="true" size={17} />{success}</p> : null}
+      {commitUncertain ? <button disabled={busy} onClick={() => void reconcileImport()} type="button">Vérifier l’état de l’import</button> : null}
 
       {rows.length ? <div className="working-time-import-table-wrap"><table className="working-time-import-table"><thead><tr><th>Date</th><th>Phases de travail</th><th>Total retenu / déclaré</th><th>Navire</th><th>Décision</th></tr></thead><tbody>{rows.map((row, index) => {
         const server = rowStatus.get(row.date);
         const issueText = server?.issueCodes.map((issue) => ISSUE_LABELS[issue] || issue).join(' · ');
-        return <tr className={row.localError ? 'has-error' : row.localWarning ? 'has-warning' : ''} key={`${row.sheet}-${row.row}`}><td><strong>{row.date}</strong><small>{row.sheet} · ligne {row.row}</small></td><td><input aria-invalid={Boolean(row.localError)} aria-label={`Phases du ${row.date}`} disabled={row.excluded || preview?.status === 'imported'} onChange={(event) => updatePhaseText(index, event.target.value)} value={row.phaseText} />{row.localError ? <small className="is-error">{row.localError}</small> : null}{row.localWarning ? <small className="is-warning">{row.localWarning}</small> : null}</td><td>{formatHours(phaseSeconds(row.phases))}<small>déclaré : {row.reportedWorkSeconds === null ? '—' : formatHours(row.reportedWorkSeconds)}</small></td><td>{server?.vesselName || row.vesselName || 'Planning'}<small>{server?.watchGroup || 'Bordée résolue au contrôle'}</small></td><td><label className="working-time-import-exclude"><input checked={row.excluded} disabled={preview?.status === 'imported'} onChange={(event) => { setRows((current) => current.map((item, rowIndex) => rowIndex === index ? { ...item, excluded: event.target.checked } : item)); markChanged(); }} type="checkbox" />Exclure</label>{server ? <span className={`working-time-import-status is-${server.status}`}>{STATUS_LABELS[server.status]}</span> : null}{issueText ? <small>{issueText}</small> : null}</td></tr>;
+        return <tr className={row.localError ? 'has-error' : row.localWarning ? 'has-warning' : ''} key={`${row.sheet}-${row.row}`}><td><strong>{row.date}</strong><small>{row.sheet} · ligne {row.row}</small></td><td><input aria-invalid={Boolean(row.localError)} aria-label={`Phases du ${row.date}`} disabled={committing || row.excluded || preview?.status === 'imported'} onChange={(event) => updatePhaseText(index, event.target.value)} value={row.phaseText} />{row.localError ? <small className="is-error">{row.localError}</small> : null}{row.localWarning ? <small className="is-warning">{row.localWarning}</small> : null}</td><td>{formatHours(phaseSeconds(row.phases))}<small>déclaré : {row.reportedWorkSeconds === null ? '—' : formatHours(row.reportedWorkSeconds)}</small></td><td>{server?.vesselName || row.vesselName || 'Planning'}<small>{server?.watchGroup || 'Bordée résolue au contrôle'}</small></td><td><label className="working-time-import-exclude"><input checked={row.excluded} disabled={committing || preview?.status === 'imported'} onChange={(event) => { setRows((current) => current.map((item, rowIndex) => rowIndex === index ? { ...item, excluded: event.target.checked } : item)); markChanged(); }} type="checkbox" />Exclure</label>{server ? <span className={`working-time-import-status is-${server.status}`}>{STATUS_LABELS[server.status]}</span> : null}{issueText ? <small>{issueText}</small> : null}</td></tr>;
       })}</tbody></table></div> : null}
 
       {preview ? <div className="working-time-import-summary"><span><strong>{preview.summary.readyRows}</strong> à importer</span><span><strong>{preview.summary.replacementRows}</strong> à remplacer</span><span><strong>{preview.summary.duplicateRows}</strong> identiques / doublons</span><span><strong>{preview.summary.blockedRows}</strong> verrouillées</span><span><strong>{preview.summary.inconsistentRows}</strong> incohérentes</span><span><strong>{formatHours(preview.summary.effectiveWorkSeconds)}</strong> retenues</span></div> : null}

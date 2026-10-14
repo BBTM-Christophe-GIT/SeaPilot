@@ -1,5 +1,6 @@
+import { deferred } from './workingTimeTestHelpers';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkingTimeImportWorkbook } from './workingTimeExcelImportModel';
 import { WorkingTimeImportWizard } from './WorkingTimeImportWizard';
@@ -7,6 +8,7 @@ import {
   commitWorkingTimeImport,
   createWorkingTimeImportBatchAndUpload,
   fetchWorkingTimeImportPeople,
+  fetchWorkingTimeImportStatus,
   previewWorkingTimeImport,
   sha256WorkingTimeImportFile,
 } from './workingTimeImportQueries';
@@ -15,6 +17,7 @@ vi.mock('./workingTimeImportQueries', () => ({
   fetchWorkingTimeImportPeople: vi.fn(), sha256WorkingTimeImportFile: vi.fn(),
   createWorkingTimeImportBatchAndUpload: vi.fn(), previewWorkingTimeImport: vi.fn(),
   commitWorkingTimeImport: vi.fn(),
+  fetchWorkingTimeImportStatus: vi.fn(),
 }));
 
 const workbook: WorkingTimeImportWorkbook = {
@@ -77,6 +80,36 @@ describe('WorkingTimeImportWizard', () => {
       replaceExistingDays: true,
     })));
   });
+  it('keeps an in-flight control stale when its rows change before the response', async () => {
+    const preview = await vi.mocked(previewWorkingTimeImport)({} as SupabaseClient, {} as never);
+    const pending = deferred<typeof preview>();
+    vi.mocked(previewWorkingTimeImport).mockReturnValueOnce(pending.promise);
+    render(<WorkingTimeImportWizard client={{} as SupabaseClient} parseWorkbook={vi.fn().mockResolvedValue(workbook)} roles={['admin']} />);
+    await waitFor(() => expect(fetchWorkingTimeImportPeople).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText(/Déposer le classeur annuel XLSM/), { target: { files: [new File(['xlsm'], workbook.sourceFileName)] } });
+    await screen.findByText('Alexandre ROUPSARD');
+    fireEvent.click(screen.getByRole('button', { name: 'Contrôler l’import' }));
+    await waitFor(() => expect(previewWorkingTimeImport).toHaveBeenCalledTimes(2));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Phases du 2026-01-01' }), { target: { value: '08:00–11:00' } });
+    pending.resolve(preview);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Contrôler l’import' })).toBeEnabled());
+    expect(screen.getByRole('button', { name: 'Valider l’import' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Valider l’import' }));
+    expect(commitWorkingTimeImport).not.toHaveBeenCalled();
+  });
+  it('ignores a previous file’s parser response after another workbook is selected', async () => {
+    const first = deferred<WorkingTimeImportWorkbook>();
+    const parser = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValueOnce({ ...workbook, sourceFileName: 'other.xlsm', detectedPersonName: 'Autre personne' });
+    render(<WorkingTimeImportWizard client={{} as SupabaseClient} parseWorkbook={parser} roles={['admin']} />);
+    await waitFor(() => expect(fetchWorkingTimeImportPeople).toHaveBeenCalled());
+    const input = screen.getByLabelText(/Déposer le classeur annuel XLSM/);
+    fireEvent.change(input, { target: { files: [new File(['xlsm'], workbook.sourceFileName)] } });
+    fireEvent.change(input, { target: { files: [new File(['xlsm'], 'other.xlsm')] } });
+    await screen.findByText('Autre personne');
+    first.resolve(workbook);
+    await waitFor(() => expect(screen.getByText('Autre personne')).toBeInTheDocument());
+    expect(screen.queryByText('Alexandre ROUPSARD', { selector: 'strong' })).not.toBeInTheDocument();
+  });
 
   it('replaces the previous control success with an actionable validation error', async () => {
     vi.mocked(commitWorkingTimeImport).mockRejectedValueOnce(new Error('canceling statement due to statement timeout'));
@@ -91,7 +124,68 @@ describe('WorkingTimeImportWizard', () => {
 
     expect(await screen.findByText(/La validation de l’import a dépassé le délai serveur/)).toBeInTheDocument();
     expect(screen.queryByText(/Contrôle serveur terminé/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Valider l’import' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Valider l’import' })).toBeDisabled();
+  });
+  it('recovers a committed import by reading its batch after a lost response, without repeating preview or commit', async () => {
+    vi.mocked(commitWorkingTimeImport).mockRejectedValueOnce(new Error('network response lost'));
+    vi.mocked(fetchWorkingTimeImportStatus).mockResolvedValueOnce({ status: 'imported', summary: { importedRows: 1, importedIntervals: 1, replacedRows: 0, replacedIntervals: 0, identicalRows: 0, approvedRegisters: 1, blockedDuringCommit: 0, remainingRows: 0 } });
+    render(<WorkingTimeImportWizard client={{} as SupabaseClient} parseWorkbook={vi.fn().mockResolvedValue(workbook)} roles={['admin']} />);
+    await waitFor(() => expect(fetchWorkingTimeImportPeople).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText(/Déposer le classeur annuel XLSM/), { target: { files: [new File(['xlsm'], workbook.sourceFileName)] } });
+    await screen.findByText('Alexandre ROUPSARD');
+    fireEvent.click(screen.getByRole('button', { name: 'Contrôler l’import' })); await screen.findByText('Prête');
+    fireEvent.click(screen.getByRole('button', { name: 'Valider l’import' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Vérifier l’état de l’import' }));
+    expect(await screen.findByText(/résultat enregistré a été retrouvé/)).toBeInTheDocument();
+    expect(fetchWorkingTimeImportStatus).toHaveBeenCalledWith(expect.anything(), 42);
+    expect(previewWorkingTimeImport).toHaveBeenCalledOnce(); expect(commitWorkingTimeImport).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: 'Valider l’import' })).toBeDisabled();
+  });
+  it('does not report an old reconciliation refresh error after the client changes', async () => {
+    const refreshed = deferred<void>(); const onImported = vi.fn().mockReturnValue(refreshed.promise);
+    const parser = vi.fn().mockResolvedValue(workbook); const client = {} as SupabaseClient;
+    vi.mocked(commitWorkingTimeImport).mockRejectedValueOnce(new Error('network response lost'));
+    vi.mocked(fetchWorkingTimeImportStatus).mockResolvedValueOnce({ status: 'imported', summary: { importedRows: 1, importedIntervals: 1, replacedRows: 0, replacedIntervals: 0, identicalRows: 0, approvedRegisters: 1, blockedDuringCommit: 0, remainingRows: 0 } });
+    const view = render(<WorkingTimeImportWizard client={client} onImported={onImported} parseWorkbook={parser} roles={['admin']} />);
+    await waitFor(() => expect(fetchWorkingTimeImportPeople).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText(/Déposer le classeur annuel XLSM/), { target: { files: [new File(['xlsm'], workbook.sourceFileName)] } });
+    await screen.findByText('Alexandre ROUPSARD');
+    fireEvent.click(screen.getByRole('button', { name: 'Contrôler l’import' })); await screen.findByText('Prête');
+    fireEvent.click(screen.getByRole('button', { name: 'Valider l’import' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Vérifier l’état de l’import' }));
+    await waitFor(() => expect(onImported).toHaveBeenCalledOnce());
+    view.rerender(<WorkingTimeImportWizard client={{} as SupabaseClient} onImported={onImported} parseWorkbook={parser} roles={['admin']} />);
+    await act(async () => { refreshed.reject(new Error('old refresh failed')); await refreshed.promise.catch(() => {}); });
+    expect(screen.queryByText(/L’import est enregistré, mais l’actualisation/)).not.toBeInTheDocument();
+    expect(commitWorkingTimeImport).toHaveBeenCalledOnce();
+  });
+  it('keeps a completed import locked when the follow-up workspace refresh fails', async () => {
+    render(<WorkingTimeImportWizard client={{} as SupabaseClient} onImported={vi.fn().mockRejectedValue(new Error('refresh failed'))} parseWorkbook={vi.fn().mockResolvedValue(workbook)} roles={['admin']} />);
+    await waitFor(() => expect(fetchWorkingTimeImportPeople).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText(/Déposer le classeur annuel XLSM/), { target: { files: [new File(['xlsm'], workbook.sourceFileName)] } });
+    await screen.findByText('Alexandre ROUPSARD');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Personne RH associée' }), { target: { value: '9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Contrôler l’import' })); await screen.findByText('Prête');
+    fireEvent.click(screen.getByRole('button', { name: 'Valider l’import' }));
+    await screen.findByText(/L’import est enregistré, mais l’actualisation/);
+    expect(screen.getByRole('button', { name: 'Valider l’import' })).toBeDisabled();
+    expect(commitWorkingTimeImport).toHaveBeenCalledOnce();
+  });
+  it('locks every editable preview control while the import commit is pending', async () => {
+    const summary = await vi.mocked(commitWorkingTimeImport)({} as SupabaseClient, 42);
+    const pending = deferred<typeof summary>(); vi.mocked(commitWorkingTimeImport).mockReturnValueOnce(pending.promise);
+    render(<WorkingTimeImportWizard client={{} as SupabaseClient} parseWorkbook={vi.fn().mockResolvedValue(workbook)} roles={['admin']} />);
+    await waitFor(() => expect(fetchWorkingTimeImportPeople).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText(/Déposer le classeur annuel XLSM/), { target: { files: [new File(['xlsm'], workbook.sourceFileName)] } });
+    await screen.findByText('Alexandre ROUPSARD');
+    fireEvent.click(screen.getByRole('button', { name: 'Contrôler l’import' })); await screen.findByText('Prête');
+    fireEvent.click(screen.getByRole('button', { name: 'Valider l’import' }));
+    expect(screen.getByRole('textbox', { name: 'Phases du 2026-01-01' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Exclure' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: /Remplacer les journées existantes différentes/ })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Personne RH associée' })).toBeDisabled();
+    pending.resolve(summary);
+    await screen.findByText(/approuvée\(s\) importée\(s\)/);
   });
 
   it('allows the server control when declared totals differ from detected phases', async () => {

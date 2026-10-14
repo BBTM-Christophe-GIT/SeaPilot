@@ -276,7 +276,8 @@ export function WorkingTimeWorkflowPanel({
 }: WorkingTimeWorkflowPanelProps) {
   const canBrowseWithoutProfile = roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
   const enabled = Boolean((currentPerson || canBrowseWithoutProfile) && range.start && range.end && range.start <= range.end);
-  const { workspace, isLoading, errorMessage, reload } = useWorkingTimeWorkspace(client, enabled, range, refreshToken);
+  const workspaceScope = `${currentPerson?.id || 0}:${[...roles].sort().join(',')}:${previewMode}`;
+  const { workspace, isLoading, errorMessage, reload } = useWorkingTimeWorkspace(client, enabled, range, refreshToken, workspaceScope);
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(currentPerson?.id || null);
   const [registerSearch, setRegisterSearch] = useState('');
   const [startsAt, setStartsAt] = useState(`${range.start}T00:00`);
@@ -365,7 +366,7 @@ export function WorkingTimeWorkflowPanel({
     .sort((left, right) => compareHrFunctionLabels(left.label, right.label)), [catalogPeople]);
   const selectedRegister = selectedPersonId ? monthlyRegisterByPerson.get(selectedPersonId) || null : null;
   const selectedDayContextKey = selectedRegister && selectedDay
-    ? `${selectedRegister.personId}:${selectedDay}`
+    ? `${selectedRegister.id}:${selectedRegister.personId}:${selectedDay}`
     : '';
   const activeDayContext = resolvedDayContextKey === selectedDayContextKey ? dayContext : null;
   const isDayContextLoading = Boolean(selectedDayContextKey && resolvedDayContextKey !== selectedDayContextKey);
@@ -421,7 +422,7 @@ export function WorkingTimeWorkflowPanel({
           && (hasManagementValidationRole || (hasDirectionRole && approval.approverPersonId === null)))))
     .sort((left, right) => left.localWorkDate.localeCompare(right.localWorkDate)) || [],
   [currentPersonId, hasCaptainRole, hasDirectionRole, hasManagementValidationRole, workspace?.dayApprovals]);
-  const canEdit = Boolean(selectedRegister
+  const legacyCanEdit = Boolean(selectedRegister
     && selectedDayApproval?.status !== 'validated'
     && (
       (selectedDayApproval?.status === 'submitted'
@@ -431,6 +432,8 @@ export function WorkingTimeWorkflowPanel({
         && (isOwnRegister || hasManagementValidationRole || isAssignedCaptainForSelectedDay)
         && visibleEditablePeople.some((person) => person.personId === selectedRegister.personId))
     ));
+  const canEdit = Boolean(!isLoading && !errorMessage && activeDayContext && selectedRegister
+    && (typeof activeDayContext.canEdit === 'boolean' ? activeDayContext.canEdit : legacyCanEdit));
 
   const nonCompliantDates = useMemo(() => {
     if (!selectedRegister) return [];
@@ -464,12 +467,30 @@ export function WorkingTimeWorkflowPanel({
     !persistedCommentDates.has(date) && !nonComplianceComplete(dayResponses[date])
   ));
   const canValidate = Boolean(
-    selectedDayApproval?.status === 'submitted'
+    !isLoading && !errorMessage && activeDayContext && selectedDayApproval?.status === 'submitted'
       && (canManageApproval(selectedDayApproval)
         || (hasCaptainRole && selectedDayApproval.approverPersonId === currentPersonId))
       && currentSignature
       && missingCaptainComments.length === 0,
   );
+  const actionContext = useMemo(() => ({ client, workspaceScope, start: range.start, end: range.end, selectedPersonId, selectedDay }),
+    [client, range.end, range.start, selectedDay, selectedPersonId, workspaceScope]);
+  const actionContextRef = useRef<typeof actionContext | null>(actionContext);
+  actionContextRef.current = actionContext;
+  const actionInFlight = useRef(false);
+
+  useEffect(() => {
+    actionContextRef.current = actionContext;
+    actionInFlight.current = false;
+    setIsSaving(false);
+    setActionMessage(null);
+    setActionError(null);
+    setPendingPhases([]);
+    setEditingIntervalId(null);
+    setIntervalComment('');
+    setVoidCandidateId(null); setVoidReason(''); setIsExporting(false);
+    return () => { if (actionContextRef.current === actionContext) actionContextRef.current = null; };
+  }, [actionContext]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -563,10 +584,11 @@ export function WorkingTimeWorkflowPanel({
       return;
     }
     let active = true;
-    const requestKey = `${selectedRegister.personId}:${selectedDay}`;
+    const requestKey = `${selectedRegister.id}:${selectedRegister.personId}:${selectedDay}`;
     void fetchWorkingTimeDayContext(client, {
       personId: selectedRegister.personId,
       localWorkDate: selectedDay,
+      registerId: selectedRegister.id,
     }).then((context) => {
       if (!active) return;
       setDayContext(context);
@@ -621,6 +643,7 @@ export function WorkingTimeWorkflowPanel({
 
   async function handlePdfDownload() {
     if (!workspace || !selectedRegister) return;
+    const targetContext = actionContext;
     setIsExporting(true);
     setActionError(null);
     try {
@@ -638,27 +661,37 @@ export function WorkingTimeWorkflowPanel({
         periodEnd: monthEnd,
       });
       const { document, filename } = await buildWorkingTimePdf(prepared);
+      if (actionContextRef.current !== targetContext) return;
       document.save(filename);
       setActionMessage('Le registre PDF mensuel a été généré à la demande, sans copie permanente.');
     } catch (error) {
-      setActionError(workingTimeErrorMessage(error));
+      if (actionContextRef.current === targetContext) setActionError(workingTimeErrorMessage(error));
     } finally {
-      setIsExporting(false);
+      if (actionContextRef.current === targetContext) setIsExporting(false);
     }
   }
 
   async function runAction(action: () => Promise<unknown>, successMessage: string) {
+    if (actionInFlight.current) return;
+    const targetContext = actionContext;
+    actionInFlight.current = true;
     setIsSaving(true);
     setActionError(null);
     setActionMessage(null);
     try {
       await action();
-      await reload();
-      setActionMessage(successMessage);
+      if (actionContextRef.current !== targetContext) return;
+      const refreshed = await reload();
+      if (actionContextRef.current !== targetContext) return;
+      setActionMessage(refreshed ? successMessage : `${successMessage} L’actualisation est indisponible : rechargez le suivi avant une nouvelle action.`);
     } catch (error) {
+      if (actionContextRef.current !== targetContext) return;
       setActionError(workingTimeErrorMessage(error));
+      // A lost response may follow a committed mutation. Reconcile through reads,
+      // never retry a write automatically or retain an editable stale workspace.
+      await reload();
     } finally {
-      setIsSaving(false);
+      if (actionContextRef.current === targetContext) { actionInFlight.current = false; setIsSaving(false); }
     }
   }
 
@@ -679,8 +712,8 @@ export function WorkingTimeWorkflowPanel({
     const common = {
       registerId: selectedRegister.id,
       timezoneName: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris',
-      vesselId: dayContext?.vesselId || null,
-      watchGroup: dayContext?.watchGroup || null,
+      vesselId: activeDayContext?.vesselId || null,
+      watchGroup: activeDayContext?.watchGroup || null,
       comment: intervalComment.trim() || null,
     };
     if (editingIntervalId) {
@@ -699,7 +732,7 @@ export function WorkingTimeWorkflowPanel({
         })),
       });
     }
-    resetIntervalForm();
+    if (actionContextRef.current === actionContext) resetIntervalForm();
   }
 
   function editInterval(interval: WorkingTimeInterval) {
@@ -726,6 +759,7 @@ export function WorkingTimeWorkflowPanel({
         : 'La journée a été validée et clôturée. Les autres jours du mois restent ouverts.';
     void runAction(async () => {
       if (pendingPhases.length || editingIntervalId) await persistPendingSelection();
+      if (actionContextRef.current !== actionContext) return;
       if (intent === 'submit-day') {
         await submitWorkingTimeDay(client, {
           registerId: selectedRegister.id,
@@ -771,6 +805,7 @@ export function WorkingTimeWorkflowPanel({
         </div>
       </nav>
       {errorMessage ? <p className="working-time-message is-error" role="alert">{errorMessage}</p> : null}
+      {errorMessage || actionError ? <button disabled={isLoading || isSaving} onClick={() => void reload()} type="button">Recharger le suivi</button> : null}
       {actionError ? <p className="working-time-message is-error" role="alert">{actionError}</p> : null}
       {actionMessage ? <p className="working-time-message is-success" role="status">{actionMessage}</p> : null}
       {!currentPerson && canBrowseWithoutProfile ? <p className="working-time-message is-warning">Vous pouvez consulter et rechercher tous les registres. Une fiche RH liée à votre compte reste requise pour saisir, signer ou valider des heures.</p> : null}
@@ -919,6 +954,7 @@ export function WorkingTimeWorkflowPanel({
                       <label>Motif du retrait<input onChange={(event) => setVoidReason(event.target.value)} value={voidReason} /></label>
                       <button disabled={isSaving || voidReason.trim().length < 2} onClick={() => void runAction(async () => {
                         await voidWorkingTimeInterval(client, voidCandidateId, voidReason);
+                        if (actionContextRef.current !== actionContext) return;
                         setVoidCandidateId(null);
                         setVoidReason('');
                       }, 'Le créneau a été retiré sans effacer son historique.')} type="button">Confirmer</button>

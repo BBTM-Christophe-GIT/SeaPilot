@@ -66,10 +66,11 @@ describe('working-time profile signatures', () => {
     expect(remove).not.toHaveBeenCalled();
   });
 
-  it('removes an orphaned upload if registration fails', async () => {
+  it('retains the immutable upload if registration cannot be confirmed', async () => {
     const png = new Blob(['signature-test'], { type: 'image/png' });
     const remove = vi.fn().mockResolvedValue({ data: [], error: null });
     const client = {
+      from: vi.fn(() => ({ select: () => ({ eq: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }) }) })),
       rpc: vi.fn()
         .mockResolvedValueOnce({ data: { person_id: 42, path_prefix: '1/42/', mime_type: 'image/png' }, error: null })
         .mockResolvedValueOnce({ data: null, error: { message: 'registration failed' } }),
@@ -80,6 +81,18 @@ describe('working-time profile signatures', () => {
     } as unknown as SupabaseClient;
 
     await expect(uploadWorkingTimeProfileSignature(client, 42, png)).rejects.toThrow('registration failed');
-    expect(remove).toHaveBeenCalledWith([expect.stringMatching(/^1\/42\/.+\.png$/)]);
+    expect(remove).not.toHaveBeenCalled();
+  });
+  it('recovers a committed signature through a read after its registration response was lost', async () => {
+    const png = new Blob(['signature-test'], { type: 'image/png' }); const hash = await sha256Hex(png);
+    let storagePath = '';
+    const read = { eq: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockImplementation(async () => ({ data: { id: 9, person_id: 42, storage_path: storagePath, sha256: hash }, error: null })) };
+    const remove = vi.fn(); const upload = vi.fn().mockImplementation(async (path) => { storagePath = path; return { error: null }; });
+    const client = { from: vi.fn(() => ({ select: () => read })), rpc: vi.fn()
+      .mockResolvedValueOnce({ data: { person_id: 42, path_prefix: '1/42/', mime_type: 'image/png' }, error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: 'network response lost' } }),
+      storage: { from: () => ({ upload, remove }) } } as unknown as SupabaseClient;
+    await expect(uploadWorkingTimeProfileSignature(client, 42, png)).resolves.toBe(9);
+    expect(read.eq).toHaveBeenCalledWith('storage_path', storagePath); expect(remove).not.toHaveBeenCalled();
   });
 });

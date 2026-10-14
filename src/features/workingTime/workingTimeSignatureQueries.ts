@@ -125,8 +125,13 @@ export async function uploadWorkingTimeProfileSignature(
     p_sha256: hash,
   });
   if (error) {
-    await client.storage.from(WORKING_TIME_SIGNATURE_BUCKET).remove([storagePath]);
-    throw new Error(error.message || 'Impossible d’enregistrer la version de signature.');
+    // Registration may have committed before a network response was lost.
+    // Keep the immutable image; deleting it could invalidate a registered proof.
+    const recorded = await client.from('working_time_profile_signatures').select('id,person_id,storage_path,sha256')
+      .eq('person_id', personId).eq('storage_path', storagePath).maybeSingle();
+    if (!recorded.error && recorded.data && Number(recorded.data.person_id) === personId
+      && recorded.data.storage_path === storagePath && recorded.data.sha256 === hash && Number(recorded.data.id) > 0) return Number(recorded.data.id);
+    throw new Error(`${error.message || 'Impossible d’enregistrer la version de signature.'} Vérifiez les versions enregistrées avant de réessayer.`);
   }
   return Number(data);
 }

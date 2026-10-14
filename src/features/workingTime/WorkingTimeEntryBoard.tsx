@@ -163,7 +163,11 @@ export function WorkingTimeEntryBoard({
   const nonCompliantDaySet = useMemo(() => new Set(nonCompliantDates), [nonCompliantDates]);
   const selectedDay = controlledSelectedDay || startsAt.slice(0, 10) || days[0] || periodStart;
   const [recommendation, setRecommendation] = useState<WorkingTimeEntryRecommendation | null>(null);
+  const [resolvedRecommendationKey, setResolvedRecommendationKey] = useState('');
+  const [recommendationClient, setRecommendationClient] = useState<SupabaseClient | null>(null);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
+  const [recommendationErrorKey, setRecommendationErrorKey] = useState('');
+  const [recommendationAttempt, setRecommendationAttempt] = useState(0);
   const [isCalculating, setIsCalculating] = useState(false);
   const [activePendingIndex, setActivePendingIndex] = useState<number | null>(null);
   const [selectedRecordedIntervalId, setSelectedRecordedIntervalId] = useState<number | null>(null);
@@ -182,11 +186,16 @@ export function WorkingTimeEntryBoard({
   const phasesConflictExisting = combinedPhases.some((phase) => intervals.some((interval) => interval.id !== editingIntervalId
     && new Date(phase.startsAt).getTime() < new Date(interval.endsAt).getTime()
     && new Date(phase.endsAt).getTime() > new Date(interval.startsAt).getTime()));
+  const recommendationKey = JSON.stringify([personId, combinedPhases, editingIntervalId, planningVesselId, planningWatchGroup, timezoneName]);
+  const currentRecommendation = recommendationClient === client && resolvedRecommendationKey === recommendationKey ? recommendation : null;
+  const currentRecommendationError = recommendationClient === client && recommendationErrorKey === recommendationKey ? recommendationError : null;
 
   useEffect(() => {
     if (!combinedPhases.length || phasesOverlap) {
       setRecommendation(null);
       setRecommendationError(null);
+      setResolvedRecommendationKey('');
+      setIsCalculating(false);
       return;
     }
     let cancelled = false;
@@ -201,11 +210,14 @@ export function WorkingTimeEntryBoard({
         watchGroup: planningWatchGroup,
         excludeIntervalId: editingIntervalId,
       }).then((result) => {
-        if (!cancelled) setRecommendation(result);
+        if (!cancelled) { setRecommendation(result); setResolvedRecommendationKey(recommendationKey); setRecommendationClient(client); }
       }).catch((error) => {
         if (!cancelled) {
           setRecommendation(null);
+          setResolvedRecommendationKey('');
           setRecommendationError(workingTimeErrorMessage(error));
+          setRecommendationErrorKey(recommendationKey);
+          setRecommendationClient(client);
         }
       }).finally(() => {
         if (!cancelled) setIsCalculating(false);
@@ -215,7 +227,7 @@ export function WorkingTimeEntryBoard({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [client, combinedPhases, editingIntervalId, personId, phasesOverlap, planningVesselId, planningWatchGroup, timezoneName]);
+  }, [client, combinedPhases, editingIntervalId, personId, phasesOverlap, planningVesselId, planningWatchGroup, recommendationAttempt, recommendationKey, timezoneName]);
 
   const selectedSlots = useMemo(() => {
     const start = new Date(startsAt).getTime();
@@ -257,7 +269,7 @@ export function WorkingTimeEntryBoard({
   }), [pendingPhases, selectedDay]);
 
   function selectSlots(first: number, last: number) {
-    if (!canEdit) return;
+    if (!canEdit || isSaving) return;
     const from = Math.max(0, Math.min(first, last));
     const to = Math.min(48, Math.max(first, last) + 1);
     onStartsAtChange(slotLocalValue(selectedDay, from));
@@ -265,7 +277,7 @@ export function WorkingTimeEntryBoard({
   }
 
   function commitSlots(first: number, last: number) {
-    if (!canEdit) return;
+    if (!canEdit || isSaving) return;
     const from = Math.max(0, Math.min(first, last));
     const to = Math.min(48, Math.max(first, last) + 1);
     const phase = { startsAt: slotLocalValue(selectedDay, from), endsAt: slotLocalValue(selectedDay, to) };
@@ -335,11 +347,14 @@ export function WorkingTimeEntryBoard({
     slotRefs.current[target]?.focus();
   }
 
-  const status = recommendation?.status || 'sans_politique';
-  const statusLabel = status === 'conforme' ? 'Conforme' : status === 'alerte' ? 'Alerte' : status === 'non_conforme' ? 'Non conforme' : 'Politique requise';
-  const maxRecommended = recommendation?.alreadyNonCompliant ? 0 : recommendation?.maxAdditionalSeconds || 0;
+  const status = currentRecommendation?.status || 'sans_politique';
+  const statusLabel = !currentRecommendation
+    ? currentRecommendationError ? 'Analyse indisponible' : combinedPhases.length ? 'Analyse en cours' : 'Sélectionnez une période'
+    : status === 'conforme' ? 'Conforme' : status === 'alerte' ? 'Alerte' : status === 'non_conforme' ? 'Non conforme' : 'Politique requise';
+  const maxRecommended = currentRecommendation?.alreadyNonCompliant ? 0 : currentRecommendation?.maxAdditionalSeconds || 0;
   const commentRequired = combinedPhases.length > 0 && (status === 'alerte' || status === 'non_conforme');
-  const selectionBlocked = phasesOverlap || phasesConflictExisting || Boolean(recommendationError);
+  const selectionBlocked = phasesOverlap || phasesConflictExisting || Boolean(currentRecommendationError)
+    || (combinedPhases.length > 0 && (isCalculating || !currentRecommendation || status === 'sans_politique'));
 
   return (
     <section aria-labelledby="working-time-entry-title" className="working-time-entry-board">
@@ -353,6 +368,7 @@ export function WorkingTimeEntryBoard({
           {isCalculating ? 'Calcul…' : statusLabel}
         </span>
       </header>
+      {planningContextLoading && !canEdit ? <p className="working-time-planning-context" role="status">Chargement de l’affectation Planning…</p> : null}
 
       <div aria-label="Jours du registre" className="working-time-day-strip" role="tablist">
         {days.map((day) => {
@@ -377,7 +393,7 @@ export function WorkingTimeEntryBoard({
                     aria-label={`${label}, ${occupiedSlots[slot] ? 'travail enregistré, cliquer pour corriger ou retirer' : pendingSlots[slot] ? 'période à enregistrer' : 'repos'}${selectedSlots[slot] ? ', sélectionné' : ''}`}
                     aria-selected={selectedSlots[slot]}
                     className={className}
-                    disabled={!canEdit}
+                    disabled={!canEdit || isSaving}
                     key={slot}
                     onKeyDown={(event) => handleSlotKeyDown(event, slot)}
                     onClick={() => { if (recordedInterval) setSelectedRecordedIntervalId(recordedInterval.id); }}
@@ -426,16 +442,16 @@ export function WorkingTimeEntryBoard({
           <div className={`working-time-analysis-bar is-${status}`}>
             <span>Analyse automatique</span>
             <dl>
-              <div><dt>Travail sur 7 jours</dt><dd>{recommendation ? formatDuration(recommendation.work7dSeconds) : '—'}</dd></div>
-              <div><dt>Repos consécutif actuel</dt><dd>{recommendation ? formatDuration(recommendation.longestRest24hSeconds) : '—'}</dd></div>
+              <div><dt>Travail sur 7 jours</dt><dd>{currentRecommendation ? formatDuration(currentRecommendation.work7dSeconds) : '—'}</dd></div>
+              <div><dt>Repos consécutif actuel</dt><dd>{currentRecommendation ? formatDuration(currentRecommendation.longestRest24hSeconds) : '—'}</dd></div>
               <div><dt>Conformité repos</dt><dd>{statusLabel}</dd></div>
-              <div><dt>Repos disponibles</dt><dd>{recommendation ? formatDuration(maxRecommended) : '—'}</dd></div>
-              <div><dt>Prochaine reprise</dt><dd>{formatDateTime(recommendation?.nextResumeAt || null)}</dd></div>
+              <div><dt>Repos disponibles</dt><dd>{currentRecommendation ? formatDuration(maxRecommended) : '—'}</dd></div>
+              <div><dt>Prochaine reprise</dt><dd>{formatDateTime(currentRecommendation?.nextResumeAt || null)}</dd></div>
             </dl>
           </div>
           {phasesOverlap ? <p className="working-time-message is-error" role="alert">Les phases de travail ne peuvent pas se chevaucher.</p> : null}
           {phasesConflictExisting ? <p className="working-time-message is-error" role="alert">Une phase recouvre un créneau déjà enregistré.</p> : null}
-          {recommendationError ? <p className="working-time-message is-error" role="alert">{recommendationError}</p> : null}
+          {currentRecommendationError ? <><p className="working-time-message is-error" role="alert">{currentRecommendationError}</p><button disabled={isSaving} onClick={() => setRecommendationAttempt((value) => value + 1)} type="button">Relancer le calcul</button></> : null}
         </div>
       </div>
 
@@ -444,10 +460,11 @@ export function WorkingTimeEntryBoard({
       {canEdit ? (
         <form className="working-time-interval-form working-time-entry-form" onSubmit={(event) => {
           event.preventDefault();
+          if (isSaving || planningContextLoading || selectionBlocked) return;
           const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
           onSubmit(combinedPhases, (submitter?.value || 'save-correction') as 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day');
         }}>
-          <label className="is-wide">{commentRequired ? 'Commentaire obligatoire' : 'Commentaire'}<input aria-required={commentRequired} onChange={(event) => onCommentChange(event.target.value)} required={commentRequired} value={comment} /></label>
+          <label className="is-wide">{commentRequired ? 'Commentaire obligatoire' : 'Commentaire'}<input aria-required={commentRequired} disabled={isSaving} onChange={(event) => onCommentChange(event.target.value)} required={commentRequired} value={comment} /></label>
           {planningContextLoading
             ? <p className="working-time-planning-context" role="status">Chargement de l’affectation Planning…</p>
             : !planningVesselId

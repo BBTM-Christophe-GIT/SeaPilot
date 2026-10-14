@@ -1,6 +1,8 @@
+-- V4 preserves every calculation day touching the window and the independent total-rest rule.
 begin;
+insert into public.companies(code,name) values('wt-cap-cycle-test','Synthetic captain calculation company');
 
-select plan(10);
+select plan(11);
 
 insert into auth.users (id, email)
 values ('77900000-0000-0000-0000-000000000001', 'cycle-capitaine@example.invalid');
@@ -12,12 +14,12 @@ select
   'Capitaine Cycle',
   company.id
 from public.companies company
-where company.code = 'bbtm';
+where company.code = 'wt-cap-cycle-test';
 
 insert into public.user_roles (user_id, company_id, role_key)
 select '77900000-0000-0000-0000-000000000001', company.id, 'capitaine'
 from public.companies company
-where company.code = 'bbtm';
+where company.code = 'wt-cap-cycle-test';
 
 insert into public.people (
   company_id, user_id, first_name, last_name, function_label, sailor_number, active
@@ -26,12 +28,12 @@ select
   company.id, '77900000-0000-0000-0000-000000000001',
   'Capitaine', 'CYCLE', 'Capitaine', 'CYCLE-779', true
 from public.companies company
-where company.code = 'bbtm';
+where company.code = 'wt-cap-cycle-test';
 
 insert into public.vessels (company_id, name, acronym, active)
 select company.id, 'WORK CYCLE TEST VESSEL', 'WCR', true
 from public.companies company
-where company.code = 'bbtm';
+where company.code = 'wt-cap-cycle-test';
 
 insert into public.planning_assignments (
   company_id, vessel_id, crew_person_id, starts_on, ends_on, starts_at, ends_at,
@@ -45,7 +47,7 @@ select
 from public.companies company
 join public.vessels vessel on vessel.company_id = company.id and vessel.acronym = 'WCR'
 join public.people person on person.company_id = company.id and person.sailor_number = 'CYCLE-779'
-where company.code = 'bbtm';
+where company.code = 'wt-cap-cycle-test';
 
 insert into public.planning_work_rest_policies (
   company_id, name, scope, vessel_id, effective_from, effective_to,
@@ -62,7 +64,7 @@ select
 from public.companies company
 join public.vessels vessel on vessel.company_id = company.id and vessel.acronym = 'WCR'
 join public.profiles profile on profile.id = '77900000-0000-0000-0000-000000000001'
-where company.code = 'bbtm';
+where company.code = 'wt-cap-cycle-test';
 
 insert into public.working_time_registers (
   company_id, person_id, period_kind, period_start, period_end, created_by
@@ -74,10 +76,10 @@ select
   person.user_id
 from public.companies company
 join public.people person on person.company_id = company.id and person.sailor_number = 'CYCLE-779'
-where company.code = 'bbtm';
+where company.code = 'wt-cap-cycle-test';
 
-select set_config('test.cycle_person_id', (select id::text from public.people where sailor_number = 'CYCLE-779'), true);
-select set_config('test.cycle_vessel_id', (select id::text from public.vessels where acronym = 'WCR'), true);
+select set_config('test.cycle_person_id', (select id::text from public.people where company_id = (select id from public.companies where code = 'wt-cap-cycle-test') and sailor_number = 'CYCLE-779'), true);
+select set_config('test.cycle_vessel_id', (select id::text from public.vessels where company_id = (select id from public.companies where code = 'wt-cap-cycle-test') and acronym = 'WCR'), true);
 select set_config('test.cycle_register_id', (
   select id::text
   from public.working_time_registers
@@ -106,8 +108,8 @@ select is(
     ((current_date - 1)::text || ' 20:00:00+00')::timestamptz,
     'UTC', current_setting('test.cycle_vessel_id')::bigint, 'Bordée cycle', null
   )->>'work_24h_seconds')::numeric,
-  21600::numeric,
-  'the Capitaine recommendation counts only work after the completed six-hour rest'
+  28800::numeric,
+  'the Capitaine recommendation retains the largest calculation day touching the window'
 );
 
 select is(
@@ -116,9 +118,19 @@ select is(
     ((current_date - 1)::text || ' 14:00:00+00')::timestamptz,
     ((current_date - 1)::text || ' 20:00:00+00')::timestamptz,
     'UTC', current_setting('test.cycle_vessel_id')::bigint, 'Bordée cycle', null
-  )->>'available_24h_seconds')::numeric,
+  )->>'current_day_work_seconds')::numeric,
   21600::numeric,
-  'six work hours remain available in the new twelve-hour cycle'
+  'the new calculation day still records six hours separately from the window maximum'
+);
+select is(
+  (public.working_time_interval_recommendation(
+    current_setting('test.cycle_person_id')::bigint,
+    ((current_date - 1)::text || ' 14:00:00+00')::timestamptz,
+    ((current_date - 1)::text || ' 20:00:00+00')::timestamptz,
+    'UTC', current_setting('test.cycle_vessel_id')::bigint, 'Bordée cycle', null
+  )->>'available_24h_seconds')::numeric,
+  14400::numeric,
+  'four hours remain beneath the twelve-hour maximum of relevant calculation days'
 );
 
 select is(
@@ -139,8 +151,8 @@ select is(
     ((current_date - 1)::text || ' 22:00:00+00')::timestamptz,
     'UTC', current_setting('test.cycle_vessel_id')::bigint, 'Bordée cycle', null
   )->'violation_codes'),
-  0,
-  'six consecutive rest hours satisfy conformity even when total rolling rest is only eight hours'
+  1,
+  'six consecutive rest hours do not waive the independent ten-hour total-rest minimum'
 );
 
 select is(
@@ -158,8 +170,8 @@ select is(
     ),
     'UTC', current_setting('test.cycle_vessel_id')::bigint, 'Bordée cycle', null
   )->>'work_24h_seconds')::numeric,
-  21600::numeric,
-  'multi-phase recommendations use the same reset counter'
+  28800::numeric,
+  'multi-phase recommendations retain the same maximum relevant calculation-day work'
 );
 
 select is(
@@ -177,8 +189,8 @@ select is(
     ),
     'UTC', current_setting('test.cycle_vessel_id')::bigint, 'Bordée cycle', null
   )->'violation_codes'),
-  0,
-  'multi-phase recommendations accept the same six-hour consecutive rest rule'
+  1,
+  'multi-phase recommendations retain the independent total-rest violation'
 );
 
 select lives_ok(
@@ -204,8 +216,8 @@ select results_eq(
     ((current_date - 1)::text || ' 22:00:00+00')
   ),
   $$values (28800::numeric, 28800::numeric, 21600::numeric,
-      true, true, true, '{}'::text[], 3)$$,
-  'the authoritative stored calculation accepts the new cycle despite only eight rolling rest hours'
+      true, false, false, '{rest_24h}'::text[], 4)$$,
+  'stored v4 calculation agrees with the recommendation and preserves the total-rest violation'
 );
 
 select is(

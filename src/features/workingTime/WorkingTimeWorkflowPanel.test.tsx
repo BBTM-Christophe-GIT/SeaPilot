@@ -1,5 +1,6 @@
+import { deferred } from './workingTimeTestHelpers';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkingTimeWorkspace } from './workingTimeQueries';
@@ -180,6 +181,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByRole('button', { name: 'Jour' })).toHaveAttribute('aria-pressed', 'true');
     await waitFor(() => expect(fetchWorkingTimeDayContext).toHaveBeenCalledWith(client, {
       personId: 20, localWorkDate: '2026-08-19',
+      registerId: 101,
     }));
 
     await user.click(screen.getByRole('tab', { name: /jeu 20 août/ }));
@@ -217,6 +219,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(await screen.findByRole('heading', { name: 'Mercredi 19 août 2026' })).toBeInTheDocument();
     await waitFor(() => expect(fetchWorkingTimeDayContext).toHaveBeenCalledWith(client, {
       personId: 20, localWorkDate: '2026-08-19',
+      registerId: 100,
     }));
   });
 
@@ -301,6 +304,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     const cells = screen.getAllByRole('gridcell');
     fireEvent.pointerDown(cells[32]);
     fireEvent.pointerUp(cells[32]);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
 
     await waitFor(() => expect(saveWorkingTimePhases).toHaveBeenCalledWith(client, expect.objectContaining({
@@ -316,6 +320,51 @@ describe('WorkingTimeWorkflowPanel', () => {
   it('selects today when the current month opens and the first day for a historical month', () => {
     expect(workingTimeInitialDay({ start: '2026-08-01', end: '2026-08-31' }, '2026-08-21')).toBe('2026-08-21');
     expect(workingTimeInitialDay({ start: '2026-07-01', end: '2026-07-31' }, '2026-08-21')).toBe('2026-07-01');
+  });
+  it('keeps a confirmed submission distinct from an unavailable refresh', async () => {
+    const user = userEvent.setup(); reload.mockResolvedValueOnce(false);
+    renderPanel(['marin'], workspace('draft'), { ...currentPerson, functionLabel: 'Matelot' });
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Valider' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Valider' }));
+    expect(await screen.findByText(/La journée a été signée.*L’actualisation est indisponible/)).toBeInTheDocument();
+    expect(submitWorkingTimeDay).toHaveBeenCalledOnce();
+  });
+  it('does not display an old submission result after the selected day changes', async () => {
+    const user = userEvent.setup(); const pending = deferred<number>();
+    vi.mocked(submitWorkingTimeDay).mockReturnValueOnce(pending.promise);
+    renderPanel(['marin'], workspace('draft'), { ...currentPerson, functionLabel: 'Matelot' });
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Valider' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Valider' }));
+    await user.click(screen.getByRole('tab', { name: /mar 04 août/ }));
+    await act(async () => { pending.resolve(1); await pending.promise; });
+    expect(screen.queryByText(/La journée a été signée/)).not.toBeInTheDocument();
+    expect(reload).not.toHaveBeenCalled(); expect(submitWorkingTimeDay).toHaveBeenCalledOnce();
+  });
+  it('does not submit a day after the module closes during its first save', async () => {
+    const user = userEvent.setup(); const pending = deferred<number[]>();
+    vi.mocked(saveWorkingTimePhases).mockReturnValueOnce(pending.promise);
+    const data = workspace('draft'); data.intervals = [];
+    const view = renderPanel(['marin'], data, { ...currentPerson, functionLabel: 'Matelot' });
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    await screen.findByText(/Affectation Planning appliquée/);
+    const cells = screen.getAllByRole('gridcell'); fireEvent.pointerDown(cells[32]); fireEvent.pointerUp(cells[32]);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Valider' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Valider' }));
+    expect(saveWorkingTimePhases).toHaveBeenCalledOnce(); view.unmount();
+    await act(async () => { pending.resolve([301]); await pending.promise; });
+    expect(submitWorkingTimeDay).not.toHaveBeenCalled(); expect(reload).not.toHaveBeenCalled();
+  });
+  it('does not retain a removal confirmation after the selected day changes', async () => {
+    const user = userEvent.setup(); renderPanel(['marin'], workspace('draft'), { ...currentPerson, functionLabel: 'Matelot' });
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    await screen.findByText(/Affectation Planning appliquée/);
+    await user.click(screen.getByRole('gridcell', { name: /08:00, travail enregistré/ }));
+    await user.click(screen.getByRole('button', { name: 'Retirer' }));
+    expect(screen.getByRole('button', { name: 'Confirmer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /mar 04 août/ }));
+    expect(screen.queryByRole('button', { name: 'Confirmer' })).not.toBeInTheDocument();
   });
 
   it('removes manual register and refresh commands when no HR person is editable', () => {
@@ -339,6 +388,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     const cells = screen.getAllByRole('gridcell');
     fireEvent.pointerDown(cells[32]);
     fireEvent.pointerUp(cells[32]);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
 
     await waitFor(() => expect(saveWorkingTimePhases).toHaveBeenCalledWith(client, expect.objectContaining({
@@ -353,7 +403,7 @@ describe('WorkingTimeWorkflowPanel', () => {
   it.each(['2026-09-01', '2026-09-05'])('keeps August entry open on %s', async (referenceDate) => {
     renderPanel(['marin'], workspace('draft'), currentPerson, referenceDate);
 
-    expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Enregistrer le brouillon' })).toBeInTheDocument();
     expect(screen.getByText(/reste ouvert à la saisie jusqu’au samedi 05 septembre 2026 inclus/)).toBeInTheDocument();
     expect(await screen.findByText(/Affectation Planning appliquée/)).toBeInTheDocument();
   });
@@ -365,6 +415,13 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
     expect(screen.getByText(/est clôturé pour la saisie.*samedi 05 septembre 2026 inclus/)).toBeInTheDocument();
     expect(screen.getByRole('grid', { name: 'Grille horaire du 2026-08-01' })).toHaveAttribute('aria-readonly', 'true');
+  });
+  it.each([true, false, undefined])('uses explicit daily server editing permission %s for an historical admin register', async (canEdit) => {
+    vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue({ ...defaultDayContext, ...(canEdit === undefined ? {} : { canEdit }) });
+    renderPanel(['admin'], workspace('draft', 20), currentPerson, '2026-10-14');
+    await waitFor(() => expect(fetchWorkingTimeDayContext).toHaveBeenCalled());
+    if (canEdit === true) expect(await screen.findByRole('button', { name: 'Enregistrer le brouillon' })).toBeInTheDocument();
+    else { await screen.findByText('Cette journée est en lecture seule pour son statut actuel.'); expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument(); }
   });
 
   it('keeps Direction read-only when the server exposes no editable person', () => {
