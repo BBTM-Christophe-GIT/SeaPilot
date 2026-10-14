@@ -6,6 +6,8 @@ stay on Drive; procedure Blob keys accept PDF publications only.
 The document API executes in Paris (`cdg1`), matching the private Blob store.
 Server credentials remain in Vercel environment variables; no store credential
 is shipped in the frontend.
+Vercel compiles API entries using the root tsconfig.json; its explicit Node and
+module resolution options match the referenced Node project configuration.
 
 Canonical Storage bucket/path references remain unchanged. Desktop aliases use
 hr-drive/<hr_documents.id>, chemical-drive/<chemical_attachments.id>,
