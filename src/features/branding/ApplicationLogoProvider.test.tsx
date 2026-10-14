@@ -66,16 +66,17 @@ describe('application logo shared state', () => {
     expect(client.rpc).toHaveBeenCalledTimes(1);
   });
 
-  it('uses the custom contain layout and restores the bundled layout after a saved reset', async () => {
+  it('keeps the shared logo layout when a custom logo is loaded and reset', async () => {
     const { client, sdk } = clientFixture();
     client.rpc.mockResolvedValue({ data: newer, error: null });
     render(<ApplicationLogoProvider client={sdk} previewMode={false}><LogoControls /></ApplicationLogoProvider>);
     const image = screen.getByRole('img', { name: 'SeaPilot by BBTM' });
     await waitFor(() => expect(image).toHaveAttribute('src', expect.stringContaining(path)));
-    expect(image.parentElement).toHaveClass('is-custom-logo');
+    const layoutClass = image.parentElement!.className;
+    expect(layoutClass).toBe('seapilot-logo');
     fireEvent.click(screen.getByRole('button', { name: 'Apply reset' }));
     expect(image).toHaveAttribute('src', DEFAULT_APPLICATION_LOGO);
-    expect(image.parentElement).not.toHaveClass('is-custom-logo');
+    expect(image.parentElement!.className).toBe(layoutClass);
   });
 
   it('falls back to the bundled image and layout when a published custom image fails to load', async () => {
