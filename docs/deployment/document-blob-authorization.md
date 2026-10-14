@@ -12,6 +12,11 @@ Before any document RPC, the server verifies the Bearer JWT with Supabase Auth's
 GET /auth/v1/user endpoint using the publishable key. The request has a ten-second
 timeout, rejects redirects and accepts only a valid top-level user UUID; any
 failure denies access without falling back to session metadata.
+Registration failures log only a numeric HTTP status and a validated SQL or
+PostgREST code. Client errors omit provider messages and private diagnostics.
+Upload verification canonicalizes the provider URL host casing and requires the
+configured private store, reserved pathname and HTTPS, without URL credentials,
+port, query or fragment. SQL keeps its strict private URL constraint.
 
 Canonical Storage bucket/path references remain unchanged. Desktop aliases use
 hr-drive/<hr_documents.id>, chemical-drive/<chemical_attachments.id>,
@@ -83,6 +88,9 @@ document_blob_lookup(target_bucket, target_path) returns authorized verified
 metadata or null. document_blob_lookup_batch accepts up to 200 paths and returns
 ordered path/document/error entries under the same RLS, withholding metadata for
 denied entries.
+Signature lookups use sequential groups of four to stay within the existing
+PostgREST authorization timeout; all other lookup batches retain their limit of
+200. Each group evaluates the same current JWT and RLS, without caching rights.
 
 Run supabase/tests/document_blob_access_test.sql against an isolated local
 database after its prerequisites and the Blob migration. It covers independent

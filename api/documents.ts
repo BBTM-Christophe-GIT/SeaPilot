@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { get, getDownloadUrl, head, issueSignedToken, presignUrl } from '@vercel/blob';
 
 const MAX_BYTES = 100 * 1024 * 1024;
+const WORKING_TIME_SIGNATURE_LOOKUP_BATCH_SIZE = 4;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const SHA256 = /^[a-f0-9]{64}$/;
 const HEADERS = { 'Cache-Control': 'private, no-store', 'Pragma': 'no-cache', 'X-Content-Type-Options': 'nosniff' };
@@ -48,6 +49,15 @@ function document(value: unknown): Json {
   }
   return info;
 }
+function privateBlobUrl(raw: string, pathname: string, storeId: string): string {
+  try {
+    const url = new URL(raw);
+    const hostname = `${storeId.replace(/^store_/, '').toLowerCase()}.private.blob.vercel-storage.com`;
+    if (url.protocol !== 'https:' || url.hostname !== hostname || url.username || url.password || url.port
+      || url.search || url.hash || decodeURIComponent(url.pathname.slice(1)) !== pathname) throw new Error('Invalid Blob URL');
+    return url.href;
+  } catch { throw new DocumentError(409, 'DOCUMENT_UPLOAD_MISMATCH'); }
+}
 /** The store credential never reaches a browser; every delegation covers one authorized object. */
 export function createDocumentBlobGateway(deps: Dependencies) {
   const now = deps.now ?? Date.now;
@@ -76,7 +86,8 @@ export function createDocumentBlobGateway(deps: Dependencies) {
       const backend = deps.backend(jwt);
       const userId = await backend.user();
       if (!userId || !UUID.test(userId)) throw new DocumentError(401, 'DOCUMENT_AUTHENTICATION_REQUIRED');
-      if (!deps.getEnv('BLOB_STORE_ID')) throw new DocumentError(503, 'DOCUMENT_STORE_NOT_CONFIGURED');
+      const storeId = deps.getEnv('BLOB_STORE_ID');
+      if (!storeId) throw new DocumentError(503, 'DOCUMENT_STORE_NOT_CONFIGURED');
       if (body.operation === 'url') {
         const key = location(body);
         const mapping = await backend.rpc('document_blob_lookup', { target_bucket: key.bucket, target_path: key.path });
@@ -87,8 +98,14 @@ export function createDocumentBlobGateway(deps: Dependencies) {
       if (body.operation === 'urls') {
         if (!Array.isArray(body.paths) || body.paths.length > 200 || typeof body.bucket !== 'string') throw new DocumentError(400, 'INVALID_DOCUMENT_BATCH');
         const paths = body.paths.map(path => location({ bucket: body.bucket, path }).path);
-        const values = await backend.rpc('document_blob_lookup_batch', { target_bucket: body.bucket, target_paths: paths });
-        if (!Array.isArray(values) || values.length !== paths.length) throw new DocumentError(502, 'INVALID_DOCUMENT_BATCH');
+        const values: unknown[] = [];
+        const lookupBatchSize = body.bucket === 'working-time-signatures' ? WORKING_TIME_SIGNATURE_LOOKUP_BATCH_SIZE : 200;
+        for (let offset = 0; offset < paths.length; offset += lookupBatchSize) {
+          const batch = paths.slice(offset, offset + lookupBatchSize);
+          const found = await backend.rpc('document_blob_lookup_batch', { target_bucket: body.bucket, target_paths: batch });
+          if (!Array.isArray(found) || found.length !== batch.length) throw new DocumentError(502, 'INVALID_DOCUMENT_BATCH');
+          values.push(...found);
+        }
         const entries: Json[] = [];
         const seconds = typeof body.expiresIn === 'number' && Number.isFinite(body.expiresIn) ? body.expiresIn : 120;
         // Bound control-plane concurrency even when a large document list is requested.
@@ -136,6 +153,7 @@ export function createDocumentBlobGateway(deps: Dependencies) {
         const current = await deps.read(pathname, { access: 'private', useCache: false, abortSignal: AbortSignal.timeout(180000) });
         if (!current || current.statusCode !== 200 || current.blob.pathname !== pathname || current.blob.size !== scope.bytes
           || mime(current.blob.contentType) !== mime(scope.mime_type)) throw new DocumentError(409, 'DOCUMENT_UPLOAD_MISMATCH');
+        const blobUrl = privateBlobUrl(current.blob.url, pathname, storeId);
         const hash = createHash('sha256');
         let bytes = 0;
         const reader = current.stream.getReader();
@@ -155,7 +173,7 @@ export function createDocumentBlobGateway(deps: Dependencies) {
         const live = object(await backend.rpc('document_blob_upload_revalidate', args));
         if (live.uploader_id !== userId || live.sha256 !== sha256 || live.bytes !== bytes) throw new DocumentError(403, 'DOCUMENT_ACCESS_DENIED');
         const result = await deps.register({ source_bucket: scope.source_bucket ?? scope.bucket, source_path: scope.source_path ?? scope.path,
-          blob_pathname: pathname, blob_url: current.blob.url, file_name: scope.file_name, mime_type: scope.mime_type,
+          blob_pathname: pathname, blob_url: blobUrl, file_name: scope.file_name, mime_type: scope.mime_type,
           bytes, sha256, verified_bytes: bytes, verified_sha256: sha256, verified_mime_type: scope.mime_type,
           upload_id: body.uploadId, uploader_id: userId });
         return response({ document: result });
@@ -205,6 +223,13 @@ const handler = createDocumentBlobGateway({
     if (!key) throw new DocumentError(503, 'DOCUMENT_VERIFIER_NOT_CONFIGURED');
     const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
     const result = await client.rpc('document_blob_register_verified', { p_record: record });
+    if (result.error) {
+      const code = result.error.code;
+      console.error('DOCUMENT_REGISTRATION_RPC_FAILED', {
+        status: Number.isInteger(result.status) && result.status >= 100 && result.status <= 599 ? result.status : 0,
+        code: typeof code === 'string' && /^(?:[0-9]{2}[0-9A-Z]{3}|(?:F0|HV|P0|XX)[0-9A-Z]{3}|PGRST[0-9]{3})$/.test(code) ? code : 'UNSPECIFIED',
+      });
+    }
     rpcError(result.error);
     return result.data;
   },

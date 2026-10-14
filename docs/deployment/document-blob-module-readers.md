@@ -64,3 +64,19 @@ pathname preserves PDF MIME using the standard Content-Type header and supports
 browser CORS. A repeated non-overwrite PUT may return HTTP 400; recovery still
 requires the server to reread and validate the reserved object's exact SHA/size/
 MIME, never accepts a failed PUT as proof, and never overwrites a document.
+
+The installed `@vercel/blob` 2.8.1 SDK signs uploads against the exact
+`https://vercel.com/api/blob/` provider endpoint. The browser checks the endpoint,
+the reserved upload UUID, and its single `pathname=documents/uploads/<UUID>`
+query value before sending any bytes. Historical Blob API hosts retain their
+root endpoint compatibility under the same reservation checks. Private store
+GET URLs are not upload destinations; redirects, credentials, ports, fragments,
+other endpoints and other reservation paths are rejected. SDK regression tests
+generate both PUT and private GET URLs with the installed presigner using a
+synthetic delegation and no provider credentials or network access.
+
+Signature lists and retention checks query `working-time-signatures` in groups
+of four. The existing signature policies remain enforced for each object; the
+smaller groups fit the authenticated PostgREST statement timeout while preserving
+list order, individual refusals and the same retained-original behavior. Other
+buckets keep their 200-path batches.
