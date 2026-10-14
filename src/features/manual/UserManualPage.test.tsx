@@ -85,7 +85,9 @@ describe('Manuel d’utilisation', () => {
     const navigation = await screen.findByRole('navigation', { name: 'Modules du manuel' });
     await user.click(within(navigation).getByRole('link', { name: 'Daily Progress Report' }));
     expect(screen.getByRole('article')).toHaveFocus();
-    expect(screen.getByRole('article')).toHaveTextContent('3 jours suivant sa création');
+    expect(screen.getByRole('article')).toHaveTextContent('3 jours suivant leur création');
+    expect(screen.getByRole('article')).toHaveTextContent('un mois avant l’embarquement');
+    expect(screen.getByRole('article')).toHaveTextContent('un mois après le débarquement');
     expect(screen.getByRole('link', { name: 'Ouvrir le module' })).toHaveAttribute('href', '/modules/dpr');
     await user.click(screen.getByRole('link', { name: 'Ouvrir le module' }));
     expect(screen.getByText('Module ouvert')).toBeInTheDocument();

@@ -212,13 +212,13 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
     reminders: ['Pour les procédures approuvées et diffusées, utilisez en priorité Procédures QHSE.'],
   },
   dpr: {
-    purpose: 'Rédiger votre Daily Progress Report et retrouver vos propres rapports dans Mes DPR.',
-    access: 'Le Marin consulte ses propres DPR. La modification d’un brouillon ou d’un rapport rouvert et sa validation sont limitées aux 3 jours suivant sa création.',
+    purpose: 'Consulter les DPR des navires accessibles et rédiger vos propres Daily Progress Reports.',
+    access: 'Le Marin consulte les DPR des navires autorisés par ses affectations, à partir d’un mois avant l’embarquement et jusqu’à un mois après le débarquement. La modification de ses propres brouillons ou rapports rouverts et leur validation restent limitées aux 3 jours suivant leur création.',
     steps: [
       { title: 'Commencer un rapport', detail: 'Cliquez sur Saisir un DPR, puis vérifiez la date, le navire, le projet et les personnes proposés à partir du planning.' },
       { title: 'Compléter les rubriques', detail: 'Parcourez les étapes du formulaire : informations projet, informations journalières, indicateurs QHSE, escale, photos et pièces jointes. Complétez les champs requis.' },
       { title: 'Enregistrer votre travail', detail: 'Utilisez Enregistrer le brouillon pour conserver la saisie. Le message Modifications non enregistrées signale les changements restant à sauvegarder.' },
-      { title: 'Valider et consulter', detail: 'Vérifiez le rapport complet avant de le valider. Il reste ensuite consultable dans Mes DPR. Le bouton Consulter remplace Modifier quand la modification n’est plus autorisée.' },
+      { title: 'Valider et consulter', detail: 'Vérifiez votre rapport complet avant de le valider. DPR des navires affiche les rapports autorisés, avec vos propres rapports. Le bouton Consulter remplace Modifier quand la modification n’est plus autorisée ; consulter le DPR d’un collègue ne donne aucun droit de correction.' },
     ],
     reminders: ['Le délai de 3 jours part de la création du rapport.', 'Le profil Marin ne dispose pas de la production PDF, de l’aperçu PDF ni des exports ZIP.', 'Si le rapport est verrouillé ou hors délai, contactez votre responsable pour une correction.'],
   },

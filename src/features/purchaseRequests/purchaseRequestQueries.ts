@@ -414,7 +414,38 @@ export function buildPurchaseRequestMetrics(requests: PurchaseRequestRecord[]): 
   };
 }
 
-export async function fetchPurchaseRequests(client: SupabaseClient): Promise<PurchaseRequestRecord[]> {
+export async function fetchAssignedPurchaseVesselIds(client: SupabaseClient): Promise<number[]> {
+  const { data, error } = await client.rpc('assigned_vessel_read_scope');
+  if (error) throw error;
+  if (!Array.isArray(data) || data.some((value) => (typeof value !== 'number' && typeof value !== 'string')
+    || !Number.isSafeInteger(Number(value)) || Number(value) <= 0)) {
+    throw new Error('Impossible de vérifier les navires accessibles. Réessayez.');
+  }
+  return [...new Set(data.map(Number))];
+}
+
+export async function fetchPurchaseRequests(client: SupabaseClient, vesselIds?: number[]): Promise<PurchaseRequestRecord[]> {
+  if (vesselIds) {
+    if (!vesselIds.length) return [];
+    const allowed = new Set(vesselIds);
+    const requestsResult = await client.from('purchase_requests').select(PURCHASE_REQUEST_SELECT)
+      .in('vessel_id', vesselIds).order('requested_on', { ascending: false, nullsFirst: false }).order('request_number', { ascending: false });
+    if (requestsResult.error) throw requestsResult.error;
+    const rows = ((requestsResult.data || []) as unknown as PurchaseRequestRow[]).filter((row) => row.vessel_id !== null && allowed.has(row.vessel_id));
+    if (!rows.length) return [];
+    const requestIds = rows.map((row) => row.id);
+    const parents = new Set(requestIds);
+    const [attachmentsResult, eventsResult] = await Promise.all([
+      client.from('purchase_request_attachments').select(PURCHASE_ATTACHMENT_SELECT).in('purchase_request_id', requestIds).order('created_at', { ascending: true }),
+      client.from('purchase_request_events').select(PURCHASE_EVENT_SELECT).in('purchase_request_id', requestIds).order('created_at', { ascending: false }),
+    ]);
+    if (attachmentsResult.error) throw attachmentsResult.error;
+    if (eventsResult.error) throw eventsResult.error;
+    const attachments = ((attachmentsResult.data || []) as unknown as PurchaseAttachmentRow[]).filter((row) => row.purchase_request_id !== null && parents.has(row.purchase_request_id));
+    const events = ((eventsResult.data || []) as unknown as PurchaseEventRow[]).filter((row) => parents.has(row.purchase_request_id));
+    return mapPurchaseRequestRows(rows, await mapAttachmentRows(client, attachments), mapEventRows(events));
+  }
+
   const [requestsResult, attachmentsResult, eventsResult] = await Promise.all([
     client.from('purchase_requests').select(PURCHASE_REQUEST_SELECT)
       .order('requested_on', { ascending: false, nullsFirst: false }).order('request_number', { ascending: false }),

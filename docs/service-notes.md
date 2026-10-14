@@ -48,6 +48,8 @@ Chaque archive contient un destinataire et une validation historique pour toute 
 
 ## Sécurité et limites
 
+Les notes diffusées ou archivées visant un navire sont également consultables dans la [fenêtre d’affectation du collaborateur](vessel-assignment-access.md). Ce droit de lecture ne donne pas la signature de la note ni l’accès aux identités et signatures du registre des destinataires ; les brouillons et notes uniquement nominatives conservent leurs règles.
+
 - Les tables `qhse_service_notes`, `qhse_service_note_attachments`, `qhse_service_note_recipients`, `qhse_service_note_signatures` et les deux tables de ciblage ont RLS activé.
 - Les fonctions de diffusion, rappel, suppression de brouillon, correction d'informations et signature sont `SECURITY DEFINER`, sans accès `anon`, avec `search_path` vide et contrôles de société/rôle explicites.
 - Les nouvelles tables reçoivent explicitement les droits Data API pour le rôle `authenticated`.

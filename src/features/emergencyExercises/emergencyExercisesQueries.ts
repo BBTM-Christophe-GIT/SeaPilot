@@ -7,6 +7,8 @@ export async function fetchExerciseRoster(client: SupabaseClient): Promise<Exerc
   if (error) throw new Error(error.message);
   if (!data || !Array.isArray(data.people) || !Array.isArray(data.vessels) || !['fleet', 'watch', 'self'].includes(data.scope)) throw new Error('Le registre est indisponible.');
   const roster = data as ExerciseRoster;
+  if (roster.vesselReadIds !== undefined && (!Array.isArray(roster.vesselReadIds)
+    || roster.vesselReadIds.some((id) => !Number.isSafeInteger(id) || id <= 0))) throw new Error('Le périmètre des navires est invalide.');
   const names = new Set<string>();
   const vessels = [...roster.vessels].sort((a, b) => a.id - b.id).filter((vessel) => {
     const name = normalizeFleetName(vessel.name);

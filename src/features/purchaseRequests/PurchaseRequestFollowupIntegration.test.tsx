@@ -53,18 +53,19 @@ function pageClient(requestCount = 2) {
     error: null,
   }));
   const client = {
-    rpc,
+    rpc: (name: string, args: { p_request_id: number; p_comment: string }) => name === 'assigned_vessel_read_scope'
+      ? Promise.resolve({ data: [2], error: null }) : rpc(name, args),
     storage: { from: vi.fn() },
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'purchase_requests') {
+        const ordered = { order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: rows, error: null }) }) };
         return {
-          select: vi.fn().mockReturnValue({
-            order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: rows, error: null }) }),
-          }),
+          select: vi.fn().mockReturnValue({ ...ordered, in: vi.fn().mockReturnValue(ordered) }),
         };
       }
       if (table === 'purchase_request_events' || table === 'purchase_request_attachments') {
-        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+        const ordered = { order: vi.fn().mockResolvedValue({ data: [], error: null }) };
+        return { select: vi.fn().mockReturnValue({ ...ordered, in: vi.fn().mockReturnValue(ordered) }) };
       }
       if (table === 'vessels') {
         return {

@@ -95,7 +95,7 @@ select ok(not exists(select 1 from jsonb_array_elements(public.documentary_audit
 select throws_ok($$select public.documentary_audits_overview('invalid')$$,'22023',null,'unknown audit kind is rejected');
 select throws_ok($$select public.documentary_audit_upload_scope('9d100000-0000-0000-0000-000000000001',null,'audit')$$,'42501',null,'dossier must exist before files can be uploaded');
 select lives_ok($$select public.documentary_audit_save(payload) from documentary_payloads where name like 'audit-%'$$,'all four audit kinds share the dossier workflow');
-select is((select count(*)::integer from public.documentary_audits),4,'one dossier exists for each type in the same vessel and year');
+select is((select count(*)::integer from public.documentary_audits where id::text like '9d100000-%'),4,'the fixture creates four tested documentary kinds in the same vessel and year');
 select throws_ok($$select public.documentary_audit_save((select payload from documentary_payloads where name='audit-1')||'{"id":"9d100000-0000-0000-0000-000000000009"}'::jsonb)$$,'23505',null,'duplicate company/type/year/vessel dossier is rejected');
 select throws_ok($$select public.documentary_audit_save((select payload from documentary_payloads where name='audit-1')||'{"year":2027}'::jsonb)$$,'22023',null,'saved dossier campaign year cannot be reassigned');
 select throws_ok($$select public.documentary_audit_save((select payload from documentary_payloads where name='audit-1')||'{"kind":"client"}'::jsonb)$$,'22023',null,'saved dossier audit type cannot be reassigned');
@@ -156,10 +156,11 @@ select lives_ok($$select public.documentary_audit_add_treatment('9d200000-0000-0
 select set_config('request.jwt.claim.sub','9d000000-0000-0000-0000-000000000002',true);
 select is((public.documentary_audits_overview('ovid')->'permissions'->>'canManage')::boolean,false,'real captain is a treatment handler, not an audit manager');
 select is(jsonb_array_length(public.documentary_audits_overview('ovid')->'audits'),1,'assigned captain sees the relevant parent dossier');
-select is((select count(*)::integer from public.documentary_audits),1,'table RLS matches assigned parent visibility');
-select is(jsonb_array_length(public.documentary_audits_overview('ecmid')->'audits'),0,'overview does not leak dossiers from another kind');
+select is((select count(*)::integer from public.documentary_audits),4,'table RLS permits all documentary kinds on the authorized ship');
+select is(jsonb_array_length(public.documentary_audits_overview('ecmid')->'audits'),1,'eCMID overview includes the authorized ship dossier');
 select is(jsonb_array_length(public.documentary_audits_overview('ovid')->'people'),0,'handler overview does not expose the company personnel directory');
-select ok(not exists(select 1 from public.documentary_audit_findings where id='9d200000-0000-0000-0000-000000000004'),'captain cannot read chief-engineer finding');
+select ok(exists(select 1 from public.documentary_audit_findings where id='9d200000-0000-0000-0000-000000000004'),'captain may consult the chief-engineer ship finding');
+select ok(not (public.documentary_audits_overview('ovid')->'permissions'->'treatableFindingIds' ? '9d200000-0000-0000-0000-000000000004'),'captain consultation gives no chief-engineer treatment capability');
 select is((select count(*)::integer from storage.objects where bucket_id='documentary-audit-files'),4,'captain reads dossier reports and own finding evidence');
 select throws_ok($$select public.documentary_audit_save((select payload from documentary_payloads where name='audit-1'))$$,'42501',null,'captain cannot edit dossier metadata');
 select throws_ok($$select public.documentary_audit_save_finding((select payload from documentary_payloads where name='finding-1'))$$,'42501',null,'captain cannot edit assigned finding metadata');
@@ -178,9 +179,10 @@ select is((select actor_id from public.documentary_audit_events where finding_id
 select throws_ok($$select public.documentary_audit_add_treatment('9d200000-0000-0000-0000-000000000001','in_progress','','[]'::jsonb)$$,'22023',null,'empty treatment without evidence is rejected');
 
 select set_config('request.jwt.claim.sub','9d000000-0000-0000-0000-000000000003',true);
-select ok(not exists(select 1 from public.documentary_audit_findings where id='9d200000-0000-0000-0000-000000000001'),'confirmed crew Marin cannot read captain-only finding');
-select ok(not exists(select 1 from public.documentary_audit_findings where id='9d200000-0000-0000-0000-000000000004'),'ordinary Matelot cannot read chief-engineer finding');
-select is((select count(*)::integer from storage.objects where bucket_id='documentary-audit-files'),2,'crew sees shared parent reports without other handlers private finding evidence');
+select ok(exists(select 1 from public.documentary_audit_findings where id='9d200000-0000-0000-0000-000000000001'),'confirmed crew Marin may consult the captain ship finding');
+select ok(not (public.documentary_audits_overview('ovid')->'permissions'->'treatableFindingIds' ? '9d200000-0000-0000-0000-000000000001'),'Marin consultation gives no captain treatment capability');
+select ok(exists(select 1 from public.documentary_audit_findings where id='9d200000-0000-0000-0000-000000000004'),'ordinary Matelot may consult the chief-engineer ship finding');
+select is((select count(*)::integer from storage.objects where bucket_id='documentary-audit-files'),6,'crew consults linked ship reports, findings and treatment evidence');
 select throws_ok($$select public.documentary_audit_upload_scope('9d100000-0000-0000-0000-000000000001','9d200000-0000-0000-0000-000000000001','treatment')$$,'42501',null,'ordinary crew cannot obtain captain-finding upload scope');
 select lives_ok($$select public.documentary_audit_add_treatment('9d200000-0000-0000-0000-000000000002','in_progress','Traitement équipage','[]'::jsonb)$$,'real confirmed crew may record their collective treatment');
 select set_config('request.jwt.claim.sub','9d000000-0000-0000-0000-000000000006',true);

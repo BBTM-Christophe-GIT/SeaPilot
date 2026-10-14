@@ -26,6 +26,7 @@ import { actionAssetKey, actionCategory } from './actionPlanNavigation';
 interface ActionPlanPageProps { client?: SupabaseClient; roles?: RoleKey[] }
 
 const EMPTY_DATA: ActionPlanData = {
+  followupActionIds: [],
   actions: [], documents: [], actionTypes: [], vessels: [], people: [], assignees: [], treatmentEvents: [],
   settings: { editButtonEnabled: true },
   exposureHours: 0, hseKpis: null, hseDashboard: null,
@@ -432,7 +433,7 @@ export function ActionPlanPage({ client, roles }: ActionPlanPageProps) {
     setTreatmentAction(null); setMessage('Action mise à jour.');
   }
   function actionCanBeTreated(action: ActionItemRecord): boolean {
-    return !isActionClosed(action);
+    return !isActionClosed(action) && data.followupActionIds.includes(action.id);
   }
   function actionCanBeApproved(action: ActionItemRecord): boolean {
     return action.workflowStatus === 'pending_approval'

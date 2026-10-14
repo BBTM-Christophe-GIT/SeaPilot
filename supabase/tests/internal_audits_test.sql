@@ -96,7 +96,8 @@ select is((select template_version from public.internal_audits where id='9b30000
 -- These are separate authenticated accounts, never simulated admin views.
 select set_config('request.jwt.claim.sub','9b000000-0000-0000-0000-000000000002',true);
 select is((public.internal_audits_overview()->'permissions'->>'canManage')::boolean,false,'real Capitaine cannot design or conduct audits');
-select is((select count(*)::integer from public.internal_audit_findings where audit_id='9b300000-0000-0000-0000-000000000001'),2,'real captain sees captain and crew assignments only');
+select is((select count(*)::integer from public.internal_audit_findings where audit_id='9b300000-0000-0000-0000-000000000001'),4,'real captain consults all findings on the authorized ship');
+select is(jsonb_array_length(public.internal_audits_overview()->'permissions'->'treatableFindingIds'),2,'captain treatment remains limited to captain and crew responsibilities');
 select is((select count(*)::integer from public.internal_audits where id='9b300000-0000-0000-0000-000000000001'),1,'an assigned captain can read the original graded audit');
 select is((select count(*)::integer from public.internal_audit_templates),0,'real Capitaine has no template access');
 select lives_ok($$select public.internal_audit_add_treatment('9b400000-0000-0000-0000-000000000001','in_progress','Contrôle du capitaine engagé')$$,'assigned real captain records treatment progress');
@@ -105,7 +106,8 @@ select throws_ok($$select public.internal_audit_save((select payload from audit_
 select throws_ok($$select public.internal_audit_save_template((select payload from audit_fixture_payload where kind='template'))$$,'42501',null,'captain cannot design templates through the RPC');
 
 select set_config('request.jwt.claim.sub','9b000000-0000-0000-0000-000000000003',true);
-select is((select count(*)::integer from public.internal_audit_findings where audit_id='9b300000-0000-0000-0000-000000000001'),2,'real chief engineer Marin sees chief engineer and crew assignments only');
+select is((select count(*)::integer from public.internal_audit_findings where audit_id='9b300000-0000-0000-0000-000000000001'),4,'real chief engineer Marin consults all findings on the authorized ship');
+select is(jsonb_array_length(public.internal_audits_overview()->'permissions'->'treatableFindingIds'),2,'chief engineer treatment remains limited to machine and crew responsibilities');
 select is(internal_audit_private.assignment_function('crew','Chef Mécanicien'),'chef mecanicien','generic crew planning role uses the real HR function');
 select is(internal_audit_private.assignment_function('Matelot','Chef Mécanicien'),'matelot','explicit planning function overrides a generic HR rank');
 select lives_ok($$select public.internal_audit_add_treatment('9b400000-0000-0000-0000-000000000002','resolved','Réparation mécanique réalisée')$$,'the assigned real chief engineer records resolution');
@@ -113,7 +115,8 @@ select throws_ok($$select public.internal_audit_add_treatment('9b400000-0000-000
 
 select set_config('request.jwt.claim.sub','9b000000-0000-0000-0000-000000000004',true);
 select is((public.internal_audits_overview()->'permissions'->>'canManage')::boolean,false,'real Marin cannot design or conduct audits');
-select is((select count(*)::integer from public.internal_audit_findings where audit_id='9b300000-0000-0000-0000-000000000001'),2,'real crew Marin sees crew and personal assignments only');
+select is((select count(*)::integer from public.internal_audit_findings where audit_id='9b300000-0000-0000-0000-000000000001'),4,'real crew Marin consults all findings on the authorized ship');
+select is(jsonb_array_length(public.internal_audits_overview()->'permissions'->'treatableFindingIds'),2,'crew treatment remains limited to crew and personal responsibilities');
 select throws_ok($$select public.internal_audit_add_treatment('9b400000-0000-0000-0000-000000000002','in_progress','Usurpation du chef mécanicien')$$,'42501',null,'a Matelot on generic crew planning cannot treat chief engineer findings');
 select lives_ok($$select public.internal_audit_add_treatment('9b400000-0000-0000-0000-000000000004','resolved','Traitement individuel terminé')$$,'a personally assigned real Marin records resolution');
 select throws_ok($$select public.internal_audit_save_finding((select payload from audit_fixture_payload where kind='finding-4'))$$,'42501',null,'a real Marin cannot reassign their finding or change its deadline');

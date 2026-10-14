@@ -131,7 +131,8 @@ describe('DprPage Phase 7', () => {
     expect(screen.queryByRole('button', { name: 'Produire' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Exports ZIP' })).not.toBeInTheDocument();
     expect(screen.queryByText('APERÇU AVANT PRODUCTION')).not.toBeInTheDocument();
-    expect(screen.getByText(/modifier pendant 3 jours/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'DPR des navires' })).toBeInTheDocument();
+    expect(screen.getByText(/modifier vos propres DPR pendant 3 jours/)).toBeInTheDocument();
     expect(screen.getByText('DPR-1056')).toBeInTheDocument();
     expect(mocks.fetchDashboard).toHaveBeenCalledWith(expect.anything());
 
@@ -182,6 +183,23 @@ describe('DprPage Phase 7', () => {
 
     await user.click(within(freshRow!).getByRole('button', { name: 'Modifier' }));
     expect(await screen.findByRole('button', { name: 'Enregistrer le brouillon' })).toBeInTheDocument();
+  });
+
+  it('lets a Marin consult an accessible colleague DPR without offering correction', async () => {
+    const user = userEvent.setup();
+    mocks.fetchDashboard.mockResolvedValue({
+      ...dashboard,
+      reports: [{ ...report, status: 'draft', number: null, createdBy: 'another-sailor', canManage: false }],
+    });
+    render(<DprPage client={{} as never} roles={['marin']} />);
+    expect(await screen.findByText('Brouillon #1056')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Consulter' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Réouvrir' })).not.toBeInTheDocument();
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(mocks.transition).not.toHaveBeenCalled();
   });
 
   it('offers the anti-pollution emergency exercise in DPR entry', async () => {

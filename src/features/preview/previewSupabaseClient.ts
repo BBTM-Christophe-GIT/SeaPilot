@@ -2103,6 +2103,11 @@ function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'assigned_vessel_read_scope') {
+    // Local fixture: the connected demonstration user has a current vessel and
+    // another assignment inside the calendar-month reading window.
+    return createPreviewQuery({ data: [9201, 9202], error: null });
+  }
   if (functionName === 'purchase_request_add_comment') {
     const request = previewRows('purchase_requests').find((row) => Number(row.id) === Number(args.p_request_id));
     const comment = String(args.p_comment || '').trim();
@@ -2350,6 +2355,11 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       type.sort_order = Number(args.p_sort_order || 0);
     }
     return createPreviewQuery({ data: type, error: null });
+  }
+  if (functionName === 'action_plan_followup_action_ids') {
+    return createPreviewQuery({ data: previewRows('action_items')
+      .filter((action) => !action.closed_on && action.workflow_status !== 'closed')
+      .map((action) => Number(action.id)), error: null });
   }
   if (functionName === 'action_plan_save_settings') {
     const settings = previewRows('action_plan_settings')[0] || { company_id: 1 };

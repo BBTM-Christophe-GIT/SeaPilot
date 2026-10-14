@@ -60,9 +60,9 @@ begin
     perform set_config('request.jwt.claim.sub', actor::text, true);
     set local role authenticated;
     select public.action_plan_current_vessel_scope() into scope;
-    if scope <> array[vessel] then raise exception 'Incorrect assigned vessel scope for %: %', actor, scope; end if;
+    if scope <> array[vessel, other_vessel] then raise exception 'Incorrect one-month vessel scope for %: %', actor, scope; end if;
     select array_agg(title order by title) into visible from public.action_items where title like 'TEST-ACTION-SCOPE-%';
-    if visible is distinct from array['TEST-ACTION-SCOPE-CLOSED', 'TEST-ACTION-SCOPE-NATIVE', 'TEST-ACTION-SCOPE-OPEN', 'TEST-ACTION-SCOPE-OTHER'] then
+    if visible is distinct from array['TEST-ACTION-SCOPE-CLOSED', 'TEST-ACTION-SCOPE-NATIVE', 'TEST-ACTION-SCOPE-OPEN', 'TEST-ACTION-SCOPE-OTHER', 'TEST-ACTION-SCOPE-UNRELATED'] then
       raise exception 'RLS leaked or hid reports for %: %', actor, visible;
     end if;
     if not public.action_item_user_can_read(foreign_report) then raise exception 'Personal report inaccessible on another vessel'; end if;
@@ -76,11 +76,11 @@ begin
   set local role postgres;
 
   update public.planning_assignments set confirmation_status = 'cancelled'
-    where crew_person_id in (sailor, captain) and vessel_id = vessel;
+    where crew_person_id in (sailor, captain) and vessel_id in (vessel, other_vessel);
   foreach actor in array array['7c460000-0000-0000-0000-000000000001'::uuid, '7c460000-0000-0000-0000-000000000002'::uuid] loop
     perform set_config('request.jwt.claim.sub', actor::text, true);
     set local role authenticated;
-    if cardinality(public.action_plan_current_vessel_scope()) <> 0 then raise exception 'Cancelled, future or past assignment leaked'; end if;
+    if cardinality(public.action_plan_current_vessel_scope()) <> 0 then raise exception 'Cancelled current/future/past assignment leaked'; end if;
     select array_agg(title order by title) into visible from public.action_items where title like 'TEST-ACTION-SCOPE-%';
     if visible is distinct from array['TEST-ACTION-SCOPE-OTHER'] then raise exception 'Incorrect personal access without current assignment: %', visible; end if;
     set local role postgres;

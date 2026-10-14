@@ -112,16 +112,17 @@ select is(jsonb_array_length(public.planning_audits_overview()),5,'real Capitain
 select ok(not exists(select 1 from jsonb_array_elements(public.planning_audits_overview()) audit where audit->>'vesselId' is null),'Capitaine receives no company-only shore metadata');
 select ok(not exists(select 1 from jsonb_array_elements(public.planning_audits_overview()) audit where audit->>'kind'='client'),'Capitaine does not receive dates outside the actual assignment period');
 select is((select audit->>'canOpen' from jsonb_array_elements(public.planning_audits_overview()) audit where audit->>'kind'='ovid'),'true','personally assigned Capitaine may open the one authorized documentary dossier');
-select is((select audit->>'canOpen' from jsonb_array_elements(public.planning_audits_overview()) audit where audit->>'kind'='ecmid'),'false','Planning visibility alone does not grant audit content access');
-select is((select count(*)::integer from public.internal_audits),0,'Planning feed does not broaden internal audit table RLS');
-select is((select count(*)::integer from public.documentary_audits),1,'documentary table RLS remains limited to the personally assigned dossier');
+select is((select audit->>'canOpen' from jsonb_array_elements(public.planning_audits_overview()) audit where audit->>'kind'='ecmid'),'true','confirmed vessel window permits consultation of eCMID content');
+select is((select count(*)::integer from public.internal_audits),2,'Capitaine reads the two internal ship audits within the vessel window');
+select is((select count(*)::integer from public.documentary_audits),5,'Capitaine reads historical and current documentary dossiers on the authorized ship');
 select throws_ok($$select public.documentary_audit_save((select payload from audit_planning_payload)||jsonb_build_object('plannedOn',(current_date+5)::text))$$,'42501',null,'Capitaine cannot reschedule an audit through Planning visibility');
 
 select set_config('request.jwt.claim.sub','9e000000-0000-0000-0000-000000000003',true);
 select is(jsonb_array_length(public.planning_audits_overview()),5,'real Marin receives assigned-vessel Planning metadata from actual crew embarkations');
-select ok(not exists(select 1 from jsonb_array_elements(public.planning_audits_overview()) audit where (audit->>'canOpen')::boolean),'unassigned audit handler Marin cannot open any audit content');
-select is((select count(*)::integer from public.documentary_audit_findings),0,'minimal feed does not expose the Capitaine private finding to crew');
-select is((select count(*)::integer from public.documentary_audits),0,'minimal feed does not expose documentary report file references');
+select ok(not exists(select 1 from jsonb_array_elements(public.planning_audits_overview()) audit where not (audit->>'canOpen')::boolean),'Marin may consult ship audits within the confirmed vessel window');
+select is((select count(*)::integer from public.documentary_audit_findings),1,'Marin consults the authorized ship finding assigned to the captain');
+select is((select count(*)::integer from public.documentary_audits),5,'Marin consults authorized historical and current documentary dossiers');
+select is(jsonb_array_length(public.documentary_audits_overview('ovid')->'permissions'->'treatableFindingIds'),0,'vessel consultation does not make Marin responsible for the captain finding');
 select set_config('request.jwt.claim.sub','9e000000-0000-0000-0000-000000000004',true);
 select is(jsonb_array_length(public.planning_audits_overview()),0,'unassigned real Marin has no live audit Planning rows');
 select set_config('request.jwt.claim.sub','9e000000-0000-0000-0000-000000000006',true);

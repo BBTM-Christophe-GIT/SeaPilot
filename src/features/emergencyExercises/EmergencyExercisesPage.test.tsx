@@ -1,15 +1,18 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EmergencyExercisesPage } from './EmergencyExercisesPage';
 import { createExercisePreviewClient } from './emergencyExercisesPreview';
 import { fetchExerciseReport } from './emergencyExercisesQueries';
 import { downloadExercisePdf } from './emergencyExercisesPdf';
+const outletContext = vi.hoisted(() => vi.fn());
+vi.mock('react-router-dom', async () => ({ ...await vi.importActual<typeof import('react-router-dom')>('react-router-dom'), useOutletContext: outletContext }));
 vi.mock('../../lib/supabaseClient', () => ({supabase:{}}));
 vi.mock('./emergencyExercisesPdf', () => ({downloadExercisePdf:vi.fn(async()=>{})}));
 const mount = (client:SupabaseClient) => render(<MemoryRouter><EmergencyExercisesPage client={client}/></MemoryRouter>);
 describe('emergency register interface', () => {
+  beforeEach(() => outletContext.mockReturnValue(undefined));
   it('shows one button per vessel in descending length order and filters with the retained vessel ID', async () => {
     const base = createExercisePreviewClient();
     const vessels = [
@@ -96,5 +99,67 @@ describe('emergency register interface', () => {
     const client={rpc:async()=>({data:null,error:{message:'Accès refusé'}})} as unknown as SupabaseClient;
     mount(client); expect(await screen.findByRole('alert')).toHaveTextContent('Accès refusé');
     await expect(fetchExerciseReport(createExercisePreviewClient(),999,2026,null,'current')).rejects.toThrow(/ne correspond pas/);
+  });
+  it('allows an assigned sailor to read vessel exercise totals while keeping the personal roster limited', async () => {
+    const base = createExercisePreviewClient();
+    const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      const response = await base.rpc(name, args);
+      if (name === 'emergency_exercises_people') response.data = { ...response.data, scope: 'self', people: response.data.people.slice(0, 1), vesselReadIds: [2] };
+      return response;
+    });
+    mount({ rpc } as unknown as SupabaseClient);
+    await screen.findByRole('heading', { name: /Alex MARTIN/ });
+    expect(screen.getByLabelText('Collaborateur')).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'SUROIT' }));
+    await screen.findByRole('heading', { name: /SUROIT/ });
+    expect(rpc).toHaveBeenLastCalledWith('emergency_exercises_report', expect.objectContaining({ target_person_id: null, target_vessel_id: 2 }));
+    expect(screen.getByLabelText('Collaborateur')).toHaveValue('');
+    expect(screen.getByRole('option', { name: 'Tous les exercices du navire' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Camille DURAND' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Exporter le PDF' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'LE ROZEL' }));
+    await screen.findByRole('heading', { name: /Alex MARTIN/ });
+    expect(rpc).toHaveBeenLastCalledWith('emergency_exercises_report', expect.objectContaining({ target_person_id: 1, target_vessel_id: 1 }));
+    expect(screen.getByRole('button', { name: 'Exporter le PDF' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Flotte' }));
+    await screen.findByRole('heading', { name: /Alex MARTIN/ });
+    expect(screen.getByLabelText('Collaborateur')).toBeDisabled();
+  });
+  it('hides the previous account report immediately and ignores its pending responses after account change', async () => {
+    const base = createExercisePreviewClient();
+    let nextAccount = false;
+    let resolveRoster: ((value: unknown) => void) | undefined;
+    const client = { rpc: (name: string, args?: Record<string, unknown>) => nextAccount && name === 'emergency_exercises_people'
+      ? new Promise((resolve) => { resolveRoster = resolve; }) : nextAccount
+        ? Promise.resolve({ data: { person: null, vessel: null, year: args?.target_year, counts: [] }, error: null })
+        : base.rpc(name, args) } as unknown as SupabaseClient;
+    outletContext.mockReturnValue({ userId: 'first-account' });
+    const view = mount(client);
+    await screen.findByRole('heading', { name: /Toute la flotte/ });
+    nextAccount = true;
+    outletContext.mockReturnValue({ userId: 'second-account' });
+    view.rerender(<MemoryRouter><EmergencyExercisesPage client={client}/></MemoryRouter>);
+    expect(screen.queryByRole('heading', { name: /Toute la flotte/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Chargement');
+    await act(async () => resolveRoster?.({ data: { scope: 'self', people: [], vessels: [], vesselReadIds: [] }, error: null }));
+    await screen.findByText('Aucune fiche marin n’est liée à votre compte. Contactez l’armement.');
+    expect(screen.queryByRole('option', { name: 'Alex MARTIN' })).not.toBeInTheDocument();
+  });
+  it('shows the new account roster error and allows retry after the account changes', async () => {
+    const base = createExercisePreviewClient();
+    let rejectRoster = false;
+    const client = { rpc: (name: string, args?: Record<string, unknown>) => rejectRoster && name === 'emergency_exercises_people'
+      ? Promise.resolve({ data: null, error: { message: 'Accès au registre refusé.' } }) : base.rpc(name, args) } as unknown as SupabaseClient;
+    outletContext.mockReturnValue({ userId: 'first-account' });
+    const view = mount(client);
+    await screen.findByRole('heading', { name: /Toute la flotte/ });
+    rejectRoster = true;
+    outletContext.mockReturnValue({ userId: 'second-account' });
+    view.rerender(<MemoryRouter><EmergencyExercisesPage client={client}/></MemoryRouter>);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Accès au registre refusé.');
+    expect(screen.queryByRole('heading', { name: /Toute la flotte/ })).not.toBeInTheDocument();
+    rejectRoster = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
+    await screen.findByRole('heading', { name: /Toute la flotte/ });
   });
 });
