@@ -114,6 +114,20 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       'La saisie d’un nouveau projet conserve les mêmes étapes et règles : champs, validations, numérotation automatique, contrat et première opération.',
     ],
   },
+  {
+    id: '3.73.0-medical-logbook',
+    version: '3.73.0',
+    publishedOn: '2026-10-14',
+    title: 'Registre médical : saisie directe et signature personnelle',
+    roles: ['admin', 'capitaine'],
+    changes: [
+      'Le menu Registres accueille le Registre médical, entièrement en français. Sélectionnez un navire pour consigner la date, l’heure, le patient, la blessure ou maladie et les soins administrés.',
+      'Nouvelle entrée ajoute une ligne de saisie dans le tableau. Modifier permet de corriger une ligne sur place ; utilisez Enregistrer l’entrée ou Annuler pour terminer.',
+      'Le nom du secouriste et sa signature sont repris automatiquement du compte connecté. Enregistrez d’abord votre signature personnelle dans RH / Brevets, sur votre fiche, dans la rubrique Signature.',
+      'L’accès est réservé aux administrateurs de leur société et aux capitaines de leurs navires autorisés pendant leur affectation confirmée et publiée.',
+      'Chaque correction conserve la version précédente dans Historique. Les entrées archivées restent consultables et peuvent être restaurées. Exporter PDF reprend le registre avec ses signatures ; Registre vierge PDF fournit une grille à remplir à la main.',
+    ],
+  },
 ];
 
 export function chronologicalNotes(notes: readonly ReleaseNote[]): ReleaseNote[] {

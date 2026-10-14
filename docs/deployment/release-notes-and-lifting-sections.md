@@ -12,6 +12,15 @@ L'ancien lien `/modules/lifting` redirige vers les apparaux. Les trois routes h�
 
 ## Demande enregistrée et comportement des notes
 
+Le 14 octobre 2026, la note `3.73.0-medical-logbook` est ajoutée à la demande
+de l’utilisateur pour annoncer le Registre médical dans Registres. Elle vise
+Administrateur et Capitaine, les profils autorisés du module, et présente la
+saisie directement dans le tableau, la signature personnelle du compte connecté,
+l’historique, les archives réversibles et les PDF. La version affichée et le
+package passent à **3.73.0**, build **2026-10-14.001**, selon la convention des
+fonctionnalités compatibles. Les anciennes notes et leurs états de lecture sont
+conservés. Aucune migration supplémentaire n’est nécessaire pour cette note.
+
 Le 10 octobre 2026, la note `3.71.8-project-portfolio-closure` est ajoutée à la
 demande de l'utilisateur pour le module Projets. Elle vise Administrateur et
 Direction, les profils gestionnaires du module, et présente les actions des
