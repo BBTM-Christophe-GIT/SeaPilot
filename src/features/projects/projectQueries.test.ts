@@ -252,6 +252,25 @@ describe('projectQueries', () => {
     })]);
   });
 
+  it('keeps project-level issued offers and contracts in Documents, while rejecting orphan operation rows', () => {
+    const base = {
+      project_id: 880, planning_occurrence_id: null, category_key: null, subcategory_key: null, expires_on: null,
+      mime_type: 'application/pdf', file_size_bytes: 512, sharepoint_web_url: null, sharepoint_folder_path: null,
+      storage_bucket: 'project-files', created_at: '2026-10-14T18:00:00Z',
+    };
+    const documents = mapProjectOperationDocumentRows([
+      { ...base, id: 91, document_type: 'offer', file_name: 'Offre.pdf', storage_path: 'projects/880/generated/offer/r1/offer.pdf' },
+      { ...base, id: 92, document_type: 'bimco_supplytime', file_name: 'Contrat.pdf', storage_path: 'projects/880/generated/bimco_supplytime/r1/contract.pdf' },
+      { ...base, id: 93, document_type: 'operation_attachment', file_name: 'Orpheline.pdf', storage_path: 'projects/880/operations/invalid/orphan.pdf' },
+      { ...base, id: 94, document_type: 'unknown', file_name: 'Inconnu.pdf', storage_path: 'projects/880/generated/unknown/file.pdf' },
+    ]);
+    expect(documents.map((document) => document.id)).toEqual([91, 92]);
+    expect(documents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ projectId: 880, planningOccurrenceId: null, documentType: 'offer', fileName: 'Offre.pdf' }),
+      expect.objectContaining({ projectId: 880, planningOccurrenceId: null, documentType: 'bimco_supplytime', fileName: 'Contrat.pdf' }),
+    ]));
+  });
+
   it('keeps projects visible and reports secondary Supabase failures as partial data', async () => {
     const client = createReadClient({
       clients: { data: [], error: null },

@@ -26,6 +26,7 @@ const BLOB_API_VERSION = '12';
 function reference(value: unknown): BlobReference {
   const info = value && typeof value === 'object' ? value as Json : {};
   if (typeof info.blob_pathname !== 'string' || !info.blob_pathname.startsWith('documents/')
+    // eslint-disable-next-line no-control-regex -- Private object paths must reject control characters.
     || /[\\\u0000-\u001f\u007f]/.test(info.blob_pathname) || /(^|\/)\.\.?($|\/)/.test(info.blob_pathname)
     || typeof info.bytes !== 'number' || !Number.isSafeInteger(info.bytes) || info.bytes < 1 || info.bytes > MAX_BYTES
     || typeof info.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(info.sha256)
@@ -71,6 +72,7 @@ function uploadDestination(data: Json): string {
   const invalid = () => new Error('La destination du document est invalide.');
   if (typeof data.uploadUrl !== 'string' || typeof data.uploadId !== 'string'
     || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(data.uploadId)
+    // eslint-disable-next-line no-control-regex -- Validate the raw URL before the URL parser normalizes it.
     || /[\\\u0000-\u0020\u007f]/.test(data.uploadUrl)) throw invalid();
   const expectedPath = `documents/uploads/${data.uploadId}`;
   if (data.pathname !== expectedPath) throw invalid();
@@ -85,7 +87,7 @@ function uploadDestination(data: Json): string {
   if ((!provider && !legacy) || paths.length !== 1 || paths[0] !== expectedPath) throw invalid();
   return data.uploadUrl;
 }
-function inferredMime(name: string): string {
+export function inferredDocumentMimeType(name: string): string {
   const extension = name.split('.').pop()?.toLowerCase();
   const mimes: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
     webp: 'image/webp', gif: 'image/gif', txt: 'text/plain', csv: 'text/csv', doc: 'application/msword',
@@ -183,7 +185,7 @@ export function documentBlobStorage(client: SupabaseClient, bucket: string, lega
     const blob = body instanceof Blob ? body : body instanceof ArrayBuffer || ArrayBuffer.isView(body) ? new Blob([body as BlobPart]) : null;
     if (!blob || !blob.size || blob.size > MAX_BYTES) throw new Error('Sélectionnez un fichier de 100 Mo maximum.');
     const fileName = body instanceof File ? body.name : path.split('/').pop() || 'document';
-    const mimeType = (options?.contentType || blob.type || inferredMime(fileName)).split(';')[0].trim().toLowerCase();
+    const mimeType = (options?.contentType || blob.type || inferredDocumentMimeType(fileName)).split(';')[0].trim().toLowerCase();
     const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())), byte => byte.toString(16).padStart(2, '0')).join('');
     const prepared = await api(client, { operation: 'prepare', bucket, path, fileName, mimeType, bytes: blob.size, sha256, context: options?.metadata || {} });
     if (typeof prepared.uploadUrl !== 'string' || typeof prepared.uploadId !== 'string') throw new Error('L’envoi du document n’a pas pu être préparé.');

@@ -565,7 +565,7 @@ export function ProjectEditor({
     if (typeof client.from !== 'function') return;
     let active = true;
     void fetchProjectDocumentCategories(client).then((categories) => {
-      if (!active || categories.length === 0) return;
+      if (!active) return;
       setDocumentCategories(categories);
       setInitialDocumentCategories(categories.map((category) => ({ ...category })));
     }).catch(() => undefined);

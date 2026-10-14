@@ -20,7 +20,6 @@ import {
   FileText,
   Files,
   Download,
-  ExternalLink,
   Filter,
   Info,
   Pencil,
@@ -45,6 +44,7 @@ import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
 import { ProjectStoredDocumentLink } from './ProjectStoredDocumentLink';
+import { ProjectDocumentLibrary } from './ProjectDocumentLibrary';
 import type { StoredProjectDocument } from './projectDocumentStorage';
 import { ClientCatalogDialog, ServiceCatalogDialog, TowedAssetCatalogDialog } from './ProjectCatalogDialogs';
 import { ProjectBillingPanel } from './ProjectBillingPanel';
@@ -114,7 +114,6 @@ const EMPTY_PROJECTS_DATA: ProjectsData = {
 };
 
 const PROJECTS_PER_PAGE = 40;
-const PROJECT_DOCUMENTS_LEGACY_URL = 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets';
 
 type ProjectDocumentDownloadMode = 'document' | 'bundle';
 
@@ -461,10 +460,12 @@ function ProjectDocuments({
   client,
   documents,
   emptyLabel,
+  categoryLabels,
 }: {
   client: SupabaseClient;
   documents: ProjectDocumentRecord[];
   emptyLabel: string;
+  categoryLabels: ReadonlyMap<string, string>;
 }) {
   if (documents.length === 0) {
     return <p className="project-section-empty">{emptyLabel}</p>;
@@ -473,13 +474,13 @@ function ProjectDocuments({
   return (
     <>
       <p className="project-document-help">
-        Les fichiers sont classés dans SeaPilot / Projet / un dossier par projet. Le lanceur ouvre la copie Google Drive vérifiée ; les sources historiques restent conservées.
+        Documents sécurisés du projet, accessibles sur ordinateur et mobile. Les versions historiques sont conservées.
       </p>
       <ul className="project-document-list">
         {documents.map((document) => {
           const linkState = getSharePointDocumentLinkState(document.fileUrl);
           const metadata = [
-            document.categoryKey,
+            categoryLabels.get(document.categoryKey) || document.categoryKey,
             document.fileExtension || document.mimeType,
             formatFileSize(document.fileSizeBytes),
             document.sourceModifiedAt ? `modifié le ${formatDate(document.sourceModifiedAt)}` : '',
@@ -522,26 +523,14 @@ function ProjectDocuments({
   );
 }
 
-const PROJECT_ATTACHMENT_CATEGORY_LABELS: Record<string, string> = {
-  billing: 'Facturation',
-  commercial_appendix: 'Prestation annexe',
-  commercial_contract: 'Contrat',
-  commercial_offer: 'Offre Commerciale',
-  hse: 'HSE',
-  hse_audits: 'Audits',
-  hse_kpi: 'KPI',
-  hse_minutes: 'Comptes Rendus',
-  hse_procedure: 'Procédure',
-  toilette_de_mer: 'Toilette de Mer',
-  toilette_de_mer_attestation_expert_bv: 'Attestation Expert/BV',
-};
-
 function ProjectStoredAttachments({
   client,
   documents,
+  categoryLabels,
 }: {
   client: SupabaseClient;
   documents: ProjectOperationDocumentRecord[];
+  categoryLabels: ReadonlyMap<string, string>;
 }) {
   if (documents.length === 0) {
     return <p className="project-section-empty">Aucune pièce jointe classée depuis la fiche projet.</p>;
@@ -550,14 +539,13 @@ function ProjectStoredAttachments({
   return (
     <>
       <p className="project-document-help">
-        Ces pièces jointes sont conservées dans l’espace privé Supabase du projet. Le lien sécurisé est temporaire et
-        réservé aux utilisateurs autorisés de la société.
+        Documents sécurisés du projet, accessibles sur ordinateur et mobile aux utilisateurs autorisés de la société.
       </p>
       <ul className="project-document-list">
         {documents.map((document) => {
-          const category = document.categoryKey ? PROJECT_ATTACHMENT_CATEGORY_LABELS[document.categoryKey] : '';
+          const category = document.categoryKey ? categoryLabels.get(document.categoryKey) || document.categoryKey : '';
           const subcategory = document.subcategoryKey
-            ? PROJECT_ATTACHMENT_CATEGORY_LABELS[document.subcategoryKey]
+            ? categoryLabels.get(document.subcategoryKey) || document.subcategoryKey
             : '';
           const metadata = [
             category,
@@ -693,6 +681,8 @@ function ProjectDocumentEmissionDialog({
 }
 
 function ProjectDetail({
+  documentAccessKey,
+  onDocumentStored,
   project,
   contract,
   client,
@@ -717,6 +707,8 @@ function ProjectDetail({
   towedAsset,
   vessels,
 }: {
+  documentAccessKey: string;
+  onDocumentStored: (document: ProjectOperationDocumentRecord) => void;
   project: ProjectRecord;
   contract?: ProjectContractRecord;
   client?: ClientRecord;
@@ -918,25 +910,34 @@ function ProjectDetail({
 
       {activeTab === 'documents' ? (
       <section aria-label="Génération documentaire" className="project-detail-section">
-        <div className="project-section-heading">
-          <div>
-            <strong>Documents contractuels et modèles</strong>
-            <span>Pièces du projet classées par catégorie : HSE, Contrat, Facturation et Opérations. Les versions historiques sont conservées.</span>
-          </div>
-          <a href={PROJECT_DOCUMENTS_LEGACY_URL} rel="noreferrer" target="_blank">
-            <ExternalLink aria-hidden="true" size={15} /> Ouvrir SharePoint
-          </a>
-        </div>
-        <h4>Pièces jointes classées depuis la fiche projet</h4>
-        <ProjectStoredAttachments client={supabaseClient} documents={projectAttachments} />
-        <h4>Documents Projets historiques</h4>
-        <ProjectDocuments client={supabaseClient} documents={projectDocuments} emptyLabel="Aucun document projet associé." />
-        <h4>Documents contractuels</h4>
-        {contractDocumentsUnavailable ? (
-          <p className="project-section-empty">Documents contractuels indisponibles en raison d’une erreur de chargement.</p>
-        ) : (
-          <ProjectDocuments client={supabaseClient} documents={contractDocuments} emptyLabel="Aucun document contractuel associé." />
-        )}
+        <ProjectDocumentLibrary
+          accessKey={documentAccessKey}
+          archived={Boolean(project.archivedAt)}
+          attachments={projectAttachments}
+          canManage={isManager}
+          client={supabaseClient}
+          contractDocuments={contractDocuments}
+          onStored={onDocumentStored}
+          otherDocuments={operationDocuments.filter((document) => !projectAttachments.includes(document))}
+          projectDocuments={projectDocuments}
+          projectId={project.id}
+          renderDocuments={(documents, labels) => <>
+            <h4>Pièces jointes classées</h4>
+            <ProjectStoredAttachments categoryLabels={labels} client={supabaseClient} documents={documents.attachments} />
+            {documents.otherDocuments?.length ? <>
+              <h4>Documents émis et des opérations</h4>
+              <ProjectStoredAttachments categoryLabels={labels} client={supabaseClient} documents={documents.otherDocuments} />
+            </> : null}
+            <h4>Documents Projets historiques</h4>
+            <ProjectDocuments categoryLabels={labels} client={supabaseClient} documents={documents.projectDocuments} emptyLabel="Aucun document projet associé." />
+            <h4>Documents contractuels</h4>
+            {contractDocumentsUnavailable ? (
+              <p className="project-section-empty">Documents contractuels indisponibles en raison d’une erreur de chargement.</p>
+            ) : (
+              <ProjectDocuments categoryLabels={labels} client={supabaseClient} documents={documents.contractDocuments} emptyLabel="Aucun document contractuel associé." />
+            )}
+          </>}
+        />
         <div className="project-generated-document-note">
           <span>La préparation d’une offre ou d’un contrat s’effectue depuis la rubrique « Offre & contrat ».</span>
           <button onClick={() => setActiveTab('offer-contract')} type="button">Ouvrir Offre & contrat</button>
@@ -951,9 +952,7 @@ function ProjectDetail({
             <strong>Calendrier des opérations</strong>
             <span>Un contrat peut regrouper plusieurs opérations indépendantes dans le Planning.</span>
           </div>
-          <a href={PROJECT_DOCUMENTS_LEGACY_URL} rel="noreferrer" target="_blank">
-            <ExternalLink aria-hidden="true" size={15} /> Documents Projets
-          </a>
+          <button className="sp-button sp-button--secondary" onClick={() => setActiveTab('documents')} type="button"><Files aria-hidden="true" size={15} /> Documents Projets</button>
         </div>
         {planningOccurrences.length > 0 ? (
           <div className="project-operations-table-scroll">
@@ -1862,6 +1861,11 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
 
           {selectedProject ? (
             <ProjectDetail
+              documentAccessKey={outletContext?.userId || ''}
+              onDocumentStored={(document) => setProjectsData((current) => ({
+                ...current,
+                operationDocuments: [document, ...current.operationDocuments.filter((existing) => existing.id !== document.id)],
+              }))}
               client={selectedClient}
               supabaseClient={effectiveClient}
               contract={selectedContract}

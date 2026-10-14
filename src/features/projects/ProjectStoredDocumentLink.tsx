@@ -34,5 +34,5 @@ export function ProjectStoredDocumentLink({
       setError(caught instanceof Error ? caught.message : 'Document indisponible.');
     } finally { setOpening(false); }
   }
-  return <span><button type="button" disabled={opening} onClick={() => void open()}>{includeIcon ? <ExternalLink aria-hidden="true" size={14} /> : null}{opening ? 'Ouverture…' : 'Ouvrir le document'}<span className="sr-only"> : {document.fileName}</span></button>{error ? <small role="alert">{error}</small> : null}</span>;
+  return <span><button className="sp-button sp-button--secondary" type="button" disabled={opening} onClick={() => void open()}>{includeIcon ? <ExternalLink aria-hidden="true" size={14} /> : null}{opening ? 'Ouverture…' : 'Ouvrir le document'}<span className="sr-only"> : {document.fileName}</span></button>{error ? <small role="alert">{error}</small> : null}</span>;
 }
