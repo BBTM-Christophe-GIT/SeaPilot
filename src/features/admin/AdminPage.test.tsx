@@ -484,6 +484,11 @@ describe('AdminPage', () => {
       expect(restricted).not.toBeChecked(); expect(restricted).toBeDisabled();
     }
     expect(screen.getByRole('checkbox', { name: 'Sanctions Disciplinaires visible pour Direction' })).toBeEnabled();
+    for (const profile of ['Direction', 'Armement', 'Marin']) {
+      const restricted = screen.getByRole('checkbox', { name: `Registre médical visible pour ${profile}` });
+      expect(restricted).not.toBeChecked(); expect(restricted).toBeDisabled();
+    }
+    expect(screen.getByRole('checkbox', { name: 'Registre médical visible pour Capitaine' })).toBeEnabled();
 
     await user.click(projectsForSailor);
 

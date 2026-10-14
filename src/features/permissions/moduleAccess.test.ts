@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { NAVIGATION_MODULES, canAccessModule, getVisibleModules } from './moduleAccess';
 
 describe('module access', () => {
+  it.each([
+    ['admin', true], ['direction', false], ['armement', false], ['capitaine', true], ['marin', false],
+  ] as const)('reserves the medical register to authorized %s profiles', (role, expected) => {
+    expect(canAccessModule([role], 'medicalLogbook')).toBe(expected);
+    expect(getVisibleModules([role]).some((module) => module.key === 'medicalLogbook')).toBe(expected);
+  });
   it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as const)(
     'allows the %s profile to read the QHSE policy',
     (role) => expect(canAccessModule([role], 'qhsePolicy')).toBe(true),
@@ -44,6 +50,7 @@ describe('module access', () => {
       ['Registres', 'Produits Chimiques', 'submenu'],
       ['Registres', 'Registre des Exercices', 'submenu'],
       ['Registres', 'Registre LSA', 'submenu'],
+      ['Registres', 'Registre médical', 'submenu'],
       ['QHSE', 'Certificats flotte', 'submenu'],
       ['QHSE', 'Procédures QHSE', 'submenu'],
       ['QHSE', 'Notes de Service', 'submenu'],
