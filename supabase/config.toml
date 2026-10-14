@@ -412,6 +412,10 @@ verify_jwt = true
 [functions.planning-calendar]
 verify_jwt = false
 
+# GET links are short HMAC capabilities; every POST validates the user JWT and RLS.
+[functions.document-drive]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 

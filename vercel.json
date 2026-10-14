@@ -33,7 +33,7 @@
       "destination": "/previews/projects.html"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]
