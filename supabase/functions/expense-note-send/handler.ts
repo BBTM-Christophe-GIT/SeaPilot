@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { isDriveDocument, DriveAccessError, type DriveDocument } from '../document-drive/googleDrive.ts';
+import { ExpensePdfAccessError, MAX_EXPENSE_PDF_BYTES, readExpenseBlobPdf } from './blobPdf.ts';
 
 const RELAY_URL = 'https://bbtm-ndfv2.netlify.app/.netlify/functions/send';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -6,9 +8,10 @@ interface Dependencies {
   userClient: (authorization: string) => SupabaseClient;
   admin: SupabaseClient;
   fetch: typeof fetch;
+  readDrive?: (document: DriveDocument) => Promise<Response>;
 }
 
-export function createExpenseSendHandler({ userClient, admin, fetch: send }: Dependencies) {
+export function createExpenseSendHandler({ userClient, admin, fetch: send, readDrive }: Dependencies) {
   return async (request: Request): Promise<Response> => {
     const origin = request.headers.get('origin') || '';
     const allowed = ['https://sea-pilot-ten.vercel.app', 'https://sea-pilot-bbtm-app.vercel.app', 'http://localhost:5173', 'http://127.0.0.1:5173'].includes(origin);
@@ -43,10 +46,31 @@ export function createExpenseSendHandler({ userClient, admin, fetch: send }: Dep
         }
         return json(409, { ok: false, error: 'Une transmission a déjà été lancée. Vérifiez son résultat avant de réessayer.' });
       }
-      const pdf = await client.storage.from('expense-note-pdfs').download(note.pdf_path);
-      if (pdf.error || !pdf.data) return json(422, { ok: false, error: 'PDF de la note indisponible.' });
-      if (pdf.data.size > 4_000_000) return json(413, { ok: false, error: 'Le PDF dépasse la limite d’envoi de 4 Mo.' });
-      const bytes = new Uint8Array(await pdf.data.arrayBuffer());
+      // Blob authorizes the same archived path using the real caller's JWT.
+      let bytes = await readExpenseBlobPdf(send, authorization, note.pdf_path);
+      if (bytes === null) {
+        // The caller's note visibility above authorizes this exact archived PDF.
+        // A service-only lookup is appropriate here; it never accepts a caller's
+        // Drive ID and cannot broaden the existing expense-note RLS.
+        const mapped = await admin.from('document_drive_files')
+          .select('drive_file_id,drive_path,file_name,mime_type,bytes,sha256,verified_at,active')
+          .eq('source_bucket', 'expense-note-pdfs').eq('source_path', note.pdf_path).maybeSingle();
+        if (mapped.error) return json(503, { ok: false, error: 'Références Google Drive indisponibles.' });
+        let pdf: Blob;
+        if (mapped.data) {
+          if (mapped.data.active !== true) return json(403, { ok: false, error: 'Accès au PDF Drive désactivé.' });
+          if (!isDriveDocument(mapped.data) || mapped.data.mime_type !== 'application/pdf') return json(422, { ok: false, error: 'PDF Drive non vérifié.' });
+          if (!readDrive) return json(503, { ok: false, error: 'Accès serveur Google Drive non configuré.' });
+          // A failed Drive read never falls back to a possibly stale Storage copy.
+          pdf = await (await readDrive(mapped.data)).blob();
+        } else {
+          const legacy = await client.storage.from('expense-note-pdfs').download(note.pdf_path);
+          if (legacy.error || !legacy.data) return json(422, { ok: false, error: 'PDF de la note indisponible.' });
+          pdf = legacy.data;
+        }
+        if (pdf.size > MAX_EXPENSE_PDF_BYTES) return json(413, { ok: false, error: 'Le PDF dépasse la limite d’envoi de 4 Mo.' });
+        bytes = new Uint8Array(await pdf.arrayBuffer());
+      }
       if (new TextDecoder().decode(bytes.slice(0, 5)) !== '%PDF-') return json(422, { ok: false, error: 'Le document enregistré est invalide.' });
       let binary = '';
       for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
@@ -72,6 +96,9 @@ export function createExpenseSendHandler({ userClient, admin, fetch: send }: Dep
         .eq('id', note.id).eq('delivery_status', 'sending');
       if (persisted.error) return json(502, { ok: false, error: 'Le résultat d’envoi n’a pas pu être enregistré. Vérifiez la réception avant tout nouvel envoi.' });
       return status === 'sent' ? json(200, { ok: true, message: 'Note enregistrée et transmise à la comptabilité.' }) : json(502, { ok: false, error });
-    } catch { return json(500, { ok: false, error: 'Transmission indisponible. La note reste dans votre historique.' }); }
+    } catch (error) {
+      if (error instanceof DriveAccessError || error instanceof ExpensePdfAccessError) return json(error.status, { ok: false, error: error.message });
+      return json(500, { ok: false, error: 'Transmission indisponible. La note reste dans votre historique.' });
+    }
   };
 }

@@ -53,7 +53,29 @@ L'émission se fait en trois étapes : préparation en base, création/téléver
 
 ## Envoi comptable
 
-Déployer `supabase/functions/expense-note-send` avec validation JWT activée et son `deno.json`. La fonction vérifie le compte puis lit la note/PDF via les règles RLS du demandeur. La clé de service n'est utilisée qu'après cette vérification pour verrouiller et enregistrer le résultat de transmission.
+Déployer `supabase/functions/expense-note-send` avec validation JWT activée et son `deno.json`. La fonction vérifie le compte puis lit la note/PDF via les règles RLS du demandeur. La clé de service n'est utilisée qu'après cette vérification pour consulter la correspondance historique Drive, verrouiller et enregistrer le résultat de transmission.
+
+Depuis la migration des documents privés, le serveur demande un lien neuf à
+`https://sea-pilot-ten.vercel.app/api/documents` avec le JWT exact du demandeur,
+après authentification et lecture RLS de la note émise. Le fournisseur Blob reçoit
+uniquement le lien signé, sans JWT ni clé de service. Le lecteur borne le flux à
+4 000 000 octets et contrôle le domaine privé, le chemin de l'objet, le MIME PDF,
+la taille, la signature `%PDF-` et le SHA-256 enregistré avant de verrouiller l'envoi.
+Un refus, une erreur réseau ou un contenu altéré interrompt la transmission.
+
+Seul le refus de recherche explicite `404 / DOCUMENT_NOT_FOUND` ouvre le lecteur
+historique : correspondance Drive vérifiée en priorité, puis Storage uniquement
+si aucune correspondance Drive n'existe. Le lecteur Drive de la version serveur 6
+déjà déployée est conservé ; une correspondance désactivée ou une lecture Drive
+refusée n'ouvre jamais un téléchargement Storage. L'index inclut à nouveau son
+lecteur et sa configuration de courtier existante. Aucun secret Blob supplémentaire
+n'est requis dans Supabase, aucun document source n'est remplacé.
+
+Pour déployer ce correctif serveur, inclure `index.ts`, `handler.ts`, `blobPdf.ts`,
+`deno.json` et leur dépendance `../document-drive/googleDrive.ts`, en conservant
+`verify_jwt = true`. Livrer d'abord l'API documentaire Vercel. La vérification de
+routage du service déployé se limite à une requête anonyme refusée ; ne pas appeler
+le traitement authentifié sur une note réelle pour tester un envoi.
 
 Le relais existant, fourni par le propriétaire, est conservé : `https://bbtm-ndfv2.netlify.app/.netlify/functions/send`, projet Netlify `12a15b20-b760-4e12-b076-505b123cd351` (`bbtm-ndfv2`). Il conserve les identifiants Gmail et le destinataire Inexweb de NDF. Aucun secret Gmail n'est copié dans SeaPilot et aucun destinataire/URL arbitraire n'est accepté du navigateur. **Ce site Netlify doit rester actif pour l'envoi.**
 
@@ -66,6 +88,7 @@ Limites : 20 justificatifs, 15 Mo par fichier source, 50 Mo cumulés avant conve
 - Tests React avec fixtures distinctes Admin, Direction, Armement, Capitaine et Marin ; aucune vue simulée de la session de l'administrateur ne sert de preuve de droits.
 - `supabase/tests/expense_notes_access_test.sql` : transaction annulée en fin de test ; vérifie les cinq rôles, une deuxième société, les PDF privés, l'émetteur modifiable, le créateur immuable, le paramétrage et les calculs serveur.
 - `supabase/tests/expense_note_send.test.ts` : tests du service d'envoi avec relais simulé (authentification, RLS, doublons, succès, refus et résultats ambigus). Ils restent avec le serveur, exclu de l'artefact Vercel par `.vercelignore` ; ils sont exécutés par Vitest en local et en CI.
+- `supabase/tests/expense_blob_pdf.test.ts` : API et fournisseur entièrement simulés ; vérifie le JWT exact, les destinations privées, l'intégrité, les refus sans repli, la limite de 4 Mo et l'arrêt d'un flux bloqué. Aucun relais comptable ni service réel n'est appelé.
 - Tests PDF réels pour l'ordre des pages, les fichiers invalides et les descriptions longues.
 - Vérification visuelle sur ordinateur et mobile ; la préversion n'enregistre ni ne transmet de note.
 - La réception d'un premier document réel dans Inexweb reste à constater en exploitation. Les tests automatisés n'envoient pas de faux justificatif à la comptabilité.
