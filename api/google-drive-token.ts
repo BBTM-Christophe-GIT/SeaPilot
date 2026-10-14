@@ -22,6 +22,12 @@ class BrokerError extends Error {
   constructor(status: number, code: string) { super(code); this.status = status; this.code = code; }
 }
 
+async function jsonObject(response: Response): Promise<Record<string, unknown> | null> {
+  const value: unknown = await response.json().catch(() => null);
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown> : null;
+}
+
 /** Server-to-server only. Google validates the Vercel signature and subject in STS. */
 export function createGoogleDriveTokenBroker({ getEnv, getOidcToken, send = fetch, now = Date.now }: Dependencies) {
   let cached: { access_token: string; expires: number } | null = null;
@@ -55,14 +61,14 @@ export function createGoogleDriveTokenBroker({ getEnv, getOidcToken, send = fetc
         subjectToken: oidc, subjectTokenType: 'urn:ietf:params:oauth:token-type:jwt',
       }),
     });
-    const exchanged = await exchange.json().catch(() => null);
+    const exchanged = await jsonObject(exchange);
     if (!exchange.ok || typeof exchanged?.access_token !== 'string' || !TOKEN_PATTERN.test(exchanged.access_token)
       || exchanged.token_type !== 'Bearer') throw new BrokerError(503, 'GOOGLE_TOKEN_EXCHANGE_FAILED');
     const impersonation = await request(`https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${SERVICE_ACCOUNT}:generateAccessToken`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${exchanged.access_token}` },
       body: JSON.stringify({ scope: [READONLY_SCOPE], lifetime: '600s' }),
     });
-    const result = await impersonation.json().catch(() => null);
+    const result = await jsonObject(impersonation);
     const expires = typeof result?.expireTime === 'string' ? Date.parse(result.expireTime) : NaN;
     if (!impersonation.ok || typeof result?.accessToken !== 'string' || !TOKEN_PATTERN.test(result.accessToken)
       || !Number.isFinite(expires) || expires <= now() + 1_000) throw new BrokerError(503, 'GOOGLE_TOKEN_IMPERSONATION_FAILED');
