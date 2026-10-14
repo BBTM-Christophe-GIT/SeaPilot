@@ -7,6 +7,7 @@ import { APP_MODULES } from './features/permissions/moduleAccess';
 
 const supabaseMock = vi.hoisted(() => ({
   from: vi.fn(),
+  rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
 }));
 
 const dprQueriesMock = vi.hoisted(() => ({
@@ -720,6 +721,11 @@ describe('App', () => {
 
   it("renders the action plan module with imported audits and progress sheets", async () => {
     vi.stubEnv('VITE_APP_BASE_URL', 'https://sea-pilot-ten.vercel.app');
+    supabaseMock.rpc.mockReset();
+    supabaseMock.rpc.mockImplementation((functionName: string) => Promise.resolve({
+      data: functionName === 'action_plan_followup_action_ids' ? [810] : [],
+      error: null,
+    }));
     supabaseMock.from.mockReset();
     supabaseMock.from.mockImplementation((table: string) => {
       if (table === 'user_roles') {
@@ -808,6 +814,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('heading', { name: "Plan d'action" })).toBeInTheDocument();
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('action_plan_followup_action_ids');
     expect(screen.getByRole('button', { name: 'Tout afficher · 1' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Afficher COTENTIN · 1 élément' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Audit pont COTENTIN' })).not.toBeInTheDocument();

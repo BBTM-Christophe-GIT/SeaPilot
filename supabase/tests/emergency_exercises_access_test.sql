@@ -123,7 +123,10 @@ begin
         exception when insufficient_privilege then null; end;
     end if;
     if i=5 then
-      assert not exists(select 1 from public.dpr_reports where company_id=company),'Raw captain DPR leaked to sailor';
+      assert exists(select 1 from public.dpr_reports where company_id=company and vessel_id=vessel),'Assigned vessel DPR not readable by sailor';
+      report := public.emergency_exercises_report(null,2026,vessel);
+      assert (select sum((x->>'count')::integer) from jsonb_array_elements(report->'counts') x)=9,'Vessel summary omits other crews or crewless operational reports';
+      assert jsonb_array_length(roster->'people')=1,'Vessel summary expanded personal rosters';
       begin perform public.emergency_exercises_report(captain,2026); raise exception 'Other sailor accepted';
         exception when insufficient_privilege then null; end;
     end if;

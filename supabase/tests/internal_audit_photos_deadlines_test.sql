@@ -117,9 +117,9 @@ select throws_ok($$select public.internal_audit_photo_upload_scope('9c400000-000
 select throws_ok($$insert into storage.objects(bucket_id,name,owner_id,metadata) select 'internal-audit-photos',payload->>'storagePath',current_setting('request.jwt.claim.sub'),jsonb_build_object('mimetype','image/png','size',8) from photo_payloads where name='closure'$$,'42501',null,'captain cannot impersonate the manager folder');
 
 select set_config('request.jwt.claim.sub','9c000000-0000-0000-0000-000000000003',true);
-select is((select count(*)::integer from storage.objects where bucket_id='internal-audit-photos'),0,'real Marin has no captain-finding image access');
+select is((select count(*)::integer from storage.objects where bucket_id='internal-audit-photos'),3,'real Marin may consult linked ship finding and treatment photos');
 select throws_ok($$insert into storage.objects(bucket_id,name,owner_id,metadata) select 'internal-audit-photos',payload->>'storagePath',current_setting('request.jwt.claim.sub'),jsonb_build_object('mimetype','image/png','size',8) from photo_payloads where name='crew-forbidden'$$,'42501',null,'a crew Marin cannot upload proof to a captain finding');
-select throws_ok($$select public.internal_audit_photo_upload_scope('9c400000-0000-0000-0000-000000000001','treatment')$$,'42501',null,'upload scope does not leak another role’s finding');
+select throws_ok($$select public.internal_audit_photo_upload_scope('9c400000-0000-0000-0000-000000000001','treatment')$$,'42501',null,'ship consultation gives no upload right on another role’s finding');
 select lives_ok($$select public.internal_audit_photo_upload_scope('9c400000-0000-0000-0000-000000000002','treatment')$$,'the same real Marin can obtain their assigned crew treatment scope');
 
 select set_config('request.jwt.claim.sub','9c000000-0000-0000-0000-000000000004',true);

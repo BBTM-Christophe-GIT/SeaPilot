@@ -61,7 +61,7 @@ function ordered(data: unknown[]) {
   return chain;
 }
 
-function createClient(actions: unknown[] = [openAction, closedAction], editButtonEnabled = true, vessels = [{ id: 12, name: 'GOURY' }, { id: 13, name: 'SUROIT' }, { id: 14, name: 'YARD - Le Havre' }, { id: 15, name: 'Bureau - LE HAVRE' }, { id: 16, name: 'ECREHOUEL' }]) {
+function createClient(actions: unknown[] = [openAction, closedAction], editButtonEnabled = true, vessels = [{ id: 12, name: 'GOURY' }, { id: 13, name: 'SUROIT' }, { id: 14, name: 'YARD - Le Havre' }, { id: 15, name: 'Bureau - LE HAVRE' }, { id: 16, name: 'ECREHOUEL' }], followupActionIds = actions.map((item) => Number((item as { id: number }).id))) {
   const treatmentEvents: Record<string, unknown>[] = [{
     id: 8801, company_id: 1, action_item_id: 810, event_type: 'commented',
     note: 'Commande validée auprès du fournisseur.', attachment_file_name: null,
@@ -88,6 +88,7 @@ function createClient(actions: unknown[] = [openAction, closedAction], editButto
     }) },
     rpc: vi.fn().mockImplementation((functionName: string, parameters?: Record<string, unknown>) => {
       if (functionName === 'action_plan_current_vessel_scope') return Promise.resolve({ data: [12], error: null });
+      if (functionName === 'action_plan_followup_action_ids') return Promise.resolve({ data: followupActionIds, error: null });
       if (functionName === 'action_item_create') {
         return Promise.resolve({ data: {
           ...created,
@@ -242,6 +243,32 @@ function renderWithProfile(client: unknown, roles = ['armement']) {
 }
 
 describe('ActionPlanPage', () => {
+  it.each(['marin', 'capitaine'] as const)('keeps ship consultation without a followup form for a read-only %s', async (role) => {
+    const user = userEvent.setup();
+    const { client } = createClient([openAction], true, [{ id: 12, name: 'GOURY' }], []);
+    render(<ActionPlanPage client={client as never} roles={[role]} />);
+    await user.click(await screen.findByRole('button', { name: /Réaliser une analyse d'eau · GOURY/ }));
+    expect(screen.getByRole('heading', { name: openAction.title })).toBeInTheDocument();
+    expect(screen.getByText('Commande validée auprès du fournisseur.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Commentaire de suivi')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Enregistrer le suivi' })).not.toBeInTheDocument();
+    expect(client.rpc).toHaveBeenCalledWith('action_plan_followup_action_ids');
+    expect(client.rpc).not.toHaveBeenCalledWith('action_item_add_treatment_followup', expect.anything());
+  });
+
+  it('keeps reports readable and hides followup controls when server capabilities fail', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient([openAction]);
+    const originalRpc = client.rpc.getMockImplementation()!;
+    client.rpc.mockImplementation((functionName: string, parameters?: Record<string, unknown>) => functionName === 'action_plan_followup_action_ids'
+      ? Promise.resolve({ data: null, error: { message: 'Capabilities unavailable' } })
+      : originalRpc(functionName, parameters));
+    render(<ActionPlanPage client={client as never} roles={['capitaine']} />);
+    await user.click(await screen.findByRole('button', { name: /Réaliser une analyse d'eau · GOURY/ }));
+    expect(screen.getByRole('heading', { name: openAction.title })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Commentaire de suivi')).not.toBeInTheDocument();
+  });
+
   it('hides closed reports by default, retrieves them through status and opens the detail only on a report click', async () => {
     const user = userEvent.setup();
     const { client } = createClient();

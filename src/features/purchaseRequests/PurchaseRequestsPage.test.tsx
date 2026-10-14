@@ -1,9 +1,9 @@
-import { fireEvent, render as renderUi, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render as renderUi, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { Link, MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
-import { isCaptainScopedPurchaseView, PurchaseRequestsPage } from './PurchaseRequestsPage';
+import { isAssignedVesselScopedPurchaseView, PurchaseRequestsPage } from './PurchaseRequestsPage';
 import { derivePurchaseRequestStage } from './purchaseRequestQueries';
 
 const baseRequest = {
@@ -102,60 +102,41 @@ function mockDetailScrolling() {
 }
 
 function orderedResult(data: unknown[], pendingResult?: Promise<{ data: unknown[]; error: null }>) {
-  return {
-    select: vi.fn().mockReturnValue({
-      order: vi.fn().mockImplementation(() => ({
-        order: vi.fn().mockReturnValue(pendingResult || Promise.resolve({ data, error: null })),
-        then: (resolve: (value: unknown) => unknown) => resolve({ data, error: null }),
-      })),
-    }),
+  const filters: Array<{ column: string; values: unknown[] }> = [];
+  const query = {
+    select: vi.fn().mockImplementation(() => query),
+    order: vi.fn().mockImplementation(() => query),
+    eq: vi.fn().mockImplementation(() => query),
+    in: vi.fn().mockImplementation((column: string, values: unknown[]) => { filters.push({ column, values }); return query; }),
+    then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => (pendingResult || Promise.resolve({ data, error: null })).then((result) => resolve({ ...result,
+      data: result.data.filter((row) => filters.every(({ column, values }) => !!row && typeof row === 'object' && values.includes((row as Record<string, unknown>)[column]))),
+    }), reject),
   };
+  return query;
 }
 
 function createClient(requests: unknown[] = [baseRequest, urgentRequest], options: {
   pendingResult?: Promise<{ data: unknown[]; error: null }>;
-  assignedVessel?: { id: number; name: string };
+  scopeVesselIds?: number[];
+  scopeError?: { code: string; message: string };
 } = {}) {
   const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+  const scopeRpc = vi.fn().mockResolvedValue({ data: options.scopeVesselIds || [1, 2, 3], error: options.scopeError || null });
   const client = {
-    rpc,
+    rpc: (name: string, args?: unknown) => name === 'assigned_vessel_read_scope' ? scopeRpc(name, args) : rpc(name, args),
     storage: { from: vi.fn() },
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'purchase_requests') return orderedResult(requests, options.pendingResult);
       if (table === 'purchase_request_attachments' || table === 'purchase_request_events') {
-        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+        return orderedResult([]);
       }
       if (table === 'vessels') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [{ id: 1, name: 'GOURY' }, { id: 2, name: 'LE ROZEL' }, { id: 3, name: 'NAVIRE CANONIQUE' }], error: null }) }),
-          }),
-        };
-      }
-      if (table === 'planning_assignments') {
-        return {
-          select: vi.fn().mockReturnValue({
-            or: vi.fn().mockReturnValue({
-              lte: vi.fn().mockReturnValue({
-                gte: vi.fn().mockReturnValue({
-                  order: vi.fn().mockReturnValue({
-                    limit: vi.fn().mockReturnValue({
-                      maybeSingle: vi.fn().mockResolvedValue({
-                        data: options.assignedVessel ? { vessel_id: options.assignedVessel.id, vessels: { name: options.assignedVessel.name } } : null,
-                        error: null,
-                      }),
-                    }),
-                  }),
-                }),
-              }),
-            }),
-          }),
-        };
+        return orderedResult([{ id: 1, name: 'GOURY' }, { id: 2, name: 'LE ROZEL' }, { id: 3, name: 'NAVIRE CANONIQUE' }]);
       }
       throw new Error(`Unexpected table ${table}`);
     }),
   };
-  return { client, rpc };
+  return { client, rpc, scopeRpc };
 }
 
 describe('PurchaseRequestsPage', () => {
@@ -181,10 +162,73 @@ describe('PurchaseRequestsPage', () => {
   });
 
   it('keeps office profiles company-wide when they also own a captain role', () => {
-    expect(isCaptainScopedPurchaseView(['admin', 'capitaine', 'marin'])).toBe(false);
-    expect(isCaptainScopedPurchaseView(['direction', 'capitaine'])).toBe(false);
-    expect(isCaptainScopedPurchaseView(['armement', 'capitaine'])).toBe(false);
-    expect(isCaptainScopedPurchaseView(['capitaine', 'marin'])).toBe(true);
+    expect(isAssignedVesselScopedPurchaseView(['admin', 'capitaine', 'marin'])).toBe(false);
+    expect(isAssignedVesselScopedPurchaseView(['direction', 'capitaine'])).toBe(false);
+    expect(isAssignedVesselScopedPurchaseView(['armement', 'capitaine'])).toBe(false);
+    expect(isAssignedVesselScopedPurchaseView(['capitaine', 'marin'])).toBe(true);
+    expect(isAssignedVesselScopedPurchaseView(['marin'])).toBe(true);
+  });
+
+  it.each(['marin', 'capitaine'] as const)('shows current, upcoming and recently ended assigned vessels for %s while excluding boats outside the server window', async (role) => {
+    const fixtures = [
+      { ...baseRequest, id: 801, vessel_id: 274, vessel_name: 'BR 71', title: 'Demande du bord actuel' },
+      { ...baseRequest, id: 802, title: 'Demande du prochain embarquement' },
+      { ...baseRequest, id: 803, vessel_id: 2, vessel_name: 'LE ROZEL', title: 'Demande du débarquement récent' },
+      { ...baseRequest, id: 804, vessel_id: 3, vessel_name: 'NAVIRE CANONIQUE', title: 'Demande hors fenêtre' },
+    ];
+    const { client, scopeRpc, rpc } = createClient(fixtures, { scopeVesselIds: [274, 1, 2] });
+    render(<PurchaseRequestsPage client={client as never} roles={[role]} />);
+    expect(await screen.findByRole('tab', { name: 'À traiter 3' })).toBeInTheDocument();
+    for (const title of fixtures.slice(0, 3).map((row) => row.title)) expect(screen.getByRole('button', { name: new RegExp(title) })).toBeInTheDocument();
+    expect(screen.queryByText('Demande hors fenêtre')).not.toBeInTheDocument();
+    expect(scopeRpc).toHaveBeenCalledExactlyOnceWith('assigned_vessel_read_scope', undefined);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(client.from).not.toHaveBeenCalledWith('planning_assignments');
+  });
+
+  it.each(['admin', 'direction', 'armement'] as const)('keeps existing office visibility for %s without querying the crew scope', async (role) => {
+    const { client, scopeRpc } = createClient([baseRequest, linkedOrderedRequest], { scopeVesselIds: [] });
+    render(<PurchaseRequestsPage client={client as never} roles={[role, 'capitaine']} />, '/purchase-requests?requestId=274');
+    expect(await screen.findByRole('heading', { name: /#274.*Dyneema/ })).toBeInTheDocument();
+    expect(scopeRpc).not.toHaveBeenCalled();
+  });
+
+  it.each(['marin', 'capitaine'] as const)('fails closed for %s when the assignment RPC is missing', async (role) => {
+    const { client } = createClient([baseRequest], { scopeError: { code: 'PGRST202', message: 'Function missing' } });
+    render(<PurchaseRequestsPage client={client as never} roles={[role]} />);
+    expect(await screen.findByText('Impossible de vérifier les navires accessibles. Actualisez pour réessayer.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /#95.*Moteur/ })).not.toBeInTheDocument();
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('does not replace an empty crew scope with all company requests', async () => {
+    const { client } = createClient([baseRequest, linkedOrderedRequest], { scopeVesselIds: [] });
+    render(<PurchaseRequestsPage client={client as never} roles={['marin']} />);
+    await screen.findByRole('tab', { name: 'À traiter 0' });
+    expect(screen.queryByRole('heading', { name: /#95|#274/ })).not.toBeInTheDocument();
+    expect(client.from).not.toHaveBeenCalledWith('purchase_requests');
+    expect(client.from).not.toHaveBeenCalledWith('purchase_request_attachments');
+  });
+
+  it('purges a prior account cache and ignores its late scope response after the connected user changes', async () => {
+    let resolveOld!: (result: { data: number[]; error: null }) => void;
+    const oldRefresh = new Promise<{ data: number[]; error: null }>((resolve) => { resolveOld = resolve; });
+    const { client, scopeRpc } = createClient([baseRequest, linkedOrderedRequest]);
+    scopeRpc.mockResolvedValueOnce({ data: [1], error: null }).mockReturnValueOnce(oldRefresh).mockResolvedValueOnce({ data: [2], error: null });
+    function account(userId: string) {
+      return <MemoryRouter><Routes><Route element={<Outlet context={{ client, roles: ['capitaine'], userId, currentPerson: null }} />}><Route path="/" element={<PurchaseRequestsPage />} /></Route></Routes></MemoryRouter>;
+    }
+    const { rerender } = renderUi(account('captain-a'));
+    await screen.findByRole('heading', { name: /#95.*Moteur/ });
+    await userEvent.click(screen.getByRole('button', { name: 'Actualiser' }));
+    expect(scopeRpc).toHaveBeenCalledTimes(2);
+    rerender(account('captain-b'));
+    expect(screen.queryByRole('heading', { name: /#95.*Moteur/ })).not.toBeInTheDocument();
+    await screen.findByRole('heading', { name: /#274.*Dyneema/ });
+    await act(async () => resolveOld({ data: [1], error: null }));
+    expect(screen.queryByRole('heading', { name: /#95.*Moteur/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /#274.*Dyneema/ })).toBeInTheDocument();
+    expect(client.from.mock.calls.filter(([table]) => table === 'purchase_requests')).toHaveLength(2);
   });
 
   it('opens the linked request in its workflow stage instead of the first pending request', async () => {
@@ -338,21 +382,22 @@ describe('PurchaseRequestsPage', () => {
     expect(screen.queryByRole('button', { name: 'Planifier la livraison' })).not.toBeInTheDocument();
   });
 
-  it('preserves the captain assigned-vessel filter when resolving a linked request', async () => {
-    const { client } = createClient([baseRequest, linkedOrderedRequest], { assignedVessel: { id: 1, name: 'GOURY' } });
+  it('opens a captain linked request on another vessel admitted by the assignment reading window', async () => {
+    const { client, scopeRpc } = createClient([baseRequest, linkedOrderedRequest], { scopeVesselIds: [1, 2] });
     render(<Routes>
       <Route element={<Outlet context={{ client, roles: ['capitaine'], currentPerson: { id: 44, functionLabel: 'Capitaine' } }} />}>
         <Route element={<PurchaseRequestsPage />} path="/purchase-requests" />
       </Route>
     </Routes>, '/purchase-requests?requestId=274');
 
-    expect(await screen.findByText('Cette demande est introuvable ou inaccessible.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /#274.*Dyneema/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'À traiter 1' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /#274.*Dyneema/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Approuver' })).not.toBeInTheDocument();
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Filtres' }));
-    expect(screen.getByLabelText('Filtrer par navire')).toHaveValue('GOURY');
+    expect(screen.getByLabelText('Filtrer par navire')).toHaveValue('');
+    expect(scopeRpc).toHaveBeenCalledWith('assigned_vessel_read_scope', undefined);
+    expect(client.from).not.toHaveBeenCalledWith('planning_assignments');
   });
 
   it('keeps Marin permissions on a linked order detail', async () => {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { previewSupabaseClient } from '../preview/previewSupabaseClient';
-import { addPurchaseRequestComment, fetchPurchaseRequests } from './purchaseRequestQueries';
+import { addPurchaseRequestComment, fetchAssignedPurchaseVesselIds, fetchPurchaseRequests } from './purchaseRequestQueries';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -8,6 +8,14 @@ afterEach(() => {
 });
 
 describe('purchase follow-up preview fixture', () => {
+  it('provides an isolated multi-vessel read scope without exposing other preview boats', async () => {
+    const scope = await fetchAssignedPurchaseVesselIds(previewSupabaseClient);
+    expect(scope).toEqual([9201, 9202]);
+    const scoped = await fetchPurchaseRequests(previewSupabaseClient, [9201]);
+    expect(scoped.length).toBeGreaterThan(0);
+    expect(scoped.every((request) => request.vesselId === 9201)).toBe(true);
+    expect(scoped.some((request) => request.vesselId === 9202)).toBe(false);
+  });
   it('keeps new comments in the local preview history without changing purchase workflow data', async () => {
     const now = '2026-10-08T14:45:00.000Z';
     vi.useFakeTimers({ now: new Date(now) });

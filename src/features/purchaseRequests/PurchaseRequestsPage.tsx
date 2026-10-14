@@ -38,7 +38,7 @@ import {
   addPurchaseRequestComment,
   buildPurchaseRequestMetrics,
   createPurchaseRequest,
-  fetchCurrentAssignedVessel,
+  fetchAssignedPurchaseVesselIds,
   fetchPurchaseRequests,
   fetchPurchaseVessels,
   isActiveUrgentPurchaseRequest,
@@ -71,10 +71,13 @@ interface ActionDialogState {
   title: string;
 }
 
-export function isCaptainScopedPurchaseView(roles: RoleKey[]): boolean {
-  return roles.includes('capitaine')
+export function isAssignedVesselScopedPurchaseView(roles: RoleKey[]): boolean {
+  return roles.some((role) => role === 'capitaine' || role === 'marin')
     && !roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
 }
+
+const EMPTY_REQUESTS: PurchaseRequestRecord[] = [];
+const EMPTY_VESSELS: PurchaseVesselOption[] = [];
 
 const PAGE_SIZE = 10;
 const STAGE_LABELS: Record<PurchaseRequestStage, string> = {
@@ -205,10 +208,12 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const decisionAllowed = canDecide(effectiveRoles);
   const approvalAllowed = decisionAllowed || effectiveRoles.includes('marin');
   const creationAllowed = canCreate(effectiveRoles, currentPerson?.functionLabel || '');
-  const captainView = isCaptainScopedPurchaseView(effectiveRoles);
-
-  const [requests, setRequests] = useState<PurchaseRequestRecord[]>([]);
-  const [vessels, setVessels] = useState<PurchaseVesselOption[]>([]);
+  const assignedView = isAssignedVesselScopedPurchaseView(effectiveRoles);
+  const accessScope = `${outletContext?.userId || ''}:${effectiveRoles.join('|')}:${currentPerson?.id || ''}`;
+  const [purchaseData, setPurchaseData] = useState<{ accessScope: string; client: SupabaseClient; requests: PurchaseRequestRecord[]; vessels: PurchaseVesselOption[] }>({ accessScope, client: effectiveClient, requests: [], vessels: [] });
+  const currentData = purchaseData.accessScope === accessScope && purchaseData.client === effectiveClient;
+  const requests = currentData ? purchaseData.requests : EMPTY_REQUESTS;
+  const vessels = currentData ? purchaseData.vessels : EMPTY_VESSELS;
   const [activeStage, setActiveStage] = useState<PurchaseRequestView>('to_process');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
@@ -229,41 +234,62 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const lastLoadSequence = useRef(0);
   const detailPanelRef = useRef<HTMLElement | null>(null);
   const lastScrolledRequestParameter = useRef<string | null>(null);
+  const mounted = useRef(false);
+  const currentAccess = useRef({ accessScope, client: effectiveClient });
+  currentAccess.current = { accessScope, client: effectiveClient };
+
+  useEffect(() => {
+    mounted.current = true;
+    setPurchaseData({ accessScope, client: effectiveClient, requests: [], vessels: [] });
+    setSelectedId(null);
+    setSearch('');
+    setFilters({ category: '', urgentOnly: false, vesselName: '' });
+    setActiveStage('to_process');
+    setStatusMessage(null);
+    setShowCreateDialog(false);
+    setActionDialog(null);
+    setRequestForm(EMPTY_FORM);
+    setFiles([]);
+    setWizardStep(0);
+    setIsSaving(false);
+    initialStageResolved.current = false;
+    lastListSignature.current = '';
+    lastScrolledRequestParameter.current = null;
+    return () => { mounted.current = false; lastLoadSequence.current += 1; };
+  }, [accessScope, effectiveClient]);
 
   const loadData = useCallback(async (initial = false) => {
     const loadSequence = ++lastLoadSequence.current;
     if (initial) setIsLoading(true);
     setErrorMessage(null);
     try {
-      const [loadedRequests, loadedVessels, assignedVessel] = await Promise.all([
-        fetchPurchaseRequests(effectiveClient),
+      const vesselIds = assignedView ? await fetchAssignedPurchaseVesselIds(effectiveClient) : undefined;
+      if (!mounted.current || currentAccess.current.accessScope !== accessScope || currentAccess.current.client !== effectiveClient || loadSequence !== lastLoadSequence.current) return;
+      const [loadedRequests, loadedVessels] = await Promise.all([
+        fetchPurchaseRequests(effectiveClient, vesselIds),
         fetchPurchaseVessels(effectiveClient),
-        captainView && currentPerson
-          ? fetchCurrentAssignedVessel(effectiveClient, currentPerson.id).catch(() => null)
-          : Promise.resolve(null),
       ]);
-      if (loadSequence !== lastLoadSequence.current) return;
-      setRequests(loadedRequests);
-      setVessels(loadedVessels);
+      if (!mounted.current || currentAccess.current.accessScope !== accessScope || currentAccess.current.client !== effectiveClient || loadSequence !== lastLoadSequence.current) return;
+      setPurchaseData({ accessScope, client: effectiveClient, requests: loadedRequests, vessels: loadedVessels });
       setSelectedId((current) => current && loadedRequests.some((request) => request.id === current) ? current : loadedRequests[0]?.id || null);
-      if (initial && assignedVessel) {
-        setFilters((current) => ({ ...current, vesselName: assignedVessel.name }));
-        setRequestForm((current) => ({ ...current, vesselId: assignedVessel.id }));
-      }
     } catch {
-      if (loadSequence === lastLoadSequence.current) setErrorMessage("Impossible de charger les demandes d'achat.");
+      if (mounted.current && currentAccess.current.accessScope === accessScope && currentAccess.current.client === effectiveClient && loadSequence === lastLoadSequence.current) {
+        setPurchaseData({ accessScope, client: effectiveClient, requests: [], vessels: [] });
+        setSelectedId(null);
+        setErrorMessage(assignedView ? 'Impossible de vérifier les navires accessibles. Actualisez pour réessayer.' : "Impossible de charger les demandes d'achat.");
+      }
     } finally {
-      if (initial) setIsLoading(false);
+      if (initial && mounted.current && currentAccess.current.accessScope === accessScope && currentAccess.current.client === effectiveClient && loadSequence === lastLoadSequence.current) setIsLoading(false);
     }
-  }, [captainView, currentPerson, effectiveClient]);
+  }, [accessScope, assignedView, effectiveClient]);
 
   useEffect(() => { void loadData(true); }, [loadData]);
 
   useEffect(() => {
     if (requestedIdParameter === null) return;
     setSearch('');
-    setFilters((current) => ({ category: '', urgentOnly: false, vesselName: captainView ? current.vesselName : '' }));
-  }, [captainView, requestedIdParameter]);
+    setFilters({ category: '', urgentOnly: false, vesselName: '' });
+  }, [requestedIdParameter]);
 
   const categories = useMemo(() => Array.from(new Set(requests.map((request) => request.categoryLabel).filter(Boolean))).sort(), [requests]);
   const vesselNames = useMemo(() => Array.from(new Set(requests.map((request) => request.vesselName).filter(Boolean))).sort(compareFleetNames), [requests]);
@@ -380,6 +406,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
     setErrorMessage(null);
     try {
       const created = await createPurchaseRequest(effectiveClient, requestForm, files);
+      if (!mounted.current || currentAccess.current.accessScope !== accessScope || currentAccess.current.client !== effectiveClient) return;
       setShowCreateDialog(false);
       setRequestForm(EMPTY_FORM);
       setFiles([]);
@@ -390,9 +417,9 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
       setStatusMessage(`Demande #${created.requestNumber} créée et équipes de traitement notifiées.`);
       await loadData();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Impossible de créer la demande.");
+      if (mounted.current && currentAccess.current.accessScope === accessScope && currentAccess.current.client === effectiveClient) setErrorMessage(error instanceof Error ? error.message : "Impossible de créer la demande.");
     } finally {
-      setIsSaving(false);
+      if (mounted.current && currentAccess.current.accessScope === accessScope && currentAccess.current.client === effectiveClient) setIsSaving(false);
     }
   }
 
@@ -402,13 +429,14 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
     setErrorMessage(null);
     try {
       await transitionPurchaseRequest(effectiveClient, selectedRequest.id, action, options);
+      if (!mounted.current || currentAccess.current.accessScope !== accessScope || currentAccess.current.client !== effectiveClient) return;
       setActionDialog(null);
       setStatusMessage('Le suivi de la demande a été actualisé.');
       await loadData();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Action impossible.');
+      if (mounted.current && currentAccess.current.accessScope === accessScope && currentAccess.current.client === effectiveClient) setErrorMessage(error instanceof Error ? error.message : 'Action impossible.');
     } finally {
-      setIsSaving(false);
+      if (mounted.current && currentAccess.current.accessScope === accessScope && currentAccess.current.client === effectiveClient) setIsSaving(false);
     }
   }
 
@@ -416,15 +444,18 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
     setIsSaving(true);
     try {
       const addedEvent = await addPurchaseRequestComment(effectiveClient, requestId, comment);
+      if (!mounted.current || currentAccess.current.accessScope !== accessScope || currentAccess.current.client !== effectiveClient) return;
       ++lastLoadSequence.current;
-      setRequests((current) => current.map((request) => request.id === requestId
-        ? { ...request, events: [addedEvent, ...request.events.filter((event) => event.id !== addedEvent.id)] } : request));
+      setPurchaseData((current) => current.accessScope !== accessScope || current.client !== effectiveClient ? current : { ...current,
+        requests: current.requests.map((request) => request.id === requestId
+          ? { ...request, events: [addedEvent, ...request.events.filter((event) => event.id !== addedEvent.id)] } : request),
+      });
     } finally {
-      setIsSaving(false);
+      if (mounted.current && currentAccess.current.accessScope === accessScope && currentAccess.current.client === effectiveClient) setIsSaving(false);
     }
   }
 
-  if (isLoading) return <div className="admin-state">Chargement des demandes d'achat…</div>;
+  if (isLoading || !currentData) return <div className="admin-state">Chargement des demandes d'achat…</div>;
 
   return (
     <section className="purchase-page purchase-workspace">
@@ -460,7 +491,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
           <label>Navire<select aria-label="Filtrer par navire" onChange={(event) => updateFilters((current) => ({ ...current, vesselName: event.target.value }))} value={filters.vesselName}><option value="">Tous les navires</option>{vesselNames.map((name) => <option key={name}>{name}</option>)}</select></label>
           <label>Catégorie<select aria-label="Filtrer par catégorie" onChange={(event) => updateFilters((current) => ({ ...current, category: event.target.value }))} value={filters.category}><option value="">Toutes les catégories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></label>
           <label className="purchase-urgent-toggle"><input checked={filters.urgentOnly} onChange={(event) => updateFilters((current) => ({ ...current, urgentOnly: event.target.checked }))} type="checkbox" />Urgences uniquement</label>
-          <button onClick={() => updateFilters((current) => ({ category: '', urgentOnly: false, vesselName: captainView ? current.vesselName : '' }))} type="button">Réinitialiser</button>
+          <button onClick={() => updateFilters(() => ({ category: '', urgentOnly: false, vesselName: '' }))} type="button">Réinitialiser</button>
         </div>
       ) : null}
 

@@ -83,3 +83,7 @@ les DPR multi-exercices/multi-participants, les brouillons, les DPR supprimés,
 les années précédentes, les anciens marins et l’isolation entre sociétés.
 Recette navigateur : menu réel en aperçu, ordinateur et mobile, illustrations,
 filtre navire, changement d’année, téléchargement et console.
+
+## Consultation des navires affectés
+
+La [fenêtre d’affectation](../vessel-assignment-access.md) ajoute aux profils Marin et Capitaine une vue des totaux d’exercices et TBT du navire sélectionné. Elle inclut les DPR des autres bordées, sans élargir la liste des carnets individuels autorisés. Le choix « Tous les exercices du navire » reste un agrégat opérationnel ; les filtres de personnel et l’export d’un carnet nominatif conservent leurs règles.

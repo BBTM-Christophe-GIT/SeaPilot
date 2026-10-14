@@ -162,6 +162,7 @@ export interface ActionPlanSettings {
 export interface ActionPlanData {
   actions: ActionItemRecord[];
   assignedVesselIds?: number[];
+  followupActionIds: number[];
   documents: ActionDocumentRecord[];
   actionTypes: ActionTypeCatalogRecord[];
   vessels: VesselOption[];
@@ -684,11 +685,12 @@ export async function fetchActionPlanData(client: SupabaseClient, restrictToAssi
   const vesselScope = restrictToAssignedVessels ? await client.rpc('action_plan_current_vessel_scope') : null;
   if (vesselScope?.error) throw vesselScope.error;
   const assignedVessels = vesselScope ? new Set<number>((vesselScope.data || []).map(Number)) : null;
-  const [actionsResult, documentsResult, typesResult, vesselsResult, peopleResult, assigneesResult, treatmentEventsResult, settingsResult, hseResult] = await Promise.allSettled([
+  const [actionsResult, documentsResult, typesResult, vesselsResult, peopleResult, assigneesResult, treatmentEventsResult, settingsResult, hseResult, followupResult] = await Promise.allSettled([
     fetchActionItems(client), fetchActionDocuments(client), fetchActionTypes(client), fetchVessels(client),
     fetchPeople(client), fetchActionAssignees(client), fetchActionTreatmentEvents(client),
     fetchActionPlanSettings(client),
     fetchActionPlanHseDashboard(client, currentYear),
+    client.rpc('action_plan_followup_action_ids'),
   ]);
   if (actionsResult.status === 'rejected') throw actionsResult.reason;
   const actionTypes = typesResult.status === 'fulfilled' ? typesResult.value : [];
@@ -702,6 +704,9 @@ export async function fetchActionPlanData(client: SupabaseClient, restrictToAssi
   return {
     actions,
     assignedVesselIds: assignedVessels ? [...assignedVessels] : undefined,
+    followupActionIds: followupResult.status === 'fulfilled' && !followupResult.value.error && Array.isArray(followupResult.value.data)
+      ? followupResult.value.data.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0)
+      : [],
     documents: documentsResult.status === 'fulfilled' ? documentsResult.value : [],
     actionTypes,
     vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value.filter((vessel) => !assignedVessels || assignedVessels.has(vessel.id)) : [],

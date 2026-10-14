@@ -14,6 +14,8 @@ export function EmergencyExercisesPage({ client }: { client?: SupabaseClient }) 
   const context = useOutletContext<AppShellOutletContext | undefined>();
   const [preview] = useState(createExercisePreviewClient);
   const db = client || (context?.previewMode ? preview : context?.client) || supabase;
+  const [dataOwner, setDataOwner] = useState(() => ({ client: db, userId: context?.userId }));
+  const currentAccount = dataOwner.client === db && dataOwner.userId === context?.userId;
   const [roster, setRoster] = useState<ExerciseRoster | null>(null);
   const [personId, setPersonId] = useState<number | null>(null);
   const [vesselId, setVesselId] = useState<number | null>(null);
@@ -29,13 +31,15 @@ export function EmergencyExercisesPage({ client }: { client?: SupabaseClient }) 
   useEffect(() => {
     let active = true;
     setRoster(null); setReport(null); setPersonId(null); setVesselId(null); setLoading(true); setError('');
+    setDataOwner({ client: db, userId: context?.userId });
     void fetchExerciseRoster(db).then((next) => {
       if (!active) return;
+      setDataOwner({ client: db, userId: context?.userId });
       setRoster(next);
       if (next.scope === 'self') setPersonId(next.people[0]?.id ?? null);
     }).catch((e) => { if (active) { setError(messageOf(e)); setLoading(false); } });
     return () => { active = false; };
-  }, [db, revision]);
+  }, [db, revision, context?.userId]);
   useEffect(() => {
     if (!roster) return;
     let active = true;
@@ -47,6 +51,7 @@ export function EmergencyExercisesPage({ client }: { client?: SupabaseClient }) 
   }, [db, roster, personId, year, vesselId, population]);
   const people = useMemo(() => roster?.people.filter((p) => roster.scope !== 'fleet' || population === 'all'
     || (population === 'current' ? p.current : p.former)) || [], [roster, population]);
+  const canReadVesselSummary = roster?.scope !== 'fleet' && vesselId !== null && Boolean(roster?.vesselReadIds?.includes(vesselId));
   // Compare the complete selection during render, so an old report can never be
   // exported between a filter change and the following effect.
   const selectionMatches = report && report.year === year && (report.person?.id ?? null) === personId && (report.vessel?.id ?? null) === vesselId;
@@ -60,26 +65,27 @@ export function EmergencyExercisesPage({ client }: { client?: SupabaseClient }) 
     finally { exportLock.current = false; setBusy(false); }
   }
   const years = Array.from({ length: Math.max(1, new Date().getFullYear() - 2000 + 1) }, (_, i) => new Date().getFullYear() - i);
+  if (!currentAccount) return <p className="exercise-empty" role="status">Chargement des exercices…</p>;
   return <section className="exercise-page">
-    <header className="exercise-header"><div><h1>Registre des Exercices</h1><p>Carnet individuel des exercices d’urgence et des TBT déclarés dans les DPR.</p></div>
+    <header className="exercise-header"><div><h1>Registre des Exercices</h1><p>Exercices d’urgence et TBT des navires et carnets individuels déclarés dans les DPR.</p></div>
       <button type="button" className="exercise-refresh" aria-label="Actualiser le registre" disabled={busy || loading} onClick={() => setRevision((n) => n + 1)}><RefreshCw size={18}/></button></header>
     {context?.previewMode && !client ? <p className="exercise-notice">Démonstration · données fictives.</p> : null}
     <nav className="exercise-vessels" aria-label="Filtrer les exercices par navire">
-      <button type="button" disabled={busy} aria-pressed={vesselId === null} onClick={() => setVesselId(null)}><span><Layers3 size={31}/></span><strong>Flotte</strong></button>
-      {roster?.vessels.map((v) => <button type="button" key={v.id} disabled={busy} aria-pressed={vesselId === v.id} onClick={() => setVesselId(v.id)}>
+      <button type="button" disabled={busy} aria-pressed={vesselId === null} onClick={() => { setVesselId(null); if (roster?.scope === 'self') setPersonId(roster.people[0]?.id ?? null); }}><span><Layers3 size={31}/></span><strong>Flotte</strong></button>
+      {roster?.vessels.map((v) => <button type="button" key={v.id} disabled={busy} aria-pressed={vesselId === v.id} onClick={() => { setVesselId(v.id); if (roster.scope !== 'fleet' && roster.vesselReadIds?.includes(v.id)) setPersonId(null); else if (roster.scope === 'self') setPersonId(roster.people[0]?.id ?? null); }}>
         <span><VesselIcon url={v.iconUrl}/></span><strong>{v.name}</strong>
       </button>)}
     </nav>
     <div className="exercise-filters">
       {roster?.scope === 'fleet' ? <label>Personnel<select aria-label="Filtrer les marins" value={population} disabled={busy} onChange={(e) => { setPopulation(e.target.value); setPersonId(null); setReport(null); }}><option value="current">En poste</option><option value="former">Anciens marins</option><option value="all">Tous les marins</option></select></label> : null}
-      <label className="exercise-person">Collaborateur<select value={personId ?? ''} disabled={busy || !roster || roster.scope === 'self'} onChange={(e) => setPersonId(e.target.value ? Number(e.target.value) : null)}>
-        {roster?.scope !== 'self' ? <option value="">{roster?.scope === 'watch' ? 'Toute ma bordée' : 'Tous les marins du filtre'}</option> : null}
+      <label className="exercise-person">Collaborateur<select value={personId ?? ''} disabled={busy || !roster || (roster.scope === 'self' && !canReadVesselSummary)} onChange={(e) => setPersonId(e.target.value ? Number(e.target.value) : null)}>
+        {roster?.scope !== 'self' || canReadVesselSummary ? <option value="">{canReadVesselSummary ? 'Tous les exercices du navire' : roster?.scope === 'watch' ? 'Toute ma bordée' : 'Tous les marins du filtre'}</option> : null}
         {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select></label>
       <label>Année<select value={year} disabled={busy} onChange={(e) => setYear(Number(e.target.value))}>{years.map((y) => <option key={y}>{y}</option>)}</select></label>
       <button className="exercise-export" disabled={busy || loading || !selectionMatches || !report?.person} type="button" onClick={() => void exportPdf()}><Download size={18}/>{busy ? 'Génération…' : 'Exporter le PDF'}</button>
     </div>
-    <p className="exercise-scope"><ShieldCheck size={15}/>{roster?.scope === 'self' ? 'Votre carnet personnel.' : roster?.scope === 'watch' ? 'Marins de votre bordée.' : 'Marins de la société.'} {!personId ? 'Sélectionnez un marin pour exporter son carnet.' : 'Le PDF reprend le marin, l’année et le navire sélectionnés.'}</p>
+    <p className="exercise-scope"><ShieldCheck size={15}/>{canReadVesselSummary && !personId ? 'Exercices du navire accessibles pendant votre fenêtre d’affectation.' : roster?.scope === 'self' ? 'Votre carnet personnel.' : roster?.scope === 'watch' ? 'Marins de votre bordée.' : 'Marins de la société.'} {!personId ? 'Sélectionnez un marin pour exporter son carnet.' : 'Le PDF reprend le marin, l’année et le navire sélectionnés.'}</p>
     {error ? <p className="exercise-error" role="alert">{error} <button type="button" disabled={busy} onClick={() => setRevision((n) => n + 1)}>Réessayer</button></p> : null}
     {notice ? <p className="exercise-notice" role="status">{notice}</p> : null}
     {loading ? <p className="exercise-empty" role="status">Chargement des exercices…</p> : !error && selectionMatches ? <article className="exercise-report">

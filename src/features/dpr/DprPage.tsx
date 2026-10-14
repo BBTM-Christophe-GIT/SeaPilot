@@ -523,7 +523,7 @@ export function DprPage({ client, roles }: DprPageProps) {
 
     {isMarinView ? <section className="dpr-marin-entry-only" aria-label="Accès DPR Marin">
       <FolderOpen aria-hidden="true"/>
-      <div><h2>Mes DPR</h2><p>Vous retrouvez les DPR dont vous êtes l’émetteur et pouvez les modifier pendant 3 jours après leur création.</p></div>
+      <div><h2>DPR des navires</h2><p>Consultez les DPR des navires accessibles. Vous pouvez modifier vos propres DPR pendant 3 jours après leur création.</p></div>
     </section> : null}
     {!isMarinView ? <div className="dpr-kpi-strip" aria-label="Indicateurs Daily Progress Report">
       <article><Gauge/><span><small>DPR ce mois</small><strong>{kpis.currentMonth}</strong></span></article>
@@ -545,7 +545,7 @@ export function DprPage({ client, roles }: DprPageProps) {
         </div>
 
         <div className="dpr-selection-summary">
-          {!isMarinView ? <span><SelectionCheckbox ids={visibleReports.map((item) => item.id)} selected={selectedSet} label={`Sélectionner les ${visibleReports.length} DPR visibles`} onChange={(checked) => selectReports(visibleReports, checked)}/><strong>{selectedReports.length} DPR sélectionné(s)</strong><small>sélection visible uniquement</small></span> : <span><strong>Mes DPR</strong><small>rédaction et suivi de mes rapports</small></span>}
+          {!isMarinView ? <span><SelectionCheckbox ids={visibleReports.map((item) => item.id)} selected={selectedSet} label={`Sélectionner les ${visibleReports.length} DPR visibles`} onChange={(checked) => selectReports(visibleReports, checked)}/><strong>{selectedReports.length} DPR sélectionné(s)</strong><small>sélection visible uniquement</small></span> : <span><strong>DPR des navires</strong><small>consultation des rapports autorisés et suivi de mes rapports</small></span>}
           <span>{visibleReports.length} DPR affiché(s)</span>
         </div>
 
