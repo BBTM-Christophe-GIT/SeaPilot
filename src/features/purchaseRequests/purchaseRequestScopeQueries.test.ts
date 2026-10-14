@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { fetchAssignedPurchaseVesselIds, fetchPurchaseRequests } from './purchaseRequestQueries';
+import { createPurchaseRequestAttachmentUrl, fetchAssignedPurchaseVesselIds, fetchPurchaseRequests, type PurchaseRequestAttachment } from './purchaseRequestQueries';
 
 describe('purchase assignment read scope', () => {
   it('gets only the connected server scope without passing a person, company or reference date', async () => {
@@ -34,7 +34,7 @@ describe('purchase assignment read scope', () => {
     expect(storage.from).not.toHaveBeenCalled();
   });
 
-  it('filters requests and their parent metadata before signing private attachment links', async () => {
+  it('filters requests and their parent attachment addresses before any private file access', async () => {
     const requests = [
       { id: 10, vessel_id: 1, title: 'Accessible', vessel_name: 'GOURY' },
       { id: 11, vessel_id: 99, title: 'Hors affectation', vessel_name: 'Autre navire' },
@@ -58,12 +58,31 @@ describe('purchase assignment read scope', () => {
     const client = { from, storage: { from: vi.fn().mockReturnValue({ createSignedUrl }) } } as unknown as SupabaseClient;
     const result = await fetchPurchaseRequests(client, [1]);
     expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ id: 10, title: 'Accessible', attachments: [{ id: 100 }], events: [{ id: 200 }] });
+    expect(result[0]).toMatchObject({ id: 10, title: 'Accessible', attachments: [{ id: 100, storageBucket: 'purchase-request-attachments', storagePath: '10/accessible.pdf' }], events: [{ id: 200 }] });
     expect(queryFilters).toEqual([
       { table: 'purchase_requests', column: 'vessel_id', values: [1] },
       { table: 'purchase_request_attachments', column: 'purchase_request_id', values: [10] },
       { table: 'purchase_request_events', column: 'purchase_request_id', values: [10] },
     ]);
-    expect(createSignedUrl).toHaveBeenCalledExactlyOnceWith('10/accessible.pdf', 3600);
+    expect(createSignedUrl).not.toHaveBeenCalled();
+    expect(client.storage.from).not.toHaveBeenCalled();
+    expect(await createPurchaseRequestAttachmentUrl(client, result[0].attachments[0])).toBe('https://private.example.test/accessible.pdf');
+    expect(createSignedUrl).toHaveBeenCalledExactlyOnceWith('10/accessible.pdf', 120);
+  });
+
+  it('does not fall back to a retained URL when the current attachment access is refused', async () => {
+    const error = new Error('Document inaccessible pour ce profil.');
+    const createSignedUrl = vi.fn().mockResolvedValue({ data: null, error });
+    const client = { storage: { from: vi.fn(() => ({ createSignedUrl })) } } as unknown as SupabaseClient;
+    const attachment = { storageBucket: 'purchase-request-attachments', storagePath: '10/proof.pdf', downloadUrl: 'https://old.example/proof.pdf' } as PurchaseRequestAttachment;
+    await expect(createPurchaseRequestAttachmentUrl(client, attachment)).rejects.toBe(error);
+    expect(createSignedUrl).toHaveBeenCalledWith('10/proof.pdf', 120);
+  });
+
+  it('preserves an external SharePoint attachment when it has no private storage address', async () => {
+    const client = { storage: { from: vi.fn() } } as unknown as SupabaseClient;
+    const attachment = { storageBucket: '', storagePath: '', downloadUrl: 'https://bbtm668.sharepoint.com/proof.pdf' } as PurchaseRequestAttachment;
+    expect(await createPurchaseRequestAttachmentUrl(client, attachment)).toBe(attachment.downloadUrl);
+    expect(client.storage.from).not.toHaveBeenCalled();
   });
 });

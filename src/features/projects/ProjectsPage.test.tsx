@@ -292,7 +292,9 @@ function createClient(
   });
 
   const rpc = vi.fn().mockImplementation((functionName: string) => (
-    functionName === 'projects_planning_occurrences'
+    functionName === 'document_drive_lookup'
+      ? Promise.resolve({ data: null, error: null })
+      : functionName === 'projects_planning_occurrences'
       ? Promise.resolve({ data: atlantiquePlanningOccurrenceRows, error: null })
       : functionName === 'projects_contracts'
         ? Promise.resolve(sources.project_contracts)

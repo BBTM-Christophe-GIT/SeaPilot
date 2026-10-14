@@ -1295,7 +1295,7 @@ describe('Drive document download', () => {
     const blob = new Blob(['verified']);
     vi.mocked(readHrDriveFile).mockResolvedValueOnce(blob);
     const doc = mapHrDocumentRows([{ ...documentRow, drive_path: 'person/file.pdf', drive_sha256: 'a'.repeat(64), storage_bucket: 'hr-documents', storage_path: 'old.pdf' }])[0];
-    const client = { storage: { from: vi.fn() } };
+    const client = { rpc: vi.fn().mockResolvedValue({ data: null, error: null }), storage: { from: vi.fn() } };
     expect(await downloadHrDocumentBlob(client as never, doc)).toBe(blob);
     expect(client.storage.from).not.toHaveBeenCalled();
   });

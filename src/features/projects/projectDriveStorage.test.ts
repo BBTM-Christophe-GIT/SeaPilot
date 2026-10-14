@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { projectDriveCategory, projectDriveStorage } from './projectDriveStorage';
 import { connectLocalDrive, localDriveRequest } from '../documents/localDriveLauncher';
+import { installDocumentDriveStorage } from '../documents/documentDriveStorage';
 vi.mock('../documents/localDriveLauncher', async original => ({ ...await original<typeof import('../documents/localDriveLauncher')>(), connectLocalDrive: vi.fn(), localDriveRequest: vi.fn(), blobBase64: vi.fn().mockResolvedValue('cGRm') }));
 const hash = async (blob: Blob) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())), (byte) => byte.toString(16).padStart(2, '0')).join('');
 function fixture(mapping: unknown = null) {
@@ -12,11 +13,14 @@ function fixture(mapping: unknown = null) {
   query.insert = insert;
   const download = vi.fn().mockResolvedValue({ data: new Blob(['legacy']), error: null });
   const storage = { from: vi.fn(() => ({ download, remove: vi.fn() })) };
-  const rpc = vi.fn().mockResolvedValue({ data: { directory: 'Projet', folder: 'P144 – GUARD VESSEL EMDT', company_id: 1 }, error: null });
+  const rpc = vi.fn().mockImplementation(async (name: string) => ({ data: name === 'document_drive_lookup' ? null : { directory: 'Projet', folder: 'P144 – GUARD VESSEL EMDT', company_id: 1 }, error: null }));
   const client = { from: vi.fn(() => query), rpc, storage };
   return { client, insert, download };
 }
-beforeEach(() => { vi.mocked(connectLocalDrive).mockResolvedValue({ url: 'http://localhost', expiresAt: 1, version: '2.5.0' }); });
+beforeEach(() => {
+  vi.mocked(connectLocalDrive).mockReset().mockResolvedValue({ url: 'http://localhost', expiresAt: 1, version: '2.5.0' });
+  vi.mocked(localDriveRequest).mockReset();
+});
 describe('project Drive routing', () => {
   it.each(['2.5.0', '2.6.0', '2.6.1', '2.10.0'])('exports P144 billing with compatible launcher %s', async version => {
     vi.mocked(connectLocalDrive).mockResolvedValue({ url: 'http://localhost', expiresAt: 1, version });
@@ -94,5 +98,60 @@ describe('project Drive routing', () => {
     vi.mocked(connectLocalDrive).mockClear();
     expect(await projectDriveStorage(client as never, 'sharepoint').createSignedUrl('legacy-url', 120)).toEqual({ data: { signedUrl: 'https://drive.google.com/file/d/verified-drive-file/view' }, error: null });
     expect(connectLocalDrive).not.toHaveBeenCalled();
+  });
+
+  it('previews and downloads a migrated project file through the gateway before consulting the older desktop receipt', async () => {
+    const path = 'projects/12/generated/contract/contract.pdf';
+    const content = 'Current authorized project PDF';
+    const info = { drive_file_id: 'verified-current-project-file', mime_type: 'application/pdf', file_name: 'contract.pdf',
+      bytes: content.length, version: '117', chunkSize: 4 * 1024 * 1024 };
+    const { client, download } = fixture({ drive_file_id: 'older-project-file', path: 'Projet-12/Contrat/contract.pdf', bytes: 3, sha256: 'older-proof' });
+    client.rpc.mockResolvedValue({ data: info, error: null } as never);
+    const invoke = vi.fn().mockImplementation(async (_name: string, { body }: { body: { operation: string; range?: { start: number; end: number } } }) => {
+      if (body.operation === 'url') return { data: { signedUrl: 'https://example.supabase.co/functions/v1/document-drive?ticket=authorized-project', document: info, chunkSize: info.chunkSize }, error: null };
+      if (body.operation === 'info') return { data: info, error: null };
+      const range = body.range!;
+      return { data: new Blob([content], { type: 'application/octet-stream' }), error: null, response: new Response(null, { status: 206, headers: {
+        'Content-Range': `bytes ${range.start}-${range.end}/${info.bytes}`, 'Content-Length': String(info.bytes),
+        'X-Document-Drive-Id': info.drive_file_id, 'X-Document-Drive-Version': info.version,
+        'X-Document-Drive-Bytes': String(info.bytes), 'X-Document-Drive-Mime': info.mime_type,
+        'X-Document-Drive-Name': encodeURIComponent(info.file_name),
+      } }) };
+    });
+    Object.assign(client, { functions: { invoke } });
+    installDocumentDriveStorage(client as never);
+    const storage = projectDriveStorage(client as never, 'project-files');
+    expect((await storage.createSignedUrl(path, 120)).data?.signedUrl).toContain('/document-drive?ticket=authorized-project');
+    const result = await storage.download(path);
+    expect(await result.data?.text()).toBe(content);
+    expect(client.rpc).toHaveBeenCalledWith('document_drive_lookup', { target_bucket: 'project-files', target_path: path });
+    expect(client.from).not.toHaveBeenCalled();
+    expect(connectLocalDrive).not.toHaveBeenCalled();
+    expect(localDriveRequest).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('never bypasses a migrated-file access refusal with an existing desktop receipt or Drive link', async () => {
+    const { client, download } = fixture({ drive_file_id: 'older-project-file', path: 'Projet-12/Contrat/contract.pdf' });
+    client.rpc.mockResolvedValue({ data: null, error: { code: '42501', message: 'Document inaccessible pour ce profil.' } } as never);
+    const storage = projectDriveStorage(client as never, 'project-files');
+    await expect(storage.createSignedUrl('projects/12/contract.pdf', 120)).rejects.toMatchObject({ code: '42501' });
+    await expect(storage.download('projects/12/contract.pdf')).rejects.toMatchObject({ code: '42501' });
+    expect(client.from).not.toHaveBeenCalled();
+    expect(client.storage.from).not.toHaveBeenCalled();
+    expect(connectLocalDrive).not.toHaveBeenCalled();
+    expect(localDriveRequest).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('returns a gateway failure without reverting to an existing desktop receipt', async () => {
+    const { client, download } = fixture({ drive_file_id: 'older-project-file', path: 'Projet-12/Contrat/contract.pdf' });
+    client.rpc.mockResolvedValue({ data: { drive_file_id: 'verified-current-project-file' }, error: null } as never);
+    const unavailable = { data: null, error: new Error('Passerelle indisponible') };
+    download.mockResolvedValue(unavailable as never);
+    expect(await projectDriveStorage(client as never, 'project-files').download('projects/12/contract.pdf')).toBe(unavailable);
+    expect(client.from).not.toHaveBeenCalled();
+    expect(connectLocalDrive).not.toHaveBeenCalled();
+    expect(localDriveRequest).not.toHaveBeenCalled();
   });
 });
