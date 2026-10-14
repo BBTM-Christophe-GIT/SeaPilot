@@ -75,6 +75,14 @@ other endpoints and other reservation paths are rejected. SDK regression tests
 generate both PUT and private GET URLs with the installed presigner using a
 synthetic delegation and no provider credentials or network access.
 
+Direct browser PUTs also send `x-api-version: 12`, matching the pinned SDK's
+native upload transport, alongside the existing `Content-Type` header. The live
+provider probe showed that this version preserves inline PDF preview for opaque
+upload paths; `download=true` still returns an attachment. Provider CORS allows
+the version header. No provider headers are added to signed GET requests. The
+regression test compares this wire header against the installed SDK using a
+synthetic credential and mocked transport.
+
 Signature lists and retention checks query `working-time-signatures` in groups
 of four. The existing signature policies remain enforced for each object; the
 smaller groups fit the authenticated PostgREST statement timeout while preserving
