@@ -46,10 +46,16 @@ function canvasPng(canvas: HTMLCanvasElement): Promise<Blob> {
   });
 }
 
-export function ProfileSignaturePanel({ canManage, client, person }: ProfileSignaturePanelProps) {
+export function ProfileSignaturePanel(props: ProfileSignaturePanelProps) {
+  // A pending image/drawing belongs to one RH person and cannot follow selection.
+  return <ProfileSignatureWorkspace key={`${props.person.id}:${props.canManage}`} {...props} />;
+}
+
+function ProfileSignatureWorkspace({ canManage, client, person }: ProfileSignaturePanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
   const [signatures, setSignatures] = useState<WorkingTimeProfileSignature[]>([]);
+  const [loadedClient, setLoadedClient] = useState(client);
   const [activeUrl, setActiveUrl] = useState('');
   const [mode, setMode] = useState<'upload' | 'draw'>('upload');
   const [pendingPng, setPendingPng] = useState<Blob | null>(null);
@@ -59,25 +65,40 @@ export function ProfileSignaturePanel({ canManage, client, person }: ProfileSign
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const activeSignature = signatures.find((signature) => signature.validTo === null);
+  const visibleSignatures = loadedClient === client ? signatures : [];
+  const activeSignature = visibleSignatures.find((signature) => signature.validTo === null);
+  const loadId = useRef(0);
+  const savingRef = useRef(false);
+  const mountedRef = useRef(true);
+  const activeClientRef = useRef(client);
+  activeClientRef.current = client;
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+  useEffect(() => {
+    savingRef.current = false; setIsSaving(false); setPendingPng(null); setPendingUrl('');
+    setHasDrawing(false); setMessage(''); setErrorMessage('');
+  }, [client]);
 
   const reload = useCallback(async () => {
+    const currentLoad = ++loadId.current;
     setIsLoading(true);
     setErrorMessage('');
     try {
       const loaded = await fetchWorkingTimeProfileSignatures(client, person.id);
-      setSignatures(loaded);
+      if (loadId.current !== currentLoad) return;
       const current = loaded.find((signature) => signature.validTo === null);
-      setActiveUrl(current ? await createWorkingTimeSignatureUrl(client, current) : '');
+      const url = current ? await createWorkingTimeSignatureUrl(client, current) : '';
+      if (loadId.current !== currentLoad) return;
+      setSignatures(loaded); setActiveUrl(url); setLoadedClient(client);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Impossible de charger la signature.');
+      if (loadId.current === currentLoad) { setSignatures([]); setActiveUrl(''); setErrorMessage(error instanceof Error ? error.message : 'Impossible de charger la signature.'); }
     } finally {
-      setIsLoading(false);
+      if (loadId.current === currentLoad) setIsLoading(false);
     }
   }, [client, person.id]);
 
   useEffect(() => {
     void reload();
+    return () => { loadId.current += 1; };
   }, [reload]);
 
   useEffect(() => {
@@ -137,27 +158,36 @@ export function ProfileSignaturePanel({ canManage, client, person }: ProfileSign
   }
 
   async function saveSignature() {
-    const png = mode === 'upload' ? pendingPng : canvasRef.current && hasDrawing ? await canvasPng(canvasRef.current) : null;
-    if (!png) {
-      setErrorMessage(mode === 'upload' ? 'Sélectionnez un fichier PNG.' : 'Dessinez la signature avant de l’enregistrer.');
-      return;
-    }
+    if (savingRef.current || !canManage) return;
+    savingRef.current = true;
     setIsSaving(true);
-    setErrorMessage('');
-    setMessage('');
     try {
+      const png = mode === 'upload' ? pendingPng : canvasRef.current && hasDrawing ? await canvasPng(canvasRef.current) : null;
+      if (!mountedRef.current || activeClientRef.current !== client) return;
+      if (!png) {
+        setErrorMessage(mode === 'upload' ? 'Sélectionnez un fichier PNG.' : 'Dessinez la signature avant de l’enregistrer.');
+        return;
+      }
+      setErrorMessage('');
+      setMessage('');
       await uploadWorkingTimeProfileSignature(client, person.id, png);
+      if (!mountedRef.current || activeClientRef.current !== client) return;
       setPendingPng(null);
       if (pendingUrl) URL.revokeObjectURL(pendingUrl);
       setPendingUrl('');
       setHasDrawing(false);
       clearCanvas(canvasRef.current);
       await reload();
+      if (!mountedRef.current || activeClientRef.current !== client) return;
       setMessage('Nouvelle version PNG enregistrée. Elle ne sera apposée que lors d’une action explicite de signature ou validation.');
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Impossible d’enregistrer la signature.');
+      if (!mountedRef.current || activeClientRef.current !== client) return;
+      const message = error instanceof Error ? error.message : 'Impossible d’enregistrer la signature.';
+      await reload();
+      if (!mountedRef.current || activeClientRef.current !== client) return;
+      setErrorMessage(message);
     } finally {
-      setIsSaving(false);
+      if (mountedRef.current && activeClientRef.current === client) { savingRef.current = false; setIsSaving(false); }
     }
   }
 
@@ -217,10 +247,10 @@ export function ProfileSignaturePanel({ canManage, client, person }: ProfileSign
       {message ? <p className="working-time-message is-success" role="status">{message}</p> : null}
       {errorMessage ? <p className="working-time-message is-error" role="alert">{errorMessage}</p> : null}
 
-      {signatures.length > 1 ? (
+      {visibleSignatures.length > 1 ? (
         <details className="hr-signature-history">
-          <summary>{signatures.length} versions conservées</summary>
-          <ul>{signatures.map((signature) => <li key={signature.id}><strong>v{signature.versionNumber}</strong><span>{formatDateTime(signature.createdAt)}</span><code>{signature.sha256.slice(0, 12)}…</code><em>{signature.validTo ? 'Historique' : 'Active'}</em></li>)}</ul>
+          <summary>{visibleSignatures.length} versions conservées</summary>
+          <ul>{visibleSignatures.map((signature) => <li key={signature.id}><strong>v{signature.versionNumber}</strong><span>{formatDateTime(signature.createdAt)}</span><code>{signature.sha256.slice(0, 12)}…</code><em>{signature.validTo ? 'Historique' : 'Active'}</em></li>)}</ul>
         </details>
       ) : null}
     </section>

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { BarChart3, CalendarDays, Download, FileText, RefreshCw, ShieldAlert, ShipWheel, Users } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchWorkingTimeComplianceOptions,
   fetchWorkingTimeComplianceReport,
@@ -66,7 +66,7 @@ export function WorkingTimeComplianceReport({ client, initialYear }: WorkingTime
   const [vesselIds, setVesselIds] = useState<number[]>([]);
   const [options, setOptions] = useState<WorkingTimeComplianceOptions | null>(null);
   const [methodologyLabel, setMethodologyLabel] = useState('');
-  const [report, setReport] = useState<WorkingTimeComplianceReportData | null>(null);
+  const [loadedReport, setLoadedReport] = useState<{ client: SupabaseClient; scope: string; report: WorkingTimeComplianceReportData } | null>(null);
   const [analysis, setAnalysis] = useState('');
   const [isLoadingOptions, setIsLoadingOptions] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -74,6 +74,13 @@ export function WorkingTimeComplianceReport({ client, initialYear }: WorkingTime
   const [error, setError] = useState<string | null>(null);
   const [openMultiSelect, setOpenMultiSelect] = useState<'people' | 'vessels' | null>(null);
   const range = useMemo(() => periodBounds(year, periodMode, month, quarter), [month, periodMode, quarter, year]);
+  const reportScope = JSON.stringify([range, metricKeys, populationScope, personIds, watchGroups, vesselIds]);
+  const report = loadedReport?.client === client && loadedReport.scope === reportScope ? loadedReport.report : null;
+  const reportContext = useMemo(() => ({ client, scope: reportScope }), [client, reportScope]);
+  const reportContextRef = useRef(reportContext);
+  reportContextRef.current = reportContext;
+  const generatingRef = useRef(false);
+  useEffect(() => { generatingRef.current = false; setIsGenerating(false); }, [reportContext]);
   const years = useMemo(() => Array.from({ length: 7 }, (_, index) => initialYear + 1 - index), [initialYear]);
   const people = options?.people || [];
   const vessels = options?.vessels || [];
@@ -114,6 +121,7 @@ export function WorkingTimeComplianceReport({ client, initialYear }: WorkingTime
   }, [client, year]);
 
   async function generateReport() {
+    if (generatingRef.current) return;
     if (!metricKeys.length) {
       setError('Sélectionnez au moins une famille d’indicateurs.');
       return;
@@ -127,6 +135,7 @@ export function WorkingTimeComplianceReport({ client, initialYear }: WorkingTime
       return;
     }
     setIsGenerating(true);
+    generatingRef.current = true;
     setError(null);
     try {
       const nextReport = await fetchWorkingTimeComplianceReport(client, {
@@ -136,12 +145,13 @@ export function WorkingTimeComplianceReport({ client, initialYear }: WorkingTime
         vesselIds,
         watchGroups: populationScope === 'watch' ? watchGroups : [],
       });
-      setReport(nextReport);
+      if (reportContextRef.current !== reportContext) return;
+      setLoadedReport({ client, scope: reportScope, report: nextReport });
       setAnalysis(nextReport.analysis);
     } catch (reason) {
-      setError(workingTimeComplianceErrorMessage(reason));
+      if (reportContextRef.current === reportContext) setError(workingTimeComplianceErrorMessage(reason));
     } finally {
-      setIsGenerating(false);
+      if (reportContextRef.current === reportContext) { generatingRef.current = false; setIsGenerating(false); }
     }
   }
 

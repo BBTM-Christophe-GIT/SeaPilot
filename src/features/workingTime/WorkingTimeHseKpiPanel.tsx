@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Activity, RefreshCw, ShieldAlert } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RoleKey } from '../permissions/roles';
 import { workingTimeErrorMessage } from './workingTimeQueries';
 
@@ -27,10 +27,17 @@ export function WorkingTimeHseKpiPanel({ client, roles, range }: Props) {
   const [clients, setClients] = useState<Option[]>([]);
   const [projects, setProjects] = useState<Option[]>([]);
   const [filters, setFilters] = useState({ vesselId: '', watch: '', personId: '', functionLabel: '', clientId: '', projectId: '', area: '', population: '' });
-  const [summary, setSummary] = useState<Record<string, unknown> | null>(null);
+  const [loadedSummary, setLoadedSummary] = useState<{ client: SupabaseClient; scope: string; summary: Record<string, unknown> } | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const canRefresh = roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
+  const summaryScope = JSON.stringify([range, methodId, filters]);
+  const summary = loadedSummary?.client === client && loadedSummary.scope === summaryScope ? loadedSummary.summary : null;
+  const summaryContext = useMemo(() => ({ client, scope: summaryScope }), [client, summaryScope]);
+  const summaryContextRef = useRef(summaryContext);
+  summaryContextRef.current = summaryContext;
+  const busyRef = useRef(false);
+  useEffect(() => { busyRef.current = false; setIsBusy(false); }, [summaryContext]);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,13 +63,15 @@ export function WorkingTimeHseKpiPanel({ client, roles, range }: Props) {
   }, [client]);
 
   async function loadSummary(refreshExposure = false) {
-    if (!methodId) return;
+    if (!methodId || busyRef.current) return;
+    busyRef.current = true;
     setIsBusy(true);
     setError(null);
     try {
       if (refreshExposure) {
         const { error: refreshError } = await client.rpc('refresh_hse_exposure_hours', { p_starts_on: range.start, p_ends_on: range.end, p_methodology_id: Number(methodId) });
         if (refreshError) throw refreshError;
+        if (summaryContextRef.current !== summaryContext) return;
       }
       const { data, error: rpcError } = await client.rpc('hse_kpi_summary', {
         p_starts_on: range.start, p_ends_on: range.end, p_methodology_id: Number(methodId),
@@ -72,11 +81,11 @@ export function WorkingTimeHseKpiPanel({ client, roles, range }: Props) {
         p_geographic_area: filters.area || null, p_population: filters.population || null,
       });
       if (rpcError) throw rpcError;
-      setSummary((data || {}) as Record<string, unknown>);
+      if (summaryContextRef.current === summaryContext) setLoadedSummary({ client, scope: summaryScope, summary: (data || {}) as Record<string, unknown> });
     } catch (reason) {
-      setError(workingTimeErrorMessage(reason));
+      if (summaryContextRef.current === summaryContext) setError(workingTimeErrorMessage(reason));
     } finally {
-      setIsBusy(false);
+      if (summaryContextRef.current === summaryContext) { busyRef.current = false; setIsBusy(false); }
     }
   }
 

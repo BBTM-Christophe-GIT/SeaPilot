@@ -1,0 +1,43 @@
+import { deferred } from './workingTimeTestHelpers';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { PersonRecord } from '../humanResources/peopleQueries';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { ProfileSignaturePanel } from './ProfileSignaturePanel';
+import { createWorkingTimeSignatureUrl, fetchWorkingTimeProfileSignatures, uploadWorkingTimeProfileSignature, type WorkingTimeProfileSignature } from './workingTimeSignatureQueries';
+vi.mock('./workingTimeSignatureQueries', () => ({ createWorkingTimeSignatureUrl: vi.fn(), fetchWorkingTimeProfileSignatures: vi.fn(), uploadWorkingTimeProfileSignature: vi.fn() }));
+const client = {} as SupabaseClient;
+const person = (id: number) => ({ id, firstName: `Personne ${id}`, lastName: 'TEST' }) as PersonRecord;
+beforeEach(() => { vi.clearAllMocks(); vi.mocked(fetchWorkingTimeProfileSignatures).mockResolvedValue([]); class FixtureURL extends URL { static createObjectURL = vi.fn(() => 'blob:pending'); static revokeObjectURL = vi.fn(); } vi.stubGlobal('URL', FixtureURL); });
+afterEach(() => vi.unstubAllGlobals());
+it('does not carry a pending signature image to another RH person', async () => {
+  const view = render(<ProfileSignaturePanel canManage client={client} person={person(1)} />);
+  fireEvent.change(screen.getByLabelText(/Fichier PNG, 1 Mo maximum/), { target: { files: [new File(['synthetic PNG'], 'signature.png', { type: 'image/png' })] } });
+  expect(screen.getByRole('button', { name: 'Enregistrer une nouvelle version' })).toBeEnabled();
+  view.rerender(<ProfileSignaturePanel canManage client={client} person={person(2)} />);
+  expect(screen.getByRole('button', { name: 'Enregistrer une nouvelle version' })).toBeDisabled();
+  expect(screen.queryByRole('img', { name: 'Aperçu de la nouvelle signature' })).not.toBeInTheDocument();
+  expect(uploadWorkingTimeProfileSignature).not.toHaveBeenCalled();
+});
+it('ignores a previous person’s delayed signature lookup', async () => {
+  const pending = deferred<WorkingTimeProfileSignature[]>();
+  vi.mocked(fetchWorkingTimeProfileSignatures).mockReturnValueOnce(pending.promise).mockResolvedValueOnce([]);
+  const view = render(<ProfileSignaturePanel canManage={false} client={client} person={person(1)} />);
+  view.rerender(<ProfileSignaturePanel canManage={false} client={client} person={person(2)} />);
+  await act(async () => { pending.resolve([{ id: 1, personId: 1, versionNumber: 1, validTo: null } as WorkingTimeProfileSignature]); await pending.promise; });
+  await waitFor(() => expect(screen.getByText('Aucune signature active')).toBeInTheDocument());
+  expect(createWorkingTimeSignatureUrl).not.toHaveBeenCalled();
+});
+it('does not reload or announce an old client’s upload after the client changes', async () => {
+  const pending = deferred<number>(); vi.mocked(uploadWorkingTimeProfileSignature).mockReturnValueOnce(pending.promise);
+  const view = render(<ProfileSignaturePanel canManage client={client} person={person(1)} />);
+  fireEvent.change(screen.getByLabelText(/Fichier PNG, 1 Mo maximum/), { target: { files: [new File(['synthetic PNG'], 'signature.png', { type: 'image/png' })] } });
+  fireEvent.click(screen.getByRole('button', { name: 'Enregistrer une nouvelle version' }));
+  await waitFor(() => expect(uploadWorkingTimeProfileSignature).toHaveBeenCalledOnce());
+  const nextClient = {} as SupabaseClient; view.rerender(<ProfileSignaturePanel canManage client={nextClient} person={person(1)} />);
+  await waitFor(() => expect(fetchWorkingTimeProfileSignatures).toHaveBeenCalledWith(nextClient, 1));
+  await act(async () => { pending.resolve(9); await pending.promise; });
+  expect(screen.queryByText(/Nouvelle version PNG enregistrée/)).not.toBeInTheDocument();
+  expect(fetchWorkingTimeProfileSignatures).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole('button', { name: 'Enregistrer une nouvelle version' })).toBeDisabled();
+});

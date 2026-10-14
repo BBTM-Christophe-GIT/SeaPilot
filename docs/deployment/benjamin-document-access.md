@@ -2,17 +2,18 @@
 
 ## État après migration Vercel Blob
 
-Le 14 octobre 2026, **774 références** ont été activées dans Vercel Blob privé :
-**690 fichiers physiques et 84 alias**. Les originaux et historiques sont conservés.
+Le 14 octobre 2026, **790 références** ont été activées dans Vercel Blob privé :
+**706 fichiers physiques et 84 alias**. Les originaux et historiques sont conservés.
 Les 76 références de Procédures activées correspondent à des PDF publiés ; les
 sources Word/Excel de ce module gardent leur circuit d'édition existant.
 
 Une session indépendante de Benjamin, créée sans envoi de mail et confirmée par
-Supabase Auth, a appelé `/api/documents` avec son JWT réel. Les **774 références
+Supabase Auth, a appelé `/api/documents` avec son JWT réel. Les **790 références
 ont été relues intégralement**, avec comparaison des octets, taille, MIME et
 SHA-256 aux preuves de transfert et au registre actif : aucun refus ni fallback.
-La preuve combine 746 lectures initiales et les 28 signatures relues après le
-fractionnement des consultations. Les métadonnées actives sont restées identiques.
+La preuve combine 746 lectures initiales, les 28 signatures relues après le
+fractionnement des consultations et les 16 pièces jointes SharePoint récupérées
+ensuite. Les métadonnées actives des copies déjà vérifiées sont restées identiques.
 Les sessions de test ont été révoquées localement sans déconnecter ses appareils.
 
 Les signatures sont consultées par groupes de quatre pour respecter le délai
@@ -29,9 +30,8 @@ lisible, page 1/1, aucun téléchargement automatique. Ce contrôle concerne Chr
 desktop ; aucun résultat sur téléphone physique n'en est déduit. Le fichier, son
 mapping et sa réservation d'essai ont été supprimés après contrôle d'identité.
 
-**19 fichiers restent sans copie migrée** : trois factures de projets introuvables
-et seize pièces jointes SharePoint d'Achats dont le fournisseur refuse la lecture.
-Ils restent référencés et recensés dans le rapport opérationnel privé, sans
+**Trois factures de projets restent sans copie migrée**, car leurs sources sont
+introuvables. Elles restent référencées dans le rapport opérationnel privé, sans
 suppression, contenu fabriqué ou élargissement des partages. Le lien interne vers
 le brouillon de Procédure 65 ne constitue pas un fichier manquant. Les douze
 documents RH trouvés hors du dossier prévu ont été récupérés sans modifier les
@@ -40,6 +40,24 @@ partages de leurs originaux ; leurs copies Blob suivent les droits RH métier.
 Les inventaires détaillés, noms de fichiers, liens privés, jetons et preuves
 restent hors Git. Le lecteur serveur des notes de frais applique aussi la
 priorité Blob ; sa vérification ne déclenche aucun envoi réel.
+
+## Récupération des pièces jointes SharePoint
+
+Les seize fichiers Achats initialement refusés par le connecteur Graph ont été
+récupérés depuis leurs liens SharePoint d'origine, grâce à une session Microsoft
+déjà autorisée dans le navigateur. Il s'agit de pièces jointes de liste, distinctes
+des fichiers d'une bibliothèque documentaire. Aucun partage, consentement ou droit
+Microsoft n'a été modifié. Les originaux restent sur SharePoint et les références
+Achats ne sont pas réécrites.
+
+Les neuf PDF, six JPEG et un PNG représentent 9 323 117 octets et seize empreintes
+distinctes. Chaque copie Blob privée a été relue intégralement avant activation ;
+sa référence source correspond exactement à l'URL métier actuelle. Une seule
+session indépendante de Benjamin a ensuite contrôlé les seize lectures complètes
+via l'API de production : HTTP 200, taille/MIME/SHA conformes, aucun refus ou
+fallback. L'accès anonyme et le GET Blob non signé restent refusés ; cette session
+locale a été révoquée à la fin. Le bilan final du registre contient 790 empreintes
+identiques à leurs sources, aucun fichier Office de Procédures ni objet d'essai.
 
 ## Vérification initiale avant la migration Blob
 

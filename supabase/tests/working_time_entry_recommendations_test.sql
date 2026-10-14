@@ -1,6 +1,8 @@
+-- V4: maximum relevant calculation-day work and amplitude remain independent bounds.
 begin;
+insert into public.companies(code,name) values('wt-entry-rec-test','Synthetic recommendation company');
 
-select plan(21);
+select plan(22);
 
 select has_function(
   'public',
@@ -37,7 +39,7 @@ cross join (values
   ('78400000-0000-0000-0000-000000000001', 'recommendation-sailor@example.invalid', 'Marin Recommandation'),
   ('78400000-0000-0000-0000-000000000002', 'recommendation-other@example.invalid', 'Autre Marin')
 ) fixture(id, email, display_name)
-where company.code = 'bbtm';
+where company.code = 'wt-entry-rec-test';
 
 insert into public.user_roles (user_id, company_id, role_key)
 select fixture.id::uuid, company.id, 'marin'
@@ -46,7 +48,7 @@ cross join (values
   ('78400000-0000-0000-0000-000000000001'),
   ('78400000-0000-0000-0000-000000000002')
 ) fixture(id)
-where company.code = 'bbtm';
+where company.code = 'wt-entry-rec-test';
 
 insert into public.people (
   company_id, user_id, first_name, last_name, function_label, sailor_number, active
@@ -58,12 +60,12 @@ cross join (values
   ('78400000-0000-0000-0000-000000000001', 'Marin', 'RECOMMANDATION', 'REC-784'),
   ('78400000-0000-0000-0000-000000000002', 'Autre', 'MARIN', 'REC-785')
 ) fixture(id, first_name, last_name, sailor_number)
-where company.code = 'bbtm';
+where company.code = 'wt-entry-rec-test';
 
 insert into public.vessels (company_id, name, acronym, active)
 select company.id, 'WORKING TIME RECOMMENDATION VESSEL', 'WTR', true
 from public.companies company
-where company.code = 'bbtm';
+where company.code = 'wt-entry-rec-test';
 
 insert into public.planning_assignments (
   company_id, vessel_id, crew_person_id, starts_on, ends_on, starts_at, ends_at,
@@ -75,23 +77,23 @@ select company.id, vessel.id, person.id, '2026-10-01', '2026-10-31',
 from public.companies company
 join public.vessels vessel on vessel.company_id = company.id and vessel.acronym = 'WTR'
 join public.people person on person.company_id = company.id and person.sailor_number = 'REC-784'
-where company.code = 'bbtm';
+where company.code = 'wt-entry-rec-test';
 
 insert into public.planning_work_rest_policies (
   company_id, name, scope, vessel_id, effective_from, effective_to,
   max_work_24h, min_rest_24h, max_work_7d, min_rest_7d,
   min_consecutive_rest_hours, max_rest_periods_24h,
-  night_starts_at, night_ends_at, max_night_work_24h,
+  night_starts_at, night_ends_at, max_night_work_24h, max_amplitude_hours, max_interval_between_rests_hours,
   include_handover, active, created_by, updated_by
 )
 select company.id, 'Politique recommandation', 'vessel', vessel.id,
        '2026-10-01', '2026-10-31',
-       12, 12, 72, 96, 6, 3, '22:00', '06:00', 8,
+       12, 12, 72, 96, 6, 3, '22:00', '06:00', 8, 14, 14,
        false, true, profile.id, profile.id
 from public.companies company
 join public.vessels vessel on vessel.company_id = company.id and vessel.acronym = 'WTR'
 join public.profiles profile on profile.id = '78400000-0000-0000-0000-000000000001'
-where company.code = 'bbtm';
+where company.code = 'wt-entry-rec-test';
 
 insert into public.working_time_registers (
   company_id, person_id, period_kind, period_start, period_end, created_by
@@ -99,7 +101,7 @@ insert into public.working_time_registers (
 select company.id, person.id, 'weekly', '2026-10-01', '2026-10-07', person.user_id
 from public.companies company
 join public.people person on person.company_id = company.id and person.sailor_number = 'REC-784'
-where company.code = 'bbtm';
+where company.code = 'wt-entry-rec-test';
 
 select set_config('request.jwt.claim.sub', '78400000-0000-0000-0000-000000000001', true);
 
@@ -115,11 +117,13 @@ select register.company_id, register.id, register.person_id, '2026-10-01',
 from public.working_time_registers register
 join public.people person on person.id = register.person_id
 join public.vessels vessel on vessel.company_id = register.company_id and vessel.acronym = 'WTR'
-where register.period_kind = 'weekly' and register.period_start = '2026-10-01';
+where register.company_id = (select id from public.companies where code = 'wt-entry-rec-test')
+  and person.sailor_number = 'REC-784'
+  and register.period_kind = 'weekly' and register.period_start = '2026-10-01';
 
-select set_config('test.wtr_person_id', (select id::text from public.people where sailor_number = 'REC-784'), true);
-select set_config('test.wtr_vessel_id', (select id::text from public.vessels where acronym = 'WTR'), true);
-select set_config('test.wtr_interval_id', (select id::text from public.working_time_intervals where source_record_key = 'recommendation-existing'), true);
+select set_config('test.wtr_person_id', (select id::text from public.people where company_id = (select id from public.companies where code = 'wt-entry-rec-test') and sailor_number = 'REC-784'), true);
+select set_config('test.wtr_vessel_id', (select id::text from public.vessels where company_id = (select id from public.companies where code = 'wt-entry-rec-test') and acronym = 'WTR'), true);
+select set_config('test.wtr_interval_id', (select id::text from public.working_time_intervals where company_id = (select id from public.companies where code = 'wt-entry-rec-test') and person_id = current_setting('test.wtr_person_id')::bigint and source_record_key = 'recommendation-existing'), true);
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '78400000-0000-0000-0000-000000000001', true);
@@ -139,8 +143,8 @@ select is(
     '2026-10-01 08:00:00+02', '2026-10-01 12:00:00+02', 'Europe/Paris',
     current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', null
   )->>'max_additional_seconds')::numeric,
-  14400::numeric,
-  'the recommended additional duration stops at the first rolling limit'
+  7200::numeric,
+  'the recommendation stops at the fourteen-hour calculation-day amplitude'
 );
 select is(
   (public.working_time_interval_recommendation(
@@ -148,8 +152,8 @@ select is(
     '2026-10-01 08:00:00+02', '2026-10-01 12:00:00+02', 'Europe/Paris',
     current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', null
   )->>'latest_end_at')::timestamptz,
-  '2026-10-01 16:00:00+02'::timestamptz,
-  'the latest compatible end is returned as an absolute timestamp'
+  '2026-10-01 14:00:00+02'::timestamptz,
+  'the absolute latest end retains the configured amplitude bound'
 );
 select is(
   (public.working_time_interval_recommendation(
@@ -163,14 +167,22 @@ select is(
 select is(
   jsonb_array_length(public.working_time_interval_recommendation(
     current_setting('test.wtr_person_id')::bigint,
-    '2026-10-01 08:00:00+02', '2026-10-01 16:00:00+02', 'Europe/Paris',
+    '2026-10-01 08:00:00+02', '2026-10-01 14:00:00+02', 'Europe/Paris',
     current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', null
   )->'violation_codes'),
   0,
-  'equality with configured maxima and minima remains compliant'
+  'equality with the configured amplitude remains compliant'
+);
+select ok(
+  public.working_time_interval_recommendation(
+    current_setting('test.wtr_person_id')::bigint,
+    '2026-10-01 08:00:00+02', '2026-10-01 16:00:00+02', 'Europe/Paris',
+    current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', null
+  )->'violation_codes' ? 'amplitude',
+  'the old sixteen-hour end breaches amplitude even though work and rest quotas are met'
 );
 select is(
-  (select count(*)::integer from public.working_time_intervals where source_record_key = 'recommendation-existing'),
+  (select count(*)::integer from public.working_time_intervals where company_id = (select id from public.companies where code = 'wt-entry-rec-test') and person_id = current_setting('test.wtr_person_id')::bigint and source_record_key = 'recommendation-existing'),
   1,
   'recommendation calls never persist the hypothetical interval'
 );
@@ -193,7 +205,7 @@ update public.working_time_intervals
 set starts_at = '2026-10-01 18:00:00+02',
     ends_at = '2026-10-02 08:00:00+02',
     local_work_date = '2026-10-01'
-where source_record_key = 'recommendation-existing';
+where company_id = (select id from public.companies where code = 'wt-entry-rec-test') and person_id = current_setting('test.wtr_person_id')::bigint and source_record_key = 'recommendation-existing';
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '78400000-0000-0000-0000-000000000001', true);

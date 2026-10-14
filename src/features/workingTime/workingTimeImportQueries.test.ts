@@ -5,6 +5,7 @@ import {
   commitWorkingTimeImport,
   createWorkingTimeImportBatchAndUpload,
   previewWorkingTimeImport,
+  fetchWorkingTimeImportStatus,
 } from './workingTimeImportQueries';
 
 const workbook: WorkingTimeImportWorkbook = {
@@ -16,6 +17,12 @@ const workbook: WorkingTimeImportWorkbook = {
 };
 
 describe('working-time import queries', () => {
+  it('reconciles only the exact permitted batch through a read', async () => {
+    const read = { eq: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: { id: 42, status: 'imported', imported_at: '2026-10-14T00:00:00Z', import_summary: { imported_rows: 3, imported_intervals: 6 } }, error: null }) };
+    const rpc = vi.fn(); const client = { from: vi.fn(() => ({ select: () => read })), rpc } as unknown as SupabaseClient;
+    expect(await fetchWorkingTimeImportStatus(client, 42)).toMatchObject({ status: 'imported', summary: { importedRows: 3, importedIntervals: 6 } });
+    expect(read.eq).toHaveBeenCalledWith('id', 42); expect(rpc).not.toHaveBeenCalled();
+  });
   it('creates a traceable private upload before any server preview', async () => {
     const upload = vi.fn().mockResolvedValue({ data: { path: '1/user/42/file.xlsm' }, error: null });
     const rpc = vi.fn().mockResolvedValue({ data: { batch_id: 42, storage_bucket: 'working-time-imports', storage_path: '1/user/42/file.xlsm' }, error: null });

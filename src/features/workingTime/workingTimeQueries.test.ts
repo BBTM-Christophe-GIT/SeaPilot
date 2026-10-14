@@ -4,6 +4,7 @@ import { workingTimeNonCompliantDates } from './workingTimeCompliance';
 import {
   fetchWorkingTimeEntryRecommendation,
   fetchWorkingTimePhasesRecommendation,
+  fetchWorkingTimeDayContext,
   fetchWorkingTimeWorkspace,
   getOrCreateWorkingTimeRegister,
   saveWorkingTimeDayComment,
@@ -17,16 +18,21 @@ function queryResult(data: unknown, onCall?: (method: string, args: unknown[]) =
   const result = { data, error: null };
   let from = 0;
   let to = 999;
+  let scoped = data;
   const query = new Proxy({}, {
     get(_target, property) {
       if (property === 'then') {
         return (resolve: (value: typeof result) => unknown) => Promise.resolve({
-          ...result, data: Array.isArray(data) ? data.slice(from, to + 1) : data,
+          ...result, data: Array.isArray(scoped) ? scoped.slice(from, to + 1) : scoped,
         }).then(resolve);
       }
       return (...args: unknown[]) => {
         onCall?.(String(property), args);
         if (property === 'range') [from, to] = args as [number, number];
+        if (property === 'in' && Array.isArray(scoped)) {
+          const [column, values] = args as [string, unknown[]];
+          scoped = scoped.filter((row) => values.includes((row as Record<string, unknown>)[column]));
+        }
         return query;
       };
     },
@@ -101,6 +107,31 @@ function workspaceClient() {
 }
 
 describe('working-time workflow queries', () => {
+  it.each([true, false, null])('preserves an explicit daily edit permission and does not coerce %s', async (permission) => {
+    const rpc = vi.fn().mockResolvedValue({ data: { assignment_id: null, captain_candidates: [], actor_can_edit_day: permission, register_id: 10 }, error: null });
+    const result = await fetchWorkingTimeDayContext({ rpc } as unknown as SupabaseClient, { personId: 42, registerId: 10, localWorkDate: '2026-08-03' });
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(result.canEdit).toBe(typeof permission === 'boolean' ? permission : undefined);
+  });
+  it('rejects a daily permission bound to another monthly register', async () => {
+    const client = { rpc: vi.fn().mockResolvedValue({ data: { actor_can_edit_day: true, register_id: 99 }, error: null }) } as unknown as SupabaseClient;
+    await expect(fetchWorkingTimeDayContext(client, { personId: 42, registerId: 10, localWorkDate: '2026-08-03' })).rejects.toThrow('ne correspond plus au registre');
+  });
+  it('loads every historical validation for the visible registers beyond the global row cap', async () => {
+    const { client, rows, queryCalls } = workspaceClient();
+    const event = rows.working_time_validations[0] as Record<string, unknown>;
+    rows.working_time_validations = [
+      ...Array.from({ length: 1001 }, (_, index) => ({ ...event, id: index + 1, register_id: 999 })),
+      ...Array.from({ length: 1201 }, (_, index) => ({ ...event, id: index + 2000, register_id: 10 })),
+    ];
+    const result = await fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' });
+    expect(result.validations).toHaveLength(1201);
+    expect(result.validations.at(-1)?.signatureSnapshot).toMatchObject({ signerName: 'Alex MARIN', storagePath: '1/42/signature.png' });
+    expect(queryCalls).toContainEqual({ table: 'working_time_validations', method: 'in', args: ['register_id', [10]] });
+    expect(queryCalls).toContainEqual({ table: 'working_time_validations', method: 'range', args: [1000, 1499] });
+    expect(queryCalls).toContainEqual({ table: 'working_time_validations', method: 'order', args: ['id'] });
+    expect(queryCalls.some((call) => call.table === 'working_time_validations' && call.method === 'limit')).toBe(false);
+  });
   it('loads late-month violations and approvals beyond the API row cap', async () => {
     const { client, rows, queryCalls } = workspaceClient();
     const calculation = rows.working_time_calculation_windows[0] as Record<string, unknown>;

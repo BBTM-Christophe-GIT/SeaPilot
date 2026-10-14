@@ -197,6 +197,7 @@ export interface WorkingTimeCaptainCandidate {
 }
 
 export interface WorkingTimeDayContext {
+  canEdit?: boolean;
   assignmentId: number | null;
   vesselId: number | null;
   watchGroup: string | null;
@@ -631,19 +632,25 @@ export async function fetchWorkingTimeWorkspace(
       : dayApprovalQuery.eq('person_id', emptyPersonScope);
   }
 
-  const [registerResult, intervalResult, calculationResult, commentResult, signatureResult, validationResult, dayApprovalResult, vesselResult, policyResult] = await Promise.all([
+  const [registerResult, intervalResult, calculationResult, commentResult, signatureResult, dayApprovalResult, vesselResult, policyResult] = await Promise.all([
     allWorkspacePages(registerQuery),
     allWorkspacePages(intervalQuery),
     allWorkspacePages(calculationQuery),
     allWorkspacePages(commentQuery),
     allWorkspacePages(signatureQuery),
-    client.from('working_time_validations').select(VALIDATION_SELECT).order('occurred_at', { ascending: false }).limit(1000),
     allWorkspacePages(dayApprovalQuery),
     client.from('vessels').select('id,name,acronym,registration_number,imo_number,flag_state,length_overall').eq('active', true).order('name'),
     client.from('planning_work_rest_policies').select(POLICY_SELECT).order('effective_from', { ascending: false }),
   ]);
 
   assertResult(registerResult.error, 'Impossible de charger les registres.');
+  const registerIds = ((registerResult.data || []) as RegisterRow[])
+    .filter((register) => register.period_start <= range.end && register.period_end >= range.start)
+    .map((register) => Number(register.id));
+  const validationResult = registerIds.length
+    ? await allWorkspacePages(client.from('working_time_validations').select(VALIDATION_SELECT)
+      .in('register_id', registerIds).order('occurred_at', { ascending: false }).order('id'))
+    : { data: [], error: null };
   assertResult(intervalResult.error, 'Impossible de charger les heures.');
   assertResult(calculationResult.error, 'Impossible de charger les calculs serveur.');
   assertResult(commentResult.error, 'Impossible de charger les commentaires.');
@@ -748,7 +755,7 @@ export async function getOrCreateWorkingTimeRegister(
 
 export async function fetchWorkingTimeDayContext(
   client: SupabaseClient,
-  input: { personId: number; localWorkDate: string },
+  input: { personId: number; localWorkDate: string; registerId?: number },
 ): Promise<WorkingTimeDayContext> {
   const { data, error } = await client.rpc('working_time_day_context', {
     p_person_id: input.personId,
@@ -757,7 +764,13 @@ export async function fetchWorkingTimeDayContext(
   assertResult(error, 'Impossible de charger l’affectation Planning de cette journée.');
   const value = (data || {}) as Record<string, unknown>;
   const candidates = Array.isArray(value.captain_candidates) ? value.captain_candidates : [];
+  let canEdit: boolean | undefined;
+  if (typeof value.actor_can_edit_day === 'boolean' && input.registerId !== undefined) {
+    if (Number(value.register_id) !== input.registerId) throw new Error('Le contexte de saisie ne correspond plus au registre sélectionné. Rechargez le suivi.');
+    canEdit = value.actor_can_edit_day;
+  }
   return {
+    ...(canEdit === undefined ? {} : { canEdit }),
     assignmentId: numberOrNull(value.assignment_id as number | string | null),
     vesselId: numberOrNull(value.vessel_id as number | string | null),
     watchGroup: value.watch_group ? String(value.watch_group) : null,

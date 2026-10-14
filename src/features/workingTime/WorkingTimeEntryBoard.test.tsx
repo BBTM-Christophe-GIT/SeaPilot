@@ -1,3 +1,4 @@
+import { deferred } from './workingTimeTestHelpers';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -30,6 +31,7 @@ const recommendation = {
   nextResumeAt: '2026-08-03T22:00:00Z',
   violationCodes: [],
 };
+const fixtureClient = {} as SupabaseClient;
 
 function Harness({
   onSubmit = vi.fn(),
@@ -59,7 +61,7 @@ function Harness({
     <WorkingTimeEntryBoard
       approverName={approverName}
       canEdit
-      client={{} as SupabaseClient}
+      client={fixtureClient}
       comment=""
       editingIntervalId={null}
       endsAt={endsAt}
@@ -104,6 +106,36 @@ describe('WorkingTimeEntryBoard', () => {
     expect(screen.getByText('Conformité repos')).toBeInTheDocument();
     expect(screen.getByText('Conforme', { selector: '.working-time-analysis-bar dd' })).toBeInTheDocument();
   });
+  it('blocks saving and submitting before the current recommendation is available', async () => {
+    const pending = deferred<typeof recommendation>();
+    vi.mocked(fetchWorkingTimePhasesRecommendation).mockReturnValue(pending.promise);
+    render(<Harness saveDraft />);
+    expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Valider' })).toBeDisabled();
+    await waitFor(() => expect(fetchWorkingTimePhasesRecommendation).toHaveBeenCalled());
+    pending.resolve(recommendation);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Valider' })).toBeEnabled());
+  });
+  it('invalidates the previous recommendation as soon as the selected periods change', async () => {
+    render(<Harness saveDraft />);
+    await screen.findByText('Conforme', { selector: '.working-time-analysis-bar dd' });
+    const pending = deferred<typeof recommendation>();
+    vi.mocked(fetchWorkingTimePhasesRecommendation).mockReturnValue(pending.promise);
+    const cells = screen.getAllByRole('gridcell');
+    fireEvent.pointerDown(cells[32]); fireEvent.pointerUp(cells[33]);
+    expect(screen.getByRole('button', { name: 'Valider' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeDisabled();
+    pending.resolve(recommendation);
+  });
+  it('distinguishes a recommendation timeout from a missing policy and permits a read-only recalculation', async () => {
+    vi.mocked(fetchWorkingTimePhasesRecommendation).mockRejectedValueOnce(new Error('canceling statement due to statement timeout'));
+    render(<Harness saveDraft />);
+    await screen.findByText('Analyse indisponible', { selector: '.working-time-compliance-badge' });
+    expect(screen.queryByText('Politique requise')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Relancer le calcul' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled());
+  });
 
   it('supports day navigation and keyboard slot selection', async () => {
     const user = userEvent.setup();
@@ -139,6 +171,7 @@ describe('WorkingTimeEntryBoard', () => {
     expect(screen.queryByLabelText('Filtrer et affecter le navire')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Filtrer et affecter la bordée')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Valider' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Valider' }));
     expect(onSubmit).toHaveBeenCalledOnce();
   });
@@ -148,6 +181,7 @@ describe('WorkingTimeEntryBoard', () => {
     const onSubmit = vi.fn();
     render(<Harness onSubmit={onSubmit} saveDraft />);
 
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
 
     expect(onSubmit).toHaveBeenCalledWith([
@@ -170,6 +204,7 @@ describe('WorkingTimeEntryBoard', () => {
 
     expect(screen.getByText('Période 1')).toBeInTheDocument();
     expect(screen.getByText('Période 2')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Valider' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Valider' }));
 
     expect(onSubmit).toHaveBeenCalledWith([
@@ -204,6 +239,7 @@ describe('WorkingTimeEntryBoard', () => {
     fireEvent.pointerUp(cells[17]);
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     expect(screen.getByText(/Approbateur : Camille CAPITAINE/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Valider' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Valider' }));
 
     expect(onSubmit).toHaveBeenCalledWith(
