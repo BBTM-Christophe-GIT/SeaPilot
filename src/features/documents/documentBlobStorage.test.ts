@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
-import { presignUrl } from '@vercel/blob';
+import { createRequire } from 'node:module';
+import { presignUrl, put } from '@vercel/blob';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { documentBlobStorage } from './documentBlobStorage';
 
@@ -193,9 +194,48 @@ describe('private Blob documents', () => {
     const file = new File([contents], 'Certificat.pdf', { type: 'application/pdf' });
     expect((await storage.upload('new.pdf', file, { metadata: { person_id: 12 } })).error).toBeNull();
     expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({ operation: 'prepare', fileName: 'Certificat.pdf', bytes: contents.length, sha256: reference.sha256, context: { person_id: 12 } });
-    expect(fetcher.mock.calls[1][1]).toMatchObject({ method: 'PUT', credentials: 'omit', redirect: 'error', headers: { 'Content-Type': 'application/pdf' } });
+    expect(fetcher.mock.calls[1][1]).toMatchObject({ method: 'PUT', credentials: 'omit', redirect: 'error', headers: { 'Content-Type': 'application/pdf', 'x-api-version': '12' } });
     expect(JSON.parse(fetcher.mock.calls[2][1].body)).toMatchObject({ operation: 'complete' });
     expect(legacy.upload).not.toHaveBeenCalled();
+  });
+
+  it('matches the installed SDK PUT transport version without adding provider headers to GETs', async () => {
+    vi.stubEnv('VERCEL_BLOB_API_URL', undefined);
+    vi.stubEnv('NEXT_PUBLIC_VERCEL_BLOB_API_URL', undefined);
+    vi.stubEnv('VERCEL_BLOB_API_VERSION_OVERRIDE', undefined);
+    vi.stubEnv('NEXT_PUBLIC_VERCEL_BLOB_API_VERSION_OVERRIDE', undefined);
+    const require = createRequire(import.meta.url);
+    const { MockAgent, getGlobalDispatcher, setGlobalDispatcher } = createRequire(require.resolve('@vercel/blob'))('undici');
+    const originalDispatcher = getGlobalDispatcher();
+    const mockedDispatcher = new MockAgent();
+    mockedDispatcher.disableNetConnect();
+    let nativeHeaders = new Headers();
+    mockedDispatcher.get('https://vercel.com').intercept({ path: /^\/api\/blob\//, method: 'PUT' }).reply((request: { headers: HeadersInit | string[] }) => {
+      if (Array.isArray(request.headers) && typeof request.headers[0] === 'string') {
+        const headers = request.headers as string[];
+        for (let index = 0; index < headers.length; index += 2) nativeHeaders.set(headers[index], headers[index + 1]);
+      } else nativeHeaders = new Headers(request.headers as HeadersInit);
+      return { statusCode: 200, data: JSON.stringify({ url: `https://test.private.blob.vercel-storage.com/${uploadPath}`,
+        pathname: uploadPath, contentType: 'application/pdf', contentDisposition: 'inline', size: contents.length }) };
+    });
+    setGlobalDispatcher(mockedDispatcher);
+    try {
+      await put(uploadPath, contents, { token: 'vercel_blob_rw_test_synthetic', access: 'private',
+        contentType: 'application/pdf', addRandomSuffix: false, allowOverwrite: false });
+      mockedDispatcher.assertNoPendingInterceptors();
+    } finally { setGlobalDispatcher(originalDispatcher); await mockedDispatcher.close(); }
+    const sdkVersion = nativeHeaders.get('x-api-version');
+    expect(sdkVersion).toBe('12');
+    const { storage, fetcher } = fixture({ 'current.pdf': reference });
+    expect((await storage.upload('new.pdf', new File([contents], 'Certificat.pdf', { type: 'application/pdf' }))).error).toBeNull();
+    const uploadHeaders = new Headers(fetcher.mock.calls[1][1].headers);
+    expect(uploadHeaders.get('x-api-version')).toBe(sdkVersion);
+    expect(uploadHeaders.get('content-type')).toBe('application/pdf');
+    expect(uploadHeaders.has('x-content-type')).toBe(false);
+    fetcher.mockClear();
+    expect((await storage.download('current.pdf')).error).toBeNull();
+    expect(fetcher.mock.calls[1][0]).toBe(privateUrl);
+    expect(fetcher.mock.calls[1][1]).toEqual({ credentials: 'omit' });
   });
 
   it('accepts the installed SDK presigned PUT and keeps its private GET separate', async () => {

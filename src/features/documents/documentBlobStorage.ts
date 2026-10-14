@@ -21,6 +21,8 @@ const BUCKETS = new Set([
   'purchase-request-external', 'service-note-source', 'service-note-external',
 ]);
 const MAX_BYTES = 100 * 1024 * 1024;
+// Match the native PUT transport of the pinned @vercel/blob 2.8.1 SDK.
+const BLOB_API_VERSION = '12';
 function reference(value: unknown): BlobReference {
   const info = value && typeof value === 'object' ? value as Json : {};
   if (typeof info.blob_pathname !== 'string' || !info.blob_pathname.startsWith('documents/')
@@ -185,7 +187,7 @@ export function documentBlobStorage(client: SupabaseClient, bucket: string, lega
     const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())), byte => byte.toString(16).padStart(2, '0')).join('');
     const prepared = await api(client, { operation: 'prepare', bucket, path, fileName, mimeType, bytes: blob.size, sha256, context: options?.metadata || {} });
     if (typeof prepared.uploadUrl !== 'string' || typeof prepared.uploadId !== 'string') throw new Error('L’envoi du document n’a pas pu être préparé.');
-    const sent = await fetch(uploadDestination(prepared), { method: 'PUT', headers: { 'Content-Type': mimeType }, body: blob, credentials: 'omit', redirect: 'error' });
+    const sent = await fetch(uploadDestination(prepared), { method: 'PUT', headers: { 'Content-Type': mimeType, 'x-api-version': BLOB_API_VERSION }, body: blob, credentials: 'omit', redirect: 'error' });
     // A previous PUT may have succeeded before a connection interruption. The
     // verifier still checks every byte; the existing object is never overwritten.
     if (!sent.ok && ![400, 409, 412].includes(sent.status)) throw new Error('L’envoi du document Vercel a échoué. Relancez l’envoi.');
