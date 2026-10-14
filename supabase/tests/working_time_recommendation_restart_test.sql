@@ -1,18 +1,27 @@
 -- Synthetic profiles only. Recommendations must stay read-only and fit the API budget.
 begin;
-select plan(22);
+select plan(26);
 
-insert into public.companies (code, name) values ('working-time-restart-test', 'Working time restart test');
+insert into public.companies (code, name) values
+  ('working-time-restart-test', 'Working time restart test'),
+  ('working-time-other-company-test', 'Other company authorization test');
 insert into auth.users (id, email) values
   ('91400000-0000-0000-0000-000000000001', 'restart-sailor@example.invalid'),
-('91400000-0000-0000-0000-000000000002', 'restart-other@example.invalid'),
-  ('91400000-0000-0000-0000-000000000003', 'restart-captain@example.invalid');
+  ('91400000-0000-0000-0000-000000000002', 'restart-other@example.invalid'),
+  ('91400000-0000-0000-0000-000000000003', 'restart-captain@example.invalid'),
+  ('91400000-0000-0000-0000-000000000004', 'restart-unlinked@example.invalid'),
+  ('91400000-0000-0000-0000-000000000005', 'restart-other-company@example.invalid');
 insert into public.profiles (id, email, display_name, active_company_id)
-select fixture.id::uuid, fixture.email, fixture.name, company.id
+select fixture.id::uuid, fixture.email, fixture.name,
+       case when fixture.id = '91400000-0000-0000-0000-000000000005'
+         then (select id from public.companies where code = 'working-time-other-company-test')
+         else company.id end
 from public.companies company cross join (values
   ('91400000-0000-0000-0000-000000000001', 'restart-sailor@example.invalid', 'Restart Sailor'),
-('91400000-0000-0000-0000-000000000002', 'restart-other@example.invalid', 'Other Sailor'),
-  ('91400000-0000-0000-0000-000000000003', 'restart-captain@example.invalid', 'Restart Captain')
+  ('91400000-0000-0000-0000-000000000002', 'restart-other@example.invalid', 'Other Sailor'),
+  ('91400000-0000-0000-0000-000000000003', 'restart-captain@example.invalid', 'Restart Captain'),
+  ('91400000-0000-0000-0000-000000000004', 'restart-unlinked@example.invalid', 'Unlinked Sailor'),
+  ('91400000-0000-0000-0000-000000000005', 'restart-other-company@example.invalid', 'Other Company Sailor')
 ) fixture(id, email, name)
 where company.code = 'working-time-restart-test';
 insert into public.user_roles (user_id, company_id, role_key)
@@ -23,8 +32,10 @@ insert into public.people (company_id, user_id, first_name, last_name, function_
 select profile.active_company_id, profile.id, 'Restart', 'SAILOR',
        case when profile.email = 'restart-captain@example.invalid' then 'Capitaine' else 'Matelot' end,
        case profile.email when 'restart-sailor@example.invalid' then 'RESTART-914'
-         when 'restart-captain@example.invalid' then 'RESTART-916' else 'RESTART-915' end, true
-from public.profiles profile where profile.email like 'restart-%@example.invalid';
+         when 'restart-captain@example.invalid' then 'RESTART-916'
+         when 'restart-other-company@example.invalid' then 'RESTART-917' else 'RESTART-915' end, true
+from public.profiles profile where profile.email like 'restart-%@example.invalid'
+  and profile.email <> 'restart-unlinked@example.invalid';
 insert into public.planning_work_rest_policies (
   company_id, name, scope, effective_from, effective_to,
   max_work_24h, min_rest_24h, max_work_7d, min_rest_7d,
@@ -73,6 +84,29 @@ select public.working_time_phases_recommendation(
 ) as recommendation;
 select is((select recommendation->>'status' from captain_restart_response), 'conforme', 'a linked Capitaine profile can analyse their own periods');
 select is((select recommendation from captain_restart_response), (select recommendation from restart_response), 'Marin and Capitaine profiles retain identical company-policy calculations');
+
+select set_config('request.jwt.claim.sub', '91400000-0000-0000-0000-000000000004', true);
+select throws_ok(
+  $$select public.working_time_interval_recommendation(current_setting('test.restart_person_id')::bigint,
+    '2026-10-14T07:30:00+02:00','2026-10-14T12:00:00+02:00','Europe/Paris',null,null,null)$$,
+  '42501', 'WORKING_TIME_PERMISSION_DENIED: recommandation.', 'a Marin without a linked HR person cannot analyse another person'
+);
+select throws_ok(
+  $$select public.working_time_phases_recommendation(current_setting('test.restart_person_id')::bigint,
+    '[{"starts_at":"2026-10-14T07:30:00+02:00","ends_at":"2026-10-14T12:00:00+02:00"}]'::jsonb, 'Europe/Paris', null, null, null)$$,
+  '42501', 'WORKING_TIME_PERMISSION_DENIED: recommandation.', 'the multi-phase RPC rejects an unlinked Marin too'
+);
+select set_config('request.jwt.claim.sub', '91400000-0000-0000-0000-000000000005', true);
+select throws_ok(
+  $$select public.working_time_interval_recommendation(current_setting('test.restart_person_id')::bigint,
+    '2026-10-14T07:30:00+02:00','2026-10-14T12:00:00+02:00','Europe/Paris',null,null,null)$$,
+  '42501', 'WORKING_TIME_PERMISSION_DENIED: recommandation.', 'a member of another company cannot analyse the target person'
+);
+select throws_ok(
+  $$select public.working_time_phases_recommendation(current_setting('test.restart_person_id')::bigint,
+    '[{"starts_at":"2026-10-14T07:30:00+02:00","ends_at":"2026-10-14T12:00:00+02:00"}]'::jsonb, 'Europe/Paris', null, null, null)$$,
+  '42501', 'WORKING_TIME_PERMISSION_DENIED: recommandation.', 'the multi-phase RPC retains company isolation'
+);
 
 select set_config('request.jwt.claim.sub', '91400000-0000-0000-0000-000000000002', true);
 select throws_ok(
