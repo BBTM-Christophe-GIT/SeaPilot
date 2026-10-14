@@ -6,6 +6,7 @@ import type { WorkingTimeWorkspace } from './workingTimeQueries';
 import {
   discardWorkingTimeDraft,
   fetchWorkingTimeDayContext,
+  fetchWorkingTimePhasesRecommendation,
   getOrCreateWorkingTimeRegister,
   saveWorkingTimePhases,
   submitWorkingTimeDay,
@@ -397,6 +398,43 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(submitWorkingTimeDay).toHaveBeenCalledWith(client, { registerId: 100, localWorkDate: '2026-08-03' });
     expect(await screen.findByText(/transmise pour approbation à un Administrateur/)).toBeInTheDocument();
     expect(validateWorkingTimeDay).not.toHaveBeenCalled();
+  });
+
+  it('lets a Marin analyse and save disjoint morning and afternoon periods without Planning', async () => {
+    const user = userEvent.setup();
+    const data = workspace('draft', 20);
+    data.currentPersonId = 20;
+    data.readablePeople = data.readablePeople.filter((person) => person.personId === 20);
+    data.editablePeople = data.editablePeople.filter((person) => person.personId === 20);
+    data.intervals = [];
+    vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue({
+      assignmentId: null, vesselId: null, watchGroup: null, statusLabel: null,
+      approverPersonId: null, captainCandidates: [],
+    });
+    renderPanel(['marin'], data, { ...currentPerson, id: 20, firstName: 'Alex', lastName: 'MARIN', functionLabel: 'Matelot', gradeLabel: '' });
+
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    await screen.findByText(/Aucune affectation Planning/);
+    const cells = screen.getAllByRole('gridcell');
+    fireEvent.pointerDown(cells[15]);
+    fireEvent.pointerEnter(cells[23]);
+    fireEvent.pointerUp(cells[23]);
+    fireEvent.pointerDown(cells[25]);
+    fireEvent.pointerEnter(cells[29]);
+    fireEvent.pointerUp(cells[29]);
+    const phases = [
+      { startsAt: '2026-08-03T07:30', endsAt: '2026-08-03T12:00' },
+      { startsAt: '2026-08-03T12:30', endsAt: '2026-08-03T15:00' },
+    ];
+    const isoPhases = phases.map((phase) => ({ startsAt: new Date(phase.startsAt).toISOString(), endsAt: new Date(phase.endsAt).toISOString() }));
+    await waitFor(() => expect(fetchWorkingTimePhasesRecommendation).toHaveBeenCalledWith(client, expect.objectContaining({
+      personId: 20, vesselId: null, watchGroup: null,
+      phases: isoPhases,
+    })));
+    expect(screen.getByText('Conforme', { selector: '.working-time-analysis-bar dd' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await waitFor(() => expect(saveWorkingTimePhases).toHaveBeenCalledWith(client, expect.objectContaining({ registerId: 100, vesselId: null, watchGroup: null, phases: isoPhases })));
+    expect(submitWorkingTimeDay).not.toHaveBeenCalled();
   });
 
   it.each(['admin', 'direction', 'armement'] as const)('lets %s find and approve a submitted day with no captain', async (role) => {
