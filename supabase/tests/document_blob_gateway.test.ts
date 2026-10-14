@@ -312,25 +312,31 @@ describe('document gateway Supabase adapters', () => {
     vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', undefined);
     vi.stubEnv('BLOB_STORE_ID', 'fixture-store-id');
   });
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
   function adapters() {
-    const getUser = vi.fn().mockResolvedValue({ data: { user: { id: USER } }, error: null });
+    const authenticate = vi.fn().mockResolvedValue(Response.json({ id: USER }));
+    vi.stubGlobal('fetch', authenticate);
     const callerRpc = vi.fn().mockResolvedValue({ data: SCOPE, error: null });
     const serviceRpc = vi.fn().mockResolvedValue({ data: DOCUMENT, error: null });
     providers.createClient.mockImplementation((_url, key) => key === 'fixture-verifier-service-key'
       ? { rpc: serviceRpc }
-      : { auth: { getUser }, rpc: callerRpc });
+      : { rpc: callerRpc });
     providers.get.mockImplementation(async () => downloaded());
     providers.head.mockResolvedValue(metadata());
-    return { getUser, callerRpc, serviceRpc };
+    return { authenticate, callerRpc, serviceRpc };
   }
 
   it('validates the caller JWT and uses the server service client only to register verified bytes', async () => {
-    const { getUser, callerRpc, serviceRpc } = adapters();
+    const { authenticate, callerRpc, serviceRpc } = adapters();
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
     const result = await api.fetch(request(complete));
     expect(result.status).toBe(200);
-    expect(getUser).toHaveBeenCalledExactlyOnceWith('fixture.valid.jwt');
+    expect(authenticate).toHaveBeenCalledExactlyOnceWith('https://fixture.supabase.co/auth/v1/user', {
+      method: 'GET', headers: { apikey: 'fixture-publishable-key', Authorization: 'Bearer fixture.valid.jwt' },
+      cache: 'no-store', credentials: 'omit', redirect: 'error', signal: expect.any(AbortSignal),
+    });
+    expect(timeout).toHaveBeenCalledWith(10_000);
     expect(providers.createClient).toHaveBeenNthCalledWith(1, 'https://fixture.supabase.co', 'fixture-publishable-key', {
       auth: { persistSession: false, autoRefreshToken: false },
       global: { headers: { Authorization: 'Bearer fixture.valid.jwt' } },
@@ -348,10 +354,55 @@ describe('document gateway Supabase adapters', () => {
   });
 
   it('rejects an invalid JWT from Auth before calling any RPC or Blob reader', async () => {
-    const { getUser, callerRpc, serviceRpc } = adapters();
-    getUser.mockResolvedValue({ data: { user: null }, error: { message: 'Invalid JWT' } });
+    const { authenticate, callerRpc, serviceRpc } = adapters();
+    authenticate.mockResolvedValue(Response.json({ message: 'Invalid JWT' }, { status: 401 }));
     const result = await api.fetch(request(complete));
     expect(result.status).toBe(401);
+    expect(callerRpc).not.toHaveBeenCalled();
+    expect(providers.get).not.toHaveBeenCalled();
+    expect(serviceRpc).not.toHaveBeenCalled();
+  });
+
+  it.each([403, 500, 302])('refuses an unsuccessful Auth response (%s)', async (status) => {
+    const { authenticate, callerRpc, serviceRpc } = adapters();
+    authenticate.mockResolvedValue(Response.json({ id: USER }, { status }));
+    const result = await api.fetch(request(complete));
+    expect(result.status).toBe(401);
+    expect(await result.json()).toEqual({ error: 'DOCUMENT_AUTHENTICATION_REQUIRED' });
+    expect(callerRpc).not.toHaveBeenCalled();
+    expect(providers.get).not.toHaveBeenCalled();
+    expect(serviceRpc).not.toHaveBeenCalled();
+  });
+
+  it.each([null, [], {}, { id: 123 }, { id: 'not-a-user-uuid' }, { user: { id: USER } }, { user_metadata: { id: USER } }])
+  ('refuses malformed Auth identities (%j)', async (identity) => {
+    const { authenticate, callerRpc, serviceRpc } = adapters();
+    authenticate.mockResolvedValue(Response.json(identity));
+    const result = await api.fetch(request(complete));
+    expect(result.status).toBe(401);
+    expect(callerRpc).not.toHaveBeenCalled();
+    expect(providers.get).not.toHaveBeenCalled();
+    expect(serviceRpc).not.toHaveBeenCalled();
+  });
+
+  it('refuses invalid Auth JSON without disclosing its response body', async () => {
+    const { authenticate, callerRpc, serviceRpc } = adapters();
+    authenticate.mockResolvedValue(new Response('private upstream details', { status: 200 }));
+    const result = await api.fetch(request(complete));
+    expect(result.status).toBe(401);
+    expect(await result.json()).toEqual({ error: 'DOCUMENT_AUTHENTICATION_REQUIRED' });
+    expect(callerRpc).not.toHaveBeenCalled();
+    expect(serviceRpc).not.toHaveBeenCalled();
+  });
+
+  it.each([new TypeError('private connection details'), new DOMException('private timeout details', 'TimeoutError')])
+  ('refuses an Auth network failure without a fallback (%j)', async (failure) => {
+    const { authenticate, callerRpc, serviceRpc } = adapters();
+    authenticate.mockRejectedValue(failure);
+    const result = await api.fetch(request(complete));
+    expect(result.status).toBe(401);
+    expect(await result.json()).toEqual({ error: 'DOCUMENT_AUTHENTICATION_REQUIRED' });
+    expect(authenticate).toHaveBeenCalledOnce();
     expect(callerRpc).not.toHaveBeenCalled();
     expect(providers.get).not.toHaveBeenCalled();
     expect(serviceRpc).not.toHaveBeenCalled();

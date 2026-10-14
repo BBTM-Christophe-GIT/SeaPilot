@@ -8,6 +8,10 @@ Server credentials remain in Vercel environment variables; no store credential
 is shipped in the frontend.
 Vercel compiles API entries using the root tsconfig.json; its explicit Node and
 module resolution options match the referenced Node project configuration.
+Before any document RPC, the server verifies the Bearer JWT with Supabase Auth's
+GET /auth/v1/user endpoint using the publishable key. The request has a ten-second
+timeout, rejects redirects and accepts only a valid top-level user UUID; any
+failure denies access without falling back to session metadata.
 
 Canonical Storage bucket/path references remain unchanged. Desktop aliases use
 hr-drive/<hr_documents.id>, chemical-drive/<chemical_attachments.id>,

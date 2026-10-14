@@ -178,13 +178,24 @@ function rpcError(error: { code?: string } | null) {
   if (error) throw new DocumentError(error.code === '42501' ? 403 : 409,
     error.code === '42501' ? 'DOCUMENT_ACCESS_DENIED' : 'DOCUMENT_STATE_INVALID');
 }
+async function authenticatedUser(url: string, key: string, jwt: string): Promise<string | null> {
+  try {
+    const result = await fetch(`${url.replace(/\/+$/, '')}/auth/v1/user`, {
+      method: 'GET', headers: { apikey: key, Authorization: `Bearer ${jwt}` },
+      cache: 'no-store', credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(10_000),
+    });
+    if (result.status !== 200) return null;
+    const user = object(await result.json());
+    return typeof user.id === 'string' && UUID.test(user.id) ? user.id : null;
+  } catch { return null; }
+}
 const handler = createDocumentBlobGateway({
   getEnv: name => process.env[name],
   backend: jwt => {
     const { url, key } = configuration();
     const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false }, global: { headers: { Authorization: `Bearer ${jwt}` } } });
     return {
-      user: async () => { const result = await client.auth.getUser(jwt); return result.error ? null : result.data.user?.id ?? null; },
+      user: () => authenticatedUser(url, key, jwt),
       rpc: async (name, args) => { const result = await client.rpc(name, args); rpcError(result.error); return result.data; },
     };
   },
