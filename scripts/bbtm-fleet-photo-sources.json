@@ -7,5 +7,6 @@
   { "name": "LE ROZEL", "acronym": "RZL", "file": "LE ROZEL.PNG", "slug": "le-rozel" },
   { "name": "SUROIT", "acronym": "SUR", "file": "SUROIT.png", "slug": "suroit" },
   { "name": "BBTM TENDER 1", "acronym": "TND", "file": "Tender 1.png", "slug": "tender-1" },
-  { "name": "YARD - Le Havre", "acronym": "YRD", "file": "Yard - LE HAVRE.png", "slug": "yard-le-havre" }
+  { "name": "YARD - Le Havre", "acronym": "YRD", "file": "Yard - LE HAVRE.png", "slug": "yard-le-havre" },
+  { "name": "ILE DE FRANCE", "acronym": "IDF", "file": "Remorqueur L’Île-de-France au canon bâbord.png", "slug": "ile-de-france" }
 ]

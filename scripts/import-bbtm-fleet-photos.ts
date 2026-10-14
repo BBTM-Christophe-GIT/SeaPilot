@@ -10,7 +10,15 @@ import { BBTM_FLEET_PHOTOS, fleetCatalogThumbnailPath } from '../src/features/fl
 const { values } = parseArgs({ options: {
   'source-dir': { type: 'string' }, 'company-code': { type: 'string', default: 'bbtm' },
   'backup-file': { type: 'string' }, apply: { type: 'boolean', default: false },
+  only: { type: 'string' }, help: { type: 'boolean', default: false },
 } });
+if (values.help) {
+  console.log('Usage: pnpm exec node --experimental-strip-types scripts/import-bbtm-fleet-photos.ts --source-dir <directory> [--only <catalog-slug>] [--company-code <code>] [--backup-file <file> --apply]');
+  console.log('Dry run by default. --only validates and imports just one illustration; photo_* fields are preserved.');
+  process.exit(0);
+}
+const photos = BBTM_FLEET_PHOTOS.filter((photo) => values.only === undefined || photo.slug === values.only);
+if (values.only !== undefined && photos.length !== 1) throw new Error(`--only must identify one existing catalog slug: ${values.only}`);
 if (!values['source-dir']) throw new Error('--source-dir is required.');
 if (values.apply && !values['backup-file']) throw new Error('--backup-file is required for an import.');
 const url = process.env.SUPABASE_URL;
@@ -23,7 +31,7 @@ const fields = 'id,company_id,name,acronym,photo_url,photo_storage_bucket,photo_
 const { data: vessels, error: vesselError } = await client.from('vessels').select(fields).eq('company_id', company.id).eq('active', true);
 if (vesselError || !vessels) throw new Error('Unable to read fleet.');
 const normalize = (text: string) => text.trim().toLocaleUpperCase('fr');
-const plan = await Promise.all(BBTM_FLEET_PHOTOS.map(async (photo) => {
+const plan = await Promise.all(photos.map(async (photo) => {
   const matches = vessels.filter((vessel) => normalize(vessel.name) === normalize(photo.name) && vessel.acronym === photo.acronym);
   if (matches.length !== 1) throw new Error(`Expected one active vessel for ${photo.name}; found ${matches.length}.`);
   const source = resolve(values['source-dir']!, photo.file);

@@ -108,6 +108,18 @@ export const BBTM_FLEET_PHOTOS = [
     "thumbnailBytes": 6374,
     "thumbnailSha256": "fceb33d96f9e6529c266331c35ebd5825d3dfb2d8c7893772e9be1980dbeb1b0",
     "originalSha256": "8983f2bb031561aaa43db30a2a3c6250566a2bbae63539b7ebb3c5e6c5b5082f"
+  },
+  {
+    "name": "ILE DE FRANCE",
+    "acronym": "IDF",
+    "file": "Remorqueur L’Île-de-France au canon bâbord.png",
+    "slug": "ile-de-france",
+    "width": 228,
+    "height": 171,
+    "thumbnail": "ile-de-france-8760583e4fff7d54.webp",
+    "thumbnailBytes": 3956,
+    "thumbnailSha256": "8760583e4fff7d54fb5d21e183815a9a38ac8bb8f8a7aaa6a97120f79def8711",
+    "originalSha256": "71c5a41a0052ca54cc2607983da1d42da3f86890f82aaa7b92cb5b0eaf2245a9"
   }
 ] as const;
 
