@@ -21,18 +21,23 @@ function memoryStore(initial: ReleaseNoteState[] = []) {
 }
 
 describe('ReleaseNotes', () => {
-  it.each<RoleKey>(['admin', 'direction', 'armement'])('shows the latest relevant update first to the %s profile', async (role) => {
+  it.each<RoleKey>(['admin', 'direction', 'armement', 'capitaine'])('shows the latest relevant update first to the %s profile', async (role) => {
     const store = memoryStore();
     render(<ReleaseNotes client={{} as never} roles={[role]} storeOverride={store} />);
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getAllByRole('heading', { level: 3 })[0]).toHaveTextContent(role === 'armement' ? 'Préparez vos bordées' : 'Projets : modifier, retrouver et clôturer vos dossiers');
+    const medicalAccess = role === 'admin' || role === 'capitaine';
+    expect(within(dialog).getAllByRole('heading', { level: 3 })[0]).toHaveTextContent(medicalAccess ? 'Registre médical : saisie directe et signature personnelle'
+      : role === 'armement' ? 'Préparez vos bordées' : 'Projets : modifier, retrouver et clôturer vos dossiers');
+    if (!medicalAccess) expect(within(dialog).queryByText('Registre médical : saisie directe et signature personnelle')).not.toBeInTheDocument();
     if (role === 'armement') {
       expect(within(dialog).queryByText('Personnalisez vos organigrammes et vos listes de contacts')).not.toBeInTheDocument();
       expect(within(dialog).queryByText('Projets : modifier, retrouver et clôturer vos dossiers')).not.toBeInTheDocument();
     }
     await userEvent.click(within(dialog).getByRole('button', { name: 'Ok' }));
-    expect(store.save).toHaveBeenCalledWith(expect.arrayContaining(['3.56.0-planning-generic-crew']), true);
-    if (role === 'armement') expect(store.save.mock.calls[0][0]).not.toContain('3.71.8-project-portfolio-closure');
+    if (medicalAccess) expect(store.save.mock.calls[0][0]).toContain('3.73.0-medical-logbook');
+    else expect(store.save.mock.calls[0][0]).not.toContain('3.73.0-medical-logbook');
+    if (role !== 'capitaine') expect(store.save).toHaveBeenCalledWith(expect.arrayContaining(['3.56.0-planning-generic-crew']), true);
+    if (role === 'armement' || role === 'capitaine') expect(store.save.mock.calls[0][0]).not.toContain('3.71.8-project-portfolio-closure');
     else expect(store.save.mock.calls[0][0]).toContain('3.71.8-project-portfolio-closure');
   });
   it.each<RoleKey>(['marin', 'capitaine'])('excludes the organigramme note from the %s profile', async (role) => {

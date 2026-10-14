@@ -2,6 +2,8 @@
 
 Le module **Registres → Registre médical** est disponible à `/modules/medicalLogbook`. Il reprend les sept rubriques du document de référence : date, heure, nom du patient, blessure ou maladie, traitement ou médicaments administrés, secouriste et signature. L’interface et les PDF sont en français.
 
+La publication **3.73.0**, build **2026-10-14.001**, comprend la note de mise à jour `3.73.0-medical-logbook`, demandée le 14 octobre 2026 et visible pour Administrateur et Capitaine. Elle suit les comportements habituels **Ok**, **Lire plus tard** et de consultation depuis la version de SeaPilot.
+
 ## Utilisation
 
 Sélectionner un navire. **Nouvelle entrée** ajoute une ligne de saisie dans le tableau ; **Modifier** rend la ligne choisie éditable. Renseigner la date et l’heure locales, le patient et le compte rendu. **Enregistrer** applique la signature personnelle de l’utilisateur connecté ; **Annuler** abandonne la saisie. Les filtres et le changement de navire sont bloqués pendant l’édition pour conserver le contexte.
