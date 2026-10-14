@@ -42,12 +42,15 @@ export function cloneDefaultProjectDocumentCategories(): ProjectDocumentCategory
 
 export async function fetchProjectDocumentCategories(
   client: SupabaseClient,
+  options: { includeInactive?: boolean } = {},
 ): Promise<ProjectDocumentCategory[]> {
-  const { data, error } = await client
+  let query = client
     .from('project_document_categories')
-    .select('category_key,parent_key,label,display_order,active')
-    .eq('active', true)
-    .order('display_order', { ascending: true });
+    .select('category_key,parent_key,label,display_order,active');
+  // Retired keys still name historical documents. Only upload selectors filter
+  // active categories; management and readers need the complete company catalog.
+  if (options.includeInactive === false) query = query.eq('active', true);
+  const { data, error } = await query.order('display_order', { ascending: true });
   if (error) throw new Error(error.message || 'Impossible de charger les catégories documentaires.');
   return ((data || []) as ProjectDocumentCategoryRow[]).map((row) => ({
     active: row.active ?? true,
@@ -60,17 +63,32 @@ export async function fetchProjectDocumentCategories(
 
 export function validateProjectDocumentCategories(categories: ProjectDocumentCategory[]): string[] {
   const errors: string[] = [];
-  const activeCategories = categories.filter((category) => category.active);
-  const keys = new Set(activeCategories.map((category) => category.key));
+  if (categories.length === 0) errors.push('Conservez au moins une catégorie, même désactivée.');
+  const keys = new Set<string>();
+  const byKey = new Map(categories.map((category) => [category.key, category]));
   const normalizedLabels = new Set<string>();
-  activeCategories.forEach((category) => {
+  categories.forEach((category) => {
     const label = category.label.trim();
     if (!label) errors.push('Chaque catégorie et sous-catégorie doit avoir un nom.');
-    const labelKey = `${category.parentKey || 'root'}:${label.toLocaleLowerCase('fr')}`;
-    if (normalizedLabels.has(labelKey)) errors.push(`Le nom « ${label} » est utilisé plusieurs fois au même niveau.`);
-    normalizedLabels.add(labelKey);
-    if (category.parentKey && !keys.has(category.parentKey)) {
-      errors.push(`La catégorie parente de « ${label} » est introuvable.`);
+    if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(category.key) || keys.has(category.key)) {
+      errors.push('Chaque catégorie doit avoir une clé valide et unique.');
+    }
+    keys.add(category.key);
+    if (!Number.isInteger(category.displayOrder) || category.displayOrder < -2147483648 || category.displayOrder > 2147483647) {
+      errors.push('L’ordre des catégories doit être un nombre entier valide.');
+    }
+    if (category.active) {
+      const labelKey = `${category.parentKey || 'root'}:${label.toLocaleLowerCase('fr')}`;
+      if (normalizedLabels.has(labelKey)) errors.push(`Le nom « ${label} » est utilisé plusieurs fois au même niveau.`);
+      normalizedLabels.add(labelKey);
+    }
+    if (category.parentKey !== null) {
+      const parent = byKey.get(category.parentKey);
+      if (!parent || (category.active && !parent.active)) {
+        errors.push(`La catégorie parente de « ${label} » est introuvable.`);
+      } else if (parent.key === category.key || parent.parentKey !== null) {
+        errors.push('Les sous-catégories doivent dépendre directement d’une catégorie principale.');
+      }
     }
   });
   return [...new Set(errors)];

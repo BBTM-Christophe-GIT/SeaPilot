@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectsPage } from './ProjectsPage';
+import { DEFAULT_PROJECT_DOCUMENT_CATEGORIES } from './projectDocumentCategories';
 
 const documentGenerationMocks = vi.hoisted(() => ({
   downloadGeneratedProjectDocument: vi.fn(),
@@ -12,6 +13,7 @@ const documentStorageMocks = vi.hoisted(() => ({
   createProjectDocumentBundle: vi.fn(),
   storeGeneratedProjectDocument: vi.fn(),
   storeOperationDocuments: vi.fn(),
+  storeProjectAttachment: vi.fn(),
 }));
 
 vi.mock('./projectDocumentGeneration', () => documentGenerationMocks);
@@ -255,6 +257,7 @@ function createClient(
     project_contracts: { data: [atlantiqueContractRow], error: null },
     project_contract_hire_periods: { data: [atlantiqueHirePeriodRow], error: null },
     project_documents: { data: [atlantiqueProjectDocumentRow, mancheProjectDocumentRow], error: null },
+    project_document_categories: { data: DEFAULT_PROJECT_DOCUMENT_CATEGORIES.map((category) => ({ active: category.active, category_key: category.key, display_order: category.displayOrder, label: category.label, parent_key: category.parentKey })), error: null },
     project_generated_documents: { data: [], error: null },
     projects: { data: [atlantiqueProjectRow, mancheProjectRow], error: null },
     vessels: {
@@ -332,9 +335,68 @@ describe('ProjectsPage', () => {
       mimeType: 'application/zip',
     });
     documentStorageMocks.storeOperationDocuments.mockResolvedValue({ failed: [], stored: [] });
+    documentStorageMocks.storeProjectAttachment.mockResolvedValue({ fileName: 'Rapport HSE.pdf', folderPath: 'projects/880/attachments/hse', id: 9901, storageBucket: 'project-files', storagePath: 'projects/880/attachments/hse/report.pdf', webUrl: '' });
   });
 
   afterEach(() => vi.useRealTimers());
+
+  it('adds a classified document directly from Documents and immediately exposes its fresh private reader', async () => {
+    const user = userEvent.setup(); const { client, from, createSignedUrl } = createClient();
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('button', { name: 'Documents Projets' }));
+    expect(screen.getByRole('tab', { name: 'Documents' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('link', { name: 'Ouvrir SharePoint' })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Ajouter un document' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Ajouter un document' }));
+    await user.upload(dialog.getByLabelText('Fichier'), new File(['%PDF'], 'Rapport HSE.pdf', { type: 'application/pdf' }));
+    await user.selectOptions(dialog.getByLabelText('Catégorie'), 'hse');
+    await user.selectOptions(dialog.getByLabelText('Sous-catégorie'), 'hse_audits');
+    const readsBeforeUpload = from.mock.calls.length;
+    expect((dialog.getByLabelText('Fichier') as HTMLInputElement).files).toHaveLength(1);
+    expect(dialog.getByLabelText('Catégorie')).toBeValid();
+    expect(dialog.getByRole('button', { name: 'Ajouter au projet' })).toBeEnabled();
+    // jsdom's required-file validation ignores the synthetic FileList supplied by userEvent.upload.
+    fireEvent.submit(screen.getByRole('dialog', { name: 'Ajouter un document' }));
+    expect(documentStorageMocks.storeProjectAttachment).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('Rapport HSE.pdf')).toBeVisible();
+    expect(screen.getByText('Le document « Rapport HSE.pdf » a été ajouté au projet.')).toBeVisible();
+    expect(from.mock.calls).toHaveLength(readsBeforeUpload);
+    expect(documentStorageMocks.storeProjectAttachment).toHaveBeenCalledWith(client, { projectId: 880, draft: expect.objectContaining({ categoryKey: 'hse', subcategoryKey: 'hse_audits', expiresOn: '', file: expect.any(File) }) });
+    await user.click(screen.getByRole('button', { name: /Ouvrir le document.*Rapport HSE.pdf/ }));
+    await waitFor(() => expect(createSignedUrl).toHaveBeenCalledWith('projects/880/attachments/hse/report.pdf', 300));
+    await user.selectOptions(screen.getByLabelText('Catégorie'), 'billing');
+    expect(screen.queryByText('Rapport HSE.pdf')).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Catégorie'), 'hse');
+    expect(screen.getByText('Rapport HSE.pdf')).toBeVisible();
+  });
+
+  it.each(['marin', 'capitaine'] as const)('keeps Documents readable without catalogue or upload writes for %s fixtures', async (role) => {
+    const user = userEvent.setup(); const { client } = createClient();
+    render(<ProjectsPage client={client as never} roles={[role]} />);
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Documents' }));
+    expect(screen.getByRole('button', { name: /Ouvrir le document.*Plan projet Atlantique.pdf/ })).toBeVisible();
+    expect(screen.getByLabelText('Catégorie')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Ajouter un document' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gérer les catégories' })).not.toBeInTheDocument();
+  });
+
+  it('lists project-level emitted files and operation attachments together in Documents', async () => {
+    const user = userEvent.setup();
+    const base = { project_id: 880, category_key: null, subcategory_key: null, expires_on: null, mime_type: 'application/pdf', file_size_bytes: 512, sharepoint_web_url: null, sharepoint_folder_path: null, storage_bucket: 'project-files', created_at: '2026-07-15T10:00:00Z' };
+    const { client } = createClient({ project_generated_documents: { data: [
+      { ...base, id: 91, document_type: 'offer', planning_occurrence_id: null, file_name: 'Offre émise.pdf', storage_path: 'projects/880/generated/offer.pdf' },
+      { ...base, id: 92, document_type: 'operation_attachment', planning_occurrence_id: 1201, file_name: 'Ordre de mission.pdf', storage_path: 'projects/880/operations/order.pdf' },
+    ], error: null } });
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Documents' }));
+    expect(screen.getByRole('heading', { name: 'Documents émis et des opérations' })).toBeVisible();
+    expect(screen.getAllByText('Offre émise.pdf')).toHaveLength(1);
+    expect(screen.getAllByText('Ordre de mission.pdf')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /Ouvrir le document.*Offre émise.pdf/ })).toBeVisible();
+  });
 
   it('starts with a compact fleet summary and expands only the eligible vessels', async () => {
     const user = userEvent.setup();
@@ -1016,7 +1078,7 @@ describe('ProjectsPage', () => {
     expect(screen.queryByRole('link', { name: /Plan projet Atlantique.pdf/ })).not.toBeInTheDocument();
 
     expect(screen.getByText('URL SharePoint absente')).toBeInTheDocument();
-    expect(screen.getAllByText(/sources historiques restent conservées/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/versions historiques sont conservées/).length).toBeGreaterThan(0);
   });
 
   it('changes the contextual navigation when another contract family is selected', async () => {

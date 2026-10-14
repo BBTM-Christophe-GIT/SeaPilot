@@ -48,6 +48,22 @@ const vessels = [
   { id: 2, name: 'SUROIT', acronym: 'SRT', active: true, fleetExitOn: '', sharePointItemId: '' },
 ];
 
+describe('ProjectEditor document categories', () => {
+  it('keeps a confirmed empty company catalog empty instead of inventing upload choices', async () => {
+    const query = { select: vi.fn().mockReturnThis(), order: vi.fn().mockResolvedValue({ data: [], error: null }) };
+    const client = { from: vi.fn(() => query), rpc: vi.fn().mockResolvedValue({ data: null, error: null }) };
+    const user = userEvent.setup();
+    render(<ProjectEditor client={client as never} clients={[]} contractTypes={[]} onClose={vi.fn()} onSaved={vi.fn()} statuses={['Non validé']} towedAssets={[]} vessels={vessels} />);
+    await waitFor(() => expect(query.order).toHaveBeenCalled());
+    await user.click(within(screen.getByLabelText('Étapes de création du projet')).getByRole('button', { name: /Documents/ }));
+    const library = screen.getByRole('region', { name: 'Pièces jointes du projet' });
+    expect(within(library).queryByRole('heading', { name: 'HSE' })).not.toBeInTheDocument();
+    expect(within(library).queryByLabelText(/Ajouter des documents/)).not.toBeInTheDocument();
+    await user.click(within(library).getByRole('button', { name: 'Modifier les catégories' }));
+    expect(within(library).getByRole('button', { name: 'Ajouter une catégorie' })).toBeEnabled();
+  });
+});
+
 function renderEditor(canViewCharterHire: boolean) {
   return render(
     <ProjectPlanningEditor

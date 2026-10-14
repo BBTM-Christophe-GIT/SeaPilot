@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createProjectDocumentBundle,
   createProjectDocumentAccessUrl,
+  PROJECT_ATTACHMENT_MAX_BYTES,
   storeGeneratedProjectDocument,
   storeOperationDocument,
   storeProjectAttachment,
@@ -166,5 +167,64 @@ describe('projectDocumentStorage', () => {
       storagePath: 'projects/144/attachments/file.pdf',
     })).resolves.toBe('https://storage.example/signed');
     expect(createSignedUrl).toHaveBeenCalledWith('projects/144/attachments/file.pdf', 300);
+  });
+
+  it('preserves PDF preview metadata when a mobile file has no MIME type', async () => {
+    const upload = vi.fn().mockResolvedValue({ error: null });
+    const rpc = vi.fn().mockResolvedValue({ data: 93, error: null });
+    const client = { rpc, storage: { from: vi.fn(() => ({ upload })) } };
+    await storeProjectAttachment(client as never, { projectId: 144,
+      draft: { id: 'mobile', categoryKey: 'hse', subcategoryKey: null, expiresOn: '', file: new File(['%PDF'], 'Plan.PDF') } });
+    expect(upload).toHaveBeenCalledWith(expect.any(String), expect.any(File), expect.objectContaining({ contentType: 'application/pdf' }));
+    expect(rpc).toHaveBeenCalledWith('projects_register_storage_attachment', expect.objectContaining({ target_mime_type: 'application/pdf' }));
+  });
+
+  it('rejects files above the existing project limit before reading or sending their bytes', async () => {
+    const file = new File(['%PDF'], 'Trop grand.pdf', { type: 'application/pdf' });
+    Object.defineProperty(file, 'size', { value: PROJECT_ATTACHMENT_MAX_BYTES + 1 });
+    const read = vi.spyOn(file, 'arrayBuffer');
+    const client = { rpc: vi.fn(), storage: { from: vi.fn() } };
+    await expect(storeProjectAttachment(client as never, { projectId: 144,
+      draft: { id: 'large', categoryKey: 'hse', subcategoryKey: null, expiresOn: '', file } })).rejects.toThrow('50 Mo maximum');
+    expect(read).not.toHaveBeenCalled();
+    expect(client.rpc).not.toHaveBeenCalled();
+    expect(client.storage.from).not.toHaveBeenCalled();
+  });
+
+  it('recovers a lost registration response by reading the exact immutable attachment', async () => {
+    const upload = vi.fn().mockResolvedValue({ error: null });
+    const remove = vi.fn();
+    let registered: Record<string, unknown> | null = null;
+    const rpc = vi.fn().mockImplementation(async (_name, args) => {
+      registered = { id: 94, project_id: args.target_project_id, document_type: 'project_attachment',
+        storage_bucket: args.target_bucket, storage_path: args.target_path, file_name: args.target_file_name,
+        mime_type: args.target_mime_type, file_size_bytes: args.target_file_size_bytes, sha256: args.target_sha256,
+        category_key: args.target_category_key, subcategory_key: args.target_subcategory_key, expires_on: args.target_expires_on };
+      return { data: null, error: { message: 'Connection lost after commit' } };
+    });
+    const query = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), maybeSingle: vi.fn(async () => ({ data: registered, error: null })) };
+    const from = vi.fn(() => query);
+    const client = { rpc, from, storage: { from: vi.fn(() => ({ upload, remove })) } };
+    const stored = await storeProjectAttachment(client as never, { projectId: 144,
+      draft: { id: 'recover', categoryKey: 'hse', subcategoryKey: null, expiresOn: '', file: new File(['%PDF'], 'Plan.pdf', { type: 'application/pdf' }) } });
+    expect(stored.id).toBe(94);
+    expect(from).toHaveBeenCalledWith('project_generated_documents');
+    expect(query.eq).toHaveBeenCalledWith('project_id', 144);
+    expect(query.eq).toHaveBeenCalledWith('storage_path', stored.storagePath);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('keeps the uploaded bytes when registration and its confirming read are unavailable', async () => {
+    const upload = vi.fn().mockResolvedValue({ error: null });
+    const remove = vi.fn();
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { message: 'Connection lost' } });
+    const query = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: null, error: { message: 'Read unavailable' } }) };
+    const client = { rpc, from: vi.fn(() => query), storage: { from: vi.fn(() => ({ upload, remove })) } };
+    await expect(storeProjectAttachment(client as never, { projectId: 144,
+      draft: { id: 'unknown', categoryKey: 'hse', subcategoryKey: null, expiresOn: '', file: new File(['%PDF'], 'Plan.pdf', { type: 'application/pdf' }) } }))
+      .rejects.toThrow('Vérifiez les documents du projet avant de relancer l’ajout.');
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(remove).not.toHaveBeenCalled();
   });
 });

@@ -3,8 +3,10 @@ import type { FleetAssetKind } from '../fleet/fleetQueries';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { normalizeProjectStatus } from './projectStatus';
 import { projectDescriptionToPlainText } from './projectDescription';
+import { PROJECT_DOCUMENT_TYPES } from './projectDocumentTypes';
 
 const READ_PAGE_SIZE = 500;
+const PROJECT_LEVEL_DOCUMENT_TYPES = new Set(['project_attachment', ...PROJECT_DOCUMENT_TYPES.map((type) => type.kind)]);
 
 const PROJECT_SELECT = [
   'id',
@@ -942,7 +944,7 @@ export function mapProjectOperationDocumentRows(
       && Number(row.planning_occurrence_id) > 0
       ? Number(row.planning_occurrence_id)
       : null;
-    if (planningOccurrenceId === null && row.document_type !== 'project_attachment') return [];
+    if (planningOccurrenceId === null && !PROJECT_LEVEL_DOCUMENT_TYPES.has(row.document_type)) return [];
     return [{
       id: row.id,
       projectId: row.project_id,

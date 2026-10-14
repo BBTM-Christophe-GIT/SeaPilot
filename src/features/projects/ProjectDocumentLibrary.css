@@ -1,0 +1,106 @@
+.project-documents-actions,
+.project-documents-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+
+.project-documents-actions {
+  flex-wrap: nowrap;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.project-documents-actions button { flex-shrink: 0; white-space: nowrap; }
+
+.project-documents-filters {
+  margin: 16px 0;
+  padding: 12px;
+  background: var(--sp-surface-subtle);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-panel-radius);
+}
+
+.project-documents-filters label,
+.project-documents-form label,
+.project-documents-category-editor label {
+  display: grid;
+  gap: 8px;
+  color: var(--sp-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.project-documents-filters select,
+.project-documents-form input,
+.project-documents-form select,
+.project-documents-category-editor input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  color: var(--sp-text);
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  font: inherit;
+}
+
+.project-documents-filters > span {
+  margin-left: auto;
+  padding-bottom: 12px;
+  color: var(--sp-muted);
+  font-size: 13px;
+}
+
+.project-documents-form,
+.project-documents-category-editor {
+  display: grid;
+  gap: 16px;
+}
+
+.project-documents-category-editor section {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--sp-border);
+}
+
+.project-documents-category-editor section > div {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+}
+
+.project-documents-category-editor label { flex: 1; min-width: 0; }
+.project-documents-category-editor .is-subcategory { padding-left: 20px; }
+.project-documents-error { color: var(--sp-text); }
+.project-documents-error button { margin-left: 12px; }
+
+@media (pointer: coarse), (max-width: 640px) {
+  .app-shell .content-area .project-documents-workspace button.sp-button,
+  .project-documents-workspace button.sp-button,
+  .project-documents-form input,
+  .project-documents-form select,
+  .project-documents-filters select,
+  .project-documents-category-editor input {
+    min-height: 44px;
+  }
+  .app-shell .content-area .project-documents-workspace .app-dialog__close,
+  .project-documents-workspace .app-dialog__close {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+@media (max-width: 640px) {
+  .project-documents-workspace .project-section-heading { align-items: stretch; flex-direction: column; }
+  .project-documents-actions { align-items: stretch; }
+  .project-documents-actions button { min-height: 44px; }
+  .project-documents-filters label { width: 100%; }
+  .project-documents-filters > span { margin-left: 0; }
+  .project-documents-category-editor section > div { flex-wrap: wrap; }
+  .project-documents-category-editor label { flex-basis: 100%; }
+  .project-documents-category-editor .is-subcategory { padding-left: 12px; }
+}

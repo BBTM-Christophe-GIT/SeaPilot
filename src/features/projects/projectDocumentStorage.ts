@@ -2,6 +2,7 @@ import { projectDriveStorage } from './projectDriveStorage';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { GeneratedProjectDocument } from './projectDocumentGeneration';
 import type { ProjectGeneratedDocumentKind } from './projectDocumentTypes';
+import { inferredDocumentMimeType } from '../documents/documentBlobStorage';
 
 export interface StoredProjectDocument {
   fileName: string;
@@ -41,6 +42,7 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 const PROJECT_FILES_BUCKET = 'project-files';
+export const PROJECT_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
 
 function storageSafeSegment(value: string, fallback: string): string {
   const normalized = value
@@ -285,9 +287,13 @@ export async function storeProjectAttachment(
     projectId: number;
   },
 ): Promise<StoredProjectDocument> {
+  if (!Number.isSafeInteger(input.projectId) || input.projectId <= 0) throw new Error('Sélectionnez un projet avant d’ajouter un document.');
+  if (!input.draft.file.size || input.draft.file.size > PROJECT_ATTACHMENT_MAX_BYTES) throw new Error('Sélectionnez un fichier non vide de 50 Mo maximum.');
+  if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(input.draft.categoryKey)) throw new Error('Sélectionnez une catégorie pour le document.');
   const buffer = await input.draft.file.arrayBuffer();
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', buffer));
-  const mimeType = input.draft.file.type || 'application/octet-stream';
+  const hash = bytesToHex(digest);
+  const mimeType = (input.draft.file.type || inferredDocumentMimeType(input.draft.file.name)).split(';')[0].trim().toLowerCase();
   const categoryPath = storageSafeSegment(input.draft.categoryKey, 'categorie');
   const subcategoryPath = storageSafeSegment(input.draft.subcategoryKey || 'documents', 'documents');
   const fileName = storageSafeSegment(input.draft.file.name, 'document');
@@ -307,9 +313,17 @@ export async function storeProjectAttachment(
     upsert: false,
   });
   if (uploadError) {
-    throw new Error(uploadError.message || `Le document ${input.draft.file.name} n’a pas pu être envoyé vers Supabase.`);
+    throw new Error(uploadError.message || `Le document ${input.draft.file.name} n’a pas pu être envoyé.`);
   }
 
+  const stored = (id: number): StoredProjectDocument => ({
+    fileName: input.draft.file.name,
+    folderPath: storagePath.slice(0, storagePath.lastIndexOf('/')),
+    id,
+    storageBucket: PROJECT_FILES_BUCKET,
+    storagePath,
+    webUrl: '',
+  });
   try {
     const { data, error } = await client.rpc('projects_register_storage_attachment', {
       target_bucket: PROJECT_FILES_BUCKET,
@@ -320,7 +334,7 @@ export async function storeProjectAttachment(
       target_mime_type: mimeType,
       target_path: storagePath,
       target_project_id: input.projectId,
-      target_sha256: bytesToHex(digest),
+      target_sha256: hash,
       target_subcategory_key: input.draft.subcategoryKey,
     });
     if (error) {
@@ -328,19 +342,27 @@ export async function storeProjectAttachment(
     }
     const documentId = Number(data);
     if (!Number.isInteger(documentId) || documentId <= 0) {
-      throw new Error(`Supabase n’a pas confirmé le rattachement de ${input.draft.file.name}.`);
+      throw new Error(`Le rattachement de ${input.draft.file.name} n’a pas été confirmé.`);
     }
-    return {
-      fileName: input.draft.file.name,
-      folderPath: storagePath.slice(0, storagePath.lastIndexOf('/')),
-      id: documentId,
-      storageBucket: PROJECT_FILES_BUCKET,
-      storagePath,
-      webUrl: '',
-    };
+    return stored(documentId);
   } catch (error) {
-    await storage.remove([storagePath]).catch(() => undefined);
-    throw error;
+    // A committed registration can lose its response. Reconcile only the exact
+    // immutable file through RLS, and retain its bytes if the outcome is unknown.
+    try {
+      const result = await client.from('project_generated_documents')
+        .select('id,project_id,document_type,storage_bucket,storage_path,file_name,mime_type,file_size_bytes,sha256,category_key,subcategory_key,expires_on')
+        .eq('project_id', input.projectId).eq('storage_bucket', PROJECT_FILES_BUCKET).eq('storage_path', storagePath).maybeSingle();
+      const row = result.data;
+      if (!result.error && row && Number.isSafeInteger(Number(row.id)) && Number(row.id) > 0
+        && Number(row.project_id) === input.projectId && row.document_type === 'project_attachment'
+        && row.storage_bucket === PROJECT_FILES_BUCKET && row.storage_path === storagePath
+        && row.file_name === input.draft.file.name && row.mime_type === mimeType
+        && Number(row.file_size_bytes) === input.draft.file.size && row.sha256 === hash
+        && row.category_key === input.draft.categoryKey && row.subcategory_key === input.draft.subcategoryKey
+        && row.expires_on === (input.draft.expiresOn || null)) return stored(Number(row.id));
+    } catch { /* A failed read cannot prove that registration did not commit. */ }
+    const message = error instanceof Error ? error.message : 'Le rattachement du document n’a pas été confirmé.';
+    throw new Error(`${message} Vérifiez les documents du projet avant de relancer l’ajout.`);
   }
 }
 
@@ -363,7 +385,7 @@ export async function storeProjectAttachments(
       result.failed.push({
         draftId: draft.id,
         fileName: draft.file.name,
-        message: error instanceof Error ? error.message : 'Échec de l’enregistrement dans Supabase.',
+        message: error instanceof Error ? error.message : 'Échec de l’enregistrement du document.',
       });
     }
   }
