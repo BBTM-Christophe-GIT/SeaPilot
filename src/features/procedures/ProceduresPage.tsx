@@ -671,7 +671,7 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
     setIsSaving(true);
     try {
       const converted = await drive.publish(publishTarget);
-      const publication = await publishProcedure(effectiveClient, publishTarget, converted);
+      const publication = await publishProcedure(effectiveClient, publishTarget, converted, drive.read);
       setPublications((current) => sortRecords([publication, ...current]));
       setProcedures((current) => current.map((item) => item.id === publishTarget.id ? {
         ...item, status: 'published', publishedOn: publication.publishedOn, diffusionOn: publication.diffusionOn,
@@ -683,10 +683,23 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
   }
 
   async function handleOpen(record: ProcedureRecord | PublishedProcedureRecord) {
+    if ('procedureId' in record) {
+      const popup = window.open('', '_blank');
+      if (!popup) { fail('Autorisez les fenêtres contextuelles pour ouvrir le document.'); return; }
+      popup.opener = null;
+      try {
+        let fileUrl: string;
+        if (record.googleDrivePath) {
+          fileUrl = URL.createObjectURL(await drive.read(record));
+          window.setTimeout(() => URL.revokeObjectURL(fileUrl), 120_000);
+        } else fileUrl = await getProcedureFileUrl(effectiveClient, record, 'open');
+        popup.location.replace(fileUrl);
+      } catch (error) { popup.close(); fail(error instanceof Error ? error.message : "Le fichier n'est pas disponible."); }
+      return;
+    }
     try {
       if (record.googleDrivePath) {
-        if ('procedureId' in record) showProcedureBlob(await drive.read(record), record.fileName, false);
-        else await drive.open(record);
+        await drive.open(record);
         return;
       }
       const fileUrl = await getProcedureFileUrl(effectiveClient, record, 'open');

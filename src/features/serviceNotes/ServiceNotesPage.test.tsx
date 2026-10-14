@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -17,6 +17,58 @@ function renderPage(roles: AppShellOutletContext['roles'] = ['admin']) {
 }
 
 describe('ServiceNotesPage', () => {
+  it.each(['source', 'attachment'] as const)('opens the %s popup during the click and navigates only after fresh authorization', async (kind) => {
+    const notes = await serviceNoteQueries.fetchServiceNotes(previewSupabaseClient);
+    const note = { ...notes.find((item) => item.status === 'published')!, id: 990, chronologyCode: 'NS CLOUD',
+      sourceKind: 'sharepoint' as const, sourceWebUrl: 'https://fixture.sharepoint.com/Note.docx', sourceFileName: 'Note.docx',
+      attachments: [{ id: 991, noteId: 990, kind: 'file' as const, displayName: 'Annexe cloud', storageBucket: '', storagePath: '',
+        externalUrl: 'https://fixture.sharepoint.com/Annexe.pdf', linkedRecordId: null, mimeType: 'application/pdf', fileSizeBytes: 4, sortOrder: 0 }],
+    };
+    const fetch = vi.spyOn(serviceNoteQueries, 'fetchServiceNotes').mockResolvedValue([note]);
+    let resolve!: (value: string) => void;
+    const pending = new Promise<string>((done) => { resolve = done; });
+    const read = kind === 'source' ? vi.spyOn(serviceNoteQueries, 'createServiceNoteSourceUrl').mockReturnValue(pending)
+      : vi.spyOn(serviceNoteQueries, 'createServiceNoteAttachmentUrl').mockReturnValue(pending);
+    const tab = { opener: window, location: { replace: vi.fn() }, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+    try {
+      renderPage();
+      fireEvent.click(await screen.findByText('NS CLOUD'));
+      fireEvent.click(await screen.findByRole('button', { name: kind === 'source' ? 'Ouvrir source' : 'Annexe cloud' }));
+      expect(open).toHaveBeenCalledExactlyOnceWith('about:blank', '_blank');
+      expect(tab.opener).toBeNull();
+      expect(read).toHaveBeenCalledOnce();
+      expect(open.mock.invocationCallOrder[0]).toBeLessThan(read.mock.invocationCallOrder[0]);
+      expect(tab.location.replace).not.toHaveBeenCalled();
+      const url = 'https://fixture.private.blob.vercel-storage.com/documents/source?signed=fresh';
+      await act(async () => { resolve(url); });
+      expect(tab.location.replace).toHaveBeenCalledExactlyOnceWith(url);
+      expect(tab.close).not.toHaveBeenCalled();
+    } finally { fetch.mockRestore(); read.mockRestore(); open.mockRestore(); }
+  });
+
+  it.each([
+    { value: new Error('Document inaccessible.'), message: 'Document inaccessible.' },
+    { value: 'javascript:void(0)', message: 'Le lien du document est invalide.' },
+  ])('closes the pending source popup for $message without opening the old SharePoint source', async ({ value, message }) => {
+    const notes = await serviceNoteQueries.fetchServiceNotes(previewSupabaseClient);
+    const note = { ...notes.find((item) => item.status === 'published')!, sourceWebUrl: 'https://fixture.sharepoint.com/Note.docx' };
+    const fetch = vi.spyOn(serviceNoteQueries, 'fetchServiceNotes').mockResolvedValue([note]);
+    const read = vi.spyOn(serviceNoteQueries, 'createServiceNoteSourceUrl');
+    if (typeof value === 'string') read.mockResolvedValue(value);
+    else read.mockRejectedValue(value);
+    const tab = { opener: window, location: { replace: vi.fn() }, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+    try {
+      renderPage();
+      fireEvent.click(await screen.findByText(note.chronologyCode));
+      fireEvent.click(await screen.findByRole('button', { name: 'Ouvrir source' }));
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(tab.close).toHaveBeenCalledOnce();
+      expect(tab.location.replace).not.toHaveBeenCalled();
+    } finally { fetch.mockRestore(); read.mockRestore(); open.mockRestore(); }
+  });
+
   it('shows the corrected issue date in the library even when published later', async () => {
     const notes = await serviceNoteQueries.fetchServiceNotes(previewSupabaseClient);
     const fetchNotes = vi.spyOn(serviceNoteQueries, 'fetchServiceNotes').mockResolvedValueOnce(notes.map((note) => (
@@ -206,15 +258,17 @@ describe('ServiceNotesPage', () => {
   });
 
   it('opens an attached procedure file directly without navigating to the Procedures module', async () => {
-    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
-    renderPage(['marin']);
-    await screen.findByRole('heading', { name: 'Notes de Service' });
-    fireEvent.click(screen.getByText('NS 08-26'));
-    fireEvent.click(await screen.findByRole('button', { name: /GEN 01-A/ }));
-
-    await waitFor(() => expect(open).toHaveBeenCalledWith('/templates/attestation-embarquement.pdf', '_blank', 'noopener,noreferrer'));
-    expect(window.location.pathname).not.toContain('/modules/procedures');
-    open.mockRestore();
+    const tab = { opener: window, location: { replace: vi.fn() }, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+    try {
+      renderPage(['marin']);
+      await screen.findByRole('heading', { name: 'Notes de Service' });
+      fireEvent.click(screen.getByText('NS 08-26'));
+      fireEvent.click(await screen.findByRole('button', { name: /GEN 01-A/ }));
+      expect(open).toHaveBeenCalledWith('about:blank', '_blank');
+      await waitFor(() => expect(tab.location.replace).toHaveBeenCalledWith('/templates/attestation-embarquement.pdf'));
+      expect(window.location.pathname).not.toContain('/modules/procedures');
+    } finally { open.mockRestore(); }
   });
 
   it('returns to the published library and reveals a note immediately after diffusion', async () => {

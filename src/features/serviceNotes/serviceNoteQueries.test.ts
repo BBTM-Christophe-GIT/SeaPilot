@@ -24,6 +24,7 @@ describe('service note helpers', () => {
       file_name: 'VPC 07-E - DUP KROKDUR.pdf', file_url: null, mime_type: 'application/pdf',
     }], error: null });
     const client = {
+      rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
       from: vi.fn(() => ({ select: vi.fn(() => ({ eq: vi.fn(() => ({ limit })) })) })),
       storage: { from: vi.fn(() => ({ createSignedUrl })) },
     } as never;

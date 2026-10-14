@@ -200,13 +200,42 @@ describe('PurchaseRequestsPage', () => {
     } finally { open.mockRestore(); }
   });
 
-  it('keeps an external SharePoint attachment as a native link', async () => {
+  it('opens the historical SharePoint link only when the external attachment is unmapped', async () => {
     const url = 'https://bbtm668.sharepoint.com/proof.pdf';
     const { client } = createClient([baseRequest], { attachments: [{ id: 18, purchase_request_id: 95, title: 'Annexe externe.pdf',
       source_kind: 'sharepoint', file_url: url }] });
-    render(<PurchaseRequestsPage client={client as never} roles={['admin']} />, '/purchase-requests?requestId=95');
-    expect(await screen.findByRole('link', { name: /Annexe externe\.pdf/ })).toHaveAttribute('href', url);
-    expect(client.storage.from).not.toHaveBeenCalled();
+    const tab = { opener: window, location: { replace: vi.fn() }, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+    try {
+      render(<PurchaseRequestsPage client={client as never} roles={['admin']} />, '/purchase-requests?requestId=95');
+      fireEvent.click(await screen.findByRole('button', { name: /Annexe externe\.pdf/ }));
+      await waitFor(() => expect(tab.location.replace).toHaveBeenCalledWith(url));
+      expect(client.storage.from).not.toHaveBeenCalled();
+    } finally { open.mockRestore(); }
+  });
+
+  it('opens migrated external purchase attachments through fresh Blob signing and closes on RLS refusal', async () => {
+    const { client, rpc } = createClient([baseRequest], { attachments: [{ id: 18, purchase_request_id: 95, title: 'Annexe cloud.pdf',
+      source_kind: 'sharepoint', file_url: 'https://fixture.sharepoint.com/Annexe.pdf' }] });
+    rpc.mockResolvedValue({ data: { blob_pathname: 'documents/imports/fixture.pdf', bytes: 4, sha256: 'a'.repeat(64), file_name: 'Annexe.pdf', mime_type: 'application/pdf' }, error: null });
+    const createSignedUrl = vi.fn().mockResolvedValue({ data: { signedUrl: 'https://fixture.private.blob.vercel-storage.com/Annexe.pdf?signed=fresh' }, error: null });
+    client.storage.from.mockReturnValue({ createSignedUrl });
+    const tab = { opener: window, location: { replace: vi.fn() }, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+    try {
+      render(<PurchaseRequestsPage client={client as never} roles={['admin']} />, '/purchase-requests?requestId=95');
+      const button = await screen.findByRole('button', { name: /Annexe cloud\.pdf/ });
+      fireEvent.click(button);
+      await waitFor(() => expect(tab.location.replace).toHaveBeenCalledWith('https://fixture.private.blob.vercel-storage.com/Annexe.pdf?signed=fresh'));
+      expect(client.storage.from).toHaveBeenCalledExactlyOnceWith('purchase-request-external');
+      expect(createSignedUrl).toHaveBeenCalledExactlyOnceWith('18', 120);
+      tab.location.replace.mockClear();
+      rpc.mockResolvedValue({ data: null, error: new Error('Document external inaccessible.') } as never);
+      fireEvent.click(button);
+      expect(await screen.findByText('Document external inaccessible.')).toBeInTheDocument();
+      expect(tab.close).toHaveBeenCalledOnce();
+      expect(tab.location.replace).not.toHaveBeenCalled();
+    } finally { open.mockRestore(); }
   });
 
   it('keeps a newly created request in À traiter even when a desired delivery date is present', () => {

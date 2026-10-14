@@ -1,14 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createHrDocument, type PersonRecord } from './peopleQueries';
 import { blobDataUrl, HR_PORTRAIT_BUCKET, preparePortrait, validatePortrait } from './portraitMedia';
-import { connectHrDrive } from './hrDocumentDrive';
 
 export async function savePersonPhoto(client: SupabaseClient, person: PersonRecord, file: File) {
   validatePortrait(file);
-  // Start the existing local launcher within the upload gesture. The full-size
-  // original must be verified in Drive before registering the display copy.
-  const connection = connectHrDrive();
-  const [thumbnail] = await Promise.all([preparePortrait(file), connection]);
+  const thumbnail = await preparePortrait(file);
   const document = await createHrDocument(client, {
     person, file, dueDate: '',
     documentType: { id: 0, sourceItemId: 0, name: 'Photo du collaborateur', fileName: 'Photo', categoryKey: 'administrative', categoryLabel: 'Documents administratifs' },

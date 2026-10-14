@@ -17,7 +17,8 @@ const wordMime = 'application/vnd.openxmlformats-officedocument.wordprocessingml
 function fixture({ mapped = true, denied = false, gatewayFailure = false } = {}) {
   const documentInfo = (path: string) => ({ drive_file_id: 'current-drive-file', mime_type: path.endsWith('.docx') ? wordMime : 'application/pdf',
     file_name: path.endsWith('.docx') ? 'current.docx' : 'current.pdf', bytes: currentContent.length, version: '117', chunkSize: 4194304 });
-  const rpc = vi.fn().mockImplementation(async (_name: string, { target_path }: { target_path: string }) => {
+  const rpc = vi.fn().mockImplementation(async (name: string, { target_path }: { target_path: string }) => {
+    if (name === 'document_blob_lookup') return { data: null, error: null };
     const info = documentInfo(target_path);
     return {
       data: mapped && !denied ? { drive_file_id: info.drive_file_id, mime_type: info.mime_type } : null,

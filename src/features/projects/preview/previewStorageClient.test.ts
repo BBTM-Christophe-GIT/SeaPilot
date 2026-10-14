@@ -18,7 +18,7 @@ describe('preview attachment exporter storage', () => {
     const client = createPreviewStorageClient(async () => new Blob());
     expect(() => client.from('projects')).toThrow('Requête interdite dans la préversion');
     expect(() => client.from('project_drive_files').select('*')).toThrow('Sélection inconnue');
-    expect(() => client.from('project_drive_files').select('path,bytes,sha256,mime_type,drive_file_id').eq('project_id', 264)).toThrow('Filtre inconnu');
+    expect(() => client.from('project_drive_files').select('id,path,bytes,sha256,mime_type,drive_file_id').eq('project_id', 264)).toThrow('Filtre inconnu');
     expect(() => client.storage.from('project-files')).toThrow('Stockage inconnu');
   });
 

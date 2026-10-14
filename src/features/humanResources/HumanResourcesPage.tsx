@@ -1,6 +1,5 @@
 import { PersonAvatar } from './PersonAvatar';
 import { PersonPhotoField, type PersonPhotoChanged } from './PersonPhotoField';
-import { connectHrDrive } from './hrDocumentDrive';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
@@ -1086,12 +1085,15 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
 
   async function handleOpenDocument(document: HrDocumentRecord) {
     setErrorMessage(null);
-
+    const popup = window.open('', '_blank');
+    if (!popup) { setErrorMessage('Autorisez les fenêtres contextuelles pour ouvrir le document.'); return; }
+    popup.opener = null;
     try {
       const url = await createHrDocumentSignedUrl(effectiveClient, document);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      popup.location.replace(url);
       if (url.startsWith('blob:')) window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (error) {
+      popup.close();
       setErrorMessage(error instanceof Error ? error.message : "Impossible d'ouvrir ce document.");
     }
   }
@@ -1110,14 +1112,13 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
         const blob = await downloadHrDocumentBlob(effectiveClient, documentToDownload);
         saveBlob(blob, documentDownloadFileName(documentToDownload));
       } else {
-        if (selectedDocuments.some(document => document.drivePath)) await connectHrDrive();
         const { default: JSZip } = await import('jszip');
         const zip = new JSZip();
         const usedNames = new Map<string, number>();
 
         for (const documentToDownload of selectedDocuments) {
           const blob = await downloadHrDocumentBlob(effectiveClient, documentToDownload);
-          zip.file(uniqueFileName(documentDownloadFileName(documentToDownload), usedNames), blob);
+          zip.file(uniqueFileName(documentDownloadFileName(documentToDownload), usedNames), await blob.arrayBuffer());
         }
 
         const zipBlob = await zip.generateAsync({ type: 'blob' });

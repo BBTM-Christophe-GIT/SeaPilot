@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { hasDocumentBlobFile } from '../documents/documentBlobStorage';
 
 const PURCHASE_REQUEST_SELECT = [
   'id',
@@ -350,8 +351,15 @@ async function mapAttachmentRows(rows: PurchaseAttachmentRow[]): Promise<Map<num
 
 /** Sign at the user's click: migrated gateway links are deliberately short-lived. */
 export async function createPurchaseRequestAttachmentUrl(client: SupabaseClient, attachment: PurchaseRequestAttachment): Promise<string> {
-  if (attachment.storageBucket && attachment.storagePath) {
-    const { data, error } = await client.storage.from(attachment.storageBucket).createSignedUrl(attachment.storagePath, 120);
+  let bucket = attachment.storageBucket;
+  let path = attachment.storagePath;
+  if ((!bucket || !path) && attachment.downloadUrl
+    && await hasDocumentBlobFile(client, 'purchase-request-external', String(attachment.id))) {
+    bucket = 'purchase-request-external';
+    path = String(attachment.id);
+  }
+  if (bucket && path) {
+    const { data, error } = await client.storage.from(bucket).createSignedUrl(path, 120);
     if (error) throw error;
     if (!data?.signedUrl) throw new Error('Cette pièce jointe est indisponible.');
     return data.signedUrl;

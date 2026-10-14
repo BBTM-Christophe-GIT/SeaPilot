@@ -271,9 +271,15 @@ export async function openFleetFindingAttachment(client: SupabaseClient, attachm
     window.open(`/demo/${attachment.storagePath.split('/').pop()}`, '_blank', 'noopener,noreferrer');
     return;
   }
-  const { data, error } = await client.storage.from(attachment.storageBucket).createSignedUrl(attachment.storagePath, 300);
-  if (error) throw error;
-  window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+  const popup = window.open('', '_blank');
+  if (!popup) throw new Error('Autorisez les fenêtres contextuelles pour ouvrir le document.');
+  popup.opener = null;
+  try {
+    const { data, error } = await client.storage.from(attachment.storageBucket).createSignedUrl(attachment.storagePath, 300);
+    if (error) throw error;
+    if (!data?.signedUrl) throw new Error('Le lien du document est indisponible.');
+    popup.location.replace(data.signedUrl);
+  } catch (error) { popup.close(); throw error; }
 }
 
 export async function deleteFleetCertificateFinding(client: SupabaseClient, findingId: number): Promise<void> {

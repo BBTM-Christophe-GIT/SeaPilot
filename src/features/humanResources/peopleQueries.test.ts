@@ -9,6 +9,7 @@ import {
   buildWorkforceExitBreakdown,
   buildWorkforceTurnover,
   createHrDocument,
+  createHrDocumentSignedUrl,
   downloadHrDocumentBlob,
   createPerson,
   deletePerson,
@@ -33,8 +34,10 @@ import {
 } from './peopleQueries';
 
 import { writeHrDriveFile, readHrDriveFile } from './hrDocumentDrive';
+import { hasDocumentBlobFile } from '../documents/documentBlobStorage';
+vi.mock('../documents/documentBlobStorage', async original => ({ ...await original<typeof import('../documents/documentBlobStorage')>(), hasDocumentBlobFile: vi.fn().mockResolvedValue(false) }));
 vi.mock('./hrDocumentDrive', () => ({ writeHrDriveFile: vi.fn(), readHrDriveFile: vi.fn() }));
-beforeEach(() => { vi.mocked(writeHrDriveFile).mockImplementation(async (_client, id, name) => ({ drive_path: `person-${id}/${name}`, drive_sha256: 'a'.repeat(64) })); });
+beforeEach(() => { vi.mocked(writeHrDriveFile).mockImplementation(async (_client, id, name) => ({ storage_bucket: 'hr-documents', storage_path: `people/${id}/fixture-${name}`, drive_path: null, drive_sha256: null })); });
 
 const personRow = {
   id: 1,
@@ -350,7 +353,7 @@ describe('createHrDocument', () => {
     ])[0];
     const file = new File(['certificate'], 'scan original.pdf', { type: 'application/pdf' });
     const title = dueDate ? 'Jean MARTIN - CFBS - 2030' : 'Jean MARTIN - CFBS';
-    const expectedStoragePath = `person-1/${title}.pdf`;
+    const expectedStoragePath = `people/1/fixture-${title}.pdf`;
     const createdRow = {
       ...documentRow,
       id: 42,
@@ -360,10 +363,10 @@ describe('createHrDocument', () => {
       title,
       status: 'valid',
       expires_on: dueDate || null,
-      source_label: 'google_drive',
+      source_label: 'seapilot_blob',
       file_url: null,
-      storage_bucket: null,
-      storage_path: null, drive_path: expectedStoragePath, drive_sha256: 'a'.repeat(64),
+      storage_bucket: 'hr-documents',
+      storage_path: expectedStoragePath, drive_path: null, drive_sha256: null,
       file_size_bytes: file.size,
       mime_type: 'application/pdf',
     };
@@ -391,7 +394,7 @@ describe('createHrDocument', () => {
           person,
         },
       ),
-    ).resolves.toEqual(expect.objectContaining({ id: 42, drivePath: expectedStoragePath }));
+    ).resolves.toEqual(expect.objectContaining({ id: 42, storagePath: expectedStoragePath }));
 
     expect(writeHrDriveFile).toHaveBeenCalledWith(expect.anything(), 1, `${title}.pdf`, file);
     expect(upload).not.toHaveBeenCalled();
@@ -401,7 +404,7 @@ describe('createHrDocument', () => {
         expires_on: dueDate || null,
         person_id: 1,
         person_name: 'Jean MARTIN',
-        storage_path: null, drive_path: expectedStoragePath, drive_sha256: 'a'.repeat(64),
+        storage_path: expectedStoragePath, drive_path: null, drive_sha256: null,
         title,
       }),
     );
@@ -508,7 +511,7 @@ describe('renewHrDocument', () => {
       },
     ])[0];
     const file = new File(['medical'], 'certificat.pdf', { type: 'application/pdf' });
-    const expectedStoragePath = 'person-31/Boris BROT - Visite Médicale - 2029.pdf';
+    const expectedStoragePath = 'people/31/fixture-Boris BROT - Visite Médicale - 2029.pdf';
     const upload = vi.fn().mockResolvedValue({ error: null });
     const remove = vi.fn().mockResolvedValue({ error: null });
     const single = vi.fn().mockResolvedValue({
@@ -519,10 +522,10 @@ describe('renewHrDocument', () => {
         title: 'Boris BROT - Visite Médicale - 2029',
         status: 'valid',
         expires_on: '2029-07-05',
-        source_label: 'google_drive',
+        source_label: 'seapilot_blob',
         file_url: null,
-        storage_bucket: null,
-        storage_path: null, drive_path: expectedStoragePath, drive_sha256: 'a'.repeat(64),
+        storage_bucket: 'hr-documents',
+        storage_path: expectedStoragePath, drive_path: null, drive_sha256: null,
         file_size_bytes: file.size,
         mime_type: 'application/pdf',
         medical_restriction: '2eme Categorie',
@@ -561,8 +564,8 @@ describe('renewHrDocument', () => {
         fileSizeBytes: file.size,
         medicalBridgeWatch: false,
         medicalRestriction: '2eme Categorie',
-        sourceLabel: 'google_drive',
-        drivePath: expectedStoragePath,
+        sourceLabel: 'seapilot_blob',
+        storagePath: expectedStoragePath,
       }),
     );
 
@@ -577,9 +580,9 @@ describe('renewHrDocument', () => {
         medical_restriction: '2eme Categorie',
         medical_unfit: false,
         mime_type: 'application/pdf',
-        source_label: 'google_drive',
-        storage_bucket: null,
-        storage_path: null, drive_path: expectedStoragePath, drive_sha256: 'a'.repeat(64),
+        source_label: 'seapilot_blob',
+        storage_bucket: 'hr-documents',
+        storage_path: expectedStoragePath, drive_path: null, drive_sha256: null,
       }),
     );
     expect(remove).not.toHaveBeenCalled();
@@ -1291,6 +1294,34 @@ describe('updatePersonDetails', () => {
 });
 
 describe('Drive document download', () => {
+  it('keeps a current migrated desktop version ahead of its retained canonical backup', async () => {
+    vi.mocked(hasDocumentBlobFile).mockResolvedValue(true);
+    const blob = new Blob(['current']);
+    const download = vi.fn().mockResolvedValue({ data: blob, error: null });
+    const from = vi.fn(() => ({ download }));
+    const doc = mapHrDocumentRows([{ ...documentRow, drive_path: 'person/current.pdf', drive_sha256: 'a'.repeat(64), storage_bucket: 'hr-documents', storage_path: 'people/1/older.pdf' }])[0];
+    try {
+      expect(await downloadHrDocumentBlob({ storage: { from } } as never, doc)).toBe(blob);
+      expect(from).toHaveBeenCalledWith('hr-drive');
+      expect(from).not.toHaveBeenCalledWith('hr-documents');
+      expect(download).toHaveBeenCalledWith(String(doc.id));
+    } finally { vi.mocked(hasDocumentBlobFile).mockReset().mockResolvedValue(false); }
+  });
+  it('opens and downloads the current renewed canonical file before the older alias at the same HR document id', async () => {
+    vi.mocked(hasDocumentBlobFile).mockImplementation(async (_client, bucket) => bucket === 'hr-documents' || bucket === 'hr-drive');
+    const blob = new Blob(['renewed']);
+    const download = vi.fn().mockResolvedValue({ data: blob, error: null });
+    const createSignedUrl = vi.fn().mockResolvedValue({ data: { signedUrl: 'https://example/current' }, error: null });
+    const from = vi.fn(() => ({ download, createSignedUrl }));
+    const doc = mapHrDocumentRows([{ ...documentRow, drive_path: null, drive_sha256: null, storage_bucket: 'hr-documents', storage_path: 'people/1/current.pdf' }])[0];
+    try {
+      expect(await downloadHrDocumentBlob({ storage: { from } } as never, doc)).toBe(blob);
+      expect(await createHrDocumentSignedUrl({ storage: { from } } as never, doc)).toBe('https://example/current');
+      expect(from).toHaveBeenCalledWith('hr-documents');
+      expect(from).not.toHaveBeenCalledWith('hr-drive');
+      expect(download).toHaveBeenCalledWith('people/1/current.pdf');
+    } finally { vi.mocked(hasDocumentBlobFile).mockReset().mockResolvedValue(false); }
+  });
   it('prefers Drive over retained legacy backup references', async () => {
     const blob = new Blob(['verified']);
     vi.mocked(readHrDriveFile).mockResolvedValueOnce(blob);

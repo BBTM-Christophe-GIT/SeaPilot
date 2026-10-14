@@ -472,6 +472,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
         tab.close();
         return;
       }
+      if (!['http:', 'https:'].includes(new URL(url, window.location.href).protocol)) throw new Error('Le lien du document est invalide.');
       tab.location.replace(url);
     } catch (error) {
       tab.close();
@@ -585,9 +586,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
             <div className="purchase-detail-section"><h3>Livraison à bord</h3><dl><div><dt>Navire</dt><dd>{selectedRequest.vesselName || '—'}</dd></div><div><dt>Lieu de livraison</dt><dd>{selectedRequest.deliveryLocation || '—'}</dd></div><div><dt>Date souhaitée</dt><dd>{formatDate(selectedRequest.expectedDeliveryOn)}</dd></div><div><dt>Responsable</dt><dd>{selectedRequest.ownerName || 'Non attribué'}</dd></div><div><dt>Précision</dt><dd>{selectedRequest.deliveryDetails || '—'}</dd></div><div><dt>Traitement</dt><dd>{selectedRequest.processingComment || '—'}</dd></div></dl></div>
             <details className="purchase-attachments" open><summary><span>Pièces jointes</span><strong><Paperclip size={16} />{selectedRequest.attachments.length} fichier{selectedRequest.attachments.length > 1 ? 's' : ''}</strong><ChevronDown size={16} /></summary><div>{selectedRequest.attachments.length ? selectedRequest.attachments.map((attachment) => {
               const label = <>{attachment.isImage ? <ImageIcon size={18} /> : <FileText size={18} />}<span><strong>{attachment.title}</strong><small>{attachment.sourceKind === 'sharepoint' ? 'SharePoint' : 'BBTM'}</small></span></>;
-              return attachment.storageBucket && attachment.storagePath
-                ? <button key={attachment.id} onClick={() => void openAttachment(attachment)} type="button">{label}</button>
-                : <a href={attachment.downloadUrl} key={attachment.id} rel="noreferrer" target="_blank">{label}</a>;
+              return <button key={attachment.id} onClick={() => void openAttachment(attachment)} type="button">{label}</button>;
             }) : <p>Aucune pièce jointe.</p>}</div></details>
             <PurchaseRequestFollowup canComment={processingAllowed} isBusy={isSaving} key={selectedRequest.id} onAddComment={(comment) => handleAddComment(selectedRequest.id, comment)} request={selectedRequest} />
           </> : <div className="purchase-empty-detail"><ShoppingCart size={34} /><p>{requestedIdParameter !== null ? 'Cette demande est introuvable ou inaccessible.' : 'Sélectionnez une demande pour afficher son suivi.'}</p></div>}

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '@supabase/supabase-js';
+import { createHash } from 'node:crypto';
 import { createSupabaseBrowserClient } from './supabaseClient';
 
 const bucket = 'fleet-certificates';
@@ -24,6 +25,7 @@ describe('Supabase browser client document access', () => {
   it('automatically routes the migrated certificate through the real SDK using the current session', async () => {
     const send = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
       const url = String(input);
+      if (url === `${endpoint}/rest/v1/rpc/document_blob_lookup`) return Response.json(null);
       if (url === `${endpoint}/rest/v1/rpc/document_drive_lookup`) return Response.json(document);
       if (url === `${endpoint}/functions/v1/document-drive`) {
         expect(JSON.parse(String(init?.body))).toEqual({ operation: 'url', bucket, path, expiresIn: 300 });
@@ -41,12 +43,12 @@ describe('Supabase browser client document access', () => {
     }));
     try {
       expect(await client.storage.from(bucket).createSignedUrl(path, 300)).toEqual({ data: { signedUrl }, error: null });
-      expect(send).toHaveBeenCalledTimes(2);
+      expect(send).toHaveBeenCalledTimes(3);
       expect(JSON.parse(String(send.mock.calls[0][1]?.body))).toEqual({ target_bucket: bucket, target_path: path });
       for (const [, init] of send.mock.calls) expect(new Headers(init?.headers).get('Authorization')).toBe(`Bearer ${accessToken}`);
       accessToken = 'refreshed-real-profile-token';
       await client.storage.from(bucket).createSignedUrl(path, 300);
-      for (const [, init] of send.mock.calls.slice(2)) expect(new Headers(init?.headers).get('Authorization')).toBe(`Bearer ${accessToken}`);
+      for (const [, init] of send.mock.calls.slice(3)) expect(new Headers(init?.headers).get('Authorization')).toBe(`Bearer ${accessToken}`);
       expect(send.mock.calls.every(([input]) => !String(input).includes('/storage/v1/'))).toBe(true);
     } finally {
       client.auth.stopAutoRefresh();
@@ -54,17 +56,59 @@ describe('Supabase browser client document access', () => {
   });
 
   it('preserves a real RPC access refusal without requesting the deleted Storage object or gateway', async () => {
-    const send = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ code: '42501', message: 'Document inaccessible pour ce profil.' }, { status: 403 }));
+    const send = vi.fn<typeof fetch>().mockImplementation(async input => String(input).endsWith('/document_blob_lookup')
+      ? Response.json(null) : Response.json({ code: '42501', message: 'Document inaccessible pour ce profil.' }, { status: 403 }));
     vi.stubGlobal('fetch', send);
     const client = createSupabaseBrowserClient(env);
     try {
       const result = await client.storage.from(bucket).createSignedUrl(path, 300);
       expect(result.data).toBeNull();
       expect(result.error).toMatchObject({ status: 403, message: 'Document inaccessible pour ce profil.' });
-      expect(send).toHaveBeenCalledTimes(1);
-      expect(String(send.mock.calls[0][0])).toBe(`${endpoint}/rest/v1/rpc/document_drive_lookup`);
+      expect(send).toHaveBeenCalledTimes(2);
+      expect(String(send.mock.calls[1][0])).toBe(`${endpoint}/rest/v1/rpc/document_drive_lookup`);
     } finally {
       client.auth.stopAutoRefresh();
     }
+  });
+  it('routes a verified Blob through the actual factory and SDK without contacting old Drive or Storage', async () => {
+    const content = 'Current verified certificate';
+    const info = { blob_pathname: 'documents/fixture/insurance.pdf', bytes: content.length, sha256: createHash('sha256').update(content).digest('hex'),
+      file_name: 'Insurance.pdf', mime_type: 'application/pdf' };
+    const url = 'https://fixture.private.blob.vercel-storage.com/documents/fixture/insurance.pdf?ticket=current';
+    const send = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+      const target = String(input);
+      if (target === `${endpoint}/rest/v1/rpc/document_blob_lookup`) return Response.json(info);
+      if (target === '/api/documents') {
+        expect(JSON.parse(String(init?.body))).toMatchObject({ operation: 'url', bucket, path });
+        expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer current-profile-token');
+        return Response.json({ signedUrl: url, document: info });
+      }
+      if (target === url) {
+        expect(init?.credentials).toBe('omit');
+        expect(new Headers(init?.headers).has('Authorization')).toBe(false);
+        return new Response(content, { headers: { 'Content-Type': 'application/pdf' } });
+      }
+      throw new Error('Unexpected document route');
+    });
+    vi.stubGlobal('fetch', send);
+    const client = createSupabaseBrowserClient(env);
+    vi.spyOn(client.auth, 'getSession').mockResolvedValue({ data: { session: { access_token: 'current-profile-token', user: { id: 'fixture-user' } } as Session }, error: null });
+    try {
+      expect((await client.storage.from(bucket).createSignedUrl(path, 120)).data?.signedUrl).toBe(url);
+      const downloaded = await client.storage.from(bucket).download(path);
+      expect(downloaded.error).toBeNull();
+      expect(await downloaded.data?.text()).toBe(content);
+      expect(send.mock.calls.every(([input]) => !String(input).includes('/document-drive') && !String(input).includes('/storage/v1/'))).toBe(true);
+    } finally { client.auth.stopAutoRefresh(); }
+  });
+  it('does not bypass a Blob lookup refusal with the old gateway', async () => {
+    const send = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ code: '42501', message: 'Document inaccessible pour ce profil.' }, { status: 403 }));
+    vi.stubGlobal('fetch', send);
+    const client = createSupabaseBrowserClient(env);
+    try {
+      expect((await client.storage.from(bucket).createSignedUrl(path, 120)).error).toMatchObject({ status: 403 });
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(String(send.mock.calls[0][0])).toBe(`${endpoint}/rest/v1/rpc/document_blob_lookup`);
+    } finally { client.auth.stopAutoRefresh(); }
   });
 });

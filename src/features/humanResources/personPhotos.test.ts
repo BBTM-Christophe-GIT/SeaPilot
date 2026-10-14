@@ -21,10 +21,10 @@ function setup(error: unknown = null) {
 }
 afterEach(() => vi.clearAllMocks());
 describe('person portraits', () => {
-  it('stores the original in the collaborator Drive folder before registering a private thumbnail', async () => {
+  it('stores the original in SeaPilot before registering a private thumbnail without a Windows launcher', async () => {
     const { client, update, upload, remove, storage } = setup();
     const result = await savePersonPhoto(client, person, file);
-    expect(connectHrDrive).toHaveBeenCalled();
+    expect(connectHrDrive).not.toHaveBeenCalled();
     expect(createHrDocument).toHaveBeenCalledWith(client, expect.objectContaining({ person, file, documentType: expect.objectContaining({ categoryKey: 'administrative', fileName: 'Photo' }) }));
     expect(vi.mocked(createHrDocument).mock.invocationCallOrder[0]).toBeLessThan(upload.mock.invocationCallOrder[0]);
     expect(upload.mock.invocationCallOrder[0]).toBeLessThan(update.mock.invocationCallOrder[0]);

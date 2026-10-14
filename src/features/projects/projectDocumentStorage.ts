@@ -127,8 +127,9 @@ export async function createProjectDocumentAccessUrl(
     return data.signedUrl;
   }
   if (document.sharePointWebUrl) {
-    const { data } = await projectDriveStorage(client, 'sharepoint').createSignedUrl(document.sharePointWebUrl, 300);
-    return data!.signedUrl;
+    const { data, error } = await projectDriveStorage(client, 'sharepoint').createSignedUrl(document.sharePointWebUrl, 300);
+    if (error || !data?.signedUrl) throw error || new Error('Le document du projet est indisponible.');
+    return data.signedUrl;
   }
   throw new Error('Ce document ne possède aucun emplacement de stockage exploitable.');
 }

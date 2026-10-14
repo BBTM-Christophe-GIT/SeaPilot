@@ -1,4 +1,3 @@
-import { connectLocalDrive, type LocalDriveConnection } from '../documents/localDriveLauncher';
 import { FilePenLine, FolderOpen, Plus, Save, Search, Upload, Download, ShieldCheck, ExternalLink } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext, useSearchParams, useLocation } from 'react-router-dom';
@@ -8,7 +7,7 @@ import { DisciplinaryForm, Field } from './DisciplinaryForm';
 import { DisciplinaryLetterEditor } from './DisciplinaryLetterEditor';
 import { DisciplinaryProcedure } from './DisciplinaryProcedure';
 import { buildDisciplinaryDocx, downloadBlob, imageFileDataUrl } from './disciplinaryDocx';
-import { ATTACHMENT_TYPES, ensureCollaboratorDriveFolder, disciplinaryDesktopUri, documentDrivePath, safeDrivePart, validateDisciplinaryPath, validateDriveUrl, writeDriveFile } from './disciplinaryDrive';
+import { ATTACHMENT_TYPES, createDisciplinaryDocumentUrl, documentDrivePath, safeDrivePart, validateDisciplinaryPath, validateDriveUrl, writeDisciplinaryBlobFile } from './disciplinaryDrive';
 import { fetchDisciplinaryData, fetchDisciplinaryDocuments, registerDisciplinaryDocument, saveDisciplinaryCase } from './disciplinaryQueries';
 import { frenchDate, generateLetter, initialForm, isEmployed, letterIssues, LETTER_KINDS, personName, SANCTIONS, todayParis, type DisciplinaryCase, type DisciplinaryDocument, type DisciplinaryLetter, type DisciplinaryPerson, type LetterKind } from './disciplinaryModel';
 import { AppDialog } from '../../components/AppDialog';
@@ -215,36 +214,31 @@ function DisciplinaryWorkspace({ context }: { context: AppShellOutletContext }) 
     if (dirty) throw new Error('Enregistrez ou proposez vos modifications avant de classer les documents.');
     return current.updated_at ? current : save();
   }
-  async function saveFile(file: Blob, name: string, documentKind: 'letter' | 'attachment', date: string, snapshot: DisciplinaryLetter | null, record: DisciplinaryCase, connection: LocalDriveConnection) {
-    const { folder } = await ensureCollaboratorDriveFolder(context.client, connection, record);
-    const id = crypto.randomUUID(), path = documentDrivePath(record, date, name, id, folder);
-    try { await writeDriveFile(context.client, connection, record, path, file); }
-    catch (error) { setLink({ path, url: '', date }); throw error; }
+  async function saveFile(file: Blob, name: string, documentKind: 'letter' | 'attachment', date: string, snapshot: DisciplinaryLetter | null, record: DisciplinaryCase) {
+    const id = crypto.randomUUID(), path = documentDrivePath(record, date, name, id);
+    await writeDisciplinaryBlobFile(context.client, record, id, path, file);
     const metadata = { id, case_id: record.id, file_name: path.split('/').at(-1)!, drive_path: path, drive_url: '', document_date: date, kind: documentKind, letter_snapshot: snapshot };
     try {
       const doc = await registerDisciplinaryDocument(context.client, metadata);
       setDocuments((all) => [doc, ...all]);
     } catch {
-      setLink({ path, url: '', date });
-      throw new Error(`Le fichier a été écrit dans Google Drive (${path}), mais sa fiche n’a pas pu être enregistrée. Utilisez « Lier un fichier déjà enregistré » pour terminer le classement.`);
+      throw new Error(`Le fichier est enregistré dans SeaPilot (référence ${id}), mais sa fiche n’a pas pu être enregistrée. Actualisez avant de réessayer.`);
     }
   }
   async function archiveLetter(snapshot = current?.letter) {
     if (!snapshot || dirty || (!locked && !collaboration.letters.some((item) => item.letter === snapshot))) throw new Error('Validez le courrier avant le classement final.');
     if (context.previewMode) throw new Error('Préversion : classement désactivé.');
-    const connection = await connectLocalDrive();
     const saved = await documentRecord(), letter = snapshot;
     const blob = await buildDisciplinaryDocx(letter);
-    await saveFile(blob, `${letter.date} - ${safeDrivePart(letter.subject)}.docx`, 'letter', letter.date, letter, saved, connection);
-    setTab('documents'); setMessage('Courrier classé dans le dossier synchronisé. Attendez la fin de la synchronisation Google Drive.');
+    await saveFile(blob, `${letter.date} - ${safeDrivePart(letter.subject)}.docx`, 'letter', letter.date, letter, saved);
+    setTab('documents'); setMessage('Courrier enregistré dans SeaPilot.');
   }
   async function attach(files: File[]) {
     if (!files.length) return;
     if (context.previewMode) throw new Error('Préversion : classement désactivé.');
-    const connection = await connectLocalDrive();
     const saved = await documentRecord();
-    for (const file of files) await saveFile(file, file.name, 'attachment', link.date, null, saved, connection);
-    setMessage(`${files.length} pièce(s) classée(s) dans le dossier synchronisé. Attendez la fin de la synchronisation Google Drive.`);
+    for (const file of files) await saveFile(file, file.name, 'attachment', link.date, null, saved);
+    setMessage(`${files.length} pièce(s) enregistrée(s) dans SeaPilot.`);
   }
   async function linkExisting() {
     const path = validateDisciplinaryPath(link.path.trim().replace(/\\/g, '/'));
@@ -253,6 +247,19 @@ function DisciplinaryWorkspace({ context }: { context: AppShellOutletContext }) 
     const doc = await registerDisciplinaryDocument(context.client, { id: crypto.randomUUID(), case_id: saved.id,
       file_name: path.split('/').at(-1)!, drive_path: path, drive_url: url, document_date: link.date, kind: 'attachment', letter_snapshot: null });
     setDocuments((all) => [doc, ...all]); setLink({ path: '', url: '', date: todayParis() }); setMessage('Fichier Drive lié au dossier.');
+  }
+  function openDocument(document: DisciplinaryDocument) {
+    if (busy) return;
+    const popup = window.open('', '_blank');
+    if (!popup) { setError('Autorisez les fenêtres contextuelles pour ouvrir le document.'); return; }
+    popup.opener = null;
+    void run(async () => {
+      try {
+        const url = await createDisciplinaryDocumentUrl(context.client, document);
+        if (url.startsWith('seapilot-drive:')) { popup.close(); window.location.assign(url); }
+        else popup.location.replace(url);
+      } catch (failure) { popup.close(); throw failure; }
+    });
   }
 
   return <section className="disciplinary-page">
@@ -281,7 +288,7 @@ function DisciplinaryWorkspace({ context }: { context: AppShellOutletContext }) 
           {locked ? <div className="disciplinary-success"><p>Courrier validé le {frenchDate(current.validated_at || '')}. La préparation et le courrier sont verrouillés.</p>{isIssuer ? <button onClick={() => void workflowAction('new_letter')}>Préparer un autre courrier dans ce dossier</button> : null}</div> : !isIssuer ? <p className="disciplinary-muted">Vos corrections seront proposées à l’émetteur. Il pourra accepter ou rejeter chaque modification.</p> : null}
           {tab === 'preparation' ? <><DisciplinaryForm disabled={busy || locked} value={current.data} onChange={(data) => edit({ ...current, data })} /><div className="disciplinary-compose"><Field label="Courrier à préparer"><select disabled={locked || !isIssuer} value={kind} onChange={(e) => setKind(e.target.value as LetterKind)}>{Object.entries(LETTER_KINDS).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></Field><button className="disciplinary-primary" disabled={busy || locked || !isIssuer} onClick={makeLetter}><FilePenLine size={17} />Générer le courrier</button></div><p className="disciplinary-muted">La qualification et la sanction restent à apprécier au cas par cas. Les signes observés ne prouvent pas une consommation.</p></> : null}
           {tab === 'letter' ? current.letter ? <>
-            <div className="disciplinary-actions"><button disabled={busy} onClick={() => void run(async () => { const letter = current.letter!; const blob = await buildDisciplinaryDocx({ ...letter, subject: !locked ? `PROJET — ${letter.subject}` : letter.subject }); downloadBlob(blob, `${letter.date} - ${!locked ? 'PROJET - ' : ''}${safeDrivePart(letter.subject)}.docx`); })}><Download size={16} />Télécharger Word</button><button className="disciplinary-primary" disabled={busy || context.previewMode || !locked || dirty} onClick={() => void run(() => archiveLetter())}><FolderOpen size={16} />Classer dans Google Drive</button></div>
+            <div className="disciplinary-actions"><button disabled={busy} onClick={() => void run(async () => { const letter = current.letter!; const blob = await buildDisciplinaryDocx({ ...letter, subject: !locked ? `PROJET — ${letter.subject}` : letter.subject }); downloadBlob(blob, `${letter.date} - ${!locked ? 'PROJET - ' : ''}${safeDrivePart(letter.subject)}.docx`); })}><Download size={16} />Télécharger Word</button><button className="disciplinary-primary" disabled={busy || context.previewMode || !locked || dirty} onClick={() => void run(() => archiveLetter())}><FolderOpen size={16} />Classer dans SeaPilot</button></div>
             {!locked && issues.length ? <details className="disciplinary-review" open><summary>À compléter avant validation ({issues.length})</summary><ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></details> : null}
             {isIssuer && !locked && !isLetterReviewed(current.data, current.letter) ? <button disabled={busy} onClick={() => edit({ ...current, letter: { ...current.letter!, reviewedForm: formFingerprint(current.data) } })}>Confirmer la relecture du courrier après modification</button> : null}
             {isIssuer && !locked ? <button className="disciplinary-primary" disabled={busy || collaborationLoading || dirty || !current.updated_at || issues.length > 0 || pendingChanges > 0} onClick={() => { if (window.confirm('Valider ce courrier ? Son contenu et sa préparation seront verrouillés.')) void workflowAction('validate'); }}>Valider le courrier</button> : null}
@@ -292,13 +299,13 @@ function DisciplinaryWorkspace({ context }: { context: AppShellOutletContext }) 
           </> : <div className="disciplinary-empty"><FilePenLine size={32} /><p>Générez le modèle depuis l’onglet Préparation.</p><button onClick={() => setTab('preparation')}>Préparer le courrier</button></div> : null}
           {tab === 'documents' ? <>
             <div className="disciplinary-actions"><button onClick={() => setTab('letter')}>Consulter le courrier</button><button onClick={() => setTab('timeline')}>Suivi de la procédure</button></div>
-            {collaboration.letters.length ? <section className="disciplinary-validated-letters"><h3>Courriers validés</h3>{collaboration.letters.map((item) => <details key={item.id} className="disciplinary-details"><summary>{frenchDate(item.letter.date)} · {item.letter.subject}</summary><p className="disciplinary-muted">Validé le {frenchDate(item.validated_at)} · {item.letter.emitterName}</p><div className="disciplinary-actions"><button onClick={() => void run(async () => downloadBlob(await buildDisciplinaryDocx(item.letter), `${item.letter.date} - ${safeDrivePart(item.letter.subject)}.docx`))}>Télécharger ce courrier</button><button disabled={context.previewMode || busy || dirty} onClick={() => void run(() => archiveLetter(item.letter))}>Classer ce courrier dans Drive</button></div><DisciplinaryLetterEditor disabled letter={item.letter} onChange={() => undefined} onError={setError} /></details>)}</section> : null}
-            <p className="disciplinary-muted">Classement automatique : SeaPilot / Sanctions Disciplinaires / {current.data.employeeName} / date. Le dossier du collaborateur est créé automatiquement.</p>
+            {collaboration.letters.length ? <section className="disciplinary-validated-letters"><h3>Courriers validés</h3>{collaboration.letters.map((item) => <details key={item.id} className="disciplinary-details"><summary>{frenchDate(item.letter.date)} · {item.letter.subject}</summary><p className="disciplinary-muted">Validé le {frenchDate(item.validated_at)} · {item.letter.emitterName}</p><div className="disciplinary-actions"><button onClick={() => void run(async () => downloadBlob(await buildDisciplinaryDocx(item.letter), `${item.letter.date} - ${safeDrivePart(item.letter.subject)}.docx`))}>Télécharger ce courrier</button><button disabled={context.previewMode || busy || dirty} onClick={() => void run(() => archiveLetter(item.letter))}>Classer ce courrier dans SeaPilot</button></div><DisciplinaryLetterEditor disabled letter={item.letter} onChange={() => undefined} onError={setError} /></details>)}</section> : null}
+            <p className="disciplinary-muted">Classement automatique : SeaPilot / Sanctions Disciplinaires / {current.data.employeeName} / date. Les pièces sont accessibles dans SeaPilot sur ordinateur et mobile.</p>
             <div className="disciplinary-upload"><Field label="Date de classement des pièces"><input type="date" required value={link.date} onChange={(e) => setLink({ ...link, date: e.target.value })} /></Field><label className="disciplinary-file-button"><Upload size={16} />Ajouter des pièces jointes<input type="file" multiple accept={ATTACHMENT_TYPES} disabled={busy || context.previewMode || !link.date} onChange={(e) => { const files = Array.from(e.target.files || []); e.target.value = ''; void run(() => attach(files)); }} /></label></div>
             <p className="disciplinary-muted">Les documents sont classés par date (AAAA-MM-JJ). Les nouvelles versions conservent les fichiers antérieurs.</p>
-            <div className="disciplinary-documents">{selectedDocuments.map((doc) => <article key={doc.id}><div><strong>{doc.file_name}</strong><small>{frenchDate(doc.document_date)} · {doc.kind === 'letter' ? 'Courrier Word' : 'Pièce jointe'}</small><small>{doc.drive_path}</small></div><div className="disciplinary-document-actions"><a href={disciplinaryDesktopUri(doc.drive_path)}><ExternalLink size={15} />Ouvrir le fichier</a>{doc.drive_url ? <a href={validateDriveUrl(doc.drive_url)} target="_blank" rel="noreferrer">Voir dans Drive</a> : null}{doc.letter_snapshot && !locked ? <button disabled={busy} onClick={() => { if (mayLeave()) { const original = cases.find((c) => c.id === doc.case_id); if (original) { edit({ ...original, letter: doc.letter_snapshot }); setTab('letter'); } } }}>Reprendre le modèle initial</button> : null}</div></article>)}{!selectedDocuments.length ? <div className="disciplinary-empty"><FolderOpen size={28} /><p>Aucun document classé dans ce dossier.</p></div> : null}</div>
+            <div className="disciplinary-documents">{selectedDocuments.map((doc) => <article key={doc.id}><div><strong>{doc.file_name}</strong><small>{frenchDate(doc.document_date)} · {doc.kind === 'letter' ? 'Courrier Word' : 'Pièce jointe'}</small><small>{doc.drive_path}</small></div><div className="disciplinary-document-actions"><button disabled={busy} type="button" onClick={() => openDocument(doc)}><ExternalLink size={15} />Ouvrir le fichier</button>{doc.drive_url ? <a href={validateDriveUrl(doc.drive_url)} target="_blank" rel="noreferrer">Voir dans Drive</a> : null}{doc.letter_snapshot && !locked ? <button disabled={busy} onClick={() => { if (mayLeave()) { const original = cases.find((c) => c.id === doc.case_id); if (original) { edit({ ...original, letter: doc.letter_snapshot }); setTab('letter'); } } }}>Reprendre le modèle initial</button> : null}</div></article>)}{!selectedDocuments.length ? <div className="disciplinary-empty"><FolderOpen size={28} /><p>Aucun document classé dans ce dossier.</p></div> : null}</div>
             <details className="disciplinary-details"><summary>Lier un fichier déjà enregistré dans Drive</summary><p>Après un enregistrement manuel, indiquez son chemin dans le dossier confidentiel. Les liens Drive restent privés.</p><div className="disciplinary-form"><Field label="Chemin relatif du fichier" wide><input value={link.path} onChange={(e) => setLink({ ...link, path: e.target.value })} placeholder="Prénom NOM - c1-p123/2026-09-15/courrier.docx" /></Field><Field label="Lien Google Drive (facultatif)" wide><input type="url" value={link.url} onChange={(e) => setLink({ ...link, url: e.target.value })} /></Field><button disabled={busy || context.previewMode || !link.path || !link.date} onClick={() => void run(linkExisting)}>Lier au dossier</button></div></details>
-            <p className="disciplinary-muted">Les courriers validés restent consultables ci-dessus. Les fichiers et leurs éventuelles modifications dans Word se consultent avec « Ouvrir le fichier ».</p>
+            <p className="disciplinary-muted">Les courriers validés restent consultables ci-dessus. Les fichiers enregistrés se consultent avec « Ouvrir le fichier ».</p>
           </> : null}
           {tab === 'review' || tab === 'timeline' ? !current.updated_at ? <p>Enregistrez le nouveau dossier pour accéder au partage et au suivi.</p> : collaborationLoading ? <p role="status">Chargement du suivi…</p> : tab === 'review' ? <DisciplinaryReviewPanel key={current.id + current.issuer_id} record={current} collaboration={collaboration} reviewers={reviewers} actorId={actorId} isAdmin={context.roles.includes('admin')} busy={busy} onAction={workflowAction} /> : <DisciplinaryTimeline key={current.id} collaboration={collaboration} busy={busy} onAction={workflowAction} /> : null}
         </>}

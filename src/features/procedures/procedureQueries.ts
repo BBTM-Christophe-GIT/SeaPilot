@@ -2,9 +2,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetNames, fleetAssetKind, type FleetAssetKind } from '../fleet/fleetDisplay';
 import { buildProcedureCode } from './procedureReview';
 import { buildGoogleDriveDesktopUri, googleDriveFileUrl, parseProcedureDriveLink } from './procedureGoogleDrive';
-import type { ProcedureDriveReceipt, ProcedureDriveSource } from './procedureDriveFiles';
+import { createProcedureFileStore, type ProcedureDriveReceipt, type ProcedureDriveSource } from './procedureDriveFiles';
 import { normalizeProcedureTags } from './procedureTags';
 import { hasDocumentDriveFile } from '../documents/documentDriveStorage';
+import { hasDocumentBlobFile } from '../documents/documentBlobStorage';
 
 export const PROCEDURE_DOCUMENT_BUCKET = 'procedure-documents';
 
@@ -237,7 +238,12 @@ export function mapProcedureRows(rows: ProcedureRow[]): ProcedureRecord[] {
 }
 
 export function mapPublishedProcedureRows(rows: PublishedProcedureRow[]): PublishedProcedureRecord[] {
-  return rows.map((row) => ({
+  return rows.map(mapPublishedProcedureRow).filter((record) => record.status === 'published'
+    && record.mimeType.toLowerCase() === 'application/pdf'
+    && record.fileName.toLowerCase().endsWith('.pdf'));
+}
+function mapPublishedProcedureRow(row: PublishedProcedureRow): PublishedProcedureRecord {
+  return {
     ...mapProcedureBase(row),
     procedureId: row.procedure_id,
     googleDrivePath: nullableText(row.google_drive_path),
@@ -248,9 +254,7 @@ export function mapPublishedProcedureRows(rows: PublishedProcedureRow[]): Publis
     mimeType: nullableText(row.mime_type) || 'application/pdf',
     sizeBytes: row.size_bytes,
     publishedBy: nullableText(row.published_by),
-  })).filter((record) => record.status === 'published'
-    && record.mimeType.toLowerCase() === 'application/pdf'
-    && record.fileName.toLowerCase().endsWith('.pdf'));
+  };
 }
 
 export function buildProcedureMetrics(data: ProceduresData): ProcedureMetrics {
@@ -531,11 +535,28 @@ export async function updateProcedureTags(
   if (error) throw error;
 }
 
-export async function publishProcedure(client: SupabaseClient, procedure: ProcedureRecord, pdfFile: File | ProcedureDriveReceipt): Promise<PublishedProcedureRecord> {
+export async function publishProcedure(client: SupabaseClient, procedure: ProcedureRecord, pdfFile: File | ProcedureDriveReceipt,
+  readPublication: (record: PublishedProcedureRecord) => Promise<Blob> = createProcedureFileStore(client).read): Promise<PublishedProcedureRecord> {
   if ('path' in pdfFile) {
-    const { data, error } = await client.rpc('publish_procedure_drive', { target_procedure: procedure.id, pdf_path: pdfFile.path, pdf_bytes: pdfFile.bytes, pdf_sha256: pdfFile.sha256 });
+    const { data, error } = await client.rpc('prepare_procedure_blob_publication', { target_procedure: procedure.id, pdf_path: pdfFile.path, pdf_bytes: pdfFile.bytes, pdf_sha256: pdfFile.sha256 });
     if (error) throw error;
-    return mapPublishedProcedureRows([data as PublishedProcedureRow])[0];
+    if (!data || !Number.isSafeInteger(data.id) || data.id <= 0) throw new Error('La préparation du PDF a échoué.');
+    const pending = mapPublishedProcedureRow(data as PublishedProcedureRow);
+    if (!await hasDocumentBlobFile(client, 'procedure-publications-drive', String(pending.id))) {
+      const blob = await readPublication(pending);
+      const bytes = await blob.arrayBuffer();
+      const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
+      if (blob.size !== pdfFile.bytes || sha256 !== pdfFile.sha256) throw new Error('La copie du PDF converti a changé. Relancez la publication.');
+      const uploaded = await client.storage.from('procedure-publications-drive').upload(String(pending.id), new File([bytes], pending.fileName, { type: 'application/pdf' }), {
+        contentType: 'application/pdf', upsert: false, metadata: { publication_id: pending.id, file_name: pending.fileName },
+      });
+      if (uploaded.error) throw uploaded.error;
+    }
+    const published = await client.rpc('publish_procedure_blob', { target_publication: pending.id });
+    if (published.error) throw published.error;
+    const publication = mapPublishedProcedureRows([published.data as PublishedProcedureRow])[0];
+    if (!publication) throw new Error('La publication du PDF n’a pas été confirmée.');
+    return publication;
   }
   if (pdfFile.type !== 'application/pdf' && !pdfFile.name.toLowerCase().endsWith('.pdf')) {
     throw new Error('La publication doit être un fichier PDF.');
@@ -632,6 +653,12 @@ export async function getProcedureFileUrl(
     || record.mimeType.toLowerCase() !== 'application/pdf'
     || !record.fileName.toLowerCase().endsWith('.pdf'))) {
     throw new Error('Seules les versions PDF publiées peuvent être ouvertes.');
+  }
+  if ('procedureId' in record && await hasDocumentBlobFile(client, 'procedure-publications-drive', String(record.id))) {
+    const { data, error } = await client.storage.from('procedure-publications-drive').createSignedUrl(String(record.id), 120,
+      action === 'download' ? { download: record.fileName || true } : undefined);
+    if (error || !data?.signedUrl) throw error || new Error('Le PDF publié est indisponible.');
+    return data.signedUrl;
   }
   const migratedDriveFile = Boolean(record.googleDriveFileId) && action !== 'open'
     && await hasDocumentDriveFile(client, record.storageBucket, record.storagePath);

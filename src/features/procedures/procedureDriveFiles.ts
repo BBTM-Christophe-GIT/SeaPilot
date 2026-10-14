@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { blobBase64, connectLocalDrive, localDriveRequest, supportsLocalDriveVersion, type LocalDriveConnection } from '../documents/localDriveLauncher';
 import type { ProcedureInput, ProcedureRecord, PublishedProcedureRecord } from './procedureQueries';
 import { hasDocumentDriveFile } from '../documents/documentDriveStorage';
+import { hasDocumentBlobFile } from '../documents/documentBlobStorage';
 
 export const PROCEDURE_IMPORT_TYPES = '.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.txt,.pdf';
 export const PROCEDURE_DRIVE_LIMIT = 25 * 1024 * 1024;
@@ -54,6 +55,16 @@ export function createProcedureFileStore(client: SupabaseClient): ProcedureFileS
       await localDriveRequest(client, await connect(), { action: 'open', module: 'procedures', procedureId: record.id });
     },
     read: async record => {
+      if ('procedureId' in record && await hasDocumentBlobFile(client, 'procedure-publications-drive', String(record.id))) {
+        const { data, error } = await client.storage.from('procedure-publications-drive').download(String(record.id));
+        if (error || !data) throw error || new Error('Le PDF publié est indisponible.');
+        return data;
+      }
+      if (await hasDocumentBlobFile(client, record.storageBucket, record.storagePath)) {
+        const { data, error } = await client.storage.from(record.storageBucket).download(record.storagePath);
+        if (error || !data) throw error || new Error('Le document est indisponible.');
+        return data;
+      }
       if (await hasDocumentDriveFile(client, record.storageBucket, record.storagePath)) {
         const { data, error } = await client.storage.from(record.storageBucket).download(record.storagePath);
         if (error || !data) throw error || new Error('Le document Google Drive est indisponible.');
