@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
+import { presignUrl } from '@vercel/blob';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { documentBlobStorage } from './documentBlobStorage';
 
@@ -7,6 +8,10 @@ const contents = '%PDF-1.7\nprivate document';
 const reference = { blob_pathname: 'documents/migrations/key/hash.pdf', bytes: contents.length,
   sha256: createHash('sha256').update(contents).digest('hex'), mime_type: 'application/pdf', file_name: 'Certificat.pdf' };
 const privateUrl = 'https://test.private.blob.vercel-storage.com/documents/migrations/key/hash.pdf?signature=scoped';
+const uploadId = '20000000-0000-4000-8000-000000000001';
+const uploadPath = `documents/uploads/${uploadId}`;
+const uploadPreparation = { uploadId, pathname: uploadPath,
+  uploadUrl: `https://vercel.com/api/blob/?pathname=${encodeURIComponent(uploadPath)}&signature=scoped` };
 const user = { id: '10000000-0000-4000-8000-000000000001' };
 function fixture(mapping: Record<string, unknown> = {}, bucket = 'fleet-certificates') {
   const rpc = vi.fn().mockImplementation(async (name: string, args: { target_path?: string; target_paths?: string[] }) => {
@@ -28,8 +33,8 @@ function fixture(mapping: Record<string, unknown> = {}, bucket = 'fleet-certific
     if (url === '/api/documents') {
       const body = JSON.parse(init?.body as string);
       if (body.operation === 'urls') return Response.json({ entries: body.paths.map((path: string) => ({ path, document: mapping[path], signedUrl: privateUrl, error: null })) });
-      if (body.operation === 'prepare') return Response.json({ uploadId: '20000000-0000-4000-8000-000000000001', uploadUrl: 'https://blob.vercel-storage.com/?pathname=reserved' });
-      if (body.operation === 'complete') return Response.json({ document: reference });
+      if (body.operation === 'prepare') return Response.json(uploadPreparation);
+      if (body.operation === 'complete') return Response.json({ document: { ...reference, blob_pathname: uploadPath } });
       return Response.json({ document: reference, signedUrl: privateUrl });
     }
     if (init?.method === 'PUT') return new Response(null, { status: 200 });
@@ -40,7 +45,7 @@ function fixture(mapping: Record<string, unknown> = {}, bucket = 'fleet-certific
   const storage = documentBlobStorage(client as never, bucket, legacy as never);
   return { storage, legacy, rpc, getSession, fetcher };
 }
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('private Blob documents', () => {
   it('reads current private bytes through the authenticated gateway', async () => {
@@ -145,19 +150,128 @@ describe('private Blob documents', () => {
     expect(fetcher.mock.calls.map(call => JSON.parse(call[1].body).paths.length)).toEqual([200, 1]);
   });
 
+  it('bounds signature lookups to four paths while preserving mixed results and order', async () => {
+    const paths = Array.from({ length: 10 }, (_, index) => `profiles/${user.id}/signature-${index}.png`);
+    const mapping = { [paths[0]]: reference, [paths[1]]: new Error('denied'), [paths[3]]: reference,
+      [paths[4]]: reference, [paths[6]]: new Error('denied'), [paths[7]]: reference, [paths[8]]: reference };
+    const { storage, rpc, fetcher, legacy } = fixture(mapping, 'working-time-signatures');
+    const result = await storage.createSignedUrls(paths, 3600);
+    expect(rpc.mock.calls.map(call => call[1].target_paths)).toEqual([paths.slice(0, 4), paths.slice(4, 8), paths.slice(8)]);
+    expect(fetcher.mock.calls.map(call => JSON.parse(call[1].body).paths)).toEqual([[paths[0], paths[3]], [paths[4], paths[7]], [paths[8]]]);
+    expect(result.data?.map(entry => entry.path)).toEqual(paths);
+    expect(result.data?.filter(entry => entry.error)).toEqual([
+      { path: paths[1], signedUrl: null, error: '42501' }, { path: paths[6], signedUrl: null, error: '42501' },
+    ]);
+    expect(result.data?.filter(entry => entry.signedUrl === privateUrl).map(entry => entry.path)).toEqual([paths[0], paths[3], paths[4], paths[7], paths[8]]);
+    expect(legacy.createSignedUrls.mock.calls.map(call => call[0])).toEqual([[paths[2]], [paths[5]], [paths[9]]]);
+  });
+
+  it('fails closed on a signature lookup timeout without using the previous provider', async () => {
+    const { storage, rpc, fetcher, legacy } = fixture({ 'private.png': reference }, 'working-time-signatures');
+    rpc.mockResolvedValueOnce({ data: null, error: { code: '57014', message: 'statement timeout' } });
+    const result = await storage.createSignedUrls(['private.png'], 3600);
+    expect(result.error?.status).toBe(502);
+    expect(result.error?.message).toContain('statement timeout');
+    expect(result.data).toBeNull();
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(legacy.createSignedUrls).not.toHaveBeenCalled();
+  });
+
+  it('uses four-path signature removal checks and retains mapped or refused originals', async () => {
+    const paths = Array.from({ length: 10 }, (_, index) => `profiles/${user.id}/signature-${index}.png`);
+    const mapping = { [paths[0]]: reference, [paths[1]]: new Error('retired'), [paths[3]]: reference,
+      [paths[4]]: reference, [paths[6]]: new Error('retired'), [paths[7]]: reference, [paths[8]]: reference };
+    const { storage, rpc, legacy, fetcher } = fixture(mapping, 'working-time-signatures');
+    expect((await storage.remove(paths)).error).toBeNull();
+    expect(rpc.mock.calls.map(call => call[1].target_paths.length)).toEqual([4, 4, 2]);
+    expect(legacy.remove).toHaveBeenCalledWith([paths[2], paths[5], paths[9]]);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it('uploads privately and waits for independent server verification', async () => {
     const { storage, legacy, fetcher } = fixture();
     const file = new File([contents], 'Certificat.pdf', { type: 'application/pdf' });
     expect((await storage.upload('new.pdf', file, { metadata: { person_id: 12 } })).error).toBeNull();
     expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({ operation: 'prepare', fileName: 'Certificat.pdf', bytes: contents.length, sha256: reference.sha256, context: { person_id: 12 } });
-    expect(fetcher.mock.calls[1][1]).toMatchObject({ method: 'PUT', credentials: 'omit', headers: { 'Content-Type': 'application/pdf' } });
+    expect(fetcher.mock.calls[1][1]).toMatchObject({ method: 'PUT', credentials: 'omit', redirect: 'error', headers: { 'Content-Type': 'application/pdf' } });
     expect(JSON.parse(fetcher.mock.calls[2][1].body)).toMatchObject({ operation: 'complete' });
     expect(legacy.upload).not.toHaveBeenCalled();
   });
 
+  it('accepts the installed SDK presigned PUT and keeps its private GET separate', async () => {
+    vi.stubEnv('VERCEL_BLOB_API_URL', '');
+    vi.stubEnv('NEXT_PUBLIC_VERCEL_BLOB_API_URL', '');
+    const validUntil = Date.now() + 60000;
+    const scope = { storeId: 'store_test', pathname: uploadPath, operations: ['get', 'put'], validUntil,
+      maximumSizeInBytes: contents.length, allowedContentTypes: ['application/pdf'] };
+    const delegation = { clientSigningToken: 'synthetic-local-signing-key',
+      delegationToken: `${Buffer.from(JSON.stringify(scope)).toString('base64url')}.synthetic-signature` };
+    const put = await presignUrl(delegation, { operation: 'put', pathname: uploadPath, access: 'private', validUntil,
+      addRandomSuffix: false, allowOverwrite: false });
+    const get = await presignUrl(delegation, { operation: 'get', pathname: uploadPath, access: 'private', validUntil });
+    const putUrl = new URL(put.presignedUrl);
+    expect(putUrl.origin).toBe('https://vercel.com');
+    expect(putUrl.pathname).toBe('/api/blob/');
+    expect(putUrl.searchParams.getAll('pathname')).toEqual([uploadPath]);
+    expect(new URL(get.presignedUrl).hostname).toBe('test.private.blob.vercel-storage.com');
+    const { storage, fetcher } = fixture({ 'current.pdf': reference });
+    fetcher.mockResolvedValueOnce(Response.json({ ...uploadPreparation, uploadUrl: put.presignedUrl }));
+    expect((await storage.upload('new.pdf', new File([contents], 'Certificat.pdf', { type: 'application/pdf' }))).error).toBeNull();
+    expect(fetcher).toHaveBeenNthCalledWith(2, put.presignedUrl, expect.objectContaining({ method: 'PUT', redirect: 'error' }));
+    fetcher.mockClear().mockResolvedValueOnce(Response.json({ ...uploadPreparation, uploadUrl: get.presignedUrl }));
+    expect((await storage.upload('new.pdf', new File([contents], 'Certificat.pdf', { type: 'application/pdf' }))).error?.message).toContain('destination');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    fetcher.mockClear().mockResolvedValueOnce(Response.json({ document: reference, signedUrl: put.presignedUrl }));
+    expect((await storage.download('current.pdf')).error?.message).toContain('lien Vercel');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['blob.vercel-storage.com', 'blob-api.vercel-storage.com', 'test.blob.vercel-storage.com', 'test.blob-api.vercel-storage.com'])(
+    'preserves the reserved upload on historical provider %s', async host => {
+      const { storage, fetcher } = fixture();
+      const url = `https://${host}/?pathname=${encodeURIComponent(uploadPath)}&signature=scoped`;
+      fetcher.mockResolvedValueOnce(Response.json({ ...uploadPreparation, uploadUrl: url }));
+      expect((await storage.upload('new.pdf', new File([contents], 'Certificat.pdf', { type: 'application/pdf' }))).error).toBeNull();
+      expect(fetcher).toHaveBeenNthCalledWith(2, url, expect.objectContaining({ method: 'PUT', credentials: 'omit', redirect: 'error' }));
+    },
+  );
+
+  it.each([
+    `https://vercel.com.evil.example/api/blob/?pathname=${uploadPath}`,
+    `https://evil-vercel.com/api/blob/?pathname=${uploadPath}`,
+    `https://vercel.com/api/blob.evil/?pathname=${uploadPath}`,
+    `https://vercel.com/api/blob?pathname=${uploadPath}`,
+    `https://vercel.com/api/blob/other?pathname=${uploadPath}`,
+    `https://blob.vercel-storage.com.evil.example/?pathname=${uploadPath}`,
+    `https://blob.vercel-storage.com/other?pathname=${uploadPath}`,
+    `https://test.private.blob.vercel-storage.com/${uploadPath}?signature=scoped`,
+    `https://vercel.com:443/api/blob/?pathname=${uploadPath}`,
+    `https://vercel.com:8443/api/blob/?pathname=${uploadPath}`,
+    `https://user:pass@vercel.com/api/blob/?pathname=${uploadPath}`,
+    `http://vercel.com/api/blob/?pathname=${uploadPath}`,
+    `https://vercel.com/api/blob/?pathname=documents/uploads/30000000-0000-4000-8000-000000000001`,
+    `https://vercel.com/api/blob/?pathname=${uploadPath}&pathname=${uploadPath}`,
+    `https://vercel.com/api/blob/?pathname=${uploadPath}#fragment`,
+  ])('rejects an unexpected upload destination before sending bytes: %s', async uploadUrl => {
+    const { storage, fetcher, legacy } = fixture();
+    fetcher.mockResolvedValueOnce(Response.json({ ...uploadPreparation, uploadUrl }));
+    expect((await storage.upload('new.pdf', new File([contents], 'Certificat.pdf', { type: 'application/pdf' }))).error?.message).toContain('destination');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(legacy.upload).not.toHaveBeenCalled();
+  });
+
+  it.each([{ uploadId: 'invalid' }, { pathname: 'documents/uploads/30000000-0000-4000-8000-000000000001' }, { pathname: null }])(
+    'rejects a mismatched upload reservation before sending bytes: %j', async change => {
+      const { storage, fetcher } = fixture();
+      fetcher.mockResolvedValueOnce(Response.json({ ...uploadPreparation, ...change }));
+      expect((await storage.upload('new.pdf', new File([contents], 'Certificat.pdf', { type: 'application/pdf' }))).error?.message).toContain('destination');
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it.each([400, 409, 412])('revalidates a previous PUT after provider refusal %s without overwriting it', async status => {
     const { storage, fetcher } = fixture();
-    fetcher.mockResolvedValueOnce(Response.json({ uploadId: '20000000-0000-4000-8000-000000000001', uploadUrl: 'https://blob.vercel-storage.com/?pathname=reserved' }))
+    fetcher.mockResolvedValueOnce(Response.json(uploadPreparation))
       .mockResolvedValueOnce(new Response(null, { status }));
     expect((await storage.upload('new.pdf', new File([contents], 'Certificat.pdf', { type: 'application/pdf' }))).error).toBeNull();
     expect(fetcher).toHaveBeenCalledTimes(3);
@@ -165,7 +279,7 @@ describe('private Blob documents', () => {
 
   it('rejects unverified uploaded contents', async () => {
     const { storage, fetcher } = fixture();
-    fetcher.mockResolvedValueOnce(Response.json({ uploadId: 'id', uploadUrl: 'https://blob.vercel-storage.com/?pathname=reserved' }))
+    fetcher.mockResolvedValueOnce(Response.json(uploadPreparation))
       .mockResolvedValueOnce(new Response(null, { status: 200 }))
       .mockResolvedValueOnce(Response.json({ document: { ...reference, sha256: 'b'.repeat(64) } }));
     expect((await storage.upload('new.pdf', new File([contents], 'Certificat.pdf', { type: 'application/pdf' }))).error?.message).toContain('ne correspond pas');

@@ -74,7 +74,7 @@ function setup() {
     throw new Error('Unexpected fixture RPC: ' + name);
   });
   const deps: Dependencies = {
-    getEnv: vi.fn((name: string) => name === 'BLOB_STORE_ID' ? 'fixture-store-id' : undefined),
+    getEnv: vi.fn((name: string) => name === 'BLOB_STORE_ID' ? 'store_fixture' : undefined),
     backend: vi.fn(() => ({ user, rpc })),
     register: vi.fn<Dependencies['register']>().mockResolvedValue(DOCUMENT),
     sign: vi.fn<Dependencies['sign']>().mockResolvedValue(TOKEN),
@@ -198,6 +198,42 @@ describe('private document Blob gateway', () => {
     expect(deps.read).not.toHaveBeenCalled();
   });
 
+  it('authorizes 28 signature paths in seven sequential groups and preserves order and denial', async () => {
+    const { handler, rpc, deps, user } = setup();
+    const paths = Array.from({ length: 28 }, (_, index) => `1/7/fixture-${index}.png`);
+    rpc.mockImplementation(async (_name, args) => (args.target_paths as string[]).map(path => ({ path,
+      document: path === paths[5] || path === paths[10] ? null : DOCUMENT,
+      error: path === paths[5] ? '42501' : null,
+    })));
+    const result = await handler(request({ operation: 'urls', bucket: 'working-time-signatures', paths }));
+    expect(result.status).toBe(200);
+    expect(user).toHaveBeenCalledOnce();
+    expect(rpc).toHaveBeenCalledTimes(7);
+    for (let index = 0; index < 7; index++) {
+      expect(rpc).toHaveBeenNthCalledWith(index + 1, 'document_blob_lookup_batch', {
+        target_bucket: 'working-time-signatures', target_paths: paths.slice(index * 4, index * 4 + 4),
+      });
+    }
+    const body = await result.json();
+    expect(body.entries.map((entry: { path: string }) => entry.path)).toEqual(paths);
+    expect(body.entries[5]).toEqual({ path: paths[5], signedUrl: null, error: 'DOCUMENT_ACCESS_DENIED' });
+    expect(body.entries[10]).toEqual({ path: paths[10], signedUrl: null, error: null, unmapped: true });
+    expect(deps.sign).toHaveBeenCalledTimes(26);
+  });
+
+  it('withholds all signature URLs if any authorization group fails', async () => {
+    const { handler, rpc, deps } = setup();
+    const paths = Array.from({ length: 28 }, (_, index) => `1/7/fixture-${index}.png`);
+    rpc.mockImplementationOnce(async (_name, args) => (args.target_paths as string[]).map(path => ({ path, document: DOCUMENT, error: null })))
+      .mockRejectedValueOnce(new Error('private upstream details'));
+    const result = await handler(request({ operation: 'urls', bucket: 'working-time-signatures', paths }));
+    expect(result.status).toBe(502);
+    expect(await result.json()).toEqual({ error: 'DOCUMENT_SERVICE_UNAVAILABLE' });
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(deps.sign).not.toHaveBeenCalled();
+    expect(deps.read).not.toHaveBeenCalled();
+  });
+
   it('delegates a private PUT only to the server-created upload, with no overwrite', async () => {
     const { handler, rpc, deps } = setup();
     const context = { vesselId: 7 };
@@ -275,6 +311,38 @@ describe('private document Blob gateway', () => {
     expect(deps.register).not.toHaveBeenCalled();
   });
 
+  it('canonicalizes the provider host casing while preserving the reserved pathname', async () => {
+    const { handler, deps } = setup();
+    const provider = downloaded();
+    provider.blob.url = `https://FiXtUrE.private.blob.vercel-storage.com/${PATHNAME}`;
+    vi.mocked(deps.read).mockResolvedValue(provider);
+    const result = await handler(request(complete));
+    expect(result.status).toBe(200);
+    expect(deps.register).toHaveBeenCalledWith(expect.objectContaining({
+      blob_url: `https://fixture.private.blob.vercel-storage.com/${PATHNAME}`, blob_pathname: PATHNAME,
+    }));
+  });
+
+  it.each([
+    `http://fixture.private.blob.vercel-storage.com/${PATHNAME}`,
+    `https://other.private.blob.vercel-storage.com/${PATHNAME}`,
+    `https://fixture.public.blob.vercel-storage.com/${PATHNAME}`,
+    `https://fixture.private.blob.vercel-storage.com/another/path`,
+    `https://user:password@fixture.private.blob.vercel-storage.com/${PATHNAME}`,
+    `https://fixture.private.blob.vercel-storage.com:444/${PATHNAME}`,
+    `https://fixture.private.blob.vercel-storage.com/${PATHNAME}?cache=0`,
+    `https://fixture.private.blob.vercel-storage.com/${PATHNAME}#private`,
+  ])('refuses an untrusted provider URL before registration (%s)', async (url) => {
+    const { handler, deps } = setup();
+    const provider = downloaded();
+    provider.blob.url = url;
+    vi.mocked(deps.read).mockResolvedValue(provider);
+    const result = await handler(request(complete));
+    expect(result.status).toBe(409);
+    expect(await result.json()).toEqual({ error: 'DOCUMENT_UPLOAD_MISMATCH' });
+    expect(deps.register).not.toHaveBeenCalled();
+  });
+
   it.each([{ etag: '"replaced"' }, { size: CONTENT.byteLength + 1 }, { contentType: 'text/plain' }])('refuses changed Blob metadata after reading the stream (%j)', async (changed) => {
     const { handler, deps } = setup();
     vi.mocked(deps.metadata).mockResolvedValue({ ...metadata(), ...changed });
@@ -310,12 +378,12 @@ describe('document gateway Supabase adapters', () => {
     vi.stubEnv('SUPABASE_PUBLISHABLE_KEY', 'fixture-publishable-key');
     vi.stubEnv('SUPABASE_SECRET_KEY', 'fixture-verifier-service-key');
     vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', undefined);
-    vi.stubEnv('BLOB_STORE_ID', 'fixture-store-id');
+    vi.stubEnv('BLOB_STORE_ID', 'store_fixture');
   });
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
   function adapters() {
-    const authenticate = vi.fn().mockResolvedValue(Response.json({ id: USER }));
+    const authenticate = vi.fn().mockImplementation(async () => Response.json({ id: USER }));
     vi.stubGlobal('fetch', authenticate);
     const callerRpc = vi.fn().mockResolvedValue({ data: SCOPE, error: null });
     const serviceRpc = vi.fn().mockResolvedValue({ data: DOCUMENT, error: null });
@@ -416,5 +484,24 @@ describe('document gateway Supabase adapters', () => {
     expect(await result.json()).toEqual({ error: 'DOCUMENT_ACCESS_DENIED' });
     expect(serviceRpc).not.toHaveBeenCalled();
     expect(providers.createClient).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs only a sanitized registration status and code while withholding private diagnostics', async () => {
+    const { serviceRpc } = adapters();
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const privateDetails = 'private-filename.pdf private-jwt private-server-key';
+    serviceRpc.mockResolvedValueOnce({ data: null, status: 401,
+      error: { code: 'PGRST301', message: privateDetails, details: privateDetails, hint: privateDetails } });
+    const first = await api.fetch(request(complete));
+    expect(first.status).toBe(409);
+    expect(await first.json()).toEqual({ error: 'DOCUMENT_STATE_INVALID' });
+    serviceRpc.mockResolvedValueOnce({ data: null, status: 500,
+      error: { code: privateDetails, message: privateDetails, details: privateDetails } });
+    const second = await api.fetch(request(complete));
+    expect(second.status).toBe(409);
+    expect(await second.json()).toEqual({ error: 'DOCUMENT_STATE_INVALID' });
+    expect(log).toHaveBeenNthCalledWith(1, 'DOCUMENT_REGISTRATION_RPC_FAILED', { status: 401, code: 'PGRST301' });
+    expect(log).toHaveBeenNthCalledWith(2, 'DOCUMENT_REGISTRATION_RPC_FAILED', { status: 500, code: 'UNSPECIFIED' });
+    expect(JSON.stringify(log.mock.calls)).not.toContain('private-');
   });
 });

@@ -65,6 +65,24 @@ function signedUrl(data: Json): string {
   if (url.protocol !== 'https:' || !/^[a-z0-9-]+\.private\.blob\.vercel-storage\.com$/.test(url.hostname)) throw new Error('Le lien Vercel est invalide.');
   return data.signedUrl;
 }
+function uploadDestination(data: Json): string {
+  const invalid = () => new Error('La destination du document est invalide.');
+  if (typeof data.uploadUrl !== 'string' || typeof data.uploadId !== 'string'
+    || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(data.uploadId)
+    || /[\\\u0000-\u0020\u007f]/.test(data.uploadUrl)) throw invalid();
+  const expectedPath = `documents/uploads/${data.uploadId}`;
+  if (data.pathname !== expectedPath) throw invalid();
+  const url = new URL(data.uploadUrl);
+  const authority = /^https:\/\/([^/?#]+)\//.exec(data.uploadUrl)?.[1];
+  if (url.protocol !== 'https:' || url.username || url.password || url.port || url.hash
+    || authority?.toLowerCase() !== url.hostname) throw invalid();
+  // SDK 2.8.1 signs PUTs against the provider API, whereas GETs use a private store URL.
+  const provider = url.hostname === 'vercel.com' && url.pathname === '/api/blob/';
+  const legacy = /^(?:[a-z0-9-]+\.)?blob(?:-api)?\.vercel-storage\.com$/.test(url.hostname) && url.pathname === '/';
+  const paths = url.searchParams.getAll('pathname');
+  if ((!provider && !legacy) || paths.length !== 1 || paths[0] !== expectedPath) throw invalid();
+  return data.uploadUrl;
+}
 function inferredMime(name: string): string {
   const extension = name.split('.').pop()?.toLowerCase();
   const mimes: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
@@ -77,6 +95,8 @@ function inferredMime(name: string): string {
 /** Shared HTTPS readers and direct, verified browser uploads for every document module. */
 export function documentBlobStorage(client: SupabaseClient, bucket: string, legacy: BucketApi): BucketApi {
   if (!BUCKETS.has(bucket)) return legacy;
+  // Signature policies are costlier; each RPC must fit authenticated PostgREST's timeout.
+  const lookupBatchSize = bucket === 'working-time-signatures' ? 4 : 200;
   let throwErrors = false;
   const operation = async <T>(perform: () => Promise<Result<T>>): Promise<Result<T>> => {
     try { const result = await perform(); if (result.error && throwErrors) throw result.error; return result; }
@@ -107,8 +127,8 @@ export function documentBlobStorage(client: SupabaseClient, bucket: string, lega
   };
   const createSignedUrls = (paths: string[], expiresIn: number, options?: BatchOptions) => operation(async () => {
     const entries: { path: string; signedUrl: string | null; error: string | null }[] = [];
-    for (let offset = 0; offset < paths.length; offset += 200) {
-      const batch = paths.slice(offset, offset + 200);
+    for (let offset = 0; offset < paths.length; offset += lookupBatchSize) {
+      const batch = paths.slice(offset, offset + lookupBatchSize);
       const lookup = await client.rpc('document_blob_lookup_batch', { target_bucket: bucket, target_paths: batch });
       if (lookup.error) throw lookup.error;
       if (!Array.isArray(lookup.data) || lookup.data.length !== batch.length) throw new Error('La liste des documents Vercel est invalide.');
@@ -165,9 +185,7 @@ export function documentBlobStorage(client: SupabaseClient, bucket: string, lega
     const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())), byte => byte.toString(16).padStart(2, '0')).join('');
     const prepared = await api(client, { operation: 'prepare', bucket, path, fileName, mimeType, bytes: blob.size, sha256, context: options?.metadata || {} });
     if (typeof prepared.uploadUrl !== 'string' || typeof prepared.uploadId !== 'string') throw new Error('L’envoi du document n’a pas pu être préparé.');
-    const uploadUrl = new URL(prepared.uploadUrl);
-    if (uploadUrl.protocol !== 'https:' || !/^(?:[a-z0-9-]+\.)?blob(?:-api)?\.vercel-storage\.com$/.test(uploadUrl.hostname)) throw new Error('La destination du document est invalide.');
-    const sent = await fetch(prepared.uploadUrl, { method: 'PUT', headers: { 'Content-Type': mimeType }, body: blob, credentials: 'omit' });
+    const sent = await fetch(uploadDestination(prepared), { method: 'PUT', headers: { 'Content-Type': mimeType }, body: blob, credentials: 'omit', redirect: 'error' });
     // A previous PUT may have succeeded before a connection interruption. The
     // verifier still checks every byte; the existing object is never overwritten.
     if (!sent.ok && ![400, 409, 412].includes(sent.status)) throw new Error('L’envoi du document Vercel a échoué. Relancez l’envoi.');
@@ -178,8 +196,8 @@ export function documentBlobStorage(client: SupabaseClient, bucket: string, lega
   });
   const remove = (paths: string[]) => operation<RemovedFiles>(async () => {
     const nativePaths: string[] = [];
-    for (let offset = 0; offset < paths.length; offset += 200) {
-      const batch = paths.slice(offset, offset + 200);
+    for (let offset = 0; offset < paths.length; offset += lookupBatchSize) {
+      const batch = paths.slice(offset, offset + lookupBatchSize);
       const result = await client.rpc('document_blob_lookup_batch', { target_bucket: bucket, target_paths: batch });
       if (result.error) throw result.error;
       if (!Array.isArray(result.data) || result.data.length !== batch.length) throw new Error('La liste des documents Vercel est invalide.');
