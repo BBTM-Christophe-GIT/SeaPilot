@@ -36,7 +36,7 @@ describe('Google Drive source links', () => {
   });
 
   it('opens and downloads the current Drive source instead of its Supabase backup', async () => {
-    const client = { storage: { from: vi.fn() } };
+    const client = { rpc: vi.fn().mockResolvedValue({ data: null, error: null }), storage: { from: vi.fn() } };
     const record = { googleDriveFileId: id, googleDrivePath: 'test.docx', storageBucket: 'procedure-documents',
       storagePath: 'sources/old.docx' } as ProcedureRecord;
     expect(await getProcedureFileUrl(client as never, record, 'open')).toBe(buildGoogleDriveDesktopUri('test.docx'));

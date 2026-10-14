@@ -4295,7 +4295,7 @@ button:disabled {
   padding: 0 28px 18px 169px;
 }
 
-.purchase-attachments a {
+.purchase-attachments :is(a, button) {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -4306,11 +4306,14 @@ button:disabled {
   color: #14548b;
   text-decoration: none;
   background: #fbfdff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.purchase-attachments a span { min-width: 0; }
-.purchase-attachments a strong { display: block; overflow: hidden; font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
-.purchase-attachments a small { color: #71809a; font-size: 0.6rem; font-weight: 700; }
+.purchase-attachments :is(a, button) span { min-width: 0; }
+.purchase-attachments :is(a, button) strong { display: block; overflow: hidden; font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
+.purchase-attachments :is(a, button) small { color: #71809a; font-size: 0.6rem; font-weight: 700; }
 .purchase-attachments p { margin: 0; color: #71809a; font-size: 0.75rem; }
 
 .purchase-activity {

@@ -147,6 +147,8 @@ export interface PurchaseRequestAttachment {
   fileSizeBytes: number | null;
   sourceKind: 'sharepoint' | 'seapilot';
   downloadUrl: string;
+  storageBucket: string;
+  storagePath: string;
   createdAt: string;
   isImage: boolean;
 }
@@ -316,13 +318,8 @@ function mapEventRows(rows: PurchaseEventRow[]): Map<number, PurchaseRequestEven
   return eventsByRequest;
 }
 
-async function mapAttachmentRows(client: SupabaseClient, rows: PurchaseAttachmentRow[]): Promise<Map<number, PurchaseRequestAttachment[]>> {
-  const mapped = await Promise.all(rows.map(async (row) => {
-    let downloadUrl = nullableText(row.file_url);
-    if (!downloadUrl && row.storage_bucket && row.storage_path) {
-      const { data } = await client.storage.from(row.storage_bucket).createSignedUrl(row.storage_path, 60 * 60);
-      downloadUrl = data?.signedUrl || '';
-    }
+async function mapAttachmentRows(rows: PurchaseAttachmentRow[]): Promise<Map<number, PurchaseRequestAttachment[]>> {
+  const mapped = rows.map((row) => {
     const contentType = nullableText(row.content_type);
     return {
       purchaseRequestId: row.purchase_request_id,
@@ -332,12 +329,14 @@ async function mapAttachmentRows(client: SupabaseClient, rows: PurchaseAttachmen
         contentType,
         fileSizeBytes: row.file_size_bytes,
         sourceKind: row.source_kind === 'sharepoint' ? 'sharepoint' as const : 'seapilot' as const,
-        downloadUrl,
+        downloadUrl: nullableText(row.file_url),
+        storageBucket: nullableText(row.storage_bucket),
+        storagePath: nullableText(row.storage_path),
         createdAt: row.created_at,
         isImage: contentType.startsWith('image/') || /\.(heic|jpe?g|png|webp)$/i.test(row.title),
       },
     };
-  }));
+  });
 
   const attachmentsByRequest = new Map<number, PurchaseRequestAttachment[]>();
   mapped.forEach(({ purchaseRequestId, attachment }) => {
@@ -347,6 +346,18 @@ async function mapAttachmentRows(client: SupabaseClient, rows: PurchaseAttachmen
     attachmentsByRequest.set(purchaseRequestId, attachments);
   });
   return attachmentsByRequest;
+}
+
+/** Sign at the user's click: migrated gateway links are deliberately short-lived. */
+export async function createPurchaseRequestAttachmentUrl(client: SupabaseClient, attachment: PurchaseRequestAttachment): Promise<string> {
+  if (attachment.storageBucket && attachment.storagePath) {
+    const { data, error } = await client.storage.from(attachment.storageBucket).createSignedUrl(attachment.storagePath, 120);
+    if (error) throw error;
+    if (!data?.signedUrl) throw new Error('Cette pièce jointe est indisponible.');
+    return data.signedUrl;
+  }
+  if (attachment.downloadUrl) return attachment.downloadUrl;
+  throw new Error('Cette pièce jointe ne possède aucun fichier accessible.');
 }
 
 export function mapPurchaseRequestRows(
@@ -443,7 +454,7 @@ export async function fetchPurchaseRequests(client: SupabaseClient, vesselIds?: 
     if (eventsResult.error) throw eventsResult.error;
     const attachments = ((attachmentsResult.data || []) as unknown as PurchaseAttachmentRow[]).filter((row) => row.purchase_request_id !== null && parents.has(row.purchase_request_id));
     const events = ((eventsResult.data || []) as unknown as PurchaseEventRow[]).filter((row) => parents.has(row.purchase_request_id));
-    return mapPurchaseRequestRows(rows, await mapAttachmentRows(client, attachments), mapEventRows(events));
+    return mapPurchaseRequestRows(rows, await mapAttachmentRows(attachments), mapEventRows(events));
   }
 
   const [requestsResult, attachmentsResult, eventsResult] = await Promise.all([
@@ -458,7 +469,7 @@ export async function fetchPurchaseRequests(client: SupabaseClient, vesselIds?: 
   if (eventsResult.error) throw eventsResult.error;
 
   const [attachmentsByRequest, eventsByRequest] = await Promise.all([
-    mapAttachmentRows(client, (attachmentsResult.data || []) as unknown as PurchaseAttachmentRow[]),
+    mapAttachmentRows((attachmentsResult.data || []) as unknown as PurchaseAttachmentRow[]),
     Promise.resolve(mapEventRows((eventsResult.data || []) as unknown as PurchaseEventRow[])),
   ]);
   return mapPurchaseRequestRows(
@@ -534,7 +545,7 @@ async function uploadPurchaseAttachments(
   const { data, error } = await client.from('purchase_request_attachments')
     .insert(uploads).select(PURCHASE_ATTACHMENT_SELECT);
   if (error) throw error;
-  const mapped = await mapAttachmentRows(client, (data || []) as unknown as PurchaseAttachmentRow[]);
+  const mapped = await mapAttachmentRows((data || []) as unknown as PurchaseAttachmentRow[]);
   return mapped.get(requestId) || [];
 }
 

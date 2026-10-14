@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { blobBase64, connectLocalDrive, localDriveRequest, supportsLocalDriveVersion } from '../documents/localDriveLauncher';
+import { hasDocumentDriveFile } from '../documents/documentDriveStorage';
 
 interface DriveReceipt { path: string; bytes: number; sha256: string; base64?: string }
 interface DriveFile { path: string; bytes: number; sha256: string; mime_type: string; drive_file_id?: string | null }
@@ -58,11 +59,15 @@ export function projectDriveStorage(client: SupabaseClient, bucket: string) {
       } catch (error) { return { error: error instanceof Error ? error : new Error((error as { message?: string })?.message || 'Classement Google Drive impossible.') }; }
     },
     async download(path: string) {
+      // Migrated documents use the same authorized gateway as the browser's
+      // other libraries, before consulting a historical desktop receipt.
+      if (await hasDocumentDriveFile(client, bucket, path)) return client.storage.from(bucket).download(path);
       const file = await lookup(path);
       if (!file) return client.storage.from(bucket).download(path);
       return { data: await read(file), error: null };
     },
     async createSignedUrl(path: string, seconds: number) {
+      if (await hasDocumentDriveFile(client, bucket, path)) return client.storage.from(bucket).createSignedUrl(path, seconds);
       const file = await lookup(path);
       if (!file) return bucket === 'sharepoint' ? { data: { signedUrl: path }, error: null } : client.storage.from(bucket).createSignedUrl(path, seconds);
       if (file.drive_file_id && /^[a-zA-Z0-9_-]+$/.test(file.drive_file_id)) return { data: { signedUrl: `https://drive.google.com/file/d/${file.drive_file_id}/view` }, error: null };

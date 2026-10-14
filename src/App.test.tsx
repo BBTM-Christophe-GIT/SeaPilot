@@ -7,7 +7,9 @@ import { APP_MODULES } from './features/permissions/moduleAccess';
 
 const supabaseMock = vi.hoisted(() => ({
   from: vi.fn(),
-  rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
+  rpc: vi.fn().mockImplementation((name: string) => Promise.resolve({
+    data: name === 'document_drive_lookup' ? null : [], error: null,
+  })),
 }));
 
 const dprQueriesMock = vi.hoisted(() => ({

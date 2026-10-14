@@ -119,6 +119,7 @@ function createClient(requests: unknown[] = [baseRequest, urgentRequest], option
   pendingResult?: Promise<{ data: unknown[]; error: null }>;
   scopeVesselIds?: number[];
   scopeError?: { code: string; message: string };
+  attachments?: unknown[];
 } = {}) {
   const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
   const scopeRpc = vi.fn().mockResolvedValue({ data: options.scopeVesselIds || [1, 2, 3], error: options.scopeError || null });
@@ -127,9 +128,8 @@ function createClient(requests: unknown[] = [baseRequest, urgentRequest], option
     storage: { from: vi.fn() },
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'purchase_requests') return orderedResult(requests, options.pendingResult);
-      if (table === 'purchase_request_attachments' || table === 'purchase_request_events') {
-        return orderedResult([]);
-      }
+      if (table === 'purchase_request_attachments') return orderedResult(options.attachments || []);
+      if (table === 'purchase_request_events') return orderedResult([]);
       if (table === 'vessels') {
         return orderedResult([{ id: 1, name: 'GOURY' }, { id: 2, name: 'LE ROZEL' }, { id: 3, name: 'NAVIRE CANONIQUE' }]);
       }
@@ -140,6 +140,75 @@ function createClient(requests: unknown[] = [baseRequest, urgentRequest], option
 }
 
 describe('PurchaseRequestsPage', () => {
+  it.each([
+    'https://example.supabase.co/functions/v1/document-drive?ticket=fresh',
+    'https://example.supabase.co/storage/v1/object/sign/purchase-request-attachments/95/proof.pdf?token=fresh',
+  ])('opens a fresh attachment URL at click time after the list has been idle: %s', async (freshUrl) => {
+    const staleUrl = 'https://example.supabase.co/functions/v1/document-drive?ticket=expired';
+    const { client } = createClient([baseRequest], { attachments: [{ id: 18, purchase_request_id: 95, title: 'Attestation achat.pdf',
+      content_type: 'application/pdf', file_size_bytes: 500, source_kind: 'seapilot', file_url: staleUrl,
+      storage_bucket: 'purchase-request-attachments', storage_path: '95/proof.pdf', created_at: '2026-10-14T08:00:00Z' }] });
+    let resolve!: (response: { data: { signedUrl: string }; error: null }) => void;
+    const createSignedUrl = vi.fn().mockReturnValue(new Promise((done) => { resolve = done; }));
+    client.storage.from.mockReturnValue({ createSignedUrl });
+    const tab = { opener: window, location: { replace: vi.fn() }, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+    const now = vi.spyOn(Date, 'now');
+    try {
+      render(<PurchaseRequestsPage client={client as never} roles={['admin']} />, '/purchase-requests?requestId=95');
+      const button = await screen.findByRole('button', { name: /Attestation achat\.pdf/ });
+      expect(createSignedUrl).not.toHaveBeenCalled();
+      expect(screen.queryByRole('link', { name: /Attestation achat\.pdf/ })).not.toBeInTheDocument();
+      now.mockReturnValue(Date.now() + 180_000);
+      fireEvent.click(button);
+      expect(open).toHaveBeenCalledWith('about:blank', '_blank');
+      expect(tab.opener).toBeNull();
+      expect(createSignedUrl).toHaveBeenCalledWith('95/proof.pdf', 120);
+      expect(tab.location.replace).not.toHaveBeenCalled();
+      await act(async () => { resolve({ data: { signedUrl: freshUrl }, error: null }); });
+      expect(tab.location.replace).toHaveBeenCalledWith(freshUrl);
+      expect(tab.location.replace).not.toHaveBeenCalledWith(staleUrl);
+      expect(tab.close).not.toHaveBeenCalled();
+    } finally { open.mockRestore(); now.mockRestore(); }
+  });
+
+  it('closes the pending attachment tab on an access refusal without navigating to its retained link', async () => {
+    const { client } = createClient([baseRequest], { attachments: [{ id: 18, purchase_request_id: 95, title: 'Attestation refusée.pdf',
+      content_type: 'application/pdf', source_kind: 'seapilot', file_url: 'https://old.example/proof.pdf',
+      storage_bucket: 'purchase-request-attachments', storage_path: '95/proof.pdf' }] });
+    client.storage.from.mockReturnValue({ createSignedUrl: vi.fn().mockResolvedValue({ data: null, error: new Error('Document inaccessible pour ce profil.') }) });
+    const tab = { opener: window, location: { replace: vi.fn() }, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+    try {
+      render(<PurchaseRequestsPage client={client as never} roles={['admin']} />, '/purchase-requests?requestId=95');
+      fireEvent.click(await screen.findByRole('button', { name: /Attestation refusée\.pdf/ }));
+      await screen.findByText('Document inaccessible pour ce profil.');
+      expect(tab.close).toHaveBeenCalled();
+      expect(tab.location.replace).not.toHaveBeenCalled();
+    } finally { open.mockRestore(); }
+  });
+
+  it('reports a blocked attachment popup before obtaining a file URL', async () => {
+    const { client } = createClient([baseRequest], { attachments: [{ id: 18, purchase_request_id: 95, title: 'Attestation achat.pdf',
+      source_kind: 'seapilot', storage_bucket: 'purchase-request-attachments', storage_path: '95/proof.pdf' }] });
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    try {
+      render(<PurchaseRequestsPage client={client as never} roles={['admin']} />, '/purchase-requests?requestId=95');
+      fireEvent.click(await screen.findByRole('button', { name: /Attestation achat\.pdf/ }));
+      expect(await screen.findByText('Autorisez les fenêtres contextuelles de SeaPilot pour ouvrir cette pièce jointe.')).toBeInTheDocument();
+      expect(client.storage.from).not.toHaveBeenCalled();
+    } finally { open.mockRestore(); }
+  });
+
+  it('keeps an external SharePoint attachment as a native link', async () => {
+    const url = 'https://bbtm668.sharepoint.com/proof.pdf';
+    const { client } = createClient([baseRequest], { attachments: [{ id: 18, purchase_request_id: 95, title: 'Annexe externe.pdf',
+      source_kind: 'sharepoint', file_url: url }] });
+    render(<PurchaseRequestsPage client={client as never} roles={['admin']} />, '/purchase-requests?requestId=95');
+    expect(await screen.findByRole('link', { name: /Annexe externe\.pdf/ })).toHaveAttribute('href', url);
+    expect(client.storage.from).not.toHaveBeenCalled();
+  });
+
   it('keeps a newly created request in À traiter even when a desired delivery date is present', () => {
     expect(derivePurchaseRequestStage({
       expectedDeliveryOn: '2026-09-12',

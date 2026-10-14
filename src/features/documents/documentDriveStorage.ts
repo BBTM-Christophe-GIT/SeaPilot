@@ -96,6 +96,11 @@ async function lookupDocumentDriveFile(client: SupabaseClient, bucket: string, p
   return data as DriveReference;
 }
 
+/** Check the real user's access before choosing a module-specific desktop reader. */
+export async function hasDocumentDriveFile(client: SupabaseClient, bucket?: string | null, path?: string | null): Promise<boolean> {
+  return Boolean(bucket && path && await lookupDocumentDriveFile(client, bucket, path));
+}
+
 async function storageError(failure: unknown): Promise<StorageApiError> {
   if (failure instanceof StorageApiError) return failure;
   const detail = failure && typeof failure === 'object' ? failure as { message?: string; code?: string; context?: unknown } : {};
