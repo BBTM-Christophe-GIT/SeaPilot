@@ -4,9 +4,13 @@ Le module **Registres → Registre médical** est disponible à `/modules/medica
 
 La publication **3.73.0**, build **2026-10-14.001**, comprend la note de mise à jour `3.73.0-medical-logbook`, demandée le 14 octobre 2026 et visible pour Administrateur et Capitaine. Elle suit les comportements habituels **Ok**, **Lire plus tard** et de consultation depuis la version de SeaPilot.
 
+La version **3.73.1**, build **2026-10-14.002**, affiche directement une ligne prête à compléter, avec **Ajouter une ligne** sous les cellules. La note publiée et les états de lecture existants sont conservés.
+
 ## Utilisation
 
-Sélectionner un navire. **Nouvelle entrée** ajoute une ligne de saisie dans le tableau ; **Modifier** rend la ligne choisie éditable. Renseigner la date et l’heure locales, le patient et le compte rendu. **Enregistrer** applique la signature personnelle de l’utilisateur connecté ; **Annuler** abandonne la saisie. Les filtres et le changement de navire sont bloqués pendant l’édition pour conserver le contexte.
+Sélectionner un navire. Une ligne vierge apparaît directement dans le tableau. Renseigner la date et l’heure locales, le patient et le compte rendu, puis cliquer sur **Ajouter une ligne**, sous cette ligne : l’entrée est enregistrée avec la signature personnelle de l’utilisateur connecté et une nouvelle ligne vierge est proposée. **Effacer** remet le brouillon à zéro. La présence d’une ligne vierge ne produit aucune écriture. Une validation ou un échec d’enregistrement conserve les champs pour les corriger ou réessayer.
+
+**Modifier** rend une entrée enregistrée éditable sur place ; **Enregistrer l’entrée** applique la correction et **Annuler** l’abandonne. Une ligne vierge laisse disponibles les filtres, les exports et le changement de navire. Ces actions sont bloquées dès qu’un brouillon est modifié ou qu’une correction est en cours, afin de conserver le contexte de la saisie.
 
 Le nom du secouriste et sa signature proviennent automatiquement du profil connecté, sans saisie d’une autre identité. La signature doit être enregistrée dans **RH / Brevets → sa fiche → Signature**. Le lien proposé ouvre directement `/modules/humanResources?person=<id>&section=signature`. Sans profil actif associé ou sans signature valide, l’enregistrement reste impossible ; les données saisies restent disponibles pour réessayer.
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { useOutletContext } from 'react-router-dom';
-import { Archive, Download, FileText, HeartPulse, History, Pencil, Plus, RefreshCw, RotateCcw, Search } from 'lucide-react';
+import { Archive, Download, FileText, HeartPulse, History, Pencil, RefreshCw, RotateCcw, Search } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import { supabase } from '../../lib/supabaseClient';
@@ -65,9 +65,15 @@ export function MedicalLogbookPage({ client, roles, previewMode }: { client?: Su
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [actionError, setActionError] = useState('');
+  const [entryError, setEntryError] = useState('');
   const [notice, setNotice] = useState('');
+  const [creationEpoch, setCreationEpoch] = useState(0);
+  const [creationFocus, setCreationFocus] = useState(false);
+  const [creationState, setCreationState] = useState<{ accessScope: string; vesselId: number; dirty: boolean } | null>(null);
+  const creationDirty = creationState?.accessScope === accessScope && creationState.vesselId === vesselId && creationState.dirty;
   const [editorState, setEditor] = useState<{ entry?: MedicalEntry; draft: MedicalDraft; vesselId: number; accessScope: string } | null>(null);
   const editor = editorState?.accessScope === accessScope ? editorState : null;
+  const interactionBlocked = busy || !!editor || !!creationDirty;
   const [archiveState, setArchiveTarget] = useState<{ entry: MedicalEntry; archived: boolean; accessScope: string } | null>(null);
   const archiveTarget = archiveState?.accessScope === accessScope ? archiveState : null;
   const [historyState, setHistory] = useState<{ entry: MedicalEntry; rows: MedicalHistory[]; loading: boolean; error: string; accessScope: string } | null>(null);
@@ -86,6 +92,7 @@ export function MedicalLogbookPage({ client, roles, previewMode }: { client?: Su
   const mutation = useRef(false);
   const historyRequest = useRef(0);
   const selectedVessel = useRef(vesselId);
+  const rowActionRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
   selectedVessel.current = vesselId;
   const vessel = vessels.find((item) => item.id === vesselId);
   const authorizedVessel = !!vessel;
@@ -166,6 +173,10 @@ export function MedicalLogbookPage({ client, roles, previewMode }: { client?: Su
   useEffect(() => {
     let active = true;
     setEditor(null);
+    setCreationState(null);
+    setCreationFocus(false);
+    setCreationEpoch((value) => value + 1);
+    setEntryError('');
     setArchiveTarget(null);
     setHistory(null);
     historyRequest.current += 1;
@@ -199,7 +210,7 @@ export function MedicalLogbookPage({ client, roles, previewMode }: { client?: Su
   }
 
   function refresh() {
-    if (busy || editor) return;
+    if (interactionBlocked) return;
     setActionError('');
     setFleetReload((value) => value + 1);
     setEntriesReload((value) => value + 1);
@@ -207,30 +218,41 @@ export function MedicalLogbookPage({ client, roles, previewMode }: { client?: Su
   }
 
   function startEntry(entry?: MedicalEntry) {
-    if (!canWrite || !loaded || busy || editor || entry?.archived) return;
+    if (!entry || !canWrite || !loaded || interactionBlocked || entry.archived) return;
     const draft = entry ? { ...entry } : blankMedicalDraft();
     draft.first_aider_name = signer?.signer_name || '';
     setActionError('');
-    if (!entry) { setQuery(''); setYear(''); }
+    setEntryError('');
     setEditor({ entry, draft, vesselId, accessScope });
   }
 
-  async function save(draft: MedicalDraft) {
-    if (!editor || !canWrite || mutation.current || editor.vesselId !== vesselId || signerLoading || !signer?.signature) return;
+  function resetCreation(focus = false) {
+    setCreationState(null);
+    setCreationEpoch((value) => value + 1);
+    setCreationFocus(focus);
+    setEntryError('');
+  }
+
+  async function save(draft: MedicalDraft, previous?: MedicalEntry) {
+    if (!canWrite || !loaded || mutation.current || signerLoading || !signer?.signature
+      || (previous ? !editor || editor.entry?.id !== previous.id || editor.vesselId !== vesselId : !!editor)) return;
     const startedSession = session.current;
     const targetVessel = vesselId;
     mutation.current = true;
     setBusy(true);
-    setActionError('');
+    setEntryError('');
     setNotice('');
     try {
-      const saved = await saveMedicalEntry(db, targetVessel, draft, editor.entry);
+      const saved = await saveMedicalEntry(db, targetVessel, draft, previous);
       if (!stillCurrent(startedSession, targetVessel)) return;
       replaceEntry(saved);
       setEditor(null);
-      setNotice(editor.entry ? 'Correction enregistrée. La version précédente est conservée dans l’historique.' : 'Entrée médicale enregistrée.');
+      resetCreation(!previous);
+      if (!previous) { setQuery(''); setYear(''); }
+      if (previous) window.requestAnimationFrame(() => { if (stillCurrent(startedSession, targetVessel)) rowActionRefs.current.get(saved.id)?.focus({ preventScroll: true }); });
+      setNotice(previous ? 'Correction enregistrée. La version précédente est conservée dans l’historique.' : 'Entrée médicale enregistrée.');
     } catch (cause) {
-      if (stillCurrent(startedSession, targetVessel)) setActionError(messageOf(cause));
+      if (stillCurrent(startedSession, targetVessel)) setEntryError(messageOf(cause));
     } finally {
       if (mounted.current && session.current === startedSession) { mutation.current = false; setBusy(false); }
     }
@@ -296,13 +318,21 @@ export function MedicalLogbookPage({ client, roles, previewMode }: { client?: Su
     }
   }
 
-  const inlineEditor = editor && vessel ? <MedicalInlineEntryRow key={editor.entry?.id || 'new'} initial={editor.draft} editing={!!editor.entry} busy={busy} error={actionError}
-    signer={signer} signerLoading={signerLoading} signerError={signerError}
-    signerUrl={signer?.signature ? signatureUrls.get(signer.signature.signature_id) : undefined}
-    signatureLoading={signaturesLoading}
-    signatureUnavailable={signer?.signature ? signatureFailures.has(signer.signature.signature_id) : false}
-    onReloadSigner={() => { signatureCache.current.clear(); setSignerReload((value) => value + 1); }}
-    onSave={(draft) => void save(draft)} onCancel={() => { if (!busy) { setEditor(null); setActionError(''); } }} /> : null;
+  const signatureProps = {
+    signer, signerLoading, signerError,
+    signerUrl: signer?.signature ? signatureUrls.get(signer.signature.signature_id) : undefined,
+    signatureLoading: signaturesLoading,
+    signatureUnavailable: signer?.signature ? signatureFailures.has(signer.signature.signature_id) : false,
+    onReloadSigner: () => { signatureCache.current.clear(); setSignerReload((value) => value + 1); },
+  };
+  const readyRow = loaded && canWrite ? <MedicalInlineEntryRow key={`${accessScope}:${vesselId}:new-${creationEpoch}`} initial={blankMedicalDraft()} editing={false} busy={busy} locked={!!editor} error={editor ? '' : entryError}
+    {...signatureProps} autoFocus={creationFocus && !editor}
+    onDirtyChange={(dirty) => setCreationState({ accessScope, vesselId, dirty })}
+    onSave={(draft) => void save(draft)} onCancel={() => { if (!busy && !editor) resetCreation(); }} /> : null;
+  const inlineEditor = editor && loaded && canWrite ? <MedicalInlineEntryRow key={`${accessScope}:${vesselId}:${editor.entry?.id}`} initial={editor.draft} editing busy={busy} error={entryError}
+    {...signatureProps}
+    autoFocus
+    onSave={(draft) => void save(draft, editor.entry)} onCancel={() => { if (!busy) { setEditor(null); setActionError(''); resetCreation(); } }} /> : null;
 
   if (!allowed) return <section className="medical-logbook-page"><header className="sp-module-header"><h1>Registre médical</h1></header><div className="sp-panel medical-empty"><HeartPulse aria-hidden="true" size={28} /><h2>Accès réservé</h2><p>Le registre médical est réservé aux administrateurs et aux capitaines de leurs navires autorisés.</p></div></section>;
 
@@ -310,45 +340,44 @@ export function MedicalLogbookPage({ client, roles, previewMode }: { client?: Su
     <header className="sp-module-header"><div><h1>Registre médical</h1><p>Journal des soins et interventions à bord, avec la signature du compte connecté.</p></div></header>
     <ModuleRibbon ariaLabel="Commandes du registre médical" singleRow>
       <ModuleRibbonGroup label="Registre">
-        {canWrite ? <ModuleRibbonCommand icon={<Plus size={22} aria-hidden="true" />} label="Nouvelle entrée" disabled={!loaded || busy || !!editor} onClick={() => startEntry()} /> : null}
-        <ModuleRibbonCommand icon={<RefreshCw size={22} aria-hidden="true" />} label="Actualiser" disabled={fleetLoading || entriesLoading || busy || !!editor} onClick={refresh} />
+        <ModuleRibbonCommand icon={<RefreshCw size={22} aria-hidden="true" />} label="Actualiser" disabled={fleetLoading || entriesLoading || interactionBlocked} onClick={refresh} />
       </ModuleRibbonGroup>
       <ModuleRibbonGroup label="Documents">
-        <ModuleRibbonCommand icon={<Download size={22} aria-hidden="true" />} label="Exporter PDF" disabled={!loaded || !filtered.length || busy || !!editor} onClick={() => void exportPdf(false)} />
-        <ModuleRibbonCommand icon={<FileText size={22} aria-hidden="true" />} label="Registre vierge PDF" disabled={!vessel || fleetLoading || busy || !!editor} onClick={() => void exportPdf(true)} />
+        <ModuleRibbonCommand icon={<Download size={22} aria-hidden="true" />} label="Exporter PDF" disabled={!loaded || !filtered.length || interactionBlocked} onClick={() => void exportPdf(false)} />
+        <ModuleRibbonCommand icon={<FileText size={22} aria-hidden="true" />} label="Registre vierge PDF" disabled={!vessel || fleetLoading || interactionBlocked} onClick={() => void exportPdf(true)} />
       </ModuleRibbonGroup>
     </ModuleRibbon>
     {preview ? <p className="medical-preview-note">Démonstration : les exemples et modifications restent dans cette prévisualisation.</p> : null}
-    <LiftingVesselFilter vessels={vessels} value={vesselId} disabled={busy || !!editor || !!history || !!archiveTarget} includeYard={false} contextLabel="Registre médical du navire" onChange={setVesselId} />
+    <LiftingVesselFilter vessels={vessels} value={vesselId} disabled={interactionBlocked || !!history || !!archiveTarget} includeYard={false} contextLabel="Registre médical du navire" onChange={setVesselId} />
     {loadError || (actionError && !editor && !archiveTarget) ? <div className="medical-feedback"><p className="medical-error" role="alert">{loadError || actionError}</p><button className="sp-button sp-button--secondary" disabled={busy || fleetLoading || entriesLoading} type="button" onClick={refresh}>Réessayer</button></div> : null}
     {notice ? <p className="medical-notice" role="status">{notice}</p> : null}
     <section className="sp-panel medical-register" aria-label="Registre des soins">
       <header className="medical-register-heading"><div><h2>{vessel ? vessel.name : 'Registre médical'}</h2><p>{vessel ? 'Journal des soins et premiers secours à bord' : 'Sélectionnez un navire pour consulter son registre.'}</p></div><span>{filtered.length} entrée{filtered.length > 1 ? 's' : ''}{includeArchived ? ' · archives incluses' : ''}</span></header>
       <div className="sp-filters medical-filters">
-        <label className="medical-search"><span><Search size={16} aria-hidden="true" />Rechercher</span><input type="search" placeholder="Patient, soin, secouriste…" value={query} onChange={(event) => setQuery(event.target.value)} disabled={!loaded || busy || !!editor} /></label>
-        <label>Année<select value={year} onChange={(event) => setYear(event.target.value)} disabled={!loaded || busy || !!editor}><option value="">Toutes les années</option>{years.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-        <label className="medical-archive-filter"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} disabled={!loaded || busy || !!editor} />Inclure les archives</label>
+        <label className="medical-search"><span><Search size={16} aria-hidden="true" />Rechercher</span><input type="search" placeholder="Patient, soin, secouriste…" value={query} onChange={(event) => setQuery(event.target.value)} disabled={!loaded || interactionBlocked} /></label>
+        <label>Année<select value={year} onChange={(event) => setYear(event.target.value)} disabled={!loaded || interactionBlocked}><option value="">Toutes les années</option>{years.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label className="medical-archive-filter"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} disabled={!loaded || interactionBlocked} />Inclure les archives</label>
       </div>
       {fleetLoading || entriesLoading ? <p className="medical-empty" role="status">Chargement du registre médical…</p>
         : !vessels.length && !loadError ? <div className="medical-empty"><h3>Aucun navire accessible</h3><p>Aucun navire n’est autorisé pour votre compte.</p></div>
           : loadError ? <p className="medical-empty">Le registre n’a pas pu être chargé.</p>
             : <>
-              {!filtered.length && !editor ? <div className="medical-empty"><HeartPulse size={28} aria-hidden="true" /><h3>{query || year ? 'Aucune entrée ne correspond aux filtres.' : 'Aucune entrée médicale'}</h3><p>{query || year ? 'Modifiez la recherche ou l’année pour retrouver une entrée.' : 'Utilisez « Nouvelle entrée » pour renseigner les soins directement dans le tableau.'}</p></div> : null}
+              {!filtered.length && !editor && (query || year || !canWrite) ? <div className="medical-empty"><HeartPulse size={28} aria-hidden="true" /><h3>{query || year ? 'Aucune entrée ne correspond aux filtres.' : 'Aucune entrée médicale'}</h3><p>{query || year ? 'Modifiez la recherche ou l’année pour retrouver une entrée.' : 'Aucune entrée enregistrée pour ce navire.'}</p></div> : null}
               <div className="medical-table-scroll" role="region" aria-label="Tableau du registre médical" tabIndex={0}>
                 <table className="medical-table">
                   <caption className="medical-sr-only">Soins enregistrés pour {vessel?.name}. Les corrections précédentes restent dans l’historique.</caption>
                   <thead><tr><th scope="col">Date</th><th scope="col">Heure</th><th scope="col">Nom du patient</th><th scope="col">Blessure / Maladie</th><th scope="col">Traitement / Médicaments administrés</th><th scope="col">Secouriste</th><th scope="col">Signature</th><th scope="col">Actions</th></tr></thead>
                   <tbody>
-                    {editor && !editor.entry ? inlineEditor : null}
+                    {readyRow}
                     {filtered.map((entry) => editor?.entry?.id === entry.id ? inlineEditor : <tr key={entry.id} className={entry.archived ? 'is-archived' : ''}>
                     <td>{formatMedicalDate(entry.occurred_on)}</td><td>{entry.occurred_time.slice(0, 5)}</td>
                     <td><strong>{entry.patient_name}</strong>{entry.archived ? <span className="medical-archived-label">Archivée</span> : null}</td>
                     <td className="medical-narrative">{entry.injury_illness}</td><td className="medical-narrative">{entry.treatment_medicines}</td><td>{entry.first_aider_name}</td>
                     <td><MedicalSignaturePreview signature={entry.signature_snapshot} url={signatureUrls.get(entry.signature_snapshot.signature_id)} loading={signaturesLoading} unavailable={signatureFailures.has(entry.signature_snapshot.signature_id)} /></td>
                     <td><div className="medical-row-actions">
-                      {canWrite && !entry.archived ? <button className="sp-button sp-button--secondary" disabled={busy || !!editor} type="button" aria-label={`Modifier l’entrée de ${entry.patient_name}`} onClick={() => startEntry(entry)}><Pencil size={15} aria-hidden="true" />Modifier</button> : null}
-                      <button className="sp-button sp-button--secondary" disabled={busy || !!editor} type="button" aria-label={`Historique de l’entrée de ${entry.patient_name}`} onClick={() => void openHistory(entry)}><History size={15} aria-hidden="true" />Historique</button>
-                      {canWrite ? <button className="sp-button sp-button--secondary" disabled={busy || !!editor} type="button" aria-label={`${entry.archived ? 'Restaurer' : 'Archiver'} l’entrée de ${entry.patient_name}`} onClick={() => { setActionError(''); setArchiveTarget({ entry, archived: !entry.archived, accessScope }); }}>{entry.archived ? <RotateCcw size={15} aria-hidden="true" /> : <Archive size={15} aria-hidden="true" />}{entry.archived ? 'Restaurer' : 'Archiver'}</button> : null}
+                      {canWrite && !entry.archived ? <button ref={(node) => { if (node) rowActionRefs.current.set(entry.id, node); else rowActionRefs.current.delete(entry.id); }} className="sp-button sp-button--secondary" disabled={interactionBlocked} type="button" aria-label={`Modifier l’entrée de ${entry.patient_name}`} onClick={() => startEntry(entry)}><Pencil size={15} aria-hidden="true" />Modifier</button> : null}
+                      <button className="sp-button sp-button--secondary" disabled={interactionBlocked} type="button" aria-label={`Historique de l’entrée de ${entry.patient_name}`} onClick={() => void openHistory(entry)}><History size={15} aria-hidden="true" />Historique</button>
+                      {canWrite ? <button className="sp-button sp-button--secondary" disabled={interactionBlocked} type="button" aria-label={`${entry.archived ? 'Restaurer' : 'Archiver'} l’entrée de ${entry.patient_name}`} onClick={() => { setActionError(''); setArchiveTarget({ entry, archived: !entry.archived, accessScope }); }}>{entry.archived ? <RotateCcw size={15} aria-hidden="true" /> : <Archive size={15} aria-hidden="true" />}{entry.archived ? 'Restaurer' : 'Archiver'}</button> : null}
                     </div></td>
                   </tr>)}</tbody>
                 </table>
