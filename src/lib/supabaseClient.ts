@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { loadAppEnv, type EnvSource } from './env';
 import { capturePasswordCallback, preparePasswordUpdateIntent, recordPasswordUpdateAuthEvent } from './passwordUpdateIntent';
+import { installDocumentDriveStorage } from '../features/documents/documentDriveStorage';
 
 let cachedClient: SupabaseClient | null = null;
 
@@ -14,6 +15,7 @@ export function createSupabaseBrowserClient(source?: EnvSource): SupabaseClient 
       detectSessionInUrl: true,
     },
   });
+  installDocumentDriveStorage(client);
   preparePasswordUpdateIntent(client, passwordCallback);
   // Listen immediately: an invitation's SIGNED_IN can precede React mounting.
   client.auth.onAuthStateChange((event, session) => recordPasswordUpdateAuthEvent(client, event, session));

@@ -41,6 +41,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
+    "@vercel/oidc": "4.0.0",
     "clsx": "^2.1.1",
     "dompurify": "3.4.13",
     "fast-xml-parser": "^5.10.1",
