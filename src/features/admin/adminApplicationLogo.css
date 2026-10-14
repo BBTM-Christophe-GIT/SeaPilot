@@ -1,0 +1,177 @@
+.admin-application-logo {
+  gap: var(--sp-space-6);
+  padding: var(--sp-space-6);
+  border-radius: var(--sp-panel-radius);
+  color: var(--sp-text);
+  font-family: var(--sp-font);
+}
+
+.admin-application-logo p:not(.form-error):not(.admin-success) {
+  margin: var(--sp-space-2) 0 0;
+  color: var(--sp-muted);
+  font-size: var(--sp-subtitle-size);
+  line-height: 1.6;
+}
+
+.admin-application-logo .admin-application-logo-demo {
+  margin: 0;
+  padding: var(--sp-space-3) var(--sp-space-4);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-primary-soft);
+  color: var(--sp-text);
+}
+
+.admin-application-logo-previews {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-space-5);
+}
+
+.admin-application-logo-previews figure {
+  min-width: 0;
+  margin: 0;
+}
+
+.admin-application-logo-previews figcaption {
+  margin-bottom: var(--sp-space-2);
+  color: var(--sp-heading);
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.admin-application-logo-image {
+  display: grid;
+  place-items: center;
+  height: 200px;
+  padding: var(--sp-space-4);
+  overflow: hidden;
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-shell);
+}
+
+.admin-application-logo-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+}
+
+.admin-application-logo-filename {
+  overflow-wrap: anywhere;
+}
+
+.admin-application-logo fieldset {
+  display: grid;
+  gap: var(--sp-space-4);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.admin-application-logo-file {
+  display: grid;
+  gap: var(--sp-space-2);
+  min-width: 0;
+}
+
+.admin-application-logo-file label {
+  font-weight: 650;
+}
+
+.admin-application-logo-file input {
+  width: 100%;
+  max-width: 640px;
+  min-width: 0;
+  min-height: var(--sp-control-height);
+  padding: var(--sp-space-2);
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-control-radius);
+  color: var(--sp-text);
+  background: var(--sp-surface);
+  font: inherit;
+}
+
+.admin-application-logo-file input::file-selector-button {
+  margin-right: var(--sp-space-3);
+  padding: var(--sp-space-2) var(--sp-space-3);
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-control-radius);
+  color: var(--sp-primary);
+  background: var(--sp-surface);
+  font: inherit;
+  cursor: pointer;
+}
+
+.admin-application-logo-file p {
+  margin: 0;
+}
+
+.admin-application-logo-actions {
+  display: flex;
+  gap: var(--sp-space-3);
+  min-width: 0;
+  overflow-x: auto;
+  padding: var(--sp-space-1);
+  margin: calc(-1 * var(--sp-space-1));
+}
+
+.admin-application-logo-actions button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.admin-application-logo .sp-button {
+  min-height: var(--sp-control-height);
+  border-radius: var(--sp-control-radius);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.admin-application-logo .sp-button--primary {
+  border-color: var(--sp-primary);
+  color: var(--sp-surface);
+  background: var(--sp-primary);
+}
+
+.admin-application-logo .sp-button--primary:hover:not(:disabled) {
+  border-color: var(--sp-primary-hover);
+  background: var(--sp-primary-hover);
+}
+
+.admin-application-logo .sp-button--secondary:hover:not(:disabled) {
+  background: var(--sp-primary-soft);
+}
+
+.admin-application-logo :is(button, input):disabled,
+.admin-application-logo fieldset:disabled input::file-selector-button {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.admin-application-logo :is(button, input):focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 3px;
+}
+
+.admin-application-logo-feedback {
+  display: grid;
+  gap: var(--sp-space-3);
+}
+
+.admin-application-logo-feedback p {
+  margin: 0;
+}
+
+.admin-application-logo-feedback button {
+  justify-self: start;
+}
+
+@media (max-width: 720px) {
+  .admin-application-logo { padding: var(--sp-space-4); }
+  .admin-application-logo-previews { grid-template-columns: minmax(0, 1fr); }
+  .admin-application-logo-image { height: 180px; }
+}

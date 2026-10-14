@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -114,6 +114,6 @@ describe('LoginPage', () => {
     await user.type(await screen.findByLabelText('Email'), 'mobile@example.test');
     await user.type(screen.getByLabelText('Mot de passe'), 'valid-test-password');
     await user.click(screen.getByRole('button', { name: 'Se connecter' }));
-    expect(screen.getByTestId('route')).toHaveTextContent(destination);
+    await waitFor(() => expect(screen.getByTestId('route')).toHaveTextContent(destination));
   });
 });

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { AuthProvider } from './features/auth/AuthProvider';
+import { ApplicationLogoProvider } from './features/branding/ApplicationLogoProvider';
 import './styles/index.css';
 import './styles/design-tokens.css';
 import './styles/module-ribbon.css';
@@ -21,9 +22,11 @@ window.addEventListener('vite:preloadError', (event) => {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
+      <ApplicationLogoProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </ApplicationLogoProvider>
     </BrowserRouter>
   </StrictMode>,
 );

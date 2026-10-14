@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { CalendarDays, ClipboardCheck, Database, FolderSync, MailPlus, PanelLeft, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react';
+import { CalendarDays, ClipboardCheck, Database, FolderSync, Image, MailPlus, PanelLeft, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
@@ -34,6 +34,7 @@ import {
 import './adminSections.css';
 import { AdminCrewPreferences } from './AdminCrewPreferences';
 import { AdminFleetOrder } from './AdminFleetOrder';
+import { AdminApplicationLogo } from './AdminApplicationLogo';
 
 const ADMIN_SECTIONS = [
   { key: 'users', label: 'Utilisateurs', icon: Users },
@@ -42,6 +43,7 @@ const ADMIN_SECTIONS = [
   { key: 'action-plan', label: 'Plan d’action', icon: ClipboardCheck },
   { key: 'crew', label: 'Équipages', icon: Users },
   { key: 'planning', label: 'Planning', icon: CalendarDays },
+  { key: 'branding', label: 'Logo de l’application', icon: Image },
   { key: 'imports', label: 'Imports et migration', icon: Database },
 ] as const;
 
@@ -87,6 +89,7 @@ function updateNavigationPermissions(
 export function AdminPage({ client = supabase, previewMode = false }: AdminPageProps) {
   const [searchParams] = useSearchParams();
   const activeSection = ADMIN_SECTIONS.find((section) => section.key === searchParams.get('section'))?.key ?? 'users';
+  const needsDirectoryData = activeSection !== 'branding';
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [people, setPeople] = useState<AdminCollaboratorRow[]>([]);
   const [population, setPopulation] = useState<AdminPopulation>('current');
@@ -104,6 +107,11 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!needsDirectoryData) {
+      setIsLoading(false);
+      return;
+    }
+
     let isMounted = true;
 
     setIsLoading(true);
@@ -141,7 +149,7 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
     return () => {
       isMounted = false;
     };
-  }, [client]);
+  }, [client, needsDirectoryData]);
 
   async function handleRoleChange(userId: string, role: RoleKey, checked: boolean) {
     const operationKey = `${userId}:${role}`;
@@ -290,7 +298,7 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
 
       {activeSection === 'crew' ? <AdminCrewPreferences client={client} /> : null}
 
-      {isLoading && activeSection !== 'documents' ? <div className="admin-state" role="status">Chargement des paramètres...</div> : null}
+      {isLoading && activeSection !== 'documents' && activeSection !== 'branding' ? <div className="admin-state" role="status">Chargement des paramètres...</div> : null}
 
       {activeSection === 'users' && !isLoading && directoryReady ? (
         <>
@@ -472,6 +480,7 @@ export function AdminPage({ client = supabase, previewMode = false }: AdminPageP
 
       {activeSection === 'documents' ? <AdminGoogleDriveSetup client={client} previewMode={previewMode} /> : null}
       {activeSection === 'planning' ? <AdminFleetOrder client={client} /> : null}
+      {activeSection === 'branding' ? <AdminApplicationLogo client={client} previewMode={previewMode} /> : null}
 
       <section className="admin-panel admin-action-plan-settings" hidden={activeSection !== 'action-plan' || isLoading} aria-label="Réglages du Plan d'action">
         <div className="admin-header admin-section-header">
