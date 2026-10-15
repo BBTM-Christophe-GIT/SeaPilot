@@ -50,4 +50,3 @@ reset session authorization;
 select ok(not has_function_privilege('anon','public.working_time_assignment_analysis(bigint,date,date,text,bigint,text,jsonb,bigint[])','execute'),'anonymous callers cannot inspect assignment coverage');
 select * from finish();
 rollback;
-

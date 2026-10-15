@@ -565,5 +565,3 @@ revoke all on function public.working_time_phases_recommendation(bigint,jsonb,te
 grant execute on function public.working_time_interval_recommendation(bigint,timestamptz,timestamptz,text,bigint,text,bigint) to authenticated;
 grant execute on function public.working_time_phases_recommendation(bigint,jsonb,text,bigint,text,bigint) to authenticated;
 notify pgrst,'reload schema';
-
-
