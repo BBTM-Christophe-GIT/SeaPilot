@@ -16657,6 +16657,10 @@ button.planning-p12-conflict-card {
   grid-template-columns: minmax(0, 1fr) 312px;
 }
 
+.planning-layout.is-crew-board-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .planning-calendar-scroll {
   max-height: calc(100vh - 284px);
   overflow-x: scroll;
