@@ -22,6 +22,8 @@ La recette distingue les identités Marin, Capitaine, Admin, Armement et Directi
 
 Les transactions SQL de mutation utilisent des profils synthétiques dans une base locale et sont annulées. Les contrôles des comptes réels en production sont des lectures ; aucune journée réelle n’est créée ou signée pour la recette. Les essais navigateur de saisie utilisent un serveur et des données synthétiques, sur ordinateur et en émulation mobile. Ils ne constituent pas des essais sur tous les téléphones physiques.
 
+La suite [du parcours signé](../../supabase/tests/working_time_signed_entry_flow_test.sql) utilise une session `authenticator` puis le rôle `authenticated`, avec des identités et dates de test distinctes. Elle déroule réellement les RPC de brouillon, soumission et approbation avec et sans capitaine affecté au Planning, contrôle les signatures requises et les refus hors périmètre, puis vérifie le verrouillage d’une journée validée. Elle ne s’appuie pas sur le raccourci de maintenance du rôle `postgres` pour ces actions.
+
 Une signature de profil absente est un prérequis à compléter par son titulaire, et ne doit jamais être contournée ou fabriquée par l’audit. La consultation et la sauvegarde d’un brouillon restent distinctes de la signature et de l’approbation.
 
 Vérifications reproductibles :
@@ -32,3 +34,5 @@ corepack pnpm build
 ```
 
 La suite du module comporte **173 tests**. Les nouvelles régressions couvrent la sélection transmise par la grille, sa sauvegarde avant soumission, les contrôles verrouillés pendant une écriture, la capture tactile et les gestes terminés hors de la grille ou annulés.
+
+Les vérifications SQL pertinentes totalisent **126 assertions réussies** : 105 régressions existantes de droits et calcul, plus 21 assertions du parcours signé et des seuils de repos. La nouvelle suite utilise des dates relatives. Les scénarios historiques dépendant du mois ouvert sont rejoués avec des dates actualisées dans des copies privées de recette, pour exercer le calendrier métier effectif.

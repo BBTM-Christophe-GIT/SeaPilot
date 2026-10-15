@@ -403,7 +403,10 @@ describe('WorkingTimeWorkflowPanel', () => {
   });
   it('persists the revised keyboard range when correcting a recorded interval', async () => {
     const user = userEvent.setup();
-    renderPanel(['marin'], workspace('draft'), { ...currentPerson, functionLabel: 'Matelot' });
+    const data = workspace('draft');
+    data.intervals[0].startsAt = new Date('2026-08-03T08:00').toISOString();
+    data.intervals[0].endsAt = new Date('2026-08-03T16:00').toISOString();
+    renderPanel(['marin'], data, { ...currentPerson, functionLabel: 'Matelot' });
     await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
     await screen.findByText(/Affectation Planning appliquée/);
     await user.click(screen.getByRole('gridcell', { name: /08:00, travail enregistré/ }));
