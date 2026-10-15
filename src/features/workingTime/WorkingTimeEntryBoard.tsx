@@ -171,7 +171,7 @@ export function WorkingTimeEntryBoard({
   const [isCalculating, setIsCalculating] = useState(false);
   const [activePendingIndex, setActivePendingIndex] = useState<number | null>(null);
   const [selectedRecordedIntervalId, setSelectedRecordedIntervalId] = useState<number | null>(null);
-  const dragStart = useRef<number | null>(null);
+  const drag = useRef<{ pointerId: number; first: number; last: number; startsAt: string; endsAt: string } | null>(null);
   const dayButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const slotRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
@@ -256,7 +256,22 @@ export function WorkingTimeEntryBoard({
   }), [editingIntervalId, intervals, selectedDay]);
   const selectedRecordedInterval = intervals.find((interval) => interval.id === selectedRecordedIntervalId) || null;
 
-  useEffect(() => { setSelectedRecordedIntervalId(null); }, [selectedDay]);
+  useEffect(() => { setSelectedRecordedIntervalId(null); }, [client, personId, selectedDay]);
+  useEffect(() => {
+    const finish = (event: PointerEvent) => {
+      if (drag.current?.pointerId === event.pointerId) drag.current = null;
+    };
+    const blur = () => { drag.current = null; };
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+    window.addEventListener('blur', blur);
+    return () => {
+      drag.current = null;
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      window.removeEventListener('blur', blur);
+    };
+  }, [client, personId, selectedDay, editingIntervalId, canEdit, isSaving]);
   useEffect(() => {
     dayButtonRefs.current.get(selectedDay)?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
   }, [selectedDay]);
@@ -274,6 +289,23 @@ export function WorkingTimeEntryBoard({
     const to = Math.min(48, Math.max(first, last) + 1);
     onStartsAtChange(slotLocalValue(selectedDay, from));
     onEndsAtChange(slotLocalValue(selectedDay, to));
+  }
+
+  function pointedSlot(event: React.PointerEvent<HTMLButtonElement>, fallback: number): number | null {
+    // Captured touch events keep their original target while the finger moves.
+    if (typeof document.elementFromPoint !== 'function') return fallback;
+    const button = document.elementFromPoint(event.clientX, event.clientY)?.closest('button');
+    const slot = slotRefs.current.findIndex((candidate) => candidate === button);
+    return slot >= 0 ? slot : null;
+  }
+
+  function cancelDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    const current = drag.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    drag.current = null;
+    if (!canEdit || isSaving) return;
+    onStartsAtChange(current.startsAt);
+    onEndsAtChange(current.endsAt);
   }
 
   function commitSlots(first: number, last: number) {
@@ -397,15 +429,32 @@ export function WorkingTimeEntryBoard({
                     key={slot}
                     onKeyDown={(event) => handleSlotKeyDown(event, slot)}
                     onClick={() => { if (recordedInterval) setSelectedRecordedIntervalId(recordedInterval.id); }}
-                    onPointerDown={() => {
+                    onPointerDown={(event) => {
+                      if (!canEdit || isSaving || event.button > 0 || drag.current) return;
                       if (recordedInterval) { setSelectedRecordedIntervalId(recordedInterval.id); return; }
-                      dragStart.current = slot; setActivePendingIndex(null); selectSlots(slot, slot);
+                      drag.current = { pointerId: event.pointerId, first: slot, last: slot, startsAt, endsAt };
+                      event.currentTarget.setPointerCapture?.(event.pointerId);
+                      setActivePendingIndex(null); selectSlots(slot, slot);
                     }}
-                    onPointerEnter={() => { if (dragStart.current !== null) selectSlots(dragStart.current, slot); }}
-                    onPointerUp={() => {
-                      if (dragStart.current !== null) commitSlots(dragStart.current, slot);
-                      dragStart.current = null;
+                    onPointerEnter={(event) => {
+                      if (drag.current && drag.current.pointerId === event.pointerId) {
+                        drag.current.last = slot; selectSlots(drag.current.first, slot);
+                      }
                     }}
+                    onPointerMove={(event) => {
+                      if (!drag.current || drag.current.pointerId !== event.pointerId) return;
+                      const target = pointedSlot(event, slot);
+                      if (target !== null) { drag.current.last = target; selectSlots(drag.current.first, target); }
+                    }}
+                    onPointerUp={(event) => {
+                      const current = drag.current;
+                      if (!current || current.pointerId !== event.pointerId) return;
+                      const target = pointedSlot(event, slot);
+                      drag.current = null;
+                      commitSlots(current.first, target ?? current.last);
+                    }}
+                    onPointerCancel={cancelDrag}
+                    onLostPointerCapture={cancelDrag}
                     ref={(element) => { slotRefs.current[slot] = element; }}
                     role="gridcell"
                     type="button"
@@ -435,7 +484,7 @@ export function WorkingTimeEntryBoard({
               </div>
             ) : null}
           </div>
-          {selectedRecordedInterval ? <div className="working-time-recorded-period-actions" role="group" aria-label="Actions de la plage enregistrée"><span><strong>{formatDateTime(selectedRecordedInterval.startsAt)}</strong> → {formatDateTime(selectedRecordedInterval.endsAt)}</span><div><button onClick={() => { setSelectedRecordedIntervalId(null); onEditInterval(selectedRecordedInterval); }} type="button"><PenLine size={15} />Corriger</button><button onClick={() => { setSelectedRecordedIntervalId(null); onRequestVoid(selectedRecordedInterval); }} type="button"><Trash2 size={15} />Retirer</button><button aria-label="Fermer les actions" onClick={() => setSelectedRecordedIntervalId(null)} type="button">×</button></div></div> : null}
+          {selectedRecordedInterval ? <div className="working-time-recorded-period-actions" role="group" aria-label="Actions de la plage enregistrée"><span><strong>{formatDateTime(selectedRecordedInterval.startsAt)}</strong> → {formatDateTime(selectedRecordedInterval.endsAt)}</span><div><button disabled={!canEdit || isSaving} onClick={() => { setSelectedRecordedIntervalId(null); onEditInterval(selectedRecordedInterval); }} type="button"><PenLine size={15} />Corriger</button><button disabled={!canEdit || isSaving} onClick={() => { setSelectedRecordedIntervalId(null); onRequestVoid(selectedRecordedInterval); }} type="button"><Trash2 size={15} />Retirer</button><button aria-label="Fermer les actions" disabled={isSaving} onClick={() => setSelectedRecordedIntervalId(null)} type="button">×</button></div></div> : null}
         </div>
 
         <div className="working-time-recommendation-panel" aria-live="polite">
@@ -455,7 +504,7 @@ export function WorkingTimeEntryBoard({
         </div>
       </div>
 
-      {!editingIntervalId && pendingPhases.length ? <div className="working-time-pending-phases" aria-label="Périodes à enregistrer">{pendingPhases.map((phase, index) => <div className={activePendingIndex === index ? 'is-active' : ''} key={`${phase.startsAt}-${phase.endsAt}`}><button aria-pressed={activePendingIndex === index} onClick={() => { setActivePendingIndex(index); onStartsAtChange(phase.startsAt); onEndsAtChange(phase.endsAt); }} type="button"><strong>Période {index + 1}</strong> {phase.startsAt.slice(11, 16)}–{phase.endsAt.slice(11, 16)}</button><button aria-label={`Retirer la période ${index + 1}`} onClick={() => removePendingPhase(index)} type="button">×</button></div>)}</div> : null}
+      {!editingIntervalId && pendingPhases.length ? <div className="working-time-pending-phases" aria-label="Périodes à enregistrer">{pendingPhases.map((phase, index) => <div className={activePendingIndex === index ? 'is-active' : ''} key={`${phase.startsAt}-${phase.endsAt}`}><button aria-pressed={activePendingIndex === index} disabled={!canEdit || isSaving} onClick={() => { setActivePendingIndex(index); onStartsAtChange(phase.startsAt); onEndsAtChange(phase.endsAt); }} type="button"><strong>Période {index + 1}</strong> {phase.startsAt.slice(11, 16)}–{phase.endsAt.slice(11, 16)}</button><button aria-label={`Retirer la période ${index + 1}`} disabled={!canEdit || isSaving} onClick={() => removePendingPhase(index)} type="button">×</button></div>)}</div> : null}
 
       {canEdit ? (
         <form className="working-time-interval-form working-time-entry-form" onSubmit={(event) => {
@@ -475,7 +524,7 @@ export function WorkingTimeEntryBoard({
             {!editingIntervalId && showSaveDraft ? <button disabled={isSaving || planningContextLoading || !combinedPhases.length || selectionBlocked} type="submit" value="save-draft"><Save aria-hidden="true" size={16} />Enregistrer le brouillon</button> : null}
             {!editingIntervalId && showSubmitToCaptain ? <button disabled={isSaving || planningContextLoading || submitDisabled || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked} type="submit" value="submit-day"><Send aria-hidden="true" size={16}/>Valider</button> : null}
             {!editingIntervalId && showValidate ? <button disabled={isSaving || validateDisabled || (!combinedPhases.length && !hasRecordedPeriods) || selectionBlocked} type="submit" value="validate-day"><UserCheck aria-hidden="true" size={16}/>Valider la journée</button> : null}
-            {editingIntervalId ? <button onClick={onCancelEdit} type="button">Annuler</button> : null}
+            {editingIntervalId ? <button disabled={isSaving} onClick={onCancelEdit} type="button">Annuler</button> : null}
           </div>
         </form>
       ) : <>

@@ -1,9 +1,9 @@
 import { deferred } from './workingTimeTestHelpers';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchWorkingTimePhasesRecommendation, type WorkingTimePhaseInput } from './workingTimeQueries';
 import { WorkingTimeEntryBoard } from './WorkingTimeEntryBoard';
 import type { WorkingTimeInterval } from './workingTimeModel';
@@ -32,6 +32,13 @@ const recommendation = {
   violationCodes: [],
 };
 const fixtureClient = {} as SupabaseClient;
+const originalElementFromPoint = document.elementFromPoint;
+
+function pointerEvent(type: string, pointerId = 71): MouseEvent {
+  const event = new MouseEvent(type, { bubbles: true, clientX: 120, clientY: 40, button: 0 });
+  Object.defineProperties(event, { pointerId: { value: pointerId }, pointerType: { value: 'touch' }, isPrimary: { value: true } });
+  return event;
+}
 
 function Harness({
   onSubmit = vi.fn(),
@@ -40,6 +47,9 @@ function Harness({
   intervals = [],
   onEditInterval = vi.fn(),
   onRequestVoid = vi.fn(),
+  onCancelEdit = vi.fn(),
+  isSaving = false,
+  editingIntervalId = null,
   planningContextLoading = false,
   planningVesselId = 7,
   approverName = 'Camille CAPITAINE',
@@ -50,6 +60,9 @@ function Harness({
   intervals?: WorkingTimeInterval[];
   onEditInterval?: (interval: WorkingTimeInterval) => void;
   onRequestVoid?: (interval: WorkingTimeInterval) => void;
+  onCancelEdit?: () => void;
+  isSaving?: boolean;
+  editingIntervalId?: number | null;
   planningContextLoading?: boolean;
   planningVesselId?: number | null;
   approverName?: string | null;
@@ -63,11 +76,11 @@ function Harness({
       canEdit
       client={fixtureClient}
       comment=""
-      editingIntervalId={null}
+      editingIntervalId={editingIntervalId}
       endsAt={endsAt}
       intervals={intervals}
-      isSaving={false}
-      onCancelEdit={vi.fn()}
+      isSaving={isSaving}
+      onCancelEdit={onCancelEdit}
       onCommentChange={vi.fn()}
       onEndsAtChange={setEndsAt}
       onEditInterval={onEditInterval}
@@ -93,6 +106,10 @@ describe('WorkingTimeEntryBoard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(fetchWorkingTimePhasesRecommendation).mockResolvedValue(recommendation);
+  });
+  afterEach(() => {
+    if (originalElementFromPoint) document.elementFromPoint = originalElementFromPoint;
+    else Reflect.deleteProperty(document, 'elementFromPoint');
   });
 
   it('shows authoritative quota guidance and all 48 half-hour cells', async () => {
@@ -160,6 +177,51 @@ describe('WorkingTimeEntryBoard', () => {
     fireEvent.pointerUp(cells[19]);
 
     expect(screen.getByText('08:00–10:00')).toBeInTheDocument();
+  });
+  it('uses finger coordinates when captured touch move and release keep targeting the first cell', async () => {
+    const user = userEvent.setup(); const onSubmit = vi.fn();
+    render(<Harness onSubmit={onSubmit} saveDraft />);
+    const cells = screen.getAllByRole('gridcell');
+    const capture = vi.fn(); cells[16].setPointerCapture = capture;
+    document.elementFromPoint = vi.fn().mockReturnValue(cells[23].querySelector('span'));
+    fireEvent(cells[16], pointerEvent('pointerdown'));
+    fireEvent(cells[16], pointerEvent('pointermove', 99));
+    expect(cells[23]).toHaveAttribute('aria-selected', 'false');
+    fireEvent(cells[16], pointerEvent('pointermove'));
+    expect(cells[23]).toHaveAttribute('aria-selected', 'true');
+    fireEvent(cells[16], pointerEvent('pointerup'));
+    expect(capture).toHaveBeenCalledWith(71);
+    expect(screen.getByText('08:00–12:00')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    expect(onSubmit).toHaveBeenCalledWith([{ startsAt: '2026-08-03T08:00', endsAt: '2026-08-03T12:00' }], 'save-draft');
+  });
+  it('ends an outside release so a later unpressed hover cannot extend the selected range', async () => {
+    const user = userEvent.setup(); const onSubmit = vi.fn();
+    render(<Harness onSubmit={onSubmit} saveDraft />);
+    const cells = screen.getAllByRole('gridcell');
+    document.elementFromPoint = vi.fn().mockReturnValue(cells[23]);
+    fireEvent(cells[16], pointerEvent('pointerdown'));
+    fireEvent(cells[16], pointerEvent('pointermove'));
+    fireEvent(window, pointerEvent('pointerup'));
+    fireEvent(cells[31], pointerEvent('pointerover'));
+    expect(cells[23]).toHaveAttribute('aria-selected', 'true');
+    expect(cells[31]).toHaveAttribute('aria-selected', 'false');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    expect(onSubmit).toHaveBeenCalledWith([{ startsAt: '2026-08-03T08:00', endsAt: '2026-08-03T12:00' }], 'save-draft');
+  });
+  it('restores the previous range when a touch gesture is cancelled', () => {
+    render(<Harness />);
+    const cells = screen.getAllByRole('gridcell');
+    document.elementFromPoint = vi.fn().mockReturnValue(cells[35]);
+    fireEvent(cells[32], pointerEvent('pointerdown'));
+    fireEvent(cells[32], pointerEvent('pointermove'));
+    expect(cells[35]).toHaveAttribute('aria-selected', 'true');
+    fireEvent(cells[32], pointerEvent('pointercancel'));
+    expect(cells[16]).toHaveAttribute('aria-selected', 'true');
+    expect(cells[35]).toHaveAttribute('aria-selected', 'false');
+    expect(screen.queryByText('Période 1')).not.toBeInTheDocument();
   });
 
   it('removes manual planning fields and keeps the draft action permission-gated', async () => {
@@ -314,5 +376,54 @@ describe('WorkingTimeEntryBoard', () => {
     await user.click(screen.getByRole('gridcell', { name: /08:00, travail enregistré/ }));
     await user.click(screen.getByRole('button', { name: 'Corriger' }));
     expect(onEditInterval).toHaveBeenCalledWith(interval);
+  });
+  it('locks the pending phases and recorded-period actions until a save settles', async () => {
+    const user = userEvent.setup(); const pending = deferred<void>();
+    const onSubmit = vi.fn(); const onEditInterval = vi.fn(); const onRequestVoid = vi.fn();
+    const interval: WorkingTimeInterval = {
+      id: 88, registerId: 5, companyId: 1, personId: 42, localWorkDate: '2026-08-03',
+      startsAt: '2026-08-03T08:00:00+02:00', endsAt: '2026-08-03T12:00:00+02:00',
+      timezoneName: 'Europe/Paris', utcOffsetMinutes: 120, vesselId: 7, watchGroup: 'Bordée 1',
+      comment: null, authorUserId: 'user', authorPersonId: 42, sourceType: 'manual', sourceReference: null, sourceRecordKey: null,
+    };
+    function SavingHarness() {
+      const [saving, setSaving] = useState(false);
+      return <Harness intervals={[interval]} isSaving={saving} onEditInterval={onEditInterval} onRequestVoid={onRequestVoid} onSubmit={(...args) => {
+        onSubmit(...args); setSaving(true); void pending.promise.then(() => setSaving(false));
+      }} saveDraft />;
+    }
+    render(<SavingHarness />);
+    const cells = screen.getAllByRole('gridcell');
+    fireEvent.pointerDown(cells[32]); fireEvent.pointerUp(cells[33]);
+    await user.click(screen.getByRole('gridcell', { name: /08:00, travail enregistré/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    const period = screen.getByRole('button', { name: /Période 1/ });
+    const remove = screen.getByRole('button', { name: 'Retirer la période 1' });
+    for (const button of [period, remove, screen.getByRole('button', { name: 'Corriger' }), screen.getByRole('button', { name: 'Retirer' }), screen.getByRole('button', { name: 'Fermer les actions' })]) {
+      expect(button).toBeDisabled(); await user.click(button);
+    }
+    expect(screen.getByText('Période 1')).toBeInTheDocument();
+    expect(onEditInterval).not.toHaveBeenCalled(); expect(onRequestVoid).not.toHaveBeenCalled();
+    expect(onSubmit).toHaveBeenCalledOnce();
+    expect(onSubmit).toHaveBeenCalledWith([{ startsAt: '2026-08-03T16:00', endsAt: '2026-08-03T17:00' }], 'save-draft');
+    await act(async () => { pending.resolve(); await pending.promise; });
+    expect(period).toBeEnabled(); expect(remove).toBeEnabled();
+  });
+  it('does not allow cancelling a correction while its save is in flight', async () => {
+    const user = userEvent.setup(); const pending = deferred<void>(); const onCancelEdit = vi.fn();
+    function SavingHarness() {
+      const [saving, setSaving] = useState(false);
+      return <Harness editingIntervalId={88} isSaving={saving} onCancelEdit={onCancelEdit} onSubmit={() => {
+        setSaving(true); void pending.promise.then(() => setSaving(false));
+      }} />;
+    }
+    render(<SavingHarness />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer la correction' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la correction' }));
+    const cancel = screen.getByRole('button', { name: 'Annuler' });
+    expect(cancel).toBeDisabled(); await user.click(cancel); expect(onCancelEdit).not.toHaveBeenCalled();
+    await act(async () => { pending.resolve(); await pending.promise; });
+    expect(cancel).toBeEnabled(); await user.click(cancel); expect(onCancelEdit).toHaveBeenCalledOnce();
   });
 });

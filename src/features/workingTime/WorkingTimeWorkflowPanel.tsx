@@ -703,11 +703,8 @@ export function WorkingTimeWorkflowPanel({
     setIntervalComment('');
   }
 
-  async function persistPendingSelection() {
+  async function persistPendingSelection(phases: WorkingTimePhaseInput[]) {
     if (!selectedRegister) return;
-    const phases = editingIntervalId
-      ? [{ startsAt, endsAt }]
-      : pendingPhases;
     if (!phases.length) return;
     const common = {
       registerId: selectedRegister.id,
@@ -744,8 +741,10 @@ export function WorkingTimeWorkflowPanel({
     setIntervalComment(interval.comment || '');
   }
 
-  function handleEntryAction(intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') {
+  function handleEntryAction(phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') {
     if (!selectedRegister) return;
+    if (!phases.length && (intent === 'save-draft' || intent === 'save-correction')) return;
+    const submittedPhases = phases.map((phase) => ({ ...phase }));
     const successMessage = intent === 'save-correction'
       ? 'La correction a été enregistrée.'
       : intent === 'save-draft'
@@ -758,7 +757,7 @@ export function WorkingTimeWorkflowPanel({
           : 'La journée a été signée et transmise au capitaine de la bordée.'
         : 'La journée a été validée et clôturée. Les autres jours du mois restent ouverts.';
     void runAction(async () => {
-      if (pendingPhases.length || editingIntervalId) await persistPendingSelection();
+      if (submittedPhases.length) await persistPendingSelection(submittedPhases);
       if (actionContextRef.current !== actionContext) return;
       if (intent === 'submit-day') {
         await submitWorkingTimeDay(client, {
@@ -924,7 +923,7 @@ export function WorkingTimeWorkflowPanel({
                     onRequestVoid={(interval) => { setVoidCandidateId(interval.id); setVoidReason(''); }}
                     onSelectedDayChange={setSelectedDay}
                     onStartsAtChange={setStartsAt}
-                    onSubmit={(_phases, intent) => handleEntryAction(intent)}
+                    onSubmit={handleEntryAction}
                     periodEnd={selectedRegister.periodEnd}
                     periodStart={selectedRegister.periodStart}
                     personId={selectedRegister.personId}
@@ -985,7 +984,7 @@ export function WorkingTimeWorkflowPanel({
                       const canRespond = Boolean(dateApproval?.status === 'submitted'
                         && (canManageApproval(dateApproval)
                           || (hasCaptainRole && dateApproval.approverPersonId === currentPersonId)));
-                      const disabled = !canRespond;
+                      const disabled = !canRespond || isSaving;
                       const update = (field: keyof NonComplianceDraft, value: string) => setDayResponses((current) => ({
                         ...current,
                         [date]: { ...(current[date] || EMPTY_NON_COMPLIANCE), [field]: value },
