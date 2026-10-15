@@ -26,6 +26,7 @@ import { ProjectStyledContractPreview } from './ProjectStyledContractPreview';
 import { buildStyledContract, contractPreviewFields } from './projectStyledContract';
 import {
   buildCommercialReserves,
+  COMMERCIAL_OFFER_COMPANY_DETAILS,
   formatProjectDocumentEmitterName,
   getCommercialConditionsDescription,
   getCommercialConditionsMode,
@@ -357,7 +358,10 @@ function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectCon
     <div className="project-offer-document">
       <header>
         <img alt="BBTM" src="/bbtm-report-logo.png" />
-        <strong>OFFRE COMMERCIALE</strong>
+        <div className="project-offer-title">
+          <strong>OFFRE COMMERCIALE</strong>
+          <address>{COMMERCIAL_OFFER_COMPANY_DETAILS.map((detail) => <span key={detail}>{detail}</span>)}</address>
+        </div>
         <span><b>{`OC-${projectCode.replace(/^P/i, '') || 'BROUILLON'}`}</b><small>{`Émise le ${compactDate(new Date().toISOString())}`}</small></span>
       </header>
       <section className="project-offer-address">
