@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.75.8`, build `2026-10-15.013`, retire le ruban de commandes et le bloc
+de diffusion de la vue Équipages. La carte Planning suit directement le titre,
+sur toute la largeur disponible, avec ses onglets et commandes locales.
+Les commandes de module et de diffusion restent accessibles en vue Flotte.
+Voir [la présentation du Planning Équipages](./planning-crew-full-width.md).
+
 Version `3.75.7`, build `2026-10-15.012`, étend la carte Planning sur toute la
 largeur disponible en vue Équipages lorsque le volet opérationnel est fermé.
 Le volet retrouve sa colonne à son ouverture. Les vues Flotte, Projet, le plein
