@@ -60,6 +60,46 @@ same version to prevent a duplicate pending migration. Private identity and
 row-level verification evidence remain outside the repository.
 The companion authorization migration is recorded as version `20261014160325`.
 
+## Follow-up on 15 October 2026
+
+Production statement statistics still showed multi-phase recommendations averaging
+4,218 ms and phase saves averaging 4,761 ms, with maxima immediately below the
+authenticated API's eight-second timeout. The first optimization still calculated
+an entire single-interval recommendation just to authorize the multi-phase call.
+Both functions also measured all 48 possible extension ends even after the first
+non-compliant end had made every remaining end ineligible.
+
+`20261015073626_working_time_recommendation_single_validation.sql` resolves the
+same access checks and applicable policy through a private helper without
+calculating a second recommendation. The helper is not executable by API roles.
+Both extension searches retain their existing grid and compliance predicates,
+and stop at the first failing end. Restart searches, quotas, locked days,
+signature requirements and approval rules retain their existing behavior.
+
+`20261015073631_optimize_working_time_captain_period_access.sql` also resolves the
+Captain's HR person once per period check and filters matching assignment pairs
+before expanding their overlapping dates. The existing authoritative daily
+Captain and effective work-status functions still decide access. This reduces
+the repeated work performed by register and calculation RLS without adding any
+role, vessel, watch or date permission.
+
+Local verification uses an independently migrated database and real synthetic
+Marin/Capitaine profiles under the `authenticator` session and `authenticated`
+role. The new `working_time_recommendation_history_test.sql` seeds 356 historical
+intervals for each profile and passes 19 assertions, including the actual
+two-phase draft save, with an eight-second statement timeout. It must be launched
+as the local cluster superuser so it can change session authorization after
+seeding historical records; all fixtures and trigger changes are rolled back.
+
+On this fixture, Marin/Capitaine multi-phase reads changed from 1,025/1,262 ms to
+252/190 ms, and the two-phase save changed from 1,602 ms to 780 ms. These are local
+measurements, not production latency guarantees. The existing restart suite
+passes 26 assertions and the permanent Captain assignment suite passes 12. The
+signed-entry API session suite passes 21 assertions, and the working-time query,
+entry-board and workflow-panel frontend suites pass 95 tests. The
+temporary Captain suite retains its 33 passing assertions and its pre-existing
+DPR crew-label expectation failure; every working-time assertion passes.
+
 ## Deployment and rollback
 
 Apply the migration before deploying the branch; no frontend protocol change is

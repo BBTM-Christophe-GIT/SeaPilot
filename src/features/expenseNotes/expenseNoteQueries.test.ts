@@ -59,4 +59,21 @@ describe('issuance and history queries', () => {
     const upload = vi.fn().mockResolvedValue({ error: { message: 'The resource already exists', statusCode: '409' } });
     await expect(submitExpenseNote({ from, storage: { from: () => ({ upload }) } } as never, input, [])).resolves.toEqual(issued);
   });
+  it('resumes the same note and existing PDF after the server issuance check has been repaired', async () => {
+    const missingPdf = { code: 'P0001', message: 'Le PDF doit être enregistré avant émission.' };
+    const insert = vi.fn(() => chain(prepared));
+    const failedIssue = vi.fn(() => chain(null, missingPdf));
+    const issue = vi.fn(() => chain(issued));
+    const from = vi.fn().mockReturnValueOnce(chain(null)).mockReturnValueOnce({ insert })
+      .mockReturnValueOnce({ update: failedIssue }).mockReturnValueOnce(chain(prepared))
+      .mockReturnValueOnce({ update: issue });
+    const upload = vi.fn().mockResolvedValueOnce({ error: null })
+      .mockResolvedValueOnce({ error: { message: 'The resource already exists', statusCode: '409' } });
+    const client = { from, storage: { from: () => ({ upload }) } };
+    await expect(submitExpenseNote(client as never, input, [])).rejects.toEqual(missingPdf);
+    await expect(submitExpenseNote(client as never, input, [])).resolves.toEqual(issued);
+    expect(insert).toHaveBeenCalledTimes(1);
+    expect(upload).toHaveBeenNthCalledWith(2, prepared.pdf_path, expect.any(Blob), expect.anything());
+    expect(issue).toHaveBeenCalledWith({ status: 'issued' });
+  });
 });

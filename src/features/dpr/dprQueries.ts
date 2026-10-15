@@ -158,7 +158,7 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { ownRe
 
   let reportQuery = client
     .from('dpr_reports')
-    .select('id,dpr_number,status,report_date,project_id,unlisted_project_name,vessel_id,validator_person_id,validator_name_snapshot,issuer_name_snapshot,description,qhse_note,created_by,created_at,updated_at,can_manage:dpr_report_can_manage')
+    .select('id,dpr_number,status,report_date,project_id,unlisted_project_name,vessel_id,validator_person_id,validator_name_snapshot,issuer_name_snapshot,description,qhse_note,created_by,created_at,updated_at')
     .is('deleted_at', null);
   if (options.ownReportsOnly) reportQuery = reportQuery.eq('created_by', profile.id);
   const reportPromise = reportQuery
@@ -166,18 +166,20 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { ownRe
     .order('dpr_number', { ascending: false, nullsFirst: false })
     .limit(1000);
 
-  const [reportResult, projectResult, reportProjectResult, vesselResult, exerciseResult, reasonResult, entryContext] = await Promise.all([
+  const [reportResult, projectResult, reportProjectResult, manageableResult, vesselResult, exerciseResult, reasonResult, entryContext] = await Promise.all([
     reportPromise,
     client.from('projects').select('id,project_code,title,archived_at').order('project_code'),
     client.rpc('dpr_report_projects'),
+    client.rpc('dpr_manageable_report_ids'),
     client.from('vessels').select('id,name,length_overall').order('name'),
     client.from('emergency_exercise_types').select('key,label').eq('active', true).order('display_order'),
     client.from('port_call_reason_types').select('key,label').eq('active', true).order('display_order'),
     fetchDprEntryContext(client, new Date().toISOString().slice(0, 10)),
   ]);
-  const firstError = [reportResult, projectResult, reportProjectResult, vesselResult, exerciseResult, reasonResult].find((result) => result.error)?.error;
+  const firstError = [reportResult, projectResult, reportProjectResult, manageableResult, vesselResult, exerciseResult, reasonResult].find((result) => result.error)?.error;
   if (firstError) throw firstError;
   const reportIds = (reportResult.data || []).map((row) => Number(row.id));
+  const manageableIds = new Set((Array.isArray(manageableResult.data) ? manageableResult.data : []).map(Number));
   const emptyResult = { data: [], error: null };
   const [metricResult, incidentResult, fileResult] = reportIds.length ? await Promise.all([
     client.from('dpr_daily_metrics').select('dpr_id,fuel_consumed_liters').in('dpr_id', reportIds),
@@ -218,7 +220,7 @@ export async function fetchDprDashboard(client: SupabaseClient, options: { ownRe
       vesselId, vesselName: vesselId ? vesselMap.get(vesselId)?.name || '' : '',
       validatorPersonId: numberOrNull(row.validator_person_id), validatorName: text(row.validator_name_snapshot), issuerName: text(row.issuer_name_snapshot),
       description: text(row.description), qhseNote: text(row.qhse_note), createdBy: row.created_by ? text(row.created_by) : null,
-      canManage: row.can_manage === true,
+      canManage: manageableIds.has(Number(row.id)),
       createdAt: text(row.created_at), updatedAt: text(row.updated_at), fuelConsumedLiters: metrics.get(Number(row.id)) || 0,
       incidentCount: incidents.get(Number(row.id)) || 0, files: filesByReport.get(Number(row.id)) || [],
     } satisfies DprReportRecord;

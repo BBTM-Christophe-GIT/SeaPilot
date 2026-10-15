@@ -82,7 +82,7 @@ describe('DPR Supabase commands', () => {
       select: vi.fn(() => table === 'dpr_reports' ? reports : table === 'profiles' ? profiles : table === 'people' ? people : empty),
     }));
     const rpc = vi.fn().mockImplementation((name: string) => Promise.resolve({
-      data: name === 'dpr_report_projects' ? [] : { issuerPersonId: 18, issuerName: 'Arthur RICHER', people: [] }, error: null,
+      data: name === 'dpr_manageable_report_ids' ? [42] : name === 'dpr_report_projects' ? [] : { issuerPersonId: 18, issuerName: 'Arthur RICHER', people: [] }, error: null,
     }));
     const client = {
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'sailor-user', email: 'arthur@example.invalid' } } }) },
@@ -95,9 +95,12 @@ describe('DPR Supabase commands', () => {
     expect(reports.eq).toHaveBeenCalledWith('created_by', 'sailor-user');
     expect(reports.order).toHaveBeenCalledWith('report_date', { ascending: false });
     expect(dashboard.reports).toEqual([
-      expect.objectContaining({ id: 42, createdBy: 'sailor-user', createdAt: '2026-08-14T08:00:00Z' }),
+      expect.objectContaining({ id: 42, createdBy: 'sailor-user', createdAt: '2026-08-14T08:00:00Z', canManage: true }),
     ]);
     expect(dashboard.currentUserId).toBe('sailor-user');
+    expect(rpc).toHaveBeenCalledWith('dpr_manageable_report_ids');
+    expect(from.mock.results.find((_, index) => from.mock.calls[index][0] === 'dpr_reports')?.value.select)
+      .toHaveBeenCalledWith(expect.not.stringContaining('dpr_report_can_manage'));
   });
 
   it('resolves historical DPR projects when RLS hides the commercial catalog', async () => {
@@ -123,12 +126,15 @@ describe('DPR Supabase commands', () => {
     };
     const dashboard = await fetchDprDashboard(client as never);
     expect(dashboard.reports.map((report) => report.projectCode)).toEqual(['P268', 'P144']);
+    expect(dashboard.reports.every((report) => report.canManage === false)).toBe(true);
     expect(dashboard.references.projects).toHaveLength(2);
     expect(dashboard.references.activeProjects.map((project) => project.id)).toEqual([60]);
     expect(dashboard.references.projects.find((project) => project.id === 61)?.archivedAt).toBe('2026-10-10T10:00:00Z');
     expect(rpc).toHaveBeenCalledWith('dpr_report_projects');
     rpc.mockImplementation((name: string) => Promise.resolve({ data: [], error: name === 'dpr_report_projects' ? { message: 'Permission denied' } : null }));
     await expect(fetchDprDashboard(client as never)).rejects.toEqual({ message: 'Permission denied' });
+    rpc.mockImplementation((name: string) => Promise.resolve({ data: [], error: name === 'dpr_manageable_report_ids' ? { message: 'Capability query failed' } : null }));
+    await expect(fetchDprDashboard(client as never)).rejects.toEqual({ message: 'Capability query failed' });
   });
 
   it('keeps closed project labels in office DPR reports while excluding them from entry choices', async () => {
