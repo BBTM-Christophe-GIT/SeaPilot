@@ -113,6 +113,14 @@ describe('planning timeline rules', () => {
     expect(planningStatusDisplayLabel('Vacances')).toBe('Congés');
     expect(normalizePlanningStatus('Congés')).toBe('Vacance');
     expect(planningStatusTone('Congés')).toBe('vacation');
+    expect(normalizePlanningStatus(' congés paternité ')).toBe('Congés Paternité');
+    expect(normalizePlanningStatus('CONGE PATERNITE')).toBe('Congés Paternité');
+    expect(normalizePlanningStatus('Congés Paternités')).toBe('Congés Paternité');
+    expect(normalizePlanningStatus(' CONGE PATERNITES ')).toBe('Congés Paternité');
+    expect(planningStatusDisplayLabel('congés paternité')).toBe('Congés Paternité');
+    expect(planningStatusTone('Congés Paternité')).toBe('paternity-leave');
+    expect(planningStatusDisplayLabel('Congés Paternités')).toBe('Congés Paternité');
+    expect(planningStatusTone('Congés Paternités')).toBe('paternity-leave');
     expect(normalizePlanningStatus(' rtt ')).toBe('RTT');
     expect(planningStatusDisplayLabel('RTT')).toBe('RTT');
     expect(planningStatusTone('RTT')).toBe('rest');
@@ -230,6 +238,15 @@ describe('planning timeline rules', () => {
     expect(controls).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'crew_unavailability', level: 'blocking' }),
     ]));
+    expect(hasBlockingPlanningControls(controls)).toBe(true);
+  });
+
+  it('keeps paternity leave unavailable for a concurrent working assignment', () => {
+    const controls = evaluatePlanningAssignment({ ...overview, periods: [{ ...overview.periods[0], sailorStatus: 'Congés Paternité' }] }, {
+      id: 'new', personId: 1, person: 'Anne CAPITAINE', vessel: 'GOURY', functionLabel: 'Capitaine',
+      status: 'En Mer', startsOn: '2026-07-10', endsOn: '2026-07-12',
+    });
+    expect(controls).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'crew_absence', level: 'blocking', detail: expect.stringContaining('Congés Paternité') })]));
     expect(hasBlockingPlanningControls(controls)).toBe(true);
   });
 

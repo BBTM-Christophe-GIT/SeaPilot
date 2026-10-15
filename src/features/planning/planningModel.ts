@@ -321,6 +321,7 @@ export function normalizePlanningStatus(value: string): string {
   if (key === 'ATERRE') return 'A Terre';
   if (key === 'RTT') return 'RTT';
   if (key.includes('REPOS') || key.includes('DEBAR')) return 'Repos';
+  if (/^CONGES?PATERNITES?$/.test(key)) return 'Congés Paternité';
   if (key.includes('VACAN') || key === 'CONGE' || key === 'CONGES') return 'Vacance';
   if (key.includes('ACCIDENT') && key.includes('TRAVAIL')) return 'Accident du Travail';
   if (key.includes('ARRET') && key.includes('MALADIE')) return 'Arrêt Maladie';
@@ -330,7 +331,8 @@ export function normalizePlanningStatus(value: string): string {
 }
 
 export function planningStatusDisplayLabel(value: string): string {
-  return normalizePlanningStatus(value) === 'Vacance' ? 'Congés' : value;
+  const status = normalizePlanningStatus(value);
+  return status === 'Vacance' ? 'Congés' : status === 'Congés Paternité' ? status : value;
 }
 
 export function planningStatusTone(value: string): string {
@@ -340,11 +342,29 @@ export function planningStatusTone(value: string): string {
   if (key === 'EXTRA') return 'extra';
   if (key === 'REPOS' || key === 'RTT') return 'rest';
   if (key === 'VACANCE') return 'vacation';
+  if (key === 'CONGESPATERNITE') return 'paternity-leave';
   if (key === 'ARRETMALADIE') return 'sick-leave';
   if (key === 'ACCIDENTDUTRAVAIL') return 'accident';
   if (key === 'ARRETDETRAVAIL') return 'sick';
   if (key === 'FORMATION') return 'training';
   return 'neutral';
+}
+
+export function hasPlanningPaternityFilter(filters: PlanningFilters): boolean {
+  return filters.eventType === 'paternity_leave' || normalizePlanningStatus(filters.status || '') === 'Congés Paternité';
+}
+
+/** Match the event's effective daily decision in its visible date range.
+ * Callers supply current events instead of rereading raw assignment notes. */
+export function planningPaternityEventMatchesFilters(event: PlanningCrewEvent, filters: PlanningFilters, range: PlanningDateRange): boolean {
+  if (event.kind === 'annualReview' || (filters.eventType && filters.eventType !== 'paternity_leave')) return false;
+  if (filters.status && normalizePlanningStatus(filters.status) !== 'Congés Paternité' && event.confirmationStatus !== filters.status) return false;
+  const start = event.startsOn > range.start ? event.startsOn : range.start;
+  const end = event.endsOn < range.end ? event.endsOn : range.end;
+  for (let date = start; date <= end; date = addPlanningDays(date, 1)) {
+    if (normalizePlanningStatus(event.dailyStatuses?.[date] || event.status) === 'Congés Paternité') return true;
+  }
+  return false;
 }
 
 const SEDENTARY_FUNCTIONS = [
@@ -560,12 +580,14 @@ export function buildPlanningCrewRows(
   const functionOrder = options.functionOrder || [];
   const referenceDate = options.referenceDate || range.start;
   const allEvents = eventPool;
+  const paternityFilter = hasPlanningPaternityFilter(filters);
   const events = allEvents.filter(
     (event) =>
       event.confirmationStatus !== 'cancelled' &&
       rangesOverlap(event.startsOn, event.endsOn, range.start, range.end) &&
       (!filters.vesselName || event.vessel === filters.vesselName) &&
-      (!filters.personName || event.person === filters.personName),
+      (!filters.personName || event.person === filters.personName) &&
+      (!paternityFilter || planningPaternityEventMatchesFilters(event, filters, range)),
   );
   const projects = overview.projects.filter(
     (project) =>
@@ -575,6 +597,8 @@ export function buildPlanningCrewRows(
   );
   const vesselsById = new Map(overview.vessels.map((vessel) => [vessel.id, vessel]));
   const vesselsByName = new Map(overview.vessels.map((vessel) => [vessel.name, vessel]));
+  const visibleGenericRows = (overview.genericCrewRows || []).filter((row) => !paternityFilter
+    || genericCrewEvents(row, vesselsById.get(row.vesselId)?.name || '').some((event) => planningPaternityEventMatchesFilters(event, filters, range)));
   const peopleById = new Map(overview.people.map((person) => [person.id, person]));
   const peopleByName = new Map(overview.people.map((person) => [formatPlanningPerson(person), person]));
   const allEventRecordKeys = new Set<string>();
@@ -597,7 +621,7 @@ export function buildPlanningCrewRows(
   const vesselNames = new Set([
     ...events.map((event) => event.vessel),
     ...boardRows.map((entry) => entry.vessel.name),
-    ...(overview.genericCrewRows || []).flatMap((row) => {
+    ...visibleGenericRows.flatMap((row) => {
       const vessel = vesselsById.get(row.vesselId);
       return vessel && !filters.personName && (!filters.vesselName || filters.vesselName === vessel.name) ? [vessel.name] : [];
     }),
@@ -648,7 +672,7 @@ export function buildPlanningCrewRows(
         const current = boards.get(entry.boardRow.watchGroup) || { events: [], rows: [] };
         boards.set(entry.boardRow.watchGroup, { ...current, rows: [...current.rows, entry] });
       });
-      const genericRows = !filters.personName ? (overview.genericCrewRows || []).filter((row) => row.vesselId === vesselRecord?.id) : [];
+      const genericRows = !filters.personName ? visibleGenericRows.filter((row) => row.vesselId === vesselRecord?.id) : [];
       genericRows.forEach((row) => {
         if (!boards.has(row.watchGroup)) boards.set(row.watchGroup, { events: [], rows: [] });
       });
@@ -827,7 +851,7 @@ const DEFAULT_PLANNING_CONTROL_LEVELS: Record<PlanningControlCode, PlanningContr
   pending_validation: 'warning',
 };
 
-const ABSENCE_STATUS_TONES = new Set(['vacation', 'sick']);
+const ABSENCE_STATUS_TONES = new Set(['vacation', 'paternity-leave', 'sick']);
 const UNAVAILABLE_STATUS_TONES = new Set(['rest', 'training']);
 const DECK_FUNCTION_TOKENS = ['CAPITAINE', 'PONT', 'MATELOT', 'BOSCO', 'OFFICIER'];
 const ENGINE_FUNCTION_TOKENS = ['MACHINE', 'MECANICIEN', 'CHEFMECANICIEN'];

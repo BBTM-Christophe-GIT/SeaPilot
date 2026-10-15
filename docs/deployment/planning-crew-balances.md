@@ -10,8 +10,13 @@ Chaque case affiche le cumul de fin de journée, même lorsqu’elle est vide. L
 | À terre | +0,50 |
 | Extra | −1,00 (corrigé en 3.39.10) |
 | Formation | +0,50 |
-| Repos, congés, case vide | −1,00 |
-| Arrêt Maladie, Accident du Travail | 0,00 |
+| Repos, congés ordinaires, case vide | −1,00 |
+| Congés Paternité, Arrêt Maladie, Accident du Travail | 0,00 |
+
+Depuis la version 3.75.6, **Congés Paternité** est proposé dans les statuts du
+Planning, y compris les journées, les périodes et les postes fictifs. Ces trois
+statuts à 0 ne remettent pas le solde cumulé à zéro : un solde de 10,00 reste à
+10,00 après chacune de ces journées. Les congés ordinaires restent distincts.
 
 Les calculs utilisent des centièmes entiers, les dates du planning et les bornes d’emploi inclusives. Ils repartent de la référence pertinente, même avant le mois affiché ; les filtres de navire, statut ou équipe ne modifient pas le cumul. Les absences approuvées priment, puis les corrections journalières, les affectations et les périodes historiques. Un statut sans règle (par exemple une visite médicale) ou un conflit non résolu suspend le solde avec une explication, jusqu’à correction du planning ou nouvelle référence.
 

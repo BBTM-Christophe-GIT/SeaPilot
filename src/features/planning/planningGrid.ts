@@ -4,6 +4,7 @@ export const PLANNING_GRID_STATUSES = [
   'En Mer',
   'A Terre', 'Extra', 'Formation',
   'Vacance',
+  'Congés Paternité',
   'Repos',
   'Arrêt Maladie',
   'Accident du Travail',
@@ -46,8 +47,10 @@ export function planningGridDefaultStatus(vessel: string): PlanningGridStatus {
 }
 
 export function normalizePlanningGridStatus(status: string, vessel: string): PlanningGridStatus {
-  return isPlanningGridStatus(status)
-    ? status
+  const key = status.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '').toUpperCase();
+  const normalized = /^CONGES?PATERNITES?$/.test(key) ? 'Congés Paternité' : status;
+  return isPlanningGridStatus(normalized)
+    ? normalized
     : planningGridDefaultStatus(vessel);
 }
 

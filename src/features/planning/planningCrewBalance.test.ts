@@ -16,7 +16,22 @@ const range = { start: '2026-09-30', end: '2026-10-08' };
 const ref = { personId: person.id, asOf: range.start, balance: 10 };
 
 describe('crew cumulative balance', () => {
-  it.each([['En Mer', 105], ['A Terre', 50], ['Extra', -100], ['Formation', 50], ['Arrêt Maladie', 0], ['Accident du Travail', 0], ['Repos', -100], ['Congés', -100], ['RTT', -100], ['', -100]])('%s has the agreed weight in cents', (status, cents) => expect(planningCrewDayCents(status)).toBe(cents));
+  it.each([['En Mer', 105], ['A Terre', 50], ['Extra', -100], ['Formation', 50], ['Congés Paternité', 0], ['congés paternité', 0], [' CONGE PATERNITE ', 0], ['Congés Paternités', 0], [' CONGE PATERNITES ', 0], ['Arrêt Maladie', 0], ['Accident du Travail', 0], ['Repos', -100], ['Congés', -100], ['RTT', -100], ['', -100]])('%s has the agreed weight in cents', (status, cents) => expect(planningCrewDayCents(status)).toBe(cents));
+
+  it.each((['assignment', 'period', 'day'] as const).flatMap((source) => ['Congés Paternité', 'Congés Paternités'].map((paternityStatus) => ({ source, paternityStatus }))))('keeps all three zero-contribution statuses neutral when sourced from a $source ($paternityStatus)', ({ source, paternityStatus }) => {
+    const statuses = [paternityStatus, 'Arrêt Maladie', 'Accident du Travail', 'Congés', 'En Mer'];
+    const assignments = statuses.map((status, index) => assignment(index + 1, `2026-10-0${index + 1}`, `2026-10-0${index + 1}`, status));
+    const data = overview(source === 'assignment' ? assignments : source === 'day' ? [assignment(1, '2026-10-01', '2026-10-05')] : []);
+    if (source === 'period') data.periods = assignments.map((item) => ({
+      id: item.id, personId: person.id, vesselId: 2, startsOn: item.startsOn, endsOn: item.endsOn, sailorStatus: item.statusLabel,
+    })) as PlanningOverview['periods'];
+    if (source === 'day') data.days = assignments.map((item) => ({
+      id: item.id, personId: person.id, vesselId: 2, workDate: item.startsOn, sourceLabel: 'seapilot-assignment-note', slot365: 'assignment:1', sailorStatus: item.statusLabel,
+    })) as PlanningOverview['days'];
+    const results = buildPlanningCrewBalanceDays(person, data, [], [ref], { start: range.start, end: '2026-10-05' });
+    expect([...results.values()].map((day) => day.value)).toEqual([10, 10, 10, 10, 9, 10.05]);
+    for (let index = 0; index < 3; index++) expect(results.get(`2026-10-0${index + 1}`)?.explanation).toContain(`${statuses[index]} : 0,00`);
+  });
   it('starts the day after the EOD checkpoint and carries the sum across months and empty days', () => {
     const data = overview([
       assignment(1, '2026-09-30', '2026-10-01'), assignment(2, '2026-10-02', '2026-10-02', 'A Terre'),

@@ -25,6 +25,15 @@ function renderRow(item = event, conflicts = new Map<string, Set<string>>()) {
 }
 
 describe('crew daily status rendering', () => {
+  it.each(['Congés Paternité', 'Congés Paternités'])('renders a paternity leave period with its canonical status and leave palette on every day (%s)', (status) => {
+    const { container } = renderRow({ ...event, status, dailyStatuses: {} });
+    const bar = container.querySelector<HTMLElement>('.planning-crew-bar')!;
+    expect(bar).toHaveClass('is-paternity-leave');
+    expect(bar).toHaveAccessibleName(/Christophe MINASSIAN, Congés Paternité/);
+    expect(bar.style.backgroundImage).toBe('linear-gradient(to right, var(--crew-state-paternity-leave) 50%, var(--crew-state-paternity-leave) 50%)');
+    expect(container.querySelectorAll('.planning-assignment-note-cell.is-paternity-leave')).toHaveLength(9);
+  });
+
   it('keeps the Fleet daily sickness decision across the period, including both resize caps', () => {
     const { container } = renderRow();
     const bar = container.querySelector<HTMLElement>('.planning-crew-bar')!;
