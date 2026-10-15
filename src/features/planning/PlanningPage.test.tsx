@@ -894,6 +894,15 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getAllByText('Paul DURAND').length).toBeGreaterThan(0);
     expect(screen.getByRole('tab', { name: 'Équipages' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getAllByRole('button', { name: /Paul DURAND, En Mer/ }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('navigation', { name: 'Menu du planning' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Diffusion du planning' })).not.toBeInTheDocument();
+    expect(document.querySelector('.planning-command-layout')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Créer une affectation' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Afficher le planning en plein écran' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Flotte' }));
+    expect(screen.getByRole('navigation', { name: 'Menu du planning' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Diffusion du planning' })).toBeInTheDocument();
   });
 
   it('keeps the current planning visible when a refresh fails', async () => {

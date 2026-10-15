@@ -2649,7 +2649,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         </div>
       ) : null}
 
-      {perspective !== 'projects' ? <div className="planning-command-layout" hidden={isFullscreen}>
+      {perspective === 'fleet' ? <div className="planning-command-layout" hidden={isFullscreen}>
         <nav aria-label="Menu du planning" className="planning-module-toolbar">
           <div className="planning-ribbon-scroll">
             {isPersonalPlanningView ? (
