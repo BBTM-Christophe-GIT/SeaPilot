@@ -5,6 +5,7 @@ import { procedureAppliesToVessel, selectProcedureList } from './procedureList';
 import { CHAPTERS, chapterKey, type ProcedureChapterKey } from './procedureChapters';
 import { downloadProcedureListPdf } from './procedureListPdf';
 import { getProcedureStatusLabel, type ProcedureRecord, type ProcedureStatus } from './procedureQueries';
+import { procedureDisplayTitle } from './procedureDisplay';
 import './procedureList.css';
 
 interface ProcedureListDialogProps {
@@ -98,8 +99,8 @@ export function ProcedureListDialog({ records, vessels, initialVessel, library, 
           </button>
         </th></tr>
         {!collapsedChapters.has(group.key) ? group.documents.map((record) => <tr key={record.id}>
-          <td><input aria-label={`Inclure ${record.title}`} type="checkbox" disabled={isExporting} checked={!excludedIds.has(record.id)} onChange={(event) => setIncluded([record.id], event.target.checked)} /></td>
-          <td className="procedure-list-document"><div className="procedure-list-document-branch"><FileText aria-hidden="true" size={14} /><span title={`${record.procedureCode || record.documentNumber || 'Sans référence'} ${record.title}`}><strong>{record.procedureCode || record.documentNumber || 'Sans référence'}</strong>{' '}{record.title}</span></div></td>
+          <td><input aria-label={`Inclure ${procedureDisplayTitle(record.title)}`} type="checkbox" disabled={isExporting} checked={!excludedIds.has(record.id)} onChange={(event) => setIncluded([record.id], event.target.checked)} /></td>
+          <td className="procedure-list-document"><div className="procedure-list-document-branch"><FileText aria-hidden="true" size={14} /><span title={`${record.procedureCode || record.documentNumber || 'Sans référence'} ${procedureDisplayTitle(record.title)}`}><strong>{record.procedureCode || record.documentNumber || 'Sans référence'}</strong>{' '}{procedureDisplayTitle(record.title)}</span></div></td>
           <td>{record.vesselName.trim() || 'Toute la flotte'}</td>
           <td>{record.versionLabel || record.revisionLabel || '-'}</td>
           <td>{getProcedureStatusLabel(record.status)}</td>

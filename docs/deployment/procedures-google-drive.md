@@ -77,6 +77,12 @@ local d'empreintes dans `%LOCALAPPDATA%/SeaPilotDrive/PublicationReceipts` perme
 de réessayer après une interruption sans reconvertir une source inchangée.
 Changer la version pour publier un contenu différent sous une nouvelle référence.
 
+Depuis la version `3.75.3`, publier une version supérieure d'une même référence
+retire automatiquement les PDF publiés de version inférieure. Les versions
+égales restent conservées ; les sources ne sont pas supprimées. La suppression
+du catalogue révoque l'accès au PDF, avec conservation des archives techniques
+privées. Voir [les règles de remplacement](procedures-latest-published-revision.md).
+
 Administration et Direction gèrent les sources. Armement, Capitaine et Marin
 consultent uniquement les PDF publiés ; aucune action de modification, publication
 ou suppression ne leur est proposée. Les nouvelles lectures depuis l'application

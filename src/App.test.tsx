@@ -349,8 +349,9 @@ describe('App', () => {
     expect(screen.getByText('Procedure embarquement ROZEL')).toBeInTheDocument();
     expect(screen.getAllByText('QSMS-OPS-01').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: /PDF publiés/i }));
-    expect(screen.getByText('Procedure embarquement ROZEL.pdf')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Télécharger Procedure embarquement ROZEL.pdf' })).toBeInTheDocument();
+    expect(screen.getByText('Procedure embarquement ROZEL')).toBeInTheDocument();
+    expect(screen.queryByText('Procedure embarquement ROZEL.pdf')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Télécharger Procedure embarquement ROZEL' })).toBeInTheDocument();
     expect(screen.queryByText('Module pret pour migration depuis le Dashboard BBTM.')).not.toBeInTheDocument();
   });
 

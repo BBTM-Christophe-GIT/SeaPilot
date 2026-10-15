@@ -1,6 +1,7 @@
 import type { RowInput } from 'jspdf-autotable';
 import { CHAPTERS, chapterKey } from './procedureChapters';
 import type { ProcedureRecord } from './procedureQueries';
+import { procedureDisplayTitle } from './procedureDisplay';
 
 export interface ProcedureListPdfInput {
   records: ProcedureRecord[];
@@ -30,7 +31,7 @@ export async function buildProcedureListPdf({ records, vessel, library, issuedAt
     return [
       [{ content: label, colSpan: 4, styles: { fontStyle: 'bold', fillColor: [225, 235, 244], textColor: [15, 38, 63] } }],
       ...chapterRecords.map((record) => [
-        record.procedureCode || record.documentNumber || '-', record.title,
+        record.procedureCode || record.documentNumber || '-', procedureDisplayTitle(record.title),
         record.versionLabel || record.revisionLabel || '-',
         record.diffusionOn ? new Date(`${record.diffusionOn}T12:00:00`).toLocaleDateString('fr-FR') : '-',
       ]),

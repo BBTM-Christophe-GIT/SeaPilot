@@ -7,6 +7,7 @@ import { ProceduresPage } from './ProceduresPage';
 import { procedureDriveFilename } from './procedureDriveFiles';
 import { downloadProcedureListPdf } from './procedureListPdf';
 import { normalizeProcedureSearch, normalizeProcedureTags } from './procedureTags';
+import { procedureDisplayTitle } from './procedureDisplay';
 
 function render(ui: Parameters<typeof renderTestingLibrary>[0], initialEntry = '/modules/procedures') {
   return renderTestingLibrary(<MemoryRouter initialEntries={[initialEntry]}>{ui}</MemoryRouter>);
@@ -111,7 +112,7 @@ function orderedResult(data: unknown[], error: Error | null = null) {
   return result;
 }
 
-function createClient(options: { procedures?: unknown[]; publications?: unknown[]; projects?: unknown[]; vessels?: unknown[]; created?: unknown; published?: unknown; updateError?: Error; catalogue?: string[] } = {}) {
+function createClient(options: { procedures?: unknown[]; publications?: unknown[]; projects?: unknown[]; vessels?: unknown[]; created?: unknown; published?: unknown; updateError?: Error; catalogue?: string[]; publicationLoadError?: () => Error | null } = {}) {
   const procedures = options.procedures ?? [approvedProcedureRow, draftProcedureRow];
   const publications = options.publications ?? [publishedProcedureRow];
   const projects = options.projects ?? projectRows;
@@ -170,7 +171,7 @@ function createClient(options: { procedures?: unknown[]; publications?: unknown[
     }
     if (table === 'published_procedures') {
       return {
-        select: vi.fn(() => orderedResult(publications)),
+        select: vi.fn(() => orderedResult(publications, options.publicationLoadError?.() || null)),
         insert: publicationInsert,
         update: publicationUpdate,
         delete: removeRow,
@@ -213,7 +214,7 @@ describe('ProceduresPage', () => {
     const { client, from } = createClient();
     render(<ProceduresPage client={client as never} roles={[role]} />, '/modules/procedures?procedure=13');
 
-    await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL.pdf/ });
+    await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL/ });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(from).not.toHaveBeenCalledWith('procedures');
   });
@@ -223,9 +224,9 @@ describe('ProceduresPage', () => {
     const { client, from } = createClient();
     render(<ProceduresPage client={client as never} roles={[role]} />, '/modules/procedures?document=32');
 
-    const title = await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL.pdf/ });
-    const dialog = await screen.findByRole('dialog', { name: 'Procédure embarquement ROZEL.pdf' });
-    expect(await within(dialog).findByTitle('Aperçu de Procédure embarquement ROZEL.pdf')).toHaveAttribute('src', 'https://storage.test/signed');
+    const title = await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL/ });
+    const dialog = await screen.findByRole('dialog', { name: 'Procédure embarquement ROZEL' });
+    expect(await within(dialog).findByTitle('Aperçu de Procédure embarquement ROZEL')).toHaveAttribute('src', 'https://storage.test/signed');
     expect(title.closest('article')).toHaveClass('is-selected');
     expect(screen.getByRole('heading', { name: 'Procédures publiées' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Modifier/ })).not.toBeInTheDocument();
@@ -241,21 +242,21 @@ describe('ProceduresPage', () => {
     const { client } = createClient({ publications: [publishedProcedureRow, secondPublication] });
     render(<><Link to="?document=33">Ouvrir la seconde publication</Link><ProceduresPage client={client as never} roles={['armement']} /></>, '/modules/procedures?document=32');
 
-    const firstTitle = await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL.pdf/ });
-    const firstDialog = await screen.findByRole('dialog', { name: 'Procédure embarquement ROZEL.pdf' });
+    const firstTitle = await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL/ });
+    const firstDialog = await screen.findByRole('dialog', { name: 'Procédure embarquement ROZEL' });
     await user.click(within(firstDialog).getByLabelText('Fermer'));
     await waitFor(() => expect(firstTitle.closest('article')).toHaveFocus());
     const chapterToggle = firstTitle.closest('.procedure-chapter')!.querySelector('.procedure-chapter-heading') as HTMLElement;
     await user.click(chapterToggle);
     expect(chapterToggle).toHaveAttribute('aria-expanded', 'false');
     await user.click(screen.getByRole('link', { name: 'Ouvrir la seconde publication' }));
-    const secondTitle = await screen.findByRole('button', { name: /Ouvrir.*Autre consigne publiée.pdf/ });
-    const secondDialog = await screen.findByRole('dialog', { name: secondPublication.title });
-    expect(await within(secondDialog).findByTitle(`Aperçu de ${secondPublication.title}`)).toBeInTheDocument();
+    const secondTitle = await screen.findByRole('button', { name: /Ouvrir.*Autre consigne publiée/ });
+    const secondDialog = await screen.findByRole('dialog', { name: procedureDisplayTitle(secondPublication.title) });
+    expect(await within(secondDialog).findByTitle(`Aperçu de ${procedureDisplayTitle(secondPublication.title)}`)).toBeInTheDocument();
     await user.click(within(secondDialog).getByLabelText('Fermer'));
     await waitFor(() => expect(secondTitle.closest('article')).toHaveFocus());
     expect(secondTitle.closest('article')).toHaveClass('is-selected');
-    expect(screen.getByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL.pdf/ }).closest('article')).not.toHaveClass('is-selected');
+    expect(screen.getByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL/ }).closest('article')).not.toHaveClass('is-selected');
     expect(chapterToggle).toHaveAttribute('aria-expanded', 'true');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
@@ -274,8 +275,8 @@ describe('ProceduresPage', () => {
     const { client } = createClient({ publications: [{ ...publishedProcedureRow, google_drive_path: 'publication.pdf', storage_bucket: null, storage_path: null }] });
     render(<ProceduresPage client={client as never} roles={['marin']} />, '/modules/procedures?document=32');
 
-    const dialog = await screen.findByRole('dialog', { name: publishedProcedureRow.title });
-    expect(await within(dialog).findByTitle(`Aperçu de ${publishedProcedureRow.title}`)).toHaveAttribute('src', 'blob:http://localhost/published-procedure');
+    const dialog = await screen.findByRole('dialog', { name: procedureDisplayTitle(publishedProcedureRow.title) });
+    expect(await within(dialog).findByTitle(`Aperçu de ${procedureDisplayTitle(publishedProcedureRow.title)}`)).toHaveAttribute('src', 'blob:http://localhost/published-procedure');
     expect(drive.read).toHaveBeenCalledWith(expect.objectContaining({ id: 32, googleDrivePath: 'publication.pdf' }));
     expect(createObjectURL).toHaveBeenCalledWith(blob);
     await user.click(within(dialog).getByLabelText('Fermer'));
@@ -287,7 +288,7 @@ describe('ProceduresPage', () => {
     const { client } = createClient({ publications: [{ ...publishedProcedureRow, storage_bucket: null, storage_path: null }] });
     render(<ProceduresPage client={client as never} roles={['capitaine']} />, '/modules/procedures?document=32');
 
-    const dialog = await screen.findByRole('dialog', { name: publishedProcedureRow.title });
+    const dialog = await screen.findByRole('dialog', { name: procedureDisplayTitle(publishedProcedureRow.title) });
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Aucun fichier disponible pour ce document.');
     expect(within(dialog).queryByTitle(`Aperçu de ${publishedProcedureRow.title}`)).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText('Titre')).not.toBeInTheDocument();
@@ -297,7 +298,7 @@ describe('ProceduresPage', () => {
     const { client } = createClient();
     render(<ProceduresPage client={client as never} roles={['marin']} />, '/modules/procedures?document=999');
 
-    const title = await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL.pdf/ });
+    const title = await screen.findByRole('button', { name: /Ouvrir.*Procédure embarquement ROZEL/ });
     expect(title.closest('article')).not.toHaveClass('is-selected');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
@@ -572,12 +573,14 @@ describe('ProceduresPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Générer une liste des documents' }));
     const dialog = within(screen.getByRole('dialog'));
     expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    expect(dialog.getByLabelText('Inclure Procédure embarquement ROZEL')).toBeChecked();
+    expect(dialog.queryByText('Procédure embarquement ROZEL.pdf')).not.toBeInTheDocument();
     await user.selectOptions(dialog.getByRole('combobox', { name: 'Statut' }), 'draft');
     expect(dialog.queryByRole('checkbox')).not.toBeInTheDocument();
     expect(dialog.getByRole('button', { name: 'Télécharger la liste PDF' })).toBeDisabled();
     await user.selectOptions(dialog.getByRole('combobox', { name: 'Statut' }), 'published');
     await user.click(dialog.getByRole('button', { name: 'Télécharger la liste PDF' }));
-    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ library: 'published', records: [expect.objectContaining({ id: 32 })] }));
+    expect(downloadProcedureListPdf).toHaveBeenLastCalledWith(expect.objectContaining({ library: 'published', records: [expect.objectContaining({ id: 32, title: 'Procédure embarquement ROZEL.pdf', fileName: 'procedure.pdf' })] }));
     expect(from).not.toHaveBeenCalledWith('procedures');
   });
 
@@ -674,7 +677,7 @@ describe('ProceduresPage', () => {
 
     fireEvent.change(screen.getByLabelText('Recherche de document'), { target: { value: '' } });
     await user.click(screen.getByRole('button', { name: /PDF publiés/i }));
-    expect(screen.getByText('Procédure embarquement ROZEL.pdf')).toBeInTheDocument();
+    expect(screen.getByText('Procédure embarquement ROZEL')).toBeInTheDocument();
   });
 
   it.each([['armement'], ['capitaine'], ['marin']] as const)(
@@ -683,8 +686,8 @@ describe('ProceduresPage', () => {
       const { client, from } = createClient();
       render(<ProceduresPage client={client as never} roles={[role]} />);
 
-      expect(await screen.findByText('Procédure embarquement ROZEL.pdf')).toBeInTheDocument();
-      expect(screen.queryByText('Procédure embarquement ROZEL')).not.toBeInTheDocument();
+      expect(await screen.findByText('Procédure embarquement ROZEL')).toBeInTheDocument();
+      expect(screen.queryByText('Consigne machine provisoire')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /Nouveau document/i })).not.toBeInTheDocument();
       expect(screen.getByText(/uniquement les versions PDF/i)).toBeInTheDocument();
       expect(from).not.toHaveBeenCalledWith('procedures');
@@ -770,7 +773,7 @@ describe('ProceduresPage', () => {
     expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('ÉvacuationSecours');
     await user.click(screen.getByRole('button', { name: 'PDF publiés' }));
     for (const publication of publications) {
-      expect(screen.getByRole('list', { name: `Tags de ${publication.title}` })).toHaveTextContent('ÉvacuationSecours');
+      expect(screen.getByRole('list', { name: `Tags de ${procedureDisplayTitle(publication.title)}` })).toHaveTextContent('ÉvacuationSecours');
     }
     fireEvent.change(screen.getByLabelText('Recherche de document'), { target: { value: 'EVACUATION' } });
     expect(screen.getAllByRole('list', { name: /^Tags de / })).toHaveLength(2);
@@ -797,16 +800,16 @@ describe('ProceduresPage', () => {
     const { client, procedureUpdate, publicationUpdate } = createClient({ procedures: [approvedProcedureRow], publications: [publishedProcedureRow, linkedCopy, standalone] });
     render(<ProceduresPage client={client as never} roles={[role]} />);
     await user.click(await screen.findByRole('button', { name: 'PDF publiés' }));
-    await user.click(screen.getByLabelText('Modifier les tags Procédure embarquement ROZEL.pdf'));
+    await user.click(screen.getByLabelText('Modifier les tags Procédure embarquement ROZEL'));
     let dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
     fireEvent.change(dialog.getByLabelText('Tags'), { target: { value: 'Énergie; Energie' } });
     await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
     await screen.findByText('Tags mis à jour.');
     expect(procedureUpdate).toHaveBeenCalledWith({ tags: ['Énergie'] });
     expect(publicationUpdate).not.toHaveBeenCalled();
-    expect(screen.getByRole('list', { name: 'Tags de Deuxième diffusion.pdf' })).toHaveTextContent('Énergie');
-    expect(screen.getByRole('list', { name: 'Tags de Document autonome.pdf' })).toHaveTextContent('Autonome');
-    await user.click(screen.getByLabelText('Modifier les tags Document autonome.pdf'));
+    expect(screen.getByRole('list', { name: 'Tags de Deuxième diffusion' })).toHaveTextContent('Énergie');
+    expect(screen.getByRole('list', { name: 'Tags de Document autonome' })).toHaveTextContent('Autonome');
+    await user.click(screen.getByLabelText('Modifier les tags Document autonome'));
     dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
     expect(dialog.getByLabelText('Tags')).toHaveValue('Autonome');
     fireEvent.change(dialog.getByLabelText('Tags'), { target: { value: 'Formation' } });
@@ -814,8 +817,8 @@ describe('ProceduresPage', () => {
     await screen.findByText('Tags mis à jour.');
     expect(publicationUpdate).toHaveBeenCalledWith({ tags: ['Formation'] });
     expect(procedureUpdate).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL.pdf' })).toHaveTextContent('Énergie');
-    expect(screen.getByRole('list', { name: 'Tags de Document autonome.pdf' })).toHaveTextContent('Formation');
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('Énergie');
+    expect(screen.getByRole('list', { name: 'Tags de Document autonome' })).toHaveTextContent('Formation');
     await user.click(screen.getByRole('button', { name: 'Documents de travail' }));
     expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('Énergie');
   });
@@ -827,15 +830,15 @@ describe('ProceduresPage', () => {
     ];
     const { client, from } = createClient({ procedures: [{ ...draftProcedureRow, tags: ['confidentiel'] }], publications });
     render(<ProceduresPage client={client as never} roles={[role]} />);
-    await screen.findByText('Procédure embarquement ROZEL.pdf');
+    await screen.findByText('Procédure embarquement ROZEL');
     const search = screen.getByLabelText('Recherche de document');
     expect(search).toHaveAttribute('placeholder', expect.stringContaining('tags'));
     fireEvent.change(search, { target: { value: 'SECURITE' } });
-    expect(screen.getByText('Procédure embarquement ROZEL.pdf')).toBeInTheDocument();
-    expect(screen.getByText('Consignes techniques.pdf')).toBeInTheDocument();
+    expect(screen.getByText('Procédure embarquement ROZEL')).toBeInTheDocument();
+    expect(screen.getByText('Consignes techniques')).toBeInTheDocument();
     fireEvent.change(search, { target: { value: 'Sécurité À BORD' } });
-    expect(screen.queryByText('Procédure embarquement ROZEL.pdf')).not.toBeInTheDocument();
-    expect(screen.getByText('Consignes techniques.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('Procédure embarquement ROZEL')).not.toBeInTheDocument();
+    expect(screen.getByText('Consignes techniques')).toBeInTheDocument();
     fireEvent.change(search, { target: { value: 'confidentiel' } });
     expect(screen.getByText('Aucun document ne correspond aux filtres.')).toBeInTheDocument();
     fireEvent.change(search, { target: { value: '' } });
@@ -869,7 +872,7 @@ describe('ProceduresPage', () => {
     await screen.findByText('Informations mises à jour.');
     expect(procedureUpdate).toHaveBeenCalledWith(expect.objectContaining({ tags: ['Incendie'] }));
     await user.click(screen.getByRole('button', { name: 'PDF publiés' }));
-    await user.click(screen.getByLabelText('Modifier les tags Procédure embarquement ROZEL.pdf'));
+    await user.click(screen.getByLabelText('Modifier les tags Procédure embarquement ROZEL'));
     dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
     expect(dialog.getByLabelText('Tags')).toHaveValue('Incendie');
     choices = dialog.getByRole('combobox', { name: 'Ajouter un tag pré-enregistré' });
@@ -909,7 +912,7 @@ describe('ProceduresPage', () => {
     expect(within(dialog.getByRole('combobox', { name: 'Ajouter un tag pré-enregistré' })).getAllByRole('option', { name: 'Énergie solaire' })).toHaveLength(1);
     await user.click(dialog.getByRole('button', { name: 'Annuler' }));
     await user.click(screen.getByRole('button', { name: 'PDF publiés' }));
-    await user.click(screen.getByLabelText('Modifier les tags Document autonome.pdf'));
+    await user.click(screen.getByLabelText('Modifier les tags Document autonome'));
     dialog = within(screen.getByRole('dialog', { name: 'Modifier les tags' }));
     await user.selectOptions(dialog.getByRole('combobox', { name: 'Ajouter un tag pré-enregistré' }), 'Énergie solaire');
     await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
@@ -984,7 +987,7 @@ describe('ProceduresPage', () => {
     await user.click(tagsDialog.getByRole('button', { name: 'Enregistrer' }));
     await screen.findByText('Tags mis à jour.');
     await user.click(screen.getByRole('button', { name: 'PDF publiés' }));
-    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL.pdf' })).toHaveTextContent('Pollution');
+    expect(screen.getByRole('list', { name: 'Tags de Procédure embarquement ROZEL' })).toHaveTextContent('Pollution');
     await user.click(screen.getByRole('button', { name: 'Nouveau document' }));
     const nextDocument = within(screen.getByRole('dialog'));
     expect(nextDocument.queryByRole('option', { name: 'Pollution' })).not.toBeInTheDocument();
@@ -1076,6 +1079,54 @@ describe('ProceduresPage', () => {
     expect(upload).toHaveBeenCalledWith('32', expect.any(Blob), expect.objectContaining({ contentType: 'application/pdf', upsert: false }));
     expect(rpc).toHaveBeenCalledWith('publish_procedure_blob', { target_publication: 32 });
     expect(publicationInsert).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the published library after the server removes lower revisions of the same reference', async () => {
+    const user = userEvent.setup();
+    const older = { ...publishedProcedureRow, id: 31, title: 'Ancienne induction.pdf', version_label: 'A' };
+    const current = { ...publishedProcedureRow, id: 35, title: 'Induction.PDF', version_label: 'B' };
+    const unrelated = { ...publishedProcedureRow, id: 33, procedure_id: 13, title: 'Autre procédure.pdf' };
+    const publications = [older, unrelated];
+    const { client, rpc, from } = createClient({ publications, published: current });
+    const originalRpc = rpc.getMockImplementation()!;
+    rpc.mockImplementation(async (name: string) => {
+      const result = await originalRpc(name);
+      if (name === 'publish_procedure_blob') publications.splice(0, publications.length, current, unrelated);
+      return result;
+    });
+    render(<ProceduresPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByLabelText('Publier Procédure embarquement ROZEL'));
+    await user.click(screen.getByRole('button', { name: 'Oui, publier' }));
+    await screen.findByText('PDF publié pour les profils Armement, Capitaine et Marin.');
+    await waitFor(() => expect(from.mock.calls.filter(([table]) => table === 'published_procedures')).toHaveLength(2));
+    await user.click(screen.getByRole('button', { name: 'PDF publiés' }));
+    expect(await screen.findByText('Induction')).toBeInTheDocument();
+    expect(screen.queryByText('Induction.PDF')).not.toBeInTheDocument();
+    expect(screen.queryByText('Ancienne induction')).not.toBeInTheDocument();
+    expect(screen.getByText('Autre procédure')).toBeInTheDocument();
+    expect(current.title).toBe('Induction.PDF');
+    expect(current.file_name).toBe('procedure.pdf');
+  });
+
+  it('keeps the newly published PDF and reports a library refresh failure separately', async () => {
+    const user = userEvent.setup();
+    let published = false;
+    const current = { ...publishedProcedureRow, id: 35, title: 'Nouvelle induction.pdf' };
+    const { client, rpc } = createClient({ publications: [], published: current,
+      publicationLoadError: () => published ? new Error('Réseau indisponible') : null });
+    const originalRpc = rpc.getMockImplementation()!;
+    rpc.mockImplementation(async (name: string) => {
+      const result = await originalRpc(name);
+      if (name === 'publish_procedure_blob') published = true;
+      return result;
+    });
+    render(<ProceduresPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByLabelText('Publier Procédure embarquement ROZEL'));
+    await user.click(screen.getByRole('button', { name: 'Oui, publier' }));
+    expect(await screen.findByText(/Le PDF a été publié, mais la bibliothèque n’a pas pu être actualisée/)).toBeInTheDocument();
+    expect(screen.getByText('PDF publié pour les profils Armement, Capitaine et Marin.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'PDF publiés' }));
+    expect(screen.getByText('Nouvelle induction')).toBeInTheDocument();
   });
 
   it('does not publish or change lifecycle when PDF conversion fails', async () => {
