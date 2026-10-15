@@ -1,6 +1,8 @@
 import { SeaPilotLogo } from '../../components/SeaPilotLogo';
 import { UserAvatar } from '../../components/UserAvatar';
 import { PersonalPlanningCalendar } from '../planning/PersonalPlanningCalendar';
+import { MailShortcutHeader } from './MailShortcutHeader';
+import { useGmailUnreadCount } from '../mailbox/useGmailUnreadCount';
 import { fetchDisciplinaryNotifications, markDisciplinaryNotificationRead, DISCIPLINARY_NOTIFICATIONS_CHANGED, type DisciplinaryNotification } from '../disciplinary/disciplinaryWorkflow';
 import { LiftingOperationsIcon } from '../lifting/LiftingIcons';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -207,6 +209,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const { session, signOut } = useAuth();
   const location = useLocation();
   const sessionUserId = session?.user.id;
+  const gmailCounter = useGmailUnreadCount(sessionUserId, session?.user.email, !previewMode);
   const [roles, setRoles] = useState<RoleKey[]>(rolesOverride || []);
   const [visibleModules, setVisibleModules] = useState<AppModule[]>(
     rolesOverride ? getDefaultVisibleModules(rolesOverride) : [],
@@ -742,6 +745,11 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                 <nav aria-label="Raccourcis notifications" className="topbar-notification-footer"><Link to="/modules/serviceNotes">Notes de service</Link>{activeVisibleModules.some((module) => module.key === 'actionPlan') ? <Link to="/modules/actionPlan">Plan d&apos;action</Link> : null}{activeVisibleModules.some((module) => module.key === 'annualReviews') ? <Link to="/modules/annualReviews">Entretiens</Link> : null}<Link to="/modules/humanResources">Mes documents RH</Link></nav>
               </div> : null}
             </div>
+            <MailShortcutHeader
+              email={previewMode ? undefined : session?.user.email}
+              unreadCount={gmailCounter.unreadCount}
+              onOpen={() => { setIsNotificationsOpen(false); setIsUserMenuOpen(false); }}
+            />
             <Link
               aria-label="Manuel d’utilisation"
               aria-current={isManualPage ? 'page' : undefined}
@@ -779,6 +787,13 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                     <span className="preview-mode-menu-note">Aucune donnée de production n’est utilisée.</span>
                   ) : (
                     <>
+                      {gmailCounter.available ? <>
+                        <button disabled={!gmailCounter.canActivate} onClick={gmailCounter.action} role="menuitem" type="button">
+                          <Mail aria-hidden="true" size={16} />
+                          {gmailCounter.actionLabel}
+                        </button>
+                        <p className="gmail-counter-status" role="status">{gmailCounter.message}</p>
+                      </> : null}
                       <button disabled={isSigningOut} onClick={() => void handleSignOut()} role="menuitem" type="button">
                         <LogOut aria-hidden="true" size={16} />
                         {isSigningOut ? 'Déconnexion en cours…' : 'Deconnexion'}

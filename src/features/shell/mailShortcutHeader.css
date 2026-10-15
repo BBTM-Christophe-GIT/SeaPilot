@@ -1,0 +1,54 @@
+.topbar .topbar-actions {
+  flex-shrink: 0;
+}
+
+.topbar-mail-shortcut {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: var(--sp-panel-radius);
+  text-decoration: none;
+}
+
+.topbar-mail-shortcut:hover {
+  color: var(--sp-primary-soft);
+}
+
+.topbar-mail-shortcut:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+}
+
+.topbar-mail-shortcut:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.topbar-mail-shortcut:disabled:hover {
+  color: var(--sp-surface);
+  background: transparent;
+}
+
+.gmail-counter-status {
+  margin: 0;
+  color: var(--sp-muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 420px) {
+  .content-shell > .topbar {
+    gap: 8px;
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .topbar .topbar-actions {
+    gap: 2px;
+  }
+
+  .topbar-context > span:first-of-type,
+  .topbar-context > svg {
+    display: none;
+  }
+}
