@@ -70,6 +70,8 @@ export const WORKING_TIME_VIOLATION_CODES = [
   'work_7d',
   'rest_7d',
   'night_work_24h',
+  'amplitude',
+  'rest_interval',
 ] as const;
 
 export type WorkingTimeViolationCode = typeof WORKING_TIME_VIOLATION_CODES[number];
@@ -92,7 +94,8 @@ export interface WorkingTimeCalculationWindow {
   rest7dSeconds: number;
   nightWork24hSeconds: number | null;
   isCompliant: boolean | null;
-  violationCodes: WorkingTimeViolationCode[];
+  // Keep server codes, including newer rules, so an unknown alert is never lost.
+  violationCodes: string[];
   calculationVersion: number;
   calculatedAt: string;
 }

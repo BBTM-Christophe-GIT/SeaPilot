@@ -168,6 +168,40 @@ describe('WorkingTimeWorkflowPanel', () => {
     vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue(defaultDayContext);
   });
 
+  it.each(['amplitude', 'rest_interval', 'future_server_rule'].flatMap((code) => (
+    ['search', 'click'].map((action) => ({ code, action }))
+  )))('keeps the workspace visible when $action selects a person with $code', async ({ code, action }) => {
+    const user = userEvent.setup();
+    const data = workspace('draft');
+    data.registers.push({ ...data.registers[0], id: 101, personId: 20, personName: 'Alex MARIN', functionLabel: 'Matelot' });
+    data.intervals.push({ ...data.intervals[0], id: 201, registerId: 101, personId: 20 });
+    data.calculations.push({
+      id: 301, companyId: 1, personId: 20, windowEnd: '2026-08-03T14:00:00Z',
+      localWindowEndDate: '2026-08-03', timezoneName: 'Europe/Paris', vesselId: 7,
+      workRestPolicyId: 1, work24hSeconds: 28800, rest24hSeconds: 57600,
+      longestRest24hSeconds: 43200, restPeriodCount24h: 2, work7dSeconds: 28800,
+      rest7dSeconds: 576000, nightWork24hSeconds: 0, isCompliant: false,
+      violationCodes: [code], calculationVersion: 4, calculatedAt: '2026-08-03T14:00:01Z',
+    });
+    renderPanel(['admin'], data, currentPerson, '2026-08-03');
+    await screen.findByRole('heading', { name: /Camille CAPITAINE/ });
+    if (action === 'search') {
+      await user.type(screen.getByRole('searchbox', { name: 'Rechercher un marin' }), 'Alex');
+    } else {
+      await user.click(screen.getByRole('button', { name: /^Matelot/ }));
+      await user.click(screen.getByRole('button', { name: /Alex MARIN/ }));
+    }
+    expect(await screen.findByRole('heading', { name: /Alex MARIN/ })).toBeVisible();
+    expect(screen.getByRole('tab', { name: 'Conformité' })).toBeVisible();
+    expect(screen.getAllByText(/Amplitude de travail|Intervalle entre deux repos|Alerte de conformité/).length).toBeGreaterThan(0);
+    await user.clear(screen.getByRole('searchbox', { name: 'Rechercher un marin' }));
+    await user.click(screen.getByRole('button', { name: /Camille CAPITAINE/ }));
+    expect(screen.getByRole('heading', { name: /Camille CAPITAINE/ })).toBeVisible();
+    expect(saveWorkingTimePhases).not.toHaveBeenCalled();
+    expect(submitWorkingTimeDay).not.toHaveBeenCalled();
+    expect(validateWorkingTimeDay).not.toHaveBeenCalled();
+  });
+
   it('opens the linked readable sailor and day in Conformité for a real Capitaine profile', async () => {
     const user = userEvent.setup();
     const data = workspace('draft');
