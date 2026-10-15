@@ -5282,7 +5282,10 @@ button:disabled {
 
 .project-offer-document header { display: grid; grid-template-columns: 70px 1fr auto; gap: 16px; align-items: center; padding-bottom: 14px; border-bottom: 3px solid #123d68; }
 .project-offer-document header img { width: 62px; max-height: 46px; object-fit: contain; }
-.project-offer-document header > strong { color: #123d68; font-size: clamp(12px, 1.3vw, 19px); letter-spacing: 0.04em; }
+.project-offer-title { display: grid; gap: 5px; min-width: 0; }
+.project-offer-title > strong { color: #123d68; font-size: clamp(12px, 1.3vw, 19px); letter-spacing: 0.04em; }
+.project-offer-title address { display: grid; gap: 2px; color: #586a80; font-size: 7px; font-style: normal; line-height: 1.35; }
+.project-offer-title address > span:first-child { font-weight: 700; }
 .project-offer-document header > span { display: grid; gap: 3px; text-align: right; }
 .project-offer-document header small { color: #768397; font-size: 7px; }
 .project-offer-address { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

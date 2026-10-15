@@ -24,6 +24,7 @@ import { BIMCO_P144_FIELDS } from './projectContractModels';
 import { buildStyledContract } from './projectStyledContract';
 import {
   buildCommercialReserves,
+  COMMERCIAL_OFFER_COMPANY_DETAILS,
   COMMERCIAL_RESERVE_AVAILABILITY,
   COMMERCIAL_RESERVE_WEATHER,
   formatProjectDocumentEmitterName,
@@ -532,7 +533,13 @@ export async function generateProjectDocument(
     pdf.setTextColor(255, 255, 255);
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(15);
-    pdf.text(copy.title, 39, 18);
+    pdf.text(copy.title, 39, 10);
+    pdf.setFontSize(7.2);
+    COMMERCIAL_OFFER_COMPANY_DETAILS.forEach((detail, index) => {
+      pdf.setFont('helvetica', index === 0 ? 'bold' : 'normal');
+      pdf.text(detail, 39, 15 + index * 3.1);
+    });
+    pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(9);
     pdf.text(reference, 196, 12, { align: 'right' });
     pdf.setFontSize(8);

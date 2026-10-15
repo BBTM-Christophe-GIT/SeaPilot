@@ -18,6 +18,13 @@ export const COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY = 'commercial_demobilisat
 export const COMMERCIAL_CONDITIONS_MODE_KEY = 'commercial_conditions_mode';
 export const COMMERCIAL_CONDITIONS_DESCRIPTION_KEY = 'commercial_conditions_description';
 
+export const COMMERCIAL_OFFER_COMPANY_DETAILS = [
+  'BENJAMIN BON TRAVAUX MARITIMES',
+  'Siège social : 15 impasse du Pou, 50340 Le Rozel - Tel : + 33(0)6 65 33 97 04',
+  'Siren : 884 601 170',
+  'www.bbtm.fr',
+] as const;
+
 export type CommercialConditionsMode = 'structured' | 'free_text';
 
 export const COMMERCIAL_RESERVE_AVAILABILITY =

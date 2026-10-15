@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.75.1`, build `2026-10-15.006`, ajoute sous le titre de l'offre
+commerciale les quatre lignes d'identification de BENJAMIN BON TRAVAUX MARITIMES :
+siège social et téléphone, Siren et site web. Le même contenu est utilisé dans
+l'aperçu du module Projets et le PDF émis. La référence, la date et les autres
+sections sont conservées. Aucune migration ni configuration nouvelle.
+
 Version `3.75.0`, build `2026-10-15.005`, rétablit les graphiques horaires jour
 et mois du temps de travail et recherche une couverture continue de chaque
 affectation par des fenêtres compatibles de 24 h. Seuls les trous sans
