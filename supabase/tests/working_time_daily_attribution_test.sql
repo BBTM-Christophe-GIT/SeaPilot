@@ -38,7 +38,9 @@ insert into public.planning_assignments
   (company_id, vessel_id, captain_person_id, crew_person_id, starts_on, ends_on, starts_at, ends_at,
    assignment_role, status_label, confirmation_status, watch_group, source_label)
 select f.company_id, v.id, c.person_id, f.person_id,
-  current_date - 2, current_date, (current_date - 2)::timestamptz, (current_date + 1)::timestamptz,
+  current_date - 2, current_date,
+  (current_date - 2)::timestamp at time zone 'Europe/Paris',
+  (current_date + 1)::timestamp at time zone 'Europe/Paris',
   case when f.label = 'captain' then 'Capitaine' else 'Matelot' end,
   'En Mer', 'confirmed', 'Bordée test', 'working_time_daily_attribution_test'
 from wt_attribution_actors f join public.vessels v on v.company_id = f.company_id and v.acronym = 'WTAT'
@@ -82,8 +84,8 @@ select f.company_id, f.person_id, ((current_date - 1)::text || 'T03:00:00+02')::
 from wt_attribution_actors f join public.vessels v on v.company_id=f.company_id and v.acronym='WTAT'
 join public.planning_work_rest_policies p on p.vessel_id=v.id where f.label='sailor';
 
-select ok(public.working_time_day_has_non_compliance(register_id, work_date),
-  'the previous worked day retains its required justification')
+select ok(not public.working_time_day_has_non_compliance(register_id, work_date),
+  'a covered assignment ignores the injected unfavorable rolling window')
 from wt_attribution_days where work_date=current_date-2;
 select ok(not public.working_time_day_has_non_compliance(register_id, work_date),
   'a violation before the first shift does not block the next worked day')
@@ -110,13 +112,13 @@ select set_config('request.jwt.claim.sub', (select user_id::text from wt_attribu
 select lives_ok(format('select public.validate_working_time_day(%s)', approval_id),
   'assigned real Capitaine can validate the next day without a false justification')
 from wt_attribution_days where work_date=current_date-1;
-select throws_ok(format('select public.validate_working_time_day(%s)', approval_id),
-  '23514', 'WORKING_TIME_NON_COMPLIANCE_DETAILS_REQUIRED.',
-  'the contributing day still requires the five justification fields')
-from wt_attribution_days where work_date=current_date-2;
-select lives_ok(format($sql$select public.validate_working_time_day_with_comment(%s,
+select throws_ok(format($sql$select public.validate_working_time_day_with_comment(%s,
   'unexpected_operation', 'Opération prolongée', 'Relève organisée', 'Repos planifié', 'Écart documenté')$sql$, approval_id),
-  'Capitaine can document and validate the actual contributing day')
+  '22023', 'WORKING_TIME_COMMENT_DAY_IS_COMPLIANT.',
+  'a covered day does not accept a false non-compliance justification')
+from wt_attribution_days where work_date=current_date-2;
+select lives_ok(format('select public.validate_working_time_day(%s)', approval_id),
+  'the real Capitaine validates the earlier covered day without an unnecessary justification')
 from wt_attribution_days where work_date=current_date-2;
 
 reset role;
@@ -124,9 +126,10 @@ select is(a.status, 'validated', 'the compliant day is validated')
 from public.working_time_day_approvals a join wt_attribution_days d on d.approval_id=a.id where d.work_date=current_date-1;
 select is(a.non_compliance_snapshot, '[]'::jsonb, 'the compliant day freezes no unrelated violation')
 from public.working_time_day_approvals a join wt_attribution_days d on d.approval_id=a.id where d.work_date=current_date-1;
-select is(a.non_compliance_snapshot->0->>'local_work_date', (current_date-2)::text, 'snapshot retains the actual alarm day')
+select is(a.non_compliance_snapshot, '[]'::jsonb, 'the earlier covered snapshot contains no obsolete rolling alarm')
 from public.working_time_day_approvals a join wt_attribution_days d on d.approval_id=a.id where d.work_date=current_date-2;
-select is(a.non_compliance_snapshot->0->>'local_window_end_date', (current_date-1)::text, 'snapshot retains the later calculation date')
+select ok(a.compliance_analysis_snapshot->'assignment_coverage'->0->>'status' in ('covered','projected'),
+  'the earlier signature retains the valid assignment coverage basis')
 from public.working_time_day_approvals a join wt_attribution_days d on d.approval_id=a.id where d.work_date=current_date-2;
 select ok(a.subject_signature_snapshot <> '{}'::jsonb and a.approver_signature_snapshot <> '{}'::jsonb,
   'both immutable signatures survive daily validation')

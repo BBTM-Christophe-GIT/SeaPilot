@@ -84,6 +84,11 @@ interface CalculationRow {
 interface PolicyRow {
   id: number | string;
   name: string;
+  scope?: 'company' | 'vessel';
+  vessel_id?: number | string | null;
+  effective_from?: string;
+  effective_to?: string | null;
+  active?: boolean;
   max_work_24h: number | string;
   min_rest_24h: number | string;
   max_work_7d: number | string;
@@ -304,6 +309,11 @@ export interface WorkingTimeVesselOption {
 export interface WorkingTimePolicyThresholds {
   id: number;
   name: string;
+  scope?: 'company' | 'vessel';
+  vesselId?: number | null;
+  effectiveFrom?: string;
+  effectiveTo?: string | null;
+  active?: boolean;
   maxWork24h: number;
   minRest24h: number;
   maxWork7d: number;
@@ -359,6 +369,45 @@ export interface SaveWorkingTimeDayCommentInput {
 
 export type WorkingTimeRecommendationStatus = 'conforme' | 'alerte' | 'non_conforme' | 'sans_politique';
 
+export interface WorkingTimeAnalysisWindow {
+  code: string;
+  windowStartsAt: string;
+  windowEndsAt: string;
+  value: number;
+  threshold: number;
+  unit: 'seconds' | 'periods';
+  thresholdKind: 'minimum' | 'maximum';
+  alreadyPresent: boolean;
+  source: 'before' | 'during' | 'after';
+}
+
+export interface WorkingTimeAnalysisPeriod {
+  periodStartsAt: string;
+  periodEndsAt: string;
+  status: 'compatible' | 'projected' | 'incompatible' | 'without_policy';
+  windowStartsAt: string | null;
+  windowEndsAt: string | null;
+  work24hSeconds: number;
+  rest24hSeconds: number;
+  longestRest24hSeconds: number;
+  restPeriodCount24h?: number;
+  work7dSeconds: number;
+  rest7dSeconds: number;
+  maximumAmplitudeSeconds?: number;
+  maximumRestIntervalSeconds?: number;
+  nightWork24hSeconds?: number;
+  violationCodes: string[];
+}
+
+export interface WorkingTimeAssignmentCoverage {
+  assignmentId: number | null;
+  scopeStartsAt: string;
+  scopeEndsAt: string;
+  status: 'covered' | 'projected' | 'uncovered' | 'unknown';
+  windows: { startsAt: string; endsAt: string }[];
+  uncoveredRanges: { startsAt: string; endsAt: string }[];
+}
+
 export interface WorkingTimeEntryRecommendation {
   status: WorkingTimeRecommendationStatus;
   policyId: number | null;
@@ -376,6 +425,78 @@ export interface WorkingTimeEntryRecommendation {
   latestEndAt: string | null;
   nextResumeAt: string | null;
   violationCodes: string[];
+  analysisWindows?: WorkingTimeAnalysisWindow[];
+  analysisStartsAt?: string;
+  analysisEndsAt?: string;
+  analysisVersion?: number;
+  analysisPeriods?: WorkingTimeAnalysisPeriod[];
+  assignmentCoverage?: WorkingTimeAssignmentCoverage[];
+  availableSlots?: { startsAt: string; endsAt: string }[];
+}
+
+function recommendationAnalysis(value: Record<string, unknown>): Pick<WorkingTimeEntryRecommendation,
+  'analysisWindows' | 'analysisStartsAt' | 'analysisEndsAt' | 'analysisVersion' | 'analysisPeriods' | 'assignmentCoverage' | 'availableSlots'> {
+  if (!Array.isArray(value.analysis_windows) && !Array.isArray(value.assignment_coverage)) return {};
+  const ranges = (input: unknown) => Array.isArray(input) ? input.flatMap((item: unknown) => {
+    if (!item || typeof item !== 'object') return [];
+    const row = item as Record<string, unknown>;
+    return typeof row.starts_at === 'string' && typeof row.ends_at === 'string'
+      && Number.isFinite(Date.parse(row.starts_at)) && Number.isFinite(Date.parse(row.ends_at))
+      ? [{ startsAt: row.starts_at, endsAt: row.ends_at }] : [];
+  }) : [];
+  return {
+    analysisWindows: (Array.isArray(value.analysis_windows) ? value.analysis_windows : []).flatMap((item: unknown) => {
+      if (!item || typeof item !== 'object') return [];
+      const row = item as Record<string, unknown>;
+      if (typeof row.code !== 'string' || typeof row.window_starts_at !== 'string'
+        || typeof row.window_ends_at !== 'string' || !Number.isFinite(Date.parse(row.window_starts_at))
+        || !Number.isFinite(Date.parse(row.window_ends_at)) || row.value == null || row.threshold == null
+        || !Number.isFinite(Number(row.value)) || !Number.isFinite(Number(row.threshold))
+        || (row.unit !== 'seconds' && row.unit !== 'periods')
+        || (row.threshold_kind !== 'minimum' && row.threshold_kind !== 'maximum')
+        || !['before', 'during', 'after'].includes(String(row.source))) return [];
+      return [{ code: row.code, windowStartsAt: row.window_starts_at, windowEndsAt: row.window_ends_at,
+        value: Number(row.value), threshold: Number(row.threshold), unit: row.unit,
+        thresholdKind: row.threshold_kind, alreadyPresent: row.already_present === true,
+        source: row.source as WorkingTimeAnalysisWindow['source'] }];
+    }),
+    assignmentCoverage: (Array.isArray(value.assignment_coverage) ? value.assignment_coverage : []).flatMap((item: unknown) => {
+      if (!item || typeof item !== 'object') return [];
+      const row = item as Record<string, unknown>;
+      if (typeof row.scope_starts_at !== 'string' || typeof row.scope_ends_at !== 'string'
+        || !['covered', 'projected', 'uncovered', 'unknown'].includes(String(row.status))) return [];
+      return [{ assignmentId: numberOrNull(row.assignment_id as number | string | null),
+        scopeStartsAt: row.scope_starts_at, scopeEndsAt: row.scope_ends_at,
+        status: row.status as WorkingTimeAssignmentCoverage['status'], windows: ranges(row.windows),
+        uncoveredRanges: ranges(row.uncovered_ranges) }];
+    }),
+    analysisPeriods: [],
+    availableSlots: ranges(value.available_slots),
+    ...(typeof value.analysis_starts_at === 'string' ? { analysisStartsAt: value.analysis_starts_at } : {}),
+    ...(typeof value.analysis_ends_at === 'string' ? { analysisEndsAt: value.analysis_ends_at } : {}),
+    ...(Number.isFinite(Number(value.analysis_version)) ? { analysisVersion: Number(value.analysis_version) } : {}),
+  };
+}
+
+export async function fetchWorkingTimeAssignmentAnalysis(client: SupabaseClient, input: {
+  personId: number; periodStart: string; periodEnd: string; timezoneName: string;
+  vesselId?: number | null; watchGroup?: string | null;
+  phases?: WorkingTimePhaseInput[]; excludeIntervalIds?: number[];
+}): Promise<WorkingTimeEntryRecommendation> {
+  const { data, error } = await client.rpc('working_time_assignment_analysis', {
+    p_person_id: input.personId, p_period_start: input.periodStart, p_period_end: input.periodEnd,
+    p_timezone_name: input.timezoneName, p_vessel_id: input.vesselId ?? null, p_watch_group: input.watchGroup ?? null,
+    p_phases: (input.phases || []).map((phase) => ({ starts_at: phase.startsAt, ends_at: phase.endsAt })),
+    p_exclude_interval_ids: input.excludeIntervalIds || [],
+  });
+  assertResult(error, 'Impossible d’analyser la couverture de l’affectation.');
+  const value = (data || {}) as Record<string, unknown>;
+  return { status: String(value.status || 'sans_politique') as WorkingTimeRecommendationStatus,
+    policyId: numberOrNull(value.policy_id as number | string | null), policyName: null,
+    alreadyNonCompliant: value.already_non_compliant === true, available24hSeconds: 0, available7dSeconds: 0,
+    work24hSeconds: 0, work7dSeconds: 0, rest24hSeconds: 0, longestRest24hSeconds: 0,
+    restImpactSeconds: 0, consecutiveRestImpactSeconds: 0, maxAdditionalSeconds: 0, latestEndAt: null,
+    nextResumeAt: null, violationCodes: textArray(value.violation_codes), ...recommendationAnalysis(value) };
 }
 
 export interface WorkingTimeRecommendationInput {
@@ -414,7 +535,7 @@ export interface SaveWorkingTimePhasesInput {
 const REGISTER_SELECT = 'id,company_id,person_id,period_kind,period_start,period_end,status,work_rest_policy_id,requested_captain_person_id,requested_signature_date,people!working_time_registers_person_id_fkey(first_name,last_name,function_label)';
 const INTERVAL_SELECT = 'id,register_id,company_id,person_id,local_work_date,starts_at,ends_at,timezone_name,utc_offset_minutes,vessel_id,watch_group,comment,author_user_id,author_person_id,source_type,source_reference,source_record_key';
 const CALCULATION_SELECT = 'id,company_id,person_id,window_end,local_window_end_date,timezone_name,vessel_id,work_rest_policy_id,work_24h_seconds,rest_24h_seconds,longest_rest_24h_seconds,rest_period_count_24h,work_7d_seconds,rest_7d_seconds,night_work_24h_seconds,is_compliant,violation_codes,calculation_version,calculated_at';
-const POLICY_SELECT = 'id,name,max_work_24h,min_rest_24h,max_work_7d,min_rest_7d,min_consecutive_rest_hours,max_rest_periods_24h,max_night_work_24h,max_amplitude_hours,max_interval_between_rests_hours';
+const POLICY_SELECT = 'id,name,scope,vessel_id,effective_from,effective_to,active,max_work_24h,min_rest_24h,max_work_7d,min_rest_7d,min_consecutive_rest_hours,max_rest_periods_24h,max_night_work_24h,max_amplitude_hours,max_interval_between_rests_hours';
 const VALIDATION_SELECT = 'id,register_id,event_type,previous_status,new_status,actor_identity_snapshot,signature_snapshot,interval_snapshot,non_compliance_snapshot,comment,occurred_at';
 const DAY_APPROVAL_SELECT = 'id,company_id,register_id,person_id,local_work_date,status,planning_assignment_id,vessel_id,watch_group,approver_person_id,submitted_at,validated_at,validated_by_person_id,subject_signature_snapshot,approver_signature_snapshot';
 
@@ -525,6 +646,11 @@ function mapPolicy(row: PolicyRow): WorkingTimePolicyThresholds {
   return {
     id: Number(row.id),
     name: row.name,
+    ...(row.scope ? { scope: row.scope } : {}),
+    ...(row.vessel_id !== undefined ? { vesselId: numberOrNull(row.vessel_id) } : {}),
+    ...(row.effective_from ? { effectiveFrom: row.effective_from } : {}),
+    ...(row.effective_to !== undefined ? { effectiveTo: row.effective_to } : {}),
+    ...(row.active !== undefined ? { active: row.active } : {}),
     maxWork24h: Number(row.max_work_24h),
     minRest24h: Number(row.min_rest_24h),
     maxWork7d: Number(row.max_work_7d),
@@ -843,6 +969,7 @@ export async function fetchWorkingTimeEntryRecommendation(
     latestEndAt: value.latest_end_at ? String(value.latest_end_at) : null,
     nextResumeAt: value.next_resume_at ? String(value.next_resume_at) : null,
     violationCodes: textArray(value.violation_codes),
+      ...recommendationAnalysis(value),
   };
 }
 
@@ -877,6 +1004,7 @@ export async function fetchWorkingTimePhasesRecommendation(
     latestEndAt: value.latest_end_at ? String(value.latest_end_at) : null,
     nextResumeAt: value.next_resume_at ? String(value.next_resume_at) : null,
     violationCodes: textArray(value.violation_codes),
+      ...recommendationAnalysis(value),
   };
 }
 

@@ -65,10 +65,49 @@ function clientFor(sources = fixture(), failedTable?: string) {
     };
     return query;
   });
-  return { client: { from } as unknown as SupabaseClient, from };
+  const rpc = vi.fn(async (name: string, parameters: { p_person_ids: number[] | null }) => ({
+    data: name === 'working_time_coverage_alerts' ? sources.workingTimeCalculations.filter((row) => !parameters.p_person_ids || parameters.p_person_ids.includes(row.person_id)) : [],
+    error: failedTable === 'working_time_calculation_windows' ? { message: 'Unavailable' } : null,
+  }));
+  return { client: { from, rpc } as unknown as SupabaseClient, from, rpc };
 }
 
 describe('home vessel associations and real profile scopes', () => {
+  it('does not resurrect a raw window alert when the server found a compatible assignment cover', async () => {
+    const { client, from, rpc } = clientFor();
+    rpc.mockResolvedValue({ data: [], error: null });
+    const result = await fetchManagerHomeDashboard(client, new Date(), { roles: ['marin'], personId: 43 });
+    expect(result.items.filter((item) => item.group === 'workingTime')).toEqual([]);
+    expect(from).not.toHaveBeenCalledWith('working_time_calculation_windows');
+    expect(rpc).toHaveBeenCalledWith('working_time_coverage_alerts', {
+      p_starts_on: expect.any(String), p_ends_on: expect.any(String), p_person_ids: [43],
+    });
+  });
+
+  it('explains a coverage gap without reusing an unrelated old rest measurement', () => {
+    const sources = fixture();
+    sources.workingTimeCalculations = [{
+      ...sources.workingTimeCalculations[0], violation_codes: ['assignment_coverage'], is_compliant: true,
+    }];
+    expect(buildManagerHomeItems(sources).find((item) => item.group === 'workingTime')).toMatchObject({
+      title: 'Couverture de l’affectation interrompue',
+      deadline: 'Aucun enchaînement complet de fenêtres de 24 h',
+    });
+  });
+
+  it('opens the uncovered date while preserving the source calculation date', () => {
+    const sources = fixture();
+    sources.workingTimeCalculations = [{
+      ...sources.workingTimeCalculations[0], violation_codes: ['assignment_coverage'],
+      local_window_end_date: '2026-10-10', coverage_starts_at: '2026-10-13T10:00:00Z',
+      coverage_ends_at: '2026-10-14T12:00:00Z',
+    }];
+    expect(buildManagerHomeItems(sources).find((item) => item.group === 'workingTime')).toMatchObject({
+      dueDate: '2026-10-13', to: '/modules/workingTime?person=42&date=2026-10-13',
+    });
+    expect(sources.workingTimeCalculations[0].local_window_end_date).toBe('2026-10-10');
+  });
+
   it('links every category to vessels and deduplicates shared personnel alerts', () => {
     const sources = fixture();
     sources.assignments!.push({ ...sources.assignments![0], vessel_id: 11, vessels: { name: 'KROKDUR' } }, sources.assignments![0]);

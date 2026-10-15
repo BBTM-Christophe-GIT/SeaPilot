@@ -90,6 +90,7 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
   const [range, setRange] = useState(() => currentMonthRange(navigationTarget?.date || initialRange?.start || referenceDate));
   const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
   const [activeModal, setActiveModal] = useState<WorkingTimeModalKey | null>(null);
+  const [selectedPolicyId, setSelectedPolicyId] = useState<number | undefined>();
   const {
     overview,
     reload,
@@ -158,7 +159,10 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
           onOpenHse={canViewHse ? () => setActiveModal('hse') : undefined}
           onOpenImport={canImport ? () => setActiveModal('import') : undefined}
           onOpenReport={canViewComplianceReport ? () => setActiveModal('report') : undefined}
-          onOpenWorkRest={hasLoaded ? () => setActiveModal('workRest') : undefined}
+          onOpenWorkRest={hasLoaded ? (policyId?: number) => {
+            setSelectedPolicyId(policyId);
+            setActiveModal('workRest');
+          } : undefined}
           onRefresh={refreshAll}
           roles={effectiveRoles}
         />
@@ -209,11 +213,12 @@ export function WorkingTimePage({ client, roles, currentPerson, initialRange }: 
           canViewWorkRest={permissions.canViewWorkRest}
           client={effectiveClient}
           initialTab="rest"
-          onAuditChange={async () => { await reload(); }}
+          initialPolicyId={selectedPolicyId}
+          onAuditChange={refreshAll}
           overview={overview}
           presentation="page"
           range={range}
-          subtitle="Seuils administrés, cycle de travail réinitialisé après 6 heures de repos, contrôles sur 24 heures et 7 jours."
+          subtitle="Seuils administrés, journées de calcul délimitées par le repos consécutif configuré, contrôles sur 24 heures et 7 jours."
           title="Contrôles travail et repos"
           visibleTabs={canReceiveManagementAlerts ? WORK_REST_NOTIFICATION_TABS : WORK_REST_TAB}
           />

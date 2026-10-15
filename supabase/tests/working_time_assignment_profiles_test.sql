@@ -1,0 +1,53 @@
+-- Real API actors, no preview session substitution. Everything is rolled back.
+begin;
+set local session authorization postgres;
+select no_plan();
+insert into public.companies(code,name) values('wt-coverage-actors','Synthetic coverage profiles');
+insert into auth.users(id,email) values('91600000-0000-4000-8000-000000000001','coverage-marin@example.invalid'),('91600000-0000-4000-8000-000000000002','coverage-capitaine@example.invalid'),('91600000-0000-4000-8000-000000000003','coverage-direction@example.invalid');
+insert into public.profiles(id,email,display_name,active_company_id) select u.id,u.email,'Synthetic coverage actor',c.id from auth.users u cross join public.companies c where u.id in('91600000-0000-4000-8000-000000000001','91600000-0000-4000-8000-000000000002','91600000-0000-4000-8000-000000000003') and c.code='wt-coverage-actors';
+insert into public.company_memberships(company_id,user_id,active) select active_company_id,id,true from public.profiles where email like 'coverage-%@example.invalid' on conflict(company_id,user_id) do update set active=true;
+insert into public.user_roles(user_id,company_id,role_key) select id,active_company_id,case when email='coverage-capitaine@example.invalid' then 'capitaine' when email='coverage-direction@example.invalid' then 'direction' else 'marin' end from public.profiles where email like 'coverage-%@example.invalid';
+insert into public.people(company_id,user_id,first_name,last_name,function_label,sailor_number,active) select active_company_id,id,'Synthetic','COVERAGE',case when email='coverage-capitaine@example.invalid' then 'Capitaine' else 'Matelot' end,case when email='coverage-capitaine@example.invalid' then 'COVERAGE-C' else 'COVERAGE-M' end,true from public.profiles where email in('coverage-marin@example.invalid','coverage-capitaine@example.invalid');
+insert into public.vessels(company_id,name,acronym,active) select id,'Synthetic coverage vessel','WTCOV',true from public.companies where code='wt-coverage-actors';
+insert into public.planning_work_rest_policies(company_id,name,scope,effective_from,max_work_24h,min_rest_24h,max_work_7d,min_rest_7d,min_consecutive_rest_hours,max_rest_periods_24h,night_starts_at,night_ends_at,max_night_work_24h,max_amplitude_hours,max_interval_between_rests_hours,include_handover,active) select id,'Coverage actor policy','company','2026-01-01',12,10,84,77,6,4,'22:00','06:00',8,14,14,false,true from public.companies where code='wt-coverage-actors';
+insert into public.planning_assignments(company_id,vessel_id,crew_person_id,starts_on,ends_on,starts_at,ends_at,assignment_role,status_label,confirmation_status,watch_group,source_label) select p.company_id,v.id,p.id,'2026-10-12','2026-10-18','2026-10-12T00:00:00Z','2026-10-19T00:00:00Z',p.function_label,'En Mer','confirmed','Bordée couverture','working_time_assignment_profiles_test' from public.people p join public.vessels v on v.company_id=p.company_id and v.acronym='WTCOV' where p.sailor_number in('COVERAGE-C','COVERAGE-M');
+insert into public.working_time_registers(company_id,person_id,period_kind,period_start,period_end) select company_id,id,'monthly','2026-10-01','2026-10-31' from public.people where sailor_number in('COVERAGE-C','COVERAGE-M');
+alter table public.working_time_intervals disable trigger working_time_intervals_recalculate;
+do $$declare p public.people%rowtype;begin for p in select * from public.people where sailor_number in('COVERAGE-C','COVERAGE-M') loop
+perform set_config('request.jwt.claim.sub',p.user_id::text,true);
+insert into public.working_time_intervals(company_id,register_id,person_id,local_work_date,starts_at,ends_at,timezone_name,utc_offset_minutes,vessel_id,watch_group,source_type)
+select p.company_id,r.id,p.id,(h.s at time zone 'UTC')::date,h.s,h.e,'UTC',0,v.id,'Bordée couverture','migration' from public.working_time_registers r join public.vessels v on v.company_id=r.company_id and v.acronym='WTCOV' cross join(values('2026-10-12T10:00:00Z'::timestamptz,'2026-10-12T12:30:00Z'::timestamptz),('2026-10-12T14:00:00Z','2026-10-12T22:00:00Z'),('2026-10-13T04:00:00Z','2026-10-13T12:00:00Z'))h(s,e) where r.person_id=p.id;
+end loop;end$$;
+alter table public.working_time_intervals enable trigger working_time_intervals_recalculate;
+select set_config('test.coverage_marin',(select id::text from public.people where sailor_number='COVERAGE-M'),true);
+select set_config('test.coverage_captain',(select id::text from public.people where sailor_number='COVERAGE-C'),true);
+set local session authorization authenticator;
+set local role authenticated;
+set local statement_timeout='8s';
+select set_config('request.jwt.claim.sub','91600000-0000-4000-8000-000000000001',true);
+create temp table coverage_actor_response as select public.working_time_assignment_analysis(current_setting('test.coverage_marin')::bigint,'2026-10-01','2026-10-31','UTC',null,null,'[]','{}') result;
+select is((select jsonb_array_length(result->'assignment_coverage') from coverage_actor_response),1,'one month request groups the actual seven-day assignment');
+select ok((select result->'assignment_coverage'->0->>'status' in('covered','projected') from coverage_actor_response),'a real Marin obtains a compatible chain despite the Oct13 unfavorable window');
+select ok((select jsonb_array_length(result->'available_slots')>0 from coverage_actor_response),'the month batch supplies concrete individually verified work slots');
+select throws_ok($$select public.working_time_assignment_analysis(current_setting('test.coverage_captain')::bigint,'2026-10-01','2026-10-31','UTC',null,null,'[]','{}')$$,'42501','WORKING_TIME_PERMISSION_DENIED: analyse des affectations.','a Marin cannot read another profile assignment analysis');
+create temp table coverage_pending_response as select public.working_time_assignment_analysis(current_setting('test.coverage_marin')::bigint,'2026-10-01','2026-10-31','UTC',null,null,'[{"starts_at":"2026-10-13T18:00:00Z","ends_at":"2026-10-13T23:00:00Z"},{"starts_at":"2026-10-14T04:00:00Z","ends_at":"2026-10-14T12:00:00Z"},{"starts_at":"2026-10-14T15:30:00Z","ends_at":"2026-10-14T19:30:00Z"}]','{}') result;
+select is((select result->>'status' from coverage_pending_response),'non_conforme','unsaved phases on multiple days are analysed together without dropping any hours');
+select is((select count(*)::integer from public.working_time_intervals where person_id=current_setting('test.coverage_marin')::bigint),3,'analysis never saves its hypothetical phases');
+reset role;
+reset session authorization;
+insert into public.vessels(company_id,name,acronym,active) select id,'Synthetic other vessel','WTCOV2',true from public.companies where code='wt-coverage-actors';
+insert into public.planning_assignments(company_id,vessel_id,crew_person_id,starts_on,ends_on,starts_at,ends_at,assignment_role,status_label,confirmation_status,watch_group,source_label) select p.company_id,v.id,p.id,'2026-10-20','2026-10-22','2026-10-20T00:00:00Z','2026-10-23T00:00:00Z','Matelot','En Mer','confirmed','Other watch','working_time_assignment_profiles_test' from public.people p join public.vessels v on v.company_id=p.company_id and v.acronym='WTCOV2' where p.sailor_number='COVERAGE-M';
+set local session authorization authenticator;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','91600000-0000-4000-8000-000000000002',true);
+select is(jsonb_array_length(public.working_time_assignment_analysis(current_setting('test.coverage_marin')::bigint,'2026-10-01','2026-10-31','UTC',null,null,'[]','{}')->'assignment_coverage'),1,'a Captain month request excludes crew assignments on another vessel and watch');
+select ok((public.working_time_assignment_analysis(current_setting('test.coverage_marin')::bigint,'2026-10-01','2026-10-31','UTC',null,null,'[]','{}')->'assignment_coverage'->0->>'status') in('covered','projected'),'the real assigned Capitaine can inspect crew coverage');
+select ok((public.working_time_assignment_analysis(current_setting('test.coverage_captain')::bigint,'2026-10-01','2026-10-31','UTC',null,null,'[]','{}')->'assignment_coverage'->0->>'status') in('covered','projected'),'the real Capitaine obtains the same conclusion for identical own hours');
+select set_config('request.jwt.claim.sub','91600000-0000-4000-8000-000000000003',true);
+select is(jsonb_array_length(public.working_time_assignment_analysis(current_setting('test.coverage_marin')::bigint,'2026-10-01','2026-10-31','UTC',null,null,'[]','{}')->'assignment_coverage'),2,'a real Direction account retains read access to both assignments');
+reset role;
+reset session authorization;
+select ok(not has_function_privilege('anon','public.working_time_assignment_analysis(bigint,date,date,text,bigint,text,jsonb,bigint[])','execute'),'anonymous callers cannot inspect assignment coverage');
+select * from finish();
+rollback;
+

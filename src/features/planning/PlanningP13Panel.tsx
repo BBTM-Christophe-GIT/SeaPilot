@@ -12,7 +12,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { formatPlanningDate, formatPlanningDateTime, todayPlanningDate } from './planningDates';
 import { planningErrorMessage } from './planningErrors';
@@ -59,6 +59,8 @@ interface PolicyForm {
   nightStartsAt: string;
   nightEndsAt: string;
   maxNightWork24h: string;
+  maxAmplitudeHours: string;
+  maxIntervalBetweenRestsHours: string;
   includeHandover: boolean;
   active: boolean;
   notes: string;
@@ -86,6 +88,7 @@ function emptyPolicy(rangeStart: string): PolicyForm {
     name: '', scope: 'company', vesselId: '', effectiveFrom: rangeStart || todayPlanningDate(), effectiveTo: '',
     maxWork24h: '', minRest24h: '', maxWork7d: '', minRest7d: '', minConsecutiveRestHours: '',
     maxRestPeriods24h: '', nightStartsAt: '', nightEndsAt: '', maxNightWork24h: '',
+    maxAmplitudeHours: '', maxIntervalBetweenRestsHours: '',
     includeHandover: true, active: true, notes: '',
   };
 }
@@ -97,6 +100,8 @@ function policyForm(policy: PlanningWorkRestPolicy): PolicyForm {
     minRest24h: String(policy.minRest24h), maxWork7d: String(policy.maxWork7d), minRest7d: String(policy.minRest7d),
     minConsecutiveRestHours: String(policy.minConsecutiveRestHours), maxRestPeriods24h: String(policy.maxRestPeriods24h),
     nightStartsAt: policy.nightStartsAt, nightEndsAt: policy.nightEndsAt, maxNightWork24h: String(policy.maxNightWork24h),
+    maxAmplitudeHours: policy.maxAmplitudeHours == null ? '' : String(policy.maxAmplitudeHours),
+    maxIntervalBetweenRestsHours: policy.maxIntervalBetweenRestsHours == null ? '' : String(policy.maxIntervalBetweenRestsHours),
     includeHandover: policy.includeHandover, active: policy.active, notes: policy.notes,
   };
 }
@@ -127,6 +132,7 @@ export interface PlanningP13PanelProps {
   onAuditChange?: () => Promise<void>;
   presentation?: 'dialog' | 'page';
   initialTab?: P13Tab;
+  initialPolicyId?: number;
   visibleTabs?: P13Tab[];
   title?: string;
   subtitle?: string;
@@ -146,6 +152,7 @@ export function PlanningP13Panel({
   onAuditChange = async () => undefined,
   presentation = 'dialog',
   initialTab,
+  initialPolicyId,
   visibleTabs,
   title = 'Cockpit Planning P1.3',
   subtitle = 'Repos, notifications, indicateurs, exports et dépendances',
@@ -155,6 +162,7 @@ export function PlanningP13Panel({
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ text: string; error: boolean } | null>(null);
   const [policyEditor, setPolicyEditor] = useState<PolicyForm | null>(null);
+  const openedPolicyId = useRef<number | undefined>(undefined);
   const [restFilter, setRestFilter] = useState<'all' | 'alerts' | 'missing'>('alerts');
   const [dependencyForm, setDependencyForm] = useState<DependencyForm | null>(null);
   const availableTabs = useMemo(() => TABS.filter((item) => {
@@ -171,29 +179,43 @@ export function PlanningP13Panel({
   ));
   const activeTab = availableTabs.some((item) => item.key === tab) ? tab : availableTabs[0]?.key || 'rest';
 
+  const applyLoadedData = useCallback((result: PlanningP13Data) => {
+    setData(result);
+    if (!canManageWorkRestPolicies) {
+      setPolicyEditor(null);
+      return;
+    }
+    if (initialPolicyId === undefined || openedPolicyId.current === initialPolicyId) return;
+    const selectedPolicy = result.policies.find((policy) => policy.id === initialPolicyId);
+    if (selectedPolicy) {
+      openedPolicyId.current = initialPolicyId;
+      setPolicyEditor(policyForm(selectedPolicy));
+    }
+  }, [canManageWorkRestPolicies, initialPolicyId]);
+
   const load = useCallback(async (refresh = false) => {
     setLoading(true);
     try {
       if (refresh && canRefreshNotifications) await refreshPlanningNotifications(client, todayPlanningDate());
-      setData(await fetchPlanningP13Data(client));
+      applyLoadedData(await fetchPlanningP13Data(client));
       setFeedback(null);
     } catch (error) {
       setFeedback({ text: planningErrorMessage(error, 'Impossible de charger le cockpit P1.3.'), error: true });
     } finally {
       setLoading(false);
     }
-  }, [canRefreshNotifications, client]);
+  }, [applyLoadedData, canRefreshNotifications, client]);
 
   useEffect(() => {
     let active = true;
     const request = canRefreshNotifications
       ? refreshPlanningNotifications(client, todayPlanningDate()).catch(() => 0).then(() => fetchPlanningP13Data(client))
       : fetchPlanningP13Data(client);
-    void request.then((result) => { if (active) setData(result); })
+    void request.then((result) => { if (active) applyLoadedData(result); })
       .catch((error) => { if (active) setFeedback({ text: planningErrorMessage(error, 'Impossible de charger le cockpit P1.3.'), error: true }); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [canRefreshNotifications, client]);
+  }, [applyLoadedData, canRefreshNotifications, client]);
 
   const checks = useMemo(() => buildPlanningWorkRestChecks(overview, data.policies, range), [data.policies, overview, range]);
   const dependencyResults = useMemo(() => buildPlanningDependencyViolations(overview, data.p12.absences, data.dependencies), [data.dependencies, data.p12.absences, overview]);
@@ -213,14 +235,14 @@ export function PlanningP13Panel({
 
   async function submitPolicy(event: FormEvent) {
     event.preventDefault();
-    if (!policyEditor) return;
+    if (!policyEditor || !canManageWorkRestPolicies) return;
     setSaving(true);
     try {
       await savePlanningWorkRestPolicy(client, {
         id: policyEditor.id, name: policyEditor.name, scope: policyEditor.scope,
         vesselId: policyEditor.vesselId ? Number(policyEditor.vesselId) : null,
         effectiveFrom: policyEditor.effectiveFrom, effectiveTo: policyEditor.effectiveTo,
-        maxWork24h: requiredPolicyNumber(policyEditor.maxWork24h, 'Le maximum de travail du cycle après repos de 6 h'),
+        maxWork24h: requiredPolicyNumber(policyEditor.maxWork24h, 'Le maximum de travail par journée de calcul'),
         minRest24h: requiredPolicyNumber(policyEditor.minRest24h, 'Le minimum de repos sur 24 h glissantes'),
         maxWork7d: requiredPolicyNumber(policyEditor.maxWork7d, 'Le maximum de travail sur 7 jours glissants'),
         minRest7d: requiredPolicyNumber(policyEditor.minRest7d, 'Le minimum de repos sur 7 jours glissants'),
@@ -229,6 +251,8 @@ export function PlanningP13Panel({
         nightStartsAt: policyEditor.nightStartsAt,
         nightEndsAt: policyEditor.nightEndsAt,
         maxNightWork24h: requiredPolicyNumber(policyEditor.maxNightWork24h, 'Le maximum de travail de nuit'),
+        maxAmplitudeHours: requiredPolicyNumber(policyEditor.maxAmplitudeHours, 'L’amplitude maximale'),
+        maxIntervalBetweenRestsHours: requiredPolicyNumber(policyEditor.maxIntervalBetweenRestsHours, 'L’intervalle maximal entre repos'),
         includeHandover: policyEditor.includeHandover, active: policyEditor.active, notes: policyEditor.notes,
       });
       setPolicyEditor(null);
@@ -309,13 +333,13 @@ export function PlanningP13Panel({
       {!loading && activeTab === 'rest' ? <div className="planning-p13-content">
         <div className="planning-p13-toolbar"><div><strong>Contrôles travail & repos</strong><small>{data.policies.length ? `${data.policies.length} politique(s) datée(s) administrée(s)` : 'Aucun seuil configuré : aucun seuil réglementaire implicite n’est appliqué.'}</small></div>{canManageWorkRestPolicies ? <button onClick={() => setPolicyEditor(emptyPolicy(range.start))} type="button"><Plus size={16} />Nouvelle politique</button> : null}</div>
         <div className="planning-p13-segmented"><button className={restFilter === 'alerts' ? 'is-active' : ''} onClick={() => setRestFilter('alerts')} type="button">Alertes</button><button className={restFilter === 'missing' ? 'is-active' : ''} onClick={() => setRestFilter('missing')} type="button">Données manquantes</button><button className={restFilter === 'all' ? 'is-active' : ''} onClick={() => setRestFilter('all')} type="button">Tous</button></div>
-        <div className="planning-p13-policy-list">{data.policies.map((policy) => <button key={policy.id} onClick={() => canManageWorkRestPolicies && setPolicyEditor(policyForm(policy))} type="button"><span><strong>{policy.name}</strong><small>{policy.scope === 'company' ? 'Entreprise' : overview.vessels.find((vessel) => vessel.id === policy.vesselId)?.name} · depuis le {formatPlanningDate(policy.effectiveFrom)}</small></span><em>{policy.active ? 'Active' : 'Inactive'}</em></button>)}</div>
+        <div className="planning-p13-policy-list">{data.policies.map((policy) => <button disabled={!canManageWorkRestPolicies} key={policy.id} onClick={() => canManageWorkRestPolicies && setPolicyEditor(policyForm(policy))} type="button"><span><strong>{policy.name}</strong><small>{policy.scope === 'company' ? 'Entreprise' : overview.vessels.find((vessel) => vessel.id === policy.vesselId)?.name} · depuis le {formatPlanningDate(policy.effectiveFrom)}</small><small>Travail : {policy.maxWork24h} h / journée de calcul · repos : {policy.minRest24h} h / 24 h</small><small>Repos continu : {policy.minConsecutiveRestHours} h · amplitude : {policy.maxAmplitudeHours ?? "non renseignée"}{policy.maxAmplitudeHours == null ? "" : " h"}</small></span><em>{policy.active ? 'Active' : 'Inactive'}</em></button>)}</div>
         <div className="planning-p13-check-list">{filteredChecks.length ? filteredChecks.map((check) => <article className={`is-${check.status}`} key={check.id}><div><strong>{check.personName}</strong><span>{check.ruleLabel}</span><small>{check.vesselName} · {formatPlanningDate(check.date)} · {check.policyName}</small></div><div><strong>{check.value ?? 'N/A'} {check.value === null ? '' : check.unit === 'hours' ? 'h' : 'période(s)'}</strong><span>Seuil : {check.threshold ?? 'non configuré'}</span><em>{check.status === 'compliant' ? 'Conforme' : check.status === 'non_compliant' ? 'Non conforme' : 'Non évaluable'}</em></div></article>) : <div className="admin-empty"><CheckCircle2 size={20} /><p>Aucun contrôle dans ce filtre.</p></div>}</div>
       </div> : null}
 
       {!loading && activeTab === 'notifications' ? <div className="planning-p13-content">
-        <div className="planning-p13-toolbar"><div><strong>Notifications métier</strong><small>{metrics.unreadNotifications} non lue(s) sur {data.notifications.length}</small></div>{canRefreshNotifications ? <button onClick={() => void load(true)} type="button"><RefreshCw size={16} />Actualiser</button> : null}</div>
-        <div className="planning-p13-notifications">{data.notifications.length ? data.notifications.map((notification) => <article className={`${notification.readAt ? 'is-read' : ''} is-${notification.severity}`} key={notification.id}><Bell size={18} /><div><span><strong>{notification.title}</strong><em>{PLANNING_NOTIFICATION_LABELS[notification.notificationType]}</em></span><p>{notification.body}</p><small>{formatPlanningDateTime(notification.createdAt)}{notification.dueOn ? ` · échéance ${formatPlanningDate(notification.dueOn)}` : ''}</small></div><button onClick={() => void toggleNotification(notification.id, !notification.readAt)} type="button">{notification.readAt ? 'Marquer non lue' : 'Marquer lue'}</button></article>) : <div className="admin-empty"><Bell size={20} /><p>Aucune notification.</p></div>}</div>
+        <div className="planning-p13-toolbar"><div><strong>Notifications métier</strong><small>{data.notificationsError ? 'Alertes de temps de travail indisponibles' : `${metrics.unreadNotifications} non lue(s) sur ${data.notifications.length}`}</small></div>{canRefreshNotifications ? <button onClick={() => void load(true)} type="button"><RefreshCw size={16} />Actualiser</button> : null}</div>
+        <div className="planning-p13-notifications">{data.notificationsError ? <p role="alert">{data.notificationsError}</p> : null}{data.notifications.length ? data.notifications.map((notification) => <article className={`${notification.readAt ? 'is-read' : ''} is-${notification.severity}`} key={notification.id}><Bell size={18} /><div><span><strong>{notification.title}</strong><em>{PLANNING_NOTIFICATION_LABELS[notification.notificationType]}</em></span><p>{notification.body}</p><small>{formatPlanningDateTime(notification.createdAt)}{notification.dueOn ? ` · échéance ${formatPlanningDate(notification.dueOn)}` : ''}</small></div><button onClick={() => void toggleNotification(notification.id, !notification.readAt)} type="button">{notification.readAt ? 'Marquer non lue' : 'Marquer lue'}</button></article>) : data.notificationsError ? null : <div className="admin-empty"><Bell size={20} /><p>Aucune notification.</p></div>}</div>
       </div> : null}
 
       {!loading && activeTab === 'dependencies' ? <div className="planning-p13-content">
@@ -323,7 +347,7 @@ export function PlanningP13Panel({
         <div className="planning-p13-dependencies">{dependencyResults.length ? dependencyResults.map((result) => <article className={result.violated ? 'is-violated' : 'is-valid'} key={result.dependency.id}><Activity size={18} /><div><span><strong>{PLANNING_DEPENDENCY_LABELS[result.dependency.dependencyType]}</strong><em>{result.violated ? 'Non respectée' : 'Respectée'}</em></span><p>{result.predecessorLabel} → {result.successorLabel}</p><small>{result.detail}</small></div>{canManageDependencies ? <button aria-label={`Supprimer la dépendance ${result.dependency.id}`} disabled={saving} onClick={() => void removeDependency(result.dependency.id)} type="button"><Trash2 size={16} /></button> : null}</article>) : <div className="admin-empty"><Link2 size={20} /><p>Aucune dépendance configurée.</p></div>}</div>
       </div> : null}
 
-      {policyEditor ? <form className="planning-p13-inline-editor" onSubmit={submitPolicy}><header><div><Settings2 size={18} /><h3>{policyEditor.id ? 'Modifier la politique' : 'Nouvelle politique'}</h3></div><button aria-label="Fermer l’éditeur" onClick={() => setPolicyEditor(null)} type="button"><X size={16} /></button></header><aside className="planning-p13-policy-warning"><TriangleAlert aria-hidden="true" size={18} /><p><strong>Configuration administrateur, sans valeur réglementaire implicite.</strong> Les seuils doivent être vérifiés avant activation. Une valeur issue d’un classeur reste une suggestion d’import et ne constitue jamais une vérité légale.</p></aside><div className="planning-p13-form-grid"><label className="is-wide">Nom<input required minLength={2} value={policyEditor.name} onChange={(event) => setPolicyEditor({ ...policyEditor, name: event.target.value })} /></label><label>Portée<select value={policyEditor.scope} onChange={(event) => setPolicyEditor({ ...policyEditor, scope: event.target.value as PolicyForm['scope'], vesselId: '' })}><option value="company">Globale (entreprise)</option><option value="vessel">Navire</option></select></label>{policyEditor.scope === 'vessel' ? <label>Navire<select required value={policyEditor.vesselId} onChange={(event) => setPolicyEditor({ ...policyEditor, vesselId: event.target.value })}><option value="">Sélectionner</option>{overview.vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label> : null}<label>Applicable du<input required type="date" value={policyEditor.effectiveFrom} onChange={(event) => setPolicyEditor({ ...policyEditor, effectiveFrom: event.target.value })} /></label><label>Au<input min={policyEditor.effectiveFrom} type="date" value={policyEditor.effectiveTo} onChange={(event) => setPolicyEditor({ ...policyEditor, effectiveTo: event.target.value })} /></label><label>Travail max — cycle après repos de 6 h<input max="24" min="0" required step="0.25" type="number" value={policyEditor.maxWork24h} onChange={(event) => setPolicyEditor({ ...policyEditor, maxWork24h: event.target.value })} /></label><label>Repos min — 24 h glissantes<input max="24" min="0" required step="0.25" type="number" value={policyEditor.minRest24h} onChange={(event) => setPolicyEditor({ ...policyEditor, minRest24h: event.target.value })} /></label><label>Travail max — 7 j glissants<input max="168" min="0" required step="0.25" type="number" value={policyEditor.maxWork7d} onChange={(event) => setPolicyEditor({ ...policyEditor, maxWork7d: event.target.value })} /></label><label>Repos min — 7 j glissants<input max="168" min="0" required step="0.25" type="number" value={policyEditor.minRest7d} onChange={(event) => setPolicyEditor({ ...policyEditor, minRest7d: event.target.value })} /></label><label>Repos consécutif minimum<input max="24" min="0" required step="0.25" type="number" value={policyEditor.minConsecutiveRestHours} onChange={(event) => setPolicyEditor({ ...policyEditor, minConsecutiveRestHours: event.target.value })} /></label><label>Périodes de repos max / 24 h<input max="24" min="1" required type="number" value={policyEditor.maxRestPeriods24h} onChange={(event) => setPolicyEditor({ ...policyEditor, maxRestPeriods24h: event.target.value })} /></label><label>Début de la fenêtre de nuit<input required type="time" value={policyEditor.nightStartsAt} onChange={(event) => setPolicyEditor({ ...policyEditor, nightStartsAt: event.target.value })} /></label><label>Fin de la fenêtre de nuit<input required type="time" value={policyEditor.nightEndsAt} onChange={(event) => setPolicyEditor({ ...policyEditor, nightEndsAt: event.target.value })} /></label><label>Travail de nuit maximum<input max="24" min="0" required step="0.25" type="number" value={policyEditor.maxNightWork24h} onChange={(event) => setPolicyEditor({ ...policyEditor, maxNightWork24h: event.target.value })} /></label><label className="is-checkbox"><input checked={policyEditor.includeHandover} onChange={(event) => setPolicyEditor({ ...policyEditor, includeHandover: event.target.checked })} type="checkbox" />Inclure le temps de passation</label><label className="is-checkbox"><input checked={policyEditor.active} onChange={(event) => setPolicyEditor({ ...policyEditor, active: event.target.checked })} type="checkbox" />Politique active</label><label className="is-wide">Notes et référence de configuration<textarea value={policyEditor.notes} onChange={(event) => setPolicyEditor({ ...policyEditor, notes: event.target.value })} /></label></div><footer><button className="is-secondary" onClick={() => setPolicyEditor(null)} type="button">Annuler</button><button disabled={saving} type="submit">Enregistrer</button></footer></form> : null}
+      {policyEditor && canManageWorkRestPolicies ? <form className="planning-p13-inline-editor" onSubmit={submitPolicy}><header><div><Settings2 size={18} /><h3>{policyEditor.id ? 'Modifier la politique' : 'Nouvelle politique'}</h3></div><button aria-label="Fermer l’éditeur" onClick={() => setPolicyEditor(null)} type="button"><X size={16} /></button></header><aside className="planning-p13-policy-warning"><TriangleAlert aria-hidden="true" size={18} /><p><strong>Configuration administrateur, sans valeur réglementaire implicite.</strong> Les seuils doivent être vérifiés avant activation. Une valeur issue d’un classeur reste une suggestion d’import et ne constitue jamais une vérité légale.</p></aside><div className="planning-p13-form-grid"><label className="is-wide">Nom<input required minLength={2} value={policyEditor.name} onChange={(event) => setPolicyEditor({ ...policyEditor, name: event.target.value })} /></label><label>Portée<select value={policyEditor.scope} onChange={(event) => setPolicyEditor({ ...policyEditor, scope: event.target.value as PolicyForm['scope'], vesselId: '' })}><option value="company">Globale (entreprise)</option><option value="vessel">Navire</option></select></label>{policyEditor.scope === 'vessel' ? <label>Navire<select required value={policyEditor.vesselId} onChange={(event) => setPolicyEditor({ ...policyEditor, vesselId: event.target.value })}><option value="">Sélectionner</option>{overview.vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label> : null}<label>Applicable du<input required type="date" value={policyEditor.effectiveFrom} onChange={(event) => setPolicyEditor({ ...policyEditor, effectiveFrom: event.target.value })} /></label><label>Au<input min={policyEditor.effectiveFrom} type="date" value={policyEditor.effectiveTo} onChange={(event) => setPolicyEditor({ ...policyEditor, effectiveTo: event.target.value })} /></label><label>Travail max — journée de calcul<input max="24" min="0" required step="0.25" type="number" value={policyEditor.maxWork24h} onChange={(event) => setPolicyEditor({ ...policyEditor, maxWork24h: event.target.value })} /></label><label>Repos min — 24 h glissantes<input max="24" min="0" required step="0.25" type="number" value={policyEditor.minRest24h} onChange={(event) => setPolicyEditor({ ...policyEditor, minRest24h: event.target.value })} /></label><label>Travail max — 7 j glissants<input max="168" min="0" required step="0.25" type="number" value={policyEditor.maxWork7d} onChange={(event) => setPolicyEditor({ ...policyEditor, maxWork7d: event.target.value })} /></label><label>Repos min — 7 j glissants<input max="168" min="0" required step="0.25" type="number" value={policyEditor.minRest7d} onChange={(event) => setPolicyEditor({ ...policyEditor, minRest7d: event.target.value })} /></label><label>Repos consécutif minimum<input max="24" min="0" required step="0.25" type="number" value={policyEditor.minConsecutiveRestHours} onChange={(event) => setPolicyEditor({ ...policyEditor, minConsecutiveRestHours: event.target.value })} /></label><label>Périodes de repos max / 24 h<input max="24" min="1" required type="number" value={policyEditor.maxRestPeriods24h} onChange={(event) => setPolicyEditor({ ...policyEditor, maxRestPeriods24h: event.target.value })} /></label><label>Début de la fenêtre de nuit<input required type="time" value={policyEditor.nightStartsAt} onChange={(event) => setPolicyEditor({ ...policyEditor, nightStartsAt: event.target.value })} /></label><label>Fin de la fenêtre de nuit<input required type="time" value={policyEditor.nightEndsAt} onChange={(event) => setPolicyEditor({ ...policyEditor, nightEndsAt: event.target.value })} /></label><label>Travail de nuit maximum<input max="24" min="0" required step="0.25" type="number" value={policyEditor.maxNightWork24h} onChange={(event) => setPolicyEditor({ ...policyEditor, maxNightWork24h: event.target.value })} /></label><label>Amplitude maximale<input max="24" min="0.01" required step="0.01" type="number" value={policyEditor.maxAmplitudeHours} onChange={(event) => setPolicyEditor({ ...policyEditor, maxAmplitudeHours: event.target.value })} /></label><label>Intervalle maximal entre repos<input max="24" min="0.01" required step="0.01" type="number" value={policyEditor.maxIntervalBetweenRestsHours} onChange={(event) => setPolicyEditor({ ...policyEditor, maxIntervalBetweenRestsHours: event.target.value })} /></label><label className="is-checkbox"><input checked={policyEditor.includeHandover} onChange={(event) => setPolicyEditor({ ...policyEditor, includeHandover: event.target.checked })} type="checkbox" />Inclure le temps de passation</label><label className="is-checkbox"><input checked={policyEditor.active} onChange={(event) => setPolicyEditor({ ...policyEditor, active: event.target.checked })} type="checkbox" />Politique active</label><label className="is-wide">Notes et référence de configuration<textarea value={policyEditor.notes} onChange={(event) => setPolicyEditor({ ...policyEditor, notes: event.target.value })} /></label></div><footer><button className="is-secondary" onClick={() => setPolicyEditor(null)} type="button">Annuler</button><button disabled={saving} type="submit">Enregistrer</button></footer></form> : null}
 
       {dependencyForm ? <form className="planning-p13-inline-editor" onSubmit={submitDependency}><header><div><Link2 size={18} /><h3>Nouvelle dépendance</h3></div><button aria-label="Fermer l’éditeur" onClick={() => setDependencyForm(null)} type="button"><X size={16} /></button></header><div className="planning-p13-form-grid"><label>Type<select value={dependencyForm.dependencyType} onChange={(event) => setDependencyForm({ ...dependencyForm, dependencyType: event.target.value as PlanningDependencyType })}>{DEPENDENCY_TYPES.map((type) => <option key={type} value={type}>{PLANNING_DEPENDENCY_LABELS[type]}</option>)}</select></label><label className="is-wide">Source<select value={dependencyForm.predecessor} onChange={(event) => setDependencyForm({ ...dependencyForm, predecessor: event.target.value })}>{entities.map((entity) => <option key={entity.value} value={entity.value}>{entity.label}</option>)}</select></label><label className="is-wide">Cible<select value={dependencyForm.successor} onChange={(event) => setDependencyForm({ ...dependencyForm, successor: event.target.value })}>{entities.map((entity) => <option key={entity.value} value={entity.value}>{entity.label}</option>)}</select></label><label>Délai minimum (minutes)<input max="525600" min="0" required type="number" value={dependencyForm.lagMinutes} onChange={(event) => setDependencyForm({ ...dependencyForm, lagMinutes: event.target.value })} /></label><label className="is-wide">Commentaire<textarea value={dependencyForm.notes} onChange={(event) => setDependencyForm({ ...dependencyForm, notes: event.target.value })} /></label></div><footer><button className="is-secondary" onClick={() => setDependencyForm(null)} type="button">Annuler</button><button disabled={saving} type="submit">Enregistrer</button></footer></form> : null}
     </section>;

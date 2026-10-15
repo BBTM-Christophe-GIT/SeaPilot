@@ -28,6 +28,7 @@ import type { CurrentPersonSummary } from '../profiles/profileQueries';
 import type { WorkingTimeInterval } from './workingTimeModel';
 import {
   fetchWorkingTimeWorkspace,
+  fetchWorkingTimeAssignmentAnalysis,
   fetchWorkingTimeDayContext,
   discardWorkingTimeDraft,
   getOrCreateWorkingTimeRegister,
@@ -41,6 +42,7 @@ import {
   type WorkingTimeActiveSignature,
   type WorkingTimeDayContext,
   type WorkingTimeDayApproval,
+  type WorkingTimeEntryRecommendation,
   type WorkingTimeNonComplianceCause,
   type WorkingTimePhaseInput,
   type WorkingTimeRange,
@@ -56,6 +58,10 @@ import {
   workingTimeViolationWindowText,
 } from './workingTimeCompliance';
 import { WorkingTimeEntryBoard, type WorkingTimeRollingWindowMarker } from './WorkingTimeEntryBoard';
+import { buildWorkingTimeEntryAnalysis, entryBounds, entryDuration } from './workingTimeEntryAnalysis';
+import { WorkingTimeEntryCompliance } from './WorkingTimeEntryCompliance';
+import './workingTimeEntryAnalysis.css';
+import { workingTimeCoverageDayStatuses, workingTimeRangeTouchesDate } from './workingTimeCoverage';
 import {
   workingTimeEntryCutoffDate,
   workingTimeEntryDateIsOpen,
@@ -79,7 +85,7 @@ interface WorkingTimeWorkflowPanelProps {
   onOpenImport?: () => void;
   onOpenHse?: () => void;
   onOpenReport?: () => void;
-  onOpenWorkRest?: () => void;
+  onOpenWorkRest?: (policyId?: number) => void;
 }
 
 type PersonnelFilter = 'active' | 'departed';
@@ -96,6 +102,18 @@ interface NonComplianceDraft {
   immediateAction: string;
   compensatoryRestPlan: string;
   comment: string;
+}
+
+interface EntryDraft {
+  startsAt: string;
+  endsAt: string;
+  comment: string;
+  editingIntervalId: number | null;
+  pending: WorkingTimePhaseInput[];
+}
+
+function emptyEntryDraft(day: string): EntryDraft {
+  return { startsAt: `${day}T00:00`, endsAt: `${day}T00:00`, comment: '', editingIntervalId: null, pending: [] };
 }
 
 interface SignatureEvidence {
@@ -278,13 +296,23 @@ export function WorkingTimeWorkflowPanel({
   const enabled = Boolean((currentPerson || canBrowseWithoutProfile) && range.start && range.end && range.start <= range.end);
   const workspaceScope = `${currentPerson?.id || 0}:${[...roles].sort().join(',')}:${previewMode}`;
   const { workspace, isLoading, errorMessage, reload } = useWorkingTimeWorkspace(client, enabled, range, refreshToken, workspaceScope);
+  const selectedRangeLoaded = Boolean(workspace && !isLoading && !errorMessage);
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(currentPerson?.id || null);
   const [registerSearch, setRegisterSearch] = useState('');
-  const [startsAt, setStartsAt] = useState(`${range.start}T00:00`);
-  const [endsAt, setEndsAt] = useState(`${range.start}T00:00`);
-  const [intervalComment, setIntervalComment] = useState('');
-  const [editingIntervalId, setEditingIntervalId] = useState<number | null>(null);
-  const [pendingPhases, setPendingPhases] = useState<WorkingTimePhaseInput[]>([]);
+  const localToday = useMemo(() => referenceDate || todayPlanningDate(), [referenceDate]);
+  const [selectedDay, setSelectedDay] = useState(() => workingTimeInitialDay(range, localToday));
+  const [entryDrafts, setEntryDrafts] = useState<Record<string, EntryDraft>>({});
+  const entryKey = `${selectedPersonId}:${selectedDay}`;
+  const draft = entryDrafts[entryKey] ?? emptyEntryDraft(selectedDay);
+  const { startsAt, endsAt, comment: intervalComment, editingIntervalId, pending: pendingPhases } = draft;
+  function updateEntryDraft(change: Partial<EntryDraft>) {
+    setEntryDrafts((current) => ({ ...current, [entryKey]: { ...(current[entryKey] ?? emptyEntryDraft(selectedDay)), ...change } }));
+  }
+  const setStartsAt = (value: string) => updateEntryDraft({ startsAt: value });
+  const setEndsAt = (value: string) => updateEntryDraft({ endsAt: value });
+  const setIntervalComment = (value: string) => updateEntryDraft({ comment: value });
+  const setEditingIntervalId = (value: number | null) => updateEntryDraft({ editingIntervalId: value });
+  const setPendingPhases = (value: WorkingTimePhaseInput[]) => updateEntryDraft({ pending: value });
   const [voidCandidateId, setVoidCandidateId] = useState<number | null>(null);
   const [voidReason, setVoidReason] = useState('');
   const [dayResponses, setDayResponses] = useState<Record<string, NonComplianceDraft>>({});
@@ -300,8 +328,6 @@ export function WorkingTimeWorkflowPanel({
   const [isAutoCreatingRegister, setIsAutoCreatingRegister] = useState(false);
   const [autoRegisterAttempt, setAutoRegisterAttempt] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const localToday = useMemo(() => referenceDate || todayPlanningDate(), [referenceDate]);
-  const [selectedDay, setSelectedDay] = useState(() => workingTimeInitialDay(range, localToday));
   const [registerView, setRegisterView] = useState<'daily' | 'monthly'>('daily');
   const [rightPanelTab, setRightPanelTab] = useState<'compliance' | 'approvals'>('compliance');
   const [approvalNavigationTarget, setApprovalNavigationTarget] = useState<{ personId: number; date: string } | null>(null);
@@ -397,6 +423,101 @@ export function WorkingTimeWorkflowPanel({
     () => rollingWindowMarker(selectedRollingImpactDetails),
     [selectedRollingImpactDetails],
   );
+  const entryPolicy = useMemo(() => {
+    const policies = workspace?.policies ?? [];
+    const dated = policies.filter((policy) => policy.effectiveFrom !== undefined);
+    if (dated.length && isDayContextLoading) return null;
+    if (dated.length) return dated.filter((policy) => policy.active !== false
+      && policy.effectiveFrom! <= selectedDay && (!policy.effectiveTo || policy.effectiveTo >= selectedDay)
+      && (policy.scope === 'company' || policy.vesselId === activeDayContext?.vesselId))
+      .sort((left, right) => Number(right.scope === 'vessel') - Number(left.scope === 'vessel')
+        || right.effectiveFrom!.localeCompare(left.effectiveFrom!) || right.id - left.id)[0] ?? null;
+    return policies.find((policy) => policy.id === (selectedCalculation?.workRestPolicyId || selectedRegister?.workRestPolicyId)) ?? null;
+  }, [activeDayContext?.vesselId, isDayContextLoading, selectedCalculation?.workRestPolicyId, selectedDay, selectedRegister?.workRestPolicyId, workspace?.policies]);
+  const projectedPhases = useMemo(() => {
+    const active = { startsAt, endsAt };
+    const valid = Number.isFinite(Date.parse(startsAt)) && Date.parse(endsAt) > Date.parse(startsAt);
+    return editingIntervalId ? (valid ? [active] : []) : pendingPhases.length ? pendingPhases : valid ? [active] : [];
+  }, [editingIntervalId, endsAt, pendingPhases, startsAt]);
+  const analysisRefreshKey = JSON.stringify([selectedRegister?.id, workspace?.policies, selectedIntervals]);
+  const monthPendingPhases = Object.entries(entryDrafts)
+    .filter(([key]) => key.startsWith(`${selectedPersonId}:`) && key.slice(key.indexOf(':') + 1) >= range.start && key.slice(key.indexOf(':') + 1) <= range.end)
+    .flatMap(([, savedDraft]) => savedDraft.editingIntervalId
+      ? Date.parse(savedDraft.endsAt) > Date.parse(savedDraft.startsAt) ? [{ startsAt: savedDraft.startsAt, endsAt: savedDraft.endsAt }] : []
+      : savedDraft.pending.length ? savedDraft.pending
+        : Date.parse(savedDraft.endsAt) > Date.parse(savedDraft.startsAt) ? [{ startsAt: savedDraft.startsAt, endsAt: savedDraft.endsAt }] : []);
+  const monthEditingIntervalIds = Object.entries(entryDrafts)
+    .filter(([key]) => key.startsWith(`${selectedPersonId}:`) && key.slice(key.indexOf(':') + 1) >= range.start && key.slice(key.indexOf(':') + 1) <= range.end)
+    .flatMap(([, savedDraft]) => savedDraft.editingIntervalId ? [savedDraft.editingIntervalId] : []);
+  const [assignmentAnalysisAttempt, setAssignmentAnalysisAttempt] = useState(0);
+  const pendingAnalysisKey = JSON.stringify([monthPendingPhases, monthEditingIntervalIds]);
+  const assignmentRequestKey = JSON.stringify([workspaceScope, selectedPersonId, range, analysisRefreshKey, refreshToken, pendingAnalysisKey, assignmentAnalysisAttempt]);
+  const [assignmentAnalysis, setAssignmentAnalysis] = useState<{ key: string; client: SupabaseClient; result: WorkingTimeEntryRecommendation | null; error: string | null } | null>(null);
+  const currentAssignmentAnalysis = assignmentAnalysis?.key === assignmentRequestKey && assignmentAnalysis.client === client ? assignmentAnalysis : null;
+  useEffect(() => {
+    if (!selectedRangeLoaded || !selectedPersonId) return;
+    let active = true;
+    const [analysisPhases, excludedIds] = JSON.parse(pendingAnalysisKey) as [WorkingTimePhaseInput[], number[]];
+    const analyze = () => {
+    void fetchWorkingTimeAssignmentAnalysis(client, { personId: selectedPersonId,
+      periodStart: range.start, periodEnd: range.end,
+      timezoneName: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris',
+      phases: analysisPhases.map((phase) => ({ startsAt: new Date(phase.startsAt).toISOString(), endsAt: new Date(phase.endsAt).toISOString() })),
+      excludeIntervalIds: excludedIds, vesselId: null, watchGroup: null,
+    }).then((result) => {
+      if (active) setAssignmentAnalysis({ key: assignmentRequestKey, client, result, error: null });
+    }).catch((reason) => {
+      if (active) setAssignmentAnalysis({ key: assignmentRequestKey, client, result: null, error: workingTimeErrorMessage(reason) });
+    });
+    };
+    const timer = analysisPhases.length ? window.setTimeout(analyze, 250) : null;
+    if (timer === null) analyze();
+    return () => { active = false; if (timer !== null) window.clearTimeout(timer); };
+  }, [assignmentRequestKey, pendingAnalysisKey, client, range.end, range.start, selectedPersonId, selectedRangeLoaded]);
+  const assignmentCoverages = currentAssignmentAnalysis?.result?.assignmentCoverage;
+  const coverageTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
+  const coverageByDay = useMemo(() => assignmentCoverages === undefined ? undefined
+    : workingTimeCoverageDayStatuses(assignmentCoverages, range.start, range.end, coverageTimezone),
+  [assignmentCoverages, coverageTimezone, range.end, range.start]);
+  const selectedAssignmentCoverages = assignmentCoverages?.filter((scope) => workingTimeRangeTouchesDate({ startsAt: scope.scopeStartsAt, endsAt: scope.scopeEndsAt }, selectedDay, coverageTimezone));
+  const assignmentAnalysisError = currentAssignmentAnalysis?.error;
+  const assignmentAnalysisLoading = !currentAssignmentAnalysis;
+  const entryAnalysis = useMemo(() => {
+    if (!entryPolicy || !selectedRangeLoaded || !selectedDay) return null;
+    const observed = [...selectedIntervals, ...projectedPhases];
+    const observedStarts = observed.map((phase) => Date.parse(phase.startsAt)).filter(Number.isFinite);
+    const observedEnds = observed.map((phase) => Date.parse(phase.endsAt)).filter(Number.isFinite);
+    if (!observedStarts.length || !observedEnds.length) return null;
+    const coverageStart = new Date(Math.min(...observedStarts));
+    const coverageEnd = new Date(Math.max(...observedEnds));
+    const previousDrafts = Object.entries(entryDrafts).filter(([key]) => key.startsWith(`${selectedPersonId}:`) && key.slice(key.indexOf(':') + 1) < selectedDay);
+    const replacedIds = new Set([editingIntervalId, ...previousDrafts.map(([, savedDraft]) => savedDraft.editingIntervalId)]);
+    const previousPhases = previousDrafts.flatMap(([, savedDraft]) => savedDraft.editingIntervalId
+      ? Date.parse(savedDraft.endsAt) > Date.parse(savedDraft.startsAt) ? [{ startsAt: savedDraft.startsAt, endsAt: savedDraft.endsAt }] : []
+      : savedDraft.pending.length ? savedDraft.pending
+        : Date.parse(savedDraft.endsAt) > Date.parse(savedDraft.startsAt) ? [{ startsAt: savedDraft.startsAt, endsAt: savedDraft.endsAt }] : [])
+      .map((phase) => ({ ...phase, isPending: true }));
+    const analysis = buildWorkingTimeEntryAnalysis({ selectedDate: selectedDay,
+      history: [...selectedIntervals.filter((interval) => !replacedIds.has(interval.id)), ...previousPhases], phases: projectedPhases,
+      policy: entryPolicy, coverage: { startsAt: coverageStart.toISOString(), endsAt: coverageEnd.toISOString() },
+    });
+    const scope = assignmentCoverages?.find((candidate) => workingTimeRangeTouchesDate({ startsAt: candidate.scopeStartsAt, endsAt: candidate.scopeEndsAt }, selectedDay, coverageTimezone));
+    const startOfDay = new Date(`${selectedDay}T00:00`).getTime();
+    const nextDay = new Date(startOfDay); nextDay.setDate(nextDay.getDate() + 1);
+    const minute = (instant: number) => instant <= startOfDay ? 0 : instant >= nextDay.getTime() ? 1440
+      : new Date(instant).getHours() * 60 + new Date(instant).getMinutes();
+    const gaps = scope?.status === 'uncovered' ? scope.uncoveredRanges
+      .filter((gap) => workingTimeRangeTouchesDate(gap, selectedDay, coverageTimezone))
+      .map((gap) => ({ startMinute: minute(Date.parse(gap.startsAt)), endMinute: minute(Date.parse(gap.endsAt)) })) : [];
+    // Only an actual gap in the server's global coverage chain colors the rail.
+    return { ...analysis, graph: { ...analysis.graph, excessRanges: gaps, workLimitMarkerMinute: null,
+      windowLabel: scope ? `Affectation : ${entryBounds({ startsAt: scope.scopeStartsAt, endsAt: scope.scopeEndsAt })}` : 'Affectation à analyser',
+      workTotalLabel: `Travail du jour : ${entryDuration(analysis.projection.dailyWorkHours)}`,
+      excessLabel: gaps.length ? 'Couverture interrompue' : null, ruleAlerts: [],
+      summaryLabel: 'La compatibilité dépend de la couverture complète de l’affectation.',
+      contextNotes: [], analysisStatusLabel: 'Recherche des combinaisons compatibles',
+    } };
+  }, [assignmentCoverages, coverageTimezone, editingIntervalId, entryDrafts, entryPolicy, projectedPhases, range.end, range.start, selectedDay, selectedPersonId, selectedIntervals, selectedRangeLoaded]);
   const isOwnRegister = selectedRegister?.personId === currentPersonId;
   const hasCaptainRole = canActAsCaptain;
   const hasManagementValidationRole = roles.includes('admin') || roles.includes('armement');
@@ -437,9 +558,11 @@ export function WorkingTimeWorkflowPanel({
 
   const nonCompliantDates = useMemo(() => {
     if (!selectedRegister) return [];
+    if (coverageByDay) return Object.entries(coverageByDay).filter(([, status]) => status === 'uncovered').map(([day]) => day);
+    if (assignmentAnalysisLoading || assignmentAnalysisError) return [];
     return workingTimeNonCompliantDates(selectedCalculations, selectedIntervals)
       .filter((day) => day >= selectedRegister.periodStart && day <= selectedRegister.periodEnd);
-  }, [selectedCalculations, selectedIntervals, selectedRegister]);
+  }, [assignmentAnalysisError, assignmentAnalysisLoading, coverageByDay, selectedCalculations, selectedIntervals, selectedRegister]);
 
   const currentSignature = workspace?.signatures.find((signature) => signature.personId === currentPersonId);
   const subjectSignature = workspace?.signatures.find((signature) => signature.personId === selectedRegister?.personId);
@@ -485,12 +608,11 @@ export function WorkingTimeWorkflowPanel({
     setIsSaving(false);
     setActionMessage(null);
     setActionError(null);
-    setPendingPhases([]);
-    setEditingIntervalId(null);
-    setIntervalComment('');
     setVoidCandidateId(null); setVoidReason(''); setIsExporting(false);
     return () => { if (actionContextRef.current === actionContext) actionContextRef.current = null; };
   }, [actionContext]);
+
+  useEffect(() => { setEntryDrafts({}); }, [client, workspaceScope]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -525,9 +647,6 @@ export function WorkingTimeWorkflowPanel({
   useEffect(() => {
     const initialDay = workingTimeInitialDay(range, localToday);
     setSelectedDay(initialDay);
-    setStartsAt(`${initialDay}T00:00`);
-    setEndsAt(`${initialDay}T00:00`);
-    setPendingPhases([]);
   }, [localToday, range.end, range.start]);
 
   useEffect(() => {
@@ -542,11 +661,8 @@ export function WorkingTimeWorkflowPanel({
     setRegisterSearch('');
     setSelectedPersonId(person.personId);
     setSelectedDay(navigationTarget.date);
-    setStartsAt(`${navigationTarget.date}T00:00`);
-    setEndsAt(`${navigationTarget.date}T00:00`);
     setRegisterView('daily');
     setRightPanelTab('compliance');
-    setPendingPhases([]);
   }, [isLoading, localToday, navigationTarget, range.end, range.start, visibleReadablePeople, workspace]);
 
   useEffect(() => {
@@ -574,7 +690,6 @@ export function WorkingTimeWorkflowPanel({
         compensatoryRestPlan: comment.compensatoryRestPlan,
         comment: comment.comment,
       }])));
-    setPendingPhases([]);
   }, [selectedRegister?.id, workspace]);
 
   useEffect(() => {
@@ -733,12 +848,12 @@ export function WorkingTimeWorkflowPanel({
   }
 
   function editInterval(interval: WorkingTimeInterval) {
-    setPendingPhases([]);
-    setEditingIntervalId(interval.id);
+    const targetKey = `${selectedPersonId}:${interval.localWorkDate}`;
+    setEntryDrafts((current) => ({ ...current, [targetKey]: {
+      pending: [], editingIntervalId: interval.id, startsAt: dateTimeLocal(interval.startsAt),
+      endsAt: dateTimeLocal(interval.endsAt), comment: interval.comment || '',
+    } }));
     setSelectedDay(interval.localWorkDate);
-    setStartsAt(dateTimeLocal(interval.startsAt));
-    setEndsAt(dateTimeLocal(interval.endsAt));
-    setIntervalComment(interval.comment || '');
   }
 
   function handleEntryAction(phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') {
@@ -790,7 +905,7 @@ export function WorkingTimeWorkflowPanel({
           <span>Aide à la décision</span>
           <div>
             {onOpenHse ? <button onClick={onOpenHse} type="button"><BarChart3 aria-hidden="true" size={21} /><small>Exposition HSE / IMCA</small></button> : null}
-            {onOpenWorkRest ? <button onClick={onOpenWorkRest} type="button"><ShieldCheck aria-hidden="true" size={21} /><small>Contrôles travail et repos</small></button> : null}
+            {onOpenWorkRest ? <button onClick={() => onOpenWorkRest()} type="button"><ShieldCheck aria-hidden="true" size={21} /><small>Contrôles travail et repos</small></button> : null}
           </div>
         </div>
 
@@ -877,9 +992,17 @@ export function WorkingTimeWorkflowPanel({
                     <button aria-selected={rightPanelTab === 'approvals'} className={rightPanelTab === 'approvals' ? 'is-active' : ''} onClick={() => setRightPanelTab('approvals')} role="tab" type="button">Approbation{pendingApprovals.length ? <em>{pendingApprovals.length}</em> : null}</button>
                   </div>
                   {rightPanelTab === 'compliance' ? <>
+                    <WorkingTimeEntryCompliance policy={entryPolicy}
+                      coverages={selectedAssignmentCoverages} error={assignmentAnalysisError}
+                      availableSlots={currentAssignmentAnalysis?.result?.availableSlots}
+                      loading={assignmentAnalysisLoading}
+                      canManagePolicy={roles.includes('admin')}
+                      onOpenPolicy={onOpenWorkRest ? () => onOpenWorkRest(entryPolicy?.id) : undefined} />
+                    {!coverageByDay && !assignmentAnalysisError && !assignmentAnalysisLoading ? <>
                     <article className="working-time-conformity-item"><FileClock aria-hidden="true" size={20} /><span>Travail sur 7 jours</span><strong>{compactDuration(selectedCalculation?.work7dSeconds)}</strong><small>{selectedCalculation?.workRestPolicyId ? 'Calcul serveur P1.3' : 'Politique requise'}</small></article>
                     <article className="working-time-conformity-item"><CalendarDays aria-hidden="true" size={20} /><span>Repos consécutif actuel</span><strong>{compactDuration(selectedCalculation?.longestRest24hSeconds)}</strong><small>Fenêtre glissante de 24 h</small></article>
                     <article className="working-time-conformity-item"><Bell aria-hidden="true" size={20} /><span>Alertes</span><strong>{nonCompliantDates.includes(selectedDay) ? selectedViolationDetails.length : 0}</strong><small>{nonCompliantDates.includes(selectedDay) && selectedViolationDetails[0] ? workingTimeViolationText(selectedViolationDetails[0]) : 'Aucune alerte détectée'}</small></article>
+                    </> : null}
                     <SignatureCard imageUrl={subjectSignatureEvidence ? signatureUrls[signatureKey(subjectSignatureEvidence)] : undefined} label="Titulaire du registre" signature={subjectSignatureEvidence} />
                     {validatorSignatureEvidence ? (
                     <SignatureCard
@@ -906,6 +1029,12 @@ export function WorkingTimeWorkflowPanel({
                     {!selectedDayApproval && entryWindowGracePeriod ? <p className="working-time-message is-success">Le registre {displayedMonthLabel} reste ouvert à la saisie jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
                     {!selectedDayApproval && !entryWindowOpen ? <p className="working-time-message is-warning">Le registre {displayedMonthLabel} est clôturé pour la saisie. Il était modifiable jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
                     <WorkingTimeEntryBoard
+                    allowPhaseResize
+                    preserveDayDrafts
+                    analysisRefreshKey={analysisRefreshKey}
+                    externalAnalysis={{ result: currentAssignmentAnalysis?.result ?? null, loading: assignmentAnalysisLoading,
+                      error: assignmentAnalysisError ?? null, retry: () => setAssignmentAnalysisAttempt((attempt) => attempt + 1) }}
+                    previewGraph={entryAnalysis?.graph}
                     approverName={activeDayContext?.captainCandidates.find((candidate) => candidate.personId === activeDayContext.approverPersonId)?.name || null}
                     canEdit={canEdit}
                     client={client}
@@ -932,7 +1061,7 @@ export function WorkingTimeWorkflowPanel({
                     planningWatchGroup={activeDayContext?.watchGroup || null}
                     planningContextLoading={isDayContextLoading}
                     nonCompliantDates={nonCompliantDates}
-                    rollingWindow={selectedRollingWindow}
+                    rollingWindow={coverageByDay || assignmentAnalysisLoading || assignmentAnalysisError ? null : selectedRollingWindow}
                     startsAt={startsAt}
                     selectedDay={selectedDay}
                     showSaveDraft={canEdit && !selectedDayApproval}
@@ -961,6 +1090,9 @@ export function WorkingTimeWorkflowPanel({
                     </div>
                     ) : null}
                   </> : <WorkingTimeMonthlyView
+                    pendingPhases={monthPendingPhases}
+                    editingIntervalIds={monthEditingIntervalIds}
+                    coverageByDay={coverageByDay ?? (assignmentAnalysisLoading || assignmentAnalysisError ? workingTimeCoverageDayStatuses([], range.start, range.end, coverageTimezone) : undefined)}
                     calculations={selectedCalculations}
                     intervals={selectedIntervals}
                     nonCompliantDates={nonCompliantDates}
@@ -993,7 +1125,10 @@ export function WorkingTimeWorkflowPanel({
                         <div className="working-time-non-compliance-card" key={date}>
                           <header><strong>{date}</strong><span>NON CONFORME</span></header>
                           <div className="working-time-non-compliance-reasons">
-                            {violationDetails.map((violation) => <p key={violation.code}>
+                            {coverageByDay ? assignmentCoverages?.flatMap((scope) => scope.uncoveredRanges)
+                              .filter((gap) => workingTimeRangeTouchesDate(gap, date, coverageTimezone)).map((gap) => <p key={`${gap.startsAt}:${gap.endsAt}`}>
+                                <strong>Couverture interrompue</strong><span>{formatDateTime(gap.startsAt)} → {formatDateTime(gap.endsAt)}</span>
+                              </p>) : violationDetails.map((violation) => <p key={violation.code}>
                               <strong>{workingTimeViolationText(violation)}</strong>
                               <span>{workingTimeViolationWindowText(violation)}</span>
                               {violation.policyName ? <small>Politique appliquée : {violation.policyName}</small> : null}

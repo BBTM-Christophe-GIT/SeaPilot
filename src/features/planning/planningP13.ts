@@ -20,6 +20,8 @@ export interface PlanningWorkRestPolicy {
   nightStartsAt: string;
   nightEndsAt: string;
   maxNightWork24h: number;
+  maxAmplitudeHours?: number | null;
+  maxIntervalBetweenRestsHours?: number | null;
   includeHandover: boolean;
   active: boolean;
   notes: string;
@@ -78,6 +80,7 @@ export interface PlanningDependencyRecord {
 export interface PlanningP13Data {
   policies: PlanningWorkRestPolicy[];
   notifications: PlanningNotificationRecord[];
+  notificationsError?: string;
   dependencies: PlanningDependencyRecord[];
   p12: PlanningP12Data;
 }

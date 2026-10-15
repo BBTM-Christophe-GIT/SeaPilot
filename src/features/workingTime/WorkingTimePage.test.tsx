@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RoleKey } from '../permissions/roles';
 import { PlanningP13Panel } from '../planning/PlanningP13Panel';
 import { EMPTY_PLANNING_OVERVIEW, usePlanningOverview } from '../planning/usePlanningOverview';
 import { WorkingTimePage } from './WorkingTimePage';
@@ -38,7 +39,7 @@ vi.mock('./WorkingTimeComplianceReport', () => ({
 const client = {} as SupabaseClient;
 const reload = vi.fn().mockResolvedValue(true);
 
-function renderPage(roles: Array<'admin' | 'marin'> = ['admin'], entry = '/') {
+function renderPage(roles: RoleKey[] = ['admin'], entry = '/') {
   return render(
     <MemoryRouter initialEntries={[entry]}>
       <WorkingTimePage
@@ -151,6 +152,26 @@ describe('WorkingTimePage', () => {
       visibleTabs: ['rest'],
     }), undefined);
     expect(screen.queryByTestId('xlsm-import-surface')).not.toBeInTheDocument();
+  });
+
+  it.each(['direction', 'armement', 'capitaine', 'marin'] as const)('opens a policy read-only for the real %s role', (role) => {
+    renderPage([role]);
+    const commandProps = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0];
+    act(() => commandProps?.onOpenWorkRest?.(27));
+    expect(PlanningP13Panel).toHaveBeenLastCalledWith(expect.objectContaining({
+      initialPolicyId: 27, canManageWorkRestPolicies: false, canViewWorkRest: true,
+    }), undefined);
+  });
+
+  it('opens the selected policy for an administrator and refreshes the analysis after saving thresholds', async () => {
+    renderPage(['admin']);
+    const commandProps = vi.mocked(WorkingTimeWorkflowPanel).mock.calls.at(-1)?.[0];
+    act(() => commandProps?.onOpenWorkRest?.(27));
+    const policyProps = vi.mocked(PlanningP13Panel).mock.calls.at(-1)?.[0];
+    expect(policyProps).toMatchObject({ initialPolicyId: 27, canManageWorkRestPolicies: true });
+    await act(async () => { await policyProps?.onAuditChange?.(); });
+    expect(reload).toHaveBeenCalledOnce();
+    expect(WorkingTimeWorkflowPanel).toHaveBeenLastCalledWith(expect.objectContaining({ refreshToken: 1 }), undefined);
   });
 
   it('switches complete calendar months and refreshes both workspaces from the command bar callbacks', async () => {
