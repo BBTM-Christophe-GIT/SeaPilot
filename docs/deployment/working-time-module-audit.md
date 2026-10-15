@@ -1,5 +1,9 @@
 # Audit du suivi du temps de travail — octobre 2026
 
+Voir aussi [l’audit de saisie et de repos du 15 octobre](working-time-entry-rest-audit.md)
+pour les corrections clavier et tactiles et la règle confirmée : 10 heures de
+repos sur 24 heures, dont 6 heures consécutives.
+
 Les corrections portent sur les résultats asynchrones et les reprises après une
 réponse perdue. Elles conservent les seuils de travail/repos, les signatures
 obligatoires, les calendriers métier et les droits appliqués par Supabase.
@@ -27,7 +31,7 @@ pour la correction des comparaisons d'identité NULL et la migration
 historiques restaurées documentent les définitions déjà appliquées en production
 et ne doivent pas être réexécutées comme une nouvelle réparation.
 
-La suite frontend du module comporte **148 tests**. Validation reproductible :
+La suite frontend du module comporte **173 tests**. Validation reproductible :
 
 ```powershell
 corepack pnpm exec vitest run src/features/workingTime

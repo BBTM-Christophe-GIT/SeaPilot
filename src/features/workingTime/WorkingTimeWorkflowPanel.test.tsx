@@ -10,6 +10,7 @@ import {
   fetchWorkingTimePhasesRecommendation,
   getOrCreateWorkingTimeRegister,
   saveWorkingTimePhases,
+  saveWorkingTimeInterval,
   submitWorkingTimeDay,
   validateWorkingTimeDay,
   validateWorkingTimeDayWithComment,
@@ -354,6 +355,69 @@ describe('WorkingTimeWorkflowPanel', () => {
   it('selects today when the current month opens and the first day for a historical month', () => {
     expect(workingTimeInitialDay({ start: '2026-08-01', end: '2026-08-31' }, '2026-08-21')).toBe('2026-08-21');
     expect(workingTimeInitialDay({ start: '2026-07-01', end: '2026-07-31' }, '2026-08-21')).toBe('2026-07-01');
+  });
+  it('persists a keyboard range as a draft without requiring Enter to commit the selection', async () => {
+    const user = userEvent.setup();
+    const data = workspace('draft'); data.intervals = [];
+    renderPanel(['marin'], data, { ...currentPerson, functionLabel: 'Matelot' });
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    await screen.findByText(/Affectation Planning appliquée/);
+    screen.getAllByRole('gridcell')[16].focus();
+    await user.keyboard('{Shift>}{ArrowRight}{/Shift}');
+    expect(screen.queryByLabelText('Périodes à enregistrer')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await waitFor(() => expect(saveWorkingTimePhases).toHaveBeenCalledWith(client, expect.objectContaining({
+      registerId: 100,
+      phases: [{ startsAt: new Date('2026-08-03T08:00').toISOString(), endsAt: new Date('2026-08-03T09:00').toISOString() }],
+    })));
+    expect(submitWorkingTimeDay).not.toHaveBeenCalled();
+  });
+  it.each([true, false])('awaits keyboard phase persistence before submitting (save succeeds: %s) and ignores a second click', async (succeeds) => {
+    const user = userEvent.setup(); const pending = deferred<number[]>();
+    vi.mocked(saveWorkingTimePhases).mockReturnValueOnce(pending.promise);
+    const data = workspace('draft'); data.intervals = [];
+    renderPanel(['marin'], data, { ...currentPerson, functionLabel: 'Matelot' });
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    await screen.findByText(/Affectation Planning appliquée/);
+    screen.getAllByRole('gridcell')[16].focus();
+    await user.keyboard('{Shift>}{ArrowRight}{/Shift}');
+    const button = screen.getByRole('button', { name: 'Valider' });
+    await waitFor(() => expect(button).toBeEnabled());
+    await user.dblClick(button);
+    expect(saveWorkingTimePhases).toHaveBeenCalledOnce();
+    expect(saveWorkingTimePhases).toHaveBeenCalledWith(client, expect.objectContaining({
+      phases: [{ startsAt: new Date('2026-08-03T08:00').toISOString(), endsAt: new Date('2026-08-03T09:00').toISOString() }],
+    }));
+    expect(submitWorkingTimeDay).not.toHaveBeenCalled();
+    expect(button).toBeDisabled();
+    if (succeeds) {
+      await act(async () => { pending.resolve([301]); await pending.promise; });
+      await waitFor(() => expect(submitWorkingTimeDay).toHaveBeenCalledExactlyOnceWith(client, { registerId: 100, localWorkDate: '2026-08-03' }));
+    } else {
+      await act(async () => { pending.reject(new Error('Enregistrement indisponible.')); });
+      expect(await screen.findByText('Enregistrement indisponible.')).toBeInTheDocument();
+      expect(submitWorkingTimeDay).not.toHaveBeenCalled();
+      expect(reload).toHaveBeenCalledOnce();
+    }
+  });
+  it('persists the revised keyboard range when correcting a recorded interval', async () => {
+    const user = userEvent.setup();
+    renderPanel(['marin'], workspace('draft'), { ...currentPerson, functionLabel: 'Matelot' });
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    await screen.findByText(/Affectation Planning appliquée/);
+    await user.click(screen.getByRole('gridcell', { name: /08:00, travail enregistré/ }));
+    await user.click(screen.getByRole('button', { name: 'Corriger' }));
+    screen.getAllByRole('gridcell')[16].focus();
+    await user.keyboard('{Shift>}{ArrowRight}{/Shift}');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer la correction' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la correction' }));
+    await waitFor(() => expect(saveWorkingTimeInterval).toHaveBeenCalledWith(client, expect.objectContaining({
+      registerId: 100, intervalId: 200,
+      startsAt: new Date('2026-08-03T08:00').toISOString(), endsAt: new Date('2026-08-03T09:00').toISOString(),
+    })));
+    expect(saveWorkingTimePhases).not.toHaveBeenCalled();
+    expect(submitWorkingTimeDay).not.toHaveBeenCalled();
   });
   it('keeps a confirmed submission distinct from an unavailable refresh', async () => {
     const user = userEvent.setup(); reload.mockResolvedValueOnce(false);
@@ -824,6 +888,8 @@ describe('WorkingTimeWorkflowPanel', () => {
 
   it('keeps validation disabled until every non-compliant day has a saved captain comment', async () => {
     const user = userEvent.setup();
+    const pending = deferred<number>();
+    vi.mocked(validateWorkingTimeDayWithComment).mockReturnValueOnce(pending.promise);
     const data = workspace('submitted', 20);
     data.dayApprovals = [{
       id: 502, companyId: 1, registerId: 100, personId: 20,
@@ -863,8 +929,9 @@ describe('WorkingTimeWorkflowPanel', () => {
     fireEvent.change(screen.getByLabelText('Action immédiate'), { target: { value: 'Relève organisée.' } });
     fireEvent.change(screen.getByLabelText('Repos compensateur prévu'), { target: { value: 'Repos planifié demain.' } });
     fireEvent.change(screen.getByLabelText('Commentaire obligatoire'), { target: { value: 'Écart documenté par le capitaine.' } });
-    await user.click(screen.getByRole('button', { name: 'Valider la saisie des heures et la justification' }));
+    await user.dblClick(screen.getByRole('button', { name: 'Valider la saisie des heures et la justification' }));
 
+    expect(validateWorkingTimeDayWithComment).toHaveBeenCalledOnce();
     expect(validateWorkingTimeDayWithComment).toHaveBeenCalledWith(client, 502, {
       causeCategory: 'safety_emergency',
       operationalContext: 'Opération de sécurité prolongée.',
@@ -873,6 +940,13 @@ describe('WorkingTimeWorkflowPanel', () => {
       comment: 'Écart documenté par le capitaine.',
     });
     expect(validateWorkingTimeDay).not.toHaveBeenCalledWith(client, 502);
+    for (const label of ['Catégorie de cause', 'Contexte opérationnel', 'Action immédiate', 'Repos compensateur prévu', 'Commentaire obligatoire']) {
+      expect(screen.getByLabelText(label)).toBeDisabled();
+    }
+    await user.type(screen.getByLabelText('Commentaire obligatoire'), 'Modification tardive');
+    expect(screen.getByLabelText('Commentaire obligatoire')).toHaveValue('Écart documenté par le capitaine.');
+    await act(async () => { pending.resolve(1); await pending.promise; });
+    await waitFor(() => expect(screen.getByLabelText('Contexte opérationnel')).toBeEnabled());
   });
 
   it('locks only the validated day without offering a month-level reopen action', async () => {
