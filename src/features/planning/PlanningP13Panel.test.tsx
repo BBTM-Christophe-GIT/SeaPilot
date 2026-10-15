@@ -38,7 +38,7 @@ const overview: PlanningOverview = {
 };
 
 const data: PlanningP13Data = {
-  policies: [{ id: 1, name: 'Politique test', scope: 'company', vesselId: null, effectiveFrom: '2026-01-01', effectiveTo: '', maxWork24h: 12, minRest24h: 11, maxWork7d: 72, minRest7d: 96, minConsecutiveRestHours: 6, maxRestPeriods24h: 2, nightStartsAt: '22:00', nightEndsAt: '06:00', maxNightWork24h: 8, includeHandover: true, active: true, notes: '', updatedAt: '' }],
+  policies: [{ id: 1, name: 'Politique test', scope: 'company', vesselId: null, effectiveFrom: '2026-01-01', effectiveTo: '', maxWork24h: 12, minRest24h: 11, maxWork7d: 72, minRest7d: 96, minConsecutiveRestHours: 6, maxRestPeriods24h: 2, nightStartsAt: '22:00', nightEndsAt: '06:00', maxNightWork24h: 8, maxAmplitudeHours: 13.25, maxIntervalBetweenRestsHours: 12.5, includeHandover: true, active: true, notes: '', updatedAt: '' }],
   notifications: [{ id: 5, notificationType: 'vacant_position', severity: 'critical', title: 'Poste vacant', body: 'Capitaine manquant', entityKind: 'conflict_case', entityId: 6, personId: null, vesselId: 1, dueOn: '2026-08-05', createdAt: '2026-08-01T08:00:00Z', readAt: '' }],
   dependencies: [],
   p12: { absences: [], conflictCases: [], conflictHistory: [], matrices: [] },
@@ -57,6 +57,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof PlanningP13P
 
 describe('Planning P1.3 cockpit', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.mocked(fetchPlanningP13Data).mockResolvedValue(data);
     vi.mocked(refreshPlanningNotifications).mockResolvedValue(0);
     vi.mocked(savePlanningWorkRestPolicy).mockResolvedValue(2);
@@ -65,6 +66,32 @@ describe('Planning P1.3 cockpit', () => {
     vi.mocked(markPlanningNotificationRead).mockResolvedValue(5);
     vi.stubGlobal('URL', { createObjectURL: vi.fn(() => 'blob:test'), revokeObjectURL: vi.fn() });
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+  });
+
+  it('opens the selected policy with its stored thresholds for an administrator', async () => {
+    const user = userEvent.setup();
+    renderPanel({ initialTab: 'rest', initialPolicyId: 1 });
+    const form = (await screen.findByRole('heading', { name: 'Modifier la politique' })).closest('form')!;
+    expect(within(form).getByLabelText('Nom')).toHaveValue('Politique test');
+    expect(within(form).getByLabelText('Amplitude maximale')).toHaveValue(13.25);
+    expect(within(form).getByLabelText('Intervalle maximal entre repos')).toHaveValue(12.5);
+    fireEvent.change(within(form).getByLabelText('Amplitude maximale'), { target: { value: '12.75' } });
+    fireEvent.change(within(form).getByLabelText('Repos consécutif minimum'), { target: { value: '7' } });
+    await user.click(within(form).getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() => expect(savePlanningWorkRestPolicy).toHaveBeenCalledWith(client, expect.objectContaining({
+      id: 1, maxAmplitudeHours: 12.75, maxIntervalBetweenRestsHours: 12.5, minConsecutiveRestHours: 7,
+    })));
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Modifier la politique' })).not.toBeInTheDocument());
+  });
+
+  it('keeps the selected policy read-only when policy administration is denied', async () => {
+    renderPanel({ initialTab: 'rest', initialPolicyId: 1, canManageWorkRestPolicies: false });
+    await screen.findByText('Politique test');
+    expect(screen.getByText('Politique test').closest('button')).toBeDisabled();
+    expect(screen.getByText(/Travail : 12 h/)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Modifier la politique' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nouvelle politique' })).not.toBeInTheDocument();
+    expect(savePlanningWorkRestPolicy).not.toHaveBeenCalled();
   });
 
   it('renders the business dashboard and recipient notification count', async () => {
@@ -111,24 +138,24 @@ describe('Planning P1.3 cockpit', () => {
     expect(within(form).getByText(/suggestion d’import/i)).toBeInTheDocument();
     expect(within(form).getByLabelText('Portée')).toHaveValue('company');
     for (const label of [
-      'Travail max — cycle après repos de 6 h', 'Repos min — 24 h glissantes',
+      'Travail max — journée de calcul', 'Repos min — 24 h glissantes',
       'Travail max — 7 j glissants', 'Repos min — 7 j glissants',
       'Repos consécutif minimum', 'Périodes de repos max / 24 h',
-      'Travail de nuit maximum',
+      'Travail de nuit maximum', 'Amplitude maximale', 'Intervalle maximal entre repos',
     ]) expect(within(form).getByLabelText(label)).toHaveValue(null);
     expect(within(form).getByLabelText('Début de la fenêtre de nuit')).toHaveValue('');
     expect(within(form).getByLabelText('Fin de la fenêtre de nuit')).toHaveValue('');
     fireEvent.change(within(form).getByLabelText('Nom'), { target: { value: 'Politique direction' } });
     for (const [label, value] of [
-      ['Travail max — cycle après repos de 6 h', '12'], ['Repos min — 24 h glissantes', '11'],
+      ['Travail max — journée de calcul', '12'], ['Repos min — 24 h glissantes', '11'],
       ['Travail max — 7 j glissants', '72'], ['Repos min — 7 j glissants', '96'],
       ['Repos consécutif minimum', '6'], ['Périodes de repos max / 24 h', '2'],
-      ['Travail de nuit maximum', '8'],
+      ['Travail de nuit maximum', '8'], ['Amplitude maximale', '13.25'], ['Intervalle maximal entre repos', '12.5'],
     ]) fireEvent.change(within(form).getByLabelText(label), { target: { value } });
     fireEvent.change(within(form).getByLabelText('Début de la fenêtre de nuit'), { target: { value: '22:00' } });
     fireEvent.change(within(form).getByLabelText('Fin de la fenêtre de nuit'), { target: { value: '06:00' } });
     await user.click(within(form).getByRole('button', { name: 'Enregistrer' }));
-    await waitFor(() => expect(savePlanningWorkRestPolicy).toHaveBeenCalledWith(client, expect.objectContaining({ name: 'Politique direction', maxWork24h: 12, minRest7d: 96 })));
+    await waitFor(() => expect(savePlanningWorkRestPolicy).toHaveBeenCalledWith(client, expect.objectContaining({ name: 'Politique direction', maxWork24h: 12, minRest7d: 96, maxAmplitudeHours: 13.25, maxIntervalBetweenRestsHours: 12.5 })));
   });
 
   it('marks notifications read and creates a manual dependency', async () => {
@@ -146,5 +173,18 @@ describe('Planning P1.3 cockpit', () => {
     await user.click(within(dependencyEditor).getByRole('button', { name: 'Enregistrer' }));
     await waitFor(() => expect(savePlanningDependency).toHaveBeenCalledWith(client, expect.objectContaining({ predecessorId: 30, successorId: 31, dependencyType: 'maintenance_recommission' })));
 
+  });
+
+  it('keeps policy administration available and makes unavailable working-time alerts explicit', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchPlanningP13Data).mockResolvedValue({ ...data, notifications: [],
+      notificationsError: 'Les alertes actuelles de temps de travail sont indisponibles. Relancez l’actualisation.',
+    });
+    renderPanel({ initialTab: 'rest', initialPolicyId: 1 });
+    expect(await screen.findByRole('heading', { name: 'Modifier la politique' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /Notifications/ }));
+    expect(screen.getByRole('alert')).toHaveTextContent('alertes actuelles de temps de travail sont indisponibles');
+    expect(screen.queryByText('Aucune notification.')).not.toBeInTheDocument();
+    expect(screen.queryByText('0 non lue(s) sur 0')).not.toBeInTheDocument();
   });
 });

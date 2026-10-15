@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { workingTimeIntervalMinutes, type WorkingTimeCalculationWindow, type WorkingTimeInterval } from './workingTimeModel';
+import { workingTimeIntervalMinutes, type WorkingTimeInterval } from './workingTimeModel';
 import type { WorkingTimeEditablePerson, WorkingTimeVesselOption } from './workingTimeQueries';
+import { fetchWorkingTimeCoverageAlerts, workingTimeCoverageAlertDates } from './workingTimeCoverageAlerts';
 
 export type ComplianceMetricKey = 'imca' | 'french' | 'non_compliance';
 
@@ -91,28 +92,6 @@ interface ReportIntervalRow {
   source_record_key: string | null;
 }
 
-interface ReportCalculationRow {
-  id: number | string;
-  company_id: number | string;
-  person_id: number | string;
-  window_end: string;
-  local_window_end_date: string;
-  timezone_name: string;
-  vessel_id: number | string | null;
-  work_rest_policy_id: number | string | null;
-  work_24h_seconds: number | string;
-  rest_24h_seconds: number | string;
-  longest_rest_24h_seconds: number | string;
-  rest_period_count_24h: number | string;
-  work_7d_seconds: number | string;
-  rest_7d_seconds: number | string;
-  night_work_24h_seconds: number | string | null;
-  is_compliant: boolean | null;
-  violation_codes: string[] | null;
-  calculation_version: number | string;
-  calculated_at: string;
-}
-
 export interface ComplianceReportTrendPoint {
   key: string;
   label: string;
@@ -152,7 +131,6 @@ const METHODOLOGY_SELECT = [
   'french_frequency_multiplier', 'french_severity_multiplier',
 ].join(',');
 const REPORT_INTERVAL_SELECT = 'id,register_id,company_id,person_id,local_work_date,starts_at,ends_at,timezone_name,utc_offset_minutes,vessel_id,watch_group,comment,author_user_id,author_person_id,source_type,source_reference,source_record_key';
-const REPORT_CALCULATION_SELECT = 'id,company_id,person_id,window_end,local_window_end_date,timezone_name,vessel_id,work_rest_policy_id,work_24h_seconds,rest_24h_seconds,longest_rest_24h_seconds,rest_period_count_24h,work_7d_seconds,rest_7d_seconds,night_work_24h_seconds,is_compliant,violation_codes,calculation_version,calculated_at';
 const REPORT_PAGE_SIZE = 1000;
 
 export interface WorkingTimeReportDateChunk {
@@ -312,31 +290,6 @@ async function fetchReportIntervals(client: SupabaseClient, filters: WorkingTime
   }));
 }
 
-async function fetchReportCalculations(client: SupabaseClient, filters: WorkingTimeComplianceFilters): Promise<WorkingTimeCalculationWindow[]> {
-  const rows: ReportCalculationRow[] = [];
-  for (const chunk of workingTimeReportDateChunks(filters.start, filters.end)) {
-    const chunkRows = await fetchAllPages<ReportCalculationRow>((from, to) => {
-      let query = client.from('working_time_calculation_windows').select(REPORT_CALCULATION_SELECT)
-        .gte('local_window_end_date', chunk.start).lte('local_window_end_date', chunk.end);
-      if (filters.personIds.length) query = query.in('person_id', filters.personIds);
-      if (filters.vesselIds.length) query = query.in('vessel_id', filters.vesselIds);
-      return query.order('local_window_end_date').order('window_end').order('id').range(from, to);
-    }, 'Impossible de charger tous les calculs de conformité du rapport.');
-    rows.push(...chunkRows);
-  }
-  return rows.map((row) => ({
-    id: Number(row.id), companyId: Number(row.company_id), personId: Number(row.person_id), windowEnd: row.window_end,
-    localWindowEndDate: row.local_window_end_date, timezoneName: row.timezone_name,
-    vesselId: row.vessel_id === null ? null : Number(row.vessel_id), workRestPolicyId: row.work_rest_policy_id === null ? null : Number(row.work_rest_policy_id),
-    work24hSeconds: Number(row.work_24h_seconds), rest24hSeconds: Number(row.rest_24h_seconds),
-    longestRest24hSeconds: Number(row.longest_rest_24h_seconds), restPeriodCount24h: Number(row.rest_period_count_24h),
-    work7dSeconds: Number(row.work_7d_seconds), rest7dSeconds: Number(row.rest_7d_seconds),
-    nightWork24hSeconds: row.night_work_24h_seconds === null ? null : Number(row.night_work_24h_seconds),
-    isCompliant: row.is_compliant, violationCodes: row.violation_codes || [],
-    calculationVersion: Number(row.calculation_version), calculatedAt: row.calculated_at,
-  }));
-}
-
 async function fetchExposureRows(client: SupabaseClient, methodologyId: number, filters: WorkingTimeComplianceFilters): Promise<ExposureRow[]> {
   return fetchAllPages<ExposureRow>((from, to) => {
     let query = client.from('hse_exposure_hours').select('exposure_date,exposure_seconds,person_id,vessel_id,watch_group')
@@ -382,15 +335,16 @@ export async function fetchWorkingTimeComplianceReport(
   const reportDataPromise = Promise.all([
     fetchComplianceReferenceData(client, filters.start, filters.end),
     fetchReportIntervals(client, filters),
-    fetchReportCalculations(client, filters),
-  ]).then(([reference, intervals, calculations]) => ({ ...reference, intervals, calculations }));
+  ]).then(([reference, intervals]) => ({ ...reference, intervals }));
   const reportData = await reportDataPromise;
   const methodology = reportData.methodology;
 
-  const [exposureRowsAll, eventRowsAll] = methodology ? await Promise.all([
-    fetchExposureRows(client, methodology.id, filters),
-    fetchSafetyEventRows(client, filters),
-  ]) : [[], []];
+  const reportPersonIds = filters.personIds.length ? filters.personIds : reportData.people.map((person) => person.personId);
+  const [exposureRowsAll, eventRowsAll, authoritativeAlerts] = await Promise.all([
+    methodology ? fetchExposureRows(client, methodology.id, filters) : Promise.resolve([]),
+    methodology ? fetchSafetyEventRows(client, filters) : Promise.resolve([]),
+    reportPersonIds.length ? fetchWorkingTimeCoverageAlerts(client, filters.start, filters.end, reportPersonIds) : Promise.resolve([]),
+  ]);
 
   const intervals = reportData.intervals.filter((interval) => (
     (!filters.personIds.length || filters.personIds.includes(interval.personId))
@@ -398,14 +352,21 @@ export async function fetchWorkingTimeComplianceReport(
     && (!filters.watchGroups.length || Boolean(interval.watchGroup && filters.watchGroups.includes(interval.watchGroup)))
   ));
   const intervalScopeKeys = new Set(intervals.map((interval) => `${interval.personId}:${interval.localWorkDate}`));
-  const calculations = reportData.calculations.filter((calculation) => (
-    (!filters.personIds.length || filters.personIds.includes(calculation.personId))
-    && (!filters.vesselIds.length || (calculation.vesselId !== null && filters.vesselIds.includes(calculation.vesselId)))
-    && (!filters.watchGroups.length || intervalScopeKeys.has(`${calculation.personId}:${calculation.localWindowEndDate}`))
+  const coverageAlerts = authoritativeAlerts.filter((alert) => (
+    (!filters.personIds.length || filters.personIds.includes(Number(alert.person_id)))
+    && (!filters.vesselIds.length || (alert.vessel_id !== null && filters.vesselIds.includes(Number(alert.vessel_id))))
+    && (!filters.watchGroups.length || (alert.watch_group ? filters.watchGroups.includes(alert.watch_group)
+      : intervalScopeKeys.has(`${alert.person_id}:${alert.local_window_end_date}`)))
   ));
-  const nonComplianceKeys = new Set(calculations
-    .filter((calculation) => calculation.isCompliant === false)
-    .map((calculation) => `${calculation.personId}:${calculation.localWindowEndDate}`));
+  const nonComplianceKeys = new Set(coverageAlerts.flatMap((alert) => workingTimeCoverageAlertDates(alert, filters.start, filters.end)
+    .map((day) => `${alert.person_id}:${day}`)));
+  const alertVesselsByDay = new Map<string, Set<string>>();
+  coverageAlerts.forEach((alert) => workingTimeCoverageAlertDates(alert, filters.start, filters.end).forEach((day) => {
+    const key = `${alert.person_id}:${day}`;
+    const vessels = alertVesselsByDay.get(key) ?? new Set<string>();
+    vessels.add(alert.vessel_id === null ? 'none' : String(alert.vessel_id));
+    alertVesselsByDay.set(key, vessels);
+  }));
   const affectedPersonIds = new Set(Array.from(nonComplianceKeys, (key) => Number(key.split(':')[0])));
   const peopleById = new Map(reportData.people.map((person) => [person.personId, `${person.firstName} ${person.lastName}`.trim()]));
   const vesselById = new Map(reportData.vessels.map((vessel) => [vessel.id, vessel.name]));
@@ -416,7 +377,7 @@ export async function fetchWorkingTimeComplianceReport(
     const [personValue, day] = key.split(':');
     const personId = Number(personValue);
     breakdownPeople.set(personId, (breakdownPeople.get(personId) || 0) + 1);
-    const vesselIds = new Set(intervals.filter((interval) => interval.personId === personId && interval.localWorkDate === day)
+    const vesselIds = alertVesselsByDay.get(key) ?? new Set(intervals.filter((interval) => interval.personId === personId && interval.localWorkDate === day)
       .map((interval) => interval.vesselId === null ? 'none' : String(interval.vesselId)));
     (vesselIds.size ? vesselIds : new Set(['none'])).forEach((id) => breakdownVessels.set(id, (breakdownVessels.get(id) || 0) + 1));
   });
@@ -479,7 +440,7 @@ export async function fetchWorkingTimeComplianceReport(
     `SOFR = Safety Observations × ${multiplier(methodology?.sofr_multiplier)} / heures d’exposition.`,
     `Taux de fréquence français = (FAT + LWDC) × ${multiplier(methodology?.french_frequency_multiplier)} / heures d’exposition.`,
     `Taux de gravité français = jours perdus × ${multiplier(methodology?.french_severity_multiplier)} / heures d’exposition.`,
-    'Journées non conformes = nombre de couples uniques marin/date pour lesquels au moins une fenêtre serveur est non conforme.',
+    'Journées non conformes = couples uniques marin/date avec un intervalle sans couverture compatible de l’affectation ; hors affectation, le verdict serveur des heures manuelles reste appliqué.',
   ];
 
   return {
@@ -488,7 +449,8 @@ export async function fetchWorkingTimeComplianceReport(
       'Les heures de travail proviennent des intervalles horodatés visibles selon les droits du profil connecté.',
       'Les heures d’exposition HSE restent distinctes des heures de travail réelles et conservent la version de méthodologie appliquée.',
       'Une valeur non configurée est laissée vide ; aucune valeur réglementaire implicite n’est ajoutée.',
-      'Les journées sans politique ou sans calcul serveur ne sont pas déclarées conformes par défaut.',
+      'Les journées sans politique ou sans analyse complète ne sont pas déclarées conformes par défaut.',
+      'Les alertes actuelles proviennent de la couverture des affectations ; les preuves historiques signées restent conservées.',
     ],
     breakdownByPerson: Array.from(breakdownPeople, ([id, value]) => ({ id: String(id), label: peopleById.get(id) || `Personne ${id}`, value }))
       .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label, 'fr')),

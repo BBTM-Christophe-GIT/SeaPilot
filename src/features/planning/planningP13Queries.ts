@@ -11,8 +11,9 @@ import type {
   PlanningWorkRestScope,
 } from './planningP13';
 import { planningEntityId, requiredPlanningText } from './planningValidation';
+import { fetchWorkingTimeCoverageAlerts, workingTimeCoverageAlertDates } from '../workingTime/workingTimeCoverageAlerts';
 
-const POLICY_SELECT = 'id, name, scope, vessel_id, effective_from, effective_to, max_work_24h, min_rest_24h, max_work_7d, min_rest_7d, min_consecutive_rest_hours, max_rest_periods_24h, night_starts_at, night_ends_at, max_night_work_24h, include_handover, active, notes, updated_at';
+const POLICY_SELECT = 'id, name, scope, vessel_id, effective_from, effective_to, max_work_24h, min_rest_24h, max_work_7d, min_rest_7d, min_consecutive_rest_hours, max_rest_periods_24h, night_starts_at, night_ends_at, max_night_work_24h, max_amplitude_hours, max_interval_between_rests_hours, include_handover, active, notes, updated_at';
 const NOTIFICATION_SELECT = 'id, notification_type, severity, title, body, entity_kind, entity_id, person_id, vessel_id, due_on, created_at, read_at';
 const DEPENDENCY_SELECT = 'id, dependency_type, predecessor_kind, predecessor_id, successor_kind, successor_id, lag_minutes, vessel_id, person_id, notes, active, created_at, updated_at';
 
@@ -32,6 +33,8 @@ interface PolicyRow {
   night_starts_at: string;
   night_ends_at: string;
   max_night_work_24h: number | string;
+  max_amplitude_hours?: number | string | null;
+  max_interval_between_rests_hours?: number | string | null;
   include_handover: boolean;
   active: boolean;
   notes: string | null;
@@ -85,6 +88,8 @@ export interface SavePlanningWorkRestPolicyInput {
   nightStartsAt: string;
   nightEndsAt: string;
   maxNightWork24h: number;
+  maxAmplitudeHours?: number;
+  maxIntervalBetweenRestsHours?: number;
   includeHandover: boolean;
   active: boolean;
   notes: string;
@@ -123,6 +128,8 @@ export function mapPlanningWorkRestPolicies(rows: PolicyRow[]): PlanningWorkRest
     nightStartsAt: row.night_starts_at.slice(0, 5),
     nightEndsAt: row.night_ends_at.slice(0, 5),
     maxNightWork24h: numeric(row.max_night_work_24h),
+    maxAmplitudeHours: row.max_amplitude_hours == null ? null : numeric(row.max_amplitude_hours),
+    maxIntervalBetweenRestsHours: row.max_interval_between_rests_hours == null ? null : numeric(row.max_interval_between_rests_hours),
     includeHandover: row.include_handover,
     active: row.active,
     notes: row.notes || '',
@@ -145,6 +152,32 @@ export function mapPlanningNotifications(rows: NotificationRow[]): PlanningNotif
     createdAt: row.created_at,
     readAt: row.read_at || '',
   }));
+}
+
+/** Hide obsolete active alerts without modifying the stored notification history. */
+export async function filterPlanningWorkingTimeNotifications(client: SupabaseClient, rows: NotificationRow[]): Promise<NotificationRow[]> {
+  const dated = rows.filter((row) => row.notification_type === 'working_time_non_compliance' && row.person_id !== null)
+    .map((row) => ({ row, day: row.due_on || row.created_at.slice(0, 10) }))
+    .filter(({ day }) => /^\d{4}-\d{2}-\d{2}$/.test(day));
+  if (!dated.length) return rows.filter((row) => row.notification_type !== 'working_time_non_compliance');
+  const dates = dated.map(({ day }) => day).sort();
+  const start = dates[0]; const end = dates.at(-1)!;
+  const alerts = await fetchWorkingTimeCoverageAlerts(client, start, end, [...new Set(dated.map(({ row }) => row.person_id!))]);
+  const actual = alerts.flatMap((alert) => workingTimeCoverageAlertDates(alert, start, end).map((day) => ({ alert, day })));
+  const seen = new Set<string>();
+  return rows.flatMap((row) => {
+    if (row.notification_type !== 'working_time_non_compliance') return [row];
+    const day = row.due_on || row.created_at.slice(0, 10);
+    const match = actual.find(({ alert, day: alertDay }) => Number(alert.person_id) === row.person_id && alertDay === day
+      && (row.vessel_id === null || Number(alert.vessel_id) === row.vessel_id));
+    if (!match) return [];
+    if (!match.alert.violation_codes?.includes('assignment_coverage')) return [row];
+    const key = `${row.person_id}:${day}:${match.alert.vessel_id}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ ...row, title: 'Couverture de l’affectation interrompue',
+      body: `Aucun enchaînement continu de fenêtres de 24 heures compatibles ne couvre l’affectation sur la journée du ${day}.` }];
+  });
 }
 
 export function mapPlanningDependencies(rows: DependencyRow[]): PlanningDependencyRecord[] {
@@ -174,9 +207,19 @@ export async function fetchPlanningP13Data(client: SupabaseClient): Promise<Plan
   ]);
   const failed = [policiesResult, notificationsResult, dependenciesResult].find((result) => result.error);
   if (failed?.error) throwPlanningDataError('load-planning-p13', 'Impossible de charger les contrôles métier P1.3.', failed.error);
+  const notificationRows = (notificationsResult.data || []) as NotificationRow[];
+  let activeNotifications: NotificationRow[];
+  let notificationsError: string | undefined;
+  try {
+    activeNotifications = await filterPlanningWorkingTimeNotifications(client, notificationRows);
+  } catch {
+    activeNotifications = notificationRows.filter((row) => row.notification_type !== 'working_time_non_compliance');
+    notificationsError = 'Les alertes actuelles de temps de travail sont indisponibles. Relancez l’actualisation.';
+  }
   return {
     policies: mapPlanningWorkRestPolicies((policiesResult.data || []) as PolicyRow[]),
-    notifications: mapPlanningNotifications((notificationsResult.data || []) as NotificationRow[]),
+    notifications: mapPlanningNotifications(activeNotifications),
+    ...(notificationsError ? { notificationsError } : {}),
     dependencies: mapPlanningDependencies((dependenciesResult.data || []) as DependencyRow[]),
     p12,
   };
@@ -195,6 +238,12 @@ function bounded(value: number, minimum: number, maximum: number, label: string)
   return value;
 }
 
+function positiveHours(value: number, label: string): number {
+  const hours = bounded(value, 0, 24, label);
+  if (hours === 0) throw new Error(`${label} doit être strictement positif.`);
+  return hours;
+}
+
 export function savePlanningWorkRestPolicy(client: SupabaseClient, input: SavePlanningWorkRestPolicyInput): Promise<number> {
   const name = requiredPlanningText(input.name, 'Le nom de la politique');
   if (!/^\d{2}:\d{2}$/.test(input.nightStartsAt) || !/^\d{2}:\d{2}$/.test(input.nightEndsAt)) {
@@ -211,7 +260,7 @@ export function savePlanningWorkRestPolicy(client: SupabaseClient, input: SavePl
     p_vessel_id: input.scope === 'vessel' ? input.vesselId : null,
     p_effective_from: input.effectiveFrom,
     p_effective_to: input.effectiveTo || null,
-    p_max_work_24h: bounded(input.maxWork24h, 0, 24, 'Le maximum de travail du cycle après repos de 6 h'),
+    p_max_work_24h: bounded(input.maxWork24h, 0, 24, 'Le maximum de travail par journée de calcul'),
     p_min_rest_24h: bounded(input.minRest24h, 0, 24, 'Le minimum de repos sur 24 h'),
     p_max_work_7d: bounded(input.maxWork7d, 0, 168, 'Le maximum de travail sur 7 jours'),
     p_min_rest_7d: bounded(input.minRest7d, 0, 168, 'Le minimum de repos sur 7 jours'),
@@ -220,6 +269,12 @@ export function savePlanningWorkRestPolicy(client: SupabaseClient, input: SavePl
     p_night_starts_at: input.nightStartsAt,
     p_night_ends_at: input.nightEndsAt,
     p_max_night_work_24h: bounded(input.maxNightWork24h, 0, 24, 'Le travail de nuit'),
+    ...(input.maxAmplitudeHours === undefined ? {} : {
+      p_max_amplitude_hours: positiveHours(input.maxAmplitudeHours, 'L’amplitude maximale'),
+    }),
+    ...(input.maxIntervalBetweenRestsHours === undefined ? {} : {
+      p_max_interval_between_rests_hours: positiveHours(input.maxIntervalBetweenRestsHours, 'L’intervalle maximal entre repos'),
+    }),
     p_include_handover: input.includeHandover,
     p_active: input.active,
     p_notes: input.notes.trim() || null,

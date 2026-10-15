@@ -106,6 +106,8 @@ interface WorkingTimeCalculationRow {
   is_compliant: boolean | null;
   violation_codes: string[] | null;
   calculated_at: string | null;
+  coverage_starts_at?: string | null;
+  coverage_ends_at?: string | null;
 }
 
 export interface ManagerHomeAssignmentRow {
@@ -594,6 +596,7 @@ function contractItems(rows: PersonRow[], today: Date, vessels: ManagerHomeVesse
 }
 
 function workingTimeTitle(codes: string[]): string {
+  if (codes.includes('assignment_coverage')) return 'Couverture de l’affectation interrompue';
   if (codes.includes('consecutive_rest')) return 'Repos consécutif insuffisant';
   if (codes.includes('rest_24h') || codes.includes('rest_7d')) return 'Repos insuffisant détecté';
   if (codes.includes('work_24h') || codes.includes('work_7d')) return 'Dépassement du temps de travail';
@@ -605,20 +608,24 @@ function workingTimeItems(rows: WorkingTimeCalculationRow[], people: PersonRow[]
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const latestByPerson = new Map<number, WorkingTimeCalculationRow>();
   [...rows]
-    .filter((row) => row.is_compliant === false)
+    .filter((row) => row.is_compliant === false || row.violation_codes?.includes('assignment_coverage'))
     .sort((left, right) => String(right.calculated_at || '').localeCompare(String(left.calculated_at || '')))
     .forEach((row) => {
       if (!latestByPerson.has(row.person_id)) latestByPerson.set(row.person_id, row);
     });
 
   return [...latestByPerson.values()].flatMap((row) => {
-    const dueDate = row.local_window_end_date.slice(0, 10);
+    const gapDate = row.coverage_starts_at ? new Date(row.coverage_starts_at) : null;
+    const dueDate = gapDate && Number.isFinite(gapDate.getTime())
+      ? toLocalIsoDate(gapDate) : row.local_window_end_date.slice(0, 10);
     const person = peopleById.get(row.person_id);
     if (personDepartedBeforeToday(person, today)) return [];
 
     const name = personName(person, `Personne ${row.person_id}`);
     const restHours = Number(row.longest_rest_24h_seconds || row.rest_24h_seconds || 0) / 3600;
-    const deadline = restHours > 0 ? `Repos continu limité à ${restHours.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} h` : 'Non-conformité détectée';
+    const deadline = row.violation_codes?.includes('assignment_coverage')
+      ? 'Aucun enchaînement complet de fenêtres de 24 h'
+      : restHours > 0 ? `Repos continu limité à ${restHours.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} h` : 'Non-conformité détectée';
 
     return [{
       id: `working-time-${row.id}`,
@@ -773,15 +780,11 @@ export async function fetchManagerHomeDashboard(
       return query;
     }),
     loadRows<WorkingTimeCalculationRow>('les alertes de temps de travail', async () => {
-      let query = client.from('working_time_calculation_windows')
-        .select('id,person_id,local_window_end_date,rest_24h_seconds,longest_rest_24h_seconds,is_compliant,violation_codes,calculated_at')
-        .eq('is_compliant', false)
-        .gte('local_window_end_date', windowStart)
-        .lte('local_window_end_date', windowEnd)
-        .order('calculated_at', { ascending: false })
-        .limit(500);
-      if (assignmentScope) query = query.in('person_id', assignmentScope.personIds);
-      return query;
+      return client.rpc('working_time_coverage_alerts', {
+        p_starts_on: windowStart,
+        p_ends_on: windowEnd,
+        p_person_ids: assignmentScope?.personIds ?? null,
+      });
     }),
   ]);
 

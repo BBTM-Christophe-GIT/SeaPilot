@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.75.0`, build `2026-10-15.005`, rétablit les graphiques horaires jour
+et mois du temps de travail et recherche une couverture continue de chaque
+affectation par des fenêtres compatibles de 24 h. Seuls les trous sans
+couverture déclenchent une alerte. Les seuils restent modifiables uniquement
+par l'administrateur. Les deux migrations de couverture doivent précéder le
+client. Voir [la logique et la recette](./working-time-assignment-coverage-v3-75-0.md).
+
 Version `3.74.9` rétablit l'émission des notes de frais dont le PDF est déjà dans
 le stockage privé Blob et réduit les calculs répétés qui interrompaient les DPR
 et le temps de travail. Les quatre migrations du 15 octobre doivent précéder le

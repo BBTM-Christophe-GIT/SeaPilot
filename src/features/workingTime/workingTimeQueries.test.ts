@@ -4,6 +4,7 @@ import { workingTimeNonCompliantDates } from './workingTimeCompliance';
 import {
   fetchWorkingTimeEntryRecommendation,
   fetchWorkingTimePhasesRecommendation,
+  fetchWorkingTimeAssignmentAnalysis,
   fetchWorkingTimeDayContext,
   fetchWorkingTimeWorkspace,
   getOrCreateWorkingTimeRegister,
@@ -396,6 +397,42 @@ describe('working-time workflow queries', () => {
     expect(rpc).toHaveBeenNthCalledWith(3, 'transition_working_time_register', {
       p_register_id: 99, p_action: 'captain_validate', p_comment: null,
     });
+  });
+
+  it('parses assignment chains and sends all pending dates and correction ids in one read-only batch', async () => {
+    const rpc = vi.fn().mockResolvedValue({ error: null, data: {
+      status: 'conforme', analysis_version: 3,
+      assignment_coverage: [{ assignment_id: '42', scope_starts_at: '2026-10-12T00:00:00Z',
+        scope_ends_at: '2026-10-19T00:00:00Z', status: 'projected',
+        windows: [{ starts_at: '2026-10-12T00:00:00Z', ends_at: '2026-10-13T00:00:00Z' }], uncovered_ranges: [] }],
+      available_slots: [{ starts_at: '2026-10-13T18:00:00Z', ends_at: '2026-10-13T18:30:00Z' }],
+    } });
+    const phases = [{ startsAt: '2026-10-13T04:00:00Z', endsAt: '2026-10-13T12:00:00Z' },
+      { startsAt: '2026-10-14T04:00:00Z', endsAt: '2026-10-14T12:00:00Z' }];
+    const result = await fetchWorkingTimeAssignmentAnalysis({ rpc } as unknown as SupabaseClient, {
+      personId: 9, periodStart: '2026-10-01', periodEnd: '2026-10-31', timezoneName: 'UTC', phases, excludeIntervalIds: [15, 16],
+    });
+    expect(rpc).toHaveBeenCalledWith('working_time_assignment_analysis', expect.objectContaining({
+      p_phases: phases.map((phase) => ({ starts_at: phase.startsAt, ends_at: phase.endsAt })), p_exclude_interval_ids: [15, 16],
+    }));
+    expect(result.assignmentCoverage?.[0]).toMatchObject({ assignmentId: 42, status: 'projected', uncoveredRanges: [],
+      windows: [{ startsAt: '2026-10-12T00:00:00Z', endsAt: '2026-10-13T00:00:00Z' }] });
+    expect(result.availableSlots).toEqual([{ startsAt: '2026-10-13T18:00:00Z', endsAt: '2026-10-13T18:30:00Z' }]);
+  });
+
+  it('ignores malformed explanatory windows and keeps an unknown assignment neutral', async () => {
+    const rpc = vi.fn().mockResolvedValue({ error: null, data: { status: 'conforme', assignment_coverage: [null,
+      { assignment_id: null, scope_starts_at: '2026-10-12T00:00:00Z', scope_ends_at: '2026-10-13T00:00:00Z', status: 'unknown', windows: [], uncovered_ranges: [] }],
+      analysis_windows: [{ code: 'rest_24h', value: 'wrong', threshold: 36000, window_starts_at: 'bad', window_ends_at: 'bad' }],
+      available_slots: [{ starts_at: 'bad', ends_at: 'bad' }],
+    } });
+    const result = await fetchWorkingTimeAssignmentAnalysis({ rpc } as unknown as SupabaseClient, {
+      personId: 9, periodStart: '2026-10-01', periodEnd: '2026-10-31', timezoneName: 'UTC',
+    });
+    expect(result.assignmentCoverage).toHaveLength(1);
+    expect(result.assignmentCoverage?.[0].status).toBe('unknown');
+    expect(result.analysisWindows).toEqual([]);
+    expect(result.availableSlots).toEqual([]);
   });
 
   it('translates server authorization failures into actionable interface messages', () => {

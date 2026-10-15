@@ -24,6 +24,21 @@ export interface WorkingTimeRollingWindowMarker {
   startLabel: string;
 }
 
+export interface WorkingTimeEntryGraphPreview {
+  workLimitMarkerMinute: number | null;
+  excessRanges: { startMinute: number; endMinute: number }[];
+  windowLabel: string;
+  workTotalLabel: string;
+  excessLabel: string | null;
+  isProjected: boolean;
+  phaseLabels?: { startMinute: number; endMinute: number; label: string; isPending: boolean }[];
+  ruleAlerts?: string[];
+  /** Optional informational copy for preview views that are not compliance checks. */
+  summaryLabel?: string;
+  contextNotes?: string[];
+  analysisStatusLabel?: string;
+}
+
 interface WorkingTimeEntryBoardProps {
   client: SupabaseClient;
   personId: number;
@@ -50,6 +65,11 @@ interface WorkingTimeEntryBoardProps {
   showValidate?: boolean;
   validateDisabled?: boolean;
   rollingWindow?: WorkingTimeRollingWindowMarker | null;
+  previewGraph?: WorkingTimeEntryGraphPreview;
+  allowPhaseResize?: boolean;
+  preserveDayDrafts?: boolean;
+  analysisRefreshKey?: string;
+  externalAnalysis?: { result: WorkingTimeEntryRecommendation | null; loading: boolean; error: string | null; retry: () => void };
   onStartsAtChange: (value: string) => void;
   onEndsAtChange: (value: string) => void;
   onCommentChange: (value: string) => void;
@@ -87,6 +107,11 @@ function formatDuration(seconds: number): string {
   const hours = Math.floor(safeSeconds / 3600);
   const minutes = Math.floor((safeSeconds % 3600) / 60);
   return `${hours} h ${pad(minutes)}`;
+}
+
+function minuteLabel(value: number): string {
+  const minutes = Math.max(0, Math.min(MINUTES_PER_DAY, Math.round(value)));
+  return `${pad(Math.floor(minutes / 60))} h ${pad(minutes % 60)}`;
 }
 
 function formatDateTime(value: string | null): string {
@@ -149,6 +174,11 @@ export function WorkingTimeEntryBoard({
   showValidate = false,
   validateDisabled = false,
   rollingWindow = null,
+  previewGraph,
+  allowPhaseResize = false,
+  preserveDayDrafts = false,
+  analysisRefreshKey = '',
+  externalAnalysis,
   onStartsAtChange,
   onEndsAtChange,
   onCommentChange,
@@ -172,8 +202,21 @@ export function WorkingTimeEntryBoard({
   const [activePendingIndex, setActivePendingIndex] = useState<number | null>(null);
   const [selectedRecordedIntervalId, setSelectedRecordedIntervalId] = useState<number | null>(null);
   const drag = useRef<{ pointerId: number; first: number; last: number; startsAt: string; endsAt: string } | null>(null);
+  const resizeDrag = useRef<{
+    pointerId: number;
+    index: number;
+    edge: 'start' | 'end';
+    lastSlot: number;
+    initialSlot: number;
+    pointerStartX: number;
+    phases: WorkingTimePhaseInput[];
+    startsAt: string;
+    endsAt: string;
+    activeIndex: number | null;
+  } | null>(null);
   const dayButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const slotRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const timelineRef = useRef<HTMLDivElement | null>(null);
   const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
   const activePhase = validProposal(startsAt, endsAt) ? { startsAt, endsAt } : null;
   const combinedPhases = useMemo(() => {
@@ -186,11 +229,16 @@ export function WorkingTimeEntryBoard({
   const phasesConflictExisting = combinedPhases.some((phase) => intervals.some((interval) => interval.id !== editingIntervalId
     && new Date(phase.startsAt).getTime() < new Date(interval.endsAt).getTime()
     && new Date(phase.endsAt).getTime() > new Date(interval.startsAt).getTime()));
-  const recommendationKey = JSON.stringify([personId, combinedPhases, editingIntervalId, planningVesselId, planningWatchGroup, timezoneName]);
-  const currentRecommendation = recommendationClient === client && resolvedRecommendationKey === recommendationKey ? recommendation : null;
-  const currentRecommendationError = recommendationClient === client && recommendationErrorKey === recommendationKey ? recommendationError : null;
+  const recommendationKey = JSON.stringify([personId, combinedPhases, editingIntervalId, planningVesselId, planningWatchGroup, timezoneName, analysisRefreshKey]);
+  const hasExternalAnalysis = Boolean(externalAnalysis);
+  const currentRecommendation = externalAnalysis ? externalAnalysis.result
+    : recommendationClient === client && resolvedRecommendationKey === recommendationKey ? recommendation : null;
+  const currentRecommendationError = externalAnalysis ? externalAnalysis.error
+    : recommendationClient === client && recommendationErrorKey === recommendationKey ? recommendationError : null;
+  const analysisLoading = externalAnalysis ? externalAnalysis.loading : isCalculating;
 
   useEffect(() => {
+    if (hasExternalAnalysis) return;
     if (!combinedPhases.length || phasesOverlap) {
       setRecommendation(null);
       setRecommendationError(null);
@@ -227,7 +275,7 @@ export function WorkingTimeEntryBoard({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [client, combinedPhases, editingIntervalId, personId, phasesOverlap, planningVesselId, planningWatchGroup, recommendationAttempt, recommendationKey, timezoneName]);
+  }, [client, combinedPhases, editingIntervalId, hasExternalAnalysis, personId, phasesOverlap, planningVesselId, planningWatchGroup, recommendationAttempt, recommendationKey, timezoneName]);
 
   const selectedSlots = useMemo(() => {
     const start = new Date(startsAt).getTime();
@@ -267,6 +315,7 @@ export function WorkingTimeEntryBoard({
     window.addEventListener('blur', blur);
     return () => {
       drag.current = null;
+      resizeDrag.current = null;
       window.removeEventListener('pointerup', finish);
       window.removeEventListener('pointercancel', finish);
       window.removeEventListener('blur', blur);
@@ -327,6 +376,81 @@ export function WorkingTimeEntryBoard({
     }
   }
 
+  function boundarySlot(value: string): number | null {
+    const boundary = new Date(value);
+    const dayStart = new Date(slotLocalValue(selectedDay, 0)).getTime();
+    const dayEnd = new Date(slotLocalValue(selectedDay, 48)).getTime();
+    const time = boundary.getTime();
+    if (!Number.isFinite(time) || time < dayStart || time > dayEnd) return null;
+    return time === dayEnd ? 48 : boundary.getHours() * 2 + boundary.getMinutes() / 30;
+  }
+
+  function resizeSlotAtPointer(clientX: number, fallbackSlot: number, pointerStartX: number, initialSlot: number): number {
+    const first = slotRefs.current[0]?.getBoundingClientRect();
+    const last = slotRefs.current[47]?.getBoundingClientRect();
+    const grid = timelineRef.current?.getBoundingClientRect();
+    const left = first && first.width > 0 ? first.left : grid?.left;
+    const right = last && last.width > 0 ? last.right : grid?.right;
+    if (left === undefined || right === undefined || right <= left || !Number.isFinite(clientX)) return fallbackSlot;
+    return Math.max(0, Math.min(48, initialSlot + Math.round((clientX - pointerStartX) / (right - left) * 48)));
+  }
+
+  function resizePhaseBoundary(index: number, edge: 'start' | 'end', targetSlot: number) {
+    if (!allowPhaseResize || !canEdit || isSaving || editingIntervalId) return;
+    const phase = pendingPhases[index];
+    if (!phase) return;
+    // Restrict the moving edge to free half-hour boundaries. Keeping the other
+    // phases intact avoids silently merging or discarding an unsaved period.
+    const obstacles = [
+      ...pendingPhases.filter((_, phaseIndex) => phaseIndex !== index),
+      ...intervals,
+    ].map((obstacle) => ({ start: new Date(obstacle.startsAt).getTime(), end: new Date(obstacle.endsAt).getTime() }));
+    const permittedSlots = Array.from({ length: 49 }, (_, slot) => slot).filter((slot) => {
+      const candidate = { ...phase, [edge === 'start' ? 'startsAt' : 'endsAt']: slotLocalValue(selectedDay, slot) };
+      const start = new Date(candidate.startsAt).getTime();
+      const end = new Date(candidate.endsAt).getTime();
+      return validProposal(candidate.startsAt, candidate.endsAt) && end - start >= 30 * 60 * 1000
+        && !obstacles.some((obstacle) => start < obstacle.end && end > obstacle.start);
+    });
+    if (!permittedSlots.length) return;
+    const nearest = permittedSlots.reduce((best, slot) => Math.abs(slot - targetSlot) < Math.abs(best - targetSlot) ? slot : best);
+    const next = { ...phase, [edge === 'start' ? 'startsAt' : 'endsAt']: slotLocalValue(selectedDay, nearest) };
+    setActivePendingIndex(index);
+    onStartsAtChange(next.startsAt);
+    onEndsAtChange(next.endsAt);
+    if (next.startsAt !== phase.startsAt || next.endsAt !== phase.endsAt) {
+      onPendingPhasesChange(pendingPhases.map((candidate, phaseIndex) => phaseIndex === index ? next : candidate));
+    }
+  }
+
+  function finishPhaseResize(element: HTMLButtonElement, pointerId: number, cancelled: boolean) {
+    const activeDrag = resizeDrag.current;
+    if (!activeDrag || activeDrag.pointerId !== pointerId) return;
+    resizeDrag.current = null;
+    if (cancelled && canEdit && !isSaving) {
+      onPendingPhasesChange(activeDrag.phases);
+      onStartsAtChange(activeDrag.startsAt);
+      onEndsAtChange(activeDrag.endsAt);
+      setActivePendingIndex(activeDrag.activeIndex);
+    }
+    if (element.hasPointerCapture?.(pointerId)) element.releasePointerCapture(pointerId);
+  }
+
+  function handleResizeKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, index: number, edge: 'start' | 'end', slot: number) {
+    if (event.key === 'Escape' && resizeDrag.current) {
+      event.preventDefault();
+      finishPhaseResize(event.currentTarget, resizeDrag.current.pointerId, true);
+      return;
+    }
+    if (resizeDrag.current) return;
+    const target = event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? slot - 1
+      : event.key === 'ArrowRight' || event.key === 'ArrowUp' ? slot + 1
+        : event.key === 'Home' ? 0 : event.key === 'End' ? 48 : null;
+    if (target === null) return;
+    event.preventDefault();
+    resizePhaseBoundary(index, edge, target);
+  }
+
   function removePendingPhase(index: number) {
     const remaining = pendingPhases.filter((_, phaseIndex) => phaseIndex !== index);
     onPendingPhasesChange(remaining);
@@ -343,6 +467,7 @@ export function WorkingTimeEntryBoard({
 
   function selectDay(day: string) {
     onSelectedDayChange(day);
+    if (preserveDayDrafts) { setActivePendingIndex(null); return; }
     if (!validProposal(startsAt, endsAt)) {
       setActivePendingIndex(null);
       onStartsAtChange(`${day}T00:00`);
@@ -384,12 +509,15 @@ export function WorkingTimeEntryBoard({
     ? currentRecommendationError ? 'Analyse indisponible' : combinedPhases.length ? 'Analyse en cours' : 'Sélectionnez une période'
     : status === 'conforme' ? 'Conforme' : status === 'alerte' ? 'Alerte' : status === 'non_conforme' ? 'Non conforme' : 'Politique requise';
   const maxRecommended = currentRecommendation?.alreadyNonCompliant ? 0 : currentRecommendation?.maxAdditionalSeconds || 0;
-  const commentRequired = combinedPhases.length > 0 && (status === 'alerte' || status === 'non_conforme');
+  const commentRequired = combinedPhases.length > 0 && (externalAnalysis
+    ? currentRecommendation?.assignmentCoverage?.some((scope) => scope.status === 'uncovered')
+    : status === 'alerte' || status === 'non_conforme');
   const selectionBlocked = phasesOverlap || phasesConflictExisting || Boolean(currentRecommendationError)
-    || (combinedPhases.length > 0 && (isCalculating || !currentRecommendation || status === 'sans_politique'));
+    || (combinedPhases.length > 0 && (analysisLoading || !currentRecommendation || status === 'sans_politique'));
+
 
   return (
-    <section aria-labelledby="working-time-entry-title" className="working-time-entry-board">
+    <section aria-labelledby="working-time-entry-title" className={`working-time-entry-board${previewGraph ? ' is-visual-preview' : ''}`}>
       <header className="working-time-entry-heading">
         <div>
           <p>Saisie assistée</p>
@@ -397,7 +525,7 @@ export function WorkingTimeEntryBoard({
         </div>
         <span aria-live="polite" className={`working-time-compliance-badge is-${status}`}>
           {status === 'conforme' ? <CheckCircle2 aria-hidden="true" size={15} /> : <AlertTriangle aria-hidden="true" size={15} />}
-          {isCalculating ? 'Calcul…' : statusLabel}
+          {analysisLoading ? 'Calcul…' : statusLabel}
         </span>
       </header>
       {planningContextLoading && !canEdit ? <p className="working-time-planning-context" role="status">Chargement de l’affectation Planning…</p> : null}
@@ -413,9 +541,10 @@ export function WorkingTimeEntryBoard({
 
       <div className="working-time-entry-layout">
         <div className="working-time-timeline-panel">
-          <div className="working-time-timeline-legend"><span><i className="is-existing" />Enregistré</span><span><i className="is-pending" />À enregistrer</span><span><i className="is-selected" />Plage active</span>{rollingWindow ? <small className="is-rolling-window"><i />24 h glissantes</small> : <small>Glissez plusieurs fois pour ajouter des périodes · pas de 30 min</small>}</div>
+          <div className="working-time-timeline-legend"><span><i className="is-existing" />Enregistré</span><span><i className="is-pending" />À enregistrer</span><span><i className="is-selected" />Plage active</span>{rollingWindow ? <small className="is-rolling-window"><i />24 h glissantes</small> : <small>{allowPhaseResize ? 'Glissez pour ajouter · ajustez les bords des périodes · pas de 30 min' : 'Glissez plusieurs fois pour ajouter des périodes · pas de 30 min'}</small>}</div>
           <div className="working-time-timeline-track">
-            <div aria-label={`Grille horaire du ${selectedDay}`} aria-readonly={!canEdit} className="working-time-timeline" role="grid">
+            <div className="working-time-timeline-frame">
+            <div aria-label={`Grille horaire du ${selectedDay}`} aria-readonly={!canEdit} className="working-time-timeline" ref={timelineRef} role="grid">
               {Array.from({ length: 48 }, (_, slot) => {
                 const label = slotLocalValue(selectedDay, slot).slice(11);
                 const recordedInterval = recordedIntervalBySlot[slot];
@@ -430,6 +559,7 @@ export function WorkingTimeEntryBoard({
                     onKeyDown={(event) => handleSlotKeyDown(event, slot)}
                     onClick={() => { if (recordedInterval) setSelectedRecordedIntervalId(recordedInterval.id); }}
                     onPointerDown={(event) => {
+                      if (resizeDrag.current) return;
                       if (!canEdit || isSaving || event.button > 0 || drag.current) return;
                       if (recordedInterval) { setSelectedRecordedIntervalId(recordedInterval.id); return; }
                       drag.current = { pointerId: event.pointerId, first: slot, last: slot, startsAt, endsAt };
@@ -463,7 +593,77 @@ export function WorkingTimeEntryBoard({
                   </button>
                 );
               })}
+              <time aria-hidden="true" className="working-time-end-hour">24h</time>
+              {previewGraph?.phaseLabels?.length ? <div aria-hidden="true" className="working-time-preview-phase-labels" style={{ pointerEvents: 'none' }}>{previewGraph.phaseLabels.map((phase, index) => {
+                const start = Math.max(0, Math.min(MINUTES_PER_DAY, phase.startMinute));
+                const end = Math.max(start, Math.min(MINUTES_PER_DAY, phase.endMinute));
+                if (end <= start) return null;
+                return <span className={phase.isPending ? 'is-pending' : ''} key={`${phase.startMinute}-${phase.endMinute}-${index}`} style={{ left: `${start / MINUTES_PER_DAY * 100}%`, width: `${(end - start) / MINUTES_PER_DAY * 100}%` }}>{phase.label}</span>;
+              })}</div> : null}
             </div>
+            {allowPhaseResize && canEdit && !editingIntervalId && pendingPhases.length ? <div aria-label="Ajuster les périodes à enregistrer" className="working-time-phase-resize-handles" role="group">
+              {pendingPhases.flatMap((phase, index) => (['start', 'end'] as const).map((edge) => {
+                const value = edge === 'start' ? phase.startsAt : phase.endsAt;
+                const slot = boundarySlot(value);
+                if (slot === null) return null;
+                const timeLabel = slot === 48 ? '24:00' : value.slice(11, 16);
+                const edgeLabel = edge === 'start' ? 'début' : 'fin';
+                return <button
+                  aria-label={`Ajuster ${edge === 'start' ? 'le début' : 'la fin'} de la période ${index + 1}, ${timeLabel}`}
+                  className={`working-time-phase-resize-handle is-${edge}`}
+                  disabled={isSaving}
+                  key={`${index}-${edge}`}
+                  onKeyDown={(event) => handleResizeKeyDown(event, index, edge, slot)}
+                  onPointerDown={(event) => {
+                    if (isSaving || resizeDrag.current || drag.current || event.button !== 0) return;
+                    event.preventDefault();
+                    resizeDrag.current = {
+                      pointerId: event.pointerId, index, edge, lastSlot: slot, initialSlot: slot, pointerStartX: event.clientX,
+                      phases: pendingPhases.map((candidate) => ({ ...candidate })), startsAt, endsAt, activeIndex: activePendingIndex,
+                    };
+                    event.currentTarget.setPointerCapture?.(event.pointerId);
+                    event.currentTarget.focus();
+                  }}
+                  onPointerMove={(event) => {
+                    const activeDrag = resizeDrag.current;
+                    if (!activeDrag || activeDrag.pointerId !== event.pointerId) return;
+                    activeDrag.lastSlot = resizeSlotAtPointer(event.clientX, activeDrag.lastSlot, activeDrag.pointerStartX, activeDrag.initialSlot);
+                    resizePhaseBoundary(activeDrag.index, activeDrag.edge, activeDrag.lastSlot);
+                  }}
+                  onPointerUp={(event) => finishPhaseResize(event.currentTarget, event.pointerId, false)}
+                  onPointerCancel={(event) => finishPhaseResize(event.currentTarget, event.pointerId, true)}
+                  onLostPointerCapture={(event) => finishPhaseResize(event.currentTarget, event.pointerId, true)}
+                  style={{ left: `${slot / 48 * 100}%` }}
+                  title={`Glissez pour ajuster ${edge === 'start' ? 'le' : 'la'} ${edgeLabel} · flèches : 30 min · Échap : annuler le glissement`}
+                  type="button"
+                ><span aria-hidden="true" /><span className="sr-only">{edge === 'start' ? 'Début' : 'Fin'}</span></button>;
+              }))}
+            </div> : null}
+            </div>
+            {previewGraph ? (
+              <div
+                aria-label={`${previewGraph.isProjected ? 'Projection en cours de saisie' : 'Analyse des périodes enregistrées'}. ${previewGraph.windowLabel}. ${previewGraph.workTotalLabel}. ${previewGraph.excessLabel || previewGraph.summaryLabel || 'Aucun dépassement du seuil de travail sur cette fenêtre.'}${previewGraph.workLimitMarkerMinute !== null ? ` Seuil atteint à ${minuteLabel(previewGraph.workLimitMarkerMinute)}.` : ''}${previewGraph.ruleAlerts?.length ? ` ${previewGraph.ruleAlerts.join('. ')}.` : ''}${previewGraph.contextNotes?.length ? ` ${previewGraph.contextNotes.join('. ')}.` : ''}`}
+                className="working-time-preview-graph"
+                role="img"
+              >
+                <div aria-hidden="true" className="working-time-preview-range-rail">
+                  {previewGraph.excessRanges.map((range, index) => {
+                    const start = Math.max(0, Math.min(MINUTES_PER_DAY, range.startMinute));
+                    const end = Math.max(start, Math.min(MINUTES_PER_DAY, range.endMinute));
+                    if (end <= start) return null;
+                    return <span className="working-time-preview-excess-range" key={`${range.startMinute}-${range.endMinute}-${index}`} style={{ left: `${start / MINUTES_PER_DAY * 100}%`, width: `${(end - start) / MINUTES_PER_DAY * 100}%` }} />;
+                  })}
+                  {previewGraph.workLimitMarkerMinute !== null ? <span className="working-time-preview-limit-marker" style={{ left: `${Math.max(0, Math.min(MINUTES_PER_DAY, previewGraph.workLimitMarkerMinute)) / MINUTES_PER_DAY * 100}%` }}><span>Seuil atteint à {minuteLabel(previewGraph.workLimitMarkerMinute)}</span></span> : null}
+                </div>
+                <div aria-hidden="true" className="working-time-preview-graph-summary">
+                  <span>{previewGraph.windowLabel}</span>
+                  <strong>{previewGraph.workTotalLabel}</strong>
+                  {previewGraph.excessLabel ? <em>{previewGraph.excessLabel}</em> : null}
+                  {previewGraph.ruleAlerts?.map((alert, index) => <span className="working-time-preview-rule-alert" key={`${alert}-${index}`}>{alert}</span>)}
+                  {previewGraph.contextNotes?.map((note, index) => <span className="working-time-preview-context-note" key={`${note}-${index}`}>{note}</span>)}
+                </div>
+              </div>
+            ) : null}
             {rollingWindow ? (
               <div
                 aria-label="Impact des 24 heures glissantes"
@@ -488,7 +688,7 @@ export function WorkingTimeEntryBoard({
         </div>
 
         <div className="working-time-recommendation-panel" aria-live="polite">
-          <div className={`working-time-analysis-bar is-${status}`}>
+          {!externalAnalysis && (currentRecommendation?.analysisVersion ?? 0) < 3 ? <div className={`working-time-analysis-bar is-${status}`}>
             <span>Analyse automatique</span>
             <dl>
               <div><dt>Travail sur 7 jours</dt><dd>{currentRecommendation ? formatDuration(currentRecommendation.work7dSeconds) : '—'}</dd></div>
@@ -497,10 +697,10 @@ export function WorkingTimeEntryBoard({
               <div><dt>Repos disponibles</dt><dd>{currentRecommendation ? formatDuration(maxRecommended) : '—'}</dd></div>
               <div><dt>Prochaine reprise</dt><dd>{formatDateTime(currentRecommendation?.nextResumeAt || null)}</dd></div>
             </dl>
-          </div>
+          </div> : null}
           {phasesOverlap ? <p className="working-time-message is-error" role="alert">Les phases de travail ne peuvent pas se chevaucher.</p> : null}
           {phasesConflictExisting ? <p className="working-time-message is-error" role="alert">Une phase recouvre un créneau déjà enregistré.</p> : null}
-          {currentRecommendationError ? <><p className="working-time-message is-error" role="alert">{currentRecommendationError}</p><button disabled={isSaving} onClick={() => setRecommendationAttempt((value) => value + 1)} type="button">Relancer le calcul</button></> : null}
+          {currentRecommendationError ? <><p className="working-time-message is-error" role="alert">{currentRecommendationError}</p><button disabled={isSaving} onClick={() => externalAnalysis ? externalAnalysis.retry() : setRecommendationAttempt((value) => value + 1)} type="button">Relancer le calcul</button></> : null}
         </div>
       </div>
 

@@ -3,11 +3,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WorkingTimeWorkspace } from './workingTimeQueries';
+import type { WorkingTimeEntryRecommendation, WorkingTimeWorkspace } from './workingTimeQueries';
 import {
   discardWorkingTimeDraft,
   fetchWorkingTimeDayContext,
-  fetchWorkingTimePhasesRecommendation,
+  fetchWorkingTimeAssignmentAnalysis,
   getOrCreateWorkingTimeRegister,
   saveWorkingTimePhases,
   saveWorkingTimeInterval,
@@ -23,6 +23,14 @@ vi.mock('./workingTimeQueries', async (importOriginal) => {
   const original = await importOriginal<typeof import('./workingTimeQueries')>();
   return {
     ...original,
+    fetchWorkingTimeAssignmentAnalysis: vi.fn().mockResolvedValue({
+      status: 'conforme', policyId: 1, policyName: 'Accords Collectifs du 27/06/2025',
+      alreadyNonCompliant: false, available24hSeconds: 14400, available7dSeconds: 180000,
+      work24hSeconds: 28800, work7dSeconds: 79200, rest24hSeconds: 57600,
+      longestRest24hSeconds: 43200, restImpactSeconds: -14400, consecutiveRestImpactSeconds: -3600,
+      maxAdditionalSeconds: 14400, latestEndAt: '2026-08-03T16:00:00Z',
+      nextResumeAt: '2026-08-03T22:00:00Z', violationCodes: [],
+    }),
     fetchWorkingTimePhasesRecommendation: vi.fn().mockResolvedValue({
       status: 'conforme', policyId: 1, policyName: 'Accords Collectifs du 27/06/2025',
       alreadyNonCompliant: false, available24hSeconds: 14400, available7dSeconds: 180000,
@@ -66,6 +74,13 @@ const defaultDayContext = {
   approverPersonId: 11,
   captainCandidates: [{ personId: 11, firstName: 'Claude', lastName: 'CAPITAINE', name: 'Claude CAPITAINE' }],
 };
+
+function analysisResult(value: Partial<WorkingTimeEntryRecommendation>): WorkingTimeEntryRecommendation {
+  return { status: 'conforme', policyId: 1, policyName: 'Politique compagnie', alreadyNonCompliant: false,
+    available24hSeconds: 0, available7dSeconds: 0, work24hSeconds: 0, work7dSeconds: 0,
+    rest24hSeconds: 0, longestRest24hSeconds: 0, restImpactSeconds: 0, consecutiveRestImpactSeconds: 0,
+    maxAdditionalSeconds: 0, latestEndAt: null, nextResumeAt: null, violationCodes: [], ...value };
+}
 
 function workspace(status: WorkingTimeWorkspace['registers'][number]['status'], personId = 10): WorkingTimeWorkspace {
   return {
@@ -316,7 +331,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     vi.mocked(fetchWorkingTimeDayContext).mockReturnValueOnce(new Promise(() => undefined));
     renderPanel(['marin'], workspace('draft'));
 
-    expect(screen.getByRole('status')).toHaveTextContent('Chargement de l’affectation Planning');
+    expect(screen.getByText('Chargement de l’affectation Planning…')).toHaveAttribute('role', 'status');
     expect(screen.queryByText(/Aucune affectation Planning/)).not.toBeInTheDocument();
   });
 
@@ -585,11 +600,11 @@ describe('WorkingTimeWorkflowPanel', () => {
       { startsAt: '2026-08-03T12:30', endsAt: '2026-08-03T15:00' },
     ];
     const isoPhases = phases.map((phase) => ({ startsAt: new Date(phase.startsAt).toISOString(), endsAt: new Date(phase.endsAt).toISOString() }));
-    await waitFor(() => expect(fetchWorkingTimePhasesRecommendation).toHaveBeenCalledWith(client, expect.objectContaining({
+    await waitFor(() => expect(fetchWorkingTimeAssignmentAnalysis).toHaveBeenCalledWith(client, expect.objectContaining({
       personId: 20, vesselId: null, watchGroup: null,
       phases: isoPhases,
     })));
-    expect(screen.getByText('Conforme', { selector: '.working-time-analysis-bar dd' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled();
     await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
     await waitFor(() => expect(saveWorkingTimePhases).toHaveBeenCalledWith(client, expect.objectContaining({ registerId: 100, vesselId: null, watchGroup: null, phases: isoPhases })));
     expect(submitWorkingTimeDay).not.toHaveBeenCalled();
@@ -681,7 +696,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     }];
     renderPanel(['admin'], data);
 
-    const nonCompliantDay = screen.getByRole('tab', { name: /lun 03 août, journée non conforme/ });
+    const nonCompliantDay = await screen.findByRole('tab', { name: /lun 03 août, journée non conforme/ });
     expect(nonCompliantDay).toHaveClass('is-non-compliant');
     expect(nonCompliantDay.querySelector('svg')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Mois' }));
@@ -968,5 +983,127 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByText(/Journée validée et clôturée/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Corriger' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Réouvrir' })).not.toBeInTheDocument();
+  });
+
+  it('preserves separate day drafts across the graphical month view without writing or changing official totals', async () => {
+    const user = userEvent.setup();
+    renderPanel(['marin'], workspace('draft'), { ...currentPerson, functionLabel: 'Matelot' }, '2026-08-03');
+    await waitFor(() => expect(screen.getAllByRole('gridcell')[36]).toBeEnabled());
+    fireEvent.keyDown(screen.getAllByRole('gridcell')[36], { key: 'Enter' });
+    expect(screen.getByRole('button', { name: 'Ajuster le début de la période 1, 18:00' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Mois' }));
+    expect(screen.getByRole('img', { name: /lun 03 août.*à enregistrer : 18:00–18:30/ })).toBeInTheDocument();
+    expect(screen.getByText('8 h 00 sur le mois')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'mar 04 août' }));
+    await waitFor(() => expect(screen.getAllByRole('gridcell')[20]).toBeEnabled());
+    expect(screen.queryByRole('group', { name: 'Ajuster les périodes à enregistrer' })).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getAllByRole('gridcell')[20], { key: 'Enter' });
+    expect(screen.getByRole('button', { name: 'Ajuster le début de la période 1, 10:00' })).toBeInTheDocument();
+    await waitFor(() => expect(fetchWorkingTimeAssignmentAnalysis).toHaveBeenLastCalledWith(client, expect.objectContaining({
+      phases: [
+        { startsAt: new Date('2026-08-03T18:00').toISOString(), endsAt: new Date('2026-08-03T18:30').toISOString() },
+        { startsAt: new Date('2026-08-04T10:00').toISOString(), endsAt: new Date('2026-08-04T10:30').toISOString() },
+      ], excludeIntervalIds: [],
+    })));
+    await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
+    expect(screen.getByRole('button', { name: 'Ajuster le début de la période 1, 18:00' })).toBeInTheDocument();
+    expect(saveWorkingTimePhases).not.toHaveBeenCalled();
+    expect(saveWorkingTimeInterval).not.toHaveBeenCalled();
+  });
+
+  it('opens the persisted threshold editor only from an administrator profile', async () => {
+    const user = userEvent.setup();
+    renderPanel(['admin'], workspace('draft'), currentPerson, '2026-08-03');
+    await user.click(screen.getByRole('button', { name: 'Modifier les seuils' }));
+    expect(onOpenWorkRest).toHaveBeenCalledWith(1);
+  });
+
+  it.each(['marin', 'capitaine', 'armement', 'direction'] as const)('gives a real %s fixture read-only access to its policy thresholds', async (role) => {
+    const user = userEvent.setup();
+    renderPanel([role], workspace('draft'), { ...currentPerson, functionLabel: role === 'capitaine' ? 'Capitaine' : 'Matelot' }, '2026-08-03');
+    expect(screen.queryByRole('button', { name: 'Modifier les seuils' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Consulter les seuils' }));
+    expect(onOpenWorkRest).toHaveBeenCalledWith(1);
+  });
+
+  it('uses a continuous assignment cover instead of a failed legacy rolling calculation in both views', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchWorkingTimeAssignmentAnalysis).mockResolvedValueOnce(analysisResult({ status: 'conforme', assignmentCoverage: [{
+      assignmentId: 1, scopeStartsAt: new Date('2026-08-03T00:00').toISOString(), scopeEndsAt: new Date('2026-08-04T00:00').toISOString(),
+      status: 'covered', windows: [{ startsAt: new Date('2026-08-03T00:00').toISOString(), endsAt: new Date('2026-08-04T00:00').toISOString() }],
+      uncoveredRanges: [],
+    }] }));
+    const data = workspace('draft');
+    data.calculations = [{
+      id: 401, companyId: 1, personId: 10, windowEnd: '2026-08-03T18:00:00Z', localWindowEndDate: '2026-08-03',
+      timezoneName: 'Europe/Paris', vesselId: 7, workRestPolicyId: 1, work24hSeconds: 28800, rest24hSeconds: 27000,
+      longestRest24hSeconds: 21600, restPeriodCount24h: 2, work7dSeconds: 120000, rest7dSeconds: 484800,
+      nightWork24hSeconds: 0, isCompliant: false, violationCodes: ['rest_24h'], calculationVersion: 4,
+      calculatedAt: '2026-08-03T18:00:01Z',
+    }];
+    renderPanel(['marin'], data, { ...currentPerson, functionLabel: 'Matelot' }, '2026-08-03');
+    await screen.findByText('Affectation couverte sans interruption');
+    expect(screen.getByRole('tab', { name: /lun 03 août/ })).not.toHaveClass('is-non-compliant');
+    expect(screen.queryByRole('region', { name: 'Journées non conformes' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Repos sur 24 h : 7,5 h / minimum 10 h')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Mois' }));
+    expect(screen.getByRole('table')).toHaveTextContent('Couvert');
+    expect(screen.getByRole('table')).not.toHaveTextContent('Non conforme');
+  });
+
+  it('ignores an old coverage response after the authenticated client changes', async () => {
+    const oldResponse = deferred<WorkingTimeEntryRecommendation>();
+    const scope = { assignmentId: 1, scopeStartsAt: new Date('2026-08-03T00:00').toISOString(),
+      scopeEndsAt: new Date('2026-08-04T00:00').toISOString(), windows: [], uncoveredRanges: [] };
+    vi.mocked(fetchWorkingTimeAssignmentAnalysis).mockReturnValueOnce(oldResponse.promise)
+      .mockResolvedValueOnce(analysisResult({ status: 'conforme', assignmentCoverage: [{ ...scope, status: 'covered' }] }));
+    const data = workspace('draft');
+    const person = { ...currentPerson, functionLabel: 'Matelot' };
+    const { rerender } = renderPanel(['marin'], data, person, '2026-08-03');
+    await waitFor(() => expect(fetchWorkingTimeAssignmentAnalysis).toHaveBeenCalledTimes(1));
+    rerender(<WorkingTimeWorkflowPanel client={{} as SupabaseClient} currentPerson={person} roles={['marin']}
+      previewMode range={{ start: '2026-08-01', end: '2026-08-31' }} referenceDate="2026-08-03" />);
+    await screen.findByText('Affectation couverte sans interruption');
+    await act(async () => oldResponse.resolve(analysisResult({ status: 'non_conforme', assignmentCoverage: [{ ...scope,
+      status: 'uncovered', uncoveredRanges: [{ startsAt: scope.scopeStartsAt, endsAt: scope.scopeEndsAt }],
+    }] })));
+    expect(screen.getByText('Affectation couverte sans interruption')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /lun 03 août/ })).not.toHaveClass('is-non-compliant');
+    expect(saveWorkingTimePhases).not.toHaveBeenCalled();
+  });
+
+  it('preserves another month’s draft without sending it to the current month analysis', async () => {
+    const person = { ...currentPerson, functionLabel: 'Matelot' };
+    const { rerender } = renderPanel(['marin'], workspace('draft'), person, '2026-08-03');
+    await waitFor(() => expect(screen.getAllByRole('gridcell')[36]).toBeEnabled());
+    fireEvent.keyDown(screen.getAllByRole('gridcell')[36], { key: 'Enter' });
+    await waitFor(() => expect(fetchWorkingTimeAssignmentAnalysis).toHaveBeenLastCalledWith(client, expect.objectContaining({ phases: [
+      { startsAt: new Date('2026-08-03T18:00').toISOString(), endsAt: new Date('2026-08-03T18:30').toISOString() },
+    ] })));
+    const september = workspace('draft');
+    september.registers[0] = { ...september.registers[0], id: 101, periodStart: '2026-09-01', periodEnd: '2026-09-30' };
+    september.intervals = [];
+    vi.mocked(useWorkingTimeWorkspace).mockReturnValue({ workspace: september, isLoading: false, errorMessage: null, reload });
+    rerender(<WorkingTimeWorkflowPanel client={client} currentPerson={person} roles={['marin']} previewMode
+      range={{ start: '2026-09-01', end: '2026-09-30' }} referenceDate="2026-09-03" />);
+    await waitFor(() => expect(fetchWorkingTimeAssignmentAnalysis).toHaveBeenLastCalledWith(client, expect.objectContaining({
+      periodStart: '2026-09-01', periodEnd: '2026-09-30', phases: [], excludeIntervalIds: [],
+    })));
+    expect(screen.queryByRole('group', { name: 'Ajuster les périodes à enregistrer' })).not.toBeInTheDocument();
+    expect(saveWorkingTimePhases).not.toHaveBeenCalled();
+  });
+
+  it('shows the effective vessel policy instead of an older policy stored on the register', async () => {
+    const data = workspace('draft');
+    const legacy = data.policies[0];
+    data.policies = [
+      { ...legacy, effectiveFrom: '2026-01-01', effectiveTo: null, scope: 'company', vesselId: null, active: true },
+      { ...legacy, id: 2, name: 'Seuils du navire actualisés', maxWork24h: 11, effectiveFrom: '2026-08-01', effectiveTo: null, scope: 'vessel', vesselId: 7, active: true },
+      { ...legacy, id: 3, name: 'Politique future', effectiveFrom: '2026-09-01', effectiveTo: null, scope: 'vessel', vesselId: 7, active: true },
+    ];
+    renderPanel(['marin'], data, { ...currentPerson, functionLabel: 'Matelot' }, '2026-08-03');
+    expect(await screen.findByText('Seuils du navire actualisés')).toBeInTheDocument();
+    expect(screen.getByText('11 h')).toBeInTheDocument();
+    expect(screen.queryByText('Politique future')).not.toBeInTheDocument();
   });
 });

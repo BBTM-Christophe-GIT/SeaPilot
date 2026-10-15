@@ -133,9 +133,9 @@ select is(
     current_setting('test.wtr_person_id')::bigint,
     '2026-10-01 08:00:00+02', '2026-10-01 12:00:00+02', 'Europe/Paris',
     current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', null
-  )->>'available_24h_seconds')::numeric,
-  14400::numeric,
-  'the server returns four remaining hours over 24 hours'
+  )->>'work_24h_seconds')::numeric,
+  28800::numeric,
+  'the factual endpoint total is retained independently of assignment coverage'
 );
 select is(
   (public.working_time_interval_recommendation(
@@ -143,8 +143,8 @@ select is(
     '2026-10-01 08:00:00+02', '2026-10-01 12:00:00+02', 'Europe/Paris',
     current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', null
   )->>'max_additional_seconds')::numeric,
-  7200::numeric,
-  'the recommendation stops at the fourteen-hour calculation-day amplitude'
+  null::numeric,
+  'assignment coverage does not advertise an unverified endpoint work ceiling'
 );
 select is(
   (public.working_time_interval_recommendation(
@@ -152,8 +152,8 @@ select is(
     '2026-10-01 08:00:00+02', '2026-10-01 12:00:00+02', 'Europe/Paris',
     current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', null
   )->>'latest_end_at')::timestamptz,
-  '2026-10-01 14:00:00+02'::timestamptz,
-  'the absolute latest end retains the configured amplitude bound'
+  null::timestamptz,
+  'assignment coverage does not advertise an endpoint-only latest end'
 );
 select is(
   (public.working_time_interval_recommendation(
@@ -161,8 +161,8 @@ select is(
     '2026-10-01 08:00:00+02', '2026-10-01 12:00:00+02', 'Europe/Paris',
     current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', null
   )->>'next_resume_at')::timestamptz,
-  '2026-10-01 18:00:00+02'::timestamptz,
-  'the next compatible restart includes the configured consecutive rest'
+  null::timestamptz,
+  'restart suggestions are supplied as separately verified assignment slots'
 );
 select is(
   jsonb_array_length(public.working_time_interval_recommendation(
@@ -224,16 +224,16 @@ select is(
     '2026-10-02 10:00:00+02', '2026-10-02 11:00:00+02', 'Europe/Paris',
     current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', null
   )->>'max_additional_seconds')::numeric,
-  0::numeric,
-  'an already non-compliant person receives zero recommended additional work'
+  null::numeric,
+  'an existing uncovered period does not manufacture a blanket zero-work ceiling'
 );
 select ok(
   (public.working_time_interval_recommendation(
     current_setting('test.wtr_person_id')::bigint,
     '2026-10-02 10:00:00+02', '2026-10-02 11:00:00+02', 'Europe/Paris',
     current_setting('test.wtr_vessel_id')::bigint, 'Bordée A', null
-  )->>'next_resume_at') is not null,
-  'a next compatible restart is still proposed after an existing breach'
+  )->>'next_resume_at') is null,
+  'an unsafe endpoint restart is not advertised after an uncovered period'
 );
 select is(
   (public.working_time_interval_recommendation(
@@ -241,9 +241,9 @@ select is(
     '2026-10-01 18:00:00+02', '2026-10-01 22:00:00+02', 'Europe/Paris',
     current_setting('test.wtr_vessel_id')::bigint, 'Bordée A',
     current_setting('test.wtr_interval_id')::bigint
-  )->>'already_non_compliant')::boolean,
-  false,
-  'correcting an interval excludes its previous version from the baseline recommendation'
+  )->>'status'),
+  'conforme',
+  'a correction excludes the previous interval and restores compatible assignment coverage'
 );
 
 select has_function('public', 'working_time_phases_recommendation', array['bigint','jsonb','text','bigint','text','bigint'], 'multi-phase recommendation RPC exists');
