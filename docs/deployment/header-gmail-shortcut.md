@@ -62,8 +62,9 @@ rechargement de la page supprime l'autorisation conservée en mémoire.
 
 ## Vérification de cette livraison
 
-Les 190 tests ciblés shell et messagerie ainsi que les 13 tests des routes de
-l'application passent, avec ESLint ciblé et compilation de production.
+Les 190 tests ciblés shell et messagerie, les 13 tests des routes de
+l'application et les 23 tests du manuel passent, avec ESLint ciblé et
+compilation de production.
 La recette navigateur utilise le véritable `AuthProvider` et `AppShell`, avec
 trois comptes de test distincts Administrateur, Marin et Capitaine, sans vue
 de profil simulée depuis un administrateur.

@@ -60,14 +60,16 @@ describe('Manuel d’utilisation', () => {
     expect(MANUAL_GUIDES.technicalDocuments?.access).toContain('attente de migration');
   });
 
-  it.each(['marin', 'capitaine'] as const)('opens through the gear between notifications and identity for an authenticated %s', async (role) => {
+  it.each(['marin', 'capitaine'] as const)('opens through help after the mailbox and before identity for an authenticated %s', async (role) => {
     const user = userEvent.setup();
     const client = renderManual({ role, route: '/' });
-    const gear = await screen.findByRole('link', { name: 'Manuel d’utilisation' });
-    expect(gear.previousElementSibling).toContainElement(screen.getByRole('button', { name: 'Notifications' }));
-    expect(gear.nextElementSibling).toHaveClass('user-menu');
+    const help = await screen.findByRole('link', { name: 'Manuel d’utilisation' });
+    const mailbox = screen.getByRole('link', { name: `Ouvrir Gmail pour ${role}@example.test dans une nouvelle fenêtre` });
+    expect(help.previousElementSibling).toBe(mailbox);
+    expect(mailbox.previousElementSibling).toContainElement(screen.getByRole('button', { name: 'Notifications' }));
+    expect(help.nextElementSibling).toHaveClass('user-menu');
     await user.click(screen.getByRole('button', { name: 'Notifications' }));
-    await user.click(gear);
+    await user.click(help);
     expect(await screen.findByRole('heading', { level: 1, name: 'Manuel d’utilisation' })).toBeInTheDocument();
     expect(screen.queryByText('Vous êtes à jour.')).not.toBeInTheDocument();
     expect(client.from).toHaveBeenCalledWith('user_roles');
