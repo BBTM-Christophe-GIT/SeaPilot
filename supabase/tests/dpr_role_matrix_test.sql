@@ -220,7 +220,7 @@ select is(
   'DPR history uses the consolidated module-aware read policy'
 );
 select ok(
-  position('dpr_can_read_report' in (select qual from pg_policies where schemaname = 'public' and tablename = 'dpr_daily_metrics' and policyname = 'dpr_daily_metrics_company_read')) > 0,
+  position('dpr_report_access_scope' in (select qual from pg_policies where schemaname = 'public' and tablename = 'dpr_daily_metrics' and policyname = 'dpr_daily_metrics_company_read')) > 0,
   'DPR child history follows the report-level module access rule'
 );
 

@@ -49,7 +49,7 @@ Migration : `20260917092601_expense_notes.sql`.
 
 Le bucket privé `expense-note-pdfs` suit les mêmes règles de lecture. Un PDF peut être téléversé uniquement sur le chemin calculé par le serveur pour une note en préparation du compte connecté. Les documents émis ne peuvent être remplacés ni supprimés par les utilisateurs. Le client ne peut modifier ni le créateur, ni les montants enregistrés, ni l'état de livraison.
 
-L'émission se fait en trois étapes : préparation en base, création/téléversement du PDF, puis passage à `issued` après contrôle de l'objet Storage. Le formulaire conserve son UUID pendant les reprises réseau pour éviter une double émission. Les préparations interrompues restent invisibles dans l'historique des notes émises ; elles peuvent être nettoyées ultérieurement après vérification. Aucune ancienne note n'est importée : le projet NDF d'origine ne contient pas de base d'historique.
+L'émission se fait en trois étapes : préparation en base, création/téléversement du PDF, puis passage à `issued` après contrôle des métadonnées du document privé. La migration `20261015073507_expense_note_blob_issuance.sql`, à appliquer après `20261014163046_document_blob_private_storage.sql`, fait reconnaître les PDF Blob vérifiés par le déclencheur d'émission via `document_blob_private.objects()`. Une correspondance Blob désactivée interdit le repli vers un ancien objet Storage ; les PDF historiques sans correspondance Blob restent reconnus. Le formulaire conserve son UUID pendant les reprises réseau pour éviter une double émission. Les préparations interrompues restent invisibles dans l'historique des notes émises ; elles peuvent être nettoyées ultérieurement après vérification. Aucune ancienne note n'est importée : le projet NDF d'origine ne contient pas de base d'historique.
 
 ## Envoi comptable
 
@@ -87,11 +87,14 @@ Limites : 20 justificatifs, 15 Mo par fichier source, 50 Mo cumulés avant conve
 
 - Tests React avec fixtures distinctes Admin, Direction, Armement, Capitaine et Marin ; aucune vue simulée de la session de l'administrateur ne sert de preuve de droits.
 - `supabase/tests/expense_notes_access_test.sql` : transaction annulée en fin de test ; vérifie les cinq rôles, une deuxième société, les PDF privés, l'émetteur modifiable, le créateur immuable, le paramétrage et les calculs serveur.
+- `supabase/tests/expense_note_blob_issuance_test.sql` : comptes authentifiés distincts pour les cinq profils et une deuxième société ; émission depuis un PDF Blob vérifié, compatibilité Storage historique, refus sans PDF ou avec une correspondance désactivée ou une autre référence. Toutes les fixtures sont annulées ; aucun envoi comptable n'est déclenché.
 - `supabase/tests/expense_note_send.test.ts` : tests du service d'envoi avec relais simulé (authentification, RLS, doublons, succès, refus et résultats ambigus). Ils restent avec le serveur, exclu de l'artefact Vercel par `.vercelignore` ; ils sont exécutés par Vitest en local et en CI.
 - `supabase/tests/expense_blob_pdf.test.ts` : API et fournisseur entièrement simulés ; vérifie le JWT exact, les destinations privées, l'intégrité, les refus sans repli, la limite de 4 Mo et l'arrêt d'un flux bloqué. Aucun relais comptable ni service réel n'est appelé.
 - Tests PDF réels pour l'ordre des pages, les fichiers invalides et les descriptions longues.
 - Vérification visuelle sur ordinateur et mobile ; la préversion n'enregistre ni ne transmet de note.
 - La réception d'un premier document réel dans Inexweb reste à constater en exploitation. Les tests automatisés n'envoient pas de faux justificatif à la comptabilité.
+
+La régression d'émission Blob comporte 34 assertions et échoue sur le déclencheur précédent avec « Le PDF doit être enregistré avant émission. ». La suite historique conserve ses 55 assertions. Sur la base locale reconstruite pour cette recette, sa lecture Storage nécessite un `GRANT SELECT ON public.project_billing_documents TO authenticated` supplémentaire dans la transaction de test : une ancienne politique Storage référence cette table. Ce grant de recette est annulé avec les fixtures ; il ne fait pas partie du correctif de production.
 
 ## Déploiement et retour arrière
 

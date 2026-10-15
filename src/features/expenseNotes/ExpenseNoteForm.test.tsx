@@ -93,15 +93,19 @@ describe('compact expense and mileage form', () => {
     await screen.findByText('Enregistrement du véhicule impossible. Votre saisie est conservée, vous pouvez réessayer.');
     expect(screen.getByLabelText('Marque / modèle du véhicule')).toHaveValue('Clio');
   });
-  it('locks submitted data and retries using the same note ID after a network error', async () => {
-    submit.mockRejectedValueOnce(new Error('Réseau indisponible'));
+  it.each(['Réseau indisponible', 'Le PDF doit être enregistré avant émission.'])('preserves the complete draft for the retry button after: %s', async (message) => {
+    submit.mockRejectedValueOnce(new Error(message));
     show(); change('Objet', 'Fournitures'); change('Montant TTC (€)', '25');
+    fireEvent.click(screen.getByRole('button', { name: 'Compléments' }));
+    const receipt = new File(['receipt'], 'ticket.pdf', { type: 'application/pdf' });
+    fireEvent.change(screen.getByLabelText('Justificatifs', { selector: 'input' }), { target: { files: [receipt] } });
     fireEvent.submit(screen.getByRole('dialog'));
-    await screen.findByText('Réseau indisponible');
+    await screen.findByText(message);
     expect(screen.getByLabelText('Objet')).toBeDisabled();
-    fireEvent.submit(screen.getByRole('dialog'));
+    fireEvent.click(screen.getByRole('button', { name: 'Réessayer l’émission' }));
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(2));
-    expect(submit.mock.calls[0][0].id).toBe(submit.mock.calls[1][0].id);
+    expect(submit.mock.calls[1]).toEqual(submit.mock.calls[0]);
+    expect(submit.mock.calls[1][1]).toEqual([receipt]);
   });
   it('prefills the profile default on a fresh note and keeps the chosen vehicle across note types', async () => {
     vehicles.fetch.mockResolvedValue([diesel, { ...electric, isDefault: true }]);

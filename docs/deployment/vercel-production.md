@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.74.9` rétablit l'émission des notes de frais dont le PDF est déjà dans
+le stockage privé Blob et réduit les calculs répétés qui interrompaient les DPR
+et le temps de travail. Les quatre migrations du 15 octobre doivent précéder le
+client. Voir [les corrections et la recette](./submission-recovery-v3-74-9.md).
+
 Version `3.71.14`, build `2026-10-10.007`, présente Brevets et visites médicales
 en arborescence dans l'aperçu et le PDF : catégorie au rang 1, documents en
 retrait au rang 2, classés par catégorie puis nom complet affiché. Les champs
