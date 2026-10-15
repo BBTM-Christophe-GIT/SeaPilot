@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.75.5`, build `2026-10-15.010`, rétablit le plein écran du Planning
+avec les API standard et WebKit, et un repli dans la fenêtre pour les navigateurs
+qui refusent ou ne proposent pas ces API. Le ruban de commandes et le panneau
+de diffusion sont masqués en plein écran. Le calendrier garde ses filtres,
+sa navigation et sa commande de sortie. Aucun changement de droits ni migration.
+Voir [le plein écran du Planning sur iPad](./planning-ipad-fullscreen.md).
+
 Version `3.75.4`, build `2026-10-15.009`, ajoute l'enveloppe Gmail à droite de
 la cloche, pour ouvrir la boîte correspondant à l'adresse de connexion dans
 une nouvelle fenêtre. Le compteur de non-lus est préparé, avec activation

@@ -50,6 +50,32 @@ describe('annual leave rights management window', () => {
     vi.mocked(savePlanningLeaveRightsPeriod).mockResolvedValue(undefined);
   });
 
+  it.each(['native', 'fallback'] as const)('keeps leave rights inside the %s fullscreen workspace', (mode) => {
+    render(<section className={`planning-workspace is-fullscreen${mode === 'fallback' ? ' is-fullscreen-fallback' : ''}`} data-testid="fullscreen-planning" />);
+    render(<PlanningLeaveRightsDialog {...props()} />);
+    expect(screen.getByTestId('fullscreen-planning')).toContainElement(screen.getByRole('dialog', { name: 'Périodes de Droits Congés' }));
+  });
+
+  it('preserves the body portal outside fullscreen instead of nesting the rights form', () => {
+    const { container } = render(<section className="planning-workspace"><PlanningLeaveRightsDialog {...props()} /></section>);
+    const dialog = screen.getByRole('dialog', { name: 'Périodes de Droits Congés' });
+    expect(document.body).toContainElement(dialog);
+    expect(container).not.toContainElement(dialog);
+  });
+
+  it('preserves edited rights when browser controls exit fullscreen while the dialog is open', () => {
+    render(<section className="planning-workspace is-fullscreen" data-testid="fullscreen-planning" />);
+    const input = props();
+    const { rerender } = render(<PlanningLeaveRightsDialog {...input} />);
+    const dialog = screen.getByRole('dialog', { name: 'Périodes de Droits Congés' });
+    fireEvent.change(within(dialog).getByLabelText('Total Congés (jours)'), { target: { value: '31,5' } });
+    screen.getByTestId('fullscreen-planning').classList.remove('is-fullscreen');
+    rerender(<PlanningLeaveRightsDialog {...input} />);
+    expect(screen.getByRole('dialog', { name: 'Périodes de Droits Congés' })).toBe(dialog);
+    expect(within(dialog).getByLabelText('Total Congés (jours)')).toHaveValue('31,5');
+    expect(screen.getByTestId('fullscreen-planning')).toContainElement(dialog);
+  });
+
   it('creates a June-to-May period for a selected start year and saves both totals together', async () => {
     const input = props();
     const user = userEvent.setup();

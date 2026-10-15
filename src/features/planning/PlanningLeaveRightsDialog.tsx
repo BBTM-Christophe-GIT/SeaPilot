@@ -27,6 +27,7 @@ export function PlanningLeaveRightsDialog({ client, initialContext, people, anch
   onClose: (reloadNeeded?: boolean) => void;
   onSaved: (context: PlanningAbsenceBalanceContext) => void;
 }) {
+  const [portalTarget] = useState(() => document.querySelector('.planning-workspace.is-fullscreen') || document.body);
   const [personId, setPersonId] = useState(initialContext.person.id);
   const [isSaving, setIsSaving] = useState(false);
   const [refreshPending, setRefreshPending] = useState(false);
@@ -49,7 +50,7 @@ export function PlanningLeaveRightsDialog({ client, initialContext, people, anch
         <PlanningLeaveRightsEditor key={personId} client={client} personId={personId} initialContext={personId === initialContext.person.id ? initialContext : undefined} anchor={anchor} onSavingChange={setIsSaving} onCommitted={() => { setRefreshPending(true); if (personId === initialContext.person.id) pendingReload.current = true; }} onSaved={(updated) => { setRefreshPending(false); if (updated.person.id === initialContext.person.id) pendingReload.current = false; onSaved(updated); }} />
       </div>
     </AppDialog>
-  </div>, document.body);
+  </div>, portalTarget);
 }
 
 function PlanningLeaveRightsEditor({ client, personId, initialContext, anchor, onSavingChange, onCommitted, onSaved }: {
