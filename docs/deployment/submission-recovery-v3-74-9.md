@@ -47,3 +47,24 @@ historique de 1 300 rapports sous un budget de quatre secondes.
 Les tests frontend et d'envoi de notes utilisent un relais simulé : aucune note
 réelle n'est envoyée pour tester cette correction. Les vues de profils simulées
 depuis un compte administrateur ne sont pas utilisées comme preuve d'accès.
+
+Résultats : 225 tests frontend/API ciblés passent, ainsi que 34 contrôles SQL
+d'émission Blob, 55 contrôles historiques de notes de frais, 34 contrôles DPR,
+19 contrôles de saisie avec historique annuel, 26 de recommandation, 12 de
+Capitaine permanent et 21 de signature. La compilation de production réussit.
+Le lint des fichiers modifiés passe ; le lint global conserve deux erreurs
+préexistantes de paramètres inutilisés dans `procedureQueries.test.ts`.
+
+Après application des quatre migrations, les contrôles en production, en lecture
+seule avec les droits des comptes réels, mesurent 370 DPR Marin en 422 ms et
+1 000 DPR Capitaine en 9 ms. Les capacités et libellés de projets prennent
+respectivement 301 ms et 15 ms. Les anciens et nouveaux contrôles d'accès
+coïncident sur 20 rapports variés pour chaque profil. Les recommandations
+d'heures prennent 960 ms et 119 ms et les lectures de registre restent dans le
+délai serveur. Ces mesures ponctuelles ne sont pas des garanties de latence.
+
+Le test historique de remplacement Capitaine conserve une attente de libellé
+« Capitaine » alors que le préremplissage renvoie « 2nd Capitaine » : cet écart
+est reproduit avec les anciennes fonctions et politiques restaurées dans une
+transaction locale annulée. Les contrôles d'autorisation de ce test passent.
+Le contrôle de sécurité Supabase ne relève aucune nouvelle alerte après migration.
