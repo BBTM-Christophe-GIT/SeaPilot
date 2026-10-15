@@ -459,23 +459,18 @@ function ProjectContractInformation({
 function ProjectDocuments({
   client,
   documents,
-  emptyLabel,
   categoryLabels,
 }: {
   client: SupabaseClient;
   documents: ProjectDocumentRecord[];
-  emptyLabel: string;
   categoryLabels: ReadonlyMap<string, string>;
 }) {
   if (documents.length === 0) {
-    return <p className="project-section-empty">{emptyLabel}</p>;
+    return null;
   }
 
   return (
     <>
-      <p className="project-document-help">
-        Documents sécurisés du projet, accessibles sur ordinateur et mobile. Les versions historiques sont conservées.
-      </p>
       <ul className="project-document-list">
         {documents.map((document) => {
           const linkState = getSharePointDocumentLinkState(document.fileUrl);
@@ -533,14 +528,11 @@ function ProjectStoredAttachments({
   categoryLabels: ReadonlyMap<string, string>;
 }) {
   if (documents.length === 0) {
-    return <p className="project-section-empty">Aucune pièce jointe classée depuis la fiche projet.</p>;
+    return null;
   }
 
   return (
     <>
-      <p className="project-document-help">
-        Documents sécurisés du projet, accessibles sur ordinateur et mobile aux utilisateurs autorisés de la société.
-      </p>
       <ul className="project-document-list">
         {documents.map((document) => {
           const category = document.categoryKey ? categoryLabels.get(document.categoryKey) || document.categoryKey : '';
@@ -922,26 +914,18 @@ function ProjectDetail({
           projectDocuments={projectDocuments}
           projectId={project.id}
           renderDocuments={(documents, labels) => <>
-            <h4>Pièces jointes classées</h4>
             <ProjectStoredAttachments categoryLabels={labels} client={supabaseClient} documents={documents.attachments} />
-            {documents.otherDocuments?.length ? <>
-              <h4>Documents émis et des opérations</h4>
+            {documents.otherDocuments?.length ? (
               <ProjectStoredAttachments categoryLabels={labels} client={supabaseClient} documents={documents.otherDocuments} />
-            </> : null}
-            <h4>Documents Projets historiques</h4>
-            <ProjectDocuments categoryLabels={labels} client={supabaseClient} documents={documents.projectDocuments} emptyLabel="Aucun document projet associé." />
-            <h4>Documents contractuels</h4>
+            ) : null}
+            <ProjectDocuments categoryLabels={labels} client={supabaseClient} documents={documents.projectDocuments} />
             {contractDocumentsUnavailable ? (
               <p className="project-section-empty">Documents contractuels indisponibles en raison d’une erreur de chargement.</p>
             ) : (
-              <ProjectDocuments categoryLabels={labels} client={supabaseClient} documents={documents.contractDocuments} emptyLabel="Aucun document contractuel associé." />
+              <ProjectDocuments categoryLabels={labels} client={supabaseClient} documents={documents.contractDocuments} />
             )}
           </>}
         />
-        <div className="project-generated-document-note">
-          <span>La préparation d’une offre ou d’un contrat s’effectue depuis la rubrique « Offre & contrat ».</span>
-          <button onClick={() => setActiveTab('offer-contract')} type="button">Ouvrir Offre & contrat</button>
-        </div>
       </section>
       ) : null}
 

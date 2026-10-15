@@ -392,7 +392,7 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} roles={['admin']} />);
     await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
     await user.click(screen.getByRole('tab', { name: 'Documents' }));
-    expect(screen.getByRole('heading', { name: 'Documents émis et des opérations' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Documents émis et des opérations' })).not.toBeInTheDocument();
     expect(screen.getAllByText('Offre émise.pdf')).toHaveLength(1);
     expect(screen.getAllByText('Ordre de mission.pdf')).toHaveLength(1);
     expect(screen.getByRole('button', { name: /Ouvrir le document.*Offre émise.pdf/ })).toBeVisible();
