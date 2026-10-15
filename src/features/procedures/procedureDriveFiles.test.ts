@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createProcedureFileStore, procedureDriveFilename } from './procedureDriveFiles';
 import type { ProcedureInput, ProcedureRecord, PublishedProcedureRecord } from './procedureQueries';
 import { hasDocumentBlobFile } from '../documents/documentBlobStorage';
+import { installDocumentDriveStorage } from '../documents/documentDriveStorage';
 
 const bridge = vi.hoisted(() => ({ connect: vi.fn(), request: vi.fn() }));
 vi.mock('../documents/localDriveLauncher', async importOriginal => ({
@@ -16,6 +17,31 @@ const client = {} as never;
 const hash = createHash('sha256').update('source').digest('hex');
 beforeEach(() => { vi.stubGlobal('crypto', webcrypto); bridge.connect.mockReset().mockResolvedValue(session); bridge.request.mockReset(); vi.mocked(hasDocumentBlobFile).mockReset().mockResolvedValue(false); });
 afterEach(() => vi.unstubAllGlobals());
+
+function cloudSourceFixture(migrated: boolean, denied = false) {
+  const mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.template';
+  const blob = new Blob(['current cloud template'], { type: mimeType });
+  const document = { drive_file_id: 'current-drive-template', mime_type: mimeType, file_name: 'Trame de base BBTM.dotx',
+    bytes: blob.size, version: '7', chunkSize: 4 * 1024 * 1024 };
+  const rpc = vi.fn(async (name: string) => name === 'document_drive_lookup'
+    ? { data: migrated ? { drive_file_id: document.drive_file_id, mime_type: mimeType } : null,
+      error: denied ? { code: '42501', message: 'Document inaccessible' } : null }
+    : { data: null, error: null });
+  const invoke = vi.fn(async (_name: string, { body }: { body: { operation: string } }) => body.operation === 'info'
+    ? { data: document, error: null }
+    : { data: blob, error: null, response: new Response(null, { status: 206, headers: {
+      'Content-Range': `bytes 0-${blob.size - 1}/${blob.size}`, 'Content-Length': String(blob.size),
+      'X-Document-Drive-Id': document.drive_file_id, 'X-Document-Drive-Version': document.version,
+      'X-Document-Drive-Bytes': String(blob.size), 'X-Document-Drive-Mime': mimeType,
+      'X-Document-Drive-Name': encodeURIComponent(document.file_name),
+    } }) });
+  const download = vi.fn().mockResolvedValue({ data: blob, error: null });
+  const client = { rpc, functions: { invoke }, storage: { from: vi.fn(() => ({ download })) } };
+  installDocumentDriveStorage(client as never);
+  const record = { id: 125, fileName: document.file_name, mimeType, googleDrivePath: '',
+    storageBucket: 'procedure-documents', storagePath: 'sources/sharepoint/listitem-69-Trame-de-base-BBTM.dotx' } as ProcedureRecord;
+  return { client, record, blob, download, invoke, rpc };
+}
 
 describe('synchronized procedure files', () => {
   it.each(['2.6.0', '2.10.0'])('keeps procedure operations available with launcher %s', async version => {
@@ -85,5 +111,31 @@ describe('synchronized procedure files', () => {
     vi.mocked(hasDocumentBlobFile).mockRejectedValue(denied);
     await expect(createProcedureFileStore(client).read({ id: 51, procedureId: 42 } as PublishedProcedureRecord)).rejects.toBe(denied);
     expect(bridge.connect).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('reads a cloud DOTX with the real authorized storage adapter (migrated: %s) without the Windows launcher', async migrated => {
+    const { client, record, blob, download, invoke, rpc } = cloudSourceFixture(migrated);
+    const read = await createProcedureFileStore(client as never).read(record);
+    expect(read.size).toBe(blob.size);
+    expect(read.type).toBe(blob.type);
+    expect(rpc).toHaveBeenCalledWith('document_drive_lookup', { target_bucket: record.storageBucket, target_path: record.storagePath });
+    if (migrated) {
+      expect(invoke).toHaveBeenCalledWith('document-drive', expect.objectContaining({ body: expect.objectContaining({ operation: 'download', path: record.storagePath }) }));
+      expect(download).not.toHaveBeenCalled();
+    } else {
+      expect(download).toHaveBeenCalledWith(record.storagePath, undefined, undefined);
+      expect(invoke).not.toHaveBeenCalled();
+    }
+    expect(bridge.connect).not.toHaveBeenCalled();
+    expect(bridge.request).not.toHaveBeenCalled();
+  });
+
+  it('does not bypass a cloud authorization refusal with the legacy copy or Windows launcher', async () => {
+    const { client, record, download, invoke } = cloudSourceFixture(true, true);
+    await expect(createProcedureFileStore(client as never).read(record)).rejects.toMatchObject({ message: 'Document inaccessible', status: 403 });
+    expect(download).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+    expect(bridge.connect).not.toHaveBeenCalled();
+    expect(bridge.request).not.toHaveBeenCalled();
   });
 });

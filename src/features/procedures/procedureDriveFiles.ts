@@ -60,6 +60,11 @@ export function createProcedureFileStore(client: SupabaseClient): ProcedureFileS
         if (error || !data) throw error || new Error('Le PDF publié est indisponible.');
         return data;
       }
+      if (!record.googleDrivePath && record.storageBucket && record.storagePath) {
+        const { data, error } = await client.storage.from(record.storageBucket).download(record.storagePath);
+        if (error || !data) throw error || new Error('Le document est indisponible.');
+        return data;
+      }
       if (await hasDocumentBlobFile(client, record.storageBucket, record.storagePath)) {
         const { data, error } = await client.storage.from(record.storageBucket).download(record.storagePath);
         if (error || !data) throw error || new Error('Le document est indisponible.');

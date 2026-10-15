@@ -1,11 +1,12 @@
 import { createHash, webcrypto } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  buildProcedureDesktopUri,
+  isProcedureOfficeDocument,
   createProcedure,
   fetchProceduresData,
   fetchProcedureVessels,
   getProcedurePublicationDate,
+  getProcedureFileUrl,
   isProcedureNumberTaken,
   suggestNextProcedureNumber,
   updateProcedure,
@@ -81,7 +82,7 @@ describe('procedure tags persistence', () => {
       events.push(name);
       return { data: name === 'document_blob_lookup' ? null : { ...row, status: name === 'prepare_procedure_blob_publication' ? 'draft' : 'published' }, error: null };
     });
-    const upload = vi.fn().mockImplementation(async (_path: string, _file: File) => { events.push('upload'); return { error: null }; });
+    const upload = vi.fn().mockImplementation(async () => { events.push('upload'); return { error: null }; });
     const read = vi.fn().mockResolvedValue(new Blob(['fixture'], { type: 'application/pdf' }));
     const result = await publishProcedure({ rpc, storage: { from: () => ({ upload }) } } as never, { id: 12 } as ProcedureRecord,
       { path: 'consigne.pdf', bytes: 7, sha256: createHash('sha256').update('fixture').digest('hex') }, read);
@@ -136,23 +137,40 @@ function fileRecord(fileName: string, mimeType = ''): ProcedureRecord {
   return { fileName, mimeType } as ProcedureRecord;
 }
 
-describe('buildProcedureDesktopUri', () => {
+describe('procedure Office sources', () => {
   it.each([
-    ['procedure.docx', '', 'ms-word'],
-    ['modele.dotx', '', 'ms-word'],
-    ['registre.xlsx', '', 'ms-excel'],
-    ['support.pptx', '', 'ms-powerpoint'],
-    ['document', 'application/vnd.oasis.opendocument.text', 'ms-word'],
-    ['document', 'application/vnd.oasis.opendocument.spreadsheet', 'ms-excel'],
-    ['document', 'application/vnd.oasis.opendocument.presentation', 'ms-powerpoint'],
-  ])('opens %s with the installed %s application', (fileName, mimeType, scheme) => {
-    expect(buildProcedureDesktopUri(fileRecord(fileName, mimeType), 'https://storage.test/file?token=signed'))
-      .toBe(`${scheme}:ofv|u|https://storage.test/file?token=signed`);
+    ['procedure.docx', ''],
+    ['modele.dotx', ''],
+    ['registre.xlsx', ''],
+    ['support.pptx', ''],
+    ['document', 'application/vnd.openxmlformats-officedocument.wordprocessingml.template'],
+    ['document', 'application/vnd.oasis.opendocument.text'],
+    ['document', 'application/vnd.oasis.opendocument.spreadsheet'],
+    ['document', 'application/vnd.oasis.opendocument.presentation'],
+  ])('recognizes %s (%s) for a named Office download', (fileName, mimeType) => {
+    expect(isProcedureOfficeDocument(fileRecord(fileName, mimeType))).toBe(true);
   });
 
-  it('keeps non-Office files on their signed URL', () => {
-    expect(buildProcedureDesktopUri(fileRecord('procedure.pdf', 'application/pdf'), 'https://storage.test/file.pdf'))
-      .toBe('https://storage.test/file.pdf');
+  it('keeps PDFs on their existing browser opening path', () => {
+    expect(isProcedureOfficeDocument(fileRecord('procedure.pdf', 'application/pdf'))).toBe(false);
+  });
+
+  it.each([
+    `https://storage.test/Trame%20de%20base.dotx?token=${'signed-token'.repeat(80)}&download=Trame%20de%20base.dotx`,
+    'blob:https://seapilot.test/temporary-document',
+  ])('preserves an adapter URL without wrapping it in an Office command', async signedUrl => {
+    const createSignedUrl = vi.fn().mockResolvedValue({ data: { signedUrl }, error: null });
+    const client = { storage: { from: vi.fn(() => ({ createSignedUrl })) } };
+    const record = { ...fileRecord('Trame de base BBTM.dotx'), storageBucket: 'procedure-documents', storagePath: 'sources/template.dotx' };
+    expect(await getProcedureFileUrl(client as never, record, 'open')).toBe(signedUrl);
+    expect(createSignedUrl).toHaveBeenCalledWith('sources/template.dotx', 300, undefined);
+  });
+
+  it('preserves an external source URL without rewriting its signed query', async () => {
+    const fileUrl = 'https://documents.test/template.dotx?signature=a%2Fb%3D&version=2';
+    const client = { storage: { from: vi.fn() } };
+    expect(await getProcedureFileUrl(client as never, { ...fileRecord('template.dotx'), fileUrl }, 'open')).toBe(fileUrl);
+    expect(client.storage.from).not.toHaveBeenCalled();
   });
 });
 

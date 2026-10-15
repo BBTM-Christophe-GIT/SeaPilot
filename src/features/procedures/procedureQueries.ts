@@ -618,30 +618,22 @@ export async function deletePublishedProcedure(client: SupabaseClient, publicati
   if (publication.storagePath) await removeStorageObjects(client, [publication.storagePath]).catch(() => undefined);
 }
 
-function officeDesktopScheme(record: ProcedureRecord | PublishedProcedureRecord): 'ms-word' | 'ms-excel' | 'ms-powerpoint' | null {
+export function isProcedureOfficeDocument(record: ProcedureRecord | PublishedProcedureRecord): boolean {
   const fileName = record.fileName.toLowerCase();
   const mimeType = record.mimeType.toLowerCase();
   if (/\.(doc|docm|docx|dot|dotm|dotx|odt)$/.test(fileName)
     || mimeType.includes('msword')
     || mimeType.includes('wordprocessingml')
-    || mimeType.includes('opendocument.text')) return 'ms-word';
+    || mimeType.includes('opendocument.text')) return true;
   if (/\.(xls|xlsb|xlsm|xlsx|xlt|xltm|xltx|ods)$/.test(fileName)
     || mimeType.includes('ms-excel')
     || mimeType.includes('spreadsheetml')
-    || mimeType.includes('opendocument.spreadsheet')) return 'ms-excel';
+    || mimeType.includes('opendocument.spreadsheet')) return true;
   if (/\.(odp|pot|potm|potx|pps|ppsm|ppsx|ppt|pptm|pptx)$/.test(fileName)
     || mimeType.includes('ms-powerpoint')
     || mimeType.includes('presentationml')
-    || mimeType.includes('opendocument.presentation')) return 'ms-powerpoint';
-  return null;
-}
-
-export function buildProcedureDesktopUri(
-  record: ProcedureRecord | PublishedProcedureRecord,
-  fileUrl: string,
-): string {
-  const scheme = officeDesktopScheme(record);
-  return scheme ? `${scheme}:ofv|u|${fileUrl}` : fileUrl;
+    || mimeType.includes('opendocument.presentation')) return true;
+  return false;
 }
 
 export async function getProcedureFileUrl(
@@ -668,11 +660,11 @@ export async function getProcedureFileUrl(
       : googleDriveFileUrl(record.googleDriveFileId);
   }
   if (!record.storageBucket || !record.storagePath) {
-    if (record.fileUrl) return action === 'open' ? buildProcedureDesktopUri(record, record.fileUrl) : record.fileUrl;
+    if (record.fileUrl) return record.fileUrl;
     throw new Error('Aucun fichier disponible pour ce document.');
   }
   const options = action === 'download' ? { download: record.fileName || true } : undefined;
   const { data, error } = await client.storage.from(record.storageBucket).createSignedUrl(record.storagePath, 300, options);
   if (error) throw error;
-  return action === 'open' ? buildProcedureDesktopUri(record, data.signedUrl) : data.signedUrl;
+  return data.signedUrl;
 }

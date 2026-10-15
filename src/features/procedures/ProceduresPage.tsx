@@ -55,6 +55,7 @@ import {
   getProcedureStatusLabel,
   isProcedureNumberConflict,
   isProcedureNumberTaken,
+  isProcedureOfficeDocument,
   publishProcedure,
   suggestNextProcedureNumber,
   updateProcedure,
@@ -702,8 +703,13 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
         await drive.open(record);
         return;
       }
+      if (isProcedureOfficeDocument(record) && record.storageBucket && record.storagePath) {
+        showProcedureBlob(await drive.read(record), record.fileName, true);
+        flash(`« ${record.fileName} » a été téléchargé. Ouvrez-le depuis vos téléchargements dans votre application Office.`);
+        return;
+      }
       const fileUrl = await getProcedureFileUrl(effectiveClient, record, 'open');
-      const opensDesktopApp = /^(ms-(word|excel|powerpoint):|seapilot-drive:)/.test(fileUrl);
+      const opensDesktopApp = fileUrl.startsWith('seapilot-drive:');
       window.open(fileUrl, opensDesktopApp ? '_self' : '_blank', opensDesktopApp ? undefined : 'noopener,noreferrer');
     }
     catch (error) { fail(error instanceof Error ? error.message : "Le fichier n'est pas disponible."); }

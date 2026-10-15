@@ -1112,23 +1112,59 @@ describe('ProceduresPage', () => {
     expect(within(dialog).getByRole('button', { name: 'Enregistrer' })).toBeDisabled();
   });
 
-  it('opens a document when its name is clicked', async () => {
+  it('downloads the cloud DOTX source by its original name when its title is clicked', async () => {
     const user = userEvent.setup();
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const downloads: { href: string; filename: string }[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push({ href: this.href, filename: this.download });
+    });
+    const createObjectURL = vi.fn(() => 'blob:https://seapilot.test/cloud-template');
+    const OriginalURL = URL;
+    vi.stubGlobal('URL', class extends OriginalURL {
+      static createObjectURL = createObjectURL;
+      static revokeObjectURL = vi.fn();
+    });
+    const blob = new Blob(['cloud template'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.template' });
+    drive.read.mockResolvedValue(blob);
+    const { client, createSignedUrl } = createClient({ procedures: [{ ...approvedProcedureRow,
+      id: 125, procedure_code: 'DNC-A', title: 'Trame de base BBTM',
+      source_file_name: 'Trame de base BBTM.dotx', source_mime_type: blob.type,
+      source_storage_path: 'sources/sharepoint/listitem-69-Trame-de-base-BBTM.dotx' }], publications: [] });
+
+    try {
+      render(<ProceduresPage client={client as never} roles={['admin']} />);
+      await user.click(await screen.findByRole('button', { name: 'Ouvrir DNC-A Trame de base BBTM' }));
+
+      expect(await screen.findByText(/Trame de base BBTM.dotx.*a été téléchargé/)).toHaveTextContent('Ouvrez-le depuis vos téléchargements');
+      expect(drive.read).toHaveBeenCalledWith(expect.objectContaining({ id: 125, fileName: 'Trame de base BBTM.dotx' }));
+      expect(createObjectURL).toHaveBeenCalledWith(blob);
+      expect(downloads).toEqual([{ href: 'blob:https://seapilot.test/cloud-template', filename: 'Trame de base BBTM.dotx' }]);
+      expect(createSignedUrl).not.toHaveBeenCalled();
+      expect(drive.open).not.toHaveBeenCalled();
+      expect(open).not.toHaveBeenCalled();
+    } finally {
+      click.mockRestore();
+      open.mockRestore();
+    }
+  });
+
+  it('shows a cloud Office access refusal without launching Office or signing a fallback URL', async () => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    drive.read.mockRejectedValue(new Error('Document inaccessible'));
     const { client, createSignedUrl } = createClient();
-    render(<ProceduresPage client={client as never} roles={['admin']} />);
-
-    await user.click(await screen.findByRole('button', {
-      name: 'Ouvrir QSMS-OPS-01 Procédure embarquement ROZEL',
-    }));
-
-    expect(createSignedUrl).toHaveBeenCalledWith('sources/source.docx', 300, undefined);
-    expect(open).toHaveBeenCalledWith(
-      'ms-word:ofv|u|https://storage.test/signed',
-      '_self',
-      undefined,
-    );
-    open.mockRestore();
+    try {
+      render(<ProceduresPage client={client as never} roles={['admin']} />);
+      await user.click(await screen.findByRole('button', { name: 'Ouvrir QSMS-OPS-01 Procédure embarquement ROZEL' }));
+      expect(await screen.findByText('Document inaccessible')).toBeInTheDocument();
+      expect(createSignedUrl).not.toHaveBeenCalled();
+      expect(drive.open).not.toHaveBeenCalled();
+      expect(open).not.toHaveBeenCalled();
+      expect(screen.queryByText(/a été téléchargé/)).not.toBeInTheDocument();
+    } finally {
+      open.mockRestore();
+    }
   });
 
   it('launches the native Drive source and provides the authenticated Drive web link', async () => {

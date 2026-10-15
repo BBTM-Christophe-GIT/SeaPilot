@@ -43,6 +43,23 @@ version ou le numéro. Une reprise avec des octets identiques est possible.
 Une suppression de fiche conserve le fichier Drive. Pour changer le chemin d'une
 ancienne source, importer le fichier à jour depuis la fiche.
 
+## Ouverture des sources historiques
+
+Les anciennes sources Office qui disposent d'une référence de stockage cloud,
+y compris les modèles Word `.dotx`, se téléchargent au clic sur leur titre.
+Ouvrir ensuite le fichier depuis les téléchargements du navigateur dans Word,
+Excel ou PowerPoint. Le nom et l'extension d'origine sont conservés. SeaPilot
+affiche une confirmation après réception des octets.
+
+La lecture utilise l'adaptateur documentaire authentifié existant, y compris
+pour les sources historiques migrées vers Google Drive. Un refus d'accès
+arrête l'action sans essayer une ancienne copie ni le lanceur Windows.
+Les liens temporaires cloud et les URL Blob ne sont plus enveloppés dans une
+commande Office. Les sources ayant un chemin dans le dossier Drive synchronisé
+gardent leur ouverture directe par le lanceur. L'ouverture des PDF est conservée.
+
+Cette correction ne nécessite ni migration, ni mise à jour du lanceur.
+
 ## Publication et consultation
 
 Enregistrer le document dans Office, puis cliquer sur **Publier**. Le lanceur
