@@ -12,21 +12,21 @@ interface ViolationRule {
   label: string;
   thresholdKind: ThresholdKind;
   unit: ViolationUnit;
-  value: (calculation: WorkingTimeCalculationWindow) => number;
-  threshold: (policy: WorkingTimePolicyThresholds) => number;
+  value: (calculation: WorkingTimeCalculationWindow) => number | null;
+  threshold: (policy: WorkingTimePolicyThresholds) => number | null;
   windowMilliseconds: number;
 }
 
 export interface WorkingTimeViolationDetail {
   alarmDay: string;
   calculation: WorkingTimeCalculationWindow;
-  code: WorkingTimeViolationCode;
+  code: string;
   label: string;
   policyName: string | null;
   threshold: number | null;
   thresholdKind: ThresholdKind;
   unit: ViolationUnit;
-  value: number;
+  value: number | null;
 }
 
 const HOURS_24 = 24 * 60 * 60 * 1000;
@@ -75,7 +75,24 @@ const RULES: Record<WorkingTimeViolationCode, ViolationRule> = {
     threshold: (policy) => policy.maxNightWork24h,
     windowMilliseconds: HOURS_24,
   },
+  amplitude: {
+    label: 'Amplitude de travail', thresholdKind: 'maximum', unit: 'hours',
+    // The server persists the verdict, but not this measured duration.
+    value: () => null,
+    threshold: (policy) => policy.maxAmplitudeHours ?? null,
+    windowMilliseconds: HOURS_24,
+  },
+  rest_interval: {
+    label: 'Intervalle entre deux repos', thresholdKind: 'maximum', unit: 'hours',
+    value: () => null,
+    threshold: (policy) => policy.maxIntervalBetweenRestsHours ?? null,
+    windowMilliseconds: HOURS_24,
+  },
 };
+
+function violationRule(code: string): ViolationRule | undefined {
+  return Object.hasOwn(RULES, code) ? RULES[code as WorkingTimeViolationCode] : undefined;
+}
 
 function calculationsForDay(calculations: WorkingTimeCalculationWindow[], day: string) {
   return calculations
@@ -85,11 +102,14 @@ function calculationsForDay(calculations: WorkingTimeCalculationWindow[], day: s
 
 function violationAlarmDay(
   calculation: WorkingTimeCalculationWindow,
-  code: WorkingTimeViolationCode,
+  code: string,
   intervals: WorkingTimeInterval[],
 ): string | null {
+  const rule = violationRule(code);
+  // A future server rule must remain visible without guessing its analysis window.
+  if (!rule) return calculation.localWindowEndDate;
   const windowEnd = new Date(calculation.windowEnd).getTime();
-  const windowStart = windowEnd - RULES[code].windowMilliseconds;
+  const windowStart = windowEnd - rule.windowMilliseconds;
   return intervals
     .filter((interval) => new Date(interval.startsAt).getTime() < windowEnd
       && new Date(interval.endsAt).getTime() > windowStart)
@@ -109,31 +129,31 @@ function allViolationDetails(
       return calculation.violationCodes.flatMap((code) => {
         const alarmDay = violationAlarmDay(calculation, code, intervals);
         if (!alarmDay) return [];
-        const rule = RULES[code];
+        const rule = violationRule(code);
         return [{
           alarmDay,
           calculation,
           code,
-          label: rule.label,
+          label: rule?.label || 'Alerte de conformité',
           policyName: policy?.name || null,
-          threshold: policy ? rule.threshold(policy) : null,
-          thresholdKind: rule.thresholdKind,
-          unit: rule.unit,
-          value: rule.value(calculation),
+          threshold: policy && rule ? rule.threshold(policy) : null,
+          thresholdKind: rule?.thresholdKind || 'maximum',
+          unit: rule?.unit || 'hours',
+          value: rule ? rule.value(calculation) : null,
         } satisfies WorkingTimeViolationDetail];
       });
     });
 }
 
 function breachMagnitude(detail: WorkingTimeViolationDetail): number {
-  if (detail.threshold === null) return 0;
+  if (detail.threshold === null || detail.value === null) return 0;
   return detail.thresholdKind === 'maximum'
     ? detail.value - detail.threshold
     : detail.threshold - detail.value;
 }
 
 function chooseDetails(details: WorkingTimeViolationDetail[], alarmDay?: string): WorkingTimeViolationDetail[] {
-  const chosen = new Map<WorkingTimeViolationCode, WorkingTimeViolationDetail>();
+  const chosen = new Map<string, WorkingTimeViolationDetail>();
   details.forEach((detail) => {
     const previous = chosen.get(detail.code);
     const detailEndsOnAlarmDay = detail.calculation.localWindowEndDate === alarmDay;
@@ -198,9 +218,12 @@ function formatNumber(value: number): string {
 }
 
 export function workingTimeViolationText(detail: WorkingTimeViolationDetail): string {
+  const threshold = detail.threshold === null ? null : `${formatNumber(detail.threshold)}${detail.unit === 'hours' ? ' h' : ''}`;
+  if (detail.value === null) {
+    return `${detail.label} : alerte signalée par le calcul serveur${threshold ? ` / ${detail.thresholdKind} ${threshold}` : ''}.`;
+  }
   const value = `${formatNumber(detail.value)}${detail.unit === 'hours' ? ' h' : ` période${detail.value > 1 ? 's' : ''}`}`;
   if (detail.threshold === null) return `${detail.label} : ${value}`;
-  const threshold = `${formatNumber(detail.threshold)}${detail.unit === 'hours' ? ' h' : ''}`;
   return `${detail.label} : ${value} / ${detail.thresholdKind} ${threshold}`;
 }
 
@@ -215,7 +238,9 @@ function formatWindowPart(value: Date, timezoneName: string): string {
 }
 
 export function workingTimeViolationWindowText(detail: WorkingTimeViolationDetail): string {
+  const rule = violationRule(detail.code);
+  if (!rule) return 'Période d’analyse non précisée par le calcul serveur.';
   const windowEnd = new Date(detail.calculation.windowEnd);
-  const windowStart = new Date(windowEnd.getTime() - RULES[detail.code].windowMilliseconds);
+  const windowStart = new Date(windowEnd.getTime() - rule.windowMilliseconds);
   return `Fenêtre d’analyse du ${formatWindowPart(windowStart, detail.calculation.timezoneName)} au ${formatWindowPart(windowEnd, detail.calculation.timezoneName)}.`;
 }

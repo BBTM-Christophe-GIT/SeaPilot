@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { workingTimeIntervalMinutes, type WorkingTimeCalculationWindow, type WorkingTimeInterval, type WorkingTimeViolationCode } from './workingTimeModel';
+import { workingTimeIntervalMinutes, type WorkingTimeCalculationWindow, type WorkingTimeInterval } from './workingTimeModel';
 import type { WorkingTimeEditablePerson, WorkingTimeVesselOption } from './workingTimeQueries';
 
 export type ComplianceMetricKey = 'imca' | 'french' | 'non_compliance';
@@ -332,7 +332,7 @@ async function fetchReportCalculations(client: SupabaseClient, filters: WorkingT
     longestRest24hSeconds: Number(row.longest_rest_24h_seconds), restPeriodCount24h: Number(row.rest_period_count_24h),
     work7dSeconds: Number(row.work_7d_seconds), rest7dSeconds: Number(row.rest_7d_seconds),
     nightWork24hSeconds: row.night_work_24h_seconds === null ? null : Number(row.night_work_24h_seconds),
-    isCompliant: row.is_compliant, violationCodes: (row.violation_codes || []) as WorkingTimeViolationCode[],
+    isCompliant: row.is_compliant, violationCodes: row.violation_codes || [],
     calculationVersion: Number(row.calculation_version), calculatedAt: row.calculated_at,
   }));
 }

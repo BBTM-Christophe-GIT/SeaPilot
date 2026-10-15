@@ -107,6 +107,47 @@ function workspaceClient() {
 }
 
 describe('working-time workflow queries', () => {
+  it('retains server violation codes including calculation-day and future codes without changing the verdict', async () => {
+    const { client, rows } = workspaceClient();
+    rows.working_time_calculation_windows = [{
+      ...(rows.working_time_calculation_windows[0] as Record<string, unknown>),
+      violation_codes: ['amplitude', 'rest_interval', 'future_server_rule'],
+      calculation_version: 4,
+      is_compliant: false,
+    }];
+
+    const result = await fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' });
+
+    expect(result.calculations[0]).toMatchObject({
+      violationCodes: ['amplitude', 'rest_interval', 'future_server_rule'],
+      calculationVersion: 4,
+      isCompliant: false,
+    });
+  });
+
+  it('reads the actual amplitude and rest-interval thresholds instead of assuming default values', async () => {
+    const { client, rows, queryCalls } = workspaceClient();
+    rows.planning_work_rest_policies = [{
+      ...(rows.planning_work_rest_policies[0] as Record<string, unknown>),
+      max_amplitude_hours: '15.5',
+      max_interval_between_rests_hours: 13.25,
+    }];
+
+    const result = await fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' });
+
+    expect(result.policies[0]).toMatchObject({ maxAmplitudeHours: 15.5, maxIntervalBetweenRestsHours: 13.25 });
+    const select = queryCalls.find((call) => call.table === 'planning_work_rest_policies' && call.method === 'select');
+    expect(String(select?.args[0]).split(',')).toEqual(expect.arrayContaining(['max_amplitude_hours', 'max_interval_between_rests_hours']));
+  });
+
+  it('preserves unavailable amplitude and rest-interval thresholds as null for historical payloads', async () => {
+    const { client } = workspaceClient();
+
+    const result = await fetchWorkingTimeWorkspace(client, { start: '2026-08-01', end: '2026-08-31' });
+
+    expect(result.policies[0]).toMatchObject({ maxAmplitudeHours: null, maxIntervalBetweenRestsHours: null });
+  });
+
   it.each([true, false, null])('preserves an explicit daily edit permission and does not coerce %s', async (permission) => {
     const rpc = vi.fn().mockResolvedValue({ data: { assignment_id: null, captain_candidates: [], actor_can_edit_day: permission, register_id: 10 }, error: null });
     const result = await fetchWorkingTimeDayContext({ rpc } as unknown as SupabaseClient, { personId: 42, registerId: 10, localWorkDate: '2026-08-03' });

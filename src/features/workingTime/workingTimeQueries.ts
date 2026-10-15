@@ -5,7 +5,6 @@ import type {
   WorkingTimeInterval,
   WorkingTimePeriodKind,
   WorkingTimeRegisterStatus,
-  WorkingTimeViolationCode,
 } from './workingTimeModel';
 
 interface EntryContextRow {
@@ -92,6 +91,8 @@ interface PolicyRow {
   min_consecutive_rest_hours: number | string;
   max_rest_periods_24h: number | string;
   max_night_work_24h: number | string;
+  max_amplitude_hours?: number | string | null;
+  max_interval_between_rests_hours?: number | string | null;
 }
 
 interface CommentRow {
@@ -310,6 +311,8 @@ export interface WorkingTimePolicyThresholds {
   minConsecutiveRestHours: number;
   maxRestPeriods24h: number;
   maxNightWork24h: number;
+  maxAmplitudeHours?: number | null;
+  maxIntervalBetweenRestsHours?: number | null;
 }
 
 export interface WorkingTimeWorkspace {
@@ -411,7 +414,7 @@ export interface SaveWorkingTimePhasesInput {
 const REGISTER_SELECT = 'id,company_id,person_id,period_kind,period_start,period_end,status,work_rest_policy_id,requested_captain_person_id,requested_signature_date,people!working_time_registers_person_id_fkey(first_name,last_name,function_label)';
 const INTERVAL_SELECT = 'id,register_id,company_id,person_id,local_work_date,starts_at,ends_at,timezone_name,utc_offset_minutes,vessel_id,watch_group,comment,author_user_id,author_person_id,source_type,source_reference,source_record_key';
 const CALCULATION_SELECT = 'id,company_id,person_id,window_end,local_window_end_date,timezone_name,vessel_id,work_rest_policy_id,work_24h_seconds,rest_24h_seconds,longest_rest_24h_seconds,rest_period_count_24h,work_7d_seconds,rest_7d_seconds,night_work_24h_seconds,is_compliant,violation_codes,calculation_version,calculated_at';
-const POLICY_SELECT = 'id,name,max_work_24h,min_rest_24h,max_work_7d,min_rest_7d,min_consecutive_rest_hours,max_rest_periods_24h,max_night_work_24h';
+const POLICY_SELECT = 'id,name,max_work_24h,min_rest_24h,max_work_7d,min_rest_7d,min_consecutive_rest_hours,max_rest_periods_24h,max_night_work_24h,max_amplitude_hours,max_interval_between_rests_hours';
 const VALIDATION_SELECT = 'id,register_id,event_type,previous_status,new_status,actor_identity_snapshot,signature_snapshot,interval_snapshot,non_compliance_snapshot,comment,occurred_at';
 const DAY_APPROVAL_SELECT = 'id,company_id,register_id,person_id,local_work_date,status,planning_assignment_id,vessel_id,watch_group,approver_person_id,submitted_at,validated_at,validated_by_person_id,subject_signature_snapshot,approver_signature_snapshot';
 
@@ -512,7 +515,7 @@ function mapCalculation(row: CalculationRow): WorkingTimeCalculationWindow {
     rest7dSeconds: Number(row.rest_7d_seconds),
     nightWork24hSeconds: numberOrNull(row.night_work_24h_seconds),
     isCompliant: row.is_compliant,
-    violationCodes: (row.violation_codes || []) as WorkingTimeViolationCode[],
+    violationCodes: row.violation_codes || [],
     calculationVersion: Number(row.calculation_version),
     calculatedAt: row.calculated_at,
   };
@@ -529,6 +532,8 @@ function mapPolicy(row: PolicyRow): WorkingTimePolicyThresholds {
     minConsecutiveRestHours: Number(row.min_consecutive_rest_hours),
     maxRestPeriods24h: Number(row.max_rest_periods_24h),
     maxNightWork24h: Number(row.max_night_work_24h),
+    maxAmplitudeHours: numberOrNull(row.max_amplitude_hours),
+    maxIntervalBetweenRestsHours: numberOrNull(row.max_interval_between_rests_hours),
   };
 }
 
