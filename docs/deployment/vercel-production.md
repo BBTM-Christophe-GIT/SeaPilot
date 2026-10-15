@@ -1,5 +1,13 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.75.4`, build `2026-10-15.009`, ajoute l'enveloppe Gmail à droite de
+la cloche, pour ouvrir la boîte correspondant à l'adresse de connexion dans
+une nouvelle fenêtre. Le compteur de non-lus est préparé, avec activation
+optionnelle par `VITE_GMAIL_CLIENT_ID` et autorisation Google de l'utilisateur.
+Sans cette configuration, le raccourci reste disponible et aucune pastille
+n'est affichée. Aucune migration ni modification de la connexion SeaPilot.
+Voir [le raccourci et l'activation du compteur](./header-gmail-shortcut.md).
+
 Version `3.75.3`, build `2026-10-15.008`, remplace automatiquement les PDF
 publiés de version strictement inférieure pour une même référence de procédure.
 Le remplacement est transactionnel et suit la validation de la nouvelle
