@@ -113,6 +113,61 @@ describe('procedure tags persistence', () => {
     expect(from).not.toHaveBeenCalled();
     expect(read).not.toHaveBeenCalled();
   });
+
+  it('publishes an uploaded PDF and its source through one atomic RPC using current server metadata', async () => {
+    vi.stubGlobal('crypto', webcrypto);
+    const upload = vi.fn().mockResolvedValue({ error: null });
+    const remove = vi.fn();
+    const rpc = vi.fn().mockResolvedValue({ data: { ...row, version_label: 'B' }, error: null });
+    const from = vi.fn();
+    const client = { from, rpc, storage: { from: vi.fn(() => ({ upload, remove })) } };
+    const file = new File(['fixture'], 'consigne.pdf', { type: 'application/pdf' });
+    const result = await publishProcedure(client as never,
+      { id: 12, theme: 'URG', documentNumber: '01', versionLabel: 'B', revisionLabel: 'B' } as ProcedureRecord, file);
+    expect(upload).toHaveBeenCalledWith(expect.stringMatching(/^published\/12\/.+[.]pdf$/), file,
+      expect.objectContaining({ contentType: 'application/pdf', upsert: false }));
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('publish_procedure_uploaded_pdf', {
+      target_procedure: 12, pdf_storage_path: upload.mock.calls[0][0], pdf_file_name: 'consigne.pdf', pdf_bytes: 7,
+      expected_source: { theme: 'URG', document_number: '01', version_label: 'B', revision_label: 'B' },
+    });
+    expect(result.versionLabel).toBe('B');
+    expect(result.tags).toEqual(['Sécurité', 'Incendie']);
+    expect(from).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('cleans the uploaded path after an atomic publication failure without deleting an existing publication', async () => {
+    vi.stubGlobal('crypto', webcrypto);
+    const upload = vi.fn().mockResolvedValue({ error: null });
+    const remove = vi.fn().mockResolvedValue({ error: null });
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: Object.assign(new Error('Source verrouillée'), { code: '42501' }) });
+    const from = vi.fn();
+    await expect(publishProcedure({ from, rpc, storage: { from: () => ({ upload, remove }) } } as never,
+      { id: 12 } as ProcedureRecord, new File(['fixture'], 'consigne.pdf', { type: 'application/pdf' })))
+      .rejects.toThrow('Source verrouillée');
+    expect(remove).toHaveBeenCalledExactlyOnceWith([upload.mock.calls[0][0]]);
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, '08007', '40003'])('retains the uploaded PDF when the publication outcome is unknown (%s)', async code => {
+    vi.stubGlobal('crypto', webcrypto);
+    const upload = vi.fn().mockResolvedValue({ error: null });
+    const remove = vi.fn().mockResolvedValue({ error: null });
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: Object.assign(new Error('Publication outcome unknown'), { code }) });
+    await expect(publishProcedure({ rpc, storage: { from: () => ({ upload, remove }) } } as never,
+      { id: 12 } as ProcedureRecord, new File(['fixture'], 'consigne.pdf', { type: 'application/pdf' })))
+      .rejects.toThrow('Publication outcome unknown');
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it.each([null, { ...row, mime_type: 'text/plain' }, { ...row, file_name: 'consigne.docx' }])('does not announce an unconfirmed imported publication: %j', async data => {
+    vi.stubGlobal('crypto', webcrypto);
+    const upload = vi.fn().mockResolvedValue({ error: null });
+    const rpc = vi.fn().mockResolvedValue({ data, error: null });
+    await expect(publishProcedure({ rpc, storage: { from: () => ({ upload }) } } as never,
+      { id: 12 } as ProcedureRecord, new File(['fixture'], 'consigne.pdf', { type: 'application/pdf' })))
+      .rejects.toThrow('La publication du PDF n’a pas été confirmée.');
+  });
 });
 
 describe('procedure fleet options', () => {

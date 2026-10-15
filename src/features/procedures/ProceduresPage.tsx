@@ -74,6 +74,7 @@ import { createProcedureTag, fetchProcedureTagCatalogue, removeProcedureTag } fr
 import { ProcedureTagCatalogueDialog } from './ProcedureTagCatalogueDialog';
 import { ProcedureListDialog } from './ProcedureListDialog';
 import { procedureAppliesToVessel } from './procedureList';
+import { procedureDisplayTitle } from './procedureDisplay';
 import { CHAPTERS, ISM_CHAPTER_THEMES, chapterKey, type ProcedureChapterKey } from './procedureChapters';
 import { createProcedureTemplateFile } from './procedureTemplate';
 import { createProcedureFileStore, procedureDriveFilename, PROCEDURE_IMPORT_TYPES, showProcedureBlob, type ProcedureFileStore } from './procedureDriveFiles';
@@ -225,7 +226,7 @@ function ProcedureTagsDialog({ record, onClose, onSave, saving, catalogue }: { r
     try { await onSave(parseProcedureTags(value)); }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'L’enregistrement des tags a échoué.'); }
   }
-  return <AppDialog title="Modifier les tags" description={record.title} icon={<Tags aria-hidden="true" size={20} />} size="sm" isBusy={saving} onClose={onClose} onSubmit={handleSubmit}
+  return <AppDialog title="Modifier les tags" description={procedureDisplayTitle(record.title)} icon={<Tags aria-hidden="true" size={20} />} size="sm" isBusy={saving} onClose={onClose} onSubmit={handleSubmit}
     footer={<div className="app-dialog__actions"><button className="sp-button sp-button--secondary" disabled={saving} onClick={onClose} type="button">Annuler</button><button className="sp-button sp-button--primary" disabled={saving} type="submit">{saving ? 'Enregistrement…' : 'Enregistrer'}</button></div>}>
     <ProcedureTagsField value={value} onChange={setValue} disabled={saving} catalogue={catalogue} />
     {error ? <p className="form-error" role="alert">{error}</p> : null}
@@ -296,7 +297,7 @@ function ProcedureEditor({ procedure, procedures, projectOptions, vesselOptions,
   return <div className="procedure-dialog-backdrop" role="presentation">
     <section aria-labelledby="procedure-editor-title" aria-modal="true" className="procedure-dialog procedure-editor-compact" role="dialog">
       <header><div className="procedure-dialog-identity"><span>QSMS · {procedure ? 'Modifier la fiche information' : 'Nouveau document'}</span>
-        <h2 id="procedure-editor-title">{generatedProcedureCode || 'Référence à compléter'} - {form.title.trim() || 'Titre du document'}</h2>
+        <h2 id="procedure-editor-title">{generatedProcedureCode || 'Référence à compléter'} - {procedureDisplayTitle(form.title.trim()) || 'Titre du document'}</h2>
       </div><button aria-label="Fermer" disabled={saving} onClick={onClose} type="button"><X size={19} /></button></header>
       <form onSubmit={handleSubmit}>
         <div className="procedure-form-body">
@@ -371,7 +372,7 @@ function PublishDialog({ procedure, onClose, onPublish, saving }: PublishDialogP
         <header><div><span>Diffusion contrôlée</span><h2 id="procedure-publish-title">Confirmer la publication</h2></div><button aria-label="Fermer" onClick={onClose} type="button"><X size={19} /></button></header>
         <div className="procedure-publish-body">
           <ShieldCheck size={30} />
-          <div><strong>Êtes-vous sûr de vouloir publier ce document ?</strong><p>{procedure.procedureCode || procedure.documentNumber} · {procedure.title}<br />Son statut deviendra « Publié » et sa date de diffusion sera fixée au {formatDate(diffusionOn)}. Seul le PDF sera accessible aux profils Armement, Capitaine et Marin.</p></div>
+          <div><strong>Êtes-vous sûr de vouloir publier ce document ?</strong><p>{procedure.procedureCode || procedure.documentNumber} · {procedureDisplayTitle(procedure.title)}<br />Son statut deviendra « Publié » et sa date de diffusion sera fixée au {formatDate(diffusionOn)}. Seul le PDF sera accessible aux profils Armement, Capitaine et Marin.</p></div>
           <p>Enregistrez vos dernières modifications dans Office. Le fichier sera converti automatiquement en PDF dans SeaPilot\Procedures PDF.</p>
         </div>
         <footer><button className="procedure-button-secondary" disabled={saving} onClick={onClose} type="button">Non</button><button className="procedure-button-primary" disabled={saving} onClick={() => void onPublish()} type="button"><Send size={16} />{saving ? 'Conversion et publication…' : 'Oui, publier'}</button></footer>
@@ -417,12 +418,12 @@ function PublicationPreviewDialog({ client, drive, publication, onClose, onDownl
     };
   }, [client, drive, publication]);
 
-  return <AppDialog title={publication.title} eyebrow="Procédure publiée · Lecture seule" icon={<FileText size={20} />} size="fullscreen" variant="preview" onClose={onClose}
+  return <AppDialog title={procedureDisplayTitle(publication.title)} eyebrow="Procédure publiée · Lecture seule" icon={<FileText size={20} />} size="fullscreen" variant="preview" onClose={onClose}
     description={[publication.procedureCode, publication.vesselName, publication.publishedOn ? `Publié le ${formatDate(publication.publishedOn)}` : ''].filter(Boolean).join(' · ')}
     footer={<div className="app-dialog__actions"><button className="is-secondary" onClick={onClose} type="button">Fermer</button><button className="is-primary" onClick={onDownload} type="button"><Download size={16} />Télécharger le PDF</button></div>}>
     {preview.loading ? <p role="status">Chargement du PDF…</p> : null}
     {preview.error ? <p className="form-error" role="alert">{preview.error}</p> : null}
-    {preview.url ? <iframe src={preview.url} title={`Aperçu de ${publication.title}`} style={{ width: '100%', height: '70vh', border: 0 }} /> : null}
+    {preview.url ? <iframe src={preview.url} title={`Aperçu de ${procedureDisplayTitle(publication.title)}`} style={{ width: '100%', height: '70vh', border: 0 }} /> : null}
   </AppDialog>;
 }
 
@@ -440,6 +441,9 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
   const drive = useMemo(() => fileStore || createProcedureFileStore(effectiveClient), [effectiveClient, fileStore]);
   const effectiveRoles = roles || outletContext?.roles || [];
   const isManager = canManageProcedures(effectiveRoles);
+  const publicationContext = useMemo(() => ({ client: effectiveClient, isManager }), [effectiveClient, isManager]);
+  const publicationContextRef = useRef(publicationContext);
+  publicationContextRef.current = publicationContext;
   const [procedures, setProcedures] = useState<ProcedureRecord[]>([]);
   const [publications, setPublications] = useState<PublishedProcedureRecord[]>([]);
   const [procedureProjects, setProcedureProjects] = useState<ProcedureProjectOption[]>([]);
@@ -669,17 +673,27 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
 
   async function handlePublish() {
     if (!publishTarget) return;
+    const context = publicationContextRef.current;
     setIsSaving(true);
     try {
       const converted = await drive.publish(publishTarget);
       const publication = await publishProcedure(effectiveClient, publishTarget, converted, drive.read);
-      setPublications((current) => sortRecords([publication, ...current]));
+      if (publicationContextRef.current !== context) return;
+      setPublications((current) => sortRecords([publication, ...current.filter(item => item.id !== publication.id)]));
       setProcedures((current) => current.map((item) => item.id === publishTarget.id ? {
         ...item, status: 'published', publishedOn: publication.publishedOn, diffusionOn: publication.diffusionOn,
       } : item));
       setPublishTarget(null);
       flash('PDF publié pour les profils Armement, Capitaine et Marin.');
-    } catch (error) { fail(error instanceof Error ? error.message : 'La publication du PDF a échoué.'); setPublishTarget(null); }
+      try {
+        const refreshed = await fetchProceduresData(effectiveClient, isManager);
+        if (publicationContextRef.current !== context) return;
+        setProcedures(sortRecords(refreshed.procedures));
+        setPublications(sortRecords(refreshed.publications));
+      } catch {
+        if (publicationContextRef.current === context) setErrorMessage('Le PDF a été publié, mais la bibliothèque n’a pas pu être actualisée. Rechargez la page pour voir les versions disponibles.');
+      }
+    } catch (error) { if (publicationContextRef.current === context) { fail(error instanceof Error ? error.message : 'La publication du PDF a échoué.'); setPublishTarget(null); } }
     finally { setIsSaving(false); }
   }
 
@@ -729,8 +743,8 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
 
   async function handleDeleteSource(procedure: ProcedureRecord) {
     if (!window.confirm(procedure.googleDrivePath
-      ? `Supprimer la fiche « ${procedure.title} » et ses publications ? Le fichier Google Drive sera conservé.`
-      : `Supprimer « ${procedure.title} » et ses publications ?`)) return;
+      ? `Supprimer la fiche « ${procedureDisplayTitle(procedure.title)} » et ses publications ? Le fichier Google Drive sera conservé.`
+      : `Supprimer « ${procedureDisplayTitle(procedure.title)} » et ses publications ?`)) return;
     try {
       const linked = publications.filter((item) => item.procedureId === procedure.id);
       await deleteProcedure(effectiveClient, procedure, linked);
@@ -742,7 +756,7 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
   }
 
   async function handleDeletePublication(publication: PublishedProcedureRecord) {
-    if (!window.confirm(`Retirer la publication « ${publication.title} » ?`)) return;
+    if (!window.confirm(`Retirer la publication « ${procedureDisplayTitle(publication.title)} » ?`)) return;
     try {
       await deletePublishedProcedure(effectiveClient, publication);
       setPublications((current) => current.filter((item) => item.id !== publication.id));
@@ -802,19 +816,20 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
                   const publication = 'procedureId' in record ? record as PublishedProcedureRecord : null;
                   const source = publication ? null : record as ProcedureRecord;
                   const linkedPublication = source ? publications.find((item) => item.procedureId === source.id) : null;
+                  const displayTitle = procedureDisplayTitle(record.title);
                   const recordProjects = projectNames(record.projectName);
                   const reviewAlert = getAnnualReviewAlert(record.annualReview, record.diffusionOn);
                   return (
                     <article id={`procedure-${publication ? 'published' : 'source'}-${record.id}`} tabIndex={selectedId === record.id ? -1 : undefined} className={`${selectedId === record.id ? 'is-selected ' : ''}${!source || !isManager ? 'procedure-document-public ' : ''}${reviewAlert ? `is-review-due is-review-${reviewAlert.tone}` : ''}`.trim()} key={`${view}-${record.id}`}>
-                      {source && isManager ? <input aria-label={`Sélectionner ${record.title}`} checked={selectedId === record.id} type="checkbox" onChange={() => setSelectedId((current) => current === record.id ? null : record.id)} /> : null}
+                      {source && isManager ? <input aria-label={`Sélectionner ${displayTitle}`} checked={selectedId === record.id} type="checkbox" onChange={() => setSelectedId((current) => current === record.id ? null : record.id)} /> : null}
                       <span className="procedure-document-icon"><FileText size={18} /></span>
                       <div className="procedure-document-copy">
-                        <button aria-label={`Ouvrir ${record.procedureCode || record.documentNumber || ''} ${record.title}`.trim()} className="procedure-document-name" onClick={() => void handleOpen(record)} type="button"><strong>{record.procedureCode || record.documentNumber || 'Sans numéro'} <span>{record.title}</span></strong></button>
+                        <button aria-label={`Ouvrir ${record.procedureCode || record.documentNumber || ''} ${displayTitle}`.trim()} className="procedure-document-name" onClick={() => void handleOpen(record)} type="button"><strong>{record.procedureCode || record.documentNumber || 'Sans numéro'} <span>{displayTitle}</span></strong></button>
                         {record.vesselName || record.tags.length > 0 || recordProjects.length > 0 ? (
                           <div className="procedure-document-metadata">
-                            <div aria-label={`Navire, tags et projets de ${record.title}`} className="procedure-document-scopes procedure-document-scopes--inline" role="group" tabIndex={0}>
+                            <div aria-label={`Navire, tags et projets de ${displayTitle}`} className="procedure-document-scopes procedure-document-scopes--inline" role="group" tabIndex={0}>
                               {record.vesselName ? <span><b>Navire :</b>{record.vesselName}</span> : null}
-                              {record.tags.length ? <ul aria-label={`Tags de ${record.title}`} className="procedure-tag-list">{record.tags.map(tag => <li className="procedure-tag" key={tag}>{tag}</li>)}</ul> : null}
+                              {record.tags.length ? <ul aria-label={`Tags de ${displayTitle}`} className="procedure-tag-list">{record.tags.map(tag => <li className="procedure-tag" key={tag}>{tag}</li>)}</ul> : null}
                               {recordProjects.map((projectName) => <span key={projectName}><b>Projet :</b>{projectName}</span>)}
                             </div>
                           </div>
@@ -822,10 +837,10 @@ export function ProceduresPage({ client, roles, fileStore }: ProceduresPageProps
                       </div>
                       <div className="procedure-document-status">{reviewAlert ? <strong className={`procedure-review-badge is-${reviewAlert.tone}`}><BellRing aria-hidden="true" size={12} />{reviewAlert.label}</strong> : null}{publication || linkedPublication ? <strong className="is-published">Document publié le {formatDate((publication || linkedPublication)?.publishedOn || '')}</strong> : <span className={`procedure-status-${record.status}`}>{getProcedureStatusLabel(record.status)}</span>}<small>{humanFileSize(record.sizeBytes)}</small></div>
                       <div className="procedure-row-actions">
-                        <button aria-label={`${source?.googleDriveFileId ? 'Voir dans Drive' : 'Télécharger'} ${record.title}`} onClick={() => void handleDownload(record)} type="button"><Download size={16} /></button>
-                        {isManager ? <button aria-label={`Modifier les tags ${record.title}`} onClick={() => setTagsTarget(record)} type="button"><Tags aria-hidden="true" size={16} /></button> : null}
-                        {source && isManager ? <><button aria-label={`Modifier ${record.title}`} onClick={() => setEditorProcedure(source)} type="button"><Edit3 size={16} /></button><button aria-label={`Publier ${record.title}`} onClick={() => setPublishTarget(source)} type="button"><Send size={16} /></button><button aria-label={`Supprimer ${record.title}`} className="danger" onClick={() => void handleDeleteSource(source)} type="button"><Trash2 size={16} /></button></> : null}
-                        {publication && isManager ? <button aria-label={`Retirer ${record.title}`} className="danger" onClick={() => void handleDeletePublication(publication)} type="button"><Trash2 size={16} /></button> : null}
+                        <button aria-label={`${source?.googleDriveFileId ? 'Voir dans Drive' : 'Télécharger'} ${displayTitle}`} onClick={() => void handleDownload(record)} type="button"><Download size={16} /></button>
+                        {isManager ? <button aria-label={`Modifier les tags ${displayTitle}`} onClick={() => setTagsTarget(record)} type="button"><Tags aria-hidden="true" size={16} /></button> : null}
+                        {source && isManager ? <><button aria-label={`Modifier ${displayTitle}`} onClick={() => setEditorProcedure(source)} type="button"><Edit3 size={16} /></button><button aria-label={`Publier ${displayTitle}`} onClick={() => setPublishTarget(source)} type="button"><Send size={16} /></button><button aria-label={`Supprimer ${displayTitle}`} className="danger" onClick={() => void handleDeleteSource(source)} type="button"><Trash2 size={16} /></button></> : null}
+                        {publication && isManager ? <button aria-label={`Retirer ${displayTitle}`} className="danger" onClick={() => void handleDeletePublication(publication)} type="button"><Trash2 size={16} /></button> : null}
                       </div>
                     </article>
                   );

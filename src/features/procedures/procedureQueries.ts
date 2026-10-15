@@ -561,47 +561,28 @@ export async function publishProcedure(client: SupabaseClient, procedure: Proced
   if (pdfFile.type !== 'application/pdf' && !pdfFile.name.toLowerCase().endsWith('.pdf')) {
     throw new Error('La publication doit être un fichier PDF.');
   }
-  const publishedOn = getProcedurePublicationDate();
-  const storagePath = await uploadProcedureFile(client, `published/${procedure.id}`, pdfFile);
-  const payload = {
-    procedure_id: procedure.id,
-    procedure_sharepoint_item_id: null,
-    procedure_code: optionalText(procedure.procedureCode),
-    title: pdfFile.name,
-    status: 'published',
-    revision_label: optionalText(procedure.revisionLabel),
-    published_on: publishedOn,
-    source_label: 'seapilot', file_url: null, notes: optionalText(procedure.notes),
-    tags: normalizeProcedureTags(procedure.tags || []),
-    category_label: optionalText(procedure.categoryLabel),
-    diffusion_on: publishedOn,
-    description: optionalText(procedure.description),
-    regulatory_requirement: optionalText(procedure.regulatoryRequirement),
-    ism_chapter: optionalText(procedure.ismChapter),
-    vessel_name: optionalText(procedure.vesselName), project_name: optionalText(procedure.projectName),
-    document_number: optionalText(procedure.documentNumber || procedure.procedureCode),
-    restrictions: optionalText(procedure.restrictions), annual_review: procedure.annualReview,
-    theme: optionalText(procedure.theme),
-    document_type: optionalText(procedure.documentType), bridge_watch: procedure.bridgeWatch,
-    version_label: optionalText(procedure.versionLabel || procedure.revisionLabel),
-    storage_bucket: PROCEDURE_DOCUMENT_BUCKET, storage_path: storagePath, file_name: pdfFile.name,
-    mime_type: 'application/pdf', size_bytes: pdfFile.size,
+  const expectedSource = {
+    theme: procedure.theme, document_number: procedure.documentNumber,
+    version_label: procedure.versionLabel, revision_label: procedure.revisionLabel,
   };
-  const { data, error } = await client.from('published_procedures').insert(payload)
-    .select(PUBLISHED_PROCEDURE_SELECT).single();
+  const storagePath = await uploadProcedureFile(client, `published/${procedure.id}`, pdfFile);
+  const { data, error } = await client.rpc('publish_procedure_uploaded_pdf', {
+    target_procedure: procedure.id, pdf_storage_path: storagePath, pdf_file_name: pdfFile.name, pdf_bytes: pdfFile.size,
+    expected_source: expectedSource,
+  });
   if (error) {
-    await removeStorageObjects(client, [storagePath]).catch(() => undefined);
+    // A SQL rejection rolls back the whole publication. A lost response can
+    // follow a successful commit, so keep its PDF available for recovery.
+    if (['22023', '23505', '23514', '42501', '55000', '40001', '40P01', 'P0001'].includes(error.code)) {
+      await removeStorageObjects(client, [storagePath]).catch(() => undefined);
+    }
     throw error;
   }
-  const publication = mapPublishedProcedureRows([data as unknown as PublishedProcedureRow])[0];
-  const { error: procedureError } = await client.from('procedures').update({
-    status: 'published', published_on: publishedOn, diffusion_on: publishedOn,
-  }).eq('id', procedure.id);
-  if (procedureError) {
-    await client.from('published_procedures').delete().eq('id', publication.id);
-    await removeStorageObjects(client, [storagePath]).catch(() => undefined);
-    throw procedureError;
+  if (!data || !Number.isSafeInteger(data.id) || data.id <= 0 || data.status !== 'published') {
+    throw new Error('La publication du PDF n’a pas été confirmée.');
   }
+  const publication = mapPublishedProcedureRows([data as PublishedProcedureRow])[0];
+  if (!publication) throw new Error('La publication du PDF n’a pas été confirmée.');
   return publication;
 }
 

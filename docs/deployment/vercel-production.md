@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.75.3`, build `2026-10-15.008`, remplace automatiquement les PDF
+publiés de version strictement inférieure pour une même référence de procédure.
+Le remplacement est transactionnel et suit la validation de la nouvelle
+publication. Les titres de la bibliothèque, de l'aperçu et de la liste PDF
+n'affichent plus l'extension `.pdf`. Appliquer les migrations de remplacement
+avant le client. Voir [la gestion des versions](./procedures-latest-published-revision.md).
+
 Version `3.75.2`, build `2026-10-15.007`, corrige l'ouverture des sources
 Office historiques du module Procédures, notamment les modèles Word `.dotx`.
 Le clic télécharge le fichier autorisé avec son nom d'origine et indique de

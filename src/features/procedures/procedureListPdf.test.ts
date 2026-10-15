@@ -30,7 +30,9 @@ async function pdfText(blob: Blob): Promise<string[]> {
 
 describe('procedure list PDF', () => {
   it('fits 50 documents on one portrait A4 page, groups by ISM and omits vessel and status', async () => {
-    const { blob, filename } = await buildProcedureListPdf({ records: sampleRecords(50).reverse(), vessel: 'GOURY', library: 'published', logo, issuedAt: new Date('2026-09-22T12:00:00') });
+    const records = sampleRecords(50).reverse();
+    records[0].title = 'SMS06A-InductionPAX.PDF';
+    const { blob, filename } = await buildProcedureListPdf({ records, vessel: 'GOURY', library: 'published', logo, issuedAt: new Date('2026-09-22T12:00:00') });
     const document = await PDFDocument.load(await blob.arrayBuffer());
     expect(filename).toBe('liste-documents-qhse-goury.pdf');
     expect(document.getPageCount()).toBe(1);
@@ -41,7 +43,9 @@ describe('procedure list PDF', () => {
     expect(text).toContain('50 document(s)');
     expect(text).not.toMatch(/GOURY|Statut|Archivée|Toute la flotte/);
     expect(text).toContain('01 - Généralités');
-    expect(text).toContain('Procédure 50');
+    expect(text).toContain('SMS06A-InductionPAX');
+    expect(text).not.toContain('SMS06A-InductionPAX.PDF');
+    expect(records[0].title).toBe('SMS06A-InductionPAX.PDF');
     // The input is deliberately reversed: both chapters and references must be sorted.
     expect(text.indexOf('DOC 1-A')).toBeLessThan(text.indexOf('DOC 6-A'));
     expect(text.indexOf('DOC 46-A')).toBeLessThan(text.indexOf('DOC 2-A'));
