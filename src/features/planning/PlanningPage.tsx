@@ -2695,7 +2695,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         /> : null}
       </div> : null}
 
-      <div className="planning-layout">
+      <div className={`planning-layout${perspective === 'crew' && !isOperationalPanelOpen ? ' is-crew-board-only' : ''}`}>
         <section className="planning-board-card" aria-label={perspective === 'projects' ? 'Calendrier des projets' : 'Calendrier des affectations'}>
           <div className={`planning-board-toolbar${perspective === 'crew' ? ' is-crew-toolbar' : ''}`}>
             <div className="planning-toolbar-main">

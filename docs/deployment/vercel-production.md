@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.75.7`, build `2026-10-15.012`, étend la carte Planning sur toute la
+largeur disponible en vue Équipages lorsque le volet opérationnel est fermé.
+Le volet retrouve sa colonne à son ouverture. Les vues Flotte, Projet, le plein
+écran et les dimensions des jours sont conservés. Aucun changement serveur.
+Voir [la largeur du Planning Équipages](./planning-crew-full-width.md).
+
 Version `3.75.6`, build `2026-10-15.011`, ajoute le statut Planning
 « Congés Paternité » aux journées, périodes, postes fictifs et filtres. Dans la
 vue Équipages, sa contribution quotidienne est de `0,00`, comme « Arrêt Maladie »
