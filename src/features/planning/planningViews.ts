@@ -8,6 +8,8 @@ import {
   formatPlanningPerson,
   normalizePlanningStatus,
   normalizePlanningText,
+  hasPlanningPaternityFilter,
+  planningPaternityEventMatchesFilters,
   type PlanningCrewEvent,
   type PlanningDateRange,
   type PlanningFilters,
@@ -115,6 +117,7 @@ export function planningCrewEventType(event: Pick<PlanningCrewEvent, 'status' | 
   const status = normalizePlanningStatus(event.status);
   if (status === 'Repos') return 'rest';
   if (status === 'Vacance') return 'leave';
+  if (status === 'Congés Paternité') return 'paternity_leave';
   if (status === 'RTT') return 'rtt';
   if (status === 'Formation') return 'training';
   if (status === 'Arrêt de travail') return 'unavailability';
@@ -126,6 +129,7 @@ export function planningCrewEventTypeLabel(type: string): string {
     assignment: 'Embarquement / affectation',
     rest: 'Repos',
     leave: 'Congés',
+    paternity_leave: 'Congés Paternité',
     rtt: 'RTT',
     training: 'Formation',
     unavailability: 'Indisponibilité',
@@ -137,6 +141,13 @@ function normalizedEquals(left: string, right: string): boolean {
   return normalizePlanningText(left) === normalizePlanningText(right);
 }
 
+function crewStatusEquals(left: string, right: string): boolean {
+  const leftStatus = normalizePlanningStatus(left);
+  const rightStatus = normalizePlanningStatus(right);
+  return leftStatus === 'Congés Paternité' || rightStatus === 'Congés Paternité'
+    ? leftStatus === rightStatus : normalizedEquals(left, right);
+}
+
 function projectMatchesFilters(project: PlanningProjectRecord, filters: PlanningFilters): boolean {
   return (
     (!filters.vesselName || (project.vesselNames || [project.primaryVesselName, project.secondaryVesselName]).includes(filters.vesselName))
@@ -146,12 +157,15 @@ function projectMatchesFilters(project: PlanningProjectRecord, filters: Planning
   );
 }
 
-function crewEventMatchesFilters(event: PlanningCrewEvent, filters: PlanningFilters): boolean {
+function crewEventMatchesFilters(event: PlanningCrewEvent, filters: PlanningFilters, range: PlanningDateRange): boolean {
+  const statusAndTypeMatch = hasPlanningPaternityFilter(filters)
+    ? planningPaternityEventMatchesFilters(event, filters, range)
+    : (!filters.eventType || planningCrewEventType(event) === filters.eventType)
+      && (!filters.status || crewStatusEquals(event.status, filters.status) || event.confirmationStatus === filters.status);
   return (
     (!filters.vesselName || event.vessel === filters.vesselName)
     && (!filters.personName || event.person === filters.personName)
-    && (!filters.eventType || planningCrewEventType(event) === filters.eventType)
-    && (!filters.status || normalizedEquals(event.status, filters.status) || event.confirmationStatus === filters.status)
+    && statusAndTypeMatch
     && (!filters.responsible || event.responsible === filters.responsible)
   );
 }
@@ -203,13 +217,17 @@ export function buildPlanningFleetLanes(
     && rangesOverlap(project.startsOn, project.endsOn || project.startsOn, range.start, range.end)
     && projectMatchesFilters(project, filters)
   ));
+  const paternityFilter = hasPlanningPaternityFilter(filters);
+  const effectiveAssignments = new Map(eventPool.filter((event) => event.kind === 'assignment').map((event) => [event.assignmentId, event]));
   const assignments = overview.assignments.filter((assignment) => (
     assignment.confirmationStatus !== 'cancelled'
     && rangesOverlap(assignment.startsOn, assignment.endsOn, range.start, range.end)
     && (!filters.vesselName || assignment.vesselName === filters.vesselName)
     && (!filters.personName || assignment.crewName === filters.personName)
-    && (!filters.eventType || filters.eventType === 'assignment')
-    && (!filters.status || normalizedEquals(assignment.statusLabel, filters.status) || assignment.confirmationStatus === filters.status)
+    && (paternityFilter
+      ? Boolean(effectiveAssignments.get(assignment.id) && planningPaternityEventMatchesFilters(effectiveAssignments.get(assignment.id)!, filters, range))
+      : (!filters.eventType || filters.eventType === 'assignment')
+        && (!filters.status || crewStatusEquals(assignment.statusLabel, filters.status) || assignment.confirmationStatus === filters.status))
     && (!filters.responsible || assignment.captainName === filters.responsible)
   ));
   const locations = overview.days.filter((day) => (
@@ -280,7 +298,7 @@ export function buildPlanningCrewLanes(
   const peopleById = new Map(overview.people.map((person) => [person.id, person]));
   const vesselsByName = new Map(overview.vessels.map((vessel) => [vessel.name, vessel.id]));
   const events = eventPool.filter((event) => event.confirmationStatus !== 'cancelled'
-    && rangesOverlap(event.startsOn, event.endsOn, range.start, range.end) && crewEventMatchesFilters(event, filters))
+    && rangesOverlap(event.startsOn, event.endsOn, range.start, range.end) && crewEventMatchesFilters(event, filters, range))
     .map((event) => event.vesselId === null && vesselsByName.has(event.vessel)
       ? { ...event, vesselId: vesselsByName.get(event.vessel)! } : event);
   const peopleByName = new Map(overview.people.map((person) => [normalizePlanningText(formatPlanningPerson(person)), person]));

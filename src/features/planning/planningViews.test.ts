@@ -11,7 +11,7 @@ import {
   removePlanningEvent,
   replacePlanningProject,
 } from './planningViews';
-import { getAllPlanningCrewEvents } from './planningModel';
+import { buildPlanningCrewRows, buildPlanningTimeline, getAllPlanningCrewEvents } from './planningModel';
 
 const overview: PlanningOverview = {
   vessels: [
@@ -39,7 +39,83 @@ const overview: PlanningOverview = {
 const range = { start: '2026-07-06', end: '2026-07-19' };
 const emptyFilters = { vesselName: '', personName: '', eventType: '', status: '', responsible: '' };
 
+function dailyState(id: number, workDate: string, sailorStatus: string, assignmentId = 100): PlanningOverview['days'][number] {
+  return { ...overview.days[0], id, personId: 10, crewName: 'Paul DURAND', workDate, sailorStatus,
+    slot365: `assignment:${assignmentId}`, sourceLabel: 'seapilot-assignment-note' };
+}
+
+const paternityFilters = [{ eventType: 'paternity_leave' }, { status: 'Congés Paternité' }, { eventType: 'paternity_leave', status: 'Congés Paternité' }];
+const visibleDays = (start: string, end: string) => buildPlanningTimeline(start, 'month').filter((day) => day.date >= start && day.date <= end);
+
 describe('planning P0.2 views', () => {
+  it.each(paternityFilters)('finds effective daily paternity corrections inside a sea assignment with filters %j', (extraFilters) => {
+    const data = { ...overview, periods: [], days: [
+      dailyState(1, '2026-07-07', 'Congés Paternités'), dailyState(2, '2026-07-08', 'Arrêt Maladie'),
+      dailyState(3, '2026-07-09', 'Accident du Travail'), dailyState(4, '2026-07-10', 'Congés Paternité'),
+      dailyState(5, '2026-07-20', 'Congés Paternité'),
+    ] };
+    const filters = { ...emptyFilters, ...extraFilters };
+    const selectedRange = { start: '2026-07-07', end: '2026-07-10' };
+    expect(buildPlanningCrewLanes(data, selectedRange, filters, 'people')[0].events[0]).toMatchObject({ status: 'En Mer', dailyStatuses: { '2026-07-07': 'Congés Paternité', '2026-07-10': 'Congés Paternité' } });
+    expect(buildPlanningFleetLanes(data, selectedRange, filters)[0].assignments.map((assignment) => assignment.id)).toEqual([100]);
+    expect(buildPlanningCrewRows(data, visibleDays(selectedRange.start, selectedRange.end), filters).filter((row) => row.type === 'person')).toHaveLength(1);
+
+    for (const noPaternityRange of [{ start: '2026-07-08', end: '2026-07-09' }, { start: '2026-07-11', end: '2026-07-12' }]) {
+      expect(buildPlanningCrewLanes(data, noPaternityRange, filters, 'people')).toEqual([]);
+      expect(buildPlanningFleetLanes(data, noPaternityRange, filters).flatMap((lane) => lane.assignments)).toEqual([]);
+      expect(buildPlanningCrewRows(data, visibleDays(noPaternityRange.start, noPaternityRange.end), filters).filter((row) => row.type === 'person')).toEqual([]);
+    }
+  });
+
+  it('requires the same effective day to match paternity type and status filters', () => {
+    const data = { ...overview, periods: [], days: [dailyState(1, '2026-07-07', 'Congés Paternité')] };
+    const filters = { ...emptyFilters, eventType: 'paternity_leave', status: 'En Mer' };
+    expect(buildPlanningCrewLanes(data, range, filters, 'people')).toEqual([]);
+    expect(buildPlanningFleetLanes(data, range, filters).flatMap((lane) => lane.assignments)).toEqual([]);
+    expect(buildPlanningCrewRows(data, visibleDays(range.start, range.end), filters).filter((row) => row.type === 'person')).toEqual([]);
+  });
+
+  it('does not match a parent paternity status when every visible day has an explicit different status', () => {
+    const data = { ...overview, assignments: [{ ...overview.assignments[0], statusLabel: 'Congés Paternité' }], periods: [], days: [
+      dailyState(1, '2026-07-08', 'Arrêt Maladie'), dailyState(2, '2026-07-09', 'Accident du Travail'),
+    ] };
+    const selectedRange = { start: '2026-07-08', end: '2026-07-09' };
+    const filters = { ...emptyFilters, status: 'Congés Paternité' };
+    expect(buildPlanningCrewLanes(data, selectedRange, filters, 'people')).toEqual([]);
+    expect(buildPlanningFleetLanes(data, selectedRange, filters).flatMap((lane) => lane.assignments)).toEqual([]);
+    expect(buildPlanningCrewRows(data, visibleDays(selectedRange.start, selectedRange.end), filters).filter((row) => row.type === 'person')).toEqual([]);
+  });
+
+  it('does not resurrect a paternity note attached to a superseded assignment', () => {
+    const data = { ...overview, periods: [], assignments: [
+      { ...overview.assignments[0], id: 99, updatedAt: '2026-07-01T08:00:00Z' },
+      { ...overview.assignments[0], updatedAt: '2026-07-02T08:00:00Z' },
+    ], days: [dailyState(1, '2026-07-08', 'Congés Paternités', 99)] };
+    const filters = { ...emptyFilters, status: 'Congés Paternité' };
+    expect(getAllPlanningCrewEvents(data).map((event) => event.assignmentId)).toEqual([100]);
+    expect(buildPlanningCrewLanes(data, range, filters, 'people')).toEqual([]);
+    expect(buildPlanningFleetLanes(data, range, filters).flatMap((lane) => lane.assignments)).toEqual([]);
+    expect(buildPlanningCrewRows(data, visibleDays(range.start, range.end), filters).filter((row) => row.type === 'person')).toEqual([]);
+  });
+
+  it('filters paternity leave independently from an ordinary leave or an assignment', () => {
+    const data = { ...overview, assignments: [{ ...overview.assignments[0], statusLabel: 'Congés Paternité' }], periods: [] };
+    expect(planningCrewEventType({ status: 'Congés Paternité', kind: 'assignment' })).toBe('paternity_leave');
+    expect(planningCrewEventTypeLabel('paternity_leave')).toBe('Congés Paternité');
+    expect(buildPlanningCrewLanes(data, range, { ...emptyFilters, eventType: 'paternity_leave' }, 'people')[0].events).toHaveLength(1);
+    expect(buildPlanningCrewLanes(data, range, { ...emptyFilters, eventType: 'assignment' }, 'people')[0]?.events || []).toHaveLength(0);
+    expect(buildPlanningCrewLanes(data, range, { ...emptyFilters, eventType: 'leave' }, 'people')[0]?.events || []).toHaveLength(0);
+  });
+
+  it.each(['Congés Paternité', 'Congés Paternités', 'CONGE PATERNITES'])('matches canonical and legacy paternity status filters in both perspectives (%s)', (statusLabel) => {
+    const data = { ...overview, assignments: [{ ...overview.assignments[0], statusLabel }], periods: [] };
+    for (const status of ['Congés Paternité', 'Congés Paternités']) {
+      expect(buildPlanningFleetLanes(data, range, { ...emptyFilters, status })[0].assignments).toHaveLength(1);
+      expect(buildPlanningCrewLanes(data, range, { ...emptyFilters, status }, 'people')[0].events).toHaveLength(1);
+    }
+    expect(data.assignments[0].statusLabel).toBe(statusLabel);
+  });
+
   it('applies explicit surname/function sorting independently of posting periods and display format', () => {
     const roles = ['Matelot', 'Maître Machine', "Maître d’Equipage", '2nd Capitaine', 'Chef Mécanicien', 'Capitaine'];
     const people = roles.map((functionLabel, index) => ({ ...overview.people[0], id: index + 1, firstName: 'Jean', lastName: String.fromCharCode(65 + index), functionLabel }));

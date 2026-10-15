@@ -358,7 +358,7 @@ const EMPTY_PROJECT_FORM: ProjectFormState = {
   description: '',
 };
 
-const PLANNING_STATUSES = ['En Mer', 'A Terre', 'Extra', 'Repos', 'Vacance', 'Arrêt Maladie', 'Arrêt de travail', 'Formation'];
+const PLANNING_STATUSES = ['En Mer', 'A Terre', 'Extra', 'Repos', 'Vacance', 'Congés Paternité', 'Arrêt Maladie', 'Accident du Travail', 'Arrêt de travail', 'Formation'];
 const FLEET_EVENT_TYPES: PlanningFleetEventType[] = ['operation', 'transit', 'maintenance', 'unavailability'];
 
 const SIDE_TABS: Array<{ key: SideTab; label: string }> = [
@@ -1201,7 +1201,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         updateOverview((current) => ({ ...current, days: daysData }));
       }
       const displayStatus = planningStatusDisplayLabel(dayStateForm.status);
-      setStatusMessage(`${displayStatus} ${displayStatus === 'Congés' ? 'enregistrés' : 'enregistré'} pour ${dayStateForm.event.person}${dayStateForm.date ? ` le ${formatPlanningDate(dayStateForm.date)}` : ' sur toute la période'}.`);
+      setStatusMessage(`${displayStatus} ${displayStatus === 'Congés' || displayStatus === 'Congés Paternité' ? 'enregistrés' : 'enregistré'} pour ${dayStateForm.event.person}${dayStateForm.date ? ` le ${formatPlanningDate(dayStateForm.date)}` : ' sur toute la période'}.`);
       setDayStateForm(null);
     } catch (error) {
       setErrorMessage(planningErrorMessage(error, 'Impossible d’enregistrer le statut, la fonction et le commentaire.'));
@@ -2750,7 +2750,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             {isFiltersOpen ? <div className="planning-filter-strip" aria-label="Filtres du planning">
               <label className="planning-select-control"><Ship aria-hidden="true" size={16} /><span className="sr-only">Filtre navire</span><select aria-label="Filtre navire" onChange={(event) => setFilters((current) => ({ ...current, vesselName: event.target.value }))} value={filters.vesselName}><option value="">Tous les navires</option>{vesselOptions.map((value) => <option key={value}>{value}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
               {perspective === 'crew' ? <label className="planning-select-control"><Search aria-hidden="true" size={16} /><span className="sr-only">Filtre marin</span><select aria-label="Filtre marin" onChange={(event) => setFilters((current) => ({ ...current, personName: event.target.value }))} value={filters.personName}><option value="">Tous les marins</option>{personOptions.map((value) => <option key={value} value={value}>{crewPersonLabels.get(value) || value}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label> : null}
-              <label className="planning-select-control"><span className="sr-only">Filtre type</span><select aria-label="Filtre type d’événement" onChange={(event) => setFilters((current) => ({ ...current, eventType: event.target.value }))} value={filters.eventType}><option value="">Tous les types</option>{perspective !== 'crew' ? FLEET_EVENT_TYPES.map((type) => <option key={type} value={type}>{planningFleetEventTypeLabel(type)}</option>) : ['assignment', 'rest', 'leave', 'rtt', 'training', 'unavailability'].map((type) => <option key={type} value={type}>{planningCrewEventTypeLabel(type)}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
+              <label className="planning-select-control"><span className="sr-only">Filtre type</span><select aria-label="Filtre type d’événement" onChange={(event) => setFilters((current) => ({ ...current, eventType: event.target.value }))} value={filters.eventType}><option value="">Tous les types</option>{perspective !== 'crew' ? FLEET_EVENT_TYPES.map((type) => <option key={type} value={type}>{planningFleetEventTypeLabel(type)}</option>) : ['assignment', 'rest', 'leave', 'paternity_leave', 'rtt', 'training', 'unavailability'].map((type) => <option key={type} value={type}>{planningCrewEventTypeLabel(type)}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
               <label className="planning-select-control"><span className="sr-only">Filtre statut</span><select aria-label="Filtre statut" onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))} value={filters.status}><option value="">Tous les statuts</option>{statusOptions.map((status) => <option key={status} value={status}>{status === 'provisional' || status === 'confirmed' || status === 'cancelled' ? planningConfirmationLabel(status) : planningStatusDisplayLabel(status)}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
               <label className="planning-select-control"><span className="sr-only">Filtre responsable</span><select aria-label="Filtre responsable" onChange={(event) => setFilters((current) => ({ ...current, responsible: event.target.value }))} value={filters.responsible}><option value="">Tous les responsables</option>{responsibleOptions.map((value) => <option key={value}>{value}</option>)}</select><ChevronDown aria-hidden="true" size={14} /></label>
               <button className="planning-filter-reset" disabled={!activeFilterCount} onClick={() => setFilters(EMPTY_FILTERS)} type="button"><X aria-hidden="true" size={14} />Réinitialiser</button>
@@ -3169,6 +3169,7 @@ function PlanningDayStateDialog({ form, isSaving, onChange, onClose, onDelete, o
     ['Extra', 'Extra', 'extra'],
     ['Formation', 'Formation', 'training'],
     ['Vacance', 'Congés', 'vacation'],
+    ['Congés Paternité', 'Congés Paternité', 'paternity-leave'],
     ['Repos', 'Repos', 'rest'],
     ['Arrêt Maladie', 'Arrêt Maladie', 'sick-leave'],
     ['Accident du Travail', 'Accident du Travail', 'accident'],

@@ -7920,7 +7920,8 @@ button:disabled {
   background: #d94242;
 }
 
-.planning-crew-bar.is-vacation {
+.planning-crew-bar.is-vacation,
+.planning-crew-bar.is-paternity-leave {
   background: #172033;
 }
 
@@ -16985,7 +16986,8 @@ button.planning-p12-conflict-card {
 
 .planning-assignment-note-cell.is-sea { background: #15ab73; }
 .planning-assignment-note-cell.is-shore { color: #674900; background: #f4c847; }
-.planning-assignment-note-cell.is-vacation { background: #172033; }
+.planning-assignment-note-cell.is-vacation,
+.planning-assignment-note-cell.is-paternity-leave { background: #172033; }
 .planning-assignment-note-cell.is-rest { background: #d94242; }
 .planning-assignment-note-cell.is-sick-leave { background: #7c3aed; }
 .planning-assignment-note-cell.is-accident { background: #ea580c; }
@@ -17013,7 +17015,8 @@ button.planning-p12-conflict-card {
 }
 
 .planning-empty-cell-marker.is-shore { background: #f4c847; box-shadow: 0 0 0 2px #a87800, 0 3px 7px rgba(120, 82, 0, .2); }
-.planning-empty-cell-marker.is-vacation { background: #172033; box-shadow: 0 0 0 2px #050a13, 0 3px 7px rgba(5, 10, 19, .2); }
+.planning-empty-cell-marker.is-vacation,
+.planning-empty-cell-marker.is-paternity-leave { background: #172033; box-shadow: 0 0 0 2px #050a13, 0 3px 7px rgba(5, 10, 19, .2); }
 .planning-empty-cell-marker.is-rest { background: #d94242; box-shadow: 0 0 0 2px #aa2020, 0 3px 7px rgba(130, 25, 25, .2); }
 .planning-empty-cell-marker.is-sick-leave { background: #7c3aed; box-shadow: 0 0 0 2px #5b21b6, 0 3px 7px rgba(91, 33, 182, .22); }
 .planning-empty-cell-marker.is-accident { background: #ea580c; box-shadow: 0 0 0 2px #b93808, 0 3px 7px rgba(185, 56, 8, .22); }
@@ -17758,9 +17761,11 @@ button.planning-p12-conflict-card {
 
 .planning-day-status-options .is-sea span { background: #15ab73; }
 .planning-day-status-options .is-shore span { color: #674900; background: #f4c847; }
-.planning-day-status-options .is-vacation span { background: #172033; }
+.planning-day-status-options .is-vacation span,
+.planning-day-status-options .is-paternity-leave span { background: #172033; }
 .planning-day-status-options .is-rest span { background: #d94242; }
 .planning-day-status-options .is-sick-leave,
+.planning-day-status-options .is-paternity-leave,
 .planning-day-status-options .is-accident { grid-column: span 2; }
 .planning-day-status-options .is-sick-leave span { background: #7c3aed; }
 .planning-day-status-options .is-accident span { background: #ea580c; }
@@ -17825,6 +17830,7 @@ button.planning-p12-conflict-card {
 @media (max-width: 700px) {
   .planning-day-status-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .planning-day-status-options .is-sick-leave,
+  .planning-day-status-options .is-paternity-leave,
   .planning-day-status-options .is-accident { grid-column: span 1; }
   .planning-board-staffing-list > label { grid-template-columns: 1fr; }
 }
@@ -24492,6 +24498,7 @@ body:has(.procedure-dialog-backdrop) { overflow: hidden; }
   --crew-state-extra: #087f8c;
   --crew-state-training: #276be8;
   --crew-state-vacation: #172033;
+  --crew-state-paternity-leave: #172033;
   --crew-state-rest: #d94242;
   --crew-state-sick: #d94242;
   --crew-state-sick-leave: #7c3aed;

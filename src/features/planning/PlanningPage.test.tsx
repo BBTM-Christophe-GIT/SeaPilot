@@ -1009,6 +1009,69 @@ describe('PlanningPage cockpit', () => {
     expect(screen.getByLabelText('Paul DURAND, solde au 14/07/2026 : 11,05')).toHaveTextContent('11,05');
   });
 
+  it('keeps the crew balance unchanged on paternity leave, sickness and workplace accident days', async () => {
+    const user = userEvent.setup();
+    const statuses = ['Congés Paternité', 'Arrêt Maladie', 'Accident du Travail'];
+    const days = statuses.map((status, index) => ({
+      ...planningDayRow, id: 220 + index, person_id: 11, vessel_id: 1,
+      work_date: `2026-07-${12 + index}`, day_number: 12 + index,
+      sailor_status: status, day_status: status, comments: '',
+      slot365: 'assignment:100', source_label: 'seapilot-assignment-note',
+    }));
+    const { client } = createClient({ assignments: [assignmentOverviewRow], periods: [], days });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    await user.click(await screen.findByRole('button', { name: 'Saisir le solde de Paul DURAND' }));
+    const dialog = screen.getByRole('dialog', { name: 'Solde de Paul DURAND' });
+    fireEvent.change(within(dialog).getByLabelText('Date du solde'), { target: { value: '2026-07-11' } });
+    await user.type(within(dialog).getByLabelText('Solde en fin de journée'), '10,00');
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer le solde' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    for (const [index, status] of statuses.entries()) {
+      const balance = screen.getByLabelText(`Paul DURAND, solde au ${12 + index}/07/2026 : 10,00`);
+      expect(balance).toHaveTextContent('10,00');
+      expect(balance).toHaveAttribute('title', `${status} : 0,00 · solde en fin de journée`);
+    }
+    expect(screen.getByLabelText('Paul DURAND, solde au 15/07/2026 : 9,00')).toHaveTextContent('9,00');
+  });
+
+  it('keeps effective daily paternity corrections visible through crew filters and a fleet transition', async () => {
+    const user = userEvent.setup();
+    const seaAssignment = { ...assignmentOverviewRow, status_label: 'En Mer', confirmation_status: 'confirmed' };
+    const legacyPaternityDay = {
+      ...planningDayRow, id: 220, person_id: 11, vessel_id: 1,
+      work_date: '2026-07-14', day_number: 14, sailor_status: 'Congés Paternités', day_status: 'Congés Paternités',
+      comments: 'Paternité héritée', slot365: 'assignment:100', source_label: 'seapilot-assignment-note',
+    };
+    const { client } = createClient({
+      people: [captainRow, crewRow, secondCrewRow], periods: [], days: [legacyPaternityDay],
+      assignments: [seaAssignment, { ...seaAssignment, id: 101, crew_person_id: 12, crew_name: 'Luc MOREL' }],
+    });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    const paternityCellName = 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND';
+    const healthyCellName = 'Modifier le statut et le commentaire du 14/07/2026 pour Luc MOREL';
+    expect(await screen.findByRole('button', { name: healthyCellName })).toHaveClass('is-sea');
+    await user.click(screen.getByRole('button', { name: 'Filtres' }));
+
+    await user.selectOptions(screen.getByLabelText('Filtre type d’événement'), 'paternity_leave');
+    expect(screen.getByRole('button', { name: paternityCellName })).toHaveTextContent('Paternité héritée');
+    expect(screen.queryByRole('button', { name: healthyCellName })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Filtre statut'), 'Congés Paternité');
+    expect(screen.getByRole('button', { name: paternityCellName })).toHaveClass('is-paternity-leave');
+    expect(screen.getByRole('button', { name: paternityCellName })).toHaveTextContent('Paternité héritée');
+    expect(screen.queryByRole('button', { name: healthyCellName })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Flotte' }));
+    expect(screen.getByLabelText('Filtre type d’événement')).toHaveValue('');
+    expect(screen.getByLabelText('Filtre statut')).toHaveValue('');
+    expect(screen.getByRole('button', { name: paternityCellName })).toHaveClass('is-paternity-leave');
+    expect(screen.getByRole('button', { name: paternityCellName })).toHaveTextContent('Paternité héritée');
+    expect(screen.getByRole('button', { name: healthyCellName })).toHaveClass('is-sea');
+  });
+
   it('keeps fleet project selection and double-click editing after the compact visual redesign', async () => {
     const user = userEvent.setup();
     const { client } = createClient({ assignments: [assignmentOverviewRow], projects: [planningProjectRow] });
@@ -1797,7 +1860,7 @@ describe('PlanningPage cockpit', () => {
     expect(within(calendarBody).queryByText('Cherbourg')).not.toBeInTheDocument();
   });
 
-  it('edits a health status and a different short text on each colored assignment day', async () => {
+  it.each(['Congés Paternité', 'Arrêt Maladie', 'Accident du Travail'])('saves %s and a short text on a colored assignment day', async (status) => {
     const user = userEvent.setup();
     const assignmentNoteRow = {
       ...planningDayRow,
@@ -1832,10 +1895,11 @@ describe('PlanningPage cockpit', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
     expect(within(dialog).getByText('Tout le groupe de cases')).toBeInTheDocument();
     expect(within(dialog).getByRole('radio', { name: 'Congés' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: 'Congés Paternité' })).toBeInTheDocument();
     expect(within(dialog).getByRole('radio', { name: 'Arrêt Maladie' })).toBeInTheDocument();
     expect(within(dialog).getByRole('radio', { name: 'Accident du Travail' })).toBeInTheDocument();
     expect(within(dialog).queryByText(/^Vacance$/)).not.toBeInTheDocument();
-    await user.click(within(dialog).getByText('Accident du Travail'));
+    await user.click(within(dialog).getByRole('radio', { name: status }));
     const noteInput = within(dialog).getByLabelText('Commentaire');
     await user.clear(noteInput);
     await user.type(noteInput, 'Le Havre');
@@ -1844,13 +1908,13 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('save_planning_assignment_day_state', {
       p_assignment_id: 100,
       p_work_date: '2026-07-14',
-      p_status: 'Accident du Travail',
+      p_status: status,
       p_note: 'Le Havre',
     }));
-    expect(await screen.findByText('Accident du Travail enregistré pour Paul DURAND le 14/07/2026.')).toBeInTheDocument();
+    expect(await screen.findByText(`${status} ${status === 'Congés Paternité' ? 'enregistrés' : 'enregistré'} pour Paul DURAND le 14/07/2026.`)).toBeInTheDocument();
   });
 
-  it('applies a group status through one RPC while keeping the original assignment dates', async () => {
+  it.each(['Repos', 'Congés Paternité'])('applies %s to a group through one RPC while keeping the original assignment dates', async (status) => {
     const user = userEvent.setup();
     const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], periods: [], days: [] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
@@ -1858,19 +1922,19 @@ describe('PlanningPage cockpit', () => {
     fireEvent.contextMenu(cell);
     const dialog = await screen.findByRole('dialog', { name: 'Statut et commentaire' });
     await user.click(within(dialog).getByRole('button', { name: 'Tout le groupe de cases' }));
-    await user.click(within(dialog).getByRole('radio', { name: 'Repos' }));
+    await user.click(within(dialog).getByRole('radio', { name: status }));
     await user.type(within(dialog).getByLabelText('Commentaire'), 'Escale');
     await user.click(within(dialog).getByRole('button', { name: 'Appliquer à la période' }));
     await waitFor(() => expect(rpc).toHaveBeenCalledWith('save_planning_assignment_day_states', {
       p_assignment_id: 100,
       p_starts_on: assignmentOverviewRow.starts_on,
       p_ends_on: assignmentOverviewRow.ends_on,
-      p_status: 'Repos',
+      p_status: status,
       p_note: 'Escale',
     }));
     expect(rpc.mock.calls.filter(([name]) => name === 'save_planning_assignment_day_states')).toHaveLength(1);
     expect(rpc.mock.calls.some(([name]) => name === 'save_planning_assignment_day_state')).toBe(false);
-    expect(await screen.findByText('Repos enregistré pour Paul DURAND sur toute la période.')).toBeInTheDocument();
+    expect(await screen.findByText(`${status} ${status === 'Congés Paternité' ? 'enregistrés' : 'enregistré'} pour Paul DURAND sur toute la période.`)).toBeInTheDocument();
   });
 
   it.each(['day', 'group'])('saves a temporary function for the selected %s without editing the parent assignment or RH', async (scope) => {
@@ -2638,6 +2702,10 @@ describe('PlanningPage cockpit', () => {
     expect(within(dialog).getByText('Formulaire complet')).toBeInTheDocument();
     expect(within(dialog).getByRole('heading', { name: /Modifier · Paul DURAND/ })).toBeInTheDocument();
     const statusSelect = within(dialog).getByLabelText('Statut');
+    expect(within(statusSelect).getByRole('option', { name: 'Congés Paternité' })).toBeInTheDocument();
+    expect(within(statusSelect).getByRole('option', { name: 'Accident du Travail' })).toBeInTheDocument();
+    await user.selectOptions(statusSelect, 'Congés Paternité');
+    expect(statusSelect).toHaveValue('Congés Paternité');
     await user.selectOptions(statusSelect, 'Arrêt Maladie');
     expect(statusSelect).toHaveValue('Arrêt Maladie');
     const functionSelect = within(dialog).getByLabelText<HTMLSelectElement>('Fonction');

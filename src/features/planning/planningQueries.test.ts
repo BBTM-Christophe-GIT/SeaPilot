@@ -991,7 +991,7 @@ describe('planning writes', () => {
     }));
   });
 
-  it.each(['Arrêt Maladie', 'Accident du Travail'] as const)('saves the %s daily state with its short comment', async (status) => {
+  it.each(['Congés Paternité', 'Arrêt Maladie', 'Accident du Travail'] as const)('saves the %s daily state with its short comment', async (status) => {
     const rpc = vi.fn().mockResolvedValue({ data: 8, error: null });
     await expect(savePlanningAssignmentDayState({ rpc } as never, {
       assignmentId: 12,
@@ -1011,11 +1011,11 @@ describe('planning writes', () => {
     const rpc = vi.fn().mockResolvedValue({ data: { savedCells: 2, createdAssignments: 1 }, error: null });
     await expect(applyPlanningGridCells({ rpc } as never, [{
       personId: 12, vesselId: 4, assignmentId: null, workDate: '2026-07-14',
-      status: 'En Mer', note: 'Cherbourg', watchGroup: 'Bordée 1', functionLabel: 'Capitaine',
+      status: 'Congés Paternité', note: 'Cherbourg', watchGroup: 'Bordée 1', functionLabel: 'Capitaine',
     }])).resolves.toEqual({ savedCells: 2, createdAssignments: 1 });
     expect(rpc).toHaveBeenCalledWith('apply_planning_grid_cells', { p_cells: [{
       personId: 12, vesselId: 4, assignmentId: null, workDate: '2026-07-14',
-      status: 'En Mer', note: 'Cherbourg', watchGroup: 'Bordée 1', functionLabel: 'Capitaine',
+      status: 'Congés Paternité', note: 'Cherbourg', watchGroup: 'Bordée 1', functionLabel: 'Capitaine',
     }] });
   });
 
@@ -1125,16 +1125,16 @@ describe('Planning performance contracts', () => {
     await expect(fetchCachedPlanningPeriods(client)).rejects.toThrow();
   });
 
-  it('submits a complete period as one RPC without changing its boundaries', async () => {
+  it.each(['Vacance', 'Congés Paternité'] as const)('submits a complete %s period as one RPC without changing its boundaries', async (status) => {
     const rpc = vi.fn().mockResolvedValue({ data: 30, error: null });
     await savePlanningAssignmentDayStates({ rpc } as never, {
-      assignmentId: 100, startsOn: '2026-09-01', endsOn: '2026-09-30', status: 'Vacance', note: ' Repos ',
+      assignmentId: 100, startsOn: '2026-09-01', endsOn: '2026-09-30', status, note: ' Repos ',
     });
     expect(rpc).toHaveBeenCalledExactlyOnceWith('save_planning_assignment_day_states', {
-      p_assignment_id: 100, p_starts_on: '2026-09-01', p_ends_on: '2026-09-30', p_status: 'Vacance', p_note: 'Repos',
+      p_assignment_id: 100, p_starts_on: '2026-09-01', p_ends_on: '2026-09-30', p_status: status, p_note: 'Repos',
     });
     await expect(savePlanningAssignmentDayStates({ rpc } as never, {
-      assignmentId: 100, startsOn: '2026-09-30', endsOn: '2026-09-01', status: 'Vacance', note: '',
+      assignmentId: 100, startsOn: '2026-09-30', endsOn: '2026-09-01', status, note: '',
     })).rejects.toThrow();
     expect(rpc).toHaveBeenCalledOnce();
   });

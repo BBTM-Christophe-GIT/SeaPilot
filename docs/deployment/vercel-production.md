@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.75.6`, build `2026-10-15.011`, ajoute le statut Planning
+« Congés Paternité » aux journées, périodes, postes fictifs et filtres. Dans la
+vue Équipages, sa contribution quotidienne est de `0,00`, comme « Arrêt Maladie »
+et « Accident du Travail » : le solde cumulé est conservé. Les congés ordinaires
+restent à `−1,00`. Les validations serveur sont étendues avant le frontend,
+sans changement de droits. Voir [le statut et sa validation](./planning-paternity-status.md).
+
 Version `3.75.5`, build `2026-10-15.010`, rétablit le plein écran du Planning
 avec les API standard et WebKit, et un repli dans la fenêtre pour les navigateurs
 qui refusent ou ne proposent pas ces API. Le ruban de commandes et le panneau

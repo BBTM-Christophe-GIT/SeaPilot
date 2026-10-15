@@ -2,14 +2,14 @@ import { useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AppDialog } from '../../components/AppDialog';
 import { PlanningCrewTimelineRow } from './PlanningTimeline';
-import { addPlanningDays, daysBetween, type PlanningCrewEvent, type PlanningTimelineDay } from './planningModel';
+import { addPlanningDays, daysBetween, normalizePlanningStatus, type PlanningCrewEvent, type PlanningTimelineDay } from './planningModel';
 import { genericCrewEvents, resolveGenericCrewRow, saveGenericCrewRow, type GenericCrewPeriod, type GenericCrewRow } from './planningGenericCrew';
 import { planningErrorMessage } from './planningErrors';
 import { planningStatusDisplayLabel } from './planningModel';
 import './planningGenericCrew.css';
 
 const NO_CONFLICTS = new Map<string, Set<string>>();
-export const GENERIC_CREW_STATUSES = ['En Mer', 'A Terre', 'Extra', 'Repos', 'Vacance', 'Arrêt Maladie', 'Arrêt de travail', 'Formation'];
+export const GENERIC_CREW_STATUSES = ['En Mer', 'A Terre', 'Extra', 'Repos', 'Vacance', 'Congés Paternité', 'Arrêt Maladie', 'Accident du Travail', 'Arrêt de travail', 'Formation'];
 
 export function PlanningGenericCrewTimelineRow({ client, row, vessel, days, dayWidth, onChange, onReplace }: {
   client: SupabaseClient; row: GenericCrewRow; vessel: string; days: PlanningTimelineDay[]; dayWidth: number;
@@ -48,7 +48,7 @@ export function PlanningGenericCrewTimelineRow({ client, row, vessel, days, dayW
       onReplacePerson={!saving ? onReplace : undefined}
       onDeleteEmptyRow={!row.periods.length ? () => void remove() : undefined} isDeletingEmptyRow={saving}
       onCreate={(_lane, date) => { setError(''); setForm({ id: crypto.randomUUID(), startsOn: date, endsOn: date, status: 'En Mer', comments: '' }); }}
-      onOpen={(event) => { setError(''); setForm(eventPeriod(event)); }}
+      onOpen={(event) => { setError(''); const period = eventPeriod(event); setForm({ ...period, status: normalizePlanningStatus(period.status) }); }}
       onMove={(event, date) => void update({ ...eventPeriod(event), startsOn: date, endsOn: addPlanningDays(date, daysBetween(event.startsOn, event.endsOn)) })}
       onResize={(event, edge, delta) => void update({ ...eventPeriod(event), [edge === 'start' ? 'startsOn' : 'endsOn']: addPlanningDays(edge === 'start' ? event.startsOn : event.endsOn, delta) })}
     />

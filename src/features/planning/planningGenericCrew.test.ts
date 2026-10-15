@@ -26,4 +26,21 @@ describe('generic crew positions', () => {
     await expect(resolveGenericCrewRow({ rpc } as never, draft, 12, '2026-09-01')).rejects.toThrow('Ce poste a changé');
     expect(rpc).toHaveBeenCalledOnce();
   });
+
+  it('filters paternity positions by visible periods without trimming the source row used for editing', () => {
+    const row = { ...draft, periods: [
+      { id: 'paternity', startsOn: '2026-10-15', endsOn: '2026-10-16', status: 'Congés Paternités', comments: '' },
+      { id: 'sea', startsOn: '2026-10-17', endsOn: '2026-10-20', status: 'En Mer', comments: '' },
+    ] };
+    const data = { ...EMPTY_PLANNING_OVERVIEW, vessels: [{ id: 10, name: 'GOURY', acronym: 'GY', active: true }],
+      genericCrewRows: [row, { ...draft, id: 2, periods: [row.periods[1]] }],
+    };
+    const days = buildPlanningTimeline('2026-10-15', 'month');
+    const filters = { vesselName: '', personName: '', status: 'Congés Paternité' };
+    const rows = buildPlanningCrewRows(data, days, filters).filter((item) => item.genericRow);
+    expect(rows.map((item) => item.genericRow?.id)).toEqual([1]);
+    expect(rows[0].genericRow).toBe(row);
+    expect(rows[0].genericRow?.periods).toHaveLength(2);
+    expect(buildPlanningCrewRows(data, days.filter((day) => day.date >= '2026-10-17'), filters).filter((item) => item.genericRow)).toEqual([]);
+  });
 });
