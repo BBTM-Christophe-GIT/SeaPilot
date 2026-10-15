@@ -9075,11 +9075,40 @@ button:disabled {
   font-weight: 730;
 }
 
-.planning-workspace.is-fullscreen {
+.planning-workspace.is-fullscreen,
+.planning-workspace.is-fullscreen.is-project-view {
+  width: 100%;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
-  padding: 14px;
-  background: #f4f6f9;
+  padding: 8px;
+  padding: max(8px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
+  background: var(--sp-canvas);
+}
+
+body.planning-fullscreen-fallback-active .content-area {
+  container-type: normal;
+}
+
+body.planning-fullscreen-fallback-active .content-shell {
+  overflow: visible;
+}
+
+body.planning-fullscreen-fallback-active .app-shell > .sidebar,
+body.planning-fullscreen-fallback-active .app-shell > .sidebar-backdrop,
+body.planning-fullscreen-fallback-active .content-shell > .topbar {
+  visibility: hidden;
+}
+
+.planning-workspace.is-fullscreen.is-fullscreen-fallback {
+  position: fixed;
+  z-index: 1000;
+  top: var(--planning-fullscreen-top, 0px);
+  left: var(--planning-fullscreen-left, 0px);
+  width: var(--planning-fullscreen-width, 100%);
+  height: var(--planning-fullscreen-height, 100vh);
+  height: var(--planning-fullscreen-height, 100dvh);
+  margin: 0;
 }
 
 .planning-workspace.is-fullscreen .planning-command-header {
@@ -18692,7 +18721,15 @@ button.planning-p12-conflict-card {
   flex-direction: column;
 }
 
-.planning-workspace.is-fullscreen .planning-command-layout {
+.planning-workspace.is-fullscreen .planning-command-layout,
+.planning-workspace .planning-command-layout[hidden] {
+  display: none;
+}
+
+.planning-workspace.is-fullscreen .planning-notices {
+  max-height: 20vh;
+  max-height: 20dvh;
+  overflow: auto;
   flex: 0 0 auto;
 }
 

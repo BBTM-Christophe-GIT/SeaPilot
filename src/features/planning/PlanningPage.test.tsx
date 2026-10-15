@@ -1247,6 +1247,129 @@ describe('PlanningPage cockpit', () => {
     expect(container.querySelector('.planning-command-layout + .planning-layout')).toBeInTheDocument();
   });
 
+  it.each([
+    { view: 'Flotte', nativeRequest: 'missing' },
+    { view: 'Équipages', nativeRequest: 'rejected' },
+    { view: 'Projet', nativeRequest: 'missing' },
+  ] as const)('keeps the $view calendar usable in fullscreen when the native API is $nativeRequest', async ({ view, nativeRequest }) => {
+    const user = userEvent.setup();
+    const { client } = createClient({ projects: [planningProjectRow] });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    await user.click(screen.getByRole('tab', { name: view }));
+    await user.click(screen.getByRole('button', { name: 'Filtres' }));
+    await user.selectOptions(screen.getByLabelText('Filtre navire'), 'COTENTIN');
+    fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-07' } });
+    await user.click(screen.getByRole('button', { name: 'Zoom avant' }));
+
+    const workspace = container.querySelector<HTMLElement>('.planning-workspace')!;
+    const nativeFullscreen = vi.fn().mockRejectedValue(new Error('Fullscreen unavailable'));
+    Object.defineProperty(workspace, 'requestFullscreen', {
+      configurable: true,
+      value: nativeRequest === 'rejected' ? nativeFullscreen : undefined,
+    });
+    const ribbon = screen.queryByRole('navigation', { name: 'Menu du planning' });
+    const publication = screen.queryByRole('region', { name: 'Diffusion du planning' });
+    await user.click(screen.getByRole('button', { name: 'Afficher le planning en plein écran' }));
+
+    expect(workspace).toHaveClass('is-fullscreen', 'is-fullscreen-fallback');
+    if (ribbon) expect(ribbon).not.toBeVisible();
+    if (publication) expect(publication).not.toBeVisible();
+    const calendar = screen.getByRole('region', { name: view === 'Projet' ? 'Calendrier des projets' : 'Calendrier des affectations' });
+    expect(within(calendar).getByRole('tab', { name: view })).toHaveAttribute('aria-selected', 'true');
+    expect(within(calendar).getByRole('button', { name: /Filtres/ })).toBeVisible();
+    expect(within(calendar).getByRole('button', { name: 'Actualiser' })).toBeVisible();
+    expect(within(calendar).getByLabelText('Filtre navire')).toHaveValue('COTENTIN');
+    expect(within(calendar).getByLabelText('Mois de référence')).toHaveValue('2026-07');
+    expect(within(calendar).getByLabelText('Niveau de zoom')).toHaveTextContent('120 %');
+    await user.click(within(calendar).getByRole('button', { name: 'Mois suivant' }));
+    expect(within(calendar).getByLabelText('Mois de référence')).toHaveValue('2026-08');
+    expect(workspace).toHaveClass('is-fullscreen');
+    await user.click(within(calendar).getByRole('button', { name: 'Quitter le plein écran' }));
+
+    expect(workspace).not.toHaveClass('is-fullscreen');
+    expect(workspace).not.toHaveClass('is-fullscreen-fallback');
+    if (ribbon) expect(ribbon).toBeVisible();
+    if (publication) expect(publication).toBeVisible();
+    expect(screen.getByLabelText('Filtre navire')).toHaveValue('COTENTIN');
+    expect(screen.getByLabelText('Mois de référence')).toHaveValue('2026-08');
+    expect(screen.queryByText("Le plein écran n'est pas disponible dans ce navigateur.")).not.toBeInTheDocument();
+    if (nativeRequest === 'rejected') expect(nativeFullscreen).toHaveBeenCalledOnce();
+  });
+
+  it.each(['capitaine', 'marin'] as const)('provides fullscreen for a real %s without changing published-only planning access', async (role) => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient({
+      publishedSnapshot: {
+        assignments: [{ ...assignmentOverviewRow, starts_on: '2026-06-29' }],
+        days: [], periods: [], projects: [planningProjectRow], handovers: [], derogations: [],
+      },
+    });
+    const { container } = render(<MemoryRouter><Routes><Route element={<Outlet context={{
+      currentPerson: { id: role === 'capitaine' ? 10 : 11 }, roles: [role], client, previewMode: false,
+    }} />}><Route path="/" element={<PlanningPage />} /></Route></Routes></MemoryRouter>);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const workspace = container.querySelector<HTMLElement>('.planning-workspace')!;
+    Object.defineProperty(workspace, 'requestFullscreen', { configurable: true, value: undefined });
+    const ribbon = screen.getByRole('navigation', { name: 'Menu du planning' });
+    expect(within(ribbon).getByRole('button', { name: 'Demander des congés' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Afficher le planning en plein écran' }));
+
+    expect(workspace).toHaveClass('is-personal', 'is-fullscreen', 'is-fullscreen-fallback');
+    expect(ribbon).not.toBeVisible();
+    expect(screen.queryByRole('region', { name: 'Diffusion du planning' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Équipages' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Créer une affectation' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Filtres/ }));
+    expect(screen.getByLabelText('Filtre navire')).toHaveValue('COTENTIN');
+    await user.click(screen.getByRole('tab', { name: 'Projet' }));
+    expect(screen.getByRole('region', { name: 'Calendrier des projets' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Quitter le plein écran' })).toBeVisible();
+    expect(screen.getByLabelText('Mois de référence')).toBeVisible();
+    await user.click(screen.getByRole('tab', { name: 'Flotte' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(workspace).not.toHaveClass('is-fullscreen');
+    expect(screen.getByRole('navigation', { name: 'Menu du planning' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Demander des congés' })).toBeVisible();
+    expect(rpc).toHaveBeenCalledWith('latest_planning_release');
+    expect(rpc).not.toHaveBeenCalledWith('planning_assignment_overview_with_revisions');
+  });
+
+  it('restores the command banner when the browser leaves native fullscreen after the planning has loaded', async () => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Planning' });
+    const workspace = container.querySelector<HTMLElement>('.planning-workspace')!;
+    const ribbon = screen.getByRole('navigation', { name: 'Menu du planning' });
+    const publication = screen.getByRole('region', { name: 'Diffusion du planning' });
+    Object.defineProperty(workspace, 'requestFullscreen', {
+      configurable: true,
+      value: vi.fn(async () => {
+        Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: workspace });
+        fireEvent(document, new Event('fullscreenchange'));
+      }),
+    });
+    try {
+      await user.click(screen.getByRole('button', { name: 'Afficher le planning en plein écran' }));
+      expect(workspace).toHaveClass('is-fullscreen');
+      expect(workspace).not.toHaveClass('is-fullscreen-fallback');
+      expect(ribbon).not.toBeVisible();
+      expect(publication).not.toBeVisible();
+
+      Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: null });
+      fireEvent(document, new Event('fullscreenchange'));
+
+      expect(workspace).not.toHaveClass('is-fullscreen');
+      expect(ribbon).toBeVisible();
+      expect(publication).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Afficher le planning en plein écran' })).toBeVisible();
+    } finally {
+      Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: null });
+    }
+  });
+
   it('creates a native BBTM assignment for administrators', async () => {
     const user = userEvent.setup();
     const createdAssignment = { ...assignmentRow, id: 101, starts_on: '2026-07-20', ends_on: '2026-07-26' };
@@ -2259,27 +2382,37 @@ describe('PlanningPage cockpit', () => {
     nativeConfirm.mockRestore();
   });
 
-  it('keeps fullscreen active when an assignment is cancelled from its form', async () => {
+  it.each(['native', 'fallback'] as const)('keeps %s fullscreen active when an assignment is cancelled from its form', async (mode) => {
     const user = userEvent.setup();
     const nativeConfirm = vi.spyOn(window, 'confirm');
     const { client, updateAssignment } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
     const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
     const workspace = container.querySelector<HTMLElement>('.planning-workspace')!;
-    Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: workspace });
-    fireEvent(document, new Event('fullscreenchange'));
+    Object.defineProperty(workspace, 'requestFullscreen', {
+      configurable: true,
+      value: mode === 'native' ? vi.fn(async () => {
+        Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: workspace });
+        fireEvent(document, new Event('fullscreenchange'));
+      }) : undefined,
+    });
+    try {
+      await user.click(screen.getByRole('button', { name: 'Afficher le planning en plein écran' }));
+      if (mode === 'fallback') expect(workspace).toHaveClass('is-fullscreen-fallback');
 
-    await user.dblClick(container.querySelector<HTMLButtonElement>('.planning-crew-bar')!);
-    const dialog = await screen.findByRole('dialog');
-    await user.click(within(dialog).getByRole('button', { name: 'Annuler l’affectation' }));
-    expect(within(dialog).getByText(/Elle restera visible et historisée/)).toBeInTheDocument();
-    await user.click(within(dialog).getByRole('button', { name: 'Confirmer' }));
+      await user.dblClick(container.querySelector<HTMLButtonElement>('.planning-crew-bar')!);
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Annuler l’affectation' }));
+      expect(within(dialog).getByText(/Elle restera visible et historisée/)).toBeInTheDocument();
+      await user.click(within(dialog).getByRole('button', { name: 'Confirmer' }));
 
-    await waitFor(() => expect(updateAssignment).toHaveBeenCalled());
-    expect(workspace).toHaveClass('is-fullscreen');
-    expect(nativeConfirm).not.toHaveBeenCalled();
-    Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: null });
-    nativeConfirm.mockRestore();
+      await waitFor(() => expect(updateAssignment).toHaveBeenCalled());
+      expect(workspace).toHaveClass('is-fullscreen');
+      expect(nativeConfirm).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: null });
+      nativeConfirm.mockRestore();
+    }
   });
 
   it.each([

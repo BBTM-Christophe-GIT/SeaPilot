@@ -1,6 +1,7 @@
 import { compareFleetNames } from '../fleet/fleetDisplay';
 import { CREW_SORT_OPTIONS, formatCrewName, type CrewSortOrder } from './planningCrewPreferences';
 import { useCrewDisplayPreferences } from './useCrewDisplayPreferences';
+import { usePlanningFullscreen } from './usePlanningFullscreen';
 import { PlanningCrewBalanceDialog } from './PlanningCrewBalanceDialog';
 import { buildPlanningCrewBalanceDays, type PlanningCrewBalanceCheckpoint } from './planningCrewBalance';
 import { fetchPlanningCrewBalances, savePlanningCrewBalance } from './planningCrewBalanceQueries';
@@ -614,7 +615,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const { isFullscreen, isFallbackFullscreen, toggleFullscreen } = usePlanningFullscreen(workspaceRef);
   const [pendingMutationId, setPendingMutationId] = useState<string | null>(null);
   const [isHandoverOpen, setIsHandoverOpen] = useState(false);
   const [isP11Open, setIsP11Open] = useState(false);
@@ -686,12 +687,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       active = false;
     };
   }, [overview.projects]);
-
-  useEffect(() => {
-    const handleFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
-    document.addEventListener('fullscreenchange', handleFullscreen);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreen);
-  }, []);
 
   useEffect(() => {
     if (perspective !== 'projects' || !hasLoaded) return;
@@ -1850,15 +1845,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     }
   }
 
-  async function toggleFullscreen() {
-    try {
-      if (document.fullscreenElement) await document.exitFullscreen();
-      else await workspaceRef.current?.requestFullscreen();
-    } catch {
-      setErrorMessage("Le plein écran n'est pas disponible dans ce navigateur.");
-    }
-  }
-
   function duplicateSelectedEvent() {
     if (!selectedEvent) return;
     const vessel = activeVessels.find((item) => item.name === selectedEvent.vessel);
@@ -2646,7 +2632,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   return (
-    <section className={`planning-workspace${isFullscreen ? ' is-fullscreen' : ''}${isPersonalPlanningView ? ' is-personal' : ''}${perspective === 'projects' ? ' is-project-view' : ''}`} ref={workspaceRef}>
+    <section className={`planning-workspace${isFullscreen ? ' is-fullscreen' : ''}${isFallbackFullscreen ? ' is-fullscreen-fallback' : ''}${isPersonalPlanningView ? ' is-personal' : ''}${perspective === 'projects' ? ' is-project-view' : ''}`} ref={workspaceRef}>
       <header className="planning-command-header">
         <div>
           <p className="module-family">Planning</p>
@@ -2663,7 +2649,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         </div>
       ) : null}
 
-      {perspective !== 'projects' ? <div className="planning-command-layout">
+      {perspective !== 'projects' ? <div className="planning-command-layout" hidden={isFullscreen}>
         <nav aria-label="Menu du planning" className="planning-module-toolbar">
           <div className="planning-ribbon-scroll">
             {isPersonalPlanningView ? (
