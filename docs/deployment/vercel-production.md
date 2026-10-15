@@ -1,5 +1,13 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.75.2`, build `2026-10-15.007`, corrige l'ouverture des sources
+Office historiques du module Procédures, notamment les modèles Word `.dotx`.
+Le clic télécharge le fichier autorisé avec son nom d'origine et indique de
+l'ouvrir depuis les téléchargements, sans transmettre de lien temporaire à
+Office. Les sources du dossier Drive synchronisé et les PDF conservent leurs
+parcours. Aucune migration ni configuration nouvelle. Voir
+[l'ouverture des sources](./procedures-google-drive.md#ouverture-des-sources-historiques).
+
 Version `3.75.1`, build `2026-10-15.006`, ajoute sous le titre de l'offre
 commerciale les quatre lignes d'identification de BENJAMIN BON TRAVAUX MARITIMES :
 siège social et téléphone, Siren et site web. Le même contenu est utilisé dans
