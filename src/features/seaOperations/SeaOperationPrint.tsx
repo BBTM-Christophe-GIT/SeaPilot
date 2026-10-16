@@ -43,12 +43,13 @@ const portServiceLabels: Record<SeaOperationPortService, string> = {
   none: 'Le règlement portuaire n’exige pas ces services',
 };
 
-/** A text-only document remains complete when printed from any preparation step. */
-export function SeaOperationPrint({ record }: { record: SeaOperationRecord }) {
+/** Complete printable content with the original Word chrome and the authorized RH signature image. */
+export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOperationRecord; signatureImageUrl?: string | null }) {
   const form = record.draft;
   const signed = record.status === 'signed';
   const person = form.signature;
   const vessel = form.vessel;
+  const signatureImage = signed ? record.signatureUrl || null : signatureImageUrl || null;
   const method = form.dapaq.method === 'nomade' ? 'Préparée dans NOMADE'
     : form.dapaq.method === 'email' ? 'Réalisée par mail et transmise à la Capitainerie' : blank;
   const responsible = form.dapaq.preparedBy === 'armament' ? 'L’Armement'
@@ -57,8 +58,11 @@ export function SeaOperationPrint({ record }: { record: SeaOperationRecord }) {
 
   return <article className="so-print" aria-label="Fiche imprimable Opération en Mer">
     <header className="so-print-header">
+      <img className="so-word-header" src="/templates/sea-operation/word-header.png" alt="GO / NO GO - OPÉRATION EN MER – en-tête du formulaire Word original" />
+      <div className="so-print-source-title">
       <p className="so-print-reference">{SEA_OPERATION_SOURCE.reference} · {SEA_OPERATION_SOURCE.title}</p>
       <h1>Opération en Mer</h1>
+      </div>
       <p className="so-print-status">{signed ? `Décision ${form.decision === 'NO_GO' ? 'NO GO' : 'GO'} signée`
         : `Brouillon${form.decision ? ` – décision ${form.decision === 'NO_GO' ? 'NO GO' : 'GO'} non signée` : ' – aucune décision signée'}`}</p>
       <dl className="so-print-grid so-print-metadata">
@@ -168,22 +172,13 @@ export function SeaOperationPrint({ record }: { record: SeaOperationRecord }) {
       <h2>3 – Plan de passage</h2>
       <dl><PrintField label="Numéro de la ou des cartes marines">{text(form.charts)}</PrintField></dl>
       <p>ETA : date et heure, ou heure seule si le point est atteint le même jour.</p>
-      {form.waypoints.length ? form.waypoints.map((point, index) => <section className="so-print-waypoint" key={point.id}>
-        <h3>Point {point.number || index + 1}</h3>
-        <dl className="so-print-grid">
-          <PrintField label="N° du point">{text(point.number)}</PrintField>
-          <PrintField label="Description / Contact VHF">{text(point.descriptionVhf)}</PrintField>
-          <PrintField label="Latitude">{text(point.latitude)}</PrintField>
-          <PrintField label="Longitude">{text(point.longitude)}</PrintField>
-          <PrintField label="UKC">{text(point.ukc)}</PrintField>
-          <PrintField label="ETA – Date et heure ou heure seule">{dateText(point.eta)}</PrintField>
-          <PrintField label="Zone maritime à trafic dense" wide>{point.denseTraffic ? 'Oui' : 'Non'}</PrintField>
-        </dl>
-      </section>) : <p>Aucun point de passage renseigné.</p>}
+      {form.waypoints.length ? <table className="so-print-passage"><thead><tr><th>N° du point</th><th>Description / Contact VHF</th><th>Latitude</th><th>Longitude</th><th>UKC</th><th>ETA – Date et heure ou heure seule</th><th>Zone maritime à trafic dense</th></tr></thead><tbody>
+        {form.waypoints.map((point) => <tr key={point.id}><td>{text(point.number)}</td><td>{text(point.descriptionVhf)}</td><td>{text(point.latitude)}</td><td>{text(point.longitude)}</td><td>{text(point.ukc)}</td><td>{dateText(point.eta)}</td><td>{point.denseTraffic ? 'Oui' : 'Non'}</td></tr>)}
+      </tbody></table> : <p>Aucun point de passage renseigné.</p>}
     </section>
 
     <section className="so-print-section so-print-decision">
-      <h2>Décision du Capitaine</h2>
+      <h2>4 – Décision du Capitaine</h2>
       <p className="so-print-decision-text"><strong>{decisionText(form.decision)}</strong></p>
       {!signed && <p><strong>Brouillon – cette décision n’a pas été signée.</strong></p>}
       <dl className="so-print-grid">
@@ -194,6 +189,8 @@ export function SeaOperationPrint({ record }: { record: SeaOperationRecord }) {
           ? signed ? 'En qualité de Capitaine, je confirme les informations renseignées et signe cette décision.' : 'Attestation cochée dans le brouillon – signature non enregistrée.'
           : 'Attestation non confirmée.'}</PrintField>
       </dl>
+      {signatureImage ? <figure className="so-print-rh-signature"><figcaption>{signed ? 'Signature RH du Capitaine' : 'Signature RH préparée – décision non signée'}</figcaption><img src={signatureImage} alt={signed ? 'Signature RH du Capitaine enregistrée avec cette décision' : 'Aperçu de la signature RH du Capitaine sélectionné, non apposée'} /></figure>
+        : <p className="so-print-signature-missing">{signed ? 'Image de signature RH non disponible pour cette fiche historique.' : 'Aucune signature RH apposée – décision non signée.'}</p>}
       {signed && <dl className="so-print-grid so-print-signature">
         <PrintField label="Identité du compte signataire">{text(record.signedByName)}</PrintField>
         <PrintField label="Capitaine signataire enregistré">{text(record.captainName)}</PrintField>
@@ -210,6 +207,6 @@ export function SeaOperationPrint({ record }: { record: SeaOperationRecord }) {
         {DIVING_MEDICAL_KIT.map((item) => <tr key={item.article}><td>{item.article}</td><td>{item.quantity}</td><td>{item.detail || 'Unité'}</td></tr>)}
       </tbody></table>
     </section>}
-    <footer className="so-print-footer">Référence source : {SEA_OPERATION_SOURCE.title}, {SEA_OPERATION_SOURCE.reference}. Vérifiez la liste de diffusion pour vous assurer d’avoir toujours la dernière version de ce formulaire.</footer>
+    <footer className="so-print-footer"><img className="so-word-footer" src="/templates/sea-operation/word-footer.png" alt="OPE-FOR-10-C – Vérifiez la liste de diffusion pour vous assurer d’avoir toujours la dernière version de ce formulaire." /></footer>
   </article>;
 }

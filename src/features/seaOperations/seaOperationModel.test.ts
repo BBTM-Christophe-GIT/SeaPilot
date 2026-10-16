@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS,
   emptySeaOperation, emptySeaOperationWaypoint, getActiveSeaOperationChecks,
-  getSeaOperationAssessment, isSeaOperationPayload, validateSeaOperation,
+  getSeaOperationAssessment, isSeaOperationPayload, validateSeaOperation, seaOperationToday,
 } from './seaOperationModel';
 import type { SeaOperationCheckId } from './seaOperationModel';
 
@@ -35,6 +35,11 @@ function completePayload() {
 }
 
 describe('sea operation form model', () => {
+  it('defaults the signature date to today in Paris, including the UTC day boundary', () => {
+    expect(emptySeaOperation().signature.date).toBe(seaOperationToday());
+    expect(seaOperationToday(new Date('2026-10-16T22:30:00Z'))).toBe('2026-10-17');
+    expect(seaOperationToday(new Date('2026-01-16T23:30:00Z'))).toBe('2026-01-17');
+  });
   it('starts with an independent unanswered draft and never implies a GO', () => {
     const first = emptySeaOperation();
     const second = emptySeaOperation();
@@ -59,6 +64,9 @@ describe('sea operation form model', () => {
     malformed.checks.weather = 'yes';
     malformed.checks.provisions = 'confirmed';
     expect(isSeaOperationPayload(malformed)).toBe(false);
+    expect(isSeaOperationPayload({ ...payload, planning: { date: '2026-10-16', operationId: '1:42', projectId: '7', captainPersonId: '5' } })).toBe(true);
+    expect(isSeaOperationPayload({ ...payload, planning: { date: 20261016, operationId: '1:42', projectId: '7', captainPersonId: '5' } })).toBe(false);
+    expect(isSeaOperationPayload({ ...payload, planning: null })).toBe(false);
   });
 
   it('preserves all source sections, controls and medical kit entries', () => {

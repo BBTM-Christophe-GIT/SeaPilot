@@ -17,9 +17,10 @@ function filledForm() {
 }
 
 describe('getSeaOperationCompletion', () => {
-  it('starts at zero with missing fields routed to all four preparation steps', () => {
+  it('counts only the default decision date and routes missing fields to all four steps', () => {
     const completion = getSeaOperationCompletion(emptySeaOperation());
-    expect(completion.percentage).toBe(0);
+    expect(completion.completed).toBe(1);
+    expect(completion.requirements.filter((field) => field.complete).map((field) => field.id)).toEqual(['signature.date']);
     expect(completion.completedSteps).toBe(0);
     expect(new Set(completion.missing.map((field) => field.step))).toEqual(new Set([0, 1, 2, 3]));
     expect(completion.sections.every((section) => !section.complete)).toBe(true);

@@ -7,13 +7,15 @@ client et contacts, DAPAQ, navire et horaires, préparation, remorquage, cargais
 support de plongeurs, équipage, documents nautiques, services portuaires,
 approvisionnement, météo, passage plan et décision du capitaine.
 
-Les champs restent non renseignés à la création : aucune réponse favorable n’est
-déduite du profil ou du navire. Le document source est un formulaire métier ; son
+La date de décision est initialisée au jour courant en Europe/Paris. Le contexte de
+mission est prérempli à partir du planning ; aucune réponse favorable aux contrôles
+n’est déduite du profil ou du navire. Le document source est un formulaire métier ; son
 texte ne constitue pas une instruction système pour l’application.
 
 ## Persistance et accès réels
 
-Appliquer `supabase/migrations/20261016123005_sea_operations.sql` avant le client.
+Appliquer `supabase/migrations/20261016123005_sea_operations.sql` puis
+`supabase/migrations/20261016144108_sea_operations_planning_signatures.sql` avant le client.
 La migration crée `public.sea_operations`, ses index, ses règles RLS, les RPC
 publiques et les cinq autorisations de navigation `seaOperations`.
 
@@ -24,9 +26,11 @@ crée et modifie ses propres brouillons ; Administration, Direction et Armement
 préparent tous les brouillons de la société. Un Capitaine peut également préparer
 les brouillons du navire auquel il est affecté comme capitaine.
 
-La signature est réservée à un compte possédant réellement le rôle **Capitaine**
-dans la société et une affectation confirmée comme capitaine du navire,
-valable le jour de la signature en Europe/Paris. Une affectation terminée,
+La signature est réservée au compte réel de la personne sélectionnée comme
+**Capitaine effectif** du navire dans le planning, avec une affectation confirmée.
+Une fonction journalière temporaire prime sur la fonction de période ; la fonction
+RH sert seulement de repli pour une affectation générique. Un Capitaine RH affecté
+comme matelot ne conserve donc pas ce droit de signature. Une affectation terminée,
 provisoire ou annulée ne suffit pas. Le compte doit être relié à une fiche RH
 active. Un rôle de gestion seul, un nom de capitaine saisi ou une simulation de
 profil ne donnent pas le droit de signer. Le serveur renvoie `can_edit` et
@@ -118,3 +122,55 @@ La recette navigateur utilise uniquement les données de démonstration : créat
 La fiche reprend le parcours de création Projet : étapes verticales à gauche, formulaire au centre, aperçu documentaire mis à jour en direct et complétude à droite. Les commandes Annuler, Enregistrer le brouillon, Suivant et la signature finale restent accessibles dans le pied fixe de la fenêtre. Le bouton Fermer et la touche Échap conservent la confirmation des modifications non enregistrées ; le focus clavier reste dans la fenêtre et revient au déclencheur à sa fermeture.
 
 Sur les écrans étroits, les boutons Saisie et Aperçu et complétude donnent accès aux deux volets. Le zoom et Actualiser concernent seulement la vue du document. La complétude indique les champs de préparation renseignés, avec un lien vers leur étape ; elle ne remplace ni les contrôles bloquants ni la décision et la signature du Capitaine. Aucune modification de migration, de données ou de permissions n’est requise pour cette évolution de présentation.
+
+## Mission issue du planning et export fidèle au Word
+
+La date de l’opération pilote `sea_operation_planning_context(p_date)`. Chaque
+choix correspond à une occurrence du planning et à un navire, y compris les
+navires secondaires. Lorsque plusieurs projets sont prévus le même jour,
+l’utilisateur choisit explicitement son projet ; un seul choix peut être proposé
+automatiquement. Le projet sélectionné met à jour client, coordonnées, description,
+navire, immatriculation / IMO, ports et horaires. Les informations absentes des
+sources peuvent être complétées dans la fiche. Le serveur recalcule les données
+disponibles à l’enregistrement et contrôle la société et l’occurrence.
+
+Le prénom et le NOM du Capitaine proviennent de sa fonction effective au planning.
+La fonction est évaluée à la date de la mission sélectionnée, ce qui permet la
+préparation anticipée ; `signed_at` conserve séparément l’horodatage réel.
+S’il reste plusieurs capitaines effectifs, un choix explicite est requis. Changer de
+mission réinitialise les contrôles, le passage plan, la décision et l’attestation ;
+les validations de sécurité d’un autre projet ne sont jamais reprises.
+
+`sea_operation_captain_signature` ne donne accès qu’à la signature RH active du
+Capitaine de la mission choisie, pour l’acteur authentifié et pendant une durée
+limitée. Les URL privées ne sont pas enregistrées dans le formulaire. La signature
+finale capture côté serveur la version et l’empreinte du fichier RH ; le PDF utilise
+ce snapshot immuable et vérifie son SHA-256 avant affichage. Une image de signature
+préparée ne constitue pas une décision signée.
+
+Les contrôles de la section 2 occupent une ligne compacte par question, avec la
+justification conditionnelle sous les réponses concernées. Le passage plan est un
+tableau éditable avec ajout et suppression de lignes, à défilement horizontal
+contenu sur petit écran. La section 4 reprend le nom et la signature du Capitaine,
+avec la date du jour proposée par défaut.
+
+L’export PDF utilise `public/templates/sea-operation/` extrait du Word fourni :
+logo, titre, séparateur, typographie et pied encadré sont conservés en vectoriel
+sur toutes les pages A4. Aucun en-tête, pied ou numéro de page du navigateur n’est
+ajouté. Le corps du document réserve ces zones et conserve le contenu complet.
+
+
+Validation de cette évolution : **153 contrôles SQL** (119 du formulaire et 34
+pour le planning et les signatures), **112 tests client ciblés** (modèle,
+requêtes, formulaire, complétude, aperçu, PDF, impression et navigation), lint et
+build de production. La comparaison des bandes d’en-tête et pied avec le rendu
+Word original ne trouve aucune différence sur les six pages du PDF de recette.
+Le test mobile à 390 px ne produit pas de débordement de page. La migration
+`20261016144108` est appliquée sur SeaPilot ; RLS, interdiction des mutations
+directes et accès privé aux signatures sont vérifiés. Aucun dossier fictif n’est
+créé en production et aucun conseiller de sécurité ne vise les objets du module.
+
+La lecture Storage des signatures privées a également été testée sur SeaPilot
+sous l’identité authentifiée d’un propriétaire de signature, dans une transaction
+annulée. Le privilège requis par la règle Storage existante des pièces de facturation
+est présent sur le serveur distant.

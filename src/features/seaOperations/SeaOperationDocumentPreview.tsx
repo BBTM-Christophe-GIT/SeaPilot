@@ -11,9 +11,10 @@ export interface SeaOperationPreviewProps {
   record: SeaOperationRecord | null;
   onChangeStep: (step: number) => void;
   hasUnsavedChanges?: boolean;
+  signatureImageUrl?: string | null;
 }
 
-export function SeaOperationPreview({ draft, record, onChangeStep, hasUnsavedChanges = false }: SeaOperationPreviewProps) {
+export function SeaOperationPreview({ draft, record, onChangeStep, hasUnsavedChanges = false, signatureImageUrl }: SeaOperationPreviewProps) {
   const [zoom, setZoom] = useState(() => typeof window === 'undefined' ? 60 : window.innerWidth < 700 ? 40 : window.innerWidth >= 1600 ? 85 : 60);
   const [revision, setRevision] = useState(0);
   const [showAllMissing, setShowAllMissing] = useState(false);
@@ -48,7 +49,7 @@ export function SeaOperationPreview({ draft, record, onChangeStep, hasUnsavedCha
       <span className="so-preview-sr-only" role="status">{refreshNotice}</span>
       <div className="so-preview-scroller" ref={scrollRef} tabIndex={0} aria-label="Document en aperçu, défilement vertical et horizontal">
         <div className={`so-document-preview${showRecordedAudit ? '' : ' is-unsaved'}`} style={{ zoom: zoom / 100 }} key={revision}>
-          <SeaOperationPrint record={previewRecord} />
+          <SeaOperationPrint record={previewRecord} signatureImageUrl={signatureImageUrl} />
         </div>
       </div>
     </section>

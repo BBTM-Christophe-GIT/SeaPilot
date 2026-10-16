@@ -27,6 +27,8 @@ export interface SeaOperationWaypoint {
 
 export interface SeaOperationPayload {
   version: 1;
+  /** Optional for compatibility with forms prepared before Planning integration. */
+  planning?: { date: string; operationId: string; projectId: string; captainPersonId: string };
   project: string;
   client: string;
   clientContact: string;
@@ -162,6 +164,12 @@ export function emptySeaOperationWaypoint(id: string = globalThis.crypto.randomU
   return { id, number: '', descriptionVhf: '', latitude: '', longitude: '', ukc: '', eta: '', denseTraffic: false };
 }
 
+/** The operation's business day follows the same Paris calendar as Planning. */
+export function seaOperationToday(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
+  return ['year', 'month', 'day'].map((type) => parts.find((part) => part.type === type)!.value).join('-');
+}
+
 /** Every call creates independent objects; an unanswered control is never a positive response. */
 export function emptySeaOperation(): SeaOperationPayload {
   return {
@@ -175,7 +183,7 @@ export function emptySeaOperation(): SeaOperationPayload {
     portServices: [], mandatoryServicesNotified: false,
     supplies: { delegated: '', shipchandlerName: '', shipchandlerContact: '', items: [], suppliers: '', customerAccountsPrepared: false },
     charts: '', waypoints: [], decision: '', risks: '',
-    signature: { captainName: '', date: '', place: '', acknowledged: false },
+    signature: { captainName: '', date: seaOperationToday(), place: '', acknowledged: false },
   };
 }
 
@@ -205,6 +213,7 @@ function isAnswer(value: unknown): value is SeaOperationAnswer { return value ==
 /** Reject malformed JSON instead of treating truthy or unknown values as confirmations. */
 export function isSeaOperationPayload(value: unknown): value is SeaOperationPayload {
   if (!hasStringFields(value, ['project', 'client', 'clientContact', 'description', 'charts', 'risks']) || value.version !== 1) return false;
+  if (value.planning !== undefined && !hasStringFields(value.planning, ['date', 'operationId', 'projectId', 'captainPersonId'])) return false;
   if (!['', 'GO', 'NO_GO'].includes(value.decision as string)) return false;
   if (!hasStringFields(value.vessel, ['id', 'name', 'registrationImo', 'captainName', 'departurePort', 'departureQuay', 'arrivalPort', 'arrivalQuay', 'etd', 'eta'])) return false;
   if (!hasStringFields(value.dapaq, ['agentName', 'agentContact']) || !['', 'nomade', 'email'].includes(value.dapaq.method as string)
