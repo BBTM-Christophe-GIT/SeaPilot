@@ -75,6 +75,13 @@ Le contrôle historique de l’absence d’USAGE sur tout le schéma `private` e
 sur le helper d’identité : des migrations ultérieures accordent USAGE pour d’autres modules, tandis que les tables
 et helpers du calendrier restent sans privilèges pour le navigateur.
 
+Déploiement du 16 octobre 2026 : migration `20261016091421` appliquée au projet SeaPilot
+`szlvyrrmvdvhzixilymh`. Les 92 mêmes assertions ont également réussi sur cette base dans des transactions
+annulées, avec des blocs de contrôle levant une exception en cas d’échec (extension pgTAP absente en production).
+Le contrôle final confirme la suppression des comptes, entreprises et jetons de recette. Les RPC anonymes et
+les helpers privés restent interdits ; une requête HTTP sur une capacité inexistante renvoie 404 avec `no-store`.
+Les abonnements existants profitent de la correction sans changer leur lien.
+
 La préversion affiche la fenêtre avec les actions désactivées et n’appelle aucun service de production.
 Les profils Marin et Capitaine sont validés avec des fixtures distinctes et les règles SQL, conformément à `AGENTS.md`.
 
