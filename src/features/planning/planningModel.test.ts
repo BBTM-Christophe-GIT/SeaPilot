@@ -86,18 +86,18 @@ describe('planning timeline rules', () => {
     expect(timelineRange(buildPlanningTimeline('2026-07-12', 'day'))).toEqual({ start: '2026-07-09', end: '2026-07-15' });
     expect(buildPlanningTimeline('2026-07-12', 'week')).toHaveLength(7);
     expect(buildPlanningTimeline('2026-07-12', 'fortnight')).toHaveLength(14);
-    expect(buildPlanningTimeline('2026-07-12', 'month')).toHaveLength(246);
+    expect(buildPlanningTimeline('2026-07-12', 'month')).toHaveLength(124);
     expect(timelineRange(buildPlanningTimeline('2026-07-12', 'month'))).toEqual({
-      start: '2026-03-12',
-      end: '2026-11-12',
+      start: '2026-05-12',
+      end: '2026-09-12',
     });
     expect(timelineRange(buildPlanningTimeline('2026-02-12', 'month'))).toEqual({
-      start: '2025-10-12',
-      end: '2026-06-12',
+      start: '2025-12-12',
+      end: '2026-04-12',
     });
     expect(timelineRange(buildPlanningTimeline('2026-07-29', 'month'))).toEqual({
-      start: '2026-03-29',
-      end: '2026-11-29',
+      start: '2026-05-29',
+      end: '2026-09-29',
     });
     expect(timelineRange(buildPlanningTimeline('2026-07-12', 'year'))).toEqual({
       start: '2025-11-01',
@@ -109,18 +109,18 @@ describe('planning timeline rules', () => {
   });
 
   it.each([
-    ['2026-01-15', '2025-09-15', '2026-05-15'],
-    ['2026-10-16', '2026-06-16', '2027-02-16'],
-    ['2026-10-31', '2026-06-30', '2027-02-28'],
-    ['2023-10-31', '2023-06-30', '2024-02-29'],
-    ['2024-02-29', '2023-10-29', '2024-06-29'],
-  ])('includes four calendar months on each side of %s', (anchor, start, end) => {
+    ['2026-01-15', '2025-11-15', '2026-03-15'],
+    ['2026-10-16', '2026-08-16', '2026-12-16'],
+    ['2026-04-30', '2026-02-28', '2026-06-30'],
+    ['2023-12-31', '2023-10-31', '2024-02-29'],
+    ['2024-02-29', '2023-12-29', '2024-04-29'],
+  ])('includes two calendar months on each side of %s', (anchor, start, end) => {
     expect(timelineRange(buildPlanningTimeline(anchor, 'month'))).toEqual({ start, end });
   });
 
   it('keeps every day continuous across years and leap day in the centered month window', () => {
     const days = buildPlanningTimeline('2024-02-29', 'month');
-    expect(days).toHaveLength(245);
+    expect(days).toHaveLength(123);
     expect(new Set(days.map((day) => day.date)).size).toBe(days.length);
     days.slice(1).forEach((day, index) => {
       expect(day.date).toBe(addPlanningDays(days[index].date, 1));
@@ -445,11 +445,11 @@ describe('planning hierarchy and side panels', () => {
   });
 
   it.each([
-    ['before the visible range', '2026-03-01', '2026-03-11', false],
-    ['overlapping its first day', '2026-03-01', '2026-03-12', true],
+    ['before the visible range', '2026-05-01', '2026-05-11', false],
+    ['overlapping its first day', '2026-05-01', '2026-05-12', true],
     ['in the following visible month', '2026-08-10', '2026-08-12', true],
-    ['overlapping its last day', '2026-11-12', '2026-12-01', true],
-    ['after the visible range', '2026-11-13', '2026-12-01', false],
+    ['overlapping its last day', '2026-09-12', '2026-10-01', true],
+    ['after the visible range', '2026-09-13', '2026-10-01', false],
   ])('only shows a saved crew row with an assignment %s', (_label, startsOn, endsOn, visible) => {
     const rows = buildPlanningCrewRows({
       ...overview,

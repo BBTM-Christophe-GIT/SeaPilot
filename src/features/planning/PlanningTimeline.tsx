@@ -331,7 +331,7 @@ function PlanningFleetTimelineRowContent({
       className={`planning-calendar-grid planning-timeline-row is-fleet${projectsOnly ? ' is-projects-only' : ''}${maxVisitStack ? ' has-visits' : ''}${projectStack.count > 1 ? ' has-project-stacks' : ''}`}
       data-project-stack-count={projectStack.count}
       data-vessel={lane.vessel}
-      style={rowMinHeight ? { minHeight: rowMinHeight } : undefined}
+      style={rowMinHeight ? { minHeight: rowMinHeight * 0.9 } : undefined}
     >
       <div
         className={`planning-row-label planning-tree-row is-vessel${personDropOver || touchPersonOver ? ' is-person-drop-target' : ''}`}
@@ -419,7 +419,7 @@ function PlanningFleetTimelineRowContent({
             style={{
               gridColumn: `${placement.start + 1} / span ${placement.span}`,
               gridRow: 1,
-              marginTop: 7 + prospectiveStack * 27,
+              marginTop: (7 + prospectiveStack * 27) * 0.9,
             }}
           />
         ) : null;
@@ -433,7 +433,7 @@ function PlanningFleetTimelineRowContent({
             style={{
               gridColumn: `${placement.start + 1} / span ${placement.span}`,
               gridRow: 1,
-              marginTop: 35 + additionalProjectStacks * 27,
+              marginTop: (35 + additionalProjectStacks * 27) * 0.9,
             }}
           />
         ) : null;
@@ -472,7 +472,7 @@ function PlanningFleetTimelineRowContent({
             style={{
               gridColumn: `${placement.start + 1} / span ${placement.span}`,
               gridRow: 1,
-              ...((projectStack.count > 1 || maxVisitStack) ? { marginTop: 7 + stack * 27 } : {}),
+              ...((projectStack.count > 1 || maxVisitStack) ? { marginTop: (7 + stack * 27) * 0.9 } : {}),
             }}
             title={`${planningFleetEventTypeLabel(project.eventType)} · ${project.title}\n${project.status}${project.cancelledAt ? ' · Annulée' : ''}${project.responsibleName ? `\nResponsable : ${project.responsibleName}` : ''}`}
             type="button"
@@ -519,7 +519,7 @@ function PlanningFleetTimelineRowContent({
             style={{
               gridColumn: `${placement.start + 1} / span ${placement.span}`,
               gridRow: 1,
-              marginTop: 35 + additionalProjectStacks * 27 + stack * 25,
+              marginTop: (35 + additionalProjectStacks * 27 + stack * 25) * 0.9,
             }}
             title={`${planningVisitTypeLabel(visit.visitType)}\n${visit.provider.name}\n${dateLabel}${isTechnicalStop && editable ? '\nDéplacer ou étirer la période avec ses poignées.' : ''}`}
             type="button"
@@ -541,7 +541,7 @@ function PlanningFleetTimelineRowContent({
           title={`${label}\n${audit.siteName}\n${formatPlanningDate(startsOn)} · ${status}${audit.title ? `\n${audit.title}` : ''}`}
           onClick={() => onOpenAudit?.(audit)}
           style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1,
-            marginTop: 35 + additionalProjectStacks * 27 + (visitStack.stackByKey.get(key) || 0) * 25 }}>
+            marginTop: (35 + additionalProjectStacks * 27 + (visitStack.stackByKey.get(key) || 0) * 25) * 0.9 }}>
           <CalendarCheck2 aria-hidden="true" size={12} /><span>{label}</span>
         </button>;
       })}

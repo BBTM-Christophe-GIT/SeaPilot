@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.75.11`, build `2026-10-16.003`, réduit la fenêtre du Planning à deux
+mois avant et après la date de référence, centrée sur aujourd'hui à l'ouverture.
+Les lignes des vues Flotte, Projet et Équipages sont compactées de 10 %, avec
+leurs barres et empilements. Voir [la fenêtre compacte et sa recette](./planning-two-month-window-compact-rows.md).
+
 Version `3.75.10`, build `2026-10-16.002`, affiche le Planning de quatre mois
 avant à quatre mois après la date de référence. Le calendrier se centre sur cette
 date à l'ouverture, au zoom et avec « Aujourd’hui », y compris après un déplacement

@@ -123,9 +123,9 @@ describe('Planning timeline visit and leave rendering', () => {
     const bars = Array.from(container.querySelectorAll<HTMLElement>('.planning-project-bar'));
     expect(row).toHaveClass('has-project-stacks');
     expect(row).toHaveAttribute('data-project-stack-count', '2');
-    expect(row.style.minHeight).toBe(projectsOnly ? '65px' : '101px');
+    expect(row.style.minHeight).toBe(projectsOnly ? '58.5px' : '90.9px');
     expect(bars.map((bar) => bar.dataset.projectStack)).toEqual(['0', '1']);
-    expect(bars.map((bar) => bar.style.marginTop)).toEqual(['7px', '34px']);
+    expect(bars.map((bar) => bar.style.marginTop)).toEqual(['6.3px', '30.6px']);
     if (projectsOnly) {
       fireEvent.click(screen.getByRole('button', { name: 'Ajouter un projet à GOURY' }));
       expect(onOpenCell).toHaveBeenLastCalledWith(expect.objectContaining({ vesselId: 2 }), '2026-08-11');

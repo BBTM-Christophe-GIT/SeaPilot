@@ -657,7 +657,7 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-07' } });
     fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-06' } });
-    expect(container.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-range-start', '2026-02-01');
+    expect(container.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-range-start', '2026-04-01');
     await waitFor(() => expect(container.querySelector('.planning-calendar-body')).toHaveTextContent('Paul DURAND'));
     expect(container.querySelector('.planning-calendar-body')).toHaveTextContent('Luc MOREL');
     expect(screen.queryByRole('button', { name: 'Filtre actif' })).not.toBeInTheDocument();
@@ -1258,7 +1258,7 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Événement flotte mis à jour sans rechargement.')).toBeInTheDocument();
   }, 20_000);
 
-  it('shows four months before and after the reference date and exposes navigation controls', async () => {
+  it('shows two months before and after the reference date and exposes navigation controls', async () => {
     const user = userEvent.setup();
     const { client } = createClient();
     render(<PlanningPage client={client as never} roles={['admin']} />);
@@ -1266,12 +1266,12 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2025-07' } });
     const calendar = document.querySelector('.planning-calendar-scroll');
-    expect(calendar).toHaveAttribute('data-planning-range-start', '2025-03-01');
-    expect(calendar).toHaveAttribute('data-planning-range-end', '2025-11-01');
+    expect(calendar).toHaveAttribute('data-planning-range-start', '2025-05-01');
+    expect(calendar).toHaveAttribute('data-planning-range-end', '2025-09-01');
     await user.click(screen.getByRole('button', { name: 'Mois suivant' }));
     expect(screen.getByLabelText('Mois de référence')).toHaveValue('2025-08');
-    expect(calendar).toHaveAttribute('data-planning-range-start', '2025-04-01');
-    expect(calendar).toHaveAttribute('data-planning-range-end', '2025-12-01');
+    expect(calendar).toHaveAttribute('data-planning-range-start', '2025-06-01');
+    expect(calendar).toHaveAttribute('data-planning-range-end', '2025-10-01');
     await user.click(screen.getByRole('button', { name: 'Mois précédent' }));
     expect(screen.getByLabelText('Mois de référence')).toHaveValue('2025-07');
     expect(screen.getByRole('button', { name: 'Zoom avant' })).toBeInTheDocument();
@@ -1292,10 +1292,10 @@ describe('PlanningPage cockpit', () => {
       const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
       await screen.findByRole('heading', { name: 'Planning' });
       const calendar = container.querySelector<HTMLElement>('.planning-calendar-scroll')!;
-      const start = shiftPlanningMonths(todayPlanningDate(), -4);
+      const start = shiftPlanningMonths(todayPlanningDate(), -2);
       const index = daysBetween(start, todayPlanningDate());
       expect(calendar).toHaveAttribute('data-planning-range-start', start);
-      expect(calendar).toHaveAttribute('data-planning-range-end', shiftPlanningMonths(todayPlanningDate(), 4));
+      expect(calendar).toHaveAttribute('data-planning-range-end', shiftPlanningMonths(todayPlanningDate(), 2));
       expect(calendar.scrollLeft).toBe((index + 0.5) * 52 - 1018 / 2);
 
       calendar.style.setProperty('--planning-label-width', '218px');
@@ -1316,7 +1316,7 @@ describe('PlanningPage cockpit', () => {
       viewportWidth = 1018;
       notifyResize();
       fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2025-12' } });
-      expect(calendar.scrollLeft).toBe((daysBetween('2025-08-01', '2025-12-01') + 0.5) * 62 - 400);
+      expect(calendar.scrollLeft).toBe((daysBetween('2025-10-01', '2025-12-01') + 0.5) * 62 - 400);
       fireEvent.click(screen.getByRole('button', { name: 'Aujourd’hui' }));
       expect(screen.getByLabelText('Mois de référence')).toHaveValue(todayPlanningDate().slice(0, 7));
       expect(calendar.scrollLeft).toBe((index + 0.5) * 62 - 400);
