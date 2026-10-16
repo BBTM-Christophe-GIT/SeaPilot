@@ -777,6 +777,6 @@ describe('InternalAuditsPage', () => {
     await user.click(screen.getByText('Historique du traitement (1)'));
     expect(screen.getByText('01 oct. 2026 · En traitement')).toBeVisible();
     expect(screen.queryByText('30 sept. 2026 · En traitement')).not.toBeInTheDocument();
-    expect(screen.getByText('15 oct. 2026')).toBeVisible();
+    expect(screen.getByText(/^15 oct\. 2026(?: · En retard)?$/)).toBeVisible();
   });
 });

@@ -36,6 +36,7 @@ function createCounter(clientId: string | undefined, email: string, enabled: boo
   let api: GoogleAuthorizationApi | undefined;
   let token: string | undefined;
   let expiresAt = 0;
+  let nextRefreshAt = 0;
   let authorizationVersion = 0;
   let fetchVersion = 0;
   let fetchController: AbortController | undefined;
@@ -55,6 +56,7 @@ function createCounter(clientId: string | undefined, email: string, enabled: boo
     fetchVersion += 1;
     token = undefined;
     expiresAt = 0;
+    nextRefreshAt = 0;
     clearTimeout(authorizationTimeout);
     clearTimeout(expiryTimeout);
     clearTimeout(fetchTimeout);
@@ -74,8 +76,12 @@ function createCounter(clientId: string | undefined, email: string, enabled: boo
 
   async function refresh() {
     if (!active || !token) return;
-    if (Date.now() >= expiresAt) { expire(); return; }
+    const now = Date.now();
+    if (now >= expiresAt) { expire(); return; }
     if (document.visibilityState === 'hidden' || fetchController) return;
+    // Focus, visibility and manual refresh share the polling limit.
+    if (now < nextRefreshAt) return;
+    nextRefreshAt = now + REFRESH_INTERVAL_MS;
     const requestVersion = ++fetchVersion;
     const currentToken = token;
     const controller = new AbortController();

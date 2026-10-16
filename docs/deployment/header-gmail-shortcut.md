@@ -2,6 +2,8 @@
 
 Version `3.75.4`, build `2026-10-15.009`.
 
+Activation : version `3.75.9`, build `2026-10-16.001`.
+
 ## Raccourci livré
 
 L'enveloppe se trouve immédiatement à droite de la cloche, avant l'aide. Son
@@ -15,15 +17,23 @@ sélectionner ou de connecter ce compte. Le lien reste utilisable au clavier,
 avec le menu contextuel et les clics modifiés. La nouvelle fenêtre ne reçoit
 aucun accès à la fenêtre SeaPilot. Le raccourci est désactivé en prévisualisation.
 
-## Compteur préparé, configuration facultative
+## Configuration du compteur
 
-Le choix de livraison est de préparer le compteur et de livrer le raccourci,
-sans identifiant OAuth Google fourni. Aucun identifiant client navigateur Gmail
-n'est actuellement configuré sur Vercel. Le raccourci fonctionne ainsi sans
-chargement de Google Identity Services ni demande d'accès à la messagerie.
-Aucune pastille ne représente une valeur inconnue.
+La livraison initiale préparait le compteur sans client OAuth. Le 16 octobre
+2026, un client Web `SeaPilot Gmail Web` a été créé dans le projet Google Cloud
+`seapilot-documents`, avec l'application `SeaPilot – Compteur Gmail` et une
+audience **interne** à l'organisation BBTM. Gmail API était déjà activée.
+`VITE_GMAIL_CLIENT_ID` est configuré sur Vercel pour production, preview et
+développement ; cette variable contient uniquement l'identifiant public.
 
-Pour activer le compteur ultérieurement :
+Les origines autorisées sont `https://sea-pilot-ten.vercel.app`,
+`https://sea-pilot-bbtm-app.vercel.app`,
+`https://sea-pilot-git-main-bbtm-app.vercel.app` et `http://localhost:5173`.
+Une URL de preview supplémentaire doit être autorisée explicitement avant
+d'utiliser le compteur sur cette origine. Aucun URI de retour serveur n'est
+nécessaire pour le modèle de jeton Google Identity Services.
+
+Pour reproduire cette configuration :
 
 1. Créer un client OAuth Google de type application Web pour SeaPilot et activer
    l'API Gmail dans son projet Google Cloud.
@@ -60,7 +70,36 @@ compteur. Une valeur inconnue n'est jamais remplacée par zéro. Une nouvelle
 autorisation nécessite une action de l'utilisateur. La fermeture ou le
 rechargement de la page supprime l'autorisation conservée en mémoire.
 
+## Coût et consommation
+
+La console Google Cloud a été vérifiée le 16 octobre 2026 : le projet
+`seapilot-documents` n'est associé à **aucun compte de facturation**. Ne pas
+activer l'essai Google Cloud, associer un paiement ni demander d'extension
+payante de quotas pour cette fonctionnalité.
+
+L'usage standard de Gmail API est gratuit. La documentation Google actuelle
+indique un seuil de 80 millions d'unités par jour et par projet ; une requête
+`labels.get` consomme une unité. Google annonce une possible facturation future
+des dépassements : la gratuité repose sur le maintien dans les quotas et
+l'absence de compte de facturation, et ne constitue pas une promesse de quota
+illimité.
+
+SeaPilot espace les lectures Gmail d'au moins 60 secondes par autorisation,
+y compris les clics d'actualisation et les événements de focus/visibilité.
+Aucune lecture ne part tant que la page est masquée. Cent utilisateurs actifs
+huit heures représentent environ 48 000 lectures Gmail par jour. L'identité
+OpenID est vérifiée avant chaque lecture avec le même jeton. Aucun service
+Supabase, Vercel Functions, Pub/Sub ni stockage serveur n'est ajouté.
+
+Une nouvelle autorisation, un changement de compte ou un nouvel onglet crée
+son propre contrôleur en mémoire ; cette limite locale n'est pas un quota
+global du projet Google.
+
 ## Vérification de cette livraison
+
+Pour l'activation `3.75.9`, les 158 tests ciblés messagerie, shell, manuel et
+routes passent. Ils couvrent aussi les rafales de focus/clic, la reprise à
+60 secondes, une page initialement masquée et l'isolation des comptes.
 
 Les 190 tests ciblés shell et messagerie, les 13 tests des routes de
 l'application et les 23 tests du manuel passent, avec ESLint ciblé et
@@ -83,3 +122,4 @@ Google réel reste à vérifier lors de la configuration d'un client OAuth.
 - [Lecture d'un libellé Gmail et portées autorisées](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.labels/get)
 - [Champs du libellé Gmail](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.labels)
 - [Portées Gmail](https://developers.google.com/workspace/gmail/api/auth/scopes)
+- [Quotas et coût Gmail API](https://developers.google.com/workspace/gmail/api/reference/quota)
