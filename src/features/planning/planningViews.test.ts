@@ -137,6 +137,13 @@ describe('planning P0.2 views', () => {
     expect(lanes.every((lane) => !lane.assignments.length && !lane.locations.length)).toBe(true);
     expect(buildPlanningProjectLanes(overview, { start: '2027-01-01', end: '2027-01-31' }, emptyFilters)).toHaveLength(2);
   });
+  it('places Armement before every vessel in the project timeline', () => {
+    const lanes = buildPlanningProjectLanes({ ...overview, vessels: [
+      ...overview.vessels, { id: 3, name: 'Armement - Cherbourg', acronym: 'ARM', active: true },
+      { id: 4, name: 'AAA NAVIRE', acronym: 'AAA', active: true },
+    ] }, range, emptyFilters);
+    expect(lanes.map((lane) => lane.label)).toEqual(['Armement - Cherbourg', 'AAA NAVIRE', 'COTENTIN', 'SUROIT']);
+  });
 
   it('includes empty active vessels for the field fleet selector', () => {
     expect(buildPlanningFleetLanes({ ...overview, assignments: [], periods: [], projects: [] }, range, emptyFilters, [], true)

@@ -96,5 +96,8 @@ export function withPlanningAuditLanes(lanes: PlanningFleetLane[], rows: Plannin
         vesselKey: key, boardKey: '', events: [], projects: additionalLanes.get(audit.siteName)!.projects }]);
     }
   });
-  return { lanes: [...additionalLanes.values()], rows: [...groups.keys()].sort(compareFleetNames).flatMap((name) => groups.get(name)!) };
+  return { lanes: [...additionalLanes.values()], rows: [...groups.keys()].sort((left, right) => (
+    Number(normalizePlanningText(right).includes('ARMEMENT')) - Number(normalizePlanningText(left).includes('ARMEMENT'))
+    || compareFleetNames(left, right)
+  )).flatMap((name) => groups.get(name)!) };
 }

@@ -32,6 +32,9 @@ Changement exclusivement côté client : aucune migration, variable d'environnem
 ou nouvelle dépendance. Le lockfile reste identique. Redéployer le client précédent
 rétablit la fenêtre de sept semaines.
 
+La correction de l'abonnement calendrier ajoutée à cette livraison possède sa
+propre migration ; voir [Armement, actions et calendrier](./planning-armement-icons-calendar.md).
+
 ## Validation
 
 Les tests du modèle couvrent la continuité des jours, les bornes incluses, les

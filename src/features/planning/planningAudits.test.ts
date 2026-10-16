@@ -52,6 +52,19 @@ describe('Audits in the global Planning', () => {
     const layout = withPlanningAuditLanes([lane], [vesselRow, personRow], [audit, { ...audit, kind: 'ovid' }], range, filters);
     expect(layout.lanes).toEqual([lane]); expect(layout.rows).toEqual([vesselRow, personRow]);
   });
+  it('keeps Armement first after audits are merged and retains every crew group', () => {
+    const names = ['LE ROZEL', 'Armement - CHERBOURG', 'GOURY'];
+    const rows: PlanningCrewRow[] = names.flatMap((vessel, index) => {
+      const key = `vessel-${index}`;
+      const row: PlanningCrewRow = { key, type: 'vessel', personId: null, vesselId: index + 1, label: vessel, vessel,
+        board: '', functionLabel: '', boardRowId: null, hasAnyRecords: false, vesselKey: key, boardKey: '', events: [], projects: [] };
+      return [row, { ...row, key: `${key}-person`, type: 'person', personId: index + 10 }];
+    });
+    const layout = withPlanningAuditLanes([], rows, [audit], range, filters);
+    expect(layout.rows.map((row) => row.vessel)).toEqual([
+      'Armement - CHERBOURG', 'Armement - CHERBOURG', 'GOURY', 'GOURY', 'LE ROZEL', 'LE ROZEL',
+    ]);
+  });
   it.each([
     ['internal_ism', 'internalAudits'], ['ovid', 'ovid'], ['ecmid', 'ecmid'],
     ['external_ism', 'externalIsmAudits'], ['client', 'clientAudits'],

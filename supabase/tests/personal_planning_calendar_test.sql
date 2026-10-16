@@ -2,7 +2,7 @@ begin;
 select no_plan();
 
 select ok((select relrowsecurity from pg_class where oid = 'private.planning_calendar_subscriptions'::regclass), 'calendar capabilities have RLS');
-select ok(not has_schema_privilege('authenticated', 'private', 'USAGE'), 'private capability storage is inaccessible to browsers');
+select ok(not has_function_privilege('authenticated', 'private.planning_calendar_context(uuid)', 'EXECUTE'), 'browser cannot invoke the private calendar identity helper');
 select ok(not has_table_privilege('authenticated', 'private.planning_calendar_subscriptions', 'SELECT'), 'browser cannot read capability hashes');
 select ok(not has_function_privilege('anon', 'public.create_planning_calendar_subscription()', 'EXECUTE'), 'anonymous callers cannot create a subscription');
 select ok(not has_function_privilege('anon', 'public.revoke_planning_calendar_subscription()', 'EXECUTE'), 'anonymous callers cannot revoke a subscription');
@@ -119,7 +119,7 @@ select is(jsonb_array_length((current_setting('test.calendar.first')::jsonb)->'e
 select is((current_setting('test.calendar.first')::jsonb)#>>'{events,0,summary}', 'En Mer', 'assignment takes precedence over a historical period and ordinary day');
 select is((current_setting('test.calendar.first')::jsonb)#>>'{events,0,location}', 'RELEASED VESSEL', 'vessel name comes from the released assignment');
 select is((current_setting('test.calendar.first')::jsonb)#>>'{events,0,end_date}', '2037-01-02', 'all-day end dates are exclusive');
-select is((current_setting('test.calendar.first')::jsonb)#>>'{events,1,summary}', 'Indisponible', 'a published day override replaces its assignment without revealing medical status');
+select is((current_setting('test.calendar.first')::jsonb)#>>'{events,1,summary}', 'Arrêt Maladie', 'a published day override preserves the personal planning status without revealing its reason');
 select is((current_setting('test.calendar.first')::jsonb)#>>'{events,1,location}', null, 'medical location is not exported');
 select is((current_setting('test.calendar.first')::jsonb)#>>'{events,2,summary}', 'Vacances', 'personal daily-only leave remains visible after distribution');
 select is((current_setting('test.calendar.first')::jsonb)#>>'{events,3,summary}', 'Indisponible', 'arbitrary status text is never copied into calendars');
@@ -162,14 +162,15 @@ values (current_setting('test.calendar.company')::bigint, 2, jsonb_build_object(
 ), '86100000-0000-0000-0000-000000000001', 'SECRET PUBLISHER', '2036-12-02T10:00:00Z');
 do $$ begin perform set_config('test.calendar.second', public.planning_calendar_feed(encode(extensions.digest(current_setting('test.calendar.token'), 'sha256'), 'hex'))::text, true); end $$;
 select is(current_setting('test.calendar.second')::jsonb->>'revision', '2', 'an existing subscription advances to each new distribution');
-select is(current_setting('test.calendar.second')::jsonb#>>'{events,0,summary}', 'Repos', 'the existing subscription reflects a changed day');
+select is(current_setting('test.calendar.second')::jsonb#>>'{events,0,summary}', 'Planning supprimé', 'a day changed to rest cancels its previously exported event');
+select is(current_setting('test.calendar.second')::jsonb#>>'{events,0,status}', 'cancelled', 'a rest day is never an active calendar event');
 select is(current_setting('test.calendar.second')::jsonb#>>'{events,0,uid}', current_setting('test.calendar.first')::jsonb#>>'{events,0,uid}', 'the same personal date keeps its UID across distributions');
-select is((select count(*)::integer from jsonb_array_elements(current_setting('test.calendar.second')::jsonb->'events') item where item->>'status' = 'cancelled'), 3, 'removed personal dates carry explicit cancellation markers');
+select is((select count(*)::integer from jsonb_array_elements(current_setting('test.calendar.second')::jsonb->'events') item where item->>'status' = 'cancelled'), 4, 'removed personal dates and rest dates carry explicit cancellation markers');
 select ok(current_setting('test.calendar.second') not like '%SECRET%', 'cancellation markers retain sanitized information only');
 insert into public.planning_releases(company_id, version_number, snapshot, published_by, published_by_name, published_at)
 select company_id, 3, snapshot, published_by, published_by_name, '2036-12-03T10:00:00Z'
 from public.planning_releases where company_id = current_setting('test.calendar.company')::bigint and version_number = 2;
-select is((select count(*)::integer from jsonb_array_elements(public.planning_calendar_feed(encode(extensions.digest(current_setting('test.calendar.token'), 'sha256'), 'hex'))->'events') item where item->>'status' = 'cancelled'), 3, 'clients that skip an intermediate release still receive all removed-date cancellations');
+select is((select count(*)::integer from jsonb_array_elements(public.planning_calendar_feed(encode(extensions.digest(current_setting('test.calendar.token'), 'sha256'), 'hex'))->'events') item where item->>'status' = 'cancelled'), 4, 'clients that skip an intermediate release still receive removed-date and rest-date cancellations');
 select is(public.planning_calendar_feed(encode(extensions.digest(current_setting('test.calendar.token'), 'sha256'), 'hex'))#>>'{events,1,uid}', current_setting('test.calendar.first')::jsonb#>>'{events,1,uid}', 'a cancellation keeps its original UID across later releases');
 insert into public.planning_releases(company_id, version_number, snapshot, published_by, published_by_name, published_at)
 values (current_setting('test.calendar.company')::bigint, 4, jsonb_build_object(

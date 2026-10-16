@@ -130,6 +130,7 @@ function buildPlanningVisitStack(
 
 function PlanningFleetTimelineRowContent({
   projectsOnly = false,
+  referenceDate,
   lane,
   days,
   editable,
@@ -159,6 +160,7 @@ function PlanningFleetTimelineRowContent({
   onToggle,
 }: TimelineBaseProps & {
   projectsOnly?: boolean;
+  referenceDate?: string;
   lane: PlanningFleetLane;
   dayWidth: number;
   expanded: boolean;
@@ -347,7 +349,7 @@ function PlanningFleetTimelineRowContent({
         </button>}
         <div aria-label={`Actions pour ${lane.label}`} className="planning-vessel-actions" role="group">
           <button aria-label={`Ouvrir la fiche de ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onOpenVessel(lane)} title="Fiche du navire" type="button"><FilePenLine aria-hidden="true" size={14} /></button>
-          {editable && projectsOnly ? <button aria-label={`Ajouter un projet à ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onOpenCell(lane, days[0].date)} title="Ajouter un projet" type="button"><Plus aria-hidden="true" size={15} /></button> : null}
+          {editable && projectsOnly ? <button aria-label={`Ajouter un projet à ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onOpenCell(lane, referenceDate || days[0].date)} title="Ajouter un projet" type="button"><Plus aria-hidden="true" size={15} /></button> : null}
           {editable && !projectsOnly ? <button aria-label={`Ajouter une bordée à ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onAddBoard(lane)} title="Ajouter une bordée" type="button"><Plus aria-hidden="true" size={15} /></button> : null}
           {editable && !projectsOnly ? <button aria-label={`Ajouter une visite ou un audit à ${lane.label}`} className="planning-tree-action is-visit" disabled={lane.vesselId === null} onClick={() => onCreateVisit(lane)} title="Nouvelle Visite / Audit" type="button"><CalendarCheck2 aria-hidden="true" size={14} /></button> : null}
         </div>

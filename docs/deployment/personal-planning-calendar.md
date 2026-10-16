@@ -25,8 +25,16 @@ Le lien permet de lire le planning : ne pas le partager, le journaliser ou le pl
 Les RPC authentifiées ne reçoivent aucun identifiant de personne. La fonction Edge hache le jeton et appelle une RPC
 réservée au service. Chaque lecture vérifie de nouveau le compte, ses droits, l’entreprise et la fiche du personnel.
 Les événements proviennent exclusivement des instantanés diffusés et concernent la personne du compte.
-Les commentaires internes et les raisons médicales ne sont pas exportés ; ces indisponibilités ont un libellé générique.
+La sélection d’un marin dans le Planning et les vues de rôle simulées ne changent jamais le propriétaire du lien :
+les RPC utilisent uniquement `auth.uid()` et sa fiche du personnel. Le dialogue est remonté à chaque changement
+du véritable compte connecté (`sessionUserId`). Aucun identifiant de marin n’est transmis à ces RPC.
+Les statuts du planning sont exportés, y compris Congés Paternité, Arrêt Maladie, Accident du Travail,
+Arrêt de travail, RTT, Extra et Formation. Seul Repos, après normalisation (dont « Débarqué »), est exclu des événements actifs.
+Les commentaires internes, noms d’autres personnes, raisons médicales et destinations privées ne sont pas exportés.
+Un texte de statut inconnu conserve le libellé générique Indisponible plutôt que recopier un motif libre.
 Les UID restent stables pour une personne/entreprise/journée. Les journées supprimées sont renvoyées comme annulées.
+Une journée devenue Repos est également renvoyée comme annulée avec son UID initial et le libellé « Planning supprimé »,
+afin de retirer les événements déjà importés. Ces marqueurs persistent pour les abonnés qui sautent une diffusion.
 Une journée avec des affectations contradictoires indique « Planning à confirmer » sans choisir arbitrairement un navire.
 
 Les avis Supabase sur cette table privée sans policy (refus par défaut) et les quatre RPC authentifiées
@@ -42,6 +50,30 @@ n’est accordé à ces RPC. Les helpers non filtrés restent privés.
 4. Le réglage `verify_jwt = false` de cette fonction est nécessaire pour les clients calendrier qui ne disposent pas de la session SeaPilot. L’authentification par jeton personnel est appliquée dans le handler puis dans la RPC réservée au service.
 5. Déployer le frontend depuis le commit testé. Aucun nouveau secret ou variable frontend n’est requis.
 6. Vérifier un abonnement de test, puis diffuser une modification et vérifier la nouvelle version du même flux. Une URL invalide ou révoquée doit répondre 404, les mutations HTTP 405.
+
+### Statuts du calendrier — 16 octobre 2026
+
+Appliquer ensuite `20261016091421_planning_calendar_all_statuses_except_rest.sql`. Cette migration ne remplace ni
+les jetons ni les URL existantes et ne modifie aucun accès : elle complète les statuts reconnus dans deux helpers privés
+et exclut Repos des journées actives. Le handler et le sérialiseur Edge sont inchangés ; aucun redéploiement Edge
+n’est nécessaire pour cette correction.
+
+Exécuter les deux recettes transactionnelles `personal_planning_calendar_test.sql` et
+`personal_planning_calendar_statuses_test.sql`. La seconde crée deux véritables comptes de test Marin/Capitaine,
+vérifie la liaison du jeton à son propre utilisateur/personnel, le refus d’identifiants cibles, l’égalité des statuts
+entre lecture authentifiée et abonnement, tous les statuts reconnus, les corrections quotidiennes et les annulations
+durables. Les données et jetons de test sont annulés à la fin ; aucun jeton brut n’est affiché.
+
+Le téléchargement ICS proposé par les exports de Planning conserve son périmètre et ses filtres autorisés.
+Il ajoute le statut au titre, découpe les changements de statut/fonction et retire chaque journée Repos, même au milieu
+d’une affectation active. Une correction non Repos sur une affectation Repos reste exportée. Les plages sont limitées
+aux dates demandées ; les heures civiles de Paris sont conservées lors du passage heure d’été/heure d’hiver.
+
+Validation locale : 92 assertions SQL réussies (74 sur les accès, données personnelles et révocations, 18 sur les
+statuts et deux comptes distincts), tests calendrier/exports/fonctions réussis, lint ciblé et contrôle TypeScript réussis.
+Le contrôle historique de l’absence d’USAGE sur tout le schéma `private` est remplacé par le refus d’EXECUTE
+sur le helper d’identité : des migrations ultérieures accordent USAGE pour d’autres modules, tandis que les tables
+et helpers du calendrier restent sans privilèges pour le navigateur.
 
 La préversion affiche la fenêtre avec les actions désactivées et n’appelle aucun service de production.
 Les profils Marin et Capitaine sont validés avec des fixtures distinctes et les règles SQL, conformément à `AGENTS.md`.

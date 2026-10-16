@@ -2615,6 +2615,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   function renderFleetLane(lane: PlanningFleetLane, rowKey: string, projectsOnly = false) {
     return (
       <PlanningFleetTimelineRow
+        referenceDate={anchorDate}
         projectsOnly={projectsOnly}
         crewCount={fleetTreeCounts.get(rowKey) || 0}
         dayWidth={effectiveDayWidth}
