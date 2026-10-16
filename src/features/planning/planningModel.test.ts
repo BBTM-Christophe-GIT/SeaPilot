@@ -25,7 +25,7 @@ import {
 } from './planningModel';
 import { getPlanningConflicts, getPlanningConflictEventIds } from './planningOverlap';
 import { planningCrewEventType } from './planningViews';
-import type { PlanningOverview } from './planningQueries';
+import type { PlanningAssignmentRecord, PlanningOverview } from './planningQueries';
 
 const overview: PlanningOverview = {
   vessels: [{ id: 1, name: 'GOURY', acronym: 'GRY', active: true }],
@@ -319,6 +319,20 @@ describe('planning timeline rules', () => {
 });
 
 describe('planning hierarchy and side panels', () => {
+  it('replaces a contained old assignment only for the same person and ship', () => {
+    const assignment: PlanningAssignmentRecord = { id: 1, vesselId: 1, vesselName: 'GOURY', captainPersonId: 1,
+      captainName: 'Anne CAPITAINE', crewPersonId: 1, crewName: 'Anne CAPITAINE', startsOn: '2026-10-02',
+      endsOn: '2026-10-12', assignmentRole: 'Capitaine', statusLabel: 'En Mer', confirmationStatus: 'confirmed',
+      watchGroup: 'Bordée 1', comments: '', sourceLabel: 'seapilot', updatedAt: '2026-10-01T10:00:00Z' };
+    const events = getAllPlanningCrewEvents({ ...overview, periods: [], assignments: [assignment,
+      { ...assignment, id: 2, startsOn: '2026-10-01', endsOn: '2026-10-14', updatedAt: '2026-10-02T10:00:00Z' },
+      { ...assignment, id: 3, vesselId: 2, vesselName: 'LANDEMER', updatedAt: '2026-10-03T10:00:00Z' },
+      { ...assignment, id: 4, crewPersonId: 2, crewName: 'Marc LIBRE', updatedAt: '2026-10-03T10:00:00Z' },
+      { ...assignment, id: 5, startsOn: '2026-10-15', endsOn: '2026-10-20', updatedAt: '2026-10-03T10:00:00Z' },
+    ] });
+    expect(events.map((event) => event.assignmentId)).toEqual([2, 3, 4, 5]);
+  });
+
   it('attaches per-day texts to their assignment without exposing technical rows', () => {
     const assignment = {
       id: 50, vesselId: 1, vesselName: 'GOURY', captainPersonId: 1, captainName: 'Anne CAPITAINE',

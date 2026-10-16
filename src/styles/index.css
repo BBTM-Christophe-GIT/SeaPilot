@@ -7657,6 +7657,23 @@ button:disabled {
   transition: opacity 100ms ease, transform 100ms ease;
 }
 
+.planning-day-cell.has-create-indicator::after {
+  width: 13px;
+  height: 13px;
+  background: linear-gradient(currentColor, currentColor) center / 8.7px 1.1px no-repeat,
+    linear-gradient(currentColor, currentColor) center / 1.1px 8.7px no-repeat;
+  content: '';
+  opacity: 0;
+  transition: opacity 100ms ease, transform 100ms ease;
+}
+
+.planning-day-cell.has-create-indicator:hover::after,
+.planning-day-cell.has-create-indicator:focus-visible::after,
+.planning-day-cell.has-create-indicator.is-saving::after {
+  opacity: 1;
+  transform: scale(1.08);
+}
+
 .planning-day-cell.is-quick-create:hover svg,
 .planning-day-cell.is-quick-create:focus-visible svg,
 .planning-day-cell.is-saving svg {
@@ -9289,7 +9306,8 @@ body.planning-fullscreen-fallback-active .content-shell > .topbar {
     touch-action: none;
   }
 
-  .planning-day-cell.is-quick-create svg {
+  .planning-day-cell.is-quick-create svg,
+  .planning-day-cell.has-create-indicator::after {
     opacity: 0.72;
   }
 

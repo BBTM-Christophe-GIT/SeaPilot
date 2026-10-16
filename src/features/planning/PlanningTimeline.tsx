@@ -36,6 +36,7 @@ import {
 import { planningStaffingBoardKey } from './planningStaffingQueries';
 import { planningEventFunctionOnDate, planningShortFunctionLabel, planningTemporaryFunctionSegments } from './planningFunctions';
 import { samePlanningLaneSelection, shallowPlanningEqual, withStablePlanningHandlers } from './planningRendering';
+import { planningCrewContextsByDate, planningTimelineDateLabels, planningTimelineDocumentsByPerson } from './planningTimelineData';
 
 export const PlanningFleetTimelineRow = withStablePlanningHandlers(PlanningFleetTimelineRowContent);
 export const PlanningFleetBoardTimelineRow = withStablePlanningHandlers(PlanningFleetBoardTimelineRowContent);
@@ -78,8 +79,8 @@ function projectStatusIcon(project: PlanningProjectRecord): string {
   return tone === 'valid' ? validIcon : tone === 'billed' ? billedIcon : plannedIcon;
 }
 
-function cellClass(day: PlanningTimelineDay, options: { create: boolean; dragOver: boolean; drop: boolean }): string {
-  return `planning-day-cell${day.isWeekend ? ' is-weekend' : ''}${day.date === todayPlanningDate() ? ' is-today' : ''}${options.drop ? ' is-drop-target' : ''}${options.create ? ' is-quick-create' : ''}${options.dragOver ? ' is-drag-over' : ''}`;
+function cellClass(day: PlanningTimelineDay, options: { create: boolean; dragOver: boolean; drop: boolean }, today: string): string {
+  return `planning-day-cell${day.isWeekend ? ' is-weekend' : ''}${day.date === today ? ' is-today' : ''}${options.drop ? ' is-drop-target' : ''}${options.create ? ' is-quick-create' : ''}${options.dragOver ? ' is-drag-over' : ''}`;
 }
 
 export function buildPlanningProjectStack(
@@ -187,6 +188,8 @@ function PlanningFleetTimelineRowContent({
   onToggle: () => void;
 }) {
   const [resizePreview, setResizePreview] = useState<{ id: number; startsOn: string; endsOn: string } | null>(null);
+  const today = todayPlanningDate();
+  const dateLabels = planningTimelineDateLabels(days);
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [personDropOver, setPersonDropOver] = useState(false);
   const [draggingId, setDraggingId] = useState<number | null>(null);
@@ -358,9 +361,9 @@ function PlanningFleetTimelineRowContent({
         const mouseDragOver = dragOver === day.date;
         const shared = {
           'aria-label': editable
-            ? `Planifier un projet pour ${lane.label} le ${formatPlanningDate(day.date)}`
-            : `Créneau du ${formatPlanningDate(day.date)} pour ${lane.label}`,
-          className: cellClass(day, { create: true, dragOver: mouseDragOver, drop: editable }),
+            ? `Planifier un projet pour ${lane.label} le ${dateLabels.get(day.date)}`
+            : `Créneau du ${dateLabels.get(day.date)} pour ${lane.label}`,
+          className: cellClass(day, { create: true, dragOver: mouseDragOver, drop: editable }, today),
           'data-planning-drop-date': day.date,
           'data-planning-drop-vessel': lane.vessel,
           disabled: !editable,
@@ -574,6 +577,7 @@ function PlanningFleetBoardTimelineRowContent({
   onAddPerson: () => void;
   onToggle: () => void;
 }) {
+  const today = todayPlanningDate();
   const [personDropOver, setPersonDropOver] = useState(false);
   const canDropPerson = editable && vesselId !== null;
   const touchPersonOver = canDropPerson && touchDropTarget?.vesselId === vesselId && touchDropTarget.watchGroup === board;
@@ -609,7 +613,7 @@ function PlanningFleetBoardTimelineRowContent({
       {days.map((day, index) => (
         <span
           aria-hidden="true"
-          className={cellClass(day, { create: false, dragOver: false, drop: false })}
+          className={cellClass(day, { create: false, dragOver: false, drop: false }, today)}
           key={day.date}
           style={{ gridColumn: index + 2, gridRow: 1 }}
         />
@@ -691,6 +695,36 @@ function PlanningCrewTimelineRowContent({
   const [movePreview, setMovePreview] = useState<{ startsOn: string; endsOn: string } | null>(null);
   const suppressClickRef = useRef(false);
   const conflictClickTimerRef = useRef<number | null>(null);
+  const today = todayPlanningDate();
+  const dateLabels = planningTimelineDateLabels(days);
+  const armementCell = lane.vessel.trim().toLocaleUpperCase('fr-FR').includes('ARMEMENT');
+  const sedentary = !hierarchy && isSedentaryPlanningFunction(lane.functionLabel || lane.events[0]?.functionLabel || 'Équipage');
+  const contextsByDate = useMemo(
+    () => hierarchy ? null : planningCrewContextsByDate(lane.events, days),
+    [hierarchy, lane.events, days],
+  );
+  const documentAlertsByPerson = useMemo(() => {
+    const documentsByPerson = planningTimelineDocumentsByPerson(hrDocuments);
+    const alertsByPerson = new Map<number, ReadonlyMap<string, string>>();
+    for (const personId of new Set(lane.events.map((event) => event.personId))) {
+      if (personId === null) continue;
+      const documents = documentsByPerson.get(personId);
+      if (!documents?.length) continue;
+      const alerts = new Map<string, string>();
+      let previousDocuments: PlanningHrDocumentRecord[] = [];
+      let label = '';
+      for (const day of days) {
+        const expired = planningExpiredDocumentsForDate(documents, personId, day.date);
+        if (expired.length !== previousDocuments.length || expired.some((document, index) => document !== previousDocuments[index])) {
+          label = expired.length ? expiredDocumentsLabel(expired) : '';
+          previousDocuments = expired;
+        }
+        if (label) alerts.set(day.date, label);
+      }
+      alertsByPerson.set(personId, alerts);
+    }
+    return alertsByPerson;
+  }, [days, hrDocuments, lane.events]);
   const laneCoverage = useMemo(() => ({
     occupiedDates: new Set(days
       .filter((day) => lane.events.some((event) => event.startsOn <= day.date && event.endsOn >= day.date))
@@ -776,9 +810,7 @@ function PlanningCrewTimelineRowContent({
       </div>
       {days.map((day, index) => {
         const occupied = laneCoverage.occupiedDates.has(day.date);
-        const contextEvents = hierarchy ? [] : lane.events.filter((event) => event.kind !== 'annualReview' && event.vesselId !== null);
-        const context = contextEvents.filter((event) => event.endsOn < day.date).sort((a, b) => b.endsOn.localeCompare(a.endsOn))[0]
-          || contextEvents.filter((event) => event.startsOn > day.date).sort((a, b) => a.startsOn.localeCompare(b.startsOn))[0];
+        const context = contextsByDate?.get(day.date);
         const vesselId = context?.vesselId ?? laneCoverage.vesselId;
         const vessel = context?.vessel || lane.vessel;
         const showEmptyButton = editable && !occupied;
@@ -787,7 +819,6 @@ function PlanningCrewTimelineRowContent({
         const emptyKey = planningGridCellKey(lane.key, day.date);
         const emptySelectedCell = selectedGridCells.get(emptyKey);
         const emptySelected = hierarchy && (Boolean(emptySelectedCell) || (!canColorEmpty && selectedId === emptySelectionId));
-        const armementCell = lane.vessel.trim().toLocaleUpperCase('fr-FR').includes('ARMEMENT');
         const emptyCell: PlanningGridCell | null = lane.personId !== null && vesselId !== null ? {
           key: emptyKey,
           laneKey: lane.key,
@@ -800,12 +831,12 @@ function PlanningCrewTimelineRowContent({
           functionLabel: context?.functionLabel || laneCoverage.functionLabel,
           assignmentId: null,
           eventId: null,
-          status: !hierarchy && isSedentaryPlanningFunction(laneCoverage.functionLabel) ? 'A Terre' : planningGridDefaultStatus(vessel),
+          status: sedentary ? 'A Terre' : planningGridDefaultStatus(vessel),
           note: '',
           isConflict: false,
         } : null;
         const shared = {
-          className: cellClass(day, { create: showEmptyButton, dragOver: dragOverDate === day.date, drop: editable }),
+          className: `${cellClass(day, { create: showEmptyButton, dragOver: dragOverDate === day.date, drop: editable }, today)}${showEmptyButton && !emptySelected ? ' has-create-indicator' : ''}`,
           'data-planning-drop-date': day.date,
           onDragEnter: editable ? () => setDragOverDate(day.date) : undefined,
           onDragLeave: editable ? () => setDragOverDate((current) => current === day.date ? null : current) : undefined,
@@ -833,7 +864,7 @@ function PlanningCrewTimelineRowContent({
         return showEmptyButton
           ? <button
               {...shared}
-              aria-label={`Case vide de ${lane.label} le ${formatPlanningDate(day.date)}. Double-cliquer pour ${canColorEmpty ? 'colorer la case' : 'ouvrir le formulaire complet'}.`}
+              aria-label={`Case vide de ${lane.label} le ${dateLabels.get(day.date)}. Double-cliquer pour ${canColorEmpty ? 'colorer la case' : 'ouvrir le formulaire complet'}.`}
               data-planning-grid-cell={emptyKey}
               key={day.date}
               onClick={(event) => {
@@ -849,7 +880,7 @@ function PlanningCrewTimelineRowContent({
                 else onCreate(lane, day.date);
               }}
               type="button"
-            >{emptySelected ? <span aria-hidden="true" className={`planning-empty-cell-marker ${armementCell ? 'is-armement' : 'is-default'} is-${planningStatusTone(emptySelectedCell?.status || emptyCell?.status || 'En Mer')}`} /> : <Plus aria-hidden="true" size={13} />}</button>
+            >{emptySelected ? <span aria-hidden="true" className={`planning-empty-cell-marker ${armementCell ? 'is-armement' : 'is-default'} is-${planningStatusTone(emptySelectedCell?.status || emptyCell?.status || 'En Mer')}`} /> : null}</button>
           : <span {...shared} aria-hidden="true" key={day.date} />;
       })}
       {movePreview ? (() => {
@@ -860,7 +891,7 @@ function PlanningCrewTimelineRowContent({
         const balance = balances.get(day.date);
         const label = balanceLoading ? 'Chargement du solde' : balance?.explanation || 'Solde à initialiser';
         return <span key={`balance-${day.date}`} className={`planning-crew-balance${balance?.value !== null && (balance?.value || 0) < 0 ? ' is-negative' : ''}`}
-          style={{ gridColumn: index + 2, gridRow: 1 }} title={label} aria-label={`${lane.label}, solde au ${formatPlanningDate(day.date)} : ${balance?.value == null ? label : formatPlanningCrewBalance(balance.value)}`}>
+          style={{ gridColumn: index + 2, gridRow: 1 }} title={label} aria-label={`${lane.label}, solde au ${dateLabels.get(day.date)} : ${balance?.value == null ? label : formatPlanningCrewBalance(balance.value)}`}>
           {balanceLoading ? '…' : balance?.value == null ? '—' : formatPlanningCrewBalance(balance.value)}
         </span>;
       }) : null}
@@ -985,12 +1016,11 @@ function PlanningCrewTimelineRowContent({
             };
             const segmentStart = !planningGridCellsShareSegment(adjacentCell(addPlanningDays(day.date, -1)), cell);
             const segmentEnd = !planningGridCellsShareSegment(cell, adjacentCell(addPlanningDays(day.date, 1)));
-            const expiredDocuments = planningExpiredDocumentsForDate(hrDocuments, event.personId, day.date);
-            const documentAlert = expiredDocuments.length ? expiredDocumentsLabel(expiredDocuments) : '';
+            const documentAlert = event.personId === null ? '' : documentAlertsByPerson.get(event.personId)?.get(day.date) || '';
             const hasStaffingAlert = staffingAlertKeys.has(planningStaffingBoardKey(event.vesselId, event.board, day.date));
             return (
               <button
-                aria-label={`${hasStaffingAlert ? 'Écart vis-à-vis de la Décision d’effectif. ' : ''}${cell.isConflict ? 'Conflit. ' : ''}${documentAlert ? `${documentAlert}. ` : ''}Modifier le statut et le commentaire du ${formatPlanningDate(day.date)} pour ${lane.label}`}
+                aria-label={`${hasStaffingAlert ? 'Écart vis-à-vis de la Décision d’effectif. ' : ''}${cell.isConflict ? 'Conflit. ' : ''}${documentAlert ? `${documentAlert}. ` : ''}Modifier le statut et le commentaire du ${dateLabels.get(day.date)} pour ${lane.label}`}
                 className={`planning-assignment-note-cell is-${planningStatusTone(selectedGridCells.get(cellKey)?.status ?? event.dailyStatuses?.[day.date] ?? event.status)}${selectedGridCells.has(cellKey) ? ' is-selected' : ''}${cutGridCellKeys.has(cellKey) ? ' is-cut' : ''}${cell.isConflict ? ' has-conflict' : ''}${hasStaffingAlert ? ' has-staffing-alert' : ''}${documentAlert ? ' has-expired-document' : ''}${day.date === event.startsOn ? ' is-first' : ''}${day.date === event.endsOn ? ' is-last' : ''}${segmentStart ? ' is-segment-start' : ''}${segmentEnd ? ' is-segment-end' : ''}`}
                 data-planning-grid-cell={cellKey}
                 disabled={!editable}
