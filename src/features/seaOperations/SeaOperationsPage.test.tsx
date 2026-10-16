@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -54,30 +54,210 @@ function renderAccount(account: Account = captainAccount, record?: SeaOperationR
 
 async function openRecord(record: SeaOperationRecord) {
   await userEvent.click(await screen.findByRole('button', { name: new RegExp(record.draft.project) }));
-  await screen.findByLabelText('Projet');
+  await screen.findByRole('dialog', { name: 'Fiche Opération en Mer' });
 }
 
+const formQueries = () => within(document.querySelector('.so-editor-form-pane')!);
+const footerQueries = () => within(screen.getByRole('dialog').querySelector('.app-dialog__footer')!);
+const stepButton = (index: number) => within(screen.getByRole('navigation', { name: 'Étapes de la préparation' })).getAllByRole('button')[index];
+
 async function saveDraft() {
-  await userEvent.click(screen.getAllByRole('button', { name: 'Enregistrer le brouillon' })[0]);
+  await userEvent.click(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' }));
 }
 
 async function decisionStep() {
-  await userEvent.click(screen.getByRole('button', { name: /4Décision du Capitaine|4 Décision du Capitaine/ }));
+  await userEvent.click(stepButton(3));
 }
 
-beforeEach(() => { vi.resetAllMocks(); sessionStorage.clear(); });
-afterEach(() => vi.restoreAllMocks());
+function viewport(width: number) {
+  vi.stubGlobal('innerWidth', width);
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+    matches: width <= 1100, media: query, onchange: null,
+    addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
+  })));
+}
+
+beforeEach(() => { vi.resetAllMocks(); sessionStorage.clear(); viewport(1440); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.style.overflow = ''; });
 
 describe('Opération en Mer with authenticated server permission fixtures', () => {
+  it('opens a fullscreen modal with four preparation steps, form, live document, completion and footer actions', async () => {
+    renderAccount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    const dialog = screen.getByRole('dialog', { name: 'Nouvelle opération en mer' });
+    const modal = within(dialog);
+    expect(dialog).toHaveClass('app-dialog--fullscreen');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(modal.getByRole('complementary', { name: 'Parcours de l’opération' })).toBeInTheDocument();
+    expect(within(modal.getByRole('navigation', { name: 'Étapes de la préparation' })).getAllByRole('button')).toHaveLength(4);
+    expect(formQueries().getByRole('region', { name: 'Préparation de l’Armement' })).toBeVisible();
+    expect(modal.getByRole('region', { name: 'Aperçu de la fiche' })).toBeInTheDocument();
+    expect(modal.getByRole('complementary', { name: 'Complétude de la fiche' })).toBeInTheDocument();
+    expect(dialog.querySelector('.so-mobile-switch')).toHaveAttribute('hidden');
+    expect(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled();
+    expect(footerQueries().getByRole('button', { name: 'Suivant' })).toBeEnabled();
+    expect(footerQueries().getByRole('button', { name: 'Annuler' })).toBeEnabled();
+    expect(footerQueries().queryByRole('button', { name: 'Précédent' })).not.toBeInTheDocument();
+  });
+
+  it('closes a clean modal with Escape and restores the opener focus and page scrolling', async () => {
+    document.body.style.overflow = 'scroll';
+    renderAccount();
+    const opener = await screen.findByRole('button', { name: 'Créer une opération' });
+    await userEvent.click(opener);
+    const dialog = screen.getByRole('dialog');
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    expect(document.body.style.overflow).toBe('hidden');
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(opener).toHaveFocus());
+    expect(document.body.style.overflow).toBe('scroll');
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('retains a dirty modal on refused Escape and closes it only after explicit acceptance', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    renderAccount();
+    const opener = await screen.findByRole('button', { name: 'Créer une opération' });
+    await userEvent.click(opener);
+    await userEvent.type(formQueries().getByLabelText('Projet'), 'Mission à conserver');
+    await userEvent.keyboard('{Escape}');
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(formQueries().getByLabelText('Projet')).toHaveValue('Mission à conserver');
+    await userEvent.keyboard('{Escape}');
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(opener).toHaveFocus());
+    expect(sessionStorage.length).toBe(0);
+  });
+
+  it('wraps keyboard focus inside the modal between its close control and fixed footer', async () => {
+    renderAccount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    const close = within(screen.getByRole('dialog')).getByRole('button', { name: 'Fermer' });
+    const next = footerQueries().getByRole('button', { name: 'Suivant' });
+    close.focus();
+    await userEvent.keyboard('{Shift>}{Tab}{/Shift}');
+    expect(next).toHaveFocus();
+    await userEvent.keyboard('{Tab}');
+    expect(close).toHaveFocus();
+  });
+
+  it('updates the live preview and completion while retaining values across footer and sidebar steps', async () => {
+    renderAccount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    const preview = screen.getByRole('region', { name: 'Aperçu de la fiche' });
+    const progress = screen.getByRole('progressbar', { name: 'Champs de préparation renseignés' });
+    const before = Number(progress.getAttribute('aria-valuenow'));
+    await userEvent.type(formQueries().getByLabelText('Projet'), 'Mission aperçue en direct');
+    await userEvent.type(formQueries().getByLabelText('Client'), 'Client du port');
+    expect(preview).toHaveTextContent('Mission aperçue en direct');
+    expect(preview).toHaveTextContent('Client du port');
+    expect(Number(progress.getAttribute('aria-valuenow'))).toBeGreaterThan(before);
+    await userEvent.click(footerQueries().getByRole('button', { name: 'Suivant' }));
+    expect(stepButton(1)).toHaveAttribute('aria-current', 'step');
+    expect(formQueries().getByRole('region', { name: 'Contrôles du Capitaine' })).toBeVisible();
+    await userEvent.click(footerQueries().getByRole('button', { name: 'Précédent' }));
+    expect(formQueries().getByLabelText('Projet')).toHaveValue('Mission aperçue en direct');
+    const completionSteps = within(screen.getByRole('navigation', { name: 'Complétude par étape' })).getAllByRole('button');
+    await userEvent.click(completionSteps[2]);
+    expect(stepButton(2)).toHaveAttribute('aria-current', 'step');
+    expect(formQueries().getByRole('region', { name: 'Plan de passage' })).toBeVisible();
+    await userEvent.click(stepButton(0));
+    expect(formQueries().getByLabelText('Client')).toHaveValue('Client du port');
+  });
+
+  it('switches compact 390px panes without losing fields and keeps footer actions available', async () => {
+    viewport(390);
+    renderAccount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    const dialog = screen.getByRole('dialog');
+    const switcher = within(screen.getByRole('group', { name: 'Affichage de la fiche' }));
+    const form = dialog.querySelector('.so-editor-form-pane')!;
+    const documentPane = dialog.querySelector('.so-editor-document-pane')!;
+    expect(switcher.getByRole('button', { name: 'Saisie' })).toHaveAttribute('aria-pressed', 'true');
+    expect(documentPane).toHaveAttribute('hidden');
+    await userEvent.type(formQueries().getByLabelText('Projet'), 'Mission mobile conservée');
+    await userEvent.click(switcher.getByRole('button', { name: 'Aperçu et complétude' }));
+    expect(form).toHaveAttribute('hidden');
+    expect(documentPane).not.toHaveAttribute('hidden');
+    expect(switcher.getByRole('button', { name: 'Aperçu et complétude' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('textbox', { name: 'Projet' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Aperçu de la fiche' })).toHaveTextContent('Mission mobile conservée');
+    expect(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled();
+    await userEvent.click(stepButton(2));
+    expect(switcher.getByRole('button', { name: 'Saisie' })).toHaveAttribute('aria-pressed', 'true');
+    expect(form).not.toHaveAttribute('hidden');
+    expect(formQueries().getByRole('region', { name: 'Plan de passage' })).toBeVisible();
+    await userEvent.click(stepButton(0));
+    expect(formQueries().getByLabelText('Projet')).toHaveValue('Mission mobile conservée');
+  });
+
+  it('reveals and focuses compact-pane server errors and focuses the form heading after completion navigation', async () => {
+    viewport(390);
+    renderAccount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await userEvent.type(formQueries().getByLabelText('Projet'), 'Mission mobile à enregistrer');
+    const switcher = within(screen.getByRole('group', { name: 'Affichage de la fiche' }));
+    await userEvent.click(switcher.getByRole('button', { name: 'Aperçu et complétude' }));
+    vi.mocked(saveSeaOperation).mockRejectedValueOnce(new Error('Le serveur demande de réessayer.'));
+    await saveDraft();
+    const alert = await formQueries().findByRole('alert');
+    expect(alert).toHaveTextContent('Le serveur demande de réessayer.');
+    expect(document.querySelector('.so-editor-form-pane')).not.toHaveAttribute('hidden');
+    await waitFor(() => expect(alert).toHaveFocus());
+    expect(formQueries().getByLabelText('Projet')).toHaveValue('Mission mobile à enregistrer');
+    await userEvent.click(switcher.getByRole('button', { name: 'Aperçu et complétude' }));
+    const completion = within(screen.getByRole('navigation', { name: 'Complétude par étape' }));
+    await userEvent.click(completion.getAllByRole('button')[2]);
+    const heading = formQueries().getByRole('heading', { name: 'Plan de passage' });
+    expect(switcher.getByRole('button', { name: 'Saisie' })).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(heading).toHaveFocus());
+  });
+
+  it('disables modal dismissal and footer submission while the server save is pending', async () => {
+    renderAccount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await userEvent.type(formQueries().getByLabelText('Projet'), 'Mission en cours de sauvegarde');
+    let resolveSave!: (record: SeaOperationRecord) => void;
+    vi.mocked(saveSeaOperation).mockImplementation(() => new Promise((resolve) => { resolveSave = resolve; }));
+    await saveDraft();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('aria-busy', 'true');
+    expect(within(dialog).getByRole('button', { name: 'Fermer' })).toBeDisabled();
+    expect(footerQueries().getByRole('button', { name: 'Annuler' })).toBeDisabled();
+    expect(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' })).toBeDisabled();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(dialog).toBeInTheDocument();
+    const draft = emptySeaOperation(); draft.project = 'Mission en cours de sauvegarde';
+    await act(async () => resolveSave(recordFixture(captainAccount, { draft, version: 1 })));
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).not.toHaveAttribute('aria-busy');
+  });
+
+  it('preserves server read-only rights inside the new fullscreen workflow', async () => {
+    const record = recordFixture(sailorAccount, { canEdit: false, canSign: false });
+    renderAccount(sailorAccount, record);
+    await openRecord(record);
+    expect(formQueries().getByLabelText('Projet')).toBeDisabled();
+    expect(footerQueries().queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
+    await decisionStep();
+    expect(formQueries().getByLabelText('Décision')).toBeDisabled();
+    expect(footerQueries().getByRole('button', { name: 'Signer la décision NO GO' })).toBeDisabled();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
   it('shows the empty register and saves an incomplete new preparation as a draft', async () => {
     const { client } = renderAccount(sailorAccount);
     expect(await screen.findByText('Préparez votre première opération en mer')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Créer une opération' }));
-    await userEvent.type(screen.getByLabelText('Projet'), 'Préparation du balisage');
-    await userEvent.selectOptions(screen.getByLabelText('Navire'), '12');
+    await userEvent.type(formQueries().getByLabelText('Projet'), 'Préparation du balisage');
+    await userEvent.selectOptions(formQueries().getByLabelText('Navire'), '12');
     vi.mocked(saveSeaOperation).mockImplementation(async (_client, draft) => recordFixture(sailorAccount, { draft: structuredClone(draft), version: 1 }));
     await saveDraft();
-    expect(await screen.findByText('Brouillon enregistré.')).toBeInTheDocument();
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
     expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ project: 'Préparation du balisage', decision: '', vessel: expect.objectContaining({ id: '12', name: 'GOURY' }) }), undefined);
     expect(signSeaOperation).not.toHaveBeenCalled();
   });
@@ -85,22 +265,22 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
   it('keeps the entered preparation after a failed save and retries without creating a second local draft', async () => {
     renderAccount();
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
-    await userEvent.type(screen.getByLabelText('Projet'), 'Mission conservée');
+    await userEvent.type(formQueries().getByLabelText('Projet'), 'Mission conservée');
     vi.mocked(saveSeaOperation).mockRejectedValueOnce(new Error('Connexion interrompue.'));
     await saveDraft();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Connexion interrompue.');
-    expect(screen.getByLabelText('Projet')).toHaveValue('Mission conservée');
+    expect(await formQueries().findByRole('alert')).toHaveTextContent('Connexion interrompue.');
+    expect(formQueries().getByLabelText('Projet')).toHaveValue('Mission conservée');
     expect(screen.getByText('Modifications non enregistrées')).toBeInTheDocument();
     vi.mocked(saveSeaOperation).mockImplementation(async (_client, draft) => recordFixture(captainAccount, { draft: structuredClone(draft), version: 1 }));
     await saveDraft();
-    expect(await screen.findByText('Brouillon enregistré.')).toBeInTheDocument();
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
     expect(saveSeaOperation).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ project: 'Mission conservée' }), undefined);
   });
 
   it('reveals applicable towing, cargo, diving and supply controls and preserves answers when a section is hidden', async () => {
     renderAccount();
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
-    await userEvent.click(screen.getByRole('button', { name: /2Contrôles avant appareillage|2 Contrôles avant appareillage/ }));
+    await userEvent.click(stepButton(1));
     const cases = [
       ['Remorquage applicable', 'towingPlan'], ['Chargement de marchandise applicable', 'cargoLashing'],
       ['Navire de support de plongeur applicable', 'divingMedicalKit'],
@@ -108,21 +288,21 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     for (const [label, checkId] of cases) {
       const check = SEA_OPERATION_CHECKS.find((item) => item.id === checkId)!;
       expect(screen.queryByLabelText(check.label)).not.toBeInTheDocument();
-      await userEvent.selectOptions(screen.getByLabelText(label), 'yes');
-      await userEvent.selectOptions(screen.getByLabelText(check.label), 'no');
+      await userEvent.selectOptions(formQueries().getByLabelText(label), 'yes');
+      await userEvent.selectOptions(formQueries().getByLabelText(check.label), 'no');
       if (checkId === 'divingMedicalKit') {
         await userEvent.click(screen.getByText('Kit médical plongée prévu par le formulaire'));
         for (const item of DIVING_MEDICAL_KIT) expect(screen.getByText((text) => text.includes(item.article) && text.startsWith(`${item.quantity} ×`))).toBeInTheDocument();
       }
-      await userEvent.selectOptions(screen.getByLabelText(label), 'no');
+      await userEvent.selectOptions(formQueries().getByLabelText(label), 'no');
       expect(screen.queryByLabelText(check.label)).not.toBeInTheDocument();
       if (checkId === 'divingMedicalKit') expect(screen.queryByText('Kit médical plongée prévu par le formulaire')).not.toBeInTheDocument();
-      await userEvent.selectOptions(screen.getByLabelText(label), 'yes');
-      expect(screen.getByLabelText(check.label)).toHaveValue('no');
+      await userEvent.selectOptions(formQueries().getByLabelText(label), 'yes');
+      expect(formQueries().getByLabelText(check.label)).toHaveValue('no');
     }
-    await userEvent.selectOptions(screen.getByLabelText('Approvisionnement / Avitaillement applicable'), 'yes');
-    expect(screen.getByLabelText('Shipchandler')).toBeInTheDocument();
-    await userEvent.selectOptions(screen.getByLabelText('Approvisionnement / Avitaillement applicable'), 'no');
+    await userEvent.selectOptions(formQueries().getByLabelText('Approvisionnement / Avitaillement applicable'), 'yes');
+    expect(formQueries().getByLabelText('Shipchandler')).toBeInTheDocument();
+    await userEvent.selectOptions(formQueries().getByLabelText('Approvisionnement / Avitaillement applicable'), 'no');
     expect(screen.queryByLabelText('Shipchandler')).not.toBeInTheDocument();
   });
 
@@ -137,7 +317,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(screen.getByText('NO GO imposé · 1 contrôle(s) bloquant(s)')).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'GO · la mission peut être réalisée' })).toBeDisabled();
     await userEvent.click(screen.getByRole('button', { name: 'Signer la décision GO' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('NO GO automatique');
+    expect(await formQueries().findByRole('alert')).toHaveTextContent('NO GO automatique');
     expect(saveSeaOperation).not.toHaveBeenCalled();
     expect(signSeaOperation).not.toHaveBeenCalled();
   });
@@ -153,11 +333,11 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await openRecord(record);
     await decisionStep();
     await userEvent.click(screen.getByRole('button', { name: 'Signer la décision NO GO' }));
-    expect(await screen.findByText('Décision du Capitaine signée et enregistrée. La fiche est figée.')).toBeInTheDocument();
+    expect(await formQueries().findByText('Décision du Capitaine signée et enregistrée. La fiche est figée.')).toBeInTheDocument();
     expect(saveSeaOperation).toHaveBeenCalledWith(client, record.draft, record);
     expect(signSeaOperation).toHaveBeenCalledWith(client, saved, captainAccount.name, true);
-    expect(screen.getByLabelText('Décision')).toBeDisabled();
-    expect(screen.getByLabelText('Projet')).toBeDisabled();
+    expect(formQueries().getByLabelText('Décision')).toBeDisabled();
+    expect(formQueries().getByLabelText('Projet')).toBeDisabled();
     expect(screen.queryByRole('button', { name: /Signer la décision/ })).not.toBeInTheDocument();
   });
 
@@ -166,7 +346,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     renderAccount(sailorAccount, record);
     await openRecord(record);
     await decisionStep();
-    expect(screen.getByLabelText('Projet')).toBeEnabled();
+    expect(formQueries().getByLabelText('Projet')).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Signer la décision NO GO' })).toBeDisabled();
     expect(screen.getByText(/La signature est réservée au compte réel du Capitaine affecté au navire/)).toBeInTheDocument();
     expect(signSeaOperation).not.toHaveBeenCalled();
@@ -181,10 +361,10 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await openRecord(record);
     await decisionStep();
     await userEvent.click(screen.getByRole('button', { name: 'Signer la décision NO GO' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('La signature a été refusée par le serveur.');
-    expect(screen.getByLabelText('Projet')).toHaveValue(record.draft.project);
-    expect(screen.getByLabelText('Risques identifiés / informations à transmettre à l’Armement')).toHaveValue(record.draft.risks);
-    expect(within(document.querySelector('.so-screen')!).getByText(/Version 4/)).toBeInTheDocument();
+    expect(await formQueries().findByRole('alert')).toHaveTextContent('La signature a été refusée par le serveur.');
+    expect(formQueries().getByLabelText('Projet')).toHaveValue(record.draft.project);
+    expect(formQueries().getByLabelText('Risques identifiés / informations à transmettre à l’Armement')).toHaveValue(record.draft.risks);
+    expect(screen.getByRole('dialog')).toHaveTextContent(/Version 4/);
     await userEvent.click(screen.getByRole('button', { name: 'Signer la décision NO GO' }));
     await waitFor(() => expect(saveSeaOperation).toHaveBeenCalledTimes(2));
     expect(saveSeaOperation).toHaveBeenLastCalledWith(client, saved.draft, saved);
@@ -195,10 +375,10 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const record = recordFixture(captainAccount, { status: 'signed', signedBy: captainAccount.id, signedByName: captainAccount.name, signedAt: '2026-10-16T10:00:00Z', canEdit: true, canSign: true });
     renderAccount(captainAccount, record);
     await openRecord(record);
-    expect(screen.getByLabelText('Projet')).toBeDisabled();
+    expect(formQueries().getByLabelText('Projet')).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
     await decisionStep();
-    expect(screen.getByLabelText('Décision')).toBeDisabled();
+    expect(formQueries().getByLabelText('Décision')).toBeDisabled();
     expect(screen.getByText(/Décision signée par Camille MARTIN/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Signer la décision/ })).not.toBeInTheDocument();
   });
@@ -207,11 +387,11 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
     renderAccount(sailorAccount);
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
-    await userEvent.type(screen.getByLabelText('Projet'), 'Préparation à conserver');
+    await userEvent.type(formQueries().getByLabelText('Projet'), 'Préparation à conserver');
     await userEvent.click(screen.getByRole('link', { name: 'Navires' }));
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(confirm).toHaveBeenCalledWith('Quitter cette fiche sans enregistrer les modifications ?');
-    expect(screen.getByLabelText('Projet')).toHaveValue('Préparation à conserver');
+    expect(formQueries().getByLabelText('Projet')).toHaveValue('Préparation à conserver');
     expect(screen.queryByRole('heading', { name: 'Flotte destination' })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('link', { name: 'Navires' }));
     expect(await screen.findByRole('heading', { name: 'Flotte destination' })).toBeInTheDocument();
@@ -226,14 +406,14 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const record = recordFixture(captainAccount, { draft });
     const { client } = renderAccount(captainAccount, record);
     await openRecord(record);
-    await userEvent.click(screen.getByRole('button', { name: /3Plan de passage|3 Plan de passage/ }));
-    const input = screen.getByLabelText('ETA · date et heure · point 1');
+    await userEvent.click(stepButton(2));
+    const input = formQueries().getByLabelText('ETA · date et heure · point 1');
     expect(input).toHaveValue('12:00');
     await userEvent.clear(input);
     await userEvent.type(input, eta);
     vi.mocked(saveSeaOperation).mockImplementation(async (_client, edited) => ({ ...record, version: 4, draft: structuredClone(edited) }));
     await saveDraft();
-    expect(await screen.findByText('Brouillon enregistré.')).toBeInTheDocument();
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
     expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ waypoints: [expect.objectContaining({ eta })] }), record);
     expect(input).toHaveValue(eta);
   });
@@ -250,10 +430,10 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const print = vi.spyOn(window, 'print').mockImplementation(() => {});
     renderAccount(captainAccount, record);
     await openRecord(record);
-    expect(screen.getByRole('button', { name: /1Armement|1 Armement/ })).toHaveAttribute('aria-current', 'step');
+    expect(stepButton(0)).toHaveAttribute('aria-current', 'step');
     await userEvent.click(screen.getByRole('button', { name: 'Imprimer la fiche' }));
     expect(print).toHaveBeenCalledTimes(1);
-    const document = within(screen.getByRole('article', { name: 'Fiche imprimable Opération en Mer', hidden: true }));
+    const document = within(window.document.querySelector('.so-page > .so-print')!);
     expect(document.getByText('Identité serveur Camille MARTIN')).toBeInTheDocument();
     expect(document.getByText('16/10/2026 12:00')).toBeInTheDocument();
     expect(document.getByText('Signée et figée')).toBeInTheDocument();
@@ -269,28 +449,28 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const original = recordFixture(captainAccount);
     const first = renderAccount(captainAccount, original);
     await openRecord(original);
-    await userEvent.clear(screen.getByLabelText('Projet'));
-    await userEvent.type(screen.getByLabelText('Projet'), 'Préparation non enregistrée');
-    await userEvent.click(screen.getByRole('button', { name: /3Plan de passage|3 Plan de passage/ }));
+    await userEvent.clear(formQueries().getByLabelText('Projet'));
+    await userEvent.type(formQueries().getByLabelText('Projet'), 'Préparation non enregistrée');
+    await userEvent.click(stepButton(2));
     vi.mocked(saveSeaOperation).mockRejectedValueOnce({ message: 'Erreur serveur inconnue conservée.' });
     await saveDraft();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Erreur serveur inconnue conservée.');
+    expect(await formQueries().findByRole('alert')).toHaveTextContent('Erreur serveur inconnue conservée.');
     first.unmount();
 
     const newer = { ...original, version: 9 };
     const recovered = renderAccount(captainAccount, newer);
     expect(await screen.findByText(/Votre préparation non enregistrée a été récupérée/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Projet')).toHaveValue('Préparation non enregistrée');
-    expect(screen.getByRole('button', { name: /3Plan de passage|3 Plan de passage/ })).toHaveAttribute('aria-current', 'step');
+    expect(formQueries().getByLabelText('Projet')).toHaveValue('Préparation non enregistrée');
+    expect(stepButton(2)).toHaveAttribute('aria-current', 'step');
     vi.mocked(saveSeaOperation).mockRejectedValueOnce(new Error('L’opération a été modifiée. Rechargez-la avant de continuer.'));
     await saveDraft();
-    expect(await screen.findByRole('alert')).toHaveTextContent('L’opération a été modifiée.');
+    expect(await formQueries().findByRole('alert')).toHaveTextContent('L’opération a été modifiée.');
     expect(saveSeaOperation).toHaveBeenLastCalledWith(recovered.client, expect.objectContaining({ project: 'Préparation non enregistrée' }), expect.objectContaining({ id: original.id, version: 3 }));
-    expect(screen.getByLabelText('Projet')).toHaveValue('Préparation non enregistrée');
+    expect(formQueries().getByLabelText('Projet')).toHaveValue('Préparation non enregistrée');
     let saved = newer;
     vi.mocked(saveSeaOperation).mockImplementation(async (_client, draft) => (saved = { ...newer, version: 10, draft: structuredClone(draft) }));
     await saveDraft();
-    expect(await screen.findByText('Brouillon enregistré.')).toBeInTheDocument();
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
     recovered.unmount();
     renderAccount(captainAccount, saved);
     expect(await screen.findByRole('button', { name: /Préparation non enregistrée/ })).toBeInTheDocument();
@@ -301,7 +481,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
   it('isolates local recovery by authenticated actor and company and discards it after an approved quit', async () => {
     const first = renderAccount(captainAccount);
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
-    await userEvent.type(screen.getByLabelText('Projet'), 'Privé au compte et à la société');
+    await userEvent.type(formQueries().getByLabelText('Projet'), 'Privé au compte et à la société');
     first.unmount();
     const otherActor = renderAccount(sailorAccount);
     expect(await screen.findByText('Préparez votre première opération en mer')).toBeInTheDocument();

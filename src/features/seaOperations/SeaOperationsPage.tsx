@@ -1,14 +1,18 @@
 import { cloneElement, isValidElement, useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { AlertTriangle, Anchor, ArrowLeft, CheckCircle2, ChevronRight, ClipboardCheck, Compass, FileText, Plus, Printer, Save, Search, Ship, Trash2 } from 'lucide-react';
+import { AlertTriangle, Anchor, ArrowLeft, CheckCircle2, ChevronRight, ClipboardCheck, Compass, Eye, FileText, Plus, Printer, Save, Search, Ship, Trash2 } from 'lucide-react';
+import { AppDialog } from '../../components/AppDialog';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS, emptySeaOperation, getSeaOperationAssessment, isSeaOperationPayload, validateSeaOperation, type SeaOperationPayload, type SeaOperationAnswer as Answer } from './seaOperationModel';
 import { fetchSeaOperationData, fetchSeaOperationDetail, saveSeaOperation, signSeaOperation, type SeaOperationData, type SeaOperationRecord } from './seaOperationQueries';
 import './seaOperations.css';
 import { SeaOperationPrint } from './SeaOperationPrint';
+import { SeaOperationPreview } from './SeaOperationDocumentPreview';
 
 const STEPS = ['Armement', 'Contrôles avant appareillage', 'Plan de passage', 'Décision du Capitaine'];
+const STEP_DETAILS = ['Mission, client et voyage', 'Préparation et sécurité du navire', 'Cartes et points de route', 'GO / NO GO et signature'];
+const STEP_ICONS = [FileText, ClipboardCheck, Compass, Anchor];
 const formatDate = (value: string | null) => value ? new Date(value).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : 'Non renseignée';
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : typeof error === 'object' && error && 'message' in error ? String(error.message) : 'Une erreur est survenue. Réessayez.';
 const recoveryKey = (data: SeaOperationData) => `seapilot:sea-operation-draft:v1:${data.companyId}:${data.actorId}`;
@@ -50,6 +54,10 @@ export function SeaOperationsPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [issues, setIssues] = useState<string[]>([]);
+  const [compactLayout, setCompactLayout] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 1100px)').matches);
+  const [mobilePane, setMobilePane] = useState<'form' | 'preview'>('form');
+  const formPane = useRef<HTMLDivElement>(null);
+  const editorOpener = useRef<HTMLElement | null>(null);
   const loadSequence = useRef(0);
   const loadedAccount = useRef('');
   const applyData = useCallback((result: SeaOperationData) => {
@@ -76,6 +84,20 @@ export function SeaOperationsPage() {
     fetchSeaOperationData(client).then((result) => { if (active) applyData(result); }).catch((reason: unknown) => { if (active) setError(errorMessage(reason)); });
     return () => { active = false; };
   }, [client, applyData]);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia('(max-width: 1100px)');
+    const change = () => setCompactLayout(media.matches);
+    media.addEventListener('change', change);
+    return () => media.removeEventListener('change', change);
+  }, []);
+  useEffect(() => {
+    if (!editing) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [editing]);
+  useEffect(() => { if (formPane.current) formPane.current.scrollTop = 0; }, [step]);
   useEffect(() => {
     if (!data || !dirty) return;
     try { sessionStorage.setItem(recoveryKey(data), JSON.stringify({ draft, recordId: record?.id ?? null, version: record?.version ?? null, step })); }
@@ -104,6 +126,19 @@ export function SeaOperationsPage() {
   const assessment = getSeaOperationAssessment(draft);
   const canSign = record?.canSign || (!record && data?.vessels.some((vessel) => String(vessel.id) === draft.vessel.id && vessel.canSign));
   const confirmLeave = () => !dirty || window.confirm('Quitter cette fiche sans enregistrer les modifications ?');
+  function closeEditor() {
+    if (busy || !confirmLeave()) return;
+    clearRecovery(data); setEditing(false); setDirty(false); setNotice(''); setIssues([]); setError('');
+    window.requestAnimationFrame(() => { if (editorOpener.current?.isConnected) editorOpener.current.focus(); });
+  }
+  function changeStep(index: number) {
+    setStep(index); setMobilePane('form');
+    window.requestAnimationFrame(() => formPane.current?.querySelector<HTMLElement>(`#sea-operation-step-${index} h2`)?.focus());
+  }
+  function revealFormFeedback() {
+    setMobilePane('form');
+    window.requestAnimationFrame(() => formPane.current?.querySelector<HTMLElement>('[role="alert"]')?.focus());
+  }
   const remember = (saved: SeaOperationRecord) => {
     clearRecovery(data);
     setRecord(saved); setDraft(saved.draft); setDirty(false);
@@ -111,22 +146,24 @@ export function SeaOperationsPage() {
   };
   async function open(item: SeaOperationRecord) {
     if (!confirmLeave()) return;
+    editorOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const request = ++loadSequence.current;
     setBusy(true); setError(''); setNotice(''); setIssues([]);
-    try { const loaded = await fetchSeaOperationDetail(client, item.id); if (request === loadSequence.current) { remember(loaded); setEditing(true); setStep(0); } }
+    try { const loaded = await fetchSeaOperationDetail(client, item.id); if (request === loadSequence.current) { remember(loaded); setEditing(true); setStep(0); setMobilePane('form'); } }
     catch (reason) { setError(errorMessage(reason)); }
     finally { setBusy(false); }
   }
   function create() {
     if (!confirmLeave()) return;
+    editorOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     clearRecovery(data);
     ++loadSequence.current;
-    setRecord(null); setDraft(emptySeaOperation()); setDirty(false); setEditing(true); setStep(0); setError(''); setNotice(''); setIssues([]);
+    setRecord(null); setDraft(emptySeaOperation()); setDirty(false); setEditing(true); setStep(0); setMobilePane('form'); setError(''); setNotice(''); setIssues([]);
   }
   async function save(sign = false) {
     if (busy) return;
     const validation = validateSeaOperation(draft, sign ? draft.decision || 'GO' : 'DRAFT');
-    if (validation.length) { setIssues(validation); setStep(sign ? 3 : step); return; }
+    if (validation.length) { setIssues(validation); setStep(sign ? 3 : step); revealFormFeedback(); return; }
     setBusy(true); setError(''); setIssues([]); setNotice('');
     try {
       const saved = await saveSeaOperation(client, draft, record || undefined);
@@ -135,7 +172,7 @@ export function SeaOperationsPage() {
         const finalized = await signSeaOperation(client, saved, draft.signature.captainName, draft.signature.acknowledged);
         remember(finalized); setNotice('Décision du Capitaine signée et enregistrée. La fiche est figée.');
       } else setNotice('Brouillon enregistré.');
-    } catch (reason) { setError(errorMessage(reason)); }
+    } catch (reason) { setError(errorMessage(reason)); revealFormFeedback(); }
     finally { setBusy(false); }
   }
   const records = (data?.records || []).filter((item) => {
@@ -145,30 +182,54 @@ export function SeaOperationsPage() {
 
   return <div className="so-page"><div className="so-screen">
     <header className="so-heading sp-module-header"><div className="so-title"><span className="so-icon"><Anchor size={26} /></span><div><span className="so-eyebrow">OPÉRATIONS · OPE-FOR-10-C</span><h1>Opération en Mer</h1><p>Préparer la mission, vérifier les conditions et consigner la décision du Capitaine.</p></div></div></header>
-    <ModuleRibbon ariaLabel="Commandes Opération en Mer" singleRow><ModuleRibbonGroup label="Opérations"><ModuleRibbonCommand disabled={busy || !data} icon={<Plus size={22} />} label="Nouvelle opération" onClick={create} />{editing && <ModuleRibbonCommand disabled={busy} icon={<ArrowLeft size={22} />} label="Les opérations" onClick={() => { if (confirmLeave()) { clearRecovery(data); setEditing(false); setDirty(false); setNotice('' ); } }} />}</ModuleRibbonGroup>{editing && <ModuleRibbonGroup label="Fiche">{editable && !signed && <ModuleRibbonCommand disabled={busy} icon={<Save size={22} />} label="Enregistrer le brouillon" onClick={() => void save()} />}{record && !dirty && <ModuleRibbonCommand icon={<Printer size={22} />} label="Imprimer la fiche" onClick={() => window.print()} />}</ModuleRibbonGroup>}</ModuleRibbon>
-    {error && <div className="so-alert so-danger" role="alert"><AlertTriangle size={19} /><span>{error}</span>{!data && <button onClick={() => { setError(''); void fetchSeaOperationData(client).then(applyData).catch((reason: unknown) => setError(errorMessage(reason))); }}>Réessayer</button>}</div>}
-    {notice && <div className="so-alert so-success" role="status"><CheckCircle2 size={18} />{notice}</div>}
+    <ModuleRibbon ariaLabel="Commandes Opération en Mer" singleRow><ModuleRibbonGroup label="Opérations"><ModuleRibbonCommand disabled={busy || !data} icon={<Plus size={22} />} label="Nouvelle opération" onClick={create} /></ModuleRibbonGroup></ModuleRibbon>
+    {!editing && error && <div className="so-alert so-danger" tabIndex={-1} role="alert"><AlertTriangle size={19} /><span>{error}</span>{!data && <button onClick={() => { setError(''); void fetchSeaOperationData(client).then(applyData).catch((reason: unknown) => setError(errorMessage(reason))); }}>Réessayer</button>}</div>}
+    {!editing && notice && <div className="so-alert so-success" role="status"><CheckCircle2 size={18} />{notice}</div>}
     {!data && !error && <p role="status">Chargement des opérations en mer…</p>}
-    {data && !editing && <>
+    {data && <>
       <div className="so-metrics">{[['Fiches enregistrées', data.records.length], ['En préparation', data.records.filter((item) => item.status === 'draft').length], ['Décisions GO', data.records.filter((item) => item.status === 'signed' && item.draft.decision === 'GO').length], ['Décisions NO GO', data.records.filter((item) => item.status === 'signed' && item.draft.decision === 'NO_GO').length]].map(([label, count]) => <div key={label}><span>{label}</span><strong>{count}</strong></div>)}</div>
       <section className="so-register sp-panel"><header><div><h2>Registre des opérations</h2><p>Les préparations et décisions de votre société.</p></div><div className="so-filters sp-filters"><label className="so-search"><Search size={17} /><input aria-label="Rechercher une opération" placeholder="Projet, client ou navire…" value={search} onChange={(event) => setSearch(event.target.value)} /></label><select aria-label="Filtrer par état" value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">Tous les états</option><option value="draft">Brouillons</option><option value="GO">GO signés</option><option value="NO_GO">NO GO signés</option></select></div></header>
       {records.length ? <div className="so-records">{records.map((item) => <button className="so-record" key={item.id} disabled={busy} onClick={() => void open(item)}><span className="so-record-icon"><Ship size={21} /></span><span><strong>{item.draft.project || 'Opération sans titre'}</strong><small>{item.draft.vessel.name || 'Navire à renseigner'} · {item.draft.client || 'Client à renseigner'}</small></span><span className={`so-badge ${item.status === 'draft' ? '' : item.draft.decision === 'GO' ? 'is-go' : 'is-nogo'}`}>{item.status === 'draft' ? 'Brouillon' : item.draft.decision === 'NO_GO' ? 'NO GO' : 'GO'}</span><span className="so-record-date">{formatDate(item.updatedAt)}<small>{item.updatedByName}</small></span><ChevronRight size={18} /></button>)}</div> : <div className="so-empty"><Compass size={42} /><h3>{search || status !== 'all' ? 'Aucune opération correspondante' : 'Préparez votre première opération en mer'}</h3><p>Renseignez la mission puis les contrôles du formulaire GO / NO GO.</p>{!search && status === 'all' && <button onClick={create}><Plus size={16} />Créer une opération</button>}</div>}</section>
       <p className="so-source">Référence : formulaire « GO / NO GO – Opération en Mer », OPE-FOR-10-C.</p>
     </>}
-    {editing && <>
-      <div className="so-workbar"><div><span className={`so-badge ${signed ? draft.decision === 'GO' ? 'is-go' : 'is-nogo' : ''}`}>{signed ? draft.decision === 'GO' ? 'GO signé' : 'NO GO signé' : 'Brouillon'}</span><strong>{draft.project || 'Nouvelle opération'}</strong><small>{dirty ? 'Modifications non enregistrées' : record ? `Version ${record.version} · ${formatDate(record.updatedAt)}` : 'Fiche à compléter'}</small></div></div>
-      <nav className="so-steps" aria-label="Étapes de la préparation">{STEPS.map((label, index) => <button key={label} aria-current={step === index ? 'step' : undefined} className={step === index ? 'is-active' : ''} onClick={() => setStep(index)}><span>{index + 1}</span>{label}</button>)}</nav>
-      {issues.length > 0 && <div className="so-alert so-danger" role="alert"><div><strong>La fiche doit être complétée</strong><ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div></div>}
+
+    {editing && <div className="so-editor-modal"><AppDialog
+      size="fullscreen"
+      title={record ? 'Fiche Opération en Mer' : 'Nouvelle opération en mer'}
+      eyebrow={signed ? 'CONSULTATION' : record ? 'PRÉPARATION' : 'CRÉATION'}
+      description={`${draft.project || 'Opération sans titre'} · OPE-FOR-10-C`}
+      isBusy={busy}
+      onClose={closeEditor}
+      footer={<div className="so-dialog-footer">
+        <div className="so-footer-state">{step > 0 && <button className="sp-button sp-button--secondary so-secondary" disabled={busy} onClick={() => changeStep(step - 1)}><ArrowLeft size={16} />Précédent</button>}<span>{busy ? 'Enregistrement…' : dirty ? 'Modifications non enregistrées' : signed ? 'Décision signée et figée' : record ? `Version ${record.version} enregistrée` : 'Brouillon à compléter'}</span></div>
+        <div className="so-footer-actions"><button className="sp-button sp-button--secondary so-secondary so-footer-cancel" disabled={busy} onClick={closeEditor}>{signed || !editable ? 'Fermer' : 'Annuler'}</button>
+          {record && !dirty && <button className="sp-button sp-button--secondary so-secondary so-footer-print" onClick={() => window.print()}><Printer size={16} />Imprimer la fiche</button>}
+          {editable && !signed && <button className="sp-button sp-button--secondary so-secondary" disabled={busy} onClick={() => void save()}><Save size={16} />Enregistrer le brouillon</button>}
+          {step < STEPS.length - 1 ? <button className="sp-button sp-button--primary" disabled={busy} onClick={() => changeStep(step + 1)}>Suivant<ChevronRight size={16} /></button> : !signed && <button className="sp-button sp-button--primary" disabled={busy || !editable || !canSign || !draft.decision} onClick={() => void save(true)}><CheckCircle2 size={17} />Signer la décision {draft.decision === 'NO_GO' ? 'NO GO' : draft.decision}</button>}
+        </div>
+      </div>}
+    >
+      <div className="so-editor-workspace">
+        <aside className="so-wizard-sidebar" aria-label="Parcours de l’opération"><span className="so-wizard-eyebrow">PARCOURS OPÉRATION</span><strong>{draft.vessel.name || 'Opération en Mer'}</strong><small>Préparation GO / NO GO</small>
+          <nav className="so-wizard-steps" aria-label="Étapes de la préparation">{STEPS.map((label, index) => { const Icon = STEP_ICONS[index]; return <button type="button" key={label} aria-controls={`sea-operation-step-${index}`} aria-current={step === index ? 'step' : undefined} className={step === index ? 'is-active' : ''} onClick={() => changeStep(index)}><b>{index + 1}</b><Icon aria-hidden="true" size={20} /><span><strong>{label}</strong><small>{STEP_DETAILS[index]}</small></span></button>; })}</nav>
+          <p className="so-wizard-note"><Anchor aria-hidden="true" size={17} /><span>La décision est signée par le Capitaine affecté au navire.</span></p>
+        </aside>
+        <div className="so-mobile-switch" hidden={!compactLayout} role="group" aria-label="Affichage de la fiche"><button aria-pressed={mobilePane === 'form'} onClick={() => setMobilePane('form')}><FileText size={16} />Saisie</button><button aria-pressed={mobilePane === 'preview'} onClick={() => setMobilePane('preview')}><Eye size={16} />Aperçu et complétude</button></div>
+        <div className="so-editor-form-pane" hidden={compactLayout && mobilePane === 'preview'} ref={formPane}>
+          <div className="so-editor-summary"><strong>{draft.project || 'Opération sans titre'}</strong><span>{draft.client || 'Client à renseigner'}</span><div><span className={`so-badge ${signed ? draft.decision === 'GO' ? 'is-go' : 'is-nogo' : ''}`}>{signed ? draft.decision === 'GO' ? 'GO signé' : 'NO GO signé' : 'Brouillon'}</span>{record && <small>Version {record.version} · {formatDate(record.updatedAt)}</small>}</div></div>
+          {error && <div className="so-alert so-danger" tabIndex={-1} role="alert"><AlertTriangle size={18} /><span>{error}</span></div>}
+          {notice && <div className="so-alert so-success" role="status"><CheckCircle2 size={18} />{notice}</div>}
+          {issues.length > 0 && <div className="so-alert so-danger" tabIndex={-1} role="alert"><div><strong>La fiche doit être complétée</strong><ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div></div>}
       <fieldset className="so-form" disabled={!editable || busy || signed}>
-        <section className={`so-panel ${step === 0 ? 'is-active' : ''}`} aria-label="Préparation de l’Armement">
-          <div className="so-section-title"><FileText size={21} /><div><h2>Préparation de l’Armement</h2><p>Informations opérationnelles et organisation de la mission.</p></div></div>
-          <div className="so-grid"><Field label="Projet"><input value={draft.project} onChange={(event) => update({ project: event.target.value })} /></Field><Field label="Client"><input value={draft.client} onChange={(event) => update({ client: event.target.value })} /></Field><Field label="Coordonnées du client" wide><input value={draft.clientContact} onChange={(event) => update({ clientContact: event.target.value })} /></Field><Field label="Description de l’opération" wide><textarea rows={3} value={draft.description} onChange={(event) => update({ description: event.target.value })} /></Field></div>
+        <section id="sea-operation-step-0" hidden={step !== 0} className={`so-panel ${step === 0 ? 'is-active' : ''}`} aria-label="Préparation de l’Armement">
+          <div className="so-section-title"><b aria-hidden="true">1</b><div><h2 tabIndex={-1}>Préparation de l’Armement</h2><p>Informations opérationnelles et organisation de la mission.</p></div></div>
+          <div className="so-grid"><Field label="Projet"><input autoFocus={!record} value={draft.project} onChange={(event) => update({ project: event.target.value })} /></Field><Field label="Client"><input value={draft.client} onChange={(event) => update({ client: event.target.value })} /></Field><Field label="Coordonnées du client" wide><input value={draft.clientContact} onChange={(event) => update({ clientContact: event.target.value })} /></Field><Field label="Description de l’opération" wide><textarea rows={3} value={draft.description} onChange={(event) => update({ description: event.target.value })} /></Field></div>
           <h3>Personnel spécial à embarquer</h3>{draft.specialPersonnel.map((person, index) => <div className="so-contact" key={index}><Field label={`Prénom NOM ${index + 1}`}><input value={person.name} onChange={(event) => update({ specialPersonnel: draft.specialPersonnel.map((row, i) => i === index ? { ...row, name: event.target.value } : row) })} /></Field><Field label={`Téléphone ${index + 1}`}><input type="tel" value={person.phone} onChange={(event) => update({ specialPersonnel: draft.specialPersonnel.map((row, i) => i === index ? { ...row, phone: event.target.value } : row) })} /></Field><button type="button" className="so-secondary sp-button sp-button--secondary" aria-label={`Retirer la personne ${index + 1}`} onClick={() => update({ specialPersonnel: draft.specialPersonnel.filter((_, i) => i !== index) })}><Trash2 size={16} /></button></div>)}<button className="so-secondary sp-button sp-button--secondary" onClick={() => update({ specialPersonnel: [...draft.specialPersonnel, { name: '', phone: '' }] })}><Plus size={15} />Ajouter une personne</button>
           <h3>Demande d’attribution de poste à quai (DAPAQ)</h3><p className="so-help">Caen, Le Havre, Dieppe et Rouen : préparation dans NOMADE par l’Armement ou le Capitaine. Autres ports : transmission par mail à la Capitainerie.</p><div className="so-grid"><Field label="Mode de déclaration"><select value={draft.dapaq.method} onChange={(event) => update({ dapaq: { ...draft.dapaq, method: event.target.value as SeaOperationPayload['dapaq']['method'] } })}><option value="">À renseigner</option><option value="nomade">NOMADE</option><option value="email">Mail à la Capitainerie</option></select></Field><Field label="Préparée par"><select value={draft.dapaq.preparedBy} onChange={(event) => update({ dapaq: { ...draft.dapaq, preparedBy: event.target.value as SeaOperationPayload['dapaq']['preparedBy'] } })}><option value="">À renseigner</option><option value="armament">Armement</option><option value="captain">Capitaine</option>{draft.dapaq.method !== 'nomade' && <option value="agent">Agent consignataire</option>}</select></Field>{draft.dapaq.preparedBy === 'agent' && <><Field label="Nom de l’agent consignataire"><input value={draft.dapaq.agentName} onChange={(event) => update({ dapaq: { ...draft.dapaq, agentName: event.target.value } })} /></Field><Field label="Coordonnées de l’agent"><input value={draft.dapaq.agentContact} onChange={(event) => update({ dapaq: { ...draft.dapaq, agentContact: event.target.value } })} /></Field></>}</div>
           <h3>Navire et voyage</h3><div className="so-grid"><Field label="Navire"><select value={draft.vessel.id ?? ''} onChange={(event) => { const vessel = data?.vessels.find((item) => item.id === Number(event.target.value)); vesselUpdate({ id: vessel ? String(vessel.id) : '', name: vessel?.name || '', registrationImo: vessel?.registrationImo || '' }); }}><option value="">Choisir un navire</option>{data?.vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></Field><Field label="Immatriculation / IMO"><input value={draft.vessel.registrationImo} onChange={(event) => vesselUpdate({ registrationImo: event.target.value })} /></Field><Field label="Prénom NOM du Capitaine"><input value={draft.vessel.captainName} onChange={(event) => vesselUpdate({ captainName: event.target.value })} /></Field><span /><Field label="Port de départ"><input value={draft.vessel.departurePort} onChange={(event) => vesselUpdate({ departurePort: event.target.value })} /></Field><Field label="Quai de départ"><input value={draft.vessel.departureQuay} onChange={(event) => vesselUpdate({ departureQuay: event.target.value })} /></Field><Field label="Port d’arrivée"><input value={draft.vessel.arrivalPort} onChange={(event) => vesselUpdate({ arrivalPort: event.target.value })} /></Field><Field label="Quai d’arrivée"><input value={draft.vessel.arrivalQuay} onChange={(event) => vesselUpdate({ arrivalQuay: event.target.value })} /></Field><Field label="ETD · date et heure de départ"><input type="datetime-local" value={draft.vessel.etd} onChange={(event) => vesselUpdate({ etd: event.target.value })} /></Field><Field label="ETA · date et heure d’arrivée"><input type="datetime-local" value={draft.vessel.eta} onChange={(event) => vesselUpdate({ eta: event.target.value })} /></Field></div><p className="so-help">Les horaires sont saisis dans l’heure locale de l’opération.</p>
         </section>
-        <section className={`so-panel ${step === 1 ? 'is-active' : ''}`} aria-label="Contrôles du Capitaine">
-          <div className="so-section-title"><ClipboardCheck size={22} /><div><h2>Contrôles avant appareillage</h2><p>À remplir par le Capitaine. Toute réponse bloquante impose un NO GO.</p></div></div>
+        <section id="sea-operation-step-1" hidden={step !== 1} className={`so-panel ${step === 1 ? 'is-active' : ''}`} aria-label="Contrôles du Capitaine">
+          <div className="so-section-title"><b aria-hidden="true">2</b><div><h2 tabIndex={-1}>Contrôles avant appareillage</h2><p>À remplir par le Capitaine. Toute réponse bloquante impose un NO GO.</p></div></div>
           {SEA_OPERATION_SECTIONS.map((section) => <section className="so-check-section" key={section.id}><h3>{section.title}</h3>{section.applicability && <Field label="Cette rubrique est-elle applicable ?"><AnswerControl label={`${section.title} applicable`} value={draft.applicability[section.applicability]} onChange={(value) => update({ applicability: { ...draft.applicability, [section.applicability!]: value } })} /></Field>}{(!section.applicability || draft.applicability[section.applicability] === 'yes') && <>
             {SEA_OPERATION_CHECKS.filter((check) => check.section === section.id).map((check) => <div className={`so-check ${check.blocking && draft.checks[check.id] === 'no' ? 'is-blocking' : ''}`} key={check.id}><div><label htmlFor={`check-${check.id}`}>{check.label}</label>{check.blocking && <small className="so-block-label">Non = NO GO</small>}{check.help && <p className="so-help">{check.help}</p>}</div><div><select id={`check-${check.id}`} value={draft.checks[check.id]} onChange={(event) => update({ checks: { ...draft.checks, [check.id]: event.target.value as Answer } })}><option value="">À renseigner</option><option value="yes">{check.yesLabel || 'Oui'}</option>{!check.yesOnly && <option value="no">{check.noLabel || 'Non'}</option>}</select></div>{draft.checks[check.id] === 'no' && (check.justifyNo || check.blocking) && <Field label={`Justification — ${check.label}`} wide><textarea rows={2} value={draft.justifications[check.id] || ''} onChange={(event) => update({ justifications: { ...draft.justifications, [check.id]: event.target.value } })} /></Field>}</div>)}
             {section.id === '2.4' && <details className="so-kit"><summary>Kit médical plongée prévu par le formulaire</summary><p>En complément de la dotation médicale réglementaire :</p><ul>{DIVING_MEDICAL_KIT.map((item) => <li key={item.article}>{item.quantity} × {item.article}. {item.detail}</li>)}</ul></details>}
@@ -177,14 +238,16 @@ export function SeaOperationsPage() {
             {section.id === '2.8' && <><div className="so-grid"><Field label="Escale déléguée à un shipchandler ?"><AnswerControl label="Shipchandler" value={draft.supplies.delegated} onChange={(value) => update({ supplies: { ...draft.supplies, delegated: value } })} /></Field>{draft.supplies.delegated === 'yes' && <><Field label="Nom du shipchandler"><input value={draft.supplies.shipchandlerName} onChange={(event) => update({ supplies: { ...draft.supplies, shipchandlerName: event.target.value } })} /></Field><Field label="Coordonnées du shipchandler"><input value={draft.supplies.shipchandlerContact} onChange={(event) => update({ supplies: { ...draft.supplies, shipchandlerContact: event.target.value } })} /></Field></>}{draft.supplies.delegated === 'no' && <p className="so-help">Le Capitaine gère l’escale avec l’appui de l’Armement.</p>}</div><div className="so-checkboxes">{SEA_OPERATION_SUPPLY_ITEMS.map((item) => <label key={item.id}><input type="checkbox" checked={draft.supplies.items.includes(item.id)} onChange={(event) => update({ supplies: { ...draft.supplies, items: event.target.checked ? [...draft.supplies.items, item.id] : draft.supplies.items.filter((value) => value !== item.id) } })} />{item.label}</label>)}</div><Field label="Fournisseurs et besoins identifiés"><textarea rows={3} value={draft.supplies.suppliers} onChange={(event) => update({ supplies: { ...draft.supplies, suppliers: event.target.value } })} /></Field><label className="so-checkbox"><input type="checkbox" checked={draft.supplies.customerAccountsPrepared} onChange={(event) => update({ supplies: { ...draft.supplies, customerAccountsPrepared: event.target.checked } })} />Comptes clients préparés au besoin avec la Direction financière.</label></>}
           </>}</section>)}
         </section>
-        <section className={`so-panel ${step === 2 ? 'is-active' : ''}`} aria-label="Plan de passage"><div className="so-section-title"><Compass size={22} /><div><h2>Plan de passage</h2><p>Cartes, points de route et conditions de navigation.</p></div></div><Field label="Numéro de la ou des cartes marines"><input value={draft.charts} onChange={(event) => update({ charts: event.target.value })} /></Field><div className="so-waypoints">{draft.waypoints.map((point, index) => <section className="so-waypoint" key={point.id}><header><h3>Point {index + 1}</h3><button className="so-secondary sp-button sp-button--secondary" aria-label={`Supprimer le point ${index + 1}`} onClick={() => update({ waypoints: draft.waypoints.filter((_, i) => i !== index) })}><Trash2 size={15} /></button></header><div className="so-grid">{([['number', 'N° du point'], ['descriptionVhf', 'Description / Contact VHF'], ['latitude', 'Latitude'], ['longitude', 'Longitude'], ['ukc', 'UKC'], ['eta', 'ETA · date et heure']] as const).map(([key, label]) => <Field key={key} label={`${label} · point ${index + 1}`}><input type="text" placeholder={key === 'eta' ? 'HH:mm ou AAAA-MM-JJTHH:mm' : undefined} value={point[key]} onChange={(event) => update({ waypoints: draft.waypoints.map((row, i) => i === index ? { ...row, [key]: event.target.value } : row) })} /></Field>)}</div><label className="so-checkbox"><input type="checkbox" checked={point.denseTraffic} onChange={(event) => update({ waypoints: draft.waypoints.map((row, i) => i === index ? { ...row, denseTraffic: event.target.checked } : row) })} />Zone maritime à trafic dense</label></section>)}</div><button className="so-secondary sp-button sp-button--secondary" onClick={() => update({ waypoints: [...draft.waypoints, { id: crypto.randomUUID(), number: String(draft.waypoints.length + 1), descriptionVhf: '', latitude: '', longitude: '', ukc: '', eta: '', denseTraffic: false }] })}><Plus size={16} />Ajouter un point de passage</button></section>
-        <section className={`so-panel ${step === 3 ? 'is-active' : ''}`} aria-label="Décision du Capitaine"><div className="so-section-title"><Anchor size={22} /><div><h2>Décision du Capitaine</h2><p>Le Capitaine consigne sa décision après examen des conditions de la mission.</p></div></div>
+        <section id="sea-operation-step-2" hidden={step !== 2} className={`so-panel ${step === 2 ? 'is-active' : ''}`} aria-label="Plan de passage"><div className="so-section-title"><b aria-hidden="true">3</b><div><h2 tabIndex={-1}>Plan de passage</h2><p>Cartes, points de route et conditions de navigation.</p></div></div><Field label="Numéro de la ou des cartes marines"><input value={draft.charts} onChange={(event) => update({ charts: event.target.value })} /></Field><div className="so-waypoints">{draft.waypoints.map((point, index) => <section className="so-waypoint" key={point.id}><header><h3>Point {index + 1}</h3><button className="so-secondary sp-button sp-button--secondary" aria-label={`Supprimer le point ${index + 1}`} onClick={() => update({ waypoints: draft.waypoints.filter((_, i) => i !== index) })}><Trash2 size={15} /></button></header><div className="so-grid">{([['number', 'N° du point'], ['descriptionVhf', 'Description / Contact VHF'], ['latitude', 'Latitude'], ['longitude', 'Longitude'], ['ukc', 'UKC'], ['eta', 'ETA · date et heure']] as const).map(([key, label]) => <Field key={key} label={`${label} · point ${index + 1}`}><input type="text" placeholder={key === 'eta' ? 'HH:mm ou AAAA-MM-JJTHH:mm' : undefined} value={point[key]} onChange={(event) => update({ waypoints: draft.waypoints.map((row, i) => i === index ? { ...row, [key]: event.target.value } : row) })} /></Field>)}</div><label className="so-checkbox"><input type="checkbox" checked={point.denseTraffic} onChange={(event) => update({ waypoints: draft.waypoints.map((row, i) => i === index ? { ...row, denseTraffic: event.target.checked } : row) })} />Zone maritime à trafic dense</label></section>)}</div><button className="so-secondary sp-button sp-button--secondary" onClick={() => update({ waypoints: [...draft.waypoints, { id: crypto.randomUUID(), number: String(draft.waypoints.length + 1), descriptionVhf: '', latitude: '', longitude: '', ukc: '', eta: '', denseTraffic: false }] })}><Plus size={16} />Ajouter un point de passage</button></section>
+        <section id="sea-operation-step-3" hidden={step !== 3} className={`so-panel ${step === 3 ? 'is-active' : ''}`} aria-label="Décision du Capitaine"><div className="so-section-title"><b aria-hidden="true">4</b><div><h2 tabIndex={-1}>Décision du Capitaine</h2><p>Le Capitaine consigne sa décision après examen des conditions de la mission.</p></div></div>
           <div className={`so-assessment ${assessment.blockingChecks.length ? 'is-nogo' : 'is-pending'}`}><AlertTriangle size={22} /><div><strong>{assessment.blockingChecks.length ? `NO GO imposé · ${assessment.blockingChecks.length} contrôle(s) bloquant(s)` : 'Vérification de la préparation'}</strong><p>Toute case rouge cochée entraîne un NO GO automatique. Le Capitaine doit trouver une solution et justifier toute situation empêchant l’appareillage.</p>{assessment.blockingChecks.length > 0 && <ul>{assessment.blockingChecks.map((check) => <li key={check.id}>{check.label}</li>)}</ul>}</div></div>
           <Field label="Décision"><select value={draft.decision} onChange={(event) => update({ decision: event.target.value as SeaOperationPayload['decision'] })}><option value="">Choisir la décision</option><option value="GO" disabled={assessment.blockingChecks.length > 0}>GO · la mission peut être réalisée</option><option value="NO_GO">NO GO · la mission ne peut être réalisée</option></select></Field><Field label="Risques identifiés / informations à transmettre à l’Armement"><textarea rows={4} value={draft.risks} onChange={(event) => update({ risks: event.target.value })} /></Field><div className="so-grid"><Field label="Prénom NOM du Capitaine signataire"><input value={draft.signature.captainName} onChange={(event) => update({ signature: { ...draft.signature, captainName: event.target.value } })} /></Field><Field label="Date de la décision"><input type="date" value={draft.signature.date} onChange={(event) => update({ signature: { ...draft.signature, date: event.target.value } })} /></Field><Field label="Lieu de la décision"><input value={draft.signature.place} onChange={(event) => update({ signature: { ...draft.signature, place: event.target.value } })} /></Field></div><label className="so-checkbox so-attestation"><input type="checkbox" checked={draft.signature.acknowledged} onChange={(event) => update({ signature: { ...draft.signature, acknowledged: event.target.checked } })} />En qualité de Capitaine, je confirme les informations renseignées et signe cette décision.</label>
         </section>
       </fieldset>
-      {step === 3 && <div className="so-signature-footer">{signed ? <p><CheckCircle2 size={18} />Décision signée par {record.signedByName} le {formatDate(record.signedAt)}. Cette fiche est figée.</p> : <><p>{canSign ? 'La signature enregistre votre identité et fige définitivement cette fiche.' : 'La signature est réservée au compte réel du Capitaine affecté au navire. Enregistrez la préparation pour lui transmettre la fiche.'}</p><button disabled={busy || !editable || !canSign || !draft.decision} onClick={() => void save(true)}><CheckCircle2 size={17} />Signer la décision {draft.decision === 'NO_GO' ? 'NO GO' : draft.decision}</button></>}</div>}
-      <div className="so-pagination"><button className="so-secondary sp-button sp-button--secondary" disabled={step === 0} onClick={() => setStep((current) => current - 1)}><ArrowLeft size={15} />Précédent</button><span>{step + 1} / {STEPS.length}</span><button className="so-secondary sp-button sp-button--secondary" disabled={step === STEPS.length - 1} onClick={() => setStep((current) => current + 1)}>Suivant<ChevronRight size={15} /></button></div>
-    </>}
+          {step === 3 && <div className="so-signature-footer">{signed ? <p><CheckCircle2 size={18} />Décision signée par {record.signedByName} le {formatDate(record.signedAt)}. Cette fiche est figée.</p> : <p>{canSign ? 'La signature enregistre votre identité et fige définitivement cette fiche.' : 'La signature est réservée au compte réel du Capitaine affecté au navire. Enregistrez la préparation pour lui transmettre la fiche.'}</p>}</div>}
+        </div>
+        <div className="so-editor-document-pane" hidden={compactLayout && mobilePane === 'form'}><SeaOperationPreview draft={draft} record={record} hasUnsavedChanges={dirty} onChangeStep={changeStep} /></div>
+      </div>
+    </AppDialog></div>}
   </div>{record && <SeaOperationPrint record={record} />}</div>;
 }

@@ -108,3 +108,69 @@
 @media (max-width: 720px) { .so-heading h1 { font-size: 1.5rem; } }
 @media print { .so-page .planning-module-toolbar { display: none !important; } }
 .app-shell .so-page .so-steps button.is-active { background: var(--sp-primary-soft); color: var(--sp-primary); }
+
+/* The operation sheet follows the full-window Project assistant. */
+.so-editor-modal .app-dialog-backdrop { padding: 0; }
+.app-shell .so-editor-modal .app-dialog--fullscreen { width: 100vw; max-width: none; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; box-shadow: none; }
+.so-editor-modal .app-dialog__header { min-height: 72px; padding: 12px 24px 8px; border-bottom: 0; }
+.so-editor-modal .app-dialog__identity h2 { font-size: 1.35rem; line-height: 1.3; }
+.so-editor-modal .app-dialog__description { flex: 0 0 auto; padding: 0 24px 14px; background: var(--sp-surface); color: var(--sp-muted); font-size: .75rem; border-color: var(--sp-border); }
+.so-page .so-editor-modal .app-dialog__close { width: 40px; height: 40px; padding: 8px; border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface); color: var(--sp-text); }
+.so-page .so-editor-modal .app-dialog__close:hover { background: var(--sp-primary-soft); }
+.so-editor-modal .app-dialog__content { display: flex; padding: 0; overflow: hidden; }
+.so-editor-workspace { display: grid; grid-template-columns: 228px minmax(390px, 32%) minmax(0, 1fr); min-width: 0; min-height: 0; flex: 1; }
+.so-wizard-sidebar { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; padding: 24px 12px; background: var(--sp-heading); color: var(--sp-surface); }
+.so-wizard-eyebrow { color: color-mix(in srgb, var(--sp-surface) 58%, transparent); font-size: .7rem; font-weight: 750; letter-spacing: .08em; }
+.so-wizard-sidebar > strong { font-size: 1.4rem; line-height: 1.3; overflow-wrap: anywhere; }
+.so-wizard-sidebar > small { font-size: .75rem; color: color-mix(in srgb, var(--sp-surface) 65%, transparent); }
+.so-wizard-steps { display: grid; gap: 10px; margin-top: 12px; }
+.so-page .so-wizard-steps button { display: grid; grid-template-columns: 18px 22px minmax(0, 1fr); text-align: left; gap: 10px; padding: 16px 12px; min-height: 82px; border: 1px solid color-mix(in srgb, var(--sp-surface) 16%, transparent); border-radius: var(--sp-panel-radius); background: transparent; color: color-mix(in srgb, var(--sp-surface) 78%, transparent); }
+.so-page .so-wizard-steps button:hover { background: color-mix(in srgb, var(--sp-surface) 8%, transparent); color: var(--sp-surface); }
+.so-page .so-wizard-steps button.is-active { color: var(--sp-surface); background: var(--sp-primary); border-color: var(--sp-primary); }
+.so-wizard-steps button > span { display: grid; gap: 6px; }
+.so-wizard-steps strong { font-size: .84rem; line-height: 1.4; }
+.so-wizard-steps small { color: inherit; opacity: .75; font-size: .71rem; line-height: 1.5; font-weight: 450; }
+.so-wizard-note { display: flex; align-items: flex-start; gap: 9px; font-size: .72rem; line-height: 1.6; margin-top: auto; padding: 20px 4px 0; color: color-mix(in srgb, var(--sp-surface) 65%, transparent); }
+.so-wizard-note svg { flex: 0 0 auto; margin-top: 2px; }
+.so-editor-form-pane { min-width: 0; min-height: 0; padding: 20px; background: var(--sp-canvas); overflow-y: auto; overscroll-behavior: contain; border-right: 1px solid var(--sp-border); }
+.so-editor-summary { display: grid; gap: 8px; padding: 16px; margin-bottom: 24px; border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); background: var(--sp-primary-soft); }
+.so-editor-summary > strong { font-size: .9rem; overflow-wrap: anywhere; }
+.so-editor-summary > span { color: var(--sp-muted); font-size: .76rem; }
+.so-editor-summary > div { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.so-editor-summary small { font-size: .69rem; color: var(--sp-muted); }
+.so-editor-form-pane .so-form { border: 0; border-radius: 0; background: transparent; }
+.so-editor-form-pane .so-panel { padding: 20px; border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); background: var(--sp-surface); }
+.so-editor-form-pane .so-section-title { align-items: center; gap: 10px; padding-bottom: 8px; margin-bottom: 20px; }
+.so-editor-form-pane .so-section-title > b { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 auto; font-size: 1rem; border-radius: var(--sp-control-radius); color: var(--sp-surface); background: var(--sp-primary); }
+.so-editor-form-pane .so-section-title h2 { color: var(--sp-primary); font-size: 1rem; }
+.so-editor-form-pane .so-section-title p { font-size: .74rem; }
+.so-editor-form-pane .so-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.so-editor-form-pane .so-check { grid-template-columns: minmax(0, 1fr); padding: 16px 8px; }
+.so-editor-form-pane .so-check > div:nth-child(2) { max-width: 100%; }
+.so-editor-form-pane .so-contact { grid-template-columns: minmax(0, 1fr) auto; }
+.so-editor-form-pane .so-contact > .so-field:first-child { grid-column: 1 / -1; }
+.so-editor-form-pane .so-checkboxes { grid-template-columns: minmax(0, 1fr); }
+.so-editor-form-pane .so-signature-footer { padding: 16px; margin-bottom: 8px; }
+.so-editor-form-pane .so-grid > span:empty { display: none; }
+.so-editor-document-pane { min-width: 0; min-height: 0; overflow: hidden; }
+.so-editor-document-pane > .so-operation-preview { height: 100%; grid-template-columns: minmax(0, 1fr) 180px; }
+.so-editor-modal .app-dialog__footer { padding: 12px 20px; box-shadow: none; }
+.so-dialog-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; min-width: 0; }
+.so-footer-state { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.so-footer-state > span { font-size: .73rem; color: var(--sp-muted); }
+.so-footer-actions { display: flex; gap: 10px; align-items: center; flex: 0 0 auto; }
+.so-footer-actions button { white-space: nowrap; }
+.so-mobile-switch[hidden], .so-editor-form-pane[hidden], .so-editor-document-pane[hidden] { display: none !important; }
+.so-mobile-switch { display: flex; padding: 8px 12px; gap: 8px; background: var(--sp-surface); border-bottom: 1px solid var(--sp-border); }
+.so-page .so-mobile-switch button { background: var(--sp-surface); color: var(--sp-muted); border-color: var(--sp-border); }
+.so-page .so-mobile-switch button[aria-pressed=true] { background: var(--sp-primary-soft); color: var(--sp-primary); border-color: var(--sp-primary); }
+@media (max-width: 1500px) { .so-editor-workspace { grid-template-columns: 210px minmax(380px, 32%) minmax(0, 1fr); } .so-editor-document-pane > .so-operation-preview { grid-template-columns: minmax(0, 1fr) 160px; } .so-wizard-sidebar { padding-left: 10px; padding-right: 10px; } .so-page .so-wizard-steps button { padding: 14px 10px; gap: 8px; } }
+@media (max-width: 1100px) { .so-editor-workspace { grid-template-columns: 210px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .so-wizard-sidebar { grid-row: 1 / -1; } .so-mobile-switch { grid-column: 2; } .so-editor-form-pane, .so-editor-document-pane { grid-column: 2; grid-row: 2; } .so-editor-form-pane { padding: 20px; } .so-editor-form-pane .so-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } .so-editor-document-pane > .so-operation-preview { grid-template-columns: minmax(0,1fr) 190px; } .so-footer-state > span { display: none; } }
+@media (max-width: 700px) { .so-editor-workspace { grid-template-columns: minmax(0,1fr); grid-template-rows: auto auto minmax(0,1fr); } .so-wizard-sidebar { grid-column: 1; grid-row: 1; padding: 10px 12px; overflow: hidden; } .so-wizard-sidebar > .so-wizard-eyebrow, .so-wizard-sidebar > strong, .so-wizard-sidebar > small, .so-wizard-note { display: none; } .so-wizard-steps { display: flex; overflow-x: auto; gap: 8px; margin: 0; } .so-page .so-wizard-steps button { flex: 0 0 160px; min-height: 60px; grid-template-columns: 18px minmax(0,1fr); padding: 10px; } .so-wizard-steps button > svg, .so-wizard-steps small { display: none; } .so-wizard-steps strong { font-size: .74rem; } .so-mobile-switch { grid-column: 1; grid-row: 2; } .so-mobile-switch > button { flex: 1; font-size: .74rem; } .so-editor-form-pane, .so-editor-document-pane { grid-column: 1; grid-row: 3; } .so-editor-form-pane { padding: 12px; } .so-editor-form-pane .so-panel { padding: 16px; } .so-editor-form-pane .so-grid { grid-template-columns: minmax(0,1fr); } .so-editor-summary { margin-bottom: 16px; padding: 14px; } .so-editor-modal .app-dialog__header { padding: 12px 14px 6px; min-height: 64px; } .so-editor-modal .app-dialog__identity h2 { font-size: 1.12rem; } .so-editor-modal .app-dialog__description { padding: 0 14px 12px; font-size: .7rem; } .so-editor-modal .app-dialog__footer { padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); } .so-dialog-footer { gap: 8px; flex-wrap: wrap; } .so-footer-state { flex: 0 0 auto; } .so-footer-state button { font-size: .7rem; padding: 9px; } .so-footer-actions { flex: 1; justify-content: flex-end; gap: 8px; min-width: 0; overflow-x: auto; } .so-footer-actions > button { font-size: .73rem; padding: 9px; } .so-footer-actions .so-footer-cancel, .so-footer-actions .so-footer-print { display: none; } .so-footer-actions button { white-space: normal; } .so-editor-document-pane > .so-operation-preview { grid-template-columns: minmax(0,1fr); } }
+@media print { .so-editor-modal { display: none !important; } }
+
+@media (max-width: 700px) { .so-editor-document-pane { overflow-y: auto; } .so-editor-document-pane > .so-operation-preview { height: auto; min-height: 100%; } }
+
+.app-shell .so-page .so-mobile-switch button:not(:disabled) { background: var(--sp-surface); color: var(--sp-muted); }
+.app-shell .so-page .so-mobile-switch button[aria-pressed=true]:not(:disabled), .app-shell .so-page .so-mobile-switch button:hover:not(:disabled) { background: var(--sp-primary-soft); color: var(--sp-primary); }
+.app-shell .so-page .so-editor-modal .app-dialog__close:hover { background: var(--sp-primary-soft); color: var(--sp-text); }
