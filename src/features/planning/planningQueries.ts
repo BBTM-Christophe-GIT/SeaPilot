@@ -1280,10 +1280,17 @@ export async function fetchPlanningAssignmentOverviewRows(
   return (data || []) as PlanningAssignmentOverviewRow[];
 }
 
-export async function fetchPlanningDays(client: SupabaseClient): Promise<PlanningDayRecord[]> {
+export async function fetchPlanningDays(
+  client: SupabaseClient,
+  options?: { personIds: readonly number[] },
+): Promise<PlanningDayRecord[]> {
+  const personIds = options ? [...new Set(options.personIds.map((id) => planningEntityId(id, 'Le marin')))] : undefined;
+  if (personIds && !personIds.length) return [];
   const rows: PlanningDayRow[] = [];
   for (let start = 0; ; start += PLANNING_READ_PAGE_SIZE) {
-    const { data, error } = await client.from('planning_days').select(PLANNING_DAY_SELECT)
+    let query = client.from('planning_days').select(PLANNING_DAY_SELECT);
+    if (personIds) query = query.in('person_id', personIds);
+    const { data, error } = await query
       .order('work_date', { ascending: true }).order('crew_name', { ascending: true })
       .order('id', { ascending: true }).range(start, start + PLANNING_READ_PAGE_SIZE - 1);
     if (error) throwPlanningDataError('load-days', 'Impossible de charger les journées du planning.', error);
@@ -1291,6 +1298,83 @@ export async function fetchPlanningDays(client: SupabaseClient): Promise<Plannin
     rows.push(...page);
     if (page.length < PLANNING_READ_PAGE_SIZE) return mapPlanningDayRows(rows);
   }
+}
+
+export interface PlanningGridPeopleRefresh {
+  personIds: number[];
+  assignments: PlanningAssignmentRecord[];
+  days: PlanningDayRecord[];
+}
+
+// A grid mutation can create or split assignments and move their daily notes.
+// Re-read every date for the affected people under the existing table RLS,
+// rather than every person's assignments and the whole audit feed.
+export async function fetchPlanningGridPeople(
+  client: SupabaseClient,
+  personIds: readonly number[],
+  context: Pick<PlanningOverview, 'people' | 'vessels'>,
+): Promise<PlanningGridPeopleRefresh> {
+  const ids = [...new Set(personIds.map((id) => planningEntityId(id, 'Le marin')))];
+  if (!ids.length) return { personIds: ids, assignments: [], days: [] };
+
+  const loadAssignments = async () => {
+    const rows: PlanningAssignmentRow[] = [];
+    for (let start = 0; ; start += PLANNING_READ_PAGE_SIZE) {
+      const { data, error } = await client.from('planning_assignments')
+        .select(`${PLANNING_ASSIGNMENT_SELECT}, updated_at`).in('crew_person_id', ids)
+        .order('id', { ascending: true }).range(start, start + PLANNING_READ_PAGE_SIZE - 1);
+      if (error) throwPlanningDataError('load-assignments', 'Impossible de charger les affectations.', error);
+      const page = (data || []) as PlanningAssignmentRow[];
+      rows.push(...page);
+      if (page.length < PLANNING_READ_PAGE_SIZE) break;
+    }
+    const people = new Map(context.people.map((person) => [person.id, person]));
+    const vessels = new Map(context.vessels.map((vessel) => [vessel.id, vessel]));
+    const personName = (id: number | null) => {
+      const person = id === null ? undefined : people.get(id);
+      return person ? formatPlanningPersonName(person).trim() : null;
+    };
+    return mapPlanningAssignmentOverviewRows(rows.map((row) => ({
+      ...row,
+      vessel_name: vessels.get(row.vessel_id)?.name || null,
+      captain_name: personName(row.captain_person_id),
+      crew_name: personName(row.crew_person_id),
+    })));
+  };
+  const [assignments, days] = await Promise.all([loadAssignments(), fetchPlanningDays(client, { personIds: ids })]);
+  return { personIds: ids, assignments, days };
+}
+
+function mergePlanningPeopleRecords<T extends { id: number }>(
+  current: T[], incoming: T[], inScope: (record: T) => boolean,
+): T[] {
+  const remaining = new Map(incoming.filter(inScope).map((record) => [record.id, record]));
+  const merged = current.flatMap((record) => {
+    if (!inScope(record)) return [record];
+    const replacement = remaining.get(record.id);
+    remaining.delete(record.id);
+    if (!replacement) return [];
+    const keys = Object.keys(record) as Array<keyof T>;
+    return [keys.length === Object.keys(replacement).length
+      && keys.every((key) => Object.is(record[key], replacement[key])) ? record : replacement];
+  });
+  merged.push(...remaining.values());
+  return merged.length === current.length && merged.every((record, index) => record === current[index]) ? current : merged;
+}
+
+export function mergePlanningDaysForPeople(
+  current: PlanningDayRecord[], incoming: PlanningDayRecord[], personIds: readonly number[],
+): PlanningDayRecord[] {
+  const ids = new Set(personIds);
+  return mergePlanningPeopleRecords(current, incoming, (row) => row.personId !== null && ids.has(row.personId));
+}
+
+export function mergePlanningGridPeople(overview: PlanningOverview, refresh: PlanningGridPeopleRefresh): PlanningOverview {
+  const ids = new Set(refresh.personIds);
+  if (!ids.size) return overview;
+  const assignments = mergePlanningPeopleRecords(overview.assignments, refresh.assignments, (row) => ids.has(row.crewPersonId));
+  const days = mergePlanningDaysForPeople(overview.days, refresh.days, refresh.personIds);
+  return assignments === overview.assignments && days === overview.days ? overview : { ...overview, assignments, days };
 }
 
 export async function fetchPlanningPeriods(client: SupabaseClient): Promise<PlanningPeriodRecord[]> {

@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.75.12`, build `2026-10-16.004`, accélère le Planning sur les volumes
+réels de production : calculs de dates/documents partagés, cellules vides allégées,
+relectures limitées aux marins modifiés et historique indépendant de la sauvegarde.
+La migration `20261016101417_optimize_planning_company_permission_initplans.sql`
+réduit les contrôles de droits répétés sans modifier leurs résultats. Voir
+[la mesure sur données réelles et le déploiement](./planning-production-performance.md).
+
 Version `3.75.11`, build `2026-10-16.003`, réduit la fenêtre du Planning à deux
 mois avant et après la date de référence, centrée sur aujourd'hui à l'ouverture.
 Les lignes des vues Flotte, Projet et Équipages sont compactées de 10 %, avec

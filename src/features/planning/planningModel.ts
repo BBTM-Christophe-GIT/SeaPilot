@@ -559,9 +559,17 @@ export function getAllPlanningCrewEvents(overview: PlanningOverview): PlanningCr
     });
   // A later saved assignment can supersede an old role on the same ship.
   // Preserve unresolved cross-ship conflicts and all successive date ranges.
-  return events.filter((event) => event.kind !== 'assignment' || !events.some((other) => (
-    other !== event && other.kind === 'assignment' && other.personId === event.personId
-    && other.vesselId === event.vesselId && other.startsOn <= event.startsOn && other.endsOn >= event.endsOn
+  const assignmentsByPersonVessel = new Map<string, PlanningCrewEvent[]>();
+  const assignmentKey = (event: PlanningCrewEvent) => `${event.personId}:${event.vesselId}`;
+  for (const event of events) {
+    if (event.kind !== 'assignment') continue;
+    const key = assignmentKey(event);
+    const assignments = assignmentsByPersonVessel.get(key);
+    if (assignments) assignments.push(event);
+    else assignmentsByPersonVessel.set(key, [event]);
+  }
+  return events.filter((event) => event.kind !== 'assignment' || !assignmentsByPersonVessel.get(assignmentKey(event))!.some((other) => (
+    other !== event && other.startsOn <= event.startsOn && other.endsOn >= event.endsOn
     && comparePlanningRevision({ ...other, sourceId: other.assignmentId }, { ...event, sourceId: event.assignmentId }) > 0
   )));
 }

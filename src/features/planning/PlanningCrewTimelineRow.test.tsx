@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { buildPlanningTimeline, type PlanningCrewEvent } from './planningModel';
 import { PlanningCrewTimelineRow } from './PlanningTimeline';
+import type { PlanningHrDocumentRecord } from './planningQueries';
 
 const days = buildPlanningTimeline('2026-09-01', 'month');
 const event: PlanningCrewEvent = {
@@ -14,12 +15,12 @@ const event: PlanningCrewEvent = {
     .map((day) => [day.date, 'Arrêt Maladie'])),
 };
 
-function renderRow(item = event, conflicts = new Map<string, Set<string>>()) {
+function renderRow(item = event, conflicts = new Map<string, Set<string>>(), hrDocuments: readonly PlanningHrDocumentRecord[] = []) {
   return render(<PlanningCrewTimelineRow
     lane={{ key: 'person-15', label: item.person, detail: '', personId: 15, vesselId: 13,
       vessel: item.vessel, watchGroup: '', events: [item] }}
     days={days} dayWidth={52} editable pendingId={null} selectedId={null}
-    conflictDatesByEvent={conflicts} balances={new Map()}
+    conflictDatesByEvent={conflicts} balances={new Map()} hrDocuments={hrDocuments}
     onCreate={vi.fn()} onMove={vi.fn()} onOpen={vi.fn()} onResize={vi.fn()} onSelect={vi.fn()}
   />);
 }
@@ -62,5 +63,21 @@ describe('crew daily status rendering', () => {
     expect(container.querySelector('.planning-crew-bar')).toHaveClass('has-conflict');
     expect(container.querySelectorAll('.planning-assignment-note-cell.has-conflict')).toHaveLength(1);
     expect(container.querySelector<HTMLElement>('.planning-crew-bar')!.style.backgroundImage).toBe('');
+  });
+
+  it('shows only this person’s expired documents and starts the alert after the expiry date', () => {
+    const document: PlanningHrDocumentRecord = { id: 1, personId: 15, personName: event.person, categoryKey: 'medical',
+      title: 'Visite médicale', status: 'valid', expiresOn: '2026-09-05', requiresCaptainValidation: false,
+      medicalRestriction: '', medicalUnfit: false, fileUrl: '' };
+    const { container } = renderRow(event, new Map(), [document,
+      { ...document, id: 2, personId: 99, title: 'Document d’un autre marin', expiresOn: '2026-01-01' },
+      { ...document, id: 3, personId: null, title: 'Document sans propriétaire', expiresOn: '2026-01-01' }]);
+    const cells = [...container.querySelectorAll<HTMLElement>('.planning-assignment-note-cell')];
+    expect(cells.find((cell) => cell.dataset.planningGridCell?.endsWith('2026-09-05'))).not.toHaveClass('has-expired-document');
+    const afterExpiry = cells.find((cell) => cell.dataset.planningGridCell?.endsWith('2026-09-06'))!;
+    expect(afterExpiry).toHaveClass('has-expired-document');
+    expect(afterExpiry).toHaveAccessibleName(expect.stringContaining('Visite médicale depuis le 05/09/2026'));
+    expect(afterExpiry.title).not.toContain('autre marin');
+    expect(afterExpiry.title).not.toContain('sans propriétaire');
   });
 });

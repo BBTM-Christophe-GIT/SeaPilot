@@ -106,10 +106,13 @@ import {
   fetchPlanningHandovers,
   fetchPlanningHistory,
   fetchPlanningDays,
+  fetchPlanningGridPeople,
   fetchPlanningProjects,
   fetchPlanningOperationDocuments,
   mapPlanningAssignmentOverviewRows,
   mapPlanningAssignmentRows,
+  mergePlanningDaysForPeople,
+  mergePlanningGridPeople,
   movePlanningGridCells,
   removePlanningGridCells,
   resolvePlanningGridConflictCells,
@@ -530,6 +533,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     overview,
     updateOverview,
     reload: loadPlanning,
+    reloadHistory,
     hasLoaded,
     isInitialLoading,
     isRefreshing,
@@ -1224,8 +1228,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       } else {
         if (dates.length === 1) await savePlanningAssignmentDayState(effectiveClient, { ...input, workDate: dates[0] });
         else await savePlanningAssignmentDayStates(effectiveClient, { ...input, startsOn: dates[0], endsOn: dates[dates.length - 1] });
-        const daysData = await fetchPlanningDays(effectiveClient);
-        updateOverview((current) => ({ ...current, days: daysData }));
+        const personIds = dayStateForm.event.personId === null ? undefined : [dayStateForm.event.personId];
+        const daysData = await fetchPlanningDays(effectiveClient, personIds ? { personIds } : undefined);
+        updateOverview((current) => ({ ...current, days: personIds
+          ? mergePlanningDaysForPeople(current.days, daysData, personIds) : daysData }));
       }
       const displayStatus = planningStatusDisplayLabel(dayStateForm.status);
       setStatusMessage(`${displayStatus} ${displayStatus === 'Congés' || displayStatus === 'Congés Paternité' ? 'enregistrés' : 'enregistré'} pour ${dayStateForm.event.person}${dayStateForm.date ? ` le ${formatPlanningDate(dayStateForm.date)}` : ' sur toute la période'}.`);
@@ -1270,7 +1276,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         planningGridMutationCells(cells),
         dayStateForm.date ? 'Suppression depuis le menu contextuel d’une case' : 'Suppression depuis le menu contextuel d’un groupe',
       );
-      await refreshPlanningGridData();
+      await refreshPlanningGridData([], cells.map((cell) => cell.personId));
       setDayStateForm(null);
       setSelectedGridCells(new Map());
       setStatusMessage(dayStateForm.date ? 'Case supprimée ; les périodes adjacentes ont été conservées.' : 'Groupe de cases supprimé du planning.');
@@ -1281,15 +1287,15 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     }
   }
 
-  async function refreshPlanningGridData(cells: PlanningGridCell[] = []): Promise<PlanningGridCell[]> {
-    const [assignmentRows, planningDays, history] = await Promise.all([
-      fetchPlanningAssignmentOverviewRows(effectiveClient),
-      fetchPlanningDays(effectiveClient),
-      fetchPlanningHistory(effectiveClient),
-    ]);
-    const assignments = mapPlanningAssignmentOverviewRows(assignmentRows);
-    updateOverview((current) => ({ ...current, assignments, days: planningDays, history }));
-    return hydratePlanningGridCells(cells, assignments);
+  async function refreshPlanningGridData(
+    cells: PlanningGridCell[] = [],
+    personIds: number[] = cells.map((cell) => cell.personId),
+  ): Promise<PlanningGridCell[]> {
+    const refreshed = await fetchPlanningGridPeople(effectiveClient, personIds, overview);
+    updateOverview((current) => mergePlanningGridPeople(current, refreshed));
+    // Audit metadata refreshes independently of the edited grid.
+    if (permissions.canViewHistory) void reloadHistory();
+    return hydratePlanningGridCells(cells, refreshed.assignments);
   }
 
   async function persistPlanningGridCells(cells: PlanningGridCell[], message: string): Promise<boolean> {
@@ -1433,7 +1439,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setErrorMessage(null);
     try {
       await removePlanningGridCells(effectiveClient, planningGridMutationCells(cells), reason);
-      await refreshPlanningGridData();
+      await refreshPlanningGridData([], cells.map((cell) => cell.personId));
       setSelectedGridCells(new Map());
       setGridClipboard((current) => current?.mode === 'cut' ? null : current);
       setStatusMessage(`${cells.length} case${cells.length > 1 ? 's supprimées' : ' supprimée'} ; la modification est historisée.`);
@@ -1473,7 +1479,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       } else {
         await applyPlanningGridCells(effectiveClient, planningGridMutationCells(targets));
       }
-      const hydrated = await refreshPlanningGridData(targets);
+      const affected = gridClipboard.mode === 'cut' ? [...targets, ...gridClipboard.cells] : targets;
+      const hydrated = await refreshPlanningGridData(targets, affected.map((cell) => cell.personId));
       setSelectedGridCells(new Map(hydrated.map((cell) => [cell.key, cell])));
       setGridClipboard(null);
       setStatusMessage(`${targets.length} case${targets.length > 1 ? 's' : ''} ${gridClipboard.mode === 'cut' ? 'déplacée' : 'copiée'}${targets.length > 1 ? 's' : ''}.`);
@@ -1514,7 +1521,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         planningGridConflictMutationCells(cells),
         `Résolution de conflit : priorité à ${priority.vessel} / ${priority.board}`,
       );
-      await refreshPlanningGridData();
+      await refreshPlanningGridData([], cells.map((cell) => cell.personId));
       setGridConflictForm(null);
       setSelectedGridCells(new Map());
       setStatusMessage('Chevauchement supprimé. La ligne prioritaire est conservée et la résolution est historisée.');

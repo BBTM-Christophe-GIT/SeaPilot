@@ -59,6 +59,7 @@ describe('WorkingTimePage', () => {
       overview: EMPTY_PLANNING_OVERVIEW,
       updateOverview: vi.fn(),
       reload,
+      reloadHistory: vi.fn(),
       hasLoaded: true,
       isInitialLoading: false,
       isRefreshing: false,

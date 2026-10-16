@@ -310,6 +310,18 @@ function createClient(options: {
 } = {}) {
   const nextAuxiliaryResponse = (resource: AuxiliaryResource, data: unknown[] = []) =>
     Promise.resolve(options.auxiliaryResponses?.[resource]?.shift() ?? { data, error: null });
+  const dayScope = vi.fn();
+  const assignmentScope = vi.fn();
+  const pagedPeopleRead = (rows: () => unknown[], scope: typeof dayScope) => {
+    let filter: { column: string; ids: number[] } | null = null;
+    const query = {
+      in: (column: string, ids: number[]) => { scope(column, ids); filter = { column, ids }; return query; },
+      order: () => query,
+      range: async (start: number, end: number) => ({ data: rows().filter((row) => !filter
+        || filter.ids.includes(Number((row as Record<string, unknown>)[filter.column]))).slice(start, end + 1), error: null }),
+    };
+    return { select: () => query };
+  };
   const insertAssignment = vi.fn().mockReturnValue({
     select: vi.fn().mockReturnValue({
       single: vi.fn().mockResolvedValue({ data: options.createdAssignment || assignmentRow, error: null }),
@@ -350,7 +362,7 @@ function createClient(options: {
       return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ range: vi.fn().mockResolvedValue({ data: [], error: null }) }) }) };
     }
     if (table === 'planning_days') {
-      return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ range: vi.fn().mockResolvedValue({ data: options.days ?? [], error: null }) }) }) }) }) };
+      return pagedPeopleRead(() => options.days ?? [], dayScope);
     }
     if (table === 'planning_periods') {
       return {
@@ -439,7 +451,8 @@ function createClient(options: {
       const occurrenceEq = vi.fn().mockReturnValue({ eq: documentTypeEq });
       return { select: vi.fn().mockReturnValue({ eq: occurrenceEq }) };
     }
-    if (table === 'planning_assignments') return { insert: insertAssignment, update: updateAssignment };
+    if (table === 'planning_assignments') return { insert: insertAssignment, update: updateAssignment,
+      ...pagedPeopleRead(() => options.assignments ?? [assignmentOverviewRow], assignmentScope) };
     throw new Error(`Unexpected table ${table}`);
   });
   const rpc = vi.fn().mockImplementation((functionName: string, args: Record<string, unknown> = {}) => {
@@ -571,7 +584,7 @@ function createClient(options: {
     }
     throw new Error(`Unexpected RPC ${functionName}`);
   });
-  return { client: { from, rpc }, from, rpc, insertAssignment, insertProject, updateProject, deleteProject, updateAssignment, vesselOrder };
+  return { client: { from, rpc }, from, rpc, insertAssignment, insertProject, updateProject, deleteProject, updateAssignment, vesselOrder, dayScope, assignmentScope };
 }
 
 describe('PlanningPage cockpit', () => {
@@ -1923,7 +1936,7 @@ describe('PlanningPage cockpit', () => {
       comments: 'Cherbourg',
       source_label: 'seapilot-assignment-note',
     };
-    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], periods: [], days: [assignmentNoteRow] });
+    const { client, rpc, dayScope } = createClient({ assignments: [assignmentOverviewRow], periods: [], days: [assignmentNoteRow] });
     const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
 
@@ -1962,6 +1975,7 @@ describe('PlanningPage cockpit', () => {
       p_note: 'Le Havre',
     }));
     expect(await screen.findByText(`${status} ${status === 'Congés Paternité' ? 'enregistrés' : 'enregistré'} pour Paul DURAND le 14/07/2026.`)).toBeInTheDocument();
+    expect(dayScope).toHaveBeenCalledWith('person_id', [11]);
   });
 
   it.each(['Repos', 'Congés Paternité'])('applies %s to a group through one RPC while keeping the original assignment dates', async (status) => {
@@ -2456,7 +2470,7 @@ describe('PlanningPage cockpit', () => {
 
   it('deletes selected persisted cells with Delete and records an explicit reason', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const { client, rpc } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
+    const { client, rpc, dayScope, assignmentScope } = createClient({ assignments: [assignmentOverviewRow], periods: [] });
     render(<PlanningPage client={client as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Planning' });
     const source = screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 14/07/2026 pour Paul DURAND' });
@@ -2468,6 +2482,10 @@ describe('PlanningPage cockpit', () => {
       p_reason: 'Suppression manuelle depuis la grille',
     }));
     expect(confirm).toHaveBeenCalledOnce();
+    await screen.findByText('1 case supprimée ; la modification est historisée.');
+    expect(dayScope).toHaveBeenCalledWith('person_id', [11]);
+    expect(assignmentScope).toHaveBeenCalledWith('crew_person_id', [11]);
+    expect(rpc.mock.calls.filter(([name]) => name === 'planning_assignment_overview_with_revisions')).toHaveLength(1);
     confirm.mockRestore();
   });
 
