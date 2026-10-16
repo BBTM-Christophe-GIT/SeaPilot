@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.75.9`, build `2026-10-16.001`, active la configuration OAuth du
+compteur Gmail sur Vercel. Le client Web est réservé à l'organisation BBTM.
+Les lectures restent dans le navigateur, avec un maximum d'une lecture par
+minute et par autorisation, y compris après un clic ou un retour au premier plan.
+Aucun serveur, abonnement, stockage de jeton ni migration n'est ajouté.
+Voir [la configuration et les limites gratuites](./header-gmail-shortcut.md).
+
 Version `3.75.8`, build `2026-10-15.013`, retire le ruban de commandes et le bloc
 de diffusion de la vue Équipages. La carte Planning suit directement le titre,
 sur toute la largeur disponible, avec ses onglets et commandes locales.

@@ -163,6 +163,11 @@ describe('AppShell mailbox shortcut', () => {
     expect(shortcut.querySelector('.topbar-mail-badge')).toHaveTextContent('5');
     expect(shortcut).toHaveAccessibleName(expect.stringContaining('5 messages non lus'));
     expect(screen.getByRole('menuitem', { name: 'Actualiser le compteur Gmail' })).toBeEnabled();
+    await user.click(screen.getByRole('menuitem', { name: 'Actualiser le compteur Gmail' }));
+    expect(fetchGmailUnreadCount).toHaveBeenCalledOnce();
+    expect(shortcut.querySelector('.topbar-mail-badge')).toHaveTextContent('5');
+
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000);
     vi.mocked(fetchGmailUnreadCount).mockRejectedValueOnce(new GmailUnreadError('wrong_account'));
     await user.click(screen.getByRole('menuitem', { name: 'Actualiser le compteur Gmail' }));
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Le compte Google ne correspond pas au compte SeaPilot.'));

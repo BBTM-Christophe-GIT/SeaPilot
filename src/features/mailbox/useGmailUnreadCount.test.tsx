@@ -105,7 +105,7 @@ describe('useGmailUnreadCount', () => {
     expect(hook.result.current.unreadCount).toBeNull();
   });
 
-  it('refreshes every minute and on focus only while visible, without opening consent again', async () => {
+  it('refreshes every minute and resumes on focus only while visible, without opening consent again', async () => {
     const hook = await renderCounter();
     act(() => { hook.result.current.action(); });
     await act(async () => { requests[0].callback(tokenResponse); });
@@ -119,8 +119,50 @@ describe('useGmailUnreadCount', () => {
     await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
     expect(fetchGmailUnreadCount).toHaveBeenCalledTimes(3);
     await act(async () => { window.dispatchEvent(new Event('focus')); });
-    expect(fetchGmailUnreadCount).toHaveBeenCalledTimes(4);
+    expect(fetchGmailUnreadCount).toHaveBeenCalledTimes(3);
     expect(requestAccessToken).toHaveBeenCalledOnce();
+  });
+
+  it('limits focus, visibility and manual refresh bursts to one read per minute and resumes polling', async () => {
+    const hook = await renderCounter();
+    act(() => { hook.result.current.action(); });
+    await act(async () => { requests[0].callback(tokenResponse); });
+    expect(fetchGmailUnreadCount).toHaveBeenCalledOnce();
+
+    for (const elapsed of [0, 30_000, 29_999]) {
+      await act(async () => { vi.advanceTimersByTime(elapsed); });
+      await act(async () => { window.dispatchEvent(new Event('focus')); });
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+      await act(async () => { hook.result.current.action(); });
+      expect(fetchGmailUnreadCount).toHaveBeenCalledOnce();
+      expect(hook.result.current).toMatchObject({ status: 'connected', unreadCount: 7 });
+    }
+
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(fetchGmailUnreadCount).toHaveBeenCalledTimes(2);
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await act(async () => { hook.result.current.action(); });
+    expect(fetchGmailUnreadCount).toHaveBeenCalledTimes(2);
+
+    await act(async () => { vi.advanceTimersByTime(60_000); });
+    expect(fetchGmailUnreadCount).toHaveBeenCalledTimes(3);
+    expect(requestAccessToken).toHaveBeenCalledOnce();
+  });
+
+  it('reads immediately when an initially hidden page becomes visible', async () => {
+    visibility.mockReturnValue('hidden');
+    const hook = await renderCounter();
+    act(() => { hook.result.current.action(); });
+    await act(async () => { requests[0].callback(tokenResponse); vi.advanceTimersByTime(30_000); });
+    expect(fetchGmailUnreadCount).not.toHaveBeenCalled();
+
+    visibility.mockReturnValue('visible');
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(fetchGmailUnreadCount).toHaveBeenCalledOnce();
+    expect(hook.result.current).toMatchObject({ status: 'connected', unreadCount: 7 });
+    await act(async () => { window.dispatchEvent(new Event('focus')); hook.result.current.action(); });
+    expect(fetchGmailUnreadCount).toHaveBeenCalledOnce();
   });
 
   it('expires the token and count even while hidden and requires another click', async () => {
@@ -134,6 +176,9 @@ describe('useGmailUnreadCount', () => {
     expect(requestAccessToken).toHaveBeenCalledOnce();
     act(() => { hook.result.current.action(); });
     expect(requestAccessToken).toHaveBeenCalledTimes(2);
+    visibility.mockReturnValue('visible');
+    await act(async () => { requests[1].callback(tokenResponse); });
+    expect(fetchGmailUnreadCount).toHaveBeenCalledTimes(2);
   });
 
   it.each(['wrong_account', 'forbidden', 'network_error', 'unauthorized'] as const)('clears the count and requires reconnection after %s', async (code) => {
@@ -141,7 +186,7 @@ describe('useGmailUnreadCount', () => {
     act(() => { hook.result.current.action(); });
     await act(async () => { requests[0].callback(tokenResponse); });
     vi.mocked(fetchGmailUnreadCount).mockRejectedValueOnce(new GmailUnreadError(code));
-    await act(async () => { hook.result.current.action(); });
+    await act(async () => { vi.advanceTimersByTime(60_000); });
     expect(hook.result.current.unreadCount).toBeNull();
     expect(hook.result.current.message).toContain(new GmailUnreadError(code).message);
     await act(async () => { vi.advanceTimersByTime(60_000); window.dispatchEvent(new Event('focus')); });
@@ -193,6 +238,22 @@ describe('useGmailUnreadCount', () => {
     await act(async () => { oldCallback(tokenResponse); });
     expect(fetchGmailUnreadCount).not.toHaveBeenCalled();
     expect(hook.result.current.unreadCount).toBeNull();
+  });
+
+  it('does not share the previous account’s refresh limit with a replacement identity', async () => {
+    const hook = await renderCounter();
+    act(() => { hook.result.current.action(); });
+    await act(async () => { requests[0].callback(tokenResponse); });
+    expect(fetchGmailUnreadCount).toHaveBeenCalledOnce();
+
+    hook.rerender({ userId: 'capitaine-account', email: 'capitaine@example.test', enabled: true });
+    await act(async () => {});
+    act(() => { hook.result.current.action(); });
+    await act(async () => { requests[1].callback({ ...tokenResponse, access_token: 'second-google-token' }); });
+
+    expect(fetchGmailUnreadCount).toHaveBeenCalledTimes(2);
+    expect(fetchGmailUnreadCount).toHaveBeenLastCalledWith('second-google-token', 'capitaine@example.test', expect.any(AbortSignal));
+    expect(hook.result.current).toMatchObject({ status: 'connected', unreadCount: 7 });
   });
 
   it('handles denial and popup closure without creating a zero count or retrying automatically', async () => {
