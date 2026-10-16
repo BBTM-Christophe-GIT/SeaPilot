@@ -7385,7 +7385,8 @@ button:disabled {
 
 .planning-calendar-grid {
   display: grid;
-  width: max-content;
+  /* Keep contained rows paintable after horizontal scrolling. */
+  width: calc(var(--planning-label-width) + var(--planning-day-count) * var(--planning-day-width));
   min-width: 100%;
   grid-template-columns: var(--planning-label-width) repeat(var(--planning-day-count), var(--planning-day-width));
 }
@@ -7493,7 +7494,7 @@ button:disabled {
 }
 
 .planning-calendar-body {
-  width: max-content;
+  width: calc(var(--planning-label-width) + var(--planning-day-count) * var(--planning-day-width));
   min-width: 100%;
 }
 

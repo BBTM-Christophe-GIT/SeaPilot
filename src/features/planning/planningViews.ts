@@ -197,7 +197,10 @@ export function buildPlanningProjectLanes(
   });
   return [...lanesByVessel.values()]
     .filter((lane) => !filters.vesselName || lane.vessel === filters.vesselName)
-    .sort((left, right) => left.label.localeCompare(right.label, 'fr'));
+    .sort((left, right) => (
+      Number(normalizePlanningText(right.vessel).includes('ARMEMENT')) - Number(normalizePlanningText(left.vessel).includes('ARMEMENT'))
+      || left.label.localeCompare(right.label, 'fr')
+    ));
 }
 
 export function buildPlanningFleetLanes(

@@ -61,6 +61,7 @@ describe('Planning timeline visit and leave rendering', () => {
   });
 
   it.each([false, true])('renders overlapping projects on separate sub-rows (projectsOnly=%s)', (projectsOnly) => {
+    const onOpenCell = vi.fn();
     const project = (id: number, title: string, startsOn: string, endsOn: string): PlanningProjectRecord => ({
       id,
       title,
@@ -79,6 +80,7 @@ describe('Planning timeline visit and leave rendering', () => {
     });
     const { container } = render(<PlanningFleetTimelineRow
       projectsOnly={projectsOnly}
+      referenceDate="2026-08-11"
       crewCount={4}
       dayWidth={110}
       days={buildPlanningTimeline('2026-08-11', 'week')}
@@ -103,7 +105,7 @@ describe('Planning timeline visit and leave rendering', () => {
       onCreateVisit={vi.fn()}
       onMove={vi.fn()}
       onOpen={vi.fn()}
-      onOpenCell={vi.fn()}
+      onOpenCell={onOpenCell}
       onOpenVessel={vi.fn()}
       onOpenVisit={vi.fn()}
       onMoveVisit={vi.fn()}
@@ -124,6 +126,10 @@ describe('Planning timeline visit and leave rendering', () => {
     expect(row.style.minHeight).toBe(projectsOnly ? '65px' : '101px');
     expect(bars.map((bar) => bar.dataset.projectStack)).toEqual(['0', '1']);
     expect(bars.map((bar) => bar.style.marginTop)).toEqual(['7px', '34px']);
+    if (projectsOnly) {
+      fireEvent.click(screen.getByRole('button', { name: 'Ajouter un projet à GOURY' }));
+      expect(onOpenCell).toHaveBeenLastCalledWith(expect.objectContaining({ vesselId: 2 }), '2026-08-11');
+    }
   });
 
   it('stacks multiple visits on the vessel row and opens provider details', async () => {

@@ -1,7 +1,8 @@
 import type { PlanningOverview } from './planningQueries';
 import type { PlanningP13Data, PlanningWorkRestCheck } from './planningP13';
-import { buildPlanningExportRows, formatPlanningPerson, getAllPlanningCrewEvents } from './planningModel';
-import { splitPlanningEventByFunction } from './planningFunctions';
+import { buildPlanningExportRows, formatPlanningPerson, getAllPlanningCrewEvents, normalizePlanningStatus, type PlanningCrewEvent } from './planningModel';
+import { planningEventFunctionOnDate, splitPlanningEventByFunction } from './planningFunctions';
+import { addPlanningDays, daysBetween, planningLocalDateTimeToUtc, utcToPlanningLocalDateTime } from './planningDates';
 
 export type PlanningExportFormat = 'xlsx' | 'pdf' | 'ics';
 export type PlanningExportKind = 'schedule' | 'sailor' | 'crew_list' | 'handover_sheet' | 'anomalies' | 'work_rest';
@@ -218,6 +219,46 @@ function icsDate(value: string, end = false): string {
   return new Date(value).toISOString().replaceAll('-', '').replaceAll(':', '').replace('.000', '');
 }
 
+function calendarCrewEvents(context: PlanningExportContext): PlanningCrewEvent[] {
+  return getAllPlanningCrewEvents(context.overview).filter((event) => selected(event.personId, context.personIds)
+    && selected(event.vesselId, context.vesselIds) && event.confirmationStatus !== 'cancelled'
+    && within(event.startsOn, event.endsOn, context.startsOn, context.endsOn)).flatMap((event) => {
+    const start = event.startsOn < context.startsOn ? context.startsOn : event.startsOn;
+    const end = event.endsOn > context.endsOn ? context.endsOn : event.endsOn;
+    const boundaries = new Set([start, addPlanningDays(end, 1)]);
+    new Set([...Object.keys(event.dailyStatuses || {}), ...Object.keys(event.dailyFunctionLabels || {})]).forEach((date) => {
+      if (date < start || date > end) return;
+      boundaries.add(date);
+      boundaries.add(addPlanningDays(date, 1));
+    });
+    const dates = [...boundaries].sort();
+    const segments: PlanningCrewEvent[] = [];
+    const shiftedTimestamp = (value: string, previousDate: string, date: string) => {
+      if (!value || previousDate === date) return value;
+      const local = utcToPlanningLocalDateTime(value);
+      return planningLocalDateTimeToUtc(`${addPlanningDays(local.slice(0, 10), daysBetween(previousDate, date))}${local.slice(10)}`);
+    };
+    for (let index = 0; index < dates.length - 1; index += 1) {
+      const startsOn = dates[index];
+      const endsOn = addPlanningDays(dates[index + 1], -1);
+      const status = normalizePlanningStatus(event.dailyStatuses?.[startsOn] || event.status);
+      const functionLabel = planningEventFunctionOnDate(event, startsOn);
+      if (status === 'Repos') continue;
+      const previous = segments.at(-1);
+      if (previous?.status === status && previous.functionLabel === functionLabel && addPlanningDays(previous.endsOn, 1) === startsOn) {
+        previous.endsOn = endsOn;
+        previous.endsAt = shiftedTimestamp(event.endsAt, event.endsOn, endsOn);
+      } else {
+        segments.push({ ...event, id: startsOn === event.startsOn ? event.id : `${event.id}-${startsOn}`,
+          status, functionLabel, startsOn, endsOn,
+          startsAt: shiftedTimestamp(event.startsAt, event.startsOn, startsOn),
+          endsAt: shiftedTimestamp(event.endsAt, event.endsOn, endsOn) });
+      }
+    }
+    return segments;
+  });
+}
+
 function icsBlob(kind: PlanningExportKind, context: PlanningExportContext): Blob {
   const events: Array<{ uid: string; title: string; description: string; start: string; end: string }> = [];
   if (kind === 'handover_sheet' || kind === 'schedule') {
@@ -228,8 +269,8 @@ function icsBlob(kind: PlanningExportKind, context: PlanningExportContext): Blob
     }
   }
   if (kind === 'crew_list' || kind === 'schedule' || kind === 'sailor') {
-    for (const event of filteredCrewEvents(context)) {
-      events.push({ uid: `${event.id}@seapilot`, title: `${event.person} · ${event.vessel}`, description: `${event.functionLabel} · ${event.comments}`, start: event.startsAt || event.startsOn, end: event.endsAt || event.endsOn });
+    for (const event of calendarCrewEvents(context)) {
+      events.push({ uid: `${event.id}@seapilot`, title: `${event.person} · ${event.vessel} · ${event.status}`, description: `${event.functionLabel} · ${event.comments}`, start: event.startsAt || event.startsOn, end: event.endsAt || event.endsOn });
     }
   }
   if (kind === 'anomalies') {

@@ -47,17 +47,33 @@
   flex: 1 1 auto;
 }
 
-.planning-timeline-row.is-fleet.is-projects-only .planning-row-label {
-  display: flex;
+.planning-timeline-row.is-fleet.is-projects-only .planning-row-label.planning-tree-row.is-vessel {
+  display: grid;
   min-height: 0;
-  align-items: center;
-  gap: 6px;
-  padding-block: 3px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 14px 18px;
+  align-content: center;
+  gap: 1px;
+  padding-block: 1px;
 }
 
 .planning-timeline-row.is-projects-only .planning-vessel-actions {
   flex-shrink: 0;
+  height: 18px;
   margin: 0;
+}
+
+.planning-timeline-row.is-projects-only .planning-vessel-actions .planning-tree-action {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  flex-basis: 18px;
+  padding: 0;
+}
+
+.planning-timeline-row.is-projects-only .planning-project-vessel-name {
+  min-height: 0;
+  line-height: 14px;
 }
 
 .planning-timeline-row.is-projects-only .planning-project-title {

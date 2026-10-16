@@ -75,8 +75,8 @@ function localDateTime(date: string, time: string): string {
   return `${date}T${time}`;
 }
 
-function emptyAbsence(range: PlanningDateRange, personalPersonId?: number | null): PlanningAbsenceFormValue {
-  const date = range.start || todayPlanningDate();
+function emptyAbsence(creationDate: string, personalPersonId?: number | null): PlanningAbsenceFormValue {
+  const date = creationDate || todayPlanningDate();
   return {
     personId: String(personalPersonId ?? ''),
     absenceType: 'leave',
@@ -111,6 +111,7 @@ export function PlanningP12Panel({
   client,
   overview,
   range,
+  creationDate,
   canRequestAbsences,
   canReviewAbsences,
   canDeleteAbsences,
@@ -129,6 +130,7 @@ export function PlanningP12Panel({
   client: SupabaseClient;
   overview: PlanningOverview;
   range: PlanningDateRange;
+  creationDate?: string;
   canRequestAbsences: boolean;
   canReviewAbsences: boolean;
   canDeleteAbsences: boolean;
@@ -154,7 +156,7 @@ export function PlanningP12Panel({
   const [isSaving, setIsSaving] = useState(false);
   const [isEditingBalances, setIsEditingBalances] = useState(false);
   const [feedback, setFeedback] = useState<{ message: string; error: boolean } | null>(null);
-  const [absenceForm, setAbsenceForm] = useState<PlanningAbsenceFormValue>(() => emptyAbsence(range, personalPersonId));
+  const [absenceForm, setAbsenceForm] = useState<PlanningAbsenceFormValue>(() => emptyAbsence(creationDate ?? range.start, personalPersonId));
   const [isAbsenceFormOpen, setIsAbsenceFormOpen] = useState(false);
   const [reviewComments, setReviewComments] = useState<Record<number, string>>({});
   const [selectedConflictKey, setSelectedConflictKey] = useState('');
@@ -252,7 +254,7 @@ export function PlanningP12Panel({
         reason: absenceForm.reason,
       });
       await Promise.all([load(), onAuditChange()]);
-      setAbsenceForm(emptyAbsence(range, personalPersonId));
+      setAbsenceForm(emptyAbsence(creationDate ?? range.start, personalPersonId));
       setIsAbsenceFormOpen(false);
       setFeedback({ message: 'Demande d’absence enregistrée. Les impacts sont recalculés.', error: false });
     } catch (error) {
@@ -382,7 +384,7 @@ export function PlanningP12Panel({
             {isLoading ? <div className="admin-state" role="status">Chargement des absences, conflits et matrices…</div> : null}
             {!isLoading && tab === 'absences' ? (
               <section className="planning-p12-section">
-                <div className="planning-p12-section-heading"><div><h3>Demandes et indisponibilités</h3><p>Consultez les soldes et les dates des demandes de chaque personne.</p></div>{canRequestAbsences ? <button disabled={isSaving || isEditingBalances} onClick={() => { setAbsenceForm(emptyAbsence(range, personalPersonId)); setIsAbsenceFormOpen((value) => !value); }} type="button"><Plus size={16} />Nouvelle demande</button> : null}</div>
+                <div className="planning-p12-section-heading"><div><h3>Demandes et indisponibilités</h3><p>Consultez les soldes et les dates des demandes de chaque personne.</p></div>{canRequestAbsences ? <button disabled={isSaving || isEditingBalances} onClick={() => { setAbsenceForm(emptyAbsence(creationDate ?? range.start, personalPersonId)); setIsAbsenceFormOpen((value) => !value); }} type="button"><Plus size={16} />Nouvelle demande</button> : null}</div>
                 {isAbsenceFormOpen ? <form className="planning-p12-form" onSubmit={submitAbsence}>
                   <PlanningAbsenceFormFields isSaving={isSaving || isEditingBalances} onChange={setAbsenceForm} people={people} personalOnly={personalOnly} value={absenceForm} />
                   <PlanningAbsenceBalances client={client} people={people} personId={absenceForm.personId ? Number(absenceForm.personId) : null} absenceType={absenceForm.absenceType} startsAt={absenceForm.startsAt} endsAt={absenceForm.endsAt} absenceId={absenceForm.id} canManage={canReviewAbsences && !personalOnly && !isSaving} onEditingChange={setIsEditingBalances} />

@@ -4,7 +4,7 @@ import { buildPlanningCrewLanes } from './planningViews';
 import type { PlanningAssignmentRecord, PlanningOverview } from './planningQueries';
 import { EMPTY_PLANNING_OVERVIEW } from './usePlanningOverview';
 
-const days = buildPlanningTimeline('2026-09-21', 'month').slice(0, 7);
+const days = buildPlanningTimeline('2026-09-21', 'week');
 const range = { start: '2026-09-21', end: '2026-09-27' };
 const filters = { vesselName: '', personName: '' };
 const overview = {
@@ -99,7 +99,7 @@ describe('Planning crew visibility', () => {
   });
 
   it('keeps all September vessel/watch postings when the grid extends into October', () => {
-    expect(timelineRange(septemberDays)).toEqual({ start: '2026-08-31', end: '2026-10-18' });
+    expect(timelineRange(septemberDays)).toEqual({ start: '2026-05-01', end: '2027-01-01' });
     const rows = buildPlanningCrewRows(septemberOverview, septemberDays, filters, septemberEvents,
       { employmentRange: septemberReference });
     expect(fleetPostings(rows)).toEqual([
