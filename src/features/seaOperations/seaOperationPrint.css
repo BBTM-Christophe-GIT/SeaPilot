@@ -1,0 +1,57 @@
+.so-print { display: none; }
+.so-print-source-title { display: none; }
+.so-print .so-word-header { display: block; width: calc(100% + 96px); max-width: none; height: auto; margin: -48px -48px 12px; }
+.so-print .so-word-footer { display: block; width: calc(100% + 96px); max-width: none; height: auto; margin: 0 -48px; }
+.so-document-preview .so-print .so-print-footer { border: 0; padding: 0; }
+.so-print-rh-signature { margin: 14px 0; break-inside: avoid; }
+.so-print-rh-signature figcaption { font-size: 11px; font-weight: 700; margin-bottom: 8px; }
+.so-print-rh-signature img { display: block; max-width: 230px; max-height: 85px; object-fit: contain; object-position: left center; }
+.so-print .so-print-passage th:nth-child(1) { width: 6%; }
+.so-print .so-print-passage th:nth-child(2) { width: 27%; }
+.so-print .so-print-passage th:nth-child(3), .so-print .so-print-passage th:nth-child(4) { width: 12%; }
+.so-print .so-print-passage th:nth-child(5) { width: 8%; }
+.so-print .so-print-passage th:nth-child(6) { width: 22%; }
+.so-print .so-print-passage th:nth-child(7) { width: 13%; }
+
+@media print {
+  .so-page > .so-screen { display: none !important; }
+  .so-page > .so-print { display: block !important; }
+  .so-print { color: #111; background: #fff; font-family: var(--sp-font), Arial, sans-serif; font-size: 9pt; line-height: 1.5; overflow: visible; }
+  .so-print *, .so-print *::before, .so-print *::after { box-sizing: border-box; color: inherit; }
+  .so-print-header { margin-bottom: 6mm; }
+  .so-print h1 { font-size: 21pt; line-height: 1.2; margin: 2mm 0 3mm; color: #000; }
+  .so-print h2 { font-size: 13pt; line-height: 1.3; margin: 6mm 0 3mm; color: #000; break-after: avoid; }
+  .so-print h3 { font-size: 10pt; line-height: 1.35; margin: 4mm 0 2mm; color: #000; break-after: avoid; }
+  .so-print p { margin: 1.5mm 0 3mm; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .so-print-reference, .so-print-footer { font-size: 7.5pt; color: #444; }
+  .so-print-status { font-size: 11pt; font-weight: 700; }
+  .so-print-section { margin-bottom: 5mm; }
+  .so-print dl { margin: 2mm 0 3mm; }
+  .so-print-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 6mm; row-gap: 2.5mm; }
+  .so-print-field { min-width: 0; break-inside: avoid; }
+  .so-print-field dt { font-size: 8pt; font-weight: 700; margin-bottom: .7mm; }
+  .so-print-field dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; }
+  .so-print-wide { grid-column: 1 / -1; }
+  .so-print-metadata { padding-bottom: 3mm; border-bottom: .3mm solid #777; }
+  .so-print-check-section { margin-bottom: 4mm; }
+  .so-print table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 2mm 0 4mm; font-size: 8.5pt; }
+  .so-print thead { display: table-header-group; }
+  .so-print th, .so-print td { padding: 2mm 2.5mm; border: .2mm solid #bbb; vertical-align: top; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .so-print th { font-weight: 700; background: #eee; }
+  .so-print tr { break-inside: avoid; }
+  .so-print-controls th:first-child { width: 57%; }
+  .so-print-controls th:last-child { width: 43%; }
+  .so-print td p { margin: 1.5mm 0 0; }
+  .so-print-help { font-size: 8pt; font-weight: 400; }
+  .so-print-label { font-weight: 700; }
+  .so-print-waypoint { margin: 3mm 0 4mm; padding-bottom: 2mm; border-bottom: .2mm solid #bbb; }
+  .so-print-decision-text { font-size: 11pt; }
+  .so-print-signature { padding-top: 3mm; border-top: .3mm solid #777; }
+  .so-print-kit th:nth-child(1) { width: 31%; }
+  .so-print-kit th:nth-child(2) { width: 11%; }
+  .so-print-kit th:nth-child(3) { width: 58%; }
+  .so-print-footer { margin-top: 6mm; padding-top: 3mm; border-top: .2mm solid #bbb; white-space: normal; }
+  .so-print .so-word-header { width: 210mm; margin: -14mm -14mm 3mm; }
+  .so-print .so-word-footer { width: 210mm; margin: 0 -14mm; }
+  .so-print .so-print-footer { border: 0; padding: 0; }
+}

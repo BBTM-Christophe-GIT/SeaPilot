@@ -212,6 +212,18 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
     ],
     reminders: ['Pour les procédures approuvées et diffusées, utilisez en priorité Procédures QHSE.'],
   },
+  seaOperations: {
+    purpose: 'Préparer une opération en mer et conserver la décision GO ou NO GO du Capitaine selon le formulaire OPE-FOR-10-C.',
+    access: 'Le module est accessible à tous les profils dans Opérations. Les droits de modification dépendent du dossier. La signature est réservée au compte réel du Capitaine affecté au navire, selon les autorisations contrôlées par le serveur.',
+    steps: [
+      { title: 'Préparer la mission', detail: 'Dans Opérations, ouvrez Opération en Mer puis Nouvelle opération. La fiche s’ouvre dans une fenêtre avec les étapes à gauche, la saisie au centre, l’aperçu en direct et la complétude à droite. Choisissez la date et le projet du planning. Si plusieurs projets sont prévus le même jour, sélectionnez la mission et le navire concernés : le client, ses coordonnées, la description, les ports et le Capitaine sont actualisés automatiquement. La fonction temporaire du planning prime sur la fonction RH. Complétez les informations manquantes, les personnes à embarquer et la DAPAQ. Enregistrer le brouillon conserve une préparation incomplète. Sur petit écran, utilisez Saisie ou Aperçu et complétude pour changer de volet.' },
+      { title: 'Vérifier les conditions avant appareillage', detail: 'Dans Contrôles avant appareillage, répondez aux contrôles du Capitaine et indiquez si le remorquage, le chargement, le support de plongeur et l’avitaillement sont applicables. Les rubriques applicables affichent leurs contrôles et informations complémentaires. Justifiez les réponses qui le demandent.' },
+      { title: 'Renseigner le plan de passage', detail: 'Renseignez les cartes marines puis utilisez Ajouter un point de passage. Chaque point occupe une ligne du tableau : numéro, description / VHF, latitude, longitude, UKC, ETA et trafic dense.' },
+      { title: 'Consigner la décision', detail: 'Le Capitaine habilité choisit GO ou NO GO, décrit les risques et vérifie son identité et sa signature RH proposées automatiquement. La date du jour est proposée par défaut ; vérifiez le lieu puis confirmez la signature. Toute réponse bloquante interdit GO. Un NO GO motivé peut être signé même si la préparation a été interrompue.' },
+      { title: 'Retrouver la fiche', detail: 'Le registre permet de rechercher les opérations et de filtrer les brouillons ou décisions signées. Une décision signée est figée. Exporter le PDF conserve l’en-tête et le pied de page du Word OPE-FOR-10-C sur chaque page ; l’impression reste disponible depuis la fiche enregistrée.' },
+    ],
+    reminders: ['Une réponse non renseignée ne constitue jamais une confirmation.', 'Enregistrez vos modifications avant de quitter la fiche.', 'La signature enregistre l’identité du compte autorisé et fige la décision ; vérifiez le navire et le contenu avant de signer.'],
+  },
   dpr: {
     purpose: 'Consulter les DPR des navires accessibles et rédiger vos propres Daily Progress Reports.',
     access: 'Le Marin consulte les DPR des navires autorisés par ses affectations, à partir d’un mois avant l’embarquement et jusqu’à un mois après le débarquement. La modification de ses propres brouillons ou rapports rouverts et leur validation restent limitées aux 3 jours suivant leur création.',
