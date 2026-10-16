@@ -49,7 +49,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ButtonHTMLAttributes, FormEvent, ReactNode } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { createPlanningAuditPreview, fetchPlanningAudits, PLANNING_AUDIT_LABELS, planningAuditUrl, withPlanningAuditLanes, type PlanningAudit } from './planningAudits';
@@ -86,7 +86,7 @@ import {
   type PlanningControlResult,
   type PlanningFilters,
 } from './planningModel';
-import { addPlanningDays, daysBetween, formatPlanningDate, formatPlanningDateTime, planningLocalDateTimeToUtc, todayPlanningDate, utcToPlanningLocalDateTime } from './planningDates';
+import { addPlanningDays, daysBetween, formatPlanningDate, formatPlanningDateTime, planningLocalDateTimeToUtc, startOfPlanningWeek, todayPlanningDate, utcToPlanningLocalDateTime } from './planningDates';
 import { planningErrorMessage } from './planningErrors';
 import { getPlanningConflictDatesByEvent } from './planningOverlap';
 import { getPlanningPermissions } from './planningPermissions';
@@ -517,6 +517,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const readPermissions = getPlanningPermissions(effectiveRoles, false);
   const usesLivePlanning = effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
   const workspaceRef = useRef<HTMLElement>(null);
+  const calendarScrollRef = useRef<HTMLDivElement>(null);
+  const [calendarFocusVersion, setCalendarFocusVersion] = useState(0);
   const initialAnchorDate = useMemo(() => todayPlanningDate(), []);
   const previewOverview = useMemo(
     () => previewMode ? createPlanningPreviewOverview(initialAnchorDate) : undefined,
@@ -810,6 +812,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const days = timelineDays;
   const monthSegments = useMemo(() => buildPlanningMonthSegments(days), [days]);
   const range = useMemo(() => timelineRange(timelineDays), [timelineDays]);
+  // Preserve creation defaults when the consultation window is extended.
+  const creationRange = useMemo(() => {
+    const start = startOfPlanningWeek(anchorDate);
+    return { start, end: addPlanningDays(start, 48) };
+  }, [anchorDate]);
   const referenceMonthRange = useMemo(() => planningReferenceMonthRange(anchorDate), [anchorDate]);
   const referenceMonthLabel = useMemo(
     () => planningReferenceMonthLabel(anchorDate).toLocaleLowerCase('fr-FR'),
@@ -838,6 +845,26 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const todayDate = todayPlanningDate();
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const effectiveDayWidth = Math.round(52 * zoomLevel / 100);
+
+  useLayoutEffect(() => {
+    const calendar = calendarScrollRef.current;
+    if (!calendar || !hasLoaded) return;
+    const centerOnAnchor = () => {
+      const labelWidth = Number.parseFloat(getComputedStyle(calendar).getPropertyValue('--planning-label-width')) || 0;
+      const visibleDayWidth = Math.max(0, calendar.clientWidth - labelWidth);
+      const anchorIndex = daysBetween(range.start, anchorDate);
+      calendar.scrollLeft = Math.max(0, (anchorIndex + 0.5) * effectiveDayWidth - visibleDayWidth / 2);
+    };
+    centerOnAnchor();
+    let observedWidth = calendar.clientWidth;
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => {
+      if (calendar.clientWidth === observedWidth) return;
+      observedWidth = calendar.clientWidth;
+      centerOnAnchor();
+    });
+    observer?.observe(calendar);
+    return () => observer?.disconnect();
+  }, [anchorDate, calendarFocusVersion, crewGrouping, effectiveDayWidth, hasLoaded, perspective, range.start]);
 
   const allPlanningCrewEvents = useMemo(() => getAllPlanningCrewEvents(planningData), [planningData]);
   const pendingBoardRowIds = canEditPlanning && pendingBoardRows.rangeStart === range.start && pendingBoardRows.rangeEnd === range.end
@@ -1128,10 +1155,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       ...EMPTY_ASSIGNMENT,
       vesselId: String(lane.vesselId),
       crewPersonId: String(person.id),
-      startsOn: range.start,
-      endsOn: range.end,
-      startsAt: localDateTime(range.start, '08:00'),
-      endsAt: localDateTime(range.end, '20:00'),
+      startsOn: creationRange.start,
+      endsOn: creationRange.end,
+      startsAt: localDateTime(creationRange.start, '08:00'),
+      endsAt: localDateTime(creationRange.end, '20:00'),
       assignmentRole: person.functionLabel || 'Équipage',
       confirmationStatus: 'provisional',
       watchGroup,
@@ -1143,8 +1170,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       vessel: lane.vessel,
       functionLabel: input.assignmentRole,
       status: input.statusLabel,
-      startsOn: range.start,
-      endsOn: range.end,
+      startsOn: creationRange.start,
+      endsOn: creationRange.end,
       startsAt: input.startsAt,
       endsAt: input.endsAt,
     }, allPlanningCrewEvents);
@@ -1159,7 +1186,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       const row = await createPlanningAssignment(effectiveClient, input);
       const [assignment] = mapPlanningAssignmentRows([row], overview.people, overview.vessels);
       updateOverview((current) => ({ ...current, assignments: [...current.assignments, assignment] }));
-      setStatusMessage(`${formatPlanningPerson(person)} est affecté provisoirement à ${lane.label}, ${watchGroup}, du ${formatPlanningDate(range.start)} au ${formatPlanningDate(range.end)}.`);
+      setStatusMessage(`${formatPlanningPerson(person)} est affecté provisoirement à ${lane.label}, ${watchGroup}, du ${formatPlanningDate(creationRange.start)} au ${formatPlanningDate(creationRange.end)}.`);
     } catch (error) {
       setErrorMessage(planningErrorMessage(error, "Impossible d'affecter ce marin par glisser-déposer."));
     } finally {
@@ -1755,7 +1782,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
       return;
     }
-    const defaultStart = range.start || anchorDate;
+    const defaultStart = creationRange.start;
     const defaultEnd = addPlanningDays(defaultStart, 6);
     setAssignmentForm({
       ...EMPTY_ASSIGNMENT,
@@ -2743,7 +2770,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                   <input aria-label="Mois de référence" onChange={(event) => event.target.value && setAnchorDate(`${event.target.value}-01`)} type="month" value={anchorDate.slice(0, 7)} />
                 </label>
                 <button aria-label="Mois suivant" className="planning-icon-button" onClick={() => setAnchorDate((value) => shiftPlanningAnchor(value, PLANNING_VIEW_MODE, 1))} type="button"><ChevronRight aria-hidden="true" size={18} /></button>
-                <button className="planning-today-button" onClick={() => setAnchorDate(todayDate)} type="button">Aujourd’hui</button>
+                <button className="planning-today-button" onClick={() => { setAnchorDate(todayDate); setCalendarFocusVersion((value) => value + 1); }} type="button">Aujourd’hui</button>
               </div>
             </div>
 
@@ -2764,6 +2791,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             data-planning-view-mode={PLANNING_VIEW_MODE}
             onClickCapture={suppressCalendarClickAfterPan}
             onPointerDown={beginCalendarPan}
+            ref={calendarScrollRef}
             style={timelineStyle(effectiveDayWidth, days.length)}
             tabIndex={0}
             title="Maintenez le clic et déplacez la souris pour parcourir le calendrier"
@@ -2954,8 +2982,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       {selectedEvent && eventForm ? <PlanningEventDialog activeVessels={activeVessels} controls={selectedEventControls} editable={canEditPlanning} event={selectedEvent} form={eventForm} functionOptions={PLANNING_ASSIGNMENT_FUNCTIONS} isSaving={isSaving} onChange={setEventForm} onClose={() => { setSelectedEvent(null); setEventForm(null); }} onDelete={() => void removeEvent(selectedEvent)} onDuplicate={duplicateSelectedEvent} onSave={() => void saveEvent(selectedEvent, eventForm)} watchGroupOptions={watchGroupOptions} /> : null}
       {isHandoverOpen ? <PlanningHandoverDialog editable={permissions.canManageHandovers} handover={selectedHandover} isSaving={isSaving} onClose={() => { setIsHandoverOpen(false); setSelectedHandover(null); }} onSave={(input) => void handleSaveHandover(input)} overview={overview} /> : null}
       {isP11Open ? <PlanningP11Panel canManageRotations={permissions.canManageRotations} canManageTemplates={permissions.canManageTemplates} client={effectiveClient} onClose={() => setIsP11Open(false)} onOperationalChange={handleP11OperationalChange} overview={overview} /> : null}
-      {isAbsenceRequestOpen ? <Suspense fallback={<div className="app-dialog-backdrop"><div className="admin-state" role="status">Chargement de la demande de congés…</div></div>}><PlanningAbsenceRequestDialog canManageBalances={canEditPlanning} client={effectiveClient} currentPerson={outletContext?.currentPerson ?? null} onClose={() => setIsAbsenceRequestOpen(false)} onSaved={async () => { await handleP12AuditChange(); setStatusMessage('Demande de congés envoyée.'); }} people={overview.people} personalOnly={isPersonalPlanningView} range={range} /></Suspense> : null}
-      {isP12Open ? <Suspense fallback={<div className="app-dialog-backdrop"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canDeleteAbsences={permissions.canDeleteAbsences} canManageConflictCases={permissions.canManageConflictCases} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} overview={overview} personalOnly={isPersonalPlanningView} personalPersonId={currentPersonId} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
+      {isAbsenceRequestOpen ? <Suspense fallback={<div className="app-dialog-backdrop"><div className="admin-state" role="status">Chargement de la demande de congés…</div></div>}><PlanningAbsenceRequestDialog canManageBalances={canEditPlanning} client={effectiveClient} currentPerson={outletContext?.currentPerson ?? null} onClose={() => setIsAbsenceRequestOpen(false)} onSaved={async () => { await handleP12AuditChange(); setStatusMessage('Demande de congés envoyée.'); }} people={overview.people} personalOnly={isPersonalPlanningView} range={creationRange} /></Suspense> : null}
+      {isP12Open ? <Suspense fallback={<div className="app-dialog-backdrop"><div className="admin-state" role="status">Chargement du centre de conflits…</div></div>}><PlanningP12Panel canDeleteAbsences={permissions.canDeleteAbsences} canManageConflictCases={permissions.canManageConflictCases} canPrepareReplacements={permissions.canPrepareReplacements} canRequestAbsences={permissions.canRequestAbsences} canReviewAbsences={permissions.canReviewAbsences} client={effectiveClient} creationDate={creationRange.start} initialAbsenceId={p12Launch.absenceId} initialTab={p12Launch.tab} onAuditChange={handleP12AuditChange} onClose={() => setIsP12Open(false)} onOpenSource={openP12Source} onPrepareReplacement={prepareManualReplacement} overview={overview} personalOnly={isPersonalPlanningView} personalPersonId={currentPersonId} range={range} requestedOnly={p12Launch.requestedOnly} /></Suspense> : null}
       {visitDialog ? <PlanningVisitsPanel canDelete={permissions.canDeleteAbsences} canEdit={canEditPlanning} canManageProviders={effectiveRoles.includes('admin') || effectiveRoles.includes('direction')} client={effectiveClient} onClose={() => setVisitDialog(null)} onSaved={async () => { await loadVesselVisits(); if (permissions.canViewHistory) { const history = await fetchPlanningHistory(effectiveClient); updateOverview((current) => ({ ...current, history })); } }} providers={serviceProviders} vessel={visitDialog.vessel} visit={visitDialog.visit} /> : null}
       {auditDialog ? <AppDialog title={PLANNING_AUDIT_LABELS[auditDialog.kind]} eyebrow={auditDialog.siteName} size="sm"
         onClose={() => setAuditDialog(null)} icon={<CalendarDays size={20} />} footer={<>
@@ -2967,7 +2995,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         <p>Statut : {{ planned: 'Planifié', in_progress: 'En cours', completed: 'Réalisé' }[auditDialog.status]}</p>
         {auditDialog.performedOn ? <p>Date de réalisation : {formatPlanningDate(auditDialog.performedOn)}</p> : null}
       </AppDialog> : null}
-      {isP13Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du cockpit métier…</div></div>}><PlanningP13Panel canManageDependencies={permissions.canManageDependencies} canManageWorkRestPolicies={permissions.canManageWorkRestPolicies} canRefreshNotifications={permissions.canRefreshNotifications} canViewDashboard={permissions.canViewDashboard} canViewNotifications={permissions.canViewNotifications} canViewWorkRest={permissions.canViewWorkRest} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP13Open(false)} overview={overview} range={range} /></Suspense> : null}
+      {isP13Open ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement du cockpit métier…</div></div>}><PlanningP13Panel canManageDependencies={permissions.canManageDependencies} canManageWorkRestPolicies={permissions.canManageWorkRestPolicies} canRefreshNotifications={permissions.canRefreshNotifications} canViewDashboard={permissions.canViewDashboard} canViewNotifications={permissions.canViewNotifications} canViewWorkRest={permissions.canViewWorkRest} client={effectiveClient} creationDate={creationRange.start} onAuditChange={handleP12AuditChange} onClose={() => setIsP13Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP21Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement de l’assistant Planning…</div></div>}><PlanningP21Panel access={assistantAccess} client={effectiveClient} onAuditChange={handleP12AuditChange} onClose={() => setIsP21Open(false)} overview={overview} range={range} /></Suspense> : null}
       {isP22Open && assistantAccess.hasAccess ? <Suspense fallback={<div className="planning-dialog-backdrop is-side-panel"><div className="admin-state" role="status">Chargement des prévisions…</div></div>}><PlanningP22Panel access={assistantAccess} client={effectiveClient} onClose={() => setIsP22Open(false)} overview={overview} range={range} /></Suspense> : null}
       {projectContextMenu ? (

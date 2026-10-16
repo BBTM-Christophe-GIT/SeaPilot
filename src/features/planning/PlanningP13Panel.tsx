@@ -122,6 +122,7 @@ export interface PlanningP13PanelProps {
   client: SupabaseClient;
   overview: PlanningOverview;
   range: { start: string; end: string };
+  creationDate?: string;
   canManageWorkRestPolicies: boolean;
   canViewDashboard: boolean;
   canViewWorkRest: boolean;
@@ -142,6 +143,7 @@ export function PlanningP13Panel({
   client,
   overview,
   range,
+  creationDate,
   canManageWorkRestPolicies,
   canViewDashboard,
   canViewWorkRest,
@@ -331,7 +333,7 @@ export function PlanningP13Panel({
       </div> : null}
 
       {!loading && activeTab === 'rest' ? <div className="planning-p13-content">
-        <div className="planning-p13-toolbar"><div><strong>Contrôles travail & repos</strong><small>{data.policies.length ? `${data.policies.length} politique(s) datée(s) administrée(s)` : 'Aucun seuil configuré : aucun seuil réglementaire implicite n’est appliqué.'}</small></div>{canManageWorkRestPolicies ? <button onClick={() => setPolicyEditor(emptyPolicy(range.start))} type="button"><Plus size={16} />Nouvelle politique</button> : null}</div>
+        <div className="planning-p13-toolbar"><div><strong>Contrôles travail & repos</strong><small>{data.policies.length ? `${data.policies.length} politique(s) datée(s) administrée(s)` : 'Aucun seuil configuré : aucun seuil réglementaire implicite n’est appliqué.'}</small></div>{canManageWorkRestPolicies ? <button onClick={() => setPolicyEditor(emptyPolicy(creationDate ?? range.start))} type="button"><Plus size={16} />Nouvelle politique</button> : null}</div>
         <div className="planning-p13-segmented"><button className={restFilter === 'alerts' ? 'is-active' : ''} onClick={() => setRestFilter('alerts')} type="button">Alertes</button><button className={restFilter === 'missing' ? 'is-active' : ''} onClick={() => setRestFilter('missing')} type="button">Données manquantes</button><button className={restFilter === 'all' ? 'is-active' : ''} onClick={() => setRestFilter('all')} type="button">Tous</button></div>
         <div className="planning-p13-policy-list">{data.policies.map((policy) => <button disabled={!canManageWorkRestPolicies} key={policy.id} onClick={() => canManageWorkRestPolicies && setPolicyEditor(policyForm(policy))} type="button"><span><strong>{policy.name}</strong><small>{policy.scope === 'company' ? 'Entreprise' : overview.vessels.find((vessel) => vessel.id === policy.vesselId)?.name} · depuis le {formatPlanningDate(policy.effectiveFrom)}</small><small>Travail : {policy.maxWork24h} h / journée de calcul · repos : {policy.minRest24h} h / 24 h</small><small>Repos continu : {policy.minConsecutiveRestHours} h · amplitude : {policy.maxAmplitudeHours ?? "non renseignée"}{policy.maxAmplitudeHours == null ? "" : " h"}</small></span><em>{policy.active ? 'Active' : 'Inactive'}</em></button>)}</div>
         <div className="planning-p13-check-list">{filteredChecks.length ? filteredChecks.map((check) => <article className={`is-${check.status}`} key={check.id}><div><strong>{check.personName}</strong><span>{check.ruleLabel}</span><small>{check.vesselName} · {formatPlanningDate(check.date)} · {check.policyName}</small></div><div><strong>{check.value ?? 'N/A'} {check.value === null ? '' : check.unit === 'hours' ? 'h' : 'période(s)'}</strong><span>Seuil : {check.threshold ?? 'non configuré'}</span><em>{check.status === 'compliant' ? 'Conforme' : check.status === 'non_compliant' ? 'Non conforme' : 'Non évaluable'}</em></div></article>) : <div className="admin-empty"><CheckCircle2 size={20} /><p>Aucun contrôle dans ce filtre.</p></div>}</div>

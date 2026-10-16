@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.75.10`, build `2026-10-16.002`, affiche le Planning de quatre mois
+avant à quatre mois après la date de référence. Le calendrier se centre sur cette
+date à l'ouverture, au zoom et avec « Aujourd’hui », y compris après un déplacement
+manuel. Aucun changement de droits, de migration ou de configuration n'est requis.
+Voir [la fenêtre et sa recette de performance](./planning-centered-four-month-window.md).
+
 Version `3.75.9`, build `2026-10-16.001`, active la configuration OAuth du
 compteur Gmail sur Vercel. Le client Web est réservé à l'organisation BBTM.
 Les lectures restent dans le navigateur, avec un maximum d'une lecture par

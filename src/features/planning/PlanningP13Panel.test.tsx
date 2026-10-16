@@ -158,6 +158,18 @@ describe('Planning P1.3 cockpit', () => {
     await waitFor(() => expect(savePlanningWorkRestPolicy).toHaveBeenCalledWith(client, expect.objectContaining({ name: 'Politique direction', maxWork24h: 12, minRest7d: 96, maxAmplitudeHours: 13.25, maxIntervalBetweenRestsHours: 12.5 })));
   });
 
+  it.each([
+    [undefined, '2026-05-01'],
+    ['2026-08-17', '2026-08-17'],
+  ])('uses creation date %s for new policies while keeping the analysis range', async (creationDate, expectedDate) => {
+    const user = userEvent.setup();
+    renderPanel({ creationDate, initialTab: 'rest', range: { start: '2026-05-01', end: '2027-01-01' } });
+    expect((await screen.findAllByText('Anne MARTIN')).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: 'Nouvelle politique' }));
+    const form = screen.getByRole('heading', { name: 'Nouvelle politique' }).closest('form')!;
+    expect(within(form).getByLabelText('Applicable du')).toHaveValue(expectedDate);
+  });
+
   it('marks notifications read and creates a manual dependency', async () => {
     const user = userEvent.setup();
     renderPanel();

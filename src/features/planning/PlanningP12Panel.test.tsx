@@ -169,6 +169,33 @@ describe('Planning P1.2 panel', () => {
     await waitFor(() => expect(reviewPlanningAbsence).toHaveBeenCalledWith(client, 31, 'approve', ''));
   });
 
+  it.each([
+    [undefined, '2026-05-01'],
+    ['2026-08-17', '2026-08-17'],
+  ])('uses creation date %s for new and reset requests while keeping the analysis range', async (creationDate, expectedDate) => {
+    const user = userEvent.setup();
+    renderPanel({ creationDate, range: { start: '2026-05-01', end: '2027-01-01' } });
+    expect(await screen.findByRole('heading', { name: 'Congés validés' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /Absences/ }));
+    await user.click(screen.getByRole('button', { name: 'Nouvelle demande' }));
+    let form = screen.getByRole('button', { name: 'Envoyer la demande' }).closest('form')!;
+    expect(within(form).getByLabelText('Début')).toHaveValue(`${expectedDate}T08:00`);
+    expect(within(form).getByLabelText('Fin')).toHaveValue(`${expectedDate}T18:00`);
+    await user.selectOptions(within(form).getByLabelText('Marin'), '11');
+    fireEvent.change(within(form).getByLabelText('Début'), { target: { value: '2026-08-20T08:00' } });
+    fireEvent.change(within(form).getByLabelText('Fin'), { target: { value: '2026-08-20T18:00' } });
+    await user.type(within(form).getByLabelText('Motif'), 'Demande de test');
+    await user.click(within(form).getByRole('button', { name: 'Envoyer la demande' }));
+    await screen.findByText('Demande d’absence enregistrée. Les impacts sont recalculés.');
+    expect(savePlanningAbsence).toHaveBeenCalledWith(client, expect.objectContaining({
+      startsAt: '2026-08-20T08:00', endsAt: '2026-08-20T18:00',
+    }));
+    await user.click(screen.getByRole('button', { name: 'Nouvelle demande' }));
+    form = screen.getByRole('button', { name: 'Envoyer la demande' }).closest('form')!;
+    expect(within(form).getByLabelText('Début')).toHaveValue(`${expectedDate}T08:00`);
+    expect(within(form).getByLabelText('Fin')).toHaveValue(`${expectedDate}T18:00`);
+  });
+
   it('keeps conflict treatment and replacement selection manual', async () => {
     const user = userEvent.setup();
     const onPrepareReplacement = vi.fn();

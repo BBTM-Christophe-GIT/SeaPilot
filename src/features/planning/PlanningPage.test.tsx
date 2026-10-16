@@ -3,8 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route, Outlet } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { PlanningPage } from './PlanningPage';
-import { formatPlanningDate, startOfPlanningWeek, todayPlanningDate } from './planningDates';
-import { buildPlanningTimeline, timelineRange } from './planningModel';
+import { daysBetween, formatPlanningDate, shiftPlanningMonths, todayPlanningDate } from './planningDates';
 import type { GenericCrewRowData } from './planningGenericCrew';
 
 vi.mock('./planningDates', async (importOriginal) => ({
@@ -624,7 +623,7 @@ describe('PlanningPage cockpit', () => {
     ]);
     await user.click(within(category).getByRole('button', { name: 'Ajouter le poste fictif Capitaine' }));
     await screen.findByRole('button', { name: 'Remplacer Capitaine par un marin' });
-    await user.dblClick(screen.getAllByRole('button', { name: /^Case vide de Capitaine le/ })[0]);
+    await user.dblClick(screen.getByRole('button', { name: /^Case vide de Capitaine le 29\/06\/2026\./ }));
     dialog = await screen.findByRole('dialog', { name: 'Préparer le planning · Capitaine' });
     fireEvent.change(within(dialog).getByLabelText('Fin'), { target: { value: '2026-06-30' } });
     await user.selectOptions(within(dialog).getByLabelText('Statut'), 'Repos');
@@ -658,7 +657,7 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-07' } });
     fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2026-06' } });
-    expect(container.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-range-start', '2026-06-01');
+    expect(container.querySelector('.planning-calendar-scroll')).toHaveAttribute('data-planning-range-start', '2026-02-01');
     await waitFor(() => expect(container.querySelector('.planning-calendar-body')).toHaveTextContent('Paul DURAND'));
     expect(container.querySelector('.planning-calendar-body')).toHaveTextContent('Luc MOREL');
     expect(screen.queryByRole('button', { name: 'Filtre actif' })).not.toBeInTheDocument();
@@ -717,7 +716,7 @@ describe('PlanningPage cockpit', () => {
     try {
       const user = userEvent.setup();
       const { client } = createClient({ assignments: [assignmentOverviewRow], periods: [], days: [],
-        people: [captainRow, crewRow, { ...crewRow, id: 99, active: false, departed_on: '2026-05-31' }],
+        people: [captainRow, crewRow, { ...crewRow, id: 99, active: false, departed_on: '2025-12-31' }],
       });
       render(<PlanningPage client={client as never} roles={['admin']} />);
       await screen.findByRole('button', { name: 'Replier COTENTIN' });
@@ -1259,7 +1258,7 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Événement flotte mis à jour sans rechargement.')).toBeInTheDocument();
   }, 20_000);
 
-  it('uses a rolling seven-week window from the selected month’s Monday and exposes navigation controls', async () => {
+  it('shows four months before and after the reference date and exposes navigation controls', async () => {
     const user = userEvent.setup();
     const { client } = createClient();
     render(<PlanningPage client={client as never} roles={['admin']} />);
@@ -1267,26 +1266,67 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2025-07' } });
     const calendar = document.querySelector('.planning-calendar-scroll');
-    expect(calendar).toHaveAttribute('data-planning-range-start', '2025-06-30');
-    expect(calendar).toHaveAttribute('data-planning-range-end', '2025-08-17');
+    expect(calendar).toHaveAttribute('data-planning-range-start', '2025-03-01');
+    expect(calendar).toHaveAttribute('data-planning-range-end', '2025-11-01');
     await user.click(screen.getByRole('button', { name: 'Mois suivant' }));
     expect(screen.getByLabelText('Mois de référence')).toHaveValue('2025-08');
-    expect(calendar).toHaveAttribute('data-planning-range-start', '2025-07-28');
-    expect(calendar).toHaveAttribute('data-planning-range-end', '2025-09-14');
+    expect(calendar).toHaveAttribute('data-planning-range-start', '2025-04-01');
+    expect(calendar).toHaveAttribute('data-planning-range-end', '2025-12-01');
     await user.click(screen.getByRole('button', { name: 'Mois précédent' }));
     expect(screen.getByLabelText('Mois de référence')).toHaveValue('2025-07');
     expect(screen.getByRole('button', { name: 'Zoom avant' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Afficher le planning en plein écran' })).toBeInTheDocument();
   });
 
-  it('opens the rolling month on the current week’s Monday', async () => {
+  it('centers today on opening, on zoom and even when Today is already the reference date', async () => {
+    let viewportWidth = 1018;
+    let notifyResize = () => {};
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { notifyResize = callback; }
+      observe() {}
+      disconnect() {}
+    });
+    const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => viewportWidth);
     const { client } = createClient();
-    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    try {
+      const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+      await screen.findByRole('heading', { name: 'Planning' });
+      const calendar = container.querySelector<HTMLElement>('.planning-calendar-scroll')!;
+      const start = shiftPlanningMonths(todayPlanningDate(), -4);
+      const index = daysBetween(start, todayPlanningDate());
+      expect(calendar).toHaveAttribute('data-planning-range-start', start);
+      expect(calendar).toHaveAttribute('data-planning-range-end', shiftPlanningMonths(todayPlanningDate(), 4));
+      expect(calendar.scrollLeft).toBe((index + 0.5) * 52 - 1018 / 2);
 
-    await screen.findByRole('heading', { name: 'Planning' });
-    const calendar = container.querySelector<HTMLElement>('.planning-calendar-scroll')!;
-    expect(calendar).toHaveAttribute('data-planning-range-start', startOfPlanningWeek(todayPlanningDate()));
-    expect(calendar.scrollLeft).toBe(0);
+      calendar.style.setProperty('--planning-label-width', '218px');
+      calendar.scrollLeft = 0;
+      fireEvent.click(screen.getByRole('button', { name: 'Aujourd’hui' }));
+      expect(calendar.scrollLeft).toBe((index + 0.5) * 52 - 400);
+      fireEvent.click(screen.getByRole('button', { name: 'Zoom avant' }));
+      expect(calendar.scrollLeft).toBe((index + 0.5) * 62 - 400);
+
+      calendar.scrollLeft = 240;
+      fireEvent.click(screen.getByRole('button', { name: 'Filtres' }));
+      expect(calendar.scrollLeft).toBe(240);
+      notifyResize();
+      expect(calendar.scrollLeft).toBe(240);
+      viewportWidth = 818;
+      notifyResize();
+      expect(calendar.scrollLeft).toBe((index + 0.5) * 62 - 300);
+      viewportWidth = 1018;
+      notifyResize();
+      fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2025-12' } });
+      expect(calendar.scrollLeft).toBe((daysBetween('2025-08-01', '2025-12-01') + 0.5) * 62 - 400);
+      fireEvent.click(screen.getByRole('button', { name: 'Aujourd’hui' }));
+      expect(screen.getByLabelText('Mois de référence')).toHaveValue(todayPlanningDate().slice(0, 7));
+      expect(calendar.scrollLeft).toBe((index + 0.5) * 62 - 400);
+      calendar.style.setProperty('--planning-label-width', '246px');
+      fireEvent.click(screen.getByRole('tab', { name: 'Équipages' }));
+      expect(calendar.scrollLeft).toBe((index + 0.5) * 62 - 386);
+    } finally {
+      width.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 
   it('organizes the menu as icon-and-text ribbon groups without changing the calendar controls', async () => {
@@ -1451,6 +1491,8 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('tab', { name: 'Équipages' }));
     await user.click(screen.getByRole('button', { name: 'Créer une affectation' }));
+    expect(screen.getByLabelText('Debut')).toHaveValue('2026-06-29T08:00');
+    expect(screen.getByLabelText('Fin')).toHaveValue('2026-07-05T20:00');
     await user.selectOptions(screen.getByLabelText('Navire'), '1');
     await user.selectOptions(screen.getByLabelText('Marin'), '11');
     await user.selectOptions(screen.getByLabelText('Capitaine'), '10');
@@ -1818,7 +1860,6 @@ describe('PlanningPage cockpit', () => {
   });
 
   it('assigns an unassigned sailor by dropping the card on a board without reloading', async () => {
-    const visibleRange = timelineRange(buildPlanningTimeline(todayPlanningDate(), 'month'));
     const existingCaptainPeriod = { ...planningPeriodRow, id: 302, crew_name: 'Jean MARTIN', function_label: 'Capitaine' };
     const { client, insertAssignment, vesselOrder } = createClient({ assignments: [], people: [captainRow, crewRow], periods: [existingCaptainPeriod] });
     const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
@@ -1844,8 +1885,8 @@ describe('PlanningPage cockpit', () => {
     await waitFor(() => expect(insertAssignment).toHaveBeenCalledWith(expect.objectContaining({
       vessel_id: 1,
       crew_person_id: 11,
-      starts_on: visibleRange.start,
-      ends_on: visibleRange.end,
+      starts_on: '2026-06-29',
+      ends_on: '2026-08-16',
       confirmation_status: 'provisional',
       watch_group: 'Bordée 1',
     })));
