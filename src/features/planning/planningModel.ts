@@ -228,8 +228,8 @@ export function buildPlanningTimeline(anchorDate: string, mode: PlanningViewMode
   if (mode === 'week') return buildDays(startOfPlanningWeek(anchorDate), 7);
   if (mode === 'fortnight') return buildDays(startOfPlanningWeek(anchorDate), 14);
 
-  const start = shiftPlanningMonths(anchorDate, -4);
-  const end = shiftPlanningMonths(anchorDate, 4);
+  const start = shiftPlanningMonths(anchorDate, -2);
+  const end = shiftPlanningMonths(anchorDate, 2);
   return buildDays(start, daysBetween(start, end) + 1);
 }
 

@@ -2,6 +2,10 @@
 
 Version `3.75.10`, build `2026-10-16.002`.
 
+Cette recette décrit la livraison initiale. La version `3.75.11` réduit ensuite
+la fenêtre à ±2 mois et les hauteurs de lignes de 10 % ; voir
+[la correction de densité et de performance](./planning-two-month-window-compact-rows.md).
+
 ## Comportement
 
 - La vue principale couvre la date de référence moins quatre mois jusqu'à cette

@@ -51,21 +51,21 @@
   display: grid;
   min-height: 0;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 14px 18px;
+  grid-template-rows: 12.6px 16.2px;
   align-content: center;
-  gap: 1px;
-  padding-block: 1px;
+  gap: .9px;
+  padding-block: .75px;
 }
 
 .planning-timeline-row.is-projects-only .planning-vessel-actions {
   flex-shrink: 0;
-  height: 18px;
+  height: 16.2px;
   margin: 0;
 }
 
 .planning-timeline-row.is-projects-only .planning-vessel-actions .planning-tree-action {
   width: 18px;
-  height: 18px;
+  height: 16.2px;
   min-height: 0;
   flex-basis: 18px;
   padding: 0;
@@ -73,7 +73,7 @@
 
 .planning-timeline-row.is-projects-only .planning-project-vessel-name {
   min-height: 0;
-  line-height: 14px;
+  line-height: 12.6px;
 }
 
 .planning-timeline-row.is-projects-only .planning-project-title {

@@ -99,7 +99,7 @@ describe('Planning crew visibility', () => {
   });
 
   it('keeps all September vessel/watch postings when the grid extends into October', () => {
-    expect(timelineRange(septemberDays)).toEqual({ start: '2026-05-01', end: '2027-01-01' });
+    expect(timelineRange(septemberDays)).toEqual({ start: '2026-07-01', end: '2026-11-01' });
     const rows = buildPlanningCrewRows(septemberOverview, septemberDays, filters, septemberEvents,
       { employmentRange: septemberReference });
     expect(fleetPostings(rows)).toEqual([

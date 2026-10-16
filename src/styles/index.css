@@ -7500,19 +7500,19 @@ button:disabled {
 
 .planning-timeline-row {
   position: relative;
-  min-height: 38px;
+  min-height: 34.2px;
   border-bottom: 1px solid #e7ecf2;
   content-visibility: auto;
-  contain-intrinsic-size: auto 44px;
+  contain-intrinsic-size: auto 39.6px;
 }
 
 .planning-timeline-row.is-fleet {
   min-height: 58px;
-  contain-intrinsic-size: auto 76px;
+  contain-intrinsic-size: auto 68.4px;
 }
 
 .planning-timeline-row.is-crew {
-  min-height: 44px;
+  min-height: 39.6px;
 }
 
 .planning-timeline-row.is-fleet .planning-row-label {
@@ -7542,12 +7542,12 @@ button:disabled {
 }
 
 .planning-timeline-row.is-vessel {
-  min-height: 54px;
+  min-height: 48.6px;
   border-top: 8px solid #f3f6f9;
 }
 
 .planning-timeline-row.is-board {
-  min-height: 34px;
+  min-height: 30.6px;
   background: #fbfcfd;
 }
 
@@ -17189,14 +17189,14 @@ button.planning-p12-conflict-card {
 }
 
 .planning-timeline-row.is-crew:has(.planning-absence-bar) {
-  min-height: 56px;
+  min-height: 50.4px;
 }
 
 .planning-absence-bar {
   display: flex;
   z-index: 22;
   min-width: 0;
-  height: 20px;
+  height: 18px;
   align-self: end;
   align-items: center;
   gap: 4px;
@@ -17297,7 +17297,7 @@ button.planning-p12-conflict-card {
   display: flex;
   z-index: 23;
   min-width: 0;
-  height: 21px;
+  height: 18.9px;
   align-self: start;
   align-items: center;
   gap: 4px;
@@ -17891,18 +17891,18 @@ button.planning-p12-conflict-card {
 }
 
 .planning-move-preview.is-crew {
-  height: 31px;
+  height: 27.9px;
   border-color: #057a58;
   background: repeating-linear-gradient(135deg, rgba(12, 151, 96, .35) 0 10px, rgba(95, 214, 164, .14) 10px 20px);
 }
 
 .planning-move-preview.is-project {
-  height: 23px;
+  height: 20.7px;
   align-self: start;
 }
 
 .planning-move-preview.is-technical-stop {
-  height: 21px;
+  height: 18.9px;
   align-self: start;
   border-color: #a74712;
   background: repeating-linear-gradient(135deg, rgba(198, 93, 22, .38) 0 10px, rgba(246, 172, 104, .18) 10px 20px);
@@ -17977,7 +17977,7 @@ button.planning-p12-conflict-card {
 
 /* Planning fleet visual parity: reuse the compact rhythm and bar language from the crew view. */
 .planning-timeline-row.is-fleet {
-  min-height: 76px;
+  min-height: 68.4px;
   grid-auto-rows: 1fr;
   transition: background-color 140ms ease;
 }
@@ -18024,10 +18024,10 @@ button.planning-p12-conflict-card {
 
 .planning-tree-row.is-vessel {
   display: grid;
-  grid-template-rows: minmax(28px, auto) 28px;
+  grid-template-rows: minmax(25.2px, auto) 25.2px;
   align-content: center;
-  gap: 6px;
-  padding-block: 7px;
+  gap: 5.4px;
+  padding-block: 6.3px;
 }
 
 .planning-tree-row.is-board {
@@ -18070,13 +18070,15 @@ button.planning-p12-conflict-card {
   color: #153e3a;
   font-size: .72rem;
   font-weight: 880;
+  line-height: 13.5px;
 }
 
 .planning-tree-row.is-vessel .planning-tree-toggle small {
-  margin-top: 1px;
+  margin-top: .9px;
   color: #70847f;
   font-size: .55rem;
   font-weight: 680;
+  line-height: 9.9px;
 }
 
 .planning-tree-row.is-board .planning-tree-toggle strong,
@@ -18127,7 +18129,7 @@ button.planning-p12-conflict-card {
 
 .planning-tree-row.is-vessel .planning-tree-toggle {
   width: 100%;
-  min-height: 28px;
+  min-height: 25.2px;
   align-self: center;
   padding: 0 2px;
 }
@@ -18141,7 +18143,7 @@ button.planning-p12-conflict-card {
 
 .planning-vessel-actions .planning-tree-action {
   width: 28px;
-  height: 28px;
+  height: 25.2px;
   flex: 0 0 28px;
 }
 
@@ -18155,7 +18157,7 @@ button.planning-p12-conflict-card {
 }
 
 .planning-timeline-row.is-fleet .planning-project-bar {
-  height: 23px;
+  height: 20.7px;
   align-self: center;
   justify-content: center;
   margin: 0 2px;
@@ -18211,7 +18213,7 @@ button.planning-p12-conflict-card {
 }
 
 .planning-timeline-row.is-fleet-person .planning-assignment-note-cell {
-  height: 23px;
+  height: 20.7px;
   border: 0;
   border-right: 0;
   font-size: .58rem;
@@ -18249,7 +18251,7 @@ button.planning-p12-conflict-card {
 
 .planning-crew-bar.is-fleet-tree.has-daily-grid {
   z-index: 7;
-  height: 23px;
+  height: 20.7px;
   border: 0 !important;
   border-radius: 6px;
   background-image: none !important;
@@ -18290,26 +18292,26 @@ button.planning-p12-conflict-card {
   color: #ffffff;
   font-size: .57rem;
   font-weight: 880;
-  line-height: 23px;
+  line-height: 20.7px;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
   pointer-events: none;
 }
 
-.planning-timeline-row.has-temporary-functions { min-height: 62px; contain-intrinsic-size: auto 62px; }
-.planning-timeline-row.has-temporary-functions.has-crew-balances { min-height: 88px; contain-intrinsic-size: auto 88px; }
+.planning-timeline-row.has-temporary-functions { min-height: 55.8px; contain-intrinsic-size: auto 55.8px; }
+.planning-timeline-row.has-temporary-functions.has-crew-balances { min-height: 79.2px; contain-intrinsic-size: auto 79.2px; }
 .has-temporary-functions > .planning-crew-bar,
-.has-temporary-functions > .planning-assignment-note-cell { align-self: start; margin-top: 8px; }
-.has-temporary-functions > .planning-fleet-assignment-label { align-self: start; margin-top: 8px; }
+.has-temporary-functions > .planning-assignment-note-cell { align-self: start; margin-top: 7.2px; }
+.has-temporary-functions > .planning-fleet-assignment-label { align-self: start; margin-top: 7.2px; }
 .planning-row-label .planning-temporary-function-summary { color: #6b3aa0; white-space: normal; }
 .planning-temporary-function-label {
   z-index: 10;
   min-width: 0;
-  height: 18px;
+  height: 16.2px;
   align-self: start;
   overflow: hidden;
-  margin: 36px 2px 0;
+  margin: 32.4px 2px 0;
   border: 1px solid #cbb4e5;
   border-radius: 4px;
   padding: 0 3px;
@@ -18317,7 +18319,7 @@ button.planning-p12-conflict-card {
   background: #f3eafa;
   font-size: 10px;
   font-weight: 800;
-  line-height: 16px;
+  line-height: 14.4px;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -18823,13 +18825,13 @@ button.planning-p12-conflict-card {
 /* Planning fleet roster: selected compact hierarchy with personnel functions. */
 .planning-timeline-row.is-fleet-board,
 .planning-timeline-row.is-fleet-person {
-  min-height: 48px;
-  contain-intrinsic-size: auto 48px;
+  min-height: 43.2px;
+  contain-intrinsic-size: auto 43.2px;
 }
 
 .planning-timeline-row.is-fleet-board .planning-day-cell,
 .planning-timeline-row.is-fleet-person .planning-day-cell {
-  min-height: 48px;
+  min-height: 43.2px;
 }
 
 .planning-timeline-row.is-fleet-board .planning-row-label.planning-tree-row.is-board {
@@ -18841,7 +18843,7 @@ button.planning-p12-conflict-card {
 
 .planning-timeline-row.is-fleet-person .planning-row-label {
   position: sticky;
-  padding: 5px 10px 5px 54px;
+  padding: 4.5px 10px 4.5px 54px;
   border-left-color: transparent;
   color: #233b47;
   background: #ffffff;
@@ -18892,6 +18894,11 @@ button.planning-p12-conflict-card {
   font-size: .57rem;
   font-weight: 650;
   line-height: 1.2;
+}
+
+.planning-timeline-row.is-fleet-person .planning-row-label:has(.planning-temporary-function-summary) small {
+  margin-top: 2.7px;
+  line-height: 1.15;
 }
 
 @media (max-width: 760px) {
@@ -24474,10 +24481,10 @@ body:has(.procedure-dialog-backdrop) { overflow: hidden; }
   .fcx-corrective-rich-toolbar { align-items: stretch; }
   .fcx-corrective-rich-toolbar > i { display: none; }
 }
-.planning-timeline-row.has-crew-balances { min-height: 74px; contain-intrinsic-size: auto 74px; }
+.planning-timeline-row.has-crew-balances { min-height: 66.6px; contain-intrinsic-size: auto 66.6px; }
 .has-crew-balances > .planning-crew-bar,
-.has-crew-balances > .planning-assignment-note-cell { align-self: start; margin-top: 8px; }
-.planning-crew-balance { align-self: end; z-index: 4; padding: 3px 1px; margin-bottom: 3px; text-align: center; font-size: 10px; line-height: 16px; font-weight: 700; font-variant-numeric: tabular-nums; color: #154d5c; background: #edf6f7; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.has-crew-balances > .planning-assignment-note-cell { align-self: start; margin-top: 7.2px; }
+.planning-crew-balance { align-self: end; z-index: 4; padding: 2.7px 1px; margin-bottom: 2.7px; text-align: center; font-size: 10px; line-height: 14.4px; font-weight: 700; font-variant-numeric: tabular-nums; color: #154d5c; background: #edf6f7; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .planning-crew-balance.is-negative { color: #9d3333; background: #fff0f0; }
 .planning-balance-open { flex: 0 0 auto; padding: 4px 6px; border: 1px solid #cfdee8; border-radius: 5px; background: #fff; color: #165f87; font-size: 11px; cursor: pointer; }
 .planning-balance-form { display: grid; gap: 16px; }
@@ -24492,7 +24499,7 @@ body:has(.procedure-dialog-backdrop) { overflow: hidden; }
 
 .has-crew-balances .planning-row-label > span { flex: 1; min-width: 0; }
 .has-crew-balances .planning-row-label { gap: 8px; }
-.has-crew-balances > .planning-fleet-assignment-label { align-self: start; margin-top: 12px; }
+.has-crew-balances > .planning-fleet-assignment-label { align-self: start; margin-top: 10.8px; }
 
 .planning-balance-form li button { border: 1px solid #cfdee8; border-radius: 6px; background: #f5f9fc; color: #165f87; padding: 6px 10px; cursor: pointer; }
 
@@ -24513,7 +24520,7 @@ body:has(.procedure-dialog-backdrop) { overflow: hidden; }
 .planning-timeline-row.is-crew:not(.is-fleet-person) > .planning-crew-bar,
 .planning-timeline-row.is-crew:not(.is-fleet-person) > .planning-assignment-note-cell {
   box-sizing: border-box;
-  height: 28px;
+  height: 25.2px;
 }
 .planning-timeline-row.is-crew:not(.is-fleet-person) > .planning-crew-bar.has-daily-grid {
   border: 0;

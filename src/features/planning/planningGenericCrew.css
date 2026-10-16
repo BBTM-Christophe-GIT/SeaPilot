@@ -1,4 +1,6 @@
 .planning-generic-person { border: 0; background: transparent; color: #17639d; font: inherit; font-weight: 700; padding: 0; text-align: left; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.planning-row-label .planning-generic-person { display: block; width: 100%; height: 22.5px; min-height: 0; }
+.planning-timeline-row.is-fleet-person .planning-row-label:has(.planning-generic-person) small { margin-top: 2.7px; line-height: 1.08; }
 .planning-generic-person:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
 .planning-generic-category { margin: 0 20px 18px; }
 .planning-generic-category > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px; }
