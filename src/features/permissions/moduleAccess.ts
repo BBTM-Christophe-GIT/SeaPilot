@@ -19,6 +19,7 @@ export type ModuleKey =
   | 'internalAudits'
   | 'clientAudits'
   | 'dpr'
+  | 'seaOperations'
   | 'purchaseRequests'
   | 'expenseNotes'
   | 'serviceProviders'
@@ -112,6 +113,13 @@ export const APP_MODULES: AppModule[] = [
   { key: 'externalIsmAudits', label: 'Audit ISM Externe', family: 'Audits', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   { key: 'internalAudits', label: 'Audit ISM Interne', family: 'Audits', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
   { key: 'clientAudits', label: 'Audit Client', family: 'Audits', navigationKind: 'submenu', allowedRoles: ALL_ROLES },
+  {
+    key: 'seaOperations',
+    label: 'Opération en Mer',
+    family: 'Opérations',
+    navigationKind: 'submenu',
+    allowedRoles: ALL_ROLES,
+  },
   {
     key: 'dpr',
     label: 'Daily Progress Report',

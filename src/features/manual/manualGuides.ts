@@ -212,6 +212,18 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
     ],
     reminders: ['Pour les procédures approuvées et diffusées, utilisez en priorité Procédures QHSE.'],
   },
+  seaOperations: {
+    purpose: 'Préparer une opération en mer et conserver la décision GO ou NO GO du Capitaine selon le formulaire OPE-FOR-10-C.',
+    access: 'Le module est accessible à tous les profils dans Opérations. Les droits de modification dépendent du dossier. La signature est réservée au compte réel du Capitaine affecté au navire, selon les autorisations contrôlées par le serveur.',
+    steps: [
+      { title: 'Préparer la mission', detail: 'Dans Opérations, ouvrez Opération en Mer puis Nouvelle opération. Renseignez le projet, le client, les personnes à embarquer, la DAPAQ, le navire et les horaires. Enregistrer le brouillon conserve une préparation incomplète.' },
+      { title: 'Vérifier les conditions avant appareillage', detail: 'Dans Contrôles avant appareillage, répondez aux contrôles du Capitaine et indiquez si le remorquage, le chargement, le support de plongeur et l’avitaillement sont applicables. Les rubriques applicables affichent leurs contrôles et informations complémentaires. Justifiez les réponses qui le demandent.' },
+      { title: 'Renseigner le plan de passage', detail: 'Ajoutez les références des cartes marines et les points de route, avec contacts VHF, positions, UKC et ETA.' },
+      { title: 'Consigner la décision', detail: 'Le Capitaine habilité choisit GO ou NO GO, décrit les risques, renseigne son nom, la date et le lieu, puis confirme sa signature. Toute réponse bloquante interdit GO. Un NO GO motivé peut être signé même si la préparation a été interrompue.' },
+      { title: 'Retrouver la fiche', detail: 'Le registre permet de rechercher les opérations et de filtrer les brouillons ou décisions signées. Une décision signée est figée et peut être imprimée depuis la fiche enregistrée.' },
+    ],
+    reminders: ['Une réponse non renseignée ne constitue jamais une confirmation.', 'Enregistrez vos modifications avant de quitter la fiche.', 'La signature enregistre l’identité du compte autorisé et fige la décision ; vérifiez le navire et le contenu avant de signer.'],
+  },
   dpr: {
     purpose: 'Consulter les DPR des navires accessibles et rédiger vos propres Daily Progress Reports.',
     access: 'Le Marin consulte les DPR des navires autorisés par ses affectations, à partir d’un mois avant l’embarquement et jusqu’à un mois après le débarquement. La modification de ses propres brouillons ou rapports rouverts et leur validation restent limitées aux 3 jours suivant leur création.',

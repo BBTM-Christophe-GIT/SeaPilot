@@ -10,6 +10,7 @@ import { QHSE_POLICY_ATTACHMENT_MIME_TYPES } from '../qhsePolicy/qhsePolicyAttac
 import { isQhsePolicyId, type QhsePolicyOwnerKind } from '../qhsePolicy/qhsePolicyModel';
 import { normalizeQhsePolicyAxisIconKey, resolveQhsePolicyAxisIcon } from '../qhsePolicy/qhsePolicyIcons';
 import { DEFAULT_PROCEDURE_TAGS } from '../procedures/procedureTagCatalogue';
+import { seaOperationPreviewRpc } from '../seaOperations/seaOperationPreview';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
@@ -2113,6 +2114,7 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     // another assignment inside the calendar-month reading window.
     return createPreviewQuery({ data: [9201, 9202], error: null });
   }
+  if (functionName.startsWith('sea_operation')) return createPreviewQuery(seaOperationPreviewRpc(functionName, args));
   if (functionName === 'purchase_request_add_comment') {
     const request = previewRows('purchase_requests').find((row) => Number(row.id) === Number(args.p_request_id));
     const comment = String(args.p_comment || '').trim();

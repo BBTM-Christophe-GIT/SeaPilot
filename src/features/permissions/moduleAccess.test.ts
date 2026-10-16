@@ -60,6 +60,7 @@ describe('module access', () => {
       ['Audits', 'Audit ISM Externe', 'submenu'],
       ['Audits', 'Audit ISM Interne', 'submenu'],
       ['Audits', 'Audit Client', 'submenu'],
+      ['Opérations', 'Opération en Mer', 'submenu'],
       ['Opérations', 'Daily Progress Report', 'submenu'],
       ['Opérations', 'Projets', 'submenu'],
       ['Opérations', 'Navires', 'submenu'],
@@ -84,6 +85,16 @@ describe('module access', () => {
     expect(NAVIGATION_MODULES.map((module) => module.key)).not.toContain('billingElements');
     expect(canAccessModule(['direction'], 'billingElements')).toBe(true);
   });
+
+  it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as const)(
+    'allows the %s profile to open sea operations from the Opérations menu',
+    (role) => {
+      expect(canAccessModule([role], 'seaOperations')).toBe(true);
+      expect(getVisibleModules([role])).toContainEqual(expect.objectContaining({
+        key: 'seaOperations', label: 'Opération en Mer', family: 'Opérations', navigationKind: 'submenu',
+      }));
+    },
+  );
 
   it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as const)(
     'allows the %s profile to read every regulatory library module by default',
