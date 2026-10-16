@@ -52,12 +52,46 @@ annulée. Les données de l'affectation, ses journées et le journal sont vérif
 identiques après l'essai ; aucune modification opérationnelle ne reste enregistrée.
 Script : `supabase/validation/planning_rpc_rollback_benchmark.sql`.
 
+## Comparaison du navigateur sur le volume réel
+
+Le replay local reprend les relations, dates, statuts et volumes réels, avec
+anonymisation avant transfert : 94 lignes, 123 jours et 11 562 cellules. Les
+réponses API sont interceptées localement, sans identifiant de connexion ni
+écriture en production. Le même poste compare les bundles 3.75.11 et 3.75.12,
+sans compilation ni tests concurrents. Médianes de cinq essais :
+
+| Opération du navigateur | Avant | Après |
+| --- | ---: | ---: |
+| Première ligne visible après navigation | 2 066 ms | 1 752 ms |
+| Actualiser le planning monté | 1 269 ms | 776 ms |
+| Ouvrir le dialogue de modification | 202 ms | 128 ms |
+| Enregistrer et afficher la note modifiée | 1 355 ms | 1 186 ms |
+| Passer au mois suivant | 922 ms | 576 ms |
+| Nœuds du document complet | 37 495 | 17 194 |
+
+Les mesures visuelles attendent deux frames après le résultat. Le chargement
+vérifie une ligne réellement visible, l'actualisation attend la réponse des
+périodes et la fin du chargement, l'enregistrement attend la fermeture du
+dialogue et la note dans la cellule. Cinq réouvertures confirment le statut et
+la note enregistrés dans le replay. Le nombre de lignes, les dates et le
+centrage sur aujourd'hui restent identiques.
+
+La recette compare aussi Flotte, Projet et Équipages sur ordinateur et mobile :
+268 lignes appariées gardent leur hauteur à 0,1 px près, les icônes restent sous
+les noms et dans les lignes, et les 18 contrôles de peinture au centre et aux
+deux bords réussissent sans erreur JavaScript.
+
+Pour le marin modifié dans cet essai, la relecture passe de 308 journées
+(196 828 octets JSON) à une seule (640 octets). Ces temps isolent le coût du
+navigateur et des réponses : ils ne représentent pas une latence réseau réelle.
+Les temps SQL ci-dessus mesurent séparément le serveur de production.
+
 ## Livraison et validation des accès
 
 La migration `20261016101417_optimize_planning_company_permission_initplans.sql`
 est appliquée au projet de production SeaPilot. Les 280 assertions de
 `supabase/tests/planning_company_initplans_test.sql` réussissent localement et en
-production : comptes réels de chaque rôle, entreprise étrangère, compte inactif,
+production : comptes authentifiés de recette de chaque rôle, entreprise étrangère, compte inactif,
 délégations datées, valeurs NULL, visibilité RLS et RPC. Tous les comptes et
 enregistrements de recette sont annulés par transaction.
 

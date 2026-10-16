@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { planningErrorMessage } from './planningErrors';
 import { fetchPlanningHistory, fetchPlanningOverview, type PlanningOverview } from './planningQueries';
@@ -62,11 +62,14 @@ export function usePlanningOverview(
     historyErrorMessage: null,
     historyLoading: false,
   });
+  const committedHistoryRef = useRef(state.overview.history);
+  useLayoutEffect(() => { committedHistoryRef.current = state.overview.history; }, [state.overview.history]);
 
   const reload = useCallback(async (): Promise<boolean> => {
     if (!enabled) return false;
     const requestId = ++requestIdRef.current;
     const historyRequestId = ++historyRequestIdRef.current;
+    const historyAtStart = committedHistoryRef.current;
     if (previewOverview) {
       setState({ overview: previewOverview, phase: 'ready', hasLoaded: true, errorMessage: null, historyErrorMessage: null, historyLoading: false });
       return true;
@@ -91,7 +94,7 @@ export function usePlanningOverview(
       if (requestId !== requestIdRef.current) return false;
       setState((current) => {
         if (requestId !== requestIdRef.current) return current;
-        const ownsHistory = historyRequestId === historyRequestIdRef.current;
+        const ownsHistory = historyRequestId === historyRequestIdRef.current && current.overview.history === historyAtStart;
         return {
           overview: ownsHistory ? overview : { ...overview, history: current.overview.history },
           phase: 'ready', hasLoaded: true,
@@ -129,18 +132,21 @@ export function usePlanningOverview(
     if (!enabled || previewOverview || publishedOnly) return false;
     const requestId = requestIdRef.current;
     const historyRequestId = ++historyRequestIdRef.current;
-    const isCurrent = () => requestId === requestIdRef.current && historyRequestId === historyRequestIdRef.current;
-    setState((current) => ({ ...current, historyLoading: true, historyErrorMessage: null }));
+    const historyAtStart = committedHistoryRef.current;
+    const isCurrent = () => requestId === requestIdRef.current && historyRequestId === historyRequestIdRef.current
+      && committedHistoryRef.current === historyAtStart;
+    setState((current) => current.overview.history === historyAtStart
+      ? { ...current, historyLoading: true, historyErrorMessage: null } : current);
     try {
       const history = await fetchPlanningHistory(client);
       if (!isCurrent()) return false;
-      setState((current) => isCurrent() ? {
+      setState((current) => isCurrent() && current.overview.history === historyAtStart ? {
         ...current, overview: { ...current.overview, history }, historyLoading: false,
       } : current);
       return true;
     } catch (error) {
       if (!isCurrent()) return false;
-      setState((current) => isCurrent() ? {
+      setState((current) => isCurrent() && current.overview.history === historyAtStart ? {
         ...current, historyLoading: false,
         historyErrorMessage: planningErrorMessage(error, 'Impossible de charger l’historique du Planning.'),
       } : current);
@@ -162,12 +168,17 @@ export function usePlanningOverview(
   }, [enabled, reload]);
 
   const updateOverview = useCallback((action: SetStateAction<PlanningOverview>) => {
-    setState((current) => ({
-      ...current,
-      overview: typeof action === 'function' ? action(current.overview) : action,
-      hasLoaded: true,
-      phase: 'ready',
-    }));
+    setState((current) => {
+      const overview = typeof action === 'function' ? action(current.overview) : action;
+      const historyChanged = overview.history !== current.overview.history;
+      // Direct history updates supersede older reads; keep this updater pure
+      // because React can replay functional updates before committing them.
+      return {
+        ...current, overview, hasLoaded: true, phase: 'ready',
+        historyLoading: historyChanged ? false : current.historyLoading,
+        historyErrorMessage: historyChanged ? null : current.historyErrorMessage,
+      };
+    });
   }, []);
 
   return {

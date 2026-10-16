@@ -156,6 +156,48 @@ describe('independent Planning history loading', () => {
     expect(result.current.isHistoryLoading).toBe(false);
   });
 
+  it.each(['functional', 'value'] as const)('keeps history supplied by a newer %s update over a pending background response', async (update) => {
+    const pending = deferred<PlanningHistoryRecord[]>();
+    vi.mocked(fetchPlanningHistory).mockResolvedValueOnce([]).mockReturnValueOnce(pending.promise);
+    const client = {} as SupabaseClient;
+    const { result } = renderHook(() => usePlanningOverview(client, true));
+    await waitFor(() => expect(result.current.hasLoaded).toBe(true));
+    let request!: Promise<boolean>;
+    act(() => { request = result.current.reloadHistory(); });
+    const recent = [{ id: 42 }] as PlanningHistoryRecord[];
+    act(() => result.current.updateOverview(update === 'functional'
+      ? (current) => ({ ...current, history: recent })
+      : { ...result.current.overview, history: recent }));
+    expect(result.current.isHistoryLoading).toBe(false);
+    await act(() => pending.resolve([{ id: 1 }] as PlanningHistoryRecord[]));
+    expect(await request).toBe(false);
+    expect(result.current.overview.history).toBe(recent);
+    expect(result.current.loadErrorMessage).toBeNull();
+  });
+
+  it.each(['resolve', 'reject'] as const)('does not leave history loading when a batched journal update supersedes a refresh that will %s', async (settlement) => {
+    const pending = deferred<PlanningHistoryRecord[]>();
+    vi.mocked(fetchPlanningHistory).mockResolvedValueOnce([]).mockReturnValueOnce(pending.promise);
+    const client = {} as SupabaseClient;
+    const { result } = renderHook(() => usePlanningOverview(client, true));
+    await waitFor(() => expect(result.current.hasLoaded).toBe(true));
+    const recent = [{ id: 42 }] as PlanningHistoryRecord[];
+    let request!: Promise<boolean>;
+    act(() => {
+      result.current.updateOverview({ ...result.current.overview, history: recent });
+      request = result.current.reloadHistory();
+    });
+    expect(result.current.isHistoryLoading).toBe(false);
+    await act(() => {
+      if (settlement === 'resolve') pending.resolve([{ id: 1 }] as PlanningHistoryRecord[]);
+      else pending.reject(new Error('Ancien journal indisponible'));
+    });
+    expect(await request).toBe(false);
+    expect(result.current.overview.history).toBe(recent);
+    expect(result.current.isHistoryLoading).toBe(false);
+    expect(result.current.loadErrorMessage).toBeNull();
+  });
+
   it.each(['client', 'profile', 'reload'] as const)('invalidates a history refresh after an operational %s change', async (change) => {
     const pending = deferred<PlanningHistoryRecord[]>();
     vi.mocked(fetchPlanningHistory).mockResolvedValueOnce([]).mockReturnValueOnce(pending.promise);
