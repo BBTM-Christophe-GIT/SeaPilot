@@ -24,6 +24,7 @@ export function buildManagerHomeVessels(sources: ManagerHomeSourceRows) {
     }),
     ...sources.purchases,
     ...sources.fleetCertificates,
+    ...(sources.pharmacyNotifications || []),
   ];
   for (const row of namedRows) {
     if (row.vessel_id == null) continue;

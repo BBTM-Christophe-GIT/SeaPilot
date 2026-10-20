@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.76.0`, build `2026-10-20.001`, ajoute **Registres → Inventaire Pharmacie** :
+220 articles importés pour GOURY, SUROIT et HIRONDELLE DE LA MANCHE, contrôles
+documentaires privés par navire et alertes à J−30 dans le registre, la cloche et
+l’accueil. Appliquer `20261020172625_pharmacy_inventory.sql` avant le client.
+Voir [les données importées, les droits et la recette](./pharmacy-inventory.md).
+
 Version `3.75.12`, build `2026-10-16.004`, accélère le Planning sur les volumes
 réels de production : calculs de dates/documents partagés, cellules vides allégées,
 relectures limitées aux marins modifiés et historique indépendant de la sauvegarde.

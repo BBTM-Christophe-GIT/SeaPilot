@@ -26,6 +26,17 @@ const REGULATORY_LIBRARY_ACCESS = 'Marin et Capitaine consultent les textes, les
 
 // Notices du profil Marin. Les noms, l’ordre et les accès viennent de la navigation.
 export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
+  pharmacy: {
+    purpose: 'Consulter et tenir à jour la pharmacie de chaque navire et son document de contrôle.',
+    access: 'Administration, Direction et Armement gèrent les inventaires de leur société. Les Capitaines peuvent modifier les navires de leur périmètre Planning ; les Marins les consultent. Le module doit être autorisé pour votre profil.',
+    steps: [
+      { title: 'Choisir le navire', detail: 'Dans Registres → Inventaire Pharmacie, choisissez le navire. Les inventaires de GOURY, SUROIT et HIRONDELLE DE LA MANCHE sont préremplis depuis les classeurs fournis.' },
+      { title: 'Repérer les priorités', detail: 'Les compteurs Périmés, Échéance ≤ 30 j, Stock insuffisant et À vérifier filtrent le tableau. Affinez la recherche par article, marque, lot ou catégorie. Cliquez sur un article pour consulter les observations et sa provenance.' },
+      { title: 'Mettre à jour le stock', detail: 'Les profils habilités utilisent Ajouter un article ou le crayon. Conservez les conditionnements, le lot et la précision de la péremption. Une quantité vide reste à vérifier ; saisissez 0 pour un stock nul. Décochez Article présent dans l’inventaire actif pour le retirer sans perdre sa fiche.' },
+      { title: 'Déposer le contrôle', detail: 'Dans Contrôle Pharmacie, déposez un PDF, JPG ou PNG de 20 Mo maximum et renseignez sa date d’échéance obligatoire. La date du contrôle est facultative. Le remplacement conserve les versions précédentes et leurs téléchargements.' },
+    ],
+    reminders: ['Les échéances apparaissent à J−30 dans le module, les notifications et l’accueil, et restent signalées après expiration.', 'Les stocks avec des unités ou des conditionnements différents restent à vérifier ; aucune conversion automatique n’est supposée.', 'Les dates au mois gardent la date interne du fichier comme repère des alertes. Une date inconnue ne crée aucune échéance fictive.', 'Si un autre utilisateur a enregistré une modification, actualisez avant de reprendre votre correction.'],
+  },
   qhsePolicy: {
     purpose: 'Consulter la politique de sécurité et de protection de l’environnement et suivre les objectifs de la société par Processus.',
     access: 'Tous les profils autorisés consultent la politique, les objectifs, leur historique et leurs pièces jointes. Marin et Capitaine consultent tous les objectifs et suivis de leur société. Seuls Administration et Direction peuvent modifier la politique, les Processus, les objectifs et ajouter un suivi.',

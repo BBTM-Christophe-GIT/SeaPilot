@@ -25,6 +25,7 @@ import { LIFTING_SECTIONS } from './features/lifting/liftingSections';
 
 const OrganigrammePage = lazy(() => import('./features/organigramme/OrganigrammePage').then((module) => ({ default: module.OrganigrammePage })));
 const UsefulLinksPage = lazy(() => import('./features/usefulLinks/UsefulLinksPage').then((module) => ({ default: module.UsefulLinksPage })));
+const PharmacyPage = lazy(() => import('./features/pharmacy/PharmacyPage').then((module) => ({ default: module.PharmacyPage })));
 const WorkingTimePage = lazy(() => import('./features/workingTime/WorkingTimePage').then((module) => ({ default: module.WorkingTimePage })));
 const ExpenseNotesPage = lazy(() => import('./features/expenseNotes/ExpenseNotesPage').then((module) => ({ default: module.ExpenseNotesPage })));
 const UserManualPage = lazy(() => import('./features/manual/UserManualPage').then((module) => ({ default: module.UserManualPage })));
@@ -82,6 +83,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <Suspense fallback={<div className="admin-state" role="status">Chargement de la bibliothèque réglementaire…</div>}><RegulatoryLibraryPage key={module.key} category={module.key === 'regulatorySafety' ? 'safety' : module.key === 'regulatoryTransport' ? 'transport' : undefined} /></Suspense>
                 ) : module.key === 'usefulLinks' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des liens utiles…</div>}><UsefulLinksPage /></Suspense>
+                ) : module.key === 'pharmacy' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement de l’inventaire pharmacie…</div>}><PharmacyPage /></Suspense>
                 ) : module.key === 'admin' ? (
                   <AdminPage client={previewMode ? previewSupabaseClient : undefined} previewMode={previewMode} />
                 ) : module.key === 'qhsePolicy' ? (

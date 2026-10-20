@@ -51,6 +51,7 @@ describe('module access', () => {
       ['Registres', 'Registre des Exercices', 'submenu'],
       ['Registres', 'Registre LSA', 'submenu'],
       ['Registres', 'Registre médical', 'submenu'],
+      ['Registres', 'Inventaire Pharmacie', 'submenu'],
       ['QHSE', 'Certificats flotte', 'submenu'],
       ['QHSE', 'Procédures QHSE', 'submenu'],
       ['QHSE', 'Notes de Service', 'submenu'],
