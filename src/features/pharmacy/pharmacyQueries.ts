@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { PharmacyControl, PharmacyItem, PharmacyItemDraft, PharmacyNotification, PharmacyVessel } from './pharmacyModel';
-import { pharmacyDaysUntil } from './pharmacyModel';
+import type { PharmacyControl, PharmacyItem, PharmacyItemDraft, PharmacyNotification, PharmacyVessel, PharmacyVesselExpiryCounts } from './pharmacyModel';
+import { PHARMACY_ALERT_DAYS, pharmacyDaysUntil } from './pharmacyModel';
 
 export async function fetchPharmacyVessels(client: SupabaseClient): Promise<PharmacyVessel[]> {
   const { data, error } = await client.rpc('pharmacy_available_vessels');
@@ -51,4 +51,17 @@ export async function fetchPharmacyNotifications(client: SupabaseClient): Promis
   const { data, error } = await client.rpc('pharmacy_notifications');
   if (error) throw error;
   return data || [];
+}
+
+export async function fetchPharmacyVesselExpiryCounts(client: SupabaseClient): Promise<Record<number, PharmacyVesselExpiryCounts>> {
+  const notifications = await fetchPharmacyNotifications(client);
+  const counts: Record<number, PharmacyVesselExpiryCounts> = {};
+  for (const notification of notifications) {
+    const days = notification.days_until_expiry;
+    if (notification.kind !== 'item' || !Number.isFinite(days) || days > PHARMACY_ALERT_DAYS) continue;
+    const vesselCounts = counts[notification.vessel_id] ||= { due: 0, expired: 0 };
+    if (days < 0) vesselCounts.expired += 1;
+    else vesselCounts.due += 1;
+  }
+  return counts;
 }

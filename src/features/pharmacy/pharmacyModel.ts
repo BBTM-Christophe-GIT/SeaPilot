@@ -20,6 +20,29 @@ export interface PharmacyNotification {
   id: string; kind: 'item' | 'control'; vessel_id: number; vessel_name: string; title: string;
   expires_on: string; days_until_expiry: number; item_id: number | null;
 }
+export type PharmacyVesselExpiryCounts = { due: number; expired: number };
+export interface PharmacyItemGroup { key: string; section: string; category: string; items: PharmacyItem[] }
+
+export function groupPharmacyItems(items: PharmacyItem[]): PharmacyItemGroup[] {
+  const sections = new Map<string, Map<string, PharmacyItemGroup>>();
+  for (const item of items) {
+    const section = item.section.trim();
+    const category = item.category.trim() || 'Sans catégorie';
+    let categories = sections.get(section);
+    if (!categories) {
+      categories = new Map();
+      sections.set(section, categories);
+    }
+    let group = categories.get(category);
+    if (!group) {
+      group = { key: JSON.stringify([section, category]), section, category, items: [] };
+      categories.set(category, group);
+    }
+    group.items.push(item);
+  }
+  return [...sections.values()].flatMap((categories) => [...categories.values()]
+    .sort((a, b) => a.category.localeCompare(b.category, 'fr', { numeric: true, sensitivity: 'base' })));
+}
 export function canManagePharmacy(roles: RoleKey[]): boolean {
   return roles.some((role) => ['admin', 'direction', 'armement', 'capitaine'].includes(role));
 }

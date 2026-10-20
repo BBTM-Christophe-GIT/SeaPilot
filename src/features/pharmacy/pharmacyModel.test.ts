@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { blankPharmacyItem, canManagePharmacy, formatPharmacyDate, pharmacyDaysUntil, pharmacyExpiryStatus, pharmacyStockStatus, pharmacyToday } from './pharmacyModel';
+import { blankPharmacyItem, canManagePharmacy, formatPharmacyDate, groupPharmacyItems, pharmacyDaysUntil, pharmacyExpiryStatus, pharmacyStockStatus, pharmacyToday, type PharmacyItem } from './pharmacyModel';
 
 describe('pharmacy dates and stock', () => {
   it('alerts inclusively at thirty days and retains expired dates', () => {
@@ -40,5 +40,39 @@ describe('pharmacy dates and stock', () => {
     expect(canManagePharmacy(['capitaine'])).toBe(true);
     expect(canManagePharmacy(['marin'])).toBe(false);
     expect(blankPharmacyItem().expires_on).toBeNull();
+  });
+});
+
+describe('pharmacy inventory grouping', () => {
+  const item = (id: number, section: string, category: string): PharmacyItem => ({ ...blankPharmacyItem(), id, company_id: 1, vessel_id: 4, section, category, designation: `Article ${id}`, revision: 1, source_file: '', source_sheet: '', source_row: null, updated_at: '' });
+
+  it('keeps sections in source order and sorts numbered categories naturally within each section', () => {
+    const source = [item(1, 'MÉDICAMENTS', '10. DIVERS'), item(2, 'MATÉRIEL', '1. SOINS'),
+      item(3, 'MÉDICAMENTS', '2. GASTRO'), item(4, 'MÉDICAMENTS', '1. CARDIOLOGIE'),
+      item(5, 'MÉDICAMENTS', ''), item(6, 'MATÉRIEL', '2. GASTRO'), item(7, 'MÉDICAMENTS', '1. CARDIOLOGIE')];
+    const groups = groupPharmacyItems(source);
+    expect(groups.map(({ section, category }) => [section, category])).toEqual([
+      ['MÉDICAMENTS', '1. CARDIOLOGIE'], ['MÉDICAMENTS', '2. GASTRO'], ['MÉDICAMENTS', '10. DIVERS'], ['MÉDICAMENTS', 'Sans catégorie'],
+      ['MATÉRIEL', '1. SOINS'], ['MATÉRIEL', '2. GASTRO'],
+    ]);
+    expect(groups[0].items.map(({ id }) => id)).toEqual([4, 7]);
+    expect(groups[1].items[0]).toBe(source[2]);
+    expect(source.map(({ id }) => id)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it('keeps identical category names in different sections separate and avoids delimiter collisions', () => {
+    const groups = groupPharmacyItems([item(1, 'Section A', '1. SOINS'), item(2, 'Section B', '1. SOINS'),
+      item(3, 'A::B', 'C'), item(4, 'A', 'B::C')]);
+    expect(groups).toHaveLength(4);
+    expect(new Set(groups.map(({ key }) => key)).size).toBe(4);
+    expect(groups.slice(0, 2).map(({ items }) => items.map(({ id }) => id))).toEqual([[1], [2]]);
+  });
+
+  it('labels blank categories consistently and handles an empty inventory', () => {
+    const groups = groupPharmacyItems([item(1, '', ''), item(2, '', '   ')]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].category).toBe('Sans catégorie');
+    expect(groups[0].items).toHaveLength(2);
+    expect(groupPharmacyItems([])).toEqual([]);
   });
 });

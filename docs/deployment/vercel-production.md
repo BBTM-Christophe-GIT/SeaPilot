@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.76.1`, build `2026-10-20.002`, sépare l’inventaire pharmacie par
+catégorie et remplace le sélecteur de navire par les illustrations de la flotte,
+avec pastilles orange (articles à échéance sous 30 jours) et rouge (périmés).
+Les compteurs couvrent tous les navires autorisés, sans nouvelle migration.
+Voir [la recette pharmacie](./pharmacy-inventory.md).
+
 Version `3.76.0`, build `2026-10-20.001`, ajoute **Registres → Inventaire Pharmacie** :
 220 articles importés pour GOURY, SUROIT et HIRONDELLE DE LA MANCHE, contrôles
 documentaires privés par navire et alertes à J−30 dans le registre, la cloche et

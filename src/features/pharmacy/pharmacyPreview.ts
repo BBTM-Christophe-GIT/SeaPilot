@@ -1,25 +1,27 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { blankPharmacyItem, pharmacyToday, type PharmacyControl, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
+import { PHARMACY_ALERT_DAYS, blankPharmacyItem, pharmacyDaysUntil, pharmacyToday, type PharmacyControl, type PharmacyItem, type PharmacyNotification, type PharmacyVessel } from './pharmacyModel';
 
 // Synthetic preview data only. The customer workbooks are imported into the protected database.
 export function createPharmacyPreviewClient(): SupabaseClient {
-  const vessels: PharmacyVessel[] = ['NAVIRE DÉMONSTRATION A', 'NAVIRE DÉMONSTRATION B', 'NAVIRE DÉMONSTRATION C'].map((name, index) => ({ id: 99001 + index, company_id: 99, name, acronym: `D${index + 1}`, can_manage: true }));
+  const vessels: PharmacyVessel[] = [['GOURY', 'GRY'], ['SUROIT', 'SUR'], ['HIRONDELLE DE LA MANCHE', 'HIR']].map(([name, acronym], index) => ({ id: 99001 + index, company_id: 99, name, acronym, can_manage: true }));
   const dateAt = (days: number) => { const date = new Date(`${pharmacyToday()}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); };
   const examples = [
-    ['ANTISEPTIQUE CUTANÉ', 'Soins et pansements', '2 flacons', '2', 350],
-    ['COMPRESSES STÉRILES', 'Soins et pansements', '20', '30', 430],
-    ['BANDES DE GAZE', 'Soins et pansements', '12', '6', 600],
-    ['PANSEMENTS ADHÉSIFS', 'Soins et pansements', '40', '20', -20],
-    ['SÉRUM PHYSIOLOGIQUE', 'Soins et pansements', '10', '10', 15],
-    ['GANTS D’EXAMEN', 'Matériel médical', '100', '50', 720],
-    ['COUVERTURE ISOTHERMIQUE', 'Matériel médical', '2', '2', null],
-    ['CISEAUX À PANSEMENT', 'Matériel médical', '1', '1', null],
-    ['THERMOMÈTRE', 'Matériel médical', '1', '1', null],
-    ['SOLUTION DE RINÇAGE OCULAIRE', 'Soins et pansements', '2', '2', 210],
-    ['BANDES ÉLASTIQUES', 'Soins et pansements', '4', '4', 510],
-    ['PINCE À ÉCHARDES', 'Matériel médical', '1', '1', null],
-    ['MASQUE DE PROTECTION', 'Matériel médical', '10', '10', 100],
-    ['SACHETS DE FROID', 'Premiers secours', '2', '2', 320],
+    ['DOTATION CARDIOLOGIQUE — DÉMO', '1. CARDIOLOGIE', '1 boîte', '1 boîte', 90],
+    ['DOTATION DIGESTIVE — DÉMO', '2. GASTRO-ENTÉROLOGIE', '1 boîte', '1 boîte', 180],
+    ['ANTISEPTIQUE CUTANÉ', '3. PANSEMENTS ET SOINS', '2 flacons', '2', 350],
+    ['COMPRESSES STÉRILES', '3. PANSEMENTS ET SOINS', '20', '30', 430],
+    ['BANDES DE GAZE', '3. PANSEMENTS ET SOINS', '12', '6', 600],
+    ['PANSEMENTS ADHÉSIFS', '3. PANSEMENTS ET SOINS', '40', '20', -20],
+    ['SÉRUM PHYSIOLOGIQUE', '3. PANSEMENTS ET SOINS', '10', '10', 15],
+    ['GANTS D’EXAMEN', '10. MATÉRIEL MÉDICAL', '100', '50', 720],
+    ['COUVERTURE ISOTHERMIQUE', '10. MATÉRIEL MÉDICAL', '2', '2', null],
+    ['CISEAUX À PANSEMENT', '10. MATÉRIEL MÉDICAL', '1', '1', null],
+    ['THERMOMÈTRE', '10. MATÉRIEL MÉDICAL', '1', '1', null],
+    ['SOLUTION DE RINÇAGE OCULAIRE', '3. PANSEMENTS ET SOINS', '2', '2', 210],
+    ['BANDES ÉLASTIQUES', '3. PANSEMENTS ET SOINS', '4', '4', 510],
+    ['PINCE À ÉCHARDES', '10. MATÉRIEL MÉDICAL', '1', '1', null],
+    ['MASQUE DE PROTECTION', '10. MATÉRIEL MÉDICAL', '10', '10', 100],
+    ['SACHETS DE FROID', '4. PREMIERS SECOURS', '2', '2', 320],
   ] as const;
   const items: PharmacyItem[] = vessels.flatMap((vessel, vesselIndex) => examples.map(([designation, category, quantity, required, days], index) => ({ ...blankPharmacyItem(), id: vesselIndex * 100 + index + 1, company_id: 99, vessel_id: vessel.id, section: 'DOTATION DE DÉMONSTRATION', category, designation, brand: '', lot_number: days === null ? '' : `DEMO-${index + 1}`, quantity, required_quantity: required, expires_on: days === null ? null : dateAt(days), expiry_text: '', expiry_precision: days === null ? 'unknown' : 'day', notes: 'Article fictif pour présentation de l’interface.', source_file: '', source_sheet: '', source_row: null, revision: 1, updated_at: new Date().toISOString() })));
   const controls: PharmacyControl[] = [];
@@ -34,6 +36,24 @@ export function createPharmacyPreviewClient(): SupabaseClient {
     from: (name: keyof typeof tables) => query(tables[name] || []),
     rpc: async (name: string, args: Record<string, unknown> = {}) => {
       if (name === 'pharmacy_available_vessels') return { data: vessels, error: null };
+      if (name === 'pharmacy_notifications') {
+        const today = pharmacyToday();
+        const notifications: PharmacyNotification[] = [];
+        for (const item of items) {
+          const days = pharmacyDaysUntil(item.expires_on, today);
+          if (!item.active || days === null || days > PHARMACY_ALERT_DAYS) continue;
+          const vessel = vessels.find((candidate) => candidate.id === item.vessel_id);
+          if (vessel) notifications.push({ id: `item-${item.id}`, kind: 'item', vessel_id: vessel.id, vessel_name: vessel.name, title: item.designation, expires_on: item.expires_on!, days_until_expiry: days, item_id: item.id });
+        }
+        for (const control of controls) {
+          const days = pharmacyDaysUntil(control.expires_on, today);
+          if (!control.is_current || days === null || days > PHARMACY_ALERT_DAYS) continue;
+          const vessel = vessels.find((candidate) => candidate.id === control.vessel_id);
+          if (vessel) notifications.push({ id: `control-${control.id}`, kind: 'control', vessel_id: vessel.id, vessel_name: vessel.name, title: 'Contrôle Pharmacie', expires_on: control.expires_on, days_until_expiry: days, item_id: null });
+        }
+        notifications.sort((a, b) => a.expires_on.localeCompare(b.expires_on) || a.vessel_name.localeCompare(b.vessel_name, 'fr') || a.title.localeCompare(b.title, 'fr'));
+        return { data: structuredClone(notifications), error: null };
+      }
       if (name === 'save_pharmacy_item') {
         const old = items.find((item) => item.id === args.p_id);
         if (old && old.revision !== args.p_revision) return { data: null, error: { message: 'Cet article a été modifié. Actualisez l’inventaire.' } };
