@@ -54,7 +54,8 @@ function pageClient(requestCount = 2) {
   }));
   const client = {
     rpc: (name: string, args: { p_request_id: number; p_comment: string }) => name === 'assigned_vessel_read_scope'
-      ? Promise.resolve({ data: [2], error: null }) : rpc(name, args),
+      ? Promise.resolve({ data: [2], error: null }) : name === 'purchase_request_own_submission_ids'
+        ? Promise.resolve({ data: [], error: null }) : rpc(name, args),
     storage: { from: vi.fn() },
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'purchase_requests') {

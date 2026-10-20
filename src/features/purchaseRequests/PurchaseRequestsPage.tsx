@@ -121,8 +121,8 @@ const EMPTY_FORM: CreatePurchaseRequestInput = {
 };
 
 const WIZARD_STEPS = ['Demandeur', 'Besoin', 'Prix', 'Livraison', 'Notes', 'Pièces jointes'];
-const PURCHASE_REQUEST_MANAGER_ROLES: RoleKey[] = ['admin', 'direction', 'armement', 'capitaine'];
-const PURCHASE_REQUEST_PROCESSOR_ROLES: RoleKey[] = [...PURCHASE_REQUEST_MANAGER_ROLES, 'marin'];
+const PURCHASE_REQUEST_CREATOR_ROLES: RoleKey[] = ['admin', 'direction', 'armement', 'capitaine', 'marin'];
+const PURCHASE_REQUEST_PROCESSOR_ROLES: RoleKey[] = [...PURCHASE_REQUEST_CREATOR_ROLES];
 const PURCHASE_REQUEST_DECIDER_ROLES: RoleKey[] = ['admin', 'direction', 'armement'];
 
 function normalize(value: string): string {
@@ -137,9 +137,8 @@ function canDecide(roles: RoleKey[]): boolean {
   return roles.some((role) => PURCHASE_REQUEST_DECIDER_ROLES.includes(role));
 }
 
-function canCreate(roles: RoleKey[], functionLabel: string): boolean {
-  return roles.some((role) => PURCHASE_REQUEST_MANAGER_ROLES.includes(role))
-    || normalize(functionLabel).includes('chef mecanicien');
+function canCreate(roles: RoleKey[]): boolean {
+  return roles.some((role) => PURCHASE_REQUEST_CREATOR_ROLES.includes(role));
 }
 
 function formatDate(value: string, includeTime = false): string {
@@ -209,7 +208,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
   const processingAllowed = canProcess(effectiveRoles);
   const decisionAllowed = canDecide(effectiveRoles);
   const approvalAllowed = decisionAllowed || effectiveRoles.includes('marin');
-  const creationAllowed = canCreate(effectiveRoles, currentPerson?.functionLabel || '');
+  const creationAllowed = canCreate(effectiveRoles);
   const assignedView = isAssignedVesselScopedPurchaseView(effectiveRoles);
   const accessScope = `${outletContext?.userId || ''}:${effectiveRoles.join('|')}:${currentPerson?.id || ''}`;
   const [purchaseData, setPurchaseData] = useState<{ accessScope: string; client: SupabaseClient; requests: PurchaseRequestRecord[]; vessels: PurchaseVesselOption[] }>({ accessScope, client: effectiveClient, requests: [], vessels: [] });
@@ -414,12 +413,18 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
       setFiles([]);
       setWizardStep(0);
       clearRequestedSelection();
+      setSearch('');
+      setFilters({ category: '', urgentOnly: false, vesselName: '' });
       setActiveStage('to_process');
-      setSelectedId(created.id);
       setStatusMessage(`Demande #${created.requestNumber} créée et équipes de traitement notifiées.`);
       await loadData();
+      if (mounted.current && currentAccess.current.accessScope === accessScope && currentAccess.current.client === effectiveClient) setSelectedId(created.id);
     } catch (error) {
-      if (mounted.current && currentAccess.current.accessScope === accessScope && currentAccess.current.client === effectiveClient) setErrorMessage(error instanceof Error ? error.message : "Impossible de créer la demande.");
+      if (mounted.current && currentAccess.current.accessScope === accessScope && currentAccess.current.client === effectiveClient) {
+        const message = error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+          ? error.message : "Impossible de créer la demande.";
+        setErrorMessage(message);
+      }
     } finally {
       if (mounted.current && currentAccess.current.accessScope === accessScope && currentAccess.current.client === effectiveClient) setIsSaving(false);
     }
@@ -524,7 +529,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
 
       <div className="admin-notices" aria-live="polite">
         {statusMessage ? <p className="admin-success">{statusMessage}</p> : null}
-        {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
+        {errorMessage && !showCreateDialog ? <p className="form-error">{errorMessage}</p> : null}
       </div>
 
       <div className="purchase-master-detail">
@@ -594,6 +599,7 @@ export function PurchaseRequestsPage({ client, roles }: PurchaseRequestsPageProp
       </div>
 
       {showCreateDialog ? <AppDialog description="Le formulaire crée la demande puis ajoute les fichiers et photos." eyebrow="Nouvelle demande" footer={<div className="purchase-wizard-footer"><button className="is-secondary" disabled={isSaving} onClick={() => wizardStep ? setWizardStep((current) => current - 1) : setShowCreateDialog(false)} type="button">{wizardStep ? 'Précédent' : 'Annuler'}</button><button className="is-primary" disabled={isSaving || (wizardStep > 0 && !requestForm.title.trim())} type="submit">{wizardStep === WIZARD_STEPS.length - 1 ? <><Plus size={17} />Créer la demande</> : <>Suivant<ChevronRight size={17} /></>}</button></div>} isBusy={isSaving} onClose={() => setShowCreateDialog(false)} onSubmit={handleCreate} size="xl" title="Créer une demande d’achat">
+        {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
         <div className="purchase-wizard"><aside><small>Création</small><strong>Demande achat</strong><nav>{WIZARD_STEPS.map((step, index) => <button className={wizardStep === index ? 'is-active' : ''} key={step} onClick={() => setWizardStep(index)} type="button"><span>{index + 1}</span>{step}</button>)}</nav></aside><section>
           {wizardStep === 0 ? <div className="purchase-wizard-card"><h3><CircleUserRound size={20} />Demandeur</h3><div className="purchase-form-grid"><label>Émetteur<input onChange={(event) => updateForm('requesterName', event.target.value)} placeholder={currentPerson ? `${currentPerson.firstName} ${currentPerson.lastName}` : 'Prénom NOM'} value={requestForm.requesterName} /></label><label>Navire<select onChange={(event) => updateForm('vesselId', event.target.value ? Number(event.target.value) : null)} value={requestForm.vesselId || ''}><option value="">Sélectionner</option>{vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></label></div></div> : null}
           {wizardStep === 1 ? <div className="purchase-wizard-card"><h3><FileText size={20} />Description du besoin</h3><div className="purchase-form-grid"><label>Désignation *<input required onChange={(event) => updateForm('title', event.target.value)} placeholder="Ex. Filtre centrale hydraulique" value={requestForm.title} /></label><label>Référence<input onChange={(event) => updateForm('reference', event.target.value)} value={requestForm.reference} /></label><label>Catégorie<select onChange={(event) => updateForm('categoryLabel', event.target.value)} value={requestForm.categoryLabel}><option>Approvisionnement</option><option>Approvisionnement - EPI</option><option>Prestataire de Service</option><option>Autre</option></select></label><label>Quantité<input inputMode="decimal" onChange={(event) => updateForm('quantity', event.target.value)} value={requestForm.quantity} /></label><label>Unité / conditionnement<select onChange={(event) => updateForm('unitLabel', event.target.value)} value={requestForm.unitLabel}><option>Unité</option><option>Mètre</option><option>Lot</option><option>Boîte</option><option>Litre</option></select></label><label>Fournisseur<input onChange={(event) => updateForm('supplierName', event.target.value)} placeholder="Ex. SERVAUX" value={requestForm.supplierName} /></label></div></div> : null}
