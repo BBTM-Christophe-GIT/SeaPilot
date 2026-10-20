@@ -29,7 +29,8 @@ describe('purchase assignment read scope', () => {
   it('does not fetch any request, metadata or file when no vessel is admitted', async () => {
     const from = vi.fn();
     const storage = { from: vi.fn() };
-    await expect(fetchPurchaseRequests({ from, storage } as unknown as SupabaseClient, [])).resolves.toEqual([]);
+    const rpc = vi.fn().mockResolvedValue({ data: [], error: null });
+    await expect(fetchPurchaseRequests({ from, storage, rpc } as unknown as SupabaseClient, [])).resolves.toEqual([]);
     expect(from).not.toHaveBeenCalled();
     expect(storage.from).not.toHaveBeenCalled();
   });
@@ -55,7 +56,7 @@ describe('purchase assignment read scope', () => {
       return query;
     });
     const createSignedUrl = vi.fn().mockResolvedValue({ data: { signedUrl: 'https://private.example.test/accessible.pdf' }, error: null });
-    const client = { from, storage: { from: vi.fn().mockReturnValue({ createSignedUrl }) } } as unknown as SupabaseClient;
+    const client = { from, rpc: vi.fn().mockResolvedValue({ data: [], error: null }), storage: { from: vi.fn().mockReturnValue({ createSignedUrl }) } } as unknown as SupabaseClient;
     const result = await fetchPurchaseRequests(client, [1]);
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ id: 10, title: 'Accessible', attachments: [{ id: 100, storageBucket: 'purchase-request-attachments', storagePath: '10/accessible.pdf' }], events: [{ id: 200 }] });

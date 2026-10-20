@@ -103,13 +103,21 @@ function mockDetailScrolling() {
 
 function orderedResult(data: unknown[], pendingResult?: Promise<{ data: unknown[]; error: null }>) {
   const filters: Array<{ column: string; values: unknown[] }> = [];
+  let alternatives: Array<{ column: string; values: number[] }> = [];
   const query = {
     select: vi.fn().mockImplementation(() => query),
     order: vi.fn().mockImplementation(() => query),
     eq: vi.fn().mockImplementation(() => query),
     in: vi.fn().mockImplementation((column: string, values: unknown[]) => { filters.push({ column, values }); return query; }),
+    or: vi.fn().mockImplementation((expression: string) => {
+      alternatives = [...expression.matchAll(/(\w+)\.in\.\(([^)]*)\)/g)]
+        .map((match) => ({ column: match[1], values: match[2].split(',').map(Number) }));
+      return query;
+    }),
     then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => (pendingResult || Promise.resolve({ data, error: null })).then((result) => resolve({ ...result,
-      data: result.data.filter((row) => filters.every(({ column, values }) => !!row && typeof row === 'object' && values.includes((row as Record<string, unknown>)[column]))),
+      data: result.data.filter((row) => !!row && typeof row === 'object'
+        && filters.every(({ column, values }) => values.includes((row as Record<string, unknown>)[column]))
+        && (!alternatives.length || alternatives.some(({ column, values }) => values.includes((row as Record<string, number>)[column])))),
     }), reject),
   };
   return query;
@@ -118,13 +126,16 @@ function orderedResult(data: unknown[], pendingResult?: Promise<{ data: unknown[
 function createClient(requests: unknown[] = [baseRequest, urgentRequest], options: {
   pendingResult?: Promise<{ data: unknown[]; error: null }>;
   scopeVesselIds?: number[];
+  ownSubmissionIds?: number[];
   scopeError?: { code: string; message: string };
   attachments?: unknown[];
 } = {}) {
   const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
   const scopeRpc = vi.fn().mockResolvedValue({ data: options.scopeVesselIds || [1, 2, 3], error: options.scopeError || null });
+  const ownSubmissionRpc = vi.fn().mockResolvedValue({ data: options.ownSubmissionIds || [], error: null });
   const client = {
-    rpc: (name: string, args?: unknown) => name === 'assigned_vessel_read_scope' ? scopeRpc(name, args) : rpc(name, args),
+    rpc: (name: string, args?: unknown) => name === 'assigned_vessel_read_scope' ? scopeRpc(name, args)
+      : name === 'purchase_request_own_submission_ids' ? ownSubmissionRpc(name) : rpc(name, args),
     storage: { from: vi.fn() },
     from: vi.fn().mockImplementation((table: string) => {
       if (table === 'purchase_requests') return orderedResult(requests, options.pendingResult);
@@ -136,7 +147,7 @@ function createClient(requests: unknown[] = [baseRequest, urgentRequest], option
       throw new Error(`Unexpected table ${table}`);
     }),
   };
-  return { client, rpc, scopeRpc };
+  return { client, rpc, scopeRpc, ownSubmissionRpc };
 }
 
 describe('PurchaseRequestsPage', () => {
@@ -504,7 +515,7 @@ describe('PurchaseRequestsPage', () => {
 
     expect(await screen.findByRole('heading', { name: '#274 · Dyneema petit treuil' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Planifier la livraison' })).toBeEnabled();
-    expect(screen.queryByRole('button', { name: 'Nouvelle demande' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nouvelle demande' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: 'Refuser' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Approuver' })).not.toBeInTheDocument();
   });
@@ -771,7 +782,7 @@ describe('PurchaseRequestsPage', () => {
     expect(screen.queryByRole('button', { name: 'Prendre en charge' })).not.toBeInTheDocument();
   });
 
-  it('lets a Marin approve and refresh the request before taking charge, without refusal or creation rights', async () => {
+  it('lets a Marin create and approve requests before taking charge, without refusal rights', async () => {
     const user = userEvent.setup();
     const requests = [{ ...baseRequest }];
     const { client, rpc } = createClient(requests);
@@ -783,7 +794,7 @@ describe('PurchaseRequestsPage', () => {
     render(<PurchaseRequestsPage client={client as never} roles={['marin']} />);
     const approve = await screen.findByRole('button', { name: 'Approuver' });
     expect(screen.queryByRole('button', { name: 'Refuser' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Nouvelle demande' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nouvelle demande' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: 'Prendre en charge' })).not.toBeInTheDocument();
 
     await user.click(approve);
@@ -808,7 +819,7 @@ describe('PurchaseRequestsPage', () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it('lets a Marin run each contextual order-processing transition without granting request creation', async () => {
+  it('lets a Marin create requests and run each contextual order-processing transition', async () => {
     const user = userEvent.setup();
     const orderedRequest = {
       ...approvedRequest,
@@ -830,7 +841,7 @@ describe('PurchaseRequestsPage', () => {
     render(<PurchaseRequestsPage client={client as never} roles={['marin']} />);
 
     expect(await screen.findByRole('button', { name: 'Prendre en charge' })).toBeEnabled();
-    expect(screen.queryByRole('button', { name: 'Nouvelle demande' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nouvelle demande' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: 'Actions de la demande' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Prendre en charge' }));
@@ -900,5 +911,135 @@ describe('PurchaseRequestsPage', () => {
     await user.clear(screen.getByLabelText('Désignation *'));
     await user.click(screen.getByRole('button', { name: /6.*Pièces jointes/i }));
     expect(screen.getByRole('button', { name: 'Créer la demande' })).toBeDisabled();
+  });
+
+  it.each([
+    { firstName: 'Adrien', lastName: 'BOIS', role: 'capitaine', functionLabel: 'Capitaine' },
+    { firstName: 'Arthur', lastName: 'RICHER', role: 'marin', functionLabel: '2nd Capitaine' },
+    { firstName: 'Gary', lastName: 'LEFEVRE', role: 'marin', functionLabel: '2nd Capitaine' },
+    { firstName: 'Équipier', lastName: 'ACHATS', role: 'marin', functionLabel: 'Matelot' },
+  ])('lets $firstName $lastName ($role) submit through every wizard step', async ({ firstName, lastName, role, functionLabel }) => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient();
+    rpc.mockResolvedValueOnce({ data: { ...baseRequest, id: 120, request_number: '120', title: 'Filtre hydraulique' }, error: null });
+
+    render(
+      <Routes>
+        <Route element={<Outlet context={{
+          client,
+          roles: [role],
+          currentPerson: { id: 12, firstName, lastName, functionLabel, gradeLabel: '' },
+        }} />}>
+          <Route path="/purchase-requests" element={<PurchaseRequestsPage />} />
+        </Route>
+      </Routes>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Nouvelle demande' }));
+    expect(screen.getByLabelText('Émetteur')).toHaveAttribute('placeholder', `${firstName} ${lastName}`);
+    expect(screen.getByRole('button', { name: 'Suivant' })).toBeEnabled();
+    await user.selectOptions(screen.getByLabelText('Navire'), '1');
+    await user.click(screen.getByRole('button', { name: 'Suivant' }));
+    expect(screen.getByLabelText('Désignation *')).toBeRequired();
+    expect(screen.getByRole('button', { name: 'Suivant' })).toBeDisabled();
+    await user.type(screen.getByLabelText('Désignation *'), 'Filtre hydraulique');
+    await user.click(screen.getByRole('button', { name: 'Suivant' }));
+    expect(screen.getByLabelText('Prix unitaire HT')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Suivant' }));
+    expect(screen.getByLabelText('Lieu de livraison')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Suivant' }));
+    expect(screen.getByLabelText('Commande urgente')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Suivant' }));
+    expect(screen.getByLabelText('Pièces jointes')).toBeInTheDocument();
+    expect(rpc).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Créer la demande' }));
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('purchase_request_create', {
+      p_payload: expect.objectContaining({ title: 'Filtre hydraulique', vessel_id: 1 }),
+    }));
+    expect(await screen.findByText('Demande #120 créée et équipes de traitement notifiées.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('shows a denied creation response inside the wizard and preserves the entered request', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient();
+    rpc.mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'Vous ne pouvez pas créer de demande d’achat.' } });
+    render(<PurchaseRequestsPage client={client as never} roles={['capitaine']} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Nouvelle demande' }));
+    await user.click(screen.getByRole('button', { name: 'Suivant' }));
+    await user.type(screen.getByLabelText('Désignation *'), 'Filtre hydraulique');
+    await user.click(screen.getByRole('button', { name: /6.*Pièces jointes/i }));
+    await user.click(screen.getByRole('button', { name: 'Créer la demande' }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Vous ne pouvez pas créer de demande d’achat.');
+    expect(within(dialog).getByRole('button', { name: 'Créer la demande' })).toBeEnabled();
+    await user.click(within(dialog).getByRole('button', { name: /2.*Besoin/i }));
+    expect(screen.getByLabelText('Désignation *')).toHaveValue('Filtre hydraulique');
+  });
+
+  it('does not grant creation to an account without an application role from its chief mechanic job title', async () => {
+    const { client } = createClient();
+    render(
+      <Routes>
+        <Route element={<Outlet context={{
+          client,
+          roles: [],
+          currentPerson: { id: 12, firstName: 'Compte', lastName: 'SANS RÔLE', functionLabel: 'Chef mécanicien', gradeLabel: '' },
+        }} />}>
+          <Route path="/purchase-requests" element={<PurchaseRequestsPage />} />
+        </Route>
+      </Routes>,
+    );
+
+    await screen.findByRole('heading', { name: /Demandes d.achat/i });
+    expect(screen.queryByRole('button', { name: 'Nouvelle demande' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { vessel_id: null, vessel_name: null, label: 'without a vessel' },
+    { vessel_id: 2, vessel_name: 'LE ROZEL', label: 'for a vessel outside the current assignment' },
+  ])('keeps a captain’s own submitted request visible after reload and a fresh mount $label', async ({ vessel_id, vessel_name }) => {
+    const user = userEvent.setup();
+    const requests: unknown[] = [baseRequest];
+    const ownSubmissionIds: number[] = [];
+    const { client, rpc } = createClient(requests, { scopeVesselIds: [1], ownSubmissionIds });
+    const created = { ...baseRequest, id: 120, request_number: '120', title: 'Filtre hydraulique', vessel_id, vessel_name };
+    rpc.mockImplementationOnce(async () => {
+      requests.push(created);
+      ownSubmissionIds.push(created.id);
+      return { data: created, error: null };
+    });
+    const page = <PurchaseRequestsPage client={client as never} roles={['capitaine']} />;
+    const firstMount = render(page, '/purchase-requests?requestId=95');
+
+    await user.click(await screen.findByRole('button', { name: 'Filtres' }));
+    await user.selectOptions(screen.getByLabelText('Filtrer par navire'), 'GOURY');
+    await user.selectOptions(screen.getByLabelText('Filtrer par catégorie'), 'Approvisionnement');
+    await user.type(screen.getByLabelText('Rechercher les demandes'), 'Moteur');
+
+    await user.click(await screen.findByRole('button', { name: 'Nouvelle demande' }));
+    if (vessel_id) await user.selectOptions(within(screen.getByRole('dialog')).getByLabelText('Navire'), String(vessel_id));
+    await user.click(screen.getByRole('button', { name: 'Suivant' }));
+    await user.type(screen.getByLabelText('Désignation *'), 'Filtre hydraulique');
+    await user.click(screen.getByRole('button', { name: /6.*Pièces jointes/i }));
+    await user.click(screen.getByRole('button', { name: 'Créer la demande' }));
+
+    expect(await screen.findByRole('heading', { name: /#120.*Filtre hydraulique/ })).toBeInTheDocument();
+    expect(screen.getByLabelText('Rechercher les demandes')).toHaveValue('');
+    expect(screen.getByLabelText('Filtrer par navire')).toHaveValue('');
+    expect(screen.getByLabelText('Filtrer par catégorie')).toHaveValue('');
+    expect(rpc).toHaveBeenCalledWith('purchase_request_create', {
+      p_payload: expect.objectContaining({ vessel_id }),
+    });
+    await user.click(screen.getByRole('button', { name: 'Actualiser' }));
+    expect(await screen.findByRole('heading', { name: /#120.*Filtre hydraulique/ })).toBeInTheDocument();
+
+    firstMount.unmount();
+    render(page);
+    await user.click(await screen.findByRole('button', { name: /#120.*Filtre hydraulique/ }));
+    expect(await screen.findByRole('heading', { name: /#120.*Filtre hydraulique/ })).toBeInTheDocument();
   });
 });
