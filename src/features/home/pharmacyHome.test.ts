@@ -10,6 +10,7 @@ import {
   type ManagerHomeSourceRows,
 } from './managerHomeData';
 import { buildManagerHomeVessels } from './managerHomeVessels';
+import { previewSupabaseClient } from '../preview/previewSupabaseClient';
 
 const TODAY = new Date('2026-10-20T12:00:00Z');
 const ASSIGNMENT: ManagerHomeAssignmentRow = {
@@ -59,6 +60,11 @@ function clientFor(rows: PharmacyNotification[] = [], options: {
 }
 
 describe('pharmacy alarms on the consolidated home dashboard', () => {
+  it('keeps the public demonstration home available without exposing pharmacy source data', async () => {
+    const result = await fetchManagerHomeDashboard(previewSupabaseClient, TODAY, { roles: ['admin'], personId: null });
+    expect(result.unavailableSources).not.toContain('les échéances pharmacie');
+    expect(result.items.filter((item) => item.id.startsWith('pharmacy-'))).toEqual([]);
+  });
   it('includes J-30 medication and control alarms in the existing fleet group and vessel filter', () => {
     const rows = [
       notification(),
