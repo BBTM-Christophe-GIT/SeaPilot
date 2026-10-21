@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, BellRing, Check, CheckCircle2, ChevronDown, Download, FileCheck2, FileUp, Package, Pencil, Pill, Plus, RotateCcw, Search } from 'lucide-react';
+import { AlertTriangle, BellRing, Check, CheckCircle2, ChevronDown, Download, FileCheck2, FileUp, Package, Pencil, Plus, RotateCcw, Search } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { canManagePharmacy, formatPharmacyDate, groupPharmacyItems, pharmacyExpiryStatus, pharmacyStockStatus, type PharmacyControl, type PharmacyItem, type PharmacyItemDraft, type PharmacyVessel, type PharmacyVesselExpiryCounts } from './pharmacyModel';
+import { canManagePharmacy, formatPharmacyDate, groupPharmacyItems, pharmacyExpiryStatus, pharmacyStockStatus, selectPharmacyVessels, type PharmacyControl, type PharmacyItem, type PharmacyItemDraft, type PharmacyVessel, type PharmacyVesselExpiryCounts } from './pharmacyModel';
 import { downloadPharmacyControl, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
 import { PharmacyControlForm, PharmacyItemForm } from './PharmacyForms';
 import { PharmacyVesselStrip } from './PharmacyVesselStrip';
+import { PharmacyIcon } from './PharmacyIcon';
 import './pharmacy.css';
 import './pharmacyGroups.css';
 
@@ -114,8 +115,9 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
     setLoading(true);
     void fetchPharmacyVessels(db).then((loaded) => {
       if (cancelled) return;
-      setVessels(loaded); setVesselId((current) => loaded.some((entry) => entry.id === current) ? current : loaded[0]?.id || 0);
-      if (!loaded.length) setLoading(false);
+      const selectable = selectPharmacyVessels(loaded);
+      setVessels(selectable); setVesselId((current) => selectable.some((entry) => entry.id === current) ? current : selectable[0]?.id || 0);
+      if (!selectable.length) setLoading(false);
     }).catch((reason) => { if (!cancelled) { setError(messageOf(reason)); setLoading(false); } });
     return () => { cancelled = true; };
   }, [db, preview, previewClient]);
@@ -124,12 +126,13 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
     if (requested && vessels.some((entry) => entry.id === requested)) setVesselId(requested);
   }, [searchParams, vessels]);
   useEffect(() => {
-    if (!vesselId || (preview && !previewClient)) return;
+    if (!vessel) { setItems([]); setControls([]); setSelected(null); return; }
+    if (preview && !previewClient) return;
     const id = ++requestId.current;
     setLoading(true); setItems([]); setControls([]); setSelected(null); setError(''); setNotice(''); setQuery(''); setCategory(''); setFilter(requestedFilter(searchFilter)); setShowInactive(false); setEditor(null); setControlOpen(false);
     void fetchPharmacyRegister(db, vesselId).then((loaded) => { if (id === requestId.current) { setItems(loaded.items); setControls(loaded.controls); } }).catch((reason) => { if (id === requestId.current) setError(messageOf(reason)); }).finally(() => { if (id === requestId.current) setLoading(false); });
     return () => { requestId.current += 1; };
-  }, [db, vesselId, preview, previewClient, searchFilter]);
+  }, [db, vessel, vesselId, preview, previewClient, searchFilter]);
 
   async function reload(refreshCounts = true) {
     if (!vesselId) return;
@@ -162,7 +165,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   }
   const controlText = !currentControl ? 'À renseigner' : controlStatus === 'expired' ? 'Contrôle échu' : controlStatus === 'due' ? 'À renouveler sous 30 jours' : 'Contrôle à jour';
   return <section className="pharmacy-page">
-    <header className="pharmacy-heading"><div><p>REGISTRES · SÉCURITÉ À BORD</p><h1><Pill aria-hidden="true" size={27} /> Inventaire Pharmacie</h1></div><span className="pharmacy-alert-rule"><BellRing size={15} /> Alertes à J−30</span></header>
+    <header className="pharmacy-heading"><div><p>REGISTRES · SÉCURITÉ À BORD</p><h1><PharmacyIcon aria-hidden="true" size={27} /> Inventaire Pharmacie</h1></div></header>
     {preview ? <div className="pharmacy-demo">Démonstration · données fictives. Les inventaires importés sont disponibles dans l’espace connecté.</div> : null}
     <div className="pharmacy-vessel-bar"><PharmacyVesselStrip vessels={vessels} value={vesselId} disabled={busy} counts={vesselExpiryCounts} loading={countsLoading} onChange={(id) => { setVesselId(id); setSearchParams({ vessel: String(id) }, { replace: true }); }} /><div className="pharmacy-vessel-actions"><span className="pharmacy-vessel-meta">{loading ? 'Chargement de l’inventaire…' : `${active.length} articles actifs`}{!manager && vessel ? ' · Consultation' : ''}</span><div><button className="pharmacy-icon-button" aria-label="Actualiser l’inventaire" disabled={busy || loading || !vessel} onClick={() => void reload()} type="button"><RotateCcw size={17} /></button>{manager ? <button className="primary-button" disabled={loading || busy} onClick={() => { setFormError(''); setEditor({}); }} type="button"><Plus size={16} /> Ajouter un article</button> : null}</div></div></div>
     {countsError ? <div className="pharmacy-message is-warning" role="alert">Compteurs d’échéance indisponibles : {countsError} Utilisez Actualiser l’inventaire pour réessayer.</div> : null}

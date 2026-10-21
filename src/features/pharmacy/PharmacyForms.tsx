@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { FileUp, Pill } from 'lucide-react';
+import { FileUp } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
+import { PharmacyIcon } from './PharmacyIcon';
 import { blankPharmacyItem, type PharmacyItem, type PharmacyItemDraft } from './pharmacyModel';
 
 export function PharmacyItemForm({ item, categories, busy, error, onClose, onSave }: {
@@ -9,7 +10,7 @@ export function PharmacyItemForm({ item, categories, busy, error, onClose, onSav
 }) {
   const [draft, setDraft] = useState<PharmacyItemDraft>(() => item ? { ...item } : blankPharmacyItem());
   const update = <K extends keyof PharmacyItemDraft>(key: K, value: PharmacyItemDraft[K]) => setDraft((old) => ({ ...old, [key]: value }));
-  return <AppDialog title={item ? 'Modifier l’article' : 'Ajouter un article'} eyebrow="Inventaire Pharmacie" icon={<Pill size={20} />} isBusy={busy} onClose={onClose} size="lg"
+  return <AppDialog title={item ? 'Modifier l’article' : 'Ajouter un article'} eyebrow="Inventaire Pharmacie" icon={<PharmacyIcon size={20} />} isBusy={busy} onClose={onClose} size="lg"
     description="Conservez les unités et conditionnements indiqués à bord. Les quantités en texte ne sont pas converties automatiquement."
     onSubmit={(event) => { event.preventDefault(); onSave({ ...draft, expires_on: draft.expiry_precision === 'unknown' ? null : draft.expires_on }); }}
     footer={<div className="app-dialog__actions"><button className="is-secondary" disabled={busy} onClick={onClose} type="button">Annuler</button><button className="is-primary" disabled={busy} type="submit">{busy ? 'Enregistrement…' : 'Enregistrer'}</button></div>}>

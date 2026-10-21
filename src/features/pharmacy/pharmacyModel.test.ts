@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { blankPharmacyItem, canManagePharmacy, formatPharmacyDate, groupPharmacyItems, pharmacyDaysUntil, pharmacyExpiryStatus, pharmacyStockStatus, pharmacyToday, type PharmacyItem } from './pharmacyModel';
+import { blankPharmacyItem, canManagePharmacy, formatPharmacyDate, groupPharmacyItems, pharmacyDaysUntil, pharmacyExpiryStatus, pharmacyStockStatus, pharmacyToday, selectPharmacyVessels, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
 
 describe('pharmacy dates and stock', () => {
   it('alerts inclusively at thirty days and retains expired dates', () => {
@@ -74,5 +74,26 @@ describe('pharmacy inventory grouping', () => {
     expect(groups[0].category).toBe('Sans catégorie');
     expect(groups[0].items).toHaveLength(2);
     expect(groupPharmacyItems([])).toEqual([]);
+  });
+});
+
+describe('pharmacy vessel selection', () => {
+  const vessel = (id: number, name: string, acronym = ''): PharmacyVessel => ({ id, company_id: 1, name, acronym, can_manage: true });
+
+  it('excludes normalized BR71 names and acronyms while sorting a copy by fleet length', () => {
+    const source = [vessel(1, 'SUROIT'), vessel(2, 'BR 71'), vessel(3, 'HIRONDELLE DE LA MANCHE'),
+      vessel(4, 'GOURY'), vessel(5, ' br-71 '), vessel(6, 'Autre libellé', 'bR71'), vessel(7, 'BR710')];
+    const selected = selectPharmacyVessels(source);
+    expect(selected.map(({ name }) => name)).toEqual(['GOURY', 'SUROIT', 'HIRONDELLE DE LA MANCHE', 'BR710']);
+    expect(source.map(({ id }) => id)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(selected[0]).toBe(source[3]);
+  });
+
+  it('prefers recorded lengths and returns no selection when BR71 is the only vessel', () => {
+    expect(selectPharmacyVessels([
+      { ...vessel(1, 'GOURY'), length_overall: '12,5 m' }, vessel(2, 'SUROIT'),
+      { ...vessel(3, 'Navire ajouté'), length_overall: 45 }, vessel(4, 'Sans longueur'),
+    ]).map(({ id }) => id)).toEqual([3, 2, 1, 4]);
+    expect(selectPharmacyVessels([vessel(5, 'BR71')])).toEqual([]);
   });
 });

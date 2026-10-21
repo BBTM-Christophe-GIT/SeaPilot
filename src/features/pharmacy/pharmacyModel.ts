@@ -1,8 +1,14 @@
 import type { RoleKey } from '../permissions/roles';
+import { compareFleetAssets, normalizeFleetName } from '../fleet/fleetDisplay';
 
 export const PHARMACY_ALERT_DAYS = 30;
 export type PharmacyExpiryPrecision = 'day' | 'month' | 'unknown';
-export interface PharmacyVessel { id: number; company_id: number; name: string; acronym: string; can_manage: boolean }
+export interface PharmacyVessel { id: number; company_id: number; name: string; acronym: string; can_manage: boolean; length_overall?: string | number | null }
+export function selectPharmacyVessels(vessels: PharmacyVessel[]): PharmacyVessel[] {
+  const normalized = (value: string) => normalizeFleetName(value).replace(/[^A-Z0-9]/g, '');
+  return vessels.filter((vessel) => normalized(vessel.name) !== 'BR71' && normalized(vessel.acronym || '') !== 'BR71')
+    .sort(compareFleetAssets);
+}
 export interface PharmacyItem {
   id: number; company_id: number; vessel_id: number; section: string; category: string;
   brand: string; designation: string; lot_number: string; quantity: string; required_quantity: string;
