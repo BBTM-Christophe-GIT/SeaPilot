@@ -109,7 +109,7 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
     purpose: 'Retrouver les équipements de sauvetage et leurs documents dans le Registre LSA.',
     access: 'Administration, Direction, Armement, Capitaine et Marin peuvent ajouter, mettre à jour, modifier et supprimer les fiches de leurs navires autorisés. Les actions sont désactivées sur les navires historiques accessibles uniquement en consultation.',
     steps: [
-      { title: 'Choisir un navire', detail: 'Dans Registres → Registre LSA, sélectionnez la carte du navire comme dans le Registre des Remorques.' },
+      { title: 'Choisir un navire', detail: 'Dans Registres → Registre LSA, sélectionnez la carte du navire comme dans le Registre des Remorques. Sur chaque navire, la pastille orange compte les matériels à échéance sous 30 jours, la rouge les matériels dont l’échéance est dépassée. Les pastilles restent indépendantes du navire sélectionné, de la recherche et des filtres.' },
       { title: 'Filtrer l’inventaire', detail: 'Choisissez Gilets de Sauvetage, GMDSS, Navigation, Pyrotechnie ou Survie. La recherche porte aussi sur la marque, le modèle et le numéro de série.' },
       { title: 'Mettre à jour une échéance', detail: 'Sur la fiche, cliquez sur Mettre à jour. La fenêtre propose la date du jour plus un an ; modifiez-la si nécessaire, puis enregistrez. Seule la date d’échéance est mise à jour.' },
       { title: 'Modifier ou supprimer un matériel', detail: 'Le crayon ouvre la fiche complète. La corbeille demande confirmation avant de retirer le matériel de l’inventaire ; ses documents et son historique sont conservés.' },
@@ -323,7 +323,7 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
     purpose: 'Consulter le registre des équipements de levage et les rapports de contrôle.',
     access: 'Le Marin consulte les équipements et les rapports accessibles. La gestion du registre et la finalisation des contrôles sont réservées aux profils habilités.',
     steps: [
-      { title: 'Choisir le registre et le navire', detail: 'Dans le menu Registres, ouvrez Registre des Apparaux de levage ou Registre des Remorques, puis sélectionnez le navire. Examen à Fond - Grue donne accès aux certificats existants.' },
+      { title: 'Choisir le registre et le navire', detail: 'Dans le menu Registres, ouvrez Registre des Apparaux de levage ou Registre des Remorques, puis sélectionnez le navire. La pastille orange compte ses matériels actifs à échéance sous 30 jours ; la rouge compte ceux dont l’échéance est dépassée. Chaque registre a ses propres compteurs, indépendants des filtres. Examen à Fond - Grue donne accès aux certificats existants.' },
       { title: 'Consulter le registre', detail: 'Vérifiez l’identification de l’équipement, ses caractéristiques et les informations de contrôle disponibles.' },
       { title: 'Créer un contrôle annuel', detail: 'Les profils habilités utilisent Nouveau contrôle annuel et choisissent le navire ainsi que la date d’émission. Dans le registre des apparaux, cette date est appliquée à la Date de mise en service de tous les apparaux actifs du navire sélectionné à l’enregistrement du nouveau contrôle.' },
       { title: 'Ouvrir un rapport', detail: 'Dans la liste des rapports, filtrez par année si nécessaire, puis ouvrez le contrôle souhaité ou téléchargez son PDF.' },

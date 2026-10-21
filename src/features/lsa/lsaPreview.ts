@@ -1,11 +1,17 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { demoFleetVessels } from '../lifting/liftingPreview';
+import { todayLocal } from '../lifting/liftingModel';
 import { LSA_DEFAULT_DESIGNATIONS, blankLsaDraft, lsaTypeKey, numberedLsaTitle, type LsaCatalog, type LsaItem } from './lsaModel';
 
 // Synthetic inventory only: production records and files are never bundled in previews.
 export function createLsaPreviewClient(): SupabaseClient {
   const vessels = demoFleetVessels.filter((vessel) => !vessel.name.startsWith('YARD'));
   const stamp = () => new Date().toISOString();
+  const dateAt = (days: number) => {
+    const date = new Date(`${todayLocal()}T12:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+  };
   const catalog: LsaCatalog = {
     types: LSA_DEFAULT_DESIGNATIONS.map((group, index) => ({ id: index + 1, name: group.name, legacy_key: group.legacy_key, active: true, updated_at: stamp() })),
     designations: LSA_DEFAULT_DESIGNATIONS.flatMap((group, index) => group.designations.map((name, offset) => ({ id: index * 10 + offset + 1, name, equipment_type_id: index + 1, active: true, updated_at: stamp() }))),
@@ -18,7 +24,7 @@ export function createLsaPreviewClient(): SupabaseClient {
       category_key: lsaTypeKey(type.id), category_label: type.name, title: numberedLsaTitle(designation.name, 1),
       document_title: numberedLsaTitle(designation.name, 1), designation_id: id, item_number: 1, original_designation: null,
       issued_on: null, planned_on: null, provider_name: null, visit_location: null, renewal_notes: null,
-      expires_on: offset === 2 ? '2026-10-01' : '2027-01-01', status: 'valid', workflow_status: 'not_started',
+      expires_on: offset === 0 ? dateAt(15) : offset === 1 ? dateAt(31) : offset === 2 ? dateAt(-1) : null, status: 'valid', workflow_status: 'not_started',
       file_name: null, storage_bucket: null, storage_path: null, file_url: null, source_label: 'Démonstration', updated_at: stamp(),
     };
   }));
@@ -31,7 +37,10 @@ export function createLsaPreviewClient(): SupabaseClient {
         select: () => chain,
         eq: (key: string, value: unknown) => { selected = selected.filter((row) => row[key] === value); return chain; },
         in: (key: string, values: unknown[]) => { selected = selected.filter((row) => values.includes(row[key])); return chain; },
+        is: (key: string, value: unknown) => { selected = selected.filter((row) => value === null ? row[key] == null : row[key] === value); return chain; },
+        lte: (key: string, value: string) => { selected = selected.filter((row) => row[key] != null && String(row[key]) <= value); return chain; },
         order: () => chain,
+        range: (from: number, to: number) => { selected = selected.slice(from, to + 1); return chain; },
         then: (resolve: (value: unknown) => void) => Promise.resolve({ data: structuredClone(selected), error: null }).then(resolve),
       };
       return chain;
