@@ -2,6 +2,7 @@
 allowBuilds:
   core-js: false
   fsevents: false
+  nodemailer: false
 blockExoticSubdeps: true
 engineStrict: true
 managePackageManagerVersions: true

@@ -1,5 +1,14 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.76.5`, build `2026-10-21.004`, retire la dépendance au site NDF Netlify
+supprimé. L'Edge Function `expense-note-send` transmet directement par Gmail TLS,
+toujours depuis `christophe@bbtm.fr`, vers le destinataire Inexweb historique.
+Déployer la fonction avec `mailer.ts` et son `deno.json`, puis renseigner le nouveau
+secret Supabase `NDF_EMAIL_APP_PASSWORD`. L'expéditeur `NDF_EMAIL_USER` et le
+destinataire `NDF_EMAIL_TO` sont configurés sur le projet lié. Sans mot de passe
+d'application, l'envoi est refusé avant toute modification d'état. Aucune note
+n'est retransmise automatiquement. Voir [la configuration NDF](./expense-notes.md).
+
 Version `3.76.4`, build `2026-10-21.003`, autorise les Capitaines à ajouter
 des documents RH à leur profil et aux membres de leur bordée. Appliquer
 `20261021101557_hr_document_self_service_upload.sql` (appliquée au projet lié)

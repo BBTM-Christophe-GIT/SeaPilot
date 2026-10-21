@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { createExpenseSendHandler } from './handler.ts';
 import { createGoogleDriveReader } from '../document-drive/googleDrive.ts';
+import nodemailer from 'nodemailer';
+import { createSmtpExpenseMailer } from './mailer.ts';
 
 const url = Deno.env.get('SUPABASE_URL')!;
 const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -9,5 +11,6 @@ Deno.serve(createExpenseSendHandler({
   userClient: (authorization) => createClient(url, anonKey, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false } }),
   admin: createClient(url, serviceKey, { auth: { persistSession: false } }),
   fetch,
+  mailer: createSmtpExpenseMailer((name) => Deno.env.get(name), (options) => nodemailer.createTransport(options)),
   readDrive: createGoogleDriveReader((name) => Deno.env.get(name)),
 }));
