@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, BellRing, Check, CheckCircle2, ChevronDown, Download, FileCheck2, FileUp, Package, Pencil, Plus, RotateCcw, Search } from 'lucide-react';
+import { AlertTriangle, BellRing, Check, CheckCircle2, ChevronDown, Download, FileCheck2, FileUp, Package, Pencil, Plus, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { AppDialog } from '../../components/AppDialog';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
@@ -59,6 +60,9 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   const [editor, setEditor] = useState<{ item?: PharmacyItem } | null>(null);
   const [controlOpen, setControlOpen] = useState(false);
   const [selected, setSelected] = useState<PharmacyItem | null>(null);
+  const [removal, setRemoval] = useState<{ item: PharmacyItem; vesselName: string; client: SupabaseClient } | null>(null);
+  const [removalError, setRemovalError] = useState('');
+  const removalInFlight = useRef(false);
   const requestId = useRef(0);
   const countsRequestId = useRef(0);
   const vessel = vessels.find((entry) => entry.id === vesselId);
@@ -126,6 +130,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
     if (requested && vessels.some((entry) => entry.id === requested)) setVesselId(requested);
   }, [searchParams, vessels]);
   useEffect(() => {
+    setRemoval(null); setRemovalError('');
     if (!vessel) { setItems([]); setControls([]); setSelected(null); return; }
     if (preview && !previewClient) return;
     const id = ++requestId.current;
@@ -148,6 +153,47 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
     try { await savePharmacyItem(db, vessel.id, draft, editor?.item); setEditor(null); await reload(false); setNotice('Article enregistré.'); window.dispatchEvent(new Event('pharmacy:changed')); }
     catch (reason) { setFormError(messageOf(reason)); }
     finally { setBusy(false); }
+  }
+  async function removeItem() {
+    if (!removal || busy || removalInFlight.current || !manager || removal.client !== db || removal.item.vessel_id !== vesselId) return;
+    const target = removal.item;
+    const current = items.find((item) => item.id === target.id && item.vessel_id === target.vessel_id);
+    if (!current?.active || current.revision !== target.revision) {
+      setRemovalError('Cet article a été modifié. Actualisez l’inventaire avant de confirmer sa suppression.');
+      return;
+    }
+    const viewId = requestId.current;
+    const success = `Article « ${target.designation || target.brand || 'Sans désignation'} » supprimé de l’inventaire de ${removal.vesselName}. L’historique est conservé.`;
+    const draft: PharmacyItemDraft = {
+      section: target.section, category: target.category, brand: target.brand, designation: target.designation,
+      lot_number: target.lot_number, quantity: target.quantity, required_quantity: target.required_quantity,
+      expires_on: target.expires_on, expiry_text: target.expiry_text, expiry_precision: target.expiry_precision,
+      notes: target.notes, active: false,
+    };
+    removalInFlight.current = true;
+    setBusy(true); setRemovalError(''); setError(''); setNotice('');
+    try {
+      await savePharmacyItem(db, target.vessel_id, draft, target);
+      // The RPC confirmed the removal. A later refresh cannot undo that result.
+      if (viewId === requestId.current) {
+        setItems((previous) => previous.map((item) => item.id === target.id && item.vessel_id === target.vessel_id
+          ? { ...item, active: false, revision: target.revision + 1 } : item));
+        setSelected((previous) => previous?.id === target.id ? null : previous);
+        setRemoval(null); setNotice(success);
+      }
+      window.dispatchEvent(new Event('pharmacy:changed'));
+      if (viewId === requestId.current) {
+        const refreshId = ++requestId.current;
+        try {
+          const loaded = await fetchPharmacyRegister(db, target.vessel_id);
+          if (refreshId === requestId.current) { setItems(loaded.items); setControls(loaded.controls); }
+        } catch {
+          if (refreshId === requestId.current) setNotice(`${success} L’actualisation est indisponible ; utilisez Actualiser l’inventaire pour réessayer.`);
+        }
+      }
+    } catch (reason) {
+      if (viewId === requestId.current) setRemovalError(messageOf(reason));
+    } finally { removalInFlight.current = false; setBusy(false); }
   }
   async function saveControl(file: File, expiresOn: string, issuedOn: string) {
     if (busy || !vessel) return;
@@ -180,10 +226,10 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
       <div className="pharmacy-inventory-panel">
         <div className="pharmacy-filters"><label className="pharmacy-search"><Search size={16} aria-hidden="true" /><input aria-label="Rechercher un article" placeholder="Article, marque, lot…" value={query} onChange={(event) => setQuery(event.target.value)} /></label><select aria-label="Catégorie" value={category} onChange={(event) => setCategory(event.target.value)}><option value="">Toutes les catégories</option>{categories.map((value) => <option key={value} value={value}>{value}</option>)}</select><select aria-label="État des articles" value={filter} onChange={(event) => setFilter(event.target.value as ItemFilter)}>{Object.entries(FILTER_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
         <div className="pharmacy-table-scroll" tabIndex={0} role="region" aria-label="Tableau de l’inventaire pharmacie" aria-busy={loading}>
-          <table className="pharmacy-table"><thead><tr><th scope="col">Article / lot</th><th scope="col">À bord</th><th scope="col">Dotation</th><th scope="col">Péremption</th><th scope="col">État</th><th scope="col"><span className="pharmacy-sr-only">Actions</span></th></tr></thead>
+          <table className={`pharmacy-table${manager ? ' has-row-actions' : ''}`}><thead><tr><th scope="col">Article / lot</th><th scope="col">À bord</th><th scope="col">Dotation</th><th scope="col">Péremption</th><th scope="col">État</th><th scope="col"><span className="pharmacy-sr-only">Actions</span></th></tr></thead>
             {loading ? <tbody><tr><td colSpan={6} className="pharmacy-empty" role="status">Chargement des articles…</td></tr></tbody> : groups.length ? groups.map((group) => <tbody key={group.key}>
               <tr className="pharmacy-category-row"><th scope="rowgroup" colSpan={6}><div><span><strong>{group.category}</strong>{group.section ? <small title={group.section}>{group.section}</small> : null}</span><em>{group.items.length} article{group.items.length > 1 ? 's' : ''}</em></div></th></tr>
-              {group.items.map((item) => <tr data-pharmacy-item={item.id} key={item.id} className={`${!item.active ? 'is-inactive' : ''} ${selected?.id === item.id ? 'is-selected' : ''}`}><td><button className="pharmacy-item-title" onClick={() => setSelected(item)} type="button">{item.designation || item.brand || 'Article sans désignation'}</button><small>{[item.brand, item.lot_number ? `Lot ${item.lot_number}` : ''].filter(Boolean).join(' · ') || item.category || 'Sans catégorie'}</small></td><td className={pharmacyStockStatus(item) === 'low' ? 'pharmacy-low-value' : ''}>{item.quantity || '—'}</td><td>{item.required_quantity || '—'}</td><td>{item.expires_on ? formatPharmacyDate(item.expires_on, item.expiry_precision) : item.expiry_text || 'À renseigner'}{item.expiry_precision === 'month' && item.expires_on ? <small>Mois indiqué</small> : null}</td><td><ItemStatus item={item} /></td><td>{manager ? <button className="pharmacy-icon-button" aria-label={`Modifier ${item.designation || item.brand}`} disabled={busy} onClick={() => { setFormError(''); setEditor({ item }); }} type="button"><Pencil size={15} /></button> : <button className="pharmacy-icon-button" aria-label={`Détails ${item.designation || item.brand}`} onClick={() => setSelected(item)} type="button"><ChevronDown size={16} /></button>}</td></tr>)}
+              {group.items.map((item) => <tr data-pharmacy-item={item.id} key={item.id} className={`${!item.active ? 'is-inactive' : ''} ${selected?.id === item.id ? 'is-selected' : ''}`}><td><button className="pharmacy-item-title" onClick={() => setSelected(item)} type="button">{item.designation || item.brand || 'Article sans désignation'}</button><small>{[item.brand, item.lot_number ? `Lot ${item.lot_number}` : ''].filter(Boolean).join(' · ') || item.category || 'Sans catégorie'}</small></td><td className={pharmacyStockStatus(item) === 'low' ? 'pharmacy-low-value' : ''}>{item.quantity || '—'}</td><td>{item.required_quantity || '—'}</td><td>{item.expires_on ? formatPharmacyDate(item.expires_on, item.expiry_precision) : item.expiry_text || 'À renseigner'}{item.expiry_precision === 'month' && item.expires_on ? <small>Mois indiqué</small> : null}</td><td><ItemStatus item={item} /></td><td>{manager ? <div className="pharmacy-row-actions"><button className="sp-button sp-button--secondary" aria-label={`Modifier ${item.designation || item.brand}`} disabled={busy} onClick={() => { setFormError(''); setEditor({ item }); }} type="button"><Pencil aria-hidden="true" size={16} /></button><button className="sp-button sp-button--secondary" aria-label={`Supprimer ${item.designation || item.brand || 'Article sans désignation'}`} title={item.active ? 'Supprimer de l’inventaire' : 'Article déjà retiré'} disabled={busy || !item.active} onClick={() => { if (busy || loading || !vessel || !item.active || item.vessel_id !== vesselId) return; setRemovalError(''); setRemoval({ item: { ...item }, vesselName: vessel.name, client: db }); }} type="button"><Trash2 aria-hidden="true" size={16} /></button></div> : <button className="pharmacy-icon-button" aria-label={`Détails ${item.designation || item.brand}`} onClick={() => setSelected(item)} type="button"><ChevronDown size={16} /></button>}</td></tr>)}
             </tbody>) : <tbody><tr><td className="pharmacy-empty" colSpan={6}>{items.length ? 'Aucun article ne correspond aux filtres.' : vessel ? 'Aucun article dans ce navire. Ajoutez son inventaire.' : 'Aucun navire accessible pour votre profil.'}</td></tr></tbody>}
           </table>
         </div>
@@ -196,6 +242,15 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
       </aside>
     </div>
     {editor ? <PharmacyItemForm item={editor.item} categories={categories} busy={busy} error={formError} onClose={() => setEditor(null)} onSave={(draft) => void saveItem(draft)} /> : null}
+    {removal && removal.client === db && removal.item.vessel_id === vesselId && manager ? <AppDialog
+      title={`Supprimer ${removal.item.designation || removal.item.brand || 'Article sans désignation'}`}
+      eyebrow={`Inventaire Pharmacie · ${removal.vesselName}`} icon={<Trash2 aria-hidden="true" size={20} />} size="sm" isBusy={busy}
+      description="L’article sera retiré de l’inventaire actif. Son historique sera conservé."
+      onClose={() => { if (!removalInFlight.current) setRemoval(null); }}
+      footer={<div className="app-dialog__actions"><button className="is-secondary" disabled={busy} onClick={() => setRemoval(null)} type="button">Annuler</button><button className="is-danger" disabled={busy} onClick={() => void removeItem()} type="button">{busy ? 'Suppression…' : 'Supprimer'}</button></div>}>
+      <p>Confirmer la suppression de <strong>{removal.item.designation || removal.item.brand || 'Article sans désignation'}</strong> sur <strong>{removal.vesselName}</strong> ?</p>
+      {removalError ? <p className="pharmacy-message is-error" role="alert">{removalError}</p> : null}
+    </AppDialog> : null}
     {controlOpen && vessel ? <PharmacyControlForm vesselName={vessel.name} busy={busy} error={formError} onClose={() => setControlOpen(false)} onSave={(file, expiresOn, issuedOn) => void saveControl(file, expiresOn, issuedOn)} /> : null}
   </section>;
 }

@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.76.6`, build `2026-10-21.005`, ajoute une corbeille **Supprimer** sur
+chaque ligne de l’inventaire pharmacie pour les profils qui gèrent le navire.
+La confirmation retire l’article de l’inventaire actif et de ses alertes via la
+RPC existante, avec contrôle de révision. Les données restent consultables dans
+les articles retirés. Aucun changement de base ni de droits n’est requis. Voir
+[le fonctionnement pharmacie](./pharmacy-inventory.md).
+
 Version `3.76.5`, build `2026-10-21.004`, retire la dépendance au site NDF Netlify
 supprimé. L'Edge Function `expense-note-send` transmet directement par Gmail TLS,
 toujours depuis `christophe@bbtm.fr`, vers le destinataire Inexweb historique.

@@ -1,9 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PharmacyPage } from './PharmacyPage';
+import type { RoleKey } from '../permissions/roles';
 import { blankPharmacyItem, type PharmacyControl, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
 import { downloadPharmacyControl, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
 
@@ -15,7 +16,7 @@ const item: PharmacyItem = { ...blankPharmacyItem(), id: 1, company_id: 1, vesse
 const expired: PharmacyItem = { ...item, id: 2, category: '2. SOINS', designation: 'ARTICLE PÉRIMÉ', quantity: '2 boîtes', expires_on: '2000-10-01', notes: 'OK' };
 const missing: PharmacyItem = { ...item, id: 3, designation: 'ARTICLE SANS DATE', quantity: '', expires_on: null, expiry_precision: 'unknown' };
 const control: PharmacyControl = { id: 20, company_id: 1, vessel_id: 1, issued_on: '2026-01-01', expires_on: '2099-01-01', storage_path: '1/1/control.pdf', file_name: 'Contrôle.pdf', file_size: 100, mime_type: 'application/pdf', created_at: '2026-01-01T00:00:00Z', is_current: true, revision: 1 };
-function page(roles: ('admin' | 'capitaine' | 'marin')[] = ['admin'], initial = '/modules/pharmacy') { return render(<MemoryRouter initialEntries={[initial]}><PharmacyPage client={client} roles={roles} /></MemoryRouter>); }
+function page(roles: RoleKey[] = ['admin'], initial = '/modules/pharmacy') { return render(<MemoryRouter initialEntries={[initial]}><PharmacyPage client={client} roles={roles} /></MemoryRouter>); }
 
 describe('PharmacyPage', () => {
   beforeEach(() => {
@@ -58,6 +59,7 @@ describe('PharmacyPage', () => {
     expect(screen.queryByRole('button', { name: 'Ajouter un article' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Déposer le document' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier ARTICLE SOURCE' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Supprimer / })).not.toBeInTheDocument();
   });
   it('requires vessel authorization for a captain and respects the vessel deep link', async () => {
     vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[1], can_manage: false }]);
@@ -66,6 +68,7 @@ describe('PharmacyPage', () => {
     expect(fetchPharmacyRegister).toHaveBeenCalledWith(client, 2);
     expect(screen.getByRole('button', { name: 'SUROIT' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('button', { name: 'Ajouter un article' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Supprimer / })).not.toBeInTheDocument();
   });
   it('orders the selectable vessels by length and defaults to the longest instead of BR71', async () => {
     vi.mocked(fetchPharmacyVessels).mockResolvedValue([
@@ -269,6 +272,146 @@ describe('PharmacyPage', () => {
     await user.click(screen.getByRole('button', { name: 'Actualiser l’inventaire' }));
     expect(await within(screen.getByRole('button', { name: 'SUROIT' })).findByRole('img', { name: '7 articles à échéance sous 30 jours' })).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+  });
+  it.each(['admin', 'direction', 'armement', 'capitaine'] as const)('offers a removal action on every line for an authorized %s fixture', async (role) => {
+    page([role]); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    const actions = screen.getAllByRole('button', { name: /^Supprimer / });
+    expect(actions).toHaveLength(3);
+    for (const action of actions) expect(action).toBeEnabled();
+  });
+  it('names the article and vessel in the confirmation and cancels without writing', async () => {
+    const user = userEvent.setup(); page();
+    await user.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
+    const dialog = screen.getByRole('dialog', { name: 'Supprimer ARTICLE SOURCE' });
+    expect(dialog).toHaveTextContent('ARTICLE SOURCE'); expect(dialog).toHaveTextContent('GOURY');
+    expect(dialog).toHaveTextContent('L’article sera retiré de l’inventaire actif. Son historique sera conservé.');
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Annuler' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+  });
+  it('removes the confirmed line, refreshes expiry counts and keeps its source available among retired articles', async () => {
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item, expired, missing], controls: [] })
+      .mockResolvedValue({ items: [item, { ...expired, active: false, revision: 3 }, missing], controls: [] });
+    const changed = vi.fn(); window.addEventListener('pharmacy:changed', changed);
+    try {
+      const user = userEvent.setup(); page();
+      await user.click(await screen.findByRole('button', { name: 'ARTICLE PÉRIMÉ' }));
+      await user.click(screen.getByRole('button', { name: 'Supprimer ARTICLE PÉRIMÉ' }));
+      const beforeCounts = vi.mocked(fetchPharmacyVesselExpiryCounts).mock.calls.length;
+      vi.mocked(fetchPharmacyVesselExpiryCounts).mockResolvedValue({ ...vesselExpiryCounts, 1: { due: 2, expired: 0 } });
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Supprimer' }));
+      expect(await screen.findByText(/ARTICLE PÉRIMÉ.*supprimé de l’inventaire de GOURY/)).toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'ARTICLE PÉRIMÉ' })).not.toBeInTheDocument();
+      expect(screen.queryByText('Détail de l’article')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Périmés.*0/ })).toBeInTheDocument();
+      expect(screen.getByText('2 articles actifs')).toBeInTheDocument();
+      expect(changed).toHaveBeenCalledOnce();
+      await waitFor(() => expect(vi.mocked(fetchPharmacyVesselExpiryCounts).mock.calls.length).toBeGreaterThan(beforeCounts));
+      await waitFor(() => expect(within(screen.getByRole('button', { name: 'GOURY' })).queryByRole('img', { name: /périmé/ })).not.toBeInTheDocument());
+      expect(savePharmacyItem).toHaveBeenCalledExactlyOnceWith(client, expired.vessel_id, {
+        section: expired.section, category: expired.category, brand: expired.brand, designation: expired.designation,
+        lot_number: expired.lot_number, quantity: expired.quantity, required_quantity: expired.required_quantity,
+        expires_on: expired.expires_on, expiry_text: expired.expiry_text, expiry_precision: expired.expiry_precision,
+        notes: expired.notes, active: false,
+      }, expired);
+      await user.click(screen.getByRole('checkbox', { name: 'Inclure les articles retirés' }));
+      expect(screen.getByRole('button', { name: 'Supprimer ARTICLE PÉRIMÉ' })).toBeDisabled();
+      await user.click(screen.getByRole('button', { name: 'ARTICLE PÉRIMÉ' }));
+      expect(screen.getByText(/Inventaire Pharmacie - GOURY.xlsx/)).toBeInTheDocument();
+      expect(screen.getByText(/DOTATION MEDICALE · ligne 4/)).toBeInTheDocument();
+    } finally { window.removeEventListener('pharmacy:changed', changed); }
+  });
+  it('keeps the removal confirmation and original revision when another device changed the article', async () => {
+    vi.mocked(savePharmacyItem).mockRejectedValueOnce(new Error('Cet article a été modifié depuis un autre appareil. Actualisez l’inventaire.'));
+    const user = userEvent.setup(); page();
+    await user.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Supprimer' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Cet article a été modifié depuis un autre appareil.');
+    expect(within(dialog).getByRole('button', { name: 'Supprimer' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+    expect(savePharmacyItem).toHaveBeenCalledExactlyOnceWith(client, 1, expect.objectContaining({ active: false }), expect.objectContaining({ id: item.id, revision: item.revision }));
+    expect(fetchPharmacyRegister).toHaveBeenCalledTimes(1);
+  });
+  it('prevents duplicate removals and closing the dialog while the guarded RPC is pending', async () => {
+    let finish: (id: number) => void = () => undefined;
+    vi.mocked(savePharmacyItem).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item], controls: [] })
+      .mockResolvedValue({ items: [{ ...item, active: false }], controls: [] });
+    page(); fireEvent.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
+    const dialog = screen.getByRole('dialog');
+    const confirm = within(dialog).getByRole('button', { name: 'Supprimer' });
+    fireEvent.click(confirm); fireEvent.click(confirm);
+    expect(savePharmacyItem).toHaveBeenCalledTimes(1);
+    expect(dialog).toHaveAttribute('aria-busy', 'true');
+    expect(within(dialog).getByRole('button', { name: 'Suppression…' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Annuler' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Fermer' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'SUROIT' })).toBeDisabled();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await act(async () => { finish(item.id); });
+    expect(await screen.findByText(/ARTICLE SOURCE.*supprimé de l’inventaire de GOURY/)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+  it('retains confirmed removal when refreshing the register fails instead of inviting a second deletion', async () => {
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item, expired], controls: [] })
+      .mockRejectedValueOnce(new Error('Connexion de lecture indisponible.'));
+    const user = userEvent.setup(); page();
+    await user.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Supprimer' }));
+    expect(await screen.findByText(/L’actualisation est indisponible/)).toHaveTextContent('L’historique est conservé.');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument();
+    expect(screen.getByText('1 articles actifs')).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Inclure les articles retirés' }));
+    expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Supprimer ARTICLE SOURCE' })).toBeDisabled();
+    expect(savePharmacyItem).toHaveBeenCalledTimes(1);
+  });
+  it('disables removal for an already retired article while retaining its details and edit action', async () => {
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [{ ...item, active: false }, expired], controls: [] });
+    const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE PÉRIMÉ' });
+    expect(screen.queryByRole('button', { name: 'Supprimer ARTICLE SOURCE' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Inclure les articles retirés' }));
+    const remove = screen.getByRole('button', { name: 'Supprimer ARTICLE SOURCE' });
+    expect(remove).toBeDisabled(); expect(remove).toHaveAttribute('title', 'Article déjà retiré');
+    expect(screen.getByRole('button', { name: 'Modifier ARTICLE SOURCE' })).toBeEnabled();
+    await user.click(remove);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+  });
+  it('discards the confirmation when changing vessel and targets only the newly selected vessel', async () => {
+    const suroitItem = { ...item, id: 40, vessel_id: 2, designation: 'ARTICLE SUROIT', revision: 7 };
+    vi.mocked(fetchPharmacyRegister).mockImplementation(async (_db, id) => ({ items: id === 1 ? [item] : [suroitItem], controls: [] }));
+    const user = userEvent.setup(); page(['capitaine']);
+    await user.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
+    await user.click(screen.getByRole('button', { name: 'SUROIT' }));
+    expect(await screen.findByRole('button', { name: 'ARTICLE SUROIT' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Supprimer ARTICLE SUROIT' }));
+    const dialog = screen.getByRole('dialog', { name: 'Supprimer ARTICLE SUROIT' });
+    expect(dialog).toHaveTextContent('SUROIT');
+    await user.click(within(dialog).getByRole('button', { name: 'Supprimer' }));
+    expect(savePharmacyItem).toHaveBeenCalledExactlyOnceWith(client, 2, expect.objectContaining({ designation: 'ARTICLE SUROIT', active: false }), suroitItem);
+  });
+  it('does not apply a stale confirmation to a newly refreshed item revision', async () => {
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item], controls: [] })
+      .mockResolvedValue({ items: [{ ...item, revision: 3, quantity: '12' }], controls: [] });
+    const user = userEvent.setup(); page();
+    await user.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Actualiser l’inventaire' }));
+    await screen.findByText('12');
+    const dialog = screen.getByRole('dialog', { name: 'Supprimer ARTICLE SOURCE' });
+    await user.click(within(dialog).getByRole('button', { name: 'Supprimer' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Cet article a été modifié.');
+    expect(savePharmacyItem).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
   });
 });

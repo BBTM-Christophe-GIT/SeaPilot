@@ -77,6 +77,43 @@
   color: #775015;
 }
 
+.pharmacy-table.has-row-actions thead th:last-child {
+  width: calc(2 * var(--sp-control-height) + 3 * var(--sp-space-1));
+}
+
+.pharmacy-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-space-1);
+}
+
+.pharmacy-row-actions .sp-button {
+  flex: none;
+  width: var(--sp-control-height);
+  min-width: var(--sp-control-height);
+  min-height: var(--sp-control-height);
+  padding: 0;
+  border-radius: var(--sp-control-radius);
+}
+
+.pharmacy-row-actions .sp-button:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .pharmacy-table.has-row-actions thead th:last-child {
+    width: calc(88px + 3 * var(--sp-space-1));
+  }
+
+  .pharmacy-row-actions .sp-button {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 @media(max-width: 760px) {
   .pharmacy-vessel-bar {
     min-height: 0;
