@@ -31,7 +31,19 @@ export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspect
       .filter((item) => item.kind === 'towing' || item.id <= 3 - (index % 3))
       .map((item) => ({ ...item, id: index * 10 + item.id, vessel_id: vessel.id }))));
   } else items.push({ ...items[1], id: 5, vessel_id: secondDemoVessel.id, reference: '1', description: 'MANILLE DU SECOND NAVIRE' });
-  items.forEach((item) => Object.assign(item, { added_on: todayLocal(), commissioned_on: todayLocal(), service_version: 1, inspection_due_on: annualExpiry(todayLocal()) }));
+  items.forEach((item, index) => {
+    let commissioned = todayLocal();
+    if (options.fleet) {
+      const date = new Date(`${commissioned}T12:00:00Z`);
+      date.setUTCFullYear(date.getUTCFullYear() - 1);
+      const offset = item.kind === 'towing'
+        ? (vessels.findIndex((vessel) => vessel.id === item.vessel_id) % 2 ? 15 : -15)
+        : [-15, 15, 60][index % 3];
+      date.setUTCDate(date.getUTCDate() + offset);
+      commissioned = date.toISOString().slice(0, 10);
+    }
+    Object.assign(item, { added_on: commissioned, commissioned_on: commissioned, service_version: 1, inspection_due_on: annualExpiry(commissioned) });
+  });
   const counters: Record<string, number> = {};
   items.forEach((item) => { const key = `${item.vessel_id}:${item.kind}`; counters[key] = Math.max(counters[key] || 0, Number(item.reference)); });
   const reports: LiftingInspection[] = [];
@@ -59,7 +71,11 @@ export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspect
     const chain = {
       select: () => chain,
       eq: (key: string, value: unknown) => { selected = selected.filter((row) => row[key] === value); return chain; },
-      order: () => chain,
+      order: (key: string, options?: { ascending?: boolean }) => {
+        selected.sort((a, b) => String(a[key]).localeCompare(String(b[key]), 'fr', { numeric: true }) * (options?.ascending === false ? -1 : 1));
+        return chain;
+      },
+      range: (from: number, to: number) => { selected = selected.slice(from, to + 1); return chain; },
       then: (resolve: (value: unknown) => void) => Promise.resolve({ data: structuredClone(selected), error: null }).then(resolve),
     };
     return chain;
