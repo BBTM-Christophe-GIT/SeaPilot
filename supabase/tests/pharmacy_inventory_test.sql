@@ -11,7 +11,7 @@ declare
 begin
   select id into c from public.companies where code='bbtm';
   insert into public.companies(code,name) values('pharmacy-test-other','Pharmacy other tenant') returning id into other_c;
-  insert into public.vessels(company_id,name,acronym,active,asset_kind) values(c,'PHARMACY TEST','PHT',true,'vessel') returning id into vessel;
+  insert into public.vessels(company_id,name,acronym,active,asset_kind,length_overall) values(c,'PHARMACY TEST','PHT',true,'vessel','26,40 m') returning id into vessel;
   insert into public.vessels(company_id,name,acronym,active,asset_kind) values(c,'PHARMACY UNASSIGNED','PHU',true,'vessel') returning id into unassigned;
   insert into public.vessels(company_id,name,acronym,active,asset_kind) values(other_c,'PHARMACY OTHER','PHO',true,'vessel') returning id into other_vessel;
   for uid,role_name in select * from (values
@@ -41,6 +41,8 @@ begin
 
   execute 'set local role authenticated';
   perform set_config('request.jwt.claim.sub','9e200000-0000-0000-0000-000000000001',true);
+  assert (select length_overall from public.pharmacy_available_vessels() where id=vessel)='26,40 m','Vessel RPC preserves the record length as source text';
+  assert (select length_overall is null from public.pharmacy_available_vessels() where id=unassigned),'Unknown recorded lengths remain null for catalog fallback';
   item:=public.save_pharmacy_item(vessel,draft);
   assert (select quantity from public.pharmacy_inventory where id=item)='2 Boîtes','Source package text survives';
   assert (select expires_on is null from public.pharmacy_inventory where id=item),'No fictitious expiry';

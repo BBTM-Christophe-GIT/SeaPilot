@@ -6,6 +6,7 @@ import { useGmailUnreadCount } from '../mailbox/useGmailUnreadCount';
 import { fetchDisciplinaryNotifications, markDisciplinaryNotificationRead, DISCIPLINARY_NOTIFICATIONS_CHANGED, type DisciplinaryNotification } from '../disciplinary/disciplinaryWorkflow';
 import { fetchPharmacyNotifications } from '../pharmacy/pharmacyQueries';
 import { formatPharmacyDate, type PharmacyNotification } from '../pharmacy/pharmacyModel';
+import { PharmacyIcon } from '../pharmacy/PharmacyIcon';
 import { LiftingOperationsIcon } from '../lifting/LiftingIcons';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
@@ -147,7 +148,7 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   emergencyExercises: BookOpenCheck,
   lsa: LifeBuoy,
   medicalLogbook: HeartPulse,
-  pharmacy: HeartPulse,
+  pharmacy: PharmacyIcon,
   certificates: FileCheck2,
   procedures: FileText,
   serviceNotes: Mail,
