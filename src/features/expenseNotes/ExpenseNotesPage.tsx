@@ -74,6 +74,19 @@ export function ExpenseNotesPage() {
   const groups = useMemo(() => groupExpenseNotes(filtered), [filtered]);
   const refresh = useCallback(() => setRevision((current) => current + 1), []);
 
+  async function transmit(note: ExpenseNote) {
+    try {
+      const confirmation = await transmitExpenseNote(client, note.id);
+      // Delivery was confirmed independently of the following history refresh.
+      setNotes((current) => current.map((item) => item.id === note.id
+        ? { ...item, delivery_status: 'sent', delivery_error: null } : item));
+      setMessage(confirmation);
+    } finally {
+      // Rejected attempts also change server state (failed, sending or unknown).
+      // Keep the retry button aligned with that state without masking the result.
+      try { setNotes(await fetchExpenseNotes(client)); } catch { /* Retain the last confirmed local state. */ }
+    }
+  }
   async function submit(input: ExpenseNoteInput, files: File[]) {
     if (previewMode) throw new Error('Cette préversion ne peut pas émettre de note.');
     const note = await submitExpenseNote(client, input, files);
@@ -82,20 +95,16 @@ export function ExpenseNotesPage() {
     setNotes((current) => [note, ...current.filter((item) => item.id !== note.id)]);
     setMessage('Note émise et enregistrée dans votre historique.');
     setBusyId(note.id);
-    try { setMessage(await transmitExpenseNote(client, note.id)); }
+    try { await transmit(note); }
     catch (failure) { setError((failure as Error).message); }
-    finally {
-      setBusyId('');
-      // A refresh failure must never turn successful issuance into a second submission.
-      try { setNotes(await fetchExpenseNotes(client)); } catch { /* Keep the confirmed issued note visible. */ }
-    }
+    finally { setBusyId(''); }
   }
   async function action(note: ExpenseNote, type: 'pdf' | 'send') {
     setError(''); setMessage(''); setBusyId(note.id);
     try {
       if (previewMode) { setMessage('Les documents de démonstration ne sont pas transmis.'); return; }
       if (type === 'pdf') await downloadExpenseNote(client, note);
-      else { setMessage(await transmitExpenseNote(client, note.id)); setNotes(await fetchExpenseNotes(client)); }
+      else await transmit(note);
     } catch (failure) { setError((failure as Error).message || 'Action impossible.'); }
     finally { setBusyId(''); }
   }

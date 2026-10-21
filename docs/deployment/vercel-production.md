@@ -1,5 +1,16 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.76.4`, build `2026-10-21.003`, autorise les Capitaines à ajouter
+des documents RH à leur profil et aux membres de leur bordée. Appliquer
+`20261021101557_hr_document_self_service_upload.sql` (appliquée au projet lié)
+avant le client.
+Les transmissions NDF réactualisent leur état après chaque tentative et une
+confirmation d'envoi reste acquise si l'actualisation échoue. Le relais externe
+`bbtm-ndfv2.netlify.app` doit être réactivé dans le compte Netlify propriétaire
+pour rétablir les envois ; les neuf notes en échec sont conservées et aucune
+n'est retransmise automatiquement. Voir [les droits RH](./hr-captain-document-uploads.md)
+et [le parcours NDF](./expense-notes.md).
+
 Version `3.76.1`, build `2026-10-20.002`, sépare l’inventaire pharmacie par
 catégorie et remplace le sélecteur de navire par les illustrations de la flotte,
 avec pastilles orange (articles à échéance sous 30 jours) et rouge (périmés).

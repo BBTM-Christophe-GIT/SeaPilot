@@ -1,5 +1,11 @@
 # Notes de frais — v3.45.0
 
+## Reprise de transmission
+
+Le bouton **Transmettre** réutilise la note et son PDF déjà émis. Chaque tentative recharge l'état de livraison, même si le serveur refuse l'envoi : une réception incertaine apparaît alors « Transmission à vérifier » et ne conserve pas un bouton de reprise issu d'un ancien état. Après un succès confirmé, la note apparaît transmise immédiatement ; un échec de lecture de l'historique ne transforme pas cet envoi en erreur et ne propose pas de renvoyer la pièce.
+
+Les tests de régression utilisent un service d'envoi simulé pour chacun des cinq profils, vérifient la reprise d'une note en échec sans nouvelle émission, la confirmation conservée en cas d'échec du rafraîchissement et la suppression de la reprise après un résultat incertain. Aucun document comptable n'est envoyé par ces tests. Le relais Netlify décrit dans **Envoi comptable** doit rester actif ; une page globale Netlify « Site not found » indique une panne de ce relais, indépendante de l'enregistrement de la note dans SeaPilot.
+
 ## Formulaire mobile et véhicule par défaut
 
 La proposition 2 remplace la disposition horizontale par des sections repliables : **Informations**, **Mon véhicule**, **Déplacements**, **Compléments** (ou **Montant et paiement** pour une dépense). Les résumés restent visibles lorsque les sections sont fermées. Sur smartphone, la fenêtre occupe la hauteur disponible ; seul le corps défile, le total et l'action d'émission restent visibles. Les contrôles ont une hauteur minimale de 44 px. Un champ obligatoire masqué provoque l'ouverture de sa section et reçoit le focus ; les saisies et justificatifs sont conservés pendant le repli.
