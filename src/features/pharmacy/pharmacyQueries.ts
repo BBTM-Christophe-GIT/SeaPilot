@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { PharmacyCategory, PharmacyControl, PharmacyItem, PharmacyItemDraft, PharmacyNotification, PharmacyVessel, PharmacyVesselExpiryCounts } from './pharmacyModel';
-import { PHARMACY_ALERT_DAYS, pharmacyDaysUntil, pharmacyDotationKey } from './pharmacyModel';
+import type { PharmacyCategory, PharmacyControl, PharmacyItem, PharmacyItemDraft, PharmacyMedicalSection, PharmacyNotification, PharmacyVessel, PharmacyVesselExpiryCounts } from './pharmacyModel';
+import { PHARMACY_ALERT_DAYS, pharmacyDaysUntil, pharmacyDotationKey, pharmacyMedicalSection } from './pharmacyModel';
 
 export async function fetchPharmacyVessels(client: SupabaseClient): Promise<PharmacyVessel[]> {
   const { data, error } = await client.rpc('pharmacy_available_vessels');
@@ -18,12 +18,13 @@ export async function fetchPharmacyRegister(client: SupabaseClient, vesselId: nu
   if (categories.error) throw categories.error;
   return { items: (items.data || []) as PharmacyItem[], controls: (controls.data || []) as PharmacyControl[], categories: (categories.data || []) as PharmacyCategory[] };
 }
-export async function savePharmacyCategory(client: SupabaseClient, vesselId: number, name: string, category?: PharmacyCategory, medicalDotation?: string): Promise<number> {
+export async function savePharmacyCategory(client: SupabaseClient, vesselId: number, name: string, category?: PharmacyCategory, medicalDotation?: string, medicalSection?: PharmacyMedicalSection): Promise<number> {
   const trimmed = name.trim();
   if (!trimmed || trimmed.length > 200) throw new Error('Renseignez un nom de catégorie entre 1 et 200 caractères.');
   if (category && category.vessel_id !== vesselId) throw new Error('Cette catégorie appartient à un autre navire.');
   if (category && medicalDotation !== undefined && pharmacyDotationKey(category.medical_dotation) !== pharmacyDotationKey(medicalDotation)) throw new Error('Cette catégorie appartient à une autre dotation médicale.');
-  const { data, error } = await client.rpc('save_pharmacy_category', { p_vessel_id: vesselId, p_name: trimmed, p_id: category?.id ?? null, p_revision: category?.revision ?? null, p_medical_dotation: medicalDotation ?? category?.medical_dotation ?? null });
+  if (category && medicalSection !== undefined && pharmacyMedicalSection(category.medical_section) !== medicalSection) throw new Error('Cette catégorie appartient à une autre branche.');
+  const { data, error } = await client.rpc('save_pharmacy_category', { p_vessel_id: vesselId, p_name: trimmed, p_id: category?.id ?? null, p_revision: category?.revision ?? null, p_medical_dotation: medicalDotation ?? category?.medical_dotation ?? null, p_medical_section: medicalSection ?? category?.medical_section ?? null });
   if (error) throw error;
   return data as number;
 }

@@ -14,7 +14,7 @@ declare
   before_b_category jsonb; before_c_category jsonb; alerts_before jsonb;
   draft jsonb := '{"designation":"DOTATION FIXTURE","section":"Original workbook section, never inferred","brand":"Synthetic","lot_number":"LOT-DOTATION","quantity":"2 Boîtes","required_quantity":"4x5","expiry_text":"source expiry","notes":"Original source notes"}';
 begin
-  assert not has_function_privilege('anon','public.save_pharmacy_category(bigint,text,bigint,integer,text)','EXECUTE'), 'Anonymous users cannot call the hierarchy-aware category RPC';
+  assert not has_function_privilege('anon','public.save_pharmacy_category(bigint,text,bigint,integer,text,text)','EXECUTE'), 'Anonymous users cannot call the hierarchy-aware category RPC';
   assert not has_table_privilege('authenticated','public.pharmacy_categories','UPDATE'), 'Snapshot changes cannot bypass revision RPCs';
   assert not has_table_privilege('authenticated','public.pharmacy_inventory','UPDATE'), 'Article snapshots cannot be reassigned directly';
 
@@ -47,10 +47,10 @@ begin
     values(c,'9e230000-0000-4000-8000-000000000005','Dotation','Sailor','Matelot','PD-MAR',true) returning id into sailor;
   insert into public.planning_assignments(company_id,vessel_id,crew_person_id,starts_on,ends_on,assignment_role,confirmation_status)
     values(c,vessel,captain,today-1,today+1,'Capitaine','confirmed'),(c,vessel,sailor,today-1,today+1,'Matelot','confirmed');
-  insert into public.pharmacy_categories(company_id,vessel_id,name,medical_dotation)
-    values(other_c,other_vessel,'Other tenant category','Other tenant only') returning id into other_category;
-  insert into public.pharmacy_categories(company_id,vessel_id,name,medical_dotation)
-    values(c,unassigned,'Other vessel category','Other vessel only');
+  insert into public.pharmacy_category_catalog(company_id,name,medical_dotation,medical_section)
+    values(other_c,'Other tenant category','Other tenant only','unclassified') returning id into other_category;
+  insert into public.pharmacy_category_catalog(company_id,name,medical_dotation,medical_section)
+    values(c,'Other vessel category','Other vessel only','unclassified');
 
   execute 'set local role authenticated';
   perform set_config('request.jwt.claim.sub','9e230000-0000-4000-8000-000000000001',true);
@@ -94,8 +94,10 @@ begin
   -- One historical parent exists only on an article; another exists only as an empty catalog group.
   insert into public.pharmacy_inventory(company_id,vessel_id,designation,medical_dotation,category,section,active)
     values(c,vessel,'ARTICLE-ONLY HISTORY','Legacy article parent','',draft->>'section',false) returning id into article_only;
-  insert into public.pharmacy_categories(company_id,vessel_id,name,medical_dotation)
+  insert into pharmacy_private.pharmacy_category_vessel_archive(company_id,vessel_id,name,medical_dotation)
     values(c,vessel,'Existing empty legacy group','Legacy catalog parent');
+  insert into public.pharmacy_category_catalog(company_id,name,medical_dotation,medical_section)
+    values(c,'Existing empty legacy group','Legacy catalog parent','unclassified');
   insert into public.pharmacy_controls(company_id,vessel_id,expires_on,storage_path,file_name,file_size,mime_type,revision,created_by)
     values(c,vessel,today+15,c||'/'||vessel||'/9e230000-0000-4000-8000-000000000099.pdf','Synthetic dotation control.pdf',100,'application/pdf',1,'9e230000-0000-4000-8000-000000000001') returning id into control_id;
   select to_jsonb(i) into before_b from public.pharmacy_inventory i where id=b_item;
@@ -179,8 +181,9 @@ begin
   select to_jsonb(i) into after_retired from public.pharmacy_inventory i where id=b_retired;
   assert not exists(select 1 from public.pharmacy_categories where id=b_category), 'Armement removes only the historical B catalog entry';
   assert after_b is not null and after_retired is not null and after_b->>'category'='' and after_retired->>'category'='', 'Deleting a historical group keeps B articles under B without a category';
-  assert (after_b-array['category','revision','updated_at','updated_by'])=(before_b-array['category','revision','updated_at','updated_by'])
-    and (after_retired-array['category','revision','updated_at','updated_by'])=(before_retired-array['category','revision','updated_at','updated_by']), 'Deleting a group preserves its parent, medical/source values and provenance';
+  assert (after_b-array['category','category_id','revision','updated_at','updated_by'])=(before_b-array['category','category_id','revision','updated_at','updated_by'])
+    and (after_retired-array['category','category_id','revision','updated_at','updated_by'])=(before_retired-array['category','category_id','revision','updated_at','updated_by']), 'Deleting a group preserves its parent, medical/source values and provenance';
+  assert after_b->'category_id'='null'::jsonb and after_retired->'category_id'='null'::jsonb, 'Historical group deletion clears the canonical link without moving the article';
   assert (select to_jsonb(i)=before_c from public.pharmacy_inventory i where id=c_item)
     and (select to_jsonb(k)=before_c_category from public.pharmacy_categories k where id=c_category), 'Deleting B leaves C articles and their category completely unchanged';
   assert exists(select 1 from public.pharmacy_inventory where id=article_only and medical_dotation='Legacy article parent'), 'Other historical parents remain untouched';

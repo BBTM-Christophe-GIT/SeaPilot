@@ -4,12 +4,32 @@ import { compareFleetAssets, normalizeFleetName } from '../fleet/fleetDisplay';
 export const PHARMACY_ALERT_DAYS = 30;
 export type PharmacyExpiryPrecision = 'day' | 'month' | 'unknown';
 export interface PharmacyVessel { id: number; company_id: number; name: string; acronym: string; can_manage: boolean; length_overall?: string | number | null; medical_dotation?: string | null }
-export function pharmacyDotationKey(value: string | null | undefined): string { return (value || '').trim().toLocaleLowerCase('fr'); }
-export function pharmacyDotationLabel(value: string | null | undefined): string { return (value || '').trim() || 'Dotation non renseignée'; }
+export function pharmacyDotationKey(value: string | null | undefined): string {
+  const raw = (value || '').trim().toLocaleLowerCase('fr');
+  const folded = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+  const known = folded.match(/^(?:dotation(?: medicale)? )?([abc])(?: (restreinte?))?(?:\s*[-–—(].*)?$/);
+  return known ? `dotation ${known[1]}${known[2] ? ' restreinte' : ''}` : raw;
+}
+export function pharmacyDotationLabel(value: string | null | undefined): string {
+  const key = pharmacyDotationKey(value);
+  const known = key.match(/^dotation ([abc])( restreinte)?$/);
+  return known ? `Dotation ${known[1].toUpperCase()}${known[2] || ''}` : (value || '').trim() || 'Dotation non renseignée';
+}
+export const PHARMACY_MEDICAL_SECTIONS = {
+  medicines: 'Médicaments',
+  equipment: 'Matériel médical et objets de pansement',
+  unclassified: 'À classer',
+} as const;
+export type PharmacyMedicalSection = keyof typeof PHARMACY_MEDICAL_SECTIONS;
+export function pharmacyMedicalSection(value: string | null | undefined): PharmacyMedicalSection {
+  return value === 'medicines' || value === 'equipment' ? value : 'unclassified';
+}
+export function pharmacyMedicalSectionLabel(value: string | null | undefined): string { return PHARMACY_MEDICAL_SECTIONS[pharmacyMedicalSection(value)]; }
 export interface PharmacyCategory {
   id: number; company_id: number; vessel_id: number; name: string; revision: number;
   created_at: string; updated_at: string;
   medical_dotation?: string;
+  medical_section?: PharmacyMedicalSection;
 }
 export function selectPharmacyVessels(vessels: PharmacyVessel[]): PharmacyVessel[] {
   const normalized = (value: string) => normalizeFleetName(value).replace(/[^A-Z0-9]/g, '');
@@ -23,8 +43,10 @@ export interface PharmacyItem {
   notes: string; active: boolean; revision: number; source_file: string; source_sheet: string;
   source_row: number | null; updated_at: string;
   medical_dotation?: string;
+  medical_section?: PharmacyMedicalSection;
+  category_id?: number | null;
 }
-export type PharmacyItemDraft = Pick<PharmacyItem, 'section' | 'category' | 'brand' | 'designation' | 'lot_number' | 'quantity' | 'required_quantity' | 'expires_on' | 'expiry_text' | 'expiry_precision' | 'notes' | 'active' | 'medical_dotation'>;
+export type PharmacyItemDraft = Pick<PharmacyItem, 'section' | 'category' | 'brand' | 'designation' | 'lot_number' | 'quantity' | 'required_quantity' | 'expires_on' | 'expiry_text' | 'expiry_precision' | 'notes' | 'active' | 'medical_dotation' | 'medical_section' | 'category_id'>;
 export interface PharmacyControl {
   id: number; company_id: number; vessel_id: number; issued_on: string | null; expires_on: string;
   storage_path: string; file_name: string; file_size: number; mime_type: string;
@@ -39,9 +61,9 @@ export function pharmacyNotificationHref(notification: PharmacyNotification): st
   return notification.kind === 'item' && notification.item_id != null ? `${route}&item=${notification.item_id}` : route;
 }
 export type PharmacyVesselExpiryCounts = { due: number; expired: number };
-export interface PharmacyItemGroup { key: string; section: string; medical_dotation: string; category: string; items: PharmacyItem[] }
+export interface PharmacyItemGroup { key: string; section: string; medical_dotation: string; medical_section: PharmacyMedicalSection; category: string; items: PharmacyItem[] }
 
-export function groupPharmacyItems(items: PharmacyItem[]): PharmacyItemGroup[] {
+export function groupPharmacyItems(items: PharmacyItem[], catalogue: PharmacyCategory[] = []): PharmacyItemGroup[] {
   const dotations = new Map<string, Map<string, PharmacyItemGroup>>();
   for (const item of items) {
     const section = item.section.trim();
@@ -53,16 +75,28 @@ export function groupPharmacyItems(items: PharmacyItem[]): PharmacyItemGroup[] {
       categories = new Map();
       dotations.set(dotationKey, categories);
     }
-    let group = categories.get(category);
+    const medicalSection = pharmacyMedicalSection(item.medical_section);
+    const categoryKey = JSON.stringify([medicalSection, category]);
+    let group = categories.get(categoryKey);
     if (!group) {
-      group = { key: JSON.stringify([dotationKey, category]), section, medical_dotation: dotation, category, items: [] };
-      categories.set(category, group);
+      group = { key: JSON.stringify([dotationKey, medicalSection, category]), section, medical_dotation: dotation, medical_section: medicalSection, category, items: [] };
+      categories.set(categoryKey, group);
     }
     if (group.section !== section) group.section = '';
     group.items.push(item);
   }
+  for (const record of catalogue) {
+    const dotation = record.medical_dotation || '';
+    const dotationKey = pharmacyDotationKey(dotation);
+    const medicalSection = pharmacyMedicalSection(record.medical_section);
+    const category = record.name.trim();
+    const categoryKey = JSON.stringify([medicalSection, category]);
+    let categories = dotations.get(dotationKey);
+    if (!categories) { categories = new Map(); dotations.set(dotationKey, categories); }
+    if (!categories.has(categoryKey)) categories.set(categoryKey, { key: JSON.stringify([dotationKey, medicalSection, category]), section: '', medical_dotation: dotation, medical_section: medicalSection, category, items: [] });
+  }
   return [...dotations.entries()].sort(([a], [b]) => a.localeCompare(b, 'fr', { numeric: true })).flatMap(([, categories]) => [...categories.values()]
-    .sort((a, b) => a.category.localeCompare(b.category, 'fr', { numeric: true, sensitivity: 'base' })));
+    .sort((a, b) => Object.keys(PHARMACY_MEDICAL_SECTIONS).indexOf(a.medical_section) - Object.keys(PHARMACY_MEDICAL_SECTIONS).indexOf(b.medical_section) || a.category.localeCompare(b.category, 'fr', { numeric: true, sensitivity: 'base' })));
 }
 export function canManagePharmacy(roles: RoleKey[]): boolean {
   return roles.some((role) => ['admin', 'direction', 'armement', 'capitaine'].includes(role));

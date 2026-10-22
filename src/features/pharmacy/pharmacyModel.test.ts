@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { blankPharmacyItem, canManagePharmacy, formatPharmacyDate, groupPharmacyItems, pharmacyDaysUntil, pharmacyDotationKey, pharmacyDotationLabel, pharmacyExpiryStatus, pharmacyStockStatus, pharmacyToday, selectPharmacyVessels, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
+import { blankPharmacyItem, canManagePharmacy, formatPharmacyDate, groupPharmacyItems, pharmacyDaysUntil, pharmacyDotationKey, pharmacyDotationLabel, pharmacyMedicalSection, pharmacyMedicalSectionLabel, pharmacyExpiryStatus, pharmacyStockStatus, pharmacyToday, selectPharmacyVessels, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
 
 describe('pharmacy dates and stock', () => {
   it('alerts inclusively at thirty days and retains expired dates', () => {
@@ -84,6 +84,36 @@ describe('pharmacy inventory grouping', () => {
     expect(groups[0].category).toBe('Sans catégorie');
     expect(groups[0].items).toHaveLength(2);
     expect(groupPharmacyItems([])).toEqual([]);
+  });
+  it('keeps medical branches separate before sorting their categories without interpreting category names', () => {
+    const source: PharmacyItem[] = [
+      { ...item(1, 'Source 1', '12. Médicaments hors dotation/spéciaux'), medical_section: 'equipment' },
+      { ...item(2, 'Source 2', '1. SOINS'), medical_section: 'medicines' },
+      { ...item(3, 'Source 3', '1. SOINS'), medical_section: 'equipment' },
+      item(4, 'MÉDICAMENTS', '1. SOINS'),
+    ];
+    const groups = groupPharmacyItems(source);
+    expect(groups.map(({ medical_section, category }) => [medical_section, category])).toEqual([
+      ['medicines', '1. SOINS'], ['equipment', '1. SOINS'], ['equipment', '12. Médicaments hors dotation/spéciaux'], ['unclassified', '1. SOINS'],
+    ]);
+    expect(new Set(groups.map(({ key }) => key)).size).toBe(4);
+    expect(groups[2].items[0]).toBe(source[0]);
+    expect(pharmacyMedicalSection(undefined)).toBe('unclassified');
+    expect(pharmacyMedicalSectionLabel('equipment')).toBe('Matériel médical et objets de pansement');
+  });
+  it('recognizes explicit fleet aliases while keeping restrictions and custom types independent', () => {
+    expect(pharmacyDotationKey('C Restreint')).toBe(pharmacyDotationKey('Dotation C restreinte'));
+    expect(pharmacyDotationKey(' DOTATION MÉDICALE C   RESTREINTE ')).toBe('dotation c restreinte');
+    expect(pharmacyDotationKey('Dotation médicale B - Médicaments (catégorie 2 - 200 miles)')).toBe('dotation b');
+    expect(pharmacyDotationLabel('Dotation médicale B - Médicaments (catégorie 2 - 200 miles)')).toBe('Dotation B');
+    expect(pharmacyDotationKey('Dotation B restreinte')).not.toBe(pharmacyDotationKey('Dotation B'));
+    expect(pharmacyDotationKey('Programme médical C spécifique')).toBe('programme médical c spécifique');
+    expect(pharmacyDotationKey('Type  Personnalisé')).toBe('type  personnalisé');
+  });
+  it('can show a shared empty category without inventing a vessel stock row', () => {
+    const groups = groupPharmacyItems([], [{ id: 1, company_id: 1, vessel_id: 8, name: '1. SOINS', medical_dotation: 'C Restreint', medical_section: 'medicines', revision: 1, created_at: '', updated_at: '' }]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ category: '1. SOINS', medical_section: 'medicines', items: [] });
   });
 });
 

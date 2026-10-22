@@ -1,5 +1,15 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.76.9`, build `2026-10-22.003`, partage les catégories Pharmacie
+par société, type de dotation médicale et branche. Les deux branches sont
+**Médicaments** et **Matériel médical et objets de pansement** ; les stocks et
+documents restent propres au navire. Appliquer les migrations
+`20261022083717_pharmacy_shared_category_catalog.sql` et
+`20261022083917_pharmacy_catalog_private_policy.sql` avant le frontend.
+La vue de lecture et les RPC conservent les
+contrats des anciens clients ; les révisions périmées imposent une relecture.
+Voir [le fonctionnement pharmacie](./pharmacy-inventory.md).
+
 Version `3.76.8`, build `2026-10-22.002`, ajoute la hiérarchie Pharmacie
 **Type de dotation médicale → Catégorie → Articles** et les filtres en cascade.
 Appliquer `20261022055745_pharmacy_dotation_hierarchy.sql` avant le frontend :

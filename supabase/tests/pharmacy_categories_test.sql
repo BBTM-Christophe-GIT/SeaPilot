@@ -16,23 +16,27 @@ begin
   assert not exists (
     select 1 from public.pharmacy_inventory i
     where btrim(i.category) <> '' and not exists (
-      select 1 from public.pharmacy_categories k where k.company_id=i.company_id and k.vessel_id=i.vessel_id
-        and lower(btrim(k.name))=lower(btrim(i.category))
+      select 1 from public.pharmacy_category_catalog k where k.id=i.category_id and k.company_id=i.company_id
+        and pharmacy_private.dotation_key(k.medical_dotation)=pharmacy_private.dotation_key(i.medical_dotation)
+        and k.medical_section=i.medical_section and lower(btrim(k.name))=lower(btrim(i.category))
     )
   ), 'Every pre-existing nonempty category has a catalog entry, including inactive articles';
-  assert (select relrowsecurity from pg_class where oid='public.pharmacy_categories'::regclass), 'Category RLS is enabled';
+  assert (select relrowsecurity from pg_class where oid='public.pharmacy_category_catalog'::regclass), 'Shared category RLS is enabled';
+  assert (select reloptions @> array['security_invoker=true'] from pg_class where oid='public.pharmacy_categories'::regclass), 'Compatibility category reads preserve real account authorization';
   assert not has_table_privilege('anon','public.pharmacy_categories','SELECT'), 'Anonymous category reads are denied';
   assert has_table_privilege('authenticated','public.pharmacy_categories','SELECT'), 'Authenticated category reads use RLS';
   assert not has_table_privilege('authenticated','public.pharmacy_categories','INSERT'), 'Direct category insertion is denied';
   assert not has_table_privilege('authenticated','public.pharmacy_categories','UPDATE'), 'Direct category updates cannot bypass CAS';
   assert not has_table_privilege('authenticated','public.pharmacy_categories','DELETE'), 'Direct category deletion cannot bypass RPC rules';
-  assert not has_function_privilege('anon','public.save_pharmacy_category(bigint,text,bigint,integer,text)','EXECUTE'), 'Anonymous category writes are denied';
+  assert not has_function_privilege('anon','public.save_pharmacy_category(bigint,text,bigint,integer,text,text)','EXECUTE'), 'Anonymous category writes are denied';
   assert not has_function_privilege('anon','public.delete_pharmacy_category(bigint,bigint,integer)','EXECUTE'), 'Anonymous category deletion is denied';
 
   insert into public.companies(code,name) values('pharmacy-cat-test','Pharmacy categories fixture') returning id into c;
   insert into public.companies(code,name) values('pharmacy-cat-other','Pharmacy categories other tenant') returning id into other_c;
   insert into public.vessels(company_id,name,acronym,active,asset_kind) values(c,'CATEGORY ASSIGNED','PCA',true,'vessel') returning id into vessel;
-  insert into public.vessels(company_id,name,acronym,active,asset_kind) values(c,'CATEGORY UNASSIGNED','PCU',true,'vessel') returning id into unassigned;
+  -- A different dotation isolates the legacy vessel-specific assertions. Shared
+  -- catalogs for matching dotations are covered by pharmacy_shared_catalog_test.
+  insert into public.vessels(company_id,name,acronym,active,asset_kind,medical_dotation) values(c,'CATEGORY UNASSIGNED','PCU',true,'vessel','Different test dotation') returning id into unassigned;
   insert into public.vessels(company_id,name,acronym,active,asset_kind) values(other_c,'CATEGORY OTHER COMPANY','PCO',true,'vessel') returning id into other_vessel;
   -- Do not depend on the operator's current menu settings; these fixture permissions roll back too.
   insert into public.role_module_permissions(role_key,module_key,is_visible)
@@ -56,7 +60,7 @@ begin
     values(c,'9e220000-0000-4000-8000-000000000005','Category','Sailor','Matelot','PC-MAR',true) returning id into sailor;
   insert into public.planning_assignments(company_id,vessel_id,crew_person_id,starts_on,ends_on,assignment_role,confirmation_status)
     values(c,vessel,captain,today-1,today+1,'Capitaine','confirmed'),(c,vessel,sailor,today-1,today+1,'Matelot','confirmed');
-  insert into public.pharmacy_categories(company_id,vessel_id,name) values(other_c,other_vessel,'Other tenant') returning id into other_category_id;
+  insert into public.pharmacy_category_catalog(company_id,medical_section,name) values(other_c,'unclassified','Other tenant') returning id into other_category_id;
 
   execute 'set local role authenticated';
   perform set_config('request.jwt.claim.sub','9e220000-0000-4000-8000-000000000001',true);
@@ -136,7 +140,7 @@ begin
   assert (after_active->>'updated_at')::timestamptz>(before_active->>'updated_at')::timestamptz, 'Article rename records a fresh audit timestamp';
   assert (select name='Renamed cardiology' and revision=2 and updated_by=auth.uid() and created_by=(before_category->>'created_by')::uuid from public.pharmacy_categories where id=category_id), 'Category revision/audit update preserves its original creator';
   assert (select to_jsonb(i)=before_unaffected from public.pharmacy_inventory i where id=unaffected_item), 'Rename does not touch other categories';
-  assert (select category='Cardiologie' and revision=1 from public.pharmacy_inventory where id=other_item), 'Rename does not touch the same name on another vessel';
+  assert (select category='Cardiologie' and revision=1 from public.pharmacy_inventory where id=other_item), 'Rename does not touch the same name on a vessel with a different dotation';
   assert (select jsonb_agg(to_jsonb(n) order by n.id)=alerts_before from public.pharmacy_notifications() n where n.vessel_id=vessel), 'Rename does not remove or alter expiry/control alerts';
   begin
     perform public.save_pharmacy_item(vessel,before_active,active_item,(before_active->>'revision')::integer);
@@ -184,8 +188,9 @@ begin
   assert after_active is not null and after_retired is not null and after_active->>'category'='' and after_retired->>'category'='', 'Category deletion retains both articles without a category';
   assert (after_active->>'revision')::integer=(before_active->>'revision')::integer+1
     and (after_retired->>'revision')::integer=(before_retired->>'revision')::integer+1, 'Deletion invalidates stale article editors';
-  assert (after_active-array['category','revision','updated_at','updated_by'])=(before_active-array['category','revision','updated_at','updated_by'])
-    and (after_retired-array['category','revision','updated_at','updated_by'])=(before_retired-array['category','revision','updated_at','updated_by']), 'Category deletion preserves quantities, dates, lots, activity and source provenance';
+  assert (after_active-array['category','category_id','revision','updated_at','updated_by'])=(before_active-array['category','category_id','revision','updated_at','updated_by'])
+    and (after_retired-array['category','category_id','revision','updated_at','updated_by'])=(before_retired-array['category','category_id','revision','updated_at','updated_by']), 'Category deletion preserves quantities, dates, lots, activity and source provenance';
+  assert after_active->'category_id'='null'::jsonb and after_retired->'category_id'='null'::jsonb, 'Deletion removes only the canonical classification link';
   assert (after_active->>'updated_by')::uuid=auth.uid() and (after_retired->>'updated_by')::uuid=auth.uid(), 'Deletion records Armement as article editor';
   assert exists(select 1 from public.pharmacy_controls where id=control_id and is_current), 'Category deletion does not remove the current control';
   assert (select jsonb_agg(to_jsonb(n) order by n.id)=alerts_before from public.pharmacy_notifications() n where n.vessel_id=vessel), 'Category deletion preserves all expiry/control alerts';

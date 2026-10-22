@@ -1,13 +1,13 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { PharmacyCategoriesDialog } from './PharmacyCategoriesDialog';
-import { blankPharmacyItem, type PharmacyCategory, type PharmacyItem } from './pharmacyModel';
+import { blankPharmacyItem, type PharmacyCategory, type PharmacyItem, type PharmacyMedicalSection } from './pharmacyModel';
 
-const category: PharmacyCategory = { id: 1, company_id: 1, vessel_id: 2, name: '2. SOINS', revision: 3, created_at: '', updated_at: '' };
-const item: PharmacyItem = { ...blankPharmacyItem(), id: 10, company_id: 1, vessel_id: 2, category: '2. SOINS', designation: 'Article conservé', revision: 2, source_file: 'Source.xlsx', source_sheet: 'Feuille', source_row: 1, updated_at: '' };
-function show({ categories = [category], items = [item], busy = false, medicalDotation = '', notice = '' }: { categories?: PharmacyCategory[]; items?: PharmacyItem[]; busy?: boolean; medicalDotation?: string; notice?: string } = {}) {
+const category: PharmacyCategory = { id: 1, company_id: 1, vessel_id: 2, name: '2. SOINS', medical_section: 'medicines', revision: 3, created_at: '', updated_at: '' };
+const item: PharmacyItem = { ...blankPharmacyItem(), id: 10, company_id: 1, vessel_id: 2, category: '2. SOINS', medical_section: 'medicines', designation: 'Article conservé', revision: 2, source_file: 'Source.xlsx', source_sheet: 'Feuille', source_row: 1, updated_at: '' };
+function show({ categories = [category], items = [item], busy = false, medicalDotation = '', notice = '', initialMedicalSection = 'medicines' }: { categories?: PharmacyCategory[]; items?: PharmacyItem[]; busy?: boolean; medicalDotation?: string; notice?: string; initialMedicalSection?: 'all' | PharmacyMedicalSection } = {}) {
   const onSave = vi.fn().mockResolvedValue(undefined); const onDelete = vi.fn().mockResolvedValue(undefined); const onClose = vi.fn();
-  const view = render(<PharmacyCategoriesDialog vesselName="SUROIT" medicalDotation={medicalDotation} categories={categories} items={items} busy={busy} notice={notice} onSave={onSave} onDelete={onDelete} onClose={onClose} />);
+  const view = render(<PharmacyCategoriesDialog vesselName="SUROIT" medicalDotation={medicalDotation} initialMedicalSection={initialMedicalSection} categories={categories} items={items} busy={busy} notice={notice} onSave={onSave} onDelete={onDelete} onClose={onClose} />);
   return { onSave, onDelete, onClose, ...view };
 }
 describe('PharmacyCategoriesDialog', () => {
@@ -24,7 +24,7 @@ describe('PharmacyCategoriesDialog', () => {
     fireEvent.change(screen.getByLabelText('Nouvelle catégorie'), { target: { value: '  TROUSSE VIDE  ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Ajouter' }));
     await screen.findByLabelText('Nouvelle catégorie');
-    expect(test.onSave).toHaveBeenCalledExactlyOnceWith('TROUSSE VIDE', undefined);
+    expect(test.onSave).toHaveBeenCalledExactlyOnceWith('TROUSSE VIDE', undefined, 'medicines');
     await act(async () => {});
     expect(screen.getByLabelText('Nouvelle catégorie')).toHaveValue('');
   });
@@ -62,7 +62,7 @@ describe('PharmacyCategoriesDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Supprimer 2. SOINS' }));
     const confirmation = screen.getByRole('dialog', { name: 'Supprimer la catégorie 2. SOINS' });
     expect(confirmation).toHaveTextContent('SUROIT');
-    expect(confirmation).toHaveTextContent('2 articles, y compris les articles retirés, seront classés dans Sans catégorie');
+    expect(confirmation).toHaveTextContent('2 articles, y compris les articles retirés, sur SUROIT');
     expect(confirmation).toHaveTextContent('Les articles et leur historique sont conservés.');
     expect(test.onDelete).not.toHaveBeenCalled();
     fireEvent.click(within(confirmation).getByRole('button', { name: 'Annuler' }));
@@ -104,7 +104,7 @@ describe('PharmacyCategoriesDialog', () => {
     expect(screen.queryByRole('button', { name: 'Renommer AUTRE B' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Supprimer 2. SOINS' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('1 article, y compris les articles retirés');
-    expect(screen.getByRole('dialog')).toHaveTextContent('dans Dotation C sur SUROIT');
+    expect(screen.getByRole('dialog')).toHaveTextContent('Dotation C, branche Médicaments');
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Supprimer' }));
     await act(async () => {});
     expect(test.onDelete).toHaveBeenCalledExactlyOnceWith(selected);
@@ -115,7 +115,7 @@ describe('PharmacyCategoriesDialog', () => {
     fireEvent.change(screen.getByLabelText('Nouvelle catégorie'), { target: { value: category.name } });
     fireEvent.click(screen.getByRole('button', { name: 'Ajouter' }));
     await act(async () => {});
-    expect(test.onSave).toHaveBeenCalledExactlyOnceWith(category.name, undefined);
+    expect(test.onSave).toHaveBeenCalledExactlyOnceWith(category.name, undefined, 'medicines');
   });
   it('hides an earlier success notice when validation reports an error', () => {
     show({ notice: 'Catégorie enregistrée.' });
@@ -123,5 +123,26 @@ describe('PharmacyCategoriesDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ajouter' }));
     expect(screen.getByRole('alert')).toHaveTextContent('1 à 200 caractères');
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+  it('requires a creation branch and accepts the same category name in another branch of the shared catalogue', async () => {
+    const test = show({ initialMedicalSection: 'all', categories: [category] });
+    fireEvent.change(screen.getByLabelText('Nouvelle catégorie'), { target: { value: category.name } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Choisissez la branche'); expect(test.onSave).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Branche du catalogue'), { target: { value: 'equipment' } });
+    expect(screen.queryByRole('button', { name: 'Renommer 2. SOINS' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter' }));
+    await act(async () => {});
+    expect(test.onSave).toHaveBeenCalledExactlyOnceWith(category.name, undefined, 'equipment');
+  });
+  it('disambiguates identical category actions across branches and describes the shared deletion impact without a made-up fleet count', () => {
+    show({ initialMedicalSection: 'all', categories: [category, { ...category, id: 2, medical_section: 'equipment' }], items: [item, { ...item, id: 12, medical_section: 'equipment' }] });
+    expect(screen.getByRole('button', { name: 'Renommer 2. SOINS — Médicaments' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Supprimer 2. SOINS — Matériel médical et objets de pansement' }));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('1 article, y compris les articles retirés, sur SUROIT');
+    expect(dialog).toHaveTextContent('Sur tous les navires de la société partageant cette dotation et cette branche');
+    expect(dialog).toHaveTextContent('Les quantités restent propres à chaque navire.');
+    expect(dialog).not.toHaveTextContent('2 articles');
   });
 });

@@ -326,7 +326,7 @@ describe('PharmacyPage', () => {
         section: expired.section, category: expired.category, brand: expired.brand, designation: expired.designation,
         lot_number: expired.lot_number, quantity: expired.quantity, required_quantity: expired.required_quantity,
         expires_on: expired.expires_on, expiry_text: expired.expiry_text, expiry_precision: expired.expiry_precision,
-        notes: expired.notes, active: false, medical_dotation: expired.medical_dotation,
+        notes: expired.notes, active: false, medical_dotation: expired.medical_dotation, medical_section: expired.medical_section,
       }, expired);
       await user.click(screen.getByRole('checkbox', { name: 'Inclure les articles retirés' }));
       expect(screen.getByRole('button', { name: 'Supprimer ARTICLE PÉRIMÉ' })).toBeDisabled();
@@ -430,18 +430,20 @@ describe('PharmacyPage', () => {
     const user = userEvent.setup(); page();
     await user.click(await screen.findByRole('button', { name: 'Gérer les catégories' }));
     const dialog = screen.getByRole('dialog', { name: 'Gérer les catégories' });
+    await user.selectOptions(within(dialog).getByLabelText('Branche du catalogue'), 'medicines');
     await user.type(within(dialog).getByLabelText('Nouvelle catégorie'), '  3. TROUSSE VIDE  ');
     await user.click(within(dialog).getByRole('button', { name: 'Ajouter' }));
     expect(await within(dialog).findByRole('status')).toHaveTextContent('L’actualisation est indisponible');
     const row = within(dialog).getByRole('button', { name: 'Renommer 3. TROUSSE VIDE' }).closest('li')!;
     expect(row).toHaveTextContent('0 article');
-    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, '3. TROUSSE VIDE', undefined, '');
+    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, '3. TROUSSE VIDE', undefined, '', 'medicines');
     expect(within(dialog).getByLabelText('Nouvelle catégorie')).toHaveValue('');
     await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Ajouter' })).toBeEnabled());
     await user.click(within(dialog).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
     expect(screen.getByRole('combobox', { name: 'Catégorie' })).toContainElement(screen.getByRole('option', { name: '3. TROUSSE VIDE' }));
     await user.click(screen.getByRole('button', { name: 'Ajouter un article' }));
     const form = screen.getByRole('dialog', { name: 'Ajouter un article' });
+    await user.selectOptions(within(form).getByLabelText('Branche'), 'medicines');
     expect([...form.querySelectorAll('datalist option')].map((option) => option.getAttribute('value'))).toContain('3. TROUSSE VIDE');
     expect(savePharmacyItem).not.toHaveBeenCalled();
   });
@@ -460,7 +462,7 @@ describe('PharmacyPage', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Enregistrer 1. CARDIOLOGIE' }));
     expect(await within(dialog).findByRole('status')).toHaveTextContent('Catégorie « 3. URGENCES » renommée');
     await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Renommer 3. URGENCES' })).toBeEnabled());
-    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, '3. URGENCES', categoryFixtures[0], '');
+    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, '3. URGENCES', categoryFixtures[0], '', 'unclassified');
     await user.click(within(dialog).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
     expect(screen.getByRole('combobox', { name: 'Catégorie' })).toHaveValue('3. URGENCES');
     expect(screen.queryByRole('option', { name: '1. CARDIOLOGIE' })).not.toBeInTheDocument();
@@ -525,6 +527,7 @@ describe('PharmacyPage', () => {
     await waitFor(() => expect(manage).toBeEnabled());
     fireEvent.click(manage);
     const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Branche du catalogue'), { target: { value: 'medicines' } });
     fireEvent.change(within(dialog).getByLabelText('Nouvelle catégorie'), { target: { value: 'Ancienne opération' } });
     const add = within(dialog).getByRole('button', { name: 'Ajouter' });
     fireEvent.click(add); fireEvent.click(add);
@@ -579,18 +582,20 @@ describe('PharmacyPage', () => {
     expect(screen.getByRole('combobox', { name: 'Type de dotation médicale' })).toHaveValue('dotation c');
     expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument();
     expect(screen.queryByRole('option', { name: parentB.name })).not.toBeInTheDocument();
-    expect(screen.getByText('Aucun article dans cette dotation (Dotation C).')).toBeInTheDocument();
+    expect(screen.getAllByText('Aucun article ne correspond aux filtres dans cette branche.')).toHaveLength(2);
     await user.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveTextContent('GOURY · Dotation C');
     expect(dialog).toHaveTextContent('Aucune catégorie dans cette dotation.');
+    await user.selectOptions(within(dialog).getByLabelText('Branche du catalogue'), 'medicines');
     await user.type(within(dialog).getByLabelText('Nouvelle catégorie'), parentB.name);
     await user.click(within(dialog).getByRole('button', { name: 'Ajouter' }));
     expect(await within(dialog).findByRole('status')).toHaveTextContent('L’actualisation est indisponible');
-    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, parentB.name, undefined, 'Dotation C');
+    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, parentB.name, undefined, 'Dotation C', 'medicines');
     await user.click(within(dialog).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
     await user.click(screen.getByRole('button', { name: 'Ajouter un article' }));
     expect(within(screen.getByRole('dialog')).getByLabelText('Type de dotation médicale')).toHaveValue('Dotation C');
+    await user.selectOptions(within(screen.getByRole('dialog')).getByLabelText('Branche'), 'medicines');
     expect([...screen.getByRole('dialog').querySelectorAll('datalist option')].map((option) => option.getAttribute('value'))).toEqual([parentB.name]);
   });
   it.each(['rename', 'delete'] as const)('isolates a category %s from the identically named category and article in another type', async (operation) => {
@@ -606,7 +611,7 @@ describe('PharmacyPage', () => {
       await user.clear(input); await user.type(input, 'URGENCES B');
       await user.click(screen.getByRole('button', { name: `Enregistrer ${parentB.name}` }));
       expect(await screen.findByRole('button', { name: 'Renommer URGENCES B' })).toBeInTheDocument();
-      expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, 'URGENCES B', parentB, 'Dotation B');
+      expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, 'URGENCES B', parentB, 'Dotation B', 'unclassified');
     } else {
       await user.click(screen.getByRole('button', { name: `Supprimer ${parentB.name}` }));
       const confirm = screen.getByRole('dialog');
@@ -633,9 +638,10 @@ describe('PharmacyPage', () => {
     vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [articleB, articleC], categories: [parentB, parentC], controls: [] });
     page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
     fireEvent.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    fireEvent.change(screen.getByLabelText('Branche du catalogue'), { target: { value: 'medicines' } });
     fireEvent.change(screen.getByLabelText('Nouvelle catégorie'), { target: { value: 'NOUVELLE B' } });
     fireEvent.click(screen.getByRole('button', { name: 'Ajouter' }));
-    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, 'NOUVELLE B', undefined, 'Dotation B');
+    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, 'NOUVELLE B', undefined, 'Dotation B', 'medicines');
     fireEvent.change(screen.getByRole('combobox', { name: 'Type de dotation médicale' }), { target: { value: 'dotation c' } });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await act(async () => { finish(300); });
@@ -702,7 +708,7 @@ describe('PharmacyPage', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Catégorie' }), parentB.name);
     await user.click(screen.getByRole('button', { name: 'ARTICLE SOURCE' }));
     await user.click(screen.getByRole('button', { name: 'Actualiser l’inventaire' }));
-    await screen.findByText('Aucun article dans cette dotation (Dotation C).');
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Type de dotation médicale' })).toHaveValue('dotation c'));
     expect(screen.getByRole('combobox', { name: 'Type de dotation médicale' })).toHaveValue('dotation c');
     expect(screen.getByRole('combobox', { name: 'Catégorie' })).toHaveValue('');
     expect(screen.queryByRole('option', { name: parentB.name })).not.toBeInTheDocument();
@@ -725,5 +731,118 @@ describe('PharmacyPage', () => {
     expect(screen.queryByRole('button', { name: 'Gérer les catégories' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier ARTICLE SOURCE' })).not.toBeInTheDocument();
     expect(fetchPharmacyRegister).toHaveBeenCalledTimes(2);
+  });
+  it('shows the two medical branches, keeps legacy rows unclassified, and cascades branch before category', async () => {
+    const medicine = { ...articleB, medical_section: 'medicines' as const };
+    const equipment = { ...articleB, id: 31, designation: 'ARTICLE MATÉRIEL', medical_section: 'equipment' as const };
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation B' }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [medicine, equipment], categories: [{ ...parentB, medical_section: 'medicines' }, { ...parentB, id: 301, medical_section: 'equipment' }], controls: [] });
+    const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    expect(screen.getByRole('combobox', { name: 'Branche' })).toHaveValue('all');
+    expect([...screen.getByRole('table').querySelectorAll('.pharmacy-branch-row')].map((row) => row.textContent)).toEqual(['Médicaments', 'Matériel médical et objets de pansement']);
+    expect(screen.queryByRole('option', { name: 'À classer' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('rowheader', { name: /^1\. CARDIOLOGIE/ })).toHaveLength(2);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'equipment');
+    expect(screen.getByRole('button', { name: 'ARTICLE MATÉRIEL' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Catégorie' }), parentB.name);
+    await user.click(screen.getByRole('button', { name: 'ARTICLE MATÉRIEL' }));
+    expect(within(screen.getByRole('complementary')).getByText('Médicaments source B')).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'medicines');
+    expect(screen.getByRole('combobox', { name: 'Catégorie' })).toHaveValue('');
+    expect(screen.queryByText('Détail de l’article')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+  });
+  it('exposes shared empty categories without importing another vessel stock and prefills the chosen article branch', async () => {
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation B' }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [], categories: [{ ...parentB, medical_section: 'equipment' }], controls: [] });
+    const user = userEvent.setup(); page(); await waitFor(() => expect(screen.getByRole('button', { name: 'Ajouter un article' })).toBeEnabled());
+    expect(screen.getAllByText('Aucun article ne correspond aux filtres dans cette branche.')).toHaveLength(1);
+    expect(screen.getByText('Aucun article enregistré sur ce navire.')).toBeInTheDocument();
+    expect(screen.getByRole('rowheader', { name: /^1\. CARDIOLOGIE/ })).toHaveTextContent('0 article');
+    expect(screen.getByRole('option', { name: parentB.name })).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'medicines');
+    expect(screen.queryByRole('option', { name: parentB.name })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'equipment');
+    await user.click(screen.getByRole('button', { name: 'Ajouter un article' }));
+    const form = screen.getByRole('dialog');
+    expect(within(form).getByLabelText('Branche')).toHaveValue('equipment');
+    expect([...form.querySelectorAll('datalist option')].map((option) => option.getAttribute('value'))).toEqual([parentB.name]);
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+  });
+  it.each(['rename', 'delete'] as const)('keeps an identically named equipment category unchanged after a medicine category %s', async (operation) => {
+    const category = { ...parentB, medical_section: 'medicines' as const };
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation B' }]);
+    vi.mocked(savePharmacyCategory).mockResolvedValue(category.id);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [{ ...articleB, medical_section: 'medicines' }, { ...articleB, id: 31, designation: 'ARTICLE MATÉRIEL', medical_section: 'equipment', quantity: '8', category_id: 301 }], categories: [category, { ...parentB, id: 301, medical_section: 'equipment' }], controls: [] }).mockRejectedValueOnce(new Error('Lecture indisponible.'));
+    const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'medicines');
+    await user.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('communes aux navires de la société');
+    if (operation === 'rename') {
+      await user.click(screen.getByRole('button', { name: `Renommer ${category.name}` }));
+      const name = screen.getByLabelText(`Nouveau nom de ${category.name}`); await user.clear(name); await user.type(name, 'SOINS MÉDICAMENTS');
+      await user.click(screen.getByRole('button', { name: `Enregistrer ${category.name}` }));
+      expect(await screen.findByRole('button', { name: 'Renommer SOINS MÉDICAMENTS' })).toBeInTheDocument();
+      expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, 'SOINS MÉDICAMENTS', category, 'Dotation B', 'medicines');
+    } else {
+      await user.click(screen.getByRole('button', { name: `Supprimer ${category.name}` }));
+      const confirm = screen.getByRole('dialog');
+      expect(confirm).toHaveTextContent('1 article, y compris les articles retirés, sur GOURY');
+      expect(confirm).toHaveTextContent('Sur tous les navires de la société partageant cette dotation et cette branche');
+      await user.click(within(confirm).getByRole('button', { name: 'Supprimer' }));
+      await screen.findByRole('dialog', { name: 'Gérer les catégories' });
+    }
+    await waitFor(() => expect(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Fermer' }).at(-1)!).toBeEnabled());
+    await user.click(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'equipment');
+    expect(screen.getByRole('button', { name: 'ARTICLE MATÉRIEL' })).toBeInTheDocument();
+    expect(screen.getByText('8')).toBeInTheDocument();
+    expect(screen.getByRole('rowheader', { name: /^1\. CARDIOLOGIE/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'SOINS MÉDICAMENTS' })).not.toBeInTheDocument();
+  });
+  it('reads a common catalogue change on another vessel while keeping that vessel own stock and source', async () => {
+    let sharedName = parentB.name;
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue(vessels.slice(0, 2).map((vessel) => ({ ...vessel, medical_dotation: 'Dotation B' })));
+    vi.mocked(fetchPharmacyRegister).mockImplementation(async (_db, vesselId) => ({ items: [{ ...articleB, id: vesselId, vessel_id: vesselId, designation: vesselId === 1 ? 'ARTICLE GOURY' : 'ARTICLE SUROIT', quantity: vesselId === 1 ? '4' : '12', category: sharedName, medical_section: 'medicines', category_id: parentB.id, source_file: `${vesselId}.xlsx` }], categories: [{ ...parentB, vessel_id: vesselId, name: sharedName, medical_section: 'medicines' }], controls: [] }));
+    vi.mocked(savePharmacyCategory).mockImplementation(async (_db, _vessel, name) => { sharedName = name; return parentB.id; });
+    const user = userEvent.setup(); page(['capitaine']); await screen.findByRole('button', { name: 'ARTICLE GOURY' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'medicines');
+    await user.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    await user.click(screen.getByRole('button', { name: `Renommer ${parentB.name}` }));
+    const name = screen.getByLabelText(`Nouveau nom de ${parentB.name}`); await user.clear(name); await user.type(name, 'CATÉGORIE COMMUNE');
+    await user.click(screen.getByRole('button', { name: `Enregistrer ${parentB.name}` }));
+    await screen.findByRole('button', { name: 'Renommer CATÉGORIE COMMUNE' });
+    await waitFor(() => expect(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Fermer' }).at(-1)!).toBeEnabled());
+    await user.click(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
+    expect(within(screen.getByRole('button', { name: 'ARTICLE GOURY' }).closest('tr')!).getAllByRole('cell')[1]).toHaveTextContent('4');
+    await user.click(screen.getByRole('button', { name: 'SUROIT' }));
+    await screen.findByRole('button', { name: 'ARTICLE SUROIT' });
+    expect(screen.getByRole('rowheader', { name: /^CATÉGORIE COMMUNE/ })).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ARTICLE GOURY' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'ARTICLE SUROIT' }));
+    expect(screen.getByText(/^2\.xlsx/)).toBeInTheDocument();
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+  });
+  it('allows choosing another creation branch inside a dialog opened from a precise inventory branch filter', async () => {
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation B' }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [{ ...articleB, medical_section: 'medicines' }], categories: [{ ...parentB, medical_section: 'medicines' }], controls: [] }).mockRejectedValueOnce(new Error('Lecture indisponible.'));
+    const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'medicines');
+    await user.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByLabelText('Branche du catalogue')).toHaveValue('medicines');
+    await user.selectOptions(within(dialog).getByLabelText('Branche du catalogue'), 'equipment');
+    await user.type(within(dialog).getByLabelText('Nouvelle catégorie'), 'MATÉRIEL COMMUN');
+    await user.click(within(dialog).getByRole('button', { name: 'Ajouter' }));
+    expect(await within(dialog).findByRole('button', { name: 'Renommer MATÉRIEL COMMUN' })).toBeInTheDocument();
+    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, 'MATÉRIEL COMMUN', undefined, 'Dotation B', 'equipment');
+    await waitFor(() => expect(within(dialog).getAllByRole('button', { name: 'Fermer' }).at(-1)!).toBeEnabled());
+    await user.click(within(dialog).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
+    expect(screen.getByRole('combobox', { name: 'Branche' })).toHaveValue('medicines');
+    expect(screen.queryByRole('option', { name: 'MATÉRIEL COMMUN' })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'equipment');
+    expect(screen.getByRole('rowheader', { name: /^MATÉRIEL COMMUN/ })).toHaveTextContent('0 article');
   });
 });
