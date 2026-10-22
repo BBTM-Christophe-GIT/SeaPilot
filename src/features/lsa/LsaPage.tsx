@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Download, FileCheck2, LifeBuoy, Package, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { AppDialog } from '../../components/AppDialog';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
+import { useVesselExpiryCounts } from '../fleet/useVesselExpiryCounts';
 import { LiftingVesselFilter } from '../lifting/LiftingVesselFilter';
 import { formatLiftingDate, liftingDeadline, type LiftingVessel } from '../lifting/liftingModel';
 import { LiftingDueBadge, useLiftingToday } from '../lifting/LiftingLifecycle';
@@ -14,7 +15,7 @@ import { LsaItemForm } from './LsaItemForm';
 import { LsaExpiryForm } from './LsaExpiryForm';
 import { LsaCatalogDialog } from './LsaCatalogDialog';
 import { blankLsaDraft, canAddLsaItem, canManageLsaCatalog, categorizeLsaItems, compareLsaNames, lsaTypeKey, lsaVersionStatus, matchesLsaItem, type LsaCatalog, type LsaItem } from './lsaModel';
-import { deleteLsaItem, downloadLsaDocument, fetchLsaCatalog, fetchLsaCreateAccess, fetchLsaRegister, fetchLsaVessels, saveLsaItem, updateLsaItemExpiry } from './lsaQueries';
+import { deleteLsaItem, downloadLsaDocument, fetchLsaCatalog, fetchLsaCreateAccess, fetchLsaRegister, fetchLsaVesselExpiryCounts, fetchLsaVessels, saveLsaItem, updateLsaItemExpiry } from './lsaQueries';
 import { createLsaPreviewClient } from './lsaPreview';
 import '../lifting/lifting.css';
 import '../lifting/liftingNavigation.css';
@@ -52,6 +53,8 @@ export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: Ro
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [refresh, setRefresh] = useState(0);
+  const loadExpiryCounts = useCallback((date: string) => fetchLsaVesselExpiryCounts(db, date), [db]);
+  const vesselExpiry = useVesselExpiryCounts(loadExpiryCounts, refresh);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('');
   const [year, setYear] = useState('');
@@ -140,9 +143,10 @@ export function LsaPage({ client, roles }: { client?: SupabaseClient; roles?: Ro
 
   return <section className="lifting-page lsa-page">
     <header className="lifting-heading"><div><p className="lifting-eyebrow">LSA · ÉQUIPEMENTS DE SAUVETAGE</p><h1>Registre LSA</h1><p>Les équipements de sauvetage, leurs échéances et leurs documents de contrôle.</p></div><LifeBuoy size={32} aria-hidden="true" /></header>
-    <LiftingVesselFilter vessels={vessels} value={vesselId} includeYard={false} disabled={busy || dialogOpen} onChange={(id) => {
+    <LiftingVesselFilter vessels={vessels} value={vesselId} includeYard={false} disabled={busy || dialogOpen} expiryCounts={vesselExpiry.counts} expiryLoading={vesselExpiry.loading} onChange={(id) => {
       setVesselId(id); context?.setLiftingVesselId?.(id); setQuery(''); setCategory(''); setYear(''); setNotice('');
     }} />
+    {vesselExpiry.error && <div className="lifting-error" role="alert">Compteurs d’échéance indisponibles : {String(vesselExpiry.error)}<button type="button" onClick={() => void vesselExpiry.refreshCounts()}>Réessayer les compteurs</button></div>}
     {error && !dialogOpen && <div className="lifting-error" role="alert">{error}<button onClick={() => setRefresh((value) => value + 1)}>Recharger</button></div>}
     {notice && <p className="lifting-notice" role="status">{notice}</p>}
     <div className="lifting-summary">

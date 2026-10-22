@@ -445,12 +445,24 @@ export async function fetchAssignedPurchaseVesselIds(client: SupabaseClient): Pr
 
 export async function fetchPurchaseRequests(client: SupabaseClient, vesselIds?: number[]): Promise<PurchaseRequestRecord[]> {
   if (vesselIds) {
-    if (!vesselIds.length) return [];
+    const ownScope = await client.rpc('purchase_request_own_submission_ids');
+    if (ownScope.error) throw ownScope.error;
+    if (!Array.isArray(ownScope.data) || ownScope.data.some((value) => (typeof value !== 'number' && typeof value !== 'string')
+      || !Number.isSafeInteger(Number(value)) || Number(value) <= 0)) {
+      throw new Error('Impossible de vérifier vos demandes soumises. Réessayez.');
+    }
+    const ownIds = [...new Set<number>(ownScope.data.map(Number))];
+    if (!vesselIds.length && !ownIds.length) return [];
     const allowed = new Set(vesselIds);
-    const requestsResult = await client.from('purchase_requests').select(PURCHASE_REQUEST_SELECT)
-      .in('vessel_id', vesselIds).order('requested_on', { ascending: false, nullsFirst: false }).order('request_number', { ascending: false });
+    const own = new Set(ownIds);
+    const query = client.from('purchase_requests').select(PURCHASE_REQUEST_SELECT);
+    const scopedQuery = vesselIds.length && ownIds.length
+      ? query.or(`vessel_id.in.(${vesselIds.join(',')}),id.in.(${ownIds.join(',')})`)
+      : vesselIds.length ? query.in('vessel_id', vesselIds) : query.in('id', ownIds);
+    const requestsResult = await scopedQuery.order('requested_on', { ascending: false, nullsFirst: false }).order('request_number', { ascending: false });
     if (requestsResult.error) throw requestsResult.error;
-    const rows = ((requestsResult.data || []) as unknown as PurchaseRequestRow[]).filter((row) => row.vessel_id !== null && allowed.has(row.vessel_id));
+    const rows = ((requestsResult.data || []) as unknown as PurchaseRequestRow[]).filter((row) =>
+      own.has(row.id) || (row.vessel_id !== null && allowed.has(row.vessel_id)));
     if (!rows.length) return [];
     const requestIds = rows.map((row) => row.id);
     const parents = new Set(requestIds);

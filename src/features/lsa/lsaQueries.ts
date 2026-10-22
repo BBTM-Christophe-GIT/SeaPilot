@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
+import { countVesselExpiries, VESSEL_EXPIRY_ALERT_DAYS, type VesselExpiryCounts } from '../fleet/vesselExpiryAlerts';
 import type { LiftingVessel } from '../lifting/liftingModel';
 import type { LsaCatalog, LsaDraft, LsaEvent, LsaItem, LsaVersion } from './lsaModel';
 
@@ -24,6 +25,24 @@ export async function fetchLsaVessels(client: SupabaseClient): Promise<LiftingVe
   const { data, error } = await client.rpc('lsa_available_vessels');
   if (error) throw error;
   return [...(data || []) as LiftingVessel[]].sort(compareFleetAssets);
+}
+
+export async function fetchLsaVesselExpiryCounts(client: SupabaseClient, today: string): Promise<Record<number, VesselExpiryCounts>> {
+  const until = new Date(`${today}T12:00:00Z`);
+  until.setUTCDate(until.getUTCDate() + VESSEL_EXPIRY_ALERT_DAYS);
+  const rows = new Map<number, Pick<LsaItem, 'id' | 'vessel_id' | 'expires_on'>>();
+  // Current equipment only: RLS enforces company, module and vessel scope.
+  // An error on any page invalidates the whole snapshot instead of reporting partial zeroes.
+  for (let offset = 0; ; offset += 750) {
+    const { data, error } = await client.from('lsa_items').select('id,vessel_id,expires_on')
+      .is('deleted_at', null).lte('expires_on', until.toISOString().slice(0, 10))
+      .order('id').range(offset, offset + 749);
+    if (error) throw error;
+    const page = (data || []) as Pick<LsaItem, 'id' | 'vessel_id' | 'expires_on'>[];
+    page.forEach((item) => rows.set(item.id, item));
+    if (page.length < 750) break;
+  }
+  return countVesselExpiries([...rows.values()], today);
 }
 
 export async function fetchLsaCreateAccess(client: SupabaseClient, vesselId: number): Promise<boolean> {

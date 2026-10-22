@@ -4,6 +4,9 @@ import { PersonalPlanningCalendar } from '../planning/PersonalPlanningCalendar';
 import { MailShortcutHeader } from './MailShortcutHeader';
 import { useGmailUnreadCount } from '../mailbox/useGmailUnreadCount';
 import { fetchDisciplinaryNotifications, markDisciplinaryNotificationRead, DISCIPLINARY_NOTIFICATIONS_CHANGED, type DisciplinaryNotification } from '../disciplinary/disciplinaryWorkflow';
+import { fetchPharmacyNotifications } from '../pharmacy/pharmacyQueries';
+import { formatPharmacyDate, type PharmacyNotification } from '../pharmacy/pharmacyModel';
+import { PharmacyIcon } from '../pharmacy/PharmacyIcon';
 import { LiftingOperationsIcon } from '../lifting/LiftingIcons';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
@@ -146,6 +149,7 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   emergencyExercises: BookOpenCheck,
   lsa: LifeBuoy,
   medicalLogbook: HeartPulse,
+  pharmacy: PharmacyIcon,
   certificates: FileCheck2,
   procedures: FileText,
   serviceNotes: Mail,
@@ -233,6 +237,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const [signOutError, setSignOutError] = useState('');
   const signOutPending = useRef(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [pharmacyNotifications, setPharmacyNotifications] = useState<PharmacyNotification[]>([]);
   const [serviceNoteNotifications, setServiceNoteNotifications] = useState<ServiceNoteNotification[]>([]);
   const [hrDocumentNotifications, setHrDocumentNotifications] = useState<HrDocumentExpiryNotification[]>([]);
   const [annualReviewNotifications, setAnnualReviewNotifications] = useState<AnnualReviewNotification[]>([]);
@@ -460,6 +465,33 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
       .then(() => setDisciplinaryNotifications((items) => items.filter((item) => item.id !== notification.id))).catch(() => undefined);
   }
 
+  const canReceivePharmacy = visibleModules.some((module) => module.key === 'pharmacy');
+  useEffect(() => {
+    setPharmacyNotifications([]);
+    if (previewMode || !sessionUserId || !canReceivePharmacy) return;
+    let live = true;
+    let version = 0;
+    const refresh = () => {
+      const request = ++version;
+      void fetchPharmacyNotifications(client)
+        .then((rows) => { if (live && request === version) setPharmacyNotifications(rows); })
+        .catch(() => { if (live && request === version) setPharmacyNotifications([]); });
+    };
+    const visible = () => { if (document.visibilityState === 'visible') refresh(); };
+    refresh();
+    const timer = window.setInterval(visible, 30_000);
+    window.addEventListener('focus', refresh);
+    window.addEventListener('pharmacy:changed', refresh);
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('pharmacy:changed', refresh);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [client, previewMode, sessionUserId, canReceivePharmacy]);
+
   const requestedModule = getRequestedModule(location.pathname);
   const liftingSection = requestedModule?.key === 'lifting' ? LIFTING_SECTIONS.find((section) => location.pathname.replace(/\/+$/, '').endsWith(`/${section.path}`)) : undefined;
   const isManualPage = location.pathname === '/manual' || location.pathname.startsWith('/manual/');
@@ -497,7 +529,8 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     || (previewMode ? 'Préversion BBTM' : sessionDisplayName || userEmail.split('@')[0] || 'Utilisateur');
   const primaryRole = ROLE_KEYS.find((role) => roles.includes(role));
   const primaryRoleLabel = primaryRole ? ROLE_LABELS[primaryRole] : 'Utilisateur';
-  const notificationCount = serviceNoteNotifications.length + hrDocumentNotifications.length + annualReviewNotifications.length + actionPlanNotifications.length + leaveNotifications.length + disciplinaryNotifications.length;
+  const activePharmacyNotifications = canReceivePharmacy && !previewMode && sessionUserId ? pharmacyNotifications : [];
+  const notificationCount = serviceNoteNotifications.length + hrDocumentNotifications.length + annualReviewNotifications.length + actionPlanNotifications.length + leaveNotifications.length + disciplinaryNotifications.length + activePharmacyNotifications.length;
 
   function openLeaveNotification(notification: PlanningLeaveNotification) {
     setIsNotificationsOpen(false);
@@ -736,6 +769,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
               {isNotificationsOpen ? <div className="topbar-notification-popover">
                 <header><div><strong>Notifications</strong><span>{notificationCount} élément{notificationCount > 1 ? 's' : ''} à traiter</span></div><Bell aria-hidden="true" size={18} /></header>
                 <div className="topbar-notification-list">
+                  {activePharmacyNotifications.length ? <section aria-label="Inventaire Pharmacie" className="topbar-notification-group"><h4>Pharmacie · échéance à 30 jours</h4>{activePharmacyNotifications.map((notification) => <Link key={notification.id} onClick={() => setIsNotificationsOpen(false)} to={`/modules/pharmacy?vessel=${notification.vessel_id}&filter=expiry`}><span><strong>{notification.vessel_name}</strong><small>{formatPharmacyDate(notification.expires_on)}</small></span><p>{notification.title}</p><em>{notification.days_until_expiry < 0 ? `Échéance dépassée de ${Math.abs(notification.days_until_expiry)} jour(s)` : notification.days_until_expiry === 0 ? 'Échéance aujourd’hui' : `Échéance dans ${notification.days_until_expiry} jours`} <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {canReceiveDisciplinary && disciplinaryNotifications.length ? <section aria-label="Sanctions disciplinaires" className="topbar-notification-group"><h4>Sanctions disciplinaires</h4>{disciplinaryNotifications.map((notification) => <Link key={notification.id} onClick={() => openDisciplinaryNotification(notification)} to={`/modules/disciplinary?case=${notification.case_id}&tab=review`}><span><strong>{notification.title}</strong><small>{formatServiceNoteDate(notification.created_at)}</small></span><em>Ouvrir la relecture <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {leaveNotifications.length ? <section aria-label="Demandes de congés" className="topbar-notification-group"><h4>Demandes de congés</h4>{leaveNotifications.map((notification) => <Link key={notification.id} onClick={() => openLeaveNotification(notification)} to="/modules/planning"><span><strong>{notification.title}</strong><small>{formatServiceNoteDate(notification.createdAt)}</small></span><p>{notification.body}</p><em>Voir le planning <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {serviceNoteNotifications.length ? <section aria-label="Notes de service" className="topbar-notification-group"><h4>Notes de service</h4>{serviceNoteNotifications.map((notification) => <Link key={notification.noteId} to={`/modules/serviceNotes?note=${notification.noteId}`}><span><strong>{notification.chronologyCode}</strong><small>{formatServiceNoteDate(notification.publishedAt)}</small></span><p>{notification.subject}</p><em>Lire et signer <ChevronRight size={14} /></em></Link>)}</section> : null}

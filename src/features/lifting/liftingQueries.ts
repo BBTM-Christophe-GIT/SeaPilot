@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
+import { countVesselExpiries, type VesselExpiryCounts } from '../fleet/vesselExpiryAlerts';
 import type { InspectionEntry, ItemDraft, LiftingInspection, LiftingItem, LiftingKind, LiftingVessel } from './liftingModel';
 import { uploadLiftingCertificate, validateLiftingCertificate, type UploadedLiftingCertificate } from './liftingCertificateQueries';
 
@@ -22,6 +23,22 @@ export async function fetchLiftingVessels(client: SupabaseClient): Promise<Lifti
   // The role-scoped RPC supplies the small, cacheable thumbnail URL directly.
   // Opening an inventory never waits for signed URLs or original photographs.
   return [...(data || []) as LiftingVessel[]].sort(compareFleetAssets);
+}
+// The current inventory deadline already reflects the latest published inspection
+// for this equipment generation. Never count report snapshots or draft dates again.
+export async function fetchLiftingVesselExpiryCounts(client: SupabaseClient, kind: LiftingKind, today: string): Promise<Record<number, VesselExpiryCounts>> {
+  const pageSize = 500;
+  const rows: { vessel_id: number; expires_on: string | null }[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await client.from('lifting_inventory')
+      .select('vessel_id,inspection_due_on').eq('kind', kind).eq('active', true)
+      .order('id', { ascending: true }).range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    const page = (data || []) as Pick<LiftingItem, 'vessel_id' | 'inspection_due_on'>[];
+    rows.push(...page.map((item) => ({ vessel_id: item.vessel_id, expires_on: item.inspection_due_on || null })));
+    if (page.length < pageSize) break;
+  }
+  return countVesselExpiries(rows, today);
 }
 // Paper forms always read current inventory, independently of UI filters and report snapshots.
 export async function fetchLiftingPaperInventory(client: SupabaseClient, vesselId: number, kind: LiftingKind) {

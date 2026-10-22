@@ -1,0 +1,78 @@
+.pharmacy-vessel-strip {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 3px 3px 7px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scroll-snap-type: x proximity;
+}
+
+.pharmacy-vessel-card {
+  position: relative;
+  display: flex;
+  flex: 0 0 116px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 3px;
+  min-width: 0;
+  height: 80px;
+  box-sizing: border-box;
+  padding: 4px 7px;
+  border: 1px solid #d6e1e6;
+  border-radius: 7px;
+  color: #466170;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  scroll-snap-align: start;
+}
+
+.pharmacy-vessel-card:hover:not(:disabled) {
+  border-color: #7da99e;
+  background: #f7fbf9;
+}
+
+.pharmacy-vessel-card[aria-pressed=true] {
+  border-color: #287964;
+  color: #184d3e;
+  background: #eff8f3;
+  box-shadow: 0 0 0 1px #287964;
+}
+
+.pharmacy-vessel-card:focus-visible,
+.pharmacy-vessel-strip:focus-visible {
+  outline: 2px solid #287964;
+  outline-offset: 2px;
+}
+
+.pharmacy-vessel-card:disabled { cursor: default; opacity: .6; }
+.pharmacy-vessel-visual { position: relative; display: flex; align-items: center; justify-content: center; flex: none; width: 100%; height: 39px; }
+.pharmacy-vessel-visual>img { display: block; width: 100%; height: 39px; object-fit: contain; }
+.pharmacy-vessel-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; color: #6c8290; }
+.pharmacy-vessel-placeholder small { font-size: 8px; font-weight: 700; line-height: 1; }
+.pharmacy-vessel-name { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 700; line-height: 15px; text-align: center; }
+.pharmacy-vessel-selected { position: absolute; bottom: 0; left: 0; display: flex; width: 15px; height: 15px; align-items: center; justify-content: center; border: 1px solid #fff; border-radius: 50%; color: #fff; background: #287964; }
+.pharmacy-vessel-counts { position: absolute; top: -3px; right: -4px; display: flex; gap: 3px; align-items: center; }
+.pharmacy-vessel-count { display: inline-flex; align-items: center; justify-content: center; gap: 2px; min-width: 21px; min-height: 19px; padding: 1px 4px; box-sizing: border-box; border: 1px solid #fff; border-radius: 10px; font-size: 10px; line-height: 1; font-variant-numeric: tabular-nums; font-weight: 800; box-shadow: 0 1px 3px #183b5026; }
+.pharmacy-vessel-count.is-due { color: #653809; background: #ffcb75; }
+.pharmacy-vessel-count.is-expired { color: #fff; background: #b33832; }
+.pharmacy-vessel-count svg { flex: none; }
+.pharmacy-vessel-unavailable { display: block; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #647783; font-size: 9px; font-weight: 400; line-height: 10px; }
+.pharmacy-vessel-description { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.pharmacy-vessel-empty { margin: 0; padding: 14px 8px; font-size: 12px; color: #647783; }
+
+@media(max-width:760px) {
+  .pharmacy-vessel-strip { gap: 7px; }
+  .pharmacy-vessel-card { flex-basis: 106px; }
+}
+
+@media(prefers-reduced-motion:no-preference) {
+  .pharmacy-vessel-strip { scroll-behavior: smooth; }
+}

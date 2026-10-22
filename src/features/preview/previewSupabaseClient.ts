@@ -2104,6 +2104,8 @@ function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  // The pharmacy editor owns its synthetic register; the shared home never reads real inventory.
+  if (functionName === 'pharmacy_notifications') return createPreviewQuery({ data: [], error: null });
   if (functionName === 'document_blob_lookup') return createPreviewQuery({ data: null, error: null });
   if (functionName === 'document_blob_lookup_batch') {
     const paths = Array.isArray(args.target_paths) ? args.target_paths : [];
@@ -2115,6 +2117,9 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     return createPreviewQuery({ data: [9201, 9202], error: null });
   }
   if (functionName.startsWith('sea_operation')) return createPreviewQuery(seaOperationPreviewRpc(functionName, args));
+  if (functionName === 'purchase_request_own_submission_ids') {
+    return createPreviewQuery({ data: [], error: null });
+  }
   if (functionName === 'purchase_request_add_comment') {
     const request = previewRows('purchase_requests').find((row) => Number(row.id) === Number(args.p_request_id));
     const comment = String(args.p_comment || '').trim();

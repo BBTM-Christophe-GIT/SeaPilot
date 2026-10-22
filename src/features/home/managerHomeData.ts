@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RoleKey } from '../permissions/roles';
+import type { PharmacyNotification } from '../pharmacy/pharmacyModel';
+import { fetchPharmacyNotifications } from '../pharmacy/pharmacyQueries';
 import { getAnnualReviewAlert } from '../procedures/procedureReview';
 import { derivePurchaseRequestStage, isPurchaseRequestRejected } from '../purchaseRequests/purchaseRequestQueries';
 import { buildManagerHomeVessels, normalizeHomeVesselName, type ManagerHomeVessel, type ManagerHomeVesselIndex } from './managerHomeVessels';
@@ -128,6 +130,7 @@ export interface ManagerHomeAssignmentScope {
 
 export interface ManagerHomeSourceRows {
   assignments?: ManagerHomeAssignmentRow[];
+  pharmacyNotifications?: PharmacyNotification[];
   purchases: PurchaseRequestRow[];
   procedures: ProcedureReviewRow[];
   fleetCertificates: FleetCertificateRow[];
@@ -320,6 +323,7 @@ export function filterManagerHomeSourcesForScope(
     purchases: sources.purchases.filter((row) => rowMatchesVesselScope(row.vessel_id, row.vessel_name, scope)),
     procedures: sources.procedures.filter((row) => rowMatchesVesselScope(null, row.vessel_name, scope)),
     fleetCertificates: sources.fleetCertificates.filter((row) => rowMatchesVesselScope(row.vessel_id, row.vessel_name, scope)),
+    pharmacyNotifications: (sources.pharmacyNotifications || []).filter((row) => scope.vesselIds.includes(row.vessel_id)),
     people: scopedPeople,
     hrDocuments: sources.hrDocuments.filter((row) => {
       if (row.person_id !== null) return personIds.has(row.person_id);
@@ -651,6 +655,40 @@ function workingTimeItems(rows: WorkingTimeCalculationRow[], people: PersonRow[]
 const GROUP_ORDER: ManagerHomeGroupKey[] = ['purchases', 'workingTime', 'procedures', 'fleetDocuments', 'humanResources'];
 const TONE_ORDER: ManagerHomeTone[] = ['danger', 'warning', 'success'];
 
+function pharmacyItems(rows: PharmacyNotification[], vessels: ManagerHomeVesselIndex): ManagerHomeItem[] {
+  return rows.map((row) => {
+    // The RPC owns the J-30 window and the Europe/Paris date calculation.
+    const remainingDays = row.days_until_expiry;
+    const referenceDate = new Date(`${row.expires_on}T12:00:00Z`);
+    referenceDate.setUTCDate(referenceDate.getUTCDate() - remainingDays);
+    const todayKey = referenceDate.toISOString().slice(0, 10);
+    const tone: ManagerHomeTone = remainingDays < 0 ? 'danger' : 'warning';
+    const deadline = remainingDays < 0 ? `Expiré depuis ${Math.abs(remainingDays)} j`
+      : remainingDays === 0 ? "Aujourd'hui"
+      : remainingDays === 1 ? 'Demain'
+      : `Échéance le ${formatShortDate(row.expires_on)} · J-${remainingDays}`;
+    const dates = [...new Set([row.expires_on, todayKey])];
+    return {
+      id: `pharmacy-${row.id}`,
+      group: 'fleetDocuments',
+      tags: ['documents', 'fleet'],
+      title: row.title,
+      context: `${row.kind === 'control' ? 'Contrôle pharmacie' : 'Inventaire pharmacie'} · ${row.vessel_name}`,
+      deadline,
+      action: row.kind === 'control' ? 'Ouvrir le contrôle pharmacie' : 'Ouvrir l’inventaire pharmacie',
+      to: `/modules/pharmacy?vessel=${row.vessel_id}&filter=expiry`,
+      dueDate: row.expires_on,
+      visibleDates: dates,
+      queueVisibleDates: dates,
+      tone,
+      queueTone: tone,
+      urgent: remainingDays <= 0,
+      thisWeek: remainingDays >= 0 && remainingDays <= 7,
+      vessels: vessels.forRow(row.vessel_id, row.vessel_name),
+    } satisfies ManagerHomeItem;
+  });
+}
+
 export function buildManagerHomeItems(sources: ManagerHomeSourceRows, today = new Date()): ManagerHomeItem[] {
   const vessels = buildManagerHomeVessels(sources);
   return [
@@ -658,6 +696,7 @@ export function buildManagerHomeItems(sources: ManagerHomeSourceRows, today = ne
     ...workingTimeItems(sources.workingTimeCalculations, sources.people, today, vessels),
     ...procedureReviewItems(sources.procedures, today, vessels),
     ...fleetCertificateItems(sources.fleetCertificates, today, vessels),
+    ...pharmacyItems(sources.pharmacyNotifications || [], vessels),
     ...hrDocumentItems(sources.hrDocuments, sources.people, today, vessels),
     ...contractItems(sources.people, today, vessels),
   ].sort((left, right) =>
@@ -734,7 +773,7 @@ export async function fetchManagerHomeDashboard(
     ? 'procedures'
     : 'published_procedures';
 
-  const [purchases, procedures, fleetCertificates, lsaItems, people, hrDocuments, workingTimeCalculations] = await Promise.all([
+  const [purchases, procedures, fleetCertificates, lsaItems, pharmacyNotifications, people, hrDocuments, workingTimeCalculations] = await Promise.all([
     loadRows<PurchaseRequestRow>('les achats', async () => {
       let query = client.from('purchase_requests')
         .select('id,request_number,title,requested_on,requester_name,project_code,vessel_id,vessel_name,status,urgent,approval_status,ordered_on,expected_delivery_on,received_on')
@@ -765,6 +804,9 @@ export async function fetchManagerHomeDashboard(
       if (assignmentScope) query = query.in('vessel_id', assignmentScope.vesselIds);
       return query;
     }),
+    loadRows<PharmacyNotification>('les échéances pharmacie', async () => ({
+      data: await fetchPharmacyNotifications(client), error: null,
+    })),
     loadRows<PersonRow>('les ressources humaines', async () => {
       let query = client.from('people')
         .select('id,first_name,last_name,function_label,departed_on,active')
@@ -788,12 +830,13 @@ export async function fetchManagerHomeDashboard(
     }),
   ]);
 
-  const results = [assignments, purchases, procedures, fleetCertificates, lsaItems, people, hrDocuments, workingTimeCalculations];
+  const results = [assignments, purchases, procedures, fleetCertificates, lsaItems, pharmacyNotifications, people, hrDocuments, workingTimeCalculations];
   const sources: ManagerHomeSourceRows = {
     assignments: assignments.rows,
     purchases: purchases.rows,
     procedures: procedures.rows.map((row) => procedureTable === 'published_procedures' ? { ...row, library: 'published' as const } : row),
     fleetCertificates: [...fleetCertificates.rows, ...lsaItems.rows.map((row) => ({ ...row, register: 'lsa' as const }))],
+    pharmacyNotifications: pharmacyNotifications.rows,
     people: people.rows,
     hrDocuments: hrDocuments.rows,
     workingTimeCalculations: workingTimeCalculations.rows,

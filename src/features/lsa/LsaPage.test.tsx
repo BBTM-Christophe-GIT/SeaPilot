@@ -60,7 +60,7 @@ describe('Registre LSA', () => {
       releaseTarget = () => resolve({ data: targetRegister.items, error: null });
     });
     vi.spyOn(client, 'from').mockImplementation((table: string) => table === 'lsa_items'
-      ? { select: () => ({ eq: (key: string, value: number) => ({ order: () => value === vessel.id ? targetItems : originalFrom(table).select('*').eq(key, value).order('id') }) }) } as never
+      ? { select: (columns: string) => columns === '*' ? ({ eq: (key: string, value: number) => ({ order: () => value === vessel.id ? targetItems : originalFrom(table).select('*').eq(key, value).order('id') }) }) : originalFrom(table).select(columns) } as never
       : originalFrom(table));
     render(<MemoryRouter initialEntries={['/modules/lsa']}><Link to={`?vessel=${vessel.id}&item=${item.id}`}>Ouvrir le matériel d’un autre navire</Link><LsaPage client={client} roles={['marin']} /></MemoryRouter>);
 
