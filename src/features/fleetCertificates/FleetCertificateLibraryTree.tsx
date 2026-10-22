@@ -22,6 +22,8 @@ interface FleetCertificateLibraryTreeProps {
   selectedScopeCategoryKey?: string;
   selectedScopeVesselName?: string;
   canManage?: boolean;
+  canDownload?: boolean;
+  isDownloading?: boolean;
   onDelete?: (certificate: FleetCertificateRecord) => void;
   onDownload: (certificate: FleetCertificateRecord) => void;
   onRenew?: (certificate: FleetCertificateRecord) => void;
@@ -154,6 +156,8 @@ export function FleetCertificateLibraryTree({
   selectedScopeCategoryKey = '',
   selectedScopeVesselName = '',
   canManage = false,
+  canDownload = false,
+  isDownloading = false,
   onDelete,
   onDownload,
   onRenew,
@@ -205,11 +209,11 @@ export function FleetCertificateLibraryTree({
         return <div aria-label={`Document ${certificate.documentTitle}`} key={certificate.id} role="treeitem">
           <div className={`fcx-library-row-wrap${selectedCertificateId === certificate.id ? ' is-selected' : ''}`}>
           <div className="fcx-library-document-actions">
-            {onToggleSelection ? <input aria-label={`Sélectionner ${certificate.documentTitle}`} checked={selectedDocumentIds.has(certificate.id)} disabled={!hasFile} onChange={() => onToggleSelection(certificate.id)} title={hasFile ? 'Sélectionner pour le téléchargement' : 'Aucun fichier à télécharger'} type="checkbox" /> : null}
+            {canDownload && onToggleSelection ? <input aria-label={`Sélectionner ${certificate.documentTitle}`} checked={selectedDocumentIds.has(certificate.id)} disabled={!hasFile || isDownloading} onChange={() => onToggleSelection(certificate.id)} title={hasFile ? 'Sélectionner pour le téléchargement' : 'Aucun fichier à télécharger'} type="checkbox" /> : null}
             {canManage && onSchedule ? <button aria-label={`Programmer une visite pour ${certificate.documentTitle}`} onClick={() => onSchedule(certificate)} title="Programmer une visite" type="button"><CalendarPlus size={15} /></button> : null}
             {canManage && onDelete ? <button aria-label={`Supprimer ${certificate.documentTitle}`} className="danger" onClick={() => onDelete(certificate)} title="Supprimer" type="button"><Trash2 size={15} /></button> : null}
             {canManage && onRenew ? <button aria-label={`Renouveler ${certificate.documentTitle}`} onClick={() => onRenew(certificate)} title="Renouveler" type="button"><RefreshCw size={15} /></button> : null}
-            <button aria-label={`Télécharger ${certificate.documentTitle}`} disabled={!hasFile} onClick={() => onDownload(certificate)} title={hasFile ? 'Télécharger' : 'Aucun fichier à télécharger'} type="button"><Download size={15} /></button>
+            {canDownload ? <button aria-label={`Télécharger ${certificate.documentTitle}`} disabled={!hasFile || isDownloading} onClick={() => onDownload(certificate)} title={hasFile ? 'Télécharger' : 'Aucun fichier à télécharger'} type="button"><Download size={15} /></button> : null}
           </div>
           <button aria-label={`Prévisualiser ${certificate.documentTitle}`} className="fcx-library-row" onClick={() => onSelect(certificate)} type="button">
             <span><FileText size={17} /><span><b>{certificate.documentTitle}</b><small>{certificate.fileName || (certificate.status === 'pending_validation' ? 'Document reçu · À valider' : 'Aucun fichier joint')}</small><small className="fcx-mobile-doc-meta">{formatDate(certificate.expiresOn)} · {getFleetCertificateStatusLabel(state)}</small></span>{actionCount > 0 && <i className="fcx-action-count">{actionCount} à traiter</i>}</span>
@@ -230,7 +234,7 @@ export function FleetCertificateLibraryTree({
     <div className="fcx-tree-toolbar">
       <span>Classement&nbsp;: <b>Navire</b><i>›</i><b>Catégorie</b><i>›</i><b>Sous-catégorie</b><i>›</i><b>Document</b></span>
       <div className="fcx-tree-toolbar-actions">
-        {onDownloadSelected ? <button aria-label={selectedDocumentIds.size ? `Télécharger (${selectedDocumentIds.size})` : 'Télécharger'} disabled={!selectedDocumentIds.size} onClick={onDownloadSelected} type="button"><Download size={15} /> Télécharger</button> : null}
+        {canDownload && onDownloadSelected ? <button aria-label={selectedDocumentIds.size ? `Télécharger (${selectedDocumentIds.size})` : 'Télécharger'} disabled={!selectedDocumentIds.size || isDownloading} onClick={onDownloadSelected} type="button"><Download size={15} /> Télécharger</button> : null}
         <button onClick={toggleAll} type="button">
           {everythingOpen ? <ChevronsDownUp size={15} /> : <ChevronsUpDown size={15} />}
           {everythingOpen ? 'Tout replier' : 'Tout déplier'}

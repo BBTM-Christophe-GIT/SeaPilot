@@ -20,9 +20,10 @@ function dateLabel(date: string): string {
   return date ? date.split('-').reverse().join('/') : 'Non renseignée';
 }
 
-export function FleetCertificateVersionsPanel({ certificate, client, canValidate, onPreview, onValidated }: {
+export function FleetCertificateVersionsPanel({ certificate, client, canPreview, canValidate, onPreview, onValidated }: {
   certificate: FleetCertificateRecord;
   client: SupabaseClient;
+  canPreview: boolean;
   canValidate: boolean;
   onPreview: (version: FleetCertificateVersion) => void;
   onValidated: () => Promise<void>;
@@ -62,7 +63,7 @@ export function FleetCertificateVersionsPanel({ certificate, client, canValidate
     {versions.length ? <ul>{versions.map((version) => <li key={version.id}>
       <div><FileText size={16} /><span><strong>v{version.versionNo} · {versionLabels[version.status]}</strong><small>{version.normalizedFileName || version.originalFileName}</small><small>Émission : {dateLabel(version.issuedOn)} · Échéance : {dateLabel(version.expiresOn)}</small></span></div>
       <div className="fcx-version-actions">
-        <button aria-label={`Afficher la version v${version.versionNo}`} className="fcx-secondary" disabled={validatingId !== null || !version.storageBucket || !version.storagePath} onClick={() => onPreview(version)} type="button">Afficher</button>
+        {canPreview ? <button aria-label={`Afficher la version v${version.versionNo}`} className="fcx-secondary" disabled={validatingId !== null || !version.storageBucket || !version.storagePath} onClick={() => onPreview(version)} type="button">Afficher</button> : null}
         {canValidate && version.status === 'pending_validation' ? <button aria-label={`Valider la version v${version.versionNo}`} className="fcx-primary" disabled={validatingId !== null} onClick={() => void validate(version)} type="button"><CheckCircle2 size={15} /> {validatingId === version.id ? 'Validation…' : 'Valider'}</button> : null}
       </div>
     </li>)}</ul> : null}

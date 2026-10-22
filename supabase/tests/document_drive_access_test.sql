@@ -59,6 +59,11 @@ insert into public.document_drive_files(source_bucket,source_path,drive_file_id,
 select 'fleet-certificates',c.id||'/test/drive-fleet.pdf','fixture_drive_fleet_123','Flotte/drive-fleet.pdf','drive-fleet.pdf','application/pdf',7,repeat('a',64),repeat('b',64),now()
 from public.companies c where c.code='bbtm';
 
+-- Register the fleet fixture as a certificate rather than unrelated shared-bucket evidence.
+insert into public.fleet_certificates(company_id,title,storage_bucket,storage_path)
+select c.id,'Drive certificate access fixture','fleet-certificates',c.id||'/test/drive-fleet.pdf'
+from public.companies c where c.code='bbtm';
+
 -- A former project attachment can remain in project_drive_files after its
 -- billing row is removed. Retain that table's exact existing RLS rights.
 insert into public.projects(title,project_code,status,source_label,company_id)
@@ -85,7 +90,12 @@ begin
   assert response->>'sha256'=repeat('a',64),'The current Drive hash is distinct from the old Storage hash';
   assert public.document_drive_lookup('procedure-documents','published/test/drive-published.pdf') is not null,'Every real profile reads a published PDF';
   fleet_path:=public.current_planning_company_id()||'/test/drive-fleet.pdf';
-  assert public.document_drive_lookup('fleet-certificates',fleet_path) is not null,'Every real profile keeps fleet certificate access';
+  if r.role_key <> 'marin' then
+   assert public.document_drive_lookup('fleet-certificates',fleet_path) is not null,'Every non-Marin profile keeps fleet certificate access';
+  else
+   begin perform public.document_drive_lookup('fleet-certificates',fleet_path); raise exception 'Marin downloaded a fleet certificate';
+   exception when insufficient_privilege then null; end;
+  end if;
   assert public.document_drive_lookup('hr-documents','no-such-object.pdf') is null,'An unmapped legacy object remains distinguishable from denied mapped content';
   if r.role_key in ('admin','direction') then
    assert public.document_drive_lookup('procedure-documents','sources/test/drive-private.docx') is not null,'Admin and Direction read source files';

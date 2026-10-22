@@ -38,6 +38,7 @@ import {
   generateFleetCertificateVisitReport,
 } from './fleetCertificateVisitReport';
 import { FleetCertificateLibraryTree } from './FleetCertificateLibraryTree';
+import { canDownloadFleetCertificates } from './fleetCertificatePermissions';
 import { FleetCertificateVersionsPanel } from './FleetCertificateVersionsPanel';
 import {
   createDefaultFleetCertificateDocumentPath,
@@ -344,9 +345,11 @@ function formatFileSize(value: number | null): string {
 }
 
 function FleetCertificateDocumentPreview({
+  canDownload,
   canEdit,
   certificate,
   error,
+  isDownloading,
   isLoading,
   onDownload,
   onEdit,
@@ -354,9 +357,11 @@ function FleetCertificateDocumentPreview({
   previewUrl,
   previewVersion,
 }: {
+  canDownload: boolean;
   canEdit: boolean;
   certificate: FleetCertificateRecord | null;
   error: string;
+  isDownloading: boolean;
   isLoading: boolean;
   onDownload: (certificate: FleetCertificateRecord) => void;
   onEdit: () => void;
@@ -374,14 +379,15 @@ function FleetCertificateDocumentPreview({
 
   return <div className="fcx-document-preview">
     <section className="fcx-preview-stage" aria-label={`Aperçu de ${certificate.documentTitle}`}>
-      <header><span><FileText size={17} /><strong>{certificate.fileName || (certificate.status === 'pending_validation' ? 'Document reçu · À valider' : 'Aucun fichier joint')}</strong></span>{hasFile ? <button onClick={() => onDownload(certificate)} type="button"><Download size={16} /> Télécharger</button> : null}</header>
+      <header><span><FileText size={17} /><strong>{certificate.fileName || (certificate.status === 'pending_validation' ? 'Document reçu · À valider' : 'Aucun fichier joint')}</strong></span>{hasFile && canDownload ? <button disabled={isDownloading} onClick={() => onDownload(certificate)} type="button"><Download size={16} /> Télécharger</button> : null}</header>
       <div>
         {!hasFile ? <div className="fcx-preview-status"><FilePlus2 /> {certificate.status === 'pending_validation' ? 'Document reçu, en attente de validation. Affichez sa version ci-dessous.' : 'Cette ligne ne contient pas encore de document.'}</div> : null}
-        {isLoading ? <div className="fcx-preview-status"><RefreshCw className="spin" /> Chargement de l’aperçu…</div> : null}
-        {hasFile && !isLoading && error ? <div className="fcx-preview-status is-error"><AlertCircle /> {error}</div> : null}
-        {hasFile && !isLoading && !error && previewUrl && isImage ? <img alt={`Aperçu de ${certificate.documentTitle}`} src={previewUrl} /> : null}
-        {hasFile && !isLoading && !error && previewUrl && canEmbed && !isImage ? <iframe src={previewUrl} title={`Aperçu de ${certificate.documentTitle}`} /> : null}
-        {hasFile && !isLoading && !error && previewUrl && !canEmbed ? <div className="fcx-preview-status"><FileText /> Ce format ne peut pas être prévisualisé. Utilisez Télécharger.</div> : null}
+        {hasFile && !canDownload ? <div className="fcx-preview-status"><FileText /> L’accès aux fichiers est réservé aux profils Admin, Direction, Armement et Capitaine.</div> : null}
+        {canDownload && isLoading ? <div className="fcx-preview-status"><RefreshCw className="spin" /> Chargement de l’aperçu…</div> : null}
+        {canDownload && hasFile && !isLoading && error ? <div className="fcx-preview-status is-error"><AlertCircle /> {error}</div> : null}
+        {canDownload && hasFile && !isLoading && !error && previewUrl && isImage ? <img alt={`Aperçu de ${certificate.documentTitle}`} src={previewUrl} /> : null}
+        {canDownload && hasFile && !isLoading && !error && previewUrl && canEmbed && !isImage ? <iframe src={previewUrl} title={`Aperçu de ${certificate.documentTitle}`} /> : null}
+        {canDownload && hasFile && !isLoading && !error && previewUrl && !canEmbed ? <div className="fcx-preview-status"><FileText /> Ce format ne peut pas être prévisualisé. Utilisez Télécharger.</div> : null}
       </div>
     </section>
     <aside className="fcx-preview-metadata">
@@ -395,7 +401,7 @@ function FleetCertificateDocumentPreview({
         <div><dt>Version</dt><dd>{hasFile ? `v${certificate.currentVersionNo}${previewVersion?.status === 'pending_validation' ? ' · À valider' : previewVersion?.status === 'archived' ? ' · Archivée' : previewVersion?.status === 'rejected' ? ' · Refusée' : ' · Version actuelle'}` : 'Aucune version validée'}</dd></div>
         <div><dt>Fichier</dt><dd>{hasFile ? formatFileSize(certificate.fileSizeBytes) : 'Aucun fichier joint'}</dd></div>
       </dl>
-      {hasFile ? <button className="fcx-secondary" onClick={() => onDownload(certificate)} type="button"><Download size={16} /> Télécharger le document</button> : canEdit ? <button className="fcx-secondary" onClick={onRenew} type="button"><UploadCloud size={16} /> Ajouter un fichier</button> : null}
+      {hasFile && canDownload ? <button className="fcx-secondary" disabled={isDownloading} onClick={() => onDownload(certificate)} type="button"><Download size={16} /> Télécharger le document</button> : !hasFile && canEdit ? <button className="fcx-secondary" onClick={onRenew} type="button"><UploadCloud size={16} /> Ajouter un fichier</button> : null}
     </aside>
   </div>;
 }
@@ -409,6 +415,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const effectiveClient = client || outlet?.client || supabase;
   const effectiveRoles = roles || outlet?.roles || [];
   const manager = canManage(effectiveRoles);
+  const canDownload = canDownloadFleetCertificates(effectiveRoles);
   const [certificates, setCertificates] = useState<FleetCertificateRecord[]>([]);
   const [findings, setFindings] = useState<FleetCertificateFinding[]>([]);
   const [responsibles, setResponsibles] = useState<FleetFindingResponsible[]>([]);
@@ -425,6 +432,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'expired' | 'upcoming' | 'actions'>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [modal, setModal] = useState<'finding' | 'finding-edit' | 'document' | 'metadata' | 'renewal' | 'report' | 'visit-target' | 'visit' | null>(null);
@@ -482,7 +490,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     setComment('');
   }, [selectedFinding?.id, selectedFinding?.progress]);
   useEffect(() => {
-    if (activeTab !== 'preview' || !previewCertificate || !previewCertificate.storageBucket || !previewCertificate.storagePath) {
+    if (!canDownload || activeTab !== 'preview' || !previewCertificate || !previewCertificate.storageBucket || !previewCertificate.storagePath) {
       setPreviewUrl('');
       setPreviewError('');
       setIsPreviewLoading(false);
@@ -497,7 +505,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
       .catch((caught) => { if (!cancelled) setPreviewError(caught instanceof Error ? caught.message : 'Aperçu indisponible.'); })
       .finally(() => { if (!cancelled) setIsPreviewLoading(false); });
     return () => { cancelled = true; };
-  }, [activeTab, effectiveClient, previewCertificate]);
+  }, [activeTab, canDownload, effectiveClient, previewCertificate]);
 
   const active = useMemo(() => certificates.filter((item) => item.isActiveFleet), [certificates]);
   const upcoming = useMemo(() => active.filter((item) => item.expiresOn && daysFromToday(item.expiresOn) >= 0 && daysFromToday(item.expiresOn) <= 90), [active]);
@@ -591,7 +599,10 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   }
 
   function downloadDocuments(documents: FleetCertificateRecord[]) {
-    void run(() => downloadFleetCertificateDocuments(effectiveClient, documents), documents.length > 1 ? 'Archive de documents préparée.' : 'Document téléchargé.', false);
+    if (!canDownload || isDownloading) return;
+    setIsDownloading(true);
+    void run(() => downloadFleetCertificateDocuments(effectiveClient, documents), documents.length > 1 ? 'Archive de documents préparée.' : 'Document téléchargé.', false)
+      .finally(() => setIsDownloading(false));
   }
 
   function deleteCertificate(certificate: FleetCertificateRecord) {
@@ -677,6 +688,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
 
   return <main className="fcx-page">
     {(error || message) && <div className={`fcx-toast ${error ? 'is-error' : ''}`}><span>{error || message}</span><button onClick={() => { setError(''); setMessage(''); }}><X size={16} /></button></div>}
+    {isDownloading ? <p role="status">Préparation du téléchargement…</p> : null}
     <header className="fcx-hero fcx-compact-hero"><div><span className="fcx-eyebrow">CONFORMITÉ · FLOTTE</span><h1>Certificats flotte</h1><p>Bibliothèque, échéances, visites et traitement documentaire dans un espace unique.</p></div></header>
     <ModuleRibbon ariaLabel="Menu des certificats flotte" className="fcx-certificates-ribbon">
       <ModuleRibbonGroup label="Gestion documentaire">
@@ -695,7 +707,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
           <label><Search size={18} /><input aria-label="Rechercher dans la bibliothèque documentaire" onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un certificat, un navire…" value={search} /></label>
           <div aria-label="Filtrer la bibliothèque"><Filter size={16} /><button className={statusFilter === 'all' ? 'active' : ''} onClick={() => setStatusFilter('all')}>Tous</button><button className={statusFilter === 'expired' ? 'active' : ''} onClick={() => setStatusFilter('expired')}>Échus</button><button className={statusFilter === 'upcoming' ? 'active' : ''} onClick={() => setStatusFilter('upcoming')}>À venir</button><button className={statusFilter === 'actions' ? 'active' : ''} onClick={() => setStatusFilter('actions')}>Avec actions</button></div>
         </div>
-        <FleetCertificateLibraryTree key={`${search}|${statusFilter}`} canManage={manager} certificates={filtered} findingCountByCertificate={findingCountByCertificate} formatDate={formatDate} onDelete={deleteCertificate} onDownload={(certificate) => downloadDocuments([certificate])} onDownloadSelected={() => downloadDocuments(selectedDocuments)} onRenew={renewCertificate} onSchedule={(certificate) => { setVisitCertificateId(certificate.id); setModal('visit'); }} onSelect={selectCertificate} onSelectCategory={selectCategoryScope} onSelectVessel={selectVesselScope} onToggleSelection={toggleDocumentSelection} revealMatches={Boolean(search.trim()) || statusFilter !== 'all'} selectedCertificateId={selectedCertificateId} selectedDocumentIds={selectedDocumentIds} selectedScopeCategoryKey={scopeCategoryKey} selectedScopeVesselName={scopeVesselName} />
+        <FleetCertificateLibraryTree key={`${search}|${statusFilter}`} isDownloading={isDownloading} canDownload={canDownload} canManage={manager} certificates={filtered} findingCountByCertificate={findingCountByCertificate} formatDate={formatDate} onDelete={deleteCertificate} onDownload={(certificate) => downloadDocuments([certificate])} onDownloadSelected={() => downloadDocuments(selectedDocuments)} onRenew={renewCertificate} onSchedule={(certificate) => { setVisitCertificateId(certificate.id); setModal('visit'); }} onSelect={selectCertificate} onSelectCategory={selectCategoryScope} onSelectVessel={selectVesselScope} onToggleSelection={toggleDocumentSelection} revealMatches={Boolean(search.trim()) || statusFilter !== 'all'} selectedCertificateId={selectedCertificateId} selectedDocumentIds={selectedDocumentIds} selectedScopeCategoryKey={scopeCategoryKey} selectedScopeVesselName={scopeVesselName} />
       </section>
 
       <section className="fcx-workspace-card">
@@ -723,8 +735,8 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
 
           {activeTab === 'visits' ? <FleetCertificateVisitCalendar embedded canManage={manager} onSchedule={() => setModal('visit-target')} onSelectDocument={(certificateId) => { const certificate = certificates.find((item) => item.id === certificateId); if (certificate) selectCertificate(certificate); }} visits={scopedVisits} /> : null}
 
-          {activeTab === 'preview' ? <><FleetCertificateDocumentPreview canEdit={manager && (!previewVersion || previewVersion.isCurrent)} certificate={previewCertificate} error={previewError} isLoading={isPreviewLoading} onDownload={(certificate) => downloadDocuments([certificate])} onEdit={() => setModal('metadata')} onRenew={() => selectedCertificate && renewCertificate(selectedCertificate)} previewUrl={previewUrl} previewVersion={previewVersion} />
-            {selectedCertificate ? <FleetCertificateVersionsPanel key={selectedCertificate.id} canValidate={manager} certificate={selectedCertificate} client={effectiveClient} onPreview={(version) => setVersionToPreview({ certificateId: selectedCertificate.id, version })} onValidated={async () => { await load(); setVersionToPreview(null); setMessage('Version validée et document disponible.'); }} /> : null}
+          {activeTab === 'preview' ? <><FleetCertificateDocumentPreview canDownload={canDownload} canEdit={manager && (!previewVersion || previewVersion.isCurrent)} certificate={previewCertificate} error={previewError} isDownloading={isDownloading} isLoading={isPreviewLoading} onDownload={(certificate) => downloadDocuments([certificate])} onEdit={() => setModal('metadata')} onRenew={() => selectedCertificate && renewCertificate(selectedCertificate)} previewUrl={previewUrl} previewVersion={previewVersion} />
+            {selectedCertificate ? <FleetCertificateVersionsPanel key={selectedCertificate.id} canPreview={canDownload} canValidate={manager} certificate={selectedCertificate} client={effectiveClient} onPreview={(version) => { if (canDownload) setVersionToPreview({ certificateId: selectedCertificate.id, version }); }} onValidated={async () => { await load(); setVersionToPreview(null); setMessage('Version validée et document disponible.'); }} /> : null}
           </> : null}
         </div>
       </section>

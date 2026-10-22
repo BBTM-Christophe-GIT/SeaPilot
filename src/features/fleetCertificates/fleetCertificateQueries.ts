@@ -471,14 +471,28 @@ export async function downloadFleetCertificateDocuments(
 ): Promise<void> {
   if (!certificates.length) throw new Error('Sélectionnez au moins un document.');
 
-  const documents = await Promise.all(certificates.map(async (certificate) => {
+  const downloadDocument = async (certificate: FleetCertificateRecord) => {
     if (!certificate.storageBucket || !certificate.storagePath) {
       throw new Error(`Le document « ${certificate.documentTitle} » est indisponible.`);
     }
-    const { data, error } = await client.storage.from(certificate.storageBucket).download(certificate.storagePath);
-    if (error || !data) throw error || new Error(`Impossible de télécharger « ${certificate.documentTitle} ».`);
-    return { blob: data, fileName: certificate.fileName || certificate.originalFileName || `${certificate.documentTitle}.pdf` };
-  }));
+    try {
+      const { data, error } = await client.storage.from(certificate.storageBucket).download(certificate.storagePath);
+      if (error || !data) throw error || new Error('Le fichier est indisponible.');
+      return { blob: data, fileName: certificate.fileName || certificate.originalFileName || `${certificate.documentTitle}.pdf` };
+    } catch (failure) {
+      const detail = failure && typeof failure === 'object' && 'message' in failure ? String(failure.message) : '';
+      throw new Error(`Impossible de télécharger « ${certificate.documentTitle} ».${detail ? ` ${detail}` : ''}`);
+    }
+  };
+  const documents: Array<{ blob: Blob; fileName: string }> = [];
+  // Keep the authenticated document gateway responsive when a whole vessel is selected.
+  for (let start = 0; start < certificates.length; start += 3) {
+    const batch = await Promise.allSettled(certificates.slice(start, start + 3).map(downloadDocument));
+    for (const result of batch) {
+      if (result.status === 'rejected') throw result.reason;
+      documents.push(result.value);
+    }
+  }
 
   if (documents.length === 1) {
     triggerBlobDownload(documents[0].blob, documents[0].fileName);
@@ -487,7 +501,9 @@ export async function downloadFleetCertificateDocuments(
 
   const { default: JSZip } = await import('jszip');
   const archive = new JSZip();
-  documents.forEach(({ blob, fileName }) => archive.file(fileName, blob));
+  for (const { blob, fileName } of documents) {
+    archive.file(fileName, await blob.arrayBuffer());
+  }
   const generated = await archive.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
   triggerBlobDownload(generated, `Certificats-flotte-${isoDate(new Date())}.zip`);
 }
