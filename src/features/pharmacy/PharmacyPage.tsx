@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, BellRing, Check, CheckCircle2, ChevronDown, Download, FileCheck2, FileUp, Package, Pencil, Plus, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { AlertTriangle, BellRing, Check, CheckCircle2, ChevronDown, Download, FileCheck2, FileUp, Folders, Package, Pencil, Plus, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { canManagePharmacy, formatPharmacyDate, groupPharmacyItems, pharmacyExpiryStatus, pharmacyStockStatus, selectPharmacyVessels, type PharmacyControl, type PharmacyItem, type PharmacyItemDraft, type PharmacyVessel, type PharmacyVesselExpiryCounts } from './pharmacyModel';
-import { downloadPharmacyControl, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
+import { canManagePharmacy, formatPharmacyDate, groupPharmacyItems, pharmacyExpiryStatus, pharmacyStockStatus, selectPharmacyVessels, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyItemDraft, type PharmacyVessel, type PharmacyVesselExpiryCounts } from './pharmacyModel';
+import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
+import { PharmacyCategoriesDialog } from './PharmacyCategoriesDialog';
 import { PharmacyControlForm, PharmacyItemForm } from './PharmacyForms';
 import { PharmacyVesselStrip } from './PharmacyVesselStrip';
 import { PharmacyIcon } from './PharmacyIcon';
@@ -18,6 +19,7 @@ type ItemFilter = 'all' | 'attention' | 'expiry' | 'expired' | 'due' | 'low' | '
 const FILTER_LABELS: Record<ItemFilter, string> = { all: 'Tous les articles', attention: 'À traiter', expiry: 'Péremptions à traiter', expired: 'Périmés', due: 'Échéance ≤ 30 j', low: 'Stock insuffisant', unknown: 'À vérifier' };
 function requestedFilter(value: string | null): ItemFilter { return value && value in FILTER_LABELS ? value as ItemFilter : 'all'; }
 function messageOf(error: unknown) { return error && typeof error === 'object' && 'message' in error ? String(error.message) : 'Impossible de réaliser cette opération. Réessayez.'; }
+const categoryKey = (name: string) => name.trim().toLocaleLowerCase('fr');
 function expiryLabel(item: PharmacyItem) {
   const status = pharmacyExpiryStatus(item.expires_on);
   return status === 'expired' ? 'Périmé' : status === 'due' ? 'Échéance ≤ 30 j' : status === 'unknown' ? 'Date à vérifier' : 'Date valide';
@@ -45,6 +47,10 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   const [vesselId, setVesselId] = useState(() => Number(searchParams.get('vessel')) || 0);
   const [items, setItems] = useState<PharmacyItem[]>([]);
   const [controls, setControls] = useState<PharmacyControl[]>([]);
+  const [categoryRecords, setCategoryRecords] = useState<PharmacyCategory[]>([]);
+  const [categoryScope, setCategoryScope] = useState<{ client: SupabaseClient; vessel: PharmacyVessel } | null>(null);
+  const categoryInFlight = useRef(false);
+  const categoryContextId = useRef(0);
   const [vesselExpiryCounts, setVesselExpiryCounts] = useState<Record<number, PharmacyVesselExpiryCounts> | null>(null);
   const [countsLoading, setCountsLoading] = useState(true);
   const [countsError, setCountsError] = useState('');
@@ -68,7 +74,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   const vessel = vessels.find((entry) => entry.id === vesselId);
   const manager = !!vessel?.can_manage && canManagePharmacy(roles || context?.roles || []);
   const active = items.filter((item) => item.active);
-  const categories = [...new Set(items.map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr', { numeric: true }));
+  const categories = [...new Set([...categoryRecords.map((entry) => entry.name), ...items.map((item) => item.category)].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr', { numeric: true }));
   const currentControl = controls.find((control) => control.is_current);
   const controlStatus = pharmacyExpiryStatus(currentControl?.expires_on || null);
   const counts = { expired: active.filter((item) => pharmacyExpiryStatus(item.expires_on) === 'expired').length, due: active.filter((item) => pharmacyExpiryStatus(item.expires_on) === 'due').length, low: active.filter((item) => pharmacyStockStatus(item) === 'low').length, unknown: active.filter((item) => pharmacyExpiryStatus(item.expires_on) === 'unknown' || pharmacyStockStatus(item) === 'unknown').length };
@@ -130,12 +136,18 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
     if (requested && vessels.some((entry) => entry.id === requested)) setVesselId(requested);
   }, [searchParams, vessels]);
   useEffect(() => {
+    categoryContextId.current += 1;
+    setCategoryScope(null);
+    return () => { categoryContextId.current += 1; };
+  }, [db, vesselId, manager, searchFilter]);
+  useEffect(() => {
     setRemoval(null); setRemovalError('');
-    if (!vessel) { setItems([]); setControls([]); setSelected(null); return; }
+    setCategoryScope(null);
+    if (!vessel) { setItems([]); setControls([]); setCategoryRecords([]); setSelected(null); return; }
     if (preview && !previewClient) return;
     const id = ++requestId.current;
-    setLoading(true); setItems([]); setControls([]); setSelected(null); setError(''); setNotice(''); setQuery(''); setCategory(''); setFilter(requestedFilter(searchFilter)); setShowInactive(false); setEditor(null); setControlOpen(false);
-    void fetchPharmacyRegister(db, vesselId).then((loaded) => { if (id === requestId.current) { setItems(loaded.items); setControls(loaded.controls); } }).catch((reason) => { if (id === requestId.current) setError(messageOf(reason)); }).finally(() => { if (id === requestId.current) setLoading(false); });
+    setLoading(true); setItems([]); setControls([]); setCategoryRecords([]); setSelected(null); setError(''); setNotice(''); setQuery(''); setCategory(''); setFilter(requestedFilter(searchFilter)); setShowInactive(false); setEditor(null); setControlOpen(false);
+    void fetchPharmacyRegister(db, vesselId).then((loaded) => { if (id === requestId.current) { setItems(loaded.items); setControls(loaded.controls); setCategoryRecords(loaded.categories); } }).catch((reason) => { if (id === requestId.current) setError(messageOf(reason)); }).finally(() => { if (id === requestId.current) setLoading(false); });
     return () => { requestId.current += 1; };
   }, [db, vessel, vesselId, preview, previewClient, searchFilter]);
 
@@ -143,7 +155,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
     if (!vesselId) return;
     if (refreshCounts) void refreshVesselCounts();
     const id = ++requestId.current; setLoading(true); setError('');
-    try { const loaded = await fetchPharmacyRegister(db, vesselId); if (id === requestId.current) { setItems(loaded.items); setControls(loaded.controls); setSelected(null); } }
+    try { const loaded = await fetchPharmacyRegister(db, vesselId); if (id === requestId.current) { setItems(loaded.items); setControls(loaded.controls); setCategoryRecords(loaded.categories); setSelected(null); } }
     catch (reason) { if (id === requestId.current) setError(messageOf(reason)); }
     finally { if (id === requestId.current) setLoading(false); }
   }
@@ -153,6 +165,64 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
     try { await savePharmacyItem(db, vessel.id, draft, editor?.item); setEditor(null); await reload(false); setNotice('Article enregistré.'); window.dispatchEvent(new Event('pharmacy:changed')); }
     catch (reason) { setFormError(messageOf(reason)); }
     finally { setBusy(false); }
+  }
+  async function changeCategory(operation: 'save' | 'delete', value: string, target?: PharmacyCategory) {
+    const scope = categoryScope;
+    if (!scope || scope.client !== db || scope.vessel.id !== vesselId || !manager) throw new Error('Le navire ou les droits ont changé. Rouvrez la gestion des catégories.');
+    if (loading) throw new Error('L’inventaire est en cours d’actualisation. Réessayez après son chargement.');
+    if (busy || categoryInFlight.current) throw new Error('Une modification est déjà en cours.');
+    if (target) {
+      const current = categoryRecords.find((entry) => entry.id === target.id && entry.vessel_id === vesselId);
+      if (target.vessel_id !== vesselId || target.company_id !== scope.vessel.company_id || !current || current.revision !== target.revision || current.name !== target.name) {
+        throw new Error('Cette catégorie a été modifiée. Actualisez l’inventaire avant de réessayer.');
+      }
+    } else if (operation === 'delete') throw new Error('Catégorie introuvable.');
+    const name = value.trim();
+    if (operation === 'save') {
+      if (!name || name.length > 200) throw new Error('Saisissez un nom de catégorie de 1 à 200 caractères.');
+      if (categoryRecords.some((entry) => entry.id !== target?.id && categoryKey(entry.name) === categoryKey(name))) throw new Error('Une catégorie porte déjà ce nom sur ce navire.');
+    }
+    const contextId = categoryContextId.current;
+    categoryInFlight.current = true; setBusy(true); setError(''); setNotice('');
+    try {
+      let savedId: number;
+      if (operation === 'save') savedId = await savePharmacyCategory(db, scope.vessel.id, name, target);
+      else {
+        if (!target) throw new Error('Catégorie introuvable.');
+        await deletePharmacyCategory(db, scope.vessel.id, target); savedId = target.id;
+      }
+      const success = operation === 'delete'
+        ? `Catégorie « ${target!.name} » supprimée. Les articles et leur historique sont conservés.`
+        : `Catégorie « ${name} » ${target ? 'renommée' : 'ajoutée'} pour ${scope.vessel.name}.`;
+      if (contextId === categoryContextId.current) {
+        const now = new Date().toISOString();
+        setCategoryRecords((previous) => operation === 'delete' ? previous.filter((entry) => entry.id !== savedId)
+          : [...previous.filter((entry) => entry.id !== savedId), { id: savedId, company_id: scope.vessel.company_id, vessel_id: scope.vessel.id,
+            name, revision: target ? target.revision + 1 : 1, created_at: target?.created_at || now, updated_at: now }]);
+        if (target) {
+          const replacement = operation === 'delete' ? '' : name;
+          const updateCategory = (item: PharmacyItem) => item.vessel_id === scope.vessel.id && categoryKey(item.category) === categoryKey(target.name) && item.category !== replacement
+            ? { ...item, category: replacement, revision: item.revision + 1, updated_at: now } : item;
+          setItems((previous) => previous.map(updateCategory));
+          setSelected((previous) => previous ? updateCategory(previous) : null);
+          setCategory((previous) => categoryKey(previous) === categoryKey(target.name) ? (operation === 'delete' ? '' : name) : previous);
+        }
+        setNotice(success);
+      }
+      window.dispatchEvent(new Event('pharmacy:changed'));
+      if (contextId === categoryContextId.current) {
+        const refreshId = ++requestId.current;
+        try {
+          const loaded = await fetchPharmacyRegister(db, scope.vessel.id);
+          if (contextId === categoryContextId.current && refreshId === requestId.current) {
+            setItems(loaded.items); setControls(loaded.controls); setCategoryRecords(loaded.categories);
+            setSelected((previous) => previous ? loaded.items.find((item) => item.id === previous.id && item.vessel_id === scope.vessel.id) || null : null);
+          }
+        } catch {
+          if (contextId === categoryContextId.current && refreshId === requestId.current) setNotice(`${success} L’actualisation est indisponible ; utilisez Actualiser l’inventaire pour réessayer.`);
+        }
+      }
+    } finally { categoryInFlight.current = false; setBusy(false); }
   }
   async function removeItem() {
     if (!removal || busy || removalInFlight.current || !manager || removal.client !== db || removal.item.vessel_id !== vesselId) return;
@@ -186,7 +256,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
         const refreshId = ++requestId.current;
         try {
           const loaded = await fetchPharmacyRegister(db, target.vessel_id);
-          if (refreshId === requestId.current) { setItems(loaded.items); setControls(loaded.controls); }
+          if (refreshId === requestId.current) { setItems(loaded.items); setControls(loaded.controls); setCategoryRecords(loaded.categories); }
         } catch {
           if (refreshId === requestId.current) setNotice(`${success} L’actualisation est indisponible ; utilisez Actualiser l’inventaire pour réessayer.`);
         }
@@ -213,7 +283,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   return <section className="pharmacy-page">
     <header className="pharmacy-heading"><div><p>REGISTRES · SÉCURITÉ À BORD</p><h1><PharmacyIcon aria-hidden="true" size={27} /> Inventaire Pharmacie</h1></div></header>
     {preview ? <div className="pharmacy-demo">Démonstration · données fictives. Les inventaires importés sont disponibles dans l’espace connecté.</div> : null}
-    <div className="pharmacy-vessel-bar"><PharmacyVesselStrip vessels={vessels} value={vesselId} disabled={busy} counts={vesselExpiryCounts} loading={countsLoading} onChange={(id) => { setVesselId(id); setSearchParams({ vessel: String(id) }, { replace: true }); }} /><div className="pharmacy-vessel-actions"><span className="pharmacy-vessel-meta">{loading ? 'Chargement de l’inventaire…' : `${active.length} articles actifs`}{!manager && vessel ? ' · Consultation' : ''}</span><div><button className="pharmacy-icon-button" aria-label="Actualiser l’inventaire" disabled={busy || loading || !vessel} onClick={() => void reload()} type="button"><RotateCcw size={17} /></button>{manager ? <button className="primary-button" disabled={loading || busy} onClick={() => { setFormError(''); setEditor({}); }} type="button"><Plus size={16} /> Ajouter un article</button> : null}</div></div></div>
+    <div className="pharmacy-vessel-bar"><PharmacyVesselStrip vessels={vessels} value={vesselId} disabled={busy} counts={vesselExpiryCounts} loading={countsLoading} onChange={(id) => { setVesselId(id); setSearchParams({ vessel: String(id) }, { replace: true }); }} /><div className="pharmacy-vessel-actions"><span className="pharmacy-vessel-meta">{loading ? 'Chargement de l’inventaire…' : `${active.length} articles actifs`}{!manager && vessel ? ' · Consultation' : ''}</span><div><button className="pharmacy-icon-button" aria-label="Actualiser l’inventaire" disabled={busy || loading || !vessel} onClick={() => void reload()} type="button"><RotateCcw size={17} /></button>{manager ? <><button className="sp-button sp-button--secondary" disabled={loading || busy} onClick={() => { if (!vessel) return; setNotice(''); setCategoryScope({ client: db, vessel: { ...vessel } }); }} type="button"><Folders aria-hidden="true" size={16} /> Gérer les catégories</button><button className="primary-button" disabled={loading || busy} onClick={() => { setFormError(''); setEditor({}); }} type="button"><Plus size={16} /> Ajouter un article</button></> : null}</div></div></div>
     {countsError ? <div className="pharmacy-message is-warning" role="alert">Compteurs d’échéance indisponibles : {countsError} Utilisez Actualiser l’inventaire pour réessayer.</div> : null}
     {error ? <div role="alert" className="pharmacy-message is-error">{error}</div> : null}{notice ? <div role="status" className="pharmacy-message is-success"><CheckCircle2 size={15} />{notice}</div> : null}
     <div className="pharmacy-metrics" aria-label="Synthèse de l’inventaire">
@@ -242,6 +312,10 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
       </aside>
     </div>
     {editor ? <PharmacyItemForm item={editor.item} categories={categories} busy={busy} error={formError} onClose={() => setEditor(null)} onSave={(draft) => void saveItem(draft)} /> : null}
+    {categoryScope && categoryScope.client === db && categoryScope.vessel.id === vesselId && manager ? <PharmacyCategoriesDialog
+      vesselName={categoryScope.vessel.name} categories={categoryRecords} items={items} busy={busy || loading} notice={notice}
+      onClose={() => { if (!categoryInFlight.current) setCategoryScope(null); }}
+      onSave={(name, target) => changeCategory('save', name, target)} onDelete={(target) => changeCategory('delete', '', target)} /> : null}
     {removal && removal.client === db && removal.item.vessel_id === vesselId && manager ? <AppDialog
       title={`Supprimer ${removal.item.designation || removal.item.brand || 'Article sans désignation'}`}
       eyebrow={`Inventaire Pharmacie · ${removal.vesselName}`} icon={<Trash2 aria-hidden="true" size={20} />} size="sm" isBusy={busy}

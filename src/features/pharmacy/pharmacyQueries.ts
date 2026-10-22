@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { PharmacyControl, PharmacyItem, PharmacyItemDraft, PharmacyNotification, PharmacyVessel, PharmacyVesselExpiryCounts } from './pharmacyModel';
+import type { PharmacyCategory, PharmacyControl, PharmacyItem, PharmacyItemDraft, PharmacyNotification, PharmacyVessel, PharmacyVesselExpiryCounts } from './pharmacyModel';
 import { PHARMACY_ALERT_DAYS, pharmacyDaysUntil } from './pharmacyModel';
 
 export async function fetchPharmacyVessels(client: SupabaseClient): Promise<PharmacyVessel[]> {
@@ -7,14 +7,29 @@ export async function fetchPharmacyVessels(client: SupabaseClient): Promise<Phar
   if (error) throw error;
   return data || [];
 }
-export async function fetchPharmacyRegister(client: SupabaseClient, vesselId: number): Promise<{ items: PharmacyItem[]; controls: PharmacyControl[] }> {
-  const [items, controls] = await Promise.all([
+export async function fetchPharmacyRegister(client: SupabaseClient, vesselId: number): Promise<{ items: PharmacyItem[]; controls: PharmacyControl[]; categories: PharmacyCategory[] }> {
+  const [items, controls, categories] = await Promise.all([
     client.from('pharmacy_inventory').select('*').eq('vessel_id', vesselId).order('id'),
     client.from('pharmacy_controls').select('*').eq('vessel_id', vesselId).order('created_at', { ascending: false }).order('id', { ascending: false }),
+    client.from('pharmacy_categories').select('*').eq('vessel_id', vesselId).order('name'),
   ]);
   if (items.error) throw items.error;
   if (controls.error) throw controls.error;
-  return { items: (items.data || []) as PharmacyItem[], controls: (controls.data || []) as PharmacyControl[] };
+  if (categories.error) throw categories.error;
+  return { items: (items.data || []) as PharmacyItem[], controls: (controls.data || []) as PharmacyControl[], categories: (categories.data || []) as PharmacyCategory[] };
+}
+export async function savePharmacyCategory(client: SupabaseClient, vesselId: number, name: string, category?: PharmacyCategory): Promise<number> {
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > 200) throw new Error('Renseignez un nom de catégorie entre 1 et 200 caractères.');
+  if (category && category.vessel_id !== vesselId) throw new Error('Cette catégorie appartient à un autre navire.');
+  const { data, error } = await client.rpc('save_pharmacy_category', { p_vessel_id: vesselId, p_name: trimmed, p_id: category?.id ?? null, p_revision: category?.revision ?? null });
+  if (error) throw error;
+  return data as number;
+}
+export async function deletePharmacyCategory(client: SupabaseClient, vesselId: number, category: PharmacyCategory): Promise<void> {
+  if (category.vessel_id !== vesselId) throw new Error('Cette catégorie appartient à un autre navire.');
+  const { error } = await client.rpc('delete_pharmacy_category', { p_vessel_id: vesselId, p_id: category.id, p_revision: category.revision });
+  if (error) throw error;
 }
 export async function savePharmacyItem(client: SupabaseClient, vesselId: number, draft: PharmacyItemDraft, item?: PharmacyItem): Promise<number> {
   const { data, error } = await client.rpc('save_pharmacy_item', { p_vessel_id: vesselId, p_item: draft, p_id: item?.id ?? null, p_revision: item?.revision ?? null });

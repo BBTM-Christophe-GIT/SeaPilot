@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { PHARMACY_ALERT_DAYS, blankPharmacyItem, pharmacyDaysUntil, pharmacyToday, type PharmacyControl, type PharmacyItem, type PharmacyNotification, type PharmacyVessel } from './pharmacyModel';
+import { PHARMACY_ALERT_DAYS, blankPharmacyItem, pharmacyDaysUntil, pharmacyToday, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyNotification, type PharmacyVessel } from './pharmacyModel';
 
 // Synthetic preview data only. The customer workbooks are imported into the protected database.
 export function createPharmacyPreviewClient(): SupabaseClient {
@@ -25,8 +25,19 @@ export function createPharmacyPreviewClient(): SupabaseClient {
   ] as const;
   const items: PharmacyItem[] = vessels.flatMap((vessel, vesselIndex) => examples.map(([designation, category, quantity, required, days], index) => ({ ...blankPharmacyItem(), id: vesselIndex * 100 + index + 1, company_id: 99, vessel_id: vessel.id, section: 'DOTATION DE DÉMONSTRATION', category, designation, brand: '', lot_number: days === null ? '' : `DEMO-${index + 1}`, quantity, required_quantity: required, expires_on: days === null ? null : dateAt(days), expiry_text: '', expiry_precision: days === null ? 'unknown' : 'day', notes: 'Article fictif pour présentation de l’interface.', source_file: '', source_sheet: '', source_row: null, revision: 1, updated_at: new Date().toISOString() })));
   const controls: PharmacyControl[] = [];
+  const categories: PharmacyCategory[] = vessels.flatMap((vessel, vesselIndex) => [...new Set(items.filter((item) => item.vessel_id === vessel.id).map((item) => item.category))]
+    .map((name, index) => ({ id: vesselIndex * 100 + index + 1, company_id: 99, vessel_id: vessel.id, name, revision: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })));
   const files = new Map<string, Blob>();
-  const tables = { pharmacy_inventory: items, pharmacy_controls: controls };
+  const tables = { pharmacy_inventory: items, pharmacy_controls: controls, pharmacy_categories: categories };
+  const categoryKey = (name: string) => name.trim().toLocaleLowerCase('fr');
+  function registerCategory(vesselId: number, name: string): string {
+    const trimmed = name.trim();
+    if (!trimmed) return '';
+    const existing = categories.find((category) => category.vessel_id === vesselId && categoryKey(category.name) === categoryKey(trimmed));
+    if (existing) return existing.name;
+    categories.push({ id: Math.max(0, ...categories.map((category) => category.id)) + 1, company_id: 99, vessel_id: vesselId, name: trimmed, revision: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+    return trimmed;
+  }
   function query(rows: unknown[]) {
     let selected = [...rows] as Record<string, unknown>[];
     const chain = { select: () => chain, eq: (key: string, value: unknown) => { selected = selected.filter((row) => row[key] === value); return chain; }, order: () => chain, then: (resolve: (value: unknown) => void) => Promise.resolve({ data: structuredClone(selected), error: null }).then(resolve) };
@@ -36,6 +47,26 @@ export function createPharmacyPreviewClient(): SupabaseClient {
     from: (name: keyof typeof tables) => query(tables[name] || []),
     rpc: async (name: string, args: Record<string, unknown> = {}) => {
       if (name === 'pharmacy_available_vessels') return { data: vessels, error: null };
+      if (name === 'save_pharmacy_category' || name === 'delete_pharmacy_category') {
+        const vesselId = Number(args.p_vessel_id);
+        if (!vessels.some((vessel) => vessel.id === vesselId)) return { data: null, error: { message: 'Navire introuvable.' } };
+        const old = categories.find((category) => category.id === args.p_id && category.vessel_id === vesselId);
+        if (args.p_id != null && (!old || old.revision !== args.p_revision)) return { data: null, error: { message: 'Cette catégorie a été modifiée. Actualisez l’inventaire.' } };
+        const trimmed = String(args.p_name || '').trim();
+        if (name === 'save_pharmacy_category' && (!trimmed || trimmed.length > 200)) return { data: null, error: { message: 'Nom de catégorie invalide.' } };
+        if (name === 'save_pharmacy_category' && categories.some((category) => category.vessel_id === vesselId && category.id !== old?.id && categoryKey(category.name) === categoryKey(trimmed))) return { data: null, error: { message: 'Cette catégorie existe déjà pour ce navire.' } };
+        if (!old && name === 'save_pharmacy_category') {
+          registerCategory(vesselId, trimmed);
+          return { data: categories.at(-1)!.id, error: null };
+        }
+        if (!old) return { data: null, error: { message: 'Catégorie introuvable.' } };
+        for (const item of items) {
+          if (item.vessel_id === vesselId && item.category === old.name) Object.assign(item, { category: name === 'delete_pharmacy_category' ? '' : trimmed, revision: item.revision + 1, updated_at: new Date().toISOString() });
+        }
+        if (name === 'delete_pharmacy_category') categories.splice(categories.indexOf(old), 1);
+        else Object.assign(old, { name: trimmed, revision: old.revision + 1, updated_at: new Date().toISOString() });
+        return { data: name === 'delete_pharmacy_category' ? null : old.id, error: null };
+      }
       if (name === 'pharmacy_notifications') {
         const today = pharmacyToday();
         const notifications: PharmacyNotification[] = [];
@@ -57,7 +88,9 @@ export function createPharmacyPreviewClient(): SupabaseClient {
       if (name === 'save_pharmacy_item') {
         const old = items.find((item) => item.id === args.p_id);
         if (old && old.revision !== args.p_revision) return { data: null, error: { message: 'Cet article a été modifié. Actualisez l’inventaire.' } };
-        const draft = args.p_item as Partial<PharmacyItem>;
+        const vesselId = Number(args.p_vessel_id);
+        const input = args.p_item as Partial<PharmacyItem>;
+        const draft = { ...input, category: registerCategory(vesselId, input.category || '') };
         if (old) Object.assign(old, draft, { revision: old.revision + 1 });
         else items.push({ ...items[0], ...draft, id: Math.max(...items.map((item) => item.id)) + 1, vessel_id: Number(args.p_vessel_id), source_file: '', source_sheet: '', source_row: null, revision: 1 });
         return { data: old?.id || items.at(-1)?.id, error: null };

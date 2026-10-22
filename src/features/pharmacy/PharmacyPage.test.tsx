@@ -5,10 +5,10 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PharmacyPage } from './PharmacyPage';
 import type { RoleKey } from '../permissions/roles';
-import { blankPharmacyItem, type PharmacyControl, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
-import { downloadPharmacyControl, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
+import { blankPharmacyItem, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
+import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
 
-vi.mock('./pharmacyQueries', async (importOriginal) => ({ ...await importOriginal<typeof import('./pharmacyQueries')>(), fetchPharmacyVessels: vi.fn(), fetchPharmacyVesselExpiryCounts: vi.fn(), fetchPharmacyRegister: vi.fn(), savePharmacyItem: vi.fn(), uploadPharmacyControl: vi.fn(), downloadPharmacyControl: vi.fn() }));
+vi.mock('./pharmacyQueries', async (importOriginal) => ({ ...await importOriginal<typeof import('./pharmacyQueries')>(), fetchPharmacyVessels: vi.fn(), fetchPharmacyVesselExpiryCounts: vi.fn(), fetchPharmacyRegister: vi.fn(), savePharmacyItem: vi.fn(), savePharmacyCategory: vi.fn(), deletePharmacyCategory: vi.fn(), uploadPharmacyControl: vi.fn(), downloadPharmacyControl: vi.fn() }));
 const client = {} as SupabaseClient;
 const vessels: PharmacyVessel[] = [{ id: 1, company_id: 1, name: 'GOURY', acronym: 'GRY', can_manage: true }, { id: 2, company_id: 1, name: 'SUROIT', acronym: 'SUR', can_manage: true }, { id: 3, company_id: 1, name: 'HIRONDELLE DE LA MANCHE', acronym: 'HIR', can_manage: true }];
 const vesselExpiryCounts = { 1: { due: 2, expired: 1 }, 2: { due: 7, expired: 0 }, 3: { due: 0, expired: 5 } };
@@ -16,6 +16,7 @@ const item: PharmacyItem = { ...blankPharmacyItem(), id: 1, company_id: 1, vesse
 const expired: PharmacyItem = { ...item, id: 2, category: '2. SOINS', designation: 'ARTICLE PÉRIMÉ', quantity: '2 boîtes', expires_on: '2000-10-01', notes: 'OK' };
 const missing: PharmacyItem = { ...item, id: 3, designation: 'ARTICLE SANS DATE', quantity: '', expires_on: null, expiry_precision: 'unknown' };
 const control: PharmacyControl = { id: 20, company_id: 1, vessel_id: 1, issued_on: '2026-01-01', expires_on: '2099-01-01', storage_path: '1/1/control.pdf', file_name: 'Contrôle.pdf', file_size: 100, mime_type: 'application/pdf', created_at: '2026-01-01T00:00:00Z', is_current: true, revision: 1 };
+const categoryFixtures: PharmacyCategory[] = ['1. CARDIOLOGIE', '2. SOINS'].map((name, index) => ({ id: 101 + index, company_id: 1, vessel_id: 1, name, revision: 2, created_at: '2026-10-22T00:00:00Z', updated_at: '2026-10-22T00:00:00Z' }));
 function page(roles: RoleKey[] = ['admin'], initial = '/modules/pharmacy') { return render(<MemoryRouter initialEntries={[initial]}><PharmacyPage client={client} roles={roles} /></MemoryRouter>); }
 
 describe('PharmacyPage', () => {
@@ -24,8 +25,10 @@ describe('PharmacyPage', () => {
     vi.clearAllMocks();
     vi.mocked(fetchPharmacyVessels).mockResolvedValue(vessels);
     vi.mocked(fetchPharmacyVesselExpiryCounts).mockResolvedValue(vesselExpiryCounts);
-    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item, expired, missing], controls: [] });
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item, expired, missing], controls: [], categories: categoryFixtures });
     vi.mocked(savePharmacyItem).mockResolvedValue(1);
+    vi.mocked(savePharmacyCategory).mockResolvedValue(120);
+    vi.mocked(deletePharmacyCategory).mockResolvedValue(undefined);
     vi.mocked(uploadPharmacyControl).mockResolvedValue(20);
   });
   it('shows source quantities, month precision and missing control without inventing a date', async () => {
@@ -60,6 +63,7 @@ describe('PharmacyPage', () => {
     expect(screen.queryByRole('button', { name: 'Déposer le document' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier ARTICLE SOURCE' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Supprimer / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gérer les catégories' })).not.toBeInTheDocument();
   });
   it('requires vessel authorization for a captain and respects the vessel deep link', async () => {
     vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[1], can_manage: false }]);
@@ -69,6 +73,7 @@ describe('PharmacyPage', () => {
     expect(screen.getByRole('button', { name: 'SUROIT' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('button', { name: 'Ajouter un article' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Supprimer / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gérer les catégories' })).not.toBeInTheDocument();
   });
   it('orders the selectable vessels by length and defaults to the longest instead of BR71', async () => {
     vi.mocked(fetchPharmacyVessels).mockResolvedValue([
@@ -91,7 +96,7 @@ describe('PharmacyPage', () => {
     expect(fetchPharmacyRegister).not.toHaveBeenCalledWith(client, 71);
   });
   it('clears the previous inventory and control when a new client only returns BR71', async () => {
-    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item], controls: [control] });
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item], controls: [control], categories: categoryFixtures });
     const { rerender } = page();
     await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
     await userEvent.click(screen.getByRole('button', { name: 'ARTICLE SOURCE' }));
@@ -132,7 +137,7 @@ describe('PharmacyPage', () => {
   });
   it('uploads a control and its expiry, retaining the current control id for concurrency', async () => {
     const user = userEvent.setup();
-    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item], controls: [control] });
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item], controls: [control], categories: categoryFixtures });
     page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
     await user.click(screen.getByRole('button', { name: 'Nouveau contrôle' }));
     const dialog = screen.getByRole('dialog');
@@ -167,18 +172,18 @@ describe('PharmacyPage', () => {
     expect(within(dialog).getByRole('button', { name: 'Enregistrer le contrôle' })).toBeEnabled();
   });
   it('does not display an earlier vessel response after switching vessel', async () => {
-    let resolveFirst: (value: { items: PharmacyItem[]; controls: PharmacyControl[] }) => void = () => undefined;
-    vi.mocked(fetchPharmacyRegister).mockImplementation((_db, id) => id === 1 ? new Promise((resolve) => { resolveFirst = resolve; }) : Promise.resolve({ items: [{ ...item, id: 40, vessel_id: 2, designation: 'ARTICLE SUROIT' }], controls: [] }));
+    let resolveFirst: (value: { items: PharmacyItem[]; controls: PharmacyControl[]; categories: PharmacyCategory[] }) => void = () => undefined;
+    vi.mocked(fetchPharmacyRegister).mockImplementation((_db, id) => id === 1 ? new Promise((resolve) => { resolveFirst = resolve; }) : Promise.resolve({ items: [{ ...item, id: 40, vessel_id: 2, designation: 'ARTICLE SUROIT' }], controls: [], categories: [] }));
     const user = userEvent.setup(); page();
     await waitFor(() => expect(fetchPharmacyRegister).toHaveBeenCalledWith(client, 1));
     await user.click(screen.getByRole('button', { name: 'SUROIT' }));
     expect(await screen.findByRole('button', { name: 'ARTICLE SUROIT' })).toBeInTheDocument();
-    resolveFirst({ items: [item], controls: [] });
+    resolveFirst({ items: [item], controls: [], categories: categoryFixtures });
     await waitFor(() => expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'ARTICLE SUROIT' })).toBeInTheDocument();
   });
   it('reports download failures without hiding the register', async () => {
-    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item], controls: [control] });
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item], controls: [control], categories: categoryFixtures });
     vi.mocked(downloadPharmacyControl).mockRejectedValue(new Error('Document inaccessible.'));
     page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
     await userEvent.click(screen.getByRole('button', { name: 'Télécharger le document' }));
@@ -188,7 +193,7 @@ describe('PharmacyPage', () => {
   it('groups visible articles under their numbered categories in natural order', async () => {
     const user = userEvent.setup();
     const dermatology = { ...item, id: 10, category: '10. DERMATOLOGIE', designation: 'ARTICLE DERMATOLOGIE' };
-    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [dermatology, expired, missing, item], controls: [] });
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [dermatology, expired, missing, item], controls: [], categories: categoryFixtures });
     page();
     await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
     const table = screen.getByRole('table');
@@ -276,6 +281,7 @@ describe('PharmacyPage', () => {
   });
   it.each(['admin', 'direction', 'armement', 'capitaine'] as const)('offers a removal action on every line for an authorized %s fixture', async (role) => {
     page([role]); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    expect(screen.getByRole('button', { name: 'Gérer les catégories' })).toBeEnabled();
     const actions = screen.getAllByRole('button', { name: /^Supprimer / });
     expect(actions).toHaveLength(3);
     for (const action of actions) expect(action).toBeEnabled();
@@ -293,8 +299,8 @@ describe('PharmacyPage', () => {
     expect(savePharmacyItem).not.toHaveBeenCalled();
   });
   it('removes the confirmed line, refreshes expiry counts and keeps its source available among retired articles', async () => {
-    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item, expired, missing], controls: [] })
-      .mockResolvedValue({ items: [item, { ...expired, active: false, revision: 3 }, missing], controls: [] });
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item, expired, missing], controls: [], categories: categoryFixtures })
+      .mockResolvedValue({ items: [item, { ...expired, active: false, revision: 3 }, missing], controls: [], categories: categoryFixtures });
     const changed = vi.fn(); window.addEventListener('pharmacy:changed', changed);
     try {
       const user = userEvent.setup(); page();
@@ -340,8 +346,8 @@ describe('PharmacyPage', () => {
   it('prevents duplicate removals and closing the dialog while the guarded RPC is pending', async () => {
     let finish: (id: number) => void = () => undefined;
     vi.mocked(savePharmacyItem).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
-    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item], controls: [] })
-      .mockResolvedValue({ items: [{ ...item, active: false }], controls: [] });
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item], controls: [], categories: categoryFixtures })
+      .mockResolvedValue({ items: [{ ...item, active: false }], controls: [], categories: categoryFixtures });
     page(); fireEvent.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
     const dialog = screen.getByRole('dialog');
     const confirm = within(dialog).getByRole('button', { name: 'Supprimer' });
@@ -359,7 +365,7 @@ describe('PharmacyPage', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
   it('retains confirmed removal when refreshing the register fails instead of inviting a second deletion', async () => {
-    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item, expired], controls: [] })
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item, expired], controls: [], categories: categoryFixtures })
       .mockRejectedValueOnce(new Error('Connexion de lecture indisponible.'));
     const user = userEvent.setup(); page();
     await user.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
@@ -375,7 +381,7 @@ describe('PharmacyPage', () => {
     expect(savePharmacyItem).toHaveBeenCalledTimes(1);
   });
   it('disables removal for an already retired article while retaining its details and edit action', async () => {
-    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [{ ...item, active: false }, expired], controls: [] });
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [{ ...item, active: false }, expired], controls: [], categories: categoryFixtures });
     const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE PÉRIMÉ' });
     expect(screen.queryByRole('button', { name: 'Supprimer ARTICLE SOURCE' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('checkbox', { name: 'Inclure les articles retirés' }));
@@ -388,7 +394,7 @@ describe('PharmacyPage', () => {
   });
   it('discards the confirmation when changing vessel and targets only the newly selected vessel', async () => {
     const suroitItem = { ...item, id: 40, vessel_id: 2, designation: 'ARTICLE SUROIT', revision: 7 };
-    vi.mocked(fetchPharmacyRegister).mockImplementation(async (_db, id) => ({ items: id === 1 ? [item] : [suroitItem], controls: [] }));
+    vi.mocked(fetchPharmacyRegister).mockImplementation(async (_db, id) => ({ items: id === 1 ? [item] : [suroitItem], controls: [], categories: categoryFixtures }));
     const user = userEvent.setup(); page(['capitaine']);
     await user.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
     await user.click(screen.getByRole('button', { name: 'SUROIT' }));
@@ -402,8 +408,8 @@ describe('PharmacyPage', () => {
     expect(savePharmacyItem).toHaveBeenCalledExactlyOnceWith(client, 2, expect.objectContaining({ designation: 'ARTICLE SUROIT', active: false }), suroitItem);
   });
   it('does not apply a stale confirmation to a newly refreshed item revision', async () => {
-    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item], controls: [] })
-      .mockResolvedValue({ items: [{ ...item, revision: 3, quantity: '12' }], controls: [] });
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item], controls: [], categories: categoryFixtures })
+      .mockResolvedValue({ items: [{ ...item, revision: 3, quantity: '12' }], controls: [], categories: categoryFixtures });
     const user = userEvent.setup(); page();
     await user.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
     fireEvent.click(screen.getByRole('button', { name: 'Actualiser l’inventaire' }));
@@ -413,5 +419,125 @@ describe('PharmacyPage', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Cet article a été modifié.');
     expect(savePharmacyItem).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+  });
+  it('keeps a newly created empty category and its item-form suggestion when the follow-up refresh fails', async () => {
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item, expired, missing], controls: [], categories: categoryFixtures })
+      .mockRejectedValueOnce(new Error('Lecture indisponible.'));
+    const user = userEvent.setup(); page();
+    await user.click(await screen.findByRole('button', { name: 'Gérer les catégories' }));
+    const dialog = screen.getByRole('dialog', { name: 'Gérer les catégories' });
+    await user.type(within(dialog).getByLabelText('Nouvelle catégorie'), '  3. TROUSSE VIDE  ');
+    await user.click(within(dialog).getByRole('button', { name: 'Ajouter' }));
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('L’actualisation est indisponible');
+    const row = within(dialog).getByRole('button', { name: 'Renommer 3. TROUSSE VIDE' }).closest('li')!;
+    expect(row).toHaveTextContent('0 article');
+    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, '3. TROUSSE VIDE', undefined);
+    expect(within(dialog).getByLabelText('Nouvelle catégorie')).toHaveValue('');
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Ajouter' })).toBeEnabled());
+    await user.click(within(dialog).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
+    expect(screen.getByRole('combobox', { name: 'Catégorie' })).toContainElement(screen.getByRole('option', { name: '3. TROUSSE VIDE' }));
+    await user.click(screen.getByRole('button', { name: 'Ajouter un article' }));
+    const form = screen.getByRole('dialog', { name: 'Ajouter un article' });
+    expect([...form.querySelectorAll('datalist option')].map((option) => option.getAttribute('value'))).toContain('3. TROUSSE VIDE');
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+  });
+  it('follows a renamed category in the active filter and selected article, including retired source rows', async () => {
+    vi.mocked(savePharmacyCategory).mockResolvedValue(categoryFixtures[0].id);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item, { ...missing, active: false }, expired], controls: [], categories: categoryFixtures })
+      .mockRejectedValueOnce(new Error('Lecture indisponible.'));
+    const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Catégorie' }), '1. CARDIOLOGIE');
+    await user.click(screen.getByRole('button', { name: 'ARTICLE SOURCE' }));
+    await user.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    const dialog = screen.getByRole('dialog', { name: 'Gérer les catégories' });
+    await user.click(within(dialog).getByRole('button', { name: 'Renommer 1. CARDIOLOGIE' }));
+    const input = within(dialog).getByLabelText('Nouveau nom de 1. CARDIOLOGIE');
+    await user.clear(input); await user.type(input, '3. URGENCES');
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer 1. CARDIOLOGIE' }));
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('Catégorie « 3. URGENCES » renommée');
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Renommer 3. URGENCES' })).toBeEnabled());
+    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, '3. URGENCES', categoryFixtures[0]);
+    await user.click(within(dialog).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
+    expect(screen.getByRole('combobox', { name: 'Catégorie' })).toHaveValue('3. URGENCES');
+    expect(screen.queryByRole('option', { name: '1. CARDIOLOGIE' })).not.toBeInTheDocument();
+    const details = screen.getByRole('complementary', { name: 'Contrôle et détails du navire' });
+    expect(within(details).getByText('3. URGENCES')).toBeInTheDocument();
+    expect(within(details).getByText(/Inventaire Pharmacie - GOURY.xlsx/)).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Inclure les articles retirés' }));
+    expect(screen.getByRole('button', { name: 'ARTICLE SANS DATE' })).toBeInTheDocument();
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+  });
+  it('deletes only the category and clears its filter while preserving every active and retired article', async () => {
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item, { ...missing, active: false }, expired], controls: [], categories: categoryFixtures })
+      .mockRejectedValueOnce(new Error('Lecture indisponible.'));
+    const changed = vi.fn(); window.addEventListener('pharmacy:changed', changed);
+    try {
+      const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Catégorie' }), '1. CARDIOLOGIE');
+      await user.click(screen.getByRole('button', { name: 'ARTICLE SOURCE' }));
+      await user.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+      await user.click(screen.getByRole('button', { name: 'Supprimer 1. CARDIOLOGIE' }));
+      const confirmation = screen.getByRole('dialog', { name: 'Supprimer la catégorie 1. CARDIOLOGIE' });
+      expect(confirmation).toHaveTextContent('2 articles, y compris les articles retirés');
+      await user.click(within(confirmation).getByRole('button', { name: 'Supprimer' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Gérer les catégories' });
+      expect(within(dialog).getByRole('status')).toHaveTextContent('Les articles et leur historique sont conservés.');
+      expect(within(dialog).queryByRole('button', { name: 'Renommer 1. CARDIOLOGIE' })).not.toBeInTheDocument();
+      expect(deletePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, categoryFixtures[0]);
+      expect(changed).toHaveBeenCalledOnce();
+      await user.click(within(dialog).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
+      expect(screen.getByRole('combobox', { name: 'Catégorie' })).toHaveValue('');
+      expect(screen.queryByRole('option', { name: '1. CARDIOLOGIE' })).not.toBeInTheDocument();
+      expect(screen.getByRole('rowheader', { name: /Sans catégorie/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'ARTICLE PÉRIMÉ' })).toBeInTheDocument();
+      expect(screen.getByText('2 articles actifs')).toBeInTheDocument();
+      await user.click(screen.getByRole('checkbox', { name: 'Inclure les articles retirés' }));
+      expect(screen.getByRole('button', { name: 'ARTICLE SANS DATE' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Supprimer ARTICLE SANS DATE' })).toBeDisabled();
+      expect(savePharmacyItem).not.toHaveBeenCalled();
+    } finally { window.removeEventListener('pharmacy:changed', changed); }
+  });
+  it('rejects a category rename whose captured revision changed during a refresh', async () => {
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item], controls: [], categories: categoryFixtures })
+      .mockResolvedValue({ items: [item], controls: [], categories: [{ ...categoryFixtures[0], revision: 3 }, categoryFixtures[1]] });
+    const user = userEvent.setup(); page();
+    await user.click(await screen.findByRole('button', { name: 'Gérer les catégories' }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Renommer 1. CARDIOLOGIE' }));
+    const name = within(dialog).getByLabelText('Nouveau nom de 1. CARDIOLOGIE');
+    await user.clear(name); await user.type(name, 'Autre nom');
+    fireEvent.click(screen.getByRole('button', { name: 'Actualiser l’inventaire' }));
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Enregistrer 1. CARDIOLOGIE' })).toBeEnabled());
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer 1. CARDIOLOGIE' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Cette catégorie a été modifiée.');
+    expect(name).toHaveValue('Autre nom'); expect(savePharmacyCategory).not.toHaveBeenCalled();
+  });
+  it('does not apply an old pending category result after changing client and vessel', async () => {
+    let finish: (id: number) => void = () => undefined;
+    vi.mocked(savePharmacyCategory).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const { rerender } = page();
+    const manage = await screen.findByRole('button', { name: 'Gérer les catégories' });
+    await waitFor(() => expect(manage).toBeEnabled());
+    fireEvent.click(manage);
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Nouvelle catégorie'), { target: { value: 'Ancienne opération' } });
+    const add = within(dialog).getByRole('button', { name: 'Ajouter' });
+    fireEvent.click(add); fireEvent.click(add);
+    expect(savePharmacyCategory).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'SUROIT' })).toBeDisabled();
+    const nextClient = {} as SupabaseClient;
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[1] }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [{ ...item, vessel_id: 2, designation: 'ARTICLE SUROIT' }], controls: [], categories: [{ ...categoryFixtures[0], vessel_id: 2, name: 'CATÉGORIE SUROIT' }] });
+    rerender(<MemoryRouter><PharmacyPage client={nextClient} roles={['capitaine']} /></MemoryRouter>);
+    await screen.findByRole('button', { name: 'ARTICLE SUROIT' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await act(async () => { finish(120); });
+    expect(screen.getByRole('button', { name: 'SUROIT' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('option', { name: 'Ancienne opération' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Ancienne opération.*ajoutée/)).not.toBeInTheDocument();
+    expect(fetchPharmacyRegister).toHaveBeenLastCalledWith(nextClient, 2);
+    fireEvent.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    expect(screen.getByRole('button', { name: 'Renommer CATÉGORIE SUROIT' })).toBeInTheDocument();
   });
 });

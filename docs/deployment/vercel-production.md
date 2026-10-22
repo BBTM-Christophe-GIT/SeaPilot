@@ -1,5 +1,13 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.76.7`, build `2026-10-22.001`, ajoute **Gérer les catégories** dans
+l’inventaire pharmacie : création, renommage et suppression pour le navire
+sélectionné, selon ses droits existants. Les catégories vides sont persistées.
+Supprimer une catégorie conserve ses articles sous **Sans catégorie**. Appliquer
+la migration `20261022050835_pharmacy_category_management.sql` avant le frontend.
+Elle initialise le catalogue et les RPC avec contrôle de révision, sans supprimer
+ni réinitialiser les données existantes. Voir [le fonctionnement pharmacie](./pharmacy-inventory.md).
+
 Version `3.76.6`, build `2026-10-21.005`, ajoute une corbeille **Supprimer** sur
 chaque ligne de l’inventaire pharmacie pour les profils qui gèrent le navire.
 La confirmation retire l’article de l’inventaire actif et de ses alertes via la

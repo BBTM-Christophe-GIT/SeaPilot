@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
-import { blankPharmacyItem, pharmacyToday, type PharmacyItem, type PharmacyNotification, type PharmacyVessel } from './pharmacyModel';
-import { fetchPharmacyNotifications, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyItem, uploadPharmacyControl, validatePharmacyControl } from './pharmacyQueries';
+import { blankPharmacyItem, pharmacyToday, type PharmacyCategory, type PharmacyItem, type PharmacyNotification, type PharmacyVessel } from './pharmacyModel';
+import { deletePharmacyCategory, fetchPharmacyNotifications, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl, validatePharmacyControl } from './pharmacyQueries';
 import { createPharmacyPreviewClient } from './pharmacyPreview';
 
 const vessel: PharmacyVessel = { id: 4, company_id: 1, name: 'SUROIT', acronym: 'SUR', can_manage: true };
@@ -40,6 +40,90 @@ describe('pharmacy persistence', () => {
   it('propagates alert failures instead of inventing an empty successful result', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: null, error: new Error('not installed') });
     await expect(fetchPharmacyNotifications({ rpc } as unknown as SupabaseClient)).rejects.toThrow('not installed');
+  });
+});
+
+describe('pharmacy categories', () => {
+  const category: PharmacyCategory = { id: 20, company_id: 1, vessel_id: 4, name: 'SOINS', revision: 7, created_at: '2026-10-22T00:00:00Z', updated_at: '2026-10-22T00:00:00Z' };
+  it('creates trimmed categories and sends the displayed category revision for rename and deletion', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 20, error: null });
+    const client = { rpc } as unknown as SupabaseClient;
+    await expect(savePharmacyCategory(client, 4, '  MATÉRIEL  ')).resolves.toBe(20);
+    expect(rpc).toHaveBeenLastCalledWith('save_pharmacy_category', { p_vessel_id: 4, p_name: 'MATÉRIEL', p_id: null, p_revision: null });
+    await savePharmacyCategory(client, 4, 'NOUVEAUX SOINS', category);
+    expect(rpc).toHaveBeenLastCalledWith('save_pharmacy_category', { p_vessel_id: 4, p_name: 'NOUVEAUX SOINS', p_id: 20, p_revision: 7 });
+    await deletePharmacyCategory(client, 4, category);
+    expect(rpc).toHaveBeenLastCalledWith('delete_pharmacy_category', { p_vessel_id: 4, p_id: 20, p_revision: 7 });
+  });
+  it('rejects empty, oversized and cross-vessel requests before calling the server', async () => {
+    const rpc = vi.fn(); const client = { rpc } as unknown as SupabaseClient;
+    await expect(savePharmacyCategory(client, 4, '  ')).rejects.toThrow('1 et 200');
+    await expect(savePharmacyCategory(client, 4, 'x'.repeat(201))).rejects.toThrow('1 et 200');
+    await expect(savePharmacyCategory(client, 9, 'SOINS', category)).rejects.toThrow('autre navire');
+    await expect(deletePharmacyCategory(client, 9, category)).rejects.toThrow('autre navire');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+  it('propagates mutation and category-read failures without reporting an empty successful catalogue', async () => {
+    const failure = new Error('Catégories indisponibles');
+    const rpc = vi.fn().mockResolvedValue({ error: failure, data: null });
+    await expect(savePharmacyCategory({ rpc } as unknown as SupabaseClient, 4, 'SOINS')).rejects.toThrow(failure);
+    await expect(deletePharmacyCategory({ rpc } as unknown as SupabaseClient, 4, category)).rejects.toThrow(failure);
+    const from = vi.fn((name: string) => {
+      const chain = { select: () => chain, eq: vi.fn(() => chain), order: () => chain, then: (resolve: (result: unknown) => void) => Promise.resolve({ data: [], error: name === 'pharmacy_categories' ? failure : null }).then(resolve) };
+      return chain;
+    });
+    await expect(fetchPharmacyRegister({ from } as unknown as SupabaseClient, 4)).rejects.toThrow(failure);
+    expect(from).toHaveBeenCalledWith('pharmacy_categories');
+    for (const result of from.mock.results) expect(result.value.eq).toHaveBeenCalledWith('vessel_id', 4);
+  });
+  it('persists empty categories, renames retired and active articles, then removes only their classification in the preview fixture', async () => {
+    const client = createPharmacyPreviewClient();
+    const [selected, other] = await fetchPharmacyVessels(client);
+    const before = await fetchPharmacyRegister(client, selected.id);
+    const otherBefore = await fetchPharmacyRegister(client, other.id);
+    const id = await savePharmacyCategory(client, selected.id, 'NOUVELLE CATÉGORIE');
+    let loaded = await fetchPharmacyRegister(client, selected.id);
+    const empty = loaded.categories.find((candidate) => candidate.id === id)!;
+    expect(empty.name).toBe('NOUVELLE CATÉGORIE');
+    expect(loaded.items).toEqual(before.items);
+    await expect(savePharmacyCategory(client, selected.id, ' nouvelle catégorie ')).rejects.toMatchObject({ message: expect.stringContaining('existe déjà') });
+    const target = before.categories.find((candidate) => before.items.filter((item) => item.category === candidate.name).length > 1)!;
+    const original = before.items.find((item) => item.category === target.name)!;
+    await savePharmacyItem(client, selected.id, { ...original, active: false }, original);
+    const withRetired = await fetchPharmacyRegister(client, selected.id);
+    const affected = withRetired.items.filter((item) => item.category === target.name);
+    await savePharmacyCategory(client, selected.id, 'RENOMMÉE', target);
+    loaded = await fetchPharmacyRegister(client, selected.id);
+    expect(loaded.items).toHaveLength(before.items.length);
+    for (const item of affected) expect(loaded.items.find((candidate) => candidate.id === item.id)).toEqual({ ...item, category: 'RENOMMÉE', revision: item.revision + 1, updated_at: expect.any(String) });
+    await expect(savePharmacyItem(client, selected.id, original, original)).rejects.toMatchObject({ message: expect.stringContaining('modifié') });
+    await expect(deletePharmacyCategory(client, selected.id, target)).rejects.toMatchObject({ message: expect.stringContaining('modifiée') });
+    const renamed = loaded.categories.find((candidate) => candidate.id === target.id)!;
+    const beforeDelete = loaded.items;
+    const expiryBefore = await fetchPharmacyVesselExpiryCounts(client);
+    await deletePharmacyCategory(client, selected.id, renamed);
+    loaded = await fetchPharmacyRegister(client, selected.id);
+    expect(loaded.categories.some((candidate) => candidate.id === target.id)).toBe(false);
+    expect(loaded.categories.some((candidate) => candidate.id === empty.id)).toBe(true);
+    expect(loaded.items).toHaveLength(before.items.length);
+    for (const item of beforeDelete) expect(loaded.items.find((candidate) => candidate.id === item.id)).toEqual(item.category === 'RENOMMÉE' ? { ...item, category: '', revision: item.revision + 1, updated_at: expect.any(String) } : item);
+    expect(await fetchPharmacyVesselExpiryCounts(client)).toEqual(expiryBefore);
+    expect(await fetchPharmacyRegister(client, other.id)).toEqual(otherBefore);
+  });
+  it('registers freeform item categories and reuses the existing category spelling', async () => {
+    const client = createPharmacyPreviewClient();
+    const [selected] = await fetchPharmacyVessels(client);
+    const { items } = await fetchPharmacyRegister(client, selected.id);
+    const item = items[0];
+    const catId = await savePharmacyCategory(client, selected.id, 'CHOIX CANONIQUE');
+    await savePharmacyItem(client, selected.id, { ...item, category: ' choix canonique ' }, item);
+    let loaded = await fetchPharmacyRegister(client, selected.id);
+    expect(loaded.items.find(({ id }) => id === item.id)?.category).toBe('CHOIX CANONIQUE');
+    expect(loaded.categories.filter(({ name }) => name === 'CHOIX CANONIQUE')).toEqual([expect.objectContaining({ id: catId })]);
+    const updated = loaded.items.find(({ id }) => id === item.id)!;
+    await savePharmacyItem(client, selected.id, { ...updated, category: 'CATÉGORIE LIBRE' }, updated);
+    loaded = await fetchPharmacyRegister(client, selected.id);
+    expect(loaded.categories.some(({ name }) => name === 'CATÉGORIE LIBRE')).toBe(true);
   });
 });
 

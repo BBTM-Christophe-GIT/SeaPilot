@@ -4,6 +4,10 @@ import { compareFleetAssets, normalizeFleetName } from '../fleet/fleetDisplay';
 export const PHARMACY_ALERT_DAYS = 30;
 export type PharmacyExpiryPrecision = 'day' | 'month' | 'unknown';
 export interface PharmacyVessel { id: number; company_id: number; name: string; acronym: string; can_manage: boolean; length_overall?: string | number | null }
+export interface PharmacyCategory {
+  id: number; company_id: number; vessel_id: number; name: string; revision: number;
+  created_at: string; updated_at: string;
+}
 export function selectPharmacyVessels(vessels: PharmacyVessel[]): PharmacyVessel[] {
   const normalized = (value: string) => normalizeFleetName(value).replace(/[^A-Z0-9]/g, '');
   return vessels.filter((vessel) => normalized(vessel.name) !== 'BR71' && normalized(vessel.acronym || '') !== 'BR71')
