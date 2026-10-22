@@ -12,6 +12,18 @@ L'ancien lien `/modules/lifting` redirige vers les apparaux. Les trois routes h�
 
 ## Demande enregistrée et comportement des notes
 
+Le 23 octobre 2026, la note `3.77.4-sea-operations` est ajoutée à la demande
+de l’utilisateur pour annoncer Opérations → Opération en Mer. Sans ciblage de
+rôles, elle est visible pour tous les profils. Elle présente la préparation
+depuis le Planning, les contrôles, la décision GO / NO GO signée par le Capitaine,
+le PDF, ainsi que le Passage Plan avec les contacts VHF, les cartes Shom et les
+prévisions disponibles de vent et de hauteur significative de houle (Hs). Elle
+précise que Remorquage, Chargement de marchandise, Navire de support de plongeur
+et Approvisionnement / Avitaillement sont réglés sur Non au départ et activables
+sur Oui. Elle n’annonce pas de calcul automatique de l’UKC. Les anciennes notes,
+leurs identifiants et les états de lecture sont conservés ; cette note ne
+nécessite aucune migration supplémentaire.
+
 Le 14 octobre 2026, la note `3.73.0-medical-logbook` est ajoutée à la demande
 de l’utilisateur pour annoncer le Registre médical dans Registres. Elle vise
 Administrateur et Capitaine, les profils autorisés du module, et présente la

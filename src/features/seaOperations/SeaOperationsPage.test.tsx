@@ -144,15 +144,25 @@ beforeEach(() => { vi.resetAllMocks(); sessionStorage.clear(); viewport(1440); }
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); document.body.style.overflow = ''; });
 
 describe('Opération en Mer with authenticated server permission fixtures', () => {
-  it('prefills new binary controls with Oui while leaving the decision and final attestation explicit', async () => {
+  it('starts the four optional sections at Non and other checks at Oui without choosing a decision', async () => {
     renderAccount();
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     await userEvent.click(stepButton(1));
-    expect(formQueries().getAllByRole('switch')).toHaveLength(SEA_OPERATION_CHECKS.length + 6);
-    for (const control of formQueries().getAllByRole('switch')) {
+    expect(formQueries().getAllByRole('switch')).toHaveLength(22);
+    for (const title of ['Remorquage', 'Chargement de marchandise', 'Navire de support de plongeur', 'Approvisionnement / Avitaillement']) {
+      expect(answerInput(`${title} applicable`)).not.toBeChecked();
+      expect(answerInput(`${title} applicable`)).toHaveTextContent('Non');
+    }
+    for (const check of SEA_OPERATION_CHECKS.filter((item) => !item.applicability)) {
+      const control = answerInput(check.label);
       expect(control).toBeChecked();
       expect(control).toHaveTextContent('Oui');
     }
+    expect(formQueries().queryByRole('switch', { name: 'Shipchandler' })).not.toBeInTheDocument();
+    await userEvent.click(answerInput('Remorquage applicable'));
+    expect(answerInput('Le plan de remorquage a été réalisé et communiqué à bord')).toBeChecked();
+    await userEvent.click(answerInput('Remorquage applicable'));
+    expect(formQueries().queryByRole('switch', { name: 'Le plan de remorquage a été réalisé et communiqué à bord' })).not.toBeInTheDocument();
     expect(formQueries().getByText(/Réponses préremplies : à vérifier avant signature/)).toBeVisible();
     await decisionStep();
     expect(choiceInput('Décision', 'GO')).not.toBeChecked();
@@ -450,7 +460,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     draft.planning = { date: seaOperationToday(), operationId: choices[0].operationId, projectId: choices[0].projectId, captainPersonId: choices[0].captains[0].personId };
     draft.dapaq = { method: 'nomade', preparedBy: 'captain', agentName: '', agentContact: '' };
     draft.specialPersonnel = [{ name: 'Personne de la première mission', phone: '0100000000' }];
-    draft.applicability = { towing: 'no', cargo: 'no', divingSupport: 'no', supplies: 'no' };
+    draft.applicability = { towing: 'yes', cargo: 'yes', divingSupport: 'yes', supplies: 'yes' };
     draft.checks.weather = 'no';
     draft.checks.cargoLashing = 'no';
     draft.charts = 'SHOM 7120';
@@ -467,7 +477,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({
       project: choices[1].project, charts: '', waypoints: [], specialPersonnel: [], decision: '', risks: '', portServices: [],
       checks: expect.objectContaining({ weather: 'yes', cargoLashing: 'yes' }),
-      applicability: { towing: 'yes', cargo: 'yes', divingSupport: 'yes', supplies: 'yes' },
+      applicability: { towing: 'no', cargo: 'no', divingSupport: 'no', supplies: 'no' },
       dapaq: { method: '', preparedBy: '', agentName: '', agentContact: '' },
       supplies: expect.objectContaining({ delegated: 'yes', suppliers: '', items: [] }),
       signature: { captainName: choices[1].captains[0].name, date: seaOperationToday(), place: 'Caen', acknowledged: false },

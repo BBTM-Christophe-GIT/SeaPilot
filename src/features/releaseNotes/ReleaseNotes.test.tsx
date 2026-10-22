@@ -21,23 +21,25 @@ function memoryStore(initial: ReleaseNoteState[] = []) {
 }
 
 describe('ReleaseNotes', () => {
-  it.each<RoleKey>(['admin', 'direction', 'armement', 'capitaine'])('shows the latest relevant update first to the %s profile', async (role) => {
+  it.each<RoleKey>(['admin', 'direction', 'armement', 'capitaine', 'marin'])('shows the latest relevant update first to the %s profile', async (role) => {
     const store = memoryStore();
     render(<ReleaseNotes client={{} as never} roles={[role]} storeOverride={store} />);
     const dialog = await screen.findByRole('dialog');
     const medicalAccess = role === 'admin' || role === 'capitaine';
-    expect(within(dialog).getAllByRole('heading', { level: 3 })[0]).toHaveTextContent(medicalAccess ? 'Registre médical : saisie directe et signature personnelle'
-      : role === 'armement' ? 'Préparez vos bordées' : 'Projets : modifier, retrouver et clôturer vos dossiers');
+    const seaOperationNote = RELEASE_NOTES.find((note) => note.id === '3.77.4-sea-operations')!;
+    expect(within(dialog).getAllByRole('heading', { level: 3 })[0]).toHaveTextContent(seaOperationNote.title);
     if (!medicalAccess) expect(within(dialog).queryByText('Registre médical : saisie directe et signature personnelle')).not.toBeInTheDocument();
     if (role === 'armement') {
       expect(within(dialog).queryByText('Personnalisez vos organigrammes et vos listes de contacts')).not.toBeInTheDocument();
       expect(within(dialog).queryByText('Projets : modifier, retrouver et clôturer vos dossiers')).not.toBeInTheDocument();
     }
     await userEvent.click(within(dialog).getByRole('button', { name: 'Ok' }));
+    expect(store.save.mock.calls[0][0]).toContain(seaOperationNote.id);
     if (medicalAccess) expect(store.save.mock.calls[0][0]).toContain('3.73.0-medical-logbook');
     else expect(store.save.mock.calls[0][0]).not.toContain('3.73.0-medical-logbook');
-    if (role !== 'capitaine') expect(store.save).toHaveBeenCalledWith(expect.arrayContaining(['3.56.0-planning-generic-crew']), true);
-    if (role === 'armement' || role === 'capitaine') expect(store.save.mock.calls[0][0]).not.toContain('3.71.8-project-portfolio-closure');
+    if (role !== 'capitaine' && role !== 'marin') expect(store.save).toHaveBeenCalledWith(expect.arrayContaining(['3.56.0-planning-generic-crew']), true);
+    else expect(store.save.mock.calls[0][0]).not.toContain('3.56.0-planning-generic-crew');
+    if (role === 'armement' || role === 'capitaine' || role === 'marin') expect(store.save.mock.calls[0][0]).not.toContain('3.71.8-project-portfolio-closure');
     else expect(store.save.mock.calls[0][0]).toContain('3.71.8-project-portfolio-closure');
   });
   it.each<RoleKey>(['marin', 'capitaine'])('excludes the organigramme note from the %s profile', async (role) => {

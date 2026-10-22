@@ -192,7 +192,7 @@ export function emptySeaOperation(): SeaOperationPayload {
 export function newSeaOperation(): SeaOperationPayload {
   const draft = emptySeaOperation();
   for (const check of SEA_OPERATION_CHECKS) draft.checks[check.id] = 'yes';
-  draft.applicability = { towing: 'yes', cargo: 'yes', divingSupport: 'yes', supplies: 'yes' };
+  draft.applicability = { towing: 'no', cargo: 'no', divingSupport: 'no', supplies: 'no' };
   draft.towedVesselBoarding.required = 'yes';
   draft.supplies.delegated = 'yes';
   return draft;

@@ -53,24 +53,24 @@ describe('sea operation form model', () => {
     expect(second.specialPersonnel).toEqual([]);
   });
 
-  it('starts a new mission with affirmative switches while leaving its decision and final confirmation explicit', () => {
+  it('starts a new mission with optional sections off and affirmative checks while leaving its decision explicit', () => {
     const draft = newSeaOperation();
     expect(isSeaOperationPayload(draft)).toBe(true);
     expect(Object.values(draft.checks)).toEqual(Array(26).fill('yes'));
-    expect(Object.values(draft.applicability)).toEqual(Array(4).fill('yes'));
+    expect(draft.applicability).toEqual({ towing: 'no', cargo: 'no', divingSupport: 'no', supplies: 'no' });
     expect(draft.towedVesselBoarding.required).toBe('yes');
     expect(draft.supplies.delegated).toBe('yes');
     expect(draft).toMatchObject({ decision: '', mandatoryServicesNotified: false,
       signature: { captainName: '', acknowledged: false }, supplies: { customerAccountsPrepared: false, items: [] } });
     expect(validateSeaOperation(draft, 'DRAFT')).toEqual([]);
-    expect(getSeaOperationAssessment(draft)).toMatchObject({ status: 'incomplete', canGo: false, completedChecks: 26 });
+    expect(getSeaOperationAssessment(draft)).toMatchObject({ status: 'incomplete', canGo: false, completedChecks: 18, totalChecks: 18 });
     expect(validateSeaOperation(draft, 'GO')).toContain('Le Capitaine doit confirmer sa signature et sa décision.');
   });
 
   it('creates independent new mission defaults without overwriting a previous mission or neutral legacy payload', () => {
     const previous = newSeaOperation();
     previous.checks.weather = 'no';
-    previous.applicability.towing = 'no';
+    previous.applicability.towing = 'yes';
     previous.towedVesselBoarding.required = 'no';
     previous.supplies.delegated = 'no';
     previous.decision = 'NO_GO';
@@ -80,7 +80,7 @@ describe('sea operation form model', () => {
     const restored = JSON.parse(JSON.stringify(previous)) as typeof previous;
     const neutral = emptySeaOperation();
     const next = newSeaOperation();
-    expect(next).toMatchObject({ checks: { weather: 'yes' }, applicability: { towing: 'yes' },
+    expect(next).toMatchObject({ checks: { weather: 'yes' }, applicability: { towing: 'no', cargo: 'no', divingSupport: 'no', supplies: 'no' },
       towedVesselBoarding: { required: 'yes' }, supplies: { delegated: 'yes' }, decision: '', signature: { acknowledged: false }, waypoints: [] });
     expect(next.justifications.navigationEquipment).toBe('');
     expect(isSeaOperationPayload(restored)).toBe(true);

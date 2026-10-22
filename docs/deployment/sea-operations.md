@@ -179,7 +179,10 @@ est présent sur le serveur distant.
 ## Questionnaire compact et consultation des documents du projet
 
 Les contrôles et l’applicabilité utilisent maintenant des interrupteurs Oui/Non.
-Les nouvelles fiches proposent Oui par défaut ; la restauration conserve les
+Les contrôles des nouvelles fiches proposent Oui par défaut. Les quatre rubriques
+Remorquage, Chargement de marchandise, Navire de support de plongeur et
+Approvisionnement / Avitaillement proposent **Non** par défaut depuis la 3.77.4 ;
+les activer sur Oui affiche leurs contrôles. La restauration conserve les
 réponses existantes et les réponses vides restent « À vérifier ». La décision GO
 et l’attestation finale ne sont jamais prévalidées. Les contrôles exigeant une
 affirmation positive acceptent Non en brouillon mais empêchent toujours GO.
@@ -241,7 +244,7 @@ Les nouvelles ETA utilisent une saisie `datetime-local`, explicitement à l’he
 de Paris. Une ancienne ETA `HH:mm` reste intacte ; le bouton Appliquer la date
 de l’opération permet une conversion volontaire. Aucune fiche signée n’est migrée.
 
-Les nouvelles réponses Oui sont produites par `newSeaOperation()` ;
+Les nouvelles réponses par défaut sont produites par `newSeaOperation()` ;
 `emptySeaOperation()` reste neutre pour les anciens payloads et les fixtures.
 Un changement de mission recrée les valeurs par défaut et remet à zéro décision,
 attestation, justifications et route. Un brouillon modifiable lié au planning dont

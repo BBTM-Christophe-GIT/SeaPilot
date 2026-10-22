@@ -31,9 +31,9 @@ describe('getSeaOperationCompletion', () => {
     const completion = getSeaOperationCompletion(form);
     expect(completion.requirements.filter((field) => field.id.startsWith('check.')).every((field) => field.complete)).toBe(true);
     expect(completion.missing).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'boarding.measures' }), expect.objectContaining({ id: 'supplies.name' }),
       expect.objectContaining({ id: 'waypoints' }), expect.objectContaining({ id: 'decision' }),
     ]));
+    expect(completion.requirements.some((field) => field.id === 'boarding.measures' || field.id === 'supplies.name')).toBe(false);
     expect(completion.steps[2].title).toBe('Passage Plan');
     expect(completion.percentage).toBeLessThan(100);
     expect(form.signature.acknowledged).toBe(false);

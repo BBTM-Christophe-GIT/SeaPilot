@@ -128,6 +128,18 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       'Chaque correction conserve la version précédente dans Historique. Les entrées archivées restent consultables et peuvent être restaurées. Exporter PDF reprend le registre avec ses signatures ; Registre vierge PDF fournit une grille à remplir à la main.',
     ],
   },
+  {
+    id: '3.77.4-sea-operations',
+    version: '3.77.4',
+    publishedOn: '2026-10-23',
+    title: 'Préparez vos opérations en mer et consignez la décision du Capitaine',
+    changes: [
+      'Le menu Opérations accueille le module Opération en Mer. Sélectionnez une journée et une mission du Planning pour préparer la fiche avec les informations du projet, du navire et du Capitaine affecté.',
+      'Complétez les contrôles avant appareillage, puis consignez la décision GO / NO GO. Le Capitaine confirme et signe la décision ; la fiche signée est conservée et peut être exportée en PDF.',
+      'Le Passage Plan réunit les points de route, les contacts VHF, la recherche des cartes Shom et les prévisions disponibles de vent et de hauteur significative de houle (Hs) à l’ETA.',
+      'Dans les nouvelles fiches, les rubriques Remorquage, Chargement de marchandise, Navire de support de plongeur et Approvisionnement / Avitaillement sont réglées sur Non au départ. Passez une rubrique sur Oui pour afficher et compléter ses contrôles.',
+    ],
+  },
 ];
 
 export function chronologicalNotes(notes: readonly ReleaseNote[]): ReleaseNote[] {
