@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
-import { blankPharmacyItem, pharmacyToday, type PharmacyItem, type PharmacyNotification, type PharmacyVessel } from './pharmacyModel';
-import { fetchPharmacyNotifications, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyItem, uploadPharmacyControl, validatePharmacyControl } from './pharmacyQueries';
+import { blankPharmacyItem, pharmacyToday, type PharmacyCategory, type PharmacyItem, type PharmacyNotification, type PharmacyVessel } from './pharmacyModel';
+import { deletePharmacyCategory, fetchPharmacyNotifications, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl, validatePharmacyControl } from './pharmacyQueries';
 import { createPharmacyPreviewClient } from './pharmacyPreview';
 
 const vessel: PharmacyVessel = { id: 4, company_id: 1, name: 'SUROIT', acronym: 'SUR', can_manage: true };
@@ -40,6 +40,168 @@ describe('pharmacy persistence', () => {
   it('propagates alert failures instead of inventing an empty successful result', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: null, error: new Error('not installed') });
     await expect(fetchPharmacyNotifications({ rpc } as unknown as SupabaseClient)).rejects.toThrow('not installed');
+  });
+});
+
+describe('pharmacy categories', () => {
+  const category: PharmacyCategory = { id: 20, company_id: 1, vessel_id: 4, name: 'SOINS', revision: 7, created_at: '2026-10-22T00:00:00Z', updated_at: '2026-10-22T00:00:00Z' };
+  it('creates trimmed categories and sends the displayed category revision for rename and deletion', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 20, error: null });
+    const client = { rpc } as unknown as SupabaseClient;
+    await expect(savePharmacyCategory(client, 4, '  MATÉRIEL  ')).resolves.toBe(20);
+    expect(rpc).toHaveBeenLastCalledWith('save_pharmacy_category', { p_vessel_id: 4, p_name: 'MATÉRIEL', p_id: null, p_revision: null, p_medical_dotation: null, p_medical_section: null });
+    await savePharmacyCategory(client, 4, 'NOUVEAUX SOINS', category);
+    expect(rpc).toHaveBeenLastCalledWith('save_pharmacy_category', { p_vessel_id: 4, p_name: 'NOUVEAUX SOINS', p_id: 20, p_revision: 7, p_medical_dotation: null, p_medical_section: null });
+    await deletePharmacyCategory(client, 4, category);
+    expect(rpc).toHaveBeenLastCalledWith('delete_pharmacy_category', { p_vessel_id: 4, p_id: 20, p_revision: 7 });
+  });
+  it('rejects empty, oversized and cross-vessel requests before calling the server', async () => {
+    const rpc = vi.fn(); const client = { rpc } as unknown as SupabaseClient;
+    await expect(savePharmacyCategory(client, 4, '  ')).rejects.toThrow('1 et 200');
+    await expect(savePharmacyCategory(client, 4, 'x'.repeat(201))).rejects.toThrow('1 et 200');
+    await expect(savePharmacyCategory(client, 9, 'SOINS', category)).rejects.toThrow('autre navire');
+    await expect(deletePharmacyCategory(client, 9, category)).rejects.toThrow('autre navire');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+  it('propagates mutation and category-read failures without reporting an empty successful catalogue', async () => {
+    const failure = new Error('Catégories indisponibles');
+    const rpc = vi.fn().mockResolvedValue({ error: failure, data: null });
+    await expect(savePharmacyCategory({ rpc } as unknown as SupabaseClient, 4, 'SOINS')).rejects.toThrow(failure);
+    await expect(deletePharmacyCategory({ rpc } as unknown as SupabaseClient, 4, category)).rejects.toThrow(failure);
+    const from = vi.fn((name: string) => {
+      const chain = { select: () => chain, eq: vi.fn(() => chain), order: () => chain, then: (resolve: (result: unknown) => void) => Promise.resolve({ data: [], error: name === 'pharmacy_categories' ? failure : null }).then(resolve) };
+      return chain;
+    });
+    await expect(fetchPharmacyRegister({ from } as unknown as SupabaseClient, 4)).rejects.toThrow(failure);
+    expect(from).toHaveBeenCalledWith('pharmacy_categories');
+    for (const result of from.mock.results) expect(result.value.eq).toHaveBeenCalledWith('vessel_id', 4);
+  });
+  it('persists empty categories, renames retired and active articles, then removes only their classification in the preview fixture', async () => {
+    const client = createPharmacyPreviewClient();
+    const [selected, other] = await fetchPharmacyVessels(client);
+    const before = await fetchPharmacyRegister(client, selected.id);
+    const otherBefore = await fetchPharmacyRegister(client, other.id);
+    const id = await savePharmacyCategory(client, selected.id, 'NOUVELLE CATÉGORIE');
+    let loaded = await fetchPharmacyRegister(client, selected.id);
+    const empty = loaded.categories.find((candidate) => candidate.id === id)!;
+    expect(empty.name).toBe('NOUVELLE CATÉGORIE');
+    expect(loaded.items).toEqual(before.items);
+    await expect(savePharmacyCategory(client, selected.id, ' nouvelle catégorie ')).rejects.toMatchObject({ message: expect.stringContaining('existe déjà') });
+    const target = before.categories.find((candidate) => before.items.filter((item) => item.category_id === candidate.id).length > 1)!;
+    const original = before.items.find((item) => item.category_id === target.id)!;
+    await savePharmacyItem(client, selected.id, { ...original, active: false }, original);
+    const withRetired = await fetchPharmacyRegister(client, selected.id);
+    const affected = withRetired.items.filter((item) => item.category_id === target.id);
+    await savePharmacyCategory(client, selected.id, 'RENOMMÉE', target);
+    loaded = await fetchPharmacyRegister(client, selected.id);
+    expect(loaded.items).toHaveLength(before.items.length);
+    for (const item of affected) expect(loaded.items.find((candidate) => candidate.id === item.id)).toEqual({ ...item, category: 'RENOMMÉE', revision: item.revision + 1, updated_at: expect.any(String) });
+    await expect(savePharmacyItem(client, selected.id, original, original)).rejects.toMatchObject({ message: expect.stringContaining('modifié') });
+    await expect(deletePharmacyCategory(client, selected.id, target)).rejects.toMatchObject({ message: expect.stringContaining('modifiée') });
+    const renamed = loaded.categories.find((candidate) => candidate.id === target.id)!;
+    const beforeDelete = loaded.items;
+    const expiryBefore = await fetchPharmacyVesselExpiryCounts(client);
+    await deletePharmacyCategory(client, selected.id, renamed);
+    loaded = await fetchPharmacyRegister(client, selected.id);
+    expect(loaded.categories.some((candidate) => candidate.id === target.id)).toBe(false);
+    expect(loaded.categories.some((candidate) => candidate.id === empty.id)).toBe(true);
+    expect(loaded.items).toHaveLength(before.items.length);
+    for (const item of beforeDelete) expect(loaded.items.find((candidate) => candidate.id === item.id)).toEqual(item.category === 'RENOMMÉE' ? { ...item, category: '', category_id: null, revision: item.revision + 1, updated_at: expect.any(String) } : item);
+    expect(await fetchPharmacyVesselExpiryCounts(client)).toEqual(expiryBefore);
+    expect(await fetchPharmacyRegister(client, other.id)).toEqual(otherBefore);
+  });
+  it('registers freeform item categories and reuses the existing category spelling', async () => {
+    const client = createPharmacyPreviewClient();
+    const [selected] = await fetchPharmacyVessels(client);
+    const { items } = await fetchPharmacyRegister(client, selected.id);
+    const item = items[0];
+    const catId = await savePharmacyCategory(client, selected.id, 'CHOIX CANONIQUE', undefined, selected.medical_dotation || '', item.medical_section);
+    await savePharmacyItem(client, selected.id, { ...item, category: ' choix canonique ' }, item);
+    let loaded = await fetchPharmacyRegister(client, selected.id);
+    expect(loaded.items.find(({ id }) => id === item.id)?.category).toBe('CHOIX CANONIQUE');
+    expect(loaded.categories.filter(({ name }) => name === 'CHOIX CANONIQUE')).toEqual([expect.objectContaining({ id: catId })]);
+    const updated = loaded.items.find(({ id }) => id === item.id)!;
+    await savePharmacyItem(client, selected.id, { ...updated, category: 'CATÉGORIE LIBRE' }, updated);
+    loaded = await fetchPharmacyRegister(client, selected.id);
+    expect(loaded.categories.some(({ name }) => name === 'CATÉGORIE LIBRE')).toBe(true);
+  });
+  it('sends the chosen dotation snapshot and rejects an unrelated category parent before writing', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 21, error: null });
+    const client = { rpc } as unknown as SupabaseClient;
+    const existing = { ...category, medical_dotation: 'Dotation B' };
+    await savePharmacyCategory(client, 4, 'SOINS', undefined, 'Dotation C');
+    expect(rpc).toHaveBeenLastCalledWith('save_pharmacy_category', expect.objectContaining({ p_medical_dotation: 'Dotation C' }));
+    await savePharmacyCategory(client, 4, 'SOINS', existing);
+    expect(rpc).toHaveBeenLastCalledWith('save_pharmacy_category', expect.objectContaining({ p_medical_dotation: 'Dotation B', p_id: existing.id, p_revision: existing.revision }));
+    await expect(savePharmacyCategory(client, 4, 'SOINS', existing, 'Dotation C')).rejects.toThrow('autre dotation');
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+  it('keeps historical types and isolates same-name categories when the assigned fleet dotation changes', async () => {
+    const client = createPharmacyPreviewClient(); const [selected] = await fetchPharmacyVessels(client);
+    const before = await fetchPharmacyRegister(client, selected.id);
+    const oldCategory = before.categories[0]; const oldItem = before.items.find((item) => item.category === oldCategory.name)!;
+    selected.medical_dotation = 'Nouvelle dotation C';
+    const newId = await savePharmacyCategory(client, selected.id, oldCategory.name);
+    let loaded = await fetchPharmacyRegister(client, selected.id);
+    const newCategory = loaded.categories.find(({ id }) => id === newId)!;
+    expect(newCategory.medical_dotation).toBe('Nouvelle dotation C');
+    expect(loaded.items).toEqual(before.items);
+    await expect(savePharmacyItem(client, selected.id, { ...blankPharmacyItem(), designation: 'Nouveau', medical_dotation: oldItem.medical_dotation })).rejects.toMatchObject({ message: expect.stringContaining('dotation') });
+    const id = await savePharmacyItem(client, selected.id, { ...blankPharmacyItem(), designation: 'Nouveau', category: oldCategory.name, medical_dotation: 'Nouvelle dotation C' });
+    await savePharmacyCategory(client, selected.id, 'ANCIENNE CATÉGORIE RENOMMÉE', oldCategory);
+    loaded = await fetchPharmacyRegister(client, selected.id);
+    expect(loaded.items.find((item) => item.id === oldItem.id)).toMatchObject({ category: 'ANCIENNE CATÉGORIE RENOMMÉE', medical_dotation: oldItem.medical_dotation });
+    expect(loaded.items.find((item) => item.id === id)).toMatchObject({ category: oldCategory.name, medical_dotation: 'Nouvelle dotation C' });
+    await deletePharmacyCategory(client, selected.id, newCategory);
+    loaded = await fetchPharmacyRegister(client, selected.id);
+    expect(loaded.items.find((item) => item.id === id)).toMatchObject({ category: '', medical_dotation: 'Nouvelle dotation C' });
+    expect(loaded.items.find((item) => item.id === oldItem.id)).toMatchObject({ category: 'ANCIENNE CATÉGORIE RENOMMÉE', medical_dotation: oldItem.medical_dotation });
+    const oldSaved = loaded.items.find((item) => item.id === oldItem.id)!;
+    await expect(savePharmacyItem(client, selected.id, { ...oldSaved, medical_dotation: 'Nouvelle dotation C' }, oldSaved)).rejects.toMatchObject({ message: expect.stringContaining('dotation') });
+    const { medical_dotation: omittedParent, ...legacyDraft } = oldSaved;
+    expect(omittedParent).toBe(oldItem.medical_dotation);
+    await savePharmacyItem(client, selected.id, legacyDraft, oldSaved);
+    expect((await fetchPharmacyRegister(client, selected.id)).items.find((item) => item.id === oldItem.id)?.medical_dotation).toBe(oldItem.medical_dotation);
+  });
+  it('shares a catalogue between matching vessel types while each stock remains independent', async () => {
+    const client = createPharmacyPreviewClient();
+    const [different, first, second] = await fetchPharmacyVessels(client);
+    second.medical_dotation = 'C Restreint';
+    const originalFirst = await fetchPharmacyRegister(client, first.id);
+    const originalSecond = await fetchPharmacyRegister(client, second.id);
+    const originalDifferent = await fetchPharmacyRegister(client, different.id);
+    expect(originalFirst.categories.map(({ id }) => id)).toEqual(originalSecond.categories.map(({ id }) => id));
+    const id = await savePharmacyCategory(client, first.id, 'CATALOGUE PARTAGÉ', undefined, first.medical_dotation || '', 'medicines');
+    const throughSecond = (await fetchPharmacyRegister(client, second.id)).categories.find((category) => category.id === id)!;
+    expect(throughSecond).toMatchObject({ vessel_id: second.id, name: 'CATALOGUE PARTAGÉ', medical_section: 'medicines' });
+    expect((await fetchPharmacyRegister(client, second.id)).items).toEqual(originalSecond.items);
+    const firstItem = originalFirst.items[0];
+    const secondItem = originalSecond.items[0];
+    await savePharmacyItem(client, first.id, { ...firstItem, category: throughSecond.name, quantity: '7 boîtes' }, firstItem);
+    await savePharmacyItem(client, second.id, { ...secondItem, category: throughSecond.name, quantity: '2 boîtes' }, secondItem);
+    await savePharmacyCategory(client, second.id, 'RENOMMAGE COMMUN', throughSecond);
+    const stockFirst = (await fetchPharmacyRegister(client, first.id)).items.find(({ id }) => id === firstItem.id)!;
+    const stockSecond = (await fetchPharmacyRegister(client, second.id)).items.find(({ id }) => id === secondItem.id)!;
+    expect(stockFirst).toMatchObject({ category: 'RENOMMAGE COMMUN', quantity: '7 boîtes', vessel_id: first.id, category_id: id });
+    expect(stockSecond).toMatchObject({ category: 'RENOMMAGE COMMUN', quantity: '2 boîtes', vessel_id: second.id, category_id: id });
+    const renamed = (await fetchPharmacyRegister(client, first.id)).categories.find((category) => category.id === id)!;
+    await deletePharmacyCategory(client, first.id, renamed);
+    expect((await fetchPharmacyRegister(client, first.id)).items.find(({ id }) => id === firstItem.id)).toMatchObject({ category: '', category_id: null, quantity: '7 boîtes' });
+    expect((await fetchPharmacyRegister(client, second.id)).items.find(({ id }) => id === secondItem.id)).toMatchObject({ category: '', category_id: null, quantity: '2 boîtes' });
+    expect(await fetchPharmacyRegister(client, different.id)).toEqual(originalDifferent);
+    expect((await fetchPharmacyRegister(client, first.id)).items).toHaveLength(originalFirst.items.length);
+    expect((await fetchPharmacyRegister(client, second.id)).items).toHaveLength(originalSecond.items.length);
+  });
+  it('keeps identical category names in separate medical branches and rejects a stale branch context', async () => {
+    const client = createPharmacyPreviewClient(); const [vessel] = await fetchPharmacyVessels(client);
+    const medicines = await savePharmacyCategory(client, vessel.id, 'SOINS COMMUNS', undefined, vessel.medical_dotation || '', 'medicines');
+    const equipment = await savePharmacyCategory(client, vessel.id, 'SOINS COMMUNS', undefined, vessel.medical_dotation || '', 'equipment');
+    expect(medicines).not.toBe(equipment);
+    const loaded = await fetchPharmacyRegister(client, vessel.id);
+    const target = loaded.categories.find(({ id }) => id === medicines)!;
+    await expect(savePharmacyCategory(client, vessel.id, 'INVALIDE', target, vessel.medical_dotation || '', 'equipment')).rejects.toThrow('autre branche');
+    await savePharmacyCategory(client, vessel.id, 'SOINS MÉDICAMENTS', target);
+    expect((await fetchPharmacyRegister(client, vessel.id)).categories.find(({ id }) => id === equipment)?.name).toBe('SOINS COMMUNS');
   });
 });
 

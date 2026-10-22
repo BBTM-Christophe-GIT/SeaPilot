@@ -1157,6 +1157,9 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
     medicalUnfit: boolean;
     person: PersonRecord;
   }) {
+    if (!isManager && !(isCaptainView && people.some((person) => person.id === input.person.id))) {
+      throw new Error("L'ajout de documents est réservé aux profils autorisés pour ce collaborateur.");
+    }
     setStatusMessage(null);
     setErrorMessage(null);
     setIsSaving(true);
@@ -1449,7 +1452,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
             <h2>Marins par fonction</h2>
             <p>Les fonctions sont classées selon l’ordre métier défini.</p>
           </div>
-          <span className={isManager ? 'hr-mode-write' : 'hr-mode-read'}>{isManager ? 'Modification' : 'Lecture seule'}</span>
+          <span className={isManager || isCaptainView ? 'hr-mode-write' : 'hr-mode-read'}>{isManager ? 'Modification' : isCaptainView ? 'Ajout de documents' : 'Lecture seule'}</span>
         </div>
         <div className="sp-toolbar">
           <button className="sp-button sp-button--secondary" disabled={!visiblePeople.length} onClick={() => setIsBulkSheetOpen(true)} type="button">
@@ -1601,6 +1604,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
 
         <PersonProfileCard
           initialSectionKey={selectedPerson?.id === initialPersonId ? initialSectionKey : undefined}
+          canCreateDocument={isManager || isCaptainView}
           canDelete={canDeletePerson}
           canEdit={Boolean(
             isManager
@@ -2064,6 +2068,7 @@ function PersonProfileCard({
   initialSectionKey,
   canDelete,
   canEdit,
+  canCreateDocument,
   canManageSignature,
   onPhotoChanged,
   canEditAnnualReviewDueDate,
@@ -2090,6 +2095,7 @@ function PersonProfileCard({
   initialSectionKey?: HrDetailsSectionKey;
   canDelete: boolean;
   canEdit: boolean;
+  canCreateDocument: boolean;
   canManageSignature: boolean;
   onPhotoChanged: PersonPhotoChanged;
   canEditAnnualReviewDueDate: boolean;
@@ -2141,6 +2147,7 @@ function PersonProfileCard({
         canDelete={canDelete}
         canEdit={canEdit}
         onPhotoChanged={onPhotoChanged}
+        canCreateDocument={canCreateDocument}
         canManageSignature={canManageSignature}
         canEditAnnualReviewDueDate={canEditAnnualReviewDueDate}
         client={client}
@@ -2893,6 +2900,7 @@ function PersonDetailsPanel({
   canClose,
   canDelete,
   canEdit,
+  canCreateDocument,
   canManageSignature,
   onPhotoChanged,
   canEditAnnualReviewDueDate,
@@ -2922,6 +2930,7 @@ function PersonDetailsPanel({
   canClose: boolean;
   canDelete: boolean;
   canEdit: boolean;
+  canCreateDocument: boolean;
   canManageSignature: boolean;
   onPhotoChanged: PersonPhotoChanged;
   canEditAnnualReviewDueDate: boolean;
@@ -3346,6 +3355,7 @@ function PersonDetailsPanel({
           <ProfileDocumentsSection
             documents={documents.filter((document) => document.categoryKey !== 'annual_review')}
             isManager={isManager}
+            canCreateDocument={canCreateDocument}
             isSaving={isSaving}
             onDocumentCreate={onDocumentCreate}
             onDocumentOpen={onDocumentOpen}
@@ -3511,6 +3521,7 @@ function PersonDetailsPanel({
 function ProfileDocumentsSection({
   documents,
   isManager,
+  canCreateDocument = isManager,
   canEditDueDate = false,
   isSaving,
   onDocumentCreate,
@@ -3525,6 +3536,7 @@ function ProfileDocumentsSection({
 }: {
   documents: HrDocumentRecord[];
   isManager: boolean;
+  canCreateDocument?: boolean;
   canEditDueDate?: boolean;
   isSaving: boolean;
   onDocumentCreate: () => void;
@@ -3569,7 +3581,7 @@ function ProfileDocumentsSection({
       <div className="hr-profile-section-title">
         <h3>{title}</h3>
         <span>{documents.length}</span>
-        {isManager ? (
+        {canCreateDocument ? (
           <button className="hr-profile-add-document" disabled={isSaving} onClick={onDocumentCreate} type="button">
             <FilePlus2 aria-hidden="true" size={15} />
             Ajouter un document

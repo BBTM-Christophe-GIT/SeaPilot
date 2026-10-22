@@ -1,5 +1,75 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.4`, build `2026-10-23.002`, publie **Opérations → Opération en Mer**
+avec sa note de mise à jour pour les cinq profils. Les nouvelles préparations
+initialisent Remorquage, Chargement de marchandise, Navire de support de plongeur
+et Approvisionnement / Avitaillement à **Non** ; activer une rubrique sur Oui
+affiche ses contrôles. Les fiches enregistrées conservent leurs réponses.
+La note annonce le planning, la décision signée, le PDF, le Passage Plan,
+les cartes Shom et les prévisions de vent / Hs disponibles à l’ETA.
+Voir [le module et ses limites](./sea-operations.md).
+
+Cette publication conserve le commit de production `476cdc1c` et ses évolutions
+RH, NDF et Pharmacie 3.76.4 à 3.76.9. Les migrations Opération en Mer
+`20261016123005`, `20261016144108`, `20261022190525` et `20261022204736`
+sont déjà appliquées au projet lié ; aucune nouvelle migration n’est requise
+pour les valeurs par défaut ou la note. Le serveur utilise Node 24 et les données
+publiques Météo-France, sans nouvelle clé météo. Les API métier restent
+authentifiées en production, même avec le paramètre de démonstration `preview=1`.
+
+Version `3.76.9`, build `2026-10-22.003`, partage les catégories Pharmacie
+par société, type de dotation médicale et branche. Les deux branches sont
+**Médicaments** et **Matériel médical et objets de pansement** ; les stocks et
+documents restent propres au navire. Appliquer les migrations
+`20261022083717_pharmacy_shared_category_catalog.sql` et
+`20261022083917_pharmacy_catalog_private_policy.sql` avant le frontend.
+La vue de lecture et les RPC conservent les
+contrats des anciens clients ; les révisions périmées imposent une relecture.
+Voir [le fonctionnement pharmacie](./pharmacy-inventory.md).
+
+Version `3.76.8`, build `2026-10-22.002`, ajoute la hiérarchie Pharmacie
+**Type de dotation médicale → Catégorie → Articles** et les filtres en cascade.
+Appliquer `20261022055745_pharmacy_dotation_hierarchy.sql` avant le frontend :
+elle expose l’affectation Flotte et ajoute un parent conservé aux articles et
+catégories. Les anciens clients gardent leurs signatures compatibles et les
+changements d’affectation ne déplacent pas les données historiques. Voir
+[le fonctionnement pharmacie](./pharmacy-inventory.md).
+
+Version `3.76.7`, build `2026-10-22.001`, ajoute **Gérer les catégories** dans
+l’inventaire pharmacie : création, renommage et suppression pour le navire
+sélectionné, selon ses droits existants. Les catégories vides sont persistées.
+Supprimer une catégorie conserve ses articles sous **Sans catégorie**. Appliquer
+la migration `20261022050835_pharmacy_category_management.sql` avant le frontend.
+Elle initialise le catalogue et les RPC avec contrôle de révision, sans supprimer
+ni réinitialiser les données existantes. Voir [le fonctionnement pharmacie](./pharmacy-inventory.md).
+
+Version `3.76.6`, build `2026-10-21.005`, ajoute une corbeille **Supprimer** sur
+chaque ligne de l’inventaire pharmacie pour les profils qui gèrent le navire.
+La confirmation retire l’article de l’inventaire actif et de ses alertes via la
+RPC existante, avec contrôle de révision. Les données restent consultables dans
+les articles retirés. Aucun changement de base ni de droits n’est requis. Voir
+[le fonctionnement pharmacie](./pharmacy-inventory.md).
+
+Version `3.76.5`, build `2026-10-21.004`, retire la dépendance au site NDF Netlify
+supprimé. L'Edge Function `expense-note-send` transmet directement par Gmail TLS,
+toujours depuis `christophe@bbtm.fr`, vers le destinataire Inexweb historique.
+Déployer la fonction avec `mailer.ts` et son `deno.json`, puis renseigner le nouveau
+secret Supabase `NDF_EMAIL_APP_PASSWORD`. L'expéditeur `NDF_EMAIL_USER` et le
+destinataire `NDF_EMAIL_TO` sont configurés sur le projet lié. Sans mot de passe
+d'application, l'envoi est refusé avant toute modification d'état. Aucune note
+n'est retransmise automatiquement. Voir [la configuration NDF](./expense-notes.md).
+
+Version `3.76.4`, build `2026-10-21.003`, autorise les Capitaines à ajouter
+des documents RH à leur profil et aux membres de leur bordée. Appliquer
+`20261021101557_hr_document_self_service_upload.sql` (appliquée au projet lié)
+avant le client.
+Les transmissions NDF réactualisent leur état après chaque tentative et une
+confirmation d'envoi reste acquise si l'actualisation échoue. Le relais externe
+`bbtm-ndfv2.netlify.app` doit être réactivé dans le compte Netlify propriétaire
+pour rétablir les envois ; les neuf notes en échec sont conservées et aucune
+n'est retransmise automatiquement. Voir [les droits RH](./hr-captain-document-uploads.md)
+et [le parcours NDF](./expense-notes.md).
+
 Version `3.76.1`, build `2026-10-20.002`, sépare l’inventaire pharmacie par
 catégorie et remplace le sélecteur de navire par les illustrations de la flotte,
 avec pastilles orange (articles à échéance sous 30 jours) et rouge (périmés).

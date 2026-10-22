@@ -1,13 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { Link, MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PharmacyPage } from './PharmacyPage';
-import { blankPharmacyItem, type PharmacyControl, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
-import { downloadPharmacyControl, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
+import type { RoleKey } from '../permissions/roles';
+import { blankPharmacyItem, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
+import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
 
-vi.mock('./pharmacyQueries', async (importOriginal) => ({ ...await importOriginal<typeof import('./pharmacyQueries')>(), fetchPharmacyVessels: vi.fn(), fetchPharmacyVesselExpiryCounts: vi.fn(), fetchPharmacyRegister: vi.fn(), savePharmacyItem: vi.fn(), uploadPharmacyControl: vi.fn(), downloadPharmacyControl: vi.fn() }));
+vi.mock('./pharmacyQueries', async (importOriginal) => ({ ...await importOriginal<typeof import('./pharmacyQueries')>(), fetchPharmacyVessels: vi.fn(), fetchPharmacyVesselExpiryCounts: vi.fn(), fetchPharmacyRegister: vi.fn(), savePharmacyItem: vi.fn(), savePharmacyCategory: vi.fn(), deletePharmacyCategory: vi.fn(), uploadPharmacyControl: vi.fn(), downloadPharmacyControl: vi.fn() }));
 const client = {} as SupabaseClient;
 const vessels: PharmacyVessel[] = [{ id: 1, company_id: 1, name: 'GOURY', acronym: 'GRY', can_manage: true }, { id: 2, company_id: 1, name: 'SUROIT', acronym: 'SUR', can_manage: true }, { id: 3, company_id: 1, name: 'HIRONDELLE DE LA MANCHE', acronym: 'HIR', can_manage: true }];
 const vesselExpiryCounts = { 1: { due: 2, expired: 1 }, 2: { due: 7, expired: 0 }, 3: { due: 0, expired: 5 } };
@@ -15,7 +16,12 @@ const item: PharmacyItem = { ...blankPharmacyItem(), id: 1, company_id: 1, vesse
 const expired: PharmacyItem = { ...item, id: 2, category: '2. SOINS', designation: 'ARTICLE PÉRIMÉ', quantity: '2 boîtes', expires_on: '2000-10-01', notes: 'OK' };
 const missing: PharmacyItem = { ...item, id: 3, designation: 'ARTICLE SANS DATE', quantity: '', expires_on: null, expiry_precision: 'unknown' };
 const control: PharmacyControl = { id: 20, company_id: 1, vessel_id: 1, issued_on: '2026-01-01', expires_on: '2099-01-01', storage_path: '1/1/control.pdf', file_name: 'Contrôle.pdf', file_size: 100, mime_type: 'application/pdf', created_at: '2026-01-01T00:00:00Z', is_current: true, revision: 1 };
-function page(roles: ('admin' | 'capitaine' | 'marin')[] = ['admin'], initial = '/modules/pharmacy') { return render(<MemoryRouter initialEntries={[initial]}><PharmacyPage client={client} roles={roles} /></MemoryRouter>); }
+const categoryFixtures: PharmacyCategory[] = ['1. CARDIOLOGIE', '2. SOINS'].map((name, index) => ({ id: 101 + index, company_id: 1, vessel_id: 1, name, revision: 2, created_at: '2026-10-22T00:00:00Z', updated_at: '2026-10-22T00:00:00Z' }));
+const parentB = { ...categoryFixtures[0], medical_dotation: 'Dotation B' };
+const parentC = { ...categoryFixtures[0], id: 201, medical_dotation: 'Dotation C' };
+const articleB = { ...item, medical_dotation: 'Dotation B', section: 'Médicaments source B' };
+const articleC = { ...item, id: 21, medical_dotation: 'Dotation C', section: 'Médicaments source B', designation: 'ARTICLE HISTORIQUE C' };
+function page(roles: RoleKey[] = ['admin'], initial = '/modules/pharmacy') { return render(<MemoryRouter initialEntries={[initial]}><PharmacyPage client={client} roles={roles} /></MemoryRouter>); }
 
 describe('PharmacyPage', () => {
   beforeEach(() => {
@@ -23,8 +29,10 @@ describe('PharmacyPage', () => {
     vi.clearAllMocks();
     vi.mocked(fetchPharmacyVessels).mockResolvedValue(vessels);
     vi.mocked(fetchPharmacyVesselExpiryCounts).mockResolvedValue(vesselExpiryCounts);
-    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item, expired, missing], controls: [] });
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item, expired, missing], controls: [], categories: categoryFixtures });
     vi.mocked(savePharmacyItem).mockResolvedValue(1);
+    vi.mocked(savePharmacyCategory).mockResolvedValue(120);
+    vi.mocked(deletePharmacyCategory).mockResolvedValue(undefined);
     vi.mocked(uploadPharmacyControl).mockResolvedValue(20);
   });
   it('shows source quantities, month precision and missing control without inventing a date', async () => {
@@ -58,6 +66,8 @@ describe('PharmacyPage', () => {
     expect(screen.queryByRole('button', { name: 'Ajouter un article' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Déposer le document' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier ARTICLE SOURCE' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Supprimer / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gérer les catégories' })).not.toBeInTheDocument();
   });
   it('requires vessel authorization for a captain and respects the vessel deep link', async () => {
     vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[1], can_manage: false }]);
@@ -66,6 +76,8 @@ describe('PharmacyPage', () => {
     expect(fetchPharmacyRegister).toHaveBeenCalledWith(client, 2);
     expect(screen.getByRole('button', { name: 'SUROIT' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('button', { name: 'Ajouter un article' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Supprimer / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gérer les catégories' })).not.toBeInTheDocument();
   });
   it('orders the selectable vessels by length and defaults to the longest instead of BR71', async () => {
     vi.mocked(fetchPharmacyVessels).mockResolvedValue([
@@ -88,7 +100,7 @@ describe('PharmacyPage', () => {
     expect(fetchPharmacyRegister).not.toHaveBeenCalledWith(client, 71);
   });
   it('clears the previous inventory and control when a new client only returns BR71', async () => {
-    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item], controls: [control] });
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item], controls: [control], categories: categoryFixtures });
     const { rerender } = page();
     await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
     await userEvent.click(screen.getByRole('button', { name: 'ARTICLE SOURCE' }));
@@ -129,7 +141,7 @@ describe('PharmacyPage', () => {
   });
   it('uploads a control and its expiry, retaining the current control id for concurrency', async () => {
     const user = userEvent.setup();
-    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item], controls: [control] });
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item], controls: [control], categories: categoryFixtures });
     page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
     await user.click(screen.getByRole('button', { name: 'Nouveau contrôle' }));
     const dialog = screen.getByRole('dialog');
@@ -164,18 +176,18 @@ describe('PharmacyPage', () => {
     expect(within(dialog).getByRole('button', { name: 'Enregistrer le contrôle' })).toBeEnabled();
   });
   it('does not display an earlier vessel response after switching vessel', async () => {
-    let resolveFirst: (value: { items: PharmacyItem[]; controls: PharmacyControl[] }) => void = () => undefined;
-    vi.mocked(fetchPharmacyRegister).mockImplementation((_db, id) => id === 1 ? new Promise((resolve) => { resolveFirst = resolve; }) : Promise.resolve({ items: [{ ...item, id: 40, vessel_id: 2, designation: 'ARTICLE SUROIT' }], controls: [] }));
+    let resolveFirst: (value: { items: PharmacyItem[]; controls: PharmacyControl[]; categories: PharmacyCategory[] }) => void = () => undefined;
+    vi.mocked(fetchPharmacyRegister).mockImplementation((_db, id) => id === 1 ? new Promise((resolve) => { resolveFirst = resolve; }) : Promise.resolve({ items: [{ ...item, id: 40, vessel_id: 2, designation: 'ARTICLE SUROIT' }], controls: [], categories: [] }));
     const user = userEvent.setup(); page();
     await waitFor(() => expect(fetchPharmacyRegister).toHaveBeenCalledWith(client, 1));
     await user.click(screen.getByRole('button', { name: 'SUROIT' }));
     expect(await screen.findByRole('button', { name: 'ARTICLE SUROIT' })).toBeInTheDocument();
-    resolveFirst({ items: [item], controls: [] });
+    resolveFirst({ items: [item], controls: [], categories: categoryFixtures });
     await waitFor(() => expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'ARTICLE SUROIT' })).toBeInTheDocument();
   });
   it('reports download failures without hiding the register', async () => {
-    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item], controls: [control] });
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item], controls: [control], categories: categoryFixtures });
     vi.mocked(downloadPharmacyControl).mockRejectedValue(new Error('Document inaccessible.'));
     page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
     await userEvent.click(screen.getByRole('button', { name: 'Télécharger le document' }));
@@ -185,7 +197,7 @@ describe('PharmacyPage', () => {
   it('groups visible articles under their numbered categories in natural order', async () => {
     const user = userEvent.setup();
     const dermatology = { ...item, id: 10, category: '10. DERMATOLOGIE', designation: 'ARTICLE DERMATOLOGIE' };
-    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [dermatology, expired, missing, item], controls: [] });
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [dermatology, expired, missing, item], controls: [], categories: categoryFixtures });
     page();
     await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
     const table = screen.getByRole('table');
@@ -270,5 +282,567 @@ describe('PharmacyPage', () => {
     expect(await within(screen.getByRole('button', { name: 'SUROIT' })).findByRole('img', { name: '7 articles à échéance sous 30 jours' })).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+  });
+  it.each(['admin', 'direction', 'armement', 'capitaine'] as const)('offers a removal action on every line for an authorized %s fixture', async (role) => {
+    page([role]); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    expect(screen.getByRole('button', { name: 'Gérer les catégories' })).toBeEnabled();
+    const actions = screen.getAllByRole('button', { name: /^Supprimer / });
+    expect(actions).toHaveLength(3);
+    for (const action of actions) expect(action).toBeEnabled();
+  });
+  it('names the article and vessel in the confirmation and cancels without writing', async () => {
+    const user = userEvent.setup(); page();
+    await user.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
+    const dialog = screen.getByRole('dialog', { name: 'Supprimer ARTICLE SOURCE' });
+    expect(dialog).toHaveTextContent('ARTICLE SOURCE'); expect(dialog).toHaveTextContent('GOURY');
+    expect(dialog).toHaveTextContent('L’article sera retiré de l’inventaire actif. Son historique sera conservé.');
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Annuler' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+  });
+  it('removes the confirmed line, refreshes expiry counts and keeps its source available among retired articles', async () => {
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item, expired, missing], controls: [], categories: categoryFixtures })
+      .mockResolvedValue({ items: [item, { ...expired, active: false, revision: 3 }, missing], controls: [], categories: categoryFixtures });
+    const changed = vi.fn(); window.addEventListener('pharmacy:changed', changed);
+    try {
+      const user = userEvent.setup(); page();
+      await user.click(await screen.findByRole('button', { name: 'ARTICLE PÉRIMÉ' }));
+      await user.click(screen.getByRole('button', { name: 'Supprimer ARTICLE PÉRIMÉ' }));
+      const beforeCounts = vi.mocked(fetchPharmacyVesselExpiryCounts).mock.calls.length;
+      vi.mocked(fetchPharmacyVesselExpiryCounts).mockResolvedValue({ ...vesselExpiryCounts, 1: { due: 2, expired: 0 } });
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Supprimer' }));
+      expect(await screen.findByText(/ARTICLE PÉRIMÉ.*supprimé de l’inventaire de GOURY/)).toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'ARTICLE PÉRIMÉ' })).not.toBeInTheDocument();
+      expect(screen.queryByText('Détail de l’article')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Périmés.*0/ })).toBeInTheDocument();
+      expect(screen.getByText('2 articles actifs')).toBeInTheDocument();
+      expect(changed).toHaveBeenCalledOnce();
+      await waitFor(() => expect(vi.mocked(fetchPharmacyVesselExpiryCounts).mock.calls.length).toBeGreaterThan(beforeCounts));
+      await waitFor(() => expect(within(screen.getByRole('button', { name: 'GOURY' })).queryByRole('img', { name: /périmé/ })).not.toBeInTheDocument());
+      expect(savePharmacyItem).toHaveBeenCalledExactlyOnceWith(client, expired.vessel_id, {
+        section: expired.section, category: expired.category, brand: expired.brand, designation: expired.designation,
+        lot_number: expired.lot_number, quantity: expired.quantity, required_quantity: expired.required_quantity,
+        expires_on: expired.expires_on, expiry_text: expired.expiry_text, expiry_precision: expired.expiry_precision,
+        notes: expired.notes, active: false, medical_dotation: expired.medical_dotation, medical_section: expired.medical_section,
+      }, expired);
+      await user.click(screen.getByRole('checkbox', { name: 'Inclure les articles retirés' }));
+      expect(screen.getByRole('button', { name: 'Supprimer ARTICLE PÉRIMÉ' })).toBeDisabled();
+      await user.click(screen.getByRole('button', { name: 'ARTICLE PÉRIMÉ' }));
+      expect(screen.getByText(/Inventaire Pharmacie - GOURY.xlsx/)).toBeInTheDocument();
+      expect(screen.getByText(/DOTATION MEDICALE · ligne 4/)).toBeInTheDocument();
+    } finally { window.removeEventListener('pharmacy:changed', changed); }
+  });
+  it('keeps the removal confirmation and original revision when another device changed the article', async () => {
+    vi.mocked(savePharmacyItem).mockRejectedValueOnce(new Error('Cet article a été modifié depuis un autre appareil. Actualisez l’inventaire.'));
+    const user = userEvent.setup(); page();
+    await user.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Supprimer' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Cet article a été modifié depuis un autre appareil.');
+    expect(within(dialog).getByRole('button', { name: 'Supprimer' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+    expect(savePharmacyItem).toHaveBeenCalledExactlyOnceWith(client, 1, expect.objectContaining({ active: false }), expect.objectContaining({ id: item.id, revision: item.revision }));
+    expect(fetchPharmacyRegister).toHaveBeenCalledTimes(1);
+  });
+  it('prevents duplicate removals and closing the dialog while the guarded RPC is pending', async () => {
+    let finish: (id: number) => void = () => undefined;
+    vi.mocked(savePharmacyItem).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item], controls: [], categories: categoryFixtures })
+      .mockResolvedValue({ items: [{ ...item, active: false }], controls: [], categories: categoryFixtures });
+    page(); fireEvent.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
+    const dialog = screen.getByRole('dialog');
+    const confirm = within(dialog).getByRole('button', { name: 'Supprimer' });
+    fireEvent.click(confirm); fireEvent.click(confirm);
+    expect(savePharmacyItem).toHaveBeenCalledTimes(1);
+    expect(dialog).toHaveAttribute('aria-busy', 'true');
+    expect(within(dialog).getByRole('button', { name: 'Suppression…' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Annuler' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Fermer' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'SUROIT' })).toBeDisabled();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await act(async () => { finish(item.id); });
+    expect(await screen.findByText(/ARTICLE SOURCE.*supprimé de l’inventaire de GOURY/)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+  it('retains confirmed removal when refreshing the register fails instead of inviting a second deletion', async () => {
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item, expired], controls: [], categories: categoryFixtures })
+      .mockRejectedValueOnce(new Error('Connexion de lecture indisponible.'));
+    const user = userEvent.setup(); page();
+    await user.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Supprimer' }));
+    expect(await screen.findByText(/L’actualisation est indisponible/)).toHaveTextContent('L’historique est conservé.');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument();
+    expect(screen.getByText('1 articles actifs')).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Inclure les articles retirés' }));
+    expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Supprimer ARTICLE SOURCE' })).toBeDisabled();
+    expect(savePharmacyItem).toHaveBeenCalledTimes(1);
+  });
+  it('disables removal for an already retired article while retaining its details and edit action', async () => {
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [{ ...item, active: false }, expired], controls: [], categories: categoryFixtures });
+    const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE PÉRIMÉ' });
+    expect(screen.queryByRole('button', { name: 'Supprimer ARTICLE SOURCE' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Inclure les articles retirés' }));
+    const remove = screen.getByRole('button', { name: 'Supprimer ARTICLE SOURCE' });
+    expect(remove).toBeDisabled(); expect(remove).toHaveAttribute('title', 'Article déjà retiré');
+    expect(screen.getByRole('button', { name: 'Modifier ARTICLE SOURCE' })).toBeEnabled();
+    await user.click(remove);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+  });
+  it('discards the confirmation when changing vessel and targets only the newly selected vessel', async () => {
+    const suroitItem = { ...item, id: 40, vessel_id: 2, designation: 'ARTICLE SUROIT', revision: 7 };
+    vi.mocked(fetchPharmacyRegister).mockImplementation(async (_db, id) => ({ items: id === 1 ? [item] : [suroitItem], controls: [], categories: categoryFixtures }));
+    const user = userEvent.setup(); page(['capitaine']);
+    await user.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
+    await user.click(screen.getByRole('button', { name: 'SUROIT' }));
+    expect(await screen.findByRole('button', { name: 'ARTICLE SUROIT' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Supprimer ARTICLE SUROIT' }));
+    const dialog = screen.getByRole('dialog', { name: 'Supprimer ARTICLE SUROIT' });
+    expect(dialog).toHaveTextContent('SUROIT');
+    await user.click(within(dialog).getByRole('button', { name: 'Supprimer' }));
+    expect(savePharmacyItem).toHaveBeenCalledExactlyOnceWith(client, 2, expect.objectContaining({ designation: 'ARTICLE SUROIT', active: false }), suroitItem);
+  });
+  it('does not apply a stale confirmation to a newly refreshed item revision', async () => {
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item], controls: [], categories: categoryFixtures })
+      .mockResolvedValue({ items: [{ ...item, revision: 3, quantity: '12' }], controls: [], categories: categoryFixtures });
+    const user = userEvent.setup(); page();
+    await user.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Actualiser l’inventaire' }));
+    await screen.findByText('12');
+    const dialog = screen.getByRole('dialog', { name: 'Supprimer ARTICLE SOURCE' });
+    await user.click(within(dialog).getByRole('button', { name: 'Supprimer' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Cet article a été modifié.');
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+  });
+  it('keeps a newly created empty category and its item-form suggestion when the follow-up refresh fails', async () => {
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item, expired, missing], controls: [], categories: categoryFixtures })
+      .mockRejectedValueOnce(new Error('Lecture indisponible.'));
+    const user = userEvent.setup(); page();
+    await user.click(await screen.findByRole('button', { name: 'Gérer les catégories' }));
+    const dialog = screen.getByRole('dialog', { name: 'Gérer les catégories' });
+    await user.selectOptions(within(dialog).getByLabelText('Branche du catalogue'), 'medicines');
+    await user.type(within(dialog).getByLabelText('Nouvelle catégorie'), '  3. TROUSSE VIDE  ');
+    await user.click(within(dialog).getByRole('button', { name: 'Ajouter' }));
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('L’actualisation est indisponible');
+    const row = within(dialog).getByRole('button', { name: 'Renommer 3. TROUSSE VIDE' }).closest('li')!;
+    expect(row).toHaveTextContent('0 article');
+    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, '3. TROUSSE VIDE', undefined, '', 'medicines');
+    expect(within(dialog).getByLabelText('Nouvelle catégorie')).toHaveValue('');
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Ajouter' })).toBeEnabled());
+    await user.click(within(dialog).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
+    expect(screen.getByRole('combobox', { name: 'Catégorie' })).toContainElement(screen.getByRole('option', { name: '3. TROUSSE VIDE' }));
+    await user.click(screen.getByRole('button', { name: 'Ajouter un article' }));
+    const form = screen.getByRole('dialog', { name: 'Ajouter un article' });
+    await user.selectOptions(within(form).getByLabelText('Branche'), 'medicines');
+    expect([...form.querySelectorAll('datalist option')].map((option) => option.getAttribute('value'))).toContain('3. TROUSSE VIDE');
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+  });
+  it('follows a renamed category in the active filter and selected article, including retired source rows', async () => {
+    vi.mocked(savePharmacyCategory).mockResolvedValue(categoryFixtures[0].id);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item, { ...missing, active: false }, expired], controls: [], categories: categoryFixtures })
+      .mockRejectedValueOnce(new Error('Lecture indisponible.'));
+    const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Catégorie' }), '1. CARDIOLOGIE');
+    await user.click(screen.getByRole('button', { name: 'ARTICLE SOURCE' }));
+    await user.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    const dialog = screen.getByRole('dialog', { name: 'Gérer les catégories' });
+    await user.click(within(dialog).getByRole('button', { name: 'Renommer 1. CARDIOLOGIE' }));
+    const input = within(dialog).getByLabelText('Nouveau nom de 1. CARDIOLOGIE');
+    await user.clear(input); await user.type(input, '3. URGENCES');
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer 1. CARDIOLOGIE' }));
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('Catégorie « 3. URGENCES » renommée');
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Renommer 3. URGENCES' })).toBeEnabled());
+    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, '3. URGENCES', categoryFixtures[0], '', 'unclassified');
+    await user.click(within(dialog).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
+    expect(screen.getByRole('combobox', { name: 'Catégorie' })).toHaveValue('3. URGENCES');
+    expect(screen.queryByRole('option', { name: '1. CARDIOLOGIE' })).not.toBeInTheDocument();
+    const details = screen.getByRole('complementary', { name: 'Contrôle et détails du navire' });
+    expect(within(details).getByText('3. URGENCES')).toBeInTheDocument();
+    expect(within(details).getByText(/Inventaire Pharmacie - GOURY.xlsx/)).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Inclure les articles retirés' }));
+    expect(screen.getByRole('button', { name: 'ARTICLE SANS DATE' })).toBeInTheDocument();
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+  });
+  it('deletes only the category and clears its filter while preserving every active and retired article', async () => {
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item, { ...missing, active: false }, expired], controls: [], categories: categoryFixtures })
+      .mockRejectedValueOnce(new Error('Lecture indisponible.'));
+    const changed = vi.fn(); window.addEventListener('pharmacy:changed', changed);
+    try {
+      const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Catégorie' }), '1. CARDIOLOGIE');
+      await user.click(screen.getByRole('button', { name: 'ARTICLE SOURCE' }));
+      await user.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+      await user.click(screen.getByRole('button', { name: 'Supprimer 1. CARDIOLOGIE' }));
+      const confirmation = screen.getByRole('dialog', { name: 'Supprimer la catégorie 1. CARDIOLOGIE' });
+      expect(confirmation).toHaveTextContent('2 articles, y compris les articles retirés');
+      await user.click(within(confirmation).getByRole('button', { name: 'Supprimer' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Gérer les catégories' });
+      expect(within(dialog).getByRole('status')).toHaveTextContent('Les articles et leur historique sont conservés.');
+      expect(within(dialog).queryByRole('button', { name: 'Renommer 1. CARDIOLOGIE' })).not.toBeInTheDocument();
+      expect(deletePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, categoryFixtures[0]);
+      expect(changed).toHaveBeenCalledOnce();
+      await user.click(within(dialog).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
+      expect(screen.getByRole('combobox', { name: 'Catégorie' })).toHaveValue('');
+      expect(screen.queryByRole('option', { name: '1. CARDIOLOGIE' })).not.toBeInTheDocument();
+      expect(screen.getByRole('rowheader', { name: /Sans catégorie/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'ARTICLE PÉRIMÉ' })).toBeInTheDocument();
+      expect(screen.getByText('2 articles actifs')).toBeInTheDocument();
+      await user.click(screen.getByRole('checkbox', { name: 'Inclure les articles retirés' }));
+      expect(screen.getByRole('button', { name: 'ARTICLE SANS DATE' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Supprimer ARTICLE SANS DATE' })).toBeDisabled();
+      expect(savePharmacyItem).not.toHaveBeenCalled();
+    } finally { window.removeEventListener('pharmacy:changed', changed); }
+  });
+  it('rejects a category rename whose captured revision changed during a refresh', async () => {
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [item], controls: [], categories: categoryFixtures })
+      .mockResolvedValue({ items: [item], controls: [], categories: [{ ...categoryFixtures[0], revision: 3 }, categoryFixtures[1]] });
+    const user = userEvent.setup(); page();
+    await user.click(await screen.findByRole('button', { name: 'Gérer les catégories' }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Renommer 1. CARDIOLOGIE' }));
+    const name = within(dialog).getByLabelText('Nouveau nom de 1. CARDIOLOGIE');
+    await user.clear(name); await user.type(name, 'Autre nom');
+    fireEvent.click(screen.getByRole('button', { name: 'Actualiser l’inventaire' }));
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Enregistrer 1. CARDIOLOGIE' })).toBeEnabled());
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer 1. CARDIOLOGIE' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Cette catégorie a été modifiée.');
+    expect(name).toHaveValue('Autre nom'); expect(savePharmacyCategory).not.toHaveBeenCalled();
+  });
+  it('does not apply an old pending category result after changing client and vessel', async () => {
+    let finish: (id: number) => void = () => undefined;
+    vi.mocked(savePharmacyCategory).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const { rerender } = page();
+    const manage = await screen.findByRole('button', { name: 'Gérer les catégories' });
+    await waitFor(() => expect(manage).toBeEnabled());
+    fireEvent.click(manage);
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Branche du catalogue'), { target: { value: 'medicines' } });
+    fireEvent.change(within(dialog).getByLabelText('Nouvelle catégorie'), { target: { value: 'Ancienne opération' } });
+    const add = within(dialog).getByRole('button', { name: 'Ajouter' });
+    fireEvent.click(add); fireEvent.click(add);
+    expect(savePharmacyCategory).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'SUROIT' })).toBeDisabled();
+    const nextClient = {} as SupabaseClient;
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[1] }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [{ ...item, vessel_id: 2, designation: 'ARTICLE SUROIT' }], controls: [], categories: [{ ...categoryFixtures[0], vessel_id: 2, name: 'CATÉGORIE SUROIT' }] });
+    rerender(<MemoryRouter><PharmacyPage client={nextClient} roles={['capitaine']} /></MemoryRouter>);
+    await screen.findByRole('button', { name: 'ARTICLE SUROIT' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await act(async () => { finish(120); });
+    expect(screen.getByRole('button', { name: 'SUROIT' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('option', { name: 'Ancienne opération' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Ancienne opération.*ajoutée/)).not.toBeInTheDocument();
+    expect(fetchPharmacyRegister).toHaveBeenLastCalledWith(nextClient, 2);
+    fireEvent.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    expect(screen.getByRole('button', { name: 'Renommer CATÉGORIE SUROIT' })).toBeInTheDocument();
+  });
+  it('uses the assigned type as the first rank and cascades category choices without guessing from source sections', async () => {
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation B' }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [articleB, { ...articleB, id: 11, section: 'Matériel source B', designation: 'ARTICLE MATÉRIEL B' }, articleC], categories: [parentB, parentC, { ...parentC, id: 202, name: 'CATÉGORIE C VIDE' }], controls: [] });
+    const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    const types = screen.getByRole('combobox', { name: 'Type de dotation médicale' });
+    expect(types).toHaveValue('dotation b');
+    expect(within(types).getByRole('option', { name: 'Dotation B · actuelle' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ARTICLE HISTORIQUE C' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'CATÉGORIE C VIDE' })).not.toBeInTheDocument();
+    const table = screen.getByRole('table');
+    expect(table.querySelector('.pharmacy-dotation-row')).toHaveTextContent('Dotation B');
+    expect(within(table).getAllByRole('rowheader', { name: /^1\. CARDIOLOGIE/ })).toHaveLength(1);
+    expect(table.querySelector('.pharmacy-category-row')).toHaveTextContent('2 articles');
+    expect(table.querySelector('.pharmacy-category-row')).not.toHaveTextContent('Médicaments source B');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Catégorie' }), parentB.name);
+    await user.click(screen.getByRole('button', { name: 'ARTICLE SOURCE' }));
+    expect(within(screen.getByRole('complementary')).getByText('Médicaments source B')).toBeInTheDocument();
+    await user.selectOptions(types, 'dotation c');
+    expect(screen.getByRole('combobox', { name: 'Catégorie' })).toHaveValue('');
+    expect(screen.getByRole('option', { name: 'CATÉGORIE C VIDE' })).toBeInTheDocument();
+    expect(screen.queryByText('Détail de l’article')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ARTICLE HISTORIQUE C' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ajouter un article' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ajouter un article' })).toHaveAttribute('title', expect.stringContaining('Dotation B'));
+    await user.click(screen.getByRole('button', { name: 'Modifier ARTICLE HISTORIQUE C' }));
+    expect(within(screen.getByRole('dialog')).getByLabelText('Type de dotation médicale')).toHaveValue('Dotation C');
+  });
+  it('keeps a newly assigned empty type selected and creates its own category rather than showing the old catalogue', async () => {
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation C' }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [articleB], categories: [parentB], controls: [] }).mockRejectedValueOnce(new Error('Lecture indisponible.'));
+    const user = userEvent.setup(); page();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Gérer les catégories' })).toBeEnabled());
+    expect(screen.getByRole('combobox', { name: 'Type de dotation médicale' })).toHaveValue('dotation c');
+    expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: parentB.name })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Aucun article ne correspond aux filtres dans cette branche.')).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('GOURY · Dotation C');
+    expect(dialog).toHaveTextContent('Aucune catégorie dans cette dotation.');
+    await user.selectOptions(within(dialog).getByLabelText('Branche du catalogue'), 'medicines');
+    await user.type(within(dialog).getByLabelText('Nouvelle catégorie'), parentB.name);
+    await user.click(within(dialog).getByRole('button', { name: 'Ajouter' }));
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('L’actualisation est indisponible');
+    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, parentB.name, undefined, 'Dotation C', 'medicines');
+    await user.click(within(dialog).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
+    await user.click(screen.getByRole('button', { name: 'Ajouter un article' }));
+    expect(within(screen.getByRole('dialog')).getByLabelText('Type de dotation médicale')).toHaveValue('Dotation C');
+    await user.selectOptions(within(screen.getByRole('dialog')).getByLabelText('Branche'), 'medicines');
+    expect([...screen.getByRole('dialog').querySelectorAll('datalist option')].map((option) => option.getAttribute('value'))).toEqual([parentB.name]);
+  });
+  it.each(['rename', 'delete'] as const)('isolates a category %s from the identically named category and article in another type', async (operation) => {
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation B' }]);
+    vi.mocked(savePharmacyCategory).mockResolvedValue(parentB.id);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [articleB, articleC], categories: [parentB, parentC], controls: [] }).mockRejectedValueOnce(new Error('Lecture indisponible.'));
+    const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Catégorie' }), parentB.name);
+    await user.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    if (operation === 'rename') {
+      await user.click(screen.getByRole('button', { name: `Renommer ${parentB.name}` }));
+      const input = screen.getByLabelText(`Nouveau nom de ${parentB.name}`);
+      await user.clear(input); await user.type(input, 'URGENCES B');
+      await user.click(screen.getByRole('button', { name: `Enregistrer ${parentB.name}` }));
+      expect(await screen.findByRole('button', { name: 'Renommer URGENCES B' })).toBeInTheDocument();
+      expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, 'URGENCES B', parentB, 'Dotation B', 'unclassified');
+    } else {
+      await user.click(screen.getByRole('button', { name: `Supprimer ${parentB.name}` }));
+      const confirm = screen.getByRole('dialog');
+      expect(confirm).toHaveTextContent('1 article, y compris les articles retirés');
+      await user.click(within(confirm).getByRole('button', { name: 'Supprimer' }));
+      expect(await screen.findByRole('dialog', { name: 'Gérer les catégories' })).toBeInTheDocument();
+      expect(deletePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, parentB);
+    }
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Fermer' }).at(-1)!).toBeEnabled());
+    await user.click(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
+    expect(screen.getByRole('combobox', { name: 'Catégorie' })).toHaveValue(operation === 'rename' ? 'URGENCES B' : '');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Type de dotation médicale' }), 'dotation c');
+    expect(screen.getByRole('option', { name: parentC.name })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'URGENCES B' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ARTICLE HISTORIQUE C' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    expect(screen.getByRole('button', { name: `Renommer ${parentC.name}` })).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveTextContent('1 article');
+  });
+  it('closes the captured category context and ignores its pending result after selecting another type', async () => {
+    let finish: (id: number) => void = () => undefined;
+    vi.mocked(savePharmacyCategory).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation B' }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [articleB, articleC], categories: [parentB, parentC], controls: [] });
+    page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    fireEvent.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    fireEvent.change(screen.getByLabelText('Branche du catalogue'), { target: { value: 'medicines' } });
+    fireEvent.change(screen.getByLabelText('Nouvelle catégorie'), { target: { value: 'NOUVELLE B' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter' }));
+    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, 'NOUVELLE B', undefined, 'Dotation B', 'medicines');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Type de dotation médicale' }), { target: { value: 'dotation c' } });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await act(async () => { finish(300); });
+    expect(screen.getByRole('combobox', { name: 'Type de dotation médicale' })).toHaveValue('dotation c');
+    expect(screen.queryByRole('option', { name: 'NOUVELLE B' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/NOUVELLE B.*ajoutée/)).not.toBeInTheDocument();
+    expect(fetchPharmacyRegister).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'ARTICLE HISTORIQUE C' })).toBeInTheDocument();
+  });
+  it('resets type and category to the newly selected vessel assignment', async () => {
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation B' }, { ...vessels[1], medical_dotation: 'Dotation C' }]);
+    vi.mocked(fetchPharmacyRegister).mockImplementation(async (_db, id) => id === 1
+      ? { items: [articleB, articleC], categories: [parentB, parentC], controls: [] }
+      : { items: [{ ...articleC, vessel_id: 2, designation: 'ARTICLE SUROIT C' }], categories: [{ ...parentC, vessel_id: 2 }], controls: [] });
+    const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Catégorie' }), parentB.name);
+    await user.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    fireEvent.click(screen.getByRole('button', { name: 'SUROIT' }));
+    await screen.findByRole('button', { name: 'ARTICLE SUROIT C' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Type de dotation médicale' })).toHaveValue('dotation c');
+    expect(screen.getByRole('combobox', { name: 'Catégorie' })).toHaveValue('');
+    expect(screen.queryByRole('option', { name: 'Dotation B · historique' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ajouter un article' })).toBeEnabled();
+  });
+  it('opens an alert article in its historical type and lets a manual type choice remain after refreshing the unchanged assignment', async () => {
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation C' }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [{ ...articleB, expires_on: '2000-10-01' }, articleC], categories: [parentB, parentC], controls: [] });
+    const user = userEvent.setup(); page(['capitaine'], '/modules/pharmacy?vessel=1&filter=expiry&item=1');
+    await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    expect(screen.getByRole('combobox', { name: 'Type de dotation médicale' })).toHaveValue('dotation b');
+    expect(screen.getByRole('combobox', { name: 'État des articles' })).toHaveValue('expiry');
+    expect(screen.getByText('Détail de l’article')).toBeInTheDocument();
+    expect(within(screen.getByRole('complementary')).getByText('Dotation B')).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Type de dotation médicale' }), 'dotation c');
+    expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Détail de l’article')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Actualiser l’inventaire' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Actualiser l’inventaire' })).toBeEnabled());
+    expect(screen.getByRole('combobox', { name: 'Type de dotation médicale' })).toHaveValue('dotation c');
+    expect(fetchPharmacyRegister).toHaveBeenCalledTimes(2);
+    expect(fetchPharmacyVessels).toHaveBeenCalledTimes(2);
+  });
+  it('handles a new alert item on the same vessel and ignores an inaccessible item id', async () => {
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation C' }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [{ ...articleB, expires_on: '2000-10-01' }, { ...articleC, expires_on: '2001-10-01' }], categories: [parentB, parentC], controls: [] });
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/modules/pharmacy?vessel=1&filter=expiry&item=1']}><PharmacyPage client={client} roles={['capitaine']} /><Link to="/modules/pharmacy?vessel=1&filter=expiry&item=21">Alerte suivante</Link><Link to="/modules/pharmacy?vessel=1&filter=expiry&item=999">Alerte inaccessible</Link></MemoryRouter>);
+    await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    await user.click(screen.getByRole('link', { name: 'Alerte suivante' }));
+    await screen.findByRole('button', { name: 'ARTICLE HISTORIQUE C' });
+    expect(screen.getByRole('combobox', { name: 'Type de dotation médicale' })).toHaveValue('dotation c');
+    expect(within(screen.getByRole('complementary')).getByText('ARTICLE HISTORIQUE C')).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Alerte inaccessible' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Actualiser l’inventaire' })).toBeEnabled());
+    expect(screen.queryByText('Détail de l’article')).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Type de dotation médicale' })).toHaveValue('dotation c');
+    expect(fetchPharmacyRegister).toHaveBeenCalledTimes(3);
+  });
+  it('refreshes the vessel assignment from Fleet and preserves the previous catalogue under its historical type', async () => {
+    vi.mocked(fetchPharmacyVessels).mockResolvedValueOnce([{ ...vessels[0], medical_dotation: 'Dotation B' }]).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation C' }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [articleB], categories: [parentB], controls: [] });
+    const user = userEvent.setup(); page(['capitaine']); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Catégorie' }), parentB.name);
+    await user.click(screen.getByRole('button', { name: 'ARTICLE SOURCE' }));
+    await user.click(screen.getByRole('button', { name: 'Actualiser l’inventaire' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Type de dotation médicale' })).toHaveValue('dotation c'));
+    expect(screen.getByRole('combobox', { name: 'Type de dotation médicale' })).toHaveValue('dotation c');
+    expect(screen.getByRole('combobox', { name: 'Catégorie' })).toHaveValue('');
+    expect(screen.queryByRole('option', { name: parentB.name })).not.toBeInTheDocument();
+    expect(screen.queryByText('Détail de l’article')).not.toBeInTheDocument();
+    expect(fetchPharmacyRegister).toHaveBeenCalledTimes(2);
+    expect(fetchPharmacyVessels).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: 'Ajouter un article' })).toBeEnabled();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Type de dotation médicale' }), 'dotation b');
+    expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: parentB.name })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'ARTICLE SOURCE' }));
+    expect(screen.getByText(/DOTATION MEDICALE · ligne 4/)).toBeInTheDocument();
+  });
+  it('updates a captain permission change discovered by manual refresh before exposing further mutations', async () => {
+    vi.mocked(fetchPharmacyVessels).mockResolvedValueOnce([vessels[0]]).mockResolvedValue([{ ...vessels[0], can_manage: false }]);
+    const user = userEvent.setup(); page(['capitaine']); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    expect(screen.getByRole('button', { name: 'Gérer les catégories' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Actualiser l’inventaire' }));
+    await screen.findByText(/Consultation/);
+    expect(screen.queryByRole('button', { name: 'Gérer les catégories' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modifier ARTICLE SOURCE' })).not.toBeInTheDocument();
+    expect(fetchPharmacyRegister).toHaveBeenCalledTimes(2);
+  });
+  it('shows the two medical branches, keeps legacy rows unclassified, and cascades branch before category', async () => {
+    const medicine = { ...articleB, medical_section: 'medicines' as const };
+    const equipment = { ...articleB, id: 31, designation: 'ARTICLE MATÉRIEL', medical_section: 'equipment' as const };
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation B' }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [medicine, equipment], categories: [{ ...parentB, medical_section: 'medicines' }, { ...parentB, id: 301, medical_section: 'equipment' }], controls: [] });
+    const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    expect(screen.getByRole('combobox', { name: 'Branche' })).toHaveValue('all');
+    expect([...screen.getByRole('table').querySelectorAll('.pharmacy-branch-row')].map((row) => row.textContent)).toEqual(['Médicaments', 'Matériel médical et objets de pansement']);
+    expect(screen.queryByRole('option', { name: 'À classer' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('rowheader', { name: /^1\. CARDIOLOGIE/ })).toHaveLength(2);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'equipment');
+    expect(screen.getByRole('button', { name: 'ARTICLE MATÉRIEL' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Catégorie' }), parentB.name);
+    await user.click(screen.getByRole('button', { name: 'ARTICLE MATÉRIEL' }));
+    expect(within(screen.getByRole('complementary')).getByText('Médicaments source B')).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'medicines');
+    expect(screen.getByRole('combobox', { name: 'Catégorie' })).toHaveValue('');
+    expect(screen.queryByText('Détail de l’article')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+  });
+  it('exposes shared empty categories without importing another vessel stock and prefills the chosen article branch', async () => {
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation B' }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [], categories: [{ ...parentB, medical_section: 'equipment' }], controls: [] });
+    const user = userEvent.setup(); page(); await waitFor(() => expect(screen.getByRole('button', { name: 'Ajouter un article' })).toBeEnabled());
+    expect(screen.getAllByText('Aucun article ne correspond aux filtres dans cette branche.')).toHaveLength(1);
+    expect(screen.getByText('Aucun article enregistré sur ce navire.')).toBeInTheDocument();
+    expect(screen.getByRole('rowheader', { name: /^1\. CARDIOLOGIE/ })).toHaveTextContent('0 article');
+    expect(screen.getByRole('option', { name: parentB.name })).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'medicines');
+    expect(screen.queryByRole('option', { name: parentB.name })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'equipment');
+    await user.click(screen.getByRole('button', { name: 'Ajouter un article' }));
+    const form = screen.getByRole('dialog');
+    expect(within(form).getByLabelText('Branche')).toHaveValue('equipment');
+    expect([...form.querySelectorAll('datalist option')].map((option) => option.getAttribute('value'))).toEqual([parentB.name]);
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+  });
+  it.each(['rename', 'delete'] as const)('keeps an identically named equipment category unchanged after a medicine category %s', async (operation) => {
+    const category = { ...parentB, medical_section: 'medicines' as const };
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation B' }]);
+    vi.mocked(savePharmacyCategory).mockResolvedValue(category.id);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [{ ...articleB, medical_section: 'medicines' }, { ...articleB, id: 31, designation: 'ARTICLE MATÉRIEL', medical_section: 'equipment', quantity: '8', category_id: 301 }], categories: [category, { ...parentB, id: 301, medical_section: 'equipment' }], controls: [] }).mockRejectedValueOnce(new Error('Lecture indisponible.'));
+    const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'medicines');
+    await user.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('communes aux navires de la société');
+    if (operation === 'rename') {
+      await user.click(screen.getByRole('button', { name: `Renommer ${category.name}` }));
+      const name = screen.getByLabelText(`Nouveau nom de ${category.name}`); await user.clear(name); await user.type(name, 'SOINS MÉDICAMENTS');
+      await user.click(screen.getByRole('button', { name: `Enregistrer ${category.name}` }));
+      expect(await screen.findByRole('button', { name: 'Renommer SOINS MÉDICAMENTS' })).toBeInTheDocument();
+      expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, 'SOINS MÉDICAMENTS', category, 'Dotation B', 'medicines');
+    } else {
+      await user.click(screen.getByRole('button', { name: `Supprimer ${category.name}` }));
+      const confirm = screen.getByRole('dialog');
+      expect(confirm).toHaveTextContent('1 article, y compris les articles retirés, sur GOURY');
+      expect(confirm).toHaveTextContent('Sur tous les navires de la société partageant cette dotation et cette branche');
+      await user.click(within(confirm).getByRole('button', { name: 'Supprimer' }));
+      await screen.findByRole('dialog', { name: 'Gérer les catégories' });
+    }
+    await waitFor(() => expect(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Fermer' }).at(-1)!).toBeEnabled());
+    await user.click(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'equipment');
+    expect(screen.getByRole('button', { name: 'ARTICLE MATÉRIEL' })).toBeInTheDocument();
+    expect(screen.getByText('8')).toBeInTheDocument();
+    expect(screen.getByRole('rowheader', { name: /^1\. CARDIOLOGIE/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'SOINS MÉDICAMENTS' })).not.toBeInTheDocument();
+  });
+  it('reads a common catalogue change on another vessel while keeping that vessel own stock and source', async () => {
+    let sharedName = parentB.name;
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue(vessels.slice(0, 2).map((vessel) => ({ ...vessel, medical_dotation: 'Dotation B' })));
+    vi.mocked(fetchPharmacyRegister).mockImplementation(async (_db, vesselId) => ({ items: [{ ...articleB, id: vesselId, vessel_id: vesselId, designation: vesselId === 1 ? 'ARTICLE GOURY' : 'ARTICLE SUROIT', quantity: vesselId === 1 ? '4' : '12', category: sharedName, medical_section: 'medicines', category_id: parentB.id, source_file: `${vesselId}.xlsx` }], categories: [{ ...parentB, vessel_id: vesselId, name: sharedName, medical_section: 'medicines' }], controls: [] }));
+    vi.mocked(savePharmacyCategory).mockImplementation(async (_db, _vessel, name) => { sharedName = name; return parentB.id; });
+    const user = userEvent.setup(); page(['capitaine']); await screen.findByRole('button', { name: 'ARTICLE GOURY' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'medicines');
+    await user.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    await user.click(screen.getByRole('button', { name: `Renommer ${parentB.name}` }));
+    const name = screen.getByLabelText(`Nouveau nom de ${parentB.name}`); await user.clear(name); await user.type(name, 'CATÉGORIE COMMUNE');
+    await user.click(screen.getByRole('button', { name: `Enregistrer ${parentB.name}` }));
+    await screen.findByRole('button', { name: 'Renommer CATÉGORIE COMMUNE' });
+    await waitFor(() => expect(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Fermer' }).at(-1)!).toBeEnabled());
+    await user.click(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
+    expect(within(screen.getByRole('button', { name: 'ARTICLE GOURY' }).closest('tr')!).getAllByRole('cell')[1]).toHaveTextContent('4');
+    await user.click(screen.getByRole('button', { name: 'SUROIT' }));
+    await screen.findByRole('button', { name: 'ARTICLE SUROIT' });
+    expect(screen.getByRole('rowheader', { name: /^CATÉGORIE COMMUNE/ })).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ARTICLE GOURY' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'ARTICLE SUROIT' }));
+    expect(screen.getByText(/^2\.xlsx/)).toBeInTheDocument();
+    expect(savePharmacyItem).not.toHaveBeenCalled();
+  });
+  it('allows choosing another creation branch inside a dialog opened from a precise inventory branch filter', async () => {
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation B' }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [{ ...articleB, medical_section: 'medicines' }], categories: [{ ...parentB, medical_section: 'medicines' }], controls: [] }).mockRejectedValueOnce(new Error('Lecture indisponible.'));
+    const user = userEvent.setup(); page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'medicines');
+    await user.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByLabelText('Branche du catalogue')).toHaveValue('medicines');
+    await user.selectOptions(within(dialog).getByLabelText('Branche du catalogue'), 'equipment');
+    await user.type(within(dialog).getByLabelText('Nouvelle catégorie'), 'MATÉRIEL COMMUN');
+    await user.click(within(dialog).getByRole('button', { name: 'Ajouter' }));
+    expect(await within(dialog).findByRole('button', { name: 'Renommer MATÉRIEL COMMUN' })).toBeInTheDocument();
+    expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, 'MATÉRIEL COMMUN', undefined, 'Dotation B', 'equipment');
+    await waitFor(() => expect(within(dialog).getAllByRole('button', { name: 'Fermer' }).at(-1)!).toBeEnabled());
+    await user.click(within(dialog).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
+    expect(screen.getByRole('combobox', { name: 'Branche' })).toHaveValue('medicines');
+    expect(screen.queryByRole('option', { name: 'MATÉRIEL COMMUN' })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'equipment');
+    expect(screen.getByRole('rowheader', { name: /^MATÉRIEL COMMUN/ })).toHaveTextContent('0 article');
   });
 });

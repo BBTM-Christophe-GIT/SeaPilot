@@ -75,15 +75,29 @@ describe('pharmacy alarms on the consolidated home dashboard', () => {
     expect(items.find((item) => item.id === 'pharmacy-item-1')).toMatchObject({
       title: 'PARACETAMOL', group: 'fleetDocuments', tags: ['documents', 'fleet'],
       context: 'Inventaire pharmacie · GOURY', queueTone: 'warning', urgent: false,
-      to: '/modules/pharmacy?vessel=10&filter=expiry',
+      to: '/modules/pharmacy?vessel=10&filter=expiry&item=1',
       vessels: [{ key: 'vessel:10', name: 'GOURY' }],
     });
     expect(items.find((item) => item.id === 'pharmacy-control-2')).toMatchObject({
       title: 'Contrôle Pharmacie', context: 'Contrôle pharmacie · GOURY',
       action: 'Ouvrir le contrôle pharmacie',
+      to: '/modules/pharmacy?vessel=10&filter=expiry',
     });
     expect(items[0].queueVisibleDates).toEqual(['2026-11-19', '2026-10-20']);
     expect(buildManagerHomeVessels(sources(rows)).vessels).toEqual([{ key: 'vessel:10', name: 'GOURY' }]);
+  });
+
+  it('keeps distinct historical and current articles addressable without changing vessel scope', () => {
+    const items = buildManagerHomeItems(sources([
+      notification({ id: 'item-41', item_id: 41, title: 'Article historique B' }),
+      notification({ id: 'item-42', item_id: 42, title: 'Article courant C' }),
+    ]), TODAY);
+    expect(items.find((item) => item.id === 'pharmacy-item-41')).toMatchObject({
+      to: '/modules/pharmacy?vessel=10&filter=expiry&item=41', vessels: [{ key: 'vessel:10', name: 'GOURY' }],
+    });
+    expect(items.find((item) => item.id === 'pharmacy-item-42')).toMatchObject({
+      to: '/modules/pharmacy?vessel=10&filter=expiry&item=42', vessels: [{ key: 'vessel:10', name: 'GOURY' }],
+    });
   });
 
   it('keeps expired controls visible and uses server days rather than the browser date', () => {

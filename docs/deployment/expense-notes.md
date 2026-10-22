@@ -1,5 +1,11 @@
 # Notes de frais — v3.45.0
 
+## Reprise de transmission
+
+Le bouton **Transmettre** réutilise la note et son PDF déjà émis. Chaque tentative recharge l'état de livraison, même si le serveur refuse l'envoi : une réception incertaine apparaît alors « Transmission à vérifier » et ne conserve pas un bouton de reprise issu d'un ancien état. Après un succès confirmé, la note apparaît transmise immédiatement ; un échec de lecture de l'historique ne transforme pas cet envoi en erreur et ne propose pas de renvoyer la pièce.
+
+Les tests de régression utilisent un service d'envoi simulé pour chacun des cinq profils, vérifient la reprise d'une note en échec sans nouvelle émission, la confirmation conservée en cas d'échec du rafraîchissement et la suppression de la reprise après un résultat incertain. Aucun document comptable n'est envoyé par ces tests. Depuis la version 3.76.5, l'envoi serveur est autonome et ne dépend plus du site Netlify supprimé.
+
 ## Formulaire mobile et véhicule par défaut
 
 La proposition 2 remplace la disposition horizontale par des sections repliables : **Informations**, **Mon véhicule**, **Déplacements**, **Compléments** (ou **Montant et paiement** pour une dépense). Les résumés restent visibles lorsque les sections sont fermées. Sur smartphone, la fenêtre occupe la hauteur disponible ; seul le corps défile, le total et l'action d'émission restent visibles. Les contrôles ont une hauteur minimale de 44 px. Un champ obligatoire masqué provoque l'ouverture de sa section et reçoit le focus ; les saisies et justificatifs sont conservés pendant le repli.
@@ -71,24 +77,37 @@ refusée n'ouvre jamais un téléchargement Storage. L'index inclut à nouveau s
 lecteur et sa configuration de courtier existante. Aucun secret Blob supplémentaire
 n'est requis dans Supabase, aucun document source n'est remplacé.
 
-Pour déployer ce correctif serveur, inclure `index.ts`, `handler.ts`, `blobPdf.ts`,
+Pour déployer ce correctif serveur, inclure `index.ts`, `handler.ts`, `mailer.ts`, `blobPdf.ts`,
 `deno.json` et leur dépendance `../document-drive/googleDrive.ts`, en conservant
 `verify_jwt = true`. Livrer d'abord l'API documentaire Vercel. La vérification de
 routage du service déployé se limite à une requête anonyme refusée ; ne pas appeler
 le traitement authentifié sur une note réelle pour tester un envoi.
 
-Le relais existant, fourni par le propriétaire, est conservé : `https://bbtm-ndfv2.netlify.app/.netlify/functions/send`, projet Netlify `12a15b20-b760-4e12-b076-505b123cd351` (`bbtm-ndfv2`). Il conserve les identifiants Gmail et le destinataire Inexweb de NDF. Aucun secret Gmail n'est copié dans SeaPilot et aucun destinataire/URL arbitraire n'est accepté du navigateur. **Ce site Netlify doit rester actif pour l'envoi.**
+La fonction envoie directement le PDF archivé par SMTP Gmail avec TLS sur `smtp.gmail.com:465`, via Nodemailer 10.1.7 épinglé dans `deno.json` et les dépendances de recette pnpm. Les scripts de dépendance restent bloqués. Le site Netlify `bbtm-ndfv2`, supprimé par son propriétaire, n'est plus utilisé.
 
-Limites : 20 justificatifs, 15 Mo par fichier source, 50 Mo cumulés avant conversion, et **4 Mo pour le PDF final**, compatible avec la limite de transport JSON/base64 du relais NDF. Les photos sont orientées par le décodeur navigateur, réduites à 1 600 pixels et compressées.
+L'expéditeur est toujours le compte `christophe@bbtm.fr`, quel que soit le créateur ou l'émetteur déclaré de la note. Le navigateur transmet uniquement la référence de note ; il ne choisit jamais l'expéditeur, le destinataire, le serveur SMTP ou le PDF. Le destinataire comptable historique est conservé dans la configuration serveur : `factures+cBBT-0584b1@m.inexweb.fr`.
 
-États : `pending`, `sending`, `sent`, `failed`, `unknown`. Une erreur d'envoi ne supprime pas une note émise. Les refus certains avant envoi permettent une reprise ; un délai dépassé ou une erreur SMTP ambiguë impose une vérification de réception. Le verrou d'envoi empêche les transmissions concurrentes. Un résultat `unknown` ou un verrou resté `sending` doit être rapproché du journal Netlify et d'Inexweb avant correction administrative de son statut, afin de ne pas créer une double pièce comptable.
+Configurer uniquement dans **Supabase → Edge Functions → Secrets** :
+
+- `NDF_EMAIL_USER` : `christophe@bbtm.fr` (configuré sur le projet lié).
+- `NDF_EMAIL_TO` : le destinataire Inexweb ci-dessus (configuré sur le projet lié).
+- `NDF_EMAIL_APP_PASSWORD` : nouveau mot de passe d'application Google du compte expéditeur. Ne jamais utiliser son mot de passe habituel, le préfixer avec `VITE_`, le commettre ou le transmettre dans un chat.
+
+Le propriétaire doit créer le mot de passe dans [Google → Mots de passe des applications](https://myaccount.google.com/apppasswords), avec la validation en deux étapes activée, puis le saisir directement dans [les secrets du projet SeaPilot](https://supabase.com/dashboard/project/szlvyrrmvdvhzixilymh/functions/secrets). Si cette option Google n'est pas disponible, l'administrateur Workspace doit vérifier les règles du compte ; aucun identifiant ne peut être récupéré du site Netlify supprimé. Voir [l'aide Google](https://support.google.com/accounts/answer/185833?hl=fr).
+
+Une configuration absente ou invalide est refusée avant lecture du PDF, verrouillage et modification de la note. Le message demande de configurer l'envoi SeaPilot ; aucune tentative comptable n'est lancée. Les secrets ne sont jamais renvoyés au navigateur ni repris dans les messages d'erreur SMTP.
+
+Limites conservées : 20 justificatifs, 15 Mo par fichier source, 50 Mo cumulés avant conversion, et **4 Mo pour le PDF final**. Les photos sont orientées par le décodeur navigateur, réduites à 1 600 pixels et compressées. Aucun PDF/base64 n'est envoyé à une API relais.
+
+États : `pending`, `sending`, `sent`, `failed`, `unknown`. Une erreur d'envoi ne supprime pas une note émise. Les refus SMTP certains avant acceptation permettent une reprise ; un délai dépassé ou une erreur ambiguë impose une vérification de réception. Le verrou d'envoi empêche les transmissions concurrentes. Le délai de réponse de 35 secondes ne garantit pas l'annulation du message : une confirmation peut encore arriver ensuite, tandis que le délai d'inactivité SMTP est borné à 25 secondes. Un résultat `unknown` ou un verrou resté `sending` doit être rapproché des éléments envoyés Gmail et d'Inexweb avant correction administrative de son statut, afin de ne pas créer une double pièce comptable. Les neuf notes `failed` constatées le 21 octobre restent disponibles pour une reprise manuelle après configuration ; aucune n'est retransmise automatiquement.
 
 ## Vérification
 
 - Tests React avec fixtures distinctes Admin, Direction, Armement, Capitaine et Marin ; aucune vue simulée de la session de l'administrateur ne sert de preuve de droits.
 - `supabase/tests/expense_notes_access_test.sql` : transaction annulée en fin de test ; vérifie les cinq rôles, une deuxième société, les PDF privés, l'émetteur modifiable, le créateur immuable, le paramétrage et les calculs serveur.
 - `supabase/tests/expense_note_blob_issuance_test.sql` : comptes authentifiés distincts pour les cinq profils et une deuxième société ; émission depuis un PDF Blob vérifié, compatibilité Storage historique, refus sans PDF ou avec une correspondance désactivée ou une autre référence. Toutes les fixtures sont annulées ; aucun envoi comptable n'est déclenché.
-- `supabase/tests/expense_note_send.test.ts` : tests du service d'envoi avec relais simulé (authentification, RLS, doublons, succès, refus et résultats ambigus). Ils restent avec le serveur, exclu de l'artefact Vercel par `.vercelignore` ; ils sont exécutés par Vitest en local et en CI.
+- `supabase/tests/expense_note_send.test.ts` : tests du service d'envoi avec mailer simulé (authentification, RLS, doublons, configuration absente avant toute mutation, succès, refus et résultats ambigus). Ils restent avec le serveur, exclu de l'artefact Vercel par `.vercelignore` ; ils sont exécutés par Vitest en local et en CI.
+- `supabase/tests/expense_mailer.test.ts` : configuration, identité expéditeur, destinataire fixe, TLS, pièce jointe PDF et classification des erreurs SMTP. Les transports sont simulés ; la recette MIME réelle utilise un transport mémoire sans connexion SMTP.
 - `supabase/tests/expense_blob_pdf.test.ts` : API et fournisseur entièrement simulés ; vérifie le JWT exact, les destinations privées, l'intégrité, les refus sans repli, la limite de 4 Mo et l'arrêt d'un flux bloqué. Aucun relais comptable ni service réel n'est appelé.
 - Tests PDF réels pour l'ordre des pages, les fichiers invalides et les descriptions longues.
 - Vérification visuelle sur ordinateur et mobile ; la préversion n'enregistre ni ne transmet de note.

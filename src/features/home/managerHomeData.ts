@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RoleKey } from '../permissions/roles';
-import type { PharmacyNotification } from '../pharmacy/pharmacyModel';
+import { pharmacyNotificationHref, type PharmacyNotification } from '../pharmacy/pharmacyModel';
 import { fetchPharmacyNotifications } from '../pharmacy/pharmacyQueries';
 import { getAnnualReviewAlert } from '../procedures/procedureReview';
 import { derivePurchaseRequestStage, isPurchaseRequestRejected } from '../purchaseRequests/purchaseRequestQueries';
@@ -676,7 +676,7 @@ function pharmacyItems(rows: PharmacyNotification[], vessels: ManagerHomeVesselI
       context: `${row.kind === 'control' ? 'Contrôle pharmacie' : 'Inventaire pharmacie'} · ${row.vessel_name}`,
       deadline,
       action: row.kind === 'control' ? 'Ouvrir le contrôle pharmacie' : 'Ouvrir l’inventaire pharmacie',
-      to: `/modules/pharmacy?vessel=${row.vessel_id}&filter=expiry`,
+      to: pharmacyNotificationHref(row),
       dueDate: row.expires_on,
       visibleDates: dates,
       queueVisibleDates: dates,
