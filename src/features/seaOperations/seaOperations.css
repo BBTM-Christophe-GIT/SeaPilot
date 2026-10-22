@@ -57,7 +57,7 @@
 .so-section-title > svg { color: var(--sp-primary); margin-top: 3px; flex: 0 0 auto; }
 .so-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px 22px; }
 .so-field { display: grid; align-content: start; gap: 7px; color: var(--sp-text); font-size: .77rem; margin-bottom: 5px; min-width: 0; }
-.so-field > label { font-weight: 650; }
+.so-field > label, .so-field-label { font-weight: 650; }
 .so-wide { grid-column: 1 / -1; }
 .so-contact { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; margin-bottom: 13px; }
 .so-contact > button { margin-bottom: 5px; height: 39px; }
@@ -175,14 +175,15 @@
 .app-shell .so-page .so-mobile-switch button[aria-pressed=true]:not(:disabled), .app-shell .so-page .so-mobile-switch button:hover:not(:disabled) { background: var(--sp-primary-soft); color: var(--sp-primary); }
 .app-shell .so-page .so-editor-modal .app-dialog__close:hover { background: var(--sp-primary-soft); color: var(--sp-text); }
 
-/* Compact safety answers and editable passage-plan rows. */
-.so-editor-form-pane .so-check { grid-template-columns: minmax(0, 1fr) 72px; gap: 6px 8px; padding: 5px 6px; min-height: 38px; }
-.so-check-question { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.so-check-question > label { display: block; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: .75rem; line-height: 1.4; }
-.so-check-question .so-block-label { flex: 0 0 auto; display: inline; margin: 0; font-size: .57rem; }
-.so-page .so-check > select { min-height: 28px; height: 28px; padding: 3px 6px; font-size: .73rem; }
-.so-editor-form-pane .so-check-section > .so-field { display: grid; grid-template-columns: minmax(0,1fr) 72px; align-items: center; gap: 8px; max-width: none; margin: 0 0 6px; }
-.so-page .so-check-section > .so-field > select { min-height: 28px; height: 28px; padding: 3px 6px; font-size: .73rem; }
+/* Full safety questions retain their wording alongside the compact answer group. */
+.so-editor-form-pane .so-check { grid-template-columns: minmax(0, 1fr); gap: var(--sp-space-2); padding: var(--sp-space-2); min-height: 0; align-items: start; }
+.so-check-question { display: block; min-width: 0; }
+.so-check-question > label, .so-check-question > span { display: block; min-width: 0; overflow: visible; white-space: normal; overflow-wrap: anywhere; text-overflow: clip; font-size: .75rem; line-height: 1.5; }
+.so-check-question .so-block-label { display: block; margin: var(--sp-space-1) 0 0; font-size: .6rem; }
+.so-check-detail { grid-column: 1 / -1; min-width: 0; font-size: .72rem; line-height: 1.5; color: var(--sp-muted); white-space: normal; overflow-wrap: anywhere; }
+.so-check-detail p { margin: 0; }
+.so-check-detail p + p { margin-top: var(--sp-space-1); }
+.so-editor-form-pane .so-check-section > .so-field { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: var(--sp-space-2); max-width: none; margin: 0 0 var(--sp-space-2); }
 .so-editor-form-pane .so-check-section { margin-top: 12px; padding-top: 0; }
 .so-editor-form-pane .so-check-section > h3 { margin: 12px 0 8px; font-size: .84rem; }
 .so-waypoint-table-scroll { overflow-x: auto; max-width: 100%; margin: 18px 0 14px; border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); }
@@ -200,7 +201,7 @@
 .so-waypoint-table .so-waypoint-traffic { text-align: center; }
 .so-waypoint-table .so-waypoint-empty { padding: 20px 10px; color: var(--sp-muted); text-align: center; }
 .so-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
-@media (pointer: coarse) { .so-page .so-waypoint-table input:not([type=checkbox]), .so-page .so-waypoint-table button { min-height: 44px; } .so-page .so-check > select, .so-page .so-check-section > .so-field > select { min-height: 36px; height: 36px; } }
+@media (pointer: coarse) { .so-page .so-waypoint-table input:not([type=checkbox]), .so-page .so-waypoint-table button { min-height: 44px; } }
 
 .so-page .so-field input[readonly], .so-page .so-field textarea[readonly] { background: var(--sp-surface-subtle); color: var(--sp-text); }
 .so-planning-status { margin: 0; color: var(--sp-muted); font-size: .75rem; line-height: 1.5; }
@@ -208,3 +209,91 @@
 .so-signature-preview > strong { font-size: .77rem; }
 .so-signature-preview img { display: block; max-width: 100%; width: 180px; height: 70px; object-fit: contain; object-position: left center; }
 .so-signature-preview small { color: var(--sp-muted); font-size: .7rem; line-height: 1.5; }
+
+/* User-requested compact desktop preparation; touch targets retain their full height. */
+@media screen {
+  .so-editor-form-pane { container: sea-operation-form / inline-size; }
+  .so-editor-summary { grid-template-columns: minmax(0, 1fr) minmax(0, 40%); gap: var(--sp-space-1) var(--sp-space-2); padding: var(--sp-space-2) var(--sp-space-3); margin-bottom: var(--sp-space-3); }
+  .so-editor-summary > strong, .so-editor-summary > span { grid-column: 1; }
+  .so-editor-summary > strong { font-size: .82rem; line-height: 1.4; }
+  .so-editor-summary > span { font-size: .72rem; line-height: 1.4; overflow-wrap: anywhere; }
+  .so-editor-summary > div { grid-column: 2; grid-row: 1 / 3; flex-direction: column; align-items: flex-end; justify-content: center; gap: var(--sp-space-1); min-width: 0; }
+  .so-editor-summary small { max-width: 100%; text-align: right; overflow-wrap: anywhere; font-size: .65rem; line-height: 1.4; }
+  .so-editor-form-pane .so-armament-panel { container: sea-operation-armament / inline-size; padding: var(--sp-space-3); }
+  .so-armament-panel .so-section-title { gap: var(--sp-space-2); margin-bottom: var(--sp-space-2); padding-bottom: var(--sp-space-1); }
+  .so-armament-panel .so-section-title > b { width: 28px; height: 28px; font-size: .88rem; }
+  .so-armament-panel .so-section-title h2 { margin-bottom: var(--sp-space-1); font-size: .94rem; }
+  .so-armament-panel .so-section-title p { font-size: .7rem; line-height: 1.4; }
+  .so-editor-form-pane .so-armament-panel :is(.so-grid, .so-armament-grid) { grid-template-columns: minmax(0, 1fr); gap: var(--sp-space-2) var(--sp-space-3); }
+  .so-armament-panel .so-field { gap: var(--sp-space-1); margin-bottom: 0; font-size: .72rem; line-height: 1.4; }
+  .so-armament-panel .so-field > label, .so-armament-panel .so-field-label { white-space: normal; overflow-wrap: anywhere; }
+  .so-armament-panel .so-field > .so-field-label { font-weight: 650; white-space: normal; overflow-wrap: anywhere; }
+  .so-page .so-armament-panel :is(input:not([type=checkbox]), select) { min-height: 32px; padding: var(--sp-space-1) var(--sp-space-2); font-size: .76rem; line-height: 1.4; }
+  .so-page .so-armament-panel textarea { min-height: 64px; padding: var(--sp-space-1) var(--sp-space-2); font-size: .76rem; line-height: 1.4; }
+  .so-page .so-armament-panel > h3 { margin: var(--sp-space-3) 0 var(--sp-space-1); font-size: .8rem; line-height: 1.4; }
+  .so-armament-panel > .so-help { margin: var(--sp-space-1) 0 var(--sp-space-2); font-size: .7rem; line-height: 1.45; }
+  .so-armament-help { margin: var(--sp-space-1) 0 var(--sp-space-2); color: var(--sp-muted); font-size: .7rem; line-height: 1.45; }
+  .so-armament-help > summary { width: fit-content; padding: var(--sp-space-1) 0; color: var(--sp-primary); font-weight: 600; cursor: pointer; }
+  .so-armament-help .so-help { margin: var(--sp-space-1) 0; font-size: inherit; line-height: inherit; }
+  .so-editor-form-pane .so-armament-panel .so-contact { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px; gap: var(--sp-space-2); margin-bottom: var(--sp-space-2); align-items: end; }
+  .so-editor-form-pane .so-armament-panel .so-contact > .so-field:first-child { grid-column: auto; }
+  .so-page .so-armament-panel button:not(.planning-ribbon-command) { min-height: 32px; padding: var(--sp-space-1) var(--sp-space-2); font-size: .72rem; line-height: 1.4; }
+  .so-armament-panel .so-contact > button { width: 32px; height: 32px; margin: 0; }
+  .so-armament-panel .so-planning-status { margin: var(--sp-space-1) 0 var(--sp-space-2); font-size: .7rem; line-height: 1.4; }
+
+  .so-answer-options, .so-questionnaire-options { display: flex; flex-wrap: wrap; align-items: stretch; gap: var(--sp-space-2); min-width: 0; max-width: 100%; margin: 0; padding: 0; border: 0; }
+  .so-answer-option, .so-questionnaire-options > label { display: inline-flex; align-items: center; gap: var(--sp-space-2); min-width: 0; min-height: 32px; padding: var(--sp-space-1) var(--sp-space-2); border: 1px solid var(--sp-border-strong); border-radius: var(--sp-control-radius); background: var(--sp-surface); color: var(--sp-text); font-size: .73rem; font-weight: 500; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; cursor: pointer; }
+  .so-answer-option:has(input:checked), .so-questionnaire-options > label:has(input:checked) { background: var(--sp-primary-soft); border-color: var(--sp-primary); color: var(--sp-primary); }
+  .so-check .so-answer-option { font-size: .73rem; line-height: 1.4; }
+  .so-answer-option:has(input:disabled), .so-questionnaire-options > label:has(input:disabled) { cursor: default; }
+  .so-answer-option:has(input:focus-visible), .so-questionnaire-options > label:has(input:focus-visible) { outline: 2px solid var(--sp-focus); outline-offset: 2px; }
+  .so-answer-option > span, .so-questionnaire-options > label > span { min-width: 0; overflow-wrap: anywhere; }
+  .so-page :is(.so-answer-option, .so-questionnaire-options > label) > input[type=checkbox] { width: 16px; height: 16px; margin: 0; padding: 0; flex: 0 0 auto; accent-color: var(--sp-primary); }
+  .so-editor-form-pane .so-check > .so-answer-options { justify-self: start; align-self: start; }
+
+  .so-project-documents { min-width: 0; margin: 0 0 var(--sp-space-3); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface-subtle); }
+  .so-project-documents > summary { display: flex; align-items: center; gap: var(--sp-space-2); padding: var(--sp-space-2); color: var(--sp-text); font-size: .72rem; line-height: 1.4; font-weight: 650; cursor: pointer; }
+  .so-project-documents > summary > svg { flex: 0 0 auto; color: var(--sp-primary); }
+  .so-project-documents > summary > span { min-width: 0; overflow-wrap: anywhere; }
+  .so-project-documents > summary > small { margin-left: auto; color: var(--sp-muted); font-size: .65rem; font-weight: 400; white-space: nowrap; }
+  .so-project-documents > summary::after { content: ''; flex: 0 0 auto; width: 6px; height: 6px; margin-left: var(--sp-space-1); border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); }
+  .so-project-documents[open] > summary::after { transform: rotate(45deg); }
+  .so-project-documents > ul { margin: 0; padding: 0 var(--sp-space-2) var(--sp-space-2); list-style: none; }
+  .so-project-documents li { display: flex; align-items: center; gap: var(--sp-space-2); min-width: 0; padding: var(--sp-space-2) 0; border-top: 1px solid var(--sp-border); }
+  .so-project-documents li > div { flex: 1 1 auto; min-width: 0; }
+  .so-project-documents li strong { display: block; color: var(--sp-text); font-size: .72rem; line-height: 1.4; font-weight: 600; overflow-wrap: anywhere; }
+  .so-project-documents li small { display: block; margin-top: var(--sp-space-1); color: var(--sp-muted); font-size: .65rem; line-height: 1.4; overflow-wrap: anywhere; }
+  .so-project-documents li > button { flex: 0 0 auto; }
+  .so-project-documents > p { margin: 0; padding: 0 var(--sp-space-2) var(--sp-space-2); color: var(--sp-muted); font-size: .7rem; line-height: 1.5; overflow-wrap: anywhere; }
+  .so-project-documents > div[role=alert] { padding: 0 var(--sp-space-2) var(--sp-space-2); font-size: .72rem; line-height: 1.5; overflow-wrap: anywhere; }
+  .so-project-documents > div[role=alert] > p { margin: 0 0 var(--sp-space-2); }
+  .so-project-document-modal .app-dialog__content { display: flex; min-width: 0; min-height: 0; padding: 0; overflow: hidden; }
+  .so-project-document-viewer { display: flex; align-items: flex-start; justify-content: center; width: 100%; min-width: 0; min-height: 240px; height: min(72dvh, 900px); overflow: auto; background: var(--sp-canvas); }
+  .so-project-document-viewer > iframe { display: block; width: 100%; height: 100%; min-width: 0; border: 0; flex: 1 1 auto; background: var(--sp-surface); }
+  .so-project-document-viewer > img { display: block; flex: 0 0 auto; width: auto; max-width: 100%; height: auto; object-fit: contain; }
+  .so-project-document-viewer > p { width: 100%; margin: 0; padding: var(--sp-space-4); color: var(--sp-muted); font-size: .8rem; line-height: 1.5; overflow-wrap: anywhere; }
+  .so-project-document-viewer > div[role=alert] { width: 100%; padding: var(--sp-space-4); font-size: .8rem; line-height: 1.5; overflow-wrap: anywhere; }
+  .so-project-document-viewer > div[role=alert] > p { margin: 0 0 var(--sp-space-3); }
+}
+
+@container sea-operation-armament (min-width: 360px) {
+  .so-editor-form-pane .so-armament-panel :is(.so-grid, .so-armament-grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container sea-operation-form (min-width: 430px) {
+  .so-editor-form-pane .so-check { grid-template-columns: minmax(0, 1fr) auto; }
+  .so-editor-form-pane .so-check > .so-answer-options { justify-self: end; }
+  .so-editor-form-pane .so-check-section > .so-field { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+}
+@media screen and (pointer: coarse) {
+  .so-page .so-armament-panel :is(input:not([type=checkbox]), select, button:not(.planning-ribbon-command)) { min-height: 44px; }
+  .so-answer-option, .so-questionnaire-options > label { min-height: 44px; }
+  .so-editor-form-pane .so-armament-panel .so-contact { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; }
+  .so-armament-panel .so-contact > button { width: 44px; height: 44px; }
+  .so-project-documents > summary { min-height: 44px; }
+  .so-armament-help > summary { min-height: 44px; display: flex; align-items: center; }
+}
+
+@media screen {
+  .so-armament-personnel-heading { display: flex; flex-wrap: wrap; gap: var(--sp-space-2); align-items: center; justify-content: space-between; margin: var(--sp-space-3) 0 var(--sp-space-1); }
+  .so-page .so-armament-personnel-heading > h3 { margin: 0; font-size: .8rem; line-height: 1.4; }
+}

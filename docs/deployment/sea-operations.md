@@ -174,3 +174,57 @@ La lecture Storage des signatures privées a également été testée sur SeaPil
 sous l’identité authentifiée d’un propriétaire de signature, dans une transaction
 annulée. Le privilège requis par la règle Storage existante des pièces de facturation
 est présent sur le serveur distant.
+
+
+## Questionnaire compact et consultation des documents du projet
+
+Les contrôles, l’applicabilité, la DAPAQ et les autres réponses du questionnaire
+utilisent des cases à cocher exclusives. Décocher la réponse sélectionnée revient
+à une réponse non renseignée ; aucun Oui n’est ajouté implicitement. Les contrôles
+exigeant une attestation positive conservent leur seule case Oui, et une réponse
+Non bloquante conserve le NO GO et sa justification. Les libellés, aides et
+conditions des réponses sont visibles intégralement, sur autant de lignes que
+nécessaire. Les sélecteurs de projet, navire et personne restent adaptés au choix
+d’une référence.
+
+Armement utilise une grille compacte de deux colonnes lorsque son propre panneau
+est assez large ; les champs et les boutons gardent une cible tactile de 44 px.
+Les consignes DAPAQ restent consultables dans un détail repliable.
+
+Le panneau repliable Documents du projet suit le projet sélectionné et permet
+la consultation des documents opérationnels, y compris sur une fiche signée.
+Les catégories Offre commerciale et Facturation, leurs sous-catégories et les
+documents de nature commerciale ou de facturation sont exclus côté serveur.
+La liste ne transmet pas d’emplacements privés ; chaque ouverture revalide le
+document et sa portée. Les changements de projet ou réponses réseau tardives
+ne conservent aucun document de l’ancienne mission dans le lecteur.
+
+
+Déploiement de cette évolution : appliquer
+`supabase/migrations/20261022190525_sea_operation_project_documents.sql` avant
+le client. Les RPC `sea_operation_project_documents` et
+`sea_operation_project_document_access` sont invoker et interdites aux anonymes.
+Le catalogue retourne seulement les métadonnées. L’ouverture crée une autorisation
+privée de cinq minutes, limitée à l’acteur et au document du projet ; les lectures
+Storage, Blob et Drive revérifient la catégorie et la société. Aucun droit de
+lecture du catalogue commercial ou de la facturation n’est ajouté. Les liens
+SharePoint historiques autorisés sont contrôlés avant ouverture dans un autre
+onglet ; seuls les fichiers de MIME PDF et les images pris en charge sont intégrés
+au lecteur. Les autres formats restent accessibles dans un onglet séparé.
+
+Recette du 22 octobre 2026 : **147 tests ciblés Opération en Mer et navigation**,
+**57 contrôles SQL** avec des comptes réels distincts et fixtures annulées, lint
+et build de production. La recette Chrome vérifie les cases exclusives, leur
+retour à non renseigné, les libellés entiers, le changement de projet et
+l’ouverture effective de PDF et d’images. Les vues 1731 px, 1440 px et 390 px sont
+contrôlées, avec cibles tactiles de 44 px et sans débordement horizontal de page.
+
+La migration est appliquée sur SeaPilot. Une lecture du catalogue a également
+réussi sous les identités authentifiées Marin et Capitaine dans une transaction
+annulée ; aucun document de démonstration n’est créé en production. Les vérifications
+distantes confirment les RPC invoker, les résolveurs internes non exposés et les
+privilèges directs révoqués sur les autorisations privées. Le conseiller de
+sécurité ne relève aucun WARN/ERROR sur les objets ajoutés. Son information
+`rls_enabled_no_policy` sur la table privée des autorisations est attendue :
+aucune policy ni aucun privilège applicatif direct, donc refus par défaut ;
+les accès passent exclusivement par les fonctions privées gardées.

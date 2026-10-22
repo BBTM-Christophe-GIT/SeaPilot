@@ -6,12 +6,14 @@ import { emptySeaOperation, DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, seaOperati
 import { fetchSeaOperationCaptainSignature, fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, type SeaOperationData, type SeaOperationPlanningContext, type SeaOperationPlanningChoice, type SeaOperationRecord } from './seaOperationQueries';
 import { exportSeaOperationPdf } from './seaOperationPdf';
 import { SeaOperationsPage } from './SeaOperationsPage';
+import { fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries';
 
 vi.mock('./seaOperationQueries', () => ({
   fetchSeaOperationData: vi.fn(), fetchSeaOperationDetail: vi.fn(), saveSeaOperation: vi.fn(), signSeaOperation: vi.fn(),
   fetchSeaOperationPlanning: vi.fn(), fetchSeaOperationCaptainSignature: vi.fn(), loadSeaOperationSignature: vi.fn().mockResolvedValue(null),
 }));
 vi.mock('./seaOperationPdf', () => ({ exportSeaOperationPdf: vi.fn() }));
+vi.mock('./seaOperationDocumentQueries', () => ({ fetchSeaOperationProjectDocuments: vi.fn(), createSeaOperationProjectDocumentUrl: vi.fn() }));
 
 const captainAccount = { id: 'captain-server-account', name: 'Camille MARTIN', canSign: true };
 const sailorAccount = { id: 'sailor-server-account', name: 'Alex DUPONT', canSign: false };
@@ -80,6 +82,7 @@ function renderAccount(account: Account = captainAccount, record?: SeaOperationR
   vi.mocked(fetchSeaOperationPlanning).mockImplementation(async (_client, date) => ({ date, choices }));
   vi.mocked(fetchSeaOperationCaptainSignature).mockResolvedValue(null);
   vi.mocked(loadSeaOperationSignature).mockResolvedValue(null);
+  vi.mocked(fetchSeaOperationProjectDocuments).mockResolvedValue([]);
   if (record) vi.mocked(fetchSeaOperationDetail).mockResolvedValue(record);
   const view = render(<MemoryRouter initialEntries={['/modules/seaOperations']}><Routes>
     <Route element={<><nav aria-label="Navigation principale"><Link to="/modules/fleet">Navires</Link></nav><Outlet context={{ client }} /></>}>
@@ -98,6 +101,13 @@ async function openRecord(record: SeaOperationRecord) {
 const formQueries = () => within(document.querySelector('.so-editor-form-pane')!);
 const footerQueries = () => within(screen.getByRole('dialog').querySelector('.app-dialog__footer')!);
 const stepButton = (index: number) => within(screen.getByRole('navigation', { name: 'Étapes de la préparation' })).getAllByRole('button')[index];
+const choiceQueries = (label: string) => within(formQueries().getByRole('group', { name: label }));
+const optionLabels: Record<string, string> = { yes: 'Oui', no: 'Non', nomade: 'NOMADE', email: 'Mail à la Capitainerie', armament: 'Armement', captain: 'Capitaine', agent: 'Agent consignataire', sms: 'Pas de mesures autres que le SMS', specific: 'Mesures spécifiques prises', GO: 'GO · la mission peut être réalisée', NO_GO: 'NO GO · la mission ne peut être réalisée' };
+const choiceInput = (label: string, value: string) => choiceQueries(label).getByRole('checkbox', { name: optionLabels[value] });
+async function selectChoice(label: string, value: string) {
+  const input = choiceInput(label, value);
+  if (!(input as HTMLInputElement).checked) await userEvent.click(input);
+}
 async function chooseMission(choice: SeaOperationPlanningChoice) {
   await screen.findByRole('option', { name: `${choice.project} · ${choice.vessel.name}` });
   await userEvent.selectOptions(formQueries().getByLabelText('Projet'), choice.operationId);
@@ -154,7 +164,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(await formQueries().findByRole('img', { name: `Signature de ${second.captains[0].name}` })).toHaveAttribute('src', 'https://signature.example.test/102.png');
     expect(formQueries().queryByRole('img', { name: `Signature de ${first.captains[0].name}` })).not.toBeInTheDocument();
     expect(fetchSeaOperationCaptainSignature).toHaveBeenLastCalledWith(client, seaOperationToday(), second.operationId, second.captains[0].personId);
-    await userEvent.selectOptions(formQueries().getByLabelText('Décision'), 'NO_GO');
+    await selectChoice('Décision', 'NO_GO');
     expect(footerQueries().getByRole('button', { name: 'Signer la décision NO GO' })).toBeEnabled();
   });
 
@@ -223,7 +233,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(formQueries().getByLabelText('Prénom NOM du Capitaine')).toHaveValue('');
     await decisionStep();
     expect(formQueries().getByLabelText('Prénom NOM du Capitaine signataire')).toHaveValue('');
-    await userEvent.selectOptions(formQueries().getByLabelText('Décision'), 'NO_GO');
+    await selectChoice('Décision', 'NO_GO');
     expect(footerQueries().getByRole('button', { name: 'Signer la décision NO GO' })).toBeDisabled();
     await userEvent.click(stepButton(0));
     await userEvent.selectOptions(formQueries().getByLabelText('Prénom NOM du Capitaine'), selected.personId);
@@ -278,12 +288,13 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(formQueries().getByLabelText('Projet')).toBeDisabled();
     await userEvent.type(formQueries().getByLabelText('Description de l’opération'), 'Saisie conservée pendant le chargement');
     await userEvent.click(stepButton(1));
-    await userEvent.selectOptions(formQueries().getByLabelText('Les conditions météo sont conformes aux limites opérationnelles définies'), 'yes');
+    await selectChoice('Les conditions météo sont conformes aux limites opérationnelles définies', 'yes');
     await act(async () => context.resolve({ date: seaOperationToday(), choices: [choice] }));
     await userEvent.click(stepButton(0));
     expect(formQueries().getByLabelText('Projet')).toHaveValue('');
     expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue('Saisie conservée pendant le chargement');
-    expect(formQueries().getByLabelText('Les conditions météo sont conformes aux limites opérationnelles définies')).toHaveValue('yes');
+    await userEvent.click(stepButton(1));
+    expect(choiceInput('Les conditions météo sont conformes aux limites opérationnelles définies', 'yes')).toBeChecked();
     expect(footerQueries().getByText('Modifications non enregistrées')).toBeInTheDocument();
     expect(saveSeaOperation).not.toHaveBeenCalled();
   });
@@ -302,9 +313,12 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await screen.findByRole('option', { name: `${choice.project} · ${choice.vessel.name}` });
     expect(formQueries().getByLabelText('Projet')).toHaveValue('');
     expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue(draft.description);
-    expect(formQueries().getByLabelText('Les conditions météo sont conformes aux limites opérationnelles définies')).toHaveValue('no');
+    await userEvent.click(stepButton(1));
+    expect(choiceInput('Les conditions météo sont conformes aux limites opérationnelles définies', 'no')).toBeChecked();
+    await userEvent.click(stepButton(2));
     expect(formQueries().getByLabelText('Numéro de la ou des cartes marines')).toHaveValue('Carte historique');
-    expect(formQueries().getByLabelText('Décision')).toHaveValue('NO_GO');
+    await decisionStep();
+    expect(choiceInput('Décision', 'NO_GO')).toBeChecked();
     vi.mocked(saveSeaOperation).mockImplementation(async (_client, saved) => ({ ...record, draft: structuredClone(saved), version: 4 }));
     await saveDraft();
     expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
@@ -316,18 +330,18 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const { client } = renderAccount(captainAccount, undefined, 1, choices);
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     await chooseMission(choices[0]);
-    await userEvent.selectOptions(formQueries().getByLabelText('Mode de déclaration'), 'nomade');
+    await selectChoice('Mode de déclaration', 'nomade');
     await userEvent.click(formQueries().getByRole('button', { name: 'Ajouter une personne' }));
     await userEvent.type(formQueries().getByLabelText('Prénom NOM 1'), 'Personne de la première mission');
     await userEvent.click(stepButton(1));
-    await userEvent.selectOptions(formQueries().getByLabelText('Chargement de marchandise applicable'), 'yes');
-    await userEvent.selectOptions(formQueries().getByLabelText('Les conditions météo sont conformes aux limites opérationnelles définies'), 'yes');
+    await selectChoice('Chargement de marchandise applicable', 'yes');
+    await selectChoice('Les conditions météo sont conformes aux limites opérationnelles définies', 'yes');
     await userEvent.click(stepButton(2));
     await userEvent.type(formQueries().getByLabelText('Numéro de la ou des cartes marines'), 'SHOM 7120');
     await userEvent.click(formQueries().getByRole('button', { name: 'Ajouter un point de passage' }));
     await userEvent.type(formQueries().getByLabelText('Description / Contact VHF · point 1'), 'Ancien point');
     await decisionStep();
-    await userEvent.selectOptions(formQueries().getByLabelText('Décision'), 'GO');
+    await selectChoice('Décision', 'GO');
     await userEvent.type(formQueries().getByLabelText('Risques identifiés / informations à transmettre à l’Armement'), 'Ancienne analyse');
     await userEvent.click(formQueries().getByRole('checkbox', { name: /En qualité de Capitaine/ }));
     await userEvent.click(stepButton(0));
@@ -348,10 +362,24 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     renderAccount();
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     await userEvent.click(stepButton(1));
-    const weather = formQueries().getByLabelText('Les conditions météo sont conformes aux limites opérationnelles définies');
-    expect(within(weather).getAllByRole('option').map((option) => option.textContent)).toEqual(['—', 'Oui', 'Non']);
-    await userEvent.selectOptions(weather, 'no');
+    const question = 'Les conditions météo sont conformes aux limites opérationnelles définies';
+    expect(choiceQueries(question).getAllByRole('checkbox').map((input) => input.closest('label')?.textContent)).toEqual(['Oui', 'Non']);
+    expect(choiceInput(question, 'yes')).not.toBeChecked();
+    expect(choiceInput(question, 'no')).not.toBeChecked();
+    await selectChoice(question, 'yes');
+    await selectChoice(question, 'no');
+    expect(choiceInput(question, 'yes')).not.toBeChecked();
+    expect(choiceInput(question, 'no')).toBeChecked();
     expect(formQueries().getByLabelText('Justification — Les conditions météo sont conformes aux limites opérationnelles définies')).toBeInTheDocument();
+    await userEvent.click(choiceInput(question, 'no'));
+    expect(choiceInput(question, 'no')).not.toBeChecked();
+    expect(formQueries().queryByLabelText(`Justification — ${question}`)).not.toBeInTheDocument();
+    const yesOnly = 'Vivres en quantité suffisante';
+    expect(choiceQueries(yesOnly).getAllByRole('checkbox')).toHaveLength(1);
+    expect(choiceQueries(yesOnly).queryByRole('checkbox', { name: 'Non' })).not.toBeInTheDocument();
+    await selectChoice(yesOnly, 'yes');
+    await userEvent.click(choiceInput(yesOnly, 'yes'));
+    expect(choiceInput(yesOnly, 'yes')).not.toBeChecked();
     await userEvent.click(stepButton(2));
     const table = formQueries().getByRole('table', { name: 'Points de passage' });
     expect(within(table).getByText('Ajoutez le premier point de passage.')).toBeInTheDocument();
@@ -363,6 +391,66 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(formQueries().getByRole('checkbox', { name: 'Zone maritime à trafic dense · point 1' })).toBeChecked();
     await userEvent.click(formQueries().getByRole('button', { name: 'Supprimer le point 1' }));
     expect(within(table).getByText('Ajoutez le premier point de passage.')).toBeInTheDocument();
+  });
+
+  it('keeps DAPAQ, boarding, safety measures and shipchandler checkbox choices exclusive and clearable', async () => {
+    const { client } = renderAccount();
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, draft) => recordFixture(captainAccount, { draft, version: 1 }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await selectChoice('Mode de déclaration', 'email');
+    await selectChoice('Préparée par', 'agent');
+    expect(formQueries().getByLabelText('Nom de l’agent consignataire')).toBeVisible();
+    await selectChoice('Mode de déclaration', 'nomade');
+    expect(choiceInput('Mode de déclaration', 'email')).not.toBeChecked();
+    expect(choiceQueries('Préparée par').queryByRole('checkbox', { name: 'Agent consignataire' })).not.toBeInTheDocument();
+    expect(formQueries().queryByLabelText('Nom de l’agent consignataire')).not.toBeInTheDocument();
+    await selectChoice('Préparée par', 'armament');
+    await selectChoice('Préparée par', 'captain');
+    expect(choiceInput('Préparée par', 'armament')).not.toBeChecked();
+    await userEvent.click(choiceInput('Préparée par', 'captain'));
+    await userEvent.click(choiceInput('Mode de déclaration', 'nomade'));
+    await userEvent.click(stepButton(1));
+    await selectChoice('Remorquage applicable', 'yes');
+    await selectChoice('Embarquement sur le remorqué', 'yes');
+    await selectChoice('Mesures de sécurité sur le remorqué', 'specific');
+    expect(formQueries().getByLabelText('Ronde de sécurité, zones dangereuses et mesures prises')).toBeVisible();
+    await selectChoice('Mesures de sécurité sur le remorqué', 'sms');
+    expect(choiceInput('Mesures de sécurité sur le remorqué', 'specific')).not.toBeChecked();
+    expect(formQueries().queryByLabelText('Ronde de sécurité, zones dangereuses et mesures prises')).not.toBeInTheDocument();
+    await userEvent.click(choiceInput('Mesures de sécurité sur le remorqué', 'sms'));
+    await selectChoice('Embarquement sur le remorqué', 'no');
+    expect(choiceInput('Embarquement sur le remorqué', 'yes')).not.toBeChecked();
+    await userEvent.click(choiceInput('Embarquement sur le remorqué', 'no'));
+    await selectChoice('Approvisionnement / Avitaillement applicable', 'yes');
+    await selectChoice('Shipchandler', 'yes');
+    expect(formQueries().getByLabelText('Nom du shipchandler')).toBeVisible();
+    await selectChoice('Shipchandler', 'no');
+    expect(choiceInput('Shipchandler', 'yes')).not.toBeChecked();
+    expect(formQueries().queryByLabelText('Nom du shipchandler')).not.toBeInTheDocument();
+    await userEvent.click(choiceInput('Shipchandler', 'no'));
+    await decisionStep();
+    await selectChoice('Décision', 'NO_GO');
+    await userEvent.click(choiceInput('Décision', 'NO_GO'));
+    await saveDraft();
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({
+      dapaq: expect.objectContaining({ method: '', preparedBy: '' }), decision: '',
+      towedVesselBoarding: expect.objectContaining({ required: '', measures: '' }), supplies: expect.objectContaining({ delegated: '' }),
+    }), undefined);
+  });
+
+  it('shows every full safety question and its explanatory text without replacing it with the checkbox labels', async () => {
+    renderAccount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await userEvent.click(stepButton(1));
+    for (const label of ['Remorquage applicable', 'Chargement de marchandise applicable', 'Navire de support de plongeur applicable', 'Approvisionnement / Avitaillement applicable']) await selectChoice(label, 'yes');
+    for (const check of SEA_OPERATION_CHECKS) {
+      expect(formQueries().getByRole('group', { name: check.label })).toBeVisible();
+      expect(formQueries().getByText(check.label, { selector: 'span' })).toBeVisible();
+      expect(choiceQueries(check.label).getAllByRole('checkbox')).toHaveLength(check.yesOnly ? 1 : 2);
+      if (check.help) expect(formQueries().getByText(check.help)).toBeVisible();
+      if (check.yesLabel) expect(formQueries().getByText(check.yesLabel)).toBeVisible();
+    }
   });
 
   it('opens a fullscreen modal with four preparation steps, form, live document, completion and footer actions', async () => {
@@ -527,7 +615,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(formQueries().getByLabelText('Projet')).toBeDisabled();
     expect(footerQueries().queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
     await decisionStep();
-    expect(formQueries().getByLabelText('Décision')).toBeDisabled();
+    expect(choiceInput('Décision', 'NO_GO')).toBeDisabled();
     expect(footerQueries().getByRole('button', { name: 'Signer la décision NO GO' })).toBeDisabled();
     expect(saveSeaOperation).not.toHaveBeenCalled();
     expect(signSeaOperation).not.toHaveBeenCalled();
@@ -571,23 +659,23 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     ] as const;
     for (const [label, checkId] of cases) {
       const check = SEA_OPERATION_CHECKS.find((item) => item.id === checkId)!;
-      expect(screen.queryByLabelText(check.label)).not.toBeInTheDocument();
-      await userEvent.selectOptions(formQueries().getByLabelText(label), 'yes');
-      await userEvent.selectOptions(formQueries().getByLabelText(check.label), 'no');
+      expect(formQueries().queryByRole('group', { name: check.label })).not.toBeInTheDocument();
+      await selectChoice(label, 'yes');
+      await selectChoice(check.label, 'no');
       if (checkId === 'divingMedicalKit') {
         await userEvent.click(screen.getByText('Kit médical plongée prévu par le formulaire'));
         for (const item of DIVING_MEDICAL_KIT) expect(screen.getByText((text) => text.includes(item.article) && text.startsWith(`${item.quantity} ×`))).toBeInTheDocument();
       }
-      await userEvent.selectOptions(formQueries().getByLabelText(label), 'no');
-      expect(screen.queryByLabelText(check.label)).not.toBeInTheDocument();
+      await selectChoice(label, 'no');
+      expect(formQueries().queryByRole('group', { name: check.label })).not.toBeInTheDocument();
       if (checkId === 'divingMedicalKit') expect(screen.queryByText('Kit médical plongée prévu par le formulaire')).not.toBeInTheDocument();
-      await userEvent.selectOptions(formQueries().getByLabelText(label), 'yes');
-      expect(formQueries().getByLabelText(check.label)).toHaveValue('no');
+      await selectChoice(label, 'yes');
+      expect(choiceInput(check.label, 'no')).toBeChecked();
     }
-    await userEvent.selectOptions(formQueries().getByLabelText('Approvisionnement / Avitaillement applicable'), 'yes');
-    expect(formQueries().getByLabelText('Shipchandler')).toBeInTheDocument();
-    await userEvent.selectOptions(formQueries().getByLabelText('Approvisionnement / Avitaillement applicable'), 'no');
-    expect(screen.queryByLabelText('Shipchandler')).not.toBeInTheDocument();
+    await selectChoice('Approvisionnement / Avitaillement applicable', 'yes');
+    expect(formQueries().getByRole('group', { name: 'Shipchandler' })).toBeInTheDocument();
+    await selectChoice('Approvisionnement / Avitaillement applicable', 'no');
+    expect(formQueries().queryByRole('group', { name: 'Shipchandler' })).not.toBeInTheDocument();
   });
 
   it('blocks GO when a red control is negative and sends no save or signature request', async () => {
@@ -599,7 +687,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await openRecord(record);
     await decisionStep();
     expect(screen.getByText('NO GO imposé · 1 contrôle(s) bloquant(s)')).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'GO · la mission peut être réalisée' })).toBeDisabled();
+    expect(choiceInput('Décision', 'GO')).toBeDisabled();
     await userEvent.click(screen.getByRole('button', { name: 'Signer la décision GO' }));
     expect(await formQueries().findByRole('alert')).toHaveTextContent('NO GO automatique');
     expect(saveSeaOperation).not.toHaveBeenCalled();
@@ -621,7 +709,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(await formQueries().findByText('Décision du Capitaine signée et enregistrée. La fiche est figée.')).toBeInTheDocument();
     expect(saveSeaOperation).toHaveBeenCalledWith(client, record.draft, record);
     expect(signSeaOperation).toHaveBeenCalledWith(client, saved, canonicalName, saved.draft.signature.acknowledged);
-    expect(formQueries().getByLabelText('Décision')).toBeDisabled();
+    expect(choiceInput('Décision', 'NO_GO')).toBeDisabled();
     expect(formQueries().getByLabelText('Projet')).toBeDisabled();
     expect(screen.queryByRole('button', { name: /Signer la décision/ })).not.toBeInTheDocument();
   });
@@ -657,15 +745,41 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
   });
 
   it('opens an existing signed decision read-only regardless of stale editing permissions', async () => {
-    const record = recordFixture(captainAccount, { status: 'signed', signedBy: captainAccount.id, signedByName: captainAccount.name, signedAt: '2026-10-16T10:00:00Z', canEdit: true, canSign: true });
+    const draft = noGoDraft();
+    draft.applicability = { towing: 'yes', cargo: 'yes', divingSupport: 'yes', supplies: 'yes' };
+    draft.towedVesselBoarding.required = 'yes';
+    const record = recordFixture(captainAccount, { draft, status: 'signed', signedBy: captainAccount.id, signedByName: captainAccount.name, signedAt: '2026-10-16T10:00:00Z', canEdit: true, canSign: true });
     renderAccount(captainAccount, record);
     await openRecord(record);
     expect(formQueries().getByLabelText('Projet')).toBeDisabled();
+    for (const input of [...choiceQueries('Mode de déclaration').getAllByRole('checkbox'), ...choiceQueries('Préparée par').getAllByRole('checkbox')]) expect(input).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
+    await userEvent.click(stepButton(1));
+    for (const input of formQueries().getAllByRole('checkbox')) expect(input).toBeDisabled();
     await decisionStep();
-    expect(formQueries().getByLabelText('Décision')).toBeDisabled();
+    expect(choiceInput('Décision', 'NO_GO')).toBeDisabled();
     expect(screen.getByText(/Décision signée par Camille MARTIN/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Signer la décision/ })).not.toBeInTheDocument();
+  });
+
+  it('loads only the selected project documents and leaves them consultable on a signed operation', async () => {
+    const mission = plannedMissions()[0];
+    const draft = noGoDraft();
+    draft.project = mission.project;
+    draft.planning = { date: seaOperationToday(), projectId: mission.projectId, operationId: mission.operationId, captainPersonId: mission.captains[0].personId };
+    const record = recordFixture(captainAccount, { draft, status: 'signed', canEdit: false, canSign: false });
+    const { client } = renderAccount(captainAccount, record, 1, plannedMissions());
+    vi.mocked(fetchSeaOperationProjectDocuments).mockResolvedValue([{ id: 'project:101', projectId: mission.projectId, title: 'Plan de prévention autorisé', fileName: 'prevention.pdf', mimeType: 'application/pdf', categoryLabel: 'Sécurité', subcategoryLabel: '', createdAt: '2026-10-22T08:00:00Z', expiresOn: null }]);
+    await openRecord(record);
+    await userEvent.click(formQueries().getByText('Documents du projet'));
+    expect(await formQueries().findByRole('button', { name: 'Ouvrir : Plan de prévention autorisé' })).toBeEnabled();
+    expect(fetchSeaOperationProjectDocuments).toHaveBeenCalledWith(client, mission.projectId);
+    expect(formQueries().getByLabelText('Projet')).toBeDisabled();
+    expect(formQueries().queryByText(/Offre commerciale|Facturation/)).not.toBeInTheDocument();
+    await userEvent.click(stepButton(1));
+    expect(formQueries().queryByText('Documents du projet')).not.toBeInTheDocument();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
   });
 
   it('keeps unsaved inputs when sidebar navigation is refused and leaves only after acceptance', async () => {

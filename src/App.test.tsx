@@ -121,8 +121,10 @@ describe('App', () => {
     );
 
     expect(await screen.findByText('Préversion · données de démonstration')).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: 'Nouveau projet' }, { timeout: 10_000 })).toBeInTheDocument();
-    expect(document.querySelector('.content-area')).toHaveTextContent('Planning BBTM');
+    const planningContent = within(screen.getByRole('main'));
+    // Await the real lazy route before checking its ready-state controls.
+    expect(await planningContent.findByRole('heading', { name: 'Planning' }, { timeout: 20_000 })).toHaveTextContent('Planning BBTM');
+    expect(await planningContent.findByRole('button', { name: 'Nouveau projet' }, { timeout: 5_000 })).toBeInTheDocument();
     expect(screen.getAllByText('GOURY').length).toBeGreaterThan(0);
     expect(screen.queryByText('NAVIRES SANS EQUIPAGE')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Connexion à SeaPilot' })).not.toBeInTheDocument();

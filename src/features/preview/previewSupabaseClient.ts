@@ -36,6 +36,8 @@ function previewSignaturePng(): Blob {
 }
 
 function previewStorageAssetUrl(bucket: string, path: string): string {
+  if (bucket === 'project-files' && ['projects/99101/attachments/sea-operation-demo.pdf', 'projects/99102/attachments/sea-operation-demo.pdf'].includes(path)) return '/demo/politique-qhse-demo.pdf';
+  if (bucket === 'project-files' && path === 'projects/99101/attachments/sea-operation-demo.webp') return '/demo/action-plan-closure-proof.webp';
   if (bucket === 'qhse-policy-attachments') return Array.from(previewQhseUploads.values()).find((upload) => upload.path === path)?.url || '';
   if (bucket === 'working-time-signatures') return '/templates/attestation-signature.png';
   if (bucket === 'procedure-documents' && path === 'published/8102/pol-01-b.pdf') return '/demo/politique-qhse-demo.pdf';

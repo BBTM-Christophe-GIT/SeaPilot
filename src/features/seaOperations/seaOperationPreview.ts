@@ -35,6 +35,11 @@ sample.planning = { date: seaOperationToday(), operationId: initialPlanning.oper
 sample.signature = { ...sample.signature, captainName: initialPlanning.captains[0].name, place: initialPlanning.vessel.departurePort };
 type PreviewRecord = Record<string, unknown> & { id: string; version: number; draft: SeaOperationPayload };
 const now = () => new Date().toISOString();
+const projectDocuments = [
+  { id: 'project:991011', project_id: 99101, title: 'Exemple PDF de démonstration', file_name: 'exemple-document-projet.pdf', mime_type: 'application/pdf', category_label: 'Préparation', subcategory_label: 'Exemple', created_at: '2026-10-22T08:00:00Z', expires_on: null, path: 'projects/99101/attachments/sea-operation-demo.pdf' },
+  { id: 'project:991012', project_id: 99101, title: 'Exemple photo de démonstration', file_name: 'exemple-photo-projet.webp', mime_type: 'image/webp', category_label: 'Préparation', subcategory_label: 'Exemple', created_at: '2026-10-22T08:00:00Z', expires_on: null, path: 'projects/99101/attachments/sea-operation-demo.webp' },
+  { id: 'project:991021', project_id: 99102, title: 'Exemple PDF du second projet', file_name: 'exemple-second-projet.pdf', mime_type: 'application/pdf', category_label: 'Préparation', subcategory_label: 'Exemple', created_at: '2026-10-22T09:00:00Z', expires_on: null, path: 'projects/99102/attachments/sea-operation-demo.pdf' },
+];
 const records: PreviewRecord[] = [{
   id: '99000000-0000-4000-8000-000000000001', company_id: 9901, version: 1, status: 'draft', draft: sample,
   created_by: 'preview-user', created_by_name: 'Compte de démonstration', created_at: now(),
@@ -47,6 +52,11 @@ export function seaOperationPreviewRpc(name: string, args: Record<string, unknow
   if (name === 'sea_operations_overview') return success({ company_id: 9901, actor_id: 'preview-user', actor_name: 'Compte de démonstration', records, vessels });
   if (name === 'sea_operation_planning_context') return success(planningContext(typeof args.p_date === 'string' ? args.p_date : seaOperationToday()));
   if (name === 'sea_operation_captain_signature') return success(null);
+  if (name === 'sea_operation_project_documents') return success(projectDocuments.filter((document) => document.project_id === Number(args.p_project_id)).map((document) => Object.fromEntries(Object.entries(document).filter(([key]) => key !== 'path'))));
+  if (name === 'sea_operation_project_document_access') {
+    const document = projectDocuments.find((item) => item.id === args.p_document_id && item.project_id === Number(args.p_project_id));
+    return document ? success({ bucket: 'project-files', path: document.path, file_name: document.file_name, mime_type: document.mime_type }) : fail('Document indisponible pour ce projet.');
+  }
   const record = records.find((item) => item.id === args.p_id);
   if (name === 'sea_operation_detail') return record ? success(record) : fail('Fiche introuvable.');
   if (name === 'sea_operation_save') {
