@@ -14,10 +14,12 @@ export interface MfwamPointForecast {
 
 export class SeaOperationGribError extends Error {
   readonly code: 'GRIB_INVALID_INPUT' | 'GRIB_UNSUPPORTED' | 'GRIB_POINT_OUTSIDE_GRID' | 'MFWAM_INCOMPLETE_FORECAST' | 'GRIB_DECODE_FAILED';
+  readonly cause?: unknown;
   constructor(code: SeaOperationGribError['code'], message: string, cause?: unknown) {
-    super(message, { cause });
+    super(message);
     this.name = 'SeaOperationGribError';
     this.code = code;
+    this.cause = cause;
   }
 }
 

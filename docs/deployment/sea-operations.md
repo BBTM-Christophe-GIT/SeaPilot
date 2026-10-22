@@ -336,6 +336,9 @@ inclut son binaire et n’a aucun script d’installation ; les scripts de dépe
 restent bloqués selon `pnpm-workspace.yaml`. `vercel.json` inclut explicitement les
 fichiers du paquet dans cette seule fonction. Les imports serveur portent leur
 extension `.js` pour l’exécution ESM après compilation Vercel.
+Le motif `includeFiles` cible le dossier physique dans `.pnpm`, afin de ne pas
+empaqueter les enfants d’un alias symbolique. Il doit suivre la version exacte
+du paquet lors d’une mise à jour.
 
 #### Autres accès et fournisseurs
 
