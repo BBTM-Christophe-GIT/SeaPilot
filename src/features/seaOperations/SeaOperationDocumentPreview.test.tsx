@@ -50,7 +50,7 @@ describe('SeaOperationPreview', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Client' }));
     expect(onChangeStep).toHaveBeenLastCalledWith(0);
     const navigation = within(screen.getByRole('navigation', { name: 'Complétude par étape' }));
-    await userEvent.click(navigation.getByRole('button', { name: /Plan de passage/ }));
+    await userEvent.click(navigation.getByRole('button', { name: /Passage Plan/ }));
     expect(onChangeStep).toHaveBeenLastCalledWith(2);
   });
 

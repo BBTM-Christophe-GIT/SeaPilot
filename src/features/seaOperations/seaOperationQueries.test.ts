@@ -19,14 +19,22 @@ describe('sea operation queries', () => {
   it('uses server permissions and orders real vessel options by decreasing length', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: { company_id: 1, actor_id: 'crew-id', actor_name: 'Marin réel',
       records: [record()], vessels: [
-        { id: 1, name: 'Petit', length_overall: '12 m', registration_imo: '123', can_sign: false },
-        { id: 2, name: 'Grand', length_overall: '45 m', registration_imo: '456', can_sign: true },
+        { id: 1, name: 'Petit', length_overall: '12 m', draft_m: '1.4', registration_imo: '123', can_sign: false },
+        { id: 2, name: 'Grand', length_overall: '45 m', draft_m: 2.1, registration_imo: '456', can_sign: true },
       ] }, error: null });
     const data = await fetchSeaOperationData({ rpc } as unknown as SupabaseClient);
     expect(data.actorId).toBe('crew-id');
     expect(data.records[0]).toMatchObject({ version: 3, canEdit: true, canSign: false, signedAt: null });
     expect(data.vessels.map((vessel) => vessel.id)).toEqual([2, 1]);
+    expect(data.vessels.map((vessel) => vessel.draftMeters)).toEqual([2.1, 1.4]);
     expect(rpc).toHaveBeenCalledWith('sea_operations_overview', undefined);
+  });
+
+  it('keeps unknown vessel draughts empty, including historical RPC responses', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { company_id: 1, actor_id: 'crew-id', actor_name: 'Marin réel', records: [],
+      vessels: [{ id: 1, name: 'Inconnu', draft_m: null }, { id: 2, name: 'Historique' }] }, error: null });
+    const data = await fetchSeaOperationData({ rpc } as unknown as SupabaseClient);
+    expect(data.vessels.every((vessel) => vessel.draftMeters === null)).toBe(true);
   });
 
   it('saves only payload and expected revision, without accepting client actor metadata', async () => {

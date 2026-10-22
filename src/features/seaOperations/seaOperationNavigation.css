@@ -1,0 +1,58 @@
+.so-radio-panel,
+.so-weather-panel {
+  min-width: 0;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sp-border);
+  container-type: inline-size;
+}
+.so-radio-panel h3,
+.so-weather-panel h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
+.so-radio-panel h4,
+.so-weather-panel h4 { margin: 12px 0 8px; }
+.so-radio-panel ul,
+.so-weather-points { display: grid; gap: 8px; list-style: none; margin: 8px 0; padding: 0; }
+.so-radio-card,
+.so-weather-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-canvas);
+  overflow-wrap: anywhere;
+}
+.so-radio-card > span,
+.so-radio-card > small,
+.so-weather-card small,
+.so-weather-retrieved { color: var(--sp-muted); font-size: 11px; line-height: 1.5; }
+.so-radio-card dl { margin: 4px 0; }
+.so-radio-card dl > div { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 8px; margin: 4px 0; }
+.so-radio-card dt { color: var(--sp-muted); }
+.so-radio-card dd { margin: 0; }
+.so-radio-card dd:first-of-type { font-variant-numeric: tabular-nums; }
+.so-radio-emergency { padding: 8px; background: var(--sp-primary-soft); border-radius: var(--sp-control-radius); }
+.so-weather-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.so-weather-heading h3 { margin: 0; }
+.so-weather-heading button { gap: 6px; font-size: 11px; }
+.so-weather-point { min-width: 0; padding-bottom: 8px; border-bottom: 1px solid var(--sp-border); }
+.so-weather-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.so-weather-card > strong { color: var(--sp-primary); }
+.so-weather-retrieved { display: block; margin-top: 4px; }
+.so-hydro-sources { margin: 12px 0; border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); padding: 8px 10px; font-size: 12px; }
+.so-hydro-sources summary { cursor: pointer; font-weight: 600; color: var(--sp-primary); }
+.so-hydro-sources p { margin: 8px 0; line-height: 1.5; }
+.so-hydro-sources ul { padding-left: 18px; margin: 8px 0; }
+.so-hydro-sources li { margin: 8px 0; line-height: 1.5; }
+.so-radio-panel a,
+.so-weather-panel a,
+.so-hydro-sources a { color: var(--sp-primary); text-decoration: underline; overflow-wrap: anywhere; }
+.so-radio-panel a:focus-visible,
+.so-weather-panel a:focus-visible,
+.so-hydro-sources summary:focus-visible,
+.so-hydro-sources a:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; }
+@container (min-width: 380px) {
+  .so-weather-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

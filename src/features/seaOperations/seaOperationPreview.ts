@@ -2,8 +2,8 @@ import { emptySeaOperation, seaOperationToday, type SeaOperationPayload } from '
 
 // Isolated demonstration data: no authenticated account or production RPC is used.
 const vessels = [
-  { id: 9901, name: 'GOURY', registration_imo: 'DEMO-9901 / IMO 9900001', length_overall: '30.62', can_sign: false },
-  { id: 9902, name: 'LE ROZEL', registration_imo: 'DEMO-9902 / IMO 9900002', length_overall: '19.2', can_sign: false },
+  { id: 9901, name: 'GOURY', registration_imo: 'DEMO-9901 / IMO 9900001', length_overall: '30.62', draft_m: 2.1, can_sign: false },
+  { id: 9902, name: 'LE ROZEL', registration_imo: 'DEMO-9902 / IMO 9900002', length_overall: '19.2', draft_m: 1.4, can_sign: false },
 ];
 function planningContext(date: string) {
   return { date, choices: [

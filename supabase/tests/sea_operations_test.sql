@@ -47,7 +47,8 @@ insert into sea_fixture(kind,payload)
 select 'go',jsonb_build_object('version',1,'project','Test sea mission','client','Client','clientContact','Contact client','description','Mission de test',
   'specialPersonnel','[]'::jsonb,'dapaq',jsonb_build_object('method','nomade','preparedBy','captain','agentName','','agentContact',''),
   'vessel',jsonb_build_object('id',(select id::text from public.vessels where name = 'SEA-OPERATION-TEST'),'name','SEA-OPERATION-TEST','registrationImo','12345',
-    'captainName','Sea Test 4','departurePort','Cherbourg','departureQuay','A','arrivalPort','Le Havre','arrivalQuay','B','etd','2026-10-17T08:00','eta','2026-10-17T18:00'),
+    'captainName','Sea Test 4','departurePort','Cherbourg','departureQuay','A','arrivalPort','Le Havre','arrivalQuay','B',
+    'etd',(now() at time zone 'Europe/Paris')::date::text||'T08:00','eta',(now() at time zone 'Europe/Paris')::date::text||'T18:00'),
   'applicability','{"towing":"no","cargo":"no","divingSupport":"no","supplies":"no"}'::jsonb,
   'checks',(select jsonb_object_agg(key,'yes') from unnest(array['vesselCondition','stability','provisions','water','fuel','operationEquipment','navigationEquipment','seaClosures',
     'towingLimits','towingPlan','towingInsurance','towingAuthorization','cargoStability','dangerousGoods','cargoLashing','divingMedicalKit','crewCredentials','crewRoles','watchesAssigned',
@@ -58,7 +59,7 @@ select 'go',jsonb_build_object('version',1,'project','Test sea mission','client'
   'towedVesselBoarding','{"required":"","measures":"","details":""}'::jsonb,'portServices','["none"]'::jsonb,'mandatoryServicesNotified',false,
   'supplies','{"delegated":"","shipchandlerName":"","shipchandlerContact":"","items":[],"suppliers":"","customerAccountsPrepared":false}'::jsonb,
   'charts','SHOM test','waypoints','[{"id":"w1","number":"1","descriptionVhf":"Point test VHF 16","latitude":"49 N","longitude":"001 W","ukc":"2 m","eta":"12:00","denseTraffic":false}]'::jsonb,
-  'decision','GO','risks','','signature','{"captainName":"Sea Test 4","date":"2026-10-16","place":"Cherbourg","acknowledged":true}'::jsonb);
+  'decision','GO','risks','','signature',jsonb_build_object('captainName','Sea Test 4','date',(now() at time zone 'Europe/Paris')::date,'place','Cherbourg','acknowledged',true));
 insert into sea_fixture(kind,payload)
 select 'partial',jsonb_set(jsonb_set(jsonb_set(jsonb_set(payload,'{decision}','"NO_GO"'),'{risks}','"Conditions météo défavorables, Armement informé"'),'{client}','""'),'{waypoints}','[]')
 from sea_fixture where kind = 'go';
@@ -158,13 +159,22 @@ select lives_ok($$select sea_operation_private.validate_draft(jsonb_set(jsonb_se
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{checks,operationEquipment}','"no"'),true)$$,'22023',null,'a conditional negative needs its justification');
 select lives_ok($$select sea_operation_private.validate_draft(jsonb_set(jsonb_set((select payload from sea_fixture where kind = 'go'),'{checks,operationEquipment}','"no"'),'{justifications,operationEquipment}','"Matériel de substitution validé par Armement"'),true)$$,'a justified conditional negative may allow GO');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{checks,water}','"no"'),true)$$,'22023',null,'positive-only attestations must be confirmed');
+select is((public.sea_operation_save(null,null,jsonb_set((select payload from sea_fixture where kind='go'),array['checks',key],'"no"'))->'draft'->'checks'->>key),
+  'no','the real Captain persists an honest negative switch answer: '||key)
+from unnest(array['provisions','water','fuel','standingOrders']) key;
+select throws_ok(format($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind='go'),array['checks',%L],'"no"'),true)$$,key),
+  '22023',null,'a persisted negative switch does not become a GO confirmation: '||key)
+from unnest(array['provisions','water','fuel','standingOrders']) key;
+select lives_ok(format($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind='partial'),array['checks',%L],'"no"'),true)$$,key),
+  'an explicit partial NO GO accepts a negative switch answer: '||key)
+from unnest(array['provisions','water','fuel','standingOrders']) key;
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{checks,weather}','null'),true)$$,'22023',null,'missing or malformed answers cannot bypass checks');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{applicability,towing}','"yes"'),true)$$,'22023',null,'towing requires boarding assessment');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{applicability,supplies}','"yes"'),true)$$,'22023',null,'supplies require identified needs and provider responsibility');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{waypoints}','[]'),true)$$,'22023',null,'GO requires a passage plan');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{dapaq,preparedBy}','"agent"'),true)$$,'22023',null,'NOMADE cannot be delegated to an agent');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{portServices}','["none","pilotage"]'),false)$$,'22023',null,'contradictory services are rejected even in drafts');
-select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{vessel,eta}','"2026-10-16T01:00"'),false)$$,'22023',null,'arrival cannot precede departure');
+select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{vessel,eta}',to_jsonb((now() at time zone 'Europe/Paris')::date::text||'T01:00')),false)$$,'22023',null,'arrival cannot precede departure');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{vessel,eta}','"infinity"'),false)$$,'22023',null,'non-finite PostgreSQL date values are not accepted as operation dates');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{signature,date}','"2026-02-30"'),true)$$,'22023',null,'invalid signature dates are rejected');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'partial'),'{risks}','""'),true)$$,'22023',null,'partial NO GO must record its risks or refusal reason');

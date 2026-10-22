@@ -83,6 +83,7 @@ export interface SeaOperationCheck {
   label: string;
   /** Only explicitly red negative answers in the source automatically prevent departure. */
   blocking?: boolean;
+  /** A GO requires Yes; drafts and explicit NO GO may still record No. */
   yesOnly?: boolean;
   justifyNo?: boolean;
   applicability?: SeaOperationApplicability;
@@ -185,6 +186,16 @@ export function emptySeaOperation(): SeaOperationPayload {
     charts: '', waypoints: [], decision: '', risks: '',
     signature: { captainName: '', date: seaOperationToday(), place: '', acknowledged: false },
   };
+}
+
+/** Requested starting answers apply only to a new mission, never to restored or signed records. */
+export function newSeaOperation(): SeaOperationPayload {
+  const draft = emptySeaOperation();
+  for (const check of SEA_OPERATION_CHECKS) draft.checks[check.id] = 'yes';
+  draft.applicability = { towing: 'yes', cargo: 'yes', divingSupport: 'yes', supplies: 'yes' };
+  draft.towedVesselBoarding.required = 'yes';
+  draft.supplies.delegated = 'yes';
+  return draft;
 }
 
 export function isSeaOperationCheckActive(check: SeaOperationCheck, payload: SeaOperationPayload): boolean {
@@ -321,10 +332,10 @@ export function validateSeaOperation(
     if (payload.supplies.delegated === 'no') requireText(payload.supplies.suppliers, 'La liste des fournisseurs');
   }
   requireText(payload.charts, 'Le numéro de la ou des cartes marines');
-  if (payload.waypoints.length === 0) errors.push('Le passage plan doit comporter au moins un point.');
+  if (payload.waypoints.length === 0) errors.push('Le Passage Plan doit comporter au moins un point.');
   payload.waypoints.forEach((point, index) => {
     const fields = [
-      [point.number, 'Le numéro'], [point.descriptionVhf, 'La description / le contact VHF'],
+      [point.number, 'Le numéro'], [point.descriptionVhf, 'La description'],
       [point.latitude, 'La latitude'], [point.longitude, 'La longitude'], [point.ukc, 'L’UKC'], [point.eta, 'L’ETA'],
     ] as const;
     for (const [value, label] of fields) requireText(value, `${label} du point n° ${index + 1}`);

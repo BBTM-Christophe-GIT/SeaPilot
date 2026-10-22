@@ -951,7 +951,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       updated_at: '2026-07-15T11:00:00Z',
     },
   ],
-  vessels: [...ACTION_PLAN_PREVIEW_VESSELS,
+  vessels: [...ACTION_PLAN_PREVIEW_VESSELS.map((vessel) => ({ ...vessel, draft_m: vessel.id === 9210 ? 1.4 : null })),
     {
       id: 1, company_id: 1, name: 'GOURY', acronym: 'GRY', asset_kind: 'vessel', active: true,
       type_label: 'Navire de charge', unit_type_label: 'Navire', fleet_exit_on: null,
@@ -967,7 +967,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       brochure_summary: 'Navire polyvalent conçu pour la surveillance, l’assistance offshore et le transfert de personnel.',
       brochure_operations: ['Standby & Guard Vessel', 'Transfert de personnel', 'Support plongée', 'Assistance offshore'],
       built_year: 2001, classification_label: 'DNV', navigation_category: 'Catégorie 2 — jusqu’à 200 milles des côtes',
-      beam_overall_m: 8.5, lightship_tonnes: 400, deadweight_tonnes: 100, safe_manning: 4,
+      beam_overall_m: 8.5, draft_m: 2.1, lightship_tonnes: 400, deadweight_tonnes: 100, safe_manning: 4,
       main_engine: 'CATERPILLAR C3512 B', main_engine_power_kw: 750, bow_thruster_power_kw: 75,
       gensets: '2 × 230 KVA + 1 × 180 KVA', max_speed_knots: 12, bollard_pull_tonnes: 12,
       fuel_capacity_m3: 110, range_description: '4 semaines · 11 000 milles nautiques à 8 nœuds · Hs 5 m',
@@ -1831,6 +1831,39 @@ function previewRows(table: string): Array<Record<string, unknown>> {
   return (PREVIEW_ROWS[table] || []) as Array<Record<string, unknown>>;
 }
 
+/** Fleet edits are retained only in this demonstration module instance. */
+function createPreviewVesselQuery(): object {
+  const filters: Array<(row: Record<string, unknown>) => boolean> = [];
+  let patch: Record<string, unknown> | null = null;
+  let singleton = false;
+  let cached: PreviewResult | null = null;
+  const result = (): PreviewResult => {
+    if (cached) return cached;
+    const rows = previewRows('vessels').filter((row) => filters.every((matches) => matches(row)));
+    if (patch) {
+      const draft = patch.draft_m;
+      if (!filters.length || (draft != null && (typeof draft !== 'number' || !Number.isFinite(draft) || draft <= 0 || draft > 50))) {
+        return cached = { data: null, error: { message: 'La modification du navire de démonstration est invalide.' } };
+      }
+      rows.forEach((row) => Object.assign(row, patch));
+    }
+    if (singleton && rows.length !== 1) return cached = { data: null, error: { message: 'Navire de démonstration introuvable.' } };
+    return cached = { data: structuredClone(singleton ? rows[0] : rows), error: null };
+  };
+  const query: object = new Proxy({}, {
+    get(_target, property) {
+      if (property === 'then') return (resolve: (value: PreviewResult) => unknown, reject?: (reason: unknown) => unknown) => Promise.resolve(result()).then(resolve, reject);
+      if (property === 'update') return (values: Record<string, unknown>) => { patch = { ...values }; return query; };
+      if (property === 'eq') return (key: string, value: unknown) => { filters.push((row) => row[key] === value); return query; };
+      if (property === 'in') return (key: string, values: unknown[]) => { filters.push((row) => values.includes(row[key])); return query; };
+      if (property === 'single' || property === 'maybeSingle') return () => { singleton = true; return query; };
+      if (['insert', 'delete', 'upsert'].includes(String(property))) return () => createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR });
+      return () => query;
+    },
+  });
+  return query;
+}
+
 function nextPreviewId(table: string, fallback: number): number {
   return Math.max(fallback, ...previewRows(table).map((row) => Number(row.id) || 0)) + 1;
 }
@@ -2118,7 +2151,19 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     // another assignment inside the calendar-month reading window.
     return createPreviewQuery({ data: [9201, 9202], error: null });
   }
-  if (functionName.startsWith('sea_operation')) return createPreviewQuery(seaOperationPreviewRpc(functionName, args));
+  if (functionName.startsWith('sea_operation')) {
+    const result = seaOperationPreviewRpc(functionName, args);
+    if (functionName === 'sea_operations_overview' && result.data) {
+      const data = result.data as { vessels: Array<Record<string, unknown>> };
+      // Explicit aliases preserve the independent, fictional Planning IDs.
+      const fleetIds: Record<number, number> = { 9901: 1, 9902: 9210 };
+      data.vessels.forEach((vessel) => {
+        const fleetVessel = previewRows('vessels').find((row) => Number(row.id) === fleetIds[Number(vessel.id)]);
+        if (fleetVessel) vessel.draft_m = fleetVessel.draft_m ?? null;
+      });
+    }
+    return createPreviewQuery(result);
+  }
   if (functionName === 'purchase_request_own_submission_ids') {
     return createPreviewQuery({ data: [], error: null });
   }
@@ -3039,7 +3084,7 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
 }
 
 export const previewSupabaseClient = {
-  from: (table: string) => table in PREVIEW_ROWS
+  from: (table: string) => table === 'vessels' ? createPreviewVesselQuery() : table in PREVIEW_ROWS
     ? createPreviewQuery({ data: PREVIEW_ROWS[table], error: null }, table === 'useful_links' || table === 'useful_link_categories')
     : createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR }),
   rpc: (functionName: string, args?: Record<string, unknown>) => previewRpc(functionName, args),

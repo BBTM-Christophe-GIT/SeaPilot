@@ -1,8 +1,38 @@
 import { describe, expect, it } from 'vitest';
 import { previewSupabaseClient } from './previewSupabaseClient';
 import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveRightsPeriod } from '../planning/planningAbsenceBalanceQueries';
+import { fetchFleetVessels, saveFleetVessel } from '../fleet/fleetQueries';
+import { fetchSeaOperationData } from '../seaOperations/seaOperationQueries';
 
 describe('previewSupabaseClient', () => {
+  it('retains a Navire draught edit and clear across Fleet reloads and sea-operation preview references', async () => {
+    const original = (await fetchFleetVessels(previewSupabaseClient)).find((vessel) => vessel.id === 1)!;
+    const input = { ...original, brochureOperations: original.brochureOperations.join('\n') };
+    try {
+      const saved = await saveFleetVessel(previewSupabaseClient, { ...input, draftMeters: 2.25 });
+      expect(saved).toMatchObject({ id: 1, name: 'GOURY', draftMeters: 2.25 });
+      const reopened = (await fetchFleetVessels(previewSupabaseClient)).find((vessel) => vessel.id === 1);
+      expect(reopened?.draftMeters).toBe(2.25);
+      const sea = await fetchSeaOperationData(previewSupabaseClient);
+      expect(sea.vessels).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 9901, name: 'GOURY', draftMeters: 2.25 }),
+        expect.objectContaining({ id: 9902, name: 'LE ROZEL', draftMeters: 1.4 }),
+      ]));
+      await saveFleetVessel(previewSupabaseClient, { ...input, draftMeters: null });
+      expect((await fetchFleetVessels(previewSupabaseClient)).find((vessel) => vessel.id === 1)?.draftMeters).toBeNull();
+      expect((await fetchSeaOperationData(previewSupabaseClient)).vessels.find((vessel) => vessel.id === 9901)?.draftMeters).toBeNull();
+    } finally {
+      await saveFleetVessel(previewSupabaseClient, { ...input, draftMeters: original.draftMeters ?? null });
+    }
+  });
+
+  it('refuses an invalid preview vessel measurement without changing another demonstration vessel', async () => {
+    const before = await fetchFleetVessels(previewSupabaseClient);
+    const update = await previewSupabaseClient.from('vessels').update({ draft_m: -1 }).eq('id', 1).select('*').single();
+    expect(update.error).toMatchObject({ message: expect.stringContaining('invalide') });
+    expect(await fetchFleetVessels(previewSupabaseClient)).toEqual(before);
+  });
+
   it('refreshes both dedicated annual counters after an adjustment', async () => {
     const draft = { personId: 111, startsOn: '2026-06-01', endsOn: '2027-05-31', leaveEntitlement: 25, rttEntitlement: 0 };
     expect((await fetchPlanningAbsenceBalanceContext(previewSupabaseClient, draft.personId)).requestBalanceKind).toBe('leave_rtt');

@@ -150,8 +150,8 @@ préparée ne constitue pas une décision signée.
 
 Les contrôles de la section 2 occupent une ligne compacte par question, avec la
 justification conditionnelle sous les réponses concernées. Le passage plan est un
-tableau éditable avec ajout et suppression de lignes, à défilement horizontal
-contenu sur petit écran. La section 4 reprend le nom et la signature du Capitaine,
+tableau éditable avec ajout et suppression de lignes, adapté sans défilement
+horizontal. La section 4 reprend le nom et la signature du Capitaine,
 avec la date du jour proposée par défaut.
 
 L’export PDF utilise `public/templates/sea-operation/` extrait du Word fourni :
@@ -178,10 +178,12 @@ est présent sur le serveur distant.
 
 ## Questionnaire compact et consultation des documents du projet
 
-Les contrôles, l’applicabilité, la DAPAQ et les autres réponses du questionnaire
-utilisent des cases à cocher exclusives. Décocher la réponse sélectionnée revient
-à une réponse non renseignée ; aucun Oui n’est ajouté implicitement. Les contrôles
-exigeant une attestation positive conservent leur seule case Oui, et une réponse
+Les contrôles et l’applicabilité utilisent maintenant des interrupteurs Oui/Non.
+Les nouvelles fiches proposent Oui par défaut ; la restauration conserve les
+réponses existantes et les réponses vides restent « À vérifier ». La décision GO
+et l’attestation finale ne sont jamais prévalidées. Les contrôles exigeant une
+affirmation positive acceptent Non en brouillon mais empêchent toujours GO.
+La DAPAQ et les choix de décision conservent leurs choix exclusifs. Une réponse
 Non bloquante conserve le NO GO et sa justification. Les libellés, aides et
 conditions des réponses sont visibles intégralement, sur autant de lignes que
 nécessaire. Les sélecteurs de projet, navire et personne restent adaptés au choix
@@ -228,3 +230,145 @@ sécurité ne relève aucun WARN/ERROR sur les objets ajoutés. Son information
 `rls_enabled_no_policy` sur la table privée des autorisations est attendue :
 aucune policy ni aucun privilège applicatif direct, donc refus par défaut ;
 les accès passent exclusivement par les fonctions privées gardées.
+
+## Passage Plan, tirant d’eau et prévisions par ETA — 3.77.2
+
+L’étape est nommée **Passage Plan**, y compris dans l’aperçu et le PDF. Ses points
+sont regroupés en lignes de champs adaptatives, sans largeur minimale ni
+défilement horizontal. Le libellé Description ne comporte plus de colonne VHF ;
+la clé historique `descriptionVhf` est conservée pour relire les fiches existantes.
+Les nouvelles ETA utilisent une saisie `datetime-local`, explicitement à l’heure
+de Paris. Une ancienne ETA `HH:mm` reste intacte ; le bouton Appliquer la date
+de l’opération permet une conversion volontaire. Aucune fiche signée n’est migrée.
+
+Les nouvelles réponses Oui sont produites par `newSeaOperation()` ;
+`emptySeaOperation()` reste neutre pour les anciens payloads et les fixtures.
+Un changement de mission recrée les valeurs par défaut et remet à zéro décision,
+attestation, justifications et route. Un brouillon modifiable lié au planning dont
+le nom du signataire est vide récupère le Capitaine effectif sélectionné ; aucune
+identité déjà renseignée ni fiche signée n’est remplacée.
+
+La migration `20261022204736_sea_operation_vessel_draft.sql` ajoute
+`public.vessels.draft_m`, numérique facultatif, strictement positif et inférieur
+ou égal à 50 m. Aucun défaut ni remplissage des vrais navires n’est appliqué.
+Le module Navires permet de renseigner cette mesure selon ses droits existants.
+L’overview Opération en Mer expose seulement la référence du navire autorisé,
+reprise dans Passage Plan par `draftMeters`. Une valeur inconnue reste absente,
+jamais zéro. Cette référence actuelle ne modifie aucun payload signé et ne
+remplace pas la mesure du tirant d’eau réel d’exploitation.
+
+### Répertoire VHF géolocalisé
+
+Les contacts sont proposés à partir des coordonnées WGS84 des points **et des
+segments** entre points consécutifs. Les degrés décimaux, degrés/minutes et
+degrés/minutes/secondes sont acceptés avec contrôle de l’axe et des bornes.
+Un point invalide coupe la route : aucun segment n’est inventé au-dessus du point
+manquant. Les entrées sont dédupliquées ; une route hors du répertoire reste sans
+contact proposé.
+
+Le répertoire initial couvre des centres/ports de Manche, d’Atlantique français
+et du sud de l’Angleterre, avec des coordonnées de repère arrondies. Le filtre de
+proximité (80 M pour les centres, 10 M pour les ports) **n’est pas une zone SAR,
+une limite VTS ni une portée radio**. La liste est explicitement non exhaustive.
+Les sources officielles de chaque canal et contact sont accessibles depuis la
+fiche. Téléphones et MMSI ne sont affichés que lorsqu’ils ont été vérifiés ; par
+exemple les notices UKHO juillet/août 2026 pour Falmouth, Dover et le JRCC UK.
+L’annuaire ne déduit ni hôpital adapté ni consigne d’appel obligatoire d’une simple
+distance.
+
+L’aperçu et le PDF reprennent ces suggestions dans une annexe datée distincte de
+la décision signée. Les données de contact proviennent du répertoire versionné,
+pas d’un service réseau pendant l’export ; les en-têtes/pieds du Word restent
+inchangés.
+
+### Météo : vent et houle significative Hs
+
+`SeaOperationWeatherPanel` consulte automatiquement les coordonnées et l’ETA de
+chaque point lorsque Passage Plan est ouvert. Les changements de point/projet
+annulent les requêtes précédentes ; les réponses tardives ne réapparaissent pas.
+Trois points sont chargés en parallèle au maximum et les modifications sont
+temporisées. Les ETA incomplètes, heures inexistantes/ambiguës de changement
+d’heure, dates passées ou hors horizon restent explicitement indisponibles.
+
+Le vent vient de `wind_speed_10m`, `wind_gusts_10m`, `wind_direction_10m`, en nœuds
+et degrés de provenance. **Houle significative (Hs)** correspond à
+`swell_wave_height`, avec `swell_wave_period` et `swell_wave_direction` (m, s, °,
+respectivement hauteur en mètres, période en secondes et provenance en degrés).
+Il s’agit de la houle seule, pas de la mer totale `wave_height` ni de la mer du
+vent. L’ETA est convertie d’Europe/Paris vers UTC sans dépendre du fuseau du
+navigateur. Les axes météo sont demandés en timestamps UTC. L’heure réelle du
+modèle la plus proche (écart maximal 30 minutes) est affichée séparément de l’ETA,
+sans interpolation cachée. Le vent et la houle peuvent être disponibles
+indépendamment ; un champ absent n’est jamais assimilé à zéro.
+
+La requête vent couvre au maximum 16 jours et la requête marine 7 jours ; la
+présence effective des valeurs est toujours contrôlée. Ces prévisions sont une
+aide consultée en direct, attribuée à Open-Meteo/DWD, et ne valident aucun contrôle
+GO / NO GO. Elles ne sont pas ajoutées aux données signées ni au PDF historique.
+
+En production, `/api/sea-operation-weather` exige un JWT authentifié et la portée
+du projet via la RPC protégée `sea_operation_project_documents`. L’accès est
+vérifié avant tout cache. Les hôtes du fournisseur sont fixes. Le secret serveur
+`OPEN_METEO_API_KEY` doit provenir d’un abonnement autorisant l’usage
+professionnel ; ne jamais utiliser un préfixe `VITE_`. Sans cette configuration,
+le service renvoie 503 avec un message d’activation, sans repli sur l’API gratuite.
+Les environnements Supabase habituels de l’application sont également nécessaires.
+Le cache est borné à 128 entrées/15 minutes, les appels à 30/minute/acteur et la
+concurrence à quatre par instance. Ces limites par instance ne remplacent pas les
+quotas globaux d’un abonnement. Aucun abonnement n’est souscrit par ce changement.
+L’absence d’abonnement a été confirmée pour cette livraison : la météo des comptes
+réels reste donc non activée, avec un message explicite dans la fiche.
+
+La préversion de démonstration seule peut utiliser les endpoints publics pour
+évaluation, comme autorisé par les [tarifs Open-Meteo](https://open-meteo.com/en/pricing).
+Les comptes réels passent par le serveur et conservent la clé privée.
+
+#### Alternatives demandées : Météo-France et Windy
+
+Les [données publiques Météo-France](https://meteofrance.com/presse/au-1er-janvier-2024-toutes-les-donnees-publiques-de-meteo-france-disposeront-dune)
+sont gratuites et réutilisables avec attribution. Les modèles AROME / ARPEGE
+fournissent le vent et MFWAM les états de mer. Le raccordement direct doit passer
+par le [portail officiel des API](https://portail-api.meteofrance.fr/web/fr/),
+avec un compte et une clé privés côté serveur ; aucune clé d’une application
+web/mobile n’est réutilisée. Ces données de grille demandent une extraction
+adaptée au point et à l’échéance : elles ne constituent pas le même contrat JSON
+que le connecteur Open-Meteo livré ici. Un accès Météo-France reste à configurer
+et à tester avant d’activer ce fournisseur pour les comptes réels.
+
+L’[API Point Forecast Windy.com](https://api4.windy.com/point-forecast/pricing)
+est disponible à 990 €/an au 22 octobre 2026. Sa formule Testing gratuite renvoie
+des données mélangées et légèrement modifiées : elle est réservée aux essais et
+ne doit pas alimenter une fiche opérationnelle. Une licence Windy Premium de
+consultation ne remplace pas une clé Point Forecast. Aucun achat n’est effectué.
+
+Recette de cette évolution : tests ciblés de la page, de l’aperçu, du modèle,
+des requêtes, de Navires, de la préversion, de la météo, des coordonnées, des
+contacts et de l’export réussis ; **165 contrôles SQL** réussis. Lint ciblé et
+build de production réussis. Chrome vérifie le rendu desktop / 390 px, les
+prévisions réelles en démonstration, la sauvegarde du tirant d’eau et l’export
+PDF A4 avec les en-têtes / pieds du Word conservés.
+
+### Bases profondeur et marée identifiées
+
+Recherche vérifiée le 22 octobre 2026 :
+
+| Source | Accès et données | Limite pour l’UKC |
+| --- | --- | --- |
+| [EMODnet Bathymetry 2024](https://erddap.emodnet.eu/erddap/info/bathymetry_dtm_2024/index.html) | ERDDAP/WCS public, grille 1/960°, environ 115 m N-S, élévation relative au LAT | La métadonnée interdit l’usage pour navigation/sécurité en mer ; grille indicative, pas sonde minimale certifiée |
+| [MNT Shom façade Atlantique](https://diffusion.shom.fr/donnees/bathymerie/mnt-facade-atl-homonim.html) | Licence ouverte, environ 111 m, NM ou PBMA selon le produit | Produit de modélisation ; restrictions de navigation du descriptif à respecter |
+| [Shom SUPMarée / SAPM](https://services.data.shom.fr/support/en/services/spm) | Abonnement, clé et identifiants ; ports ou points du modèle en mer, prédictions au zéro hydrographique | Autorisation de réutilisation et correspondance datum/localité à vérifier ; niveau réel affecté par la météo |
+| [UKHO Tidal API](https://admiraltyapi.developer.azure-api.net/docs/technicalOverview) | Abonnement/clé ; hauteurs à des stations selon le niveau d’offre, dates GMT/CD | Pas d’extrapolation arbitraire d’une station à tous les points ; CD et LAT ne sont pas universellement interchangeables |
+| [Copernicus NWS](https://data.marine.copernicus.eu/product/NWSHELF_ANALYSISFORECAST_PHY_004_013/description) | Compte et données de modèle, environ 1,5 km | Niveau rapporté au géoïde ; aucune addition directe à une sonde LAT |
+
+Les jeux S-102/S-104 publics Shom/UKHO identifiés sont des jeux de test, pas un
+flux hydrographique opérationnel général. WorldTides propose des datums et une
+API, mais ses conditions excluent les usages de navigation/sécurité ; ce service
+n’est donc pas branché au calcul d’UKC.
+
+L’UKC reste une saisie validée par le Capitaine. Pour automatiser son calcul, il
+faut des sondes ENC/S-102 ou levés portuaires autorisés, l’incertitude verticale,
+une marée au même datum et à l’ETA, le tirant d’eau réel, ainsi que squat,
+mouvements et marges de l’armement. La proximité d’un point sur un MNT ouvert et
+une hauteur de marée approximative ne suffisent pas. Le volet repliable Profondeur,
+marée et calcul de l’UKC expose ces références dans la fiche sans fabriquer une
+valeur d’UKC.

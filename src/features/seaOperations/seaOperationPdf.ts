@@ -2,6 +2,7 @@ import type { jsPDF } from 'jspdf';
 import type { SeaOperationRecord } from './seaOperationQueries';
 import { DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS } from './seaOperationModel';
 import type { SeaOperationAnswer, SeaOperationCheck } from './seaOperationModel';
+import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperationRadio';
 
 export const SEA_OPERATION_WORD_TEMPLATE_URL = '/templates/sea-operation/word-header-footer.pdf';
 const PAGE_WIDTH = 595.32;
@@ -132,11 +133,17 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
         ['Fournisseurs et besoins identifiés', form.supplies.suppliers], ['Comptes clients préparés avec la Direction financière au besoin', form.supplies.customerAccountsPrepared ? 'Confirmé' : 'Non confirmé / sans besoin déclaré']]);
     }
   }
-  heading('3 - Plan de passage');
+  heading('3 - Passage Plan');
   fields([['Numéro de la ou des cartes marines', form.charts]]);
-  paragraph('ETA : date et heure, ou heure seule si le point est atteint le même jour.');
-  if (form.waypoints.length) table(form.waypoints.map((point) => [value(point.number), value(point.descriptionVhf), value(point.latitude), value(point.longitude), value(point.ukc), date(point.eta), point.denseTraffic ? 'Oui' : 'Non']), ['N°', 'Description / Contact VHF', 'Latitude', 'Longitude', 'UKC', 'ETA', 'Trafic dense']);
+  paragraph('ETA : date et heure locale de Paris. Les fiches historiques peuvent conserver une heure seule.');
+  if (form.waypoints.length) table(form.waypoints.map((point) => [value(point.number), value(point.descriptionVhf), value(point.latitude), value(point.longitude), value(point.ukc), date(point.eta), point.denseTraffic ? 'Oui' : 'Non']), ['N°', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA - Date / heure', 'Trafic dense']);
   else paragraph('Aucun point de passage renseigné.');
+  const radioContacts = seaOperationRadioContacts(form.waypoints).contacts;
+  if (radioContacts.length) {
+    heading('Contacts VHF proposés par proximité');
+    paragraph(`Annuaire de préparation vérifié le ${date(SEA_RADIO_VERIFIED_ON)}. Repères arrondis à moins de 80 M (centres) ou 10 M (ports) de la route. Ce filtre ne détermine ni une compétence SAR / VTS, ni la portée radio. Annexe indicative, distincte de la décision signée.`);
+    table(radioContacts.map((contact) => [contact.name, `Canal ${contact.vhf}`, [contact.phone, contact.mmsi ? `MMSI ${contact.mmsi}` : ''].filter(Boolean).join('\n') || '-', contact.sourceLabel]), ['Contact', 'VHF', 'Téléphone / MMSI', 'Source']);
+  }
   heading('4 - Décision du Capitaine');
   paragraph(form.decision === 'GO' ? 'GO - La mission peut être réalisée.' : form.decision === 'NO_GO' ? 'NO GO - La mission ne peut être réalisée. Transmettre à l’Armement les risques identifiés.' : 'Décision à renseigner.', true);
   if (!signed) paragraph('BROUILLON - cette décision n’a pas été signée.', true);

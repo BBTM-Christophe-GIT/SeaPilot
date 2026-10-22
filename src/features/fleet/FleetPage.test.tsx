@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,11 +7,11 @@ import { FleetPage } from './FleetPage';
 import type { FleetVessel } from './fleetQueries';
 import { fetchPlanningP11Data } from '../planning/planningP11Queries';
 import { downloadFleetBrochure } from './fleetBrochure';
-import { fetchFleetVessels, resolveFleetVesselPhotoUrl } from './fleetQueries';
+import { fetchFleetVessels, resolveFleetVesselPhotoUrl, saveFleetVessel } from './fleetQueries';
 
 vi.mock('./fleetQueries', async (importOriginal) => {
   const original = await importOriginal<typeof import('./fleetQueries')>();
-  return { ...original, fetchFleetVessels: vi.fn(), resolveFleetVesselPhotoUrl: vi.fn() };
+  return { ...original, fetchFleetVessels: vi.fn(), resolveFleetVesselPhotoUrl: vi.fn(), saveFleetVessel: vi.fn() };
 });
 vi.mock('../planning/planningP11Queries', () => ({ fetchPlanningP11Data: vi.fn() }));
 vi.mock('./fleetBrochure', () => ({ downloadFleetBrochure: vi.fn() }));
@@ -41,6 +41,7 @@ describe('FleetPage', () => {
     vi.mocked(fetchPlanningP11Data).mockResolvedValue({ rotations: [], templates: [], matrices: [], certificates: [] });
     vi.mocked(resolveFleetVesselPhotoUrl).mockResolvedValue('/vessels/goury.jpg');
     vi.mocked(downloadFleetBrochure).mockResolvedValue(undefined);
+    vi.mocked(saveFleetVessel).mockReset();
   });
 
   it('organizes the mixed register and keeps staffing decisions inside each vessel', async () => {
@@ -67,5 +68,41 @@ describe('FleetPage', () => {
     await user.click(screen.getByRole('button', { name: 'Éditer brochure' }));
     expect(downloadFleetBrochure).toHaveBeenCalledWith(baseVessel, '/vessels/goury.jpg');
     expect(await screen.findByText('La brochure de GOURY a été éditée.')).toBeInTheDocument();
+  });
+
+  it('keeps an unknown vessel draft empty and saves an explicitly entered measurement', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['admin']} /></MemoryRouter>);
+    await screen.findByRole('heading', { name: 'GOURY' });
+    expect(screen.getByText('Tirant d’eau', { selector: 'dt' }).nextElementSibling).toHaveTextContent('—');
+    await user.click(screen.getByRole('button', { name: 'Modifier' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Modifier l’actif' }));
+    const input = dialog.getByRole('spinbutton', { name: 'Tirant d’eau (m)' });
+    expect(input).toHaveValue(null);
+    expect(input).toHaveAttribute('max', '50');
+    await user.type(input, '3.25');
+    const saved = { ...baseVessel, draftMeters: 3.25 };
+    vi.mocked(saveFleetVessel).mockResolvedValue(saved);
+    vi.mocked(fetchFleetVessels).mockResolvedValue([saved, office, quay]);
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    expect(await screen.findByText('Navire enregistré.')).toBeInTheDocument();
+    expect(saveFleetVessel).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 1, draftMeters: 3.25 }));
+    expect(screen.getByText('Tirant d’eau', { selector: 'dt' }).nextElementSibling).toHaveTextContent('3.25 m');
+  });
+
+  it('prefills the saved draft and lets the user clear it to an unknown value', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchFleetVessels).mockResolvedValue([{ ...baseVessel, draftMeters: 3.5 }, office, quay]);
+    render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['admin']} /></MemoryRouter>);
+    await screen.findByRole('heading', { name: 'GOURY' });
+    await user.click(screen.getByRole('button', { name: 'Modifier' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Modifier l’actif' }));
+    const input = dialog.getByRole('spinbutton', { name: 'Tirant d’eau (m)' });
+    expect(input).toHaveValue(3.5);
+    await user.clear(input);
+    vi.mocked(saveFleetVessel).mockResolvedValue({ ...baseVessel, draftMeters: null });
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Navire enregistré.');
+    expect(saveFleetVessel).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ draftMeters: null }));
   });
 });

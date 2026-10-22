@@ -80,7 +80,7 @@ export function getSeaOperationCompletion(form: SeaOperationPayload) {
   if (!form.waypoints.length) add('waypoints', 'Au moins un point de passage', 2, false);
   form.waypoints.forEach((point, index) => {
     for (const [key, label] of [
-      ['number', 'Numéro'], ['descriptionVhf', 'Description / Contact VHF'], ['latitude', 'Latitude'],
+      ['number', 'Numéro'], ['descriptionVhf', 'Description'], ['latitude', 'Latitude'],
       ['longitude', 'Longitude'], ['ukc', 'UKC'],
     ] as const) field(`waypoint.${index}.${key}`, `${label} du point ${index + 1}`, point[key], 2);
     add(`waypoint.${index}.eta`, `ETA du point ${index + 1}`, 2, /^([01]\d|2[0-3]):[0-5]\d$/.test(point.eta) || dateValid(point.eta));
@@ -93,7 +93,7 @@ export function getSeaOperationCompletion(form: SeaOperationPayload) {
   if (form.decision === 'NO_GO') field('risks', 'Risques ou motif de NO GO à transmettre à l’Armement', form.risks, 3);
 
   const completeCount = requirements.filter((requirement) => requirement.complete).length;
-  const steps = ['Armement et voyage', 'Contrôles avant appareillage', 'Plan de passage', 'Décision du Capitaine'].map((title, index) => {
+  const steps = ['Armement et voyage', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'].map((title, index) => {
     const fields = requirements.filter((requirement) => requirement.step === index);
     const completed = fields.filter((requirement) => requirement.complete).length;
     return { index, title, total: fields.length, completed, complete: completed === fields.length };

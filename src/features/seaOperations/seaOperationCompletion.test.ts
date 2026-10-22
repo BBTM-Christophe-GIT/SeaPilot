@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptySeaOperation, emptySeaOperationWaypoint, SEA_OPERATION_CHECKS } from './seaOperationModel';
+import { emptySeaOperation, emptySeaOperationWaypoint, newSeaOperation, SEA_OPERATION_CHECKS } from './seaOperationModel';
 import { getSeaOperationCompletion } from './seaOperationCompletion';
 
 function filledForm() {
@@ -24,6 +24,19 @@ describe('getSeaOperationCompletion', () => {
     expect(completion.completedSteps).toBe(0);
     expect(new Set(completion.missing.map((field) => field.step))).toEqual(new Set([0, 1, 2, 3]));
     expect(completion.sections.every((section) => !section.complete)).toBe(true);
+  });
+
+  it('counts new mission answers without completing its Passage Plan, GO decision or signature', () => {
+    const form = newSeaOperation();
+    const completion = getSeaOperationCompletion(form);
+    expect(completion.requirements.filter((field) => field.id.startsWith('check.')).every((field) => field.complete)).toBe(true);
+    expect(completion.missing).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'boarding.measures' }), expect.objectContaining({ id: 'supplies.name' }),
+      expect.objectContaining({ id: 'waypoints' }), expect.objectContaining({ id: 'decision' }),
+    ]));
+    expect(completion.steps[2].title).toBe('Passage Plan');
+    expect(completion.percentage).toBeLessThan(100);
+    expect(form.signature.acknowledged).toBe(false);
   });
 
   it('reaches full preparation completeness without claiming a signature or GO assessment', () => {

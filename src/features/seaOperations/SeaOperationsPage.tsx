@@ -4,15 +4,18 @@ import { AlertTriangle, Anchor, ArrowLeft, CheckCircle2, ChevronRight, Clipboard
 import { AppDialog } from '../../components/AppDialog';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS, emptySeaOperation, getSeaOperationAssessment, isSeaOperationPayload, validateSeaOperation, seaOperationToday, type SeaOperationPayload, type SeaOperationAnswer as Answer } from './seaOperationModel';
+import { DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS, emptySeaOperation, newSeaOperation, getSeaOperationAssessment, isSeaOperationPayload, validateSeaOperation, seaOperationToday, type SeaOperationPayload, type SeaOperationAnswer as Answer } from './seaOperationModel';
 import { fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationCaptainSignature, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, type SeaOperationData, type SeaOperationRecord, type SeaOperationPlanningContext, type SeaOperationPlanningChoice } from './seaOperationQueries';
 import './seaOperations.css';
 import { SeaOperationPrint } from './SeaOperationPrint';
 import { SeaOperationPreview } from './SeaOperationDocumentPreview';
 import { exportSeaOperationPdf } from './seaOperationPdf';
 import { SeaOperationProjectDocuments } from './SeaOperationProjectDocuments';
+import { SeaOperationRadioPanel } from './SeaOperationRadioPanel';
+import { SeaOperationWeatherPanel } from './SeaOperationWeatherPanel';
+import { SeaOperationHydroSources } from './SeaOperationHydroSources';
 
-const STEPS = ['Armement', 'Contrôles avant appareillage', 'Plan de passage', 'Décision du Capitaine'];
+const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'];
 const STEP_DETAILS = ['Mission, client et voyage', 'Préparation et sécurité du navire', 'Cartes et points de route', 'GO / NO GO et signature'];
 const STEP_ICONS = [FileText, ClipboardCheck, Compass, Anchor];
 const formatDate = (value: string | null) => value ? new Date(value).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : 'Non renseignée';
@@ -50,13 +53,13 @@ function ChoiceControl({ label, value, onChange, options, id }: {
   </label>)}</div>;
 }
 
-function AnswerControl({ label, value, onChange, yesOnly = false, id }: { label: string; value: Answer; onChange: (value: Answer) => void; yesOnly?: boolean; id?: string }) {
-  return <ChoiceControl id={id} label={label} value={value} onChange={(answer) => onChange(answer as Answer)} options={yesOnly ? [{ value: 'yes', label: 'Oui' }] : [{ value: 'yes', label: 'Oui' }, { value: 'no', label: 'Non' }]} />;
+function AnswerControl({ label, value, onChange, id }: { label: string; value: Answer; onChange: (value: Answer) => void; id?: string }) {
+  return <div className="so-answer-switches"><button id={id} type="button" role="switch" aria-label={label} aria-checked={value === 'yes'} className="so-answer-switch" onClick={() => onChange(value === 'yes' ? 'no' : 'yes')}><span className="so-answer-switch-track" aria-hidden="true" /><span className="so-answer-switch-label">{value === 'yes' ? 'Oui' : value === 'no' ? 'Non' : 'À vérifier'}</span></button></div>;
 }
 
 /** A change of mission must never inherit the previous mission's safety approvals. */
 function draftForPlanningChoice(choice: SeaOperationPlanningChoice, date: string): SeaOperationPayload {
-  const draft = emptySeaOperation();
+  const draft = newSeaOperation();
   const captain = choice.captains.length === 1 ? choice.captains[0] : null;
   return { ...draft, planning: { date, operationId: choice.operationId, projectId: choice.projectId, captainPersonId: captain?.personId || '' },
     project: choice.project, client: choice.client, clientContact: choice.clientContact, description: choice.description,
@@ -65,10 +68,10 @@ function draftForPlanningChoice(choice: SeaOperationPlanningChoice, date: string
 }
 
 export function SeaOperationsPage() {
-  const { client } = useOutletContext<AppShellOutletContext>();
+  const { client, previewMode = false } = useOutletContext<AppShellOutletContext>();
   const [data, setData] = useState<SeaOperationData | null>(null);
   const [record, setRecord] = useState<SeaOperationRecord | null>(null);
-  const [draft, setDraft] = useState<SeaOperationPayload>(emptySeaOperation);
+  const [draft, setDraft] = useState<SeaOperationPayload>(newSeaOperation);
   const latestDraft = useRef(draft);
   const [editing, setEditing] = useState(false);
   const [planningDate, setPlanningDate] = useState(seaOperationToday);
@@ -164,6 +167,19 @@ export function SeaOperationsPage() {
     fetchSeaOperationPlanning(client, planningDate).then((result) => {
       if (!active) return;
       setPlanning(result);
+      const current = latestDraft.current;
+      const mission = result.choices.find((choice) => choice.operationId === current.planning?.operationId);
+      const captain = mission?.captains.find((person) => person.personId === current.planning?.captainPersonId)
+        || (!current.planning?.captainPersonId && mission?.captains.length === 1 ? mission.captains[0] : undefined);
+      // Repair missing draft identity only; signed decisions and existing names remain historical.
+      if (captain && record?.canEdit !== false && current.planning?.date === result.date && (!current.signature.captainName.trim() || !current.vessel.captainName.trim())) {
+        setDraft((draft) => draft.planning && mission && draft.planning.operationId === mission.operationId && draft.planning.date === result.date && draft.planning.captainPersonId === current.planning?.captainPersonId ? {
+          ...draft, planning: { ...draft.planning, captainPersonId: draft.planning.captainPersonId || captain.personId },
+          vessel: { ...draft.vessel, captainName: draft.vessel.captainName.trim() ? draft.vessel.captainName : captain.name },
+          signature: { ...draft.signature, captainName: draft.signature.captainName.trim() ? draft.signature.captainName : captain.name, acknowledged: draft.signature.captainName.trim() ? draft.signature.acknowledged : false },
+        } : draft);
+        setDirty(true);
+      }
       // A unique planned mission can be selected directly. Multiple missions always require a choice.
       if (allowAutomaticMission.current && editRevision.current === revision && !latestDraft.current.project && !latestDraft.current.planning?.operationId && result.choices.length === 1) {
         allowAutomaticMission.current = false;
@@ -173,7 +189,7 @@ export function SeaOperationsPage() {
     }).catch((reason: unknown) => { if (active) setPlanningError(errorMessage(reason)); })
       .finally(() => { if (active) setPlanningLoading(false); });
     return () => { active = false; };
-  }, [client, editing, planningDate, record?.status]);
+  }, [client, editing, planningDate, record?.status, record?.canEdit]);
   useEffect(() => {
     setCaptainSignature(null); setSignatureError(''); setSignatureLoading(false);
     if (!editing || record?.status === 'signed' || !draft.planning?.operationId || !draft.planning.captainPersonId) return;
@@ -188,24 +204,26 @@ export function SeaOperationsPage() {
 
   const update = (patch: Partial<SeaOperationPayload>) => { allowAutomaticMission.current = false; editRevision.current += 1; setDraft((current) => ({ ...current, ...patch })); setDirty(true); setNotice(''); setIssues([]); };
   const vesselUpdate = (patch: Partial<SeaOperationPayload['vessel']>) => update({ vessel: { ...draft.vessel, ...patch } });
+  const waypointUpdate = (index: number, patch: Partial<SeaOperationPayload['waypoints'][number]>) => update({ waypoints: draft.waypoints.map((point, i) => i === index ? { ...point, ...patch } : point) });
   const editable = !record || record.canEdit;
   const signed = record?.status === 'signed';
   const assessment = getSeaOperationAssessment(draft);
   const selectedMission = planning?.choices.find((choice) => choice.operationId === draft.planning?.operationId);
   const selectedCaptain = selectedMission?.captains.find((captain) => captain.personId === draft.planning?.captainPersonId);
   const linkedToPlanning = Boolean(draft.planning?.operationId);
+  const referenceDraft = data?.vessels.find((vessel) => String(vessel.id) === draft.vessel.id)?.draftMeters;
   const canSign = linkedToPlanning ? selectedCaptain?.canSign === true : record?.canSign || (!record && data?.vessels.some((vessel) => String(vessel.id) === draft.vessel.id && vessel.canSign));
   function selectMission(operationId: string) {
     allowAutomaticMission.current = false;
     editRevision.current += 1;
     const choice = planning?.choices.find((item) => item.operationId === operationId);
-    setDraft(choice ? draftForPlanningChoice(choice, planningDate) : emptySeaOperation());
+    setDraft(choice ? draftForPlanningChoice(choice, planningDate) : newSeaOperation());
     setDirty(true); setIssues([]); setNotice(''); setError('');
   }
   function changePlanningDate(value: string) {
     allowAutomaticMission.current = true;
     editRevision.current += 1;
-    setPlanningDate(value); setPlanning(null); setDraft(emptySeaOperation()); setDirty(true); setIssues([]); setNotice('');
+    setPlanningDate(value); setPlanning(null); setDraft(newSeaOperation()); setDirty(true); setIssues([]); setNotice('');
   }
   function selectCaptain(personId: string) {
     const captain = selectedMission?.captains.find((item) => item.personId === personId);
@@ -246,7 +264,7 @@ export function SeaOperationsPage() {
     editorOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     clearRecovery(data);
     ++loadSequence.current;
-    setRecord(null); setDraft(emptySeaOperation()); setPlanningDate(seaOperationToday()); setPlanning(null); setDirty(false); setEditing(true); setStep(0); setMobilePane('form'); setError(''); setNotice(''); setIssues([]);
+    setRecord(null); setDraft(newSeaOperation()); setPlanningDate(seaOperationToday()); setPlanning(null); setDirty(false); setEditing(true); setStep(0); setMobilePane('form'); setError(''); setNotice(''); setIssues([]);
   }
   async function save(sign = false) {
     if (busy) return;
@@ -337,11 +355,11 @@ export function SeaOperationsPage() {
           <h3>Navire et voyage</h3><div className="so-grid so-armament-grid"><Field label="Navire"><select disabled={linkedToPlanning} value={draft.vessel.id ?? ''} onChange={(event) => { const vessel = data?.vessels.find((item) => item.id === Number(event.target.value)); vesselUpdate({ id: vessel ? String(vessel.id) : '', name: vessel?.name || '', registrationImo: vessel?.registrationImo || '' }); }}><option value="">Choisir un navire</option>{data?.vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></Field><Field label="Immatriculation / IMO"><input readOnly={linkedToPlanning && Boolean(selectedMission?.vessel.registrationImo)} value={draft.vessel.registrationImo} onChange={(event) => vesselUpdate({ registrationImo: event.target.value })} /></Field><Field label="Prénom NOM du Capitaine" wide>{linkedToPlanning && (selectedMission?.captains.length || 0) > 1 ? <select value={draft.planning?.captainPersonId || ''} onChange={(event) => selectCaptain(event.target.value)}><option value="">Choisir le Capitaine affecté</option>{selectedMission?.captains.map((captain) => <option value={captain.personId} key={captain.personId}>{captain.name} · {captain.functionLabel}</option>)}</select> : <input readOnly={linkedToPlanning} value={draft.vessel.captainName} onChange={(event) => vesselUpdate({ captainName: event.target.value })} />}</Field>{linkedToPlanning && selectedMission?.captains.length === 0 && <p className="so-help" role="status">Aucun Capitaine confirmé n’est affecté à ce navire à cette date.</p>}<Field label="Port de départ"><input readOnly={linkedToPlanning && Boolean(selectedMission?.vessel.departurePort)} value={draft.vessel.departurePort} onChange={(event) => vesselUpdate({ departurePort: event.target.value })} /></Field><Field label="Quai de départ"><input value={draft.vessel.departureQuay} onChange={(event) => vesselUpdate({ departureQuay: event.target.value })} /></Field><Field label="Port d’arrivée"><input readOnly={linkedToPlanning && Boolean(selectedMission?.vessel.arrivalPort)} value={draft.vessel.arrivalPort} onChange={(event) => vesselUpdate({ arrivalPort: event.target.value })} /></Field><Field label="Quai d’arrivée"><input value={draft.vessel.arrivalQuay} onChange={(event) => vesselUpdate({ arrivalQuay: event.target.value })} /></Field><Field label="ETD · date et heure de départ"><input type="datetime-local" value={draft.vessel.etd} onChange={(event) => vesselUpdate({ etd: event.target.value })} /></Field><Field label="ETA · date et heure d’arrivée"><input type="datetime-local" value={draft.vessel.eta} onChange={(event) => vesselUpdate({ eta: event.target.value })} /></Field></div><p className="so-help">Les horaires sont saisis dans l’heure locale de l’opération.</p>
         </section>
         <section id="sea-operation-step-1" hidden={step !== 1} className={`so-panel ${step === 1 ? 'is-active' : ''}`} aria-label="Contrôles du Capitaine">
-          <div className="so-section-title"><b aria-hidden="true">2</b><div><h2 tabIndex={-1}>Contrôles avant appareillage</h2><p>À remplir par le Capitaine. Toute réponse bloquante impose un NO GO.</p></div></div>
+          <div className="so-section-title"><b aria-hidden="true">2</b><div><h2 tabIndex={-1}>Contrôles avant appareillage</h2><p>Réponses préremplies : à vérifier avant signature. Toute réponse bloquante impose un NO GO.</p></div></div>
           {SEA_OPERATION_SECTIONS.map((section) => <section className="so-check-section" key={section.id}><h3>{section.title}</h3>{section.applicability && <Field label="Cette rubrique est-elle applicable ?"><AnswerControl label={`${section.title} applicable`} value={draft.applicability[section.applicability]} onChange={(value) => update({ applicability: { ...draft.applicability, [section.applicability!]: value } })} /></Field>}{(!section.applicability || draft.applicability[section.applicability] === 'yes') && <>
             {SEA_OPERATION_CHECKS.filter((check) => check.section === section.id).map((check) => <div className={`so-check ${check.blocking && draft.checks[check.id] === 'no' ? 'is-blocking' : ''}`} key={check.id}>
               <div className="so-check-question"><span id={`check-question-${check.id}`}>{check.label}</span>{check.blocking && <small className="so-block-label" title="Une réponse Non impose un NO GO">Non = NO GO</small>}</div>
-              <AnswerControl id={`check-${check.id}`} label={check.label} value={draft.checks[check.id]} yesOnly={check.yesOnly} onChange={(value) => update({ checks: { ...draft.checks, [check.id]: value } })} />
+              <AnswerControl id={`check-${check.id}`} label={check.label} value={draft.checks[check.id]} onChange={(value) => update({ checks: { ...draft.checks, [check.id]: value } })} />
               {(check.help || check.yesLabel) && <div className="so-check-detail so-wide">{check.help && <p className="so-help">{check.help}</p>}{check.yesLabel && <p className="so-help">{check.yesLabel}</p>}</div>}
               {draft.checks[check.id] === 'no' && (check.justifyNo || check.blocking) && <Field label={`Justification — ${check.label}`} wide><textarea rows={2} value={draft.justifications[check.id] || ''} onChange={(event) => update({ justifications: { ...draft.justifications, [check.id]: event.target.value } })} /></Field>}
             </div>)}
@@ -351,21 +369,33 @@ export function SeaOperationsPage() {
             {section.id === '2.8' && <><div className="so-grid"><Field label="Escale déléguée à un shipchandler ?"><AnswerControl label="Shipchandler" value={draft.supplies.delegated} onChange={(value) => update({ supplies: { ...draft.supplies, delegated: value } })} /></Field>{draft.supplies.delegated === 'yes' && <><Field label="Nom du shipchandler"><input value={draft.supplies.shipchandlerName} onChange={(event) => update({ supplies: { ...draft.supplies, shipchandlerName: event.target.value } })} /></Field><Field label="Coordonnées du shipchandler"><input value={draft.supplies.shipchandlerContact} onChange={(event) => update({ supplies: { ...draft.supplies, shipchandlerContact: event.target.value } })} /></Field></>}{draft.supplies.delegated === 'no' && <p className="so-help">Le Capitaine gère l’escale avec l’appui de l’Armement.</p>}</div><div className="so-checkboxes">{SEA_OPERATION_SUPPLY_ITEMS.map((item) => <label key={item.id}><input type="checkbox" checked={draft.supplies.items.includes(item.id)} onChange={(event) => update({ supplies: { ...draft.supplies, items: event.target.checked ? [...draft.supplies.items, item.id] : draft.supplies.items.filter((value) => value !== item.id) } })} />{item.label}</label>)}</div><Field label="Fournisseurs et besoins identifiés"><textarea rows={3} value={draft.supplies.suppliers} onChange={(event) => update({ supplies: { ...draft.supplies, suppliers: event.target.value } })} /></Field><label className="so-checkbox"><input type="checkbox" checked={draft.supplies.customerAccountsPrepared} onChange={(event) => update({ supplies: { ...draft.supplies, customerAccountsPrepared: event.target.checked } })} />Comptes clients préparés au besoin avec la Direction financière.</label></>}
           </>}</section>)}
         </section>
-        <section id="sea-operation-step-2" hidden={step !== 2} className={`so-panel ${step === 2 ? 'is-active' : ''}`} aria-label="Plan de passage">
-          <div className="so-section-title"><b aria-hidden="true">3</b><div><h2 tabIndex={-1}>Plan de passage</h2><p>Cartes, points de route et conditions de navigation.</p></div></div>
+        <section id="sea-operation-step-2" hidden={step !== 2} className={`so-panel ${step === 2 ? 'is-active' : ''}`} aria-label="Passage Plan">
+          <div className="so-section-title"><b aria-hidden="true">3</b><div><h2 tabIndex={-1}>Passage Plan</h2><p>Cartes, points de route et conditions de navigation.</p></div></div>
           <Field label="Numéro de la ou des cartes marines"><input value={draft.charts} onChange={(event) => update({ charts: event.target.value })} /></Field>
-          <div className="so-waypoint-table-scroll" tabIndex={0} role="region" aria-label="Tableau des points de passage"><table className="so-waypoint-table"><caption>Points de passage</caption><thead><tr><th scope="col">N°</th><th scope="col">Description / VHF</th><th scope="col">Latitude</th><th scope="col">Longitude</th><th scope="col">UKC</th><th scope="col">ETA</th><th scope="col">Trafic dense</th><th scope="col"><span className="so-sr-only">Actions</span></th></tr></thead>
-            <tbody>{draft.waypoints.map((point, index) => <tr key={point.id}>
-              {([['number', 'N° du point'], ['descriptionVhf', 'Description / Contact VHF'], ['latitude', 'Latitude'], ['longitude', 'Longitude'], ['ukc', 'UKC'], ['eta', 'ETA · date et heure']] as const).map(([key, label]) => <td key={key}><input aria-label={`${label} · point ${index + 1}`} type="text" placeholder={key === 'eta' ? 'HH:mm' : undefined} value={point[key]} onChange={(event) => update({ waypoints: draft.waypoints.map((row, i) => i === index ? { ...row, [key]: event.target.value } : row) })} /></td>)}
-              <td className="so-waypoint-traffic"><input aria-label={`Zone maritime à trafic dense · point ${index + 1}`} type="checkbox" checked={point.denseTraffic} onChange={(event) => update({ waypoints: draft.waypoints.map((row, i) => i === index ? { ...row, denseTraffic: event.target.checked } : row) })} /></td>
-              <td><button type="button" className="so-secondary sp-button sp-button--secondary" aria-label={`Supprimer le point ${index + 1}`} onClick={() => update({ waypoints: draft.waypoints.filter((_, i) => i !== index) })}><Trash2 size={15} /></button></td>
-            </tr>)}{draft.waypoints.length === 0 && <tr><td colSpan={8} className="so-waypoint-empty">Ajoutez le premier point de passage.</td></tr>}</tbody>
-          </table></div>
+          <Field label="Tirant d’eau de référence (m)"><input type="number" readOnly value={referenceDraft ?? ''} /></Field>{referenceDraft == null && <p className="so-help">Renseignez le tirant d’eau du navire dans le module Navires.</p>}
+          <SeaOperationHydroSources />
+          <h3>Points de passage</h3>
+          <div className="so-passage-grid" role="table" aria-label="Points de passage">
+            {draft.waypoints.map((point, index) => {
+              const legacyEta = point.eta && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(point.eta);
+              const operationDate = draft.planning?.date || planningDate;
+              const proposedEta = legacyEta && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(point.eta) && /^\d{4}-\d{2}-\d{2}$/.test(operationDate) ? `${operationDate}T${point.eta}` : '';
+              return <div className="so-passage-row" role="row" key={point.id}>
+                {([['number', 'N° du point', 'number'], ['descriptionVhf', 'Description', 'description'], ['latitude', 'Latitude', 'latitude'], ['longitude', 'Longitude', 'longitude'], ['ukc', 'UKC', 'ukc']] as const).map(([key, label, variant]) => <label role="cell" className={`so-passage-field is-${variant}`} key={key}><span>{label}</span><input aria-label={`${label} · point ${index + 1}`} type="text" value={point[key]} onChange={(event) => waypointUpdate(index, { [key]: event.target.value })} /></label>)}
+                <label role="cell" className="so-passage-field is-eta"><span>ETA · date et heure</span><input aria-label={`ETA · date et heure · point ${index + 1}`} type="datetime-local" value={legacyEta ? '' : point.eta} onChange={(event) => waypointUpdate(index, { eta: event.target.value })} />{legacyEta && <small className="so-help">Ancienne ETA : {point.eta}. Renseignez une date et une heure pour la remplacer.</small>}{proposedEta && <button type="button" className="sp-button sp-button--secondary" aria-label={`Appliquer la date de l’opération à l’ETA du point ${index + 1}`} onClick={() => waypointUpdate(index, { eta: proposedEta })}>Utiliser le {operationDate.split('-').reverse().join('/')} à {point.eta}</button>}</label>
+                <label role="cell" className="so-passage-field is-traffic"><input aria-label={`Zone maritime à trafic dense · point ${index + 1}`} type="checkbox" checked={point.denseTraffic} onChange={(event) => waypointUpdate(index, { denseTraffic: event.target.checked })} /><span>Zone maritime à trafic dense</span></label>
+                <div role="cell" className="so-passage-field is-actions"><button type="button" className="so-secondary sp-button sp-button--secondary" aria-label={`Supprimer le point ${index + 1}`} onClick={() => update({ waypoints: draft.waypoints.filter((_, i) => i !== index) })}><Trash2 size={15} /></button></div>
+              </div>;
+            })}
+            {draft.waypoints.length === 0 && <div className="so-waypoint-empty" role="row"><div role="cell">Ajoutez le premier point de passage.</div></div>}
+          </div>
           <button type="button" className="so-secondary sp-button sp-button--secondary" onClick={() => update({ waypoints: [...draft.waypoints, { id: crypto.randomUUID(), number: String(draft.waypoints.length + 1), descriptionVhf: '', latitude: '', longitude: '', ukc: '', eta: '', denseTraffic: false }] })}><Plus size={16} />Ajouter un point de passage</button>
+          <SeaOperationRadioPanel waypoints={draft.waypoints} />
+          <SeaOperationWeatherPanel client={client} projectId={draft.planning?.projectId || ''} waypoints={draft.waypoints} preview={previewMode} active={step === 2} />
         </section>
-        <section id="sea-operation-step-3" hidden={step !== 3} className={`so-panel ${step === 3 ? 'is-active' : ''}`} aria-label="Décision du Capitaine"><div className="so-section-title"><b aria-hidden="true">4</b><div><h2 tabIndex={-1}>Décision du Capitaine</h2><p>Le Capitaine consigne sa décision après examen des conditions de la mission.</p></div></div>
-          <div className={`so-assessment ${assessment.blockingChecks.length ? 'is-nogo' : 'is-pending'}`}><AlertTriangle size={22} /><div><strong>{assessment.blockingChecks.length ? `NO GO imposé · ${assessment.blockingChecks.length} contrôle(s) bloquant(s)` : 'Vérification de la préparation'}</strong><p>Toute case rouge cochée entraîne un NO GO automatique. Le Capitaine doit trouver une solution et justifier toute situation empêchant l’appareillage.</p>{assessment.blockingChecks.length > 0 && <ul>{assessment.blockingChecks.map((check) => <li key={check.id}>{check.label}</li>)}</ul>}</div></div>
-          <Field label="Décision"><ChoiceControl label="Décision" value={draft.decision} onChange={(decision) => update({ decision: decision as SeaOperationPayload['decision'] })} options={[{ value: 'GO', label: 'GO · la mission peut être réalisée', disabled: assessment.blockingChecks.length > 0 }, { value: 'NO_GO', label: 'NO GO · la mission ne peut être réalisée' }]} /></Field><Field label="Risques identifiés / informations à transmettre à l’Armement"><textarea rows={4} value={draft.risks} onChange={(event) => update({ risks: event.target.value })} /></Field><div className="so-grid"><Field label="Prénom NOM du Capitaine signataire"><input readOnly={linkedToPlanning} value={draft.signature.captainName} onChange={(event) => update({ signature: { ...draft.signature, captainName: event.target.value } })} /></Field><Field label="Date de la décision"><input type="date" value={draft.signature.date} onChange={(event) => update({ signature: { ...draft.signature, date: event.target.value } })} /></Field><Field label="Lieu de la décision"><input value={draft.signature.place} onChange={(event) => update({ signature: { ...draft.signature, place: event.target.value } })} /></Field></div>{linkedToPlanning && <div className="so-signature-preview"><strong>Signature du Capitaine</strong>{(signed ? record?.signatureUrl : captainSignature?.url) ? <img src={signed ? record?.signatureUrl : captainSignature?.url} alt={`Signature de ${draft.signature.captainName}`} /> : <p className="so-help">{signed ? 'Aucune image de signature attachée à cette fiche.' : signatureError || (signatureLoading ? 'Chargement de la signature…' : selectedCaptain?.hasSignature ? 'La signature RH est indisponible. Rechargez la fiche avant de signer.' : 'Aucune signature RH active enregistrée pour ce Capitaine.')}</p>}<small>{signed ? 'Signature conservée avec la décision.' : 'La signature est apposée lors de la confirmation de la décision par le Capitaine.'}</small></div>}<label className="so-checkbox so-attestation"><input type="checkbox" checked={draft.signature.acknowledged} onChange={(event) => update({ signature: { ...draft.signature, acknowledged: event.target.checked } })} />En qualité de Capitaine, je confirme les informations renseignées et signe cette décision.</label>
+        <section id="sea-operation-step-3" hidden={step !== 3} className={`so-panel so-decision-panel ${step === 3 ? 'is-active' : ''}`} aria-label="Décision du Capitaine"><div className="so-section-title"><b aria-hidden="true">4</b><div><h2 tabIndex={-1}>Décision du Capitaine</h2><p>Le Capitaine consigne sa décision après examen des conditions de la mission.</p></div></div>
+          <div className={`so-assessment ${assessment.blockingChecks.length ? 'is-nogo' : 'is-pending'}`}><AlertTriangle size={22} /><div><strong>{assessment.blockingChecks.length ? `NO GO imposé · ${assessment.blockingChecks.length} contrôle(s) bloquant(s)` : 'Vérification de la préparation'}</strong><p>Toute réponse Non à un contrôle bloquant impose un NO GO. Le Capitaine doit trouver une solution et justifier toute situation empêchant l’appareillage.</p>{assessment.blockingChecks.length > 0 && <ul>{assessment.blockingChecks.map((check) => <li key={check.id}>{check.label}</li>)}</ul>}</div></div>
+          <Field label="Décision"><ChoiceControl label="Décision" value={draft.decision} onChange={(decision) => update({ decision: decision as SeaOperationPayload['decision'] })} options={[{ value: 'GO', label: 'GO · la mission peut être réalisée', disabled: assessment.blockingChecks.length > 0 }, { value: 'NO_GO', label: 'NO GO · la mission ne peut être réalisée' }]} /></Field><Field label="Risques identifiés / informations à transmettre à l’Armement"><textarea rows={2} value={draft.risks} onChange={(event) => update({ risks: event.target.value })} /></Field><div className="so-grid so-decision-identity-grid"><Field label="Prénom NOM du Capitaine signataire"><input readOnly={linkedToPlanning} value={draft.signature.captainName} onChange={(event) => update({ signature: { ...draft.signature, captainName: event.target.value } })} /></Field><Field label="Date de la décision"><input type="date" value={draft.signature.date} onChange={(event) => update({ signature: { ...draft.signature, date: event.target.value } })} /></Field><Field label="Lieu de la décision"><input value={draft.signature.place} onChange={(event) => update({ signature: { ...draft.signature, place: event.target.value } })} /></Field></div>{linkedToPlanning && <div className="so-signature-preview"><strong>Signature du Capitaine</strong>{(signed ? record?.signatureUrl : captainSignature?.url) ? <img src={signed ? record?.signatureUrl : captainSignature?.url} alt={`Signature de ${draft.signature.captainName}`} /> : <p className="so-help">{signed ? 'Aucune image de signature attachée à cette fiche.' : signatureError || (signatureLoading ? 'Chargement de la signature…' : selectedCaptain?.hasSignature ? 'La signature RH est indisponible. Rechargez la fiche avant de signer.' : 'Aucune signature RH active enregistrée pour ce Capitaine.')}</p>}<small>{signed ? 'Signature conservée avec la décision.' : 'La signature est apposée lors de la confirmation de la décision par le Capitaine.'}</small></div>}<label className="so-checkbox so-attestation"><input type="checkbox" checked={draft.signature.acknowledged} onChange={(event) => update({ signature: { ...draft.signature, acknowledged: event.target.checked } })} />En qualité de Capitaine, je confirme les informations renseignées et signe cette décision.</label>
         </section>
       </fieldset>
           {step === 3 && <div className="so-signature-footer">{signed ? <p><CheckCircle2 size={18} />Décision signée par {record.signedByName} le {formatDate(record.signedAt)}. Cette fiche est figée.</p> : <p>{canSign ? 'La signature enregistre votre identité et fige définitivement cette fiche.' : 'La signature est réservée au compte réel du Capitaine affecté au navire. Enregistrez la préparation pour lui transmettre la fiche.'}</p>}</div>}

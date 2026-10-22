@@ -50,6 +50,8 @@ describe('Opération en Mer printable content', () => {
     expect(print.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument();
     expect(print.getByRole('cell', { name: /Contact VHF\s+Canal 16/ }).textContent).toBe('Contact VHF\nCanal 16');
     expect(print.getByText('12:00')).toBeInTheDocument();
+    expect(print.getByText('Contacts VHF proposés par proximité')).toBeInTheDocument();
+    expect(print.getByRole('cell', { name: 'CROSS Jobourg' })).toBeInTheDocument();
     expect(print.getByText('Brouillon – cette décision n’a pas été signée.')).toBeInTheDocument();
     expect(print.queryByText('Identité du compte signataire')).not.toBeInTheDocument();
     expect(container.querySelector('script, img[onerror], input, textarea, select')).toBeNull();

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS,
   emptySeaOperation, emptySeaOperationWaypoint, getActiveSeaOperationChecks,
-  getSeaOperationAssessment, isSeaOperationPayload, validateSeaOperation, seaOperationToday,
+  getSeaOperationAssessment, isSeaOperationPayload, newSeaOperation, validateSeaOperation, seaOperationToday,
 } from './seaOperationModel';
 import type { SeaOperationCheckId } from './seaOperationModel';
 
@@ -51,6 +51,43 @@ describe('sea operation form model', () => {
     expect(second.checks.weather).toBe('');
     expect(second.applicability.towing).toBe('');
     expect(second.specialPersonnel).toEqual([]);
+  });
+
+  it('starts a new mission with affirmative switches while leaving its decision and final confirmation explicit', () => {
+    const draft = newSeaOperation();
+    expect(isSeaOperationPayload(draft)).toBe(true);
+    expect(Object.values(draft.checks)).toEqual(Array(26).fill('yes'));
+    expect(Object.values(draft.applicability)).toEqual(Array(4).fill('yes'));
+    expect(draft.towedVesselBoarding.required).toBe('yes');
+    expect(draft.supplies.delegated).toBe('yes');
+    expect(draft).toMatchObject({ decision: '', mandatoryServicesNotified: false,
+      signature: { captainName: '', acknowledged: false }, supplies: { customerAccountsPrepared: false, items: [] } });
+    expect(validateSeaOperation(draft, 'DRAFT')).toEqual([]);
+    expect(getSeaOperationAssessment(draft)).toMatchObject({ status: 'incomplete', canGo: false, completedChecks: 26 });
+    expect(validateSeaOperation(draft, 'GO')).toContain('Le Capitaine doit confirmer sa signature et sa décision.');
+  });
+
+  it('creates independent new mission defaults without overwriting a previous mission or neutral legacy payload', () => {
+    const previous = newSeaOperation();
+    previous.checks.weather = 'no';
+    previous.applicability.towing = 'no';
+    previous.towedVesselBoarding.required = 'no';
+    previous.supplies.delegated = 'no';
+    previous.decision = 'NO_GO';
+    previous.signature.acknowledged = true;
+    previous.justifications.navigationEquipment = 'Explication de l’ancienne mission';
+    previous.waypoints.push({ ...emptySeaOperationWaypoint('old'), eta: '09:00' });
+    const restored = JSON.parse(JSON.stringify(previous)) as typeof previous;
+    const neutral = emptySeaOperation();
+    const next = newSeaOperation();
+    expect(next).toMatchObject({ checks: { weather: 'yes' }, applicability: { towing: 'yes' },
+      towedVesselBoarding: { required: 'yes' }, supplies: { delegated: 'yes' }, decision: '', signature: { acknowledged: false }, waypoints: [] });
+    expect(next.justifications.navigationEquipment).toBe('');
+    expect(isSeaOperationPayload(restored)).toBe(true);
+    expect(restored).toEqual(previous);
+    expect(restored.waypoints[0].eta).toBe('09:00');
+    expect(neutral.checks.weather).toBe('');
+    expect(neutral.applicability.towing).toBe('');
   });
 
   it('rejects malformed JSON and unrecognized answer values even in drafts', () => {
@@ -143,6 +180,17 @@ describe('sea operation form model', () => {
     expect(assessment.canGo).toBe(false);
   });
 
+  it.each(SEA_OPERATION_CHECKS.filter((check) => check.yesOnly))('persists a negative $id answer but requires a positive answer for GO', (check) => {
+    const payload = completePayload();
+    payload.checks[check.id] = 'no';
+    expect(isSeaOperationPayload(payload)).toBe(true);
+    expect(validateSeaOperation(payload, 'DRAFT')).toEqual([]);
+    expect(validateSeaOperation(payload, 'GO')).toContain(`À confirmer : ${check.label}.`);
+    expect(getSeaOperationAssessment(payload)).toMatchObject({ canGo: false, status: 'incomplete', blockingChecks: [] });
+    payload.risks = 'Ravitaillement ou vérification complémentaire nécessaire.';
+    expect(validateSeaOperation(payload, 'NO_GO')).toEqual([]);
+  });
+
   it('allows an interrupted inspection to be signed NO GO with mission, vessel, risks and captain identity', () => {
     const payload = emptySeaOperation();
     payload.project = 'P144';
@@ -218,7 +266,7 @@ describe('sea operation form model', () => {
     payload.waypoints[0].eta = '2026-10-16T09:00';
     expect(validateSeaOperation(payload, 'GO')).toEqual([]);
     payload.waypoints = [];
-    expect(validateSeaOperation(payload, 'GO')).toContain('Le passage plan doit comporter au moins un point.');
+    expect(validateSeaOperation(payload, 'GO')).toContain('Le Passage Plan doit comporter au moins un point.');
   });
 
   it('rejects reversed voyage times and impossible signature dates', () => {

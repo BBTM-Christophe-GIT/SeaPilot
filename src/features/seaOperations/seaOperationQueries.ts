@@ -61,6 +61,7 @@ export interface SeaOperationVessel {
   name: string;
   registrationImo: string;
   lengthOverall: string | null;
+  draftMeters?: number | null;
   canSign: boolean;
 }
 
@@ -135,7 +136,8 @@ export async function fetchSeaOperationData(client: SupabaseClient): Promise<Sea
   const vessels = data.vessels.map((value): SeaOperationVessel => {
     const row = object(value);
     return { id: Number(row.id), name: String(row.name), registrationImo: String(row.registration_imo || ''),
-      lengthOverall: nullableText(row.length_overall), canSign: row.can_sign === true };
+      lengthOverall: nullableText(row.length_overall), draftMeters: row.draft_m == null ? null : Number(row.draft_m),
+      canSign: row.can_sign === true };
   }).sort(compareFleetAssets);
   return { companyId: Number(data.company_id), actorId: String(data.actor_id), actorName: String(data.actor_name),
     records: data.records.map(mapSeaOperationRecord), vessels };
