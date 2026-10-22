@@ -63,12 +63,13 @@ export function SeaOperationWeatherPanel({ client, projectId, waypoints, preview
         <h4>Point {point.number || index + 1}</h4>
         {result?.error ? <p role="status">{result.error}</p> : !weather ? <p role="status">Préparation de la prévision…</p> : <>
           <p className="so-help">ETA : {utc(weather.etaUtc)} UTC · {point.latitude}, {point.longitude}</p>
-          <div className="so-weather-cards"><div className="so-weather-card"><strong>Vent à 10 m</strong>{weather.wind ? <><span>{number(weather.wind.speedKnots)} nd · de {number(weather.wind.directionDegrees, 0)}°</span><span>Rafales : {number(weather.wind.gustKnots)} nd</span><small>Heure modèle : {utc(weather.wind.time)} UTC</small></> : <span>{weather.windMessage || 'Prévision de vent indisponible à cette ETA.'}</span>}</div>
+          <div className="so-weather-cards"><div className="so-weather-card"><strong>Vent moyen à 10 m</strong>{weather.wind ? <><span>{number(weather.wind.speedKnots)} nd · de {number(weather.wind.directionDegrees, 0)}°</span><small>Heure modèle : {utc(weather.wind.time)} UTC</small></> : <span>{weather.windMessage || 'Prévision de vent indisponible à cette ETA.'}</span>}</div>
             <div className="so-weather-card"><strong>Houle significative (Hs)</strong>{weather.waves ? <><span>Hs {number(weather.waves.heightMeters, 2)} m · {number(weather.waves.periodSeconds)} s</span><span>Provenance : {number(weather.waves.directionDegrees, 0)}°</span><small>Heure modèle : {utc(weather.waves.time)} UTC</small></> : <span>{weather.wavesMessage || 'Prévision de houle indisponible à cette ETA.'}</span>}</div></div>
+          <small className="so-weather-retrieved">Source : <a href={weather.sourceUrl} target="_blank" rel="noopener noreferrer">{weather.attribution}</a>{weather.attribution === 'Open-Meteo' ? ' / DWD' : ''}{weather.model ? ` · ${weather.model.name} · réseau du ${utc(weather.model.referenceTime)} UTC · maille ${weather.model.latitude.toFixed(3)}, ${weather.model.longitude.toFixed(3)}` : ''}</small>
           <small className="so-weather-retrieved">Consultée le {utc(weather.fetchedAt)} UTC</small>
         </>}
       </li>;
     })}</ul>}
-    <p className="so-help">Sources : <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> / <a href="https://www.dwd.de/EN/Home/home_node.html" target="_blank" rel="noopener noreferrer">DWD</a> · Hs de la houle seule, hors mer du vent. Les dates hors horizon ou les données absentes restent indisponibles. Prévisions consultées en direct, distinctes des données signées de la fiche.</p>
+    <p className="so-help">Hs de la houle seule, hors mer du vent. Les dates hors horizon, mailles terrestres ou données absentes restent indisponibles. Prévisions consultées en direct, distinctes des données signées de la fiche.</p>
   </section>;
 }

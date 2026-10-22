@@ -13,6 +13,23 @@ function fixture() {
 }
 
 describe('sea operation weather queries', () => {
+  it('uses the server public-data demo only on a real preview and accepts a traced Météo-France model', async () => {
+    const { client, getSession } = fixture();
+    vi.stubGlobal('window', { location: { hostname: 'sea-pilot-git-codex-sea-operations-bbtm-app.vercel.app', search: '?preview=1' } });
+    const forecast = { ...result, attribution: 'Météo-France', sourceUrl: 'https://www.data.gouv.fr/datasets/paquets-de-modele-de-vagues-mfwam-resolution-0-025deg', model: { name: 'MFWAM', referenceTime: '2026-10-22T00:00:00Z', latitude: 49.7, longitude: -1.6 } };
+    const fetcher = vi.fn().mockResolvedValue(Response.json(forecast));
+    vi.stubGlobal('fetch', fetcher);
+    expect(await fetchSeaOperationWaypointWeather(client, point, { preview: true })).toEqual(forecast);
+    expect(getSession).not.toHaveBeenCalled();
+    expect(fetcher).toHaveBeenCalledWith('/api/sea-operation-weather?preview=1', expect.objectContaining({ headers: { 'Content-Type': 'application/json' } }));
+  });
+
+  it('reports a provider function startup failure in plain language when the platform returns text', async () => {
+    const { client } = fixture();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('FUNCTION_INVOCATION_FAILED', { status: 500 })));
+    await expect(fetchSeaOperationWaypointWeather(client, point)).rejects.toThrow('temporairement indisponible');
+  });
+
   it('sends only point metadata using the current token and forwards cancellation', async () => {
     const { client } = fixture();
     const fetcher = vi.fn().mockResolvedValue(Response.json(result));

@@ -5,7 +5,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/documents.ts": { "regions": ["cdg1"] },
-    "api/sea-operation-weather.ts": { "regions": ["cdg1"] }
+    "api/sea-operation-weather.ts": { "regions": ["cdg1"], "includeFiles": "node_modules/@meri-imperiumi/eccodes-wasm/**" }
   },
   "headers": [
     {

@@ -16,7 +16,7 @@ function fixture(options: { configured?: boolean; user?: string | null; denied?:
     return Response.json({ utc_offset_seconds: 0, hourly: { time: [hour], ...Object.fromEntries(variables.map((key) => [key, [2]])) },
       hourly_units: Object.fromEntries(variables.map((key, index) => [key, (marine ? ['m', 's', '°'] : ['kn', 'kn', '°'])[index]])) });
   }) as typeof fetch;
-  const handler = createSeaOperationWeatherGateway({ getEnv: () => options.configured === false ? undefined : 'server-secret', backend, fetcher, now: () => now });
+  const handler = createSeaOperationWeatherGateway({ getEnv: (name) => name === 'SEA_OPERATION_WEATHER_PROVIDER' ? 'open-meteo' : name === 'OPEN_METEO_API_KEY' && options.configured !== false ? 'server-secret' : undefined, backend, fetcher, now: () => now });
   return { handler, authorize, backend, fetcher };
 }
 const request = (body: unknown = point, headers: Record<string, string> = {}) => new Request('https://app.example/api/sea-operation-weather', {
@@ -24,6 +24,31 @@ const request = (body: unknown = point, headers: Record<string, string> = {}) =>
 });
 
 describe('authenticated sea operation weather endpoint', () => {
+  it('uses public Météo-France data by default without an API subscription after authorizing the actor', async () => {
+    const authorize = vi.fn().mockResolvedValue(undefined);
+    const meteoFrance = vi.fn().mockResolvedValue({ pointId: point.pointId, etaUtc: '2026-10-22T10:25:00Z', wind: null, waves: null, attribution: 'Météo-France' });
+    const handler = createSeaOperationWeatherGateway({ getEnv: () => undefined, backend: () => ({ user: async () => 'actual-user', authorize }), meteoFrance, now: () => now });
+    const response = await handler(request());
+    expect(response.status).toBe(200);
+    expect(authorize).toHaveBeenCalledWith(point.projectId);
+    expect(meteoFrance).toHaveBeenCalledWith(point, expect.objectContaining({ now }));
+    expect((await response.json()).attribution).toBe('Météo-France');
+    expect(authorize.mock.invocationCallOrder[0]).toBeLessThan(meteoFrance.mock.invocationCallOrder[0]);
+  });
+
+  it('reserves anonymous public-weather demonstration to server-confirmed Vercel previews', async () => {
+    const backend = vi.fn();
+    const meteoFrance = vi.fn().mockResolvedValue({ pointId: point.pointId, wind: null, waves: null });
+    const previewRequest = () => new Request('https://app.example/api/sea-operation-weather?preview=1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(point) });
+    const production = createSeaOperationWeatherGateway({ getEnv: () => undefined, backend, meteoFrance });
+    expect((await production(previewRequest())).status).toBe(401);
+    const preview = createSeaOperationWeatherGateway({ getEnv: (name) => name === 'VERCEL_ENV' ? 'preview' : undefined, backend, meteoFrance });
+    expect((await preview(previewRequest())).status).toBe(200);
+    expect(backend).not.toHaveBeenCalled();
+    expect(meteoFrance).toHaveBeenCalledTimes(1);
+    expect((await preview(new Request('https://app.example/api/sea-operation-weather', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(point) }))).status).toBe(401);
+  });
+
   it('requires POST, bearer authentication, same origin and validated coordinates before querying a provider', async () => {
     const { handler, fetcher } = fixture();
     expect((await handler(new Request('https://app.example/api/sea-operation-weather'))).status).toBe(405);

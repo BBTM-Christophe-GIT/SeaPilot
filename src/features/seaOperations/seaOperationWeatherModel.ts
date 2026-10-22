@@ -18,9 +18,12 @@ export interface SeaOperationWaypointWeather {
   waves: { time: string; heightMeters: number | null; periodSeconds: number | null; directionDegrees: number | null; component: 'swell' } | null;
   windMessage: string;
   wavesMessage: string;
-  attribution: 'Open-Meteo';
+  attribution: 'Open-Meteo' | 'Météo-France';
   sourceUrl: string;
+  model?: { name: string; referenceTime: string; latitude: number; longitude: number };
 }
+
+export const SEA_METEO_FRANCE_SOURCE_URL = 'https://www.data.gouv.fr/datasets/paquets-de-modele-de-vagues-mfwam-resolution-0-025deg';
 
 export function isSeaOperationWaypointWeather(value: unknown): value is SeaOperationWaypointWeather {
   if (!value || typeof value !== 'object') return false;
@@ -38,8 +41,16 @@ export function isSeaOperationWaypointWeather(value: unknown): value is SeaOpera
     && component(record.wind, ['speedKnots', 'gustKnots', 'directionDegrees'])
     && component(record.waves, ['heightMeters', 'periodSeconds', 'directionDegrees'])
     && (record.waves === null || (record.waves as Record<string, unknown>).component === 'swell')
-    && typeof record.windMessage === 'string' && typeof record.wavesMessage === 'string' && record.attribution === 'Open-Meteo'
-    && record.sourceUrl === 'https://open-meteo.com/en/docs/marine-weather-api';
+    && typeof record.windMessage === 'string' && typeof record.wavesMessage === 'string'
+    && (record.attribution === 'Open-Meteo' && record.sourceUrl === 'https://open-meteo.com/en/docs/marine-weather-api'
+      || record.attribution === 'Météo-France' && record.sourceUrl === SEA_METEO_FRANCE_SOURCE_URL)
+    && (record.model === undefined || Boolean(record.model && typeof record.model === 'object'
+      && typeof (record.model as Record<string, unknown>).name === 'string'
+      && timestamp((record.model as Record<string, unknown>).referenceTime)
+      && typeof (record.model as Record<string, unknown>).latitude === 'number'
+      && Math.abs((record.model as Record<string, unknown>).latitude as number) <= 90
+      && typeof (record.model as Record<string, unknown>).longitude === 'number'
+      && Math.abs((record.model as Record<string, unknown>).longitude as number) <= 180));
 }
 
 const paris = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hourCycle: 'h23',

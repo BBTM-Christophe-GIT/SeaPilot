@@ -290,56 +290,67 @@ Trois points sont chargés en parallèle au maximum et les modifications sont
 temporisées. Les ETA incomplètes, heures inexistantes/ambiguës de changement
 d’heure, dates passées ou hors horizon restent explicitement indisponibles.
 
-Le vent vient de `wind_speed_10m`, `wind_gusts_10m`, `wind_direction_10m`, en nœuds
-et degrés de provenance. **Houle significative (Hs)** correspond à
-`swell_wave_height`, avec `swell_wave_period` et `swell_wave_direction` (m, s, °,
-respectivement hauteur en mètres, période en secondes et provenance en degrés).
-Il s’agit de la houle seule, pas de la mer totale `wave_height` ni de la mer du
-vent. L’ETA est convertie d’Europe/Paris vers UTC sans dépendre du fuseau du
-navigateur. Les axes météo sont demandés en timestamps UTC. L’heure réelle du
-modèle la plus proche (écart maximal 30 minutes) est affichée séparément de l’ETA,
-sans interpolation cachée. Le vent et la houle peuvent être disponibles
-indépendamment ; un champ absent n’est jamais assimilé à zéro.
+Le fournisseur par défaut est **Météo-France MFWAM 0,025°, forcé par AROME**.
+Le [catalogue officiel](https://www.data.gouv.fr/datasets/paquets-de-modele-de-vagues-mfwam-resolution-0-025deg)
+et ses fichiers GRIB2 sont publics, sous Licence Ouverte 2.0 : cette voie ne
+requiert ni abonnement payant, ni compte API, ni clé. Le serveur découvre les
+réseaux/échéances disponibles puis décode les paquets CCSDS/AEC avec ecCodes-WASM.
+Les téléchargements sont limités aux URL HTTPS du répertoire MFWAM 0025 / SP1
+attendu, sans redirection ; les tailles sont plafonnées à 2 Mo pour le catalogue
+et 20 Mo par fichier. Le WASM reste exclusivement dans la fonction serveur.
 
-La requête vent couvre au maximum 16 jours et la requête marine 7 jours ; la
-présence effective des valeurs est toujours contrôlée. Ces prévisions sont une
-aide consultée en direct, attribuée à Open-Meteo/DWD, et ne valident aucun contrôle
-GO / NO GO. Elles ne sont pas ajoutées aux données signées ni au PDF historique.
+Les champs `WIND` / `DWI` fournissent le vent moyen à 10 m en nœuds et degrés de
+provenance. **Houle significative (Hs)** reprend `SHS` / `MPS` / `MDS` : hauteur
+en mètres, période en secondes et provenance en degrés de la houle totale,
+distincte de la mer totale `SWH` et de la mer du vent. Les rafales ne sont pas
+affichées. Le réseau, l’heure prévue réelle et la maille du modèle sont visibles.
+La maille la plus proche est utilisée pour tous les champs ; une maille terrestre
+masquée reste indisponible, sans déplacement silencieux vers la mer.
 
-En production, `/api/sea-operation-weather` exige un JWT authentifié et la portée
-du projet via la RPC protégée `sea_operation_project_documents`. L’accès est
-vérifié avant tout cache. Les hôtes du fournisseur sont fixes. Le secret serveur
-`OPEN_METEO_API_KEY` doit provenir d’un abonnement autorisant l’usage
-professionnel ; ne jamais utiliser un préfixe `VITE_`. Sans cette configuration,
-le service renvoie 503 avec un message d’activation, sans repli sur l’API gratuite.
-Les environnements Supabase habituels de l’application sont également nécessaires.
-Le cache est borné à 128 entrées/15 minutes, les appels à 30/minute/acteur et la
-concurrence à quatre par instance. Ces limites par instance ne remplacent pas les
-quotas globaux d’un abonnement. Aucun abonnement n’est souscrit par ce changement.
-L’absence d’abonnement a été confirmée pour cette livraison : la météo des comptes
-réels reste donc non activée, avec un message explicite dans la fiche.
+Le domaine couvre 38–53° N et 8° O–12° E, dont la Manche, l’Atlantique français
+et le sud de l’Angleterre. L’horizon dépend des fichiers effectivement publiés
+(48 h depuis le réseau dans le catalogue contrôlé le 22 octobre 2026), sans
+extrapolation. L’ETA est convertie d’Europe/Paris vers UTC. L’écart à l’heure du
+modèle reste inférieur ou égal à 30 minutes, sans interpolation cachée. Une
+donnée absente n’est jamais assimilée à zéro. Ces prévisions ne valident aucun
+contrôle GO / NO GO et ne modifient pas les données signées ni le PDF historique.
 
-La préversion de démonstration seule peut utiliser les endpoints publics pour
-évaluation, comme autorisé par les [tarifs Open-Meteo](https://open-meteo.com/en/pricing).
-Les comptes réels passent par le serveur et conservent la clé privée.
+En production, `/api/sea-operation-weather` vérifie le JWT et l’accès au projet
+par `sea_operation_project_documents` avant les caches. Les environnements
+Supabase habituels restent nécessaires. Le cache final est borné à 128 entrées /
+15 minutes, les appels à 30/minute/acteur et la concurrence à quatre par instance.
+Le catalogue et au plus quatre fichiers / 64 Mo sont conservés cinq minutes.
+Les téléchargements identiques sont mutualisés ; le décodeur unique travaille
+séquentiellement et libère les handles et son fichier mémoire après chaque point.
 
-#### Alternatives demandées : Météo-France et Windy
+La démonstration publique de météo serveur exige à la fois `VERCEL_ENV=preview`
+et `?preview=1` sur l’API. Elle ne lit aucune donnée de société/projet ; son quota
+de 30 appels/minute est commun à l’instance. Ce drapeau client n’ouvre aucun accès
+anonyme en production. Le développement Vite local utilise encore le mode
+d’évaluation publique Open-Meteo, distinctement attribué ; les déploiements de
+préversion utilisent Météo-France comme les comptes réels.
 
-Les [données publiques Météo-France](https://meteofrance.com/presse/au-1er-janvier-2024-toutes-les-donnees-publiques-de-meteo-france-disposeront-dune)
-sont gratuites et réutilisables avec attribution. Les modèles AROME / ARPEGE
-fournissent le vent et MFWAM les états de mer. Le raccordement direct doit passer
-par le [portail officiel des API](https://portail-api.meteofrance.fr/web/fr/),
-avec un compte et une clé privés côté serveur ; aucune clé d’une application
-web/mobile n’est réutilisée. Ces données de grille demandent une extraction
-adaptée au point et à l’échéance : elles ne constituent pas le même contrat JSON
-que le connecteur Open-Meteo livré ici. Un accès Météo-France reste à configurer
-et à tester avant d’activer ce fournisseur pour les comptes réels.
+Le serveur et la CI utilisent **Node 24**, déjà configuré sur Vercel, pour
+`@meri-imperiumi/eccodes-wasm@2.48.2` (Apache-2.0, libaec BSD-2-Clause). Le paquet
+inclut son binaire et n’a aucun script d’installation ; les scripts de dépendances
+restent bloqués selon `pnpm-workspace.yaml`. `vercel.json` inclut explicitement les
+fichiers du paquet dans cette seule fonction. Les imports serveur portent leur
+extension `.js` pour l’exécution ESM après compilation Vercel.
+
+#### Autres accès et fournisseurs
+
+L’[API ciblée Météo-France](https://portail-api.meteofrance.fr/web/fr/) est également
+gratuite mais requiert un compte et une clé ; elle n’est pas nécessaire au
+connecteur par fichiers publics livré ici. Aucun compte n’est créé.
+Le fournisseur optionnel `SEA_OPERATION_WEATHER_PROVIDER=open-meteo` exige une
+clé professionnelle `OPEN_METEO_API_KEY`, exclusivement serveur. Sans cette clé,
+ce mode renvoie un message de configuration et ne bascule pas vers son API
+gratuite. Par défaut ou avec `meteo-france`, aucune clé météo n’est requise.
 
 L’[API Point Forecast Windy.com](https://api4.windy.com/point-forecast/pricing)
 est disponible à 990 €/an au 22 octobre 2026. Sa formule Testing gratuite renvoie
 des données mélangées et légèrement modifiées : elle est réservée aux essais et
-ne doit pas alimenter une fiche opérationnelle. Une licence Windy Premium de
-consultation ne remplace pas une clé Point Forecast. Aucun achat n’est effectué.
+ne doit pas alimenter une fiche opérationnelle. Aucun achat n’est effectué.
 
 Recette de cette évolution : tests ciblés de la page, de l’aperçu, du modèle,
 des requêtes, de Navires, de la préversion, de la météo, des coordonnées, des
