@@ -2,6 +2,8 @@ import { fireEvent, render as renderTestingLibrary, screen, waitFor, within } fr
 import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
+import JSZip from 'jszip';
+import type { RoleKey } from '../permissions/roles';
 import { FleetCertificatesPage } from './FleetCertificatesPage';
 import { compareFleetFindingsByTypeDueYearAndTitle, compareFleetFindingTitles } from './fleetCertificateFindings';
 import { resolveFleetCertificateReportSelection } from './FleetCertificateReportDialog';
@@ -94,7 +96,142 @@ function createClient(
   return { attachmentInsert, client, findingUpdate, findingUpdateEq, rpc, storageApi };
 }
 
+function captureDownloads() {
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+  const createObjectURL = vi.fn<(blob: Blob) => string>(() => 'blob:fleet-certificate');
+  const revokeObjectURL = vi.fn();
+  const filenames: string[] = [];
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    filenames.push(this.download);
+  });
+  Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+  Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+  return {
+    createObjectURL, filenames, revokeObjectURL,
+    restore() {
+      Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: originalCreateObjectURL });
+      Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: originalRevokeObjectURL });
+      click.mockRestore();
+    },
+  };
+}
+
 describe('FleetCertificatesPage', () => {
+  it.each<RoleKey>(['admin', 'direction', 'armement', 'capitaine'])('lets the %s profile download and preview a GOURY certificate', async (role) => {
+    const user = userEvent.setup();
+    const { client, storageApi } = createClient();
+    const downloads = captureDownloads();
+    try {
+      render(<FleetCertificatesPage client={client as never} roles={[role]} />);
+      const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+      await user.click(within(library).getByRole('button', { name: /GOURY/ }));
+      await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
+      await user.click(within(library).getByRole('button', { name: 'Télécharger Certificat de Franc-Bord' }));
+      expect(await screen.findByText('Document téléchargé.')).toBeInTheDocument();
+      expect(storageApi.download).toHaveBeenCalledWith('1/GRY/legacy/franc-bord.pdf');
+      expect(downloads.filenames).toEqual(['GRY - Certificat de Franc-Bord.pdf']);
+      await waitFor(() => expect(downloads.revokeObjectURL).toHaveBeenCalledWith('blob:fleet-certificate'));
+
+      await user.click(within(library).getByRole('button', { name: 'Prévisualiser Certificat de Franc-Bord' }));
+      expect(await screen.findByTitle('Aperçu de Certificat de Franc-Bord')).toHaveAttribute('src', 'https://signed.test/document');
+      expect(storageApi.createSignedUrl).toHaveBeenCalledWith('1/GRY/legacy/franc-bord.pdf', 300);
+      expect(screen.getByRole('button', { name: 'Télécharger le document' })).toBeEnabled();
+    } finally {
+      downloads.restore();
+    }
+  });
+
+  it('lets the Capitaine profile download selected GOURY certificates as one ZIP', async () => {
+    const user = userEvent.setup();
+    const { client, storageApi } = createClient(findings, undefined, [certificates[0], {
+      ...certificates[1], vessel_id: 1, vessel_name: 'GOURY', vessel: { acronym: 'GRY' },
+      file_name: 'GOURY - Certificat extincteurs.pdf', storage_path: '1/GRY/legacy/extincteurs.pdf',
+    }]);
+    const downloads = captureDownloads();
+    try {
+      render(<FleetCertificatesPage client={client as never} roles={['capitaine']} />);
+      const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+      await user.click(within(library).getByRole('button', { name: 'Tout déplier' }));
+      await user.click(within(library).getByRole('checkbox', { name: 'Sélectionner Certificat de Franc-Bord' }));
+      await user.click(within(library).getByRole('checkbox', { name: 'Sélectionner Certificat extincteurs' }));
+      await user.click(within(library).getByRole('button', { name: 'Télécharger (2)' }));
+      expect(await screen.findByText('Archive de documents préparée.')).toBeInTheDocument();
+      expect(storageApi.download.mock.calls).toEqual([['1/GRY/legacy/franc-bord.pdf'], ['1/GRY/legacy/extincteurs.pdf']]);
+      expect(downloads.filenames).toEqual([expect.stringMatching(/^Certificats-flotte-\d{4}-\d{2}-\d{2}\.zip$/)]);
+      const archiveBlob = downloads.createObjectURL.mock.calls[0][0];
+      const archiveData = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(archiveBlob);
+      });
+      const archive = await JSZip.loadAsync(archiveData);
+      expect(Object.keys(archive.files)).toEqual(['GRY - Certificat de Franc-Bord.pdf', 'GOURY - Certificat extincteurs.pdf']);
+      expect(await archive.file('GRY - Certificat de Franc-Bord.pdf')?.async('string')).toBe('document');
+      await waitFor(() => expect(downloads.revokeObjectURL).toHaveBeenCalledWith('blob:fleet-certificate'));
+    } finally {
+      downloads.restore();
+    }
+  });
+
+  it('shows preparation progress and blocks duplicate downloads until the file is ready', async () => {
+    const user = userEvent.setup();
+    const { client, storageApi } = createClient();
+    let completeDownload!: (result: { data: Blob; error: null }) => void;
+    storageApi.download.mockImplementation(() => new Promise((resolve) => { completeDownload = resolve; }));
+    const downloads = captureDownloads();
+    try {
+      render(<FleetCertificatesPage client={client as never} roles={['capitaine']} />);
+      const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+      await user.click(within(library).getByRole('button', { name: 'Tout déplier' }));
+      await user.click(within(library).getByRole('checkbox', { name: 'Sélectionner Certificat de Franc-Bord' }));
+      await user.click(within(library).getByRole('button', { name: 'Prévisualiser Certificat de Franc-Bord' }));
+      await user.click(screen.getByRole('button', { name: 'Télécharger le document' }));
+      expect(screen.getByRole('status')).toHaveTextContent('Préparation du téléchargement…');
+      screen.getAllByRole('button', { name: /Télécharger/ }).forEach((button) => expect(button).toBeDisabled());
+      expect(within(library).getByRole('checkbox', { name: 'Sélectionner Certificat de Franc-Bord' })).toBeDisabled();
+      fireEvent.click(within(library).getByRole('button', { name: 'Télécharger (1)' }));
+      expect(storageApi.download).toHaveBeenCalledTimes(1);
+
+      completeDownload({ data: new Blob(['PDF']), error: null });
+      expect(await screen.findByText('Document téléchargé.')).toBeInTheDocument();
+      expect(screen.queryByText('Préparation du téléchargement…')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Télécharger le document' })).toBeEnabled();
+      await waitFor(() => expect(downloads.revokeObjectURL).toHaveBeenCalled());
+    } finally {
+      downloads.restore();
+    }
+  });
+
+  it.each<{ profile: string; roles: RoleKey[] }>([
+    { profile: 'Marin', roles: ['marin'] },
+    { profile: 'without a role', roles: [] },
+  ])('keeps metadata visible for the $profile profile without requesting certificate files', async ({ roles }) => {
+    const user = userEvent.setup();
+    const { client, storageApi } = createClient(findings, undefined, certificates, [{
+      id: 202, version_no: 2, status: 'pending_validation', is_current: false,
+      original_file_name: 'signe.pdf', normalized_file_name: 'GOURY - Certificat de Franc-Bord - 2026.pdf',
+      storage_bucket: 'fleet-certificates', storage_path: '1/GRY/42/renewals/signe.pdf', mime_type: 'application/pdf',
+      issued_on: '2026-10-01', expires_on: '2027-10-01', created_at: '2026-10-01T08:07:09Z',
+    }]);
+    render(<FleetCertificatesPage client={client as never} roles={roles} />);
+    const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+    await user.click(within(library).getByRole('button', { name: 'Tout déplier' }));
+    expect(within(library).queryByRole('checkbox', { name: /Sélectionner/ })).not.toBeInTheDocument();
+    expect(within(library).queryByRole('button', { name: /Télécharger/ })).not.toBeInTheDocument();
+    await user.click(within(library).getByRole('button', { name: 'Prévisualiser Certificat de Franc-Bord' }));
+    expect(screen.getByRole('heading', { name: 'Informations du document' })).toBeInTheDocument();
+    expect(screen.getByText('L’accès aux fichiers est réservé aux profils Admin, Direction, Armement et Capitaine.')).toBeInTheDocument();
+    expect(await screen.findByText('v2 · À valider')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Afficher la version/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Télécharger/ })).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Aperçu de Certificat de Franc-Bord')).not.toBeInTheDocument();
+    expect(storageApi.download).not.toHaveBeenCalled();
+    expect(storageApi.createSignedUrl).not.toHaveBeenCalled();
+  });
+
+
   it('opens the exact linked certificate preview and reacts to another certificate link', async () => {
     const user = userEvent.setup();
     const { client } = createClient();

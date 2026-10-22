@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.76.4`, build `2026-10-22.001`, autorise les téléchargements de
+certificats flotte aux profils Admin, Direction, Armement et Capitaine, et
+protège les fichiers courants et historiques contre l’accès Marin. Appliquer
+`20261022075326_fleet_certificate_download_roles.sql` avant le client.
+Voir [la règle et la recette](./fleet-certificate-download-access.md).
+
 Version `3.76.1`, build `2026-10-20.002`, sépare l’inventaire pharmacie par
 catégorie et remplace le sélecteur de navire par les illustrations de la flotte,
 avec pastilles orange (articles à échéance sous 30 jours) et rouge (périmés).
