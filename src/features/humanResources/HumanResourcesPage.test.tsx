@@ -931,7 +931,7 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).queryByLabelText('Échéance de Entretien Professionnel et d’Evaluation 2026')).not.toBeInTheDocument();
   });
 
-  it.each([false, true])('adds a catalog document with noExpiry=%s and the automatic file name', async (noExpiry) => {
+  it.each([['armement', false, 1], ['armement', true, 1], ['capitaine', false, 1], ['capitaine', true, 7]] as const)('adds a catalog document as %s with noExpiry=%s for allowed person %s', async (role, noExpiry, personId) => {
     const user = userEvent.setup();
     const catalogRows = [
       {
@@ -950,13 +950,17 @@ describe('HumanResourcesPage', () => {
       },
     ];
     catalogRows.push(...[{ id: 57, source_item_id: 57, name: 'Attestation de droits', category: 'Ressources Humaines', file_name: 'Attestation de droits' }, { id: 58, source_item_id: 58, name: 'Carte Vitale', category: 'Ressources Humaines', file_name: 'Carte Vitale' }]);
+    const targetPerson = personId === 1 ? activePerson : { ...activePerson, id: 7, user_id: 'watch-mate', first_name: 'Paul', last_name: 'DURAND' };
+    const personName = personId === 1 ? 'Jean MARTIN' : 'Paul DURAND';
     const file = new File(['certificate'], 'scan-cfbs.pdf', { type: 'application/pdf' });
-    const title = noExpiry ? 'Jean MARTIN - CFBS' : 'Jean MARTIN - CFBS - 2030';
+    const title = `${personName} - CFBS${noExpiry ? '' : ' - 2030'}`;
     const expiresOn = noExpiry ? null : '2030-06-30';
-    const storagePath = `people/1/fixture-${title}.pdf`;
+    const storagePath = `people/${personId}/fixture-${title}.pdf`;
     const createdDocument = {
       ...documents[1],
       id: 42,
+      person_id: personId,
+      person_name: personName,
       category_key: 'safety_training',
       title,
       status: 'valid',
@@ -981,7 +985,8 @@ describe('HumanResourcesPage', () => {
     const catalogueSelect = vi.fn().mockReturnValue({ eq: catalogueEq });
     const client = {
       from: vi.fn().mockImplementation((table: string) => {
-        if (table === 'people') return createOrderedSelect([activePerson]);
+        // Actual Captain RLS returns only their own record and authorized watch.
+        if (table === 'people') return createOrderedSelect(personId === 1 ? [activePerson] : [activePerson, targetPerson]);
         if (table === 'hr_documents') return { ...createDocumentsSelect(documents), insert };
         if (table === 'stcw_certificates') return { select: catalogueSelect };
         throw new Error(`Unexpected table ${table}`);
@@ -991,13 +996,14 @@ describe('HumanResourcesPage', () => {
       },
     };
 
-    render(<HumanResourcesPage client={client as never} roles={['armement']} />);
-
-    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    render(<HumanResourcesPage client={client as never} currentPersonId={1} roles={[role]} />);
+    await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
+    if (personId !== 1) await user.click(screen.getByRole('button', { name: `Afficher la fiche de ${personName}` }));
+    const profile = screen.getByRole('complementary', { name: `Fiche RH de ${personName}` });
     await user.click(within(profile).getByRole('button', { name: 'Documents' }));
     await user.click(within(profile).getByRole('button', { name: 'Ajouter un document' }));
 
-    const dialog = screen.getByRole('dialog', { name: 'Ajouter un document pour Jean MARTIN' });
+    const dialog = screen.getByRole('dialog', { name: `Ajouter un document pour ${personName}` });
     const derogationOption = within(dialog).getByRole('option', { name: 'Dérogation' });
     expect(derogationOption.closest('optgroup')).toHaveAttribute('label', 'Documents administratifs');
     for (const name of ['Attestation de droits', 'Carte Vitale']) expect(within(dialog).getByRole('option', { name }).closest('optgroup')).toHaveAttribute('label', 'Documents administratifs');
@@ -1014,7 +1020,7 @@ describe('HumanResourcesPage', () => {
     expect(within(dialog).getByRole('button', { name: 'Creer le document' })).toBeEnabled();
     fireEvent.submit(dialog.querySelector('form') as HTMLFormElement);
 
-    await waitFor(() => expect(writeHrDriveFile).toHaveBeenCalledWith(expect.anything(), 1, `${title}.pdf`, file));
+    await waitFor(() => expect(writeHrDriveFile).toHaveBeenCalledWith(expect.anything(), personId, `${title}.pdf`, file));
     expect(upload).not.toHaveBeenCalled();
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({
       category_key: 'safety_training',
@@ -1090,13 +1096,14 @@ describe('HumanResourcesPage', () => {
     }
   });
 
-  it.each(['marin', 'capitaine'] as const)('keeps document mutations hidden for a real %s role fixture', async (role) => {
+  it.each(['marin', 'capitaine'] as const)('keeps edits and deletion hidden for a real %s role fixture', async (role) => {
     const user = userEvent.setup();
     render(<HumanResourcesPage client={createClient([activePerson]) as never} currentPersonId={1} roles={[role]} />);
     const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
     await user.click(within(profile).getByRole('button', { name: 'Documents' }));
     expect(within(profile).getByText('Capitaine 200')).toBeInTheDocument();
-    expect(within(profile).queryByRole('button', { name: 'Ajouter un document' })).not.toBeInTheDocument();
+    if (role === 'capitaine') expect(within(profile).getByRole('button', { name: 'Ajouter un document' })).toBeInTheDocument();
+    else expect(within(profile).queryByRole('button', { name: 'Ajouter un document' })).not.toBeInTheDocument();
     expect(within(profile).queryByRole('button', { name: 'Modifier Capitaine 200' })).not.toBeInTheDocument();
     expect(within(profile).queryByRole('button', { name: 'Supprimer Capitaine 200' })).not.toBeInTheDocument();
     expect(within(profile).queryByRole('button', { name: 'Renouveler' })).not.toBeInTheDocument();

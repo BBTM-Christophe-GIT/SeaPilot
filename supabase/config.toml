@@ -407,6 +407,9 @@ verify_jwt = true
 [functions.project-document-upload]
 verify_jwt = true
 
+[functions.expense-note-send]
+verify_jwt = true
+
 # Calendar clients authenticate with a revocable personal capability, checked by
 # the function and its service-only RPC on every read.
 [functions.planning-calendar]

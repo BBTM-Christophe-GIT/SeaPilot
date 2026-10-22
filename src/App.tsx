@@ -42,6 +42,7 @@ const LiftingPage = lazy(() => import('./features/lifting/LiftingPage').then((mo
 const LsaPage = lazy(() => import('./features/lsa/LsaPage').then((module) => ({ default: module.LsaPage })));
 const MedicalLogbookPage = lazy(() => import('./features/medicalLogbook/MedicalLogbookPage').then((module) => ({ default: module.MedicalLogbookPage })));
 const RegulatoryLibraryPage = lazy(() => import('./features/regulatoryLibrary/RegulatoryLibraryPage').then((module) => ({ default: module.RegulatoryLibraryPage })));
+const SeaOperationsPage = lazy(() => import('./features/seaOperations/SeaOperationsPage').then((module) => ({ default: module.SeaOperationsPage })));
 
 const InternalAuditsPage = lazy(() => import('./features/internalAudits/InternalAuditsPage').then((module) => ({ default: module.InternalAuditsPage })));
 const DocumentaryAuditsPage = lazy(() => import('./features/documentaryAudits/DocumentaryAuditsPage').then((module) => ({ default: module.DocumentaryAuditsPage })));
@@ -105,6 +106,8 @@ export default function App({ previewModeOverride }: AppProps) {
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des audits ISM internes…</div>}><InternalAuditsPage /></Suspense>
                 ) : module.key === 'ovid' || module.key === 'ecmid' || module.key === 'externalIsmAudits' || module.key === 'clientAudits' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement du dossier d’audit…</div>}><DocumentaryAuditsPage key={module.key} kind={module.key === 'externalIsmAudits' ? 'external_ism' : module.key === 'clientAudits' ? 'client' : module.key} /></Suspense>
+                ) : module.key === 'seaOperations' ? (
+                  <Suspense fallback={<div className="admin-state" role="status">Chargement des opérations en mer…</div>}><SeaOperationsPage /></Suspense>
                 ) : module.key === 'dpr' ? (
                   <DprPage />
                 ) : module.key === 'certificates' ? (

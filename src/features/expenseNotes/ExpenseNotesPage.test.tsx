@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ExpenseNotesPage } from './ExpenseNotesPage';
@@ -105,5 +105,38 @@ describe('NDF profile fixtures', () => {
     expect(screen.getByText('Nouvelle dépense')).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(queries.submit).toHaveBeenCalledTimes(1);
+  });
+  it.each(['marin', 'capitaine', 'armement', 'admin', 'direction'] as const)('%s can retry an archived failed note without issuing another note', async (role) => {
+    const note = { ...EXPENSE_NOTE_PREVIEW[0], delivery_status: 'failed', delivered_at: null } as const;
+    queries.notes.mockResolvedValueOnce([note]).mockResolvedValue([{ ...note, delivery_status: 'sent' }]);
+    queries.send.mockResolvedValue('Note transmise à la comptabilité.');
+    show(role);
+    fireEvent.click(await screen.findByRole('button', { name: `Transmettre : ${note.title}` }));
+    expect(await screen.findByText('Note transmise à la comptabilité.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: `Transmettre : ${note.title}` })).not.toBeInTheDocument());
+    expect(queries.send).toHaveBeenCalledExactlyOnceWith(expect.anything(), note.id);
+    expect(queries.submit).not.toHaveBeenCalled();
+  });
+  it('keeps confirmed delivery visible when refreshing the history fails', async () => {
+    const note = { ...EXPENSE_NOTE_PREVIEW[0], delivery_status: 'pending' } as const;
+    queries.notes.mockResolvedValueOnce([note]).mockRejectedValue(new Error('Lecture hors ligne'));
+    queries.send.mockResolvedValue('Note transmise à la comptabilité.');
+    show('marin');
+    fireEvent.click(await screen.findByRole('button', { name: `Transmettre : ${note.title}` }));
+    expect(await screen.findByText('Note transmise à la comptabilité.')).toBeInTheDocument();
+    await waitFor(() => expect(queries.notes).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('Transmise à la comptabilité')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: `Transmettre : ${note.title}` })).not.toBeInTheDocument();
+  });
+  it('refreshes a rejected attempt so an uncertain delivery cannot be retried from stale state', async () => {
+    const note = { ...EXPENSE_NOTE_PREVIEW[0], delivery_status: 'pending' } as const;
+    queries.notes.mockResolvedValueOnce([note]).mockResolvedValue([{ ...note, delivery_status: 'unknown' }]);
+    queries.send.mockRejectedValue(new Error('Vérifiez la réception auprès de la comptabilité.'));
+    show('marin');
+    fireEvent.click(await screen.findByRole('button', { name: `Transmettre : ${note.title}` }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Vérifiez la réception auprès de la comptabilité.');
+    expect(await screen.findByText('Transmission à vérifier')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: `Transmettre : ${note.title}` })).not.toBeInTheDocument();
   });
 });

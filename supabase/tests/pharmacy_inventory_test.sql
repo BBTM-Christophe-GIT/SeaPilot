@@ -6,6 +6,7 @@ declare
   c bigint; other_c bigint; vessel bigint; unassigned bigint; other_vessel bigint;
   captain bigint; sailor bigint; item bigint; due_item bigint; expired_item bigint; future_item bigint;
   control bigint; replacement bigint; uid uuid; role_name text; path text; second_path text;
+  retired_item bigint; before_row jsonb; after_row jsonb;
   today date:=(current_timestamp at time zone 'Europe/Paris')::date;
   draft jsonb:='{"designation":"PHARMACY TEST","quantity":"2 Boîtes","required_quantity":"4x5","expiry_precision":"unknown"}';
 begin
@@ -77,6 +78,19 @@ begin
     perform public.save_pharmacy_item(unassigned,draft);
     raise exception 'Captain edited unassigned vessel';
   exception when insufficient_privilege then null; end;
+
+  -- A captain withdraws an article without deleting its source values or import provenance.
+  retired_item:=public.save_pharmacy_item(vessel,draft||jsonb_build_object('designation','WITHDRAWAL FIXTURE','expires_on',today+15,'expiry_precision','day'));
+  execute 'reset role';
+  update public.pharmacy_inventory set source_file='synthetic-inventory.xlsx',source_sheet='Inventory',source_row=12,source_data='{"source_quantity":"2 Boîtes"}'::jsonb where id=retired_item;
+  execute 'set local role authenticated';
+  select to_jsonb(i) into before_row from public.pharmacy_inventory i where id=retired_item;
+  assert exists(select 1 from public.pharmacy_notifications() where item_id=retired_item),'Withdrawal fixture initially emits expiry alarm';
+  perform public.save_pharmacy_item(vessel,before_row||'{"active":false}'::jsonb,retired_item,(before_row->>'revision')::integer);
+  select to_jsonb(i) into after_row from public.pharmacy_inventory i where id=retired_item;
+  assert after_row is not null and (after_row->>'active')::boolean=false,'Withdrawal retains the row and marks it inactive';
+  assert (after_row-array['active','revision','updated_at','updated_by'])=(before_row-array['active','revision','updated_at','updated_by']),'Withdrawal preserves every item value and import provenance';
+  assert not exists(select 1 from public.pharmacy_notifications() where item_id=retired_item),'Withdrawn article stops emitting expiry alarms';
 
   -- A real sailor sees their vessel and alarms but cannot edit.
   perform set_config('request.jwt.claim.sub','9e200000-0000-0000-0000-000000000005',true);

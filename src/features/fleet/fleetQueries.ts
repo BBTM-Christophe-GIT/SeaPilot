@@ -2,6 +2,7 @@ import { compareFleetAssets } from './fleetDisplay';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type FleetAssetKind = 'vessel' | 'office' | 'quay';
+export const MAX_FLEET_DRAFT_METERS = 50;
 
 const FLEET_VESSEL_SELECT = [
   'id', 'company_id', 'name', 'acronym', 'asset_kind', 'type_label', 'unit_type_label',
@@ -12,7 +13,7 @@ const FLEET_VESSEL_SELECT = [
   'photo_storage_bucket', 'photo_storage_path', 'illustration_storage_bucket',
   'illustration_storage_path', 'illustration_thumbnail_url', 'brochure_subtitle', 'brochure_summary',
   'brochure_operations', 'built_year', 'classification_label', 'navigation_category',
-  'beam_overall_m', 'lightship_tonnes', 'deadweight_tonnes', 'safe_manning', 'main_engine',
+  'beam_overall_m', 'draft_m', 'lightship_tonnes', 'deadweight_tonnes', 'safe_manning', 'main_engine',
   'main_engine_power_kw', 'bow_thruster_power_kw', 'gensets', 'max_speed_knots',
   'bollard_pull_tonnes', 'fuel_capacity_m3', 'range_description', 'deck_equipment',
   'electronics_communications', 'accommodation', 'liability_insurer',
@@ -59,6 +60,7 @@ interface FleetVesselRow {
   classification_label: string | null;
   navigation_category: string | null;
   beam_overall_m: number | string | null;
+  draft_m?: number | string | null;
   lightship_tonnes: number | string | null;
   deadweight_tonnes: number | string | null;
   safe_manning: number | string | null;
@@ -117,6 +119,7 @@ export interface FleetVessel {
   classificationLabel: string;
   navigationCategory: string;
   beamOverallM: number | null;
+  draftMeters?: number | null;
   lightshipTonnes: number | null;
   deadweightTonnes: number | null;
   safeManning: number | null;
@@ -159,6 +162,7 @@ export interface SaveFleetVesselInput {
   classificationLabel: string;
   navigationCategory: string;
   beamOverallM: number | null;
+  draftMeters?: number | null;
   lightshipTonnes: number | null;
   deadweightTonnes: number | null;
   safeManning: number | null;
@@ -201,7 +205,7 @@ function mapFleetVessel(row: FleetVesselRow): FleetVessel {
     brochureSubtitle: row.brochure_subtitle || '', brochureSummary: row.brochure_summary || '',
     brochureOperations: row.brochure_operations || [], builtYear: numberOrNull(row.built_year),
     classificationLabel: row.classification_label || '', navigationCategory: row.navigation_category || '',
-    beamOverallM: numberOrNull(row.beam_overall_m), lightshipTonnes: numberOrNull(row.lightship_tonnes),
+    beamOverallM: numberOrNull(row.beam_overall_m), draftMeters: numberOrNull(row.draft_m), lightshipTonnes: numberOrNull(row.lightship_tonnes),
     deadweightTonnes: numberOrNull(row.deadweight_tonnes), safeManning: numberOrNull(row.safe_manning),
     mainEngine: row.main_engine || '', mainEnginePowerKw: numberOrNull(row.main_engine_power_kw),
     bowThrusterPowerKw: numberOrNull(row.bow_thruster_power_kw), gensets: row.gensets || '',
@@ -222,6 +226,9 @@ export async function fetchFleetVessels(client: SupabaseClient): Promise<FleetVe
 export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVesselInput): Promise<FleetVessel> {
   const name = input.name.trim();
   if (name.length < 2) throw new Error('Le nom doit contenir au moins deux caractères.');
+  if (input.draftMeters != null && (!Number.isFinite(input.draftMeters) || input.draftMeters <= 0 || input.draftMeters > MAX_FLEET_DRAFT_METERS)) {
+    throw new Error(`Le tirant d’eau doit être supérieur à 0 et inférieur ou égal à ${MAX_FLEET_DRAFT_METERS} m.`);
+  }
   const payload = {
     name, acronym: optional(input.acronym), asset_kind: input.assetKind, type_label: optional(input.typeLabel),
     unit_type_label: optional(input.unitTypeLabel), registration_number: optional(input.registrationNumber),
@@ -233,6 +240,7 @@ export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVe
     brochure_operations: input.brochureOperations.split(/\r?\n|;/).map((value) => value.trim()).filter(Boolean),
     built_year: input.builtYear, classification_label: optional(input.classificationLabel),
     navigation_category: optional(input.navigationCategory), beam_overall_m: input.beamOverallM,
+    ...(input.draftMeters === undefined ? {} : { draft_m: input.draftMeters }),
     lightship_tonnes: input.lightshipTonnes, deadweight_tonnes: input.deadweightTonnes, safe_manning: input.safeManning,
     main_engine: optional(input.mainEngine), main_engine_power_kw: input.mainEnginePowerKw,
     bow_thruster_power_kw: input.bowThrusterPowerKw, gensets: optional(input.gensets), max_speed_knots: input.maxSpeedKnots,

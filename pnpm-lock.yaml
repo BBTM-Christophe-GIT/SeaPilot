@@ -16,6 +16,9 @@ importers:
 
   .:
     dependencies:
+      '@meri-imperiumi/eccodes-wasm':
+        specifier: 2.48.2
+        version: 2.48.2
       '@supabase/supabase-js':
         specifier: ^2.108.2
         version: 2.108.2
@@ -104,6 +107,9 @@ importers:
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1
+      nodemailer:
+        specifier: 10.1.7
+        version: 10.1.7
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -340,6 +346,12 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@meri-imperiumi/eccodes-wasm@2.48.2':
+    resolution: {integrity: sha512-Z7rD3xInomPG7FS97ORD1UGKAdgeeRP9ofa9k4m8d+k2sDfDQeAjTzvs9UOndyaZovaSbEQeIoNX8gTmQNhiSA==}
+    engines: {node: '>=24.0.0'}
+    cpu: [x64, arm64]
+    os: [darwin, linux, win32]
 
   '@napi-rs/canvas-android-arm64@1.0.8':
     resolution: {integrity: sha512-5+nkh8i3gt6lqS/d2jTZ1xAn6tdgtB4Lf1mW6T0Qm5/rXNwBuV1sAEyLEWan5o9gJPU/GuvHR3rvSeZ+FaGrbw==}
@@ -1417,6 +1429,10 @@ packages:
     resolution: {integrity: sha512-wRNIrw4DmVLKQlbgOMdkMx27Wrpzes2hh5Jtbi2bjPd+4wJstWIqP5A+lscnqbm0xxmT5Bpg8Lec5ItEBwx6BQ==}
     engines: {node: '>=18'}
 
+  nodemailer@10.1.7:
+    resolution: {integrity: sha512-OQa6FDln5fLttmqSbjDiRYvFDOFNrBqfiOwHPlEbURil3b+vPB1v8xpi+Sp46drzNDlsTnNsS502vthmz56r4w==}
+    engines: {node: '>=20.0.0'}
+
   npm-run-path@4.0.1:
     resolution: {integrity: sha512-S48WzZW777zhNIrn7gxOlISNAqi9ZC/uQFnRdbeIHhZhCA6UqpkOT8T1G7BvfdgP4Er8gF4sUbaS0i7QvIfCWw==}
     engines: {node: '>=8'}
@@ -2163,6 +2179,8 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@meri-imperiumi/eccodes-wasm@2.48.2': {}
 
   '@napi-rs/canvas-android-arm64@1.0.8':
     optional: true
@@ -3159,6 +3177,8 @@ snapshots:
   natural-compare@1.4.0: {}
 
   node-releases@2.0.51: {}
+
+  nodemailer@10.1.7: {}
 
   npm-run-path@4.0.1:
     dependencies:

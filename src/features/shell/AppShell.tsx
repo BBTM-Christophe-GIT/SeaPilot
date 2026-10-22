@@ -5,7 +5,7 @@ import { MailShortcutHeader } from './MailShortcutHeader';
 import { useGmailUnreadCount } from '../mailbox/useGmailUnreadCount';
 import { fetchDisciplinaryNotifications, markDisciplinaryNotificationRead, DISCIPLINARY_NOTIFICATIONS_CHANGED, type DisciplinaryNotification } from '../disciplinary/disciplinaryWorkflow';
 import { fetchPharmacyNotifications } from '../pharmacy/pharmacyQueries';
-import { formatPharmacyDate, type PharmacyNotification } from '../pharmacy/pharmacyModel';
+import { formatPharmacyDate, pharmacyNotificationHref, type PharmacyNotification } from '../pharmacy/pharmacyModel';
 import { PharmacyIcon } from '../pharmacy/PharmacyIcon';
 import { LiftingOperationsIcon } from '../lifting/LiftingIcons';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -34,6 +34,7 @@ import {
   LifeBuoy,
   LogOut,
   Mail,
+  Map,
   Menu,
   Network,
   Settings,
@@ -159,6 +160,7 @@ const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   internalAudits: ClipboardCheck,
   clientAudits: FileCheck2,
   dpr: Gauge,
+  seaOperations: Map,
   purchaseRequests: ShoppingCart,
   expenseNotes: ReceiptText,
   serviceProviders: Store,
@@ -767,7 +769,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
               {isNotificationsOpen ? <div className="topbar-notification-popover">
                 <header><div><strong>Notifications</strong><span>{notificationCount} élément{notificationCount > 1 ? 's' : ''} à traiter</span></div><Bell aria-hidden="true" size={18} /></header>
                 <div className="topbar-notification-list">
-                  {activePharmacyNotifications.length ? <section aria-label="Inventaire Pharmacie" className="topbar-notification-group"><h4>Pharmacie · échéance à 30 jours</h4>{activePharmacyNotifications.map((notification) => <Link key={notification.id} onClick={() => setIsNotificationsOpen(false)} to={`/modules/pharmacy?vessel=${notification.vessel_id}&filter=expiry`}><span><strong>{notification.vessel_name}</strong><small>{formatPharmacyDate(notification.expires_on)}</small></span><p>{notification.title}</p><em>{notification.days_until_expiry < 0 ? `Échéance dépassée de ${Math.abs(notification.days_until_expiry)} jour(s)` : notification.days_until_expiry === 0 ? 'Échéance aujourd’hui' : `Échéance dans ${notification.days_until_expiry} jours`} <ChevronRight size={14} /></em></Link>)}</section> : null}
+                  {activePharmacyNotifications.length ? <section aria-label="Inventaire Pharmacie" className="topbar-notification-group"><h4>Pharmacie · échéance à 30 jours</h4>{activePharmacyNotifications.map((notification) => <Link key={notification.id} onClick={() => setIsNotificationsOpen(false)} to={pharmacyNotificationHref(notification)}><span><strong>{notification.vessel_name}</strong><small>{formatPharmacyDate(notification.expires_on)}</small></span><p>{notification.title}</p><em>{notification.days_until_expiry < 0 ? `Échéance dépassée de ${Math.abs(notification.days_until_expiry)} jour(s)` : notification.days_until_expiry === 0 ? 'Échéance aujourd’hui' : `Échéance dans ${notification.days_until_expiry} jours`} <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {canReceiveDisciplinary && disciplinaryNotifications.length ? <section aria-label="Sanctions disciplinaires" className="topbar-notification-group"><h4>Sanctions disciplinaires</h4>{disciplinaryNotifications.map((notification) => <Link key={notification.id} onClick={() => openDisciplinaryNotification(notification)} to={`/modules/disciplinary?case=${notification.case_id}&tab=review`}><span><strong>{notification.title}</strong><small>{formatServiceNoteDate(notification.created_at)}</small></span><em>Ouvrir la relecture <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {leaveNotifications.length ? <section aria-label="Demandes de congés" className="topbar-notification-group"><h4>Demandes de congés</h4>{leaveNotifications.map((notification) => <Link key={notification.id} onClick={() => openLeaveNotification(notification)} to="/modules/planning"><span><strong>{notification.title}</strong><small>{formatServiceNoteDate(notification.createdAt)}</small></span><p>{notification.body}</p><em>Voir le planning <ChevronRight size={14} /></em></Link>)}</section> : null}
                   {serviceNoteNotifications.length ? <section aria-label="Notes de service" className="topbar-notification-group"><h4>Notes de service</h4>{serviceNoteNotifications.map((notification) => <Link key={notification.noteId} to={`/modules/serviceNotes?note=${notification.noteId}`}><span><strong>{notification.chronologyCode}</strong><small>{formatServiceNoteDate(notification.publishedAt)}</small></span><p>{notification.subject}</p><em>Lire et signer <ChevronRight size={14} /></em></Link>)}</section> : null}
