@@ -1,6 +1,6 @@
 import { cloneElement, isValidElement, useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { AlertTriangle, Anchor, ArrowLeft, CheckCircle2, ChevronRight, ClipboardCheck, Compass, Eye, FileDown, FileText, Plus, Printer, Save, Search, Ship, Trash2 } from 'lucide-react';
+import { AlertTriangle, Anchor, ArrowLeft, CheckCircle2, ChevronRight, ClipboardCheck, Compass, Eye, FileDown, FileText, Map, Plus, Printer, Save, Search, Ship, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import type { AppShellOutletContext } from '../shell/AppShell';
@@ -297,7 +297,7 @@ export function SeaOperationsPage() {
   });
 
   return <div className="so-page"><div className="so-screen">
-    <header className="so-heading sp-module-header"><div className="so-title"><span className="so-icon"><Anchor size={26} /></span><div><span className="so-eyebrow">OPÉRATIONS · OPE-FOR-10-C</span><h1>Opération en Mer</h1><p>Préparer la mission, vérifier les conditions et consigner la décision du Capitaine.</p></div></div></header>
+    <header className="so-heading sp-module-header"><div className="so-title"><span className="so-icon"><Map size={26} /></span><div><span className="so-eyebrow">OPÉRATIONS · OPE-FOR-10-C</span><h1>Opération en Mer</h1><p>Préparer la mission, vérifier les conditions et consigner la décision du Capitaine.</p></div></div></header>
     <ModuleRibbon ariaLabel="Commandes Opération en Mer" singleRow><ModuleRibbonGroup label="Opérations"><ModuleRibbonCommand disabled={busy || !data} icon={<Plus size={22} />} label="Nouvelle opération" onClick={create} /></ModuleRibbonGroup></ModuleRibbon>
     {!editing && error && <div className="so-alert so-danger" tabIndex={-1} role="alert"><AlertTriangle size={19} /><span>{error}</span>{!data && <button onClick={() => { setError(''); void fetchSeaOperationData(client).then(applyData).catch((reason: unknown) => setError(errorMessage(reason))); }}>Réessayer</button>}</div>}
     {!editing && notice && <div className="so-alert so-success" role="status"><CheckCircle2 size={18} />{notice}</div>}
