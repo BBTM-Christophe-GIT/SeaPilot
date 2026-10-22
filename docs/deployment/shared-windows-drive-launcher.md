@@ -2,7 +2,15 @@
 
 ## Dossier partagé et raccourcis Google Drive (2.7)
 
-Un dossier présent dans **Partagés avec moi** doit être ajouté à **Mon Drive** par chaque compte destinataire : sur [Google Drive Web](https://drive.google.com), clic droit sur **SeaPilot** → **Organiser → Ajouter un raccourci → Mon Drive**. Google documente [l'ajout de ces raccourcis](https://support.google.com/drive/answer/2375057?hl=fr) et leur [présentation Windows sous forme de fichiers `.lnk`](https://support.google.com/drive/answer/10864219?hl=fr). Attendre Google Drive pour ordinateur, puis vérifier SeaPilot dans l'Explorateur avec le compte autorisé. Le partage du dossier ne crée pas automatiquement son entrée dans le lecteur local des destinataires.
+La procédure détaillée est affichée dans **Administration → Documents et Google Drive → 1 Connecter Google Drive**. Le partage ne suffit pas toujours à faire apparaître le dossier sur le PC : chaque compte destinataire doit ajouter un raccourci dans son **Mon Drive**.
+
+1. Installer Google Drive pour ordinateur et connecter le compte Google destinataire du partage.
+2. Ouvrir [Google Drive dans le navigateur](https://drive.google.com) avec ce même compte, puis cliquer sur **Partagés avec moi**.
+3. Faire un clic droit sur **SeaPilot** → **Organiser → Ajouter un raccourci**.
+4. Choisir **Mon Drive**, puis cliquer sur **Ajouter**.
+5. Attendre la synchronisation, puis ouvrir **Google Drive → Mon Drive** dans l'Explorateur Windows et vérifier que SeaPilot ou son raccourci apparaît.
+
+Si le dossier manque aussi dans **Partagés avec moi** sur le Web, vérifier l'adresse Google du destinataire dans le partage et ouvrir le lien direct fourni par le propriétaire. S'il apparaît sur le Web mais pas sur le PC, vérifier que Drive pour ordinateur utilise le même compte, puis redémarrer l'application. Le raccourci donne accès au dossier original et à ses mises à jour sans créer de copie. Google documente [l'ajout de ces raccourcis](https://support.google.com/drive/answer/2375057?hl=fr) et leur [présentation Windows sous forme de fichiers `.lnk`](https://support.google.com/drive/answer/10864219?hl=fr).
 
 Installer le lanceur **2.7.0** sur chaque PC concerné. Dans **Administration → Documents et Google Drive → Sélectionner le dossier dans Windows**, choisir **Choisir un dossier** ou **Choisir un raccourci (.lnk)** et sélectionner SeaPilot / SeaPilot.lnk. Le lanceur lit le lien Shell sans l'exécuter, suit également un parent Mon Drive / My Drive présenté comme un raccourci en [mode duplication](https://support.google.com/drive/answer/13401938?hl=fr), puis valide et prépare le dossier réel. L'option d'installation `-SeaPilotRoot` accepte les mêmes dossiers et raccourcis. Le dossier résolu est enregistré dans HKCU seulement après préparation réussie.
 

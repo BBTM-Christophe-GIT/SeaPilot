@@ -74,12 +74,15 @@
 }
 
 .admin-setup-steps { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; counter-reset: setup; }
-.admin-setup-steps li { display: flex; align-items: flex-start; gap: 16px; padding: 22px 0; border-top: 1px solid #e5ebf2; counter-increment: setup; }
-.admin-setup-steps li::before { display: grid; place-items: center; flex: 0 0 32px; height: 32px; border-radius: 50%; color: #0c5598; background: #edf5ff; font-weight: 750; content: counter(setup); }
-.admin-setup-steps li > div { min-width: 0; }
+.admin-setup-steps > li { display: flex; align-items: flex-start; gap: 16px; padding: 22px 0; border-top: 1px solid #e5ebf2; counter-increment: setup; }
+.admin-setup-steps > li::before { display: grid; place-items: center; flex: 0 0 32px; height: 32px; border-radius: 50%; color: #0c5598; background: #edf5ff; font-weight: 750; content: counter(setup); }
+.admin-setup-steps > li > div { min-width: 0; }
 .admin-setup-steps p, .admin-drive-usage p { margin: 8px 0 14px; color: #52647b; font-size: 0.9rem; line-height: 1.65; }
 .admin-setup-steps a { text-decoration: none; text-align: center; padding: 9px 14px; }
 .admin-setup-steps a svg { flex-shrink: 0; }
+.admin-drive-shared-steps { margin: 8px 0 16px; padding-left: 24px; color: var(--sp-muted); font-size: 0.9rem; line-height: 1.65; }
+.admin-drive-shared-steps > li + li { margin-top: 8px; }
+.admin-drive-shared-steps a { padding: 0; color: var(--sp-primary); text-decoration: underline; }
 .admin-drive-path code { overflow-wrap: anywhere; color: #253044; }
 .admin-drive-usage { padding: 20px; border: 1px solid #cde4d9; border-radius: 8px; background: #f4faf7; }
 .admin-drive-usage a { display: inline-flex; align-items: center; gap: 8px; color: #136c4b; font-weight: 700; }
@@ -93,7 +96,7 @@
   .admin-section-menu { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .admin-section-menu a { min-height: 88px; padding: 12px; font-size: 0.82rem; }
   .admin-panel { padding: 16px; }
-  .admin-setup-steps li { gap: 12px; }
+  .admin-setup-steps > li { gap: 12px; }
   .admin-setup-steps a { width: 100%; }
   .admin-drive-usage { padding: 16px; }
   .admin-users .admin-header-actions { flex-wrap: wrap; }

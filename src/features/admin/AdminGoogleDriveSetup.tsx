@@ -38,7 +38,19 @@ export function AdminGoogleDriveSetup({ client, previewMode = false }: { client:
   return <section className="admin-panel admin-drive-setup" aria-labelledby="admin-drive-title">
     <div className="admin-header"><div><p className="module-family">Documents et Google Drive</p><h2 id="admin-drive-title">Un seul dossier SeaPilot pour ce PC</h2><p className="admin-section-description">Configurez une fois la racine synchronisée. Tous les modules utilisent ensuite le même lanceur Windows.</p></div><span className="admin-platform-badge"><Monitor aria-hidden="true" size={16} />Windows</span></div>
     <ol className="admin-setup-steps">
-      <li><div><h3>Connecter Google Drive</h3><p>Le dossier SeaPilot doit être disponible dans l’Explorateur de fichiers de ce PC. S’il est dans « Partagés avec moi », ouvrez Google Drive sur le Web, puis choisissez Organiser → Ajouter un raccourci dans Mon Drive sur le dossier SeaPilot. Attendez sa synchronisation dans Google Drive pour ordinateur.</p><a className="admin-secondary-button" href="https://support.google.com/drive/answer/10838124?hl=fr" target="_blank" rel="noreferrer"><ExternalLink size={16} />Installer Google Drive</a><a className="admin-secondary-button" href="https://support.google.com/drive/answer/2375057?hl=fr" target="_blank" rel="noreferrer"><ExternalLink size={16} />Ajouter le dossier partagé à Mon Drive</a></div></li>
+      <li><div><h3>Connecter Google Drive</h3>
+        <p>Installez Google Drive pour ordinateur et connectez le compte Google auquel le dossier SeaPilot a été partagé. Le partage ne suffit pas toujours à faire apparaître le dossier sur votre PC : chaque utilisateur doit ajouter un raccourci dans son Mon Drive.</p>
+        <ol className="admin-drive-shared-steps">
+          <li>Ouvrez <a href="https://drive.google.com" target="_blank" rel="noreferrer">Google Drive dans le navigateur</a> avec <strong>le compte destinataire du partage</strong>.</li>
+          <li>Dans le menu à gauche, cliquez sur <strong>Partagés avec moi</strong> et repérez le dossier <strong>SeaPilot</strong>.</li>
+          <li>Faites un clic droit sur le dossier, puis choisissez <strong>Organiser → Ajouter un raccourci</strong>.</li>
+          <li>Sélectionnez <strong>Mon Drive</strong>, puis cliquez sur <strong>Ajouter</strong>.</li>
+          <li>Dans l’Explorateur de fichiers Windows, ouvrez <strong>Google Drive → Mon Drive</strong> et attendez la synchronisation : le dossier SeaPilot ou son raccourci doit apparaître.</li>
+        </ol>
+        <p>Le raccourci donne accès au dossier original et à ses mises à jour, sans créer de copie.</p>
+        <p><strong>Si le dossier n’apparaît toujours pas :</strong> s’il est absent de Partagés avec moi sur le Web, vérifiez l’adresse Google utilisée pour le partage et ouvrez le lien direct fourni par le propriétaire. S’il apparaît sur le Web mais pas sur le PC, vérifiez que Google Drive pour ordinateur utilise le même compte, puis redémarrez l’application.</p>
+        <div className="admin-root-actions"><a className="admin-secondary-button" href="https://support.google.com/drive/answer/10838124?hl=fr" target="_blank" rel="noreferrer"><ExternalLink size={16} />Installer Google Drive</a><a className="admin-secondary-button" href="https://support.google.com/drive/answer/2375057?hl=fr" target="_blank" rel="noreferrer"><ExternalLink size={16} />Ajouter le dossier partagé à Mon Drive</a></div>
+      </div></li>
       <li><div><h3>Installer le lanceur unique</h3><p>Extrayez l’archive puis exécutez <strong>Installer.cmd</strong> sur chaque PC. La version 2.7 accepte le dossier SeaPilot et les raccourcis Google Drive Windows (.lnk). Elle conserve toutes les fonctions de classement, d’ouverture et d’export PDF. Une mise à jour conserve le dossier déjà configuré.</p>
         <p>Version proposée au téléchargement : <strong>{LOCAL_DRIVE_DOWNLOAD_VERSION}</strong></p>
         <p role="status">Version installée sur ce PC : <strong>{installedVersion || (previewMode ? 'indisponible en préversion' : busy ? 'détection en cours…' : 'non détectée')}</strong></p>
