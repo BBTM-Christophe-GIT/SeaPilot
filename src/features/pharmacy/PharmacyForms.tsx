@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { FileUp } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { PharmacyIcon } from './PharmacyIcon';
-import { blankPharmacyItem, type PharmacyItem, type PharmacyItemDraft } from './pharmacyModel';
+import { blankPharmacyItem, pharmacyDotationLabel, type PharmacyItem, type PharmacyItemDraft } from './pharmacyModel';
 
-export function PharmacyItemForm({ item, categories, busy, error, onClose, onSave }: {
-  item?: PharmacyItem; categories: string[]; busy: boolean; error: string;
+export function PharmacyItemForm({ item, medicalDotation, categories, busy, error, onClose, onSave }: {
+  item?: PharmacyItem; medicalDotation?: string | null; categories: string[]; busy: boolean; error: string;
   onClose: () => void; onSave: (draft: PharmacyItemDraft) => void;
 }) {
-  const [draft, setDraft] = useState<PharmacyItemDraft>(() => item ? { ...item } : blankPharmacyItem());
+  const [draft, setDraft] = useState<PharmacyItemDraft>(() => item ? { ...item, medical_dotation: item.medical_dotation || '' } : { ...blankPharmacyItem(), medical_dotation: medicalDotation?.trim() || '' });
   const update = <K extends keyof PharmacyItemDraft>(key: K, value: PharmacyItemDraft[K]) => setDraft((old) => ({ ...old, [key]: value }));
   return <AppDialog title={item ? 'Modifier l’article' : 'Ajouter un article'} eyebrow="Inventaire Pharmacie" icon={<PharmacyIcon size={20} />} isBusy={busy} onClose={onClose} size="lg"
     description="Conservez les unités et conditionnements indiqués à bord. Les quantités en texte ne sont pas converties automatiquement."
@@ -16,7 +16,8 @@ export function PharmacyItemForm({ item, categories, busy, error, onClose, onSav
     footer={<div className="app-dialog__actions"><button className="is-secondary" disabled={busy} onClick={onClose} type="button">Annuler</button><button className="is-primary" disabled={busy} type="submit">{busy ? 'Enregistrement…' : 'Enregistrer'}</button></div>}>
     {error ? <p className="pharmacy-message is-error" role="alert">{error}</p> : null}
     <div className="pharmacy-form-grid">
-      <label>Section<input maxLength={300} value={draft.section} onChange={(event) => update('section', event.target.value)} /></label>
+      <label className="pharmacy-form-wide">Type de dotation médicale<input aria-label="Type de dotation médicale" readOnly value={pharmacyDotationLabel(draft.medical_dotation)} /><span className="pharmacy-field-help">{item ? 'Le type enregistré avec cet article est conservé.' : 'Le type est celui affecté au navire dans la Flotte.'}</span></label>
+      <label>Section d’origine<input maxLength={300} value={draft.section} onChange={(event) => update('section', event.target.value)} /></label>
       <label>Catégorie<input list="pharmacy-categories" maxLength={200} value={draft.category} onChange={(event) => update('category', event.target.value)} /><datalist id="pharmacy-categories">{categories.map((category) => <option key={category} value={category} />)}</datalist></label>
       <label className="pharmacy-form-wide">Désignation<input required maxLength={500} value={draft.designation} onChange={(event) => update('designation', event.target.value)} /></label>
       <label>Marque<input maxLength={200} value={draft.brand} onChange={(event) => update('brand', event.target.value)} /></label>

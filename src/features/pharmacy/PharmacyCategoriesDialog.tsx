@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Folders, Pencil, Plus, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
-import type { PharmacyCategory, PharmacyItem } from './pharmacyModel';
+import { pharmacyDotationKey, pharmacyDotationLabel, type PharmacyCategory, type PharmacyItem } from './pharmacyModel';
 
 interface Props {
   vesselName: string;
+  medicalDotation?: string;
   categories: PharmacyCategory[];
   items: PharmacyItem[];
   busy: boolean;
@@ -19,7 +20,7 @@ function failureMessage(reason: unknown) {
     ? String(reason.message) : 'La modification n’a pas pu être enregistrée. Réessayez.';
 }
 
-export function PharmacyCategoriesDialog({ vesselName, categories, items, busy, notice, onClose, onSave, onDelete }: Props) {
+export function PharmacyCategoriesDialog({ vesselName, medicalDotation = '', categories: allCategories, items: allItems, busy, notice, onClose, onSave, onDelete }: Props) {
   const [name, setName] = useState('');
   const [editing, setEditing] = useState<{ category: PharmacyCategory; name: string } | null>(null);
   const [removing, setRemoving] = useState<PharmacyCategory | null>(null);
@@ -28,6 +29,8 @@ export function PharmacyCategoriesDialog({ vesselName, categories, items, busy, 
   const inFlight = useRef(false);
   const mounted = useRef(true);
   const locked = busy || saving;
+  const categories = allCategories.filter((category) => pharmacyDotationKey(category.medical_dotation) === pharmacyDotationKey(medicalDotation));
+  const items = allItems.filter((item) => pharmacyDotationKey(item.medical_dotation) === pharmacyDotationKey(medicalDotation));
   const sorted = [...categories].sort((left, right) => left.name.localeCompare(right.name, 'fr', { numeric: true, sensitivity: 'base' }));
   const countFor = (category: PharmacyCategory) => items.filter((item) => keyOf(item.category) === keyOf(category.name));
 
@@ -40,7 +43,7 @@ export function PharmacyCategoriesDialog({ vesselName, categories, items, busy, 
     const trimmed = value.trim();
     if (!trimmed || trimmed.length > 200) { setError('Saisissez un nom de catégorie de 1 à 200 caractères.'); return null; }
     if (categories.some((category) => category.id !== current?.id && keyOf(category.name) === keyOf(trimmed))) {
-      setError('Une catégorie porte déjà ce nom sur ce navire.'); return null;
+      setError('Une catégorie porte déjà ce nom dans cette dotation.'); return null;
     }
     return trimmed;
   }
@@ -61,18 +64,18 @@ export function PharmacyCategoriesDialog({ vesselName, categories, items, busy, 
 
   if (removing) {
     const count = countFor(removing).length;
-    return <AppDialog key={`delete-${removing.id}`} title={`Supprimer la catégorie ${removing.name}`} eyebrow={`Inventaire Pharmacie · ${vesselName}`}
+    return <AppDialog key={`delete-${removing.id}`} title={`Supprimer la catégorie ${removing.name}`} eyebrow={`Inventaire Pharmacie · ${vesselName} · ${pharmacyDotationLabel(medicalDotation)}`}
       icon={<Trash2 aria-hidden="true" size={20} />} size="sm" isBusy={locked}
       description="La suppression d’une catégorie ne supprime aucun article."
       onClose={() => { if (!inFlight.current) { setRemoving(null); setError(''); } }}
       footer={<div className="app-dialog__actions"><button className="is-secondary" disabled={locked} onClick={() => { setRemoving(null); setError(''); }} type="button">Annuler</button><button className="is-danger" disabled={locked} onClick={() => void run(() => onDelete(removing), () => setRemoving(null))} type="button">{locked ? 'Suppression…' : 'Supprimer'}</button></div>}>
-      <p>Supprimer <strong>{removing.name}</strong> sur <strong>{vesselName}</strong> ?</p>
+      <p>Supprimer <strong>{removing.name}</strong> dans <strong>{pharmacyDotationLabel(medicalDotation)}</strong> sur <strong>{vesselName}</strong> ?</p>
       <p>{count} article{count > 1 ? 's' : ''}, y compris les articles retirés, {count > 1 ? 'seront classés' : 'sera classé'} dans <strong>Sans catégorie</strong>. Les articles et leur historique sont conservés.</p>
       {error ? <p className="pharmacy-message is-error" role="alert">{error}</p> : null}
     </AppDialog>;
   }
-  return <AppDialog key="categories" title="Gérer les catégories" eyebrow={`Inventaire Pharmacie · ${vesselName}`} icon={<Folders aria-hidden="true" size={20} />} size="lg" isBusy={locked}
-    description="Ajoutez, renommez ou supprimez les catégories de ce navire. Les effectifs comprennent les articles retirés."
+  return <AppDialog key="categories" title="Gérer les catégories" eyebrow={`Inventaire Pharmacie · ${vesselName} · ${pharmacyDotationLabel(medicalDotation)}`} icon={<Folders aria-hidden="true" size={20} />} size="lg" isBusy={locked}
+    description="Ajoutez, renommez ou supprimez les catégories de cette dotation. Les effectifs comprennent les articles retirés."
     onClose={() => { if (!inFlight.current) onClose(); }}
     footer={<div className="app-dialog__actions"><button className="is-secondary" disabled={locked} onClick={onClose} type="button">Fermer</button></div>}>
     {error ? <p className="pharmacy-message is-error" role="alert">{error}</p> : null}
@@ -97,6 +100,6 @@ export function PharmacyCategoriesDialog({ vesselName, categories, items, busy, 
           </>}
         </li>;
       })}
-    </ul> : <p className="pharmacy-category-empty">Aucune catégorie sur ce navire. Ajoutez votre première catégorie.</p>}
+    </ul> : <p className="pharmacy-category-empty">Aucune catégorie dans cette dotation. Ajoutez votre première catégorie.</p>}
   </AppDialog>;
 }

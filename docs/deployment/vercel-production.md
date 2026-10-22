@@ -1,5 +1,13 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.76.8`, build `2026-10-22.002`, ajoute la hiérarchie Pharmacie
+**Type de dotation médicale → Catégorie → Articles** et les filtres en cascade.
+Appliquer `20261022055745_pharmacy_dotation_hierarchy.sql` avant le frontend :
+elle expose l’affectation Flotte et ajoute un parent conservé aux articles et
+catégories. Les anciens clients gardent leurs signatures compatibles et les
+changements d’affectation ne déplacent pas les données historiques. Voir
+[le fonctionnement pharmacie](./pharmacy-inventory.md).
+
 Version `3.76.7`, build `2026-10-22.001`, ajoute **Gérer les catégories** dans
 l’inventaire pharmacie : création, renommage et suppression pour le navire
 sélectionné, selon ses droits existants. Les catégories vides sont persistées.

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { blankPharmacyItem, canManagePharmacy, formatPharmacyDate, groupPharmacyItems, pharmacyDaysUntil, pharmacyExpiryStatus, pharmacyStockStatus, pharmacyToday, selectPharmacyVessels, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
+import { blankPharmacyItem, canManagePharmacy, formatPharmacyDate, groupPharmacyItems, pharmacyDaysUntil, pharmacyDotationKey, pharmacyDotationLabel, pharmacyExpiryStatus, pharmacyStockStatus, pharmacyToday, selectPharmacyVessels, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
 
 describe('pharmacy dates and stock', () => {
   it('alerts inclusively at thirty days and retains expired dates', () => {
@@ -46,26 +46,36 @@ describe('pharmacy dates and stock', () => {
 describe('pharmacy inventory grouping', () => {
   const item = (id: number, section: string, category: string): PharmacyItem => ({ ...blankPharmacyItem(), id, company_id: 1, vessel_id: 4, section, category, designation: `Article ${id}`, revision: 1, source_file: '', source_sheet: '', source_row: null, updated_at: '' });
 
-  it('keeps sections in source order and sorts numbered categories naturally within each section', () => {
+  it('sorts numbered categories within a dotation and preserves each original source section', () => {
     const source = [item(1, 'MÉDICAMENTS', '10. DIVERS'), item(2, 'MATÉRIEL', '1. SOINS'),
       item(3, 'MÉDICAMENTS', '2. GASTRO'), item(4, 'MÉDICAMENTS', '1. CARDIOLOGIE'),
       item(5, 'MÉDICAMENTS', ''), item(6, 'MATÉRIEL', '2. GASTRO'), item(7, 'MÉDICAMENTS', '1. CARDIOLOGIE')];
     const groups = groupPharmacyItems(source);
     expect(groups.map(({ section, category }) => [section, category])).toEqual([
-      ['MÉDICAMENTS', '1. CARDIOLOGIE'], ['MÉDICAMENTS', '2. GASTRO'], ['MÉDICAMENTS', '10. DIVERS'], ['MÉDICAMENTS', 'Sans catégorie'],
-      ['MATÉRIEL', '1. SOINS'], ['MATÉRIEL', '2. GASTRO'],
+      ['MÉDICAMENTS', '1. CARDIOLOGIE'], ['MATÉRIEL', '1. SOINS'], ['', '2. GASTRO'], ['MÉDICAMENTS', '10. DIVERS'], ['MÉDICAMENTS', 'Sans catégorie'],
     ]);
     expect(groups[0].items.map(({ id }) => id)).toEqual([4, 7]);
-    expect(groups[1].items[0]).toBe(source[2]);
+    expect(groups[2].items.map(({ section }) => section)).toEqual(['MÉDICAMENTS', 'MATÉRIEL']);
     expect(source.map(({ id }) => id)).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
 
-  it('keeps identical category names in different sections separate and avoids delimiter collisions', () => {
-    const groups = groupPharmacyItems([item(1, 'Section A', '1. SOINS'), item(2, 'Section B', '1. SOINS'),
-      item(3, 'A::B', 'C'), item(4, 'A', 'B::C')]);
+  it('separates identical names under different dotations and avoids delimiter collisions', () => {
+    const groups = groupPharmacyItems([{ ...item(1, 'Section A', '1. SOINS'), medical_dotation: 'Dotation B' }, { ...item(2, 'Section B', '1. SOINS'), medical_dotation: 'Dotation C' },
+      { ...item(3, '', 'C'), medical_dotation: 'A::B' }, { ...item(4, '', 'B::C'), medical_dotation: 'A' }]);
     expect(groups).toHaveLength(4);
     expect(new Set(groups.map(({ key }) => key)).size).toBe(4);
-    expect(groups.slice(0, 2).map(({ items }) => items.map(({ id }) => id))).toEqual([[1], [2]]);
+    expect(groups.find(({ medical_dotation }) => medical_dotation === 'Dotation B')?.items.map(({ id }) => id)).toEqual([1]);
+    expect(groups.find(({ medical_dotation }) => medical_dotation === 'Dotation C')?.items.map(({ id }) => id)).toEqual([2]);
+  });
+
+  it('uses an explicit fleet snapshot instead of guessing a type from a source section', () => {
+    const first = { ...item(1, 'DOTATION C RESTREINTE - MÉDICAMENTS', '1. SOINS'), medical_dotation: 'Dotation B' };
+    const groups = groupPharmacyItems([first, { ...first, id: 2, section: 'MATÉRIEL', medical_dotation: ' dotation b ' }]);
+    expect(groups).toHaveLength(1); expect(groups[0].items).toHaveLength(2);
+    expect(groups[0].medical_dotation).toBe('Dotation B');
+    expect(pharmacyDotationKey(' Dotation B ')).toBe('dotation b');
+    expect(pharmacyDotationLabel(undefined)).toBe('Dotation non renseignée');
+    expect(pharmacyDotationLabel(' Dotation B ')).toBe('Dotation B');
   });
 
   it('labels blank categories consistently and handles an empty inventory', () => {

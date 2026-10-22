@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RoleKey } from '../permissions/roles';
 import { fetchPharmacyNotifications } from '../pharmacy/pharmacyQueries';
@@ -20,8 +20,12 @@ vi.mock('../disciplinary/disciplinaryWorkflow', () => ({ fetchDisciplinaryNotifi
 vi.mock('../pharmacy/pharmacyQueries', () => ({ fetchPharmacyNotifications: vi.fn() }));
 
 const notices = [{ id: 'control-1', kind: 'control' as const, vessel_id: 4, vessel_name: 'SUROIT', title: 'Contrôle Pharmacie', expires_on: '2026-10-19', days_until_expiry: -1, item_id: null }];
+function PharmacyDestination() {
+  const location = useLocation();
+  return <><div>Pharmacie ouverte</div><output aria-label="Cible Pharmacie">{location.search}</output></>;
+}
 function renderShell() {
-  return render(<MemoryRouter><Routes><Route element={<AppShell client={{} as never} />}><Route index element={<div>Accueil</div>} /><Route path="modules/pharmacy" element={<div>Pharmacie ouverte</div>} /></Route></Routes></MemoryRouter>);
+  return render(<MemoryRouter><Routes><Route element={<AppShell client={{} as never} />}><Route index element={<div>Accueil</div>} /><Route path="modules/pharmacy" element={<PharmacyDestination />} /></Route></Routes></MemoryRouter>);
 }
 
 describe('pharmacy expiry notifications', () => {
@@ -35,6 +39,16 @@ describe('pharmacy expiry notifications', () => {
     await user.click(link);
     expect(await screen.findByText('Pharmacie ouverte')).toBeInTheDocument();
     // Opening an alert must not dismiss an unresolved expired control.
+    expect(screen.getByRole('button', { name: /Notifications, 1 élément/ })).toBeInTheDocument();
+  });
+  it('retains the exact historical article target when opening an expiry alert', async () => {
+    vi.mocked(fetchPharmacyNotifications).mockResolvedValue([{ ...notices[0], id: 'item-42', kind: 'item', item_id: 42, title: 'Article historique B' }]);
+    const user = userEvent.setup(); renderShell();
+    await user.click(await screen.findByRole('button', { name: /Notifications, 1 élément/ }));
+    const link = screen.getByRole('link', { name: /SUROIT.*Article historique B/ });
+    expect(link).toHaveAttribute('href', '/modules/pharmacy?vessel=4&filter=expiry&item=42');
+    await user.click(link);
+    expect(await screen.findByLabelText('Cible Pharmacie')).toHaveTextContent('?vessel=4&filter=expiry&item=42');
     expect(screen.getByRole('button', { name: /Notifications, 1 élément/ })).toBeInTheDocument();
   });
   it('does not fetch alerts when the pharmacy module is hidden', async () => {

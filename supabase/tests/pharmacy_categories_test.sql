@@ -26,7 +26,7 @@ begin
   assert not has_table_privilege('authenticated','public.pharmacy_categories','INSERT'), 'Direct category insertion is denied';
   assert not has_table_privilege('authenticated','public.pharmacy_categories','UPDATE'), 'Direct category updates cannot bypass CAS';
   assert not has_table_privilege('authenticated','public.pharmacy_categories','DELETE'), 'Direct category deletion cannot bypass RPC rules';
-  assert not has_function_privilege('anon','public.save_pharmacy_category(bigint,text,bigint,integer)','EXECUTE'), 'Anonymous category writes are denied';
+  assert not has_function_privilege('anon','public.save_pharmacy_category(bigint,text,bigint,integer,text)','EXECUTE'), 'Anonymous category writes are denied';
   assert not has_function_privilege('anon','public.delete_pharmacy_category(bigint,bigint,integer)','EXECUTE'), 'Anonymous category deletion is denied';
 
   insert into public.companies(code,name) values('pharmacy-cat-test','Pharmacy categories fixture') returning id into c;

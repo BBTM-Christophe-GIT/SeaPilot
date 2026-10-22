@@ -5,9 +5,9 @@ import { blankPharmacyItem, type PharmacyCategory, type PharmacyItem } from './p
 
 const category: PharmacyCategory = { id: 1, company_id: 1, vessel_id: 2, name: '2. SOINS', revision: 3, created_at: '', updated_at: '' };
 const item: PharmacyItem = { ...blankPharmacyItem(), id: 10, company_id: 1, vessel_id: 2, category: '2. SOINS', designation: 'Article conservé', revision: 2, source_file: 'Source.xlsx', source_sheet: 'Feuille', source_row: 1, updated_at: '' };
-function show({ categories = [category], items = [item], busy = false }: { categories?: PharmacyCategory[]; items?: PharmacyItem[]; busy?: boolean } = {}) {
+function show({ categories = [category], items = [item], busy = false, medicalDotation = '', notice = '' }: { categories?: PharmacyCategory[]; items?: PharmacyItem[]; busy?: boolean; medicalDotation?: string; notice?: string } = {}) {
   const onSave = vi.fn().mockResolvedValue(undefined); const onDelete = vi.fn().mockResolvedValue(undefined); const onClose = vi.fn();
-  const view = render(<PharmacyCategoriesDialog vesselName="SUROIT" categories={categories} items={items} busy={busy} notice="" onSave={onSave} onDelete={onDelete} onClose={onClose} />);
+  const view = render(<PharmacyCategoriesDialog vesselName="SUROIT" medicalDotation={medicalDotation} categories={categories} items={items} busy={busy} notice={notice} onSave={onSave} onDelete={onDelete} onClose={onClose} />);
   return { onSave, onDelete, onClose, ...view };
 }
 describe('PharmacyCategoriesDialog', () => {
@@ -20,7 +20,7 @@ describe('PharmacyCategoriesDialog', () => {
   });
   it('shows an empty catalogue and trims a name before adding an empty category', async () => {
     const test = show({ categories: [], items: [] });
-    expect(screen.getByText(/Aucune catégorie sur ce navire/)).toBeInTheDocument();
+    expect(screen.getByText(/Aucune catégorie dans cette dotation/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Nouvelle catégorie'), { target: { value: '  TROUSSE VIDE  ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Ajouter' }));
     await screen.findByLabelText('Nouvelle catégorie');
@@ -94,5 +94,34 @@ describe('PharmacyCategoriesDialog', () => {
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' }); expect(test.onClose).not.toHaveBeenCalled();
     await act(async () => { finish(); });
     expect(add).toBeEnabled();
+  });
+  it('limits the catalogue, counts and confirmation to the captured parent even when another type has the same category', async () => {
+    const selected = { ...category, medical_dotation: 'Dotation C' };
+    const other = { ...category, id: 2, medical_dotation: 'Dotation B' };
+    const test = show({ medicalDotation: 'Dotation C', categories: [selected, other, { ...other, id: 3, name: 'AUTRE B' }], items: [{ ...item, medical_dotation: 'Dotation C' }, { ...item, id: 11, medical_dotation: 'Dotation B' }] });
+    expect(screen.getByRole('dialog')).toHaveTextContent('SUROIT · Dotation C');
+    expect(screen.getAllByRole('button', { name: 'Renommer 2. SOINS' })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Renommer AUTRE B' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Supprimer 2. SOINS' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('1 article, y compris les articles retirés');
+    expect(screen.getByRole('dialog')).toHaveTextContent('dans Dotation C sur SUROIT');
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Supprimer' }));
+    await act(async () => {});
+    expect(test.onDelete).toHaveBeenCalledExactlyOnceWith(selected);
+  });
+  it('allows a name used in another dotation and never falls back to that parent catalogue', async () => {
+    const test = show({ medicalDotation: 'Dotation C', categories: [{ ...category, medical_dotation: 'Dotation B' }] });
+    expect(screen.getByText(/Aucune catégorie dans cette dotation/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Nouvelle catégorie'), { target: { value: category.name } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter' }));
+    await act(async () => {});
+    expect(test.onSave).toHaveBeenCalledExactlyOnceWith(category.name, undefined);
+  });
+  it('hides an earlier success notice when validation reports an error', () => {
+    show({ notice: 'Catégorie enregistrée.' });
+    expect(screen.getByRole('status')).toHaveTextContent('Catégorie enregistrée.');
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('1 à 200 caractères');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

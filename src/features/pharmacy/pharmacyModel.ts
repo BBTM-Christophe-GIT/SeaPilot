@@ -3,10 +3,13 @@ import { compareFleetAssets, normalizeFleetName } from '../fleet/fleetDisplay';
 
 export const PHARMACY_ALERT_DAYS = 30;
 export type PharmacyExpiryPrecision = 'day' | 'month' | 'unknown';
-export interface PharmacyVessel { id: number; company_id: number; name: string; acronym: string; can_manage: boolean; length_overall?: string | number | null }
+export interface PharmacyVessel { id: number; company_id: number; name: string; acronym: string; can_manage: boolean; length_overall?: string | number | null; medical_dotation?: string | null }
+export function pharmacyDotationKey(value: string | null | undefined): string { return (value || '').trim().toLocaleLowerCase('fr'); }
+export function pharmacyDotationLabel(value: string | null | undefined): string { return (value || '').trim() || 'Dotation non renseignée'; }
 export interface PharmacyCategory {
   id: number; company_id: number; vessel_id: number; name: string; revision: number;
   created_at: string; updated_at: string;
+  medical_dotation?: string;
 }
 export function selectPharmacyVessels(vessels: PharmacyVessel[]): PharmacyVessel[] {
   const normalized = (value: string) => normalizeFleetName(value).replace(/[^A-Z0-9]/g, '');
@@ -19,8 +22,9 @@ export interface PharmacyItem {
   expires_on: string | null; expiry_text: string; expiry_precision: PharmacyExpiryPrecision;
   notes: string; active: boolean; revision: number; source_file: string; source_sheet: string;
   source_row: number | null; updated_at: string;
+  medical_dotation?: string;
 }
-export type PharmacyItemDraft = Pick<PharmacyItem, 'section' | 'category' | 'brand' | 'designation' | 'lot_number' | 'quantity' | 'required_quantity' | 'expires_on' | 'expiry_text' | 'expiry_precision' | 'notes' | 'active'>;
+export type PharmacyItemDraft = Pick<PharmacyItem, 'section' | 'category' | 'brand' | 'designation' | 'lot_number' | 'quantity' | 'required_quantity' | 'expires_on' | 'expiry_text' | 'expiry_precision' | 'notes' | 'active' | 'medical_dotation'>;
 export interface PharmacyControl {
   id: number; company_id: number; vessel_id: number; issued_on: string | null; expires_on: string;
   storage_path: string; file_name: string; file_size: number; mime_type: string;
@@ -30,27 +34,34 @@ export interface PharmacyNotification {
   id: string; kind: 'item' | 'control'; vessel_id: number; vessel_name: string; title: string;
   expires_on: string; days_until_expiry: number; item_id: number | null;
 }
+export function pharmacyNotificationHref(notification: PharmacyNotification): string {
+  const route = `/modules/pharmacy?vessel=${notification.vessel_id}&filter=expiry`;
+  return notification.kind === 'item' && notification.item_id != null ? `${route}&item=${notification.item_id}` : route;
+}
 export type PharmacyVesselExpiryCounts = { due: number; expired: number };
-export interface PharmacyItemGroup { key: string; section: string; category: string; items: PharmacyItem[] }
+export interface PharmacyItemGroup { key: string; section: string; medical_dotation: string; category: string; items: PharmacyItem[] }
 
 export function groupPharmacyItems(items: PharmacyItem[]): PharmacyItemGroup[] {
-  const sections = new Map<string, Map<string, PharmacyItemGroup>>();
+  const dotations = new Map<string, Map<string, PharmacyItemGroup>>();
   for (const item of items) {
     const section = item.section.trim();
+    const dotation = (item.medical_dotation || '').trim();
+    const dotationKey = pharmacyDotationKey(dotation);
     const category = item.category.trim() || 'Sans catégorie';
-    let categories = sections.get(section);
+    let categories = dotations.get(dotationKey);
     if (!categories) {
       categories = new Map();
-      sections.set(section, categories);
+      dotations.set(dotationKey, categories);
     }
     let group = categories.get(category);
     if (!group) {
-      group = { key: JSON.stringify([section, category]), section, category, items: [] };
+      group = { key: JSON.stringify([dotationKey, category]), section, medical_dotation: dotation, category, items: [] };
       categories.set(category, group);
     }
+    if (group.section !== section) group.section = '';
     group.items.push(item);
   }
-  return [...sections.values()].flatMap((categories) => [...categories.values()]
+  return [...dotations.entries()].sort(([a], [b]) => a.localeCompare(b, 'fr', { numeric: true })).flatMap(([, categories]) => [...categories.values()]
     .sort((a, b) => a.category.localeCompare(b.category, 'fr', { numeric: true, sensitivity: 'base' })));
 }
 export function canManagePharmacy(roles: RoleKey[]): boolean {

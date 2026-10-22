@@ -24,16 +24,77 @@
   flex: none;
 }
 
+.pharmacy-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: var(--sp-space-2);
+}
+
+.pharmacy-filter-field {
+  display: grid;
+  min-width: 0;
+  gap: var(--sp-space-1);
+  color: var(--sp-muted);
+  font-size: 12px;
+}
+
+.pharmacy-filter-field select {
+  min-height: var(--sp-control-height);
+}
+
+.pharmacy-filters .pharmacy-search {
+  grid-column: 1 / -1;
+}
+
+.pharmacy-table .pharmacy-dotation-row>th {
+  position: static;
+  width: auto;
+  padding: var(--sp-space-3);
+  background: var(--sp-surface-subtle);
+  border-bottom: 1px solid var(--sp-border-strong);
+  color: var(--sp-text);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.pharmacy-dotation-row span,
+.pharmacy-dotation-row strong {
+  display: block;
+}
+
+.pharmacy-dotation-row span {
+  margin-bottom: var(--sp-space-1);
+  color: var(--sp-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.pharmacy-dotation-row strong {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.pharmacy-form-grid input[readonly] {
+  background: var(--sp-surface-subtle);
+  color: var(--sp-muted);
+}
+
 .pharmacy-table .pharmacy-category-row>th {
   position: static;
   width: auto;
   padding: 8px 14px;
+  padding-inline-start: var(--sp-space-6);
   border-top: 1px solid #d5e4e6;
   border-bottom: 1px solid #d5e4e6;
   background: #e9f3f1;
   color: #245b54;
   text-transform: none;
   letter-spacing: 0;
+}
+
+.pharmacy-table tbody td:first-child {
+  padding-inline-start: calc(2 * var(--sp-space-4));
 }
 
 .pharmacy-category-row th>div {
@@ -179,6 +240,12 @@
 }
 
 @media (pointer: coarse) {
+  .pharmacy-filter-field select,
+  .pharmacy-filters .pharmacy-search input,
+  .pharmacy-form-grid input[readonly] {
+    min-height: 44px;
+  }
+
   .pharmacy-table.has-row-actions thead th:last-child {
     width: calc(88px + 3 * var(--sp-space-1));
   }
@@ -216,6 +283,14 @@
 }
 
 @media(max-width: 760px) {
+  .pharmacy-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pharmacy-dotation-filter {
+    grid-column: 1 / -1;
+  }
+
   .pharmacy-vessel-bar {
     min-height: 0;
   }
