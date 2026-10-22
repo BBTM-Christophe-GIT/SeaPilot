@@ -386,3 +386,81 @@ mouvements et marges de l’armement. La proximité d’un point sur un MNT ouve
 une hauteur de marée approximative ne suffisent pas. Le volet repliable Profondeur,
 marée et calcul de l’UKC expose ces références dans la fiche sans fabriquer une
 valeur d’UKC.
+
+### Cartes SHOM retrouvées par coordonnées — v3.77.3
+
+Dans Passage Plan, `SeaOperationChartsPanel` recherche automatiquement les cartes
+papier du catalogue SHOM aux coordonnées WGS84 de chaque waypoint. Les coordonnées
+décimales et degrés/minutes/secondes utilisent le parseur commun ; aucune ETA
+n’est nécessaire. Les cinq références les plus détaillées sont visibles en
+premier, les autres restent accessibles dans un volet repliable. Chaque résultat
+donne le numéro exact (y compris un zéro initial), le titre, l’échelle et un lien
+de recherche vers le catalogue officiel. « Ajouter à la fiche » complète le champ
+des cartes sans écraser les références saisies ; les numéros retenus suivent
+l’enregistrement et l’export habituels. Les résultats consultés en direct ne sont
+pas ajoutés silencieusement à une fiche, ni à son historique signé.
+
+`/api/sea-operation-charts` vérifie le compte réel et
+`sea_operation_project_documents` pour le projet sélectionné avant toute
+consultation, y compris lorsque le provider dispose déjà d’un cache. Les droits
+du module, de la société active et du projet suivent donc les contrôles existants
+des cinq profils. Ajouter exige le droit d’édition de la fiche ; la consultation
+et sa relance restent disponibles en lecture seule, hors du fieldset désactivé.
+Aucune migration, clé SHOM ou nouvelle dépendance n’est requise. La démonstration
+anonyme exige `VERCEL_ENV=preview` côté serveur et `?preview=1` sur l’API.
+
+Le provider serveur interroge le [WFS officiel](https://services.data.shom.fr/INSPIRE/wfs)
+2.0, les quatre couches `GRILLES_CARTES_PAPIER:grille_cartespapier_30`,
+`_30_300`, `_300_800`, `_800`, par filtre FES `Intersects(geometry, Point)` en
+CRS84 (longitude puis latitude). Le point est aussi vérifié dans les polygones
+GeoJSON, en respectant les trous et cadres disjoints. Un simple BBOX aurait ajouté
+des faux positifs au test Brest. Les emprises restent celles déclarées dans le
+catalogue : certaines cartes générales ou projections spéciales ont de très
+grands rectangles ; cette recherche n’établit ni la pertinence nautique de toutes
+les références ni la couverture continue de la route entre les points.
+
+Les requêtes sont temporisées et annulées lors d’un changement de projet ou de
+point ; les réponses périmées restent masquées. Deux points sont traités en
+parallèle. Le serveur limite à 30 appels/minute/acteur et quatre requêtes actives
+par instance. Le cache provider conserve 128 positions pendant une heure, avec
+mutualisation des téléchargements et 16 recherches en cours au plus. Chaque couche
+est bornée à 64 objets, 2 Mo et 12 secondes. Une couche en erreur, un résultat
+tronqué ou un GeoJSON invalide provoque une erreur explicite, jamais une fausse
+absence de cartes. Les URLs et couches sont fixes, aucun hôte n’est fourni par le
+navigateur. Le corps entrant est lu en flux avec un plafond de 4 Ko.
+
+Essai réel le 23 octobre 2026 à Brest (48,36 N ; 4,53 O) : les quatre couches
+répondent HTTP 200 en 0,66 seconde, avec 19 références dédupliquées ; les premières
+sont 7399, 7398, 7400, 7401 et 7148. Une deuxième consultation utilise le cache.
+Les éditions et corrections des cartes doivent toujours être vérifiées dans le
+catalogue ; le service ne télécharge ni image complète de carte ni sonde.
+
+### État de la recherche UKC automatique
+
+Le [service public ncWMS SHOM](https://services.data.shom.fr/ncwms2/wms?service=WMS&version=1.3.0&request=GetCapabilities)
+expose les hauteurs TOLOSA `ssh`, marée et surcote réunies, au niveau moyen du
+modèle, et leurs heures réellement disponibles. Le test Brest du 23 octobre à
+00 UTC retourne 1,73138094 m ; les mailles masquées restent sans valeur. Les
+variables de profondeur native ne sont pas publiées dans ce service.
+
+Les archives du MNT façade HOMONIM sont accessibles, environ 464 Mo pour la
+version PBMA testée, mais la couche WMS testée n’offre pas de profondeur numérique
+par `GetFeatureInfo`. Une extraction géographique nécessite un prétraitement
+hors ligne. Surtout, l’égalité de réalisation entre le NM de cette archive et
+celui de TOLOSA n’est pas établie. La notice publique CRV mentionne encore HYCOM ;
+son incertitude de conversion ne représente pas l’erreur totale de TOLOSA.
+
+Le [descriptif SHOM du MNT, §5.1](https://services.data.shom.fr/static/specifications/Descriptif_Contenu_MNT_facade_2020.pdf)
+exclut la navigation. Son ordre de grandeur d’incertitude, 1 % de la maille, ne
+constitue ni écart-type, ni intervalle de couverture à 95 %, ni borne garantie.
+La [présentation SHOM TOLOSA de juillet 2024](https://refmar.shom.fr/sites/default/files/2024-07/J3-14h15-14h45_Didier_JOURDAN.pdf)
+présente des statistiques de validation multi-stations ; elles ne qualifient pas
+l’incertitude d’une prévision ponctuelle à chaque ETA. Le tirant du module Navires
+reste une référence, sans précision ni état de chargement attachés.
+
+L’UKC automatique n’est donc pas activé par cette livraison. Pour une estimation
+avec incertitude justifiable, il reste à disposer d’une profondeur numérique
+appropriée, du raccordement vertical vérifié et d’un budget explicitant tirant
+réel, marée, fond, position, squat et mouvements. Aucun zéro, marge arbitraire ou
+intervalle de confiance inventé ne remplace ces données manquantes. Les cartes
+retrouvées ne fournissent pas ces sondes par leur seule emprise.

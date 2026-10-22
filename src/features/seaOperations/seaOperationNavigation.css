@@ -1,4 +1,5 @@
 .so-radio-panel,
+.so-charts-panel,
 .so-weather-panel {
   min-width: 0;
   margin-top: 16px;
@@ -7,6 +8,7 @@
   container-type: inline-size;
 }
 .so-radio-panel h3,
+.so-charts-panel h3,
 .so-weather-panel h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
 .so-radio-panel h4,
 .so-weather-panel h4 { margin: 12px 0 8px; }
@@ -47,12 +49,24 @@
 .so-hydro-sources ul { padding-left: 18px; margin: 8px 0; }
 .so-hydro-sources li { margin: 8px 0; line-height: 1.5; }
 .so-radio-panel a,
+.so-charts-panel a,
 .so-weather-panel a,
 .so-hydro-sources a { color: var(--sp-primary); text-decoration: underline; overflow-wrap: anywhere; }
 .so-radio-panel a:focus-visible,
+.so-charts-panel a:focus-visible,
 .so-weather-panel a:focus-visible,
 .so-hydro-sources summary:focus-visible,
 .so-hydro-sources a:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; }
 @container (min-width: 380px) {
   .so-weather-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.so-chart-points, .so-chart-list { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 8px; }
+.so-chart-points > li { min-width: 0; border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); padding: 8px 10px; }
+.so-chart-points summary { cursor: pointer; color: var(--sp-primary); font-weight: 600; }
+.so-chart-list > li { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px; background: var(--sp-canvas); border-radius: var(--sp-control-radius); }
+.so-chart-list > li > div { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+.so-chart-list small { display: block; margin-top: 3px; color: var(--sp-muted); }
+.so-chart-list button { font-size: 11px; }
+.so-editor-form-pane > .so-charts-panel { padding: 16px; background: var(--sp-surface); border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); }
+.so-chart-points summary:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; }
+.so-other-charts { margin: 8px 0; }

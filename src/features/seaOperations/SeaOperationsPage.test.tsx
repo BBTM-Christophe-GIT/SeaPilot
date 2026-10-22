@@ -9,6 +9,7 @@ import { SeaOperationsPage } from './SeaOperationsPage';
 import { fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries';
 
 const weatherPanelMock = vi.hoisted(() => vi.fn());
+const chartsPanelMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./seaOperationQueries', () => ({
   fetchSeaOperationData: vi.fn(), fetchSeaOperationDetail: vi.fn(), saveSeaOperation: vi.fn(), signSeaOperation: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock('./seaOperationQueries', () => ({
 vi.mock('./seaOperationPdf', () => ({ exportSeaOperationPdf: vi.fn() }));
 vi.mock('./seaOperationDocumentQueries', () => ({ fetchSeaOperationProjectDocuments: vi.fn(), createSeaOperationProjectDocumentUrl: vi.fn() }));
 vi.mock('./SeaOperationWeatherPanel', () => ({ SeaOperationWeatherPanel: (props: Record<string, unknown>) => { weatherPanelMock(props); return null; } }));
+vi.mock('./SeaOperationChartsPanel', () => ({ SeaOperationChartsPanel: (props: Record<string, unknown>) => { chartsPanelMock(props); return <div data-testid="sea-charts-panel" />; } }));
 
 const captainAccount = { id: 'captain-server-account', name: 'Camille MARTIN', canSign: true };
 const sailorAccount = { id: 'sailor-server-account', name: 'Alex DUPONT', canSign: false };
@@ -178,6 +180,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     fireEvent.change(formQueries().getByLabelText('Longitude · point 1'), { target: { value: '-1.62' } });
     fireEvent.change(formQueries().getByLabelText('ETA · date et heure · point 1'), { target: { value: '2026-10-22T14:30' } });
     expect(weatherPanelMock).toHaveBeenLastCalledWith(expect.objectContaining({ client, projectId: mission.projectId, preview: true, active: true, waypoints: [expect.objectContaining({ latitude: '49.65', longitude: '-1.62', eta: '2026-10-22T14:30' })] }));
+    expect(chartsPanelMock).toHaveBeenLastCalledWith(expect.objectContaining({ client, projectId: mission.projectId, preview: true, active: true, canEdit: true, charts: draft.charts, waypoints: [expect.objectContaining({ latitude: '49.65', longitude: '-1.62' })] }));
     expect(saveSeaOperation).not.toHaveBeenCalled();
   });
 
@@ -188,6 +191,17 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await userEvent.click(stepButton(2));
     expect(formQueries().getByLabelText('Tirant d’eau de référence (m)')).toHaveValue(null);
     expect(formQueries().getByText('Renseignez le tirant d’eau du navire dans le module Navires.')).toBeVisible();
+  });
+
+  it('keeps the SHOM consultation outside disabled signed fields and forbids adding references', async () => {
+    const record = recordFixture(captainAccount, { status: 'signed', canEdit: false, canSign: false, signedBy: captainAccount.id, signedByName: captainAccount.name, signedAt: '2026-10-16T09:15:00Z' });
+    renderAccount(captainAccount, record);
+    await openRecord(record);
+    await userEvent.click(stepButton(2));
+    expect(chartsPanelMock).toHaveBeenLastCalledWith(expect.objectContaining({ canEdit: false }));
+    expect(formQueries().getByTestId('sea-charts-panel').closest('fieldset')).toBeNull();
+    expect(formQueries().getByLabelText('Numéro de la ou des cartes marines')).toBeDisabled();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
   });
 
   it('repairs an incomplete draft captain identity from Planning and requires its attestation again', async () => {
