@@ -1,5 +1,14 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.5`, build `2026-10-23.003`, ajoute automatiquement au Passage Plan
+tous les numéros de cartes SHOM identifiés aux points de passage, après la fin
+des recherches, sans clic et sans doublon. Le séparateur est **« - »** : les
+références manuelles sont conservées et les anciens séparateurs sont harmonisés
+lors de l’ajout. Les fiches signées ou en lecture seule ne sont pas modifiées.
+Le champ des cartes conserve son enregistrement et son export PDF habituels.
+Aucune migration, configuration ni nouvelle note de mise à jour n’est ajoutée.
+Voir [le fonctionnement des cartes](./sea-operations.md#cartes-shom-retrouvées-par-coordonnées-et-ajout-automatique--v3775).
+
 Version `3.77.4`, build `2026-10-23.002`, publie **Opérations → Opération en Mer**
 avec sa note de mise à jour pour les cinq profils. Les nouvelles préparations
 initialisent Remorquage, Chargement de marchandise, Navire de support de plongeur

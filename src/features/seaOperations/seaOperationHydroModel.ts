@@ -11,9 +11,16 @@ export function isShomChart(value: unknown): value is ShomChart {
     && chart.catalogueUrl === `https://diffusion.shom.fr/catalogsearch/result/?q=${chart.number}`;
 }
 
-/** Preserve manually retained chart references and make repeated additions idempotent. */
-export function addShomChartReference(value: string, number: string): string {
-  if (!/^\d{1,8}$/.test(number)) return value;
-  if (value.split(/[^A-Za-z0-9]+/).some((token) => token === number)) return value;
-  return value.trim() ? `${value.trim()}; ${number}` : number;
+/** Preserve manual references and merge identified numbers in waypoint order. */
+export function addShomChartReferences(value: string, numbers: readonly string[]): string {
+  const valid = numbers.filter((number) => /^\d{1,8}$/.test(number));
+  if (!valid.length) return value;
+  const references = value.split(/\s*;\s*|\s+-\s+/).map((reference) => reference.trim()).filter(Boolean);
+  const retained = new Set(references.join(' ').split(/[^A-Za-z0-9]+/));
+  for (const number of valid) {
+    if (retained.has(number)) continue;
+    references.push(number);
+    retained.add(number);
+  }
+  return references.join(' - ');
 }
