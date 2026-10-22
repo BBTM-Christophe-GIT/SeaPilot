@@ -1,20 +1,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Map, RefreshCw } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import { seaWaypointPosition } from './seaOperationNavigation';
 import { fetchSeaOperationPointCharts, type SeaOperationPointCharts } from './seaOperationChartQueries';
-import { addShomChartReference, type ShomChart } from './seaOperationHydroModel';
+import { addShomChartReferences, type ShomChart } from './seaOperationHydroModel';
 import './seaOperationNavigation.css';
 
 interface Props { client: SupabaseClient; projectId: string; waypoints: readonly SeaOperationWaypoint[]; charts: string; onChartsChange: (value: string) => void; canEdit?: boolean; preview?: boolean; active?: boolean }
 type Result = { lookup?: SeaOperationPointCharts; error?: string };
 
-function ChartList({ matches, charts, canEdit, onChartsChange }: { matches: ShomChart[]; charts: string; canEdit: boolean; onChartsChange: (value: string) => void }) {
-  return <ul className="so-chart-list">{matches.map((chart) => {
-    const retained = addShomChartReference(charts, chart.number) === charts;
-    return <li key={chart.id}><div><a href={chart.catalogueUrl} target="_blank" rel="noopener noreferrer">{chart.number} · {chart.title}</a><small>Échelle 1:{new Intl.NumberFormat('fr-FR').format(chart.scale)}</small></div>{canEdit && <button className="sp-button sp-button--secondary" type="button" disabled={retained} aria-label={`Ajouter la carte ${chart.number} à la fiche`} onClick={() => onChartsChange(addShomChartReference(charts, chart.number))}>{retained ? 'Ajoutée' : 'Ajouter à la fiche'}</button>}</li>;
-  })}</ul>;
+function ChartList({ matches }: { matches: ShomChart[] }) {
+  return <ul className="so-chart-list">{matches.map((chart) =>
+    <li key={chart.id}><div><a href={chart.catalogueUrl} target="_blank" rel="noopener noreferrer">{chart.number} · {chart.title}</a><small>Échelle 1:{new Intl.NumberFormat('fr-FR').format(chart.scale)}</small></div></li>,
+  )}</ul>;
 }
 
 export function SeaOperationChartsPanel({ client, projectId, waypoints, charts, onChartsChange, canEdit = true, preview = false, active = true }: Props) {
@@ -24,6 +23,16 @@ export function SeaOperationChartsPanel({ client, projectId, waypoints, charts, 
   currentClient.current = client;
   const inputKey = JSON.stringify({ projectId, preview, points: waypoints.map(({ id, latitude, longitude }) => ({ id, latitude, longitude })) });
   const current = state?.key === inputKey && state.client === client ? state : null;
+  const identifiedNumbersKey = JSON.stringify(current && !current.loading
+    ? waypoints.flatMap((point, index) => current.results[`${index}:${point.id}`]?.lookup?.charts.map((chart) => chart.number) ?? [])
+    : []);
+  const retainIdentifiedCharts = useEffectEvent((numbers: string[]) => {
+    const next = addShomChartReferences(charts, numbers);
+    if (next !== charts) onChartsChange(next);
+  });
+  useEffect(() => {
+    if (active && canEdit && identifiedNumbersKey !== '[]') retainIdentifiedCharts(JSON.parse(identifiedNumbersKey) as string[]);
+  }, [active, canEdit, identifiedNumbersKey]);
   useEffect(() => {
     if (!active || !projectId) return;
     const input = JSON.parse(inputKey) as { projectId: string; preview: boolean; points: Pick<SeaOperationWaypoint, 'id' | 'latitude' | 'longitude'>[] };
@@ -65,12 +74,12 @@ export function SeaOperationChartsPanel({ client, projectId, waypoints, charts, 
         <summary>Point {point.number || index + 1}{lookup ? ` · ${lookup.charts.length} carte${lookup.charts.length > 1 ? 's' : ''}` : ''}</summary>
         <p className="so-help">{point.latitude || 'Latitude à renseigner'} · {point.longitude || 'Longitude à renseigner'}</p>
         {result?.error ? <p role="status">{result.error}</p> : !lookup ? <p role="status">Recherche des cartes…</p> : <>
-          {lookup.charts.length ? <><ChartList matches={lookup.charts.slice(0, 5)} charts={charts} canEdit={canEdit} onChartsChange={onChartsChange} />{lookup.charts.length > 5 && <details className="so-other-charts"><summary>Autres cartes à plus petite échelle ({lookup.charts.length - 5})</summary><ChartList matches={lookup.charts.slice(5)} charts={charts} canEdit={canEdit} onChartsChange={onChartsChange} /></details>}</> : <p>Aucune carte papier SHOM trouvée dans le catalogue à cette position.</p>}
+          {lookup.charts.length ? <><ChartList matches={lookup.charts.slice(0, 5)} />{lookup.charts.length > 5 && <details className="so-other-charts"><summary>Autres cartes à plus petite échelle ({lookup.charts.length - 5})</summary><ChartList matches={lookup.charts.slice(5)} /></details>}</> : <p>Aucune carte papier SHOM trouvée dans le catalogue à cette position.</p>}
           {lookup.truncated && <p role="status">Résultat incomplet : vérifiez le catalogue SHOM.</p>}
           <small className="so-weather-retrieved">Catalogue SHOM consulté le {new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(lookup.fetchedAt))}.</small>
         </>}
       </details></li>;
     })}</ul>}
-    <p className="so-help">Les emprises du catalogue indiquent les cartes candidates au waypoint. Vérifiez leur édition, leurs corrections et la couverture de tout le trajet. Seuls les numéros ajoutés à la fiche sont enregistrés et exportés.</p>
+    <p className="so-help">Les emprises du catalogue indiquent les cartes candidates au waypoint. Vérifiez leur édition, leurs corrections et la couverture de tout le trajet.{canEdit && ' Les numéros identifiés sont ajoutés automatiquement aux références de la fiche, séparés par « - », puis enregistrés et exportés avec elle.'}</p>
   </section>;
 }

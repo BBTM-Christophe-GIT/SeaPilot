@@ -390,7 +390,7 @@ une hauteur de marée approximative ne suffisent pas. Le volet repliable Profond
 marée et calcul de l’UKC expose ces références dans la fiche sans fabriquer une
 valeur d’UKC.
 
-### Cartes SHOM retrouvées par coordonnées — v3.77.3
+### Cartes SHOM retrouvées par coordonnées et ajout automatique — v3.77.5
 
 Dans Passage Plan, `SeaOperationChartsPanel` recherche automatiquement les cartes
 papier du catalogue SHOM aux coordonnées WGS84 de chaque waypoint. Les coordonnées
@@ -398,17 +398,23 @@ décimales et degrés/minutes/secondes utilisent le parseur commun ; aucune ETA
 n’est nécessaire. Les cinq références les plus détaillées sont visibles en
 premier, les autres restent accessibles dans un volet repliable. Chaque résultat
 donne le numéro exact (y compris un zéro initial), le titre, l’échelle et un lien
-de recherche vers le catalogue officiel. « Ajouter à la fiche » complète le champ
-des cartes sans écraser les références saisies ; les numéros retenus suivent
-l’enregistrement et l’export habituels. Les résultats consultés en direct ne sont
-pas ajoutés silencieusement à une fiche, ni à son historique signé.
+de recherche vers le catalogue officiel. À la fin des recherches des points,
+tous les numéros identifiés sont ajoutés automatiquement au champ des cartes,
+sans clic et sans doublon, y compris ceux du volet repliable. Les références
+saisies manuellement sont conservées ; les références sont séparées par
+` - `, par exemple `7399 - 7398 - 7400`. Les anciens séparateurs `;` sont
+harmonisés lors de cet ajout. La recherche ne retire aucune référence déjà
+présente. Le champ existant conserve ses circuits habituels d’enregistrement,
+d’aperçu et d’export PDF ; aucun champ ni format d’export supplémentaire n’est créé.
 
 `/api/sea-operation-charts` vérifie le compte réel et
 `sea_operation_project_documents` pour le projet sélectionné avant toute
 consultation, y compris lorsque le provider dispose déjà d’un cache. Les droits
 du module, de la société active et du projet suivent donc les contrôles existants
-des cinq profils. Ajouter exige le droit d’édition de la fiche ; la consultation
-et sa relance restent disponibles en lecture seule, hors du fieldset désactivé.
+des cinq profils. L’ajout automatique exige le droit d’édition de la fiche ;
+une fiche signée ou en lecture seule n’est jamais modifiée par la recherche.
+La consultation et sa relance restent disponibles en lecture seule, hors du
+fieldset désactivé.
 Aucune migration, clé SHOM ou nouvelle dépendance n’est requise. La démonstration
 anonyme exige `VERCEL_ENV=preview` côté serveur et `?preview=1` sur l’API.
 
