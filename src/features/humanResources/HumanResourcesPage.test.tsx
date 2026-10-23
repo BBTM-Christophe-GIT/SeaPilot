@@ -340,6 +340,8 @@ describe('HumanResourcesPage', () => {
     render(<MemoryRouter initialEntries={['/modules/humanResources?person=999&document=11']}><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={createClient([activePerson], []) as never} currentPersonId={1} roles={[role]} />} /></Routes></MemoryRouter>);
     await waitFor(() => expect(screen.queryByText('Chargement du personnel RH…')).not.toBeInTheDocument());
     expect(screen.queryByRole('complementary', { name: 'Fiche RH de Jean MARTIN' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ajouter un document' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /^Ajouter un document pour/ })).not.toBeInTheDocument();
   });
 
   it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as const)('opens the connected person’s record by default for the %s profile', async (role) => {
@@ -1031,6 +1033,59 @@ describe('HumanResourcesPage', () => {
     expect(await screen.findByText('Document ajoute.')).toBeInTheDocument();
     expect(within(profile).getByText('CFBS')).toBeInTheDocument();
     if (noExpiry) expect(within(profile).getByText('Sans échéance')).toBeInTheDocument();
+  });
+
+  it.each([41, 42])('opens document creation by keyboard and submits the actual button for a distinct Captain fixture and authorized person %s', async (personId) => {
+    const user = userEvent.setup();
+    const captain = { ...activePerson, id: 41, user_id: 'captain-auth-account', first_name: 'Camille', last_name: 'CAPITAINE' };
+    const watchMate = { ...activePerson, id: 42, user_id: 'watch-auth-account', first_name: 'Alex', last_name: 'BORDEE', function_label: 'Matelot Polyvalent' };
+    const target = personId === captain.id ? captain : watchMate;
+    const personName = `${target.first_name} ${target.last_name}`;
+    const catalog = [{ id: 25, source_item_id: 25, name: 'CFBS - Certificat de Formation de Base à la Sécurité', category: 'Formation de Sécurité', file_name: 'CFBS' }];
+    // This client contains only the authenticated Captain and the allowed watch;
+    // the server SQL fixtures verify the real authorization behind this scope.
+    const baseClient = createClient([captain, watchMate], [], [], catalog);
+    const insert = vi.fn((payload: Record<string, unknown>) => ({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { ...documents[1], id: 144, ...payload }, error: null }) }) }));
+    const rpc = vi.fn().mockResolvedValue({ data: captain, error: null });
+    const client = {
+      ...baseClient,
+      rpc,
+      from: vi.fn((table: string) => table === 'hr_documents' ? { ...baseClient.from(table), insert } : baseClient.from(table)),
+    };
+    render(<HumanResourcesPage client={client as never} currentPersonId={captain.id} roles={['capitaine']} />);
+    await screen.findByRole('complementary', { name: 'Fiche RH de Camille CAPITAINE' });
+    if (personId !== captain.id) await user.click(screen.getByRole('button', { name: `Afficher la fiche de ${personName}` }));
+    const profile = screen.getByRole('complementary', { name: `Fiche RH de ${personName}` });
+    await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+    const add = within(profile).getByRole('button', { name: 'Ajouter un document' });
+    expect(add).toBeEnabled();
+    expect(add).toHaveAttribute('type', 'button');
+    add.focus();
+    await user.keyboard('{Enter}');
+    let dialog = await screen.findByRole('dialog', { name: `Ajouter un document pour ${personName}` });
+    await user.click(within(dialog).getByRole('button', { name: 'Annuler' }));
+    expect(screen.queryByRole('dialog', { name: `Ajouter un document pour ${personName}` })).not.toBeInTheDocument();
+    expect(insert).not.toHaveBeenCalled();
+    await user.click(add);
+    dialog = await screen.findByRole('dialog', { name: `Ajouter un document pour ${personName}` });
+    fireEvent.change(within(dialog).getByLabelText("Date d'echeance"), { target: { value: '2030-06-30' } });
+    const file = new File(['isolated Captain certificate'], 'cfbs-capitaine.pdf', { type: 'application/pdf' });
+    const fileInput = within(dialog).getByLabelText('Fichier') as HTMLInputElement;
+    await user.upload(fileInput, file);
+    expect(fileInput.files?.[0]).toBe(file);
+    // userEvent's synthetic FileList does not satisfy jsdom's native required
+    // file constraint. Keep the real submit click and React's file validation.
+    fileInput.required = false;
+    const generatedFileName = `${personName} - CFBS - 2030.pdf`;
+    expect(within(dialog).getByLabelText('Nom genere')).toHaveValue(generatedFileName);
+    await user.click(within(dialog).getByRole('button', { name: 'Creer le document' }));
+    expect(await screen.findByText('Document ajoute.')).toBeInTheDocument();
+    expect(writeHrDriveFile).toHaveBeenCalledWith(client, personId, generatedFileName, file);
+    expect(insert).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ person_id: personId, title: `${personName} - CFBS - 2030`, category_key: 'safety_training', expires_on: '2030-06-30' }));
+    expect(rpc).not.toHaveBeenCalled();
+    expect(within(profile).getByText('CFBS')).toBeInTheDocument();
+    expect(within(profile).queryByRole('button', { name: /^Modifier CFBS/ })).not.toBeInTheDocument();
+    expect(within(profile).queryByRole('button', { name: /^Supprimer CFBS/ })).not.toBeInTheDocument();
   });
 
   it('edits metadata without a new file and refreshes the category, dates and alert counts', async () => {
