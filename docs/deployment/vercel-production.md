@@ -1,5 +1,13 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.10`, build `2026-10-23.008`, regroupe l’indicateur des conditions
+de vie à bord dans la carte **Météo à l’ETA** du Passage Plan, dans le PDF et
+l’aperçu imprimable. La colonne séparée est supprimée ; le tableau paysage
+comporte neuf colonnes et donne plus de largeur à la météo. Sans matrice du
+navire définie, aucun indicateur n’est ajouté. Les prévisions enregistrées,
+les sources et horaires, les fiches signées et les fragments Word sont conservés.
+Aucune migration, dépendance, clé ou nouvelle note de mise à jour.
+
 Version `3.77.9`, build `2026-10-23.007`, permet de placer les waypoints par clic
 ou toucher sur la carte du Passage Plan. Les coordonnées et un numéro disponible
 sont reportés dans une nouvelle ligne du tableau, conservée à la sauvegarde.
