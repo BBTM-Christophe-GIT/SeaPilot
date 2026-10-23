@@ -11,6 +11,7 @@ import { isQhsePolicyId, type QhsePolicyOwnerKind } from '../qhsePolicy/qhsePoli
 import { normalizeQhsePolicyAxisIconKey, resolveQhsePolicyAxisIcon } from '../qhsePolicy/qhsePolicyIcons';
 import { DEFAULT_PROCEDURE_TAGS } from '../procedures/procedureTagCatalogue';
 import { seaOperationPreviewRpc } from '../seaOperations/seaOperationPreview';
+import { GOURY_WEATHER_MATRIX, isVesselWeatherMatrix, cloneVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
@@ -1802,6 +1803,9 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   stcw_certificates: PREVIEW_STCW_CERTIFICATES,
 };
 
+// Isolated fixture configuration, never an authenticated profile or a production write.
+for (const vessel of previewRows('vessels')) vessel.weather_matrix = Number(vessel.id) === 1 ? cloneVesselWeatherMatrix(GOURY_WEATHER_MATRIX) : null;
+
 function createPreviewQuery(result: PreviewResult, readOnly = false): object {
   const query: object = new Proxy({}, {
     get(_target, property) {
@@ -1842,10 +1846,12 @@ function createPreviewVesselQuery(): object {
     const rows = previewRows('vessels').filter((row) => filters.every((matches) => matches(row)));
     if (patch) {
       const draft = patch.draft_m;
-      if (!filters.length || (draft != null && (typeof draft !== 'number' || !Number.isFinite(draft) || draft <= 0 || draft > 50))) {
+      const matrix = patch.weather_matrix;
+      if (!filters.length || (draft != null && (typeof draft !== 'number' || !Number.isFinite(draft) || draft <= 0 || draft > 50))
+        || (matrix != null && (!isVesselWeatherMatrix(matrix) || new TextEncoder().encode(JSON.stringify(matrix)).length > 32768))) {
         return cached = { data: null, error: { message: 'La modification du navire de démonstration est invalide.' } };
       }
-      rows.forEach((row) => Object.assign(row, patch));
+      rows.forEach((row) => Object.assign(row, structuredClone(patch)));
     }
     if (singleton && rows.length !== 1) return cached = { data: null, error: { message: 'Navire de démonstration introuvable.' } };
     return cached = { data: structuredClone(singleton ? rows[0] : rows), error: null };
@@ -2152,16 +2158,9 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     return createPreviewQuery({ data: [9201, 9202], error: null });
   }
   if (functionName.startsWith('sea_operation')) {
-    const result = seaOperationPreviewRpc(functionName, args);
-    if (functionName === 'sea_operations_overview' && result.data) {
-      const data = result.data as { vessels: Array<Record<string, unknown>> };
-      // Explicit aliases preserve the independent, fictional Planning IDs.
-      const fleetIds: Record<number, number> = { 9901: 1, 9902: 9210 };
-      data.vessels.forEach((vessel) => {
-        const fleetVessel = previewRows('vessels').find((row) => Number(row.id) === fleetIds[Number(vessel.id)]);
-        if (fleetVessel) vessel.draft_m = fleetVessel.draft_m ?? null;
-      });
-    }
+    // Explicit aliases preserve the independent, fictional Planning IDs.
+    const fleetIds: Record<number, number> = { 9901: 1, 9902: 9210 };
+    const result = seaOperationPreviewRpc(functionName, args, (vesselId) => previewRows('vessels').find((row) => Number(row.id) === fleetIds[vesselId]));
     return createPreviewQuery(result);
   }
   if (functionName === 'purchase_request_own_submission_ids') {

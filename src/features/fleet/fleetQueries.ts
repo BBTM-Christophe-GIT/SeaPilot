@@ -1,4 +1,5 @@
 import { compareFleetAssets } from './fleetDisplay';
+import { isVesselWeatherMatrix, parseVesselWeatherMatrix, type VesselWeatherMatrix } from './vesselWeatherMatrix';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type FleetAssetKind = 'vessel' | 'office' | 'quay';
@@ -16,7 +17,7 @@ const FLEET_VESSEL_SELECT = [
   'beam_overall_m', 'draft_m', 'lightship_tonnes', 'deadweight_tonnes', 'safe_manning', 'main_engine',
   'main_engine_power_kw', 'bow_thruster_power_kw', 'gensets', 'max_speed_knots',
   'bollard_pull_tonnes', 'fuel_capacity_m3', 'range_description', 'deck_equipment',
-  'electronics_communications', 'accommodation', 'liability_insurer',
+  'electronics_communications', 'accommodation', 'liability_insurer', 'weather_matrix',
 ].join(', ');
 
 interface FleetVesselRow {
@@ -61,6 +62,7 @@ interface FleetVesselRow {
   navigation_category: string | null;
   beam_overall_m: number | string | null;
   draft_m?: number | string | null;
+  weather_matrix?: unknown;
   lightship_tonnes: number | string | null;
   deadweight_tonnes: number | string | null;
   safe_manning: number | string | null;
@@ -120,6 +122,7 @@ export interface FleetVessel {
   navigationCategory: string;
   beamOverallM: number | null;
   draftMeters?: number | null;
+  weatherMatrix?: VesselWeatherMatrix | null;
   lightshipTonnes: number | null;
   deadweightTonnes: number | null;
   safeManning: number | null;
@@ -163,6 +166,7 @@ export interface SaveFleetVesselInput {
   navigationCategory: string;
   beamOverallM: number | null;
   draftMeters?: number | null;
+  weatherMatrix?: VesselWeatherMatrix | null;
   lightshipTonnes: number | null;
   deadweightTonnes: number | null;
   safeManning: number | null;
@@ -189,6 +193,8 @@ function numberOrNull(value: number | string | null | undefined): number | null 
 }
 
 function mapFleetVessel(row: FleetVesselRow): FleetVessel {
+  const weatherMatrix = parseVesselWeatherMatrix(row.weather_matrix);
+  if (row.weather_matrix != null && !weatherMatrix) throw new Error('La matrice Hs × période reçue pour ce navire est invalide.');
   return {
     id: Number(row.id), companyId: Number(row.company_id), name: row.name, acronym: row.acronym || '',
     assetKind: row.asset_kind || 'vessel', typeLabel: row.type_label || '', unitTypeLabel: row.unit_type_label || '',
@@ -206,6 +212,7 @@ function mapFleetVessel(row: FleetVesselRow): FleetVessel {
     brochureOperations: row.brochure_operations || [], builtYear: numberOrNull(row.built_year),
     classificationLabel: row.classification_label || '', navigationCategory: row.navigation_category || '',
     beamOverallM: numberOrNull(row.beam_overall_m), draftMeters: numberOrNull(row.draft_m), lightshipTonnes: numberOrNull(row.lightship_tonnes),
+    ...(row.weather_matrix === undefined ? {} : { weatherMatrix }),
     deadweightTonnes: numberOrNull(row.deadweight_tonnes), safeManning: numberOrNull(row.safe_manning),
     mainEngine: row.main_engine || '', mainEnginePowerKw: numberOrNull(row.main_engine_power_kw),
     bowThrusterPowerKw: numberOrNull(row.bow_thruster_power_kw), gensets: row.gensets || '',
@@ -229,6 +236,7 @@ export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVe
   if (input.draftMeters != null && (!Number.isFinite(input.draftMeters) || input.draftMeters <= 0 || input.draftMeters > MAX_FLEET_DRAFT_METERS)) {
     throw new Error(`Le tirant d’eau doit être supérieur à 0 et inférieur ou égal à ${MAX_FLEET_DRAFT_METERS} m.`);
   }
+  if (input.weatherMatrix != null && !isVesselWeatherMatrix(input.weatherMatrix)) throw new Error('La matrice Hs × période du navire est invalide.');
   const payload = {
     name, acronym: optional(input.acronym), asset_kind: input.assetKind, type_label: optional(input.typeLabel),
     unit_type_label: optional(input.unitTypeLabel), registration_number: optional(input.registrationNumber),
@@ -241,6 +249,7 @@ export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVe
     built_year: input.builtYear, classification_label: optional(input.classificationLabel),
     navigation_category: optional(input.navigationCategory), beam_overall_m: input.beamOverallM,
     ...(input.draftMeters === undefined ? {} : { draft_m: input.draftMeters }),
+    ...(input.weatherMatrix === undefined ? {} : { weather_matrix: input.weatherMatrix === null ? null : parseVesselWeatherMatrix(input.weatherMatrix) }),
     lightship_tonnes: input.lightshipTonnes, deadweight_tonnes: input.deadweightTonnes, safe_manning: input.safeManning,
     main_engine: optional(input.mainEngine), main_engine_power_kw: input.mainEnginePowerKw,
     bow_thruster_power_kw: input.bowThrusterPowerKw, gensets: optional(input.gensets), max_speed_knots: input.maxSpeedKnots,

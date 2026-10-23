@@ -6,12 +6,14 @@ import { emptySeaOperation, SEA_OPERATION_CHECKS } from './seaOperationModel';
 import { generateSeaOperationPdf } from './seaOperationPdf';
 import type { SeaOperationRecord } from './seaOperationQueries';
 import { SEA_METEO_FRANCE_SOURCE_URL } from './seaOperationWeatherModel';
+import { GOURY_WEATHER_MATRIX } from '../fleet/vesselWeatherMatrix';
 
 function fixture(): SeaOperationRecord {
   const draft = emptySeaOperation();
   draft.project = 'P144 - Inspection en mer'; draft.client = 'Client maritime'; draft.clientContact = 'Chef de projet +33 2 00 00 00 00';
   draft.description = `Préparation de l’opération, vérifications et consignes.\n${'Compte rendu détaillé à conserver intégralement. '.repeat(120)}`;
   draft.vessel = { id: '42', name: 'GOURY', captainName: 'Capitaine de test', registrationImo: 'IMO1234567', departurePort: 'Le Havre', departureQuay: '1', arrivalPort: 'Caen', arrivalQuay: '2', etd: '2026-10-16T08:00', eta: '2026-10-16T18:00' };
+  draft.vessel.weatherMatrix = structuredClone(GOURY_WEATHER_MATRIX);
   draft.dapaq = { method: 'nomade', preparedBy: 'captain', agentName: '', agentContact: '' };
   draft.applicability = { towing: 'yes', cargo: 'yes', divingSupport: 'yes', supplies: 'yes' };
   for (const check of SEA_OPERATION_CHECKS) draft.checks[check.id] = 'yes';
@@ -31,7 +33,7 @@ function fixture(): SeaOperationRecord {
   const captured = draft.waypoints[0];
   draft.waypoints = draft.waypoints.map((point) => ({ ...point, latitude: captured.latitude, longitude: captured.longitude, eta: captured.eta,
     descriptionVhf: 'Point de route / VHF12. Approche du chenal commercial, changement de route et compte rendu à la capitainerie. Maintenir une veille renforcée sur les mouvements de navires.',
-    weather: { ...captured.weather!, pointId: point.id },
+    weather: { ...structuredClone(captured.weather!), pointId: point.id },
     radio: { ...captured.radio!, contacts: [
       { ...captured.radio!.contacts[0], name: 'Port de commerce et de pêche de Cherbourg · Capitainerie' },
       { id: 'cross-jobourg', kind: 'rescue', name: 'CROSS Jobourg · Centre régional opérationnel de surveillance et de sauvetage', area: 'Manche centrale', vhf: '16', phone: '+33 2 33 52 16 16',
@@ -87,7 +89,11 @@ describe('Sea operation PDF', () => {
     const passage = landscapeText.join('\n');
     expect(passage).toContain('(Waypoint)');
     expect(passage).toContain('(Contacts VHF)');
+    expect(passage).toContain('(Conditions de vie');
     expect(passage).toContain('Houle Hs');
+    expect(passage).toContain('Période');
+    expect(passage).toContain('(Confortable)');
+    expect(passage.match(/\(Confortable\)/g)).toHaveLength(8);
     expect(passage).toContain('MFWAM');
     expect(passage).toContain('portsdenormandie.fr');
     expect(passage).not.toMatch(/rafales/i);
@@ -97,6 +103,31 @@ describe('Sea operation PDF', () => {
     expect(fonts.some((name) => name.includes('Calibri'))).toBe(true);
     expect(generated.filename).toBe('Operation-en-Mer-P144 - Inspection en mer-GOURY.pdf');
     if (process.env.SEAPILOT_PDF_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_QA_OUTPUT, generated.bytes);
+  });
+
+  it('keeps an old signed record unevaluated and reports a captured forecast outside its vessel matrix', async () => {
+    const record = fixture();
+    delete record.draft.vessel.weatherMatrix;
+    record.draft.waypoints = record.draft.waypoints.slice(0, 2);
+    record.draft.description = 'Opération';
+    const old = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const textOf = async (bytes: Uint8Array) => {
+      const doc = await PDFDocument.load(bytes);
+      return doc.getPages().map((page) => {
+        const objects = page.node.Resources()!.lookup(PDFName.of('XObject'), PDFDict);
+        const body = objects.lookup(objects.keys()[0]);
+        if (!(body instanceof PDFRawStream)) throw new Error('Expected the generated body stream');
+        return Buffer.from(decodePDFRawStream(body).decode()).toString('latin1');
+      }).join('\n');
+    };
+    expect(await textOf(old.bytes)).not.toContain('Matrice non renseignée');
+    expect(await textOf(old.bytes)).toContain('Houle Hs');
+    record.draft.vessel.weatherMatrix = structuredClone(GOURY_WEATHER_MATRIX);
+    record.draft.waypoints[0].weather!.waves!.heightMeters = 4;
+    const current = await textOf((await generateSeaOperationPdf(record, { templateBytes: await template() })).bytes);
+    expect(current).toContain('(Hors matrice)');
+    expect(current).toContain('(Confortable)');
+    expect(current).toContain('GO - La mission peut');
   });
 
   it('fails explicitly if the source chrome is absent instead of fabricating a replacement header', async () => {

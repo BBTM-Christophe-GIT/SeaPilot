@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { webcrypto } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { emptySeaOperation } from './seaOperationModel';
+import { createEmptyVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { fetchSeaOperationCaptainSignature, fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, loadSeaOperationSignature, mapSeaOperationRecord, saveSeaOperation, signSeaOperation } from './seaOperationQueries';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -35,6 +36,47 @@ describe('sea operation queries', () => {
       vessels: [{ id: 1, name: 'Inconnu', draft_m: null }, { id: 2, name: 'Historique' }] }, error: null });
     const data = await fetchSeaOperationData({ rpc } as unknown as SupabaseClient);
     expect(data.vessels.every((vessel) => vessel.draftMeters === null)).toBe(true);
+  });
+
+  it('maps vessel matrices without substituting another vessel or guessing legacy absence', async () => {
+    const matrix = createEmptyVesselWeatherMatrix(); matrix.levels[0][0] = 'unlivable';
+    const rpc = vi.fn().mockResolvedValue({ data: { company_id: 1, actor_id: 'crew-id', actor_name: 'Marin réel', records: [], vessels: [
+      { id: 1, name: 'Configured', weather_matrix: matrix, can_sign: false },
+      { id: 2, name: 'Unconfigured', weather_matrix: null, can_sign: true }, { id: 3, name: 'Legacy' },
+    ] }, error: null });
+    const data = await fetchSeaOperationData({ rpc } as unknown as SupabaseClient);
+    expect(data.vessels.find((vessel) => vessel.id === 1)).toMatchObject({ weatherMatrix: matrix, canSign: false });
+    expect(data.vessels.find((vessel) => vessel.id === 2)).toMatchObject({ weatherMatrix: null, canSign: true });
+    expect(data.vessels.find((vessel) => vessel.id === 3)).not.toHaveProperty('weatherMatrix');
+  });
+
+  it('reports malformed canonical matrices instead of silently replacing them with no matrix', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { company_id: 1, actor_id: 'crew-id', actor_name: 'Marin réel', records: [], vessels: [
+      { id: 1, name: 'Malformed', weather_matrix: { version: 1 } },
+    ] }, error: null });
+    await expect(fetchSeaOperationData({ rpc } as unknown as SupabaseClient)).rejects.toThrow('matrice Hs × période reçue');
+  });
+
+  it('keeps the exact planning vessel matrix and distinguishes loaded null from legacy omission', async () => {
+    const matrix = createEmptyVesselWeatherMatrix(); matrix.levels[5][6] = 'twelve_hours';
+    const vessel = { name: 'Navire', registrationImo: '', departurePort: '', arrivalPort: '', etd: '', eta: '' };
+    const base = { projectId: '1', project: 'Mission', client: '', clientContact: '', description: '', captains: [], canSign: false };
+    const rpc = vi.fn().mockResolvedValue({ data: { date: '2026-10-23', choices: [
+      { ...base, operationId: '1:1', vessel: { ...vessel, id: '1', weatherMatrix: matrix } },
+      { ...base, operationId: '2:2', vessel: { ...vessel, id: '2', weatherMatrix: null } },
+      { ...base, operationId: '3:3', vessel: { ...vessel, id: '3' } },
+    ] }, error: null });
+    const { choices } = await fetchSeaOperationPlanning({ rpc } as unknown as SupabaseClient, '2026-10-23');
+    expect(choices[0].vessel.weatherMatrix).toEqual(matrix);
+    expect(choices[0].vessel.weatherMatrix).not.toBe(matrix);
+    expect(choices[1].vessel.weatherMatrix).toBeNull();
+    expect(choices[2].vessel).not.toHaveProperty('weatherMatrix');
+  });
+
+  it('reports malformed planning vessel matrices without exposing an apparently unconfigured choice', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { date: '2026-10-23', choices: [{ operationId: '1:1', projectId: '1', project: 'Mission', client: '', clientContact: '', description: '', captains: [],
+      vessel: { id: '1', name: 'Navire', registrationImo: '', departurePort: '', arrivalPort: '', etd: '', eta: '', weatherMatrix: false } }] }, error: null });
+    await expect(fetchSeaOperationPlanning({ rpc } as unknown as SupabaseClient, '2026-10-23')).rejects.toThrow('matrice Hs × période reçue');
   });
 
   it('saves only payload and expected revision, without accepting client actor metadata', async () => {

@@ -327,11 +327,62 @@ de consultation. La sauvegarde puis la signature conservent cette copie. Une
 nouvelle recherche ne réécrit jamais une fiche signée ; un ancien historique
 sans copie indique « prévisions non enregistrées », sans reconstituer sa météo.
 
+### Matrice Hs × période par navire — 3.77.7
+
+Dans **Navires → fiche du navire → Conditions météo limites**, la matrice se
+consulte pour chaque navire. L’édition utilise le droit de modification de la
+fiche Navire existant, réservé à l’administration. Marin et Capitaine consultent
+la matrice sans l’éditer. Bureaux et quais n’affichent pas cette section.
+
+`vessels.weather_matrix` est nullable. Le modèle v1 contient sept bornes basses
+Hs, une borne Hs supérieure, six bornes basses de période et 42 cellules, chacune
+vide ou parmi Confortable, Peu confortable, Fatiguant, 12 heures max et Rude.
+Les axes sont modifiables ; appliquer des bornes conserve les cellules à leur
+position, ce qui est explicitement indiqué dans le formulaire. Les bornes basses
+sont incluses et les hautes exclues, sauf la dernière borne Hs incluse. La
+dernière tranche de période est ouverte vers le haut. Aucune interpolation ni
+extrapolation des cellules n’est effectuée.
+
+La référence GOURY fournie par l’utilisateur est transcrite dans le navire
+`id=1`, société `id=1`, uniquement si son nom est GOURY et sa matrice encore
+absente. Les autres navires restent sans matrice. La référence initiale utilise
+les tranches Hs de 0 à 3,5 m par pas de 0,5 m et les périodes <5 s, 5 à <7 s,
+7 à <9 s, 9 à <11 s, 11 à <13 s et ≥13 s. Le bouton modèle GOURY ne sauvegarde
+rien sans l’action Enregistrer de la fiche.
+
+Chaque waypoint présente une carte météo avec Hs, **période moyenne de la houle**
+en secondes, provenance, vent moyen sans rafales et horaires UTC. Le décodage
+MFWAM déjà utilisé récupère la période GRIB2 `10/0/9`, définie comme la période
+moyenne des houles par la
+[table officielle des paramètres](https://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_doc/grib2_table4-2-10-0.shtml).
+L’indicateur est calculé à partir des valeurs non arrondies de Hs et de période.
+Une matrice absente ou sans cellule définie, et une cellule vide pour la tranche
+concernée, n’affichent aucun indicateur ; la carte météo reste visible. Une
+prévision Hs / période absente ou Hs hors bornes dans une matrice définie sont
+signalées explicitement, jamais assimilées à un niveau confortable.
+La catégorie 12 heures max ne déduit pas la durée d’exposition du trajet et ne
+remplace pas la décision du Capitaine. Aucun seuil de vent n’est ajouté.
+
+À la sauvegarde d’un brouillon, le serveur copie la configuration canonique du
+navire et de sa société dans `draft.vessel.weatherMatrix`. Une autre matrice
+fournie par un client ne peut pas remplacer celle de Navires. La signature garde
+la copie sauvegardée, même si la configuration du navire change ensuite.
+Les anciennes fiches signées sans copie restent sans évaluation ; aucune fiche
+historique n’est réécrite. Le tableau HTML et le PDF paysage reprennent la carte
+météo, avec leurs sources et horaires conservés. L’indicateur du document a sa
+propre colonne **Conditions de vie à bord** ; il n’est pas répété dans Waypoint.
+
+La migration `20261023051322_vessel_weather_limits.sql` doit précéder le
+frontend. Elle ajoute la validation de la matrice et sa capture canonique,
+ainsi que son exposition dans les contextes Navires / Opération en Mer,
+sans modifier les règles de société, RLS, affectation ou signature existantes.
+
 ### Tableau du document en paysage
 
 Le chapitre 3 du PDF utilise une page **A4 paysage** : environ 744 points utiles
 contre 497 en portrait. Les colonnes Waypoint, Description, Latitude, Longitude,
-UKC, ETA, Contacts VHF, Prévisions météo et Trafic dense restent lisibles sans
+UKC, ETA, Contacts VHF, Prévisions météo, Conditions de vie à bord et Trafic dense
+restent lisibles sans
 réduire excessivement la police. Les en-têtes du tableau sont répétés à chaque
 page. Les sources et horaires des copies sont détaillés sous le tableau.
 Les autres chapitres restent en portrait. Les fragments vectoriels d’en-tête et

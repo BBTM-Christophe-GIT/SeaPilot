@@ -4,6 +4,7 @@ import { emptySeaOperation } from './seaOperationModel';
 import type { SeaOperationRecord } from './seaOperationQueries';
 import { SeaOperationPrint } from './SeaOperationPrint';
 import { SEA_METEO_FRANCE_SOURCE_URL } from './seaOperationWeatherModel';
+import { GOURY_WEATHER_MATRIX } from '../fleet/vesselWeatherMatrix';
 
 describe('Opération en Mer printable content', () => {
   it('shows the prepared RH image without claiming a decision signature, and uses only the recorded snapshot once signed', () => {
@@ -61,6 +62,7 @@ describe('Opération en Mer printable content', () => {
 
   it('keeps Waypoint, captured VHF and ETA forecasts in a landscape chapter without filling signed history from live data', () => {
     const draft = emptySeaOperation();
+    draft.vessel.weatherMatrix = structuredClone(GOURY_WEATHER_MATRIX);
     draft.waypoints = [{ id: 'recorded-wp', number: 'WP1', descriptionVhf: '<Approche du port>', latitude: '49.65 N', longitude: '1.62 W', eta: '2026-10-23T12:00', ukc: '2 m', denseTraffic: true,
       weather: { pointId: 'recorded-wp', latitude: 49.65, longitude: -1.62, etaUtc: '2026-10-23T10:00:00Z', fetchedAt: '2026-10-22T12:00:00Z',
         wind: { time: '2026-10-23T10:00:00Z', speedKnots: 12, gustKnots: 37, directionDegrees: 270 },
@@ -76,17 +78,32 @@ describe('Opération en Mer printable content', () => {
     const { container, rerender } = render(<SeaOperationPrint record={record} />);
     const passage = within(container.querySelector('.so-print-passage-section')!);
     const table = passage.getByRole('table', { name: 'Points de passage, contacts VHF et météo à l’ETA' });
-    expect(within(table).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA – Date et heure', 'Contacts VHF', 'Météo à l’ETA', 'Trafic dense']);
+    expect(within(table).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA – Date et heure', 'Contacts VHF', 'Météo à l’ETA', 'Conditions de vie à bord', 'Trafic dense']);
     expect(within(table).getByRole('cell', { name: '<Approche du port>' })).toBeInTheDocument();
     expect(within(table).getByRole('cell', { name: /Cherbourg · Capitainerie · Ch 12/ })).toBeInTheDocument();
-    expect(within(table).getByRole('cell', { name: /Vent moyen 10 m : 12 nd[\s\S]*Houle Hs : 0,60 m/ })).toBeInTheDocument();
+    const weatherCell = within(table).getByRole('cell', { name: /État de mer prévu[\s\S]*Houle Hs/ });
+    expect(weatherCell.textContent).toMatch(/Période(?:moyenne)?6 s/);
+    expect(weatherCell.textContent).toContain('Houle Hs0,60 m');
+    expect(weatherCell.textContent).toContain('Vent moyen 10 m12 nd');
+    expect(weatherCell.querySelector('.so-sea-state')).toBeNull();
+    const waypointCell = within(table).getByRole('cell', { name: 'WP1' });
+    expect(waypointCell.textContent).toBe('WP1');
+    expect(waypointCell.querySelector('.so-sea-state')).toBeNull();
+    const conditionsCell = within(table).getByRole('cell', { name: 'Confortable' });
+    expect(within(conditionsCell).getByText('Confortable')).toHaveClass('is-success');
+    expect(table.querySelectorAll('.so-sea-state')).toHaveLength(1);
     expect(passage.getByText(/Météo-France · consultée le/)).toHaveTextContent('MFWAM');
     expect(passage.getByText(/Annuaire vérifié le/)).toHaveTextContent('Ports de Normandie');
     expect(table.textContent).not.toMatch(/rafales|37 nd/i);
     delete draft.waypoints[0].radio; delete draft.waypoints[0].weather;
     rerender(<SeaOperationPrint record={record} />);
     expect(passage.getByRole('cell', { name: 'Contacts VHF non enregistrés.' })).toBeInTheDocument();
-    expect(passage.getByRole('cell', { name: 'Prévisions météo non enregistrées pour cette position et cette ETA.' })).toBeInTheDocument();
+    expect(passage.getByRole('cell', { name: /État de mer prévu[\s\S]*Prévisions météo non enregistrées/ })).toBeInTheDocument();
+    expect(passage.getByRole('cell', { name: 'Hs / période indisponible' })).toBeInTheDocument();
     expect(passage.queryByText(/Cherbourg|CROSS/)).not.toBeInTheDocument();
+    delete draft.vessel.weatherMatrix;
+    rerender(<SeaOperationPrint record={record} />);
+    expect(passage.queryByText('Matrice non renseignée')).not.toBeInTheDocument();
+    expect(container.querySelector('.so-print-passage .so-sea-state')).toBeNull();
   });
 });

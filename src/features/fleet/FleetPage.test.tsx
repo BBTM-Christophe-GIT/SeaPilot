@@ -8,6 +8,7 @@ import type { FleetVessel } from './fleetQueries';
 import { fetchPlanningP11Data } from '../planning/planningP11Queries';
 import { downloadFleetBrochure } from './fleetBrochure';
 import { fetchFleetVessels, resolveFleetVesselPhotoUrl, saveFleetVessel } from './fleetQueries';
+import { createEmptyVesselWeatherMatrix, GOURY_WEATHER_MATRIX, vesselHsRange, vesselPeriodRange } from './vesselWeatherMatrix';
 
 vi.mock('./fleetQueries', async (importOriginal) => {
   const original = await importOriginal<typeof import('./fleetQueries')>();
@@ -104,5 +105,52 @@ describe('FleetPage', () => {
     await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
     await screen.findByText('Navire enregistré.');
     expect(saveFleetVessel).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ draftMeters: null }));
+  });
+
+  it('saves a vessel matrix only through the usual save action and can discard its changes', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['admin']} /></MemoryRouter>);
+    await screen.findByRole('heading', { name: 'GOURY' });
+    await user.click(screen.getByRole('tab', { name: 'Conditions météo limites' }));
+    expect(screen.getByText(/Matrice non renseignée/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Modifier' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Modifier l’actif' }));
+    await user.click(dialog.getByRole('button', { name: 'Appliquer le modèle GOURY' }));
+    expect(saveFleetVessel).not.toHaveBeenCalled();
+    await user.click(dialog.getByRole('button', { name: 'Annuler' }));
+    expect(screen.getByText(/Matrice non renseignée/)).toBeInTheDocument();
+    expect(saveFleetVessel).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Modifier' }));
+    const nextDialog = within(screen.getByRole('dialog', { name: 'Modifier l’actif' }));
+    await user.click(nextDialog.getByRole('button', { name: 'Définir une matrice' }));
+    const empty = createEmptyVesselWeatherMatrix();
+    await user.selectOptions(nextDialog.getByRole('combobox', { name: `Période ${vesselPeriodRange(empty, 0)} · Hs ${vesselHsRange(empty, 0)}` }), 'uncomfortable');
+    const matrix = { ...empty, levels: empty.levels.map((row, period) => row.map((level, hs) => period === 0 && hs === 0 ? 'uncomfortable' as const : level)) };
+    const saved = { ...baseVessel, weatherMatrix: matrix };
+    vi.mocked(saveFleetVessel).mockResolvedValue(saved);
+    vi.mocked(fetchFleetVessels).mockResolvedValue([saved, office, quay]);
+    await user.click(nextDialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Navire enregistré.');
+    expect(saveFleetVessel).toHaveBeenCalledExactlyOnceWith(expect.anything(), expect.objectContaining({ id: 1, weatherMatrix: matrix }));
+    expect(within(screen.getByRole('table', { name: 'Matrice Hs × période de GOURY' })).getByText('Peu confortable')).toBeInTheDocument();
+  });
+
+  it.each(['marin', 'capitaine'] as const)('exposes the saved matrix read-only for a real %s profile fixture', async (role) => {
+    const user = userEvent.setup();
+    vi.mocked(fetchFleetVessels).mockResolvedValue([{ ...baseVessel, weatherMatrix: GOURY_WEATHER_MATRIX }, office, quay]);
+    render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={[role]} /></MemoryRouter>);
+    await screen.findByRole('heading', { name: 'GOURY' });
+    expect(screen.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ajouter' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Conditions météo limites' }));
+    const table = screen.getByRole('table', { name: 'Matrice Hs × période de GOURY' });
+    expect(within(table).getAllByText('Confortable').length).toBeGreaterThan(0);
+    expect(within(table).queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Appliquer le modèle GOURY' })).not.toBeInTheDocument();
+    expect(saveFleetVessel).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: /Bureaux\s*1/ }));
+    expect(screen.queryByRole('tab', { name: 'Conditions météo limites' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: /Matrice Hs/ })).not.toBeInTheDocument();
   });
 });

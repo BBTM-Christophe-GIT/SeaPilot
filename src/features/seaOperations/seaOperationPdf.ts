@@ -1,9 +1,12 @@
 import type { jsPDF } from 'jspdf';
+import type { UserOptions } from 'jspdf-autotable';
+import type { VesselSeaStateAssessment } from '../fleet/vesselWeatherMatrix';
 import type { SeaOperationRecord } from './seaOperationQueries';
 import { DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS } from './seaOperationModel';
 import type { SeaOperationAnswer, SeaOperationCheck } from './seaOperationModel';
 import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperationRadio';
 import { passagePlanCellData } from './seaOperationPassagePlan';
+import { waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 
 export const SEA_OPERATION_WORD_TEMPLATE_URL = '/templates/sea-operation/word-header-footer.pdf';
 const PAGE_WIDTH = 595.32;
@@ -15,6 +18,13 @@ const BOTTOM = 55;
 const WORD_HEADER_HEIGHT = 90;
 const WORD_FOOTER_HEIGHT = 26;
 const BLUE: [number, number, number] = [21, 96, 130];
+const SEA_STATE_COLORS: Record<VesselSeaStateAssessment['tone'], { foreground: [number, number, number]; background: [number, number, number] }> = {
+  success: { foreground: [23, 97, 59], background: [234, 247, 239] },
+  warning: { foreground: [120, 81, 0], background: [255, 247, 214] },
+  danger: { foreground: [161, 38, 40], background: [255, 240, 238] },
+  critical: { foreground: [255, 255, 255], background: [24, 33, 50] },
+  neutral: { foreground: [70, 80, 95], background: [242, 245, 248] },
+};
 
 export interface SeaOperationPdfOptions {
   /** Private RH image resolved and hash-checked by the authorized query helper. */
@@ -77,13 +87,14 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     document.setFont('helvetica', 'bold'); document.setFontSize(minor ? 10 : 12); document.setTextColor(...BLUE);
     document.text(clean(text), LEFT, y); y += minor ? 15 : 18;
   };
-  const table = (rows: string[][], headers?: string[], widths?: Record<number, { cellWidth: number }>, compact = false) => {
+  const table = (rows: string[][], headers?: string[], widths?: Record<number, { cellWidth: number }>, compact = false, hooks?: Pick<UserOptions, 'didParseCell' | 'didDrawCell' | 'willDrawCell'>) => {
     autoTable(document, {
       startY: y, margin: { top: TOP, bottom: BOTTOM, left: LEFT, right: RIGHT },
       head: headers ? [headers.map(clean)] : undefined, body: rows.map((row) => row.map(clean)), theme: 'grid',
       styles: { font: 'helvetica', fontSize: compact ? 8.5 : 9, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: .35, cellPadding: compact ? 4 : 5, overflow: 'linebreak', valign: 'top' },
       headStyles: { fillColor: [255, 255, 255], textColor: BLUE, fontStyle: 'bold' },
       columnStyles: widths, rowPageBreak: 'avoid', showHead: 'everyPage',
+      ...hooks,
     });
     y = ((document as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || y) + 8;
   };
@@ -143,10 +154,85 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   heading('3 - Passage Plan');
   fields([['Numéro de la ou des cartes marines', form.charts]]);
   paragraph('ETA : date et heure locale de Paris. Les fiches historiques peuvent conserver une heure seule.');
-  const passageRows = form.waypoints.map((point) => passagePlanCellData(point, { allowLiveRadio: !signed }));
-  if (passageRows.length) table(passageRows.map((row) => [row.waypoint, row.description, row.latitude, row.longitude, row.ukc, row.eta, row.vhf, row.weather, row.denseTraffic]),
-    ['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA - Date / heure', 'Contacts VHF', 'Météo à l’ETA', 'Trafic dense'],
-    { 0: { cellWidth: 50 }, 1: { cellWidth: 140 }, 2: { cellWidth: 65 }, 3: { cellWidth: 65 }, 4: { cellWidth: 35 }, 5: { cellWidth: 75 }, 6: { cellWidth: 125 }, 7: { cellWidth: 150 }, 8: { cellWidth: PAGE_HEIGHT - LEFT - RIGHT - 705 } }, true);
+  const passageRows = form.waypoints.map((point) => passagePlanCellData(point, { allowLiveRadio: !signed, weatherMatrix: form.vessel.weatherMatrix }));
+  const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
+  const height = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const integer = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
+  const metric = (amount: number | null | undefined, unit: string, formatter = decimal) => amount === null || amount === undefined ? '—' : `${formatter.format(amount)} ${unit}`;
+  const weatherCards = form.waypoints.map((point) => {
+    const forecast = waypointWeatherSnapshot(point);
+    document.setFont('helvetica', 'normal'); document.setFontSize(7.5);
+    const message = forecast ? forecast.waves ? '' : forecast.wavesMessage || 'Prévision de houle indisponible.' : 'Prévisions météo non enregistrées pour cette position et cette ETA.';
+    const messageLines = message ? document.splitTextToSize(clean(message), 114) as string[] : [];
+    const windLines = forecast?.wind ? [metric(forecast.wind.speedKnots, 'nd') + (forecast.wind.directionDegrees === null ? '' : ` · de ${integer.format(forecast.wind.directionDegrees)}°`)]
+      : document.splitTextToSize(clean(forecast?.windMessage || 'Prévision de vent indisponible.'), 102) as string[];
+    return { forecast, messageLines, windLines,
+      height: forecast ? 114 + messageLines.length * 10 + windLines.length * 10 : 33 + messageLines.length * 10 };
+  });
+  if (passageRows.length) table(passageRows.map((row) => [row.waypoint, row.description, row.latitude, row.longitude, row.ukc, row.eta, row.vhf, row.weather, row.hasSeaStateIndicator ? row.seaState.label : '—', row.denseTraffic]),
+    ['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA - Date / heure', 'Contacts VHF', 'Météo à l’ETA', 'Conditions de vie à bord', 'Trafic dense'],
+    { 0: { cellWidth: 45 }, 1: { cellWidth: 105 }, 2: { cellWidth: 60 }, 3: { cellWidth: 60 }, 4: { cellWidth: 35 }, 5: { cellWidth: 73 }, 6: { cellWidth: 106 }, 7: { cellWidth: 140 }, 8: { cellWidth: 85 }, 9: { cellWidth: PAGE_HEIGHT - LEFT - RIGHT - 709 } }, true, {
+      didParseCell(cell) {
+        if (cell.section === 'head' && cell.column.index === 0) cell.cell.styles.cellPadding = 3;
+        if (cell.section !== 'body') return;
+        const row = passageRows[cell.row.index];
+        if (cell.column.index === 8 && row.hasSeaStateIndicator) cell.cell.text = [];
+        if (cell.column.index === 7) {
+          // The cell reserves the measured card height; the vector card is drawn below without rasterizing its text.
+          cell.cell.text = [];
+          cell.cell.styles.minCellHeight = weatherCards[cell.row.index].height + 10;
+          cell.cell.styles.cellPadding = 0;
+          cell.cell.styles.fillColor = false;
+        }
+      },
+      willDrawCell(cell) {
+        if (cell.section !== 'body' || cell.column.index !== 7) return;
+        document.setFillColor(255, 255, 255); document.setDrawColor(209, 220, 230); document.setLineWidth(.6);
+        document.roundedRect(cell.cell.x + 5, cell.cell.y + 5, cell.cell.width - 10, weatherCards[cell.row.index].height, 5, 5, 'FD');
+      },
+      didDrawCell(cell) {
+        if (cell.section !== 'body') return;
+        const row = passageRows[cell.row.index];
+        if (cell.column.index === 8 && row.hasSeaStateIndicator) {
+          const colors = SEA_STATE_COLORS[row.seaState.tone];
+          document.setFont('helvetica', 'bold'); document.setFontSize(8);
+          const lines = document.splitTextToSize(clean(row.seaState.label), cell.cell.width - 20) as string[];
+          document.setFillColor(...colors.background);
+          document.roundedRect(cell.cell.x + 5, cell.cell.y + 6, cell.cell.width - 10, lines.length * 10 + 10, 3, 3, 'F');
+          document.setTextColor(...colors.foreground);
+          document.text(lines, cell.cell.x + 10, cell.cell.y + 18, { lineHeightFactor: 1.25 });
+        }
+        if (cell.column.index !== 7) return;
+        const card = weatherCards[cell.row.index];
+        const forecast = card.forecast;
+        const x = cell.cell.x + 12;
+        let top = cell.cell.y + 19;
+        document.setFont('helvetica', 'bold'); document.setFontSize(6.5); document.setTextColor(87, 104, 117);
+        document.text('MÉTÉO À L’ETA', x, top); top += 9;
+        if (forecast) {
+          const metricColumn = (cell.cell.width - 24) / 2;
+          document.setFont('helvetica', 'normal'); document.setFontSize(7); document.setTextColor(87, 104, 117);
+          document.text('Houle Hs', x, top); document.text('Période moyenne', x + metricColumn, top);
+          document.setFont('helvetica', 'bold'); document.setFontSize(13); document.setTextColor(24, 44, 62);
+          document.text(metric(forecast.waves?.heightMeters, 'm', height), x, top + 17);
+          document.text(metric(forecast.waves?.periodSeconds, 's'), x + metricColumn, top + 17); top += 33;
+          document.setFont('helvetica', 'normal'); document.setFontSize(7.5); document.setTextColor(55, 71, 84);
+          document.text(`Provenance houle : ${metric(forecast.waves?.directionDegrees, '°', integer)}`, x, top); top += 12;
+        }
+        if (card.messageLines.length) {
+          document.setFont('helvetica', 'normal'); document.setFontSize(7.5); document.setTextColor(70, 80, 95);
+          document.text(card.messageLines, x, top, { lineHeightFactor: 1.3 }); top += card.messageLines.length * 10 + 4;
+        }
+        if (forecast) {
+          document.setFillColor(237, 246, 251);
+          document.roundedRect(x - 1, top, cell.cell.width - 22, 24 + card.windLines.length * 10, 3, 3, 'F');
+          document.setFont('helvetica', 'normal'); document.setFontSize(7); document.setTextColor(55, 95, 119);
+          document.text('Vent moyen 10 m', x + 5, top + 12);
+          document.setFont('helvetica', forecast.wind ? 'bold' : 'normal'); document.setFontSize(8.5); document.setTextColor(24, 44, 62);
+          document.text(card.windLines, x + 5, top + 25, { lineHeightFactor: 1.15 });
+        }
+      },
+    });
   else paragraph('Aucun point de passage renseigné.');
   if (passageRows.some((row) => row.weatherFootnote || row.radioFootnote)) {
     heading('Sources et horaires du Passage Plan', true);

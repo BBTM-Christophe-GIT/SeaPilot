@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
+import { parseVesselWeatherMatrix, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { isSeaOperationPayload, type SeaOperationPayload } from './seaOperationModel';
 
 export interface SeaOperationRecord {
@@ -50,7 +51,7 @@ export interface SeaOperationPlanningChoice {
   client: string;
   clientContact: string;
   description: string;
-  vessel: Pick<SeaOperationPayload['vessel'], 'id' | 'name' | 'registrationImo' | 'departurePort' | 'arrivalPort' | 'etd' | 'eta'> & { lengthOverall?: string | null };
+  vessel: Pick<SeaOperationPayload['vessel'], 'id' | 'name' | 'registrationImo' | 'departurePort' | 'arrivalPort' | 'etd' | 'eta'> & { lengthOverall?: string | null; weatherMatrix?: VesselWeatherMatrix | null };
   captains: SeaOperationPlanningCaptain[];
   canSign: boolean;
 }
@@ -62,6 +63,7 @@ export interface SeaOperationVessel {
   registrationImo: string;
   lengthOverall: string | null;
   draftMeters?: number | null;
+  weatherMatrix?: VesselWeatherMatrix | null;
   canSign: boolean;
 }
 
@@ -75,6 +77,11 @@ export interface SeaOperationData {
 
 type Row = Record<string, unknown>;
 const nullableText = (value: unknown): string | null => value == null ? null : String(value);
+function vesselMatrix(value: unknown): VesselWeatherMatrix | null {
+  const matrix = parseVesselWeatherMatrix(value);
+  if (value != null && !matrix) throw new Error('La matrice Hs × période reçue pour ce navire est invalide.');
+  return matrix;
+}
 
 function object(value: unknown): Row {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -137,6 +144,7 @@ export async function fetchSeaOperationData(client: SupabaseClient): Promise<Sea
     const row = object(value);
     return { id: Number(row.id), name: String(row.name), registrationImo: String(row.registration_imo || ''),
       lengthOverall: nullableText(row.length_overall), draftMeters: row.draft_m == null ? null : Number(row.draft_m),
+      ...(row.weather_matrix === undefined ? {} : { weatherMatrix: vesselMatrix(row.weather_matrix) }),
       canSign: row.can_sign === true };
   }).sort(compareFleetAssets);
   return { companyId: Number(data.company_id), actorId: String(data.actor_id), actorName: String(data.actor_name),
@@ -173,7 +181,8 @@ export async function fetchSeaOperationPlanning(client: SupabaseClient, date: st
     if (!Array.isArray(row.captains) || !['operationId', 'projectId', 'project', 'client', 'clientContact', 'description'].every((key) => typeof row[key] === 'string')
       || !['id', 'name', 'registrationImo', 'departurePort', 'arrivalPort', 'etd', 'eta'].every((key) => typeof vessel[key] === 'string')) throw new Error('Le contexte Planning est invalide.');
     return { operationId: String(row.operationId), projectId: String(row.projectId), project: String(row.project), client: String(row.client),
-      clientContact: String(row.clientContact), description: String(row.description), vessel: { ...vessel, lengthOverall: nullableText(vessel.lengthOverall) } as SeaOperationPlanningChoice['vessel'],
+      clientContact: String(row.clientContact), description: String(row.description), vessel: { ...vessel, lengthOverall: nullableText(vessel.lengthOverall),
+        ...(vessel.weatherMatrix === undefined ? {} : { weatherMatrix: vesselMatrix(vessel.weatherMatrix) }) } as SeaOperationPlanningChoice['vessel'],
       captains: row.captains.map((value) => { const person = object(value); return { personId: String(person.personId), name: String(person.name),
         functionLabel: String(person.functionLabel), hasSignature: person.hasSignature === true, canSign: person.canSign === true }; }), canSign: row.canSign === true };
   });
