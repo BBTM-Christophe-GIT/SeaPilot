@@ -1,4 +1,12 @@
 .so-eta-picker { min-width: 0; max-width: 100%; width: 100%; font-family: var(--sp-font); }
+.so-eta-picker.is-inline { container: sea-operation-eta / inline-size; }
+.so-eta-picker.is-inline .so-eta-panel { width: min(100%, 640px); margin-top: 0; box-shadow: none; }
+.so-eta-date-pane, .so-eta-controls { min-width: 0; }
+@container sea-operation-eta (min-width: 480px) {
+  .so-eta-picker.is-inline .so-eta-panel { display: grid; grid-template-columns: minmax(240px, 300px) minmax(140px, 1fr); align-items: start; gap: var(--sp-space-3); }
+  .so-eta-picker.is-inline .so-eta-controls { padding-top: var(--sp-space-1); }
+  .so-eta-picker.is-inline .so-eta-time { grid-template-columns: minmax(0, 1fr); }
+}
 .so-eta-picker .so-eta-trigger.sp-button { display: flex; width: 100%; min-width: 0; min-height: 40px; justify-content: flex-start; gap: var(--sp-space-2); padding: var(--sp-space-2); border-radius: var(--sp-control-radius); font: inherit; font-size: .75rem; text-align: left; }
 .so-eta-trigger > svg { flex-shrink: 0; }
 .so-eta-trigger > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }

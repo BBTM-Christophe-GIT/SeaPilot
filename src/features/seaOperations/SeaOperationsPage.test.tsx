@@ -149,17 +149,19 @@ const choiceQueries = (label: string) => within(formQueries().getByRole('group',
 const optionLabels: Record<string, string> = { yes: 'Oui', no: 'Non', nomade: 'NOMADE', email: 'Mail à la Capitainerie', armament: 'Armement', captain: 'Capitaine', agent: 'Agent consignataire', sms: 'Pas de mesures autres que le SMS', specific: 'Mesures spécifiques prises', GO: 'GO · la mission peut être réalisée', NO_GO: 'NO GO · la mission ne peut être réalisée' };
 const choiceInput = (label: string, value: string) => choiceQueries(label).getByRole('checkbox', { name: optionLabels[value] });
 const answerInput = (label: string) => formQueries().getByRole('switch', { name: label });
-const etaTrigger = (index = 1) => formQueries().getByRole('button', { name: `ETA · date et heure · point ${index}` });
+const etaGroup = (index = 1) => formQueries().getByRole('group', { name: `ETA · date et heure · point ${index}` });
+const etaQueries = (index = 1) => within(etaGroup(index));
 const etaDayLabel = (date: string) => new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`));
-function openEta(index = 1) {
-  fireEvent.click(etaTrigger(index));
-  return within(screen.getByRole('dialog', { name: 'Choisir l’ETA' }));
+function expectEta(date: string, time: string, index = 1) {
+  expect(etaGroup(index)).toBeVisible();
+  expect(etaQueries(index).getByLabelText('Heure de l’ETA (Paris)')).toHaveValue(time);
+  expect(etaQueries(index).getByRole('button', { name: etaDayLabel(date) }).closest('[role="gridcell"]')).toHaveAttribute('aria-selected', 'true');
 }
 function applyEta(date: string, time: string, index = 1) {
   const current = capturingWeatherPanel().waypoints[index - 1].eta;
   const displayedDate = /^\d{4}-\d{2}-\d{2}T/.test(current) ? current : seaOperationToday();
   const months = (Number(date.slice(0, 4)) - Number(displayedDate.slice(0, 4))) * 12 + Number(date.slice(5, 7)) - Number(displayedDate.slice(5, 7));
-  const picker = openEta(index);
+  const picker = etaQueries(index);
   for (let month = 0; month < Math.abs(months); month++) fireEvent.click(picker.getByRole('button', { name: months < 0 ? 'Mois précédent' : 'Mois suivant' }));
   fireEvent.click(picker.getByRole('button', { name: etaDayLabel(date) }));
   fireEvent.change(picker.getByLabelText('Heure de l’ETA (Paris)'), { target: { value: time } });
@@ -293,8 +295,9 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(formQueries().queryByRole('button', { name: 'Placer les waypoints' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Afficher la carte en plein écran' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Quitter le plein écran' })).not.toBeInTheDocument();
-    expect(etaTrigger()).toBeDisabled();
-    fireEvent.click(etaTrigger());
+    expectEta('2026-10-23', '14:00');
+    expect(etaQueries().getByLabelText('Heure de l’ETA (Paris)')).toBeDisabled();
+    for (const button of etaQueries().getAllByRole('button')) expect(button).toBeDisabled();
     expect(screen.queryByRole('dialog', { name: 'Choisir l’ETA' })).not.toBeInTheDocument();
     expect(record.draft).toEqual(original);
     expect(saveSeaOperation).not.toHaveBeenCalled();
@@ -318,6 +321,9 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
       expect(point).not.toHaveProperty('radio');
       expect(formQueries().getByLabelText(`Latitude · point ${index + 1}`)).toHaveValue('49');
       expect(formQueries().getByLabelText(`Longitude · point ${index + 1}`)).toHaveValue('-3');
+      expect(etaGroup(index + 1)).toBeVisible();
+      expect(etaQueries(index + 1).getByRole('grid', { name: /Calendrier ·/ })).toBeVisible();
+      expect(etaQueries(index + 1).getByLabelText('Heure de l’ETA (Paris)')).toHaveValue('');
     }
     expect(saveSeaOperation).not.toHaveBeenCalled();
   });
@@ -416,8 +422,9 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(formQueries().queryByRole('button', { name: 'Afficher la carte en plein écran' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Quitter le plein écran' })).not.toBeInTheDocument();
     expect(formQueries().getByLabelText('Latitude · point 1')).toBeDisabled();
-    expect(etaTrigger()).toBeDisabled();
-    fireEvent.click(etaTrigger());
+    expectEta('2026-10-23', '14:00');
+    expect(etaQueries().getByLabelText('Heure de l’ETA (Paris)')).toBeDisabled();
+    for (const button of etaQueries().getAllByRole('button')) expect(button).toBeDisabled();
     expect(screen.queryByRole('dialog', { name: 'Choisir l’ETA' })).not.toBeInTheDocument();
     expect(saveSeaOperation).not.toHaveBeenCalled();
     expect(signSeaOperation).not.toHaveBeenCalled();
@@ -1084,14 +1091,15 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const table = formQueries().getByRole('table', { name: 'Points de passage' });
     expect(within(table).getByText('Ajoutez le premier point de passage.')).toBeInTheDocument();
     await userEvent.click(formQueries().getByRole('button', { name: 'Ajouter un point de passage' }));
-    expect(within(table).getAllByRole('row')).toHaveLength(1);
+    expect(within(table).getAllByRole('row').filter((row) => row.parentElement === table)).toHaveLength(1);
     expect(table).toHaveClass('so-passage-grid');
     expect(formQueries().queryByLabelText(/Description.*VHF/)).not.toBeInTheDocument();
     await userEvent.type(formQueries().getByLabelText('Description · point 1'), 'Entrée du chenal');
     await userEvent.click(formQueries().getByRole('checkbox', { name: 'Zone maritime à trafic dense · point 1' }));
     expect(formQueries().getByLabelText('Description · point 1')).toHaveValue('Entrée du chenal');
-    expect(etaTrigger()).toHaveAttribute('aria-haspopup', 'dialog');
-    expect(etaTrigger()).toHaveTextContent('Choisir date et heure');
+    expect(etaGroup()).toBeVisible();
+    expect(etaQueries().getByRole('grid', { name: /Calendrier ·/ })).toBeVisible();
+    expect(etaQueries().getByLabelText('Heure de l’ETA (Paris)')).toHaveValue('');
     expect(formQueries().getByRole('checkbox', { name: 'Zone maritime à trafic dense · point 1' })).toBeChecked();
     await userEvent.click(formQueries().getByRole('button', { name: 'Supprimer le point 1' }));
     expect(within(table).getByText('Ajoutez le premier point de passage.')).toBeInTheDocument();
@@ -1514,14 +1522,15 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     vi.mocked(saveSeaOperation).mockImplementation(async (_client, edited) => ({ ...record, version: 4, draft: structuredClone(edited) }));
     await openRecord(record);
     await userEvent.click(stepButton(2));
-    expect(etaTrigger()).toHaveAttribute('aria-haspopup', 'dialog');
-    expect(etaTrigger()).toHaveTextContent('12:00');
+    expect(etaGroup()).toBeVisible();
+    expect(etaQueries().getByLabelText('Heure de l’ETA (Paris)')).toHaveValue('');
+    expect(etaQueries().queryByRole('gridcell', { selected: true })).not.toBeInTheDocument();
     expect(formQueries().getByText(/Ancienne ETA : 12:00/)).toBeVisible();
     await saveDraft();
     expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
     expect(saveSeaOperation).toHaveBeenLastCalledWith(client, expect.objectContaining({ waypoints: [expect.objectContaining({ eta: '12:00' })] }), record);
     await userEvent.click(formQueries().getByRole('button', { name: 'Appliquer la date de l’opération à l’ETA du point 1' }));
-    expect(etaTrigger()).toHaveTextContent('16/10/2026 · 12:00');
+    expectEta('2026-10-16', '12:00');
     expect(capturingWeatherPanel().waypoints[0].eta).toBe('2026-10-16T12:00');
     expect(formQueries().queryByText(/Ancienne ETA/)).not.toBeInTheDocument();
     await saveDraft();
@@ -1529,7 +1538,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(saveSeaOperation).toHaveBeenLastCalledWith(client, expect.objectContaining({ waypoints: [expect.objectContaining({ eta: '2026-10-16T12:00' })] }), expect.objectContaining({ version: 4 }));
   });
 
-  it.each(['Annuler', 'Escape'])('opens an empty ETA on the current Paris month and discards pending edits with %s without dirtying the saved operation', async (action) => {
+  it.each(['Annuler', 'Escape'])('shows an empty ETA on the current Paris month and resets pending edits with %s while keeping its calendar visible and the saved operation unchanged', async (action) => {
     const draft = waypointCaptureDraft();
     delete draft.planning;
     draft.vessel.etd = '2025-01-16T08:00';
@@ -1542,7 +1551,9 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await waitFor(() => expect(formQueries().getByLabelText('Projet')).toBeEnabled());
     fireEvent.click(stepButton(2));
     await waitFor(() => expect(formQueries().getByRole('heading', { name: 'Passage Plan' })).toHaveFocus());
-    const picker = openEta();
+    const picker = etaQueries();
+    expect(etaGroup()).toBeVisible();
+    expect(formQueries().queryByRole('button', { name: 'ETA · date et heure · point 1' })).not.toBeInTheDocument();
     const today = seaOperationToday();
     const currentMonth = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${today}T12:00:00Z`));
     expect(picker.getByRole('grid', { name: `Calendrier · ${currentMonth}` })).toBeVisible();
@@ -1559,8 +1570,11 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     else fireEvent.click(picker.getByRole('button', { name: 'Annuler' }));
     expect(screen.queryByRole('dialog', { name: 'Choisir l’ETA' })).not.toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: 'Fiche Opération en Mer' })).toBeVisible();
-    await waitFor(() => expect(etaTrigger()).toHaveFocus());
-    expect(etaTrigger()).toHaveTextContent('Choisir date et heure');
+    expect(etaGroup()).toBeVisible();
+    expect(picker.getByRole('grid', { name: `Calendrier · ${currentMonth}` })).toBeVisible();
+    expect(picker.queryByRole('gridcell', { selected: true })).not.toBeInTheDocument();
+    expect(picker.getByLabelText('Heure de l’ETA (Paris)')).toHaveValue('');
+    expect(picker.getByRole('button', { name: 'Appliquer' })).toBeDisabled();
     expect(capturingWeatherPanel().waypoints).toEqual(original.waypoints);
     expect(footerQueries().queryByText('Modifications non enregistrées')).not.toBeInTheDocument();
     expect(sessionStorage.length).toBe(0);
@@ -1580,7 +1594,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await waitFor(() => expect(formQueries().getByLabelText('Projet')).toBeEnabled());
     fireEvent.click(stepButton(2));
     const previousCallback = capturingWeatherPanel().onWeatherLoaded!;
-    const picker = openEta();
+    const picker = etaQueries();
     fireEvent.click(picker.getByRole('button', { name: etaDayLabel('2026-10-24') }));
     fireEvent.change(picker.getByLabelText('Heure de l’ETA (Paris)'), { target: { value: '15:30' } });
     expect(capturingWeatherPanel().waypoints[0]).toEqual(originalPoint);
@@ -1593,7 +1607,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(capturingWeatherPanel().waypoints[0]).not.toHaveProperty('weather');
     expect(capturingWeatherPanel().waypoints[0].radio).toEqual(originalPoint.radio);
     expect(footerQueries().getByText('Modifications non enregistrées')).toBeVisible();
-    expect(etaTrigger()).toHaveTextContent('24/10/2026 · 15:30');
+    expectEta('2026-10-24', '15:30');
     await saveDraft();
     expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
     const savedPoint = vi.mocked(saveSeaOperation).mock.calls[0][1].waypoints[0];
@@ -1613,17 +1627,17 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     vi.mocked(saveSeaOperation).mockImplementation(async (_client, edited) => (stored = { ...record, version: 4, draft: structuredClone(edited) }));
     await openRecord(record);
     await userEvent.click(stepButton(2));
-    expect(etaTrigger()).toHaveTextContent('16/10/2026 · 12:00');
+    expectEta('2026-10-16', '12:00');
     applyEta('2026-10-17', '14:45');
     await saveDraft();
     expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
     expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ waypoints: [expect.objectContaining({ eta: '2026-10-17T14:45' })] }), record);
-    expect(etaTrigger()).toHaveTextContent('17/10/2026 · 14:45');
+    expectEta('2026-10-17', '14:45');
     fireEvent.click(footerQueries().getByRole('button', { name: 'Annuler' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await openRecord(stored);
     fireEvent.click(stepButton(2));
-    expect(etaTrigger()).toHaveTextContent('17/10/2026 · 14:45');
+    expectEta('2026-10-17', '14:45');
     expect(capturingWeatherPanel().waypoints[0].eta).toBe('2026-10-17T14:45');
   });
 

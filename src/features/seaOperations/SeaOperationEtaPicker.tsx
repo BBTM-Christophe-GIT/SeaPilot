@@ -26,42 +26,50 @@ function calendarWeeks(month: string) {
   return Array.from({ length: cells.length / 7 }, (_, index) => cells.slice(index * 7, index * 7 + 7));
 }
 
-/** Local Paris wall-clock ETA. Opening and editing the calendar never publishes a partial value. */
-export function SeaOperationEtaPicker({ value, onChange, label, disabled = false }: {
-  value: string; onChange: (value: string) => void; label: string; disabled?: boolean;
+/** Local Paris wall-clock ETA. Calendar edits never publish a partial value. */
+export function SeaOperationEtaPicker({ value, onChange, label, disabled = false, inline = false }: {
+  value: string; onChange: (value: string) => void; label: string; disabled?: boolean; inline?: boolean;
 }) {
   const panelId = useId(), titleId = useId(), helpId = useId();
   const wrapper = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
+  const timeInput = useRef<HTMLInputElement>(null);
   const dayButtons = useRef(new Map<string, HTMLButtonElement>());
-  const source = useRef(value), openRef = useRef(false), pendingFocus = useRef(false);
-  const [open, setOpen] = useState(false);
-  const [selectedDate, setSelectedDate] = useState('');
-  const [time, setTime] = useState('');
-  const [month, setMonth] = useState(() => monthOf(seaOperationToday()));
-  const [focusDate, setFocusDate] = useState(() => seaOperationToday());
+  const source = useRef(value), openRef = useRef(inline), pendingFocus = useRef(false);
+  const [open, setOpen] = useState(inline);
+  const [selectedDate, setSelectedDate] = useState(() => inline ? readEta(value)?.date || '' : '');
+  const [time, setTime] = useState(() => inline ? readEta(value)?.time || '' : '');
+  const [month, setMonth] = useState(() => monthOf(inline ? readEta(value)?.date || seaOperationToday() : seaOperationToday()));
+  const [focusDate, setFocusDate] = useState(() => inline ? readEta(value)?.date || seaOperationToday() : seaOperationToday());
   const [error, setError] = useState('');
   const current = readEta(value);
   const today = seaOperationToday();
   const summary = current ? `${current.date.split('-').reverse().join('/')} · ${current.time}` : value || 'Choisir date et heure';
   const close = useCallback((restoreFocus = true) => {
+    if (inline) {
+      const initial = readEta(value), initialFocus = initial?.date || seaOperationToday();
+      source.current = value; pendingFocus.current = false;
+      setSelectedDate(initial?.date || ''); setTime(initial?.time || '');
+      setMonth(monthOf(initialFocus)); setFocusDate(initialFocus); setError('');
+      return;
+    }
     if (!openRef.current) return;
     openRef.current = false; setOpen(false);
     if (restoreFocus) trigger.current?.focus({ preventScroll: true });
-  }, []);
+  }, [inline, value]);
 
   useEffect(() => { if (disabled || source.current !== value) close(false); }, [disabled, value, close]);
   useEffect(() => {
-    if (!open) return;
+    if (!open || inline) return;
     const document = wrapper.current?.ownerDocument;
     const outside = (event: PointerEvent) => { if (event.target instanceof Node && !wrapper.current?.contains(event.target)) close(false); };
     document?.addEventListener('pointerdown', outside, true);
     return () => document?.removeEventListener('pointerdown', outside, true);
-  }, [open, close]);
+  }, [open, inline, close]);
   useEffect(() => {
-    if (open && pendingFocus.current) { pendingFocus.current = false; dayButtons.current.get(focusDate)?.focus({ preventScroll: true }); }
-  }, [open, month, focusDate]);
+    if ((inline || open) && pendingFocus.current) { pendingFocus.current = false; dayButtons.current.get(focusDate)?.focus({ preventScroll: true }); }
+  }, [inline, open, month, focusDate]);
 
-  function canEdit() { return !disabled && !trigger.current?.matches(':disabled') && !trigger.current?.closest('[inert]'); }
+  function canEdit() { return !disabled && !(trigger.current || timeInput.current)?.matches(':disabled') && !wrapper.current?.closest('[inert]'); }
   function show() {
     if (!canEdit() || openRef.current) return;
     const initial = readEta(value), initialFocus = initial?.date || seaOperationToday();
@@ -98,26 +106,26 @@ export function SeaOperationEtaPicker({ value, onChange, label, disabled = false
     const next = `${selectedDate}T${time}`;
     try { seaOperationEtaUtc(next); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Choisissez une date et une heure de Paris valides.'); return; }
-    onChange(next); close();
+    onChange(next); if (!inline) close();
   }
 
-  return <div className="so-eta-picker" ref={wrapper} onKeyDownCapture={(event) => {
-    if (event.key === 'Escape' && (openRef.current || event.repeat)) { event.preventDefault(); event.stopPropagation(); if (!event.repeat) close(); }
-    else if (openRef.current && event.key === 'Enter' && event.target instanceof HTMLInputElement) { event.preventDefault(); event.stopPropagation(); }
+  return <div className={`so-eta-picker${inline ? ' is-inline' : ''}`} ref={wrapper} onKeyDownCapture={(event) => {
+    if (event.key === 'Escape' && (inline || openRef.current || event.repeat)) { event.preventDefault(); event.stopPropagation(); if (!event.repeat) close(); }
+    else if ((inline || openRef.current) && event.key === 'Enter' && event.target instanceof HTMLInputElement) { event.preventDefault(); event.stopPropagation(); }
   }}>
-    <button type="button" className="sp-button sp-button--secondary so-eta-trigger" ref={trigger} aria-label={label} aria-haspopup="dialog" aria-expanded={open && !disabled} aria-controls={open && !disabled ? panelId : undefined} disabled={disabled} onClick={() => open ? close() : show()} onKeyDown={(event) => {
+    {!inline && <button type="button" className="sp-button sp-button--secondary so-eta-trigger" ref={trigger} aria-label={label} aria-haspopup="dialog" aria-expanded={open && !disabled} aria-controls={open && !disabled ? panelId : undefined} disabled={disabled} onClick={() => open ? close() : show()} onKeyDown={(event) => {
       if (['Enter', ' ', 'ArrowDown'].includes(event.key)) { event.preventDefault(); if (!event.repeat) { if (open) close(); else show(); } }
-    }}><CalendarDays size={15} aria-hidden="true" /><span>{summary}</span><ChevronDown size={14} aria-hidden="true" /></button>
-    {open && !disabled && <div className="so-eta-panel" role="dialog" aria-modal="false" aria-labelledby={titleId} aria-describedby={helpId} id={panelId}>
-      <header className="so-eta-navigation"><button type="button" className="sp-button sp-button--secondary" aria-label="Mois précédent" disabled={month === '1000-01-01'} onClick={() => navigate(-1)}><ChevronLeft size={17} aria-hidden="true" /></button><h3><span id={titleId}>Choisir l’ETA</span><strong aria-live="polite">{monthLabel.format(parsePlanningDate(month))}</strong></h3><button type="button" className="sp-button sp-button--secondary" aria-label="Mois suivant" disabled={month === '9999-12-01'} onClick={() => navigate(1)}><ChevronRight size={17} aria-hidden="true" /></button></header>
+    }}><CalendarDays size={15} aria-hidden="true" /><span>{summary}</span><ChevronDown size={14} aria-hidden="true" /></button>}
+    {(inline || (open && !disabled)) && <div className="so-eta-panel" role={inline ? 'group' : 'dialog'} aria-modal={inline ? undefined : 'false'} aria-label={inline ? label : undefined} aria-labelledby={inline ? undefined : titleId} aria-describedby={helpId} id={panelId}>
+      <div className="so-eta-date-pane"><header className="so-eta-navigation"><button type="button" className="sp-button sp-button--secondary" aria-label="Mois précédent" disabled={disabled || month === '1000-01-01'} onClick={() => navigate(-1)}><ChevronLeft size={17} aria-hidden="true" /></button><h3><span id={titleId}>Choisir l’ETA</span><strong aria-live="polite">{monthLabel.format(parsePlanningDate(month))}</strong></h3><button type="button" className="sp-button sp-button--secondary" aria-label="Mois suivant" disabled={disabled || month === '9999-12-01'} onClick={() => navigate(1)}><ChevronRight size={17} aria-hidden="true" /></button></header>
       <div className="so-eta-calendar" role="grid" aria-label={`Calendrier · ${monthLabel.format(parsePlanningDate(month))}`}>
         <div role="row" className="so-eta-week">{weekdays.map(([short, full]) => <span key={full} role="columnheader" aria-label={full}>{short}</span>)}</div>
-        {calendarWeeks(month).map((week, index) => <div className="so-eta-week" role="row" key={index}>{week.map((date, column) => date ? <div role="gridcell" aria-selected={date === selectedDate} key={date}><button type="button" className={`so-eta-day${date === selectedDate ? ' is-selected' : ''}`} ref={(node) => { if (node) dayButtons.current.set(date, node); else dayButtons.current.delete(date); }} tabIndex={date === focusDate ? 0 : -1} aria-label={dayLabel.format(parsePlanningDate(date))} aria-current={date === today ? 'date' : undefined} onClick={() => choose(date)} onKeyDown={(event) => dayKeyDown(event, date)}>{parsePlanningDate(date).getUTCDate()}</button></div> : <span key={`empty-${column}`} role="gridcell" />)}</div>)}
-      </div>
-      <label className="so-eta-time"><span><Clock3 size={15} aria-hidden="true" />Heure de l’ETA (Paris)</span><input type="time" step={60} value={time} onChange={(event) => { if (canEdit()) { setTime(event.target.value); setError(''); } }} /></label>
+        {calendarWeeks(month).map((week, index) => <div className="so-eta-week" role="row" key={index}>{week.map((date, column) => date ? <div role="gridcell" aria-selected={date === selectedDate} key={date}><button type="button" disabled={disabled} className={`so-eta-day${date === selectedDate ? ' is-selected' : ''}`} ref={(node) => { if (node) dayButtons.current.set(date, node); else dayButtons.current.delete(date); }} tabIndex={date === focusDate ? 0 : -1} aria-label={dayLabel.format(parsePlanningDate(date))} aria-current={date === today ? 'date' : undefined} onClick={() => choose(date)} onKeyDown={(event) => dayKeyDown(event, date)}>{parsePlanningDate(date).getUTCDate()}</button></div> : <span key={`empty-${column}`} role="gridcell" />)}</div>)}
+      </div></div>
+      <div className="so-eta-controls"><label className="so-eta-time"><span><Clock3 size={15} aria-hidden="true" />Heure de l’ETA (Paris)</span><input ref={timeInput} disabled={disabled} type="time" step={60} value={time} onChange={(event) => { if (canEdit()) { setTime(event.target.value); setError(''); } }} /></label>
       <p className="so-eta-help" id={helpId}>Sélectionnez une date et une heure. Heure locale Europe/Paris.</p>
       {error && <p className="so-eta-error" role="alert">{error}</p>}
-      <footer className="so-eta-actions"><button type="button" className="sp-button sp-button--secondary" disabled={!value} onClick={() => { if (canEdit()) { onChange(''); close(); } }}>Effacer</button><button type="button" className="sp-button sp-button--secondary" onClick={() => close()}>Annuler</button><button type="button" className="sp-button sp-button--primary" disabled={!selectedDate || !timePattern.test(time)} onClick={apply}>Appliquer</button></footer>
+      <footer className="so-eta-actions"><button type="button" className="sp-button sp-button--secondary" disabled={disabled || !value} onClick={() => { if (canEdit()) { onChange(''); close(); } }}>Effacer</button><button type="button" className="sp-button sp-button--secondary" disabled={disabled} onClick={() => close()}>Annuler</button><button type="button" className="sp-button sp-button--primary" disabled={disabled || !selectedDate || !timePattern.test(time)} onClick={apply}>Appliquer</button></footer></div>
     </div>}
   </div>;
 }
