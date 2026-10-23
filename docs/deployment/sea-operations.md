@@ -327,6 +327,30 @@ de consultation. La sauvegarde puis la signature conservent cette copie. Une
 nouvelle recherche ne réécrit jamais une fiche signée ; un ancien historique
 sans copie indique « prévisions non enregistrées », sans reconstituer sa météo.
 
+### Placement des waypoints sur la carte — 3.77.9
+
+Dans un brouillon modifiable, **Placer les waypoints** ouvre la carte en mode
+placement, y compris lorsque le tableau est vide. Un clic ou toucher ajoute un
+point à la fin du tableau avec un nouvel identifiant et un numéro disponible ;
+latitude et longitude WGS84 sont reportées en degrés décimaux. Le tableau reste
+modifiable pour affiner ces positions et compléter description, ETA et UKC.
+Aucune ETA, UKC, météo ou validation n’est copiée d’un autre waypoint.
+
+Le cadrage est conservé pendant le placement pour éviter qu’il saute après chaque
+ajout. Les boutons permettent de zoomer, déplacer la vue ou **Cadrer le parcours**.
+Faire glisser déplace seulement la carte et ne crée pas de point. Le clavier et
+**Ajouter au centre** offrent une autre façon de placer un point ; **Terminer le
+placement** revient à la carte de consultation. Changer de vue ne modifie pas le
+brouillon ; ajouter un point le marque comme non enregistré. **Enregistrer le
+brouillon** conserve les points dans le fonctionnement de sauvegarde habituel.
+
+Le callback contrôle les droits et refuse les ajouts pendant sauvegarde/export,
+après signature et en lecture seule. Les fiches Capitaine/Marin utilisent les
+permissions renvoyées par le serveur. L’impression et le PDF restent des cartes
+de consultation, sans commandes de placement. Le fond indicatif Natural Earth
+embarqué et les limites de précision décrites ci-dessous restent identiques.
+Aucune migration, API de carte, dépendance applicative, clé ou note de mise à jour.
+
 ### Carte du parcours au-dessus du tableau — 3.77.8
 
 La fiche, son aperçu et le PDF présentent une **Carte du parcours** avant le

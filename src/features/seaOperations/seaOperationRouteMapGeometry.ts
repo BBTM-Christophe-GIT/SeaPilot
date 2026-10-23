@@ -1,10 +1,18 @@
 import worldLandJson from './mapData/world-land.json?raw';
 import europeLandJson from './mapData/europe-land.json?raw';
 import type { SeaOperationWaypoint } from './seaOperationModel';
-import { seaWaypointPosition } from './seaOperationNavigation';
+import { seaWaypointPosition, type SeaPosition } from './seaOperationNavigation';
 
 export interface RouteMapPosition { x: number; y: number }
 export interface RouteMapSegment { from: RouteMapPosition; to: RouteMapPosition }
+export interface RouteMapViewport { centerLatitude: number; centerLongitude: number; longitudeSpan: number }
+export interface RouteMapProjection {
+  centerLatitude: number;
+  centerLongitude: number;
+  latitudePixelsPerDegree: number;
+  longitudePixelsPerDegree: number;
+}
+export const DEFAULT_ROUTE_MAP_VIEWPORT: Readonly<RouteMapViewport> = Object.freeze({ centerLatitude: 49, centerLongitude: -3, longitudeSpan: 16 });
 export interface SeaOperationRouteMapGeometry {
   width: number;
   height: number;
@@ -14,6 +22,8 @@ export interface SeaOperationRouteMapGeometry {
   points: Array<RouteMapPosition & { index: number; label: string; description: string }>;
   invalidCount: number;
   scale: (RouteMapSegment & { label: string }) | null;
+  viewport: RouteMapViewport | null;
+  projection: RouteMapProjection | null;
 }
 
 // Owned, simplified Natural Earth data; see mapData/README.md for provenance.
@@ -27,6 +37,46 @@ const prepareLand = (json: string) => (JSON.parse(json) as number[][][]).map((ri
 const worldLand = prepareLand(worldLandJson);
 const europeLand = prepareLand(europeLandJson);
 const wrapLongitude = (value: number) => ((value + 180) % 360 + 360) % 360 - 180;
+const dimensions = (width: number, height: number) => ({
+  width: Number.isFinite(width) ? Math.max(120, Math.min(4000, width)) : 900,
+  height: Number.isFinite(height) ? Math.max(100, Math.min(2000, height)) : 320,
+});
+const latitudeFactorAt = (latitude: number) => Math.max(.05, Math.cos(latitude * Math.PI / 180));
+const normalizeViewport = (viewport: RouteMapViewport): RouteMapViewport => ({
+  centerLatitude: Number.isFinite(viewport?.centerLatitude) ? Math.max(-90, Math.min(90, viewport.centerLatitude)) : DEFAULT_ROUTE_MAP_VIEWPORT.centerLatitude,
+  centerLongitude: Number.isFinite(viewport?.centerLongitude) ? wrapLongitude(viewport.centerLongitude) : DEFAULT_ROUTE_MAP_VIEWPORT.centerLongitude,
+  longitudeSpan: Number.isFinite(viewport?.longitudeSpan) ? Math.max(.02, Math.min(360, viewport.longitudeSpan)) : DEFAULT_ROUTE_MAP_VIEWPORT.longitudeSpan,
+});
+
+/** Fractions of the visible width/height; positive values move east/north without changing waypoints. */
+export function moveRouteMapViewport(viewport: RouteMapViewport, eastFraction: number, northFraction: number, width = 900, height = 320): RouteMapViewport {
+  const normalized = normalizeViewport(viewport);
+  const size = dimensions(width, height);
+  const latitudeSpan = size.height / size.width * normalized.longitudeSpan * latitudeFactorAt(normalized.centerLatitude);
+  const east = Number.isFinite(eastFraction) ? (eastFraction % (360 / normalized.longitudeSpan)) * normalized.longitudeSpan : 0;
+  const north = Number.isFinite(northFraction) ? Math.sign(northFraction) * Math.min(Math.abs(northFraction), 180 / latitudeSpan) * latitudeSpan : 0;
+  return normalizeViewport({ ...normalized, centerLongitude: normalized.centerLongitude + east, centerLatitude: normalized.centerLatitude + north });
+}
+
+/** A factor greater than one zooms in; longitude never spans more than one world. */
+export function zoomRouteMapViewport(viewport: RouteMapViewport, factor: number): RouteMapViewport {
+  const normalized = normalizeViewport(viewport);
+  if (!Number.isFinite(factor) || factor <= 0) return normalized;
+  return normalizeViewport({ ...normalized, longitudeSpan: Math.max(.02, Math.min(360, normalized.longitudeSpan / factor)) });
+}
+
+/** Pixels must already be transformed into the SVG viewBox; no clamped or guessed maritime position. */
+export function routeMapPositionAt(geometry: SeaOperationRouteMapGeometry, x: number, y: number): SeaPosition | null {
+  const projection = geometry.projection;
+  if (!projection || !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > geometry.width || y > geometry.height
+    || !Number.isFinite(projection.centerLatitude) || !Number.isFinite(projection.centerLongitude)
+    || !Number.isFinite(projection.latitudePixelsPerDegree) || projection.latitudePixelsPerDegree <= 0
+    || !Number.isFinite(projection.longitudePixelsPerDegree) || projection.longitudePixelsPerDegree <= 0) return null;
+  const latitude = projection.centerLatitude + (geometry.height / 2 - y) / projection.latitudePixelsPerDegree;
+  const longitude = wrapLongitude(projection.centerLongitude + (x - geometry.width / 2) / projection.longitudePixelsPerDegree);
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude)) return null;
+  return { latitude, longitude };
+}
 const rounded = (value: number) => Math.round(value * 100) / 100;
 const niceStep = (value: number) => {
   const unit = 10 ** Math.floor(Math.log10(value));
@@ -78,28 +128,39 @@ export function buildSeaOperationRouteMap(
   waypoints: readonly Pick<SeaOperationWaypoint, 'latitude' | 'longitude' | 'number' | 'descriptionVhf'>[],
   width = 900,
   height = 320,
+  viewport?: RouteMapViewport,
 ): SeaOperationRouteMapGeometry {
-  width = Number.isFinite(width) ? Math.max(120, Math.min(4000, width)) : 900;
-  height = Number.isFinite(height) ? Math.max(100, Math.min(2000, height)) : 320;
+  ({ width, height } = dimensions(width, height));
   const positions = waypoints.map(seaWaypointPosition);
   const validPositions = positions.filter((point) => point !== null);
-  const result: SeaOperationRouteMapGeometry = { width, height, land: [], grid: [], segments: [], points: [], invalidCount: waypoints.length - validPositions.length, scale: null };
-  if (!validPositions.length) return result;
+  const result: SeaOperationRouteMapGeometry = { width, height, land: [], grid: [], segments: [], points: [], invalidCount: waypoints.length - validPositions.length, scale: null, viewport: null, projection: null };
+  if (!validPositions.length && viewport === undefined) return result;
 
-  const longitudes = validPositions.map(({ longitude }) => (longitude + 360) % 360).sort((a, b) => a - b);
-  let cut = 0, largestGap = -1;
-  longitudes.forEach((longitude, index) => {
-    const gap = (longitudes[index + 1] ?? longitudes[0] + 360) - longitude;
-    if (gap > largestGap) { largestGap = gap; cut = longitudes[(index + 1) % longitudes.length]; }
-  });
-  const longitudeFor = (longitude: number) => ((longitude - cut) % 360 + 360) % 360 + cut;
-  const unwrapped = validPositions.map(({ longitude }) => longitudeFor(longitude));
-  const minLon = Math.min(...unwrapped), maxLon = Math.max(...unwrapped);
-  const latitudes = validPositions.map(({ latitude }) => latitude);
-  const minLat = Math.min(...latitudes), maxLat = Math.max(...latitudes);
-  const centerLon = (minLon + maxLon) / 2, centerLat = (minLat + maxLat) / 2;
-  const latitudeFactor = Math.max(.05, Math.cos(centerLat * Math.PI / 180));
-  const unitScale = Math.min((width - 80) / Math.max(.8, (maxLon - minLon) * latitudeFactor * 1.35), (height - 64) / Math.max(.45, (maxLat - minLat) * 1.5));
+  let centerLon: number, centerLat: number, unitScale: number, longitudeFor: (longitude: number) => number;
+  const locked = viewport === undefined ? null : normalizeViewport(viewport);
+  if (locked) {
+    centerLon = locked.centerLongitude; centerLat = locked.centerLatitude;
+    unitScale = width / (locked.longitudeSpan * latitudeFactorAt(centerLat));
+    longitudeFor = (longitude) => centerLon + wrapLongitude(longitude - centerLon);
+  } else {
+    // Preserve the historical automatic framing used by signed print/PDF exports.
+    const longitudes = validPositions.map(({ longitude }) => (longitude + 360) % 360).sort((a, b) => a - b);
+    let cut = 0, largestGap = -1;
+    longitudes.forEach((longitude, index) => {
+      const gap = (longitudes[index + 1] ?? longitudes[0] + 360) - longitude;
+      if (gap > largestGap) { largestGap = gap; cut = longitudes[(index + 1) % longitudes.length]; }
+    });
+    longitudeFor = (longitude) => ((longitude - cut) % 360 + 360) % 360 + cut;
+    const unwrapped = validPositions.map(({ longitude }) => longitudeFor(longitude));
+    const minLon = Math.min(...unwrapped), maxLon = Math.max(...unwrapped);
+    const latitudes = validPositions.map(({ latitude }) => latitude);
+    const minLat = Math.min(...latitudes), maxLat = Math.max(...latitudes);
+    centerLon = (minLon + maxLon) / 2; centerLat = (minLat + maxLat) / 2;
+    unitScale = Math.min((width - 80) / Math.max(.8, (maxLon - minLon) * latitudeFactorAt(centerLat) * 1.35), (height - 64) / Math.max(.45, (maxLat - minLat) * 1.5));
+  }
+  const latitudeFactor = latitudeFactorAt(centerLat);
+  result.viewport = locked ?? { centerLatitude: centerLat, centerLongitude: wrapLongitude(centerLon), longitudeSpan: width / (latitudeFactor * unitScale) };
+  result.projection = { centerLatitude: centerLat, centerLongitude: wrapLongitude(centerLon), latitudePixelsPerDegree: unitScale, longitudePixelsPerDegree: latitudeFactor * unitScale };
   const project = (longitude: number, latitude: number): RouteMapPosition => ({ x: rounded(width / 2 + (longitude - centerLon) * latitudeFactor * unitScale), y: rounded(height / 2 - (latitude - centerLat) * unitScale) });
   const west = centerLon - width / (2 * latitudeFactor * unitScale), east = centerLon + width / (2 * latitudeFactor * unitScale);
   const south = centerLat - height / (2 * unitScale), north = centerLat + height / (2 * unitScale);

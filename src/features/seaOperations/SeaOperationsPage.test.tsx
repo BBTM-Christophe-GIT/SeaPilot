@@ -175,6 +175,81 @@ beforeEach(() => { vi.resetAllMocks(); sessionStorage.clear(); viewport(1440); }
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); document.body.style.overflow = ''; });
 
 describe('Opération en Mer with authenticated server permission fixtures', () => {
+  it('adds consecutive map placements to the table without losing batched clicks or guessing ETA and UKC', async () => {
+    renderAccount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await userEvent.click(stepButton(2));
+    await userEvent.click(formQueries().getByRole('button', { name: 'Placer les waypoints' }));
+    const add = formQueries().getByRole('button', { name: 'Ajouter au centre' });
+    act(() => { fireEvent.click(add); fireEvent.click(add); });
+    const points = capturingWeatherPanel().waypoints;
+    expect(points).toHaveLength(2);
+    expect(new Set(points.map((point) => point.id)).size).toBe(2);
+    expect(points.map((point) => point.number)).toEqual(['1', '2']);
+    for (const [index, point] of points.entries()) {
+      expect(point).toMatchObject({ latitude: '49', longitude: '-3', eta: '', ukc: '', descriptionVhf: '', denseTraffic: false });
+      expect(point).not.toHaveProperty('weather');
+      expect(point).not.toHaveProperty('radio');
+      expect(formQueries().getByLabelText(`Latitude · point ${index + 1}`)).toHaveValue('49');
+      expect(formQueries().getByLabelText(`Longitude · point ${index + 1}`)).toHaveValue('-3');
+    }
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('keeps map and manual additions numbered uniquely after deleting a middle row', async () => {
+    renderAccount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await userEvent.click(stepButton(2));
+    for (let index = 0; index < 3; index += 1) await userEvent.click(formQueries().getByRole('button', { name: 'Ajouter un point de passage' }));
+    await userEvent.click(formQueries().getByRole('button', { name: 'Supprimer le point 2' }));
+    await userEvent.click(formQueries().getByRole('button', { name: 'Placer les waypoints' }));
+    await userEvent.click(formQueries().getByRole('button', { name: 'Ajouter au centre' }));
+    expect(capturingWeatherPanel().waypoints.map((point) => point.number)).toEqual(['1', '3', '4']);
+    expect(formQueries().getByLabelText('Waypoint · point 2')).toHaveValue('3');
+    expect(formQueries().getByLabelText('Waypoint · point 3')).toHaveValue('4');
+    await userEvent.click(formQueries().getByRole('button', { name: 'Ajouter un point de passage' }));
+    expect(capturingWeatherPanel().waypoints.map((point) => point.number)).toEqual(['1', '3', '4', '5']);
+  });
+
+  it('ends map placement with Escape while keeping the operation dialog open', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderAccount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await userEvent.click(stepButton(2));
+    await userEvent.click(formQueries().getByRole('button', { name: 'Placer les waypoints' }));
+    await userEvent.click(formQueries().getByRole('button', { name: 'Ajouter au centre' }));
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(formQueries().getByRole('button', { name: 'Placer les waypoints' })).toBeVisible();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(capturingWeatherPanel().waypoints).toHaveLength(1);
+  });
+
+  it('saves placed coordinates beside the original waypoint without inheriting its weather, ETA or UKC', async () => {
+    const draft = waypointCaptureDraft();
+    draft.waypoints[0].weather = waypointWeather();
+    const record = recordFixture(captainAccount, { draft });
+    const { client } = renderAccount(captainAccount, record, 1, plannedMissions());
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, edited) => ({ ...record, version: 4, draft: structuredClone(edited) }));
+    await openRecord(record);
+    await userEvent.click(stepButton(2));
+    await userEvent.click(formQueries().getByRole('button', { name: 'Placer les waypoints' }));
+    await userEvent.click(formQueries().getByRole('button', { name: 'Ajouter au centre' }));
+    const placed = capturingWeatherPanel().waypoints[1];
+    expect(placed).toMatchObject({ eta: '', ukc: '', denseTraffic: false, descriptionVhf: '' });
+    expect(placed).not.toHaveProperty('weather');
+    expect(placed).not.toHaveProperty('radio');
+    expect(capturingWeatherPanel().waypoints[0]).toEqual(draft.waypoints[0]);
+    await saveDraft();
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
+    const saved = vi.mocked(saveSeaOperation).mock.calls[0][1];
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, saved, record);
+    expect(saved.waypoints).toHaveLength(2);
+    expect(saved.waypoints[0]).toMatchObject(draft.waypoints[0]);
+    expect(saved.waypoints[1]).toMatchObject(placed);
+    expect(saved).toMatchObject({ description: draft.description, charts: draft.charts, specialPersonnel: draft.specialPersonnel });
+  });
+
   it('places a responsive route map before the Passage Plan table and updates it from coordinate edits', async () => {
     renderAccount();
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
@@ -211,6 +286,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const map = formQueries().getByRole('figure', { name: 'Carte du parcours' });
     expect(within(map).getByRole('img', { name: 'Carte du parcours · 1 point géolocalisé' })).toBeVisible();
     expect(within(map).queryByRole('button')).not.toBeInTheDocument();
+    expect(formQueries().queryByRole('button', { name: 'Placer les waypoints' })).not.toBeInTheDocument();
     expect(formQueries().getByLabelText('Latitude · point 1')).toBeDisabled();
     expect(saveSeaOperation).not.toHaveBeenCalled();
     expect(signSeaOperation).not.toHaveBeenCalled();

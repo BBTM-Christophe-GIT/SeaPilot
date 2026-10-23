@@ -23,6 +23,8 @@ import { passagePlanCellData } from './seaOperationPassagePlan';
 import { cloneVesselWeatherMatrix, evaluateVesselSeaState, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { SeaOperationWeatherCard, SeaStateIndicator } from './SeaOperationWeatherCard';
 import { SeaOperationRouteMap } from './SeaOperationRouteMap';
+import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
+import type { SeaPosition } from './seaOperationNavigation';
 
 const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'];
 const STEP_DETAILS = ['Mission, client et voyage', 'Préparation et sécurité du navire', 'Cartes et points de route', 'GO / NO GO et signature'];
@@ -233,9 +235,24 @@ export function SeaOperationsPage() {
   const waypointUpdate = (index: number, patch: Partial<SeaOperationPayload['waypoints'][number]>) => update({ waypoints: draft.waypoints.map((point, i) => i === index ? updateSeaOperationWaypoint(point, patch) : point) });
   const editable = !record || record.canEdit;
   const signed = record?.status === 'signed';
-  const weatherEditor = useRef({ client, draft, editing, editable, signed, busy });
+  const weatherEditor = useRef({ client, draft, editing, editable, signed, busy, exporting });
   const pendingWeather = useRef(new globalThis.Map<string, { weather: SeaOperationWaypointWeather; context: SeaOperationWeatherCaptureContext; sourceClient: SupabaseClient }>());
-  weatherEditor.current = { client, draft, editing, editable, signed, busy };
+  weatherEditor.current = { client, draft, editing, editable, signed, busy, exporting };
+  const addWaypoint = (position?: SeaPosition) => {
+    const current = weatherEditor.current;
+    if (!current.editing || !current.editable || current.signed || current.busy || current.exporting) return;
+    if (position && (!Number.isFinite(position.latitude) || !Number.isFinite(position.longitude) || Math.abs(position.latitude) > 90 || Math.abs(position.longitude) > 180)) return;
+    const id = crypto.randomUUID();
+    allowAutomaticMission.current = false; editRevision.current += 1;
+    setDraft((value) => {
+      const used = new Set(value.waypoints.map((point) => point.number.trim()));
+      let number = value.waypoints.length + 1;
+      while (used.has(String(number))) number += 1;
+      const point = { id, number: String(number), descriptionVhf: '', latitude: position ? String(Number(position.latitude.toFixed(6))) : '', longitude: position ? String(Number(position.longitude.toFixed(6))) : '', ukc: '', eta: '', denseTraffic: false };
+      return { ...value, waypoints: [...value.waypoints, point] };
+    });
+    setDirty(true); setNotice(''); setIssues([]);
+  };
   const retainWeather = useCallback((weather: SeaOperationWaypointWeather, context: SeaOperationWeatherCaptureContext, sourceClient: SupabaseClient) => {
     const current = weatherEditor.current;
     if (sourceClient !== current.client || !current.editing || !current.editable || current.signed
@@ -432,7 +449,9 @@ export function SeaOperationsPage() {
           <Field label="Numéro de la ou des cartes marines"><input value={draft.charts} onChange={(event) => update({ charts: event.target.value })} /></Field>
           <Field label="Tirant d’eau de référence (m)"><input type="number" readOnly value={referenceDraft ?? ''} /></Field>{referenceDraft == null && <p className="so-help">Renseignez le tirant d’eau du navire dans le module Navires.</p>}
           <SeaOperationHydroSources />
-          {step === 2 && <SeaOperationRouteMap waypoints={draft.waypoints} />}
+          {step === 2 && (editable && !signed
+            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${draft.planning?.operationId || ''}`} waypoints={draft.waypoints} onAddWaypoint={addWaypoint} disabled={busy || exporting} />
+            : <SeaOperationRouteMap waypoints={draft.waypoints} />)}
           <h3>Points de passage</h3>
           <div className="so-passage-grid" role="table" aria-label="Points de passage">
             {draft.waypoints.map((point, index) => {
@@ -451,7 +470,7 @@ export function SeaOperationsPage() {
             })}
             {draft.waypoints.length === 0 && <div className="so-waypoint-empty" role="row"><div role="cell">Ajoutez le premier point de passage.</div></div>}
           </div>
-          <button type="button" className="so-secondary sp-button sp-button--secondary" onClick={() => update({ waypoints: [...draft.waypoints, { id: crypto.randomUUID(), number: String(draft.waypoints.length + 1), descriptionVhf: '', latitude: '', longitude: '', ukc: '', eta: '', denseTraffic: false }] })}><Plus size={16} />Ajouter un point de passage</button>
+          <button type="button" className="so-secondary sp-button sp-button--secondary" disabled={exporting} onClick={() => addWaypoint()}><Plus size={16} />Ajouter un point de passage</button>
           <SeaOperationRadioPanel waypoints={draft.waypoints} />
           <SeaOperationWeatherPanel client={client} projectId={draft.planning?.projectId || ''} waypoints={draft.waypoints} preview={previewMode} active={step === 2} onWeatherLoaded={retainWeather} />
         </section>

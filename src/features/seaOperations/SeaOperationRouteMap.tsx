@@ -1,7 +1,7 @@
 import { MapPin } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SeaOperationWaypoint } from './seaOperationModel';
-import { buildSeaOperationRouteMap } from './seaOperationRouteMapGeometry';
+import { buildSeaOperationRouteMap, type RouteMapViewport, type SeaOperationRouteMapGeometry } from './seaOperationRouteMapGeometry';
 import './seaOperationRouteMap.css';
 
 interface Position { x: number; y: number }
@@ -27,9 +27,12 @@ function directionArrow(from: Position, to: Position): string | null {
   return `${x + ux * 5},${y + uy * 5} ${x - ux * 4 - uy * 3.5},${y - uy * 4 + ux * 3.5} ${x - ux * 4 + uy * 3.5},${y - uy * 4 - ux * 3.5}`;
 }
 
-/** Read-only situation map from recorded coordinates; no map server or tracking. */
-export function SeaOperationRouteMap({ waypoints, compact = false }: {
+/** Local situation map; placement is supplied explicitly by the editing wrapper. */
+export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onGeometry, renderOverlay }: {
   waypoints: readonly SeaOperationWaypoint[]; compact?: boolean;
+  viewport?: RouteMapViewport;
+  onGeometry?: (geometry: SeaOperationRouteMapGeometry) => void;
+  renderOverlay?: (geometry: SeaOperationRouteMapGeometry) => ReactNode;
 }) {
   const titleId = useId();
   const descriptionId = useId();
@@ -38,9 +41,11 @@ export function SeaOperationRouteMap({ waypoints, compact = false }: {
   const frame = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
   const height = compact ? 220 : width < 600 ? 280 : 320;
-  const geometry = useMemo(() => buildSeaOperationRouteMap(waypoints, width, height), [waypoints, width, height]);
+  const geometry = useMemo(() => buildSeaOperationRouteMap(waypoints, width, height, compact ? undefined : viewport), [waypoints, width, height, compact, viewport]);
   const groups = useMemo(() => groupCoincidentPoints(geometry.points), [geometry.points]);
   const countLabel = `${geometry.points.length} point${geometry.points.length === 1 ? '' : 's'} géolocalisé${geometry.points.length === 1 ? '' : 's'}`;
+
+  useEffect(() => { onGeometry?.(geometry); }, [geometry, onGeometry]);
 
   useEffect(() => {
     if (!frame.current || typeof ResizeObserver === 'undefined') return;
@@ -54,7 +59,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false }: {
   return <figure aria-labelledby={titleId} className={`so-route-map${compact ? ' is-compact' : ''}`}>
     <header className="so-route-map-heading"><h3 id={titleId}>Carte du parcours</h3><span>{countLabel}</span></header>
     <div className="so-route-map-frame" ref={frame}>
-      {geometry.points.length ? <svg aria-labelledby={svgTitleId} aria-describedby={descriptionId} className="so-route-map-svg" role="img" viewBox={`0 0 ${geometry.width} ${geometry.height}`}>
+      {geometry.projection ? <svg aria-labelledby={svgTitleId} aria-describedby={descriptionId} className="so-route-map-svg" role={!compact && renderOverlay ? 'group' : 'img'} viewBox={`0 0 ${geometry.width} ${geometry.height}`}>
         <title id={svgTitleId}>{`Carte du parcours · ${countLabel}`}</title>
         <desc id={descriptionId}>Nord en haut. Les numéros suivent l’ordre du tableau. {geometry.points.map((point) => `Point ${point.index} : ${point.label}`).join(' ; ')}. Les points aux mêmes coordonnées partagent une pastille.</desc>
         <defs><clipPath id={clipId}><rect width={geometry.width} height={geometry.height} /></clipPath></defs>
@@ -85,6 +90,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false }: {
           })}</g>
           <g aria-hidden="true" className="so-route-map-north" transform={`translate(${geometry.width - 23} 31)`}><text textAnchor="middle" y={-15}>N</text><path d="M 0 9 V -7 M -4 -2 L 0 -7 L 4 -2" vectorEffect="non-scaling-stroke" /></g>
           {geometry.scale && <g aria-hidden="true" className="so-route-map-scale"><path d={`M ${geometry.scale.from.x} ${geometry.scale.from.y - 4} V ${geometry.scale.from.y + 4} M ${geometry.scale.from.x} ${geometry.scale.from.y} H ${geometry.scale.to.x} M ${geometry.scale.to.x} ${geometry.scale.to.y - 4} V ${geometry.scale.to.y + 4}`} vectorEffect="non-scaling-stroke" /><text x={(geometry.scale.from.x + geometry.scale.to.x) / 2} y={geometry.scale.from.y - 8} textAnchor="middle">{geometry.scale.label}</text></g>}
+          {!compact && renderOverlay?.(geometry)}
         </g>
       </svg> : <div className="so-route-map-empty"><MapPin aria-hidden="true" size={22} /><p>Renseignez une latitude et une longitude valides pour afficher les points de passage.</p></div>}
     </div>
