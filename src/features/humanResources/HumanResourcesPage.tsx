@@ -767,6 +767,9 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
   const [documentAction, setDocumentAction] = useState<{ document: HrDocumentRecord; mode: 'edit' | 'delete' } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isCreatingDocument, setIsCreatingDocument] = useState(false);
+  const documentCreationPending = useRef(false);
+  const isBusy = isSaving || isCreatingDocument;
   const [isDownloading, setIsDownloading] = useState(false);
   const [isGeneratingTrainingPlan, setIsGeneratingTrainingPlan] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -1160,9 +1163,11 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
     if (!isManager && !(isCaptainView && people.some((person) => person.id === input.person.id))) {
       throw new Error("L'ajout de documents est réservé aux profils autorisés pour ce collaborateur.");
     }
+    if (documentCreationPending.current) return;
+    documentCreationPending.current = true;
     setStatusMessage(null);
     setErrorMessage(null);
-    setIsSaving(true);
+    setIsCreatingDocument(true);
 
     try {
       const createdDocument = await createHrDocument(effectiveClient, input);
@@ -1174,7 +1179,8 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
       setErrorMessage(error instanceof Error ? error.message : "Impossible d'ajouter le document.");
       throw new Error('hr-document-creation-failed');
     } finally {
-      setIsSaving(false);
+      documentCreationPending.current = false;
+      setIsCreatingDocument(false);
     }
   }
 
@@ -1625,9 +1631,11 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
           documents={selectedPersonDocuments}
           documentTypes={documentTypes}
           isManager={isManager}
-          isSaving={isSaving}
+          isSaving={isBusy}
           onClose={() => setSelectedPersonId(null)}
-          onDocumentCreate={(person) => setDocumentCreationPersonId(person.id)}
+          onDocumentCreate={(person) => {
+            if (!documentCreationPending.current) setDocumentCreationPersonId(person.id);
+          }}
           onDocumentOpen={handleOpenDocument}
           onDocumentRenew={(document) => setRenewalDocumentId(document.id)}
           onDocumentEdit={(document) => setDocumentAction({ document, mode: 'edit' })}
@@ -1656,7 +1664,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
       {isCreateOpen ? (
         <CreatePersonDialog
           form={form}
-          isSaving={isSaving}
+          isSaving={isBusy}
           onClose={() => setIsCreateOpen(false)}
           onSubmit={handleCreatePerson}
           onUpdate={updateFormValue}
@@ -1666,7 +1674,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
       {documentAction && isManager ? (
         <DocumentDetailsDialog
           document={documentAction.document}
-          isSaving={isSaving}
+          isSaving={isBusy}
           mode={documentAction.mode}
           onClose={() => setDocumentAction(null)}
           onSubmit={handleDocumentAction}
@@ -1676,7 +1684,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
       {renewalDocument && renewalPerson ? (
         <DocumentRenewalDialog
           document={renewalDocument}
-          isSaving={isSaving}
+          isSaving={isBusy}
           onClose={() => setRenewalDocumentId(null)}
           onSubmit={handleRenewDocument}
           person={renewalPerson}
@@ -1686,8 +1694,10 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
       {documentCreationPerson ? (
         <DocumentCreationDialog
           documentTypes={documentTypes}
-          isSaving={isSaving}
-          onClose={() => setDocumentCreationPersonId(null)}
+          isSaving={isCreatingDocument}
+          onClose={() => {
+            if (!documentCreationPending.current) setDocumentCreationPersonId(null);
+          }}
           onSubmit={handleCreateDocument}
           person={documentCreationPerson}
         />
@@ -2419,6 +2429,7 @@ function DocumentCreationDialog({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSaving) return;
     setFormError('');
 
     if (!selectedDocumentType || !file || (!dueDate && !noExpiry) || !generatedFileName) {
@@ -3582,7 +3593,7 @@ function ProfileDocumentsSection({
         <h3>{title}</h3>
         <span>{documents.length}</span>
         {canCreateDocument ? (
-          <button className="hr-profile-add-document" disabled={isSaving} onClick={onDocumentCreate} type="button">
+          <button aria-haspopup="dialog" className="hr-profile-add-document sp-button sp-button--primary" onClick={onDocumentCreate} type="button">
             <FilePlus2 aria-hidden="true" size={15} />
             Ajouter un document
           </button>
