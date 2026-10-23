@@ -327,6 +327,29 @@ de consultation. La sauvegarde puis la signature conservent cette copie. Une
 nouvelle recherche ne réécrit jamais une fiche signée ; un ancien historique
 sans copie indique « prévisions non enregistrées », sans reconstituer sa météo.
 
+### Carte du parcours au-dessus du tableau — 3.77.8
+
+La fiche, son aperçu et le PDF présentent une **Carte du parcours** avant le
+tableau du Passage Plan. Le cadrage suit automatiquement les positions WGS84
+saisies, avec le nord en haut, une grille de coordonnées et une échelle indicative
+en milles nautiques. Les repères reprennent l’ordre des lignes du tableau et les
+segments relient seulement deux lignes consécutives dont les coordonnées sont
+valides. Une ligne manquante ou invalide interrompt le tracé ; elle n’est jamais
+contournée par une liaison inventée. Sans position valide, un message invite à
+renseigner latitude et longitude. Les repères confondus restent identifiables.
+
+Le fond terrestre est embarqué depuis Natural Earth, sans clé, tuiles distantes
+ni transmission des coordonnées à un tiers. Sa provenance, ses tolérances de
+simplification et son script de reconstruction sont dans
+[`mapData/README.md`](../../src/features/seaOperations/mapData/README.md).
+Cette carte de situation représente le tracé saisi ; elle ne calcule pas de route
+navigable, ne fournit pas de sonde et ne remplace pas les cartes SHOM identifiées.
+Les géométries sont partagées par le SVG de la fiche et le dessin vectoriel PDF.
+Le chapitre 3 reste en paysage et conserve ses dix colonnes et les éléments Word.
+La carte utilise uniquement le contenu courant ou enregistré de la fiche, y
+compris signée ; elle ne modifie ni la signature, ni les permissions, ni les RPC.
+Aucune migration, dépendance applicative, clé ou nouvelle note de mise à jour.
+
 ### Matrice Hs × période par navire — 3.77.7
 
 Dans **Navires → fiche du navire → Conditions météo limites**, la matrice se

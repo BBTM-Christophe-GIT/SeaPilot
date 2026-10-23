@@ -1,0 +1,42 @@
+.so-route-map { min-width: 0; max-width: 100%; margin: var(--sp-space-4) 0; padding: var(--sp-space-3); border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); color: var(--sp-text); background: var(--sp-surface); font-family: var(--sp-font); break-inside: avoid; }
+.so-route-map-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: var(--sp-space-1) var(--sp-space-3); margin-bottom: var(--sp-space-2); }
+.so-route-map .so-route-map-heading h3 { margin: 0; color: var(--sp-heading); font-size: .875rem; font-weight: 700; }
+.so-route-map-heading > span { color: var(--sp-muted); font-size: .72rem; }
+.so-route-map-frame { min-width: 0; overflow: hidden; border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-primary-soft); }
+.so-route-map-svg { display: block; width: 100%; height: auto; overflow: hidden; }
+.so-route-map-sea { fill: var(--sp-primary-soft); }
+.so-route-map-land polygon { fill: var(--sp-surface-subtle); stroke: var(--sp-border-strong); stroke-width: .8px; }
+.so-route-map-grid line { stroke: var(--sp-border-strong); stroke-width: .6px; stroke-dasharray: 3 5; }
+.so-route-map-grid text { fill: var(--sp-muted); font-family: var(--sp-font); font-size: 10px; paint-order: stroke; stroke: var(--sp-primary-soft); stroke-width: 2px; }
+.so-route-map-track line { stroke: var(--sp-primary); stroke-width: 2.5px; stroke-linecap: round; }
+.so-route-map-direction { fill: var(--sp-primary); }
+.so-route-map-pin { fill: var(--sp-surface); stroke: var(--sp-primary); stroke-width: 2px; }
+.so-route-map-ordinal { fill: var(--sp-primary); font-family: var(--sp-font); font-size: 12px; font-weight: 750; }
+.so-route-map-point.is-start .so-route-map-pin { fill: var(--sp-primary); }
+.so-route-map-point.is-start .so-route-map-ordinal { fill: var(--sp-surface); }
+.so-route-map-finish-ring { fill: none; stroke: var(--sp-primary); stroke-width: 1.5px; }
+.so-route-map-point-label { fill: var(--sp-heading); font-family: var(--sp-font); font-size: 11px; font-weight: 650; paint-order: stroke; stroke: var(--sp-primary-soft); stroke-width: 3px; stroke-linejoin: round; }
+.so-route-map-north text, .so-route-map-scale text { fill: var(--sp-heading); font-family: var(--sp-font); font-size: 10px; font-weight: 650; paint-order: stroke; stroke: var(--sp-primary-soft); stroke-width: 2px; }
+.so-route-map-north path, .so-route-map-scale path { stroke: var(--sp-heading); stroke-width: 1.3px; fill: none; }
+.so-route-map-empty { display: grid; place-items: center; gap: var(--sp-space-2); min-height: 120px; padding: var(--sp-space-4); text-align: center; color: var(--sp-muted); }
+.so-route-map .so-route-map-empty p { margin: 0; font-size: .8125rem; line-height: 1.5; }
+.so-route-map .so-route-map-omissions { margin: var(--sp-space-2) 0 0; color: var(--sp-muted); font-size: .75rem; line-height: 1.5; }
+.so-route-map-caption { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-space-2) var(--sp-space-3); margin-top: var(--sp-space-2); color: var(--sp-muted); font-size: .68rem; line-height: 1.5; overflow-wrap: anywhere; }
+.so-route-map-legend, .so-route-map-legend > span { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-1); }
+.so-route-map-legend { gap: var(--sp-space-3); }
+.so-route-map-legend i { display: inline-block; width: 10px; height: 10px; border: 1px solid var(--sp-primary); border-radius: 50%; background: var(--sp-surface); }
+.so-route-map-legend i.is-start { background: var(--sp-primary); }
+.so-route-map-legend i.is-end { outline: 1px solid var(--sp-primary); outline-offset: 2px; margin: 0 2px; }
+.so-route-map.is-compact { padding: var(--sp-space-2); margin: var(--sp-space-3) 0; }
+.so-route-map.is-compact .so-route-map-heading { margin-bottom: var(--sp-space-1); }
+.so-route-map.is-compact .so-route-map-caption, .so-route-map.is-compact .so-route-map-omissions { font-size: .65rem; }
+@media (max-width: 430px) {
+  .so-route-map { padding: var(--sp-space-2); }
+  .so-route-map-caption { display: grid; }
+}
+@media print {
+  .so-route-map { break-inside: avoid; padding: 6pt; margin: 8pt 0; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .so-route-map .so-route-map-heading h3 { font-size: 10pt; }
+  .so-route-map-heading > span, .so-route-map-caption, .so-route-map .so-route-map-omissions { font-size: 7.5pt; }
+  .so-route-map .so-route-map-empty p { font-size: 8pt; white-space: normal; }
+}

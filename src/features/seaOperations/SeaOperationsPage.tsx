@@ -22,6 +22,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { passagePlanCellData } from './seaOperationPassagePlan';
 import { cloneVesselWeatherMatrix, evaluateVesselSeaState, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { SeaOperationWeatherCard, SeaStateIndicator } from './SeaOperationWeatherCard';
+import { SeaOperationRouteMap } from './SeaOperationRouteMap';
 
 const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'];
 const STEP_DETAILS = ['Mission, client et voyage', 'Préparation et sécurité du navire', 'Cartes et points de route', 'GO / NO GO et signature'];
@@ -431,6 +432,7 @@ export function SeaOperationsPage() {
           <Field label="Numéro de la ou des cartes marines"><input value={draft.charts} onChange={(event) => update({ charts: event.target.value })} /></Field>
           <Field label="Tirant d’eau de référence (m)"><input type="number" readOnly value={referenceDraft ?? ''} /></Field>{referenceDraft == null && <p className="so-help">Renseignez le tirant d’eau du navire dans le module Navires.</p>}
           <SeaOperationHydroSources />
+          {step === 2 && <SeaOperationRouteMap waypoints={draft.waypoints} />}
           <h3>Points de passage</h3>
           <div className="so-passage-grid" role="table" aria-label="Points de passage">
             {draft.waypoints.map((point, index) => {

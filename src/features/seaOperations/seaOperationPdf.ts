@@ -7,6 +7,7 @@ import type { SeaOperationAnswer, SeaOperationCheck } from './seaOperationModel'
 import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperationRadio';
 import { passagePlanCellData } from './seaOperationPassagePlan';
 import { waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
+import { buildSeaOperationRouteMap } from './seaOperationRouteMapGeometry';
 
 export const SEA_OPERATION_WORD_TEMPLATE_URL = '/templates/sea-operation/word-header-footer.pdf';
 const PAGE_WIDTH = 595.32;
@@ -18,6 +19,7 @@ const BOTTOM = 55;
 const WORD_HEADER_HEIGHT = 90;
 const WORD_FOOTER_HEIGHT = 26;
 const BLUE: [number, number, number] = [21, 96, 130];
+const WHITE: [number, number, number] = [255, 255, 255];
 const SEA_STATE_COLORS: Record<VesselSeaStateAssessment['tone'], { foreground: [number, number, number]; background: [number, number, number] }> = {
   success: { foreground: [23, 97, 59], background: [234, 247, 239] },
   warning: { foreground: [120, 81, 0], background: [255, 247, 214] },
@@ -154,6 +156,95 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   heading('3 - Passage Plan');
   fields([['Numéro de la ou des cartes marines', form.charts]]);
   paragraph('ETA : date et heure locale de Paris. Les fiches historiques peuvent conserver une heure seule.');
+  const routeMap = buildSeaOperationRouteMap(form.waypoints, pageWidth() - LEFT - RIGHT, 190);
+  page(routeMap.points.length ? routeMap.height + 65 : 65);
+  heading('Carte du parcours', true);
+  if (routeMap.points.length) {
+    const mapY = y;
+    const at = (point: { x: number; y: number }) => ({ x: LEFT + point.x, y: mapY + point.y });
+    document.saveGraphicsState();
+    document.setFillColor(236, 246, 251); document.setDrawColor(190, 208, 219); document.setLineWidth(.6);
+    document.rect(LEFT, mapY, routeMap.width, routeMap.height, 'FD');
+    document.setFillColor(226, 233, 220);
+    for (const polygon of routeMap.land) {
+      if (polygon.length < 3) continue;
+      document.path([...polygon.map((point, index) => ({ op: index ? 'l' : 'm', c: [LEFT + point.x, mapY + point.y] })), { op: 'h', c: [] }]);
+      document.fill();
+    }
+    document.setDrawColor(199, 216, 225); document.setLineWidth(.35);
+    document.setFont('helvetica', 'normal'); document.setFontSize(6); document.setTextColor(80, 105, 120);
+    for (const line of routeMap.grid) {
+      const from = at(line.from), to = at(line.to), label = at(line.labelAt);
+      document.line(from.x, from.y, to.x, to.y); document.text(clean(line.label), label.x, label.y);
+    }
+    document.setDrawColor(...BLUE); document.setLineWidth(1.6);
+    for (const segment of routeMap.segments) {
+      const from = at(segment.from), to = at(segment.to);
+      document.line(from.x, from.y, to.x, to.y);
+      const dx = to.x - from.x, dy = to.y - from.y, length = Math.hypot(dx, dy);
+      if (length >= 24) {
+        const x = (from.x + to.x) / 2, centerY = (from.y + to.y) / 2, ux = dx / length, uy = dy / length;
+        document.setFillColor(...BLUE);
+        document.path([{ op: 'm', c: [x + ux * 4, centerY + uy * 4] },
+          { op: 'l', c: [x - ux * 3 - uy * 2.5, centerY - uy * 3 + ux * 2.5] },
+          { op: 'l', c: [x - ux * 3 + uy * 2.5, centerY - uy * 3 - ux * 2.5] }, { op: 'h', c: [] }]);
+        document.fill();
+      }
+    }
+    const markerGroups = new Map<string, typeof routeMap.points>();
+    for (const point of routeMap.points) {
+      const key = `${point.x}:${point.y}`;
+      markerGroups.set(key, [...(markerGroups.get(key) || []), point]);
+    }
+    for (const group of markerGroups.values()) {
+      const point = group[0], position = at(point);
+      const endpoint = group.some((entry) => entry.index === 1 || entry.index === form.waypoints.length);
+      const arrival = form.waypoints.length > 1 && group.some((entry) => entry.index === form.waypoints.length);
+      const ordinal = group.length > 4 ? `${group[0].index}/.../${group[group.length - 1].index}` : group.map((entry) => entry.index).join('/');
+      document.setFont('helvetica', 'bold'); document.setFontSize(7);
+      document.setFillColor(...(endpoint ? BLUE : WHITE)); document.setDrawColor(...BLUE); document.setLineWidth(.8);
+      if (group.length > 1) {
+        const width = Math.min(110, document.getTextWidth(ordinal) + 10);
+        const markerX = Math.max(LEFT + 3, Math.min(position.x - width / 2, LEFT + routeMap.width - width - 3));
+        document.roundedRect(markerX, position.y - 7, width, 14, 6, 6, 'FD');
+        if (arrival) document.roundedRect(markerX - 2, position.y - 9, width + 4, 18, 7, 7, 'S');
+        document.setTextColor(...(endpoint ? WHITE : BLUE));
+        document.text(ordinal, markerX + width / 2, position.y + 2.4, { align: 'center' });
+      } else {
+        document.circle(position.x, position.y, 6, 'FD');
+        if (arrival) document.circle(position.x, position.y, 8, 'S');
+        document.setTextColor(...(endpoint ? WHITE : BLUE));
+        document.text(ordinal, position.x, position.y + 2.4, { align: 'center' });
+      }
+      const labels = group.filter((entry) => entry.label !== String(entry.index)).map((entry) => entry.label);
+      if (labels.length) {
+        document.setFontSize(7); document.setTextColor(...BLUE);
+        const complete = clean(labels.join(' / '));
+        let label = complete;
+        while (label.length > 1 && document.getTextWidth(label) > 110) label = label.slice(0, -1);
+        if (label !== complete) label = `${label.slice(0, -3)}...`;
+        const width = document.getTextWidth(label);
+        document.text(label, Math.max(LEFT + 4, Math.min(position.x + 10, LEFT + routeMap.width - width - 4)), Math.max(mapY + 10, position.y - 10));
+      }
+    }
+    if (routeMap.scale) {
+      const from = at(routeMap.scale.from), to = at(routeMap.scale.to);
+      document.setDrawColor(55, 80, 96); document.setLineWidth(1);
+      document.line(from.x, from.y, to.x, to.y); document.line(from.x, from.y - 3, from.x, from.y + 3); document.line(to.x, to.y - 3, to.x, to.y + 3);
+      document.setFont('helvetica', 'normal'); document.setFontSize(6.5); document.setTextColor(55, 80, 96);
+      document.text(clean(routeMap.scale.label), (from.x + to.x) / 2, from.y - 5, { align: 'center' });
+    }
+    document.setFont('helvetica', 'bold'); document.setFontSize(7); document.setTextColor(55, 80, 96);
+    document.text('N', LEFT + routeMap.width - 13, mapY + 12, { align: 'center' });
+    document.setDrawColor(55, 80, 96); document.setLineWidth(.8);
+    document.line(LEFT + routeMap.width - 13, mapY + 17, LEFT + routeMap.width - 13, mapY + 30);
+    document.line(LEFT + routeMap.width - 13, mapY + 17, LEFT + routeMap.width - 16, mapY + 21);
+    document.line(LEFT + routeMap.width - 13, mapY + 17, LEFT + routeMap.width - 10, mapY + 21);
+    document.restoreGraphicsState();
+    y += routeMap.height + 12;
+    paragraph('Fond : Natural Earth · Tracé indicatif. Repères numérotés dans l’ordre du tableau ; les positions identiques regroupent leurs numéros.');
+  } else paragraph('Aucun waypoint avec une latitude et une longitude valides à placer sur la carte.');
+  if (routeMap.invalidCount) paragraph(`${routeMap.invalidCount} waypoint${routeMap.invalidCount > 1 ? 's' : ''} non placé${routeMap.invalidCount > 1 ? 's' : ''} : coordonnées absentes ou invalides. Le tracé est interrompu à ces positions.`);
   const passageRows = form.waypoints.map((point) => passagePlanCellData(point, { allowLiveRadio: !signed, weatherMatrix: form.vessel.weatherMatrix }));
   const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
   const height = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -169,6 +260,14 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     return { forecast, messageLines, windLines,
       height: forecast ? 114 + messageLines.length * 10 + windLines.length * 10 : 33 + messageLines.length * 10 };
   });
+  if (passageRows.length) {
+    document.setFont('helvetica', 'normal'); document.setFontSize(8.5);
+    const first = passageRows[0];
+    const textCells: Array<[string, number]> = [[first.waypoint, 45], [first.description, 105], [first.latitude, 60], [first.longitude, 60], [first.ukc, 35], [first.eta, 73], [first.vhf, 106]];
+    const firstRowHeight = Math.max(weatherCards[0].height + 10, ...textCells.map(([content, width]) => (document.splitTextToSize(clean(content), width - 8) as string[]).length * 8.5 * 1.15 + 8));
+    // Keep the repeated header with the first text/card block, even when a missing forecast makes its card shorter.
+    page(firstRowHeight + 32);
+  }
   if (passageRows.length) table(passageRows.map((row) => [row.waypoint, row.description, row.latitude, row.longitude, row.ukc, row.eta, row.vhf, row.weather, row.hasSeaStateIndicator ? row.seaState.label : '—', row.denseTraffic]),
     ['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA - Date / heure', 'Contacts VHF', 'Météo à l’ETA', 'Conditions de vie à bord', 'Trafic dense'],
     { 0: { cellWidth: 45 }, 1: { cellWidth: 105 }, 2: { cellWidth: 60 }, 3: { cellWidth: 60 }, 4: { cellWidth: 35 }, 5: { cellWidth: 73 }, 6: { cellWidth: 106 }, 7: { cellWidth: 140 }, 8: { cellWidth: 85 }, 9: { cellWidth: PAGE_HEIGHT - LEFT - RIGHT - 709 } }, true, {

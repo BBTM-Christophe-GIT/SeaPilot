@@ -1,0 +1,94 @@
+import { MapPin } from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { SeaOperationWaypoint } from './seaOperationModel';
+import { buildSeaOperationRouteMap } from './seaOperationRouteMapGeometry';
+import './seaOperationRouteMap.css';
+
+interface Position { x: number; y: number }
+type MapPoint = ReturnType<typeof buildSeaOperationRouteMap>['points'][number];
+
+function groupCoincidentPoints(points: MapPoint[]) {
+  const groups = new Map<string, { x: number; y: number; points: MapPoint[] }>();
+  for (const point of points) {
+    const key = `${point.x}:${point.y}`;
+    const group = groups.get(key);
+    if (group) group.points.push(point);
+    else groups.set(key, { x: point.x, y: point.y, points: [point] });
+  }
+  return [...groups.values()];
+}
+
+function directionArrow(from: Position, to: Position): string | null {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 32) return null;
+  const x = (from.x + to.x) / 2, y = (from.y + to.y) / 2;
+  const ux = dx / length, uy = dy / length;
+  return `${x + ux * 5},${y + uy * 5} ${x - ux * 4 - uy * 3.5},${y - uy * 4 + ux * 3.5} ${x - ux * 4 + uy * 3.5},${y - uy * 4 - ux * 3.5}`;
+}
+
+/** Read-only situation map from recorded coordinates; no map server or tracking. */
+export function SeaOperationRouteMap({ waypoints, compact = false }: {
+  waypoints: readonly SeaOperationWaypoint[]; compact?: boolean;
+}) {
+  const titleId = useId();
+  const descriptionId = useId();
+  const svgTitleId = useId();
+  const clipId = `sea-route-clip-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const frame = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(900);
+  const height = compact ? 220 : width < 600 ? 280 : 320;
+  const geometry = useMemo(() => buildSeaOperationRouteMap(waypoints, width, height), [waypoints, width, height]);
+  const groups = useMemo(() => groupCoincidentPoints(geometry.points), [geometry.points]);
+  const countLabel = `${geometry.points.length} point${geometry.points.length === 1 ? '' : 's'} géolocalisé${geometry.points.length === 1 ? '' : 's'}`;
+
+  useEffect(() => {
+    if (!frame.current || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry?.contentRect.width > 0) setWidth(Math.max(280, Math.min(900, Math.round(entry.contentRect.width))));
+    });
+    observer.observe(frame.current);
+    return () => observer.disconnect();
+  }, []);
+
+  return <figure aria-labelledby={titleId} className={`so-route-map${compact ? ' is-compact' : ''}`}>
+    <header className="so-route-map-heading"><h3 id={titleId}>Carte du parcours</h3><span>{countLabel}</span></header>
+    <div className="so-route-map-frame" ref={frame}>
+      {geometry.points.length ? <svg aria-labelledby={svgTitleId} aria-describedby={descriptionId} className="so-route-map-svg" role="img" viewBox={`0 0 ${geometry.width} ${geometry.height}`}>
+        <title id={svgTitleId}>{`Carte du parcours · ${countLabel}`}</title>
+        <desc id={descriptionId}>Nord en haut. Les numéros suivent l’ordre du tableau. {geometry.points.map((point) => `Point ${point.index} : ${point.label}`).join(' ; ')}. Les points aux mêmes coordonnées partagent une pastille.</desc>
+        <defs><clipPath id={clipId}><rect width={geometry.width} height={geometry.height} /></clipPath></defs>
+        <g clipPath={`url(#${clipId})`}>
+          <rect className="so-route-map-sea" width={geometry.width} height={geometry.height} />
+          <g aria-hidden="true" className="so-route-map-land">{geometry.land.map((polygon, index) => <polygon key={index} points={polygon.map((point) => `${point.x},${point.y}`).join(' ')} vectorEffect="non-scaling-stroke" />)}</g>
+          <g aria-hidden="true" className="so-route-map-grid">{geometry.grid.map((line, index) => <g key={index}><line x1={line.from.x} y1={line.from.y} x2={line.to.x} y2={line.to.y} vectorEffect="non-scaling-stroke" /><text x={line.labelAt.x} y={line.labelAt.y}>{line.label}</text></g>)}</g>
+          <g aria-hidden="true" className="so-route-map-track">{geometry.segments.map((segment, index) => {
+            const arrow = directionArrow(segment.from, segment.to);
+            return <g key={index}><line x1={segment.from.x} y1={segment.from.y} x2={segment.to.x} y2={segment.to.y} vectorEffect="non-scaling-stroke" />{arrow && <polygon className="so-route-map-direction" points={arrow} />}</g>;
+          })}</g>
+          <g className="so-route-map-points">{groups.map((group) => {
+            const first = group.points[0];
+            const isStart = group.points.some((point) => point.index === 1);
+            const isEnd = waypoints.length > 1 && group.points.some((point) => point.index === waypoints.length);
+            const allOrdinals = group.points.map((point) => point.index).join('/');
+            const ordinals = group.points.length > 4 ? `${first.index}/…/${group.points[group.points.length - 1].index}` : allOrdinals;
+            const markerWidth = Math.max(26, Math.min(110, ordinals.length * 7 + 14));
+            const label = group.points.length === 1 && first.label !== String(first.index) ? first.label : '';
+            const alignEnd = group.x > geometry.width * .7;
+            return <g className={`so-route-map-point${isStart ? ' is-start' : ''}${isEnd ? ' is-end' : ''}`} data-point-indices={allOrdinals} key={`${group.x}:${group.y}`} transform={`translate(${group.x} ${group.y})`}>
+              <title>{group.points.map((point) => `Point ${point.index} · ${point.label}${point.description ? ` · ${point.description}` : ''}`).join('\n')}</title>
+              {isEnd && <rect className="so-route-map-finish-ring" x={-markerWidth / 2 - 4} y={-17} width={markerWidth + 8} height={34} rx={17} vectorEffect="non-scaling-stroke" />}
+              <rect className="so-route-map-pin" x={-markerWidth / 2} y={-13} width={markerWidth} height={26} rx={13} vectorEffect="non-scaling-stroke" />
+              <text className="so-route-map-ordinal" textAnchor="middle" dominantBaseline="central">{ordinals}</text>
+              {label && <text className="so-route-map-point-label" x={alignEnd ? -markerWidth / 2 - 7 : markerWidth / 2 + 7} y={-18} textAnchor={alignEnd ? 'end' : 'start'}>{label.length > 20 ? `${label.slice(0, 19)}…` : label}</text>}
+            </g>;
+          })}</g>
+          <g aria-hidden="true" className="so-route-map-north" transform={`translate(${geometry.width - 23} 31)`}><text textAnchor="middle" y={-15}>N</text><path d="M 0 9 V -7 M -4 -2 L 0 -7 L 4 -2" vectorEffect="non-scaling-stroke" /></g>
+          {geometry.scale && <g aria-hidden="true" className="so-route-map-scale"><path d={`M ${geometry.scale.from.x} ${geometry.scale.from.y - 4} V ${geometry.scale.from.y + 4} M ${geometry.scale.from.x} ${geometry.scale.from.y} H ${geometry.scale.to.x} M ${geometry.scale.to.x} ${geometry.scale.to.y - 4} V ${geometry.scale.to.y + 4}`} vectorEffect="non-scaling-stroke" /><text x={(geometry.scale.from.x + geometry.scale.to.x) / 2} y={geometry.scale.from.y - 8} textAnchor="middle">{geometry.scale.label}</text></g>}
+        </g>
+      </svg> : <div className="so-route-map-empty"><MapPin aria-hidden="true" size={22} /><p>Renseignez une latitude et une longitude valides pour afficher les points de passage.</p></div>}
+    </div>
+    {geometry.invalidCount > 0 && <p className="so-route-map-omissions" role="status">{geometry.invalidCount === 1 ? '1 point sans coordonnées valides n’est pas représenté ; la liaison est interrompue à cet endroit.' : `${geometry.invalidCount} points sans coordonnées valides ne sont pas représentés ; les liaisons sont interrompues à ces endroits.`}</p>}
+    <figcaption className="so-route-map-caption"><span className="so-route-map-legend"><span><i className="is-start" aria-hidden="true" />Départ</span><span><i className="is-end" aria-hidden="true" />Arrivée</span><span>Numéros : ordre du tableau</span></span><span>Fond Natural Earth · Tracé indicatif</span></figcaption>
+  </figure>;
+}

@@ -87,6 +87,10 @@ describe('Sea operation PDF', () => {
     expect(orientations.at(-1)).toBe('portrait');
     expect(orientations.filter((orientation) => orientation === 'landscape').length).toBeGreaterThan(1);
     const passage = landscapeText.join('\n');
+    expect(passage).toContain('(Carte du parcours)');
+    expect(passage).toContain('Natural Earth');
+    expect(passage).toContain('(1/.../8)');
+    expect(passage.indexOf('(Carte du parcours)')).toBeLessThan(passage.indexOf('(Conditions de vie'));
     expect(passage).toContain('(Waypoint)');
     expect(passage).toContain('(Contacts VHF)');
     expect(passage).toContain('(Conditions de vie');
@@ -137,5 +141,57 @@ describe('Sea operation PDF', () => {
 
   it('rejects an unreadable private signature rather than exporting a substitute image', async () => {
     await expect(generateSeaOperationPdf(fixture(), { templateBytes: await template(), signatureImage: 'data:image/png;base64,not-an-image' })).rejects.toThrow('image privée de signature RH ne peut pas être lue');
+  });
+
+  it('exports the recorded route offline and explicitly reports waypoints whose coordinates cannot be placed', async () => {
+    const record = fixture();
+    record.draft.description = 'Opération';
+    record.draft.waypoints = [
+      { ...record.draft.waypoints[0], number: 'Brest', latitude: '48.36', longitude: '-4.53' },
+      { ...record.draft.waypoints[1], number: 'À préciser', latitude: '', longitude: '' },
+      { ...record.draft.waypoints[2], number: 'Plymouth', latitude: '50.35', longitude: '-4.15' },
+    ];
+    const original = structuredClone(record.draft);
+    const fetcher = vi.fn().mockRejectedValue(new Error('Unexpected network access'));
+    vi.stubGlobal('fetch', fetcher);
+    const generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const document = await PDFDocument.load(generated.bytes);
+    const landscapeBodies = document.getPages().filter((page) => page.getWidth() > page.getHeight()).map((page) => {
+      const objects = page.node.Resources()!.lookup(PDFName.of('XObject'), PDFDict);
+      const body = objects.lookup(objects.keys()[0]);
+      if (!(body instanceof PDFRawStream)) throw new Error('Expected the generated body stream');
+      return Buffer.from(decodePDFRawStream(body).decode()).toString('latin1');
+    });
+    const routeText = landscapeBodies.join('\n');
+    expect(landscapeBodies[0]).not.toContain('(Conditions de vie');
+    expect(landscapeBodies[1]).toContain('(Conditions de vie');
+    expect(routeText).toContain('(Carte du parcours)');
+    expect(routeText).toContain('Natural Earth');
+    expect(routeText).toContain('(Brest)');
+    expect(routeText).toContain('(Plymouth)');
+    expect(routeText).toContain('1 waypoint non placé');
+    expect(routeText).toContain('Le tracé est interrompu');
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(record.draft).toEqual(original);
+  });
+
+  it('bounds a coincident marker for a large route while retaining every waypoint in the table', async () => {
+    const record = fixture();
+    record.draft.description = 'Opération';
+    const point = structuredClone(record.draft.waypoints[0]);
+    delete point.weather; delete point.radio;
+    record.draft.waypoints = Array.from({ length: 100 }, (_, index) => ({ ...point, id: `group-${index}`, number: String(index + 1), descriptionVhf: 'Point de route' }));
+    const generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const document = await PDFDocument.load(generated.bytes);
+    const bodyText = document.getPages().filter((page) => page.getWidth() > page.getHeight()).map((page) => {
+      const objects = page.node.Resources()!.lookup(PDFName.of('XObject'), PDFDict);
+      const body = objects.lookup(objects.keys()[0]);
+      if (!(body instanceof PDFRawStream)) throw new Error('Expected the generated body stream');
+      return Buffer.from(decodePDFRawStream(body).decode()).toString('latin1');
+    }).join('\n');
+    expect(bodyText).toContain('(1/.../100)');
+    expect(bodyText).not.toContain(Array.from({ length: 100 }, (_, index) => index + 1).join('/'));
+    expect(bodyText).toContain('(100)');
+    expect(record.draft.waypoints).toHaveLength(100);
   });
 });

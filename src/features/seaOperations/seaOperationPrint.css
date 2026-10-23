@@ -19,6 +19,7 @@
 .so-print-passage-sources section { break-inside: avoid; }
 .so-print-passage-sources h4 { font-size: inherit; margin: 10px 0 3px; }
 .so-print-passage .so-waypoint-weather-card { white-space: normal; }
+.so-print-route-map { margin: 12px 0 16px; break-inside: avoid; }
 
 @media print {
   @page sea-operation-portrait { size: A4 portrait; margin: 14mm; }

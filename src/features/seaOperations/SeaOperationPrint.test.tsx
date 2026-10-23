@@ -78,6 +78,11 @@ describe('Opération en Mer printable content', () => {
     const { container, rerender } = render(<SeaOperationPrint record={record} />);
     const passage = within(container.querySelector('.so-print-passage-section')!);
     const table = passage.getByRole('table', { name: 'Points de passage, contacts VHF et météo à l’ETA' });
+    const map = container.querySelector('.so-print-route-map')!;
+    expect(map.textContent).toContain('Carte du parcours');
+    expect(map.querySelector('svg')).not.toBeNull();
+    expect(map.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(map.querySelector('iframe, image')).toBeNull();
     expect(within(table).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA – Date et heure', 'Contacts VHF', 'Météo à l’ETA', 'Conditions de vie à bord', 'Trafic dense']);
     expect(within(table).getByRole('cell', { name: '<Approche du port>' })).toBeInTheDocument();
     expect(within(table).getByRole('cell', { name: /Cherbourg · Capitainerie · Ch 12/ })).toBeInTheDocument();
