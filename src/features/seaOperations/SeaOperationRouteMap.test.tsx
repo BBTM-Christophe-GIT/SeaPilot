@@ -108,4 +108,21 @@ describe('SeaOperationRouteMap', () => {
     expect(container.querySelectorAll('.so-route-map-point')).toHaveLength(3);
     expect(screen.getByText('Fond Natural Earth · Tracé indicatif')).toBeInTheDocument();
   });
+
+  it('accepts a locked empty viewport and an opt-in overlay without adding built-in controls', () => {
+    const report = vi.fn();
+    render(<SeaOperationRouteMap waypoints={[]} viewport={{ centerLatitude: 49, centerLongitude: -3, longitudeSpan: 16 }} onGeometry={report} renderOverlay={(geometry) => <text>Centre {geometry.viewport?.centerLongitude}</text>} />);
+    expect(screen.getByRole('group', { name: 'Carte du parcours · 0 points géolocalisés' })).toBeInTheDocument();
+    expect(screen.getByText('Centre -3')).toBeInTheDocument();
+    expect(report).toHaveBeenCalledWith(expect.objectContaining({ width: 900, viewport: { centerLatitude: 49, centerLongitude: -3, longitudeSpan: 16 } }));
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('ignores placement overlays and locked viewports in compact print mode', () => {
+    const overlay = vi.fn();
+    render(<SeaOperationRouteMap waypoints={channelRoute()} compact viewport={{ centerLatitude: 0, centerLongitude: 0, longitudeSpan: 16 }} renderOverlay={overlay} />);
+    expect(screen.getByRole('img')).toHaveAttribute('viewBox', '0 0 900 220');
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(overlay).not.toHaveBeenCalled();
+  });
 });

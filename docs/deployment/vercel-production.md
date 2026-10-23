@@ -1,5 +1,15 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.9`, build `2026-10-23.007`, permet de placer les waypoints par clic
+ou toucher sur la carte du Passage Plan. Les coordonnées et un numéro disponible
+sont reportés dans une nouvelle ligne du tableau, conservée à la sauvegarde.
+Le mode placement garde sa vue pendant les ajouts, propose zoom/déplacement et
+ajout au centre au clavier ; un glissement déplace la carte sans ajouter de point.
+Les commandes sont réservées aux brouillons modifiables et bloquées pendant
+sauvegarde/export. Aucun héritage d’ETA/UKC/prévisions d’un autre point. Le PDF,
+l’impression, les droits serveur et le fond Natural Earth restent préservés.
+Aucune migration, dépendance applicative, clé ou nouvelle note de mise à jour.
+
 Version `3.77.8`, build `2026-10-23.006`, ajoute une **Carte du parcours** au-dessus
 du tableau Passage Plan dans la fiche, l’aperçu et le PDF. Les waypoints sont
 reliés dans l’ordre du tableau, avec cadrage automatique, repères numérotés,
