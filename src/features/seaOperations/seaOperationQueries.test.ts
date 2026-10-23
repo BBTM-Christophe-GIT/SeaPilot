@@ -3,7 +3,7 @@ import { webcrypto } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { emptySeaOperation } from './seaOperationModel';
 import { createEmptyVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
-import { fetchSeaOperationCaptainSignature, fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, mapSeaOperationRecord, saveSeaOperation, signSeaOperation } from './seaOperationQueries';
+import { deleteSeaOperation, reviseSeaOperation, fetchSeaOperationCaptainSignature, fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, mapSeaOperationRecord, saveSeaOperation, signSeaOperation } from './seaOperationQueries';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -21,6 +21,38 @@ const observation = (): ObservationResult => ({ pointId: 'point-1', latitude: 49
   status: 'unavailable', message: 'Aucune mesure officielle proche disponible.' });
 
 describe('sea operation queries', () => {
+  it('fails closed for absent or non-boolean administrator capabilities', () => {
+    expect(mapSeaOperationRecord(record())).toMatchObject({ canRevise: false, canDelete: false, previousRevisionId: null, supersededById: null });
+    expect(mapSeaOperationRecord(record({ can_revise: 'true', can_delete: 1 }))).toMatchObject({ canRevise: false, canDelete: false });
+    expect(mapSeaOperationRecord(record({ can_revise: true, can_delete: true, previous_revision_id: 'old', superseded_by_id: 'new' })))
+      .toMatchObject({ canRevise: true, canDelete: true, previousRevisionId: 'old', supersededById: 'new' });
+  });
+
+  it('requests an administrator revision with the expected version and accepts server metadata only', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: record({ id: 'new-record', previous_revision_id: 'record-1', version: 1 }), error: null });
+    const result = await reviseSeaOperation({ rpc } as unknown as SupabaseClient, { id: 'record-1', version: 3 });
+    expect(rpc).toHaveBeenCalledWith('sea_operation_revise', { p_id: 'record-1', p_version: 3 });
+    expect(result).toMatchObject({ id: 'new-record', previousRevisionId: 'record-1', version: 1, status: 'draft' });
+  });
+
+  it('requires a matching server acknowledgement before accepting deletion', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { id: 'record-1', deleted: true }, error: null });
+    const client = { rpc } as unknown as SupabaseClient;
+    await expect(deleteSeaOperation(client, { id: 'record-1', version: 3 })).resolves.toBeUndefined();
+    expect(rpc).toHaveBeenCalledWith('sea_operation_delete', { p_id: 'record-1', p_version: 3 });
+    for (const result of [{ id: 'another', deleted: true }, { id: 'record-1', deleted: false }, {}]) {
+      rpc.mockResolvedValueOnce({ data: result, error: null });
+      await expect(deleteSeaOperation(client, { id: 'record-1', version: 3 })).rejects.toThrow('n’a pas été confirmée');
+    }
+  });
+
+  it('propagates administrator permission and concurrent-update failures', async () => {
+    const error = { message: 'Version périmée', code: '40001' };
+    const client = { rpc: vi.fn().mockResolvedValue({ data: null, error }) } as unknown as SupabaseClient;
+    await expect(reviseSeaOperation(client, { id: 'record-1', version: 3 })).rejects.toBe(error);
+    await expect(deleteSeaOperation(client, { id: 'record-1', version: 3 })).rejects.toBe(error);
+  });
+
   it('uses server permissions and orders real vessel options by decreasing length', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: { company_id: 1, actor_id: 'crew-id', actor_name: 'Marin réel',
       records: [record()], vessels: [

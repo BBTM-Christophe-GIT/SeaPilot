@@ -35,6 +35,19 @@
 .so-source { font-size: .72rem; color: var(--sp-muted); margin-top: 16px; }
 .so-page button.so-record { display: grid; grid-template-columns: 42px minmax(0, 1fr) 90px 155px 20px; gap: 14px; background: var(--sp-surface); color: var(--sp-text); width: 100%; border: 0; border-bottom: 1px solid var(--sp-border); border-radius: 0; text-align: left; padding: 20px 22px; }
 .so-page button.so-record:hover { background: var(--sp-primary-soft); }
+.so-record-entry { display: flex; align-items: stretch; min-width: 0; border-bottom: 1px solid var(--sp-border); }
+.so-page .so-record-entry > button.so-record { flex: 1 1 auto; min-width: 0; border-bottom: 0; }
+.so-record-actions { display: flex; align-items: center; gap: var(--sp-space-2); padding: var(--sp-space-2) var(--sp-space-3); flex: 0 0 auto; }
+.so-page .so-record-actions button { min-height: 40px; padding: var(--sp-space-2); border-radius: var(--sp-control-radius); }
+.so-revision-link { margin-bottom: var(--sp-space-3); }
+.so-revision-history { display: grid; justify-items: start; gap: var(--sp-space-2); margin-bottom: var(--sp-space-3); padding: var(--sp-space-3); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface-subtle); }
+.so-revision-history p { margin: 0; font-size: .76rem; line-height: 1.5; color: var(--sp-muted); }
+.so-record-confirm .app-dialog-backdrop { z-index: 1500; }
+.so-record-confirm .app-dialog__content > p { margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
+.so-record-confirm .app-dialog__content > [role=alert] { margin-top: var(--sp-space-3); }
+@media (max-width: 1100px) { .so-record-entry { flex-wrap: wrap; } .so-record-entry > .so-record { flex-basis: 100%; } .so-record-actions { justify-content: flex-end; width: 100%; padding-top: 0; } }
+@media (pointer: coarse) { .so-page .so-record-actions button { min-height: 44px; } }
+@media print { .so-record-confirm { display: none !important; } }
 .so-record strong { display: block; font-size: .9rem; overflow-wrap: anywhere; }
 .so-record small { display: block; font-weight: 400; color: var(--sp-muted); font-size: .75rem; margin-top: 5px; }
 .so-record-icon { background: var(--sp-primary-soft); color: var(--sp-primary); border-radius: var(--sp-panel-radius); display: grid; place-items: center; width: 42px; height: 42px; }

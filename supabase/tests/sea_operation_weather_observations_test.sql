@@ -188,7 +188,7 @@ select public.sea_operation_weather_observations_claim(40);
 reset role;
 select ok((select completed_at is not null and result#>>'{wind,speedKnots}'='12' from sea_operation_private.weather_observations where operation_id=(select id from history_fixture) and point_id='history-past'),'expiry terminates partial collection while preserving recorded measurements');
 select is((select to_jsonb(operation) from public.sea_operations operation where id=(select id from history_fixture)),
-  (select signed_record-'can_edit'-'can_sign' from history_fixture),'collecting observations never changes the signed row, forecast, signature, version or timestamps');
+  (select signed_record-'can_edit'-'can_sign'-'can_revise'-'can_delete'-'previous_revision_id'-'superseded_by_id' from history_fixture),'collecting observations never changes the signed row, forecast, signature, version or timestamps');
 select throws_ok($$update public.sea_operations set draft=jsonb_set(draft,'{description}','"changed"') where id=(select id from history_fixture)$$,
   '55000',null,'the signed document freeze remains enforced even for privileged writers');
 

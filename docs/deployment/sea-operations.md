@@ -99,6 +99,53 @@ conditions particulières, le NO GO partiel, la concurrence, l’identité serve
 et l’immuabilité. Ne pas utiliser la simulation d’un administrateur comme preuve
 d’un accès Marin ou Capitaine.
 
+## Modification et suppression par l’administration — 3.77.17
+
+Le registre propose explicitement **Modifier** et **Supprimer** à partir des
+capacités renvoyées par le serveur. Un administrateur peut modifier tous les
+brouillons de sa société active, y compris ceux créés par un autre compte.
+Sur une fiche signée, Modifier demande confirmation puis crée une nouvelle
+préparation : la décision et l’attestation sont à renouveler par le Capitaine
+réellement autorisé. La fiche signée précédente, sa signature et ses prévisions
+restent strictement immuables, accessibles par **Version précédente signée**.
+Le registre courant affiche la nouvelle préparation à la place de sa source.
+
+Supprimer demande confirmation avant d’appeler le serveur. La fiche est retirée
+du registre après réussite uniquement ; une suppression logique auditée conserve
+les données et les signatures. Le détail, la lecture directe sous RLS, les
+observations et les mutations refusent ensuite cette fiche. Les observations
+météo des versions signées restent rattachées à leur propre version. La collecte
+continue pour une version remplacée ; elle s’arrête pour une fiche supprimée,
+y compris lorsqu’un traitement avait déjà obtenu un bail de collecte.
+
+`sea_operation_revise(p_id,p_version)` renvoie le nouveau brouillon ;
+`sea_operation_delete(p_id,p_version)` confirme son retrait. Les contrôles exigent
+un compte authentifié, une appartenance active, l’accès au module, le rôle réel
+`admin` dans la société active et la version attendue. Direction, Armement,
+Capitaine et Marin conservent leurs permissions habituelles sur les brouillons,
+sans recevoir ces nouveaux droits d’administration. Une fiche remplacée est
+consultable mais ne peut plus être modifiée, révisée ou supprimée depuis un appel
+périmé. Les wrappers publics restent `SECURITY INVOKER`, sans privilège de
+mutation directe sur les tables.
+
+La migration `20261023140034_sea_operation_admin_lifecycle.sql` doit précéder le déploiement client.
+Elle ajoute uniquement les métadonnées privées et les contrôles nécessaires,
+sans réécrire les fiches existantes. Pour revenir au client précédent, conserver
+la migration et l’historique ; ne pas supprimer les données d’administration
+ni remettre une version corrigée sous la signature de sa source.
+
+Vérification du 23 octobre 2026 : **149 tests client** (Page 90, requêtes 36,
+manuel 23), lint et build de production réussis ; recette à 1440 × 960 et
+390 × 844 sur données fictives, sans erreur console ni débordement horizontal.
+Les **468 assertions SQL** couvrent le module, le planning, les captures, le
+tirant d’eau, les documents projet, les observations et les actions admin.
+Deux connexions révisant la même fiche donnent une seule révision ; la seconde
+attend le verrou puis reçoit `40001`. Après migration en production, l’empreinte
+de la fiche existante est inchangée et aucune action d’administration n’a été
+créée. Aucun nouvel avertissement ni erreur de sécurité ; seule l’information
+RLS sans politique de la nouvelle table privée est attendue, son accès étant
+réservé aux fonctions contrôlées.
+
 Les requêtes client ont des tests dédiés dans
 `src/features/seaOperations/seaOperationQueries.test.ts`. Utiliser **pnpm 10.34.5**
 pour les tests et le build de production. Vérifier ensuite que le déploiement

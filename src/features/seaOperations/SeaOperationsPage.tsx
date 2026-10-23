@@ -1,11 +1,11 @@
 import { cloneElement, isValidElement, useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { AlertTriangle, Anchor, ArrowLeft, CheckCircle2, ChevronRight, ClipboardCheck, Compass, Eye, FileDown, FileText, Map, Plus, Printer, Save, Search, Ship, Trash2 } from 'lucide-react';
+import { AlertTriangle, Anchor, ArrowLeft, CheckCircle2, ChevronRight, ClipboardCheck, Compass, Eye, FileDown, FileText, Map, Pencil, Plus, Printer, Save, Search, Ship, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS, emptySeaOperation, newSeaOperation, getSeaOperationAssessment, isSeaOperationPayload, validateSeaOperation, seaOperationToday, type SeaOperationPayload, type SeaOperationAnswer as Answer } from './seaOperationModel';
-import { fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationCaptainSignature, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, type SeaOperationData, type SeaOperationRecord, type SeaOperationPlanningContext, type SeaOperationPlanningChoice } from './seaOperationQueries';
+import { fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationCaptainSignature, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, reviseSeaOperation, deleteSeaOperation, type SeaOperationData, type SeaOperationRecord, type SeaOperationPlanningContext, type SeaOperationPlanningChoice } from './seaOperationQueries';
 import './seaOperations.css';
 import { SeaOperationPrint } from './SeaOperationPrint';
 import { SeaOperationPreview } from './SeaOperationDocumentPreview';
@@ -35,6 +35,7 @@ const formatDate = (value: string | null) => value ? new Date(value).toLocaleStr
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : typeof error === 'object' && error && 'message' in error ? String(error.message) : 'Une erreur est survenue. Réessayez.';
 const recoveryKey = (data: SeaOperationData) => `seapilot:sea-operation-draft:v1:${data.companyId}:${data.actorId}`;
 interface DraftRecovery { draft: SeaOperationPayload; recordId: string | null; version: number | null; step: number }
+interface RecordAction { kind: 'revise' | 'delete'; record: SeaOperationRecord; client: SupabaseClient; account: string }
 function readRecovery(data: SeaOperationData): DraftRecovery | null {
   try {
     const value: unknown = JSON.parse(sessionStorage.getItem(recoveryKey(data)) || 'null');
@@ -113,6 +114,8 @@ export function SeaOperationsPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [issues, setIssues] = useState<string[]>([]);
+  const [recordAction, setRecordAction] = useState<RecordAction | null>(null);
+  const [recordActionError, setRecordActionError] = useState('');
   const [compactLayout, setCompactLayout] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 1100px)').matches);
   const [mobilePane, setMobilePane] = useState<'form' | 'preview'>('form');
   const formPane = useRef<HTMLDivElement>(null);
@@ -121,11 +124,19 @@ export function SeaOperationsPage() {
   const allowAutomaticMission = useRef(false);
   const loadSequence = useRef(0);
   const loadedAccount = useRef('');
+  const currentClient = useRef(client);
+  const mutationRunning = useRef(false);
+  const recordActionSequence = useRef(0);
+  const actionContext = useRef({ client, account: '' });
+  actionContext.current = { client, account: data ? recoveryKey(data) : '' };
   useEffect(() => { latestDraft.current = draft; }, [draft]);
   const applyData = useCallback((result: SeaOperationData) => {
     setData(result);
     const account = recoveryKey(result);
     if (loadedAccount.current === account) return;
+    ++recordActionSequence.current;
+    mutationRunning.current = false;
+    setRecordAction(null); setRecordActionError(''); setBusy(false);
     loadedAccount.current = account;
     setRecord(null); setDraft(emptySeaOperation()); setEditing(false); setDirty(false); setStep(0);
     const recovery = readRecovery(result);
@@ -140,6 +151,16 @@ export function SeaOperationsPage() {
     setDraft(captureVesselMatrix(recovery.draft, result.vessels.find((vessel) => String(vessel.id) === recovery.draft.vessel.id))); setPlanningDate(recovery.draft.planning?.date || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setStep(recovery.step); setEditing(true); setDirty(true);
     setNotice('Votre préparation non enregistrée a été récupérée dans cet onglet. Vérifiez-la avant de l’enregistrer.');
   }, []);
+
+  useEffect(() => {
+    if (currentClient.current === client) return;
+    currentClient.current = client;
+    ++loadSequence.current; ++recordActionSequence.current;
+    mutationRunning.current = false;
+    loadedAccount.current = '';
+    setRecordAction(null); setRecordActionError(''); setBusy(false); setExporting(false); setHistoryLoading(false);
+    setData(null); setRecord(null); setEditing(false); setDirty(false); setNotice(''); setError('');
+  }, [client]);
 
   useEffect(() => {
     let active = true;
@@ -315,15 +336,15 @@ export function SeaOperationsPage() {
   const remember = (saved: SeaOperationRecord) => {
     clearRecovery(data);
     setRecord(saved); setDraft(saved.draft); setDirty(false);
-    setData((current) => current ? { ...current, records: [saved, ...current.records.filter((item) => item.id !== saved.id)] } : current);
+    setData((current) => current ? { ...current, records: [ ...(saved.supersededById ? [] : [saved]), ...current.records.filter((item) => item.id !== saved.id)] } : current);
   };
-  async function open(item: SeaOperationRecord) {
+  async function open(item: Pick<SeaOperationRecord, 'id'>) {
     if (!confirmLeave()) return;
     allowAutomaticMission.current = false;
     editorOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const request = ++loadSequence.current;
     setBusy(true); setError(''); setNotice(''); setIssues([]);
-    try { const loaded = await fetchSeaOperationDetail(client, item.id); if (request === loadSequence.current) {
+    try { const loaded = await fetchSeaOperationDetail(client, item.id); if (request === loadSequence.current && actionContext.current.client === client) {
       remember(loaded);
       if (loaded.status !== 'signed' && loaded.canEdit) {
         const prepared = captureVesselMatrix(loaded.draft, data?.vessels.find((vessel) => String(vessel.id) === loaded.draft.vessel.id));
@@ -331,8 +352,8 @@ export function SeaOperationsPage() {
       }
       setPlanningDate(loaded.draft.planning?.date || loaded.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setEditing(true); setStep(0); setMobilePane('form');
     } }
-    catch (reason) { setError(errorMessage(reason)); }
-    finally { setBusy(false); }
+    catch (reason) { if (request === loadSequence.current && actionContext.current.client === client) setError(errorMessage(reason)); }
+    finally { if (request === loadSequence.current && actionContext.current.client === client) setBusy(false); }
   }
   function create() {
     if (!confirmLeave()) return;
@@ -341,6 +362,52 @@ export function SeaOperationsPage() {
     clearRecovery(data);
     ++loadSequence.current;
     setRecord(null); setDraft(newSeaOperation()); setPlanningDate(seaOperationToday()); setPlanning(null); setDirty(false); setEditing(true); setStep(0); setMobilePane('form'); setError(''); setNotice(''); setIssues([]);
+  }
+  function requestRecordAction(kind: RecordAction['kind'], item: SeaOperationRecord) {
+    if (!data || busy || exporting || mutationRunning.current || recordAction
+      || (kind === 'revise' ? item.status !== 'signed' || !item.canRevise : !item.canDelete)) return;
+    if (!confirmLeave()) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    editorOpener.current = opener?.closest('.so-record-entry')?.querySelector<HTMLButtonElement>('.so-record') || editorOpener.current;
+    setRecordActionError(''); setRecordAction({ kind, record: item, client, account: recoveryKey(data) });
+  }
+  async function confirmRecordAction() {
+    const action = recordAction;
+    if (!action || mutationRunning.current || busy || exporting || action.client !== client
+      || action.account !== actionContext.current.account
+      || (action.kind === 'revise' ? !action.record.canRevise : !action.record.canDelete)) return;
+    mutationRunning.current = true;
+    const request = ++recordActionSequence.current;
+    ++loadSequence.current;
+    pendingWeather.current.clear();
+    setBusy(true); setRecordActionError('');
+    const isCurrent = () => request === recordActionSequence.current && actionContext.current.client === action.client
+      && actionContext.current.account === action.account;
+    try {
+      if (action.kind === 'revise') {
+        const revised = await reviseSeaOperation(action.client, { id: action.record.id, version: action.record.version });
+        if (!isCurrent()) return;
+        remember(revised);
+        setData((current) => current ? { ...current, records: current.records.filter((item) => item.id !== action.record.id) } : current);
+        setPlanningDate(revised.draft.planning?.date || revised.draft.vessel.etd.slice(0, 10) || seaOperationToday());
+        allowAutomaticMission.current = false;
+        setPlanning(null); setEditing(true); setStep(0); setMobilePane('form'); setIssues([]); setError('');
+        setNotice('Nouvelle préparation créée. La version signée précédente reste conservée. Le Capitaine devra signer cette nouvelle fiche.');
+      } else {
+        await deleteSeaOperation(action.client, { id: action.record.id, version: action.record.version });
+        if (!isCurrent()) return;
+        setData((current) => current ? { ...current, records: current.records.filter((item) => item.id !== action.record.id) } : current);
+        if (record?.id === action.record.id) {
+          clearRecovery(data); setRecord(null); setEditing(false); setDirty(false); setIssues([]);
+        }
+        setError(''); setNotice('Opération supprimée du registre.');
+      }
+      setRecordAction(null);
+    } catch (reason) {
+      if (isCurrent()) setRecordActionError(errorMessage(reason));
+    } finally {
+      if (isCurrent()) { mutationRunning.current = false; setBusy(false); }
+    }
   }
   async function save(sign = false) {
     if (busy) return;
@@ -354,13 +421,15 @@ export function SeaOperationsPage() {
       const captured = sign ? await captureSeaOperationValidationWeather(client, prepared, { preview: previewMode }) : prepared;
       if (sequence !== loadSequence.current || weatherEditor.current.client !== client || !weatherEditor.current.editing) return;
       const saved = await saveSeaOperation(client, captured, record || undefined);
+      if (sequence !== loadSequence.current || weatherEditor.current.client !== client || !weatherEditor.current.editing) return;
       remember(saved);
       if (sign) {
         const finalized = await signSeaOperation(client, saved, saved.draft.signature.captainName, saved.draft.signature.acknowledged);
+        if (sequence !== loadSequence.current || weatherEditor.current.client !== client || !weatherEditor.current.editing) return;
         remember(finalized); setNotice('Décision du Capitaine signée et enregistrée. La fiche est figée.');
       } else setNotice('Brouillon enregistré.');
-    } catch (reason) { setError(errorMessage(reason)); revealFormFeedback(); }
-    finally { setBusy(false); }
+    } catch (reason) { if (sequence === loadSequence.current && weatherEditor.current.client === client) { setError(errorMessage(reason)); revealFormFeedback(); } }
+    finally { if (sequence === loadSequence.current && weatherEditor.current.client === client) setBusy(false); }
   }
   async function refreshWeatherHistory() {
     if (!record || record.status !== 'signed' || historyLoading) return;
@@ -390,7 +459,7 @@ export function SeaOperationsPage() {
     return matches && (status === 'all' || (status === 'draft' ? item.status === 'draft' : item.status === 'signed' && item.draft.decision === status));
   });
 
-  return <div className="so-page"><div className="so-screen">
+  return <div className="so-page"><div className="so-screen" inert={recordAction ? true : undefined} aria-hidden={recordAction ? true : undefined}>
     <header className="so-heading sp-module-header"><div className="so-title"><span className="so-icon"><Map size={26} /></span><div><span className="so-eyebrow">OPÉRATIONS · OPE-FOR-10-C</span><h1>Opération en Mer</h1><p>Préparer la mission, vérifier les conditions et consigner la décision du Capitaine.</p></div></div></header>
     <ModuleRibbon ariaLabel="Commandes Opération en Mer" singleRow><ModuleRibbonGroup label="Opérations"><ModuleRibbonCommand disabled={busy || !data} icon={<Plus size={22} />} label="Nouvelle opération" onClick={create} /></ModuleRibbonGroup></ModuleRibbon>
     {!editing && error && <div className="so-alert so-danger" tabIndex={-1} role="alert"><AlertTriangle size={19} /><span>{error}</span>{!data && <button onClick={() => { setError(''); void fetchSeaOperationData(client).then(applyData).catch((reason: unknown) => setError(errorMessage(reason))); }}>Réessayer</button>}</div>}
@@ -399,7 +468,13 @@ export function SeaOperationsPage() {
     {data && <>
       <div className="so-metrics">{[['Fiches enregistrées', data.records.length], ['En préparation', data.records.filter((item) => item.status === 'draft').length], ['Décisions GO', data.records.filter((item) => item.status === 'signed' && item.draft.decision === 'GO').length], ['Décisions NO GO', data.records.filter((item) => item.status === 'signed' && item.draft.decision === 'NO_GO').length]].map(([label, count]) => <div key={label}><span>{label}</span><strong>{count}</strong></div>)}</div>
       <section className="so-register sp-panel"><header><div><h2>Registre des opérations</h2><p>Les préparations et décisions de votre société.</p></div><div className="so-filters sp-filters"><label className="so-search"><Search size={17} /><input aria-label="Rechercher une opération" placeholder="Projet, client ou navire…" value={search} onChange={(event) => setSearch(event.target.value)} /></label><select aria-label="Filtrer par état" value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">Tous les états</option><option value="draft">Brouillons</option><option value="GO">GO signés</option><option value="NO_GO">NO GO signés</option></select></div></header>
-      {records.length ? <div className="so-records">{records.map((item) => <button className="so-record" key={item.id} disabled={busy} onClick={() => void open(item)}><span className="so-record-icon"><Ship size={21} /></span><span><strong>{item.draft.project || 'Opération sans titre'}</strong><small>{item.draft.vessel.name || 'Navire à renseigner'} · {item.draft.client || 'Client à renseigner'}</small></span><span className={`so-badge ${item.status === 'draft' ? '' : item.draft.decision === 'GO' ? 'is-go' : 'is-nogo'}`}>{item.status === 'draft' ? 'Brouillon' : item.draft.decision === 'NO_GO' ? 'NO GO' : 'GO'}</span><span className="so-record-date">{formatDate(item.updatedAt)}<small>{item.updatedByName}</small></span><ChevronRight size={18} /></button>)}</div> : <div className="so-empty"><Compass size={42} /><h3>{search || status !== 'all' ? 'Aucune opération correspondante' : 'Préparez votre première opération en mer'}</h3><p>Renseignez la mission puis les contrôles du formulaire GO / NO GO.</p>{!search && status === 'all' && <button onClick={create}><Plus size={16} />Créer une opération</button>}</div>}</section>
+      {records.length ? <div className="so-records">{records.map((item) => <div className="so-record-entry" key={item.id}>
+        <button className="so-record" disabled={busy || exporting} onClick={() => void open(item)}><span className="so-record-icon"><Ship size={21} /></span><span><strong>{item.draft.project || 'Opération sans titre'}</strong><small>{item.draft.vessel.name || 'Navire à renseigner'} · {item.draft.client || 'Client à renseigner'}</small></span><span className={`so-badge ${item.status === 'draft' ? '' : item.draft.decision === 'GO' ? 'is-go' : 'is-nogo'}`}>{item.status === 'draft' ? 'Brouillon' : item.draft.decision === 'NO_GO' ? 'NO GO' : 'GO'}</span><span className="so-record-date">{formatDate(item.updatedAt)}<small>{item.updatedByName}</small></span><ChevronRight size={18} /></button>
+        {((item.status === 'draft' && item.canEdit) || item.canRevise || item.canDelete) && <div className="so-record-actions" role="group" aria-label={`Actions pour ${item.draft.project || 'Opération sans titre'}`}>
+          {((item.status === 'draft' && item.canEdit) || item.canRevise) && <button type="button" className="sp-button sp-button--secondary so-secondary" disabled={busy || exporting} onClick={() => item.status === 'draft' ? void open(item) : requestRecordAction('revise', item)}><Pencil size={16} />Modifier</button>}
+          {item.canDelete && <button type="button" className="sp-button sp-button--secondary so-secondary so-delete-record" disabled={busy || exporting} onClick={() => requestRecordAction('delete', item)}><Trash2 size={16} />Supprimer</button>}
+        </div>}
+      </div>)}</div> : <div className="so-empty"><Compass size={42} /><h3>{search || status !== 'all' ? 'Aucune opération correspondante' : 'Préparez votre première opération en mer'}</h3><p>Renseignez la mission puis les contrôles du formulaire GO / NO GO.</p>{!search && status === 'all' && <button onClick={create}><Plus size={16} />Créer une opération</button>}</div>}</section>
       <p className="so-source">Référence : formulaire « GO / NO GO – Opération en Mer », OPE-FOR-10-C.</p>
     </>}
 
@@ -413,6 +488,8 @@ export function SeaOperationsPage() {
       footer={<div className="so-dialog-footer">
         <div className="so-footer-state">{step > 0 && <button className="sp-button sp-button--secondary so-secondary" disabled={busy} onClick={() => changeStep(step - 1)}><ArrowLeft size={16} />Précédent</button>}<span>{exporting ? 'Export du PDF…' : busy ? 'Enregistrement…' : dirty ? 'Modifications non enregistrées' : signed ? 'Décision signée et figée' : record ? `Version ${record.version} enregistrée` : 'Brouillon à compléter'}</span></div>
         <div className="so-footer-actions"><button className="sp-button sp-button--secondary so-secondary so-footer-cancel" disabled={busy} onClick={closeEditor}>{signed || !editable ? 'Fermer' : 'Annuler'}</button>
+          {record?.canRevise && signed && <button type="button" className="sp-button sp-button--secondary so-secondary" disabled={busy || exporting} onClick={() => requestRecordAction('revise', record)}><Pencil size={16} />Modifier cette fiche</button>}
+          {record?.canDelete && !dirty && <button type="button" className="sp-button sp-button--secondary so-secondary so-delete-record" disabled={busy || exporting} onClick={() => requestRecordAction('delete', record)}><Trash2 size={16} />Supprimer cette fiche</button>}
           {record && !dirty && <button className="sp-button sp-button--secondary so-secondary" disabled={busy || exporting} onClick={() => void exportPdf()}><FileDown size={16} />Exporter le PDF</button>}
           {record && !dirty && <button className="sp-button sp-button--secondary so-secondary so-footer-print" disabled={busy || exporting} onClick={() => window.print()}><Printer size={16} />Imprimer la fiche</button>}
           {editable && !signed && <button className="sp-button sp-button--secondary so-secondary" disabled={busy} onClick={() => void save()}><Save size={16} />Enregistrer le brouillon</button>}
@@ -428,6 +505,8 @@ export function SeaOperationsPage() {
         <div className="so-mobile-switch" hidden={!compactLayout} role="group" aria-label="Affichage de la fiche"><button aria-pressed={mobilePane === 'form'} onClick={() => setMobilePane('form')}><FileText size={16} />Saisie</button><button aria-pressed={mobilePane === 'preview'} onClick={() => setMobilePane('preview')}><Eye size={16} />Aperçu et complétude</button></div>
         <div className="so-editor-form-pane" hidden={compactLayout && mobilePane === 'preview'} ref={formPane}>
           <div className="so-editor-summary"><strong>{draft.project || 'Opération sans titre'}</strong><span>{draft.client || 'Client à renseigner'}</span><div><span className={`so-badge ${signed ? draft.decision === 'GO' ? 'is-go' : 'is-nogo' : ''}`}>{signed ? draft.decision === 'GO' ? 'GO signé' : 'NO GO signé' : 'Brouillon'}</span>{record && <small>Version {record.version} · {formatDate(record.updatedAt)}</small>}</div></div>
+          {record?.previousRevisionId && <button type="button" className="sp-button sp-button--secondary so-secondary so-revision-link" disabled={busy || exporting} onClick={() => void open({ id: record.previousRevisionId! })}>Version précédente signée</button>}
+          {record?.supersededById && <div className="so-revision-history"><p>Cette version signée est conservée dans l’historique.</p><button type="button" className="sp-button sp-button--secondary so-secondary" disabled={busy || exporting} onClick={() => void open({ id: record.supersededById! })}>Version suivante</button></div>}
           {error && <div className="so-alert so-danger" tabIndex={-1} role="alert"><AlertTriangle size={18} /><span>{error}</span></div>}
           {notice && <div className="so-alert so-success" role="status"><CheckCircle2 size={18} />{notice}</div>}
           {issues.length > 0 && <div className="so-alert so-danger" tabIndex={-1} role="alert"><div><strong>La fiche doit être complétée</strong><ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div></div>}
@@ -506,5 +585,8 @@ export function SeaOperationsPage() {
         <div className="so-editor-document-pane" hidden={compactLayout && mobilePane === 'form'}><SeaOperationPreview draft={draft} record={record} signatureImageUrl={captainSignature?.url} hasUnsavedChanges={dirty} onChangeStep={changeStep} /></div>
       </div>
     </AppDialog></div>}
-  </div>{record && <SeaOperationPrint record={record} />}</div>;
+  </div>{recordAction && <div className="so-record-confirm"><AppDialog size="sm" title={recordAction.kind === 'revise' ? 'Modifier une fiche signée' : 'Supprimer cette fiche du registre ?'} eyebrow="Confirmation" description={recordAction.record.draft.project || 'Opération sans titre'} isBusy={busy} onClose={() => { if (!busy) { setRecordAction(null); setRecordActionError(''); } }} footer={<div className="app-dialog__actions"><button type="button" className="sp-button sp-button--secondary so-secondary" disabled={busy} onClick={() => { setRecordAction(null); setRecordActionError(''); }}>Annuler</button><button type="button" className={`sp-button sp-button--primary${recordAction.kind === 'delete' ? ' so-delete-record' : ''}`} disabled={busy || exporting} onClick={() => void confirmRecordAction()}>{busy ? 'Traitement…' : recordAction.kind === 'revise' ? 'Créer la nouvelle préparation' : 'Supprimer'}</button></div>}>
+    <p>{recordAction.kind === 'revise' ? 'Une nouvelle préparation sera créée à partir de cette fiche. La version signée restera conservée dans l’historique. Le Capitaine devra valider et signer la nouvelle préparation.' : 'Cette fiche ne sera plus affichée dans le registre des opérations. Confirmez-vous sa suppression ?'}</p>
+    {recordActionError && <p className="so-alert so-danger" role="alert">{recordActionError}</p>}
+  </AppDialog></div>}{record && <SeaOperationPrint record={record} />}</div>;
 }
