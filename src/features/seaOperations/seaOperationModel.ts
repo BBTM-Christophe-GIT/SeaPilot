@@ -1,3 +1,6 @@
+import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
+import { waypointRadioSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
+
 /** Digital transcription of OPE-FOR-10-C, GO / NO GO – OPÉRATION EN MER. */
 export type SeaOperationAnswer = '' | 'yes' | 'no';
 export type SeaOperationDecision = 'GO' | 'NO_GO';
@@ -13,6 +16,26 @@ export type SeaOperationCheckId =
   | 'portRegulations' | 'berthAvailable' | 'weather';
 
 export interface SeaOperationContact { name: string; phone: string }
+export interface SeaOperationRadioContactSnapshot {
+  id: string;
+  kind: 'rescue' | 'port';
+  name: string;
+  area: string;
+  vhf: string;
+  phone?: string;
+  mmsi?: string;
+  source: string;
+  sourceLabel: string;
+  distanceNm: number;
+}
+export interface SeaOperationWaypointRadio {
+  version: 1;
+  latitude: number;
+  longitude: number;
+  capturedAt: string;
+  verifiedOn: string;
+  contacts: SeaOperationRadioContactSnapshot[];
+}
 export interface SeaOperationWaypoint {
   id: string;
   number: string;
@@ -23,6 +46,9 @@ export interface SeaOperationWaypoint {
   /** The source permits a time alone when the point is reached on the same day. */
   eta: string;
   denseTraffic: boolean;
+  /** Optional captures retain the information consulted for this precise point. */
+  weather?: SeaOperationWaypointWeather;
+  radio?: SeaOperationWaypointRadio;
 }
 
 export interface SeaOperationPayload {
@@ -241,7 +267,9 @@ export function isSeaOperationPayload(value: unknown): value is SeaOperationPayl
     || typeof value.supplies.customerAccountsPrepared !== 'boolean' || !Array.isArray(value.supplies.items)
     || !value.supplies.items.every((item) => SEA_OPERATION_SUPPLY_ITEMS.some((known) => known.id === item))) return false;
   if (!hasStringFields(value.signature, ['captainName', 'date', 'place']) || typeof value.signature.acknowledged !== 'boolean') return false;
-  return Array.isArray(value.waypoints) && value.waypoints.every((point) => hasStringFields(point, ['id', 'number', 'descriptionVhf', 'latitude', 'longitude', 'ukc', 'eta']) && typeof point.denseTraffic === 'boolean');
+  return Array.isArray(value.waypoints) && value.waypoints.every((point) => hasStringFields(point, ['id', 'number', 'descriptionVhf', 'latitude', 'longitude', 'ukc', 'eta']) && typeof point.denseTraffic === 'boolean'
+    && (point.weather === undefined || Boolean(waypointWeatherSnapshot(point as unknown as SeaOperationWaypoint)))
+    && (point.radio === undefined || Boolean(waypointRadioSnapshot(point as unknown as SeaOperationWaypoint))));
 }
 
 /**

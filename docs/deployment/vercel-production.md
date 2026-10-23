@@ -1,5 +1,17 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.6`, build `2026-10-23.004`, enrichit le tableau Passage Plan avec
+les contacts VHF et les prévisions de vent / Hs par **Waypoint**. Les copies
+enregistrées conservent leurs sources et horaires ; les fiches signées ne sont
+pas actualisées par une consultation ultérieure. Le chapitre 3 du PDF passe en
+A4 paysage, avec les autres chapitres en portrait et les fragments Word à leurs
+dimensions d’origine. Le modèle v1 accepte les nouvelles copies facultatives
+et conserve la lecture des historiques sans copie. Appliquer
+`20261023042059_sea_operation_waypoint_captures.sql` avant le frontend : ce guard
+vérifie les copies facultatives sans modifier les droits, les fonctions de
+sauvegarde / signature ni les fiches déjà enregistrées. Aucune nouvelle note de
+mise à jour n’est créée pour cette modification.
+
 Version `3.77.5`, build `2026-10-23.003`, ajoute automatiquement au Passage Plan
 tous les numéros de cartes SHOM identifiés aux points de passage, après la fin
 des recherches, sans clic et sans doublon. Le séparateur est **« - »** : les

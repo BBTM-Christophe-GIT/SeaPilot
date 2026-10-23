@@ -15,6 +15,11 @@ import { SeaOperationRadioPanel } from './SeaOperationRadioPanel';
 import { SeaOperationWeatherPanel } from './SeaOperationWeatherPanel';
 import { SeaOperationHydroSources } from './SeaOperationHydroSources';
 import { SeaOperationChartsPanel } from './SeaOperationChartsPanel';
+import { captureSeaOperationRadios, retainSeaOperationWeather, updateSeaOperationWaypoint } from './seaOperationWaypointSnapshots';
+import type { SeaOperationWeatherCaptureContext } from './seaOperationWaypointSnapshots';
+import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { passagePlanCellData } from './seaOperationPassagePlan';
 
 const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'];
 const STEP_DETAILS = ['Mission, client et voyage', 'Préparation et sécurité du navire', 'Cartes et points de route', 'GO / NO GO et signature'];
@@ -205,9 +210,31 @@ export function SeaOperationsPage() {
 
   const update = (patch: Partial<SeaOperationPayload>) => { allowAutomaticMission.current = false; editRevision.current += 1; setDraft((current) => ({ ...current, ...patch })); setDirty(true); setNotice(''); setIssues([]); };
   const vesselUpdate = (patch: Partial<SeaOperationPayload['vessel']>) => update({ vessel: { ...draft.vessel, ...patch } });
-  const waypointUpdate = (index: number, patch: Partial<SeaOperationPayload['waypoints'][number]>) => update({ waypoints: draft.waypoints.map((point, i) => i === index ? { ...point, ...patch } : point) });
+  const waypointUpdate = (index: number, patch: Partial<SeaOperationPayload['waypoints'][number]>) => update({ waypoints: draft.waypoints.map((point, i) => i === index ? updateSeaOperationWaypoint(point, patch) : point) });
   const editable = !record || record.canEdit;
   const signed = record?.status === 'signed';
+  const weatherEditor = useRef({ client, draft, editing, editable, signed, busy });
+  const pendingWeather = useRef(new globalThis.Map<string, { weather: SeaOperationWaypointWeather; context: SeaOperationWeatherCaptureContext; sourceClient: SupabaseClient }>());
+  weatherEditor.current = { client, draft, editing, editable, signed, busy };
+  const retainWeather = useCallback((weather: SeaOperationWaypointWeather, context: SeaOperationWeatherCaptureContext, sourceClient: SupabaseClient) => {
+    const current = weatherEditor.current;
+    if (sourceClient !== current.client || !current.editing || !current.editable || current.signed
+      || retainSeaOperationWeather(current.draft, weather, context) === current.draft) return;
+    if (current.busy) {
+      const key = `${context.projectId}:${context.pointId}`;
+      if (!pendingWeather.current.has(key) && pendingWeather.current.size >= 64) pendingWeather.current.delete(pendingWeather.current.keys().next().value!);
+      pendingWeather.current.set(key, { weather, context, sourceClient });
+      return;
+    }
+    setDraft((value) => retainSeaOperationWeather(value, weather, context));
+    setDirty(true); setNotice('');
+  }, []);
+  useEffect(() => {
+    if (busy) return;
+    const pending = [...pendingWeather.current.values()];
+    pendingWeather.current.clear();
+    if (editing && editable && !signed) for (const entry of pending) retainWeather(entry.weather, entry.context, entry.sourceClient);
+  }, [busy, client, editing, editable, signed, retainWeather]);
   const assessment = getSeaOperationAssessment(draft);
   const selectedMission = planning?.choices.find((choice) => choice.operationId === draft.planning?.operationId);
   const selectedCaptain = selectedMission?.captains.find((captain) => captain.personId === draft.planning?.captainPersonId);
@@ -269,11 +296,12 @@ export function SeaOperationsPage() {
   }
   async function save(sign = false) {
     if (busy) return;
-    const validation = validateSeaOperation(draft, sign ? draft.decision || 'GO' : 'DRAFT');
+    const prepared = captureSeaOperationRadios(draft);
+    const validation = validateSeaOperation(prepared, sign ? prepared.decision || 'GO' : 'DRAFT');
     if (validation.length) { setIssues(validation); setStep(sign ? 3 : step); revealFormFeedback(); return; }
     setBusy(true); setError(''); setIssues([]); setNotice('');
     try {
-      const saved = await saveSeaOperation(client, draft, record || undefined);
+      const saved = await saveSeaOperation(client, prepared, record || undefined);
       remember(saved);
       if (sign) {
         const finalized = await signSeaOperation(client, saved, saved.draft.signature.captainName, saved.draft.signature.acknowledged);
@@ -381,8 +409,11 @@ export function SeaOperationsPage() {
               const legacyEta = point.eta && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(point.eta);
               const operationDate = draft.planning?.date || planningDate;
               const proposedEta = legacyEta && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(point.eta) && /^\d{4}-\d{2}-\d{2}$/.test(operationDate) ? `${operationDate}T${point.eta}` : '';
+              const navigation = passagePlanCellData(point, { allowLiveRadio: !signed });
               return <div className="so-passage-row" role="row" key={point.id}>
-                {([['number', 'N° du point', 'number'], ['descriptionVhf', 'Description', 'description'], ['latitude', 'Latitude', 'latitude'], ['longitude', 'Longitude', 'longitude'], ['ukc', 'UKC', 'ukc']] as const).map(([key, label, variant]) => <label role="cell" className={`so-passage-field is-${variant}`} key={key}><span>{label}</span><input aria-label={`${label} · point ${index + 1}`} type="text" value={point[key]} onChange={(event) => waypointUpdate(index, { [key]: event.target.value })} /></label>)}
+                {([['number', 'Waypoint', 'number'], ['descriptionVhf', 'Description', 'description'], ['latitude', 'Latitude', 'latitude'], ['longitude', 'Longitude', 'longitude'], ['ukc', 'UKC', 'ukc']] as const).map(([key, label, variant]) => <label role="cell" className={`so-passage-field is-${variant}`} key={key}><span>{label}</span><input aria-label={`${label} · point ${index + 1}`} type="text" value={point[key]} onChange={(event) => waypointUpdate(index, { [key]: event.target.value })} /></label>)}
+                <div role="cell" className="so-passage-field is-vhf"><span>Contacts VHF</span><p>{navigation.vhf}</p></div>
+                <div role="cell" className="so-passage-field is-weather"><span>Prévisions météo</span><p>{navigation.weather}</p></div>
                 <label role="cell" className="so-passage-field is-eta"><span>ETA · date et heure</span><input aria-label={`ETA · date et heure · point ${index + 1}`} type="datetime-local" value={legacyEta ? '' : point.eta} onChange={(event) => waypointUpdate(index, { eta: event.target.value })} />{legacyEta && <small className="so-help">Ancienne ETA : {point.eta}. Renseignez une date et une heure pour la remplacer.</small>}{proposedEta && <button type="button" className="sp-button sp-button--secondary" aria-label={`Appliquer la date de l’opération à l’ETA du point ${index + 1}`} onClick={() => waypointUpdate(index, { eta: proposedEta })}>Utiliser le {operationDate.split('-').reverse().join('/')} à {point.eta}</button>}</label>
                 <label role="cell" className="so-passage-field is-traffic"><input aria-label={`Zone maritime à trafic dense · point ${index + 1}`} type="checkbox" checked={point.denseTraffic} onChange={(event) => waypointUpdate(index, { denseTraffic: event.target.checked })} /><span>Zone maritime à trafic dense</span></label>
                 <div role="cell" className="so-passage-field is-actions"><button type="button" className="so-secondary sp-button sp-button--secondary" aria-label={`Supprimer le point ${index + 1}`} onClick={() => update({ waypoints: draft.waypoints.filter((_, i) => i !== index) })}><Trash2 size={15} /></button></div>
@@ -392,7 +423,7 @@ export function SeaOperationsPage() {
           </div>
           <button type="button" className="so-secondary sp-button sp-button--secondary" onClick={() => update({ waypoints: [...draft.waypoints, { id: crypto.randomUUID(), number: String(draft.waypoints.length + 1), descriptionVhf: '', latitude: '', longitude: '', ukc: '', eta: '', denseTraffic: false }] })}><Plus size={16} />Ajouter un point de passage</button>
           <SeaOperationRadioPanel waypoints={draft.waypoints} />
-          <SeaOperationWeatherPanel client={client} projectId={draft.planning?.projectId || ''} waypoints={draft.waypoints} preview={previewMode} active={step === 2} />
+          <SeaOperationWeatherPanel client={client} projectId={draft.planning?.projectId || ''} waypoints={draft.waypoints} preview={previewMode} active={step === 2} onWeatherLoaded={retainWeather} />
         </section>
         <section id="sea-operation-step-3" hidden={step !== 3} className={`so-panel so-decision-panel ${step === 3 ? 'is-active' : ''}`} aria-label="Décision du Capitaine"><div className="so-section-title"><b aria-hidden="true">4</b><div><h2 tabIndex={-1}>Décision du Capitaine</h2><p>Le Capitaine consigne sa décision après examen des conditions de la mission.</p></div></div>
           <div className={`so-assessment ${assessment.blockingChecks.length ? 'is-nogo' : 'is-pending'}`}><AlertTriangle size={22} /><div><strong>{assessment.blockingChecks.length ? `NO GO imposé · ${assessment.blockingChecks.length} contrôle(s) bloquant(s)` : 'Vérification de la préparation'}</strong><p>Toute réponse Non à un contrôle bloquant impose un NO GO. Le Capitaine doit trouver une solution et justifier toute situation empêchant l’appareillage.</p>{assessment.blockingChecks.length > 0 && <ul>{assessment.blockingChecks.map((check) => <li key={check.id}>{check.label}</li>)}</ul>}</div></div>

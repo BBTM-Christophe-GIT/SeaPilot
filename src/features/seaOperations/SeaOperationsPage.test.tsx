@@ -7,6 +7,7 @@ import { fetchSeaOperationCaptainSignature, fetchSeaOperationData, fetchSeaOpera
 import { exportSeaOperationPdf } from './seaOperationPdf';
 import { SeaOperationsPage } from './SeaOperationsPage';
 import { fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries';
+import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
 
 const weatherPanelMock = vi.hoisted(() => vi.fn());
 const chartsPanelMock = vi.hoisted(() => vi.fn());
@@ -62,6 +63,35 @@ function noGoDraft(): SeaOperationPayload {
   draft.signature = { captainName: captainAccount.name, date: '2026-10-16', place: 'Cherbourg', acknowledged: true };
   return draft;
 }
+
+function waypointCaptureDraft(mission = plannedMissions()[1]): SeaOperationPayload {
+  const draft = noGoDraft();
+  draft.project = mission.project;
+  draft.planning = { date: seaOperationToday(), operationId: mission.operationId, projectId: mission.projectId, captainPersonId: mission.captains[0].personId };
+  draft.description = 'Description métier conservée pendant les captures.';
+  draft.charts = 'Carte SHOM 7000';
+  draft.specialPersonnel = [{ name: 'Observateur embarqué', phone: '0200000000' }];
+  draft.signature = { ...draft.signature, captainName: mission.captains[0].name, place: mission.vessel.departurePort };
+  draft.vessel = { ...draft.vessel, ...mission.vessel, captainName: mission.captains[0].name };
+  draft.waypoints = [{ id: 'capture-point', number: '3', descriptionVhf: 'Entrée de Cherbourg', latitude: '49.65', longitude: '-1.62', ukc: '2,4 m validés par le Capitaine', eta: '2026-10-23T14:00', denseTraffic: true }];
+  return draft;
+}
+
+function waypointWeather(): SeaOperationWaypointWeather {
+  return {
+    pointId: 'capture-point', latitude: 49.65, longitude: -1.62, etaUtc: '2026-10-23T12:00:00.000Z', fetchedAt: '2026-10-23T08:00:00.000Z',
+    wind: { time: '2026-10-23T12:00:00.000Z', speedKnots: 14, gustKnots: null, directionDegrees: 245 },
+    waves: { time: '2026-10-23T12:00:00.000Z', heightMeters: 1.2, periodSeconds: 8, directionDegrees: 260, component: 'swell' },
+    windMessage: '', wavesMessage: '', attribution: 'Météo-France', sourceUrl: 'https://www.data.gouv.fr/datasets/paquets-de-modele-de-vagues-mfwam-resolution-0-025deg',
+  };
+}
+
+interface CapturingWeatherPanelProps {
+  waypoints: SeaOperationPayload['waypoints'];
+  onWeatherLoaded?: (weather: SeaOperationWaypointWeather, context: { projectId: string; pointId: string; latitude: string; longitude: string; eta: string }, sourceClient: unknown) => void;
+}
+const capturingWeatherPanel = () => weatherPanelMock.mock.lastCall![0] as CapturingWeatherPanelProps;
+const waypointWeatherContext = (draft: SeaOperationPayload) => ({ projectId: draft.planning?.projectId || '', pointId: draft.waypoints[0].id, latitude: draft.waypoints[0].latitude, longitude: draft.waypoints[0].longitude, eta: draft.waypoints[0].eta });
 
 function recordFixture(account: Account, overrides: Partial<SeaOperationRecord> = {}): SeaOperationRecord {
   return {
@@ -192,6 +222,160 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(weatherPanelMock).toHaveBeenLastCalledWith(expect.objectContaining({ client, projectId: mission.projectId, preview: true, active: true, waypoints: [expect.objectContaining({ latitude: '49.65', longitude: '-1.62', eta: '2026-10-22T14:30' })] }));
     expect(chartsPanelMock).toHaveBeenLastCalledWith(expect.objectContaining({ client, projectId: mission.projectId, preview: true, active: true, canEdit: true, charts: draft.charts, waypoints: [expect.objectContaining({ latitude: '49.65', longitude: '-1.62' })] }));
     expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it.each(['save', 'sign'] as const)('persists matching waypoint weather and sourced radio contacts before %s while preserving preparation fields', async (action) => {
+    const draft = waypointCaptureDraft();
+    const original = structuredClone(draft);
+    const record = recordFixture(captainAccount, { draft });
+    const { client } = renderAccount(captainAccount, record, 1, plannedMissions());
+    vi.mocked(fetchSeaOperationCaptainSignature).mockResolvedValue(profileSignature());
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, edited) => ({ ...record, draft: structuredClone(edited), version: 4 }));
+    vi.mocked(signSeaOperation).mockImplementation(async (_client, saved) => ({ ...record, ...saved, draft: structuredClone(vi.mocked(saveSeaOperation).mock.calls[0][1]), status: 'signed', version: 5, canEdit: false, canSign: false, signedBy: captainAccount.id, signedByName: captainAccount.name, signedAt: '2026-10-23T08:15:00Z' }));
+    await openRecord(record);
+    const weather = waypointWeather();
+    expect(capturingWeatherPanel().onWeatherLoaded).toBeTypeOf('function');
+    await act(async () => capturingWeatherPanel().onWeatherLoaded!(weather, waypointWeatherContext(draft), { fixtureAccountId: 'previous-authenticated-client' }));
+    expect(capturingWeatherPanel().waypoints[0]).not.toHaveProperty('weather');
+    await act(async () => capturingWeatherPanel().onWeatherLoaded!(weather, waypointWeatherContext(draft), client));
+    if (action === 'sign') {
+      await decisionStep();
+      await userEvent.click(screen.getByRole('button', { name: 'Signer la décision NO GO' }));
+      expect(await formQueries().findByText('Décision du Capitaine signée et enregistrée. La fiche est figée.')).toBeInTheDocument();
+    } else {
+      await saveDraft();
+      expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
+    }
+    expect(saveSeaOperation).toHaveBeenCalledTimes(1);
+    const savedPayload = vi.mocked(saveSeaOperation).mock.calls[0][1];
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, savedPayload, record);
+    expect(savedPayload).toEqual({ ...original, waypoints: [expect.objectContaining({ ...original.waypoints[0], weather })] });
+    expect(savedPayload.waypoints[0].radio).toEqual(expect.objectContaining({
+      version: 1, latitude: 49.65, longitude: -1.62, capturedAt: expect.any(String), verifiedOn: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      contacts: expect.arrayContaining([
+        expect.objectContaining({ id: 'cross-jobourg', kind: 'rescue', name: 'CROSS Jobourg', vhf: '16', source: expect.stringContaining('https://'), sourceLabel: expect.any(String), distanceNm: expect.any(Number) }),
+        expect.objectContaining({ id: 'cherbourg-port', kind: 'port', name: 'Cherbourg · Capitainerie', vhf: '12', phone: '+33 2 33 20 41 25', source: 'https://portsdenormandie.fr/en/harbour-masters-office/cherbourg', distanceNm: 0 }),
+      ]),
+    }));
+    expect(Number.isFinite(Date.parse(savedPayload.waypoints[0].radio!.capturedAt))).toBe(true);
+    expect(draft).toEqual(original);
+    if (action === 'sign') {
+      expect(signSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ version: 4, draft: savedPayload }), draft.signature.captainName, true);
+    } else expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it.each(['save', 'sign'] as const)('replays weather arriving during a pending %s only if the completed record stays editable', async (action) => {
+    const draft = waypointCaptureDraft();
+    const record = recordFixture(captainAccount, { draft });
+    const pendingSave = deferred<SeaOperationRecord>();
+    const { client } = renderAccount(captainAccount, record, 1, plannedMissions());
+    vi.mocked(fetchSeaOperationCaptainSignature).mockResolvedValue(profileSignature());
+    vi.mocked(saveSeaOperation).mockImplementationOnce(() => pendingSave.promise)
+      .mockImplementation(async (_client, edited) => ({ ...record, draft: structuredClone(edited), version: 5 }));
+    vi.mocked(signSeaOperation).mockImplementation(async () => ({ ...record, draft: structuredClone(vi.mocked(saveSeaOperation).mock.calls[0][1]), status: 'signed', version: 5, canEdit: false, canSign: false, signedBy: captainAccount.id, signedByName: captainAccount.name, signedAt: '2026-10-23T08:15:00Z' }));
+    await openRecord(record);
+    const callback = capturingWeatherPanel().onWeatherLoaded!;
+    if (action === 'sign') {
+      await decisionStep();
+      await userEvent.click(screen.getByRole('button', { name: 'Signer la décision NO GO' }));
+    } else await saveDraft();
+    expect(saveSeaOperation).toHaveBeenCalledTimes(1);
+    const initiallySaved = structuredClone(vi.mocked(saveSeaOperation).mock.calls[0][1]);
+    expect(initiallySaved.waypoints[0]).not.toHaveProperty('weather');
+    await act(async () => callback(waypointWeather(), waypointWeatherContext(draft), client));
+    expect(capturingWeatherPanel().waypoints[0]).not.toHaveProperty('weather');
+    expect(footerQueries().getByText('Enregistrement…')).toBeVisible();
+    await act(async () => pendingSave.resolve({ ...record, draft: initiallySaved, version: 4 }));
+    if (action === 'sign') {
+      expect(await formQueries().findByText('Décision du Capitaine signée et enregistrée. La fiche est figée.')).toBeInTheDocument();
+      expect(capturingWeatherPanel().waypoints).toEqual(initiallySaved.waypoints);
+      expect(capturingWeatherPanel().waypoints[0]).not.toHaveProperty('weather');
+      expect(footerQueries().queryByText('Modifications non enregistrées')).not.toBeInTheDocument();
+      expect(sessionStorage.length).toBe(0);
+      expect(signSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ version: 4, draft: initiallySaved }), draft.signature.captainName, true);
+    } else {
+      expect(await footerQueries().findByText('Modifications non enregistrées')).toBeVisible();
+      expect(capturingWeatherPanel().waypoints[0]).toEqual({ ...initiallySaved.waypoints[0], weather: waypointWeather() });
+      expect(JSON.parse(sessionStorage.getItem('seapilot:sea-operation-draft:v1:1:captain-server-account')!).draft.waypoints[0].weather).toEqual(waypointWeather());
+      expect(saveSeaOperation).toHaveBeenCalledTimes(1);
+      await saveDraft();
+      expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
+      expect(saveSeaOperation).toHaveBeenLastCalledWith(client, expect.objectContaining({ waypoints: [expect.objectContaining({ weather: waypointWeather() })] }), expect.objectContaining({ version: 4 }));
+      expect(signSeaOperation).not.toHaveBeenCalled();
+    }
+  });
+
+  it('ignores a previous project weather response when the next project reuses the same waypoint coordinates and ETA', async () => {
+    const choices = plannedMissions();
+    const first = recordFixture(captainAccount, { id: 'capture-record-a', draft: waypointCaptureDraft(choices[0]) });
+    const second = recordFixture(captainAccount, { id: 'capture-record-b', draft: waypointCaptureDraft(choices[1]) });
+    second.draft.description = 'Seconde mission à préserver.';
+    const originalSecond = structuredClone(second.draft);
+    const { client, data } = renderAccount(captainAccount, first, 1, choices);
+    data.records.push(second);
+    vi.mocked(fetchSeaOperationDetail).mockImplementation(async (_client, id) => id === first.id ? first : second);
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, edited) => ({ ...second, draft: structuredClone(edited), version: 4 }));
+    await openRecord(first);
+    const previousCallback = capturingWeatherPanel().onWeatherLoaded!;
+    await userEvent.click(footerQueries().getByRole('button', { name: 'Annuler' }));
+    await openRecord(second);
+    await act(async () => previousCallback(waypointWeather(), waypointWeatherContext(first.draft), client));
+    expect(capturingWeatherPanel().waypoints).toEqual(originalSecond.waypoints);
+    await saveDraft();
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({
+      ...originalSecond,
+      waypoints: [expect.objectContaining(originalSecond.waypoints[0])],
+    }), second);
+    expect(vi.mocked(saveSeaOperation).mock.calls[0][1].waypoints[0]).not.toHaveProperty('weather');
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('ignores an already started weather callback after a signed record opens and preserves its recorded captures', async () => {
+    const draft = waypointCaptureDraft();
+    const first = recordFixture(captainAccount, { id: 'capture-editable', draft });
+    const signedDraft = structuredClone(draft);
+    signedDraft.project = 'Captures historiques signées';
+    signedDraft.waypoints[0].weather = waypointWeather();
+    signedDraft.waypoints[0].radio = { version: 1, latitude: 49.65, longitude: -1.62, capturedAt: '2026-10-22T08:00:00Z', verifiedOn: '2026-10-21', contacts: [{ id: 'historic-contact', kind: 'rescue', name: 'Contact radio archivé', area: 'Manche', vhf: '16', source: 'https://example.test/archive', sourceLabel: 'Source archivée', distanceNm: 4 }] };
+    const signedRecord = recordFixture(captainAccount, { id: 'capture-signed', draft: signedDraft, status: 'signed', canEdit: true, canSign: true, signedBy: captainAccount.id, signedByName: captainAccount.name, signedAt: '2026-10-23T08:15:00Z' });
+    const originalSigned = structuredClone(signedDraft);
+    const { client, data } = renderAccount(captainAccount, first, 1, plannedMissions());
+    data.records.push(signedRecord);
+    vi.mocked(fetchSeaOperationDetail).mockImplementation(async (_client, id) => id === first.id ? first : signedRecord);
+    await openRecord(first);
+    const previousCallback = capturingWeatherPanel().onWeatherLoaded!;
+    await userEvent.click(footerQueries().getByRole('button', { name: 'Annuler' }));
+    await openRecord(signedRecord);
+    const refreshedWeather = { ...waypointWeather(), fetchedAt: '2026-10-23T08:30:00.000Z', wind: { ...waypointWeather().wind!, speedKnots: 35 } };
+    await act(async () => previousCallback(refreshedWeather, waypointWeatherContext(draft), client));
+    expect(capturingWeatherPanel().waypoints).toEqual(originalSigned.waypoints);
+    expect(signedDraft).toEqual(originalSigned);
+    await userEvent.click(stepButton(2));
+    expect(formQueries().getByLabelText('Latitude · point 1')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('opens a legacy waypoint without inventing saved weather or radio captures', async () => {
+    const draft = noGoDraft();
+    draft.waypoints = [{ id: 'legacy-without-captures', number: '2', descriptionVhf: 'Ancien descriptif et canal VHF 12', latitude: '49.65', longitude: '-1.62', ukc: 'Ancienne UKC validée à bord', eta: '12:00', denseTraffic: true }];
+    const original = structuredClone(draft);
+    const record = recordFixture(captainAccount, { draft });
+    renderAccount(captainAccount, record);
+    await openRecord(record);
+    await userEvent.click(stepButton(2));
+    expect(capturingWeatherPanel().waypoints).toEqual(original.waypoints);
+    expect(capturingWeatherPanel().waypoints[0]).not.toHaveProperty('weather');
+    expect(capturingWeatherPanel().waypoints[0]).not.toHaveProperty('radio');
+    expect(formQueries().getByLabelText('Description · point 1')).toHaveValue(original.waypoints[0].descriptionVhf);
+    expect(formQueries().getByLabelText('UKC · point 1')).toHaveValue(original.waypoints[0].ukc);
+    expect(formQueries().getByText(/Ancienne ETA : 12:00/)).toBeVisible();
+    expect(sessionStorage.length).toBe(0);
+    expect(draft).toEqual(original);
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
   });
 
   it('leaves a missing vessel draught blank and directs the user to the vessel record', async () => {

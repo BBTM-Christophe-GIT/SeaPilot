@@ -3,6 +3,7 @@ import type { SeaOperationRecord } from './seaOperationQueries';
 import { DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS } from './seaOperationModel';
 import type { SeaOperationAnswer, SeaOperationCheck } from './seaOperationModel';
 import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperationRadio';
+import { passagePlanCellData } from './seaOperationPassagePlan';
 
 export const SEA_OPERATION_WORD_TEMPLATE_URL = '/templates/sea-operation/word-header-footer.pdf';
 const PAGE_WIDTH = 595.32;
@@ -11,6 +12,8 @@ const LEFT = 49;
 const RIGHT = 49;
 const TOP = 100;
 const BOTTOM = 55;
+const WORD_HEADER_HEIGHT = 90;
+const WORD_FOOTER_HEIGHT = 26;
 const BLUE: [number, number, number] = [21, 96, 130];
 
 export interface SeaOperationPdfOptions {
@@ -59,10 +62,13 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   const document = new Pdf({ orientation: 'portrait', unit: 'pt', format: [PAGE_WIDTH, PAGE_HEIGHT], compress: true });
   document.setProperties({ title: `GO / NO GO - OPÉRATION EN MER - ${form.project}`, subject: 'OPE-FOR-10-C', author: 'BBTM', creator: 'SeaPilot' });
   let y = TOP;
-  const page = (space = 25) => { if (y + space > PAGE_HEIGHT - BOTTOM) { document.addPage(); y = TOP; } };
+  const pageWidth = () => document.internal.pageSize.getWidth();
+  const pageHeight = () => document.internal.pageSize.getHeight();
+  const newPage = (orientation: 'portrait' | 'landscape') => { document.addPage([PAGE_WIDTH, PAGE_HEIGHT], orientation); y = TOP; };
+  const page = (space = 25) => { if (y + space > pageHeight() - BOTTOM) { document.addPage(); y = TOP; } };
   const paragraph = (text: string, bold = false) => {
     document.setFont('helvetica', bold ? 'bold' : 'normal'); document.setFontSize(9); document.setTextColor(0, 0, 0);
-    const lines = document.splitTextToSize(clean(text), PAGE_WIDTH - LEFT - RIGHT) as string[];
+    const lines = document.splitTextToSize(clean(text), pageWidth() - LEFT - RIGHT) as string[];
     for (const line of lines) { page(13); document.text(line, LEFT, y); y += 12; }
     y += 5;
   };
@@ -71,11 +77,11 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     document.setFont('helvetica', 'bold'); document.setFontSize(minor ? 10 : 12); document.setTextColor(...BLUE);
     document.text(clean(text), LEFT, y); y += minor ? 15 : 18;
   };
-  const table = (rows: string[][], headers?: string[], widths?: Record<number, { cellWidth: number }>) => {
+  const table = (rows: string[][], headers?: string[], widths?: Record<number, { cellWidth: number }>, compact = false) => {
     autoTable(document, {
       startY: y, margin: { top: TOP, bottom: BOTTOM, left: LEFT, right: RIGHT },
       head: headers ? [headers.map(clean)] : undefined, body: rows.map((row) => row.map(clean)), theme: 'grid',
-      styles: { font: 'helvetica', fontSize: 9, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: .35, cellPadding: 5, overflow: 'linebreak', valign: 'top' },
+      styles: { font: 'helvetica', fontSize: compact ? 8.5 : 9, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: .35, cellPadding: compact ? 4 : 5, overflow: 'linebreak', valign: 'top' },
       headStyles: { fillColor: [255, 255, 255], textColor: BLUE, fontStyle: 'bold' },
       columnStyles: widths, rowPageBreak: 'avoid', showHead: 'everyPage',
     });
@@ -133,17 +139,29 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
         ['Fournisseurs et besoins identifiés', form.supplies.suppliers], ['Comptes clients préparés avec la Direction financière au besoin', form.supplies.customerAccountsPrepared ? 'Confirmé' : 'Non confirmé / sans besoin déclaré']]);
     }
   }
+  newPage('landscape');
   heading('3 - Passage Plan');
   fields([['Numéro de la ou des cartes marines', form.charts]]);
   paragraph('ETA : date et heure locale de Paris. Les fiches historiques peuvent conserver une heure seule.');
-  if (form.waypoints.length) table(form.waypoints.map((point) => [value(point.number), value(point.descriptionVhf), value(point.latitude), value(point.longitude), value(point.ukc), date(point.eta), point.denseTraffic ? 'Oui' : 'Non']), ['N°', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA - Date / heure', 'Trafic dense']);
+  const passageRows = form.waypoints.map((point) => passagePlanCellData(point, { allowLiveRadio: !signed }));
+  if (passageRows.length) table(passageRows.map((row) => [row.waypoint, row.description, row.latitude, row.longitude, row.ukc, row.eta, row.vhf, row.weather, row.denseTraffic]),
+    ['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA - Date / heure', 'Contacts VHF', 'Météo à l’ETA', 'Trafic dense'],
+    { 0: { cellWidth: 50 }, 1: { cellWidth: 140 }, 2: { cellWidth: 65 }, 3: { cellWidth: 65 }, 4: { cellWidth: 35 }, 5: { cellWidth: 75 }, 6: { cellWidth: 125 }, 7: { cellWidth: 150 }, 8: { cellWidth: PAGE_HEIGHT - LEFT - RIGHT - 705 } }, true);
   else paragraph('Aucun point de passage renseigné.');
-  const radioContacts = seaOperationRadioContacts(form.waypoints).contacts;
+  if (passageRows.some((row) => row.weatherFootnote || row.radioFootnote)) {
+    heading('Sources et horaires du Passage Plan', true);
+    for (const row of passageRows) {
+      if (row.weatherFootnote) paragraph(`Waypoint ${row.waypoint} - ${row.weatherFootnote}`);
+      if (row.radioFootnote) paragraph(`Waypoint ${row.waypoint} - ${row.radioFootnote}`);
+    }
+  }
+  const radioContacts = signed ? [] : seaOperationRadioContacts(form.waypoints).contacts;
   if (radioContacts.length) {
     heading('Contacts VHF proposés par proximité');
     paragraph(`Annuaire de préparation vérifié le ${date(SEA_RADIO_VERIFIED_ON)}. Repères arrondis à moins de 80 M (centres) ou 10 M (ports) de la route. Ce filtre ne détermine ni une compétence SAR / VTS, ni la portée radio. Annexe indicative, distincte de la décision signée.`);
     table(radioContacts.map((contact) => [contact.name, `Canal ${contact.vhf}`, [contact.phone, contact.mmsi ? `MMSI ${contact.mmsi}` : ''].filter(Boolean).join('\n') || '-', contact.sourceLabel]), ['Contact', 'VHF', 'Téléphone / MMSI', 'Source']);
   }
+  newPage('portrait');
   heading('4 - Décision du Capitaine');
   paragraph(form.decision === 'GO' ? 'GO - La mission peut être réalisée.' : form.decision === 'NO_GO' ? 'NO GO - La mission ne peut être réalisée. Transmettre à l’Armement les risques identifiés.' : 'Décision à renseigner.', true);
   if (!signed) paragraph('BROUILLON - cette décision n’a pas été signée.', true);
@@ -169,14 +187,24 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   let source;
   try { source = await PDFDocument.load(template); } catch { throw new Error('Le modèle Word d’en-tête et de pied de page est invalide.'); }
   if (source.getPageCount() !== 1) throw new Error('Le modèle Word d’en-tête et de pied de page est invalide.');
+  // Normalize each crop to a page whose origin is zero; repeated nonzero Form BBoxes render inconsistently across PDF viewers.
+  const chromeDocument = await PDFDocument.create();
+  const [originalWordPage] = await chromeDocument.embedPdf(source, [0]);
+  const headerPage = chromeDocument.addPage([PAGE_WIDTH, WORD_HEADER_HEIGHT]);
+  headerPage.drawPage(originalWordPage, { x: 0, y: WORD_HEADER_HEIGHT - PAGE_HEIGHT });
+  const footerPage = chromeDocument.addPage([PAGE_WIDTH, WORD_FOOTER_HEIGHT]);
+  footerPage.drawPage(originalWordPage, { x: 0, y: 0 });
   const output = await PDFDocument.create();
-  const [chrome] = await output.embedPdf(source, [0]);
+  const [header, footer] = await output.embedPdf(await chromeDocument.save(), [0, 1]);
   const bodyDocument = await PDFDocument.load(document.output('arraybuffer'));
   const body = await output.embedPdf(bodyDocument, bodyDocument.getPageIndices());
   for (const content of body) {
-    const sheet = output.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-    sheet.drawPage(chrome, { x: 0, y: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT });
-    sheet.drawPage(content, { x: 0, y: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT });
+    const sheet = output.addPage([content.width, content.height]);
+    sheet.drawPage(content, { x: 0, y: 0 });
+    const x = (content.width - PAGE_WIDTH) / 2;
+    // Native-size vector fragments: translate the original chrome without stretching the logo or fonts.
+    sheet.drawPage(header, { x, y: content.height - WORD_HEADER_HEIGHT });
+    sheet.drawPage(footer, { x, y: 0 });
   }
   output.setTitle(`GO / NO GO - OPÉRATION EN MER - ${form.project}`);
   output.setSubject('OPE-FOR-10-C'); output.setCreator('SeaPilot'); output.setProducer('SeaPilot');

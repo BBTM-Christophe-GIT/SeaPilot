@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { emptySeaOperation } from './seaOperationModel';
 import type { SeaOperationRecord } from './seaOperationQueries';
 import { SeaOperationPrint } from './SeaOperationPrint';
+import { SEA_METEO_FRANCE_SOURCE_URL } from './seaOperationWeatherModel';
 
 describe('Opération en Mer printable content', () => {
   it('shows the prepared RH image without claiming a decision signature, and uses only the recorded snapshot once signed', () => {
@@ -56,5 +57,36 @@ describe('Opération en Mer printable content', () => {
     expect(print.queryByText('Identité du compte signataire')).not.toBeInTheDocument();
     expect(container.querySelector('script, img[onerror], input, textarea, select')).toBeNull();
     expect(Array.from(container.querySelectorAll('img')).map((image) => image.getAttribute('src'))).toEqual(['/templates/sea-operation/word-header.png', '/templates/sea-operation/word-footer.png']);
+  });
+
+  it('keeps Waypoint, captured VHF and ETA forecasts in a landscape chapter without filling signed history from live data', () => {
+    const draft = emptySeaOperation();
+    draft.waypoints = [{ id: 'recorded-wp', number: 'WP1', descriptionVhf: '<Approche du port>', latitude: '49.65 N', longitude: '1.62 W', eta: '2026-10-23T12:00', ukc: '2 m', denseTraffic: true,
+      weather: { pointId: 'recorded-wp', latitude: 49.65, longitude: -1.62, etaUtc: '2026-10-23T10:00:00Z', fetchedAt: '2026-10-22T12:00:00Z',
+        wind: { time: '2026-10-23T10:00:00Z', speedKnots: 12, gustKnots: 37, directionDegrees: 270 },
+        waves: { time: '2026-10-23T10:00:00Z', heightMeters: .6, periodSeconds: 6, directionDegrees: 220, component: 'swell' },
+        windMessage: '', wavesMessage: '', attribution: 'Météo-France', sourceUrl: SEA_METEO_FRANCE_SOURCE_URL,
+        model: { name: 'MFWAM', referenceTime: '2026-10-22T06:00:00Z', latitude: 49.65, longitude: -1.625 } },
+      radio: { version: 1, latitude: 49.65, longitude: -1.62, capturedAt: '2026-10-22T12:00:00Z', verifiedOn: '2026-10-22',
+        contacts: [{ id: 'cherbourg-port', kind: 'port', name: 'Cherbourg · Capitainerie', area: 'Port', vhf: '12', phone: '+33 2 33 20 41 25',
+          source: 'https://portsdenormandie.fr/en/harbour-masters-office/cherbourg', sourceLabel: 'Ports de Normandie', distanceNm: 0 }] } }];
+    const record: SeaOperationRecord = { id: 'recorded-weather', companyId: 1, version: 1, status: 'signed', draft,
+      createdBy: 'author', createdByName: 'Auteur', createdAt: '2026-10-22T08:00:00Z', updatedBy: 'captain', updatedByName: 'Capitaine', updatedAt: '2026-10-22T12:00:00Z',
+      signedBy: 'captain', signedByName: 'Capitaine', signedAt: '2026-10-22T12:00:00Z', captainName: 'Capitaine', canEdit: false, canSign: false };
+    const { container, rerender } = render(<SeaOperationPrint record={record} />);
+    const passage = within(container.querySelector('.so-print-passage-section')!);
+    const table = passage.getByRole('table', { name: 'Points de passage, contacts VHF et météo à l’ETA' });
+    expect(within(table).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA – Date et heure', 'Contacts VHF', 'Météo à l’ETA', 'Trafic dense']);
+    expect(within(table).getByRole('cell', { name: '<Approche du port>' })).toBeInTheDocument();
+    expect(within(table).getByRole('cell', { name: /Cherbourg · Capitainerie · Ch 12/ })).toBeInTheDocument();
+    expect(within(table).getByRole('cell', { name: /Vent moyen 10 m : 12 nd[\s\S]*Houle Hs : 0,60 m/ })).toBeInTheDocument();
+    expect(passage.getByText(/Météo-France · consultée le/)).toHaveTextContent('MFWAM');
+    expect(passage.getByText(/Annuaire vérifié le/)).toHaveTextContent('Ports de Normandie');
+    expect(table.textContent).not.toMatch(/rafales|37 nd/i);
+    delete draft.waypoints[0].radio; delete draft.waypoints[0].weather;
+    rerender(<SeaOperationPrint record={record} />);
+    expect(passage.getByRole('cell', { name: 'Contacts VHF non enregistrés.' })).toBeInTheDocument();
+    expect(passage.getByRole('cell', { name: 'Prévisions météo non enregistrées pour cette position et cette ETA.' })).toBeInTheDocument();
+    expect(passage.queryByText(/Cherbourg|CROSS/)).not.toBeInTheDocument();
   });
 });
