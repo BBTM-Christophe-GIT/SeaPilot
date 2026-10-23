@@ -54,4 +54,26 @@ describe('waypoint weather card', () => {
     expect(container.textContent).toContain('0,60 m');
     expect(container.textContent).toContain('6 s');
   });
+  it('provides a dedicated editor variant while retaining weather, assessment, UTC times and source', () => {
+    const { container } = render(<SeaOperationWeatherCard point={point()} matrix={GOURY_WEATHER_MATRIX} compact variant="editor" />);
+    expect(container.firstElementChild).toHaveClass('is-editor', 'is-compact');
+    expect(container.firstElementChild).not.toHaveClass('is-unavailable');
+    expect(screen.getByText('Confortable')).toHaveClass('is-success');
+    for (const label of ['0,60 m', '6 s', '12,5 nd', '220°', '270°', 'ETA : 23/10', 'Open-Meteo', 'Modèle houle', 'Modèle vent', 'UTC']) expect(container.textContent).toContain(label);
+    expect(container.textContent).not.toMatch(/rafale|99/);
+  });
+  it('marks missing editor forecasts without retaining stale metrics or inventing a sea-state level', () => {
+    const record = point(); record.eta = '2026-10-23T13:00';
+    const { container } = render(<SeaOperationWeatherCard point={record} matrix={GOURY_WEATHER_MATRIX} variant="editor" />);
+    expect(container.firstElementChild).toHaveClass('is-editor', 'is-unavailable');
+    expect(container.textContent).toContain('Prévisions météo non enregistrées pour cette position et cette ETA.');
+    expect(container.textContent).not.toMatch(/Confortable|0,60|12,5/);
+    expect(container.querySelector('.so-waypoint-weather-metrics')).toBeNull();
+  });
+  it('keeps the existing printable compact card outside the editor variant', () => {
+    const { container } = render(<SeaOperationWeatherCard point={point()} compact />);
+    expect(container.firstElementChild).toHaveClass('is-compact');
+    expect(container.firstElementChild).not.toHaveClass('is-editor');
+    expect(screen.getByText('État de mer prévu')).toBeVisible();
+  });
 });

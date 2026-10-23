@@ -1,0 +1,27 @@
+.so-eta-picker { min-width: 0; max-width: 100%; width: 100%; font-family: var(--sp-font); }
+.so-eta-picker .so-eta-trigger.sp-button { display: flex; width: 100%; min-width: 0; min-height: 40px; justify-content: flex-start; gap: var(--sp-space-2); padding: var(--sp-space-2); border-radius: var(--sp-control-radius); font: inherit; font-size: .75rem; text-align: left; }
+.so-eta-trigger > svg { flex-shrink: 0; }
+.so-eta-trigger > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.so-eta-picker .sp-button.sp-button--secondary:hover:not(:disabled), .so-eta-picker .so-eta-day:hover:not(:disabled) { background: var(--sp-primary-soft); color: var(--sp-primary); border-color: var(--sp-border-strong); }
+.so-eta-panel { box-sizing: border-box; min-width: 0; width: min(100%, 320px); padding: var(--sp-space-2); margin-top: var(--sp-space-2); border: 1px solid var(--sp-border-strong); border-radius: var(--sp-panel-radius); color: var(--sp-text); background: var(--sp-surface); box-shadow: var(--sp-shadow); }
+.so-eta-navigation { display: grid; grid-template-columns: 40px minmax(0, 1fr) 40px; align-items: center; gap: var(--sp-space-1); }
+.so-eta-picker .so-eta-navigation h3 { display: grid; gap: 2px; min-width: 0; margin: 0; color: var(--sp-heading); text-align: center; font-size: .78rem; }
+.so-eta-navigation h3 > span { color: var(--sp-muted); font-size: .68rem; font-weight: 500; }
+.so-eta-picker .so-eta-navigation .sp-button { min-width: 0; min-height: 40px; padding: var(--sp-space-1); }
+.so-eta-calendar { margin: var(--sp-space-2) 0; }
+.so-eta-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.so-eta-week > [role=columnheader] { padding: var(--sp-space-1) 0; color: var(--sp-muted); font-size: .7rem; text-align: center; }
+.so-eta-week > [role=gridcell] { min-width: 0; }
+.so-eta-picker button.so-eta-day { display: block; width: 100%; min-width: 0; min-height: 40px; padding: var(--sp-space-1) 0; border: 1px solid transparent; border-radius: var(--sp-control-radius); color: var(--sp-text); background: transparent; font: inherit; font-size: .75rem; font-weight: 500; cursor: pointer; }
+.so-eta-picker button.so-eta-day[aria-current=date] { border-color: var(--sp-border-strong); font-weight: 750; }
+.so-eta-picker button.so-eta-day.is-selected { color: var(--sp-surface); background: var(--sp-primary); border-color: var(--sp-primary); }
+.so-eta-picker button:focus-visible, .so-eta-picker input:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 1px; }
+.so-eta-picker .so-eta-time { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, .65fr); align-items: center; gap: var(--sp-space-2); color: var(--sp-text); font-size: .75rem; }
+.so-eta-time > span { display: flex; align-items: center; gap: var(--sp-space-1); }
+.so-eta-picker .so-eta-time input { box-sizing: border-box; min-width: 0; width: 100%; min-height: 40px; padding: var(--sp-space-1); border: 1px solid var(--sp-border-strong); border-radius: var(--sp-control-radius); font: inherit; color: var(--sp-text); background: var(--sp-surface); }
+.so-eta-picker .so-eta-help, .so-eta-picker .so-eta-error { margin: var(--sp-space-2) 0; font-size: .68rem; line-height: 1.4; overflow-wrap: anywhere; }
+.so-eta-help { color: var(--sp-muted); }
+.so-eta-error { color: var(--sp-text); font-weight: 650; }
+.so-eta-actions { display: flex; flex-wrap: wrap; gap: var(--sp-space-1); }
+.so-eta-picker .so-eta-actions .sp-button { flex: 1 1 72px; min-width: 0; min-height: 40px; padding: var(--sp-space-1); font-size: .72rem; }
+@media (pointer: coarse) { .so-eta-picker .so-eta-trigger.sp-button, .so-eta-picker .so-eta-navigation .sp-button, .so-eta-picker .so-eta-actions .sp-button, .so-eta-picker .so-eta-time input, .so-eta-picker button.so-eta-day { min-height: 44px; } }

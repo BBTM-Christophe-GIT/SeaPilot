@@ -23,6 +23,26 @@
 .so-waypoint-weather-model + .so-waypoint-weather-model, .so-waypoint-weather-band { margin-top: calc(-1 * var(--sp-space-1)); }
 .so-waypoint-weather-card.is-compact { padding: var(--sp-space-2); }
 .so-passage-field.is-number .so-sea-state { margin-top: var(--sp-space-1); }
+@media screen {
+  /* The editing layout is deliberately separate from the printable compact card. */
+  .so-waypoint-weather-card.is-editor { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-space-1); padding: var(--sp-space-2); border-radius: var(--sp-control-radius); box-shadow: none; }
+  .so-waypoint-weather-card.is-editor > :not(.so-waypoint-weather-model) { grid-column: 1 / -1; }
+  .so-waypoint-weather-card.is-editor .so-waypoint-weather-heading { align-items: center; }
+  .so-waypoint-weather-card.is-editor .so-waypoint-weather-heading > span:first-child { display: none; }
+  .so-waypoint-weather-card.is-editor .so-waypoint-weather-heading:not(:has(.so-sea-state)) { display: none; }
+  .so-waypoint-weather-card.is-editor .so-sea-state { padding: 0 var(--sp-space-1); font-size: .67rem; }
+  .so-waypoint-weather-card.is-editor .so-waypoint-weather-metrics { gap: var(--sp-space-2); }
+  .so-waypoint-weather-card.is-editor .so-waypoint-weather-metrics dt { gap: var(--sp-space-1); font-size: .65rem; }
+  .so-waypoint-weather-card.is-editor .so-waypoint-weather-metrics dd { margin: 0; font-size: 1rem; line-height: 1.2; }
+  .so-waypoint-weather-card.is-editor .so-waypoint-weather-metrics dd small { font-size: .68rem; }
+  .so-waypoint-weather-card.is-editor .so-waypoint-weather-wind { gap: var(--sp-space-1); padding: var(--sp-space-1); }
+  .so-waypoint-weather-card.is-editor .so-waypoint-weather-wind strong { display: inline; margin: 0 0 0 var(--sp-space-1); font-size: .7rem; }
+  .so-waypoint-weather-card.is-editor .so-waypoint-weather-time { justify-content: flex-start; padding-top: var(--sp-space-1); gap: 0 var(--sp-space-2); }
+  .so-waypoint-weather-card.is-editor .so-waypoint-weather-model, .so-waypoint-weather-card.is-editor .so-waypoint-weather-band { margin: 0; }
+  .so-waypoint-weather-card.is-editor .so-waypoint-weather-model { min-width: 0; }
+  .so-waypoint-weather-card.is-editor svg { width: 12px; height: 12px; }
+  .so-waypoint-weather-card.is-editor.is-unavailable { padding: var(--sp-space-1) var(--sp-space-2); }
+}
 @media print {
   .so-waypoint-weather-card { gap: 5pt; padding: 6pt; border-radius: 5pt; box-shadow: none; background: #fff; }
   .so-sea-state { padding: 3pt 5pt; border-radius: 4pt; font-size: 8pt; print-color-adjust: exact; -webkit-print-color-adjust: exact; }

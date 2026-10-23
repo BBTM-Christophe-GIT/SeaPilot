@@ -1,5 +1,15 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.12`, build `2026-10-23.010`, compacte les fiches de waypoint du
+Passage Plan : champs regroupés, contacts VHF sur une ligne par contact et carte
+météo plus dense sans indicateur répété. Un clic sur l’ETA ouvre le calendrier
+du mois courant si elle est vide, ou celui de la date existante, avec sélection
+de l’heure de Paris. **Appliquer** valide la date et l’heure ensemble ; Annuler
+ou Échap conserve la valeur enregistrée. Les heures ambiguës ou inexistantes
+du changement d’heure sont refusées. Les historiques, droits, prévisions
+enregistrées et mises en page du PDF sont conservés. Aucune migration,
+dépendance, clé ou nouvelle note de mise à jour.
+
 Version `3.77.11`, build `2026-10-23.009`, ajoute **Plein écran** à la carte de
 sélection des waypoints. La carte agrandie conserve le placement, le cadrage,
 le zoom et les points saisis ; **Quitter le plein écran** ou Échap revient à
