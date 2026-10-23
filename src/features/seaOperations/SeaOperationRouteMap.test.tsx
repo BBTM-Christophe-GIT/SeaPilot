@@ -125,4 +125,21 @@ describe('SeaOperationRouteMap', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(overlay).not.toHaveBeenCalled();
   });
+
+  it('uses both exact measured dimensions when filling the available map frame', () => {
+    let onResize!: ResizeObserverCallback;
+    vi.stubGlobal('ResizeObserver', class { constructor(callback: ResizeObserverCallback) { onResize = callback; } observe() {} disconnect() {} });
+    const report = vi.fn();
+    render(<SeaOperationRouteMap waypoints={channelRoute()} fillAvailableSpace onGeometry={report} />);
+    act(() => onResize([{ contentRect: { width: 1440.5, height: 681.25 } } as ResizeObserverEntry], {} as ResizeObserver));
+    expect(screen.getByRole('img')).toHaveAttribute('viewBox', '0 0 1440.5 681.25');
+    expect(screen.getByRole('figure')).toHaveClass('is-filling');
+    expect(report).toHaveBeenLastCalledWith(expect.objectContaining({ width: 1440.5, height: 681.25 }));
+  });
+
+  it('keeps compact print dimensions independent of a fullscreen frame request', () => {
+    render(<SeaOperationRouteMap waypoints={channelRoute()} compact fillAvailableSpace />);
+    expect(screen.getByRole('figure')).not.toHaveClass('is-filling');
+    expect(screen.getByRole('img')).toHaveAttribute('viewBox', '0 0 900 220');
+  });
 });

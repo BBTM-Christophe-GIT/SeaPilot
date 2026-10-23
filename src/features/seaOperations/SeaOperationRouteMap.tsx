@@ -28,19 +28,22 @@ function directionArrow(from: Position, to: Position): string | null {
 }
 
 /** Local situation map; placement is supplied explicitly by the editing wrapper. */
-export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onGeometry, renderOverlay }: {
+export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onGeometry, renderOverlay, fillAvailableSpace = false }: {
   waypoints: readonly SeaOperationWaypoint[]; compact?: boolean;
   viewport?: RouteMapViewport;
   onGeometry?: (geometry: SeaOperationRouteMapGeometry) => void;
   renderOverlay?: (geometry: SeaOperationRouteMapGeometry) => ReactNode;
+  fillAvailableSpace?: boolean;
 }) {
   const titleId = useId();
   const descriptionId = useId();
   const svgTitleId = useId();
   const clipId = `sea-route-clip-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const frame = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(900);
-  const height = compact ? 220 : width < 600 ? 280 : 320;
+  const [size, setSize] = useState({ width: 900, height: 320 });
+  const filling = fillAvailableSpace && !compact;
+  const width = filling ? size.width : Math.max(280, Math.min(900, Math.round(size.width)));
+  const height = compact ? 220 : filling ? size.height : width < 600 ? 280 : 320;
   const geometry = useMemo(() => buildSeaOperationRouteMap(waypoints, width, height, compact ? undefined : viewport), [waypoints, width, height, compact, viewport]);
   const groups = useMemo(() => groupCoincidentPoints(geometry.points), [geometry.points]);
   const countLabel = `${geometry.points.length} point${geometry.points.length === 1 ? '' : 's'} géolocalisé${geometry.points.length === 1 ? '' : 's'}`;
@@ -50,13 +53,16 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
   useEffect(() => {
     if (!frame.current || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(([entry]) => {
-      if (entry?.contentRect.width > 0) setWidth(Math.max(280, Math.min(900, Math.round(entry.contentRect.width))));
+      if (entry?.contentRect.width > 0) setSize((previous) => {
+        const next = { width: entry.contentRect.width, height: entry.contentRect.height > 0 ? entry.contentRect.height : previous.height };
+        return previous.width === next.width && previous.height === next.height ? previous : next;
+      });
     });
     observer.observe(frame.current);
     return () => observer.disconnect();
   }, []);
 
-  return <figure aria-labelledby={titleId} className={`so-route-map${compact ? ' is-compact' : ''}`}>
+  return <figure aria-labelledby={titleId} className={`so-route-map${compact ? ' is-compact' : ''}${filling ? ' is-filling' : ''}`}>
     <header className="so-route-map-heading"><h3 id={titleId}>Carte du parcours</h3><span>{countLabel}</span></header>
     <div className="so-route-map-frame" ref={frame}>
       {geometry.projection ? <svg aria-labelledby={svgTitleId} aria-describedby={descriptionId} className="so-route-map-svg" role={!compact && renderOverlay ? 'group' : 'img'} viewBox={`0 0 ${geometry.width} ${geometry.height}`}>

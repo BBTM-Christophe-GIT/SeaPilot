@@ -1,5 +1,13 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.11`, build `2026-10-23.009`, ajoute **Plein écran** à la carte de
+sélection des waypoints. La carte agrandie conserve le placement, le cadrage,
+le zoom et les points saisis ; **Quitter le plein écran** ou Échap revient à
+la fiche. Le tableau continue de recevoir les coordonnées des points ajoutés.
+Les commandes restent accessibles au clavier et sur mobile. Le PDF et l’aperçu
+imprimable conservent leur carte de consultation. Aucune migration, dépendance,
+clé ou nouvelle note de mise à jour.
+
 Version `3.77.10`, build `2026-10-23.008`, regroupe l’indicateur des conditions
 de vie à bord dans la carte **Météo à l’ETA** du Passage Plan, dans le PDF et
 l’aperçu imprimable. La colonne séparée est supprimée ; le tableau paysage
