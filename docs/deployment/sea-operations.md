@@ -234,12 +234,14 @@ sécurité ne relève aucun WARN/ERROR sur les objets ajoutés. Son information
 aucune policy ni aucun privilège applicatif direct, donc refus par défaut ;
 les accès passent exclusivement par les fonctions privées gardées.
 
-## Passage Plan, tirant d’eau et prévisions par ETA — 3.77.2
+## Passage Plan, tirant d’eau et prévisions par ETA — 3.77.6
 
 L’étape est nommée **Passage Plan**, y compris dans l’aperçu et le PDF. Ses points
 sont regroupés en lignes de champs adaptatives, sans largeur minimale ni
-défilement horizontal. Le libellé Description ne comporte plus de colonne VHF ;
-la clé historique `descriptionVhf` est conservée pour relire les fiches existantes.
+défilement horizontal. Le premier champ est nommé **Waypoint**. Les contacts VHF
+et les prévisions de vent moyen / houle significative Hs figurent dans chaque
+ligne, avec les coordonnées et l’ETA correspondantes. La clé historique
+`descriptionVhf` conserve la description des fiches existantes.
 Les nouvelles ETA utilisent une saisie `datetime-local`, explicitement à l’heure
 de Paris. Une ancienne ETA `HH:mm` reste intacte ; le bouton Appliquer la date
 de l’opération permet une conversion volontaire. Aucune fiche signée n’est migrée.
@@ -279,10 +281,12 @@ exemple les notices UKHO juillet/août 2026 pour Falmouth, Dover et le JRCC UK.
 L’annuaire ne déduit ni hôpital adapté ni consigne d’appel obligatoire d’une simple
 distance.
 
-L’aperçu et le PDF reprennent ces suggestions dans une annexe datée distincte de
-la décision signée. Les données de contact proviennent du répertoire versionné,
-pas d’un service réseau pendant l’export ; les en-têtes/pieds du Word restent
-inchangés.
+Chaque ligne du tableau présente les contacts proches de ce waypoint. La copie
+des contacts, des canaux et des sources est conservée dans la fiche lors de son
+enregistrement. Le répertoire global par route reste une aide à la préparation
+des brouillons. L’export d’une fiche signée utilise exclusivement ses copies
+enregistrées ; un historique sans copie reste explicitement non renseigné.
+L’export ne consulte aucun service réseau pour remplacer ces contacts.
 
 ### Météo : vent et houle significative Hs
 
@@ -316,7 +320,34 @@ et le sud de l’Angleterre. L’horizon dépend des fichiers effectivement publ
 extrapolation. L’ETA est convertie d’Europe/Paris vers UTC. L’écart à l’heure du
 modèle reste inférieur ou égal à 30 minutes, sans interpolation cachée. Une
 donnée absente n’est jamais assimilée à zéro. Ces prévisions ne valident aucun
-contrôle GO / NO GO et ne modifient pas les données signées ni le PDF historique.
+contrôle GO / NO GO. Les réponses reçues pour le projet, le compte, les coordonnées
+et l’ETA encore sélectionnés peuvent être conservées dans le brouillon. Elles
+incluent les heures du modèle en UTC, le réseau, la maille, la source et l’heure
+de consultation. La sauvegarde puis la signature conservent cette copie. Une
+nouvelle recherche ne réécrit jamais une fiche signée ; un ancien historique
+sans copie indique « prévisions non enregistrées », sans reconstituer sa météo.
+
+### Tableau du document en paysage
+
+Le chapitre 3 du PDF utilise une page **A4 paysage** : environ 744 points utiles
+contre 497 en portrait. Les colonnes Waypoint, Description, Latitude, Longitude,
+UKC, ETA, Contacts VHF, Prévisions météo et Trafic dense restent lisibles sans
+réduire excessivement la police. Les en-têtes du tableau sont répétés à chaque
+page. Les sources et horaires des copies sont détaillés sous le tableau.
+Les autres chapitres restent en portrait. Les fragments vectoriels d’en-tête et
+de pied du formulaire Word sont réutilisés à leurs dimensions d’origine et
+centrés sur les pages paysage, sans déformer le logo ou la typographie.
+L’aperçu et l’impression reprennent ce chapitre en paysage ; la saisie conserve
+ses lignes adaptatives sur ordinateur et mobile.
+
+Les propriétés facultatives `waypoints[].weather` et `waypoints[].radio`
+conservent les copies validées. La migration
+`20261023042059_sea_operation_waypoint_captures.sql` ajoute un guard privé avant
+écriture : types, tailles, coordonnées WGS84, ETA convertie depuis Europe/Paris,
+horaires UTC et sources attendues. Les heures ambiguës/inexistantes de changement
+d’heure sont rejetées. Les anciennes fiches sans ces propriétés restent valides.
+Aucune donnée existante n’est réécrite ; RLS, sociétés, rôle temporaire,
+sauvegarde avec révision et immutabilité après signature conservent leurs règles.
 
 En production, `/api/sea-operation-weather` vérifie le JWT et l’accès au projet
 par `sea_operation_project_documents` avant les caches. Les environnements

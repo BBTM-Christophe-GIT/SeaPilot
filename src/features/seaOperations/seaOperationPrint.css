@@ -6,17 +6,24 @@
 .so-print-rh-signature { margin: 14px 0; break-inside: avoid; }
 .so-print-rh-signature figcaption { font-size: 11px; font-weight: 700; margin-bottom: 8px; }
 .so-print-rh-signature img { display: block; max-width: 230px; max-height: 85px; object-fit: contain; object-position: left center; }
-.so-print .so-print-passage th:nth-child(1) { width: 6%; }
-.so-print .so-print-passage th:nth-child(2) { width: 27%; }
-.so-print .so-print-passage th:nth-child(3), .so-print .so-print-passage th:nth-child(4) { width: 12%; }
-.so-print .so-print-passage th:nth-child(5) { width: 8%; }
-.so-print .so-print-passage th:nth-child(6) { width: 22%; }
-.so-print .so-print-passage th:nth-child(7) { width: 13%; }
+.so-print .so-print-passage th:nth-child(1) { width: 6.72%; }
+.so-print .so-print-passage th:nth-child(2) { width: 18.82%; }
+.so-print .so-print-passage th:nth-child(3), .so-print .so-print-passage th:nth-child(4) { width: 8.74%; }
+.so-print .so-print-passage th:nth-child(5) { width: 4.71%; }
+.so-print .so-print-passage th:nth-child(6) { width: 10.08%; }
+.so-print .so-print-passage th:nth-child(7) { width: 16.8%; }
+.so-print .so-print-passage th:nth-child(8) { width: 20.16%; }
+.so-print .so-print-passage th:nth-child(9) { width: 5.23%; }
+.so-print-passage caption { text-align: left; font-size: .9em; padding-bottom: 6px; }
+.so-print-passage-sources section { break-inside: avoid; }
+.so-print-passage-sources h4 { font-size: inherit; margin: 10px 0 3px; }
 
 @media print {
+  @page sea-operation-portrait { size: A4 portrait; margin: 14mm; }
+  @page sea-operation-landscape { size: A4 landscape; margin: 14mm; }
   .so-page > .so-screen { display: none !important; }
   .so-page > .so-print { display: block !important; }
-  .so-print { color: #111; background: #fff; font-family: var(--sp-font), Arial, sans-serif; font-size: 9pt; line-height: 1.5; overflow: visible; }
+  .so-print { page: sea-operation-portrait; color: #111; background: #fff; font-family: var(--sp-font), Arial, sans-serif; font-size: 9pt; line-height: 1.5; overflow: visible; }
   .so-print *, .so-print *::before, .so-print *::after { box-sizing: border-box; color: inherit; }
   .so-print-header { margin-bottom: 6mm; }
   .so-print h1 { font-size: 21pt; line-height: 1.2; margin: 2mm 0 3mm; color: #000; }
@@ -39,6 +46,11 @@
   .so-print th, .so-print td { padding: 2mm 2.5mm; border: .2mm solid #bbb; vertical-align: top; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
   .so-print th { font-weight: 700; background: #eee; }
   .so-print tr { break-inside: avoid; }
+  .so-print-passage-section { page: sea-operation-landscape; break-before: page; break-after: page; }
+  .so-print-decision { page: sea-operation-portrait; break-before: page; }
+  .so-print table.so-print-passage { font-size: 8.5pt; line-height: 1.3; }
+  .so-print .so-print-passage th, .so-print .so-print-passage td { padding: 4pt; }
+  .so-print-passage-sources { font-size: 8pt; line-height: 1.35; }
   .so-print-controls th:first-child { width: 57%; }
   .so-print-controls th:last-child { width: 43%; }
   .so-print td p { margin: 1.5mm 0 0; }
@@ -51,7 +63,7 @@
   .so-print-kit th:nth-child(2) { width: 11%; }
   .so-print-kit th:nth-child(3) { width: 58%; }
   .so-print-footer { margin-top: 6mm; padding-top: 3mm; border-top: .2mm solid #bbb; white-space: normal; }
-  .so-print .so-word-header { width: 210mm; margin: -14mm -14mm 3mm; }
-  .so-print .so-word-footer { width: 210mm; margin: 0 -14mm; }
+  .so-print .so-word-header { width: 100%; height: auto; margin: 0 0 3mm; object-fit: contain; }
+  .so-print .so-word-footer { width: 100%; height: auto; margin: 0; object-fit: contain; }
   .so-print .so-print-footer { border: 0; padding: 0; }
 }

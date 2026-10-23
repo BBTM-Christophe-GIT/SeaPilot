@@ -318,7 +318,7 @@
   .so-decision-panel .so-signature-footer p { font-size: .7rem; line-height: 1.45; overflow-wrap: anywhere; }
 
   .so-passage-grid { container: sea-operation-passage / inline-size; display: grid; gap: var(--sp-space-2); min-width: 0; max-width: 100%; margin: var(--sp-space-3) 0; }
-  .so-passage-row { display: grid; grid-template-columns: minmax(0, 1fr) 44px; grid-template-areas: 'number actions' 'description description' 'latitude latitude' 'longitude longitude' 'ukc ukc' 'eta eta' 'traffic traffic'; align-items: end; gap: var(--sp-space-2); min-width: 0; max-width: 100%; padding: var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface-subtle); }
+  .so-passage-row { display: grid; grid-template-columns: minmax(0, 1fr) 44px; grid-template-areas: 'number actions' 'description description' 'latitude latitude' 'longitude longitude' 'ukc ukc' 'eta eta' 'traffic traffic' 'vhf vhf' 'weather weather'; align-items: end; gap: var(--sp-space-2); min-width: 0; max-width: 100%; padding: var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface-subtle); }
   .so-passage-field { display: grid; align-content: start; gap: var(--sp-space-1); min-width: 0; }
   .so-passage-field.is-number { grid-area: number; }
   .so-passage-field.is-description { grid-area: description; }
@@ -328,6 +328,10 @@
   .so-passage-field.is-eta { grid-area: eta; }
   .so-passage-field.is-traffic { grid-area: traffic; }
   .so-passage-field.is-actions { grid-area: actions; justify-self: end; }
+  .so-passage-field.is-vhf { grid-area: vhf; }
+  .so-passage-field.is-weather { grid-area: weather; }
+  .so-passage-field:is(.is-vhf, .is-weather) { align-self: stretch; padding-top: var(--sp-space-2); border-top: 1px solid var(--sp-border); }
+  .so-page .so-passage-field:is(.is-vhf, .is-weather) p { margin: 0; min-width: 0; font-size: .72rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
   .so-passage-field > span, .so-passage-field :is(label, .so-field-label) { min-width: 0; color: var(--sp-muted); font-size: .7rem; font-weight: 600; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
   .so-page .so-passage-field input:not([type=checkbox]) { width: 100%; min-width: 0; max-width: 100%; min-height: var(--sp-control-height); padding: var(--sp-space-2); font-size: .76rem; line-height: 1.4; }
   .so-passage-field:is(.is-latitude, .is-longitude, .is-ukc, .is-eta) input { font-variant-numeric: tabular-nums; }
@@ -349,10 +353,10 @@
   .so-decision-identity-grid > .so-field:first-child { grid-column: auto; }
 }
 @container sea-operation-passage (min-width: 300px) {
-  .so-passage-row { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'number actions' 'description description' 'latitude longitude' 'ukc ukc' 'eta eta' 'traffic traffic'; }
+  .so-passage-row { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'number actions' 'description description' 'latitude longitude' 'ukc ukc' 'eta eta' 'traffic traffic' 'vhf vhf' 'weather weather'; }
 }
 @container sea-operation-passage (min-width: 430px) {
-  .so-passage-row { grid-template-columns: repeat(6, minmax(0, 1fr)); grid-template-areas: 'number description description description description actions' 'latitude latitude latitude longitude longitude longitude' 'ukc eta eta eta traffic traffic'; }
+  .so-passage-row { grid-template-columns: repeat(6, minmax(0, 1fr)); grid-template-areas: 'number description description description description actions' 'latitude latitude latitude longitude longitude longitude' 'ukc eta eta eta traffic traffic' 'vhf vhf vhf weather weather weather'; }
 }
 @media screen and (pointer: coarse) {
   .so-page .so-answer-switches > button.so-answer-switch { min-height: 44px; }

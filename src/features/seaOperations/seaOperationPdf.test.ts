@@ -1,10 +1,11 @@
 // @vitest-environment node
 import { readFile, writeFile } from 'node:fs/promises';
-import { PDFDocument, PDFDict, PDFName } from 'pdf-lib';
+import { PDFDocument, PDFDict, PDFName, PDFArray, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { emptySeaOperation, SEA_OPERATION_CHECKS } from './seaOperationModel';
 import { generateSeaOperationPdf } from './seaOperationPdf';
 import type { SeaOperationRecord } from './seaOperationQueries';
+import { SEA_METEO_FRANCE_SOURCE_URL } from './seaOperationWeatherModel';
 
 function fixture(): SeaOperationRecord {
   const draft = emptySeaOperation();
@@ -18,6 +19,25 @@ function fixture(): SeaOperationRecord {
   draft.towedVesselBoarding = { required: 'yes', measures: 'specific', details: 'Ronde, zones balisées et EPI contrôlés.' };
   draft.supplies = { delegated: 'yes', shipchandlerName: 'Fournisseur maritime', shipchandlerContact: '02 00 00 00 01', items: ['provisions', 'drinkingWater'], suppliers: 'Fournisseurs prévenus', customerAccountsPrepared: true };
   draft.waypoints = Array.from({ length: 8 }, (_, index) => ({ id: String(index), number: String(index + 1), descriptionVhf: 'Point de route / VHF12', latitude: '49°29.00 N', longitude: '000°06.00 E', ukc: '2 m', eta: '12:00', denseTraffic: index === 1 }));
+  draft.waypoints[0] = { ...draft.waypoints[0], latitude: '49.65 N', longitude: '1.62 W', eta: '2026-10-16T12:00',
+    weather: { pointId: '0', latitude: 49.65, longitude: -1.62, etaUtc: '2026-10-16T10:00:00Z', fetchedAt: '2026-10-15T12:00:00Z',
+      wind: { time: '2026-10-16T10:00:00Z', speedKnots: 12, gustKnots: 37, directionDegrees: 270 },
+      waves: { time: '2026-10-16T10:00:00Z', heightMeters: .6, periodSeconds: 6, directionDegrees: 220, component: 'swell' },
+      windMessage: '', wavesMessage: '', attribution: 'Météo-France', sourceUrl: SEA_METEO_FRANCE_SOURCE_URL,
+      model: { name: 'MFWAM', referenceTime: '2026-10-15T06:00:00Z', latitude: 49.65, longitude: -1.625 } },
+    radio: { version: 1, latitude: 49.65, longitude: -1.62, capturedAt: '2026-10-15T12:00:00Z', verifiedOn: '2026-10-15',
+      contacts: [{ id: 'cherbourg-port', kind: 'port', name: 'Cherbourg · Capitainerie', area: 'Port', vhf: '12', phone: '+33 2 33 20 41 25',
+        source: 'https://portsdenormandie.fr/en/harbour-masters-office/cherbourg', sourceLabel: 'Ports de Normandie', distanceNm: 0 }] } };
+  const captured = draft.waypoints[0];
+  draft.waypoints = draft.waypoints.map((point) => ({ ...point, latitude: captured.latitude, longitude: captured.longitude, eta: captured.eta,
+    descriptionVhf: 'Point de route / VHF12. Approche du chenal commercial, changement de route et compte rendu à la capitainerie. Maintenir une veille renforcée sur les mouvements de navires.',
+    weather: { ...captured.weather!, pointId: point.id },
+    radio: { ...captured.radio!, contacts: [
+      { ...captured.radio!.contacts[0], name: 'Port de commerce et de pêche de Cherbourg · Capitainerie' },
+      { id: 'cross-jobourg', kind: 'rescue', name: 'CROSS Jobourg · Centre régional opérationnel de surveillance et de sauvetage', area: 'Manche centrale', vhf: '16', phone: '+33 2 33 52 16 16',
+        source: 'https://mer.gouv.fr/regles-de-securite-pour-les-loisirs-nautiques-en-mer', sourceLabel: 'Ministère chargé de la Mer', distanceNm: 5 },
+    ] },
+  }));
   draft.decision = 'GO'; draft.signature = { captainName: 'Capitaine de test', date: '2026-10-16', place: 'Le Havre', acknowledged: true };
   return { id: 'pdf-fixture', companyId: 1, version: 3, status: 'signed', draft,
     createdBy: 'test', createdByName: 'Auteur test', createdAt: '2026-10-16T08:00:00Z', updatedBy: 'test', updatedByName: 'Auteur test', updatedAt: '2026-10-16T09:00:00Z',
@@ -27,17 +47,51 @@ const template = () => readFile(new URL('../../../public/templates/sea-operation
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Sea operation PDF', () => {
-  it('reuses the actual Word vector chrome and embedded Aptos/Calibri fonts on every A4 page', async () => {
+  it('keeps portrait chapters and landscape Passage Plan pages with native-size Word chrome on every page', async () => {
     const generated = await generateSeaOperationPdf(fixture(), { templateBytes: await template() });
     const document = await PDFDocument.load(generated.bytes);
     expect(generated.pageCount).toBeGreaterThan(3);
     expect(document.getPageCount()).toBe(generated.pageCount);
+    const orientations: string[] = [];
+    const landscapeText: string[] = [];
     for (const page of document.getPages()) {
-      expect(page.getWidth()).toBeCloseTo(595.32, 2);
-      expect(page.getHeight()).toBeCloseTo(841.92, 2);
+      const landscape = page.getWidth() > page.getHeight();
+      orientations.push(landscape ? 'landscape' : 'portrait');
+      expect(page.getWidth()).toBeCloseTo(landscape ? 841.92 : 595.32, 2);
+      expect(page.getHeight()).toBeCloseTo(landscape ? 595.32 : 841.92, 2);
       const xObjects = page.node.Resources()?.lookup(PDFName.of('XObject'), PDFDict);
-      expect(xObjects?.keys()).toHaveLength(2);
+      expect(xObjects?.keys()).toHaveLength(3);
+      if (xObjects) {
+        const objects = xObjects.keys().map((key) => {
+          const object = xObjects.lookup(key);
+          if (!(object instanceof PDFRawStream)) throw new Error('Expected an embedded PDF stream');
+          return object;
+        });
+        const boxes = objects.map((object) => object.dict.lookup(PDFName.of('BBox'), PDFArray).asArray().map((number) => Number(number.toString())));
+        expect(boxes.slice(1)).toEqual([[0, 0, 595.32, 90], [0, 0, 595.32, 26]]);
+        if (landscape) landscapeText.push(Buffer.from(decodePDFRawStream(objects[0]).decode()).toString('latin1'));
+        const contents = page.node.Contents();
+        const streams = contents instanceof PDFArray ? contents.asArray().map((reference) => {
+          const stream = document.context.lookup(reference);
+          if (!(stream instanceof PDFRawStream)) throw new Error('Expected a page content stream');
+          return stream;
+        }) : [contents as PDFRawStream];
+        const transforms = streams.flatMap((stream) => [...Buffer.from(decodePDFRawStream(stream).decode()).toString('latin1').matchAll(/([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) cm/g)]);
+        expect(transforms.length).toBeGreaterThan(0);
+        expect(transforms.every((match) => match.slice(1, 5).map(Number).join(',') === '1,0,0,1')).toBe(true);
+      }
     }
+    expect(orientations[0]).toBe('portrait');
+    expect(orientations.at(-1)).toBe('portrait');
+    expect(orientations.filter((orientation) => orientation === 'landscape').length).toBeGreaterThan(1);
+    const passage = landscapeText.join('\n');
+    expect(passage).toContain('(Waypoint)');
+    expect(passage).toContain('(Contacts VHF)');
+    expect(passage).toContain('Houle Hs');
+    expect(passage).toContain('MFWAM');
+    expect(passage).toContain('portsdenormandie.fr');
+    expect(passage).not.toMatch(/rafales/i);
+    for (const text of landscapeText.filter((text) => text.includes('Point de route / VHF12'))) expect(text).toContain('(Waypoint)');
     const fonts = document.context.enumerateIndirectObjects().flatMap(([, object]) => object instanceof PDFDict ? [object.get(PDFName.of('BaseFont'))?.toString() || ''] : []);
     expect(fonts.some((name) => name.includes('Aptos'))).toBe(true);
     expect(fonts.some((name) => name.includes('Calibri'))).toBe(true);

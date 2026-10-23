@@ -6,6 +6,7 @@ import {
 import type { SeaOperationAnswer, SeaOperationCheck, SeaOperationPortService } from './seaOperationModel';
 import type { SeaOperationRecord } from './seaOperationQueries';
 import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperationRadio';
+import { passagePlanCellData } from './seaOperationPassagePlan';
 import './seaOperationPrint.css';
 
 const blank = 'À renseigner';
@@ -47,8 +48,9 @@ const portServiceLabels: Record<SeaOperationPortService, string> = {
 /** Complete printable content with the original Word chrome and the authorized RH signature image. */
 export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOperationRecord; signatureImageUrl?: string | null }) {
   const form = record.draft;
-  const radioContacts = seaOperationRadioContacts(form.waypoints).contacts;
   const signed = record.status === 'signed';
+  const radioContacts = signed ? [] : seaOperationRadioContacts(form.waypoints).contacts;
+  const passageRows = form.waypoints.map((point) => passagePlanCellData(point, { allowLiveRadio: !signed }));
   const person = form.signature;
   const vessel = form.vessel;
   const signatureImage = signed ? record.signatureUrl || null : signatureImageUrl || null;
@@ -170,13 +172,14 @@ export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOp
       })}
     </section>
 
-    <section className="so-print-section">
+    <section className="so-print-section so-print-passage-section">
       <h2>3 – Passage Plan</h2>
       <dl><PrintField label="Numéro de la ou des cartes marines">{text(form.charts)}</PrintField></dl>
       <p>ETA : date et heure locale de Paris. Les fiches historiques peuvent conserver une heure seule.</p>
-      {form.waypoints.length ? <table className="so-print-passage"><thead><tr><th>N° du point</th><th>Description</th><th>Latitude</th><th>Longitude</th><th>UKC</th><th>ETA – Date et heure</th><th>Zone maritime à trafic dense</th></tr></thead><tbody>
-        {form.waypoints.map((point) => <tr key={point.id}><td>{text(point.number)}</td><td>{text(point.descriptionVhf)}</td><td>{text(point.latitude)}</td><td>{text(point.longitude)}</td><td>{text(point.ukc)}</td><td>{dateText(point.eta)}</td><td>{point.denseTraffic ? 'Oui' : 'Non'}</td></tr>)}
+      {passageRows.length ? <table className="so-print-passage"><caption>Points de passage, contacts VHF et météo à l’ETA</caption><thead><tr><th scope="col">Waypoint</th><th scope="col">Description</th><th scope="col">Latitude</th><th scope="col">Longitude</th><th scope="col">UKC</th><th scope="col">ETA – Date et heure</th><th scope="col">Contacts VHF</th><th scope="col">Météo à l’ETA</th><th scope="col">Trafic dense</th></tr></thead><tbody>
+        {passageRows.map((row, index) => <tr key={`${index}:${form.waypoints[index].id}`}><td>{row.waypoint}</td><td>{row.description}</td><td>{row.latitude}</td><td>{row.longitude}</td><td>{row.ukc}</td><td>{row.eta}</td><td>{row.vhf}</td><td>{row.weather}</td><td>{row.denseTraffic}</td></tr>)}
       </tbody></table> : <p>Aucun point de passage renseigné.</p>}
+      {passageRows.some((row) => row.weatherFootnote || row.radioFootnote) && <div className="so-print-passage-sources"><h3>Sources et horaires du Passage Plan</h3>{passageRows.map((row, index) => (row.weatherFootnote || row.radioFootnote) ? <section key={`${index}:${form.waypoints[index].id}`}><h4>Waypoint {row.waypoint}</h4>{row.weatherFootnote && <p>{row.weatherFootnote}</p>}{row.radioFootnote && <p>{row.radioFootnote}</p>}</section> : null)}</div>}
       {radioContacts.length > 0 && <div className="so-print-radio"><h3>Contacts VHF proposés par proximité</h3><p>Annuaire de préparation vérifié le {dateText(SEA_RADIO_VERIFIED_ON)}. Repères arrondis à moins de 80 M (centres) ou 10 M (ports) de la route ; ce filtre ne détermine ni une compétence SAR / VTS, ni la portée radio. Annexe indicative, distincte de la décision signée.</p><table><thead><tr><th>Contact</th><th>VHF</th><th>Téléphone / MMSI</th><th>Source</th></tr></thead><tbody>{radioContacts.map((contact) => <tr key={contact.id}><td>{contact.name}</td><td>Canal {contact.vhf}</td><td>{[contact.phone, contact.mmsi ? `MMSI ${contact.mmsi}` : ''].filter(Boolean).join(' · ') || '—'}</td><td><a href={contact.source}>{contact.sourceLabel}</a></td></tr>)}</tbody></table></div>}
     </section>
 
