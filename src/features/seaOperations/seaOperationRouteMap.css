@@ -4,6 +4,10 @@
 .so-route-map-heading > span { color: var(--sp-muted); font-size: .72rem; }
 .so-route-map-frame { min-width: 0; overflow: hidden; border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-primary-soft); }
 .so-route-map-svg { display: block; width: 100%; height: auto; overflow: hidden; }
+.so-route-map.is-filling { display: flex; flex-direction: column; min-height: 0; }
+.so-route-map.is-filling .so-route-map-frame { flex: 1 1 0; min-height: 100px; position: relative; }
+.so-route-map.is-filling .so-route-map-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.so-route-map.is-filling .so-route-map-heading, .so-route-map.is-filling .so-route-map-caption, .so-route-map.is-filling .so-route-map-omissions { flex-shrink: 0; }
 .so-route-map-sea { fill: var(--sp-primary-soft); }
 .so-route-map-land polygon { fill: var(--sp-surface-subtle); stroke: var(--sp-border-strong); stroke-width: .8px; }
 .so-route-map-grid line { stroke: var(--sp-border-strong); stroke-width: .6px; stroke-dasharray: 3 5; }

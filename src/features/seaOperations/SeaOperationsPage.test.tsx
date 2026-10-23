@@ -175,6 +175,101 @@ beforeEach(() => { vi.resetAllMocks(); sessionStorage.clear(); viewport(1440); }
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); document.body.style.overflow = ''; });
 
 describe('Opération en Mer with authenticated server permission fixtures', () => {
+  it('keeps fullscreen placements and existing captures through return, save and reopening', async () => {
+    const draft = waypointCaptureDraft();
+    draft.waypoints[0].weather = waypointWeather();
+    const record = recordFixture(captainAccount, { draft });
+    const { client } = renderAccount(captainAccount, record);
+    let stored = record;
+    vi.mocked(fetchSeaOperationDetail).mockImplementation(async () => stored);
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, edited) => (stored = { ...record, version: 4, draft: structuredClone(edited) }));
+    await openRecord(record);
+    fireEvent.click(stepButton(2));
+    fireEvent.click(formQueries().getByRole('button', { name: 'Placer les waypoints' }));
+    fireEvent.click(formQueries().getByRole('button', { name: 'Afficher la carte en plein écran' }));
+    fireEvent.click(formQueries().getByRole('button', { name: 'Ajouter au centre' }));
+    const placed = structuredClone(capturingWeatherPanel().waypoints[1]);
+    expect(placed).toMatchObject({ number: '2', eta: '', ukc: '', descriptionVhf: '', denseTraffic: false });
+    expect(placed.latitude).not.toBe('');
+    expect(placed.longitude).not.toBe('');
+    expect(placed).not.toHaveProperty('weather');
+    expect(placed).not.toHaveProperty('radio');
+    fireEvent.click(formQueries().getByRole('button', { name: 'Quitter le plein écran' }));
+    expect(formQueries().getByRole('button', { name: 'Terminer le placement' })).toBeVisible();
+    expect(capturingWeatherPanel().waypoints[0]).toEqual(draft.waypoints[0]);
+    expect(formQueries().getByLabelText('Latitude · point 2')).toHaveValue(placed.latitude);
+    expect(formQueries().getByLabelText('Longitude · point 2')).toHaveValue(placed.longitude);
+    fireEvent.click(formQueries().getByRole('button', { name: 'Terminer le placement' }));
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' }));
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ waypoints: [expect.objectContaining(draft.waypoints[0]), expect.objectContaining(placed)] }), record);
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Annuler' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await openRecord(stored);
+    fireEvent.click(stepButton(2));
+    expect(formQueries().getByLabelText('Latitude · point 2')).toHaveValue(placed.latitude);
+    expect(formQueries().getByLabelText('Longitude · point 2')).toHaveValue(placed.longitude);
+    expect(capturingWeatherPanel().waypoints[0].weather).toEqual(draft.waypoints[0].weather);
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('uses Escape to leave fullscreen before ending placement without closing the operation dialog', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderAccount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    fireEvent.click(stepButton(2));
+    fireEvent.click(formQueries().getByRole('button', { name: 'Placer les waypoints' }));
+    fireEvent.click(formQueries().getByRole('button', { name: 'Afficher la carte en plein écran' }));
+    fireEvent.click(formQueries().getByRole('button', { name: 'Ajouter au centre' }));
+    const points = structuredClone(capturingWeatherPanel().waypoints);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(formQueries().queryByRole('button', { name: 'Quitter le plein écran' })).not.toBeInTheDocument();
+    expect(formQueries().getByRole('button', { name: 'Terminer le placement' })).toBeVisible();
+    await waitFor(() => expect(formQueries().getByRole('button', { name: 'Afficher la carte en plein écran' })).toHaveFocus());
+    expect(capturingWeatherPanel().waypoints).toEqual(points);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(formQueries().getByRole('button', { name: 'Placer les waypoints' })).toBeVisible();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(capturingWeatherPanel().waypoints).toEqual(points);
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('does not mark a saved operation dirty when only enlarging and restoring its placement map', async () => {
+    const draft = waypointCaptureDraft();
+    const record = recordFixture(captainAccount, { draft });
+    renderAccount(captainAccount, record);
+    await openRecord(record);
+    fireEvent.click(stepButton(2));
+    fireEvent.click(formQueries().getByRole('button', { name: 'Placer les waypoints' }));
+    const originalPoints = structuredClone(capturingWeatherPanel().waypoints);
+    expect(sessionStorage.getItem('seapilot:sea-operation-draft:v1:1:captain-server-account')).toBeNull();
+    fireEvent.click(formQueries().getByRole('button', { name: 'Afficher la carte en plein écran' }));
+    fireEvent.click(formQueries().getByRole('button', { name: 'Quitter le plein écran' }));
+    expect(capturingWeatherPanel().waypoints).toEqual(originalPoints);
+    expect(sessionStorage.getItem('seapilot:sea-operation-draft:v1:1:captain-server-account')).toBeNull();
+    expect(footerQueries().queryByText('Modifications non enregistrées')).not.toBeInTheDocument();
+    expect(footerQueries().getByRole('button', { name: 'Exporter le PDF' })).toBeEnabled();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('never exposes fullscreen placement commands for a signed server record', async () => {
+    const record = recordFixture(captainAccount, { draft: waypointCaptureDraft(), status: 'signed', canEdit: false, canSign: false });
+    const original = structuredClone(record.draft);
+    renderAccount(captainAccount, record);
+    await openRecord(record);
+    fireEvent.click(stepButton(2));
+    expect(formQueries().getByRole('figure', { name: 'Carte du parcours' })).toBeVisible();
+    expect(formQueries().queryByRole('button', { name: 'Placer les waypoints' })).not.toBeInTheDocument();
+    expect(formQueries().queryByRole('button', { name: 'Afficher la carte en plein écran' })).not.toBeInTheDocument();
+    expect(formQueries().queryByRole('button', { name: 'Quitter le plein écran' })).not.toBeInTheDocument();
+    expect(record.draft).toEqual(original);
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
   it('adds consecutive map placements to the table without losing batched clicks or guessing ETA and UKC', async () => {
     renderAccount();
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
@@ -287,6 +382,8 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(within(map).getByRole('img', { name: 'Carte du parcours · 1 point géolocalisé' })).toBeVisible();
     expect(within(map).queryByRole('button')).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Placer les waypoints' })).not.toBeInTheDocument();
+    expect(formQueries().queryByRole('button', { name: 'Afficher la carte en plein écran' })).not.toBeInTheDocument();
+    expect(formQueries().queryByRole('button', { name: 'Quitter le plein écran' })).not.toBeInTheDocument();
     expect(formQueries().getByLabelText('Latitude · point 1')).toBeDisabled();
     expect(saveSeaOperation).not.toHaveBeenCalled();
     expect(signSeaOperation).not.toHaveBeenCalled();

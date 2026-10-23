@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, LocateFixed, MapPin, Minus, Plus } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, LocateFixed, MapPin, Maximize, Minimize, Minus, Plus } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import type { SeaPosition } from './seaOperationNavigation';
@@ -8,6 +8,7 @@ import {
   zoomRouteMapViewport, type RouteMapViewport, type SeaOperationRouteMapGeometry,
 } from './seaOperationRouteMapGeometry';
 import './seaOperationWaypointMapEditor.css';
+import { useSeaOperationMapFullscreen } from './useSeaOperationMapFullscreen';
 
 interface MapGesture {
   pointerId: number;
@@ -22,6 +23,19 @@ interface MapGesture {
 
 const coordinateLabel = (value: number) => value.toLocaleString('fr-FR', { minimumFractionDigits: 5, maximumFractionDigits: 5 });
 
+function mapPixelAt(svg: SVGSVGElement, geometry: SeaOperationRouteMapGeometry, clientX: number, clientY: number) {
+  const matrix = svg.getScreenCTM?.();
+  if (matrix && typeof svg.createSVGPoint === 'function') {
+    const point = svg.createSVGPoint(); point.x = clientX; point.y = clientY;
+    return point.matrixTransform(matrix.inverse());
+  }
+  // Default SVG preserveAspectRatio is xMidYMid meet; exclude any letterboxing.
+  const bounds = svg.getBoundingClientRect();
+  const scale = Math.min(bounds.width / geometry.width, bounds.height / geometry.height);
+  return { x: (clientX - bounds.left - (bounds.width - geometry.width * scale) / 2) / scale,
+    y: (clientY - bounds.top - (bounds.height - geometry.height * scale) / 2) / scale };
+}
+
 /** Only this wrapper accepts gestures. Moving its viewport never modifies the recorded route. */
 export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, disabled = false }: {
   waypoints: readonly SeaOperationWaypoint[];
@@ -35,15 +49,23 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, disabl
   const geometryRef = useRef<SeaOperationRouteMapGeometry | null>(null);
   const surfaceRef = useRef<SVGRectElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const editorRef = useRef<HTMLElement>(null);
+  const fullscreenToggleRef = useRef<HTMLButtonElement>(null);
   const gestureRef = useRef<MapGesture | null>(null);
   const lastPointerAdd = useRef<{ time: number; x: number; y: number } | null>(null);
-  const recordGeometry = useCallback((geometry: SeaOperationRouteMapGeometry) => { geometryRef.current = geometry; }, []);
 
   const cancelGesture = useCallback(() => {
     const gesture = gestureRef.current;
     gestureRef.current = null;
     if (gesture?.element.hasPointerCapture?.(gesture.pointerId)) gesture.element.releasePointerCapture(gesture.pointerId);
   }, []);
+  const resetInteraction = useCallback(() => { cancelGesture(); lastPointerAdd.current = null; }, [cancelGesture]);
+  const recordGeometry = useCallback((geometry: SeaOperationRouteMapGeometry) => {
+    const previous = geometryRef.current;
+    if (previous && (previous.width !== geometry.width || previous.height !== geometry.height)) resetInteraction();
+    geometryRef.current = geometry;
+  }, [resetInteraction]);
+  const fullscreen = useSeaOperationMapFullscreen(editorRef, fullscreenToggleRef, resetInteraction, toggleRef);
 
   useEffect(() => {
     if (disabled || !placing) cancelGesture();
@@ -60,6 +82,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, disabl
     cancelGesture();
     lastPointerAdd.current = null;
     if (!placing) setViewport(geometryRef.current?.viewport ?? { ...DEFAULT_ROUTE_MAP_VIEWPORT });
+    if (placing && fullscreen.isFullscreen) fullscreen.exitFullscreen();
     setPlacing(!placing);
     if (placing) toggleRef.current?.focus({ preventScroll: true });
   }
@@ -131,9 +154,10 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, disabl
     if (disabled || !placing || gesture.cancelled || gesture.dragging || Math.hypot(event.clientX - gesture.clientX, event.clientY - gesture.clientY) > 6) return;
     const previous = lastPointerAdd.current;
     if (previous && event.timeStamp - previous.time < 350 && Math.hypot(event.clientX - previous.x, event.clientY - previous.y) < 6) return;
-    const position = routeMapPositionAt(gesture.geometry,
-      (event.clientX - gesture.bounds.left) / gesture.bounds.width * gesture.geometry.width,
-      (event.clientY - gesture.bounds.top) / gesture.bounds.height * gesture.geometry.height);
+    const svg = event.currentTarget.ownerSVGElement;
+    if (!svg) return;
+    const pixel = mapPixelAt(svg, gesture.geometry, event.clientX, event.clientY);
+    const position = routeMapPositionAt(gesture.geometry, pixel.x, pixel.y);
     if (!position) return;
     lastPointerAdd.current = { time: event.timeStamp, x: event.clientX, y: event.clientY };
     addPosition(position);
@@ -146,7 +170,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, disabl
     else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); if (!event.repeat) addAtCentre(); }
   }
 
-  return <section aria-label="Placement des waypoints" className={`so-waypoint-map-editor${placing ? ' is-placing' : ''}`} onKeyDown={(event) => {
+  return <section aria-label="Placement des waypoints" ref={editorRef} tabIndex={fullscreen.isFullscreen ? -1 : undefined} className={`so-waypoint-map-editor${placing ? ' is-placing' : ''}${fullscreen.isFullscreen ? ' is-fullscreen' : ''}${fullscreen.isFallbackFullscreen ? ' is-fallback-fullscreen' : ''}`} onKeyDownCapture={fullscreen.onKeyDownCapture} onKeyDown={(event) => {
     if (placing && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); togglePlacement(); }
   }}>
     <div className="so-waypoint-map-toolbar">
@@ -157,9 +181,12 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, disabl
         <button type="button" className="sp-button sp-button--secondary" onClick={fitRoute} disabled={disabled}><LocateFixed aria-hidden="true" size={16} />Cadrer le parcours</button>
         <button type="button" className="sp-button sp-button--primary" onClick={addAtCentre} disabled={disabled}><Plus aria-hidden="true" size={16} />Ajouter au centre</button>
       </>}
+      {(placing || fullscreen.isFullscreen) && <button type="button" className="sp-button sp-button--secondary" ref={fullscreenToggleRef} aria-label={fullscreen.isFullscreen ? 'Quitter le plein écran' : 'Afficher la carte en plein écran'} aria-pressed={fullscreen.isFullscreen} disabled={disabled && !fullscreen.isFullscreen} onClick={() => {
+        if (fullscreen.isFullscreen) fullscreen.exitFullscreen(); else if (!disabled) fullscreen.enterFullscreen();
+      }}>{fullscreen.isFullscreen ? <Minimize aria-hidden="true" size={16} /> : <Maximize aria-hidden="true" size={16} />}{fullscreen.isFullscreen ? 'Quitter le plein écran' : 'Plein écran'}</button>}
     </div>
     {placing && <>
-      <p id={instructionsId} className="so-waypoint-map-instructions">Cliquez ou touchez la carte pour ajouter un waypoint à la fin du tableau. Glissez pour déplacer la vue. Au clavier, utilisez les flèches puis Entrée pour ajouter au centre. Échap termine le placement.</p>
+      <p id={instructionsId} className="so-waypoint-map-instructions">Cliquez ou touchez la carte pour ajouter un waypoint à la fin du tableau. Glissez pour déplacer la vue. Au clavier, utilisez les flèches puis Entrée pour ajouter au centre. {fullscreen.isFullscreen ? 'Échap quitte le plein écran.' : 'Échap termine le placement.'}</p>
       <div className="so-waypoint-map-navigation" aria-label="Déplacement et zoom de la carte">
         <div className="so-waypoint-map-controls">
           <button type="button" className="sp-button sp-button--secondary" aria-label="Zoomer sur la carte" onClick={() => zoomView(2)} disabled={disabled}><Plus aria-hidden="true" size={18} /></button>
@@ -172,7 +199,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, disabl
         {viewport && <span className="so-waypoint-map-centre">Centre : {coordinateLabel(viewport.centerLatitude)}° · {coordinateLabel(viewport.centerLongitude)}°</span>}
       </div>
     </>}
-    <SeaOperationRouteMap waypoints={waypoints} viewport={placing ? viewport : undefined} onGeometry={recordGeometry} renderOverlay={placing && !disabled ? (geometry) => <>
+    <SeaOperationRouteMap waypoints={waypoints} viewport={placing ? viewport : undefined} onGeometry={recordGeometry} fillAvailableSpace={fullscreen.isFullscreen} renderOverlay={placing && !disabled ? (geometry) => <>
       <rect className="so-waypoint-map-surface" ref={surfaceRef} width={geometry.width} height={geometry.height} role="button" tabIndex={0} aria-label="Zone de placement des waypoints" aria-describedby={instructionsId} aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Escape" onKeyDown={keyDown} onPointerDown={(event) => pointerDown(event, geometry)} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={cancelGesture} onLostPointerCapture={cancelGesture} />
       <g aria-hidden="true" className="so-waypoint-map-crosshair" transform={`translate(${geometry.width / 2} ${geometry.height / 2})`}><circle r={10} /><path d="M -17 0 H -5 M 5 0 H 17 M 0 -17 V -5 M 0 5 V 17" /></g>
     </> : undefined} />

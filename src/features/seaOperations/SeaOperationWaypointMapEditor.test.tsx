@@ -218,4 +218,33 @@ describe('SeaOperationWaypointMapEditor', () => {
     expect(add).toHaveBeenCalledTimes(3);
     expect(add.mock.calls[2][0].longitude).toBeCloseTo(.6);
   });
+
+  it('cancels a gesture and the pixel deduplication guard whenever the plotting dimensions change', () => {
+    let onResize!: ResizeObserverCallback;
+    vi.stubGlobal('ResizeObserver', class { constructor(callback: ResizeObserverCallback) { onResize = callback; } observe() {} disconnect() {} });
+    const add = vi.fn();
+    render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
+    const { surface } = activate();
+    tap(surface);
+    fireEvent.pointerDown(surface, { clientX: 325, clientY: 130, pointerId: 2, button: 0 });
+    act(() => onResize([{ contentRect: { width: 330, height: 280 } } as ResizeObserverEntry], {} as ResizeObserver));
+    fireEvent.pointerUp(surface, { clientX: 325, clientY: 130, pointerId: 2 });
+    expect(add).toHaveBeenCalledOnce();
+    tap(surface, 325, 130, 3);
+    expect(add).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses the SVG screen transform for accurate click coordinates even with viewport letterboxing', () => {
+    const add = vi.fn();
+    render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
+    const { surface, svg } = activate();
+    const inverse = vi.fn(() => ({ inverseTransform: true }));
+    const transform = vi.fn(() => ({ x: 675, y: 160 }));
+    Object.defineProperty(svg, 'getScreenCTM', { configurable: true, value: () => ({ inverse }) });
+    Object.defineProperty(svg, 'createSVGPoint', { configurable: true, value: () => ({ x: 0, y: 0, matrixTransform: transform }) });
+    tap(surface, 400, 100);
+    expect(inverse).toHaveBeenCalledOnce();
+    expect(transform).toHaveBeenCalledWith({ inverseTransform: true });
+    expect(add).toHaveBeenCalledExactlyOnceWith({ latitude: 49, longitude: 1 });
+  });
 });

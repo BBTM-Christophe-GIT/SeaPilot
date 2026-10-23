@@ -344,6 +344,14 @@ placement** revient à la carte de consultation. Changer de vue ne modifie pas l
 brouillon ; ajouter un point le marque comme non enregistré. **Enregistrer le
 brouillon** conserve les points dans le fonctionnement de sauvegarde habituel.
 
+Depuis **3.77.11**, le bouton **Plein écran** agrandit cette carte pour placer
+les waypoints plus facilement. Le zoom, le cadrage et les points restent
+conservés à l’aller et au retour. **Quitter le plein écran** ou Échap ramène
+à la fiche sans terminer le placement ; un nouvel Échap termine le placement.
+Le plein écran n’ajoute ni n’enregistre de waypoint à lui seul.
+**Terminer le placement** revient directement à la fiche. Si le navigateur
+refuse le plein écran natif, la carte occupe la fenêtre disponible.
+
 Le callback contrôle les droits et refuse les ajouts pendant sauvegarde/export,
 après signature et en lecture seule. Les fiches Capitaine/Marin utilisent les
 permissions renvoyées par le serveur. L’impression et le PDF restent des cartes
