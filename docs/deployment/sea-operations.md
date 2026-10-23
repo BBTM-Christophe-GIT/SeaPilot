@@ -242,15 +242,19 @@ défilement horizontal. Le premier champ est nommé **Waypoint**. Les contacts V
 et les prévisions de vent moyen / houle significative Hs figurent dans chaque
 ligne, avec les coordonnées et l’ETA correspondantes. La clé historique
 `descriptionVhf` conserve la description des fiches existantes.
-Depuis la version 3.77.12, un clic sur l’ETA ouvre directement un calendrier
-mensuel et un champ heure, explicitement à l’heure de Paris. Une ETA vide ouvre
-le mois courant en Europe/Paris sans présélectionner de date ni d’heure ; une
-ETA existante ouvre son mois. **Appliquer** renseigne les deux valeurs ensemble,
-**Annuler**, Échap ou un clic extérieur abandonne la saisie en cours. Les heures
+Depuis la version 3.77.16, chaque waypoint affiche directement son calendrier
+mensuel et son champ heure, explicitement à l’heure de Paris, sans clic préalable.
+Une ETA vide affiche le mois courant en Europe/Paris sans présélectionner de date
+ni d’heure ; une ETA existante affiche son mois. **Appliquer** renseigne les deux
+valeurs ensemble sans refermer le calendrier. **Annuler** ou Échap réinitialise
+la saisie locale ; un clic sur un autre champ laisse le calendrier affiché. Les heures
 inexistantes ou ambiguës lors du changement d’heure sont refusées. Le format
 persisté reste `YYYY-MM-DDTHH:mm` ; une valeur inchangée conserve ses secondes
 éventuelles. Une ancienne ETA `HH:mm` reste intacte ; le bouton Appliquer la date
-de l’opération permet une conversion volontaire. Aucune fiche signée n’est migrée.
+de l’opération permet une conversion volontaire. Le calendrier ne prend pas le
+focus à l’ouverture de la fiche et reste visible, désactivé, en lecture seule.
+Sur les panneaux larges, l’heure et les actions se placent à côté du calendrier.
+Aucune fiche signée n’est migrée.
 
 La fiche regroupe ses champs en une ou deux rangées sur les panneaux larges et
 s’adapte aux petits écrans sans défilement horizontal. Les contacts VHF gardent
