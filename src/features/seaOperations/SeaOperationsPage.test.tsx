@@ -12,6 +12,7 @@ import { GOURY_WEATHER_MATRIX, createEmptyVesselWeatherMatrix } from '../fleet/v
 import { captureSeaOperationRadios } from './seaOperationWaypointSnapshots';
 import { captureSeaOperationValidationWeather } from './seaOperationValidationWeather';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
+import { weatherRequestKey, type WeatherRequestStatus } from './seaOperationWeatherStatus';
 
 const weatherPanelMock = vi.hoisted(() => vi.fn());
 const chartsPanelMock = vi.hoisted(() => vi.fn());
@@ -95,10 +96,12 @@ function waypointWeather(): SeaOperationWaypointWeather {
 
 interface CapturingWeatherPanelProps {
   waypoints: SeaOperationPayload['waypoints'];
+  active?: boolean;
   readOnly?: boolean;
   validatedAt?: string | null;
   observations?: readonly ObservationResult[];
   onWeatherLoaded?: (weather: SeaOperationWaypointWeather, context: { projectId: string; pointId: string; latitude: string; longitude: string; eta: string }, sourceClient: unknown) => void;
+  onStatusChange?: (statuses: Record<string, WeatherRequestStatus>, sourceClient: unknown) => void;
 }
 const capturingWeatherPanel = () => weatherPanelMock.mock.lastCall![0] as CapturingWeatherPanelProps;
 const waypointWeatherContext = (draft: SeaOperationPayload) => ({ projectId: draft.planning?.projectId || '', pointId: draft.waypoints[0].id, latitude: draft.waypoints[0].latitude, longitude: draft.waypoints[0].longitude, eta: draft.waypoints[0].eta });
@@ -816,7 +819,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const { client, data } = renderAccount(captainAccount, record, 1, [mission], true);
     data.vessels[0].draftMeters = 2.65;
     await openRecord(record);
-    expect(weatherPanelMock).toHaveBeenLastCalledWith(expect.objectContaining({ client, projectId: mission.projectId, preview: true, active: false, waypoints: draft.waypoints }));
+    expect(weatherPanelMock).toHaveBeenLastCalledWith(expect.objectContaining({ client, projectId: mission.projectId, preview: true, active: true, waypoints: draft.waypoints }));
     await userEvent.click(stepButton(2));
     expect(formQueries().getByLabelText('Tirant d’eau de référence (m)')).toHaveValue(2.65);
     expect(formQueries().getByLabelText('Tirant d’eau de référence (m)')).toHaveAttribute('readonly');
@@ -826,6 +829,150 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     applyEta('2026-10-22', '14:30');
     expect(weatherPanelMock).toHaveBeenLastCalledWith(expect.objectContaining({ client, projectId: mission.projectId, preview: true, active: true, waypoints: [expect.objectContaining({ latitude: '49.65', longitude: '-1.62', eta: '2026-10-22T14:30' })] }));
     expect(chartsPanelMock).toHaveBeenLastCalledWith(expect.objectContaining({ client, projectId: mission.projectId, preview: true, active: true, canEdit: true, charts: draft.charts, waypoints: [expect.objectContaining({ latitude: '49.65', longitude: '-1.62' })] }));
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('keeps weather acquisition active across preparation steps and accepts its completion after leaving the Passage Plan', async () => {
+    const draft = waypointCaptureDraft();
+    const record = recordFixture(captainAccount, { draft });
+    const { client } = renderAccount(captainAccount, record);
+    await openRecord(record);
+    const callback = capturingWeatherPanel().onWeatherLoaded!;
+    const statusCallback = capturingWeatherPanel().onStatusChange;
+    for (const index of [2, 1, 0, 3]) {
+      fireEvent.click(stepButton(index));
+      expect(capturingWeatherPanel().active).toBe(true);
+      expect(capturingWeatherPanel().onWeatherLoaded).toBe(callback);
+      expect(capturingWeatherPanel().onStatusChange).toBe(statusCallback);
+    }
+    await act(async () => callback(waypointWeather(), waypointWeatherContext(draft), client));
+    expect(capturingWeatherPanel().waypoints[0].weather).toEqual(waypointWeather());
+    expect(footerQueries().getByText('Modifications non enregistrées')).toBeVisible();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('waits for missing draft forecasts before saving from another step and retains them when reopening', async () => {
+    const draft = waypointCaptureDraft();
+    const record = recordFixture(captainAccount, { draft });
+    const pending = deferred<SeaOperationPayload>();
+    const { client } = renderAccount(captainAccount, record, 1, [], true);
+    let stored = record;
+    vi.mocked(fetchSeaOperationDetail).mockImplementation(async () => stored);
+    vi.mocked(captureSeaOperationValidationWeather).mockReturnValue(pending.promise);
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, captured) => (stored = { ...record, version: 4, draft: structuredClone(captured) }));
+    await openRecord(record);
+    fireEvent.click(stepButton(2));
+    fireEvent.click(stepButton(0));
+    await saveDraft();
+    expect(captureSeaOperationValidationWeather).toHaveBeenCalledWith(client, expect.objectContaining({ project: draft.project }), { preview: true, missingOnly: true });
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' })).toBeDisabled();
+    const prepared = vi.mocked(captureSeaOperationValidationWeather).mock.calls[0][1];
+    await act(async () => pending.resolve({ ...prepared, waypoints: [{ ...prepared.waypoints[0], weather: waypointWeather() }] }));
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeVisible();
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ waypoints: [expect.objectContaining({ weather: waypointWeather() })] }), record);
+    expect(signSeaOperation).not.toHaveBeenCalled();
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Annuler' }));
+    await openRecord(stored);
+    expect(capturingWeatherPanel().waypoints[0].weather).toEqual(waypointWeather());
+  });
+
+  it('displays each weather request error beside its own waypoint without altering the saved preparation', async () => {
+    const draft = waypointCaptureDraft();
+    draft.waypoints.push({ ...draft.waypoints[0], id: 'second-weather-point', number: '4', eta: '2026-10-25T14:00' });
+    const original = structuredClone(draft);
+    const record = recordFixture(captainAccount, { draft });
+    const { client } = renderAccount(captainAccount, record);
+    await openRecord(record);
+    const callback = capturingWeatherPanel().onStatusChange!;
+    const keys = draft.waypoints.map((point) => weatherRequestKey(draft.planning!.projectId, point));
+    await act(async () => callback({ [keys[0]]: { loading: false, error: 'Prévision indisponible pour le premier waypoint.' }, [keys[1]]: { loading: true } }, client));
+    fireEvent.click(stepButton(2));
+    const firstRow = formQueries().getByLabelText('Description · point 1').closest<HTMLElement>('.so-passage-row')!;
+    const secondRow = formQueries().getByLabelText('Description · point 2').closest<HTMLElement>('.so-passage-row')!;
+    expect(within(firstRow).getByText('Prévision indisponible pour le premier waypoint.')).toBeVisible();
+    expect(within(secondRow).queryByText('Prévision indisponible pour le premier waypoint.')).not.toBeInTheDocument();
+    await act(async () => callback({ [keys[0]]: { loading: false }, [keys[1]]: { loading: false, error: 'ETA du second waypoint hors de la période disponible.' } }, client));
+    expect(within(firstRow).queryByText('Prévision indisponible pour le premier waypoint.')).not.toBeInTheDocument();
+    expect(within(secondRow).getByText('ETA du second waypoint hors de la période disponible.')).toBeVisible();
+    expect(capturingWeatherPanel().waypoints).toEqual(original.waypoints);
+    expect(sessionStorage.length).toBe(0);
+    expect(footerQueries().queryByText('Modifications non enregistrées')).not.toBeInTheDocument();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('clears stale request errors only for successfully saved forecast snapshots, including an unavailable provider response (empty=%s)', async (empty) => {
+    const draft = waypointCaptureDraft();
+    draft.waypoints.push({ ...draft.waypoints[0], id: 'still-missing-weather', number: '4', eta: '2026-10-25T14:00' });
+    const record = recordFixture(captainAccount, { draft });
+    const { client } = renderAccount(captainAccount, record);
+    const weather = empty ? { ...waypointWeather(), wind: null, waves: null, windMessage: 'Vent indisponible à cette ETA hors horizon.', wavesMessage: 'Houle indisponible à cette ETA hors horizon.' } : waypointWeather();
+    vi.mocked(captureSeaOperationValidationWeather).mockImplementation(async (_client, prepared) => ({ ...prepared, waypoints: prepared.waypoints.map((point, index) => index === 0 ? { ...point, weather } : point) }));
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, captured) => ({ ...record, version: 4, draft: structuredClone(captured) }));
+    await openRecord(record);
+    fireEvent.click(stepButton(2));
+    const keys = draft.waypoints.map((point) => weatherRequestKey(draft.planning!.projectId, point));
+    await act(async () => capturingWeatherPanel().onStatusChange!({ [keys[0]]: { loading: false, error: 'Ancienne panne du premier point.' }, [keys[1]]: { loading: false, error: 'Le second point reste sans prévision.' } }, client));
+    expect(formQueries().getByText('Ancienne panne du premier point.')).toBeVisible();
+    await saveDraft();
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeVisible();
+    expect(formQueries().queryByText('Ancienne panne du premier point.')).not.toBeInTheDocument();
+    expect(formQueries().getByText('Le second point reste sans prévision.')).toBeVisible();
+    expect(formQueries().queryByText(/(?:Chargement|Actualisation) des prévisions météo…/)).not.toBeInTheDocument();
+    if (empty) expect(formQueries().getByText('Houle indisponible à cette ETA hors horizon.')).toBeVisible();
+    expect(capturingWeatherPanel().waypoints[0].weather).toEqual(weather);
+    expect(capturingWeatherPanel().waypoints[1]).not.toHaveProperty('weather');
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('ignores weather request statuses for old coordinates and for an earlier authenticated client', async () => {
+    const draft = waypointCaptureDraft();
+    const record = recordFixture(captainAccount, { draft });
+    const view = renderAccount(captainAccount, record);
+    await openRecord(record);
+    fireEvent.click(stepButton(2));
+    const callback = capturingWeatherPanel().onStatusChange!;
+    const oldKey = weatherRequestKey(draft.planning!.projectId, draft.waypoints[0]);
+    fireEvent.change(formQueries().getByLabelText('Latitude · point 1'), { target: { value: '49.75' } });
+    const currentPoint = capturingWeatherPanel().waypoints[0];
+    const currentKey = weatherRequestKey(draft.planning!.projectId, currentPoint);
+    await act(async () => callback({ [oldKey]: { loading: false, error: 'Anciennes coordonnées à ignorer.' } }, view.client));
+    expect(formQueries().queryByText('Anciennes coordonnées à ignorer.')).not.toBeInTheDocument();
+    await act(async () => callback({ [currentKey]: { loading: false, error: 'Erreur du contexte actuel.' } }, view.client));
+    expect(formQueries().getByText('Erreur du contexte actuel.')).toBeVisible();
+    const other = recordFixture(sailorAccount, { id: 'same-waypoint-other-client', draft: { ...structuredClone(draft), project: 'Autre compte météo', waypoints: [structuredClone(currentPoint)] } });
+    vi.mocked(fetchSeaOperationData).mockResolvedValue({ ...view.data, actorId: sailorAccount.id, actorName: sailorAccount.name, records: [other] });
+    vi.mocked(fetchSeaOperationDetail).mockResolvedValue(other);
+    const nextClient = { fixtureAccountId: sailorAccount.id };
+    view.rerenderClient(nextClient);
+    await openRecord(other);
+    fireEvent.click(stepButton(2));
+    expect(capturingWeatherPanel().onStatusChange).toBe(callback);
+    await act(async () => callback({ [currentKey]: { loading: false, error: 'Erreur périmée de l’ancien client.' } }, view.client));
+    expect(formQueries().queryByText('Erreur périmée de l’ancien client.')).not.toBeInTheDocument();
+    expect(formQueries().queryByText('Erreur du contexte actuel.')).not.toBeInTheDocument();
+    await act(async () => callback({ [currentKey]: { loading: false, error: 'Prévision du nouveau compte indisponible.' } }, nextClient));
+    expect(formQueries().getByText('Prévision du nouveau compte indisponible.')).toBeVisible();
+    expect(capturingWeatherPanel().waypoints).toEqual(other.draft.waypoints);
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('keeps request status messages out of a signed record and stops automatic weather acquisition', async () => {
+    const draft = waypointCaptureDraft();
+    draft.waypoints[0].weather = waypointWeather();
+    const record = recordFixture(captainAccount, { draft, status: 'signed', canEdit: false, canSign: false });
+    const { client } = renderAccount(captainAccount, record);
+    await openRecord(record);
+    expect(capturingWeatherPanel().active).toBe(false);
+    const key = weatherRequestKey(draft.planning!.projectId, draft.waypoints[0]);
+    await act(async () => capturingWeatherPanel().onStatusChange!({ [key]: { loading: false, error: 'État de requête sans valeur historique.' } }, client));
+    fireEvent.click(stepButton(2));
+    expect(formQueries().queryByText('État de requête sans valeur historique.')).not.toBeInTheDocument();
+    expect(capturingWeatherPanel().waypoints[0].weather).toEqual(waypointWeather());
+    expect(sessionStorage.length).toBe(0);
+    expect(captureSeaOperationValidationWeather).not.toHaveBeenCalled();
     expect(saveSeaOperation).not.toHaveBeenCalled();
   });
 
@@ -844,7 +991,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const callback = capturingWeatherPanel().onWeatherLoaded!;
     await decisionStep();
     await userEvent.click(screen.getByRole('button', { name: 'Signer la décision NO GO' }));
-    expect(captureSeaOperationValidationWeather).toHaveBeenCalledWith(client, expect.objectContaining({ project: draft.project }), { preview: true });
+    expect(captureSeaOperationValidationWeather).toHaveBeenCalledWith(client, expect.objectContaining({ project: draft.project }), { preview: true, missingOnly: false });
     expect(saveSeaOperation).not.toHaveBeenCalled();
     expect(signSeaOperation).not.toHaveBeenCalled();
     const stale = { ...waypointWeather(), wind: { ...waypointWeather().wind!, speedKnots: 99 } };

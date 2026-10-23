@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SeaOperationWeatherPanel } from './SeaOperationWeatherPanel';
 import { emptySeaOperationWaypoint } from './seaOperationModel';
 import { fetchSeaOperationWaypointWeather, type SeaOperationWaypointWeather } from './seaOperationWeatherQueries';
+import { weatherRequestKey } from './seaOperationWeatherStatus';
 
 vi.mock('./seaOperationWeatherQueries', () => ({ fetchSeaOperationWaypointWeather: vi.fn() }));
 const client = {} as SupabaseClient;
@@ -12,6 +13,28 @@ const weather: SeaOperationWaypointWeather = { pointId: 'p1', latitude: 49.65, l
 const load = async () => { await act(() => new Promise((resolve) => setTimeout(resolve, 750))); };
 beforeEach(() => vi.clearAllMocks());
 describe('waypoint weather', () => {
+  it('publishes contextual loading and network status for the inline weather card', async () => {
+    let reject!: (error: Error) => void;
+    vi.mocked(fetchSeaOperationWaypointWeather).mockReturnValue(new Promise((_, fail) => { reject = fail; }));
+    const onStatusChange = vi.fn();
+    render(<SeaOperationWeatherPanel client={client} projectId="1" waypoints={[point]} onStatusChange={onStatusChange} />);
+    await load();
+    expect(onStatusChange).toHaveBeenLastCalledWith({ [weatherRequestKey('1', point)]: { loading: true } }, client);
+    await act(async () => reject(new Error('Connexion météo indisponible.')));
+    expect(onStatusChange).toHaveBeenLastCalledWith({ [weatherRequestKey('1', point)]: { loading: false, error: 'Connexion météo indisponible.' } }, client);
+  });
+  it('retries a stored empty forecast once without looping when the captured data rerenders', async () => {
+    const empty = { ...weather, wind: null, waves: null, windMessage: 'Hors horizon.', wavesMessage: 'Hors horizon.' };
+    const onWeatherLoaded = vi.fn();
+    vi.mocked(fetchSeaOperationWaypointWeather).mockResolvedValue(weather);
+    const view = render(<SeaOperationWeatherPanel client={client} projectId="1" waypoints={[{ ...point, weather: empty }]} onWeatherLoaded={onWeatherLoaded} />);
+    await load();
+    expect(onWeatherLoaded).toHaveBeenCalledWith(weather, expect.anything(), client);
+    view.rerender(<SeaOperationWeatherPanel client={client} projectId="1" waypoints={[{ ...point, weather }]} onWeatherLoaded={onWeatherLoaded} />);
+    await load();
+    expect(fetchSeaOperationWaypointWeather).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/Hs 0,6 m/)).toBeVisible();
+  });
   it('loads wind and significant swell for the coordinates and complete ETA', async () => {
     const onWeatherLoaded = vi.fn();
     vi.mocked(fetchSeaOperationWaypointWeather).mockResolvedValue(weather);

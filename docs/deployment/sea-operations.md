@@ -353,7 +353,9 @@ L’export ne consulte aucun service réseau pour remplacer ces contacts.
 ### Météo : vent et houle significative Hs
 
 `SeaOperationWeatherPanel` consulte automatiquement les coordonnées et l’ETA de
-chaque point lorsque Passage Plan est ouvert. Les changements de point/projet
+chaque point du brouillon modifiable, y compris après un changement de section.
+Le chargement, les erreurs et les champs manquants sont indiqués directement
+dans la carte météo de chaque waypoint. Les changements de point/projet
 annulent les requêtes précédentes ; les réponses tardives ne réapparaissent pas.
 Trois points sont chargés en parallèle au maximum et les modifications sont
 temporisées. Les ETA incomplètes, heures inexistantes/ambiguës de changement
@@ -373,19 +375,29 @@ provenance. **Houle significative (Hs)** reprend `SHS` / `MPS` / `MDS` : hauteur
 en mètres, période en secondes et provenance en degrés de la houle totale,
 distincte de la mer totale `SWH` et de la mer du vent. Les rafales ne sont pas
 affichées. Le réseau, l’heure prévue réelle et la maille du modèle sont visibles.
-La maille la plus proche est utilisée pour tous les champs ; une maille terrestre
-masquée reste indisponible, sans déplacement silencieux vers la mer.
+La maille la plus proche est utilisée pour tous les champs. Si elle n’a aucune
+hauteur ni période de houle exploitable, le serveur recherche la maille marine
+disponible la plus proche dans un rayon de **10 km**. Les composantes proviennent
+toutes de cette même maille, du même réseau et de la même échéance. La position
+réelle et la distance au waypoint sont affichées dans la saisie, l’aperçu et le
+PDF ; cette position du modèle ne modifie pas les coordonnées du waypoint.
+Sans maille marine dans ce rayon, les valeurs restent indisponibles.
 
 Le domaine couvre 38–53° N et 8° O–12° E, dont la Manche, l’Atlantique français
 et le sud de l’Angleterre. L’horizon dépend des fichiers effectivement publiés
 (48 h depuis le réseau dans le catalogue contrôlé le 22 octobre 2026), sans
-extrapolation. L’ETA est convertie d’Europe/Paris vers UTC. L’écart à l’heure du
+extrapolation. Une ETA hors horizon indique les premières et dernières heures
+disponibles en UTC ; une échéance absente à l’intérieur de cette plage est
+distinguée d’un horizon dépassé. L’ETA est convertie d’Europe/Paris vers UTC. L’écart à l’heure du
 modèle reste inférieur ou égal à 30 minutes, sans interpolation cachée. Une
 donnée absente n’est jamais assimilée à zéro. Ces prévisions ne valident aucun
 contrôle GO / NO GO. Les réponses reçues pour le projet, le compte, les coordonnées
 et l’ETA encore sélectionnés peuvent être conservées dans le brouillon. Elles
 incluent les heures du modèle en UTC, le réseau, la maille, la source et l’heure
-de consultation. La sauvegarde puis la signature conservent cette copie. Une
+de consultation. La sauvegarde du brouillon attend la récupération des
+prévisions manquantes ; la signature actualise les prévisions futures avant
+de conserver cette copie. Une erreur réseau conserve les valeurs déjà reçues.
+Les snapshots vides sont retentés à la réouverture ou à l’actualisation. Une
 nouvelle recherche ne réécrit jamais une fiche signée ; un ancien historique
 sans copie indique « prévisions non enregistrées », sans reconstituer sa météo.
 

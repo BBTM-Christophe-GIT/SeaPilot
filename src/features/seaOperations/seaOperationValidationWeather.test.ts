@@ -20,6 +20,17 @@ const input = { projectId: '1', pointId: 'p1', latitude: 49.65, longitude: -1.62
 beforeEach(() => vi.resetAllMocks());
 
 describe('forecast capture before captain validation', () => {
+  it('fills a previously unavailable forecast on draft save while keeping recorded values without another request', async () => {
+    const draft = payload();
+    draft.waypoints[0].weather = { ...forecast(input), wind: null, waves: null, windMessage: 'Hors horizon.', wavesMessage: 'Hors horizon.' };
+    vi.mocked(fetchSeaOperationWaypointWeather).mockResolvedValue(forecast(input));
+    const captured = await captureSeaOperationValidationWeather(client, draft, { now, missingOnly: true });
+    expect(captured.waypoints[0].weather?.waves).toEqual(forecast(input).waves);
+    expect(fetchSeaOperationWaypointWeather).toHaveBeenCalledTimes(1);
+    expect(await captureSeaOperationValidationWeather(client, captured, { now, missingOnly: true })).toBe(captured);
+    expect(fetchSeaOperationWaypointWeather).toHaveBeenCalledTimes(1);
+  });
+
   it('waits for the forecast and captures only the matching waypoint without changing preparation fields', async () => {
     let resolve!: (weather: SeaOperationWaypointWeather) => void;
     vi.mocked(fetchSeaOperationWaypointWeather).mockReturnValue(new Promise((done) => { resolve = done; }));

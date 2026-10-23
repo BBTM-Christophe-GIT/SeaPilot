@@ -1,5 +1,14 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.18`, build `2026-10-23.016`, fiabilise les prévisions du Passage
+Plan : le chargement continue lors d’un changement de section, son état est
+visible dans chaque waypoint et l’enregistrement du brouillon attend les
+prévisions manquantes. Sans donnée marine à la maille sélectionnée, le serveur
+recherche la maille marine disponible la plus proche dans un rayon de 10 km,
+au même réseau et à la même échéance. Ses coordonnées et sa distance sont
+affichées dans la fiche et le PDF. Les dates hors horizon restent explicitement
+indisponibles. Aucune migration, dépendance, clé ou note de mise à jour requise.
+
 Version `3.77.13`, build `2026-10-23.011`, ajoute **Transférer** aux fiches actives
 des registres Apparaux de levage et Remorques pour Administration, Direction et
 Armement. La fenêtre présente les icônes des navires autorisés ; une confirmation

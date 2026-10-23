@@ -111,4 +111,32 @@ describe('recorded Passage Plan presentation', () => {
     expect(changed.observation).toBeUndefined();
     expect(changed.observedWeather).not.toContain('4,2 m');
   });
+
+  it('keeps the waypoint position distinct from the nearby marine forecast cell in its recorded sources', () => {
+    const point = recordedPoint();
+    point.weather!.model!.latitude = 49.7;
+    point.weather!.model!.longitude = -1.62;
+    const original = structuredClone(point);
+    const row = passagePlanCellData(point);
+    expect(row.latitude).toBe('49.65 N');
+    expect(row.longitude).toBe('1.62 W');
+    expect(row.weatherFootnote).toContain('Point météo : 49.7000, -1.6200 · à 5,6 km du waypoint. Prévision de maille, position approchée.');
+    expect(row.weather).toContain('Houle Hs : 0,60 m');
+    expect(point).toEqual(original);
+    const stale = passagePlanCellData({ ...point, eta: '2026-10-23T15:00' });
+    expect(stale.weather).toContain('non enregistrées');
+    expect(stale.weatherFootnote).not.toContain('Point météo');
+  });
+
+  it('retains the recorded horizon explanation without claiming a marine location that was not returned', () => {
+    const point = recordedPoint();
+    point.weather!.wind = null; point.weather!.waves = null;
+    point.weather!.windMessage = point.weather!.wavesMessage = 'Aucune prévision disponible à cette ETA : horizon dépassé.';
+    delete point.weather!.model;
+    const row = passagePlanCellData(point);
+    expect(row.weather).toContain('horizon dépassé');
+    expect(row.weather).not.toContain('non enregistrées');
+    expect(row.weatherFootnote).toContain('Météo-France');
+    expect(row.weatherFootnote).not.toContain('Point météo');
+  });
 });

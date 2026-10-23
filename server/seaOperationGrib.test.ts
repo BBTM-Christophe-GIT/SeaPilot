@@ -35,6 +35,19 @@ function mask(item: Message, index: number) {
   item.bitmap[index] = 0; item.values[index] = 9999;
   item.numbers.numberOfValues -= 1; item.numbers.numberOfMissing += 1;
 }
+function coastalFields(ni = 5) {
+  const records = fields();
+  records.forEach((item, field) => {
+    Object.assign(item.numbers, { Ni: ni, Nj: 3, numberOfPoints: ni * 3, numberOfValues: ni * 3,
+      iDirectionIncrementInDegrees: 0.025, jDirectionIncrementInDegrees: 0.025,
+      latitudeOfFirstGridPointInDegrees: 50.025, longitudeOfFirstGridPointInDegrees: 0,
+      latitudeOfLastGridPointInDegrees: 49.975, longitudeOfLastGridPointInDegrees: (ni - 1) * 0.025 });
+    item.bitmap = Array<number>(ni * 3).fill(1);
+    item.values = Array.from({ length: ni * 3 }, (_, index) => [index + 1, 90 + index, (index + 1) / 10, 5 + index / 5, 180 + index][field]);
+  });
+  return records;
+}
+const COASTAL_POINT = { latitude: 50, longitude: 0.05 };
 function engine(messages: Message[]) {
   const deletes: Array<ReturnType<typeof vi.fn>> = [];
   const events: string[] = [];
@@ -70,11 +83,102 @@ describe('MFWAM GRIB point decoder', () => {
     expect(runtime.unlink).toHaveBeenCalledOnce();
   });
 
-  it('keeps a masked land cell empty rather than moving to a neighbouring wet cell', async () => {
+  it('keeps a masked land cell empty when every wet neighbour is beyond ten kilometres', async () => {
     const records = fields(); records.forEach((item) => mask(item, 4)); engine(records);
     const { decodeMfwamPoint } = await load();
     await expect(decodeMfwamPoint(bytes(), POINT, TARGET)).resolves.toMatchObject({ latitude: 50, longitude: -7,
       windSpeedMps: null, windDirectionDegrees: null, heightMeters: null, periodSeconds: null, swellDirectionDegrees: null });
+  });
+
+  it('selects the closest marine cell geodesically and samples every component from that same cell', async () => {
+    const records = coastalFields();
+    records.slice(2).forEach((item) => mask(item, 7));
+    engine(records);
+    const { decodeMfwamPoint } = await load();
+    const result = await decodeMfwamPoint(bytes(), COASTAL_POINT, TARGET);
+    // West/east are nearer in kilometres than the north/south cells, although all are one grid step away.
+    expect(result).toMatchObject({ latitude: 50, longitude: expect.closeTo(0.025, 10), marineFallback: true,
+      windSpeedMps: 7, windDirectionDegrees: 96, heightMeters: 0.7, periodSeconds: 6.2, swellDirectionDegrees: 186,
+      referenceTime: '2026-10-22T12:00:00.000Z', validTime: '2026-10-22T13:00:00.000Z' });
+    expect(result.windSpeedMps).not.toBe(records[0].values[7]);
+  });
+
+  it('breaks equally distant marine-cell ties by stable grid index', async () => {
+    const records = coastalFields();
+    records.slice(2).forEach((item) => mask(item, 7));
+    engine(records);
+    const { decodeMfwamPoint } = await load();
+    const first = await decodeMfwamPoint(bytes(), COASTAL_POINT, TARGET);
+    const second = await decodeMfwamPoint(bytes(), COASTAL_POINT, TARGET);
+    expect(first.longitude).toBeCloseTo(0.025, 10);
+    expect(second).toEqual(first);
+  });
+
+  it('keeps a partially available requested marine cell instead of moving solely to complete its other fields', async () => {
+    const records = coastalFields();
+    mask(records[0], 7); mask(records[3], 7); records[2].values[7] = 0;
+    engine(records);
+    const { decodeMfwamPoint } = await load();
+    const result = await decodeMfwamPoint(bytes(), COASTAL_POINT, TARGET);
+    expect(result).toMatchObject({ latitude: 50, longitude: expect.closeTo(0.05, 10), windSpeedMps: null, heightMeters: 0, periodSeconds: null });
+    expect(result.marineFallback).toBeUndefined();
+  });
+
+  it('does not mistake a nearby wind-only land cell for a usable marine cell and preserves partial fields at the chosen sea cell', async () => {
+    const records = coastalFields();
+    records.slice(2).forEach((item) => mask(item, 7));
+    mask(records[2], 6); mask(records[3], 6);
+    mask(records[0], 8); mask(records[3], 8);
+    engine(records);
+    const { decodeMfwamPoint } = await load();
+    const result = await decodeMfwamPoint(bytes(), COASTAL_POINT, TARGET);
+    expect(result).toMatchObject({ longitude: expect.closeTo(0.075, 10), marineFallback: true, heightMeters: 0.9,
+      periodSeconds: null, windSpeedMps: null, windDirectionDegrees: 98, swellDirectionDegrees: 188 });
+  });
+
+  it('returns the requested cell with missing marine values when no marine neighbour exists inside the radius', async () => {
+    const records = coastalFields();
+    records.slice(2).forEach((item) => { for (let index = 0; index < item.values.length; index++) mask(item, index); });
+    engine(records);
+    const { decodeMfwamPoint } = await load();
+    const result = await decodeMfwamPoint(bytes(), COASTAL_POINT, TARGET);
+    expect(result).toMatchObject({ longitude: expect.closeTo(0.05, 10), windSpeedMps: 8, heightMeters: null, periodSeconds: null, swellDirectionDegrees: null });
+    expect(result.marineFallback).toBeUndefined();
+  });
+
+  it('measures the ten-kilometre search from the requested coordinates, including the natural half-cell offset', async () => {
+    const records = coastalFields(8);
+    records.slice(2).forEach((item) => {
+      for (let index = 0; index < item.values.length; index++) if (index !== 14) mask(item, index);
+    });
+    engine(records);
+    const { decodeMfwamPoint } = await load();
+    // The marine cell at 0.15 E is about 9.8 km from the request, but 10.7 km from its nearest grid cell at 0 E.
+    const result = await decodeMfwamPoint(bytes(), { latitude: 50, longitude: 0.0124 }, TARGET);
+    expect(result).toMatchObject({ longitude: expect.closeTo(0.15, 10), marineFallback: true, heightMeters: 1.5 });
+  });
+
+  it('rejects a marine neighbour just outside ten kilometres even when its grid index is close', async () => {
+    const records = coastalFields(8);
+    records.slice(2).forEach((item) => {
+      for (let index = 0; index < item.values.length; index++) if (index !== 14) mask(item, index);
+    });
+    engine(records);
+    const { decodeMfwamPoint } = await load();
+    const result = await decodeMfwamPoint(bytes(), { latitude: 50, longitude: 0.01 }, TARGET);
+    expect(result).toMatchObject({ longitude: 0, heightMeters: null, periodSeconds: null });
+    expect(result.marineFallback).toBeUndefined();
+  });
+
+  it('never substitutes a neighbouring hour to find marine values', async () => {
+    const records = coastalFields();
+    records.slice(2).forEach((item) => { for (let index = 0; index < item.values.length; index++) mask(item, index); });
+    const later = coastalFields(); later.forEach((item) => { item.numbers.validityTime = 1400; });
+    engine([...records, ...later]);
+    const { decodeMfwamPoint } = await load();
+    const result = await decodeMfwamPoint(bytes(), COASTAL_POINT, TARGET);
+    expect(result).toMatchObject({ validTime: '2026-10-22T13:00:00.000Z', heightMeters: null, periodSeconds: null });
+    expect(result.marineFallback).toBeUndefined();
   });
 
   it('preserves partially missing fields at the same cell', async () => {

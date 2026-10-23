@@ -219,6 +219,54 @@ describe('Sea operation PDF', () => {
     expect(record).toEqual(original);
   });
 
+  it('prints the nearby marine cell inside its weather card without moving the waypoint or overlapping the measured annex', async () => {
+    const record = fixture();
+    record.draft.project = 'RECETTE - Position de la prévision marine';
+    record.draft.description = 'Vérification de la maille météo marine proche, de sa distance au waypoint et de la séparation avec les mesures officielles.';
+    record.draft.waypoints = record.draft.waypoints.slice(0, 3);
+    const [nearby, coincident, unavailable] = record.draft.waypoints;
+    [nearby.number, coincident.number, unavailable.number] = ['NEAR', 'GRID', 'H3'];
+    nearby.weather!.model!.latitude = 49.7; nearby.weather!.model!.longitude = -1.62;
+    coincident.weather!.model!.latitude = 49.65; coincident.weather!.model!.longitude = -1.62;
+    unavailable.weather!.wind = null; unavailable.weather!.waves = null;
+    unavailable.weather!.windMessage = unavailable.weather!.wavesMessage = 'Aucune prévision disponible : horizon dépassé.';
+    delete unavailable.weather!.model;
+    record.weatherObservations = [recordedObservation(nearby.id)];
+    const original = structuredClone(record);
+    const generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const document = await PDFDocument.load(generated.bytes);
+    const bodies = await generatedBodies(generated.bytes);
+    const nearBody = bodies.find((body) => textPositions(body, 'NEAR').length > 0)!;
+    expect(nearBody).toContain('Point météo : 49.7000, -1.6200');
+    expect(nearBody).toContain('5,6 km');
+    expect(nearBody).toContain('position approchée.');
+    expect(nearBody).toContain('MESURES APRÈS LE PASSAGE');
+    const locations = [...nearBody.matchAll(/BT\n([\s\S]*?)\nET/g)]
+      .filter((match) => match[1].includes('(Point météo : 49.7000, -1.6200'))
+      .map((match) => /([\d.-]+) ([\d.-]+) Td/.exec(match[1])!);
+    expect(locations).toHaveLength(1);
+    const location = { x: Number(locations[0][1]), y: Number(locations[0][2]) };
+    expect(location.x).toBeGreaterThan(533); expect(location.x).toBeLessThan(758);
+    expect(textPositions(nearBody, 'Vent moyen 10 m')[0].y - location.y).toBeGreaterThan(20);
+    expect(location.y - textPositions(nearBody, 'MESURES APRÈS LE PASSAGE')[0].y).toBeGreaterThan(15);
+    const exactBody = bodies.find((body) => textPositions(body, 'GRID').length > 0)!;
+    expect(exactBody).toContain('49.6500, -1.6200'); expect(exactBody).toContain('0,0 km');
+    const unavailableBody = bodies.find((body) => textPositions(body, 'H3').length > 0)!;
+    expect(unavailableBody).toContain('horizon dépassé.');
+    expect(unavailableBody).not.toContain('Point météo');
+    for (const [index, body] of bodies.entries()) {
+      const page = document.getPage(index);
+      for (const placement of [...body.matchAll(/BT\n([\s\S]*?)\nET/g)].map((match) => /([\d.-]+) ([\d.-]+) Td/.exec(match[1])).filter((match) => match !== null)) {
+        expect(Number(placement[1])).toBeGreaterThanOrEqual(49);
+        expect(Number(placement[1])).toBeLessThan(page.getWidth() - 49);
+        expect(Number(placement[2])).toBeGreaterThanOrEqual(55);
+        expect(Number(placement[2])).toBeLessThanOrEqual(page.getHeight() - 100);
+      }
+    }
+    expect(record).toEqual(original);
+    if (process.env.SEAPILOT_PDF_MARINE_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_MARINE_QA_OUTPUT, generated.bytes);
+  });
+
   it('fails explicitly if the source chrome is absent instead of fabricating a replacement header', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
     await expect(generateSeaOperationPdf(fixture())).rejects.toThrow('modèle Word d’en-tête et de pied de page est indisponible');

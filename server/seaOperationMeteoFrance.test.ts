@@ -72,7 +72,49 @@ describe('public Météo-France MFWAM provider', () => {
     const result = await loadMeteoFranceForecast({ ...point, eta: '2026-10-22T16:31' }, { fetcher, now: NOW });
     expect(result.wind).toBeNull(); expect(result.waves).toBeNull();
     expect(result.windMessage).toContain('horizon');
+    expect(result.windMessage).toContain('dernière échéance disponible le 22/10/2026 à 14:00 UTC');
+    expect(result.wavesMessage).toBe(result.windMessage);
     expect(fetcher).toHaveBeenCalledTimes(1); expect(decode).not.toHaveBeenCalled();
+  });
+
+  it('reports the latest actual deadline across available runs without relying on catalogue order', async () => {
+    const fetcher = fixture([resource(2), resource(60, '2026-10-22T06:00:00Z'), resource(1)]);
+    const result = await loadMeteoFranceForecast({ ...point, eta: '2026-10-25T12:00' }, { fetcher, now: NOW });
+    expect(result.wind).toBeNull(); expect(result.waves).toBeNull();
+    expect(result.windMessage).toContain('dernière échéance disponible le 24/10/2026 à 18:00 UTC');
+    expect(result.wavesMessage).toBe(result.windMessage);
+    expect(fetcher).toHaveBeenCalledTimes(1); expect(decode).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes an ETA before the first published deadline from one beyond the horizon', async () => {
+    const fetcher = fixture([resource(3), resource(2)]);
+    const result = await loadMeteoFranceForecast({ ...point, eta: '2026-10-22T14:00' }, { fetcher, now: NOW });
+    expect(result.windMessage).toContain('précède la première échéance');
+    expect(result.windMessage).toContain('22/10/2026 à 14:00 UTC');
+    expect(result.windMessage).not.toContain('hors horizon');
+    expect(result.wavesMessage).toBe(result.windMessage);
+    expect(fetcher).toHaveBeenCalledTimes(1); expect(decode).not.toHaveBeenCalled();
+  });
+
+  it('explains an unpublished hour inside the available window instead of reporting an upstream outage', async () => {
+    const fetcher = fixture([resource(3), resource(1)]);
+    const result = await loadMeteoFranceForecast({ ...point, eta: '2026-10-22T16:00' }, { fetcher, now: NOW });
+    expect(result.windMessage).toContain('Une échéance Météo-France manque pour cette heure');
+    expect(result.windMessage).toContain('du 22/10/2026 à 13:00 UTC au 22/10/2026 à 15:00 UTC');
+    expect(result.windMessage).not.toMatch(/hors horizon|temporairement indisponibles/);
+    expect(result.wavesMessage).toBe(result.windMessage);
+    expect(fetcher).toHaveBeenCalledTimes(1); expect(decode).not.toHaveBeenCalled();
+  });
+
+  it('reports an empty exploitable catalogue separately from a network or malformed-catalogue failure', async () => {
+    const result = await loadMeteoFranceForecast(point, { fetcher: fixture([]), now: NOW });
+    expect(result.windMessage).toContain('Aucune échéance Météo-France exploitable');
+    expect(result.windMessage).not.toContain('hors horizon');
+    expect(result.wavesMessage).toBe(result.windMessage);
+    const malformed = vi.fn<typeof fetch>(async () => Response.json({}));
+    await expect(loadMeteoFranceForecast(point, { fetcher: malformed, now: NOW })).rejects.toThrow('catalogue Météo-France est invalide');
+    const offline = vi.fn<typeof fetch>().mockRejectedValue(new Error('Network unavailable'));
+    await expect(loadMeteoFranceForecast(point, { fetcher: offline, now: NOW })).rejects.toThrow('Network unavailable');
   });
 
   it.each([
@@ -110,6 +152,30 @@ describe('public Météo-France MFWAM provider', () => {
     expect(result.wind).toBeNull(); expect(result.waves).toBeNull();
     expect(result.wavesMessage).toContain('terrestre');
     expect(decode).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts only a decoder-confirmed marine fallback within ten kilometres and retains the requested coordinates', async () => {
+    decode.mockResolvedValue({ ...decoded(), latitude: point.latitude + 0.05, longitude: point.longitude, marineFallback: true });
+    const result = await loadMeteoFranceForecast(point, { fetcher: fixture(), now: NOW });
+    expect(result).toMatchObject({ latitude: point.latitude, longitude: point.longitude,
+      model: { latitude: point.latitude + 0.05, longitude: point.longitude, referenceTime: decoded().referenceTime } });
+    expect(result.waves?.heightMeters).toBe(decoded().heightMeters);
+    expect(result).not.toHaveProperty('marineFallback');
+  });
+
+  it.each([
+    ['beyond the geodesic radius', { latitude: point.latitude + 0.09 }],
+    ['only land wind without marine height/period', { heightMeters: null, periodSeconds: null }],
+    ['a different run', { referenceTime: '2026-10-22T06:00:00Z' }],
+    ['a different hour', { validTime: '2026-10-22T14:00:00Z' }],
+  ])('refuses a marked marine fallback with %s', async (_label, change) => {
+    decode.mockResolvedValue({ ...decoded(), latitude: point.latitude + 0.05, longitude: point.longitude, marineFallback: true, ...change });
+    await expect(loadMeteoFranceForecast(point, { fetcher: fixture(), now: NOW })).rejects.toThrow('ne correspond pas');
+  });
+
+  it('does not enlarge the ordinary half-cell guard for an unmarked result', async () => {
+    decode.mockResolvedValue({ ...decoded(), latitude: point.latitude + 0.05, longitude: point.longitude });
+    await expect(loadMeteoFranceForecast(point, { fetcher: fixture(), now: NOW })).rejects.toThrow('ne correspond pas');
   });
 
   it('preserves valid zero values and leaves individual invalid fields missing', async () => {

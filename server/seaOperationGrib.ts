@@ -10,6 +10,8 @@ export interface MfwamPointForecast {
   heightMeters: number | null;
   periodSeconds: number | null;
   swellDirectionDegrees: number | null;
+  /** Internal proof that a marine cell was selected within the bounded spatial search. */
+  marineFallback?: true;
 }
 
 export class SeaOperationGribError extends Error {
@@ -48,6 +50,9 @@ const PARAMETERS: Record<string, FieldSpec> = {
 const FIELD_COUNT = 5;
 const PATH = '/seapilot-mfwam.grib2';
 const EPSILON = 1e-7;
+const MARINE_RADIUS_KM = 10;
+const EARTH_RADIUS_KM = 6371.0088;
+const MAX_MARINE_CELLS = 4096;
 const require = createRequire(import.meta.url);
 let modulePromise: Promise<Eccodes> | undefined;
 let queue: Promise<void> = Promise.resolve();
@@ -134,11 +139,49 @@ function readDescriptor(handle: Handle, ordinal: number, spec: FieldSpec): Descr
   if (![0, 1].includes(bitmap) || packed < 0 || missing < 0 || packed + missing !== grid.points || !bitmap && missing !== 0) unsupported('taille du masque mer/terre incohérente');
   return { ordinal, spec, grid, bitmap, packed, missing, missingValue: numeric(handle, 'missingValue') };
 }
-function sample(handle: Handle, descriptor: Descriptor, index: number): number | null {
+type Cell = ReturnType<typeof nearest>;
+function distanceKm(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }): number {
+  const radians = Math.PI / 180;
+  const lat = (b.latitude - a.latitude) * radians;
+  const lon = longitude(b.longitude - a.longitude) * radians;
+  const value = Math.sin(lat / 2) ** 2 + Math.cos(a.latitude * radians) * Math.cos(b.latitude * radians) * Math.sin(lon / 2) ** 2;
+  return EARTH_RADIUS_KM * 2 * Math.asin(Math.sqrt(Math.min(1, value)));
+}
+
+/** Candidate bounds enclose the geodesic disk; distance filtering, not degrees, decides eligibility. */
+function marineNeighbours(grid: Grid, point: { latitude: number; longitude: number }, selected: Cell): Cell[] {
+  const angular = MARINE_RADIUS_KM / EARTH_RADIUS_KM;
+  const latitudeSpan = angular * 180 / Math.PI;
+  const nearPole = Math.abs(point.latitude) + latitudeSpan >= 90;
+  const longitudeSpan = nearPole ? 180 : Math.asin(Math.min(1, Math.sin(angular) / Math.cos(point.latitude * Math.PI / 180))) * 180 / Math.PI;
+  const x = selected.index % grid.ni + longitude(point.longitude - selected.longitude) / grid.lonStep;
+  const y = (point.latitude - grid.firstLat) / grid.latStep;
+  const dx = longitudeSpan / Math.abs(grid.lonStep);
+  const dy = latitudeSpan / Math.abs(grid.latStep);
+  const minI = Math.max(0, Math.ceil(x - dx - EPSILON));
+  const maxI = Math.min(grid.ni - 1, Math.floor(x + dx + EPSILON));
+  const minJ = Math.max(0, Math.ceil(y - dy - EPSILON));
+  const maxJ = Math.min(grid.nj - 1, Math.floor(y + dy + EPSILON));
+  if ((maxI - minI + 1) * (maxJ - minJ + 1) > MAX_MARINE_CELLS) unsupported('voisinage de recherche marine trop volumineux');
+  const cells: Array<Cell & { distance: number }> = [];
+  for (let j = minJ; j <= maxJ; j++) {
+    for (let i = minI; i <= maxI; i++) {
+      const index = j * grid.ni + i;
+      if (index === selected.index) continue;
+      const cell = { index, latitude: grid.firstLat + j * grid.latStep, longitude: longitude(grid.firstLon + i * grid.lonStep) };
+      const distance = distanceKm(point, cell);
+      if (distance <= MARINE_RADIUS_KM) cells.push({ ...cell, distance });
+    }
+  }
+  return cells.sort((a, b) => Math.abs(a.distance - b.distance) <= 1e-9 ? a.index - b.index : a.distance - b.distance);
+}
+
+function samples(handle: Handle, descriptor: Descriptor, cells: Cell[], selectedIndex: number): Map<number, number | null> {
   const values = handle.getDoubleArray('values');
   if (values.length !== descriptor.grid.points) unsupported('valeurs non développées sur la grille complète');
+  let bitmap: number[] | undefined;
   if (descriptor.bitmap) {
-    const bitmap = handle.getDoubleArray('bitmap');
+    bitmap = handle.getDoubleArray('bitmap');
     if (bitmap.length !== values.length) unsupported('masque de taille invalide');
     let packed = 0;
     for (const wet of bitmap) {
@@ -146,12 +189,16 @@ function sample(handle: Handle, descriptor: Descriptor, index: number): number |
       packed += wet;
     }
     if (packed !== descriptor.packed) unsupported('nombre de cellules du masque incohérent');
-    if (bitmap[index] === 0) return null;
   }
-  const value = values[index];
-  if (value === descriptor.missingValue) return null;
-  if (!Number.isFinite(value) || value < 0 || descriptor.spec.direction && value > 360) unsupported(`valeur du champ ${descriptor.spec.field} invalide`);
-  return value;
+  return new Map(cells.map(({ index }): [number, number | null] => {
+    if (bitmap?.[index] === 0 || values[index] === descriptor.missingValue) return [index, null];
+    const value = values[index];
+    if (!Number.isFinite(value) || value < 0 || descriptor.spec.direction && value > 360) {
+      if (index === selectedIndex) unsupported(`valeur du champ ${descriptor.spec.field} invalide`);
+      return [index, null];
+    }
+    return [index, value];
+  }));
 }
 
 async function decode(bytes: Uint8Array, point: { latitude: number; longitude: number }, targetTime: number): Promise<MfwamPointForecast> {
@@ -187,15 +234,26 @@ async function decode(bytes: Uint8Array, point: { latitude: number; longitude: n
     const descriptors = [...group.fields.values()];
     const grid = descriptors[0].grid;
     if (descriptors.some((descriptor) => JSON.stringify(descriptor.grid) !== JSON.stringify(grid))) unsupported('les champs ne partagent pas la même grille');
-    const cell = nearest(grid, point);
-    const result: MfwamPointForecast = { referenceTime: group.referenceTime, validTime: group.validTime, latitude: cell.latitude, longitude: cell.longitude,
-      windSpeedMps: null, windDirectionDegrees: null, heightMeters: null, periodSeconds: null, swellDirectionDegrees: null };
+    const requestedCell = nearest(grid, point);
+    const neighbours = marineNeighbours(grid, point, requestedCell);
+    const cells = [requestedCell, ...neighbours];
+    const sampled = new Map<Field, Map<number, number | null>>();
     const byOrdinal = new Map(descriptors.map((descriptor) => [descriptor.ordinal, descriptor]));
     ordinal = 0;
     eccodes.forEachMessage(PATH, (handle) => {
       const descriptor = byOrdinal.get(++ordinal);
-      if (descriptor) result[descriptor.spec.field] = sample(handle, descriptor, cell.index);
+      if (descriptor) sampled.set(descriptor.spec.field, samples(handle, descriptor, cells, requestedCell.index));
     });
+    const hasMarine = (cell: Cell) => {
+      const height = sampled.get('heightMeters')?.get(cell.index);
+      const period = sampled.get('periodSeconds')?.get(cell.index);
+      return (typeof height === 'number' && height >= 0 && height <= 100) || (typeof period === 'number' && period > 0 && period <= 100);
+    };
+    const cell = hasMarine(requestedCell) ? requestedCell : neighbours.find(hasMarine) ?? requestedCell;
+    const result: MfwamPointForecast = { referenceTime: group.referenceTime, validTime: group.validTime, latitude: cell.latitude, longitude: cell.longitude,
+      windSpeedMps: null, windDirectionDegrees: null, heightMeters: null, periodSeconds: null, swellDirectionDegrees: null,
+      ...(cell.index !== requestedCell.index ? { marineFallback: true } : {}) };
+    for (const field of descriptors) result[field.spec.field] = sampled.get(field.spec.field)?.get(cell.index) ?? null;
     return result;
   } finally {
     // ecCodes' iterator frees all C handles in finally; remove the input from MEMFS too.
@@ -203,7 +261,7 @@ async function decode(bytes: Uint8Array, point: { latitude: number; longitude: n
   }
 }
 
-/** No interpolation or move to a neighbouring sea cell. Provider enforces its ETA horizon. */
+/** No interpolation: a missing marine cell may use the closest marine neighbour within 10 km, at the same model time. */
 export function decodeMfwamPoint(bytes: Uint8Array, point: { latitude: number; longitude: number }, targetTime: number): Promise<MfwamPointForecast> {
   if (!(bytes instanceof Uint8Array) || bytes.length < 20 || bytes[0] !== 71 || bytes[1] !== 82 || bytes[2] !== 73 || bytes[3] !== 66 || bytes[7] !== 2
     || !Number.isFinite(point?.latitude) || Math.abs(point.latitude) > 90 || !Number.isFinite(point?.longitude) || Math.abs(point.longitude) > 180

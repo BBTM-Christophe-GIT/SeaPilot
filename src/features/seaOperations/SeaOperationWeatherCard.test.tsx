@@ -12,6 +12,23 @@ function point(): SeaOperationWaypoint {
       waves: { time: '2026-10-23T10:00:00Z', heightMeters: .6, periodSeconds: 6, directionDegrees: 220, component: 'swell' }, windMessage: '', wavesMessage: '' } };
 }
 describe('waypoint weather card', () => {
+  it('shows acquisition and prerequisite errors directly beside the waypoint', () => {
+    const record = point(); record.weather = undefined;
+    const view = render(<SeaOperationWeatherCard point={record} requestStatus={{ loading: true }} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Chargement des prévisions météo…');
+    view.rerender(<SeaOperationWeatherCard point={record} requestStatus={{ loading: false, error: 'Sélectionnez un projet du planning pour consulter la météo.' }} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Sélectionnez un projet du planning');
+    expect(screen.queryByText(/Prévisions météo non enregistrées/)).not.toBeInTheDocument();
+  });
+  it('keeps the saved metrics when a refresh fails and shows the actual nearby model location', () => {
+    const record = point();
+    record.weather!.model = { name: 'MFWAM', referenceTime: '2026-10-23T00:00:00Z', latitude: 49.675, longitude: -1.625 };
+    const { container } = render(<SeaOperationWeatherCard point={record} requestStatus={{ loading: false, error: 'Connexion météo indisponible.' }} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Les prévisions déjà enregistrées sont conservées.');
+    expect(container.textContent).toContain('0,60 m');
+    expect(container.textContent).toContain('12,5 nd');
+    expect(container.textContent).toContain('Point météo : 49.6750, -1.6250 · à 2,8 km du waypoint.');
+  });
   it('labels the swell period and Hs explicitly and keeps mean wind without gusts', () => {
     const { container } = render(<SeaOperationWeatherCard point={point()} matrix={GOURY_WEATHER_MATRIX} />);
     expect(screen.getByText('Période')).toBeVisible();

@@ -5,6 +5,8 @@ import { waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 import './seaOperationWeatherCard.css';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 import { SeaOperationWeatherObservationCard } from './SeaOperationWeatherObservationCard';
+import type { WeatherRequestStatus } from './seaOperationWeatherStatus';
+import { seaOperationWeatherLocation } from './seaOperationWeatherLocation';
 
 const integer = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
@@ -20,9 +22,10 @@ export function SeaStateIndicator({ assessment }: { assessment: VesselSeaStateAs
 }
 
 /** Recorded data only: this card neither fetches a forecast nor changes the captain's decision. */
-export function SeaOperationWeatherCard({ point, matrix, compact = false, showIndicator = true, variant = 'default', validatedAt, showObservations = false, observations }: {
+export function SeaOperationWeatherCard({ point, matrix, compact = false, showIndicator = true, variant = 'default', validatedAt, showObservations = false, observations, requestStatus }: {
   point: SeaOperationWaypoint; matrix?: VesselWeatherMatrix | null; compact?: boolean; showIndicator?: boolean; variant?: 'default' | 'editor';
   validatedAt?: string | null; showObservations?: boolean; observations?: readonly ObservationResult[];
+  requestStatus?: WeatherRequestStatus;
 }) {
   const forecast = waypointWeatherSnapshot(point);
   const assessment = evaluateVesselSeaState(matrix, forecast?.waves);
@@ -40,8 +43,11 @@ export function SeaOperationWeatherCard({ point, matrix, compact = false, showIn
       <div className="so-waypoint-weather-time"><span>ETA : {date.format(new Date(forecast.etaUtc))} UTC</span><span>{forecast.attribution}</span></div>
       {waves && <small className="so-waypoint-weather-model">Modèle houle : {date.format(new Date(waves.time))} UTC</small>}
       {forecast.wind && <small className="so-waypoint-weather-model">Modèle vent : {date.format(new Date(forecast.wind.time))} UTC</small>}
+      {forecast.model && <small className="so-waypoint-weather-model">{seaOperationWeatherLocation(forecast)}</small>}
       {assessment.hsRange && <small className="so-waypoint-weather-band">Matrice : Hs {assessment.hsRange} · {assessment.periodRange}</small>}
-    </> : <p className="so-waypoint-weather-unavailable">Prévisions météo non enregistrées pour cette position et cette ETA.</p>}
+    </> : <p className="so-waypoint-weather-unavailable" role={requestStatus ? 'status' : undefined}>{requestStatus?.error || (requestStatus?.loading ? 'Chargement des prévisions météo…' : 'Prévisions météo non enregistrées pour cette position et cette ETA.')}</p>}
+    {forecast && requestStatus?.loading && <small role="status" className="so-waypoint-weather-model">Actualisation des prévisions météo…</small>}
+    {forecast && requestStatus?.error && <p role="status" className="so-waypoint-weather-unavailable">{requestStatus.error} Les prévisions déjà enregistrées sont conservées.</p>}
     {validatedAt && <small className="so-waypoint-weather-model">Validation du Capitaine : {date.format(new Date(validatedAt))} UTC</small>}
     {showObservations && <SeaOperationWeatherObservationCard point={point} observations={observations} />}
   </div>;
