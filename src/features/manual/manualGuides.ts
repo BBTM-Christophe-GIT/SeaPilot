@@ -284,11 +284,12 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
   },
   humanResources: {
     purpose: 'Consulter votre fiche RH, mettre à jour vos informations personnelles et retrouver vos brevets.',
-    access: 'Le Marin accède à sa propre fiche. Il peut modifier les informations personnelles autorisées ; la gestion des documents et des autres collaborateurs reste réservée aux profils habilités.',
+    access: 'Le Marin accède à sa propre fiche et peut modifier les informations personnelles autorisées. Le Capitaine peut aussi ajouter des documents dans son dossier et ceux de sa bordée ; les autres actions de gestion restent réservées aux profils habilités.',
     steps: [
       { title: 'Consulter votre fiche', detail: 'Parcourez les onglets de votre profil pour vérifier vos coordonnées, vos informations professionnelles et vos documents.' },
       { title: 'Mettre à jour vos informations', detail: 'Cliquez sur Modifier la fiche RH, corrigez les champs disponibles, puis cliquez sur Enregistrer la fiche.' },
       { title: 'Vérifier vos brevets et visites médicales', detail: 'Consultez les documents et leurs échéances. Transmettez les nouveaux justificatifs au service chargé de les enregistrer.' },
+      { title: 'Ajouter un document comme Capitaine', detail: 'Ouvrez votre fiche ou celle d’un membre de votre bordée, puis Documents → Ajouter un document. Choisissez le brevet ou document, son échéance et le fichier. Le bouton reste accessible pendant l’enregistrement de votre fiche RH.' },
       { title: 'Renseigner votre signature', detail: 'Utilisez la rubrique de signature de votre profil pour disposer d’une signature active, nécessaire notamment pour signer les notes de service.' },
     ],
     reminders: ['Une alerte dans la cloche peut annoncer une échéance documentaire dans les 40 prochains jours.', 'Si aucune fiche n’est associée à votre compte, demandez à l’administrateur de vérifier le rattachement.'],

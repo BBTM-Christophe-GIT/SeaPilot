@@ -1088,6 +1088,93 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).queryByRole('button', { name: /^Supprimer CFBS/ })).not.toBeInTheDocument();
   });
 
+  it('keeps Captain document creation available while saving its own unrelated HR details', async () => {
+    const user = userEvent.setup();
+    const captain = { ...activePerson, id: 41, user_id: 'captain-auth-account', first_name: 'Camille', last_name: 'CAPITAINE' };
+    const catalog = [{ id: 25, source_item_id: 25, name: 'CFBS', category: 'Formation de Sécurité', file_name: 'CFBS' }];
+    let resolveProfile!: (value: { data: typeof captain; error: null }) => void;
+    const profileSave = new Promise<{ data: typeof captain; error: null }>((resolve) => { resolveProfile = resolve; });
+    const rpc = vi.fn().mockReturnValue(profileSave);
+    const client = { ...createClient([captain], [], [], catalog), rpc };
+    render(<HumanResourcesPage client={client as never} currentPersonId={captain.id} roles={['capitaine']} />);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Camille CAPITAINE' });
+    await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
+    await user.click(within(profile).getByRole('button', { name: 'Coordonnées' }));
+    fireEvent.change(within(profile).getByLabelText('Telephone'), { target: { value: '+33 6 55 44 33 22' } });
+    await user.click(within(profile).getByRole('button', { name: 'Enregistrer la fiche' }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('update_own_hr_profile', {
+      p_person_id: captain.id,
+      p_details: expect.objectContaining({ phone: '+33 6 55 44 33 22' }),
+    }));
+    try {
+      expect(within(profile).getByRole('button', { name: 'Enregistrement...' })).toBeDisabled();
+      await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+      const add = within(profile).getByRole('button', { name: 'Ajouter un document' });
+      expect(add).toBeEnabled();
+      await user.click(add);
+      const dialog = await screen.findByRole('dialog', { name: 'Ajouter un document pour Camille CAPITAINE' });
+      expect(within(dialog).getByLabelText('Brevet / document')).toBeEnabled();
+      expect(within(dialog).getByLabelText('Fichier')).toBeEnabled();
+      expect(within(dialog).getByLabelText("Date d'echeance")).toBeEnabled();
+      await user.click(within(dialog).getByRole('button', { name: 'Annuler' }));
+      expect(screen.queryByRole('dialog', { name: 'Ajouter un document pour Camille CAPITAINE' })).not.toBeInTheDocument();
+      expect(rpc).toHaveBeenCalledOnce();
+    } finally {
+      resolveProfile({ data: captain, error: null });
+      await screen.findByText('Fiche collaborateur mise a jour.');
+    }
+  });
+
+  it('keeps a Captain upload protected when profile saving finishes and enables retry after an upload failure', async () => {
+    const user = userEvent.setup();
+    const captain = { ...activePerson, id: 41, user_id: 'captain-auth-account', first_name: 'Camille', last_name: 'CAPITAINE' };
+    const catalog = [{ id: 25, source_item_id: 25, name: 'CFBS', category: 'Formation de Sécurité', file_name: 'CFBS' }];
+    const baseClient = createClient([captain], [], [], catalog);
+    const insert = vi.fn((payload: Record<string, unknown>) => ({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { ...documents[1], id: 144, ...payload }, error: null }) }) }));
+    let resolveProfile!: (value: { data: typeof captain; error: null }) => void;
+    const profileSave = new Promise<{ data: typeof captain; error: null }>((resolve) => { resolveProfile = resolve; });
+    const rpc = vi.fn().mockReturnValue(profileSave);
+    const client = { ...baseClient, rpc, from: vi.fn((table: string) => table === 'hr_documents' ? { ...baseClient.from(table), insert } : baseClient.from(table)) };
+    let rejectUpload!: (reason: Error) => void;
+    const pendingUpload = new Promise<Awaited<ReturnType<typeof writeHrDriveFile>>>((_, reject) => { rejectUpload = reject; });
+    vi.mocked(writeHrDriveFile).mockClear();
+    vi.mocked(writeHrDriveFile).mockImplementationOnce(() => pendingUpload);
+    render(<HumanResourcesPage client={client as never} currentPersonId={captain.id} roles={['capitaine']} />);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Camille CAPITAINE' });
+    await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
+    await user.click(within(profile).getByRole('button', { name: 'Enregistrer la fiche' }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledOnce());
+    await user.click(within(profile).getByRole('button', { name: 'Documents' }));
+    await user.click(within(profile).getByRole('button', { name: 'Ajouter un document' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Ajouter un document pour Camille CAPITAINE' });
+    fireEvent.change(within(dialog).getByLabelText("Date d'echeance"), { target: { value: '2030-06-30' } });
+    const file = new File(['isolated Captain certificate'], 'cfbs-capitaine.pdf', { type: 'application/pdf' });
+    await user.upload(within(dialog).getByLabelText('Fichier'), file);
+    const form = dialog.querySelector('form') as HTMLFormElement;
+    // A repeated submit event must not upload the same private file twice.
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await waitFor(() => expect(writeHrDriveFile).toHaveBeenCalledTimes(1));
+    expect(within(dialog).getByRole('button', { name: 'Chargement...' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Annuler' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Fermer' })).toBeDisabled();
+    expect(within(dialog).getByLabelText('Fichier')).toBeDisabled();
+    expect(insert).not.toHaveBeenCalled();
+    resolveProfile({ data: captain, error: null });
+    await screen.findByText('Fiche collaborateur mise a jour.');
+    expect(within(dialog).getByRole('button', { name: 'Chargement...' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Annuler' })).toBeDisabled();
+    rejectUpload(new Error('Upload temporairement indisponible'));
+    expect(await within(dialog).findByText("Impossible d'ajouter le document.")).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Creer le document' })).toBeEnabled();
+    expect(within(dialog).getByRole('button', { name: 'Annuler' })).toBeEnabled();
+    expect(within(dialog).getByLabelText('Fichier')).toBeEnabled();
+    fireEvent.submit(form);
+    expect(await screen.findByText('Document ajoute.')).toBeInTheDocument();
+    expect(writeHrDriveFile).toHaveBeenCalledTimes(2);
+    expect(insert).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ person_id: captain.id, title: 'Camille CAPITAINE - CFBS - 2030' }));
+  });
+
   it('edits metadata without a new file and refreshes the category, dates and alert counts', async () => {
     const user = userEvent.setup();
     const baseClient = createClient([activePerson]);
