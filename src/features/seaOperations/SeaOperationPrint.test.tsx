@@ -5,6 +5,16 @@ import type { SeaOperationRecord } from './seaOperationQueries';
 import { SeaOperationPrint } from './SeaOperationPrint';
 import { SEA_METEO_FRANCE_SOURCE_URL } from './seaOperationWeatherModel';
 import { GOURY_WEATHER_MATRIX } from '../fleet/vesselWeatherMatrix';
+import { SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL, SEA_METEO_FRANCE_OBSERVATIONS_URL, type ObservationResult } from './seaOperationWeatherObservationsModel';
+
+function recordedObservation(): ObservationResult {
+  const common = { observedAt: '2026-10-23T10:15:00Z', station: { id: '62001', name: 'Bouée Manche', latitude: 49.6, longitude: -1.6, distanceKm: 5.8 },
+    source: { provider: 'Météo-France' as const, sourceUrl: SEA_METEO_FRANCE_OBSERVATIONS_URL, license: 'Licence Ouverte 2.0',
+      licenseUrl: SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL, quality: 'not_provided' as const } };
+  return { pointId: 'recorded-wp', latitude: 49.65, longitude: -1.62, etaUtc: '2026-10-23T10:00:00Z', recordedAt: '2026-10-24T08:00:00Z',
+    wind: { ...common, speedKnots: 22, directionDegrees: 280, instrumentHeightMeters: 3 },
+    waves: { ...common, heightMeters: 4.2, periodSeconds: 11, directionDegrees: 250, component: 'total', periodKind: 'peak' }, status: 'recorded', message: '' };
+}
 
 describe('Opération en Mer printable content', () => {
   it('shows the prepared RH image without claiming a decision signature, and uses only the recorded snapshot once signed', () => {
@@ -74,7 +84,9 @@ describe('Opération en Mer printable content', () => {
           source: 'https://portsdenormandie.fr/en/harbour-masters-office/cherbourg', sourceLabel: 'Ports de Normandie', distanceNm: 0 }] } }];
     const record: SeaOperationRecord = { id: 'recorded-weather', companyId: 1, version: 1, status: 'signed', draft,
       createdBy: 'author', createdByName: 'Auteur', createdAt: '2026-10-22T08:00:00Z', updatedBy: 'captain', updatedByName: 'Capitaine', updatedAt: '2026-10-22T12:00:00Z',
-      signedBy: 'captain', signedByName: 'Capitaine', signedAt: '2026-10-22T12:00:00Z', captainName: 'Capitaine', canEdit: false, canSign: false };
+      signedBy: 'captain', signedByName: 'Capitaine', signedAt: '2026-10-22T12:00:00Z', captainName: 'Capitaine', canEdit: false, canSign: false, weatherObservations: [recordedObservation()] };
+    draft.decision = 'GO';
+    const original = structuredClone(record);
     const { container, rerender } = render(<SeaOperationPrint record={record} />);
     const passage = within(container.querySelector('.so-print-passage-section')!);
     const table = passage.getByRole('table', { name: 'Points de passage, contacts VHF et météo à l’ETA' });
@@ -88,7 +100,7 @@ describe('Opération en Mer printable content', () => {
     expect(within(table).queryByRole('columnheader', { name: 'Conditions de vie à bord' })).not.toBeInTheDocument();
     expect(within(table).getByRole('cell', { name: '<Approche du port>' })).toBeInTheDocument();
     expect(within(table).getByRole('cell', { name: /Cherbourg · Capitainerie · Ch 12/ })).toBeInTheDocument();
-    const weatherCell = within(table).getByRole('cell', { name: /État de mer prévu[\s\S]*Houle Hs/ });
+    const weatherCell = within(table).getByRole('cell', { name: /Prévision conservée à la validation[\s\S]*Houle Hs/ });
     expect(weatherCell.textContent).toMatch(/Période(?:moyenne)?6 s/);
     expect(weatherCell.textContent).toContain('Houle Hs0,60 m');
     expect(weatherCell.textContent).toContain('Vent moyen 10 m12 nd');
@@ -97,6 +109,14 @@ describe('Opération en Mer printable content', () => {
     expect(waypointCell.textContent).toBe('WP1');
     expect(waypointCell.querySelector('.so-sea-state')).toBeNull();
     expect(table.querySelectorAll('.so-sea-state')).toHaveLength(1);
+    expect(within(weatherCell).getByText('Hs de mer totale observée')).toBeInTheDocument();
+    expect(within(weatherCell).getByText('4,2 m · période de pic : 11 s')).toBeInTheDocument();
+    expect(within(weatherCell).getByText('Vent mesuré à 3 m')).toBeInTheDocument();
+    expect(within(weatherCell).getAllByText('Bouée Manche · 5,8 km · 23/10/2026 10:15 UTC')).toHaveLength(2);
+    expect(within(weatherCell).getAllByRole('link', { name: 'Licence Ouverte 2.0' })[0]).toHaveAttribute('href', SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL);
+    expect(passage.getByText(/Météo-France · consultée le/)).toHaveTextContent(SEA_METEO_FRANCE_OBSERVATIONS_URL);
+    expect(container.textContent).toContain('GO');
+    expect(record).toEqual(original);
     expect(passage.getByText(/Météo-France · consultée le/)).toHaveTextContent('MFWAM');
     expect(passage.getByText(/Annuaire vérifié le/)).toHaveTextContent('Ports de Normandie');
     expect(table.textContent).not.toMatch(/rafales|37 nd/i);
@@ -109,7 +129,7 @@ describe('Opération en Mer printable content', () => {
     delete draft.waypoints[0].radio; delete draft.waypoints[0].weather;
     rerender(<SeaOperationPrint record={record} />);
     expect(passage.getByRole('cell', { name: 'Contacts VHF non enregistrés.' })).toBeInTheDocument();
-    expect(passage.getByRole('cell', { name: /État de mer prévu[\s\S]*Prévisions météo non enregistrées/ })).toBeInTheDocument();
+    expect(passage.getByRole('cell', { name: /Prévision conservée à la validation[\s\S]*Prévisions météo non enregistrées/ })).toBeInTheDocument();
     expect(within(weatherCell).getByText('Hs / période indisponible')).toHaveClass('so-sea-state');
     expect(passage.queryByText(/Cherbourg|CROSS/)).not.toBeInTheDocument();
     delete draft.vessel.weatherMatrix;
@@ -119,5 +139,10 @@ describe('Opération en Mer printable content', () => {
     expect(container.querySelector('.so-print-passage .so-sea-state')).toBeNull();
     expect(weatherCell.textContent).toContain('Houle Hs0,60 m');
     expect(weatherCell.textContent).toMatch(/Période(?:moyenne)?6 s/);
+    rerender(<SeaOperationPrint record={{ ...record, status: 'draft' }} />);
+    expect(passage.queryByText('Mesures officielles après le passage')).not.toBeInTheDocument();
+    expect(passage.queryByText('Hs de mer totale observée')).not.toBeInTheDocument();
+    expect(passage.queryByRole('link', { name: 'Licence Ouverte 2.0' })).not.toBeInTheDocument();
+    expect(passage.getByText(/Météo-France · consultée le/)).not.toHaveTextContent(SEA_METEO_FRANCE_OBSERVATIONS_URL);
   });
 });

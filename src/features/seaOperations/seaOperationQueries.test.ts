@@ -3,7 +3,8 @@ import { webcrypto } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { emptySeaOperation } from './seaOperationModel';
 import { createEmptyVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
-import { fetchSeaOperationCaptainSignature, fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, loadSeaOperationSignature, mapSeaOperationRecord, saveSeaOperation, signSeaOperation } from './seaOperationQueries';
+import { fetchSeaOperationCaptainSignature, fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, mapSeaOperationRecord, saveSeaOperation, signSeaOperation } from './seaOperationQueries';
+import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 
 afterEach(() => vi.unstubAllGlobals());
 const signature = { signature_id: 17, signer_person_id: 4, signer_name: 'Arthur DUPONT', storage_bucket: 'working-time-signatures',
@@ -15,6 +16,9 @@ function record(overrides: Record<string, unknown> = {}) {
     updated_by: 'manager-id', updated_by_name: 'Armement réel', updated_at: '2026-10-16T09:00:00Z',
     signed_by: null, signed_by_name: null, signed_at: null, captain_name: null, can_edit: true, can_sign: false, ...overrides };
 }
+const observation = (): ObservationResult => ({ pointId: 'point-1', latitude: 49.65, longitude: -1.62,
+  etaUtc: '2026-10-23T10:00:00Z', recordedAt: '2026-10-24T08:00:00Z', wind: null, waves: null,
+  status: 'unavailable', message: 'Aucune mesure officielle proche disponible.' });
 
 describe('sea operation queries', () => {
   it('uses server permissions and orders real vessel options by decreasing length', async () => {
@@ -95,6 +99,62 @@ describe('sea operation queries', () => {
     const result = await signSeaOperation({ rpc } as unknown as SupabaseClient, { id: 'record-1', version: 3 }, ' Nom déclaré ', true);
     expect(rpc).toHaveBeenCalledWith('sea_operation_sign', { p_id: 'record-1', p_version: 3, p_captain_name: 'Nom déclaré', p_acknowledged: true });
     expect(result).toMatchObject({ status: 'signed', version: 4, signedBy: 'real-captain-id', signedByName: 'Capitaine authentifié', canEdit: false });
+  });
+
+  it('loads the measured annex separately for a signed revision without changing its saved form', async () => {
+    const signed = record({ status: 'signed', signed_at: '2026-10-23T08:00:00Z', can_edit: false });
+    const originalDraft = structuredClone(signed.draft);
+    const points = [observation()];
+    const rpc = vi.fn().mockImplementation(async (name: string) => ({ data: name === 'sea_operation_detail' ? signed : { operationId: 'record-1', points }, error: null }));
+    const result = await fetchSeaOperationDetail({ rpc } as unknown as SupabaseClient, 'record-1');
+    expect(result.weatherObservations).toEqual(points);
+    expect(result.draft).toEqual(originalDraft);
+    expect(result.weatherHistoryError).toBeUndefined();
+    expect(rpc).toHaveBeenNthCalledWith(2, 'sea_operation_weather_observations', { p_id: 'record-1' });
+    expect(signed.draft).toEqual(originalDraft);
+  });
+
+  it('does not collect a measured annex while an operation is a draft', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: record(), error: null });
+    const result = await fetchSeaOperationDetail({ rpc } as unknown as SupabaseClient, 'record-1');
+    expect(result.weatherObservations).toBeUndefined();
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['detail', 'sign'] as const)('keeps the valid signed %s readable when the measured annex cannot be read', async (action) => {
+    const signed = record({ status: 'signed', version: 4, signed_by: 'actual-captain', signed_by_name: 'Capitaine réel',
+      signed_at: '2026-10-23T08:00:00Z', can_edit: false, can_sign: false });
+    const rpc = vi.fn().mockImplementation(async (name: string) => name === 'sea_operation_weather_observations'
+      ? { data: null, error: { code: '42501', message: 'Lecture indisponible.' } } : { data: signed, error: null });
+    const client = { rpc } as unknown as SupabaseClient;
+    const result = action === 'detail' ? await fetchSeaOperationDetail(client, 'record-1')
+      : await signSeaOperation(client, { id: 'record-1', version: 3 }, 'Capitaine réel', true);
+    expect(result).toMatchObject({ id: 'record-1', status: 'signed', version: 4, signedBy: 'actual-captain', canEdit: false,
+      weatherHistoryError: 'Les mesures météo enregistrées sont temporairement indisponibles. Réessayez leur lecture.' });
+    expect(result.weatherObservations).toBeUndefined();
+    expect(result.draft).toEqual(signed.draft);
+  });
+
+  it('reads only the requested operation measured annex', async () => {
+    const points = [observation()];
+    const rpc = vi.fn().mockResolvedValue({ data: { operationId: 'record-1', points }, error: null });
+    expect(await fetchSeaOperationWeatherObservations({ rpc } as unknown as SupabaseClient, 'record-1')).toEqual(points);
+    expect(rpc).toHaveBeenCalledWith('sea_operation_weather_observations', { p_id: 'record-1' });
+  });
+
+  it('retains all points of an existing long passage plan without an artificial 64-point limit', async () => {
+    const points = Array.from({ length: 120 }, (_, index) => ({ ...observation(), pointId: `point-${index}` }));
+    const rpc = vi.fn().mockResolvedValue({ data: { operationId: 'record-1', points }, error: null });
+    expect(await fetchSeaOperationWeatherObservations({ rpc } as unknown as SupabaseClient, 'record-1')).toEqual(points);
+  });
+
+  it.each([
+    { operationId: 'another-operation', points: [] }, { operationId: 'record-1', points: null },
+    { operationId: 'record-1', points: [{ ...observation(), status: 'recorded' }] },
+    { operationId: 'record-1', points: [{ ...observation(), etaUtc: '2026-02-30T10:00:00Z' }] },
+  ])('rejects malformed or mismatched measured annexes %o', async (value) => {
+    const rpc = vi.fn().mockResolvedValue({ data: value, error: null });
+    await expect(fetchSeaOperationWeatherObservations({ rpc } as unknown as SupabaseClient, 'record-1')).rejects.toThrow('invalides');
   });
 
   it('propagates revision and permission failures instead of falling back to a writable form', async () => {

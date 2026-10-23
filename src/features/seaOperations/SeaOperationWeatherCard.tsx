@@ -3,6 +3,8 @@ import { evaluateVesselSeaState, type VesselSeaStateAssessment, type VesselWeath
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import { waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 import './seaOperationWeatherCard.css';
+import type { ObservationResult } from './seaOperationWeatherObservationsModel';
+import { SeaOperationWeatherObservationCard } from './SeaOperationWeatherObservationCard';
 
 const integer = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
@@ -18,14 +20,15 @@ export function SeaStateIndicator({ assessment }: { assessment: VesselSeaStateAs
 }
 
 /** Recorded data only: this card neither fetches a forecast nor changes the captain's decision. */
-export function SeaOperationWeatherCard({ point, matrix, compact = false, showIndicator = true, variant = 'default' }: {
+export function SeaOperationWeatherCard({ point, matrix, compact = false, showIndicator = true, variant = 'default', validatedAt, showObservations = false, observations }: {
   point: SeaOperationWaypoint; matrix?: VesselWeatherMatrix | null; compact?: boolean; showIndicator?: boolean; variant?: 'default' | 'editor';
+  validatedAt?: string | null; showObservations?: boolean; observations?: readonly ObservationResult[];
 }) {
   const forecast = waypointWeatherSnapshot(point);
   const assessment = evaluateVesselSeaState(matrix, forecast?.waves);
   const waves = forecast?.waves;
-  return <div className={`so-waypoint-weather-card${compact ? ' is-compact' : ''}${variant === 'editor' ? ' is-editor' : ''}${!forecast ? ' is-unavailable' : ''}`}>
-    <div className="so-waypoint-weather-heading"><span>État de mer prévu</span>{showIndicator && <SeaStateIndicator assessment={assessment} />}</div>
+  return <div className={`so-waypoint-weather-card${compact ? ' is-compact' : ''}${variant === 'editor' ? ' is-editor' : ''}${!forecast ? ' is-unavailable' : ''}${validatedAt ? ' is-validated' : ''}`}>
+    <div className="so-waypoint-weather-heading"><span>{validatedAt ? 'Prévision conservée à la validation' : 'État de mer prévu'}</span>{showIndicator && <SeaStateIndicator assessment={assessment} />}</div>
     {forecast ? <>
       <dl className="so-waypoint-weather-metrics">
         <div><dt><Waves size={15} aria-hidden="true" />Houle Hs</dt><dd>{amount(waves?.heightMeters ?? null, height)}<small> m</small></dd></div>
@@ -39,5 +42,7 @@ export function SeaOperationWeatherCard({ point, matrix, compact = false, showIn
       {forecast.wind && <small className="so-waypoint-weather-model">Modèle vent : {date.format(new Date(forecast.wind.time))} UTC</small>}
       {assessment.hsRange && <small className="so-waypoint-weather-band">Matrice : Hs {assessment.hsRange} · {assessment.periodRange}</small>}
     </> : <p className="so-waypoint-weather-unavailable">Prévisions météo non enregistrées pour cette position et cette ETA.</p>}
+    {validatedAt && <small className="so-waypoint-weather-model">Validation du Capitaine : {date.format(new Date(validatedAt))} UTC</small>}
+    {showObservations && <SeaOperationWeatherObservationCard point={point} observations={observations} />}
   </div>;
 }

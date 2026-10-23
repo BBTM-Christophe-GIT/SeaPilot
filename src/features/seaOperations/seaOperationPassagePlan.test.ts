@@ -4,6 +4,16 @@ import { emptySeaOperationWaypoint, type SeaOperationWaypoint } from './seaOpera
 import { SEA_METEO_FRANCE_SOURCE_URL } from './seaOperationWeatherModel';
 import { passagePlanCellData } from './seaOperationPassagePlan';
 import { GOURY_WEATHER_MATRIX } from '../fleet/vesselWeatherMatrix';
+import { SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL, SEA_METEO_FRANCE_OBSERVATIONS_URL, type ObservationResult } from './seaOperationWeatherObservationsModel';
+
+function recordedObservation(): ObservationResult {
+  const common = { observedAt: '2026-10-23T10:15:00Z', station: { id: '62001', name: 'Bouée Manche', latitude: 49.6, longitude: -1.6, distanceKm: 5.8 },
+    source: { provider: 'Météo-France' as const, sourceUrl: SEA_METEO_FRANCE_OBSERVATIONS_URL, license: 'Licence Ouverte 2.0',
+      licenseUrl: SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL, quality: 'not_provided' as const } };
+  return { pointId: 'route-1', latitude: 49.65, longitude: -1.62, etaUtc: '2026-10-23T10:00:00Z', recordedAt: '2026-10-24T08:00:00Z',
+    wind: { ...common, speedKnots: 22, directionDegrees: 280, instrumentHeightMeters: 3 },
+    waves: { ...common, heightMeters: 4.2, periodSeconds: 11, directionDegrees: 250, component: 'total', periodKind: 'peak' }, status: 'recorded', message: '' };
+}
 
 function recordedPoint(): SeaOperationWaypoint {
   return { ...emptySeaOperationWaypoint('route-1'), number: 'WP1', descriptionVhf: 'Approche du port', latitude: '49.65 N', longitude: '1.62 W', eta: '2026-10-23T12:00', ukc: '2 m',
@@ -72,5 +82,33 @@ describe('recorded Passage Plan presentation', () => {
     expect(passagePlanCellData(point, { weatherMatrix: GOURY_WEATHER_MATRIX }).seaState.code).toBe('outside_matrix');
     point.weather!.waves!.periodSeconds = null;
     expect(passagePlanCellData(point, { weatherMatrix: GOURY_WEATHER_MATRIX }).seaState.code).toBe('no_forecast');
+  });
+  it('keeps official measurements separate from the validated forecast and its original matrix assessment', () => {
+    const point = recordedPoint();
+    const observation = recordedObservation();
+    const original = structuredClone({ point, observation });
+    const row = passagePlanCellData(point, { weatherMatrix: GOURY_WEATHER_MATRIX, observations: [observation], includeObservations: true, validatedAt: '2026-10-22T12:00:00Z' });
+    expect(row.weather).toContain('Prévision conservée à la validation du 22/10/2026 12:00 UTC');
+    expect(row.weather).toContain('Houle Hs : 0,60 m');
+    expect(row.weather).toContain('Vent moyen 10 m : 12 nd');
+    expect(row.observedWeather).toContain('Hs de mer totale observée : 4,2 m · période de pic : 11 s');
+    expect(row.observedWeather).toContain('Vent mesuré à 3 m : 22 nd');
+    expect(row.seaState).toMatchObject({ code: 'comfortable', label: 'Confortable' });
+    expect(row.weather).not.toMatch(/rafales|37 nd|Rude|Hors matrice/i);
+    expect(row.weatherFootnote).toContain('Bouée Manche (62001) · 49.6, -1.6 · 5.8 km · 23/10/2026 10:15 UTC');
+    expect(row.weatherFootnote).toContain(SEA_METEO_FRANCE_OBSERVATIONS_URL);
+    expect(row.weatherFootnote).toContain(`Licence Ouverte 2.0 · ${SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL}`);
+    expect({ point, observation }).toEqual(original);
+  });
+  it('does not expose an annex for drafts or attach measured conditions to a changed waypoint', () => {
+    const point = recordedPoint();
+    const options = { observations: [recordedObservation()] };
+    const draft = passagePlanCellData(point, options);
+    expect(draft.observedWeather).toBe('');
+    expect(draft.observation).toBeUndefined();
+    expect(draft.weatherFootnote).not.toContain(SEA_METEO_FRANCE_OBSERVATIONS_URL);
+    const changed = passagePlanCellData({ ...point, eta: '2026-10-23T13:00' }, { ...options, includeObservations: true });
+    expect(changed.observation).toBeUndefined();
+    expect(changed.observedWeather).not.toContain('4,2 m');
   });
 });

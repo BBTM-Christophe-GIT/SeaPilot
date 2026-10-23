@@ -33,6 +33,14 @@ export function waypointWeatherSnapshot(point: SeaOperationWaypoint): SeaOperati
   return weather;
 }
 
+/** An unavailable refresh must not erase the forecast already consulted for this exact ETA. */
+export function preservedWaypointWeather(point: SeaOperationWaypoint, incoming: SeaOperationWaypointWeather): SeaOperationWaypointWeather | undefined {
+  const candidate = waypointWeatherSnapshot({ ...point, weather: incoming });
+  if (!candidate) return undefined;
+  const stored = waypointWeatherSnapshot(point);
+  return !candidate.wind && !candidate.waves && stored && (stored.wind || stored.waves) ? stored : candidate;
+}
+
 /** Radio contacts are an indicative directory capture, never a VTS/SAR boundary. */
 export function waypointRadioSnapshot(point: SeaOperationWaypoint): SeaOperationWaypointRadio | undefined {
   const radio = point.radio;
@@ -53,10 +61,11 @@ export function retainSeaOperationWeather(payload: SeaOperationPayload, weather:
   if (payload.planning?.projectId !== context.projectId) return payload;
   let changed = false;
   const waypoints = payload.waypoints.map((point) => {
-    if (point.id !== context.pointId || point.latitude !== context.latitude || point.longitude !== context.longitude || point.eta !== context.eta
-      || !waypointWeatherSnapshot({ ...point, weather }) || JSON.stringify(point.weather) === JSON.stringify(weather)) return point;
+    if (point.id !== context.pointId || point.latitude !== context.latitude || point.longitude !== context.longitude || point.eta !== context.eta) return point;
+    const retained = preservedWaypointWeather(point, weather);
+    if (!retained || JSON.stringify(point.weather) === JSON.stringify(retained)) return point;
     changed = true;
-    return { ...point, weather: structuredClone(weather) };
+    return { ...point, weather: structuredClone(retained) };
   });
   return changed ? { ...payload, waypoints } : payload;
 }

@@ -623,3 +623,7 @@ appropriée, du raccordement vertical vérifié et d’un budget explicitant tir
 réel, marée, fond, position, squat et mouvements. Aucun zéro, marge arbitraire ou
 intervalle de confiance inventé ne remplace ces données manquantes. Les cartes
 retrouvées ne fournissent pas ces sondes par leur seule emprise.
+
+## Conservation météo après validation
+
+Depuis la version 3.77.15, la validation du Capitaine conserve les prévisions disponibles avant la signature. Les observations officielles reçues après le passage sont enregistrées dans une annexe indépendante, avec leurs stations, horaires et sources ; elles ne modifient jamais la fiche signée. Voir [configuration et collecte quotidienne](./sea-operation-weather-history.md) et [sources officielles et couverture](./sea-operation-weather-observations.md).
