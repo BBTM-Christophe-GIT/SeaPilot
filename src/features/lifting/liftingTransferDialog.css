@@ -1,0 +1,22 @@
+.lifting-transfer-dialog { min-width: 0; color: var(--sp-text); font-family: var(--sp-font); }
+.lifting-transfer-item { display: grid; gap: var(--sp-space-1); margin: 0 0 var(--sp-space-3); overflow-wrap: anywhere; }
+.lifting-transfer-item > span, .lifting-transfer-help, .lifting-transfer-empty { color: var(--sp-muted); font-size: .8125rem; line-height: 1.5; }
+.lifting-transfer-dialog .lifting-fleet { padding: var(--sp-space-3); margin: var(--sp-space-3) 0; border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); background: var(--sp-surface); }
+.lifting-transfer-dialog .lifting-fleet-label { color: var(--sp-muted); }
+.lifting-transfer-dialog .lifting-fleet-heading h2 { color: var(--sp-heading); }
+.lifting-transfer-dialog .lifting-vessel-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: var(--sp-space-3); overflow: visible; padding: var(--sp-space-3) 0; }
+.lifting-transfer-dialog .lifting-vessel-card { width: 100%; max-width: none; min-height: 40px; color: var(--sp-text); }
+.lifting-transfer-dialog .lifting-vessel-photo { border-color: var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface); }
+.lifting-transfer-dialog .lifting-vessel-card:hover .lifting-vessel-photo { border-color: var(--sp-border-strong); box-shadow: var(--sp-shadow); }
+.lifting-transfer-dialog .lifting-vessel-card[aria-pressed=true] { color: var(--sp-primary); }
+.lifting-transfer-dialog .lifting-vessel-card[aria-pressed=true] .lifting-vessel-photo { border-color: var(--sp-primary); box-shadow: 0 0 0 2px var(--sp-primary-soft); }
+.lifting-transfer-dialog .lifting-vessel-check, .lifting-transfer-dialog .lifting-context-dot { background: var(--sp-primary); }
+.lifting-transfer-dialog .lifting-vessel-placeholder { color: var(--sp-muted); }
+.lifting-transfer-dialog .lifting-vessel-card:focus-visible { outline: 3px solid var(--sp-focus); outline-offset: 3px; }
+.lifting-transfer-dialog .lifting-fleet-scroll > span, .lifting-transfer-dialog .lifting-fleet-context { color: var(--sp-muted); }
+.lifting-transfer-destination { color: var(--sp-primary); font-size: .8125rem; }
+.lifting-transfer-actions .sp-button, .lifting-page .lifting-row-actions .lifting-transfer-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-space-2); min-height: 40px; }
+.lifting-page .lifting-row-actions:has(.lifting-transfer-button) { flex-wrap: wrap; justify-content: flex-end; max-width: 240px; }
+.lifting-page .lifting-row-actions .lifting-transfer-button { font-size: .75rem; }
+@media (pointer: coarse) { .lifting-transfer-actions .sp-button, .lifting-page .lifting-row-actions .lifting-transfer-button { min-height: 44px; } }
+@media (max-width: 680px) { .lifting-transfer-dialog .lifting-vessel-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

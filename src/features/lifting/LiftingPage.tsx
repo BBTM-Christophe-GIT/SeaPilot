@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Link, useNavigate, useOutletContext } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, Download, FileCheck2, Package, Pencil, Plus, Printer, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRightLeft, CheckCircle2, Download, FileCheck2, Package, Pencil, Plus, Printer, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
@@ -12,7 +12,7 @@ import { buildLiftingPaperPdf } from './liftingPaperPdf';
 import { LiftingIcon } from './LiftingIcons';
 import { LiftingControlForm, LiftingItemForm, LiftingStartForm } from './LiftingForms';
 import { INSPECTOR, KIND_LABELS, blankItem, liftingDeadline, canManageLifting, canRemoveLiftingItem, entryComplete, entryUnsatisfactory, formatLiftingDate, type InspectionEntry, type ItemDraft, type LiftingInspection, type LiftingItem, type LiftingKind, type LiftingVessel } from './liftingModel';
-import { deleteLiftingInspectionDraft, downloadLiftingReport, fetchLiftingCanStart, replaceLiftingItem, fetchInspectionEntries, fetchLiftingRegister, fetchLiftingPaperInventory, fetchLiftingVessels, fetchLiftingVesselExpiryCounts, loadLiftingStamp, publishLiftingInspection, saveInspectionEntries, saveLiftingItem, setLiftingItemActive, startLiftingInspection } from './liftingQueries';
+import { deleteLiftingInspectionDraft, downloadLiftingReport, fetchLiftingCanStart, replaceLiftingItem, fetchInspectionEntries, fetchLiftingRegister, fetchLiftingPaperInventory, fetchLiftingVessels, fetchLiftingVesselExpiryCounts, loadLiftingStamp, publishLiftingInspection, saveInspectionEntries, saveLiftingItem, setLiftingItemActive, startLiftingInspection, transferLiftingItem } from './liftingQueries';
 import { buildLiftingPdf, liftingReportFilename, saveLiftingBlob } from './liftingPdf';
 import { accessoryDefinition, groupByAccessory } from './liftingControls';
 import { LiftingFilters } from './LiftingFilters';
@@ -26,6 +26,8 @@ import { createLiftingPreviewClient } from './liftingPreview';
 import { LiftingVesselFilter } from './LiftingVesselFilter';
 import './liftingNavigation.css';
 import { LIFTING_SECTIONS, type LiftingSection } from './liftingSections';
+import { fleetAssetKind } from '../fleet/fleetDisplay';
+import { LiftingTransferDialog } from './LiftingTransferDialog';
 
 function messageOf(error: unknown) { return error && typeof error === 'object' && 'message' in error ? String(error.message) : 'Impossible de réaliser cette opération. Réessayez.'; }
 export function LiftingPage({ client, roles, section = 'lifting' }: { client?: SupabaseClient; roles?: RoleKey[]; section?: LiftingSection }) {
@@ -58,6 +60,13 @@ export function LiftingPage({ client, roles, section = 'lifting' }: { client?: S
   const [startOpen, setStartOpen] = useState(false);
   const [canStart, setCanStart] = useState(false);
   const [replacement, setReplacement] = useState<LiftingItem | null>(null);
+  const [transferItem, setTransferItem] = useState<LiftingItem | null>(null);
+  const transferPending = useRef<object | null>(null);
+  const mounted = useRef(true);
+  const companyId = vessels.find((candidate) => candidate.id === vesselId)?.company_id || 0;
+  const actorId = context?.userId || String(context?.currentPerson?.id || '');
+  const transferContext = useRef({ db, vesselId, section, manager, companyId, actorId });
+  transferContext.current = { db, vesselId, section, manager, companyId, actorId };
   const today = useLiftingToday();
   const [paperOpen, setPaperOpen] = useState(false);
   const [removeItem, setRemoveItem] = useState<LiftingItem | null>(null);
@@ -76,6 +85,12 @@ export function LiftingPage({ client, roles, section = 'lifting' }: { client?: S
   const filtered = inventoryItems.filter((item) => matchesLiftingItem(item, query, accessoryType));
   const displayedReports = inspections.filter((r) => !year || String(r.inspection_year) === year);
   const setNavigationBlocked = context?.setLiftingNavigationBlocked;
+
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; transferPending.current = null; }; }, []);
+  useEffect(() => {
+    setTransferItem(null);
+    if (transferPending.current) { transferPending.current = null; setBusy(false); }
+  }, [db, vesselId, section, manager, companyId, actorId]);
 
   useEffect(() => {
     setNavigationBlocked?.(busy || dirty);
@@ -154,12 +169,30 @@ export function LiftingPage({ client, roles, section = 'lifting' }: { client?: S
       else { const rows = await fetchInspectionEntries(db, selected.id); const pdf = await buildLiftingPdf(selected, rows); saveLiftingBlob(pdf.blob, pdf.filename); }
     });
   }
+  async function transferEquipment(targetVesselId: number) {
+    const item = transferItem;
+    const context = transferContext.current;
+    const destination = vessels.find((candidate) => candidate.id === targetVesselId && candidate.id !== item?.vessel_id && candidate.company_id === item?.company_id && candidate.active !== false && fleetAssetKind(candidate) === 'vessel');
+    if (busy || transferPending.current || !manager || !item?.active || !destination || context.db !== db || context.vesselId !== item.vessel_id || context.section !== item.kind || context.companyId !== item.company_id || context.actorId !== actorId || !context.manager) return;
+    if (!items.some((candidate) => candidate.id === item.id && candidate.updated_at === item.updated_at && candidate.active)) { setError('Le matériel a changé. Fermez cette fenêtre et rechargez le registre avant de le transférer.'); return; }
+    const request = {};
+    const isCurrent = () => mounted.current && transferPending.current === request && transferContext.current.db === db && transferContext.current.vesselId === item.vessel_id && transferContext.current.section === item.kind && transferContext.current.companyId === item.company_id && transferContext.current.actorId === actorId && transferContext.current.manager;
+    transferPending.current = request; setBusy(true); setError(''); setNotice('');
+    try {
+      await transferLiftingItem(db, item, destination.id);
+      if (!isCurrent()) return;
+      setItems((previous) => previous.filter((candidate) => candidate.id !== item.id));
+      setTransferItem(null); setExpiryRevision((revision) => revision + 1);
+      setNotice(`Matériel ${item.reference} transféré vers ${destination.name}.`);
+    } catch (reason) { if (isCurrent()) setError(messageOf(reason)); }
+    finally { if (mounted.current && transferPending.current === request) { transferPending.current = null; setBusy(false); } }
+  }
   return <section className="lifting-page">
     <header className="lifting-heading"><div><p className="lifting-eyebrow">LEVAGE · SÉCURITÉ DES ÉQUIPEMENTS</p><h1>{currentSection.title}</h1><p>{currentSection.description}</p></div><Link className="secondary-button" to="/modules/certificates"><FileCheck2 size={17} /> Certificats flotte</Link></header>
     {section === 'crane' ? <div className="lifting-crane"><LiftingIcon kind="crane" /><div><h2>Examen à Fond - Grue</h2><p>Cette section est réservée au contrôle de la grue. Les rapports existants restent disponibles dans les certificats du navire.</p><p>La première version du module couvre le registre des apparaux et les remorques.</p><Link to="/modules/certificates">Consulter les certificats flotte</Link></div></div> : <>
       <LiftingVesselFilter vessels={vessels} value={vesselId} disabled={busy || dirty} expiryCounts={expiryCounts} expiryLoading={expiryLoading} onChange={(id) => { setVesselId(id); context?.setLiftingVesselId?.(id); }} />
       {expiryError && <div className="lifting-error" role="alert">Pastilles d’échéance indisponibles : {expiryError}<button type="button" onClick={() => void refreshCounts()}>Réessayer les pastilles</button></div>}
-      {error && !replacement && !removeDraft && !paperOpen && !editor && !startOpen && !publishOpen && !removeItem && <div className="lifting-error" role="alert">{error}<button onClick={() => { setError(''); void reloadCurrentReport(); }}>Recharger</button></div>}
+      {error && !replacement && !transferItem && !removeDraft && !paperOpen && !editor && !startOpen && !publishOpen && !removeItem && <div className="lifting-error" role="alert">{error}<button onClick={() => { setError(''); void reloadCurrentReport(); }}>Recharger</button></div>}
       {notice && <p className="lifting-notice" role="status"><CheckCircle2 size={18} />{notice}</p>}
       {!report ? <>
         <div className="lifting-summary"><div><strong>{activeItems.length}</strong><span>matériels en inventaire</span></div><div><strong>{inspections.filter((r) => r.status === 'draft').length}</strong><span>contrôles en cours</span></div><div><strong>{inspections.filter((r) => r.status === 'published').length}</strong><span>rapports finalisés</span></div><div className="lifting-summary-actions"><button className="secondary-button" disabled={busy || loading || !vessels.length} onClick={() => { setError(''); setPaperOpen(true); }}><Printer size={18} /> Fiche de contrôle papier</button>{canStart && <button className="primary-button" disabled={busy || loading || !vessels.length} onClick={() => { setError(''); setStartOpen(true); }}><Plus size={18} /> Nouveau contrôle annuel</button>}</div></div>
@@ -167,7 +200,7 @@ export function LiftingPage({ client, roles, section = 'lifting' }: { client?: S
           {loading ? <p className="lifting-empty" role="status">Chargement du registre…</p> : view === 'inventory' ? <>
             <LiftingFilters items={inventoryItems} query={query} type={accessoryType} onQuery={setQuery} onType={setAccessoryType} count={filtered.length} context="inventaire" />
             <div className="lifting-filter"><label className="lifting-toggle"><input type="checkbox" checked={showInactive} onChange={(e) => { setShowInactive(e.target.checked); setAccessoryType(''); }} /> Inclure les matériels supprimés</label></div>
-            {!filtered.length ? <p className="lifting-empty">{query || accessoryType ? 'Aucun matériel ne correspond aux filtres.' : 'Aucun matériel dans cet inventaire.'}</p> : <>{groupByAccessory(filtered, (item) => item).map((group) => <section key={group.label} className="lifting-accessory-group" aria-label={group.label}><header><div><h3>{group.label}</h3><i lang="en">{group.definition?.en}</i></div><strong>{group.rows.length} matériel{group.rows.length > 1 ? 's' : ''}</strong></header><div className="lifting-item-list">{group.rows.map((item) => <article key={item.id} className={`lifting-item ${item.active ? liftingDeadline(item.inspection_due_on, today) : 'is-inactive'}`}><div className="lifting-id">{item.reference}</div><div className="lifting-item-main"><div className="lifting-item-title"><small>{accessoryLabel(item)}{!item.active ? ' · Supprimé de l’inventaire actif' : ''}</small><h3>{item.description}</h3></div><div className="lifting-item-metadata"><p>{item.location || 'Emplacement non renseigné'}{item.serial_number && ` · N° ${item.serial_number}`}</p><p className="lifting-lifecycle">Visite annuelle{item.commissioned_on && ` · Mise en service : ${formatLiftingDate(item.commissioned_on)}`}{item.last_control_on && ` · Dernier contrôle : ${formatLiftingDate(item.last_control_on)}`}</p>{item.active && <LiftingDueBadge date={item.inspection_due_on} today={today} />}</div><div className="lifting-item-details"><LiftingCertificates client={db} item={item} /><LiftingSourceDetails item={item} /></div></div><div className="lifting-cmu"><span>CMU</span><strong>{item.swl_tonnes === null ? '—' : `${item.swl_tonnes} t`}</strong></div>{(manager || (canRemoveItem && item.active)) && <div className="lifting-row-actions">{manager && item.active && <button className="lifting-icon-button" title="Remplacer" aria-label={`Remplacer ${item.reference}`} disabled={busy} onClick={() => { setError(''); setReplacement(item); }}><RefreshCw size={17} /></button>}{manager && <button className="lifting-icon-button" title="Modifier" aria-label={`Modifier ${item.reference}`} disabled={busy} onClick={() => { setError(''); setEditor({ id: item.id, draft: { ...item } }); }}><Pencil size={17} /></button>}{item.active && canRemoveItem ? <button className="lifting-icon-button" aria-label={`Supprimer ${item.reference}`} disabled={busy} onClick={() => { setError(''); setRemoveItem(item); }}><Trash2 size={17} /></button> : manager && !item.active ? <button className="lifting-icon-button" aria-label={`Restaurer ${item.reference}`} disabled={busy} onClick={() => void act(async () => { await setLiftingItemActive(db, item.id, true); setExpiryRevision((revision) => revision + 1); await reload(); })}><RotateCcw size={17} /></button> : null}</div>}</article>)}</div></section>)}</>}
+            {!filtered.length ? <p className="lifting-empty">{query || accessoryType ? 'Aucun matériel ne correspond aux filtres.' : 'Aucun matériel dans cet inventaire.'}</p> : <>{groupByAccessory(filtered, (item) => item).map((group) => <section key={group.label} className="lifting-accessory-group" aria-label={group.label}><header><div><h3>{group.label}</h3><i lang="en">{group.definition?.en}</i></div><strong>{group.rows.length} matériel{group.rows.length > 1 ? 's' : ''}</strong></header><div className="lifting-item-list">{group.rows.map((item) => <article key={item.id} className={`lifting-item ${item.active ? liftingDeadline(item.inspection_due_on, today) : 'is-inactive'}`}><div className="lifting-id">{item.reference}</div><div className="lifting-item-main"><div className="lifting-item-title"><small>{accessoryLabel(item)}{!item.active ? ' · Supprimé de l’inventaire actif' : ''}</small><h3>{item.description}</h3></div><div className="lifting-item-metadata"><p>{item.location || 'Emplacement non renseigné'}{item.serial_number && ` · N° ${item.serial_number}`}</p><p className="lifting-lifecycle">Visite annuelle{item.commissioned_on && ` · Mise en service : ${formatLiftingDate(item.commissioned_on)}`}{item.last_control_on && ` · Dernier contrôle : ${formatLiftingDate(item.last_control_on)}`}</p>{item.active && <LiftingDueBadge date={item.inspection_due_on} today={today} />}</div><div className="lifting-item-details"><LiftingCertificates client={db} item={item} /><LiftingSourceDetails item={item} /></div></div><div className="lifting-cmu"><span>CMU</span><strong>{item.swl_tonnes === null ? '—' : `${item.swl_tonnes} t`}</strong></div>{(manager || (canRemoveItem && item.active)) && <div className="lifting-row-actions">{manager && item.active && <button type="button" className="sp-button sp-button--secondary lifting-transfer-button" aria-label={`Transférer ${item.reference}`} disabled={busy} onClick={() => { setError(''); setTransferItem(item); }}><ArrowRightLeft size={16} aria-hidden="true" />Transférer</button>}{manager && item.active && <button className="lifting-icon-button" title="Remplacer" aria-label={`Remplacer ${item.reference}`} disabled={busy} onClick={() => { setError(''); setReplacement(item); }}><RefreshCw size={17} /></button>}{manager && <button className="lifting-icon-button" title="Modifier" aria-label={`Modifier ${item.reference}`} disabled={busy} onClick={() => { setError(''); setEditor({ id: item.id, draft: { ...item } }); }}><Pencil size={17} /></button>}{item.active && canRemoveItem ? <button className="lifting-icon-button" aria-label={`Supprimer ${item.reference}`} disabled={busy} onClick={() => { setError(''); setRemoveItem(item); }}><Trash2 size={17} /></button> : manager && !item.active ? <button className="lifting-icon-button" aria-label={`Restaurer ${item.reference}`} disabled={busy} onClick={() => void act(async () => { await setLiftingItemActive(db, item.id, true); setExpiryRevision((revision) => revision + 1); await reload(); })}><RotateCcw size={17} /></button> : null}</div>}</article>)}</div></section>)}</>}
           </> : <><div className="lifting-filter"><label>Année<select value={year} onChange={(e) => setYear(e.target.value)}><option value="">Toutes les années</option>{[...new Set(inspections.map((r) => r.inspection_year))].map((y) => <option key={y}>{y}</option>)}</select></label></div>{!displayedReports.length && <p className="lifting-empty">Aucun rapport pour cette sélection. Démarrez un contrôle annuel pour préparer le premier rapport.</p>}{displayedReports.map((r) => <article className={`lifting-report-row ${liftingDeadline(r.expires_on, today)}`} key={r.id}><FileCheck2 /><div><h3>{KIND_LABELS[r.kind]} · {r.inspection_year} · LEV-{r.id}</h3><p>Émission : {formatLiftingDate(r.issued_on)}</p><LiftingDueBadge date={r.expires_on} today={today} /></div><span className={`lifting-status ${r.status} ${liftingDeadline(r.expires_on, today)}`}>{r.status === 'draft' ? 'Brouillon' : 'Finalisé'}</span><button className="secondary-button" disabled={busy} onClick={() => void openReport(r)}>{r.status === 'draft' ? 'Reprendre' : 'Consulter'}</button><button className="lifting-icon-button" disabled={busy} aria-label={`Télécharger le rapport LEV-${r.id} du ${formatLiftingDate(r.issued_on)}`} onClick={() => void exportReport(r)}><Download size={18} /></button>{manager && r.status === 'draft' && <button className="lifting-icon-button is-danger" disabled={busy} title="Supprimer le brouillon" aria-label={`Supprimer le brouillon LEV-${r.id}`} onClick={() => { setError(''); setRemoveDraft(r); }}><Trash2 size={18} /></button>}</article>)}</>}
         </div>
       </> : <div className="lifting-content">
@@ -194,6 +227,7 @@ export function LiftingPage({ client, roles, section = 'lifting' }: { client?: S
       else await reload();
     })} />}
     {replacement && manager && <LiftingReplaceForm client={db} item={replacement} busy={busy} error={error} onClose={() => { setReplacement(null); setError(''); }} onSave={(date, files) => void act(async () => { await replaceLiftingItem(db, replacement, date, files); setExpiryRevision((revision) => revision + 1); setReplacement(null); await reload(); setNotice('Matériel remplacé. La visite annuelle repart de la nouvelle mise en service.'); })} />}
+    {transferItem && manager && section !== 'crane' && <LiftingTransferDialog key={`${transferItem.id}:${transferItem.vessel_id}:${transferItem.updated_at}`} item={transferItem} vessels={vessels} busy={busy} error={error} onClose={() => { if (!busy && !transferPending.current) { setTransferItem(null); setError(''); } }} onTransfer={transferEquipment} />}
     {removeDraft && manager && <AppDialog title="Supprimer le brouillon ?" icon={<Trash2 size={22} />} isBusy={busy} onClose={() => { setRemoveDraft(null); setError(''); void reload(); }} footer={<><button type="button" className="secondary-button" disabled={busy} onClick={() => { setRemoveDraft(null); setError(''); void reload(); }}>Annuler</button><button type="button" className="primary-button lifting-delete-button" disabled={busy} onClick={() => void act(async () => {
       await deleteLiftingInspectionDraft(db, removeDraft);
       const remaining = inspections.filter((inspection) => inspection.id !== removeDraft.id);

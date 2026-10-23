@@ -1,5 +1,15 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.13`, build `2026-10-23.011`, ajoute **Transférer** aux fiches actives
+des registres Apparaux de levage et Remorques pour Administration, Direction et
+Armement. La fenêtre présente les icônes des navires autorisés ; une confirmation
+déplace la fiche existante vers le navire choisi, sans changer de registre ni
+copier le matériel. Identité, dates et certificats suivent le matériel ; les
+rapports existants gardent leurs instantanés. Une référence déjà utilisée à
+destination ou une confirmation périmée bloque le transfert sans écriture.
+Appliquer `20261023084001_lifting_equipment_vessel_transfer.sql` avant le frontend.
+Aucune dépendance, configuration ni nouvelle note de mise à jour.
+
 Version `3.77.12`, build `2026-10-23.010`, compacte les fiches de waypoint du
 Passage Plan : champs regroupés, contacts VHF sur une ligne par contact et carte
 météo plus dense sans indicateur répété. Un clic sur l’ETA ouvre le calendrier
