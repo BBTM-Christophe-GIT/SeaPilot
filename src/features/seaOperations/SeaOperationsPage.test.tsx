@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptySeaOperation, DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, seaOperationToday, validateSeaOperation, type SeaOperationPayload } from './seaOperationModel';
-import { fetchSeaOperationCaptainSignature, fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, type SeaOperationData, type SeaOperationPlanningContext, type SeaOperationPlanningChoice, type SeaOperationRecord } from './seaOperationQueries';
+import { fetchSeaOperationCaptainSignature, fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, reviseSeaOperation, deleteSeaOperation, type SeaOperationData, type SeaOperationPlanningContext, type SeaOperationPlanningChoice, type SeaOperationRecord } from './seaOperationQueries';
 import { exportSeaOperationPdf } from './seaOperationPdf';
 import { SeaOperationsPage } from './SeaOperationsPage';
 import { fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries';
@@ -19,7 +19,7 @@ const chartsPanelMock = vi.hoisted(() => vi.fn());
 vi.mock('./seaOperationQueries', () => ({
   fetchSeaOperationData: vi.fn(), fetchSeaOperationDetail: vi.fn(), saveSeaOperation: vi.fn(), signSeaOperation: vi.fn(),
   fetchSeaOperationPlanning: vi.fn(), fetchSeaOperationCaptainSignature: vi.fn(), loadSeaOperationSignature: vi.fn().mockResolvedValue(null),
-  fetchSeaOperationWeatherObservations: vi.fn(),
+  fetchSeaOperationWeatherObservations: vi.fn(), reviseSeaOperation: vi.fn(), deleteSeaOperation: vi.fn(),
 }));
 vi.mock('./seaOperationValidationWeather', () => ({ captureSeaOperationValidationWeather: vi.fn() }));
 vi.mock('./seaOperationPdf', () => ({ exportSeaOperationPdf: vi.fn() }));
@@ -29,6 +29,7 @@ vi.mock('./SeaOperationChartsPanel', () => ({ SeaOperationChartsPanel: (props: R
 
 const captainAccount = { id: 'captain-server-account', name: 'Camille MARTIN', canSign: true };
 const sailorAccount = { id: 'sailor-server-account', name: 'Alex DUPONT', canSign: false };
+const adminAccount = { id: 'admin-server-account', name: 'Alice ADMIN', canSign: false };
 type Account = typeof captainAccount;
 
 function plannedMissions(date = seaOperationToday()): SeaOperationPlanningChoice[] {
@@ -128,13 +129,14 @@ function renderAccount(account: Account = captainAccount, record?: SeaOperationR
   vi.mocked(loadSeaOperationSignature).mockResolvedValue(null);
   vi.mocked(fetchSeaOperationProjectDocuments).mockResolvedValue([]);
   if (record) vi.mocked(fetchSeaOperationDetail).mockResolvedValue(record);
-  const view = render(<MemoryRouter initialEntries={['/modules/seaOperations']}><Routes>
-    <Route element={<><nav aria-label="Navigation principale"><Link to="/modules/fleet">Navires</Link></nav><Outlet context={{ client, previewMode }} /></>}>
+  const application = (outletClient = client) => <MemoryRouter initialEntries={['/modules/seaOperations']}><Routes>
+    <Route element={<><nav aria-label="Navigation principale"><Link to="/modules/fleet">Navires</Link></nav><Outlet context={{ client: outletClient, previewMode }} /></>}>
       <Route path="modules/seaOperations" element={<SeaOperationsPage />} />
       <Route path="modules/fleet" element={<h1>Flotte destination</h1>} />
     </Route>
-  </Routes></MemoryRouter>);
-  return { client, data, unmount: view.unmount };
+  </Routes></MemoryRouter>;
+  const view = render(application());
+  return { client, data, unmount: view.unmount, rerenderClient: (nextClient: typeof client) => view.rerender(application(nextClient)) };
 }
 
 async function openRecord(record: SeaOperationRecord) {
@@ -144,6 +146,7 @@ async function openRecord(record: SeaOperationRecord) {
 
 const formQueries = () => within(document.querySelector('.so-editor-form-pane')!);
 const footerQueries = () => within(screen.getByRole('dialog').querySelector('.app-dialog__footer')!);
+const recordActions = (record: SeaOperationRecord) => within(screen.getByRole('group', { name: `Actions pour ${record.draft.project || 'Opération sans titre'}` }));
 const stepButton = (index: number) => within(screen.getByRole('navigation', { name: 'Étapes de la préparation' })).getAllByRole('button')[index];
 const choiceQueries = (label: string) => within(formQueries().getByRole('group', { name: label }));
 const optionLabels: Record<string, string> = { yes: 'Oui', no: 'Non', nomade: 'NOMADE', email: 'Mail à la Capitainerie', armament: 'Armement', captain: 'Capitaine', agent: 'Agent consignataire', sms: 'Pas de mesures autres que le SMS', specific: 'Mesures spécifiques prises', GO: 'GO · la mission peut être réalisée', NO_GO: 'NO GO · la mission ne peut être réalisée' };
@@ -203,6 +206,270 @@ beforeEach(() => {
   vi.mocked(fetchSeaOperationWeatherObservations).mockResolvedValue([]);
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); document.body.style.overflow = ''; });
+
+function adminSignedRecord(): SeaOperationRecord {
+  const draft = waypointCaptureDraft();
+  draft.waypoints[0].weather = waypointWeather();
+  return recordFixture(adminAccount, { id: 'admin-signed-record', draft, status: 'signed', canEdit: false, canSign: false,
+    canRevise: true, canDelete: true, signedBy: captainAccount.id, signedByName: captainAccount.name,
+    signedAt: '2026-10-23T08:15:00Z', signatureSnapshot: profileSignature().snapshot });
+}
+function adminRevision(record: SeaOperationRecord): SeaOperationRecord {
+  const draft = structuredClone(record.draft);
+  draft.decision = '';
+  draft.signature.acknowledged = false;
+  return recordFixture(adminAccount, { id: 'admin-revised-preparation', version: 1, draft, canEdit: true, canSign: false,
+    canRevise: false, canDelete: true, previousRevisionId: record.id, signatureSnapshot: null });
+}
+
+describe('Opération en Mer administration with authenticated server permissions', () => {
+  it('places row actions outside the record button and opens editable drafts without revising or granting signature rights', async () => {
+    const record = recordFixture(adminAccount, { canDelete: true, canSign: false });
+    renderAccount(adminAccount, record);
+    await screen.findByRole('group', { name: `Actions pour ${record.draft.project}` });
+    expect(document.querySelector('.so-record button')).toBeNull();
+    expect(document.querySelector('.so-record-actions')?.closest('button')).toBeNull();
+    fireEvent.click(recordActions(record).getByRole('button', { name: 'Modifier' }));
+    await screen.findByRole('dialog', { name: 'Fiche Opération en Mer' });
+    expect(formQueries().getByLabelText('Description de l’opération')).toBeEnabled();
+    expect(reviseSeaOperation).not.toHaveBeenCalled();
+    await decisionStep();
+    expect(footerQueries().getByRole('button', { name: 'Signer la décision NO GO' })).toBeDisabled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it.each([captainAccount, sailorAccount])('keeps signed records readonly without server administration capabilities for $id', async (account) => {
+    const record = recordFixture(account, { status: 'signed', canEdit: true, canSign: true });
+    renderAccount(account, record);
+    await screen.findByRole('button', { name: new RegExp(record.draft.project) });
+    expect(screen.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Supprimer' })).not.toBeInTheDocument();
+    await openRecord(record);
+    expect(formQueries().getByLabelText('Projet')).toBeDisabled();
+    expect(footerQueries().queryByRole('button', { name: 'Modifier cette fiche' })).not.toBeInTheDocument();
+    expect(footerQueries().queryByRole('button', { name: 'Supprimer cette fiche' })).not.toBeInTheDocument();
+    expect(reviseSeaOperation).not.toHaveBeenCalled();
+    expect(deleteSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('requires an explicit confirmation before revising a signed record and cancels without a write', async () => {
+    const record = adminSignedRecord();
+    const original = structuredClone(record);
+    renderAccount(adminAccount, record);
+    await screen.findByRole('group', { name: `Actions pour ${record.draft.project}` });
+    fireEvent.click(recordActions(record).getByRole('button', { name: 'Modifier' }));
+    const confirmation = screen.getByRole('dialog', { name: 'Modifier une fiche signée' });
+    expect(within(confirmation).getByText(/La version signée restera conservée dans l’historique/)).toBeVisible();
+    expect(reviseSeaOperation).not.toHaveBeenCalled();
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Annuler' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(recordActions(record).getByRole('button', { name: 'Modifier' })).toBeEnabled();
+    expect(record).toEqual(original);
+    expect(reviseSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('waits for the signed-record revision and opens only the new editable preparation without inheriting the captain signature', async () => {
+    const original = adminSignedRecord();
+    const immutable = structuredClone(original);
+    const revised = adminRevision(original);
+    const pending = deferred<SeaOperationRecord>();
+    const { client } = renderAccount(adminAccount, original);
+    vi.mocked(reviseSeaOperation).mockReturnValue(pending.promise);
+    await screen.findByRole('group', { name: `Actions pour ${original.draft.project}` });
+    fireEvent.click(recordActions(original).getByRole('button', { name: 'Modifier' }));
+    const confirmation = screen.getByRole('dialog', { name: 'Modifier une fiche signée' });
+    const confirm = within(confirmation).getByRole('button', { name: 'Créer la nouvelle préparation' });
+    fireEvent.click(confirm); fireEvent.click(confirm);
+    expect(reviseSeaOperation).toHaveBeenCalledExactlyOnceWith(client, { id: original.id, version: original.version });
+    expect(confirmation).toHaveAttribute('aria-busy', 'true');
+    for (const button of within(confirmation).getAllByRole('button')) expect(button).toBeDisabled();
+    expect(document.querySelector('.so-screen')).toHaveAttribute('inert');
+    expect(document.querySelectorAll('.so-record-entry')).toHaveLength(1);
+    await userEvent.keyboard('{Escape}');
+    expect(confirmation).toBeInTheDocument();
+    await act(async () => pending.resolve(revised));
+    expect(await formQueries().findByText(/Nouvelle préparation créée/)).toBeVisible();
+    expect(screen.queryByRole('dialog', { name: 'Modifier une fiche signée' })).not.toBeInTheDocument();
+    expect(formQueries().getByLabelText('Projet')).toBeEnabled();
+    expect(formQueries().getByRole('button', { name: 'Version précédente signée' })).toBeVisible();
+    expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue(revised.draft.description);
+    expect(capturingWeatherPanel().waypoints).toEqual(revised.draft.waypoints);
+    expect(sessionStorage.length).toBe(0);
+    await decisionStep();
+    expect(formQueries().getByRole('checkbox', { name: /En qualité de Capitaine/ })).not.toBeChecked();
+    expect(formQueries().queryByRole('img', { name: /Signature de/ })).not.toBeInTheDocument();
+    expect(footerQueries().getByRole('button', { name: 'Signer la décision' })).toBeDisabled();
+    expect(original).toEqual(immutable);
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Annuler' }));
+    expect(document.querySelectorAll('.so-record-entry')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /NO GO/ })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { code: '40001', message: 'La fiche a été modifiée. Rechargez-la.' },
+    { code: '42501', message: 'Cette modification est réservée aux administrateurs.' },
+  ])('retains a signed record and shows a revision failure inside its confirmation: $code', async (failure) => {
+    const record = adminSignedRecord();
+    renderAccount(adminAccount, record);
+    vi.mocked(reviseSeaOperation).mockRejectedValue(failure);
+    await screen.findByRole('group', { name: `Actions pour ${record.draft.project}` });
+    fireEvent.click(recordActions(record).getByRole('button', { name: 'Modifier' }));
+    const confirmation = within(screen.getByRole('dialog', { name: 'Modifier une fiche signée' }));
+    fireEvent.click(confirmation.getByRole('button', { name: 'Créer la nouvelle préparation' }));
+    expect(await confirmation.findByRole('alert')).toHaveTextContent(failure.message);
+    expect(confirmation.getByRole('button', { name: 'Créer la nouvelle préparation' })).toBeEnabled();
+    expect(document.querySelectorAll('.so-record-entry')).toHaveLength(1);
+    expect(screen.queryByRole('dialog', { name: 'Fiche Opération en Mer' })).not.toBeInTheDocument();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('opens the previous signed version as history and returns to the current preparation without reinserting history in the register', async () => {
+    const original = adminSignedRecord();
+    const revised = adminRevision(original);
+    const historical = { ...original, supersededById: revised.id, canEdit: false, canSign: false, canRevise: false, canDelete: false };
+    renderAccount(adminAccount, revised);
+    vi.mocked(fetchSeaOperationDetail).mockImplementation(async (_client, id) => id === original.id ? historical : revised);
+    await openRecord(revised);
+    fireEvent.click(formQueries().getByRole('button', { name: 'Version précédente signée' }));
+    expect(await formQueries().findByText('Cette version signée est conservée dans l’historique.')).toBeVisible();
+    expect(formQueries().getByLabelText('Projet')).toBeDisabled();
+    expect(footerQueries().queryByRole('button', { name: /Modifier cette fiche|Supprimer cette fiche/ })).not.toBeInTheDocument();
+    expect(capturingWeatherPanel().waypoints).toEqual(historical.draft.waypoints);
+    expect(document.querySelectorAll('.so-record-entry')).toHaveLength(1);
+    fireEvent.click(formQueries().getByRole('button', { name: 'Version suivante' }));
+    await waitFor(() => expect(formQueries().getByLabelText('Projet')).toBeEnabled());
+    expect(formQueries().getByRole('button', { name: 'Version précédente signée' })).toBeVisible();
+    expect(fetchSeaOperationDetail).toHaveBeenCalledWith(expect.anything(), original.id);
+    expect(fetchSeaOperationDetail).toHaveBeenLastCalledWith(expect.anything(), revised.id);
+    expect(document.querySelectorAll('.so-record-entry')).toHaveLength(1);
+    expect(reviseSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it.each(['draft', 'signed'] as const)('cancels removal of an administered %s without deleting it', async (status) => {
+    const record = { ...adminSignedRecord(), status, canEdit: status === 'draft' };
+    renderAccount(adminAccount, record);
+    await screen.findByRole('group', { name: `Actions pour ${record.draft.project}` });
+    fireEvent.click(recordActions(record).getByRole('button', { name: 'Supprimer' }));
+    const confirmation = screen.getByRole('dialog', { name: 'Supprimer cette fiche du registre ?' });
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Annuler' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.querySelectorAll('.so-record-entry')).toHaveLength(1);
+    expect(deleteSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it.each(['draft', 'signed'] as const)('removes an open %s only after server confirmation and clears its editor and print copy', async (status) => {
+    const record = { ...adminSignedRecord(), status, canEdit: status === 'draft', canRevise: status === 'signed' };
+    const pending = deferred<void>();
+    const { client } = renderAccount(adminAccount, record);
+    vi.mocked(deleteSeaOperation).mockReturnValue(pending.promise);
+    await openRecord(record);
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Supprimer cette fiche' }));
+    const confirmation = screen.getByRole('dialog', { name: 'Supprimer cette fiche du registre ?' });
+    const confirm = within(confirmation).getByRole('button', { name: 'Supprimer' });
+    fireEvent.click(confirm); fireEvent.click(confirm);
+    expect(deleteSeaOperation).toHaveBeenCalledExactlyOnceWith(client, { id: record.id, version: record.version });
+    expect(document.querySelectorAll('.so-record-entry')).toHaveLength(1);
+    for (const button of within(confirmation).getAllByRole('button')) expect(button).toBeDisabled();
+    await act(async () => pending.resolve());
+    expect(await screen.findByText('Opération supprimée du registre.')).toBeVisible();
+    expect(document.querySelectorAll('.so-record-entry')).toHaveLength(0);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.querySelector('.so-page > .so-print')).toBeNull();
+    expect(screen.getByText('Préparez votre première opération en mer')).toBeVisible();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('keeps a failed deletion visible in the confirmation and retries the same expected revision', async () => {
+    const record = adminSignedRecord();
+    const { client } = renderAccount(adminAccount, record);
+    vi.mocked(deleteSeaOperation).mockRejectedValueOnce({ code: '40001', message: 'Rechargez la fiche avant de la supprimer.' }).mockResolvedValueOnce();
+    await screen.findByRole('group', { name: `Actions pour ${record.draft.project}` });
+    fireEvent.click(recordActions(record).getByRole('button', { name: 'Supprimer' }));
+    const confirmation = within(screen.getByRole('dialog', { name: 'Supprimer cette fiche du registre ?' }));
+    fireEvent.click(confirmation.getByRole('button', { name: 'Supprimer' }));
+    expect(await confirmation.findByRole('alert')).toHaveTextContent('Rechargez la fiche avant de la supprimer.');
+    expect(document.querySelectorAll('.so-record-entry')).toHaveLength(1);
+    fireEvent.click(confirmation.getByRole('button', { name: 'Supprimer' }));
+    expect(await screen.findByText('Opération supprimée du registre.')).toBeVisible();
+    expect(deleteSeaOperation).toHaveBeenCalledTimes(2);
+    expect(deleteSeaOperation).toHaveBeenLastCalledWith(client, { id: record.id, version: record.version });
+    expect(reviseSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it.each(['revise', 'delete'] as const)('ignores a late %s result after the authenticated client changes', async (kind) => {
+    const original = adminSignedRecord();
+    const revised = adminRevision(original);
+    const pending = deferred<SeaOperationRecord>();
+    const view = renderAccount(adminAccount, original);
+    if (kind === 'revise') vi.mocked(reviseSeaOperation).mockReturnValue(pending.promise);
+    else vi.mocked(deleteSeaOperation).mockImplementation(async () => { await pending.promise; });
+    await screen.findByRole('group', { name: `Actions pour ${original.draft.project}` });
+    fireEvent.click(recordActions(original).getByRole('button', { name: kind === 'revise' ? 'Modifier' : 'Supprimer' }));
+    const confirmation = within(screen.getByRole('dialog', { name: kind === 'revise' ? 'Modifier une fiche signée' : 'Supprimer cette fiche du registre ?' }));
+    fireEvent.click(confirmation.getByRole('button', { name: kind === 'revise' ? 'Créer la nouvelle préparation' : 'Supprimer' }));
+    const other = recordFixture(sailorAccount, { id: 'other-company-record', companyId: 2, canEdit: false,
+      draft: { ...noGoDraft(), project: 'Autre société à conserver' } });
+    vi.mocked(fetchSeaOperationData).mockResolvedValue({ ...view.data, companyId: 2, actorId: sailorAccount.id, actorName: sailorAccount.name, records: [other] });
+    view.rerenderClient({ fixtureAccountId: sailorAccount.id });
+    expect(await screen.findByRole('button', { name: /Autre société à conserver/ })).toBeVisible();
+    await act(async () => pending.resolve(revised));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Autre société à conserver/ })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: new RegExp(original.draft.project) })).not.toBeInTheDocument();
+    expect(document.querySelectorAll('.so-record-entry')).toHaveLength(1);
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('disables administration actions while the signed PDF export is pending', async () => {
+    const record = adminSignedRecord();
+    const pending = deferred<string | null>();
+    renderAccount(adminAccount, record);
+    vi.mocked(loadSeaOperationSignature).mockReturnValue(pending.promise);
+    vi.mocked(exportSeaOperationPdf).mockResolvedValue({ bytes: new Uint8Array(), filename: 'operation.pdf', pageCount: 1 });
+    await openRecord(record);
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Exporter le PDF' }));
+    expect(footerQueries().getByRole('button', { name: 'Modifier cette fiche' })).toBeDisabled();
+    expect(footerQueries().getByRole('button', { name: 'Supprimer cette fiche' })).toBeDisabled();
+    for (const button of recordActions(record).getAllByRole('button')) expect(button).toBeDisabled();
+    await act(async () => pending.resolve(null));
+    await waitFor(() => expect(footerQueries().getByRole('button', { name: 'Modifier cette fiche' })).toBeEnabled());
+    expect(reviseSeaOperation).not.toHaveBeenCalled();
+    expect(deleteSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('does not let a previous client detail failure clear a new account deletion in progress', async () => {
+    const original = adminSignedRecord();
+    const staleDetail = deferred<SeaOperationRecord>();
+    const pendingDelete = deferred<void>();
+    const view = renderAccount(adminAccount, original);
+    vi.mocked(fetchSeaOperationDetail).mockImplementation(async () => { await staleDetail.promise; throw new Error('Ancienne lecture à ignorer.'); });
+    fireEvent.click(await screen.findByRole('button', { name: new RegExp(original.draft.project) }));
+    expect(fetchSeaOperationDetail).toHaveBeenCalledWith(view.client, original.id);
+    const other = recordFixture(adminAccount, { id: 'other-admin-record', companyId: 2, canDelete: true,
+      draft: { ...noGoDraft(), project: 'Préparation du second compte' } });
+    vi.mocked(fetchSeaOperationData).mockResolvedValue({ ...view.data, companyId: 2, actorId: 'other-admin-account', records: [other] });
+    vi.mocked(deleteSeaOperation).mockReturnValue(pendingDelete.promise);
+    view.rerenderClient({ fixtureAccountId: 'other-admin-account' });
+    await screen.findByRole('group', { name: `Actions pour ${other.draft.project}` });
+    fireEvent.click(recordActions(other).getByRole('button', { name: 'Supprimer' }));
+    const confirmation = screen.getByRole('dialog', { name: 'Supprimer cette fiche du registre ?' });
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Supprimer' }));
+    await act(async () => staleDetail.resolve(original));
+    expect(confirmation).toHaveAttribute('aria-busy', 'true');
+    expect(within(confirmation).getByRole('button', { name: 'Traitement…' })).toBeDisabled();
+    expect(screen.queryByText('Ancienne lecture à ignorer.')).not.toBeInTheDocument();
+    await act(async () => pendingDelete.resolve());
+    expect(await screen.findByText('Opération supprimée du registre.')).toBeVisible();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});
 
 describe('Opération en Mer with authenticated server permission fixtures', () => {
   it('keeps fullscreen placements and existing captures through return, save and reopening', async () => {

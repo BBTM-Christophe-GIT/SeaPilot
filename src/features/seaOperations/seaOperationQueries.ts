@@ -23,6 +23,10 @@ export interface SeaOperationRecord {
   /** Permissions come from the authenticated server account, including assignments. */
   canEdit: boolean;
   canSign: boolean;
+  canRevise?: boolean;
+  canDelete?: boolean;
+  previousRevisionId?: string | null;
+  supersededById?: string | null;
   signatureSnapshot?: SeaOperationSignatureSnapshot | null;
   signatureUrl?: string;
   /** Post-passage measurements are a separate annex, never part of the signed draft. */
@@ -108,6 +112,8 @@ export function mapSeaOperationRecord(value: unknown): SeaOperationRecord {
     updatedBy: String(row.updated_by), updatedByName: String(row.updated_by_name), updatedAt: String(row.updated_at),
     signedBy: nullableText(row.signed_by), signedByName: nullableText(row.signed_by_name), signedAt: nullableText(row.signed_at),
     captainName: nullableText(row.captain_name), canEdit: row.can_edit === true, canSign: row.can_sign === true,
+    canRevise: row.can_revise === true, canDelete: row.can_delete === true,
+    previousRevisionId: nullableText(row.previous_revision_id), supersededById: nullableText(row.superseded_by_id),
     signatureSnapshot: mapSignature(row.signature_snapshot),
   };
 }
@@ -180,6 +186,23 @@ export async function saveSeaOperation(
   return hydrateSignature(client, mapSeaOperationRecord(await rpc(client, 'sea_operation_save', {
     p_id: existing?.id ?? null, p_version: existing?.version ?? null, p_draft: draft,
   })));
+}
+
+/** An administrator prepares a new unsigned revision; the signed source stays immutable. */
+export async function reviseSeaOperation(
+  client: SupabaseClient, record: Pick<SeaOperationRecord, 'id' | 'version'>,
+): Promise<SeaOperationRecord> {
+  return hydrateSignature(client, mapSeaOperationRecord(await rpc(client, 'sea_operation_revise', {
+    p_id: record.id, p_version: record.version,
+  })));
+}
+
+/** Deletion is acknowledged by the server before removing the record from the register. */
+export async function deleteSeaOperation(
+  client: SupabaseClient, record: Pick<SeaOperationRecord, 'id' | 'version'>,
+): Promise<void> {
+  const result = await rpc(client, 'sea_operation_delete', { p_id: record.id, p_version: record.version });
+  if (result.id !== record.id || result.deleted !== true) throw new Error('La suppression de cette opération n’a pas été confirmée.');
 }
 
 /** Signs an already persisted revision; identity, permission and timestamps are server-derived. */
