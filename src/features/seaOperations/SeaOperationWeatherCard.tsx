@@ -18,13 +18,13 @@ export function SeaStateIndicator({ assessment }: { assessment: VesselSeaStateAs
 }
 
 /** Recorded data only: this card neither fetches a forecast nor changes the captain's decision. */
-export function SeaOperationWeatherCard({ point, matrix, compact = false, showIndicator = true }: {
-  point: SeaOperationWaypoint; matrix?: VesselWeatherMatrix | null; compact?: boolean; showIndicator?: boolean;
+export function SeaOperationWeatherCard({ point, matrix, compact = false, showIndicator = true, variant = 'default' }: {
+  point: SeaOperationWaypoint; matrix?: VesselWeatherMatrix | null; compact?: boolean; showIndicator?: boolean; variant?: 'default' | 'editor';
 }) {
   const forecast = waypointWeatherSnapshot(point);
   const assessment = evaluateVesselSeaState(matrix, forecast?.waves);
   const waves = forecast?.waves;
-  return <div className={`so-waypoint-weather-card${compact ? ' is-compact' : ''}`}>
+  return <div className={`so-waypoint-weather-card${compact ? ' is-compact' : ''}${variant === 'editor' ? ' is-editor' : ''}${!forecast ? ' is-unavailable' : ''}`}>
     <div className="so-waypoint-weather-heading"><span>État de mer prévu</span>{showIndicator && <SeaStateIndicator assessment={assessment} />}</div>
     {forecast ? <>
       <dl className="so-waypoint-weather-metrics">

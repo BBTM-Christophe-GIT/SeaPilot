@@ -15,15 +15,16 @@ import { SeaOperationRadioPanel } from './SeaOperationRadioPanel';
 import { SeaOperationWeatherPanel } from './SeaOperationWeatherPanel';
 import { SeaOperationHydroSources } from './SeaOperationHydroSources';
 import { SeaOperationChartsPanel } from './SeaOperationChartsPanel';
-import { captureSeaOperationRadios, retainSeaOperationWeather, updateSeaOperationWaypoint, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
+import { captureSeaOperationRadios, retainSeaOperationWeather, updateSeaOperationWaypoint } from './seaOperationWaypointSnapshots';
 import type { SeaOperationWeatherCaptureContext } from './seaOperationWaypointSnapshots';
 import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { passagePlanCellData } from './seaOperationPassagePlan';
-import { cloneVesselWeatherMatrix, evaluateVesselSeaState, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
-import { SeaOperationWeatherCard, SeaStateIndicator } from './SeaOperationWeatherCard';
+import { cloneVesselWeatherMatrix, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
+import { SeaOperationWeatherCard } from './SeaOperationWeatherCard';
 import { SeaOperationRouteMap } from './SeaOperationRouteMap';
 import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
+import { SeaOperationEtaPicker } from './SeaOperationEtaPicker';
 import type { SeaPosition } from './seaOperationNavigation';
 
 const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'];
@@ -460,10 +461,10 @@ export function SeaOperationsPage() {
               const proposedEta = legacyEta && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(point.eta) && /^\d{4}-\d{2}-\d{2}$/.test(operationDate) ? `${operationDate}T${point.eta}` : '';
               const navigation = passagePlanCellData(point, { allowLiveRadio: !signed, weatherMatrix: draft.vessel.weatherMatrix });
               return <div className="so-passage-row" role="row" key={point.id}>
-                {([['number', 'Waypoint', 'number'], ['descriptionVhf', 'Description', 'description'], ['latitude', 'Latitude', 'latitude'], ['longitude', 'Longitude', 'longitude'], ['ukc', 'UKC', 'ukc']] as const).map(([key, label, variant]) => <label role="cell" className={`so-passage-field is-${variant}`} key={key}><span>{label}</span><input aria-label={`${label} · point ${index + 1}`} type="text" value={point[key]} onChange={(event) => waypointUpdate(index, { [key]: event.target.value })} />{key === 'number' && <SeaStateIndicator assessment={evaluateVesselSeaState(draft.vessel.weatherMatrix, waypointWeatherSnapshot(point)?.waves)} />}</label>)}
-                <div role="cell" className="so-passage-field is-vhf"><span>Contacts VHF</span><p>{navigation.vhf}</p></div>
-                <div role="cell" className="so-passage-field is-weather"><span>Prévisions météo</span><SeaOperationWeatherCard point={point} matrix={draft.vessel.weatherMatrix} compact /></div>
-                <label role="cell" className="so-passage-field is-eta"><span>ETA · date et heure</span><input aria-label={`ETA · date et heure · point ${index + 1}`} type="datetime-local" value={legacyEta ? '' : point.eta} onChange={(event) => waypointUpdate(index, { eta: event.target.value })} />{legacyEta && <small className="so-help">Ancienne ETA : {point.eta}. Renseignez une date et une heure pour la remplacer.</small>}{proposedEta && <button type="button" className="sp-button sp-button--secondary" aria-label={`Appliquer la date de l’opération à l’ETA du point ${index + 1}`} onClick={() => waypointUpdate(index, { eta: proposedEta })}>Utiliser le {operationDate.split('-').reverse().join('/')} à {point.eta}</button>}</label>
+                {([['number', 'Waypoint', 'number'], ['descriptionVhf', 'Description', 'description'], ['latitude', 'Latitude', 'latitude'], ['longitude', 'Longitude', 'longitude'], ['ukc', 'UKC', 'ukc']] as const).map(([key, label, variant]) => <label role="cell" className={`so-passage-field is-${variant}`} key={key}><span>{label}</span><input aria-label={`${label} · point ${index + 1}`} type="text" value={point[key]} onChange={(event) => waypointUpdate(index, { [key]: event.target.value })} /></label>)}
+                <div role="cell" className="so-passage-field is-vhf"><span>Contacts VHF</span><p>{navigation.vhf.split('\n\n').map((contact) => contact.replace(/\n/g, ' · ')).join('\n')}</p></div>
+                <div role="cell" className="so-passage-field is-weather"><span>Prévisions météo</span><SeaOperationWeatherCard point={point} matrix={draft.vessel.weatherMatrix} compact variant="editor" /></div>
+                <div role="cell" className="so-passage-field is-eta"><span>ETA · date et heure</span><SeaOperationEtaPicker label={`ETA · date et heure · point ${index + 1}`} value={point.eta} disabled={!editable || signed || busy || exporting} onChange={(eta) => { if (eta !== point.eta) waypointUpdate(index, { eta }); }} />{legacyEta && <small className="so-help">Ancienne ETA : {point.eta}. Renseignez une date et une heure pour la remplacer.</small>}{proposedEta && <button type="button" className="sp-button sp-button--secondary" aria-label={`Appliquer la date de l’opération à l’ETA du point ${index + 1}`} onClick={() => waypointUpdate(index, { eta: proposedEta })}>Utiliser le {operationDate.split('-').reverse().join('/')} à {point.eta}</button>}</div>
                 <label role="cell" className="so-passage-field is-traffic"><input aria-label={`Zone maritime à trafic dense · point ${index + 1}`} type="checkbox" checked={point.denseTraffic} onChange={(event) => waypointUpdate(index, { denseTraffic: event.target.checked })} /><span>Zone maritime à trafic dense</span></label>
                 <div role="cell" className="so-passage-field is-actions"><button type="button" className="so-secondary sp-button sp-button--secondary" aria-label={`Supprimer le point ${index + 1}`} onClick={() => update({ waypoints: draft.waypoints.filter((_, i) => i !== index) })}><Trash2 size={15} /></button></div>
               </div>;
