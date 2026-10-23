@@ -448,7 +448,8 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     vi.mocked(signSeaOperation).mockImplementation(async (_client, saved) => ({ ...record, ...saved, draft: structuredClone(storedDraft), status: 'signed', canEdit: false, canSign: false, version: 5 }));
     await openRecord(record);
     await userEvent.click(stepButton(2));
-    expect(formQueries().getAllByText('Peu confortable')).toHaveLength(2);
+    expect(formQueries().getByText('Peu confortable').closest('.so-waypoint-weather-card')).toHaveClass('is-editor');
+    expect(document.querySelector('.so-passage-field.is-number .so-sea-state')).toBeNull();
     if (action === 'sign') {
       await decisionStep();
       await userEvent.click(screen.getByRole('button', { name: 'Signer la décision NO GO' }));
