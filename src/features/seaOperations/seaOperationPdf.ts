@@ -250,15 +250,20 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   const height = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const integer = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
   const metric = (amount: number | null | undefined, unit: string, formatter = decimal) => amount === null || amount === undefined ? '—' : `${formatter.format(amount)} ${unit}`;
-  const weatherCards = form.waypoints.map((point) => {
+  const weatherColumnWidth = 225;
+  const weatherCards = form.waypoints.map((point, index) => {
     const forecast = waypointWeatherSnapshot(point);
+    const row = passageRows[index];
+    document.setFont('helvetica', 'bold'); document.setFontSize(8);
+    const indicatorLines = row.hasSeaStateIndicator ? document.splitTextToSize(clean(row.seaState.label), weatherColumnWidth - 34) as string[] : [];
+    const indicatorHeight = indicatorLines.length ? indicatorLines.length * 10 + 16 : 0;
     document.setFont('helvetica', 'normal'); document.setFontSize(7.5);
     const message = forecast ? forecast.waves ? '' : forecast.wavesMessage || 'Prévision de houle indisponible.' : 'Prévisions météo non enregistrées pour cette position et cette ETA.';
-    const messageLines = message ? document.splitTextToSize(clean(message), 114) as string[] : [];
+    const messageLines = message ? document.splitTextToSize(clean(message), weatherColumnWidth - 26) as string[] : [];
     const windLines = forecast?.wind ? [metric(forecast.wind.speedKnots, 'nd') + (forecast.wind.directionDegrees === null ? '' : ` · de ${integer.format(forecast.wind.directionDegrees)}°`)]
-      : document.splitTextToSize(clean(forecast?.windMessage || 'Prévision de vent indisponible.'), 102) as string[];
-    return { forecast, messageLines, windLines,
-      height: forecast ? 114 + messageLines.length * 10 + windLines.length * 10 : 33 + messageLines.length * 10 };
+      : document.splitTextToSize(clean(forecast?.windMessage || 'Prévision de vent indisponible.'), weatherColumnWidth - 38) as string[];
+    return { forecast, messageLines, windLines, indicatorLines, indicatorHeight,
+      height: indicatorHeight + (forecast ? 114 + messageLines.length * 10 + windLines.length * 10 : 33 + messageLines.length * 10) };
   });
   if (passageRows.length) {
     document.setFont('helvetica', 'normal'); document.setFontSize(8.5);
@@ -268,14 +273,12 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     // Keep the repeated header with the first text/card block, even when a missing forecast makes its card shorter.
     page(firstRowHeight + 32);
   }
-  if (passageRows.length) table(passageRows.map((row) => [row.waypoint, row.description, row.latitude, row.longitude, row.ukc, row.eta, row.vhf, row.weather, row.hasSeaStateIndicator ? row.seaState.label : '—', row.denseTraffic]),
-    ['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA - Date / heure', 'Contacts VHF', 'Météo à l’ETA', 'Conditions de vie à bord', 'Trafic dense'],
-    { 0: { cellWidth: 45 }, 1: { cellWidth: 105 }, 2: { cellWidth: 60 }, 3: { cellWidth: 60 }, 4: { cellWidth: 35 }, 5: { cellWidth: 73 }, 6: { cellWidth: 106 }, 7: { cellWidth: 140 }, 8: { cellWidth: 85 }, 9: { cellWidth: PAGE_HEIGHT - LEFT - RIGHT - 709 } }, true, {
+  if (passageRows.length) table(passageRows.map((row) => [row.waypoint, row.description, row.latitude, row.longitude, row.ukc, row.eta, row.vhf, row.weather, row.denseTraffic]),
+    ['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA - Date / heure', 'Contacts VHF', 'Météo à l’ETA', 'Trafic dense'],
+    { 0: { cellWidth: 45 }, 1: { cellWidth: 105 }, 2: { cellWidth: 60 }, 3: { cellWidth: 60 }, 4: { cellWidth: 35 }, 5: { cellWidth: 73 }, 6: { cellWidth: 106 }, 7: { cellWidth: weatherColumnWidth }, 8: { cellWidth: PAGE_HEIGHT - LEFT - RIGHT - 709 } }, true, {
       didParseCell(cell) {
         if (cell.section === 'head' && cell.column.index === 0) cell.cell.styles.cellPadding = 3;
         if (cell.section !== 'body') return;
-        const row = passageRows[cell.row.index];
-        if (cell.column.index === 8 && row.hasSeaStateIndicator) cell.cell.text = [];
         if (cell.column.index === 7) {
           // The cell reserves the measured card height; the vector card is drawn below without rasterizing its text.
           cell.cell.text = [];
@@ -290,24 +293,22 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
         document.roundedRect(cell.cell.x + 5, cell.cell.y + 5, cell.cell.width - 10, weatherCards[cell.row.index].height, 5, 5, 'FD');
       },
       didDrawCell(cell) {
-        if (cell.section !== 'body') return;
+        if (cell.section !== 'body' || cell.column.index !== 7) return;
         const row = passageRows[cell.row.index];
-        if (cell.column.index === 8 && row.hasSeaStateIndicator) {
-          const colors = SEA_STATE_COLORS[row.seaState.tone];
-          document.setFont('helvetica', 'bold'); document.setFontSize(8);
-          const lines = document.splitTextToSize(clean(row.seaState.label), cell.cell.width - 20) as string[];
-          document.setFillColor(...colors.background);
-          document.roundedRect(cell.cell.x + 5, cell.cell.y + 6, cell.cell.width - 10, lines.length * 10 + 10, 3, 3, 'F');
-          document.setTextColor(...colors.foreground);
-          document.text(lines, cell.cell.x + 10, cell.cell.y + 18, { lineHeightFactor: 1.25 });
-        }
-        if (cell.column.index !== 7) return;
         const card = weatherCards[cell.row.index];
         const forecast = card.forecast;
         const x = cell.cell.x + 12;
         let top = cell.cell.y + 19;
         document.setFont('helvetica', 'bold'); document.setFontSize(6.5); document.setTextColor(87, 104, 117);
-        document.text('MÉTÉO À L’ETA', x, top); top += 9;
+        document.text('MÉTÉO À L’ETA', x, top); top += 10;
+        if (card.indicatorLines.length) {
+          const colors = SEA_STATE_COLORS[row.seaState.tone];
+          document.setFillColor(...colors.background);
+          document.roundedRect(x - 1, top - 3, cell.cell.width - 22, card.indicatorHeight - 6, 3, 3, 'F');
+          document.setFont('helvetica', 'bold'); document.setFontSize(8); document.setTextColor(...colors.foreground);
+          document.text(card.indicatorLines, x + 4, top + 10, { lineHeightFactor: 1.25 });
+          top += card.indicatorHeight;
+        }
         if (forecast) {
           const metricColumn = (cell.cell.width - 24) / 2;
           document.setFont('helvetica', 'normal'); document.setFontSize(7); document.setTextColor(87, 104, 117);

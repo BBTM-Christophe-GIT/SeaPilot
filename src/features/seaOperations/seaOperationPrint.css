@@ -12,9 +12,8 @@
 .so-print .so-print-passage th:nth-child(5) { width: 4.71%; }
 .so-print .so-print-passage th:nth-child(6) { width: 9.81%; }
 .so-print .so-print-passage th:nth-child(7) { width: 14.25%; }
-.so-print .so-print-passage th:nth-child(8) { width: 18.82%; }
-.so-print .so-print-passage th:nth-child(9) { width: 11.43%; }
-.so-print .so-print-passage th:nth-child(10) { width: 4.69%; }
+.so-print .so-print-passage th:nth-child(8) { width: 30.25%; }
+.so-print .so-print-passage th:nth-child(9) { width: 4.69%; }
 .so-print-passage caption { text-align: left; font-size: .9em; padding-bottom: 6px; }
 .so-print-passage-sources section { break-inside: avoid; }
 .so-print-passage-sources h4 { font-size: inherit; margin: 10px 0 3px; }

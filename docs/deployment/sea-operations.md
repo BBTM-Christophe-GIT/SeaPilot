@@ -416,8 +416,10 @@ fournie par un client ne peut pas remplacer celle de Navires. La signature garde
 la copie sauvegardée, même si la configuration du navire change ensuite.
 Les anciennes fiches signées sans copie restent sans évaluation ; aucune fiche
 historique n’est réécrite. Le tableau HTML et le PDF paysage reprennent la carte
-météo, avec leurs sources et horaires conservés. L’indicateur du document a sa
-propre colonne **Conditions de vie à bord** ; il n’est pas répété dans Waypoint.
+météo, avec leurs sources et horaires conservés. Depuis la version **3.77.10**,
+l’indicateur du document apparaît dans la carte **Météo à l’ETA** de chaque
+waypoint ; la colonne séparée **Conditions de vie à bord** est supprimée.
+L’indicateur n’est pas répété dans la colonne Waypoint.
 
 La migration `20261023051322_vessel_weather_limits.sql` doit précéder le
 frontend. Elle ajoute la validation de la matrice et sa capture canonique,
@@ -428,9 +430,9 @@ sans modifier les règles de société, RLS, affectation ou signature existantes
 
 Le chapitre 3 du PDF utilise une page **A4 paysage** : environ 744 points utiles
 contre 497 en portrait. Les colonnes Waypoint, Description, Latitude, Longitude,
-UKC, ETA, Contacts VHF, Prévisions météo, Conditions de vie à bord et Trafic dense
-restent lisibles sans
-réduire excessivement la police. Les en-têtes du tableau sont répétés à chaque
+UKC, ETA, Contacts VHF, Prévisions météo et Trafic dense restent lisibles sans
+réduire excessivement la police. Les neuf colonnes donnent plus de largeur à
+la carte météo et à son indicateur. Les en-têtes du tableau sont répétés à chaque
 page. Les sources et horaires des copies sont détaillés sous le tableau.
 Les autres chapitres restent en portrait. Les fragments vectoriels d’en-tête et
 de pied du formulaire Word sont réutilisés à leurs dimensions d’origine et

@@ -46,6 +46,24 @@ function fixture(): SeaOperationRecord {
     signedBy: 'test-captain', signedByName: 'Capitaine de test', signedAt: '2026-10-16T09:15:00Z', captainName: 'Capitaine de test', canEdit: false, canSign: false };
 }
 const template = () => readFile(new URL('../../../public/templates/sea-operation/word-header-footer.pdf', import.meta.url));
+
+async function landscapeBodies(bytes: Uint8Array): Promise<string[]> {
+  const document = await PDFDocument.load(bytes);
+  return document.getPages().filter((page) => page.getWidth() > page.getHeight()).map((page) => {
+    const objects = page.node.Resources()!.lookup(PDFName.of('XObject'), PDFDict);
+    const body = objects.lookup(objects.keys()[0]);
+    if (!(body instanceof PDFRawStream)) throw new Error('Expected the generated body stream');
+    return Buffer.from(decodePDFRawStream(body).decode()).toString('latin1');
+  });
+}
+
+function textPositions(body: string, text: string) {
+  return [...body.matchAll(/BT\n([\s\S]*?)\nET/g)].filter((match) => match[1].includes(`(${text}) Tj`)).map((match) => {
+    const position = /([\d.-]+) ([\d.-]+) Td/.exec(match[1]);
+    if (!position) throw new Error(`Expected a text position for ${text}`);
+    return { x: Number(position[1]), y: Number(position[2]), commands: match[1] };
+  });
+}
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Sea operation PDF', () => {
@@ -90,10 +108,10 @@ describe('Sea operation PDF', () => {
     expect(passage).toContain('(Carte du parcours)');
     expect(passage).toContain('Natural Earth');
     expect(passage).toContain('(1/.../8)');
-    expect(passage.indexOf('(Carte du parcours)')).toBeLessThan(passage.indexOf('(Conditions de vie'));
+    expect(passage.indexOf('(Carte du parcours)')).toBeLessThan(passage.indexOf('(Waypoint)'));
     expect(passage).toContain('(Waypoint)');
     expect(passage).toContain('(Contacts VHF)');
-    expect(passage).toContain('(Conditions de vie');
+    expect(passage).not.toContain('(Conditions de vie');
     expect(passage).toContain('Houle Hs');
     expect(passage).toContain('Période');
     expect(passage).toContain('(Confortable)');
@@ -125,6 +143,7 @@ describe('Sea operation PDF', () => {
       }).join('\n');
     };
     expect(await textOf(old.bytes)).not.toContain('Matrice non renseignée');
+    expect(await textOf(old.bytes)).not.toContain('(Confortable)');
     expect(await textOf(old.bytes)).toContain('Houle Hs');
     record.draft.vessel.weatherMatrix = structuredClone(GOURY_WEATHER_MATRIX);
     record.draft.waypoints[0].weather!.waves!.heightMeters = 4;
@@ -132,6 +151,50 @@ describe('Sea operation PDF', () => {
     expect(current).toContain('(Hors matrice)');
     expect(current).toContain('(Confortable)');
     expect(current).toContain('GO - La mission peut');
+  });
+
+  it('uses nine columns and draws each captured assessment inside its own weather card, never in Waypoint', async () => {
+    const record = fixture();
+    record.draft.description = 'Opération';
+    record.draft.waypoints = record.draft.waypoints.slice(0, 4);
+    const [calm, rough, stale, undefinedBand] = record.draft.waypoints;
+    [calm.number, rough.number, stale.number, undefinedBand.number] = ['S1', 'S2', 'S3', 'S4'];
+    rough.weather!.waves!.heightMeters = 2.6;
+    stale.weather!.etaUtc = '2026-10-16T11:00:00Z';
+    undefinedBand.weather!.waves!.heightMeters = 1.2;
+    record.draft.vessel.weatherMatrix!.levels[1][2] = null;
+    const original = structuredClone(record);
+    const bodies = await landscapeBodies((await generateSeaOperationPdf(record, { templateBytes: await template() })).bytes);
+    const passage = bodies.join('\n');
+    expect(passage).not.toContain('Conditions de vie');
+    expect(passage).not.toContain('Condition non définie');
+    expect(passage).not.toContain('Invivable');
+    for (const [waypoint, label, color] of [
+      ['S1', 'Confortable', '0.09 0.38 0.231 rg'],
+      ['S2', 'Rude', '1. g'],
+      ['S3', 'Hs / période indisponible', '0.275 0.314 0.373 rg'],
+    ]) {
+      const body = bodies.find((body) => textPositions(body, label).length > 0)!;
+      const badges = textPositions(body, label);
+      expect(badges).toHaveLength(1);
+      const badge = badges[0];
+      expect(badge.x).toBeGreaterThan(533);
+      expect(badge.x).toBeLessThan(758);
+      expect(badge.commands).toContain(color);
+      const waypointPosition = textPositions(body, waypoint)[0];
+      expect(waypointPosition).toBeDefined();
+      expect(waypointPosition.x).toBeLessThan(94);
+      expect(waypointPosition.y - badge.y).toBeGreaterThan(20);
+      expect(waypointPosition.y - badge.y).toBeLessThan(45);
+    }
+    for (const body of bodies.filter((body) => body.includes('(Waypoint)'))) {
+      const rectangles = [...body.matchAll(/([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) re\nB/g)].map((match) => ({ index: match.index, x: Number(match[1]), y: Number(match[2]), width: Number(match[3]), height: Number(match[4]) }));
+      const header = rectangles.filter((rectangle) => rectangle.index < body.indexOf('(Waypoint)')).at(-1)!;
+      const cells = rectangles.filter((rectangle) => rectangle.y === header.y && rectangle.height === header.height);
+      expect(cells.map((cell) => cell.x)).toEqual([49, 94, 199, 259, 319, 354, 427, 533, 758]);
+      expect(cells[7].width).toBe(225);
+    }
+    expect(record).toEqual(original);
   });
 
   it('fails explicitly if the source chrome is absent instead of fabricating a replacement header', async () => {
@@ -163,8 +226,8 @@ describe('Sea operation PDF', () => {
       return Buffer.from(decodePDFRawStream(body).decode()).toString('latin1');
     });
     const routeText = landscapeBodies.join('\n');
-    expect(landscapeBodies[0]).not.toContain('(Conditions de vie');
-    expect(landscapeBodies[1]).toContain('(Conditions de vie');
+    expect(landscapeBodies[0]).not.toContain('(Waypoint)');
+    expect(landscapeBodies[1]).toContain('(Waypoint)');
     expect(routeText).toContain('(Carte du parcours)');
     expect(routeText).toContain('Natural Earth');
     expect(routeText).toContain('(Brest)');
