@@ -110,10 +110,13 @@ describe('PharmacyPage', () => {
     vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], id: 71, name: 'BR71', acronym: 'BR71' }]);
     rerender(<MemoryRouter initialEntries={['/modules/pharmacy']}><PharmacyPage client={nextClient} roles={['admin']} /></MemoryRouter>);
     expect(await screen.findByText('Aucun navire accessible pour votre profil.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'BR71' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Télécharger le document' })).not.toBeInTheDocument();
-    expect(screen.queryByText('Observation du fichier')).not.toBeInTheDocument();
+    // The empty-vessel message can render before the effect clears the previous control and details.
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'BR71' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Télécharger le document' })).not.toBeInTheDocument();
+      expect(screen.queryByText('Observation du fichier')).not.toBeInTheDocument();
+    });
     expect(fetchPharmacyRegister).not.toHaveBeenCalledWith(nextClient, 71);
   });
   it('saves an article with the original revision and keeps failed edits open', async () => {
