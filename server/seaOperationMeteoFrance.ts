@@ -142,6 +142,29 @@ function finite(value: number | null, maximum: number): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= maximum ? value : null;
 }
 
+function gridDistanceKm(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }): number {
+  const radians = Math.PI / 180;
+  const latitude = (b.latitude - a.latitude) * radians;
+  const longitude = (b.longitude - a.longitude) * radians;
+  const value = Math.sin(latitude / 2) ** 2 + Math.cos(a.latitude * radians) * Math.cos(b.latitude * radians) * Math.sin(longitude / 2) ** 2;
+  return 6371.0088 * 2 * Math.asin(Math.sqrt(Math.min(1, value)));
+}
+
+function utcDeadline(time: number): string {
+  const iso = new Date(time).toISOString();
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)} à ${iso.slice(11, 16)} UTC`;
+}
+
+/** Explain the actual published window without treating a missing model hour as a service failure. */
+function missingDeadline(resources: Resource[], target: number): string {
+  if (resources.length === 0) return 'Aucune échéance Météo-France exploitable n’est actuellement publiée dans le catalogue. Réessayez plus tard.';
+  const first = Math.min(...resources.map((entry) => entry.time));
+  const last = Math.max(...resources.map((entry) => entry.time));
+  if (target > last + HOUR / 2) return `ETA hors horizon Météo-France : dernière échéance disponible le ${utcDeadline(last)}. Actualisez les prévisions à l’approche du passage.`;
+  if (target < first - HOUR / 2) return `L’ETA précède la première échéance Météo-France disponible : le ${utcDeadline(first)}.`;
+  return `Une échéance Météo-France manque pour cette heure : aucune prévision publiée à moins de 30 minutes de l’ETA. Le catalogue couvre du ${utcDeadline(first)} au ${utcDeadline(last)}.`;
+}
+
 /** Public MFWAM data, decoded on the server. It never supplies an invented coastal value or gust. */
 export async function loadMeteoFranceForecast(input: SeaOperationWeatherInput, options: {
   now?: number; signal?: AbortSignal; fetcher?: typeof fetch;
@@ -166,10 +189,13 @@ export async function loadMeteoFranceForecast(input: SeaOperationWeatherInput, o
   const fetcher = options.fetcher ?? fetch;
   const state = stateFor(fetcher);
   const resources = await waitFor(catalogue(state, fetcher, now), options.signal);
-  const selected = resources.filter((entry) => entry.run <= now && entry.run >= now - 24 * HOUR
-    && entry.run <= target && Math.abs(entry.time - target) <= HOUR / 2)
+  const available = resources.filter((entry) => entry.run <= now && entry.run >= now - 24 * HOUR && entry.run <= target);
+  const selected = available.filter((entry) => Math.abs(entry.time - target) <= HOUR / 2)
     .sort((a, b) => b.run - a.run || Math.abs(a.time - target) - Math.abs(b.time - target) || a.time - b.time)[0];
-  if (!selected) return result;
+  if (!selected) {
+    result.windMessage = result.wavesMessage = missingDeadline(available, target);
+    return result;
+  }
   options.signal?.throwIfAborted();
   const bytes = await waitFor(file(state, selected, fetcher, now), options.signal);
   options.signal?.throwIfAborted();
@@ -182,9 +208,16 @@ export async function loadMeteoFranceForecast(input: SeaOperationWeatherInput, o
   }
   const decoded = await waitFor(pending, options.signal);
   const validTime = Date.parse(decoded.validTime);
+  const marineFallback = decoded.marineFallback === true;
+  const marinePeriod = finite(decoded.periodSeconds, 100);
+  const marineValue = finite(decoded.heightMeters, 100) !== null
+    || (marinePeriod !== null && marinePeriod > 0);
+  const positionMatches = marineFallback
+    ? marineValue && gridDistanceKm(point, decoded) <= 10
+    : Math.abs(decoded.latitude - point.latitude) <= 0.012501 && Math.abs(decoded.longitude - point.longitude) <= 0.012501;
   if (Date.parse(decoded.referenceTime) !== selected.run || !Number.isFinite(validTime) || validTime < selected.run
     || Math.abs(validTime - target) > HOUR / 2 || !Number.isFinite(decoded.latitude) || !Number.isFinite(decoded.longitude)
-    || Math.abs(decoded.latitude - point.latitude) > 0.012501 || Math.abs(decoded.longitude - point.longitude) > 0.012501) {
+    || Math.abs(decoded.latitude) > 90 || Math.abs(decoded.longitude) > 180 || !positionMatches) {
     throw new Error('La prévision Météo-France ne correspond pas au point ou à l’ETA demandés.');
   }
   result.model = { name: 'MFWAM 0,025° — forçage AROME', referenceTime: new Date(selected.run).toISOString(), latitude: decoded.latitude, longitude: decoded.longitude };
@@ -194,7 +227,7 @@ export async function loadMeteoFranceForecast(input: SeaOperationWeatherInput, o
   const period = finite(decoded.periodSeconds, 100);
   const swellDirection = finite(decoded.swellDirectionDegrees, 360);
   const time = new Date(validTime).toISOString();
-  const missing = 'Aucune donnée marine pour cette maille : point terrestre ou données manquantes. Vérifiez les coordonnées.';
+  const missing = 'Aucune donnée marine disponible dans un rayon de 10 km : point terrestre ou données manquantes. Vérifiez les coordonnées.';
   result.windMessage = result.wavesMessage = missing;
   if (speed !== null || direction !== null) {
     result.wind = { time, speedKnots: speed === null ? null : speed * 1.9438444924406, gustKnots: null, directionDegrees: direction };

@@ -33,11 +33,12 @@ export function waypointWeatherSnapshot(point: SeaOperationWaypoint): SeaOperati
   return weather;
 }
 
-/** An unavailable refresh must not erase the forecast already consulted for this exact ETA. */
+/** Older responses and unavailable refreshes must not erase a newer forecast for this exact ETA. */
 export function preservedWaypointWeather(point: SeaOperationWaypoint, incoming: SeaOperationWaypointWeather): SeaOperationWaypointWeather | undefined {
   const candidate = waypointWeatherSnapshot({ ...point, weather: incoming });
   if (!candidate) return undefined;
   const stored = waypointWeatherSnapshot(point);
+  if (stored && Date.parse(candidate.fetchedAt) < Date.parse(stored.fetchedAt)) return stored;
   return !candidate.wind && !candidate.waves && stored && (stored.wind || stored.waves) ? stored : candidate;
 }
 

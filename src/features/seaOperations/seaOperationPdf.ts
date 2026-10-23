@@ -7,6 +7,7 @@ import type { SeaOperationAnswer, SeaOperationCheck } from './seaOperationModel'
 import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperationRadio';
 import { passagePlanCellData } from './seaOperationPassagePlan';
 import { waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
+import { seaOperationWeatherLocation } from './seaOperationWeatherLocation';
 import { buildSeaOperationRouteMap } from './seaOperationRouteMapGeometry';
 
 export const SEA_OPERATION_WORD_TEMPLATE_URL = '/templates/sea-operation/word-header-footer.pdf';
@@ -271,9 +272,10 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     ].join('\n') : row.observedWeather;
     const observedLines = observationSummary ? document.splitTextToSize(clean(observationSummary), weatherColumnWidth - 26) as string[] : [];
     const validationLines = signed && record.signedAt ? document.splitTextToSize(clean(`Prévision conservée à la validation du ${new Date(record.signedAt).toLocaleString('fr-FR', { timeZone: 'UTC' })} UTC`), weatherColumnWidth - 26) as string[] : [];
-    return { forecast, messageLines, windLines, indicatorLines, indicatorHeight, observedLines, validationLines,
+    const locationLines = forecast?.model ? document.splitTextToSize(clean(seaOperationWeatherLocation(forecast)), weatherColumnWidth - 26) as string[] : [];
+    return { forecast, messageLines, windLines, indicatorLines, indicatorHeight, observedLines, validationLines, locationLines,
       height: indicatorHeight + (forecast ? 114 + messageLines.length * 10 + windLines.length * 10 : 33 + messageLines.length * 10)
-        + (observedLines.length ? observedLines.length * 8 + 14 : 0) + validationLines.length * 8 };
+        + (observedLines.length ? observedLines.length * 8 + 14 : 0) + validationLines.length * 8 + locationLines.length * 8 };
   });
   if (passageRows.length) {
     document.setFont('helvetica', 'normal'); document.setFontSize(8.5);
@@ -345,6 +347,10 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
           document.setFont('helvetica', forecast.wind ? 'bold' : 'normal'); document.setFontSize(8.5); document.setTextColor(24, 44, 62);
           document.text(card.windLines, x + 5, top + 25, { lineHeightFactor: 1.15 });
           top += 24 + card.windLines.length * 10 + 5;
+        }
+        if (card.locationLines.length) {
+          document.setFont('helvetica', 'normal'); document.setFontSize(6.5); document.setTextColor(55, 71, 84);
+          document.text(card.locationLines, x, top, { lineHeightFactor: 1.15 }); top += card.locationLines.length * 8;
         }
         if (card.observedLines.length) {
           document.setDrawColor(209, 220, 230); document.line(x, top, x + cell.cell.width - 24, top); top += 12;

@@ -4,6 +4,7 @@ import { waypointRadioSnapshot, waypointWeatherSnapshot } from './seaOperationWa
 import { evaluateVesselSeaState, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 import { observationFootnote, observationText, observationWaitingMessage, waypointWeatherObservation } from './seaOperationWeatherHistory';
+import { seaOperationWeatherLocation } from './seaOperationWeatherLocation';
 
 const value = (text: string) => text.trim() || 'À renseigner';
 const numbers = [0, 1, 2].map((digits) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: digits, ...(digits === 2 ? { minimumFractionDigits: 2 } : {}) }));
@@ -40,6 +41,7 @@ export function passagePlanCellData(point: SeaOperationWaypoint, options: { allo
     `${forecast.attribution} · consultée le ${utc(forecast.fetchedAt)}`,
     `ETA : ${utc(forecast.etaUtc)}${forecast.waves ? ` · modèle houle : ${utc(forecast.waves.time)}` : ''}${forecast.wind ? ` · modèle vent : ${utc(forecast.wind.time)}` : ''}`,
     ...(forecast.model ? [`${forecast.model.name} · réseau du ${utc(forecast.model.referenceTime)} · maille ${forecast.model.latitude.toFixed(3)}, ${forecast.model.longitude.toFixed(3)}`] : []),
+    ...(forecast.model ? [seaOperationWeatherLocation(forecast)] : []),
     ...(hasSeaStateIndicator && seaState.hsRange ? [`Matrice du navire enregistrée : Hs ${seaState.hsRange} · période ${seaState.periodRange}. Aide à la lecture, sans décision GO automatique.`] : []),
     forecast.sourceUrl,
   ].join('\n') : '';

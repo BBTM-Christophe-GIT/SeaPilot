@@ -8,29 +8,34 @@ import { seaOperationEtaUtc } from './seaOperationWeatherModel';
 import { preservedWaypointWeather, waypointWeatherSnapshot, type SeaOperationWeatherCaptureContext } from './seaOperationWaypointSnapshots';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 import { SeaOperationWeatherObservationCard } from './SeaOperationWeatherObservationCard';
+import { weatherRequestKey, type WeatherRequestStatus } from './seaOperationWeatherStatus';
+import { seaOperationWeatherLocation } from './seaOperationWeatherLocation';
 import './seaOperationNavigation.css';
 
 interface Props {
   client: SupabaseClient; projectId: string; waypoints: readonly SeaOperationWaypoint[]; preview?: boolean; active?: boolean;
   readOnly?: boolean; validatedAt?: string | null;
   observations?: readonly ObservationResult[];
+  onStatusChange?: (statuses: Record<string, WeatherRequestStatus>, sourceClient: SupabaseClient) => void;
   onWeatherLoaded?: (weather: SeaOperationWaypointWeather, context: SeaOperationWeatherCaptureContext, sourceClient: SupabaseClient) => void;
 }
-type PointResult = { weather?: SeaOperationWaypointWeather; error?: string };
+type PointResult = { weather?: SeaOperationWaypointWeather; error?: string; loading?: boolean };
 const number = (value: number | null, digits = 1) => value === null ? 'Indisponible' : new Intl.NumberFormat('fr-FR', { maximumFractionDigits: digits }).format(value);
 const utc = (value: string) => new Intl.DateTimeFormat('fr-FR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 
 /** Forecasts are contextual assistance, never an automatic safety answer or a signed-form mutation. */
-export function SeaOperationWeatherPanel({ client, projectId, waypoints, preview = false, active = true, readOnly = false, validatedAt, observations, onWeatherLoaded }: Props) {
+export function SeaOperationWeatherPanel({ client, projectId, waypoints, preview = false, active = true, readOnly = false, validatedAt, observations, onWeatherLoaded, onStatusChange }: Props) {
   const [refresh, setRefresh] = useState(0);
   const [state, setState] = useState<{ key: string; client: SupabaseClient; results: Record<string, PointResult>; loading: boolean } | null>(null);
   const currentClient = useRef(client);
   const currentWaypoints = useRef(waypoints);
   const capture = useRef(onWeatherLoaded);
+  const statusChange = useRef(onStatusChange);
   const lastRefresh = useRef(0);
   currentClient.current = client;
   currentWaypoints.current = waypoints;
   capture.current = onWeatherLoaded;
+  statusChange.current = onStatusChange;
   const inputKey = JSON.stringify({ projectId, preview, readOnly, points: waypoints.map(({ id, latitude, longitude, eta }) => ({ id, latitude, longitude, eta })) });
   const current = state?.key === inputKey && state.client === client ? state : null;
 
@@ -49,11 +54,18 @@ export function SeaOperationWeatherPanel({ client, projectId, waypoints, preview
       try { seaOperationEtaUtc(point.eta); } catch (error) { results[key] = { error: (error as Error).message }; return null; }
       const stored = currentWaypoints.current[index];
       const weather = stored?.id === point.id ? waypointWeatherSnapshot(stored) : undefined;
-      if (weather) { results[key] = { weather }; if (!refreshing) return null; }
+      if (weather) { results[key] = { weather }; if (!refreshing && (weather.wind || weather.waves)) return null; }
+      results[key] = { ...results[key], loading: true };
       return { key, point: { projectId: input.projectId, pointId: point.id, ...position, eta: point.eta }, context: { projectId: input.projectId, pointId: point.id, latitude: point.latitude, longitude: point.longitude, eta: point.eta } };
     }).filter((entry) => entry !== null);
     const publish = (loading: boolean) => {
-      if (!cancelled && currentClient.current === client) setState({ key: inputKey, client, results: { ...results }, loading });
+      if (!cancelled && currentClient.current === client) {
+        setState({ key: inputKey, client, results: { ...results }, loading });
+        statusChange.current?.(Object.fromEntries(input.points.map((point, index) => {
+          const result = results[`${index}:${point.id}`];
+          return [weatherRequestKey(input.projectId, point), { loading: result?.loading === true, ...(result?.error ? { error: result.error } : {}) }];
+        })), client);
+      }
     };
     const timer = window.setTimeout(() => {
       publish(pending.length > 0);
@@ -68,12 +80,12 @@ export function SeaOperationWeatherPanel({ client, projectId, waypoints, preview
                 && point.latitude === entry.context.latitude && point.longitude === entry.context.longitude && point.eta === entry.context.eta);
               const retained = point && preservedWaypointWeather(point, weather);
               if (retained) {
-                results[entry.key] = { weather: retained };
+                results[entry.key] = { weather: retained, loading: false };
                 capture.current?.(retained, entry.context, client);
-              }
+              } else results[entry.key] = { loading: false, error: 'La prévision reçue ne correspond pas à ce waypoint. Actualisez la météo.' };
             }
           }
-          catch (error) { if (!cancelled) results[entry.key] = { ...results[entry.key], error: error instanceof Error ? error.message : 'La prévision est indisponible. Réessayez.' }; }
+          catch (error) { if (!cancelled) results[entry.key] = { ...results[entry.key], loading: false, error: error instanceof Error ? error.message : 'La prévision est indisponible. Réessayez.' }; }
           publish(true);
         }
       };
@@ -98,10 +110,11 @@ export function SeaOperationWeatherPanel({ client, projectId, waypoints, preview
             <div className="so-weather-card"><strong>Houle significative (Hs)</strong>{weather.waves ? <><span>Hs {number(weather.waves.heightMeters, 2)} m · Période moyenne : {number(weather.waves.periodSeconds)} s</span><span>Provenance : {number(weather.waves.directionDegrees, 0)}°</span><small>Heure modèle : {utc(weather.waves.time)} UTC</small></> : <span>{weather.wavesMessage || 'Prévision de houle indisponible à cette ETA.'}</span>}</div></div>
           <small className="so-weather-retrieved">Source : <a href={weather.sourceUrl} target="_blank" rel="noopener noreferrer">{weather.attribution}</a>{weather.attribution === 'Open-Meteo' ? ' / DWD' : ''}{weather.model ? ` · ${weather.model.name} · réseau du ${utc(weather.model.referenceTime)} UTC · maille ${weather.model.latitude.toFixed(3)}, ${weather.model.longitude.toFixed(3)}` : ''}</small>
           <small className="so-weather-retrieved">Consultée le {utc(weather.fetchedAt)} UTC</small>
+          {weather.model && <small className="so-weather-retrieved">{seaOperationWeatherLocation(weather)}</small>}
         </>}
         {readOnly && <SeaOperationWeatherObservationCard point={point} observations={observations} />}
       </li>;
     })}</ul>}
-    <p className="so-help">Hs de la houle seule, hors mer du vent. Les dates hors horizon, mailles terrestres ou données absentes restent indisponibles. Les prévisions disponibles sont enregistrées avec la décision du Capitaine. Une consultation en direct ne modifie jamais une fiche signée.</p>
+    <p className="so-help">Hs de la houle seule, hors mer du vent. Sans donnée marine à la maille du waypoint, la maille marine disponible la plus proche est recherchée à 10 km maximum, à la même échéance. Sa position et sa distance sont affichées. Les dates hors horizon ou sans donnée proche restent indisponibles. Les prévisions disponibles sont conservées à l’enregistrement du brouillon et à la validation du Capitaine. Une consultation en direct ne modifie jamais une fiche signée.</p>
   </section>;
 }

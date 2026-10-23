@@ -41,6 +41,25 @@ describe('recorded waypoint assistance', () => {
     expect(captured.waypoints[0].ukc).toBe('3.1');
     expect(retainSeaOperationWeather(captured, weather, context)).toBe(captured);
   });
+  it('ignores an older queued forecast after a more recent capture and accepts a later refresh', () => {
+    const latest = { ...weather, fetchedAt: '2026-10-22T13:00:00Z', wind: { ...weather.wind!, speedKnots: 18 }, waves: { ...weather.waves!, heightMeters: 1.2 } };
+    const captured = retainSeaOperationWeather(payload(), latest, context);
+    expect(retainSeaOperationWeather(captured, weather, context)).toBe(captured);
+    expect(captured.waypoints[0].weather).toEqual(latest);
+
+    const refresh = { ...weather, fetchedAt: '2026-10-22T14:00:00Z' };
+    const refreshed = retainSeaOperationWeather(captured, refresh, context);
+    expect(refreshed).not.toBe(captured);
+    expect(refreshed.waypoints[0].weather).toEqual(refresh);
+  });
+  it('keeps the newer unavailable response when an older response arrives for the same point', () => {
+    const latest = { ...weather, fetchedAt: '2026-10-22T13:00:00Z', wind: null, waves: null,
+      windMessage: 'Échéance non disponible.', wavesMessage: 'Échéance non disponible.' };
+    const captured = retainSeaOperationWeather(payload(), latest, context);
+    expect(retainSeaOperationWeather(captured, weather, context)).toBe(captured);
+    expect(retainSeaOperationWeather(captured, { ...latest, fetchedAt: weather.fetchedAt, windMessage: 'Ancienne réponse.' }, context)).toBe(captured);
+    expect(captured.waypoints[0].weather).toEqual(latest);
+  });
   it('keeps the recorded forecast when a successful refresh has no weather after the ETA', () => {
     const captured = retainSeaOperationWeather(payload(), weather, context);
     const unavailable = { ...weather, fetchedAt: '2026-10-23T12:00:00Z', wind: null, waves: null,

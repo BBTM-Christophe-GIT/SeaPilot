@@ -3,16 +3,18 @@ import type { SeaOperationPayload } from './seaOperationModel';
 import { seaWaypointPosition } from './seaOperationNavigation';
 import { seaOperationEtaUtc } from './seaOperationWeatherModel';
 import { fetchSeaOperationWaypointWeather } from './seaOperationWeatherQueries';
-import { retainSeaOperationWeather } from './seaOperationWaypointSnapshots';
+import { retainSeaOperationWeather, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 
-/** Collect the available forecasts before saving the revision the Captain will sign. */
+/** Collect available forecasts before a draft save or the revision the Captain will sign. */
 export async function captureSeaOperationValidationWeather(client: SupabaseClient, payload: SeaOperationPayload,
-  options: { preview?: boolean; signal?: AbortSignal; now?: number } = {}): Promise<SeaOperationPayload> {
+  options: { preview?: boolean; signal?: AbortSignal; now?: number; missingOnly?: boolean } = {}): Promise<SeaOperationPayload> {
   options.signal?.throwIfAborted();
   const projectId = payload.planning?.projectId;
   if (!projectId) return payload;
   const now = options.now ?? Date.now();
   const pending = payload.waypoints.flatMap((point) => {
+    const stored = waypointWeatherSnapshot(point);
+    if (options.missingOnly && (stored?.wind || stored?.waves)) return [];
     const position = seaWaypointPosition(point);
     if (!position) return [];
     try { if (Date.parse(seaOperationEtaUtc(point.eta)) <= now) return []; } catch { return []; }
