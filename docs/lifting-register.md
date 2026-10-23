@@ -20,6 +20,37 @@ Le PDF final est automatiquement enregistré dans le compartiment privé `fleet-
 
 Les alertes d’échéance existantes des certificats s’appliquent. Le statut de validité documentaire ne remplace pas les réserves et décisions de chaque matériel dans le PDF.
 
+## Transférer un matériel vers un autre navire — 3.77.13
+
+Administration, Direction et Armement disposent de **Transférer** sur chaque
+fiche active des registres Apparaux et Remorques. La fenêtre reprend les photos
+et icônes de la flotte, classées du navire le plus long au plus court. Choisir un
+navire puis **Transférer** confirme l’affectation ; Annuler ne change rien.
+Seuls les navires actifs accessibles de la même société sont proposés, hors
+navire de départ. Le Yard peut être une origine ; il n’est pas une destination.
+
+La RPC `transfer_lifting_item(id, source_vessel_id, target_vessel_id, updated_at)`
+déplace le même enregistrement : identifiant, référence, registre, numéro de
+série, dates de contrôle, génération et certificats sont conservés. La fiche
+disparaît de la liste du navire source et ses compteurs d’échéance sont actualisés. Le
+matériel apparaît dans le même registre du navire destinataire. Les fichiers
+restent à leur chemin privé d’origine ; leur accès suit l’affectation actuelle
+du matériel grâce aux métadonnées du certificat, sans ouvrir les autres fichiers
+de l’ancien navire.
+
+Le serveur vérifie le rôle réel, la société, les droits sur les deux unités,
+l’état actif et la version attendue de la fiche. Une référence déjà utilisée
+dans le registre destinataire refuse le transfert sans renumérotation ni
+modification du matériel. Un double transfert ou une fiche
+modifiée depuis l’ouverture doit être rechargé avant une nouvelle tentative.
+Les rapports et contrôles déjà ouverts gardent leurs instantanés ; leur
+publication ne renouvelle pas l’échéance d’une affectation ultérieure, même si le
+matériel revient sur son navire initial.
+
+Appliquer `20261023084001_lifting_equipment_vessel_transfer.sql` avant le frontend.
+Aucune dépendance ni configuration supplémentaire ; aucune donnée d’inventaire
+n’est déplacée par cette migration.
+
 ## Préparer un contrôle sur papier
 
 Dans Apparaux ou Remorques, cliquer sur **Fiche de contrôle papier**, choisir le navire / site et le registre, puis **Télécharger la fiche PDF**. Le téléchargement relit tous les matériels actifs de ce registre dans Supabase à cet instant, même si un filtre est affiché ou si un rapport antérieur existe. Un registre vide ou un navire devenu inaccessible affiche une erreur ; aucun ancien inventaire n’est utilisé en remplacement.
@@ -48,7 +79,7 @@ Les PDF historiques restent les originaux déjà stockés dans Certificats flott
 
 - Tous les profils du module (Admin, Direction, Armement, Capitaine et Marin) : ajout de matériel et ajout / téléchargement de certificats sur leurs navires accessibles.
 - Admin, Direction, Armement et Capitaine : bouton **Supprimer** pour chaque matériel actif des registres Apparaux et Remorques, sur les navires accessibles. Une confirmation retire le matériel de l’inventaire actif sans effacer ses rapports ni ses certificats. Le profil Marin ne dispose pas de ce bouton et la RPC refuse aussi ses demandes de suppression.
-- Admin, Direction, Armement : modification, restauration et remplacement du matériel ; création et finalisation des contrôles.
+- Admin, Direction, Armement : modification, restauration, remplacement et transfert du matériel ; création et finalisation des contrôles.
 - Création d’un contrôle masquée et refusée côté serveur pour Capitaine / Marin, sauf le compte vérifié d’Antoine MONCEAUX lorsqu’il possède le rôle Capitaine. La dérogation est liée à son `auth.uid` dans une table privée ; modifier un nom d’affichage ne donne aucun droit.
 - Capitaine et Marin : consultation et saisie des contrôles sur les navires accessibles selon les règles réelles du planning et les affectations. Les fonctions SQL contrôlent les droits indépendamment de l’interface.
 - Aucun accès anonyme aux données. Le tampon est conservé dans `lifting-assets`, accessible uniquement aux profils de gestion de la société. Aucun tampon ni inventaire réel n’est inclus dans les données de démonstration publiques.

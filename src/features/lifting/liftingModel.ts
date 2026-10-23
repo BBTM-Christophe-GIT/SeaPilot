@@ -1,4 +1,5 @@
 import type { RoleKey } from '../permissions/roles';
+import type { FleetAssetKind } from '../fleet/fleetDisplay';
 import { applicableCodes, CONTROL_CODES, type AccessoryItem, type TowingType } from './liftingControls';
 
 export type LiftingKind = 'lifting' | 'towing';
@@ -19,6 +20,8 @@ export interface LiftingVessel {
   call_sign: string; registration_port: string;
   illustration_thumbnail_url?: string | null;
   length_overall?: string | null;
+  asset_kind?: FleetAssetKind;
+  active?: boolean;
 }
 export interface LiftingItem {
   id: number; company_id: number; vessel_id: number; kind: LiftingKind; reference: string;
@@ -30,6 +33,7 @@ export interface LiftingItem {
   last_control_on?: string | null;
   replaced_on?: string | null;
   service_version?: number;
+  assignment_version?: number;
   inspection_due_on?: string | null;
   towing_type?: TowingType | null;
   source_key?: string | null;

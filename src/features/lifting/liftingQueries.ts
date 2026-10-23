@@ -73,6 +73,15 @@ export async function saveLiftingItem(client: SupabaseClient, vesselId: number, 
   if (error) throw error;
   return data as number;
 }
+export async function transferLiftingItem(client: SupabaseClient, item: LiftingItem, targetVesselId: number): Promise<void> {
+  const { error } = await client.rpc('transfer_lifting_item', {
+    p_id: item.id,
+    p_source_vessel_id: item.vessel_id,
+    p_target_vessel_id: targetVesselId,
+    p_updated_at: item.updated_at,
+  });
+  if (error) throw error;
+}
 export async function setLiftingItemActive(client: SupabaseClient, id: number, active: boolean) {
   const { error } = await client.rpc('set_lifting_item_active', { p_id: id, p_active: active });
   if (error) throw error;

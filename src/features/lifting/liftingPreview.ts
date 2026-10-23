@@ -3,6 +3,7 @@ import type { RoleKey } from '../permissions/roles';
 import type { LiftingCertificate, UploadedLiftingCertificate } from './liftingCertificateQueries';
 import { accessoryDefinition } from './liftingControls';
 import { BBTM_FLEET_PHOTOS, fleetCatalogThumbnailPath } from '../fleet/fleetPhotoCatalog';
+import { fleetAssetKind } from '../fleet/fleetDisplay';
 import { annualExpiry, canManageLifting, canRemoveLiftingItem, todayLocal, defaultChecks, INSPECTOR, type LiftingInspection, type LiftingItem, type LiftingVessel, type InspectionEntry } from './liftingModel';
 
 // Independent demonstration data. No customer inventory or signature is bundled into public previews.
@@ -19,12 +20,14 @@ export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspect
   const manager = canManageLifting(roles);
   const canStart = manager || (roles.includes('capitaine') && Boolean(options.inspectorGrant));
   const denied = () => ({ data: null, error: { message: 'Accès refusé.' } });
+  let updatedAt = Date.now();
+  const nextUpdatedAt = () => new Date(++updatedAt).toISOString();
   const items: LiftingItem[] = [
     ['1','lifting','Élingue','ÉLINGUE TEXTILE RONDE — 3 M',3],
     ['2','lifting','Manille','MANILLE LYRE — 6,5 T',6.5],
     ['3','lifting','Croc','CROCHET À LINGUET — 2 T',2],
     ['1','towing','Remorque','REMORQUE TEXTILE — 200 M',null],
-  ].map(([reference,kind,type,description,swl],index) => ({ id: index+1,company_id:1,vessel_id:demoVessel.id,kind,reference,material_type:accessoryDefinition(String(type))?.fr || type,towing_type:kind === 'towing' ? 'textile_line' : null,description,swl_tonnes:swl,serial_number:'',location:'Pont principal',notes:'Matériel de démonstration',active:true,source_label:'Démonstration',updated_at:'' } as LiftingItem));
+  ].map(([reference,kind,type,description,swl],index) => ({ id: index+1,company_id:1,vessel_id:demoVessel.id,kind,reference,material_type:accessoryDefinition(String(type))?.fr || type,towing_type:kind === 'towing' ? 'textile_line' : null,description,swl_tonnes:swl,serial_number:'',location:'Pont principal',notes:'Matériel de démonstration',active:true,source_label:'Démonstration',updated_at:nextUpdatedAt() } as LiftingItem));
   if (options.fleet) {
     const samples = structuredClone(items);
     items.splice(0, items.length, ...vessels.flatMap((vessel, index) => samples
@@ -42,7 +45,7 @@ export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspect
       date.setUTCDate(date.getUTCDate() + offset);
       commissioned = date.toISOString().slice(0, 10);
     }
-    Object.assign(item, { added_on: commissioned, commissioned_on: commissioned, service_version: 1, inspection_due_on: annualExpiry(commissioned) });
+    Object.assign(item, { added_on: commissioned, commissioned_on: commissioned, service_version: 1, assignment_version: 1, inspection_due_on: annualExpiry(commissioned) });
   });
   const counters: Record<string, number> = {};
   items.forEach((item) => { const key = `${item.vessel_id}:${item.kind}`; counters[key] = Math.max(counters[key] || 0, Number(item.reference)); });
@@ -85,6 +88,21 @@ export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspect
     rpc: async (name: string, args: Record<string, unknown> = {}) => {
       if (name === 'lifting_can_start_inspection') return { data: canStart, error: null };
       if (['delete_lifting_inspection_draft', 'replace_lifting_item'].includes(name) && !manager) return denied();
+      if (name === 'transfer_lifting_item') {
+        if (!manager) return denied();
+        const item = items.find((row) => row.id === args.p_id);
+        const destination = vessels.find((row) => row.id === args.p_target_vessel_id);
+        if (!item?.active || !destination || ('active' in destination && destination.active === false) || destination.company_id !== item.company_id || fleetAssetKind(destination) !== 'vessel') return denied();
+        if (item.vessel_id !== args.p_source_vessel_id || !args.p_updated_at || item.updated_at !== args.p_updated_at) return { data: null, error: { message: 'Ce matériel a été modifié ou transféré depuis un autre appareil. Rechargez le registre.' } };
+        if (destination.id === item.vessel_id) return { data: null, error: { message: 'Choisissez un autre navire de destination.' } };
+        if (items.some((other) => other.id !== item.id && other.vessel_id === destination.id && other.kind === item.kind && other.reference === item.reference)) return { data: null, error: { message: 'Cette référence existe déjà sur le navire de destination. Le transfert a été annulé.' } };
+        item.vessel_id = destination.id;
+        item.assignment_version = (item.assignment_version ?? 1) + 1;
+        item.updated_at = nextUpdatedAt();
+        const counterKey = `${destination.id}:${item.kind}`;
+        counters[counterKey] = Math.max(counters[counterKey] || 0, Number(item.reference) || 0);
+        return { data: item.id, error: null };
+      }
       if (name === 'add_lifting_item_certificate') {
         const item = items.find((row) => row.id === args.p_item_id);
         const path = String(args.p_storage_path);
@@ -113,10 +131,10 @@ export function createLiftingPreviewClient(options: { roles?: RoleKey[]; inspect
         const kind = String(args.p_kind);
         const counterKey = `${args.p_vessel_id}:${kind}`;
         const reference = old && old.kind === kind ? old.reference : String(counters[counterKey] = (counters[counterKey] || 0) + 1);
-        if (old) Object.assign(old, draft, { reference, kind });
+        if (old) Object.assign(old, draft, { reference, kind, updated_at: nextUpdatedAt() });
         else items.push({ ...items[0], ...draft, reference, id: Math.max(0, ...items.map((item) => item.id))+1, vessel_id: Number(args.p_vessel_id), kind,
           added_on: todayLocal(), commissioned_on: draft.commissioned_on || todayLocal(), last_control_on: null,
-          replaced_on: null, service_version: 1, inspection_due_on: annualExpiry(todayLocal()),
+          replaced_on: null, service_version: 1, assignment_version: 1, updated_at: nextUpdatedAt(), inspection_due_on: annualExpiry(todayLocal()),
         } as LiftingItem);
         return { data: old?.id || items.at(-1)?.id, error: null };
       }
