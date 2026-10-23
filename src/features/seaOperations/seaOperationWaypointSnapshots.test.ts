@@ -41,6 +41,16 @@ describe('recorded waypoint assistance', () => {
     expect(captured.waypoints[0].ukc).toBe('3.1');
     expect(retainSeaOperationWeather(captured, weather, context)).toBe(captured);
   });
+  it('keeps the recorded forecast when a successful refresh has no weather after the ETA', () => {
+    const captured = retainSeaOperationWeather(payload(), weather, context);
+    const unavailable = { ...weather, fetchedAt: '2026-10-23T12:00:00Z', wind: null, waves: null,
+      windMessage: 'L’ETA est passée.', wavesMessage: 'L’ETA est passée.' };
+    expect(retainSeaOperationWeather(captured, unavailable, context)).toBe(captured);
+    expect(captured.waypoints[0].weather).toEqual(weather);
+    const edited = { ...captured, waypoints: [updateSeaOperationWaypoint(captured.waypoints[0], { eta: '2026-10-23T13:00' })] };
+    expect(retainSeaOperationWeather(edited, unavailable, context)).toBe(edited);
+    expect(edited.waypoints[0]).not.toHaveProperty('weather');
+  });
   it('invalidates forecast on ETA edit and both captures on coordinate edit', () => {
     const captured = captureSeaOperationRadios(retainSeaOperationWeather(payload(), weather, context)).waypoints[0];
     const changedEta = updateSeaOperationWaypoint(captured, { eta: '2026-10-23T13:00' });

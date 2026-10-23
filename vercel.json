@@ -6,8 +6,10 @@
   "functions": {
     "api/documents.ts": { "regions": ["cdg1"] },
     "api/sea-operation-charts.ts": { "regions": ["cdg1"] },
-    "api/sea-operation-weather.ts": { "regions": ["cdg1"], "includeFiles": "node_modules/.pnpm/@meri-imperiumi+eccodes-wasm@2.48.2/node_modules/@meri-imperiumi/eccodes-wasm/**" }
+    "api/sea-operation-weather.ts": { "regions": ["cdg1"], "includeFiles": "node_modules/.pnpm/@meri-imperiumi+eccodes-wasm@2.48.2/node_modules/@meri-imperiumi/eccodes-wasm/**" },
+    "api/sea-operation-weather-observations.ts": { "regions": ["cdg1"] }
   },
+  "crons": [{ "path": "/api/sea-operation-weather-observations", "schedule": "30 9 * * *" }],
   "headers": [
     {
       "source": "/vessels/bbtm/:path*",

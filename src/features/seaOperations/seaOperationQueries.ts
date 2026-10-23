@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { parseVesselWeatherMatrix, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { isSeaOperationPayload, type SeaOperationPayload } from './seaOperationModel';
+import { isSeaOperationWeatherObservation, type ObservationResult } from './seaOperationWeatherObservationsModel';
 
 export interface SeaOperationRecord {
   id: string;
@@ -24,6 +25,9 @@ export interface SeaOperationRecord {
   canSign: boolean;
   signatureSnapshot?: SeaOperationSignatureSnapshot | null;
   signatureUrl?: string;
+  /** Post-passage measurements are a separate annex, never part of the signed draft. */
+  weatherObservations?: ObservationResult[];
+  weatherHistoryError?: string;
 }
 
 export interface SeaOperationSignatureSnapshot {
@@ -152,7 +156,22 @@ export async function fetchSeaOperationData(client: SupabaseClient): Promise<Sea
 }
 
 export async function fetchSeaOperationDetail(client: SupabaseClient, id: string): Promise<SeaOperationRecord> {
-  return hydrateSignature(client, mapSeaOperationRecord(await rpc(client, 'sea_operation_detail', { p_id: id })));
+  const record = await hydrateSignature(client, mapSeaOperationRecord(await rpc(client, 'sea_operation_detail', { p_id: id })));
+  return hydrateWeatherHistory(client, record);
+}
+
+export async function fetchSeaOperationWeatherObservations(client: SupabaseClient, id: string): Promise<ObservationResult[]> {
+  const result = await rpc(client, 'sea_operation_weather_observations', { p_id: id });
+  if (result.operationId !== id || !Array.isArray(result.points)
+    || !result.points.every(isSeaOperationWeatherObservation)) throw new Error('Les mesures météo enregistrées sont invalides.');
+  return result.points;
+}
+
+async function hydrateWeatherHistory(client: SupabaseClient, record: SeaOperationRecord): Promise<SeaOperationRecord> {
+  if (record.status !== 'signed') return record;
+  try { record.weatherObservations = await fetchSeaOperationWeatherObservations(client, record.id); }
+  catch { record.weatherHistoryError = 'Les mesures météo enregistrées sont temporairement indisponibles. Réessayez leur lecture.'; }
+  return record;
 }
 
 export async function saveSeaOperation(
@@ -167,9 +186,10 @@ export async function saveSeaOperation(
 export async function signSeaOperation(
   client: SupabaseClient, record: Pick<SeaOperationRecord, 'id' | 'version'>, captainName: string, acknowledged: boolean,
 ): Promise<SeaOperationRecord> {
-  return hydrateSignature(client, mapSeaOperationRecord(await rpc(client, 'sea_operation_sign', {
+  const signed = await hydrateSignature(client, mapSeaOperationRecord(await rpc(client, 'sea_operation_sign', {
     p_id: record.id, p_version: record.version, p_captain_name: captainName.trim(), p_acknowledged: acknowledged,
   })));
+  return hydrateWeatherHistory(client, signed);
 }
 
 export async function fetchSeaOperationPlanning(client: SupabaseClient, date: string): Promise<SeaOperationPlanningContext> {

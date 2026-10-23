@@ -5,7 +5,7 @@ import { AppDialog } from '../../components/AppDialog';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS, emptySeaOperation, newSeaOperation, getSeaOperationAssessment, isSeaOperationPayload, validateSeaOperation, seaOperationToday, type SeaOperationPayload, type SeaOperationAnswer as Answer } from './seaOperationModel';
-import { fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationCaptainSignature, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, type SeaOperationData, type SeaOperationRecord, type SeaOperationPlanningContext, type SeaOperationPlanningChoice } from './seaOperationQueries';
+import { fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationCaptainSignature, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, type SeaOperationData, type SeaOperationRecord, type SeaOperationPlanningContext, type SeaOperationPlanningChoice } from './seaOperationQueries';
 import './seaOperations.css';
 import { SeaOperationPrint } from './SeaOperationPrint';
 import { SeaOperationPreview } from './SeaOperationDocumentPreview';
@@ -25,6 +25,7 @@ import { SeaOperationWeatherCard } from './SeaOperationWeatherCard';
 import { SeaOperationRouteMap } from './SeaOperationRouteMap';
 import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
 import { SeaOperationEtaPicker } from './SeaOperationEtaPicker';
+import { captureSeaOperationValidationWeather } from './seaOperationValidationWeather';
 import type { SeaPosition } from './seaOperationNavigation';
 
 const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'];
@@ -92,6 +93,7 @@ export function SeaOperationsPage() {
   const { client, previewMode = false } = useOutletContext<AppShellOutletContext>();
   const [data, setData] = useState<SeaOperationData | null>(null);
   const [record, setRecord] = useState<SeaOperationRecord | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [draft, setDraft] = useState<SeaOperationPayload>(newSeaOperation);
   const latestDraft = useRef(draft);
   const [editing, setEditing] = useState(false);
@@ -347,8 +349,11 @@ export function SeaOperationsPage() {
     const validation = validateSeaOperation(prepared, sign ? prepared.decision || 'GO' : 'DRAFT');
     if (validation.length) { setIssues(validation); setStep(sign ? 3 : step); revealFormFeedback(); return; }
     setBusy(true); setError(''); setIssues([]); setNotice('');
+    const sequence = loadSequence.current;
     try {
-      const saved = await saveSeaOperation(client, prepared, record || undefined);
+      const captured = sign ? await captureSeaOperationValidationWeather(client, prepared, { preview: previewMode }) : prepared;
+      if (sequence !== loadSequence.current || weatherEditor.current.client !== client || !weatherEditor.current.editing) return;
+      const saved = await saveSeaOperation(client, captured, record || undefined);
       remember(saved);
       if (sign) {
         const finalized = await signSeaOperation(client, saved, saved.draft.signature.captainName, saved.draft.signature.acknowledged);
@@ -356,6 +361,20 @@ export function SeaOperationsPage() {
       } else setNotice('Brouillon enregistré.');
     } catch (reason) { setError(errorMessage(reason)); revealFormFeedback(); }
     finally { setBusy(false); }
+  }
+  async function refreshWeatherHistory() {
+    if (!record || record.status !== 'signed' || historyLoading) return;
+    const operationId = record.id;
+    const sequence = loadSequence.current;
+    setHistoryLoading(true);
+    try {
+      const points = await fetchSeaOperationWeatherObservations(client, operationId);
+      if (sequence === loadSequence.current && weatherEditor.current.client === client) setRecord((value) =>
+        value?.id === operationId ? { ...value, weatherObservations: points, weatherHistoryError: undefined } : value);
+    } catch {
+      if (sequence === loadSequence.current && weatherEditor.current.client === client) setRecord((value) =>
+        value?.id === operationId ? { ...value, weatherHistoryError: 'Les mesures météo enregistrées sont temporairement indisponibles. Réessayez leur lecture.' } : value);
+    } finally { setHistoryLoading(false); }
   }
   async function exportPdf() {
     if (!record || dirty || exporting) return;
@@ -463,7 +482,7 @@ export function SeaOperationsPage() {
               return <div className="so-passage-row" role="row" key={point.id}>
                 {([['number', 'Waypoint', 'number'], ['descriptionVhf', 'Description', 'description'], ['latitude', 'Latitude', 'latitude'], ['longitude', 'Longitude', 'longitude'], ['ukc', 'UKC', 'ukc']] as const).map(([key, label, variant]) => <label role="cell" className={`so-passage-field is-${variant}`} key={key}><span>{label}</span><input aria-label={`${label} · point ${index + 1}`} type="text" value={point[key]} onChange={(event) => waypointUpdate(index, { [key]: event.target.value })} /></label>)}
                 <div role="cell" className="so-passage-field is-vhf"><span>Contacts VHF</span><p>{navigation.vhf.split('\n\n').map((contact) => contact.replace(/\n/g, ' · ')).join('\n')}</p></div>
-                <div role="cell" className="so-passage-field is-weather"><span>Prévisions météo</span><SeaOperationWeatherCard point={point} matrix={draft.vessel.weatherMatrix} compact variant="editor" /></div>
+                <div role="cell" className="so-passage-field is-weather"><span>Météo à l’ETA</span><SeaOperationWeatherCard point={point} matrix={draft.vessel.weatherMatrix} compact variant="editor" validatedAt={signed ? record?.signedAt : undefined} showObservations={signed} observations={record?.weatherObservations} /></div>
                 <div role="cell" className="so-passage-field is-eta"><span>ETA · date et heure</span><SeaOperationEtaPicker label={`ETA · date et heure · point ${index + 1}`} value={point.eta} disabled={!editable || signed || busy || exporting} onChange={(eta) => { if (eta !== point.eta) waypointUpdate(index, { eta }); }} />{legacyEta && <small className="so-help">Ancienne ETA : {point.eta}. Renseignez une date et une heure pour la remplacer.</small>}{proposedEta && <button type="button" className="sp-button sp-button--secondary" aria-label={`Appliquer la date de l’opération à l’ETA du point ${index + 1}`} onClick={() => waypointUpdate(index, { eta: proposedEta })}>Utiliser le {operationDate.split('-').reverse().join('/')} à {point.eta}</button>}</div>
                 <label role="cell" className="so-passage-field is-traffic"><input aria-label={`Zone maritime à trafic dense · point ${index + 1}`} type="checkbox" checked={point.denseTraffic} onChange={(event) => waypointUpdate(index, { denseTraffic: event.target.checked })} /><span>Zone maritime à trafic dense</span></label>
                 <div role="cell" className="so-passage-field is-actions"><button type="button" className="so-secondary sp-button sp-button--secondary" aria-label={`Supprimer le point ${index + 1}`} onClick={() => update({ waypoints: draft.waypoints.filter((_, i) => i !== index) })}><Trash2 size={15} /></button></div>
@@ -473,13 +492,14 @@ export function SeaOperationsPage() {
           </div>
           <button type="button" className="so-secondary sp-button sp-button--secondary" disabled={exporting} onClick={() => addWaypoint()}><Plus size={16} />Ajouter un point de passage</button>
           <SeaOperationRadioPanel waypoints={draft.waypoints} />
-          <SeaOperationWeatherPanel client={client} projectId={draft.planning?.projectId || ''} waypoints={draft.waypoints} preview={previewMode} active={step === 2} onWeatherLoaded={retainWeather} />
+          <SeaOperationWeatherPanel client={client} projectId={draft.planning?.projectId || ''} waypoints={draft.waypoints} preview={previewMode} active={step === 2} readOnly={signed} validatedAt={record?.signedAt} observations={record?.weatherObservations} onWeatherLoaded={retainWeather} />
         </section>
         <section id="sea-operation-step-3" hidden={step !== 3} className={`so-panel so-decision-panel ${step === 3 ? 'is-active' : ''}`} aria-label="Décision du Capitaine"><div className="so-section-title"><b aria-hidden="true">4</b><div><h2 tabIndex={-1}>Décision du Capitaine</h2><p>Le Capitaine consigne sa décision après examen des conditions de la mission.</p></div></div>
           <div className={`so-assessment ${assessment.blockingChecks.length ? 'is-nogo' : 'is-pending'}`}><AlertTriangle size={22} /><div><strong>{assessment.blockingChecks.length ? `NO GO imposé · ${assessment.blockingChecks.length} contrôle(s) bloquant(s)` : 'Vérification de la préparation'}</strong><p>Toute réponse Non à un contrôle bloquant impose un NO GO. Le Capitaine doit trouver une solution et justifier toute situation empêchant l’appareillage.</p>{assessment.blockingChecks.length > 0 && <ul>{assessment.blockingChecks.map((check) => <li key={check.id}>{check.label}</li>)}</ul>}</div></div>
           <Field label="Décision"><ChoiceControl label="Décision" value={draft.decision} onChange={(decision) => update({ decision: decision as SeaOperationPayload['decision'] })} options={[{ value: 'GO', label: 'GO · la mission peut être réalisée', disabled: assessment.blockingChecks.length > 0 }, { value: 'NO_GO', label: 'NO GO · la mission ne peut être réalisée' }]} /></Field><Field label="Risques identifiés / informations à transmettre à l’Armement"><textarea rows={2} value={draft.risks} onChange={(event) => update({ risks: event.target.value })} /></Field><div className="so-grid so-decision-identity-grid"><Field label="Prénom NOM du Capitaine signataire"><input readOnly={linkedToPlanning} value={draft.signature.captainName} onChange={(event) => update({ signature: { ...draft.signature, captainName: event.target.value } })} /></Field><Field label="Date de la décision"><input type="date" value={draft.signature.date} onChange={(event) => update({ signature: { ...draft.signature, date: event.target.value } })} /></Field><Field label="Lieu de la décision"><input value={draft.signature.place} onChange={(event) => update({ signature: { ...draft.signature, place: event.target.value } })} /></Field></div>{linkedToPlanning && <div className="so-signature-preview"><strong>Signature du Capitaine</strong>{(signed ? record?.signatureUrl : captainSignature?.url) ? <img src={signed ? record?.signatureUrl : captainSignature?.url} alt={`Signature de ${draft.signature.captainName}`} /> : <p className="so-help">{signed ? 'Aucune image de signature attachée à cette fiche.' : signatureError || (signatureLoading ? 'Chargement de la signature…' : selectedCaptain?.hasSignature ? 'La signature RH est indisponible. Rechargez la fiche avant de signer.' : 'Aucune signature RH active enregistrée pour ce Capitaine.')}</p>}<small>{signed ? 'Signature conservée avec la décision.' : 'La signature est apposée lors de la confirmation de la décision par le Capitaine.'}</small></div>}<label className="so-checkbox so-attestation"><input type="checkbox" checked={draft.signature.acknowledged} onChange={(event) => update({ signature: { ...draft.signature, acknowledged: event.target.checked } })} />En qualité de Capitaine, je confirme les informations renseignées et signe cette décision.</label>
         </section>
       </fieldset>
+          {signed && step === 2 && <div className="so-weather-history-actions"><p className="so-help">Les mesures officielles sont ajoutées après le passage, selon leur disponibilité. La prévision validée et la décision du Capitaine restent conservées.</p><button className="sp-button sp-button--secondary" disabled={historyLoading} onClick={() => void refreshWeatherHistory()} type="button">{historyLoading ? 'Lecture des mesures…' : 'Actualiser les mesures enregistrées'}</button>{record?.weatherHistoryError && <p role="status">{record.weatherHistoryError}</p>}</div>}
           {step === 2 && <SeaOperationChartsPanel client={client} projectId={draft.planning?.projectId || ''} waypoints={draft.waypoints} charts={draft.charts} onChartsChange={(charts) => update({ charts })} canEdit={editable && !busy && !signed} preview={previewMode} active />}
           {step === 3 && <div className="so-signature-footer">{signed ? <p><CheckCircle2 size={18} />Décision signée par {record.signedByName} le {formatDate(record.signedAt)}. Cette fiche est figée.</p> : <p>{canSign ? 'La signature enregistre votre identité et fige définitivement cette fiche.' : 'La signature est réservée au compte réel du Capitaine affecté au navire. Enregistrez la préparation pour lui transmettre la fiche.'}</p>}</div>}
         </div>

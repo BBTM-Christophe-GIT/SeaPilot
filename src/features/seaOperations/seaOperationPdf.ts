@@ -245,7 +245,7 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     paragraph('Fond : Natural Earth · Tracé indicatif. Repères numérotés dans l’ordre du tableau ; les positions identiques regroupent leurs numéros.');
   } else paragraph('Aucun waypoint avec une latitude et une longitude valides à placer sur la carte.');
   if (routeMap.invalidCount) paragraph(`${routeMap.invalidCount} waypoint${routeMap.invalidCount > 1 ? 's' : ''} non placé${routeMap.invalidCount > 1 ? 's' : ''} : coordonnées absentes ou invalides. Le tracé est interrompu à ces positions.`);
-  const passageRows = form.waypoints.map((point) => passagePlanCellData(point, { allowLiveRadio: !signed, weatherMatrix: form.vessel.weatherMatrix }));
+  const passageRows = form.waypoints.map((point) => passagePlanCellData(point, { allowLiveRadio: !signed, weatherMatrix: form.vessel.weatherMatrix, observations: record.weatherObservations, includeObservations: signed, validatedAt: signed ? record.signedAt : undefined }));
   const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
   const height = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const integer = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
@@ -262,8 +262,18 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     const messageLines = message ? document.splitTextToSize(clean(message), weatherColumnWidth - 26) as string[] : [];
     const windLines = forecast?.wind ? [metric(forecast.wind.speedKnots, 'nd') + (forecast.wind.directionDegrees === null ? '' : ` · de ${integer.format(forecast.wind.directionDegrees)}°`)]
       : document.splitTextToSize(clean(forecast?.windMessage || 'Prévision de vent indisponible.'), weatherColumnWidth - 38) as string[];
-    return { forecast, messageLines, windLines, indicatorLines, indicatorHeight,
-      height: indicatorHeight + (forecast ? 114 + messageLines.length * 10 + windLines.length * 10 : 33 + messageLines.length * 10) };
+    const observed = row.observation;
+    const observationSummary = !signed ? '' : observed?.status === 'recorded' ? [
+      'MESURES APRÈS LE PASSAGE',
+      observed.waves ? `${observed.waves.component === 'swell' ? 'Houle Hs' : 'Hs mer totale'} ${metric(observed.waves.heightMeters, 'm', height)} · ${observed.waves.periodKind === 'peak' ? 'Tp' : 'Tm'} ${metric(observed.waves.periodSeconds, 's')}` : 'Hs : aucune mesure proche.',
+      observed.wind ? `Vent mesuré : ${metric(observed.wind.speedKnots, 'nd')} · de ${metric(observed.wind.directionDegrees, '°', integer)}` : 'Vent : aucune mesure proche.',
+      'Stations, horaires et sources en annexe.',
+    ].join('\n') : row.observedWeather;
+    const observedLines = observationSummary ? document.splitTextToSize(clean(observationSummary), weatherColumnWidth - 26) as string[] : [];
+    const validationLines = signed && record.signedAt ? document.splitTextToSize(clean(`Prévision conservée à la validation du ${new Date(record.signedAt).toLocaleString('fr-FR', { timeZone: 'UTC' })} UTC`), weatherColumnWidth - 26) as string[] : [];
+    return { forecast, messageLines, windLines, indicatorLines, indicatorHeight, observedLines, validationLines,
+      height: indicatorHeight + (forecast ? 114 + messageLines.length * 10 + windLines.length * 10 : 33 + messageLines.length * 10)
+        + (observedLines.length ? observedLines.length * 8 + 14 : 0) + validationLines.length * 8 };
   });
   if (passageRows.length) {
     document.setFont('helvetica', 'normal'); document.setFontSize(8.5);
@@ -301,6 +311,10 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
         let top = cell.cell.y + 19;
         document.setFont('helvetica', 'bold'); document.setFontSize(6.5); document.setTextColor(87, 104, 117);
         document.text('MÉTÉO À L’ETA', x, top); top += 10;
+        if (card.validationLines.length) {
+          document.setFont('helvetica', 'normal'); document.setFontSize(6.5);
+          document.text(card.validationLines, x, top, { lineHeightFactor: 1.15 }); top += card.validationLines.length * 8;
+        }
         if (card.indicatorLines.length) {
           const colors = SEA_STATE_COLORS[row.seaState.tone];
           document.setFillColor(...colors.background);
@@ -330,10 +344,24 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
           document.text('Vent moyen 10 m', x + 5, top + 12);
           document.setFont('helvetica', forecast.wind ? 'bold' : 'normal'); document.setFontSize(8.5); document.setTextColor(24, 44, 62);
           document.text(card.windLines, x + 5, top + 25, { lineHeightFactor: 1.15 });
+          top += 24 + card.windLines.length * 10 + 5;
+        }
+        if (card.observedLines.length) {
+          document.setDrawColor(209, 220, 230); document.line(x, top, x + cell.cell.width - 24, top); top += 12;
+          document.setFont('helvetica', 'normal'); document.setFontSize(6.5); document.setTextColor(55, 71, 84);
+          document.text(card.observedLines, x, top, { lineHeightFactor: 1.2 });
         }
       },
     });
   else paragraph('Aucun point de passage renseigné.');
+  if (signed && passageRows.some((row) => row.observation?.status === 'recorded')) {
+    heading('Mesures officielles après le passage', true);
+    paragraph('Annexe ajoutée après la validation. Les mesures des stations proches ne modifient ni la prévision conservée, ni la décision du Capitaine.');
+    for (const row of passageRows) if (row.observation?.status === 'recorded') {
+      heading(`Waypoint ${row.waypoint} - ETA ${row.eta}`, true);
+      paragraph(row.observedWeather);
+    }
+  }
   if (passageRows.some((row) => row.weatherFootnote || row.radioFootnote)) {
     heading('Sources et horaires du Passage Plan', true);
     for (const row of passageRows) {

@@ -7,6 +7,18 @@ import { generateSeaOperationPdf } from './seaOperationPdf';
 import type { SeaOperationRecord } from './seaOperationQueries';
 import { SEA_METEO_FRANCE_SOURCE_URL } from './seaOperationWeatherModel';
 import { GOURY_WEATHER_MATRIX } from '../fleet/vesselWeatherMatrix';
+import { SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL, SEA_METEO_FRANCE_OBSERVATIONS_URL, type ObservationResult } from './seaOperationWeatherObservationsModel';
+
+function recordedObservation(pointId: string): ObservationResult {
+  const common = { observedAt: '2026-10-16T10:15:00Z', station: { id: '62001',
+    name: 'Bouée côtière de la Manche occidentale - station officielle de suivi des états de mer - LONG-STATION-END',
+    latitude: 49.6, longitude: -1.6, distanceKm: 5.8 },
+    source: { provider: 'Météo-France' as const, sourceUrl: SEA_METEO_FRANCE_OBSERVATIONS_URL, license: 'Licence Ouverte 2.0',
+      licenseUrl: SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL, quality: 'not_provided' as const } };
+  return { pointId, latitude: 49.65, longitude: -1.62, etaUtc: '2026-10-16T10:00:00Z', recordedAt: '2026-10-17T08:00:00Z',
+    wind: { ...common, speedKnots: 22, directionDegrees: 280, instrumentHeightMeters: 3 },
+    waves: { ...common, heightMeters: 4.2, periodSeconds: 11, directionDegrees: 250, component: 'total', periodKind: 'peak' }, status: 'recorded', message: '' };
+}
 
 function fixture(): SeaOperationRecord {
   const draft = emptySeaOperation();
@@ -50,6 +62,16 @@ const template = () => readFile(new URL('../../../public/templates/sea-operation
 async function landscapeBodies(bytes: Uint8Array): Promise<string[]> {
   const document = await PDFDocument.load(bytes);
   return document.getPages().filter((page) => page.getWidth() > page.getHeight()).map((page) => {
+    const objects = page.node.Resources()!.lookup(PDFName.of('XObject'), PDFDict);
+    const body = objects.lookup(objects.keys()[0]);
+    if (!(body instanceof PDFRawStream)) throw new Error('Expected the generated body stream');
+    return Buffer.from(decodePDFRawStream(body).decode()).toString('latin1');
+  });
+}
+
+async function generatedBodies(bytes: Uint8Array): Promise<string[]> {
+  const document = await PDFDocument.load(bytes);
+  return document.getPages().map((page) => {
     const objects = page.node.Resources()!.lookup(PDFName.of('XObject'), PDFDict);
     const body = objects.lookup(objects.keys()[0]);
     if (!(body instanceof PDFRawStream)) throw new Error('Expected the generated body stream');
@@ -200,6 +222,59 @@ describe('Sea operation PDF', () => {
   it('fails explicitly if the source chrome is absent instead of fabricating a replacement header', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
     await expect(generateSeaOperationPdf(fixture())).rejects.toThrow('modèle Word d’en-tête et de pied de page est indisponible');
+  });
+
+  it('exports an official measured annex without changing the validated forecast, matrix or decision and keeps its long details in the page body', async () => {
+    const record = fixture();
+    record.draft.description = 'Opération de recette - prévision validée et mesures officielles après passage.';
+    record.draft.waypoints = record.draft.waypoints.slice(0, 3);
+    record.weatherObservations = record.draft.waypoints.map((point) => recordedObservation(point.id));
+    const original = structuredClone(record);
+    const generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    if (process.env.SEAPILOT_PDF_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_QA_OUTPUT, generated.bytes);
+    const document = await PDFDocument.load(generated.bytes);
+    const bodies = await generatedBodies(generated.bytes);
+    const text = bodies.join('\n');
+    expect(text).toContain('MESURES APRÈS LE PASSAGE');
+    expect(text).toContain('Hs mer totale 4,20 m');
+    expect(text).toContain('Tp 11 s');
+    expect(text).toContain('Houle Hs');
+    expect(text).toContain('(0,60 m)');
+    expect(text.match(/\(Confortable\)/g)).toHaveLength(3);
+    expect(text).not.toContain('(Rude)');
+    expect(text).not.toContain('(Hors matrice)');
+    expect(text).toContain('GO - La mission peut');
+    expect(text).toContain('Vent mesuré à 3 m');
+    expect(text).toContain('LONG-STATION-END');
+    expect(text).toContain('16/10/2026 10:15 UTC');
+    expect(text).toContain('Annexe mise à jour le 17/10/2026 08:00 UTC');
+    expect(text).toContain('qualité');
+    expect(text).toContain('non renseignée');
+    expect(text).toContain(SEA_METEO_FRANCE_OBSERVATIONS_URL);
+    expect(text).toContain(SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL);
+    expect(text).toContain('Licence Ouverte 2.0');
+    expect(text).not.toMatch(/rafales|37 nd/i);
+    for (const [index, body] of bodies.entries()) {
+      const page = document.getPage(index);
+      const placements = [...body.matchAll(/BT\n([\s\S]*?)\nET/g)].map((match) => /([\d.-]+) ([\d.-]+) Td/.exec(match[1])).filter((match) => match !== null);
+      for (const placement of placements) {
+        expect(Number(placement[1])).toBeGreaterThanOrEqual(49);
+        expect(Number(placement[1])).toBeLessThan(page.getWidth() - 49);
+        expect(Number(placement[2])).toBeGreaterThanOrEqual(55);
+        expect(Number(placement[2])).toBeLessThanOrEqual(page.getHeight() - 100);
+      }
+      const observed = textPositions(body, 'MESURES APRÈS LE PASSAGE');
+      if (observed.length) {
+        const wind = textPositions(body, 'Vent moyen 10 m');
+        expect(observed).toHaveLength(wind.length);
+        observed.forEach((position, index) => expect(wind[index].y - position.y).toBeGreaterThan(30));
+      }
+    }
+    expect(record).toEqual(original);
+    const draft = await generatedBodies((await generateSeaOperationPdf({ ...record, status: 'draft' }, { templateBytes: await template() })).bytes);
+    expect(draft.join('\n')).not.toContain('MESURES APRÈS LE PASSAGE');
+    expect(draft.join('\n')).not.toContain('LONG-STATION-END');
+    expect(draft.join('\n')).not.toContain(SEA_METEO_FRANCE_OBSERVATIONS_URL);
   });
 
   it('rejects an unreadable private signature rather than exporting a substitute image', async () => {

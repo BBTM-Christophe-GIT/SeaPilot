@@ -71,6 +71,44 @@ describe('waypoint weather', () => {
     expect(screen.getByText(/12 nd · de 270/)).toBeVisible();
     expect(onWeatherLoaded).not.toHaveBeenCalled();
   });
+  it('preserves a recorded forecast when a successful refresh returns no values after the ETA', async () => {
+    const onWeatherLoaded = vi.fn();
+    vi.mocked(fetchSeaOperationWaypointWeather).mockResolvedValue({ ...weather, fetchedAt: '2026-10-23T12:00:00Z', wind: null, waves: null,
+      windMessage: 'L’ETA est passée.', wavesMessage: 'L’ETA est passée.' });
+    render(<SeaOperationWeatherPanel client={client} projectId="1" waypoints={[{ ...point, weather }]} onWeatherLoaded={onWeatherLoaded} />);
+    await load();
+    fireEvent.click(screen.getByRole('button', { name: 'Actualiser la météo' }));
+    await load();
+    expect(screen.getByText(/12 nd · de 270/)).toBeVisible();
+    expect(screen.queryByText('L’ETA est passée.')).not.toBeInTheDocument();
+    expect(onWeatherLoaded).toHaveBeenCalledWith(weather, expect.objectContaining({ pointId: 'p1' }), client);
+  });
+  it('shows the signed forecast and its validation date without live requests or refresh controls', async () => {
+    const onWeatherLoaded = vi.fn();
+    render(<SeaOperationWeatherPanel client={client} projectId="1" waypoints={[{ ...point, weather }, { ...point, id: 'p2' }]}
+      readOnly validatedAt="2026-10-22T14:30:00Z" onWeatherLoaded={onWeatherLoaded} />);
+    await load();
+    expect(screen.getByText(/12 nd · de 270/)).toBeVisible();
+    expect(screen.getByText(/Décision du Capitaine validée le 22\/10\/2026 14:30 UTC/)).toBeVisible();
+    expect(screen.getByText(/non enregistrées.*lors de la validation/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Actualiser la météo' })).not.toBeInTheDocument();
+    expect(fetchSeaOperationWaypointWeather).not.toHaveBeenCalled();
+    expect(onWeatherLoaded).not.toHaveBeenCalled();
+  });
+  it('aborts an editable request when the signed revision opens and displays its saved values', async () => {
+    let resolve!: (weather: SeaOperationWaypointWeather) => void;
+    vi.mocked(fetchSeaOperationWaypointWeather).mockReturnValue(new Promise((done) => { resolve = done; }));
+    const onWeatherLoaded = vi.fn();
+    const view = render(<SeaOperationWeatherPanel client={client} projectId="1" waypoints={[point]} onWeatherLoaded={onWeatherLoaded} />);
+    await load();
+    const signal = vi.mocked(fetchSeaOperationWaypointWeather).mock.calls[0][2]?.signal;
+    view.rerender(<SeaOperationWeatherPanel client={client} projectId="1" waypoints={[{ ...point, weather }]} readOnly onWeatherLoaded={onWeatherLoaded} />);
+    expect(signal?.aborted).toBe(true);
+    await act(async () => resolve({ ...weather, wind: { ...weather.wind!, speedKnots: 50 } }));
+    expect(screen.getByText(/12 nd · de 270/)).toBeVisible();
+    expect(screen.queryByText(/50 nd/)).not.toBeInTheDocument();
+    expect(onWeatherLoaded).not.toHaveBeenCalled();
+  });
   it('waits until Passage Plan is opened before making requests', async () => {
     vi.mocked(fetchSeaOperationWaypointWeather).mockResolvedValue(weather);
     const view = render(<SeaOperationWeatherPanel client={client} projectId="1" waypoints={[point]} active={false} />);

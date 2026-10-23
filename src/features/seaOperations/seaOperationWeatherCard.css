@@ -55,3 +55,12 @@
   .so-waypoint-weather-wind strong { font-size: 8pt; }
   .so-waypoint-weather-card svg { width: 11pt; height: 11pt; }
 }
+.so-weather-observations { display: grid; gap: var(--sp-space-2); border-top: 1px solid var(--sp-border); padding-top: var(--sp-space-2); margin-top: var(--sp-space-2); min-width: 0; color: var(--sp-text); overflow-wrap: anywhere; }
+.so-weather-observations h5 { margin: 0; font-size: .72rem; color: var(--sp-heading); }
+.so-weather-observations p { margin: 0; font-size: .7rem; line-height: 1.45; }
+.so-weather-observation-component { display: grid; gap: var(--sp-space-1); font-size: .72rem; }
+.so-weather-observation-component strong { display: flex; align-items: center; gap: var(--sp-space-1); }
+.so-weather-observations small { color: var(--sp-muted); font-size: .65rem; line-height: 1.4; }
+.so-weather-history-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-block: .75rem; }
+.so-weather-history-actions > p { flex: 1 1 100%; margin: 0; }
+.so-waypoint-weather-card.is-editor.is-validated .so-waypoint-weather-heading > span:first-child { display: block; }
