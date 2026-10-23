@@ -2,9 +2,68 @@ import { describe, expect, it } from 'vitest';
 import { previewSupabaseClient } from './previewSupabaseClient';
 import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveRightsPeriod } from '../planning/planningAbsenceBalanceQueries';
 import { fetchFleetVessels, saveFleetVessel } from '../fleet/fleetQueries';
-import { fetchSeaOperationData } from '../seaOperations/seaOperationQueries';
+import { fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, saveSeaOperation } from '../seaOperations/seaOperationQueries';
+import { emptySeaOperation, emptySeaOperationWaypoint, seaOperationToday } from '../seaOperations/seaOperationModel';
+import { cloneVesselWeatherMatrix, GOURY_WEATHER_MATRIX } from '../fleet/vesselWeatherMatrix';
 
 describe('previewSupabaseClient', () => {
+  it('seeds only demo GOURY and carries Navire matrix edits through overview, planning and canonical operation save', async () => {
+    const original = (await fetchFleetVessels(previewSupabaseClient)).find((vessel) => vessel.id === 1)!;
+    const input = { ...original, brochureOperations: original.brochureOperations.join('\n') };
+    expect(original.weatherMatrix).toEqual(GOURY_WEATHER_MATRIX);
+    expect((await fetchFleetVessels(previewSupabaseClient)).filter((vessel) => vessel.id !== 1).every((vessel) => vessel.weatherMatrix === null)).toBe(true);
+    const edited = cloneVesselWeatherMatrix(GOURY_WEATHER_MATRIX); edited.levels[0][0] = 'unlivable';
+    const expected = structuredClone(edited);
+    try {
+      await saveFleetVessel(previewSupabaseClient, { ...input, weatherMatrix: edited });
+      edited.levels[0][0] = 'comfortable';
+      const overview = await fetchSeaOperationData(previewSupabaseClient);
+      expect(overview.vessels.find((vessel) => vessel.id === 9901)?.weatherMatrix).toEqual(expected);
+      expect(overview.vessels.find((vessel) => vessel.id === 9902)?.weatherMatrix).toBeNull();
+      const planning = await fetchSeaOperationPlanning(previewSupabaseClient, seaOperationToday());
+      expect(planning.choices[0].vessel.weatherMatrix).toEqual(expected);
+      expect(planning.choices[1].vessel.weatherMatrix).toBeNull();
+      const draft = emptySeaOperation();
+      draft.project = 'Mission de démonstration pour vérification';
+      draft.description = 'Conserver les champs manuels.';
+      draft.vessel = { ...draft.vessel, ...planning.choices[0].vessel, weatherMatrix: cloneVesselWeatherMatrix(GOURY_WEATHER_MATRIX) };
+      draft.waypoints = [{ ...emptySeaOperationWaypoint('matrix-demo'), ukc: 'UKC validée manuellement' }];
+      const saved = await saveSeaOperation(previewSupabaseClient, draft);
+      expect(saved.draft.vessel.weatherMatrix).toEqual(expected);
+      expect(saved.draft.description).toBe(draft.description);
+      expect(saved.draft.waypoints).toEqual(draft.waypoints);
+      expect(saved.draft.decision).toBe(''); expect(saved.draft.signature.acknowledged).toBe(false);
+      expect(draft.vessel.weatherMatrix).toEqual(GOURY_WEATHER_MATRIX);
+      await saveFleetVessel(previewSupabaseClient, { ...input, weatherMatrix: null });
+      expect((await fetchSeaOperationDetail(previewSupabaseClient, saved.id)).draft.vessel.weatherMatrix).toEqual(expected);
+      const other = await saveSeaOperation(previewSupabaseClient, { ...draft, vessel: { ...draft.vessel, ...planning.choices[1].vessel, weatherMatrix: expected } });
+      expect(other.draft.vessel.weatherMatrix).toBeNull();
+    } finally { await saveFleetVessel(previewSupabaseClient, { ...input, weatherMatrix: original.weatherMatrix }); }
+  });
+
+  it('propagates an explicit matrix clear through demo planning and save without a GOURY fallback', async () => {
+    const original = (await fetchFleetVessels(previewSupabaseClient)).find((vessel) => vessel.id === 1)!;
+    const input = { ...original, brochureOperations: original.brochureOperations.join('\n') };
+    try {
+      await saveFleetVessel(previewSupabaseClient, { ...input, weatherMatrix: null });
+      expect((await fetchFleetVessels(previewSupabaseClient)).find((vessel) => vessel.id === 1)?.weatherMatrix).toBeNull();
+      expect((await fetchSeaOperationData(previewSupabaseClient)).vessels.find((vessel) => vessel.id === 9901)?.weatherMatrix).toBeNull();
+      const { choices } = await fetchSeaOperationPlanning(previewSupabaseClient, seaOperationToday());
+      expect(choices[0].vessel.weatherMatrix).toBeNull();
+      const draft = emptySeaOperation(); draft.vessel = { ...draft.vessel, ...choices[0].vessel, weatherMatrix: cloneVesselWeatherMatrix(GOURY_WEATHER_MATRIX) };
+      expect((await saveSeaOperation(previewSupabaseClient, draft)).draft.vessel.weatherMatrix).toBeNull();
+    } finally { await saveFleetVessel(previewSupabaseClient, { ...input, weatherMatrix: original.weatherMatrix }); }
+  });
+
+  it('rejects malformed or oversized generic preview matrix updates atomically', async () => {
+    const original = await fetchFleetVessels(previewSupabaseClient);
+    for (const weather_matrix of [false, { version: 1 }, { ...GOURY_WEATHER_MATRIX, extra: 'x'.repeat(32769) }]) {
+      const result = await previewSupabaseClient.from('vessels').update({ weather_matrix, draft_m: 7 }).eq('id', 1).select('*').single();
+      expect(result.error).toMatchObject({ message: expect.stringContaining('invalide') });
+      expect(await fetchFleetVessels(previewSupabaseClient)).toEqual(original);
+    }
+  });
+
   it('retains a Navire draught edit and clear across Fleet reloads and sea-operation preview references', async () => {
     const original = (await fetchFleetVessels(previewSupabaseClient)).find((vessel) => vessel.id === 1)!;
     const input = { ...original, brochureOperations: original.brochureOperations.join('\n') };

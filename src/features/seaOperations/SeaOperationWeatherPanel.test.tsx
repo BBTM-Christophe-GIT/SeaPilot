@@ -19,7 +19,7 @@ describe('waypoint weather', () => {
     await load();
     expect(fetchSeaOperationWaypointWeather).toHaveBeenCalledWith(client, { projectId: '1', pointId: 'p1', latitude: 49.65, longitude: -1.62, eta: point.eta }, expect.objectContaining({ preview: false }));
     expect(screen.getByText('Houle significative (Hs)')).toBeVisible();
-    expect(screen.getByText('Hs 0,6 m · 6 s')).toBeVisible();
+    expect(screen.getByText('Hs 0,6 m · Période moyenne : 6 s')).toBeVisible();
     expect(screen.getByText(/12 nd · de 270/)).toBeVisible();
     expect(screen.queryByText(/Rafales/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(/Heure modèle : 23\/10\/2026 10:00 UTC/)).toHaveLength(2);

@@ -15,11 +15,13 @@ import { SeaOperationRadioPanel } from './SeaOperationRadioPanel';
 import { SeaOperationWeatherPanel } from './SeaOperationWeatherPanel';
 import { SeaOperationHydroSources } from './SeaOperationHydroSources';
 import { SeaOperationChartsPanel } from './SeaOperationChartsPanel';
-import { captureSeaOperationRadios, retainSeaOperationWeather, updateSeaOperationWaypoint } from './seaOperationWaypointSnapshots';
+import { captureSeaOperationRadios, retainSeaOperationWeather, updateSeaOperationWaypoint, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 import type { SeaOperationWeatherCaptureContext } from './seaOperationWaypointSnapshots';
 import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { passagePlanCellData } from './seaOperationPassagePlan';
+import { cloneVesselWeatherMatrix, evaluateVesselSeaState, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
+import { SeaOperationWeatherCard, SeaStateIndicator } from './SeaOperationWeatherCard';
 
 const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'];
 const STEP_DETAILS = ['Mission, client et voyage', 'Préparation et sécurité du navire', 'Cartes et points de route', 'GO / NO GO et signature'];
@@ -69,8 +71,17 @@ function draftForPlanningChoice(choice: SeaOperationPlanningChoice, date: string
   const captain = choice.captains.length === 1 ? choice.captains[0] : null;
   return { ...draft, planning: { date, operationId: choice.operationId, projectId: choice.projectId, captainPersonId: captain?.personId || '' },
     project: choice.project, client: choice.client, clientContact: choice.clientContact, description: choice.description,
-    vessel: { ...draft.vessel, ...choice.vessel, id: String(choice.vessel.id), captainName: captain?.name || '' },
+    vessel: { ...draft.vessel, ...choice.vessel, id: String(choice.vessel.id), captainName: captain?.name || '',
+      ...(choice.vessel.weatherMatrix === undefined ? {} : { weatherMatrix: structuredClone(choice.vessel.weatherMatrix) }) },
     signature: { ...draft.signature, captainName: captain?.name || '', place: choice.vessel.departurePort } };
+}
+
+/** Undefined means an older/unloaded source; null explicitly records a vessel without a configured matrix. */
+function captureVesselMatrix(payload: SeaOperationPayload, source?: { id: string | number; weatherMatrix?: VesselWeatherMatrix | null }): SeaOperationPayload {
+  const fingerprint = (matrix: VesselWeatherMatrix | null | undefined) => JSON.stringify(matrix ? cloneVesselWeatherMatrix(matrix) : matrix);
+  if (!source || String(source.id) !== payload.vessel.id || source.weatherMatrix === undefined
+    || fingerprint(payload.vessel.weatherMatrix) === fingerprint(source.weatherMatrix)) return payload;
+  return { ...payload, vessel: { ...payload.vessel, weatherMatrix: structuredClone(source.weatherMatrix) } };
 }
 
 export function SeaOperationsPage() {
@@ -120,7 +131,7 @@ export function SeaOperationsPage() {
       return;
     }
     setRecord(existing ? { ...existing, version: recovery.version! } : null);
-    setDraft(recovery.draft); setPlanningDate(recovery.draft.planning?.date || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setStep(recovery.step); setEditing(true); setDirty(true);
+    setDraft(captureVesselMatrix(recovery.draft, result.vessels.find((vessel) => String(vessel.id) === recovery.draft.vessel.id))); setPlanningDate(recovery.draft.planning?.date || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setStep(recovery.step); setEditing(true); setDirty(true);
     setNotice('Votre préparation non enregistrée a été récupérée dans cet onglet. Vérifiez-la avant de l’enregistrer.');
   }, []);
 
@@ -175,6 +186,13 @@ export function SeaOperationsPage() {
       setPlanning(result);
       const current = latestDraft.current;
       const mission = result.choices.find((choice) => choice.operationId === current.planning?.operationId);
+      if (mission && record?.canEdit !== false && current.planning?.date === result.date && !weatherEditor.current.busy && !weatherEditor.current.signed) {
+        const source = mission.vessel.weatherMatrix === undefined ? data?.vessels.find((vessel) => String(vessel.id) === current.vessel.id) : mission.vessel;
+        if (captureVesselMatrix(current, source) !== current) {
+          setDraft((value) => value.planning?.operationId === mission.operationId && value.planning.date === result.date ? captureVesselMatrix(value, source) : value);
+          setDirty(true);
+        }
+      }
       const captain = mission?.captains.find((person) => person.personId === current.planning?.captainPersonId)
         || (!current.planning?.captainPersonId && mission?.captains.length === 1 ? mission.captains[0] : undefined);
       // Repair missing draft identity only; signed decisions and existing names remain historical.
@@ -189,13 +207,14 @@ export function SeaOperationsPage() {
       // A unique planned mission can be selected directly. Multiple missions always require a choice.
       if (allowAutomaticMission.current && editRevision.current === revision && !latestDraft.current.project && !latestDraft.current.planning?.operationId && result.choices.length === 1) {
         allowAutomaticMission.current = false;
-        setDraft(draftForPlanningChoice(result.choices[0], planningDate));
+        const selected = draftForPlanningChoice(result.choices[0], planningDate);
+        setDraft(result.choices[0].vessel.weatherMatrix === undefined ? captureVesselMatrix(selected, data?.vessels.find((vessel) => String(vessel.id) === selected.vessel.id)) : selected);
         setDirty(true);
       }
     }).catch((reason: unknown) => { if (active) setPlanningError(errorMessage(reason)); })
       .finally(() => { if (active) setPlanningLoading(false); });
     return () => { active = false; };
-  }, [client, editing, planningDate, record?.status, record?.canEdit]);
+  }, [client, editing, planningDate, record?.status, record?.canEdit, data?.vessels]);
   useEffect(() => {
     setCaptainSignature(null); setSignatureError(''); setSignatureLoading(false);
     if (!editing || record?.status === 'signed' || !draft.planning?.operationId || !draft.planning.captainPersonId) return;
@@ -245,7 +264,8 @@ export function SeaOperationsPage() {
     allowAutomaticMission.current = false;
     editRevision.current += 1;
     const choice = planning?.choices.find((item) => item.operationId === operationId);
-    setDraft(choice ? draftForPlanningChoice(choice, planningDate) : newSeaOperation());
+    const next = choice ? draftForPlanningChoice(choice, planningDate) : newSeaOperation();
+    setDraft(choice?.vessel.weatherMatrix === undefined ? captureVesselMatrix(next, data?.vessels.find((vessel) => String(vessel.id) === next.vessel.id)) : next);
     setDirty(true); setIssues([]); setNotice(''); setError('');
   }
   function changePlanningDate(value: string) {
@@ -282,7 +302,14 @@ export function SeaOperationsPage() {
     editorOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const request = ++loadSequence.current;
     setBusy(true); setError(''); setNotice(''); setIssues([]);
-    try { const loaded = await fetchSeaOperationDetail(client, item.id); if (request === loadSequence.current) { remember(loaded); setPlanningDate(loaded.draft.planning?.date || loaded.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setEditing(true); setStep(0); setMobilePane('form'); } }
+    try { const loaded = await fetchSeaOperationDetail(client, item.id); if (request === loadSequence.current) {
+      remember(loaded);
+      if (loaded.status !== 'signed' && loaded.canEdit) {
+        const prepared = captureVesselMatrix(loaded.draft, data?.vessels.find((vessel) => String(vessel.id) === loaded.draft.vessel.id));
+        if (prepared !== loaded.draft) { setDraft(prepared); setDirty(true); setNotice('La matrice du navire a été actualisée pour cette préparation. Enregistrez pour la conserver.'); }
+      }
+      setPlanningDate(loaded.draft.planning?.date || loaded.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setEditing(true); setStep(0); setMobilePane('form');
+    } }
     catch (reason) { setError(errorMessage(reason)); }
     finally { setBusy(false); }
   }
@@ -296,7 +323,8 @@ export function SeaOperationsPage() {
   }
   async function save(sign = false) {
     if (busy) return;
-    const prepared = captureSeaOperationRadios(draft);
+    const matrixSource = selectedMission?.vessel.weatherMatrix === undefined ? data?.vessels.find((vessel) => String(vessel.id) === draft.vessel.id) : selectedMission.vessel;
+    const prepared = captureSeaOperationRadios(captureVesselMatrix(draft, matrixSource));
     const validation = validateSeaOperation(prepared, sign ? prepared.decision || 'GO' : 'DRAFT');
     if (validation.length) { setIssues(validation); setStep(sign ? 3 : step); revealFormFeedback(); return; }
     setBusy(true); setError(''); setIssues([]); setNotice('');
@@ -409,11 +437,11 @@ export function SeaOperationsPage() {
               const legacyEta = point.eta && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(point.eta);
               const operationDate = draft.planning?.date || planningDate;
               const proposedEta = legacyEta && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(point.eta) && /^\d{4}-\d{2}-\d{2}$/.test(operationDate) ? `${operationDate}T${point.eta}` : '';
-              const navigation = passagePlanCellData(point, { allowLiveRadio: !signed });
+              const navigation = passagePlanCellData(point, { allowLiveRadio: !signed, weatherMatrix: draft.vessel.weatherMatrix });
               return <div className="so-passage-row" role="row" key={point.id}>
-                {([['number', 'Waypoint', 'number'], ['descriptionVhf', 'Description', 'description'], ['latitude', 'Latitude', 'latitude'], ['longitude', 'Longitude', 'longitude'], ['ukc', 'UKC', 'ukc']] as const).map(([key, label, variant]) => <label role="cell" className={`so-passage-field is-${variant}`} key={key}><span>{label}</span><input aria-label={`${label} · point ${index + 1}`} type="text" value={point[key]} onChange={(event) => waypointUpdate(index, { [key]: event.target.value })} /></label>)}
+                {([['number', 'Waypoint', 'number'], ['descriptionVhf', 'Description', 'description'], ['latitude', 'Latitude', 'latitude'], ['longitude', 'Longitude', 'longitude'], ['ukc', 'UKC', 'ukc']] as const).map(([key, label, variant]) => <label role="cell" className={`so-passage-field is-${variant}`} key={key}><span>{label}</span><input aria-label={`${label} · point ${index + 1}`} type="text" value={point[key]} onChange={(event) => waypointUpdate(index, { [key]: event.target.value })} />{key === 'number' && <SeaStateIndicator assessment={evaluateVesselSeaState(draft.vessel.weatherMatrix, waypointWeatherSnapshot(point)?.waves)} />}</label>)}
                 <div role="cell" className="so-passage-field is-vhf"><span>Contacts VHF</span><p>{navigation.vhf}</p></div>
-                <div role="cell" className="so-passage-field is-weather"><span>Prévisions météo</span><p>{navigation.weather}</p></div>
+                <div role="cell" className="so-passage-field is-weather"><span>Prévisions météo</span><SeaOperationWeatherCard point={point} matrix={draft.vessel.weatherMatrix} compact /></div>
                 <label role="cell" className="so-passage-field is-eta"><span>ETA · date et heure</span><input aria-label={`ETA · date et heure · point ${index + 1}`} type="datetime-local" value={legacyEta ? '' : point.eta} onChange={(event) => waypointUpdate(index, { eta: event.target.value })} />{legacyEta && <small className="so-help">Ancienne ETA : {point.eta}. Renseignez une date et une heure pour la remplacer.</small>}{proposedEta && <button type="button" className="sp-button sp-button--secondary" aria-label={`Appliquer la date de l’opération à l’ETA du point ${index + 1}`} onClick={() => waypointUpdate(index, { eta: proposedEta })}>Utiliser le {operationDate.split('-').reverse().join('/')} à {point.eta}</button>}</label>
                 <label role="cell" className="so-passage-field is-traffic"><input aria-label={`Zone maritime à trafic dense · point ${index + 1}`} type="checkbox" checked={point.denseTraffic} onChange={(event) => waypointUpdate(index, { denseTraffic: event.target.checked })} /><span>Zone maritime à trafic dense</span></label>
                 <div role="cell" className="so-passage-field is-actions"><button type="button" className="so-secondary sp-button sp-button--secondary" aria-label={`Supprimer le point ${index + 1}`} onClick={() => update({ waypoints: draft.waypoints.filter((_, i) => i !== index) })}><Trash2 size={15} /></button></div>

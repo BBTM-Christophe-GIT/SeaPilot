@@ -51,6 +51,9 @@
 .so-document-preview .so-print table.so-print-passage { font-size: 11.33px; line-height: 1.3; }
 .so-document-preview .so-print .so-print-passage th, .so-document-preview .so-print .so-print-passage td { padding: 5.33px; }
 .so-document-preview .so-print-passage-sources { font-size: 10.67px; line-height: 1.35; }
+.so-document-preview .so-print .so-waypoint-weather-metrics { margin: 0; }
+.so-document-preview .so-print .so-waypoint-weather-card p { margin: 0; white-space: normal; }
+.so-document-preview .so-print-passage .so-waypoint-weather-card { white-space: normal; box-shadow: none; }
 .so-completion { padding: 20px 16px; overflow: auto; min-width: 0; min-height: 0; background: var(--sp-surface); border-left: 1px solid var(--sp-border); }
 .so-completion > header { display: flex; align-items: center; gap: 8px; color: var(--sp-muted); }
 .so-operation-preview .so-completion h2 { margin: 0; font-size: .86rem; font-weight: 650; color: var(--sp-heading); }

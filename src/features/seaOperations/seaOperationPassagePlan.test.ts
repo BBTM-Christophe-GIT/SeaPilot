@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { emptySeaOperationWaypoint, type SeaOperationWaypoint } from './seaOperationModel';
 import { SEA_METEO_FRANCE_SOURCE_URL } from './seaOperationWeatherModel';
 import { passagePlanCellData } from './seaOperationPassagePlan';
+import { GOURY_WEATHER_MATRIX } from '../fleet/vesselWeatherMatrix';
 
 function recordedPoint(): SeaOperationWaypoint {
   return { ...emptySeaOperationWaypoint('route-1'), number: 'WP1', descriptionVhf: 'Approche du port', latitude: '49.65 N', longitude: '1.62 W', eta: '2026-10-23T12:00', ukc: '2 m',
@@ -23,8 +24,9 @@ describe('recorded Passage Plan presentation', () => {
     expect(row.vhf).toContain('Cherbourg · Capitainerie · Ch 12');
     expect(row.vhf).toContain('Tél. +33 2 33 20 41 25');
     expect(row.weather).toContain('Vent moyen 10 m : 12 nd · de 270°');
-    expect(row.weather).toContain('Houle Hs : 0,60 m · 6 s · de 220°');
-    expect(row.weather).toContain('23/10/2026 10:00 UTC');
+    expect(row.weather).toContain('Houle Hs : 0,60 m\nPériode : 6 s\nProvenance houle : 220°');
+    expect(row.weather).not.toContain('23/10/2026 10:00 UTC');
+    expect(row.weatherFootnote).toContain('modèle houle : 23/10/2026 10:00 UTC');
     expect(row.weather).not.toMatch(/rafale|37/i);
     expect(row.weatherFootnote).toContain('Météo-France · consultée le 22/10/2026 12:00 UTC');
     expect(row.weatherFootnote).toContain('réseau du 22/10/2026 06:00 UTC');
@@ -51,5 +53,24 @@ describe('recorded Passage Plan presentation', () => {
     expect(passagePlanCellData(point).weather).toContain('Houle Hs : 0,00 m');
     point.weather!.wind = null; point.weather!.windMessage = 'Horizon dépassé.';
     expect(passagePlanCellData(point).weather).toContain('Vent : Horizon dépassé.');
+  });
+  it('evaluates only the captured matrix and matching Hs-period pair, with no wind limit or automatic GO', () => {
+    const point = recordedPoint();
+    const row = passagePlanCellData(point, { weatherMatrix: GOURY_WEATHER_MATRIX });
+    expect(row.weather).toMatch(/^Confortable\n/);
+    expect(row.seaState).toMatchObject({ code: 'comfortable', tone: 'success' });
+    expect(row.weatherFootnote).toContain('Matrice du navire enregistrée');
+    point.weather!.waves!.heightMeters = 2.2; point.weather!.waves!.periodSeconds = 4;
+    point.weather!.wind!.speedKnots = 0;
+    expect(passagePlanCellData(point, { weatherMatrix: GOURY_WEATHER_MATRIX }).seaState.code).toBe('unlivable');
+    point.weather!.wind!.speedKnots = 200;
+    expect(passagePlanCellData(point, { weatherMatrix: GOURY_WEATHER_MATRIX }).seaState.code).toBe('unlivable');
+    expect(passagePlanCellData(point).seaState.code).toBe('no_matrix');
+    expect(passagePlanCellData(point).weather).not.toMatch(/Matrice non renseignée|Condition non définie/);
+    expect(passagePlanCellData(point).hasSeaStateIndicator).toBe(false);
+    point.weather!.waves!.heightMeters = 4;
+    expect(passagePlanCellData(point, { weatherMatrix: GOURY_WEATHER_MATRIX }).seaState.code).toBe('outside_matrix');
+    point.weather!.waves!.periodSeconds = null;
+    expect(passagePlanCellData(point, { weatherMatrix: GOURY_WEATHER_MATRIX }).seaState.code).toBe('no_forecast');
   });
 });

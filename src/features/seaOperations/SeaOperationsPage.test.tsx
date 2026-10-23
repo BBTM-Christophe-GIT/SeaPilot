@@ -8,6 +8,7 @@ import { exportSeaOperationPdf } from './seaOperationPdf';
 import { SeaOperationsPage } from './SeaOperationsPage';
 import { fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries';
 import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
+import { GOURY_WEATHER_MATRIX, createEmptyVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 
 const weatherPanelMock = vi.hoisted(() => vi.fn());
 const chartsPanelMock = vi.hoisted(() => vi.fn());
@@ -174,6 +175,86 @@ beforeEach(() => { vi.resetAllMocks(); sessionStorage.clear(); viewport(1440); }
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); document.body.style.overflow = ''; });
 
 describe('Opération en Mer with authenticated server permission fixtures', () => {
+  it('captures the chosen vessel matrix and clears it when changing to a vessel without configuration', async () => {
+    const choices = plannedMissions();
+    choices[0].vessel.weatherMatrix = structuredClone(GOURY_WEATHER_MATRIX);
+    choices[1].vessel.weatherMatrix = null;
+    const { data } = renderAccount(captainAccount, undefined, 1, choices);
+    data.vessels[0].weatherMatrix = createEmptyVesselWeatherMatrix();
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await chooseMission(choices[0]);
+    await waitFor(() => expect(JSON.parse(sessionStorage.getItem('seapilot:sea-operation-draft:v1:1:captain-server-account')!).draft.vessel.weatherMatrix).toEqual(GOURY_WEATHER_MATRIX));
+    // Planning is the current source even if an older overview has a different configuration.
+    expect(choices[0].vessel.weatherMatrix).toEqual(GOURY_WEATHER_MATRIX);
+    await chooseMission(choices[1]);
+    await waitFor(() => expect(JSON.parse(sessionStorage.getItem('seapilot:sea-operation-draft:v1:1:captain-server-account')!).draft.vessel.weatherMatrix).toBeNull());
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it.each(['save', 'sign'] as const)('refreshes an editable draft matrix and retains the canonical saved snapshot before %s', async (action) => {
+    const choices = plannedMissions();
+    choices[1].vessel.weatherMatrix = structuredClone(GOURY_WEATHER_MATRIX);
+    const draft = waypointCaptureDraft(choices[1]);
+    draft.vessel.weatherMatrix = createEmptyVesselWeatherMatrix();
+    draft.waypoints[0].weather = waypointWeather();
+    const original = structuredClone(draft);
+    const record = recordFixture(captainAccount, { draft });
+    const { client, data } = renderAccount(captainAccount, record, 1, choices);
+    data.vessels[1].weatherMatrix = structuredClone(GOURY_WEATHER_MATRIX);
+    vi.mocked(fetchSeaOperationCaptainSignature).mockResolvedValue(profileSignature());
+    let storedDraft = structuredClone(record.draft);
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, edited) => {
+      storedDraft = structuredClone(edited);
+      return { ...record, version: 4, draft: storedDraft };
+    });
+    vi.mocked(signSeaOperation).mockImplementation(async (_client, saved) => ({ ...record, ...saved, draft: structuredClone(storedDraft), status: 'signed', canEdit: false, canSign: false, version: 5 }));
+    await openRecord(record);
+    await userEvent.click(stepButton(2));
+    expect(formQueries().getAllByText('Peu confortable')).toHaveLength(2);
+    if (action === 'sign') {
+      await decisionStep();
+      await userEvent.click(screen.getByRole('button', { name: 'Signer la décision NO GO' }));
+      expect(await formQueries().findByText('Décision du Capitaine signée et enregistrée. La fiche est figée.')).toBeInTheDocument();
+      expect(signSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ version: 4, draft: expect.objectContaining({ vessel: expect.objectContaining({ weatherMatrix: GOURY_WEATHER_MATRIX }) }) }), draft.signature.captainName, true);
+    } else {
+      await saveDraft();
+      expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
+    }
+    expect(vi.mocked(saveSeaOperation).mock.calls[0][1].vessel.weatherMatrix).toEqual(GOURY_WEATHER_MATRIX);
+    expect(draft).toEqual(original);
+  });
+
+  it.each([true, false])('keeps signed/readonly historical matrix snapshots without current configuration (signed=%s)', async (signed) => {
+    const choices = plannedMissions();
+    choices[1].vessel.weatherMatrix = structuredClone(GOURY_WEATHER_MATRIX);
+    const draft = waypointCaptureDraft(choices[1]);
+    draft.vessel.weatherMatrix = createEmptyVesselWeatherMatrix();
+    draft.waypoints[0].weather = waypointWeather();
+    const record = recordFixture(captainAccount, { draft, status: signed ? 'signed' : 'draft', canEdit: false, canSign: false });
+    const { data } = renderAccount(captainAccount, record, 1, choices);
+    data.vessels[1].weatherMatrix = structuredClone(GOURY_WEATHER_MATRIX);
+    await openRecord(record);
+    await userEvent.click(stepButton(2));
+    expect(formQueries().queryByText('Condition non définie')).not.toBeInTheDocument();
+    expect(document.querySelector('.so-editor-form-pane .so-sea-state')).toBeNull();
+    expect(formQueries().queryByText('Peu confortable')).not.toBeInTheDocument();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(sessionStorage.length).toBe(0);
+  });
+
+  it('does not mark an unchanged matrix dirty merely because JSONB returns its properties in another order', async () => {
+    const draft = waypointCaptureDraft();
+    const matrix = structuredClone(GOURY_WEATHER_MATRIX);
+    draft.vessel.weatherMatrix = { levels: matrix.levels, periodLowerBoundsSeconds: matrix.periodLowerBoundsSeconds, hsUpperBoundMeters: matrix.hsUpperBoundMeters, hsLowerBoundsMeters: matrix.hsLowerBoundsMeters, version: 1 };
+    const record = recordFixture(captainAccount, { draft });
+    const { data } = renderAccount(captainAccount, record);
+    data.vessels[1].weatherMatrix = matrix;
+    await openRecord(record);
+    expect(footerQueries().getByRole('button', { name: 'Exporter le PDF' })).toBeEnabled();
+    expect(footerQueries().queryByText('Modifications non enregistrées')).not.toBeInTheDocument();
+    expect(sessionStorage.length).toBe(0);
+  });
+
   it('starts the four optional sections at Non and other checks at Oui without choosing a decision', async () => {
     renderAccount();
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));

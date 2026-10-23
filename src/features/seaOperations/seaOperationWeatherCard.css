@@ -1,0 +1,37 @@
+.so-sea-state { display: inline-flex; align-items: center; gap: var(--sp-space-1); width: fit-content; max-width: 100%; padding: var(--sp-space-1) var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-canvas); color: var(--sp-muted); font-size: .69rem; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.so-sea-state-dot { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+/* Business sea-state colours preserve the supplied matrix semantics. */
+.so-sea-state.is-success { color: #17613b; background: #eaf7ef; border-color: #9fcfb2; }
+.so-sea-state.is-warning { color: #785100; background: #fff7d6; border-color: #e9c966; }
+.so-sea-state.is-danger { color: #a12628; background: #fff0ee; border-color: #e7aaa6; }
+.so-sea-state.is-critical { color: #fff; background: #182132; border-color: #182132; }
+.so-waypoint-weather-card { display: grid; gap: var(--sp-space-2); min-width: 0; padding: var(--sp-space-3); background: var(--sp-surface); border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); color: var(--sp-text); box-shadow: var(--sp-shadow); break-inside: avoid; }
+.so-waypoint-weather-heading { display: flex; align-items: flex-start; flex-wrap: wrap; justify-content: space-between; gap: var(--sp-space-1) var(--sp-space-2); }
+.so-waypoint-weather-heading > span:first-child { font-size: .65rem; color: var(--sp-muted); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.so-waypoint-weather-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-space-3); margin: 0; }
+.so-waypoint-weather-metrics > div { min-width: 0; }
+.so-waypoint-weather-metrics dt { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-1); color: var(--sp-muted); font-size: .68rem; }
+.so-waypoint-weather-metrics dd { margin: var(--sp-space-1) 0 0; color: var(--sp-heading); font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.so-waypoint-weather-metrics dd small { font-size: .75rem; color: var(--sp-muted); font-weight: 500; }
+.so-waypoint-weather-direction, .so-waypoint-weather-wind { display: flex; align-items: center; gap: var(--sp-space-2); min-width: 0; }
+.so-waypoint-weather-card .so-waypoint-weather-direction, .so-waypoint-weather-card .so-waypoint-weather-unavailable { margin: 0; font-size: .68rem; line-height: 1.45; overflow-wrap: anywhere; }
+.so-waypoint-weather-direction svg, .so-waypoint-weather-wind svg { flex-shrink: 0; color: var(--sp-primary); }
+.so-waypoint-weather-wind { padding: var(--sp-space-2); border-radius: var(--sp-control-radius); background: var(--sp-primary-soft); color: var(--sp-muted); font-size: .65rem; }
+.so-waypoint-weather-wind strong { display: block; margin-top: var(--sp-space-1); color: var(--sp-text); font-size: .73rem; font-weight: 600; }
+.so-waypoint-weather-time { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--sp-space-1) var(--sp-space-2); padding-top: var(--sp-space-2); border-top: 1px solid var(--sp-border); }
+.so-waypoint-weather-time, .so-waypoint-weather-model, .so-waypoint-weather-band { color: var(--sp-muted); font-size: .6rem; line-height: 1.4; overflow-wrap: anywhere; }
+.so-waypoint-weather-model + .so-waypoint-weather-model, .so-waypoint-weather-band { margin-top: calc(-1 * var(--sp-space-1)); }
+.so-waypoint-weather-card.is-compact { padding: var(--sp-space-2); }
+.so-passage-field.is-number .so-sea-state { margin-top: var(--sp-space-1); }
+@media print {
+  .so-waypoint-weather-card { gap: 5pt; padding: 6pt; border-radius: 5pt; box-shadow: none; background: #fff; }
+  .so-sea-state { padding: 3pt 5pt; border-radius: 4pt; font-size: 8pt; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .so-waypoint-weather-heading > span:first-child, .so-waypoint-weather-metrics dt { font-size: 7.5pt; }
+  .so-waypoint-weather-metrics dd { font-size: 13pt; }
+  .so-waypoint-weather-metrics dd small { font-size: 8pt; }
+  .so-waypoint-weather-card .so-waypoint-weather-direction, .so-waypoint-weather-card .so-waypoint-weather-unavailable { font-size: 7.5pt; }
+  .so-waypoint-weather-time, .so-waypoint-weather-model, .so-waypoint-weather-band { font-size: 7pt; }
+  .so-waypoint-weather-wind { padding: 5pt; font-size: 7.5pt; }
+  .so-waypoint-weather-wind strong { font-size: 8pt; }
+  .so-waypoint-weather-card svg { width: 11pt; height: 11pt; }
+}

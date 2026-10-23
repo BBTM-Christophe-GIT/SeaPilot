@@ -1,5 +1,20 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.7`, build `2026-10-23.005`, ajoute **Conditions météo limites** dans
+chaque fiche Navire : matrice Hs × période configurable, avec la référence GOURY
+fournie par l’utilisateur et aucune limite présumée pour les autres navires.
+Les cartes météo des waypoints rendent explicite la période moyenne de houle
+en secondes et affichent l’indicateur issu de la matrice du navire, sans seuil
+de vent ni validation automatique GO / NO GO. Sans limites définies, aucun
+indicateur n’est affiché ; le niveau le plus élevé porte le libellé **Rude**.
+La configuration est copiée côté
+serveur lors de la sauvegarde et conservée après signature. Appliquer
+`20261023051322_vessel_weather_limits.sql` avant le frontend. Le PDF conserve
+son chapitre 3 paysage, les éléments du Word et place l’indicateur dans une
+colonne dédiée **Conditions de vie à bord**, sans le répéter dans Waypoint.
+Aucune dépendance, clé ou note
+de mise à jour supplémentaire.
+
 Version `3.77.6`, build `2026-10-23.004`, enrichit le tableau Passage Plan avec
 les contacts VHF et les prévisions de vent / Hs par **Waypoint**. Les copies
 enregistrées conservent leurs sources et horaires ; les fiches signées ne sont

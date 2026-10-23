@@ -1,5 +1,6 @@
 import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
 import { waypointRadioSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
+import { isVesselWeatherMatrix, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 
 /** Digital transcription of OPE-FOR-10-C, GO / NO GO – OPÉRATION EN MER. */
 export type SeaOperationAnswer = '' | 'yes' | 'no';
@@ -67,6 +68,8 @@ export interface SeaOperationPayload {
     agentContact: string;
   };
   vessel: {
+    /** The vessel matrix retained at preparation, never replaced on a signed form. */
+    weatherMatrix?: VesselWeatherMatrix | null;
     id: string;
     name: string;
     registrationImo: string;
@@ -253,6 +256,7 @@ export function isSeaOperationPayload(value: unknown): value is SeaOperationPayl
   if (value.planning !== undefined && !hasStringFields(value.planning, ['date', 'operationId', 'projectId', 'captainPersonId'])) return false;
   if (!['', 'GO', 'NO_GO'].includes(value.decision as string)) return false;
   if (!hasStringFields(value.vessel, ['id', 'name', 'registrationImo', 'captainName', 'departurePort', 'departureQuay', 'arrivalPort', 'arrivalQuay', 'etd', 'eta'])) return false;
+  if (value.vessel.weatherMatrix !== undefined && value.vessel.weatherMatrix !== null && !isVesselWeatherMatrix(value.vessel.weatherMatrix)) return false;
   if (!hasStringFields(value.dapaq, ['agentName', 'agentContact']) || !['', 'nomade', 'email'].includes(value.dapaq.method as string)
     || !['', 'armament', 'captain', 'agent'].includes(value.dapaq.preparedBy as string)) return false;
   if (!isObject(value.applicability) || !['towing', 'cargo', 'divingSupport', 'supplies'].every((key) => isAnswer(value.applicability && (value.applicability as Record<string, unknown>)[key]))) return false;
