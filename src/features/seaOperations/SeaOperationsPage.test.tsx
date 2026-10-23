@@ -175,6 +175,48 @@ beforeEach(() => { vi.resetAllMocks(); sessionStorage.clear(); viewport(1440); }
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); document.body.style.overflow = ''; });
 
 describe('Opération en Mer with authenticated server permission fixtures', () => {
+  it('places a responsive route map before the Passage Plan table and updates it from coordinate edits', async () => {
+    renderAccount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    expect(formQueries().queryByRole('figure', { name: 'Carte du parcours' })).not.toBeInTheDocument();
+    await userEvent.click(stepButton(2));
+    const map = formQueries().getByRole('figure', { name: 'Carte du parcours' });
+    const table = formQueries().getByRole('table', { name: 'Points de passage' });
+    expect(map.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(within(map).getByText(/Renseignez une latitude et une longitude valides/)).toBeVisible();
+    for (const [index, latitude, longitude] of [[1, '49.65', '-1.62'], [2, '48.36', '-4.53']] as const) {
+      await userEvent.click(formQueries().getByRole('button', { name: 'Ajouter un point de passage' }));
+      fireEvent.change(formQueries().getByLabelText(`Latitude · point ${index}`), { target: { value: latitude } });
+      fireEvent.change(formQueries().getByLabelText(`Longitude · point ${index}`), { target: { value: longitude } });
+    }
+    expect(within(map).getByRole('img', { name: 'Carte du parcours · 2 points géolocalisés' })).toBeVisible();
+    expect(map.querySelectorAll('.so-route-map-track line')).toHaveLength(1);
+    fireEvent.change(formQueries().getByLabelText('Latitude · point 1'), { target: { value: '' } });
+    expect(within(map).getByRole('status')).toHaveTextContent('1 point sans coordonnées valides');
+    expect(map.querySelectorAll('.so-route-map-track line')).toHaveLength(0);
+    await userEvent.click(formQueries().getByRole('button', { name: 'Supprimer le point 1' }));
+    expect(map.querySelector('.so-route-map-point')).toHaveAttribute('data-point-indices', '1');
+    await userEvent.click(stepButton(0));
+    expect(formQueries().queryByRole('figure', { name: 'Carte du parcours' })).not.toBeInTheDocument();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it.each([captainAccount, sailorAccount])('shows recorded map positions read-only for server account $id without changing access', async (account) => {
+    const draft = waypointCaptureDraft();
+    const original = structuredClone(draft);
+    const record = recordFixture(account, { draft, canEdit: false, canSign: false });
+    renderAccount(account, record);
+    await openRecord(record);
+    await userEvent.click(stepButton(2));
+    const map = formQueries().getByRole('figure', { name: 'Carte du parcours' });
+    expect(within(map).getByRole('img', { name: 'Carte du parcours · 1 point géolocalisé' })).toBeVisible();
+    expect(within(map).queryByRole('button')).not.toBeInTheDocument();
+    expect(formQueries().getByLabelText('Latitude · point 1')).toBeDisabled();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+    expect(record.draft).toEqual(original);
+  });
+
   it('captures the chosen vessel matrix and clears it when changing to a vessel without configuration', async () => {
     const choices = plannedMissions();
     choices[0].vessel.weatherMatrix = structuredClone(GOURY_WEATHER_MATRIX);

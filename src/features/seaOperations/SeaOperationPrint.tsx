@@ -8,6 +8,7 @@ import type { SeaOperationRecord } from './seaOperationQueries';
 import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperationRadio';
 import { passagePlanCellData } from './seaOperationPassagePlan';
 import { SeaOperationWeatherCard, SeaStateIndicator } from './SeaOperationWeatherCard';
+import { SeaOperationRouteMap } from './SeaOperationRouteMap';
 import './seaOperationPrint.css';
 
 const blank = 'À renseigner';
@@ -177,6 +178,7 @@ export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOp
       <h2>3 – Passage Plan</h2>
       <dl><PrintField label="Numéro de la ou des cartes marines">{text(form.charts)}</PrintField></dl>
       <p>ETA : date et heure locale de Paris. Les fiches historiques peuvent conserver une heure seule.</p>
+      <div className="so-print-route-map"><SeaOperationRouteMap waypoints={form.waypoints} compact /></div>
       {passageRows.length ? <table className="so-print-passage"><caption>Points de passage, contacts VHF et météo à l’ETA</caption><thead><tr><th scope="col">Waypoint</th><th scope="col">Description</th><th scope="col">Latitude</th><th scope="col">Longitude</th><th scope="col">UKC</th><th scope="col">ETA – Date et heure</th><th scope="col">Contacts VHF</th><th scope="col">Météo à l’ETA</th><th scope="col">Conditions de vie à bord</th><th scope="col">Trafic dense</th></tr></thead><tbody>
         {passageRows.map((row, index) => <tr key={`${index}:${form.waypoints[index].id}`}><td>{row.waypoint}</td><td>{row.description}</td><td>{row.latitude}</td><td>{row.longitude}</td><td>{row.ukc}</td><td>{row.eta}</td><td>{row.vhf}</td><td><SeaOperationWeatherCard point={form.waypoints[index]} matrix={form.vessel.weatherMatrix} showIndicator={false} compact /></td><td>{row.hasSeaStateIndicator ? <SeaStateIndicator assessment={row.seaState} /> : '—'}</td><td>{row.denseTraffic}</td></tr>)}
       </tbody></table> : <p>Aucun point de passage renseigné.</p>}

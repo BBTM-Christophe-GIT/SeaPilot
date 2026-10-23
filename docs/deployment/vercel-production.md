@@ -1,5 +1,14 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.8`, build `2026-10-23.006`, ajoute une **Carte du parcours** au-dessus
+du tableau Passage Plan dans la fiche, l’aperçu et le PDF. Les waypoints sont
+reliés dans l’ordre du tableau, avec cadrage automatique, repères numérotés,
+nord et échelle indicative. Une coordonnée invalide interrompt la liaison.
+Le fond Natural Earth est embarqué et le PDF reste vectoriel, sans appel à un
+service de tuiles, clé ni envoi des positions à un tiers. Le chapitre 3 paysage,
+ses dix colonnes et l’en-tête/pied Word sont conservés. Aucun changement de droits,
+RPC, migration, dépendance applicative ou note de mise à jour supplémentaire.
+
 Version `3.77.7`, build `2026-10-23.005`, ajoute **Conditions météo limites** dans
 chaque fiche Navire : matrice Hs × période configurable, avec la référence GOURY
 fournie par l’utilisateur et aucune limite présumée pour les autres navires.

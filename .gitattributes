@@ -1,0 +1,2 @@
+# Preserve the byte-identical generated map assets and their documented SHA-256.
+src/features/seaOperations/mapData/*.json text eol=lf
