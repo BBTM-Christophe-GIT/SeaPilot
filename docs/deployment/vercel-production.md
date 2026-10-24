@@ -1,5 +1,16 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.19`, build `2026-10-24.001`, ajoute les pilules UKC dans la saisie,
+l’aperçu, l’impression et le PDF : rouge ≤ tirant d’eau, orange au-dessus du
+tirant d’eau jusqu’à +2 m inclus, vert au-delà ; triangle d’alerte rouge/orange.
+Le tirant d’eau de Navires est conservé dans la version de la fiche et canonisé
+à la sauvegarde. Appliquer `20261024052953_sea_operation_ukc_draft_snapshot.sql`
+avant le frontend. Aucune fiche signée historique n’est réécrite ; sans référence
+enregistrée, l’affichage reste neutre. Les sources bathymétriques et de niveaux
+d’eau publics vérifiées sont documentées dans
+[UKC et bathymétrie](./sea-operation-ukc-bathymetry.md).
+Aucune dépendance, clé ou note de mise à jour requise.
+
 Version `3.77.18`, build `2026-10-23.016`, fiabilise les prévisions du Passage
 Plan : le chargement continue lors d’un changement de section, son état est
 visible dans chaque waypoint et l’enregistrement du brouillon attend les

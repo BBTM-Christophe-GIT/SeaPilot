@@ -17,6 +17,33 @@ function recordedObservation(): ObservationResult {
 }
 
 describe('Opération en Mer printable content', () => {
+  it('prints the recorded draft reference and UKC pills without changing the captain decision', () => {
+    const draft = emptySeaOperation(); draft.vessel.draftMeters = 2; draft.decision = 'GO';
+    const values = ['2', '2,000001', '3', '4', '4,000001', '-0,2', 'À vérifier'];
+    draft.waypoints = values.map((ukc, index) => ({ id: `ukc-print-${index}`, number: String(index + 1), descriptionVhf: '', latitude: '', longitude: '', eta: '', ukc, denseTraffic: false }));
+    const record: SeaOperationRecord = { id: 'ukc-print', companyId: 1, version: 2, status: 'signed', draft,
+      createdBy: 'author', createdByName: 'Auteur', createdAt: '2026-10-23T08:00:00Z', updatedBy: 'author', updatedByName: 'Auteur', updatedAt: '2026-10-23T09:00:00Z',
+      signedBy: 'captain', signedByName: 'Capitaine', signedAt: '2026-10-23T09:00:00Z', captainName: 'Capitaine', canEdit: false, canSign: false };
+    const original = structuredClone(record);
+    const { container, rerender } = render(<SeaOperationPrint record={record} />);
+    const table = container.querySelector('.so-print-passage')!;
+    const cells = Array.from(table.querySelectorAll('tbody tr')).map((row) => row.children[4]);
+    for (const [index, level] of ['danger', 'warning', 'warning', 'warning', 'success', 'danger'].entries()) {
+      expect(cells[index].querySelector('.so-ukc-pill')).toHaveClass(`is-${level}`);
+      expect(cells[index].querySelector('svg') !== null).toBe(level !== 'success');
+    }
+    expect(cells[4].textContent).toBe('4,000001 m');
+    expect(cells[6].textContent).toBe('À vérifier');
+    expect(cells[6].querySelector('.so-ukc-pill')).toBeNull();
+    expect(within(container).getByText('Tirant d’eau de référence conservé').nextElementSibling).toHaveTextContent('2 m');
+    expect(container.textContent).toContain('GO – La mission peut être réalisée.');
+    expect(record).toEqual(original);
+    delete draft.vessel.draftMeters;
+    rerender(<SeaOperationPrint record={record} />);
+    expect(table.querySelectorAll('.so-ukc-pill')).toHaveLength(0);
+    expect(cells[4].textContent).toBe('4,000001');
+    expect(container.textContent).toContain('Non renseigné – indicateur UKC indisponible');
+  });
   it('shows the prepared RH image without claiming a decision signature, and uses only the recorded snapshot once signed', () => {
     const draft = emptySeaOperation();
     const record: SeaOperationRecord = {
