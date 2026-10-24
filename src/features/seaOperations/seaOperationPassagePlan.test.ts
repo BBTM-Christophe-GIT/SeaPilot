@@ -95,7 +95,7 @@ describe('recorded Passage Plan presentation', () => {
     expect(row.observedWeather).toContain('Vent mesuré à 3 m : 22 nd');
     expect(row.seaState).toMatchObject({ code: 'comfortable', label: 'Confortable' });
     expect(row.weather).not.toMatch(/rafales|37 nd|Rude|Hors matrice/i);
-    expect(row.weatherFootnote).toContain('Bouée Manche (62001) · 49.6, -1.6 · 5.8 km · 23/10/2026 10:15 UTC');
+    expect(row.weatherFootnote).toContain('Bouée Manche (62001) · 49° 36.000′ N — 001° 36.000′ W · 5.8 km · 23/10/2026 10:15 UTC');
     expect(row.weatherFootnote).toContain(SEA_METEO_FRANCE_OBSERVATIONS_URL);
     expect(row.weatherFootnote).toContain(`Licence Ouverte 2.0 · ${SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL}`);
     expect({ point, observation }).toEqual(original);
