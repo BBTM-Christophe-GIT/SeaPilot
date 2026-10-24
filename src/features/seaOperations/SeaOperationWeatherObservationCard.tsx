@@ -2,6 +2,7 @@ import { Waves, Wind } from 'lucide-react';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 import { observationTime, observationWaitingMessage, waypointWeatherObservation } from './seaOperationWeatherHistory';
+import { formatSeaPosition } from './seaOperationCoordinates';
 import './seaOperationWeatherCard.css';
 
 const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
@@ -37,6 +38,7 @@ export function SeaOperationWeatherObservationCard({ point, observations }: {
 function ObservationOrigin({ component }: { component: NonNullable<ObservationResult['wind']> | NonNullable<ObservationResult['waves']> }) {
   return <>
     <small>{component.station.name} · {decimal.format(component.station.distanceKm)} km · {observationTime(component.observedAt)}</small>
+    <small>{formatSeaPosition(component.station)}</small>
     <small><a href={component.source.sourceUrl} target="_blank" rel="noopener noreferrer">{component.source.provider}</a> · qualité {component.source.quality === 'good' ? 'bonne' : 'non renseignée'} · <a href={component.source.licenseUrl} target="_blank" rel="noopener noreferrer">{component.source.license}</a></small>
   </>;
 }

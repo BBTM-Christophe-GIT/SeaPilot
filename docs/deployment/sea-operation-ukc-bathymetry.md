@@ -1,5 +1,10 @@
 # Indicateur UKC et données bathymétriques — 24 octobre 2026
 
+Le raccord vertical et les démarches d’accès serveur sont détaillés dans
+[SHOM CRV : connexion et qualification](./sea-operation-shom-crv.md). En
+v3.77.20, le moteur de calcul est préparé et testé, mais reste non connecté :
+aucun nouveau calcul UKC n’est activé sans conversion locale qualifiée.
+
 ## Affichage demandé
 
 Les seuils confirmés par l’utilisateur comparent la valeur **UKC** au tirant

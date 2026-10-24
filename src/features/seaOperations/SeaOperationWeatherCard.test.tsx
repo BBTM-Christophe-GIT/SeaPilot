@@ -27,7 +27,7 @@ describe('waypoint weather card', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Les prévisions déjà enregistrées sont conservées.');
     expect(container.textContent).toContain('0,60 m');
     expect(container.textContent).toContain('12,5 nd');
-    expect(container.textContent).toContain('Point météo : 49.6750, -1.6250 · à 2,8 km du waypoint.');
+    expect(container.textContent).toContain('Point météo : 49° 40.500′ N — 001° 37.500′ W · à 2,8 km du waypoint.');
   });
   it('labels the swell period and Hs explicitly and keeps mean wind without gusts', () => {
     const { container } = render(<SeaOperationWeatherCard point={point()} matrix={GOURY_WEATHER_MATRIX} />);

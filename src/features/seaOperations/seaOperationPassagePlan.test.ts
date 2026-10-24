@@ -95,7 +95,7 @@ describe('recorded Passage Plan presentation', () => {
     expect(row.observedWeather).toContain('Vent mesuré à 3 m : 22 nd');
     expect(row.seaState).toMatchObject({ code: 'comfortable', label: 'Confortable' });
     expect(row.weather).not.toMatch(/rafales|37 nd|Rude|Hors matrice/i);
-    expect(row.weatherFootnote).toContain('Bouée Manche (62001) · 49.6, -1.6 · 5.8 km · 23/10/2026 10:15 UTC');
+    expect(row.weatherFootnote).toContain('Bouée Manche (62001) · 49° 36.000′ N — 001° 36.000′ W · 5.8 km · 23/10/2026 10:15 UTC');
     expect(row.weatherFootnote).toContain(SEA_METEO_FRANCE_OBSERVATIONS_URL);
     expect(row.weatherFootnote).toContain(`Licence Ouverte 2.0 · ${SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL}`);
     expect({ point, observation }).toEqual(original);
@@ -118,9 +118,9 @@ describe('recorded Passage Plan presentation', () => {
     point.weather!.model!.longitude = -1.62;
     const original = structuredClone(point);
     const row = passagePlanCellData(point);
-    expect(row.latitude).toBe('49.65 N');
-    expect(row.longitude).toBe('1.62 W');
-    expect(row.weatherFootnote).toContain('Point météo : 49.7000, -1.6200 · à 5,6 km du waypoint. Prévision de maille, position approchée.');
+    expect(row.latitude).toBe('49° 39.000′ N');
+    expect(row.longitude).toBe('001° 37.200′ W');
+    expect(row.weatherFootnote).toContain('Point météo : 49° 42.000′ N — 001° 37.200′ W · à 5,6 km du waypoint. Prévision de maille, position approchée.');
     expect(row.weather).toContain('Houle Hs : 0,60 m');
     expect(point).toEqual(original);
     const stale = passagePlanCellData({ ...point, eta: '2026-10-23T15:00' });

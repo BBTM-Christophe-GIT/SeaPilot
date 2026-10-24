@@ -1,5 +1,17 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.20`, build `2026-10-24.002`, affiche les coordonnées du Passage
+Plan en degrés et minutes décimales, avec hémisphères, dans la saisie, la carte,
+les résultats météo/cartes SHOM, l’aperçu et le PDF. La précision stockée et les
+captures existantes sont conservées ; un simple focus / flou ne modifie pas
+la fiche. Le PDF utilise une apostrophe pour les minutes, compatible avec sa
+police existante. Le moteur pur de calcul UKC à l’ETA est préparé et testé,
+mais **n’est pas branché ni activé** : le raccord vertical TOLOSA / LAT et
+l’accès serveur CRV restent à qualifier. Voir la
+[procédure SHOM CRV](./sea-operation-shom-crv.md).
+Aucune migration, dépendance ou nouvelle clé consommée par cette version.
+Aucune note de mise à jour intégrée.
+
 Version `3.77.19`, build `2026-10-24.001`, ajoute les pilules UKC dans la saisie,
 l’aperçu, l’impression et le PDF : rouge ≤ tirant d’eau, orange au-dessus du
 tirant d’eau jusqu’à +2 m inclus, vert au-delà ; triangle d’alerte rouge/orange.

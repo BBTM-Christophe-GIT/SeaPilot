@@ -13,6 +13,7 @@ import { captureSeaOperationRadios } from './seaOperationWaypointSnapshots';
 import { captureSeaOperationValidationWeather } from './seaOperationValidationWeather';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 import { weatherRequestKey, type WeatherRequestStatus } from './seaOperationWeatherStatus';
+import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates';
 
 const weatherPanelMock = vi.hoisted(() => vi.fn());
 const chartsPanelMock = vi.hoisted(() => vi.fn());
@@ -497,8 +498,8 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     fireEvent.click(formQueries().getByRole('button', { name: 'Quitter le plein écran' }));
     expect(formQueries().getByRole('button', { name: 'Terminer le placement' })).toBeVisible();
     expect(capturingWeatherPanel().waypoints[0]).toEqual(draft.waypoints[0]);
-    expect(formQueries().getByLabelText('Latitude · point 2')).toHaveValue(placed.latitude);
-    expect(formQueries().getByLabelText('Longitude · point 2')).toHaveValue(placed.longitude);
+    expect(formQueries().getByLabelText('Latitude · point 2')).toHaveValue(formatSeaLatitude(placed.latitude));
+    expect(formQueries().getByLabelText('Longitude · point 2')).toHaveValue(formatSeaLongitude(placed.longitude));
     fireEvent.click(formQueries().getByRole('button', { name: 'Terminer le placement' }));
     fireEvent.click(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' }));
     expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
@@ -507,8 +508,8 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await openRecord(stored);
     fireEvent.click(stepButton(2));
-    expect(formQueries().getByLabelText('Latitude · point 2')).toHaveValue(placed.latitude);
-    expect(formQueries().getByLabelText('Longitude · point 2')).toHaveValue(placed.longitude);
+    expect(formQueries().getByLabelText('Latitude · point 2')).toHaveValue(formatSeaLatitude(placed.latitude));
+    expect(formQueries().getByLabelText('Longitude · point 2')).toHaveValue(formatSeaLongitude(placed.longitude));
     expect(capturingWeatherPanel().waypoints[0].weather).toEqual(draft.waypoints[0].weather);
     expect(signSeaOperation).not.toHaveBeenCalled();
   });
@@ -589,8 +590,8 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
       expect(point).toMatchObject({ latitude: '49', longitude: '-3', eta: '', ukc: '', descriptionVhf: '', denseTraffic: false });
       expect(point).not.toHaveProperty('weather');
       expect(point).not.toHaveProperty('radio');
-      expect(formQueries().getByLabelText(`Latitude · point ${index + 1}`)).toHaveValue('49');
-      expect(formQueries().getByLabelText(`Longitude · point ${index + 1}`)).toHaveValue('-3');
+      expect(formQueries().getByLabelText(`Latitude · point ${index + 1}`)).toHaveValue('49° 00.000′ N');
+      expect(formQueries().getByLabelText(`Longitude · point ${index + 1}`)).toHaveValue('003° 00.000′ W');
       expect(etaGroup(index + 1)).toBeVisible();
       expect(etaQueries(index + 1).getByRole('grid', { name: /Calendrier ·/ })).toBeVisible();
       expect(etaQueries(index + 1).getByLabelText('Heure de l’ETA (Paris)')).toHaveValue('');
@@ -676,6 +677,66 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await userEvent.click(stepButton(0));
     expect(formQueries().queryByRole('figure', { name: 'Carte du parcours' })).not.toBeInTheDocument();
     expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('displays SMCP coordinates without rounding stored positions or invalidating captures on focus and blur', async () => {
+    const draft = waypointCaptureDraft();
+    draft.waypoints[0].latitude = '49.6500017';
+    draft.waypoints[0].longitude = '-1.6200024';
+    draft.waypoints[0].weather = { ...waypointWeather(), latitude: 49.6500017, longitude: -1.6200024 };
+    draft.waypoints = captureSeaOperationRadios(draft).waypoints;
+    const original = structuredClone(draft);
+    const record = recordFixture(captainAccount, { draft });
+    renderAccount(captainAccount, record);
+    await openRecord(record);
+    fireEvent.click(stepButton(2));
+    const latitude = formQueries().getByLabelText('Latitude · point 1');
+    const longitude = formQueries().getByLabelText('Longitude · point 1');
+    expect(latitude).toHaveValue('49° 39.000′ N');
+    expect(longitude).toHaveValue('001° 37.200′ W');
+    for (const input of [latitude, longitude]) {
+      fireEvent.focus(input);
+      fireEvent.blur(input);
+    }
+    expect(latitude).toHaveValue('49° 39.000′ N');
+    expect(longitude).toHaveValue('001° 37.200′ W');
+    expect(capturingWeatherPanel().waypoints).toEqual(original.waypoints);
+    expect(record.draft).toEqual(original);
+    expect(sessionStorage.length).toBe(0);
+    expect(footerQueries().queryByText('Modifications non enregistrées')).not.toBeInTheDocument();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('preserves typed decimal, SMCP and incomplete coordinates while formatting only the display after blur', async () => {
+    const draft = waypointCaptureDraft();
+    const original = structuredClone(draft);
+    const record = recordFixture(captainAccount, { draft });
+    renderAccount(captainAccount, record);
+    await openRecord(record);
+    fireEvent.click(stepButton(2));
+    const latitude = formQueries().getByLabelText('Latitude · point 1');
+    const longitude = formQueries().getByLabelText('Longitude · point 1');
+    for (const [lat, lon, displayedLat, displayedLon] of [
+      ['50,0710667', '-1,0306667', '50° 04.264′ N', '001° 01.840′ W'],
+      ['50° 04.264′ S', '001° 01.840′ E', '50° 04.264′ S', '001° 01.840′ E'],
+      ['50 E', '-', '50 E', '-'],
+    ]) {
+      fireEvent.focus(latitude);
+      fireEvent.change(latitude, { target: { value: lat } });
+      expect(latitude).toHaveValue(lat);
+      fireEvent.blur(latitude);
+      fireEvent.focus(longitude);
+      fireEvent.change(longitude, { target: { value: lon } });
+      expect(longitude).toHaveValue(lon);
+      fireEvent.blur(longitude);
+      expect(latitude).toHaveValue(displayedLat);
+      expect(longitude).toHaveValue(displayedLon);
+      expect(capturingWeatherPanel().waypoints[0]).toMatchObject({ latitude: lat, longitude: lon });
+    }
+    expect(record.draft).toEqual(original);
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
   });
 
   it.each([captainAccount, sailorAccount])('shows recorded map positions read-only for server account $id without changing access', async (account) => {

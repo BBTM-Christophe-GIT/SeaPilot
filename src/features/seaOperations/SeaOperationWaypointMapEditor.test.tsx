@@ -64,7 +64,7 @@ describe('SeaOperationWaypointMapEditor', () => {
     fireEvent.click(surface, { clientX: 437.5, clientY: 130 });
     expect(add).toHaveBeenCalledExactlyOnceWith({ latitude: 49, longitude: 1 });
     expect(screen.getByRole('status')).toHaveTextContent('Point 1 ajouté au tableau');
-    expect(screen.getByRole('status')).toHaveTextContent('longitude 1,00000');
+    expect(screen.getByRole('status')).toHaveTextContent('49° 00.000′ N — 001° 00.000′ E');
     tap(surface, 437.5, 130, 2); // accidental second click/tap at the same pixel
     expect(add).toHaveBeenCalledOnce();
   });
@@ -94,7 +94,7 @@ describe('SeaOperationWaypointMapEditor', () => {
     const { surface } = activate();
     fireEvent.pointerDown(surface, { clientX: 325, clientY: 130, pointerId: 1, button: 0 });
     fireEvent.pointerMove(surface, { clientX: 415, clientY: 130, pointerId: 1 });
-    expect(screen.getByText(/Centre : 49,00000° · -6,20000°/)).toBeVisible();
+    expect(screen.getByText('Centre : 49° 00.000′ N — 006° 12.000′ W')).toBeVisible();
     fireEvent.pointerMove(surface, { clientX: 325, clientY: 130, pointerId: 1 });
     fireEvent.pointerUp(surface, { clientX: 325, clientY: 130, pointerId: 1 });
     fireEvent.click(surface);
@@ -144,7 +144,7 @@ describe('SeaOperationWaypointMapEditor', () => {
     const { surface } = activate();
     fireEvent.click(screen.getByRole('button', { name: 'Zoomer sur la carte' }));
     fireEvent.click(screen.getByRole('button', { name: 'Déplacer la carte vers l’est' }));
-    expect(screen.getByText(/Centre : 49,00000° · -1,40000°/)).toBeVisible();
+    expect(screen.getByText('Centre : 49° 00.000′ N — 001° 24.000′ W')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Déplacer la carte vers le nord' }));
     fireEvent.click(screen.getByRole('button', { name: 'Déplacer la carte vers le sud' }));
     fireEvent.click(screen.getByRole('button', { name: 'Déplacer la carte vers l’ouest' }));

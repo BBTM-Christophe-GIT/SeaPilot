@@ -2,6 +2,7 @@ import worldLandJson from './mapData/world-land.json?raw';
 import europeLandJson from './mapData/europe-land.json?raw';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import { seaWaypointPosition, type SeaPosition } from './seaOperationNavigation';
+import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates';
 
 export interface RouteMapPosition { x: number; y: number }
 export interface RouteMapSegment { from: RouteMapPosition; to: RouteMapPosition }
@@ -179,12 +180,14 @@ export function buildSeaOperationRouteMap(
 
   const formatCoordinate = (value: number, latitude: boolean) => {
     const number = latitude ? value : wrapLongitude(value);
-    return `${Number(Math.abs(number).toFixed(2))}°${Math.abs(number) < .00001 ? '' : latitude ? number < 0 ? 'S' : 'N' : number < 0 ? 'O' : 'E'}`;
+    return (latitude ? formatSeaLatitude(number) : formatSeaLongitude(number))
+      .replace(/^0+(?=\d)/, '').replace('° ', '°').replace(/\.000′/, '′').replace(/(\.\d*?[1-9])0+′/, '$1′');
   };
   const lonStep = niceStep((east - west) / 5), latStep = niceStep((north - south) / 3);
   for (let lon = Math.ceil(west / lonStep) * lonStep; lon <= east; lon += lonStep) {
     const from = project(lon, north), to = project(lon, south);
-    result.grid.push({ from, to, label: formatCoordinate(lon, false), labelAt: { x: Math.max(24, Math.min(width - 30, to.x)), y: height - 7 } });
+    const label = formatCoordinate(lon, false);
+    result.grid.push({ from, to, label, labelAt: { x: Math.max(7, Math.min(width - Math.ceil(label.length * 5.5) - 7, to.x)), y: height - 7 } });
   }
   for (let lat = Math.ceil(Math.max(-90, south) / latStep) * latStep; lat <= Math.min(90, north); lat += latStep) {
     const from = project(west, lat), to = project(east, lat);

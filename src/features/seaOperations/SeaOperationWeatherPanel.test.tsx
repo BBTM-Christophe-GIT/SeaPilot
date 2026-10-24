@@ -46,6 +46,7 @@ describe('waypoint weather', () => {
     expect(screen.getByText(/12 nd · de 270/)).toBeVisible();
     expect(screen.queryByText(/Rafales/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(/Heure modèle : 23\/10\/2026 10:00 UTC/)).toHaveLength(2);
+    expect(screen.getByText('ETA : 23/10/2026 10:00 UTC · 49° 39.000′ N — 001° 37.200′ W')).toBeVisible();
     expect(onWeatherLoaded).toHaveBeenCalledWith(weather, { projectId: '1', pointId: point.id, latitude: point.latitude, longitude: point.longitude, eta: point.eta }, client);
   });
   it('does not request missing coordinates, date or project', async () => {

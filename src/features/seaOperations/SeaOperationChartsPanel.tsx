@@ -5,6 +5,7 @@ import type { SeaOperationWaypoint } from './seaOperationModel';
 import { seaWaypointPosition } from './seaOperationNavigation';
 import { fetchSeaOperationPointCharts, type SeaOperationPointCharts } from './seaOperationChartQueries';
 import { addShomChartReferences, type ShomChart } from './seaOperationHydroModel';
+import { formatSeaPosition } from './seaOperationCoordinates';
 import './seaOperationNavigation.css';
 
 interface Props { client: SupabaseClient; projectId: string; waypoints: readonly SeaOperationWaypoint[]; charts: string; onChartsChange: (value: string) => void; canEdit?: boolean; preview?: boolean; active?: boolean }
@@ -72,7 +73,7 @@ export function SeaOperationChartsPanel({ client, projectId, waypoints, charts, 
       const lookup = result?.lookup;
       return <li key={`${index}:${point.id}`}><details open={waypoints.length === 1}>
         <summary>Point {point.number || index + 1}{lookup ? ` · ${lookup.charts.length} carte${lookup.charts.length > 1 ? 's' : ''}` : ''}</summary>
-        <p className="so-help">{point.latitude || 'Latitude à renseigner'} · {point.longitude || 'Longitude à renseigner'}</p>
+        <p className="so-help">{formatSeaPosition(point)}</p>
         {result?.error ? <p role="status">{result.error}</p> : !lookup ? <p role="status">Recherche des cartes…</p> : <>
           {lookup.charts.length ? <><ChartList matches={lookup.charts.slice(0, 5)} />{lookup.charts.length > 5 && <details className="so-other-charts"><summary>Autres cartes à plus petite échelle ({lookup.charts.length - 5})</summary><ChartList matches={lookup.charts.slice(5)} /></details>}</> : <p>Aucune carte papier SHOM trouvée dans le catalogue à cette position.</p>}
           {lookup.truncated && <p role="status">Résultat incomplet : vérifiez le catalogue SHOM.</p>}

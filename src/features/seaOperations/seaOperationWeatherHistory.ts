@@ -1,5 +1,6 @@
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import { seaWaypointPosition } from './seaOperationNavigation';
+import { formatSeaPosition } from './seaOperationCoordinates';
 import { seaOperationEtaUtc } from './seaOperationWeatherModel';
 import { isSeaOperationWeatherObservation, type ObservationResult } from './seaOperationWeatherObservationsModel';
 
@@ -44,7 +45,7 @@ export function observationFootnote(observation: ObservationResult | undefined):
   const components = [observation.wind, observation.waves].filter((value) => value !== null);
   return [
     `Annexe mise à jour le ${observationTime(observation.recordedAt)}. Stations à 50 km maximum, heure observée à 30 min maximum de l’ETA.`,
-    ...components.map((part) => `${part.source.provider} · ${part.station.name} (${part.station.id}) · ${part.station.latitude}, ${part.station.longitude} · ${part.station.distanceKm.toFixed(1)} km · ${observationTime(part.observedAt)} · qualité ${part.source.quality === 'good' ? 'bonne' : 'non renseignée'}\n${part.source.sourceUrl}\n${part.source.license} · ${part.source.licenseUrl}`),
+    ...components.map((part) => `${part.source.provider} · ${part.station.name} (${part.station.id}) · ${formatSeaPosition(part.station)} · ${part.station.distanceKm.toFixed(1)} km · ${observationTime(part.observedAt)} · qualité ${part.source.quality === 'good' ? 'bonne' : 'non renseignée'}\n${part.source.sourceUrl}\n${part.source.license} · ${part.source.licenseUrl}`),
     'Valeurs présentées en mètres, secondes, degrés et nœuds ; sélection de la station et de l’heure proches de l’ETA. Les mesures ne modifient pas la décision signée.',
   ].join('\n');
 }

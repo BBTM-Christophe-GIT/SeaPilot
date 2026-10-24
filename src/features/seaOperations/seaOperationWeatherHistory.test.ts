@@ -60,7 +60,7 @@ describe('measured weather annex rendering data', () => {
     const text = observationFootnote(observation());
     expect(text).toContain('Annexe mise à jour le 24/10/2026 08:00 UTC');
     expect(text).toContain('Stations à 50 km maximum, heure observée à 30 min maximum de l’ETA');
-    expect(text).toContain('Météo-France · Bouée Manche (62001) · 49.6, -1.6 · 5.8 km · 23/10/2026 10:15 UTC · qualité non renseignée');
+    expect(text).toContain('Météo-France · Bouée Manche (62001) · 49° 36.000′ N — 001° 36.000′ W · 5.8 km · 23/10/2026 10:15 UTC · qualité non renseignée');
     expect(text).toContain(SEA_METEO_FRANCE_OBSERVATIONS_URL);
     expect(text).toContain(`Licence Ouverte 2.0 · ${SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL}`);
     expect(text).toContain('Les mesures ne modifient pas la décision signée.');
