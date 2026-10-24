@@ -22,6 +22,7 @@ describe('SHOM charts in Passage Plan', () => {
     render(<SeaOperationChartsPanel client={client} projectId="12" waypoints={[point]} charts="7148" onChartsChange={onChartsChange} />);
     await load();
     expect(fetchSeaOperationPointCharts).toHaveBeenCalledWith(client, { projectId: '12', pointId: 'p1', latitude: 48.36, longitude: -4.53 }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(screen.getByText('48° 21.600′ N — 004° 31.800′ W')).toBeVisible();
     expect(screen.getByRole('link', { name: '7399 · Port de Brest' })).toHaveAttribute('href', lookup.charts[0].catalogueUrl);
     expect(screen.getByText(/Échelle 1:7/)).toBeVisible();
     expect(onChartsChange).toHaveBeenCalledExactlyOnceWith('7148 - 7399');

@@ -275,12 +275,15 @@ describe('Sea operation PDF', () => {
     const document = await PDFDocument.load(generated.bytes);
     const bodies = await generatedBodies(generated.bytes);
     const nearBody = bodies.find((body) => textPositions(body, 'NEAR').length > 0)!;
-    expect(nearBody).toContain('Point météo : 49.7000, -1.6200');
+    expect(nearBody).toContain("Point météo : 49° 42.000' N -");
+    expect(nearBody).toContain("001° 37.200' W");
+    expect(nearBody).toContain("(49° 39.000' N) Tj");
+    expect(nearBody).toContain("(001° 37.200' W) Tj");
     expect(nearBody).toContain('5,6 km');
     expect(nearBody).toContain('position approchée.');
     expect(nearBody).toContain('MESURES APRÈS LE PASSAGE');
     const locations = [...nearBody.matchAll(/BT\n([\s\S]*?)\nET/g)]
-      .filter((match) => match[1].includes('(Point météo : 49.7000, -1.6200'))
+      .filter((match) => match[1].includes("(Point météo : 49° 42.000' N -"))
       .map((match) => /([\d.-]+) ([\d.-]+) Td/.exec(match[1])!);
     expect(locations).toHaveLength(1);
     const location = { x: Number(locations[0][1]), y: Number(locations[0][2]) };
@@ -288,7 +291,7 @@ describe('Sea operation PDF', () => {
     expect(textPositions(nearBody, 'Vent moyen 10 m')[0].y - location.y).toBeGreaterThan(20);
     expect(location.y - textPositions(nearBody, 'MESURES APRÈS LE PASSAGE')[0].y).toBeGreaterThan(15);
     const exactBody = bodies.find((body) => textPositions(body, 'GRID').length > 0)!;
-    expect(exactBody).toContain('49.6500, -1.6200'); expect(exactBody).toContain('0,0 km');
+    expect(exactBody).toContain("49° 39.000' N -"); expect(exactBody).toContain('0,0 km');
     const unavailableBody = bodies.find((body) => textPositions(body, 'H3').length > 0)!;
     expect(unavailableBody).toContain('horizon dépassé.');
     expect(unavailableBody).not.toContain('Point météo');

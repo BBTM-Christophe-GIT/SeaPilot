@@ -13,8 +13,19 @@ describe('Passage Plan situation map', () => {
     expect(map.segments).toHaveLength(2);
     expect(map.land.length).toBeGreaterThan(0);
     expect(map.grid.length).toBeGreaterThan(2);
+    expect(map.grid.every(({ label }) => /^\d{1,3}°\d{2}(?:\.\d{1,3})?′ [NSEW]$/.test(label))).toBe(true);
     expect(map.scale?.label).toMatch(/ NM$/);
     expect(allCoordinates(map).every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x <= map.width && y >= 0 && y <= map.height)).toBe(true);
+  });
+
+  it('keeps compact DMM graticule labels inside the view without changing the route positions', () => {
+    const points = [point('49', '-3'), point('49.5', '-1')];
+    const original = structuredClone(points);
+    const map = buildSeaOperationRouteMap(points, 360, 280);
+    expect(map.grid.every(({ label, labelAt }) => labelAt.x >= 0 && labelAt.x + Math.ceil(label.length * 5.5) <= map.width)).toBe(true);
+    expect(map.grid.some(({ label }) => label.endsWith(' W'))).toBe(true);
+    expect(map.grid.every(({ label }) => !label.includes('.000'))).toBe(true);
+    expect(points).toEqual(original);
   });
 
   it('never connects across missing or invalid positions and retains original ordinals', () => {

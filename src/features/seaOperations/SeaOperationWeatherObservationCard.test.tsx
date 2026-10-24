@@ -25,6 +25,7 @@ describe('measured weather card', () => {
     expect(screen.getByText('Vent mesuré à 3 m')).toBeVisible();
     expect(screen.getByText('12 nd · de 270°')).toBeVisible();
     expect(screen.getAllByText('Bouée Manche · 5,8 km · 23/10/2026 10:15 UTC')).toHaveLength(2);
+    expect(screen.getAllByText('49° 36.000′ N — 001° 36.000′ W')).toHaveLength(2);
     expect(screen.getAllByRole('link', { name: 'Météo-France' })[0]).toHaveAttribute('href', SEA_METEO_FRANCE_OBSERVATIONS_URL);
     expect(screen.getAllByRole('link', { name: 'Licence Ouverte 2.0' })[0]).toHaveAttribute('href', SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL);
     expect(screen.getAllByText(/qualité non renseignée/)).toHaveLength(2);

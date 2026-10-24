@@ -9,6 +9,7 @@ import {
 } from './seaOperationRouteMapGeometry';
 import './seaOperationWaypointMapEditor.css';
 import { useSeaOperationMapFullscreen } from './useSeaOperationMapFullscreen';
+import { formatSeaPosition } from './seaOperationCoordinates';
 
 interface MapGesture {
   pointerId: number;
@@ -20,8 +21,6 @@ interface MapGesture {
   dragging: boolean;
   cancelled: boolean;
 }
-
-const coordinateLabel = (value: number) => value.toLocaleString('fr-FR', { minimumFractionDigits: 5, maximumFractionDigits: 5 });
 
 function mapPixelAt(svg: SVGSVGElement, geometry: SeaOperationRouteMapGeometry, clientX: number, clientY: number) {
   const matrix = svg.getScreenCTM?.();
@@ -90,7 +89,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, disabl
   function addPosition(position: SeaPosition | null) {
     if (disabled || !placing || !position) return;
     onAddWaypoint(position);
-    setAnnouncement(`Point ${waypoints.length + 1} ajouté au tableau · latitude ${coordinateLabel(position.latitude)} · longitude ${coordinateLabel(position.longitude)}.`);
+    setAnnouncement(`Point ${waypoints.length + 1} ajouté au tableau · ${formatSeaPosition(position)}.`);
   }
 
   function addAtCentre() {
@@ -196,7 +195,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, disabl
           <button type="button" className="sp-button sp-button--secondary" aria-label="Déplacer la carte vers l’ouest" onClick={() => moveView(-.2, 0)} disabled={disabled}><ArrowLeft aria-hidden="true" size={18} /></button>
           <button type="button" className="sp-button sp-button--secondary" aria-label="Déplacer la carte vers l’est" onClick={() => moveView(.2, 0)} disabled={disabled}><ArrowRight aria-hidden="true" size={18} /></button>
         </div>
-        {viewport && <span className="so-waypoint-map-centre">Centre : {coordinateLabel(viewport.centerLatitude)}° · {coordinateLabel(viewport.centerLongitude)}°</span>}
+        {viewport && <span className="so-waypoint-map-centre">Centre : {formatSeaPosition({ latitude: viewport.centerLatitude, longitude: viewport.centerLongitude })}</span>}
       </div>
     </>}
     <SeaOperationRouteMap waypoints={waypoints} viewport={placing ? viewport : undefined} onGeometry={recordGeometry} fillAvailableSpace={fullscreen.isFullscreen} renderOverlay={placing && !disabled ? (geometry) => <>

@@ -118,9 +118,9 @@ describe('recorded Passage Plan presentation', () => {
     point.weather!.model!.longitude = -1.62;
     const original = structuredClone(point);
     const row = passagePlanCellData(point);
-    expect(row.latitude).toBe('49.65 N');
-    expect(row.longitude).toBe('1.62 W');
-    expect(row.weatherFootnote).toContain('Point météo : 49.7000, -1.6200 · à 5,6 km du waypoint. Prévision de maille, position approchée.');
+    expect(row.latitude).toBe('49° 39.000′ N');
+    expect(row.longitude).toBe('001° 37.200′ W');
+    expect(row.weatherFootnote).toContain('Point météo : 49° 42.000′ N — 001° 37.200′ W · à 5,6 km du waypoint. Prévision de maille, position approchée.');
     expect(row.weather).toContain('Houle Hs : 0,60 m');
     expect(point).toEqual(original);
     const stale = passagePlanCellData({ ...point, eta: '2026-10-23T15:00' });

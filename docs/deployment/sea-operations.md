@@ -701,3 +701,31 @@ retrouvées ne fournissent pas ces sondes par leur seule emprise.
 ## Conservation météo après validation
 
 Depuis la version 3.77.15, la validation du Capitaine conserve les prévisions disponibles avant la signature. Les observations officielles reçues après le passage sont enregistrées dans une annexe indépendante, avec leurs stations, horaires et sources ; elles ne modifient jamais la fiche signée. Voir [configuration et collecte quotidienne](./sea-operation-weather-history.md) et [sources officielles et couverture](./sea-operation-weather-observations.md).
+
+## Coordonnées SMCP et préparation UKC — v3.77.20
+
+Les positions s’affichent sous la forme `50° 04.264′ N — 001° 01.840′ E`, selon
+le principe degrés / minutes et hémisphères de la
+[résolution OMI A.918(22), SMCP §11.1](https://wwwcdn.imo.org/localresources/en/OurWork/Safety/Documents/A.918(22).pdf).
+Les trois décimales de minute et le remplissage des degrés suivent l’exemple
+demandé ; ils ne constituent pas une garantie de précision des sources.
+
+Le format est appliqué aux champs latitude / longitude au repos, au Passage
+Plan, aux positions et stations météo, aux résultats SHOM et aux repères de la
+carte. Les graticules gardent une forme compacte degrés / minutes. Dans le PDF,
+la police Helvetica existante utilise l’apostrophe ASCII pour les minutes ;
+l’en-tête et le pied Word restent inchangés.
+
+Le stockage, les identités des captures et les requêtes conservent les valeurs
+d’origine. Une simple ouverture / sortie du champ ne réécrit ni n’arrondit la
+position ; une saisie explicite conserve le texte tapé et reste compatible
+avec les degrés décimaux, la virgule, les DMM et les DMS déjà acceptés.
+
+`seaOperationUkcEstimateModel.ts` prépare le calcul statique au LAT et son budget
+d’incertitude, avec interpolation à l’ETA entre deux heures du même modèle,
+run et cellule, sans extrapolation. Les sources, cellules et conversions sont
+validées et l’arithmétique des captures est recalculée. Le moteur n’est appelé
+par aucun écran ou endpoint à ce stade : aucune capture UKC automatique n’est
+enregistrée et aucune saisie manuelle n’est remplacée. L’activation dépend
+d’un raccord qualifié et de droits CRV serveur ; voir la
+[procédure de connexion et les vérifications requises](./sea-operation-shom-crv.md).

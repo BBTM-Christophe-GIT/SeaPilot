@@ -5,6 +5,7 @@ import { evaluateVesselSeaState, type VesselWeatherMatrix } from '../fleet/vesse
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 import { observationFootnote, observationText, observationWaitingMessage, waypointWeatherObservation } from './seaOperationWeatherHistory';
 import { seaOperationWeatherLocation } from './seaOperationWeatherLocation';
+import { formatSeaLatitude, formatSeaLongitude, formatSeaPosition } from './seaOperationCoordinates';
 
 const value = (text: string) => text.trim() || 'À renseigner';
 const numbers = [0, 1, 2].map((digits) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: digits, ...(digits === 2 ? { minimumFractionDigits: 2 } : {}) }));
@@ -40,14 +41,14 @@ export function passagePlanCellData(point: SeaOperationWaypoint, options: { allo
   const forecastFootnote = forecast ? [
     `${forecast.attribution} · consultée le ${utc(forecast.fetchedAt)}`,
     `ETA : ${utc(forecast.etaUtc)}${forecast.waves ? ` · modèle houle : ${utc(forecast.waves.time)}` : ''}${forecast.wind ? ` · modèle vent : ${utc(forecast.wind.time)}` : ''}`,
-    ...(forecast.model ? [`${forecast.model.name} · réseau du ${utc(forecast.model.referenceTime)} · maille ${forecast.model.latitude.toFixed(3)}, ${forecast.model.longitude.toFixed(3)}`] : []),
+    ...(forecast.model ? [`${forecast.model.name} · réseau du ${utc(forecast.model.referenceTime)} · maille ${formatSeaPosition(forecast.model)}`] : []),
     ...(forecast.model ? [seaOperationWeatherLocation(forecast)] : []),
     ...(hasSeaStateIndicator && seaState.hsRange ? [`Matrice du navire enregistrée : Hs ${seaState.hsRange} · période ${seaState.periodRange}. Aide à la lecture, sans décision GO automatique.`] : []),
     forecast.sourceUrl,
   ].join('\n') : '';
   const weatherFootnote = [options.validatedAt ? `Validation du Capitaine : ${utc(options.validatedAt)}.` : '', forecastFootnote, observationFootnote(observation)].filter(Boolean).join('\n');
   return {
-    waypoint: value(point.number), description: value(point.descriptionVhf), latitude: value(point.latitude), longitude: value(point.longitude),
+    waypoint: value(point.number), description: value(point.descriptionVhf), latitude: value(formatSeaLatitude(point.latitude)), longitude: value(formatSeaLongitude(point.longitude)),
     ukc: value(point.ukc), eta: value(point.eta.replace(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2}).*$/, '$3/$2/$1 à $4')),
     vhf, weather, observedWeather, observation, seaState, hasSeaStateIndicator, denseTraffic: point.denseTraffic ? 'Oui' : 'Non', weatherFootnote, radioFootnote,
   };

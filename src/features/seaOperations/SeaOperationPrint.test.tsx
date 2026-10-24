@@ -126,6 +126,8 @@ describe('Opération en Mer printable content', () => {
     expect(within(table).getAllByRole('row')[1].querySelectorAll('td')).toHaveLength(9);
     expect(within(table).queryByRole('columnheader', { name: 'Conditions de vie à bord' })).not.toBeInTheDocument();
     expect(within(table).getByRole('cell', { name: '<Approche du port>' })).toBeInTheDocument();
+    expect(within(table).getByRole('cell', { name: '49° 39.000′ N' })).toBeInTheDocument();
+    expect(within(table).getByRole('cell', { name: '001° 37.200′ W' })).toBeInTheDocument();
     expect(within(table).getByRole('cell', { name: /Cherbourg · Capitainerie · Ch 12/ })).toBeInTheDocument();
     const weatherCell = within(table).getByRole('cell', { name: /Prévision conservée à la validation[\s\S]*Houle Hs/ });
     expect(weatherCell.textContent).toMatch(/Période(?:moyenne)?6 s/);

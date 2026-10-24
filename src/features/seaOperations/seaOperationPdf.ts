@@ -46,7 +46,9 @@ export interface SeaOperationGeneratedPdf { bytes: Uint8Array; filename: string;
 
 const value = (input: string | null | undefined) => input?.trim() ? input : 'À renseigner';
 const answer = (input: SeaOperationAnswer) => input === 'yes' ? 'Oui' : input === 'no' ? 'Non' : 'À renseigner';
-const clean = (input: string) => input.replace(/\u00a0/g, ' ').replace(/[\u2010-\u2015]/g, '-').replace(/\u202f/g, ' ');
+// Helvetica/WinAnsi has no U+2032 minute glyph. ASCII apostrophe keeps the
+// degree/minute/hemisphere notation readable without corrupting PDF text.
+const clean = (input: string) => input.replace(/\u00a0/g, ' ').replace(/[\u2010-\u2015]/g, '-').replace(/\u202f/g, ' ').replace(/\u2032/g, "'");
 const date = (input: string) => input.replace(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}:\d{2})(.*))?$/, (_match, year, month, day, time, suffix) => `${day}/${month}/${year}${time ? ` à ${time}${suffix || ''}` : ''}`) || 'À renseigner';
 function timestamp(input: string | null) {
   if (!input) return 'À renseigner';
@@ -164,6 +166,7 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   fields([['Numéro de la ou des cartes marines', form.charts], ['Tirant d’eau de référence conservé', isVesselDraftMeters(form.vessel.draftMeters) ? `${form.vessel.draftMeters.toLocaleString('fr-FR', { maximumFractionDigits: 20 })} m` : 'Non renseigné - indicateur UKC indisponible']]);
   if (isVesselDraftMeters(form.vessel.draftMeters)) paragraph('Seuils UKC : rouge jusqu’au tirant d’eau inclus ; orange au-delà et jusqu’à +2 m inclus ; vert au-delà de +2 m. Indicateur distinct de la décision du Capitaine.');
   paragraph('ETA : date et heure locale de Paris. Les fiches historiques peuvent conserver une heure seule.');
+  paragraph('Positions WGS84 : degrés et minutes décimales, N/S et E/W (Ouest).');
   const routeMap = buildSeaOperationRouteMap(form.waypoints, pageWidth() - LEFT - RIGHT, 190);
   page(routeMap.points.length ? routeMap.height + 65 : 65);
   heading('Carte du parcours', true);
@@ -313,6 +316,7 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
       didParseCell(cell) {
         if (cell.section === 'head' && cell.column.index === 0) cell.cell.styles.cellPadding = 3;
         if (cell.section !== 'body') return;
+        if (cell.column.index === 2 || cell.column.index === 3) cell.cell.styles.fontSize = 7;
         const ukc = ukcCards[cell.row.index];
         if (cell.column.index === 4 && ukc) {
           cell.cell.text = [];
