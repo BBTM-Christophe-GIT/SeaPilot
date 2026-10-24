@@ -70,6 +70,8 @@ export interface SeaOperationPayload {
   vessel: {
     /** The vessel matrix retained at preparation, never replaced on a signed form. */
     weatherMatrix?: VesselWeatherMatrix | null;
+    /** Navires draft retained with this revision, independently of later vessel changes. */
+    draftMeters?: number | null;
     id: string;
     name: string;
     registrationImo: string;
@@ -257,6 +259,8 @@ export function isSeaOperationPayload(value: unknown): value is SeaOperationPayl
   if (!['', 'GO', 'NO_GO'].includes(value.decision as string)) return false;
   if (!hasStringFields(value.vessel, ['id', 'name', 'registrationImo', 'captainName', 'departurePort', 'departureQuay', 'arrivalPort', 'arrivalQuay', 'etd', 'eta'])) return false;
   if (value.vessel.weatherMatrix !== undefined && value.vessel.weatherMatrix !== null && !isVesselWeatherMatrix(value.vessel.weatherMatrix)) return false;
+  if (value.vessel.draftMeters !== undefined && value.vessel.draftMeters !== null
+    && (typeof value.vessel.draftMeters !== 'number' || !Number.isFinite(value.vessel.draftMeters) || value.vessel.draftMeters <= 0 || value.vessel.draftMeters > 50)) return false;
   if (!hasStringFields(value.dapaq, ['agentName', 'agentContact']) || !['', 'nomade', 'email'].includes(value.dapaq.method as string)
     || !['', 'armament', 'captain', 'agent'].includes(value.dapaq.preparedBy as string)) return false;
   if (!isObject(value.applicability) || !['towing', 'cargo', 'divingSupport', 'supplies'].every((key) => isAnswer(value.applicability && (value.applicability as Record<string, unknown>)[key]))) return false;

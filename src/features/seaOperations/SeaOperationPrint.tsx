@@ -9,6 +9,8 @@ import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperation
 import { passagePlanCellData } from './seaOperationPassagePlan';
 import { SeaOperationWeatherCard } from './SeaOperationWeatherCard';
 import { SeaOperationRouteMap } from './SeaOperationRouteMap';
+import { SeaOperationUkcIndicator } from './SeaOperationUkcIndicator';
+import { isVesselDraftMeters } from './seaOperationUkc';
 import './seaOperationPrint.css';
 
 const blank = 'À renseigner';
@@ -176,11 +178,13 @@ export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOp
 
     <section className="so-print-section so-print-passage-section">
       <h2>3 – Passage Plan</h2>
-      <dl><PrintField label="Numéro de la ou des cartes marines">{text(form.charts)}</PrintField></dl>
+      <dl><PrintField label="Numéro de la ou des cartes marines">{text(form.charts)}</PrintField>
+        <PrintField label="Tirant d’eau de référence conservé">{isVesselDraftMeters(vessel.draftMeters) ? `${vessel.draftMeters.toLocaleString('fr-FR', { maximumFractionDigits: 20 })} m` : 'Non renseigné – indicateur UKC indisponible'}</PrintField></dl>
+      {isVesselDraftMeters(vessel.draftMeters) && <p>Seuils UKC : rouge jusqu’au tirant d’eau inclus ; orange au-delà et jusqu’à +2 m inclus ; vert au-delà de +2 m. Indicateur distinct de la décision du Capitaine.</p>}
       <p>ETA : date et heure locale de Paris. Les fiches historiques peuvent conserver une heure seule.</p>
       <div className="so-print-route-map"><SeaOperationRouteMap waypoints={form.waypoints} compact /></div>
       {passageRows.length ? <table className="so-print-passage"><caption>Points de passage, contacts VHF et météo à l’ETA</caption><thead><tr><th scope="col">Waypoint</th><th scope="col">Description</th><th scope="col">Latitude</th><th scope="col">Longitude</th><th scope="col">UKC</th><th scope="col">ETA – Date et heure</th><th scope="col">Contacts VHF</th><th scope="col">Météo à l’ETA</th><th scope="col">Trafic dense</th></tr></thead><tbody>
-        {passageRows.map((row, index) => <tr key={`${index}:${form.waypoints[index].id}`}><td>{row.waypoint}</td><td>{row.description}</td><td>{row.latitude}</td><td>{row.longitude}</td><td>{row.ukc}</td><td>{row.eta}</td><td>{row.vhf}</td><td><SeaOperationWeatherCard point={form.waypoints[index]} matrix={form.vessel.weatherMatrix} compact showObservations={signed} observations={record.weatherObservations} validatedAt={signed ? record.signedAt : undefined} /></td><td>{row.denseTraffic}</td></tr>)}
+        {passageRows.map((row, index) => <tr key={`${index}:${form.waypoints[index].id}`}><td>{row.waypoint}</td><td>{row.description}</td><td>{row.latitude}</td><td>{row.longitude}</td><td><SeaOperationUkcIndicator value={form.waypoints[index].ukc} draftMeters={vessel.draftMeters} /></td><td>{row.eta}</td><td>{row.vhf}</td><td><SeaOperationWeatherCard point={form.waypoints[index]} matrix={form.vessel.weatherMatrix} compact showObservations={signed} observations={record.weatherObservations} validatedAt={signed ? record.signedAt : undefined} /></td><td>{row.denseTraffic}</td></tr>)}
       </tbody></table> : <p>Aucun point de passage renseigné.</p>}
       {passageRows.some((row) => row.weatherFootnote || row.radioFootnote) && <div className="so-print-passage-sources"><h3>Sources et horaires du Passage Plan</h3>{passageRows.map((row, index) => (row.weatherFootnote || row.radioFootnote) ? <section key={`${index}:${form.waypoints[index].id}`}><h4>Waypoint {row.waypoint}</h4>{row.weatherFootnote && <p>{row.weatherFootnote}</p>}{row.radioFootnote && <p>{row.radioFootnote}</p>}</section> : null)}</div>}
       {radioContacts.length > 0 && <div className="so-print-radio"><h3>Contacts VHF proposés par proximité</h3><p>Annuaire de préparation vérifié le {dateText(SEA_RADIO_VERIFIED_ON)}. Repères arrondis à moins de 80 M (centres) ou 10 M (ports) de la route ; ce filtre ne détermine ni une compétence SAR / VTS, ni la portée radio. Annexe indicative, distincte de la décision signée.</p><table><thead><tr><th>Contact</th><th>VHF</th><th>Téléphone / MMSI</th><th>Source</th></tr></thead><tbody>{radioContacts.map((contact) => <tr key={contact.id}><td>{contact.name}</td><td>Canal {contact.vhf}</td><td>{[contact.phone, contact.mmsi ? `MMSI ${contact.mmsi}` : ''].filter(Boolean).join(' · ') || '—'}</td><td><a href={contact.source}>{contact.sourceLabel}</a></td></tr>)}</tbody></table></div>}

@@ -701,6 +701,132 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(record.draft).toEqual(original);
   });
 
+  it('updates the captain waypoint UKC pill at both boundaries without changing the departure decision or saving', async () => {
+    const draft = waypointCaptureDraft();
+    draft.waypoints[0].ukc = '2';
+    const original = structuredClone(draft);
+    const record = recordFixture(captainAccount, { draft });
+    const { data } = renderAccount(captainAccount, record, 1, plannedMissions());
+    data.vessels[1].draftMeters = 2;
+    await openRecord(record);
+    await userEvent.click(stepButton(2));
+    const input = formQueries().getByLabelText('UKC · point 1');
+    const cell = within(input.closest<HTMLElement>('.so-passage-field.is-ukc')!);
+    let pill = cell.getByRole('img', { name: /2 m — UKC inférieure ou égale/ });
+    expect(pill).toHaveClass('is-danger');
+    expect(pill.querySelector('svg')).not.toBeNull();
+    fireEvent.change(input, { target: { value: '4' } });
+    pill = cell.getByRole('img', { name: /4 m — UKC supérieure au tirant/ });
+    expect(pill).toHaveClass('is-warning');
+    expect(pill.querySelector('svg')).not.toBeNull();
+    fireEvent.change(input, { target: { value: '4.0001' } });
+    pill = cell.getByRole('img', { name: /4,0001 m — UKC supérieure/ });
+    expect(pill).toHaveClass('is-success');
+    expect(pill.querySelector('svg')).toBeNull();
+    fireEvent.change(input, { target: { value: 'À vérifier par le Capitaine' } });
+    expect(cell.queryByRole('img')).not.toBeInTheDocument();
+    expect(input).toHaveValue('À vérifier par le Capitaine');
+    const local = JSON.parse(sessionStorage.getItem('seapilot:sea-operation-draft:v1:1:captain-server-account')!).draft;
+    expect(local.decision).toBe(original.decision);
+    expect(local.checks).toEqual(original.checks);
+    await decisionStep();
+    expect(choiceInput('Décision', 'NO_GO')).toBeChecked();
+    expect(choiceInput('Décision', 'GO')).not.toBeChecked();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+    expect(record.draft).toEqual(original);
+  });
+
+  it('captures the chosen vessel draught independently from its planning weather matrix and clears missing references', async () => {
+    const choices = plannedMissions();
+    choices[0].vessel.weatherMatrix = structuredClone(GOURY_WEATHER_MATRIX);
+    choices[1].vessel.weatherMatrix = null;
+    const { data } = renderAccount(captainAccount, undefined, 1, choices);
+    data.vessels[0].draftMeters = 2.65;
+    data.vessels[1].draftMeters = null;
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await chooseMission(choices[0]);
+    await userEvent.click(stepButton(2));
+    expect(formQueries().getByLabelText('Tirant d’eau de référence (m)')).toHaveValue(2.65);
+    const stored = () => JSON.parse(sessionStorage.getItem('seapilot:sea-operation-draft:v1:1:captain-server-account')!).draft;
+    expect(stored().vessel.draftMeters).toBe(2.65);
+    await userEvent.click(stepButton(0));
+    await chooseMission(choices[1]);
+    await userEvent.click(stepButton(2));
+    expect(formQueries().getByLabelText('Tirant d’eau de référence (m)')).toHaveValue(null);
+    expect(stored().vessel.draftMeters).toBeNull();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it.each(['save', 'sign'] as const)('captures the current fleet draught before %s and uses the returned canonical snapshot', async (action) => {
+    const choices = plannedMissions();
+    const draft = waypointCaptureDraft(choices[1]);
+    draft.vessel.draftMeters = 1;
+    const original = structuredClone(draft);
+    const record = recordFixture(captainAccount, { draft });
+    const { client, data } = renderAccount(captainAccount, record, 1, choices);
+    data.vessels[1].draftMeters = 2.65;
+    vi.mocked(fetchSeaOperationCaptainSignature).mockResolvedValue(profileSignature());
+    let canonical = record;
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, edited) => (canonical = { ...record, version: 4,
+      draft: { ...structuredClone(edited), vessel: { ...structuredClone(edited.vessel), draftMeters: 2.9 } } }));
+    vi.mocked(signSeaOperation).mockImplementation(async (_client, saved) => ({ ...canonical, ...saved, status: 'signed', canEdit: false, canSign: false, version: 5 }));
+    await openRecord(record);
+    await userEvent.click(stepButton(2));
+    expect(formQueries().getByLabelText('Tirant d’eau de référence (m)')).toHaveValue(2.65);
+    data.vessels[1].draftMeters = 2.8;
+    if (action === 'sign') {
+      await decisionStep();
+      await userEvent.click(screen.getByRole('button', { name: 'Signer la décision NO GO' }));
+      expect(await formQueries().findByText('Décision du Capitaine signée et enregistrée. La fiche est figée.')).toBeInTheDocument();
+      expect(signSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ draft: expect.objectContaining({
+        vessel: expect.objectContaining({ draftMeters: 2.9 }),
+      }) }), draft.signature.captainName, true);
+    } else {
+      await saveDraft();
+      expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
+    }
+    expect(vi.mocked(saveSeaOperation).mock.calls[0][1].vessel.draftMeters).toBe(2.8);
+    await userEvent.click(stepButton(2));
+    expect(formQueries().getByLabelText('Tirant d’eau de référence (m)')).toHaveValue(2.9);
+    expect(draft).toEqual(original);
+  });
+
+  it.each([
+    { signed: true, snapshot: undefined }, { signed: true, snapshot: 2.1 }, { signed: false, snapshot: 2.1 },
+  ])('keeps readonly draught snapshots historical instead of using the current vessel (signed=$signed, snapshot=$snapshot)', async ({ signed, snapshot }) => {
+    const draft = waypointCaptureDraft();
+    if (snapshot !== undefined) draft.vessel.draftMeters = snapshot;
+    const original = structuredClone(draft);
+    const record = recordFixture(captainAccount, { draft, status: signed ? 'signed' : 'draft', canEdit: false, canSign: false });
+    const { data } = renderAccount(captainAccount, record, 1, plannedMissions());
+    data.vessels[1].draftMeters = 9;
+    await openRecord(record);
+    await userEvent.click(stepButton(2));
+    expect(formQueries().getByLabelText('Tirant d’eau de référence (m)')).toHaveValue(snapshot ?? null);
+    if (snapshot === undefined) {
+      expect(formQueries().getByText('Tirant d’eau de référence non enregistré dans cette version : indicateur UKC indisponible.')).toBeVisible();
+      expect(formQueries().queryByText('Renseignez le tirant d’eau du navire dans le module Navires.')).not.toBeInTheDocument();
+    }
+    expect(record.draft).toEqual(original);
+    expect(sessionStorage.length).toBe(0);
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('removes the old vessel draught when manually choosing a vessel whose source has no measurement', async () => {
+    const { data } = renderAccount();
+    data.vessels[0].draftMeters = 2.65;
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await userEvent.selectOptions(formQueries().getByLabelText('Navire'), '12');
+    await userEvent.click(stepButton(2));
+    expect(formQueries().getByLabelText('Tirant d’eau de référence (m)')).toHaveValue(2.65);
+    await userEvent.click(stepButton(0));
+    await userEvent.selectOptions(formQueries().getByLabelText('Navire'), '13');
+    await userEvent.click(stepButton(2));
+    expect(formQueries().getByLabelText('Tirant d’eau de référence (m)')).toHaveValue(null);
+    expect(JSON.parse(sessionStorage.getItem('seapilot:sea-operation-draft:v1:1:captain-server-account')!).draft.vessel).not.toHaveProperty('draftMeters');
+  });
+
   it('captures the chosen vessel matrix and clears it when changing to a vessel without configuration', async () => {
     const choices = plannedMissions();
     choices[0].vessel.weatherMatrix = structuredClone(GOURY_WEATHER_MATRIX);

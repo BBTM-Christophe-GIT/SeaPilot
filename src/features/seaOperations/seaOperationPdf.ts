@@ -9,6 +9,7 @@ import { passagePlanCellData } from './seaOperationPassagePlan';
 import { waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 import { seaOperationWeatherLocation } from './seaOperationWeatherLocation';
 import { buildSeaOperationRouteMap } from './seaOperationRouteMapGeometry';
+import { assessSeaOperationUkc, isVesselDraftMeters, type SeaOperationUkcLevel } from './seaOperationUkc';
 
 export const SEA_OPERATION_WORD_TEMPLATE_URL = '/templates/sea-operation/word-header-footer.pdf';
 const PAGE_WIDTH = 595.32;
@@ -21,6 +22,11 @@ const WORD_HEADER_HEIGHT = 90;
 const WORD_FOOTER_HEIGHT = 26;
 const BLUE: [number, number, number] = [21, 96, 130];
 const WHITE: [number, number, number] = [255, 255, 255];
+const UKC_COLORS: Record<SeaOperationUkcLevel, { foreground: [number, number, number]; background: [number, number, number] }> = {
+  danger: { foreground: [162, 27, 27], background: [255, 240, 239] },
+  warning: { foreground: [138, 65, 0], background: [255, 242, 223] },
+  success: { foreground: [23, 101, 63], background: [234, 247, 239] },
+};
 const SEA_STATE_COLORS: Record<VesselSeaStateAssessment['tone'], { foreground: [number, number, number]; background: [number, number, number] }> = {
   success: { foreground: [23, 97, 59], background: [234, 247, 239] },
   warning: { foreground: [120, 81, 0], background: [255, 247, 214] },
@@ -155,7 +161,8 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   }
   newPage('landscape');
   heading('3 - Passage Plan');
-  fields([['Numéro de la ou des cartes marines', form.charts]]);
+  fields([['Numéro de la ou des cartes marines', form.charts], ['Tirant d’eau de référence conservé', isVesselDraftMeters(form.vessel.draftMeters) ? `${form.vessel.draftMeters.toLocaleString('fr-FR', { maximumFractionDigits: 20 })} m` : 'Non renseigné - indicateur UKC indisponible']]);
+  if (isVesselDraftMeters(form.vessel.draftMeters)) paragraph('Seuils UKC : rouge jusqu’au tirant d’eau inclus ; orange au-delà et jusqu’à +2 m inclus ; vert au-delà de +2 m. Indicateur distinct de la décision du Capitaine.');
   paragraph('ETA : date et heure locale de Paris. Les fiches historiques peuvent conserver une heure seule.');
   const routeMap = buildSeaOperationRouteMap(form.waypoints, pageWidth() - LEFT - RIGHT, 190);
   page(routeMap.points.length ? routeMap.height + 65 : 65);
@@ -247,6 +254,21 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   } else paragraph('Aucun waypoint avec une latitude et une longitude valides à placer sur la carte.');
   if (routeMap.invalidCount) paragraph(`${routeMap.invalidCount} waypoint${routeMap.invalidCount > 1 ? 's' : ''} non placé${routeMap.invalidCount > 1 ? 's' : ''} : coordonnées absentes ou invalides. Le tracé est interrompu à ces positions.`);
   const passageRows = form.waypoints.map((point) => passagePlanCellData(point, { allowLiveRadio: !signed, weatherMatrix: form.vessel.weatherMatrix, observations: record.weatherObservations, includeObservations: signed, validatedAt: signed ? record.signedAt : undefined }));
+  // Reserve the alert icon's width without widening the page or moving the weather column.
+  const ukcColumnWidth = form.waypoints.some((point) => assessSeaOperationUkc(point.ukc, form.vessel.draftMeters)) ? 45 : 35;
+  const descriptionColumnWidth = 140 - ukcColumnWidth;
+  const ukcCards = form.waypoints.map((point) => {
+    const assessment = assessSeaOperationUkc(point.ukc, form.vessel.draftMeters);
+    if (!assessment) return undefined;
+    document.setFont('helvetica', 'bold'); document.setFontSize(6.5);
+    const label = clean(assessment.formattedValue);
+    const warning = assessment.level !== 'success';
+    const maxTextWidth = ukcColumnWidth - 12;
+    const inline = document.getTextWidth(label) + (warning ? 8 : 0) <= maxTextWidth;
+    const number = label.slice(0, -2);
+    const lines = inline ? [label] : document.getTextWidth(number) <= maxTextWidth ? [number, 'm'] : document.splitTextToSize(label, maxTextWidth) as string[];
+    return { assessment, warning, inline, lines, height: 8 + lines.length * 8 + (warning && !inline ? 9 : 0) };
+  });
   const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
   const height = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const integer = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
@@ -280,17 +302,23 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   if (passageRows.length) {
     document.setFont('helvetica', 'normal'); document.setFontSize(8.5);
     const first = passageRows[0];
-    const textCells: Array<[string, number]> = [[first.waypoint, 45], [first.description, 105], [first.latitude, 60], [first.longitude, 60], [first.ukc, 35], [first.eta, 73], [first.vhf, 106]];
+    const textCells: Array<[string, number]> = [[first.waypoint, 45], [first.description, descriptionColumnWidth], [first.latitude, 60], [first.longitude, 60], [first.ukc, ukcColumnWidth], [first.eta, 73], [first.vhf, 106]];
     const firstRowHeight = Math.max(weatherCards[0].height + 10, ...textCells.map(([content, width]) => (document.splitTextToSize(clean(content), width - 8) as string[]).length * 8.5 * 1.15 + 8));
     // Keep the repeated header with the first text/card block, even when a missing forecast makes its card shorter.
     page(firstRowHeight + 32);
   }
   if (passageRows.length) table(passageRows.map((row) => [row.waypoint, row.description, row.latitude, row.longitude, row.ukc, row.eta, row.vhf, row.weather, row.denseTraffic]),
     ['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA - Date / heure', 'Contacts VHF', 'Météo à l’ETA', 'Trafic dense'],
-    { 0: { cellWidth: 45 }, 1: { cellWidth: 105 }, 2: { cellWidth: 60 }, 3: { cellWidth: 60 }, 4: { cellWidth: 35 }, 5: { cellWidth: 73 }, 6: { cellWidth: 106 }, 7: { cellWidth: weatherColumnWidth }, 8: { cellWidth: PAGE_HEIGHT - LEFT - RIGHT - 709 } }, true, {
+    { 0: { cellWidth: 45 }, 1: { cellWidth: descriptionColumnWidth }, 2: { cellWidth: 60 }, 3: { cellWidth: 60 }, 4: { cellWidth: ukcColumnWidth }, 5: { cellWidth: 73 }, 6: { cellWidth: 106 }, 7: { cellWidth: weatherColumnWidth }, 8: { cellWidth: PAGE_HEIGHT - LEFT - RIGHT - 709 } }, true, {
       didParseCell(cell) {
         if (cell.section === 'head' && cell.column.index === 0) cell.cell.styles.cellPadding = 3;
         if (cell.section !== 'body') return;
+        const ukc = ukcCards[cell.row.index];
+        if (cell.column.index === 4 && ukc) {
+          cell.cell.text = [];
+          cell.cell.styles.minCellHeight = ukc.height + 6;
+          cell.cell.styles.cellPadding = 0;
+        }
         if (cell.column.index === 7) {
           // The cell reserves the measured card height; the vector card is drawn below without rasterizing its text.
           cell.cell.text = [];
@@ -305,7 +333,29 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
         document.roundedRect(cell.cell.x + 5, cell.cell.y + 5, cell.cell.width - 10, weatherCards[cell.row.index].height, 5, 5, 'FD');
       },
       didDrawCell(cell) {
-        if (cell.section !== 'body' || cell.column.index !== 7) return;
+        if (cell.section !== 'body') return;
+        const ukc = ukcCards[cell.row.index];
+        if (cell.column.index === 4 && ukc) {
+          const colors = UKC_COLORS[ukc.assessment.level];
+          const x = cell.cell.x + 3, top = cell.cell.y + 4, width = cell.cell.width - 6;
+          document.saveGraphicsState();
+          document.setFillColor(...colors.background); document.setDrawColor(...colors.foreground); document.setLineWidth(.45);
+          document.roundedRect(x, top, width, ukc.height, 6, 6, 'FD');
+          let textY = top + 10;
+          if (ukc.warning) {
+            const iconX = ukc.inline ? x + 3 : x + width / 2 - 3;
+            const iconY = top + 3;
+            document.triangle(iconX + 3, iconY, iconX + 6, iconY + 6, iconX, iconY + 6, 'S');
+            document.setFont('helvetica', 'bold'); document.setFontSize(4.7); document.setTextColor(...colors.foreground);
+            document.text('!', iconX + 3, iconY + 5, { align: 'center' });
+            if (!ukc.inline) textY += 9;
+          }
+          document.setFont('helvetica', 'bold'); document.setFontSize(6.5); document.setTextColor(...colors.foreground);
+          document.text(ukc.lines, x + width / 2 + (ukc.warning && ukc.inline ? 4 : 0), textY, { align: 'center', lineHeightFactor: 1.23 });
+          document.restoreGraphicsState();
+          return;
+        }
+        if (cell.column.index !== 7) return;
         const row = passageRows[cell.row.index];
         const card = weatherCards[cell.row.index];
         const forecast = card.forecast;

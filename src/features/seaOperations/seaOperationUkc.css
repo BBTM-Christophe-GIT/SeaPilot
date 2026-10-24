@@ -1,0 +1,31 @@
+.so-ukc-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: .75rem;
+  font-weight: 700;
+  line-height: 1.25;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+.so-ukc-pill svg { flex: 0 0 auto; }
+.so-ukc-pill.is-danger { color: #a21b1b; background: #fff0ef; }
+.so-ukc-pill.is-warning { color: #8a4100; background: #fff2df; }
+.so-ukc-pill.is-success { color: #17653f; background: #eaf7ef; }
+.so-ukc-unclassified { color: var(--sp-muted); overflow-wrap: anywhere; }
+.so-passage-field.is-ukc .so-ukc-pill { margin-top: 4px; }
+.so-print .so-print-passage .so-ukc-pill { gap: 2px; padding: 2px 4px; font-size: .85em; }
+.so-print .so-print-passage .so-ukc-pill svg { width: 10px; height: 10px; }
+@media print {
+  .so-print .so-ukc-pill.is-danger { color: #a21b1b; }
+  .so-print .so-ukc-pill.is-warning { color: #8a4100; }
+  .so-print .so-ukc-pill.is-success { color: #17653f; }
+}

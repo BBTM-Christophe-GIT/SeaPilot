@@ -580,12 +580,14 @@ PDF A4 avec les en-têtes / pieds du Word conservés.
 
 ### Bases profondeur et marée identifiées
 
-Recherche vérifiée le 22 octobre 2026 :
+Recherche complétée le 24 octobre 2026 ; appels numériques et références
+verticales détaillés dans [UKC et bathymétrie](./sea-operation-ukc-bathymetry.md).
 
 | Source | Accès et données | Limite pour l’UKC |
 | --- | --- | --- |
 | [EMODnet Bathymetry 2024](https://erddap.emodnet.eu/erddap/info/bathymetry_dtm_2024/index.html) | ERDDAP/WCS public, grille 1/960°, environ 115 m N-S, élévation relative au LAT | La métadonnée interdit l’usage pour navigation/sécurité en mer ; grille indicative, pas sonde minimale certifiée |
 | [MNT Shom façade Atlantique](https://diffusion.shom.fr/donnees/bathymerie/mnt-facade-atl-homonim.html) | Licence ouverte, environ 111 m, NM ou PBMA selon le produit | Produit de modélisation ; restrictions de navigation du descriptif à respecter |
+| [SHOM prévisions côtières TOLOSA](https://www.shom.fr/fr/copernicus) | ncWMS public gratuit sans compte ; niveaux d’eau horaires au niveau moyen du modèle | Conversion verticale nécessaire avant une addition à une sonde LAT ; disponibilité et horizon selon le modèle |
 | [Shom SUPMarée / SAPM](https://services.data.shom.fr/support/en/services/spm) | Abonnement, clé et identifiants ; ports ou points du modèle en mer, prédictions au zéro hydrographique | Autorisation de réutilisation et correspondance datum/localité à vérifier ; niveau réel affecté par la météo |
 | [UKHO Tidal API](https://admiraltyapi.developer.azure-api.net/docs/technicalOverview) | Abonnement/clé ; hauteurs à des stations selon le niveau d’offre, dates GMT/CD | Pas d’extrapolation arbitraire d’une station à tous les points ; CD et LAT ne sont pas universellement interchangeables |
 | [Copernicus NWS](https://data.marine.copernicus.eu/product/NWSHELF_ANALYSISFORECAST_PHY_004_013/description) | Compte et données de modèle, environ 1,5 km | Niveau rapporté au géoïde ; aucune addition directe à une sonde LAT |
@@ -602,6 +604,15 @@ mouvements et marges de l’armement. La proximité d’un point sur un MNT ouve
 une hauteur de marée approximative ne suffisent pas. Le volet repliable Profondeur,
 marée et calcul de l’UKC expose ces références dans la fiche sans fabriquer une
 valeur d’UKC.
+
+Depuis **3.77.19**, la valeur UKC présente une pilule rouge si elle est inférieure
+ou égale au tirant d’eau, orange jusqu’à tirant d’eau + 2 m inclus, verte au-delà.
+Rouge et orange comportent un triangle « ! ». Ces plages confirmées par
+l’utilisateur couvrent aussi l’intervalle entre tirant d’eau et +1 m. Le tirant
+d’eau du navire est conservé à la préparation puis canonisé côté serveur pour
+la version enregistrée. Une fiche signée sans cette référence ou une annotation
+non numérique reste neutre. La légende et le tirant de référence apparaissent
+dans le Passage Plan, l’aperçu, l’impression et le PDF, sans changer le GO / NO GO.
 
 ### Cartes SHOM retrouvées par coordonnées et ajout automatique — v3.77.5
 

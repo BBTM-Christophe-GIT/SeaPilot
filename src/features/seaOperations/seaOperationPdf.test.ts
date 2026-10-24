@@ -89,6 +89,44 @@ function textPositions(body: string, text: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Sea operation PDF', () => {
+  it('draws compact UKC pills from the recorded draft reference and keeps historical values neutral without it', async () => {
+    const record = fixture();
+    record.draft.description = 'Contrôle visuel des seuils UKC et du tirant d’eau conservé.';
+    record.draft.vessel.draftMeters = 2;
+    const values = ['2', '2,5', '4', '4,000001', '-0,2', 'À vérifier'];
+    record.draft.waypoints = values.map((ukc, index) => {
+      const point = { ...record.draft.waypoints[index], number: `U${index + 1}`, descriptionVhf: 'Point de passage', ukc };
+      delete point.weather; delete point.radio;
+      return point;
+    });
+    const original = structuredClone(record);
+    const generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const bodies = await generatedBodies(generated.bytes);
+    const passage = bodies.filter((body) => body.includes('(Waypoint)')).join('\n');
+    const ukcText = [...passage.matchAll(/BT\n([\s\S]*?)\nET/g)].map((match) => {
+      const position = /([\d.-]+) ([\d.-]+) Td/.exec(match[1]);
+      return { commands: match[1], x: Number(position?.[1]) };
+    }).filter((item) => item.x > 309 && item.x < 354);
+    const textBody = bodies.join('\n').replace(/\x92/g, '’');
+    expect(textBody.includes('Tirant d’eau de référence conservé')).toBe(true);
+    expect(textBody.includes('orange au-delà et jusqu’à +2 m inclus')).toBe(true);
+    expect(ukcText.filter((item) => item.commands.includes('0.635 0.106 0.106 rg') && !item.commands.includes('(!) Tj'))).toHaveLength(2);
+    expect(ukcText.filter((item) => item.commands.includes('0.541 0.255 0. rg') && !item.commands.includes('(!) Tj'))).toHaveLength(2);
+    expect(ukcText.filter((item) => item.commands.includes('0.09 0.396 0.247 rg'))).toHaveLength(1);
+    expect(ukcText.filter((item) => item.commands.includes('(!) Tj'))).toHaveLength(4);
+    expect(ukcText.some((item) => item.commands.includes('(À vérifier) Tj') || item.commands.includes('(À) Tj') && item.commands.includes('(vérifier) Tj'))).toBe(true);
+    expect(ukcText.some((item) => item.commands.includes('(4,000001) Tj') || item.commands.includes('(4,000001 m) Tj'))).toBe(true);
+    expect(record).toEqual(original);
+    if (process.env.SEAPILOT_PDF_UKC_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_UKC_QA_OUTPUT, generated.bytes);
+    delete record.draft.vessel.draftMeters;
+    const historical = (await generatedBodies((await generateSeaOperationPdf(record, { templateBytes: await template() })).bytes)).join('\n');
+    expect(historical).toContain('Non renseigné - indicateur UKC indisponible');
+    expect(historical).not.toContain('0.635 0.106 0.106 rg');
+    expect(historical).not.toContain('0.541 0.255 0. rg');
+    expect(historical).not.toContain('0.09 0.396 0.247 rg');
+    expect(historical.replace(/\) Tj\s*T\* \(/g, '').includes('4,000001')).toBe(true);
+    expect(record.draft.decision).toBe('GO');
+  });
   it('keeps portrait chapters and landscape Passage Plan pages with native-size Word chrome on every page', async () => {
     const generated = await generateSeaOperationPdf(fixture(), { templateBytes: await template() });
     const document = await PDFDocument.load(generated.bytes);
