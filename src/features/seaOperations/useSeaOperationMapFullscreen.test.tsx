@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppDialog } from '../../components/AppDialog';
 import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
@@ -47,12 +47,12 @@ describe('Sea operation map fullscreen lifecycle', () => {
     expect(outside).toHaveAttribute('aria-hidden', 'true');
     expect(document.body.style.overflow).toBe('hidden');
     const exit = screen.getByRole('button', { name: 'Quitter le plein écran' });
-    const surface = screen.getByRole('button', { name: 'Zone de placement des waypoints' });
-    surface.focus();
-    fireEvent.keyDown(surface, { key: 'Tab' });
+    const lastPort = within(editor).getAllByRole('button', { name: /^Sélectionner le port |^Choisir un port parmi / }).at(-1)!;
+    lastPort.focus();
+    fireEvent.keyDown(lastPort, { key: 'Tab' });
     expect(screen.getByRole('button', { name: 'Terminer le placement' })).toHaveFocus();
     fireEvent.keyDown(screen.getByRole('button', { name: 'Terminer le placement' }), { key: 'Tab', shiftKey: true });
-    expect(surface).toHaveFocus();
+    expect(lastPort).toHaveFocus();
     fireEvent.keyDown(exit, { key: 'Escape' });
     expect(editor).not.toHaveClass('is-fullscreen');
     expect(editor).toHaveClass('is-placing');

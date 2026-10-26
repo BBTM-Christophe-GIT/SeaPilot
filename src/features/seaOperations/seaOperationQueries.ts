@@ -71,6 +71,8 @@ export interface SeaOperationVessel {
   registrationImo: string;
   lengthOverall: string | null;
   draftMeters?: number | null;
+  /** Current vessel reference for map estimates; never a field of the signed form. */
+  maxSpeedKnots?: number | null;
   weatherMatrix?: VesselWeatherMatrix | null;
   canSign: boolean;
 }
@@ -85,6 +87,11 @@ export interface SeaOperationData {
 
 type Row = Record<string, unknown>;
 const nullableText = (value: unknown): string | null => value == null ? null : String(value);
+function positiveNumberOrNull(value: unknown): number | null {
+  if ((typeof value !== 'number' && typeof value !== 'string') || typeof value === 'string' && !value.trim()) return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
 function vesselMatrix(value: unknown): VesselWeatherMatrix | null {
   const matrix = parseVesselWeatherMatrix(value);
   if (value != null && !matrix) throw new Error('La matrice Hs × période reçue pour ce navire est invalide.');
@@ -154,6 +161,7 @@ export async function fetchSeaOperationData(client: SupabaseClient): Promise<Sea
     const row = object(value);
     return { id: Number(row.id), name: String(row.name), registrationImo: String(row.registration_imo || ''),
       lengthOverall: nullableText(row.length_overall), draftMeters: row.draft_m == null ? null : Number(row.draft_m),
+      ...(row.max_speed_knots === undefined ? {} : { maxSpeedKnots: positiveNumberOrNull(row.max_speed_knots) }),
       ...(row.weather_matrix === undefined ? {} : { weatherMatrix: vesselMatrix(row.weather_matrix) }),
       canSign: row.can_sign === true };
   }).sort(compareFleetAssets);
