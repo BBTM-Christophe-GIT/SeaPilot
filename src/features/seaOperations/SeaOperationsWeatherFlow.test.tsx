@@ -115,7 +115,10 @@ describe('Passage Plan weather through the real editor and preview', () => {
     vi.mocked(fetchSeaOperationWaypointWeather).mockImplementation(async (_client, input) => forecast(input));
     await openFixture(); await step(2);
     const picker = within(form().getByRole('group', { name: 'ETA · date et heure · point 1' }));
-    await act(async () => { fireEvent.change(picker.getByLabelText('Heure de l’ETA (Paris)'), { target: { value: '21:45' } }); });
+    await act(async () => {
+      fireEvent.change(picker.getByLabelText('Heures de l’ETA (Paris)'), { target: { value: '21' } });
+      fireEvent.change(picker.getByLabelText('Minutes de l’ETA (Paris)'), { target: { value: '45' } });
+    });
     await act(async () => { fireEvent.click(picker.getByRole('button', { name: 'Appliquer' })); });
     await step(3);
     expect(fetchSeaOperationWaypointWeather).not.toHaveBeenCalled();

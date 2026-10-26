@@ -16,6 +16,7 @@ import './seaOperationNavigation.css';
 interface Props {
   client: SupabaseClient; projectId: string; waypoints: readonly SeaOperationWaypoint[]; preview?: boolean; active?: boolean;
   readOnly?: boolean; validatedAt?: string | null;
+  compact?: boolean;
   observations?: readonly ObservationResult[];
   onStatusChange?: (statuses: Record<string, WeatherRequestStatus>, sourceClient: SupabaseClient) => void;
   onWeatherLoaded?: (weather: SeaOperationWaypointWeather, context: SeaOperationWeatherCaptureContext, sourceClient: SupabaseClient) => void;
@@ -23,9 +24,10 @@ interface Props {
 type PointResult = { weather?: SeaOperationWaypointWeather; error?: string; loading?: boolean };
 const number = (value: number | null, digits = 1) => value === null ? 'Indisponible' : new Intl.NumberFormat('fr-FR', { maximumFractionDigits: digits }).format(value);
 const utc = (value: string) => new Intl.DateTimeFormat('fr-FR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+const collectionHelp = 'Hs de la houle seule, hors mer du vent. Sans donnée marine à la maille du waypoint, la maille marine disponible la plus proche est recherchée à 10 km maximum, à la même échéance. Sa position et sa distance sont affichées. Les dates hors horizon ou sans donnée proche restent indisponibles. Les prévisions disponibles sont conservées à l’enregistrement du brouillon et à la validation du Capitaine. Une consultation en direct ne modifie jamais une fiche signée.';
 
 /** Forecasts are contextual assistance, never an automatic safety answer or a signed-form mutation. */
-export function SeaOperationWeatherPanel({ client, projectId, waypoints, preview = false, active = true, readOnly = false, validatedAt, observations, onWeatherLoaded, onStatusChange }: Props) {
+export function SeaOperationWeatherPanel({ client, projectId, waypoints, preview = false, active = true, readOnly = false, compact = false, validatedAt, observations, onWeatherLoaded, onStatusChange }: Props) {
   const [refresh, setRefresh] = useState(0);
   const [state, setState] = useState<{ key: string; client: SupabaseClient; results: Record<string, PointResult>; loading: boolean } | null>(null);
   const currentClient = useRef(client);
@@ -99,7 +101,7 @@ export function SeaOperationWeatherPanel({ client, projectId, waypoints, preview
     <div className="so-weather-heading"><h3><CloudSun size={17} aria-hidden="true" />Prévisions aux points de passage</h3>{!readOnly && <button type="button" className="sp-button sp-button--secondary" disabled={!projectId || !waypoints.length || current?.loading} onClick={() => setRefresh((value) => value + 1)}><RefreshCw size={14} aria-hidden="true" />Actualiser la météo</button>}</div>
     <p className="so-help">ETA saisies à l’heure de Paris. Prévisions horaires : l’heure du modèle est affichée en UTC, au plus près de l’ETA (30 min maximum). {readOnly ? 'Les prévisions enregistrées sont conservées avec la décision signée.' : 'Les conditions météo restent à valider par le Capitaine.'}</p>
     {readOnly && validatedAt && Number.isFinite(Date.parse(validatedAt)) && <p className="so-help">Décision du Capitaine validée le {utc(validatedAt)} UTC.</p>}
-    {!projectId ? <p>Sélectionnez le projet du planning pour consulter la météo.</p> : !waypoints.length ? <p>Ajoutez un point avec ses coordonnées et sa date / heure d’arrivée.</p> : <ul className="so-weather-points">{waypoints.map((point, index) => {
+    {!projectId ? <p>Sélectionnez le projet du planning pour consulter la météo.</p> : !waypoints.length ? <p>Ajoutez un point avec ses coordonnées et sa date / heure d’arrivée.</p> : !compact && <ul className="so-weather-points">{waypoints.map((point, index) => {
       const result = current?.results[`${index}:${point.id}`] ?? { weather: waypointWeatherSnapshot(point) };
       const weather = result?.weather;
       return <li className="so-weather-point" key={`${index}:${point.id}`}>
@@ -116,6 +118,6 @@ export function SeaOperationWeatherPanel({ client, projectId, waypoints, preview
         {readOnly && <SeaOperationWeatherObservationCard point={point} observations={observations} />}
       </li>;
     })}</ul>}
-    <p className="so-help">Hs de la houle seule, hors mer du vent. Sans donnée marine à la maille du waypoint, la maille marine disponible la plus proche est recherchée à 10 km maximum, à la même échéance. Sa position et sa distance sont affichées. Les dates hors horizon ou sans donnée proche restent indisponibles. Les prévisions disponibles sont conservées à l’enregistrement du brouillon et à la validation du Capitaine. Une consultation en direct ne modifie jamais une fiche signée.</p>
+    {compact ? <details className="so-weather-methods"><summary>Sources et règles météo</summary><p className="so-help">{collectionHelp}</p></details> : <p className="so-help">{collectionHelp}</p>}
   </section>;
 }

@@ -1,5 +1,34 @@
 # Mesures météo après l’ETA
 
+## Comparaison dans la fiche enregistrée
+
+Le chapitre Passage Plan affiche une carte par waypoint après le premier
+enregistrement. Elle utilise exclusivement `record.draft`, indépendamment de
+la saisie non enregistrée. Un message identifie la dernière version sauvegardée
+lorsque le formulaire a été modifié.
+
+Un brouillon affiche « Prévisions du brouillon » et « Non signé » ; la recherche
+des mesures n’est annoncée qu’après la signature et le passage. Une fiche signée
+affiche « Données prévues à la signature du Capitaine », uniquement avec une
+capture compatible consultée avant sa signature. Les mesures restent une
+annexe distincte, avec leur heure effective et la distance de la station.
+Une indisponibilité de lecture est distinguée de l’absence de mesures.
+
+Les trois métriques sont Hs, période et vent moyen, sans rafales. Houle / mer
+totale, période moyenne / de pic et hauteur instrumentale du vent ne sont pas
+assimilées. Les sources, stations, licences et précisions restent disponibles
+dans les détails repliables. La relecture des mesures enregistrées reste
+accessible aux comptes réels autorisés sur une fiche en lecture seule.
+
+La saisie ETA garde le mois visible dans un calendrier compact, avec deux
+sélecteurs heures/minutes et une validation complète par Appliquer. Aucun
+changement partiel n’invalide les captures avant cette validation. Les cibles
+des jours font 32 px sur ordinateur et 44 px au pointeur tactile. Une fiche en
+lecture seule présente directement son ETA et le mode UKC sans commandes de
+modification. Ces adaptations concernent l’écran ; les exports sont conservés.
+
+## Conservation et collecte
+
 Les mesures officielles sont enregistrées séparément des prévisions conservées
 à la validation du Capitaine. Elles ne remplacent pas la copie signée et ne sont
 jamais reconstituées avec une prévision, une analyse de modèle, une réanalyse ou

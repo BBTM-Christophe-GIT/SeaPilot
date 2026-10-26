@@ -168,6 +168,16 @@ describe('SeaOperationEtaPicker', () => {
 describe('SeaOperationEtaPicker inline', () => {
   const inlinePicker = (value = '', onChange: (value: string) => void = vi.fn(), disabled = false) => <SeaOperationEtaPicker inline label={label} value={value} onChange={onChange} disabled={disabled} />;
   const inlineQueries = (name = label) => within(screen.getByRole('group', { name }));
+  function changeTime(picker: ReturnType<typeof inlineQueries>, time: string) {
+    const [hour, minute] = time.split(':');
+    fireEvent.change(picker.getByRole('combobox', { name: 'Heures de l’ETA (Paris)' }), { target: { value: hour } });
+    fireEvent.change(picker.getByRole('combobox', { name: 'Minutes de l’ETA (Paris)' }), { target: { value: minute } });
+  }
+  function expectTime(picker: ReturnType<typeof inlineQueries>, time: string) {
+    const [hour = '', minute = ''] = time.split(':');
+    expect(picker.getByRole('combobox', { name: 'Heures de l’ETA (Paris)' })).toHaveValue(hour);
+    expect(picker.getByRole('combobox', { name: 'Minutes de l’ETA (Paris)' })).toHaveValue(minute);
+  }
 
   it('shows the current Paris calendar and hour immediately without a trigger, implicit ETA or stolen focus', () => {
     vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-31T23:30:00Z'));
@@ -180,7 +190,7 @@ describe('SeaOperationEtaPicker inline', () => {
     expect(calendar).toBeVisible();
     expect(within(calendar).getAllByRole('columnheader').map((column) => column.getAttribute('aria-label'))).toEqual(['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche']);
     expect(calendar.querySelector('[aria-selected="true"]')).toBeNull();
-    expect(picker.getByLabelText('Heure de l’ETA (Paris)')).toHaveValue('');
+    expectTime(picker, '');
     expect(picker.getByRole('button', { name: 'Appliquer' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -197,13 +207,13 @@ describe('SeaOperationEtaPicker inline', () => {
     render(<ControlledPicker />);
     const picker = inlineQueries();
     fireEvent.click(picker.getByRole('button', { name: 'samedi 24 octobre 2026' }));
-    fireEvent.change(picker.getByLabelText('Heure de l’ETA (Paris)'), { target: { value: '15:30' } });
+    changeTime(picker, '15:30');
     expect(change).not.toHaveBeenCalled();
     fireEvent.click(picker.getByRole('button', { name: 'Appliquer' }));
     expect(change).toHaveBeenCalledExactlyOnceWith('2026-10-24T15:30');
     expect(picker.getByRole('grid', { name: 'Calendrier · octobre 2026' })).toBeVisible();
     expect(picker.getByRole('gridcell', { selected: true })).toHaveTextContent('24');
-    expect(picker.getByLabelText('Heure de l’ETA (Paris)')).toHaveValue('15:30');
+    expectTime(picker, '15:30');
     fireEvent.click(picker.getByRole('button', { name: 'Appliquer' }));
     expect(change).toHaveBeenCalledOnce();
   });
@@ -215,11 +225,11 @@ describe('SeaOperationEtaPicker inline', () => {
     expect(first.getByRole('grid', { name: 'Calendrier · octobre 2026' })).toBeVisible();
     expect(second.getByRole('grid', { name: 'Calendrier · novembre 2026' })).toBeVisible();
     fireEvent.click(first.getByRole('button', { name: 'samedi 24 octobre 2026' }));
-    fireEvent.change(first.getByLabelText('Heure de l’ETA (Paris)'), { target: { value: '15:30' } });
-    fireEvent.change(second.getByLabelText('Heure de l’ETA (Paris)'), { target: { value: '10:45' } });
+    changeTime(first, '15:30');
+    changeTime(second, '10:45');
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Autre champ' }));
-    expect(first.getByLabelText('Heure de l’ETA (Paris)')).toHaveValue('15:30');
-    expect(second.getByLabelText('Heure de l’ETA (Paris)')).toHaveValue('10:45');
+    expectTime(first, '15:30');
+    expectTime(second, '10:45');
     fireEvent.click(first.getByRole('button', { name: 'Appliquer' }));
     expect(firstChange).toHaveBeenCalledExactlyOnceWith('2026-10-24T15:30');
     expect(secondChange).not.toHaveBeenCalled();
@@ -229,20 +239,23 @@ describe('SeaOperationEtaPicker inline', () => {
     expect(secondChange).toHaveBeenCalledExactlyOnceWith('2026-11-12T10:45');
   });
 
-  it.each(['explicit', 'fieldset'] as const)('shows stored ETA but blocks all inline editing when disabled by %s', (mode) => {
+  it.each(['explicit', 'fieldset', 'inert'] as const)('shows stored ETA but blocks all inline editing when disabled by %s', (mode) => {
     const change = vi.fn();
-    render(mode === 'fieldset' ? <fieldset disabled>{inlinePicker('2026-10-23T12:00', change)}</fieldset> : inlinePicker('2026-10-23T12:00', change, true));
+    render(mode === 'fieldset' ? <fieldset disabled>{inlinePicker('2026-10-23T12:00', change)}</fieldset>
+      : mode === 'inert' ? <div inert>{inlinePicker('2026-10-23T12:00', change)}</div> : inlinePicker('2026-10-23T12:00', change, true));
     const picker = inlineQueries();
     expect(picker.getByRole('grid', { name: 'Calendrier · octobre 2026' })).toBeVisible();
-    for (const button of picker.getAllByRole('button')) expect(button).toBeDisabled();
-    expect(picker.getByLabelText('Heure de l’ETA (Paris)')).toBeDisabled();
+    if (mode !== 'inert') {
+      for (const button of picker.getAllByRole('button')) expect(button).toBeDisabled();
+      for (const select of picker.getAllByRole('combobox')) expect(select).toBeDisabled();
+    }
     fireEvent.click(picker.getByRole('button', { name: 'samedi 24 octobre 2026' }));
     fireEvent.click(picker.getByRole('button', { name: 'Mois suivant' }));
-    fireEvent.change(picker.getByLabelText('Heure de l’ETA (Paris)'), { target: { value: '15:30' } });
+    changeTime(picker, '15:30');
     fireEvent.click(picker.getByRole('button', { name: 'Appliquer' }));
     fireEvent.click(picker.getByRole('button', { name: 'Effacer' }));
     expect(picker.getByRole('gridcell', { selected: true })).toHaveTextContent('23');
-    expect(picker.getByLabelText('Heure de l’ETA (Paris)')).toHaveValue('12:00');
+    expectTime(picker, '12:00');
     expect(picker.getByRole('grid', { name: 'Calendrier · octobre 2026' })).toBeVisible();
     expect(change).not.toHaveBeenCalled();
   });
@@ -251,11 +264,11 @@ describe('SeaOperationEtaPicker inline', () => {
     const change = vi.fn(); const { rerender } = render(inlinePicker('2026-10-23T12:00', change));
     let picker = inlineQueries();
     fireEvent.click(picker.getByRole('button', { name: 'samedi 24 octobre 2026' }));
-    fireEvent.change(picker.getByLabelText('Heure de l’ETA (Paris)'), { target: { value: '15:30' } });
+    changeTime(picker, '15:30');
     rerender(inlinePicker('2026-11-12T09:00', change)); picker = inlineQueries();
     expect(picker.getByRole('grid', { name: 'Calendrier · novembre 2026' })).toBeVisible();
     expect(picker.getByRole('gridcell', { selected: true })).toHaveTextContent('12');
-    expect(picker.getByLabelText('Heure de l’ETA (Paris)')).toHaveValue('09:00');
+    expectTime(picker, '09:00');
     fireEvent.click(picker.getByRole('button', { name: 'Appliquer' }));
     expect(change).not.toHaveBeenCalled();
   });
@@ -263,17 +276,17 @@ describe('SeaOperationEtaPicker inline', () => {
   it('resets provisional inline edits with Cancel or Escape and leaves the surrounding operation open', () => {
     const change = vi.fn(), close = vi.fn(), submit = vi.fn((event: { preventDefault: () => void }) => event.preventDefault());
     render(<AppDialog title="Opération en mer" onClose={close} onSubmit={submit}>{inlinePicker('2026-10-23T12:00', change)}</AppDialog>);
-    const picker = inlineQueries(), hour = picker.getByLabelText('Heure de l’ETA (Paris)');
+    const picker = inlineQueries(), hour = picker.getByRole('combobox', { name: 'Heures de l’ETA (Paris)' });
     for (const action of ['Annuler', 'Escape']) {
       fireEvent.click(picker.getByRole('button', { name: 'samedi 24 octobre 2026' }));
-      fireEvent.change(hour, { target: { value: '15:30' } });
+      changeTime(picker, '15:30');
       fireEvent.keyDown(hour, { key: 'Enter' });
       expect(submit).not.toHaveBeenCalled();
       if (action === 'Escape') {
         fireEvent.keyDown(hour, { key: 'Escape' });
         fireEvent.keyDown(hour, { key: 'Escape', repeat: true });
       } else fireEvent.click(picker.getByRole('button', { name: 'Annuler' }));
-      expect(hour).toHaveValue('12:00');
+      expectTime(picker, '12:00');
       expect(picker.getByRole('gridcell', { selected: true })).toHaveTextContent('23');
       expect(picker.getByRole('grid', { name: 'Calendrier · octobre 2026' })).toBeVisible();
       expect(screen.getByRole('dialog', { name: 'Opération en mer' })).toBeVisible();
@@ -288,6 +301,45 @@ describe('SeaOperationEtaPicker inline', () => {
     fireEvent.keyDown(day, { key: 'ArrowRight' });
     expect(picker.getByRole('grid', { name: 'Calendrier · janvier 2027' })).toBeVisible();
     expect(picker.getByRole('button', { name: 'vendredi 1 janvier 2027' })).toHaveFocus();
-    await user.tab(); expect(picker.getByLabelText('Heure de l’ETA (Paris)')).toHaveFocus();
+    await user.tab(); expect(picker.getByRole('combobox', { name: 'Heures de l’ETA (Paris)' })).toHaveFocus();
+    await user.tab(); expect(picker.getByRole('combobox', { name: 'Minutes de l’ETA (Paris)' })).toHaveFocus();
+  });
+
+  it('keeps a partial hour local and supports every minute including midnight and 23:59', () => {
+    const change = vi.fn(); render(inlinePicker('2026-10-23T12:00', change));
+    const picker = inlineQueries(), hour = picker.getByRole('combobox', { name: 'Heures de l’ETA (Paris)' }), minute = picker.getByRole('combobox', { name: 'Minutes de l’ETA (Paris)' });
+    expect(within(hour).getAllByRole('option')).toHaveLength(25);
+    expect(within(minute).getAllByRole('option')).toHaveLength(61);
+    fireEvent.change(minute, { target: { value: '' } });
+    fireEvent.change(hour, { target: { value: '23' } });
+    expect(picker.getByRole('button', { name: 'Appliquer' })).toBeDisabled(); expect(change).not.toHaveBeenCalled();
+    fireEvent.change(minute, { target: { value: '59' } });
+    fireEvent.click(picker.getByRole('button', { name: 'Appliquer' }));
+    expect(change).toHaveBeenLastCalledWith('2026-10-23T23:59');
+    changeTime(picker, '00:00'); fireEvent.click(picker.getByRole('button', { name: 'Appliquer' }));
+    expect(change).toHaveBeenLastCalledWith('2026-10-23T00:00');
+  });
+
+  it.each(['2026-03-29', '2026-10-25'])('rejects the DST gap or overlap with separate hour and minute selectors on %s', date => {
+    const change = vi.fn(); render(inlinePicker(`${date}T12:00`, change));
+    const picker = inlineQueries(); changeTime(picker, '02:30'); fireEvent.click(picker.getByRole('button', { name: 'Appliquer' }));
+    expect(picker.getByRole('alert')).toHaveTextContent('inexistante ou ambiguë'); expect(change).not.toHaveBeenCalled();
+    changeTime(picker, '03:30'); expect(picker.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(picker.getByRole('button', { name: 'Appliquer' })); expect(change).toHaveBeenCalledExactlyOnceWith(`${date}T03:30`);
+  });
+
+  it('preserves exact stored seconds when the separate selectors make no visible change', () => {
+    const change = vi.fn(); render(inlinePicker('2026-10-23T12:34:56', change));
+    const picker = inlineQueries(); expectTime(picker, '12:34');
+    fireEvent.click(picker.getByRole('button', { name: 'Appliquer' })); expect(change).not.toHaveBeenCalled();
+  });
+
+  it.each(['1000-01-01T00:00', '9999-12-31T23:59'])('keeps navigation inside the supported date range at %s', value => {
+    render(inlinePicker(value)); const picker = inlineQueries(), lower = value.startsWith('1000');
+    expect(picker.getByRole('button', { name: lower ? 'Mois précédent' : 'Mois suivant' })).toBeDisabled();
+    const selected = picker.getByRole('gridcell', { selected: true }).querySelector('button')!;
+    fireEvent.keyDown(selected, { key: lower ? 'ArrowLeft' : 'ArrowRight' });
+    expect(picker.getByRole('gridcell', { selected: true })).toHaveTextContent(lower ? '1' : '31');
+    expectTime(picker, lower ? '00:00' : '23:59');
   });
 });

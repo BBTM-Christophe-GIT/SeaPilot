@@ -1,12 +1,6 @@
 .so-eta-picker { min-width: 0; max-width: 100%; width: 100%; font-family: var(--sp-font); }
-.so-eta-picker.is-inline { container: sea-operation-eta / inline-size; }
-.so-eta-picker.is-inline .so-eta-panel { width: min(100%, 640px); margin-top: 0; box-shadow: none; }
+.so-eta-picker.is-inline .so-eta-panel { width: min(100%, 254px); margin-top: 0; box-shadow: none; }
 .so-eta-date-pane, .so-eta-controls { min-width: 0; }
-@container sea-operation-eta (min-width: 480px) {
-  .so-eta-picker.is-inline .so-eta-panel { display: grid; grid-template-columns: minmax(240px, 300px) minmax(140px, 1fr); align-items: start; gap: var(--sp-space-3); }
-  .so-eta-picker.is-inline .so-eta-controls { padding-top: var(--sp-space-1); }
-  .so-eta-picker.is-inline .so-eta-time { grid-template-columns: minmax(0, 1fr); }
-}
 .so-eta-picker .so-eta-trigger.sp-button { display: flex; width: 100%; min-width: 0; min-height: 40px; justify-content: flex-start; gap: var(--sp-space-2); padding: var(--sp-space-2); border-radius: var(--sp-control-radius); font: inherit; font-size: .75rem; text-align: left; }
 .so-eta-trigger > svg { flex-shrink: 0; }
 .so-eta-trigger > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
@@ -16,20 +10,38 @@
 .so-eta-picker .so-eta-navigation h3 { display: grid; gap: 2px; min-width: 0; margin: 0; color: var(--sp-heading); text-align: center; font-size: .78rem; }
 .so-eta-navigation h3 > span { color: var(--sp-muted); font-size: .68rem; font-weight: 500; }
 .so-eta-picker .so-eta-navigation .sp-button { min-width: 0; min-height: 40px; padding: var(--sp-space-1); }
+.so-eta-picker .so-eta-navigation button.sp-button--secondary { color: var(--sp-text); background: var(--sp-surface); border-color: var(--sp-border-strong); }
 .so-eta-calendar { margin: var(--sp-space-2) 0; }
 .so-eta-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
 .so-eta-week > [role=columnheader] { padding: var(--sp-space-1) 0; color: var(--sp-muted); font-size: .7rem; text-align: center; }
 .so-eta-week > [role=gridcell] { min-width: 0; }
 .so-eta-picker button.so-eta-day { display: block; width: 100%; min-width: 0; min-height: 40px; padding: var(--sp-space-1) 0; border: 1px solid transparent; border-radius: var(--sp-control-radius); color: var(--sp-text); background: transparent; font: inherit; font-size: .75rem; font-weight: 500; cursor: pointer; }
+.so-eta-picker.is-inline button.so-eta-day { min-height: 32px; padding: 2px 0; font-size: .7rem; }
+.so-eta-picker.is-inline .so-eta-calendar { margin: var(--sp-space-1) 0; }
+.so-eta-picker.is-inline .so-eta-week > [role=columnheader] { padding: 2px 0; font-size: .65rem; }
+.so-eta-picker.is-inline .so-eta-navigation h3 > span { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .so-eta-picker button.so-eta-day[aria-current=date] { border-color: var(--sp-border-strong); font-weight: 750; }
 .so-eta-picker button.so-eta-day.is-selected { color: var(--sp-surface); background: var(--sp-primary); border-color: var(--sp-primary); }
-.so-eta-picker button:focus-visible, .so-eta-picker input:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 1px; }
+.so-eta-picker button:focus-visible, .so-eta-picker input:focus-visible, .so-eta-picker select:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 1px; }
 .so-eta-picker .so-eta-time { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, .65fr); align-items: center; gap: var(--sp-space-2); color: var(--sp-text); font-size: .75rem; }
 .so-eta-time > span { display: flex; align-items: center; gap: var(--sp-space-1); }
 .so-eta-picker .so-eta-time input { box-sizing: border-box; min-width: 0; width: 100%; min-height: 40px; padding: var(--sp-space-1); border: 1px solid var(--sp-border-strong); border-radius: var(--sp-control-radius); font: inherit; color: var(--sp-text); background: var(--sp-surface); }
+.so-eta-picker.is-inline .so-eta-time { grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-space-1); font-size: .7rem; }
+.so-eta-time-parts { display: flex; align-items: center; gap: 2px; }
+.so-eta-picker .so-eta-time-parts select { box-sizing: border-box; width: 54px; min-width: 0; min-height: 40px; margin: 0; padding: 2px; border: 1px solid var(--sp-border-strong); border-radius: var(--sp-control-radius); font: inherit; font-variant-numeric: tabular-nums; color: var(--sp-text); background: var(--sp-surface); cursor: pointer; }
+.so-eta-picker .so-eta-time-parts select:disabled { cursor: default; }
 .so-eta-picker .so-eta-help, .so-eta-picker .so-eta-error { margin: var(--sp-space-2) 0; font-size: .68rem; line-height: 1.4; overflow-wrap: anywhere; }
 .so-eta-help { color: var(--sp-muted); }
 .so-eta-error { color: var(--sp-text); font-weight: 650; }
 .so-eta-actions { display: flex; flex-wrap: wrap; gap: var(--sp-space-1); }
 .so-eta-picker .so-eta-actions .sp-button { flex: 1 1 72px; min-width: 0; min-height: 40px; padding: var(--sp-space-1); font-size: .72rem; }
-@media (pointer: coarse) { .so-eta-picker .so-eta-trigger.sp-button, .so-eta-picker .so-eta-navigation .sp-button, .so-eta-picker .so-eta-actions .sp-button, .so-eta-picker .so-eta-time input, .so-eta-picker button.so-eta-day { min-height: 44px; } }
+.so-eta-picker.is-inline .so-eta-help { margin: var(--sp-space-1) 0; font-size: .6rem; }
+.so-eta-picker.is-inline .so-eta-actions { flex-wrap: nowrap; align-items: center; }
+.so-eta-picker.is-inline .so-eta-actions .sp-button { flex: 0 1 auto; padding: var(--sp-space-1) 6px; font-size: .68rem; }
+.so-eta-picker.is-inline .so-eta-actions .so-eta-quiet-action { border-color: transparent; background: transparent; color: var(--sp-muted); }
+.so-eta-picker.is-inline .so-eta-actions .so-eta-quiet-action:hover:not(:disabled) { background: var(--sp-primary-soft); color: var(--sp-primary); }
+.so-eta-picker.is-inline .so-eta-actions .sp-button--primary { margin-left: auto; }
+@media (pointer: coarse) {
+  .so-eta-picker.is-inline .so-eta-panel { width: min(100%, 338px); }
+  .so-eta-picker .so-eta-trigger.sp-button, .so-eta-picker .so-eta-navigation .sp-button, .so-eta-picker .so-eta-actions .sp-button, .so-eta-picker .so-eta-time input, .so-eta-picker .so-eta-time-parts select, .so-eta-picker button.so-eta-day, .so-eta-picker.is-inline button.so-eta-day { min-height: 44px; }
+}

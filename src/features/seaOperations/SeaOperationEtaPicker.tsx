@@ -8,6 +8,8 @@ import './seaOperationEtaPicker.css';
 const monthLabel = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 const dayLabel = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 const weekdays = [['Lu', 'Lundi'], ['Ma', 'Mardi'], ['Me', 'Mercredi'], ['Je', 'Jeudi'], ['Ve', 'Vendredi'], ['Sa', 'Samedi'], ['Di', 'Dimanche']];
+const hours = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0'));
+const minutes = Array.from({ length: 60 }, (_, minute) => String(minute).padStart(2, '0'));
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const monthOf = (date: string) => `${date.slice(0, 7)}-01`;
 const validDate = (value: string) => isPlanningDate(value) && value >= '1000-01-01';
@@ -33,6 +35,7 @@ export function SeaOperationEtaPicker({ value, onChange, label, disabled = false
   const panelId = useId(), titleId = useId(), helpId = useId();
   const wrapper = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
   const timeInput = useRef<HTMLInputElement>(null);
+  const hourSelect = useRef<HTMLSelectElement>(null);
   const dayButtons = useRef(new Map<string, HTMLButtonElement>());
   const source = useRef(value), openRef = useRef(inline), pendingFocus = useRef(false);
   const [open, setOpen] = useState(inline);
@@ -69,7 +72,7 @@ export function SeaOperationEtaPicker({ value, onChange, label, disabled = false
     if ((inline || open) && pendingFocus.current) { pendingFocus.current = false; dayButtons.current.get(focusDate)?.focus({ preventScroll: true }); }
   }, [inline, open, month, focusDate]);
 
-  function canEdit() { return !disabled && !(trigger.current || timeInput.current)?.matches(':disabled') && !wrapper.current?.closest('[inert]'); }
+  function canEdit() { return !disabled && !(trigger.current || timeInput.current || hourSelect.current)?.matches(':disabled') && !wrapper.current?.closest('[inert]'); }
   function show() {
     if (!canEdit() || openRef.current) return;
     const initial = readEta(value), initialFocus = initial?.date || seaOperationToday();
@@ -79,6 +82,12 @@ export function SeaOperationEtaPicker({ value, onChange, label, disabled = false
     pendingFocus.current = true; openRef.current = true; setOpen(true);
   }
   function choose(date: string) { if (canEdit()) { setSelectedDate(date); setFocusDate(date); setError(''); } }
+  function changeTimePart(part: 0 | 1, value: string) {
+    if (!canEdit()) return;
+    const parts = time.split(':');
+    parts[part] = value;
+    setTime(`${parts[0] || ''}:${parts[1] || ''}`); setError('');
+  }
   function moveFocus(date: string) {
     if (!canEdit() || !validDate(date)) return;
     pendingFocus.current = true; setFocusDate(date); setMonth(monthOf(date));
@@ -110,8 +119,8 @@ export function SeaOperationEtaPicker({ value, onChange, label, disabled = false
   }
 
   return <div className={`so-eta-picker${inline ? ' is-inline' : ''}`} ref={wrapper} onKeyDownCapture={(event) => {
-    if (event.key === 'Escape' && (inline || openRef.current || event.repeat)) { event.preventDefault(); event.stopPropagation(); if (!event.repeat) close(); }
-    else if ((inline || openRef.current) && event.key === 'Enter' && event.target instanceof HTMLInputElement) { event.preventDefault(); event.stopPropagation(); }
+    if (event.key === 'Escape' && (inline || openRef.current || event.repeat)) { event.preventDefault(); event.stopPropagation(); if (!event.repeat && canEdit()) close(); }
+    else if ((inline || openRef.current) && event.key === 'Enter' && (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement)) { event.preventDefault(); event.stopPropagation(); }
   }}>
     {!inline && <button type="button" className="sp-button sp-button--secondary so-eta-trigger" ref={trigger} aria-label={label} aria-haspopup="dialog" aria-expanded={open && !disabled} aria-controls={open && !disabled ? panelId : undefined} disabled={disabled} onClick={() => open ? close() : show()} onKeyDown={(event) => {
       if (['Enter', ' ', 'ArrowDown'].includes(event.key)) { event.preventDefault(); if (!event.repeat) { if (open) close(); else show(); } }
@@ -122,10 +131,13 @@ export function SeaOperationEtaPicker({ value, onChange, label, disabled = false
         <div role="row" className="so-eta-week">{weekdays.map(([short, full]) => <span key={full} role="columnheader" aria-label={full}>{short}</span>)}</div>
         {calendarWeeks(month).map((week, index) => <div className="so-eta-week" role="row" key={index}>{week.map((date, column) => date ? <div role="gridcell" aria-selected={date === selectedDate} key={date}><button type="button" disabled={disabled} className={`so-eta-day${date === selectedDate ? ' is-selected' : ''}`} ref={(node) => { if (node) dayButtons.current.set(date, node); else dayButtons.current.delete(date); }} tabIndex={date === focusDate ? 0 : -1} aria-label={dayLabel.format(parsePlanningDate(date))} aria-current={date === today ? 'date' : undefined} onClick={() => choose(date)} onKeyDown={(event) => dayKeyDown(event, date)}>{parsePlanningDate(date).getUTCDate()}</button></div> : <span key={`empty-${column}`} role="gridcell" />)}</div>)}
       </div></div>
-      <div className="so-eta-controls"><label className="so-eta-time"><span><Clock3 size={15} aria-hidden="true" />Heure de l’ETA (Paris)</span><input ref={timeInput} disabled={disabled} type="time" step={60} value={time} onChange={(event) => { if (canEdit()) { setTime(event.target.value); setError(''); } }} /></label>
-      <p className="so-eta-help" id={helpId}>Sélectionnez une date et une heure. Heure locale Europe/Paris.</p>
+      <div className="so-eta-controls">{inline ? <div className="so-eta-time" role="group" aria-label="Heure de l’ETA (Paris)"><span><Clock3 size={14} aria-hidden="true" />Heure (Paris)</span>
+        <div className="so-eta-time-parts"><select ref={hourSelect} aria-label="Heures de l’ETA (Paris)" disabled={disabled} value={time.split(':')[0] || ''} onChange={event => changeTimePart(0, event.target.value)}><option value="">HH</option>{hours.map(hour => <option value={hour} key={hour}>{hour}</option>)}</select><span aria-hidden="true">:</span>
+        <select aria-label="Minutes de l’ETA (Paris)" disabled={disabled} value={time.split(':')[1] || ''} onChange={event => changeTimePart(1, event.target.value)}><option value="">mm</option>{minutes.map(minute => <option value={minute} key={minute}>{minute}</option>)}</select></div>
+      </div> : <label className="so-eta-time"><span><Clock3 size={15} aria-hidden="true" />Heure de l’ETA (Paris)</span><input ref={timeInput} disabled={disabled} type="time" step={60} value={time} onChange={(event) => { if (canEdit()) { setTime(event.target.value); setError(''); } }} /></label>}
+      <p className="so-eta-help" id={helpId}>{inline ? 'Date et heure locale · Europe/Paris' : 'Sélectionnez une date et une heure. Heure locale Europe/Paris.'}</p>
       {error && <p className="so-eta-error" role="alert">{error}</p>}
-      <footer className="so-eta-actions"><button type="button" className="sp-button sp-button--secondary" disabled={disabled || !value} onClick={() => { if (canEdit()) { onChange(''); close(); } }}>Effacer</button><button type="button" className="sp-button sp-button--secondary" disabled={disabled} onClick={() => close()}>Annuler</button><button type="button" className="sp-button sp-button--primary" disabled={disabled || !selectedDate || !timePattern.test(time)} onClick={apply}>Appliquer</button></footer></div>
+      <footer className="so-eta-actions"><button type="button" className="sp-button sp-button--secondary so-eta-quiet-action" disabled={disabled || !value} onClick={() => { if (canEdit()) { onChange(''); close(); } }}>Effacer</button><button type="button" className="sp-button sp-button--secondary so-eta-quiet-action" disabled={disabled} onClick={() => { if (canEdit()) close(); }}>Annuler</button><button type="button" className="sp-button sp-button--primary" disabled={disabled || !selectedDate || !timePattern.test(time)} onClick={apply}>Appliquer</button></footer></div>
     </div>}
   </div>;
 }
