@@ -1,0 +1,31 @@
+{
+  "notice": "Synthetic arithmetic fixture only. No real forecast or credential.",
+  "input": {
+    "projectId": "2", "pointId": "wp-1", "vesselId": "1",
+    "latitude": 49.65, "longitude": -1.62, "eta": "2026-10-27T12:07", "draftMeters": 2
+  },
+  "fetchedAt": "2026-10-26T08:00:00.000Z",
+  "provider": {
+    "status": "available", "message": "Synthetic fixture",
+    "source": {
+      "model": "NWS", "productId": "NWSHELF_ANALYSISFORECAST_PHY_004_013",
+      "seaLevelDatasetId": "cmems_mod_nws_phy-ssh_anfc_1.5km-2D_PT15M-i",
+      "bathymetryDatasetId": "cmems_mod_nws_phy_anfc_1.5km_static", "datasetVersion": "202511",
+      "datum": "model-geoid", "referenceTimeUtc": null,
+      "sourceUrl": "https://data.marine.copernicus.eu/product/NWSHELF_ANALYSISFORECAST_PHY_004_013/description"
+    },
+    "cell": {
+      "latitude": 49.65, "longitude": -1.62,
+      "bounds": {"west": -1.64, "east": -1.6, "south": 49.64, "north": 49.66},
+      "resolutionMeters": 2300, "depthMeters": 20, "depthMinMeters": null, "depthMaxMeters": null
+    },
+    "waterLevel": {
+      "timeBeforeUtc": "2026-10-27T11:00:00Z", "timeAfterUtc": "2026-10-27T11:15:00Z",
+      "heightBeforeMeters": 1.2, "heightAfterMeters": 2.1
+    }
+  },
+  "expected": {
+    "etaUtc": "2026-10-27T11:07:00.000Z", "waterLevelMeters": 1.62, "ukcMeters": 19.62,
+    "missingComponents": ["bathymetryVertical", "waterLevel", "draft", "positionEffect", "temporalInterpolation"]
+  }
+}

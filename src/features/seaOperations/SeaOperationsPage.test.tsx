@@ -8,15 +8,20 @@ import { exportSeaOperationPdf } from './seaOperationPdf';
 import { SeaOperationsPage } from './SeaOperationsPage';
 import { fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries';
 import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
+import { seaOperationEtaUtc } from './seaOperationWeatherModel';
 import { GOURY_WEATHER_MATRIX, createEmptyVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { captureSeaOperationRadios } from './seaOperationWaypointSnapshots';
 import { captureSeaOperationValidationWeather } from './seaOperationValidationWeather';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 import { weatherRequestKey, type WeatherRequestStatus } from './seaOperationWeatherStatus';
 import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates';
+import { captureSeaOperationValidationUkc, ukcRequestKey, type SeaOperationUkcRequestStatus } from './seaOperationValidationUkc';
+import { calculateSeaOperationCopernicusEstimate, COPERNICUS_UKC_PRODUCTS, type SeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
+import { seaOperationUkcReference, type SeaOperationUkcCaptureContext } from './seaOperationWaypointSnapshots';
 
 const weatherPanelMock = vi.hoisted(() => vi.fn());
 const chartsPanelMock = vi.hoisted(() => vi.fn());
+const ukcPanelMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./seaOperationQueries', () => ({
   fetchSeaOperationData: vi.fn(), fetchSeaOperationDetail: vi.fn(), saveSeaOperation: vi.fn(), signSeaOperation: vi.fn(),
@@ -24,10 +29,12 @@ vi.mock('./seaOperationQueries', () => ({
   fetchSeaOperationWeatherObservations: vi.fn(), reviseSeaOperation: vi.fn(), deleteSeaOperation: vi.fn(),
 }));
 vi.mock('./seaOperationValidationWeather', () => ({ captureSeaOperationValidationWeather: vi.fn() }));
+vi.mock('./seaOperationValidationUkc', async importOriginal => ({ ...await importOriginal<typeof import('./seaOperationValidationUkc')>(), captureSeaOperationValidationUkc: vi.fn() }));
 vi.mock('./seaOperationPdf', () => ({ exportSeaOperationPdf: vi.fn() }));
 vi.mock('./seaOperationDocumentQueries', () => ({ fetchSeaOperationProjectDocuments: vi.fn(), createSeaOperationProjectDocumentUrl: vi.fn() }));
 vi.mock('./SeaOperationWeatherPanel', () => ({ SeaOperationWeatherPanel: (props: Record<string, unknown>) => { weatherPanelMock(props); return null; } }));
 vi.mock('./SeaOperationChartsPanel', () => ({ SeaOperationChartsPanel: (props: Record<string, unknown>) => { chartsPanelMock(props); return <div data-testid="sea-charts-panel" />; } }));
+vi.mock('./SeaOperationUkcPanel', () => ({ SeaOperationUkcPanel: (props: Record<string, unknown>) => { ukcPanelMock(props); return null; } }));
 
 const captainAccount = { id: 'captain-server-account', name: 'Camille MARTIN', canSign: true };
 const sailorAccount = { id: 'sailor-server-account', name: 'Alex DUPONT', canSign: false };
@@ -106,6 +113,38 @@ interface CapturingWeatherPanelProps {
 }
 const capturingWeatherPanel = () => weatherPanelMock.mock.lastCall![0] as CapturingWeatherPanelProps;
 const waypointWeatherContext = (draft: SeaOperationPayload) => ({ projectId: draft.planning?.projectId || '', pointId: draft.waypoints[0].id, latitude: draft.waypoints[0].latitude, longitude: draft.waypoints[0].longitude, eta: draft.waypoints[0].eta });
+
+interface CapturingUkcPanelProps {
+  payload: SeaOperationPayload; active?: boolean; readOnly?: boolean;
+  onUkcLoaded?: (capture: SeaOperationCopernicusEstimate, context: SeaOperationUkcCaptureContext, sourceClient: unknown) => void;
+  onStatusChange?: (statuses: Record<string, SeaOperationUkcRequestStatus>, sourceClient: unknown) => void;
+}
+const capturingUkcPanel = () => ukcPanelMock.mock.lastCall![0] as CapturingUkcPanelProps;
+function automaticUkcDraft(go = false): SeaOperationPayload {
+  const draft = waypointCaptureDraft(), mission = plannedMissions()[1];
+  draft.vessel.draftMeters = 2;
+  draft.waypoints[0] = { ...draft.waypoints[0], ukcMode: 'automatic', eta: `${new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10)}T12:05` };
+  if (go) {
+    draft.decision = 'GO'; draft.client = mission.client; draft.clientContact = mission.clientContact;
+    draft.dapaq = { method: 'nomade', preparedBy: 'captain', agentName: '', agentContact: '' };
+    draft.vessel.departureQuay = 'Quai 1'; draft.vessel.arrivalQuay = 'Quai 2';
+    draft.applicability = { towing: 'no', cargo: 'no', divingSupport: 'no', supplies: 'no' };
+    draft.portServices = ['none']; for (const check of SEA_OPERATION_CHECKS) draft.checks[check.id] = 'yes';
+  }
+  return draft;
+}
+function waypointUkc(draft: SeaOperationPayload): SeaOperationCopernicusEstimate {
+  const point = draft.waypoints[0], eta = Date.parse(seaOperationEtaUtc(point.eta)), before = Math.floor(eta / 900000) * 900000;
+  return calculateSeaOperationCopernicusEstimate({ projectId: draft.planning!.projectId, vesselId: draft.vessel.id, draftMeters: draft.vessel.draftMeters!,
+    pointId: point.id, latitude: Number(point.latitude), longitude: Number(point.longitude), eta: point.eta }, { status: 'available', message: '',
+    source: { model: 'NWS', ...COPERNICUS_UKC_PRODUCTS.NWS, datum: 'model-geoid', referenceTimeUtc: null,
+      sourceUrl: 'https://data.marine.copernicus.eu/product/NWSHELF_ANALYSISFORECAST_PHY_004_013/description' },
+    cell: { latitude: 49.65, longitude: -1.62, bounds: { west: -1.64, east: -1.6, south: 49.64, north: 49.66 }, resolutionMeters: 2300,
+      depthMeters: 20, depthMinMeters: null, depthMaxMeters: null },
+    waterLevel: { timeBeforeUtc: new Date(before).toISOString(), timeAfterUtc: new Date(before + 900000).toISOString(), heightBeforeMeters: 2, heightAfterMeters: 5 } }, new Date(Date.now() - 1000).toISOString());
+}
+const waypointUkcContext = (draft: SeaOperationPayload): SeaOperationUkcCaptureContext => ({ ...waypointWeatherContext(draft),
+  vesselId: draft.vessel.id, draftMeters: draft.vessel.draftMeters! });
 
 function recordFixture(account: Account, overrides: Partial<SeaOperationRecord> = {}): SeaOperationRecord {
   return {
@@ -207,6 +246,7 @@ function viewport(width: number) {
 beforeEach(() => {
   vi.resetAllMocks(); sessionStorage.clear(); viewport(1440);
   vi.mocked(captureSeaOperationValidationWeather).mockImplementation(async (_client, draft) => draft);
+  vi.mocked(captureSeaOperationValidationUkc).mockImplementation(async (_client, draft) => draft);
   vi.mocked(fetchSeaOperationWeatherObservations).mockResolvedValue([]);
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); document.body.style.overflow = ''; });
@@ -225,6 +265,130 @@ function adminRevision(record: SeaOperationRecord): SeaOperationRecord {
   return recordFixture(adminAccount, { id: 'admin-revised-preparation', version: 1, draft, canEdit: true, canSign: false,
     canRevise: false, canDelete: true, previousRevisionId: record.id, signatureSnapshot: null });
 }
+
+describe('Copernicus UKC in authenticated operation forms', () => {
+  it('retains a calculation across wizard sections while preserving the original manual annotation', async () => {
+    const draft = automaticUkcDraft(), forecast = waypointUkc(draft), record = recordFixture(captainAccount, { draft });
+    const { client } = renderAccount(captainAccount, record, 1, plannedMissions());
+    await openRecord(record); fireEvent.click(stepButton(2));
+    const panel = capturingUkcPanel(); expect(panel.active).toBe(true);
+    fireEvent.click(stepButton(1));
+    expect(capturingUkcPanel().active).toBe(true);
+    act(() => panel.onUkcLoaded?.(forecast, waypointUkcContext(draft), client));
+    expect(capturingUkcPanel().payload.waypoints[0].ukcForecast).toEqual(forecast);
+    expect(capturingUkcPanel().payload.waypoints[0].ukc).toBe(draft.waypoints[0].ukc);
+    fireEvent.click(stepButton(2));
+    expect(formQueries().getByLabelText('UKC · point 1')).toHaveValue('≈ 21,00');
+    expect(formQueries().getByLabelText('UKC · point 1')).toHaveAttribute('readonly');
+    fireEvent.click(within(formQueries().getByRole('group', { name: 'Mode UKC · point 1' })).getByRole('button', { name: 'Manuel' }));
+    expect(formQueries().getByLabelText('UKC · point 1')).toHaveValue(draft.waypoints[0].ukc);
+    expect(capturingUkcPanel().payload.waypoints[0]).not.toHaveProperty('ukcForecast');
+    expect(record.draft).toEqual(draft); expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it.each([captainAccount, sailorAccount])('does not modify signed or server read-only data for $id', async account => {
+    const draft = automaticUkcDraft(); draft.waypoints[0].ukcForecast = waypointUkc(draft);
+    const record = recordFixture(account, { draft, canEdit: false, status: account === captainAccount ? 'signed' : 'draft' });
+    const original = structuredClone(record), { client } = renderAccount(account, record, 1, plannedMissions());
+    await openRecord(record); fireEvent.click(stepButton(2));
+    expect(capturingUkcPanel().active).toBe(false); expect(capturingUkcPanel().readOnly).toBe(true);
+    expect(within(formQueries().getByRole('group', { name: 'Mode UKC · point 1' })).getByRole('button', { name: 'Manuel' })).toBeDisabled();
+    act(() => capturingUkcPanel().onUkcLoaded?.(waypointUkc(draft), waypointUkcContext(draft), client));
+    expect(record).toEqual(original); expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('ignores queued results and statuses after a coordinate edit or a switch back to manual mode', async () => {
+    const draft = automaticUkcDraft(), forecast = waypointUkc(draft), record = recordFixture(captainAccount, { draft });
+    const { client } = renderAccount(captainAccount, record, 1, plannedMissions());
+    await openRecord(record); fireEvent.click(stepButton(2)); const panel = capturingUkcPanel();
+    fireEvent.change(formQueries().getByLabelText('Latitude · point 1'), { target: { value: '49.5' } });
+    act(() => {
+      panel.onUkcLoaded?.(forecast, waypointUkcContext(draft), client);
+      panel.onStatusChange?.({ [ukcRequestKey(seaOperationUkcReference(draft), draft.waypoints[0])]: { loading: false, error: 'Ancienne erreur du point' } }, client);
+    });
+    expect(capturingUkcPanel().payload.waypoints[0]).not.toHaveProperty('ukcForecast');
+    expect(formQueries().queryByText('Ancienne erreur du point')).not.toBeInTheDocument();
+    fireEvent.click(within(formQueries().getByRole('group', { name: 'Mode UKC · point 1' })).getByRole('button', { name: 'Manuel' }));
+    act(() => panel.onUkcLoaded?.(forecast, waypointUkcContext(draft), client));
+    expect(capturingUkcPanel().payload.waypoints[0].ukcMode).toBe('manual');
+    expect(formQueries().getByLabelText('UKC · point 1')).toHaveValue(draft.waypoints[0].ukc);
+  });
+
+  it('waits for save-time captures and drains a compatible silent response received while busy', async () => {
+    const draft = automaticUkcDraft(), forecast = waypointUkc(draft), record = recordFixture(captainAccount, { draft });
+    const capture = deferred<SeaOperationPayload>(); vi.mocked(captureSeaOperationValidationUkc).mockReturnValue(capture.promise);
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, payload) => recordFixture(captainAccount, { draft: payload, version: 4 }));
+    const { client } = renderAccount(captainAccount, record, 1, plannedMissions());
+    await openRecord(record); fireEvent.click(stepButton(2));
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await waitFor(() => expect(captureSeaOperationValidationUkc).toHaveBeenCalled());
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    act(() => capturingUkcPanel().onUkcLoaded?.(forecast, waypointUkcContext(draft), client));
+    await act(async () => { capture.resolve(draft); });
+    await waitFor(() => expect(saveSeaOperation).toHaveBeenCalled());
+    expect(vi.mocked(saveSeaOperation).mock.calls[0][1].waypoints[0].ukcForecast).toEqual(forecast);
+    expect(vi.mocked(saveSeaOperation).mock.calls[0][1].waypoints[0].ukc).toBe(draft.waypoints[0].ukc);
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
+    expect(footerQueries().queryByText('Modifications non enregistrées')).not.toBeInTheDocument();
+  });
+
+  it('keeps an incomplete draft saveable when Copernicus is not configured', async () => {
+    const draft = automaticUkcDraft(), record = recordFixture(captainAccount, { draft });
+    vi.mocked(captureSeaOperationValidationUkc).mockImplementation(async (_client, payload, options) => {
+      options?.onError?.(payload.waypoints[0], 'La connexion Copernicus Marine n’est pas encore configurée. Contactez l’Armement.'); return payload;
+    });
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, payload) => recordFixture(captainAccount, { draft: payload, version: 4 }));
+    renderAccount(captainAccount, record, 1, plannedMissions());
+    await openRecord(record); fireEvent.click(stepButton(2)); await saveDraft();
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
+    expect(formQueries().getByText('La connexion Copernicus Marine n’est pas encore configurée. Contactez l’Armement.')).toBeVisible();
+    expect(vi.mocked(saveSeaOperation).mock.calls[0][1].waypoints[0].ukcMode).toBe('automatic');
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('refreshes automatic forecasts before GO and signs only the saved compatible capture', async () => {
+    const draft = automaticUkcDraft(true), record = recordFixture(captainAccount, { draft });
+    let stored = record;
+    vi.mocked(captureSeaOperationValidationUkc).mockImplementation(async (_client, payload) => ({ ...payload,
+      waypoints: payload.waypoints.map((point, index) => index === 0 ? { ...point, ukcForecast: waypointUkc(payload) } : point) }));
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, payload) => { stored = recordFixture(captainAccount, { draft: payload, version: 4 }); return stored; });
+    vi.mocked(signSeaOperation).mockImplementation(async () => ({ ...stored, status: 'signed', canEdit: false, signedBy: captainAccount.id, signedAt: new Date().toISOString() }));
+    renderAccount(captainAccount, record, 1, plannedMissions()); await openRecord(record); await decisionStep();
+    await waitFor(() => expect(footerQueries().getByRole('button', { name: 'Signer la décision GO' })).toBeEnabled());
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Signer la décision GO' }));
+    await waitFor(() => expect(signSeaOperation).toHaveBeenCalled());
+    expect(captureSeaOperationValidationUkc).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ missingOnly: false }));
+    expect(stored.draft.waypoints[0].ukcForecast?.status).toBe('available');
+    expect(stored.draft.waypoints[0].ukc).toBe(draft.waypoints[0].ukc);
+  });
+
+  it('stops GO signing when canonical save changes the draught and removes the obsolete capture', async () => {
+    const draft = automaticUkcDraft(true); draft.waypoints[0].ukcForecast = waypointUkc(draft);
+    const record = recordFixture(captainAccount, { draft });
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, payload) => {
+      const canonical = structuredClone(payload); canonical.vessel.draftMeters = 3; delete canonical.waypoints[0].ukcForecast;
+      return recordFixture(captainAccount, { draft: canonical, version: 4 });
+    });
+    renderAccount(captainAccount, record, 1, plannedMissions()); await openRecord(record); await decisionStep();
+    await waitFor(() => expect(footerQueries().getByRole('button', { name: 'Signer la décision GO' })).toBeEnabled());
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Signer la décision GO' }));
+    expect(await formQueries().findByText('L’UKC du point n° 1 est obligatoire.')).toBeInTheDocument();
+    expect(saveSeaOperation).toHaveBeenCalled(); expect(signSeaOperation).not.toHaveBeenCalled();
+    expect(capturingUkcPanel().payload.vessel.draftMeters).toBe(3);
+    expect(capturingUkcPanel().payload.waypoints[0]).not.toHaveProperty('ukcForecast');
+  });
+
+  it('still permits an explicit NO GO without a successful automatic estimate', async () => {
+    const draft = automaticUkcDraft(), record = recordFixture(captainAccount, { draft }); let stored = record;
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, payload) => { stored = recordFixture(captainAccount, { draft: payload, version: 4 }); return stored; });
+    vi.mocked(signSeaOperation).mockImplementation(async () => ({ ...stored, status: 'signed', canEdit: false, signedBy: captainAccount.id, signedAt: new Date().toISOString() }));
+    renderAccount(captainAccount, record, 1, plannedMissions()); await openRecord(record); await decisionStep();
+    await waitFor(() => expect(footerQueries().getByRole('button', { name: 'Signer la décision NO GO' })).toBeEnabled());
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Signer la décision NO GO' }));
+    await waitFor(() => expect(signSeaOperation).toHaveBeenCalled());
+    expect(stored.draft.waypoints[0]).not.toHaveProperty('ukcForecast'); expect(stored.draft.decision).toBe('NO_GO');
+  });
+});
 
 describe('Opération en Mer administration with authenticated server permissions', () => {
   it('places row actions outside the record button and opens editable drafts without revising or granting signature rights', async () => {

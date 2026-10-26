@@ -8,6 +8,7 @@ import type { SeaOperationRecord } from './seaOperationQueries';
 import { SEA_METEO_FRANCE_SOURCE_URL } from './seaOperationWeatherModel';
 import { GOURY_WEATHER_MATRIX } from '../fleet/vesselWeatherMatrix';
 import { SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL, SEA_METEO_FRANCE_OBSERVATIONS_URL, type ObservationResult } from './seaOperationWeatherObservationsModel';
+import { calculateSeaOperationCopernicusEstimate, type SeaOperationCopernicusInput, type SeaOperationCopernicusProviderResult } from './seaOperationCopernicusModel';
 
 function recordedObservation(pointId: string): ObservationResult {
   const common = { observedAt: '2026-10-16T10:15:00Z', station: { id: '62001',
@@ -89,6 +90,37 @@ function textPositions(body: string, text: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Sea operation PDF', () => {
+  it('exports the retained automatic UKC, compact indicative pill and model provenance annex without manual fallback', async () => {
+    const source = JSON.parse(await readFile(new URL('./testFixtures/copernicus-ukc.json', import.meta.url), 'utf8')) as {
+      input: SeaOperationCopernicusInput; provider: SeaOperationCopernicusProviderResult; fetchedAt: string;
+    };
+    const record = fixture(); record.draft.description = 'Contrôle visuel UKC automatique Copernicus.';
+    record.signedAt = '2026-10-26T09:00:00Z';
+    record.draft.planning = { date: '2026-10-27', operationId: '1', projectId: source.input.projectId, captainPersonId: '3' };
+    record.draft.vessel.id = source.input.vesselId; record.draft.vessel.draftMeters = source.input.draftMeters;
+    record.draft.waypoints = [{ id: source.input.pointId, number: 'AUTO-1', descriptionVhf: 'Approche', latitude: String(source.input.latitude), longitude: String(source.input.longitude), eta: source.input.eta,
+      ukc: 'MANUAL-OLD', ukcMode: 'automatic', denseTraffic: false, ukcForecast: calculateSeaOperationCopernicusEstimate(source.input, source.provider, source.fetchedAt) }];
+    const original = structuredClone(record);
+    const generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const bodies = await generatedBodies(generated.bytes);
+    const textBody = bodies.join('\n').replace(/\x92/g, '’');
+    expect(textBody).toContain('(~ 19,62 m) Tj');
+    expect(textBody).toContain('Annexe UKC - estimations statiques indicatives');
+    expect(textBody).toContain('Incertitude totale non quantifiée');
+    expect(textBody).toContain('version 202511');
+    expect(textBody.replace(/\x92/g, '’')).toContain('niveau d’eau 1,62 m - tirant d’eau');
+    expect(textBody).toContain('10.48670/moi-00054');
+    expect(textBody).toContain('0.09 0.396 0.247 rg');
+    expect(textBody).not.toContain('MANUAL-OLD');
+    expect(textBody).not.toContain('95 %');
+    expect(record).toEqual(original);
+    if (process.env.SEAPILOT_PDF_COPERNICUS_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_COPERNICUS_QA_OUTPUT, generated.bytes);
+    record.draft.vessel.draftMeters = 3;
+    const stale = (await generatedBodies((await generateSeaOperationPdf(record, { templateBytes: await template() })).bytes)).join('\n');
+    expect([...stale.matchAll(/\(([^()]*)\) Tj/g)].map(match => match[1]).join('')).toContain('Indisponible');
+    expect(stale).not.toContain('MANUAL-OLD');
+    expect(stale).not.toContain('(~ 19,62 m) Tj');
+  });
   it('draws compact UKC pills from the recorded draft reference and keeps historical values neutral without it', async () => {
     const record = fixture();
     record.draft.description = 'Contrôle visuel des seuils UKC et du tirant d’eau conservé.';

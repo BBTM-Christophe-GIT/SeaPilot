@@ -48,7 +48,7 @@ const value = (input: string | null | undefined) => input?.trim() ? input : 'À 
 const answer = (input: SeaOperationAnswer) => input === 'yes' ? 'Oui' : input === 'no' ? 'Non' : 'À renseigner';
 // Helvetica/WinAnsi has no U+2032 minute glyph. ASCII apostrophe keeps the
 // degree/minute/hemisphere notation readable without corrupting PDF text.
-const clean = (input: string) => input.replace(/\u00a0/g, ' ').replace(/[\u2010-\u2015]/g, '-').replace(/\u202f/g, ' ').replace(/\u2032/g, "'");
+const clean = (input: string) => input.replace(/\u00a0/g, ' ').replace(/[\u2010-\u2015\u2212]/g, '-').replace(/\u202f/g, ' ').replace(/\u2032/g, "'");
 const date = (input: string) => input.replace(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}:\d{2})(.*))?$/, (_match, year, month, day, time, suffix) => `${day}/${month}/${year}${time ? ` à ${time}${suffix || ''}` : ''}`) || 'À renseigner';
 function timestamp(input: string | null) {
   if (!input) return 'À renseigner';
@@ -256,15 +256,16 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     paragraph('Fond : Natural Earth · Tracé indicatif. Repères numérotés dans l’ordre du tableau ; les positions identiques regroupent leurs numéros.');
   } else paragraph('Aucun waypoint avec une latitude et une longitude valides à placer sur la carte.');
   if (routeMap.invalidCount) paragraph(`${routeMap.invalidCount} waypoint${routeMap.invalidCount > 1 ? 's' : ''} non placé${routeMap.invalidCount > 1 ? 's' : ''} : coordonnées absentes ou invalides. Le tracé est interrompu à ces positions.`);
-  const passageRows = form.waypoints.map((point) => passagePlanCellData(point, { allowLiveRadio: !signed, weatherMatrix: form.vessel.weatherMatrix, observations: record.weatherObservations, includeObservations: signed, validatedAt: signed ? record.signedAt : undefined }));
+  const passageRows = form.waypoints.map((point) => passagePlanCellData(point, { payload: form, allowLiveRadio: !signed, weatherMatrix: form.vessel.weatherMatrix, observations: record.weatherObservations, includeObservations: signed, validatedAt: signed ? record.signedAt : undefined }));
+  if (passageRows.some(row => row.ukcPresentation.automatic)) paragraph('UKC précédées de ~ : estimations statiques indicatives. Calcul, sources conservées et limites dans l’annexe UKC par waypoint.');
   // Reserve the alert icon's width without widening the page or moving the weather column.
-  const ukcColumnWidth = form.waypoints.some((point) => assessSeaOperationUkc(point.ukc, form.vessel.draftMeters)) ? 45 : 35;
+  const ukcColumnWidth = passageRows.some(row => assessSeaOperationUkc(row.ukcPresentation.rawValue, form.vessel.draftMeters)) ? 45 : 35;
   const descriptionColumnWidth = 140 - ukcColumnWidth;
-  const ukcCards = form.waypoints.map((point) => {
-    const assessment = assessSeaOperationUkc(point.ukc, form.vessel.draftMeters);
+  const ukcCards = passageRows.map((row) => {
+    const assessment = assessSeaOperationUkc(row.ukcPresentation.rawValue, form.vessel.draftMeters);
     if (!assessment) return undefined;
     document.setFont('helvetica', 'bold'); document.setFontSize(6.5);
-    const label = clean(assessment.formattedValue);
+    const label = clean(row.ukcPresentation.automatic ? row.ukcPresentation.pdfValue : assessment.formattedValue);
     const warning = assessment.level !== 'success';
     const maxTextWidth = ukcColumnWidth - 12;
     const inline = document.getTextWidth(label) + (warning ? 8 : 0) <= maxTextWidth;
@@ -427,6 +428,15 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     for (const row of passageRows) {
       if (row.weatherFootnote) paragraph(`Waypoint ${row.waypoint} - ${row.weatherFootnote}`);
       if (row.radioFootnote) paragraph(`Waypoint ${row.waypoint} - ${row.radioFootnote}`);
+    }
+  }
+  if (passageRows.some(row => row.ukcFootnote)) {
+    newPage('landscape');
+    heading('Annexe UKC - estimations statiques indicatives', true);
+    for (const row of passageRows) if (row.ukcFootnote) {
+      heading(`Waypoint ${row.waypoint} - ETA ${row.eta}`, true);
+      for (const detail of row.ukcPresentation.details) paragraph(detail);
+      for (const url of row.ukcPresentation.sourceUrls) paragraph(`Source : Copernicus Marine Service - ${url}`);
     }
   }
   const radioContacts = signed ? [] : seaOperationRadioContacts(form.waypoints).contacts;

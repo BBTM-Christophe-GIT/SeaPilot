@@ -19,4 +19,12 @@ describe('UKC pill', () => {
     expect(screen.getByText('3,5')).toBeVisible();
     expect(view.container.querySelector('.so-ukc-pill')).toBeNull();
   });
+  it('marks a model estimate as approximate without changing the unrounded comparison or its exact tooltip', () => {
+    const { container } = render(<SeaOperationUkcIndicator value="4.000001" draftMeters={2} approximate />);
+    const pill = container.querySelector('.so-ukc-pill')!;
+    expect(pill).toHaveClass('is-success');
+    expect(pill).toHaveTextContent('≈ 4,00 m');
+    expect(pill).toHaveAttribute('title', expect.stringContaining('4,000001 m'));
+    expect(pill).toHaveAttribute('title', expect.stringContaining('incertitude totale non quantifiée'));
+  });
 });

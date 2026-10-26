@@ -2,6 +2,7 @@ import type { SeaOperationPayload, SeaOperationWaypoint, SeaOperationWaypointRad
 import { seaWaypointPosition } from './seaOperationNavigation';
 import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperationRadio';
 import { isSeaOperationWaypointWeather, seaOperationEtaUtc, type SeaOperationWaypointWeather } from './seaOperationWeatherModel';
+import { isSeaOperationCopernicusEstimate, type SeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 
 export interface SeaOperationWeatherCaptureContext {
   projectId: string;
@@ -9,6 +10,17 @@ export interface SeaOperationWeatherCaptureContext {
   latitude: string;
   longitude: string;
   eta: string;
+}
+
+export interface SeaOperationUkcReference {
+  projectId?: string;
+  vesselId: string;
+  draftMeters?: number | null;
+}
+
+export interface SeaOperationUkcCaptureContext extends SeaOperationWeatherCaptureContext {
+  vesselId: string;
+  draftMeters: number;
 }
 
 const sameCoordinate = (a: number, b: number) => Math.abs(a - b) < 1e-8;
@@ -74,9 +86,73 @@ export function retainSeaOperationWeather(payload: SeaOperationPayload, weather:
 /** Coordinate/ETA edits invalidate only the captures that no longer match. */
 export function updateSeaOperationWaypoint(point: SeaOperationWaypoint, patch: Partial<SeaOperationWaypoint>): SeaOperationWaypoint {
   const next = { ...point, ...patch };
+  if (patch.ukc !== undefined && patch.ukc !== point.ukc && patch.ukcMode === undefined) next.ukcMode = 'manual';
   if (next.weather && !waypointWeatherSnapshot(next)) delete next.weather;
   if (next.radio && !waypointRadioSnapshot(next)) delete next.radio;
+  if (next.ukcForecast && (next.ukcMode !== 'automatic' || !waypointUkcIdentity(next))) delete next.ukcForecast;
   return next;
+}
+
+/** Position and ETA checks also work while a waypoint is edited without its parent payload. */
+function waypointUkcIdentity(point: SeaOperationWaypoint): SeaOperationCopernicusEstimate | undefined {
+  const forecast = point.ukcForecast;
+  if (!isSeaOperationCopernicusEstimate(forecast) || forecast.pointId !== point.id) return undefined;
+  const position = seaWaypointPosition(point);
+  if (!position || !sameCoordinate(position.latitude, forecast.latitude) || !sameCoordinate(position.longitude, forecast.longitude)) return undefined;
+  try { if (Date.parse(forecast.etaUtc) !== Date.parse(seaOperationEtaUtc(point.eta))) return undefined; } catch { return undefined; }
+  return forecast;
+}
+
+/** A draft change cannot silently reuse a calculation made for another project, vessel or draught. */
+export function waypointUkcSnapshot(point: SeaOperationWaypoint, reference: SeaOperationUkcReference): SeaOperationCopernicusEstimate | undefined {
+  const forecast = waypointUkcIdentity(point);
+  return forecast && point.ukcMode === 'automatic' && forecast.projectId === reference.projectId
+    && forecast.vesselId === reference.vesselId && forecast.draftMeters === reference.draftMeters ? forecast : undefined;
+}
+
+export function seaOperationUkcReference(payload: SeaOperationPayload): SeaOperationUkcReference {
+  return { projectId: payload.planning?.projectId, vesselId: payload.vessel.id, draftMeters: payload.vessel.draftMeters };
+}
+
+/** Manual text is used only in manual mode; an unavailable automatic calculation has no fallback. */
+export function effectiveSeaOperationUkc(payload: SeaOperationPayload, point: SeaOperationWaypoint): string {
+  if (point.ukcMode !== 'automatic') return point.ukc;
+  const forecast = waypointUkcSnapshot(point, seaOperationUkcReference(payload));
+  return forecast?.status === 'available' && forecast.estimate ? String(forecast.estimate.ukcMeters) : '';
+}
+
+/** Remove only stale automatic captures after a mission/vessel/draught edit or server canonisation. */
+export function invalidateSeaOperationUkc(payload: SeaOperationPayload): SeaOperationPayload {
+  let changed = false;
+  const reference = seaOperationUkcReference(payload);
+  const waypoints = payload.waypoints.map(point => {
+    if (!point.ukcForecast || waypointUkcSnapshot(point, reference)) return point;
+    const next = { ...point }; delete next.ukcForecast; changed = true;
+    return next;
+  });
+  return changed ? { ...payload, waypoints } : payload;
+}
+
+/** Retain a response only while every request field and the real reference draught still match. */
+export function retainSeaOperationUkc(payload: SeaOperationPayload, incoming: SeaOperationCopernicusEstimate,
+  context: SeaOperationUkcCaptureContext): SeaOperationPayload {
+  if (payload.planning?.projectId !== context.projectId || payload.vessel.id !== context.vesselId
+    || payload.vessel.draftMeters !== context.draftMeters) return payload;
+  let changed = false;
+  const reference = seaOperationUkcReference(payload);
+  const waypoints = payload.waypoints.map(point => {
+    if (point.ukcMode !== 'automatic' || point.id !== context.pointId || point.latitude !== context.latitude
+      || point.longitude !== context.longitude || point.eta !== context.eta) return point;
+    const candidate = waypointUkcSnapshot({ ...point, ukcForecast: incoming }, reference);
+    if (!candidate) return point;
+    const existing = waypointUkcSnapshot(point, reference);
+    if (existing && (Date.parse(existing.fetchedAt) > Date.parse(candidate.fetchedAt)
+      || existing.status === 'available' && candidate.status !== 'available')) return point;
+    if (JSON.stringify(existing) === JSON.stringify(candidate)) return point;
+    changed = true;
+    return { ...point, ukcForecast: structuredClone(candidate) };
+  });
+  return changed ? { ...payload, waypoints } : payload;
 }
 
 /** Capture the current static directory at save; no remote request and no manual UKC change. */

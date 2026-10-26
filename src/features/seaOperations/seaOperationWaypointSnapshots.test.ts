@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { emptySeaOperation, emptySeaOperationWaypoint, isSeaOperationPayload } from './seaOperationModel';
-import { captureSeaOperationRadios, retainSeaOperationWeather, updateSeaOperationWaypoint, waypointRadioSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
+import { captureSeaOperationRadios, effectiveSeaOperationUkc, invalidateSeaOperationUkc, retainSeaOperationUkc, retainSeaOperationWeather,
+  seaOperationUkcReference, updateSeaOperationWaypoint, waypointRadioSnapshot, waypointUkcSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
+import { COPERNICUS_UKC_PRODUCTS, calculateSeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 
 const point = { ...emptySeaOperationWaypoint('p1'), number: '1', latitude: '49°39′ N', longitude: '1°37.2′ W', eta: '2026-10-23T12:00', ukc: '2.3' };
 const weather: SeaOperationWaypointWeather = {
@@ -12,6 +14,96 @@ const weather: SeaOperationWaypointWeather = {
 };
 const payload = () => ({ ...emptySeaOperation(), planning: { date: '2026-10-23', operationId: '10:20', projectId: '1', captainPersonId: '3' }, waypoints: [{ ...point }] });
 const context = { projectId: '1', pointId: point.id, latitude: point.latitude, longitude: point.longitude, eta: point.eta };
+
+function ukcFixture() {
+  const draft = payload();
+  draft.vessel.id = '2'; draft.vessel.draftMeters = 3;
+  draft.waypoints[0].ukcMode = 'automatic';
+  const input = { projectId: '1', pointId: 'p1', vesselId: '2', latitude: 49.65, longitude: -1.62, eta: point.eta, draftMeters: 3 };
+  const forecast = calculateSeaOperationCopernicusEstimate(input, { status: 'available', message: '',
+    source: { model: 'NWS', ...COPERNICUS_UKC_PRODUCTS.NWS, datum: 'model-geoid', referenceTimeUtc: null,
+      sourceUrl: 'https://data.marine.copernicus.eu/product/NWSHELF_ANALYSISFORECAST_PHY_004_013/description' },
+    cell: { latitude: 49.65, longitude: -1.62, bounds: { west: -1.635, east: -1.605, south: 49.643243, north: 49.656757 },
+      resolutionMeters: 2200, depthMeters: 20, depthMinMeters: null, depthMaxMeters: null },
+    waterLevel: { timeBeforeUtc: '2026-10-23T10:00:00Z', timeAfterUtc: '2026-10-23T10:15:00Z', heightBeforeMeters: 1, heightAfterMeters: 2 } }, '2026-10-22T12:00:00Z');
+  const request = { ...context, vesselId: '2', draftMeters: 3 };
+  return { draft, forecast, request };
+}
+
+describe('retained Copernicus UKC assistance', () => {
+  it('retains an exact automatic capture without overwriting any manual text or other form edits', () => {
+    const { draft, forecast, request } = ukcFixture(); draft.risks = 'Travaux en cours';
+    const stored = retainSeaOperationUkc(draft, forecast, request);
+    expect(stored).not.toBe(draft); expect(stored.risks).toBe('Travaux en cours');
+    expect(stored.waypoints[0].ukc).toBe('2.3'); expect(draft.waypoints[0]).not.toHaveProperty('ukcForecast');
+    expect(effectiveSeaOperationUkc(stored, stored.waypoints[0])).toBe('18');
+    expect(waypointUkcSnapshot(stored.waypoints[0], seaOperationUkcReference(stored))).toEqual(forecast);
+    expect(isSeaOperationPayload(stored)).toBe(true);
+    expect(retainSeaOperationUkc(stored, forecast, request)).toBe(stored);
+  });
+
+  it('keeps historical manual values and ignores any queued automatic response after selecting manual mode', () => {
+    const { draft, forecast, request } = ukcFixture(); delete draft.waypoints[0].ukcMode;
+    expect(effectiveSeaOperationUkc(draft, draft.waypoints[0])).toBe('2.3');
+    expect(retainSeaOperationUkc(draft, forecast, request)).toBe(draft);
+    draft.waypoints[0].ukcMode = 'manual';
+    expect(retainSeaOperationUkc(draft, forecast, request)).toBe(draft);
+  });
+
+  it.each([{ projectId: '2' }, { vesselId: '3' }, { draftMeters: 4 }, { pointId: 'elsewhere' }, { latitude: '49.65' }, { longitude: '-1.62' }, { eta: '2026-10-23T13:00' }])('ignores a delayed result for changed request %o', patch => {
+    const { draft, forecast, request } = ukcFixture();
+    expect(retainSeaOperationUkc(draft, forecast, { ...request, ...patch })).toBe(draft);
+  });
+
+  it('does not substitute the old manual value when an automatic estimate is unavailable or stale', () => {
+    const { draft, forecast, request } = ukcFixture();
+    expect(effectiveSeaOperationUkc(draft, draft.waypoints[0])).toBe('');
+    const unavailable = { ...forecast, status: 'unavailable' as const, estimate: null, message: 'Hors horizon' };
+    const empty = retainSeaOperationUkc(draft, unavailable, request);
+    expect(effectiveSeaOperationUkc(empty, empty.waypoints[0])).toBe('');
+    expect(empty.waypoints[0].ukc).toBe('2.3'); expect(isSeaOperationPayload(empty)).toBe(true);
+    const stored = retainSeaOperationUkc(draft, forecast, request);
+    expect(retainSeaOperationUkc(stored, { ...unavailable, fetchedAt: '2026-10-23T11:00:00Z' }, request)).toBe(stored);
+    expect(effectiveSeaOperationUkc(stored, { ...stored.waypoints[0], eta: '2026-10-23T13:00' })).toBe('');
+  });
+
+  it('drops a calculation after position or ETA changes and uses manual mode only after an explicit manual edit', () => {
+    const { draft, forecast, request } = ukcFixture();
+    const stored = retainSeaOperationUkc(draft, forecast, request);
+    for (const patch of [{ latitude: '48 N' }, { eta: '2026-10-23T13:00' }]) {
+      expect(updateSeaOperationWaypoint(stored.waypoints[0], patch)).not.toHaveProperty('ukcForecast');
+    }
+    const manual = updateSeaOperationWaypoint(stored.waypoints[0], { ukc: '4.2' });
+    expect(manual.ukcMode).toBe('manual'); expect(manual).not.toHaveProperty('ukcForecast');
+    expect(effectiveSeaOperationUkc(stored, manual)).toBe('4.2');
+    expect(updateSeaOperationWaypoint(stored.waypoints[0], { descriptionVhf: 'Route modifiée' }).ukcForecast).toEqual(forecast);
+    expect(updateSeaOperationWaypoint(stored.waypoints[0], { latitude: '49.65' }).ukcForecast).toEqual(forecast);
+  });
+
+  it.each(['project', 'vessel', 'draught'] as const)('invalidates a capture after parent %s changes, including a canonical save response', field => {
+    const { draft, forecast, request } = ukcFixture(); const stored = retainSeaOperationUkc(draft, forecast, request);
+    const changed = structuredClone(stored);
+    if (field === 'project') changed.planning!.projectId = '3';
+    else if (field === 'vessel') changed.vessel.id = '3';
+    else changed.vessel.draftMeters = 4;
+    expect(isSeaOperationPayload(changed)).toBe(false);
+    const cleaned = invalidateSeaOperationUkc(changed);
+    expect(cleaned.waypoints[0]).not.toHaveProperty('ukcForecast');
+    expect(cleaned.waypoints[0].ukcMode).toBe('automatic'); expect(cleaned.waypoints[0].ukc).toBe('2.3');
+    expect(effectiveSeaOperationUkc(cleaned, cleaned.waypoints[0])).toBe('');
+    expect(isSeaOperationPayload(cleaned)).toBe(true); expect(invalidateSeaOperationUkc(cleaned)).toBe(cleaned);
+  });
+
+  it('rejects malformed calculations and does not let older requests replace a newer capture', () => {
+    const { draft, forecast, request } = ukcFixture();
+    const latest = { ...forecast, fetchedAt: '2026-10-22T13:00:00Z' };
+    const stored = retainSeaOperationUkc(draft, latest, request);
+    expect(retainSeaOperationUkc(stored, forecast, request)).toBe(stored);
+    const forged = structuredClone(forecast); forged.estimate!.ukcMeters = 999;
+    expect(retainSeaOperationUkc(draft, forged, request)).toBe(draft);
+    expect(isSeaOperationPayload({ ...stored, waypoints: [{ ...stored.waypoints[0], ukcForecast: forged }] })).toBe(false);
+  });
+});
 
 describe('recorded waypoint assistance', () => {
   it('keeps old forms valid and accepts optional captures without changing the schema version', () => {

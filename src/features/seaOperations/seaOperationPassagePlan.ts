@@ -1,4 +1,4 @@
-import type { SeaOperationWaypoint } from './seaOperationModel';
+import type { SeaOperationPayload, SeaOperationWaypoint } from './seaOperationModel';
 import { seaOperationRadioContacts, SEA_RADIO_VERIFIED_ON } from './seaOperationRadio';
 import { waypointRadioSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 import { evaluateVesselSeaState, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
@@ -6,6 +6,7 @@ import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 import { observationFootnote, observationText, observationWaitingMessage, waypointWeatherObservation } from './seaOperationWeatherHistory';
 import { seaOperationWeatherLocation } from './seaOperationWeatherLocation';
 import { formatSeaLatitude, formatSeaLongitude, formatSeaPosition } from './seaOperationCoordinates';
+import { seaOperationUkcPresentation } from './seaOperationUkcPresentation';
 
 const value = (text: string) => text.trim() || 'À renseigner';
 const numbers = [0, 1, 2].map((digits) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: digits, ...(digits === 2 ? { minimumFractionDigits: 2 } : {}) }));
@@ -14,7 +15,8 @@ const number = (amount: number | null, digits = 1) => amount === null ? 'indispo
 const utc = (time: string) => `${utcDate.format(new Date(time))} UTC`;
 
 /** A shared, plain-text view of the recorded Passage Plan for the editor, print and PDF. */
-export function passagePlanCellData(point: SeaOperationWaypoint, options: { allowLiveRadio?: boolean; weatherMatrix?: VesselWeatherMatrix | null; observations?: readonly ObservationResult[]; includeObservations?: boolean; validatedAt?: string | null } = {}) {
+export function passagePlanCellData(point: SeaOperationWaypoint, options: { payload?: SeaOperationPayload; allowLiveRadio?: boolean; weatherMatrix?: VesselWeatherMatrix | null; observations?: readonly ObservationResult[]; includeObservations?: boolean; validatedAt?: string | null } = {}) {
+  const ukcPresentation = seaOperationUkcPresentation(options.payload, point);
   const radio = waypointRadioSnapshot(point);
   const contacts = radio?.contacts ?? (options.allowLiveRadio ? seaOperationRadioContacts([point]).contacts : undefined);
   const forecast = waypointWeatherSnapshot(point);
@@ -49,7 +51,9 @@ export function passagePlanCellData(point: SeaOperationWaypoint, options: { allo
   const weatherFootnote = [options.validatedAt ? `Validation du Capitaine : ${utc(options.validatedAt)}.` : '', forecastFootnote, observationFootnote(observation)].filter(Boolean).join('\n');
   return {
     waypoint: value(point.number), description: value(point.descriptionVhf), latitude: value(formatSeaLatitude(point.latitude)), longitude: value(formatSeaLongitude(point.longitude)),
-    ukc: value(point.ukc), eta: value(point.eta.replace(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2}).*$/, '$3/$2/$1 à $4')),
+    ukc: ukcPresentation.automatic ? ukcPresentation.displayValue || 'Indisponible' : value(point.ukc), ukcPresentation,
+    ukcFootnote: ukcPresentation.automatic ? ukcPresentation.sourceFootnote : '',
+    eta: value(point.eta.replace(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2}).*$/, '$3/$2/$1 à $4')),
     vhf, weather, observedWeather, observation, seaState, hasSeaStateIndicator, denseTraffic: point.denseTraffic ? 'Oui' : 'Non', weatherFootnote, radioFootnote,
   };
 }
