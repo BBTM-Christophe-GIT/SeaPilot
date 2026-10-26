@@ -16,6 +16,8 @@ interface ProjectBillingRawLinesProps {
   showHeading?: boolean;
   initializeBlankOnOpen?: boolean;
   initialDate: string;
+  startDate?: string;
+  endDate?: string;
   onSave: (draft: BillingRawLineDraft, id?: number) => Promise<ProjectBillingRawLine>;
   onDelete: (id: number) => Promise<void>;
   onCatalogOpen: () => void;
@@ -35,6 +37,7 @@ interface RawLineRow {
   saved?: BillingRawLineDraft;
   pending?: 'save' | 'delete';
   awaitingAcknowledgement?: boolean;
+  placeholder?: boolean;
   error?: string;
 }
 
@@ -81,6 +84,7 @@ function sameDraft(left: BillingRawLineDraft, right: BillingRawLineDraft): boole
 }
 
 function isDirty(row: RawLineRow): boolean {
+  if (row.placeholder) return false;
   return !row.saved || row.values.unitAmountHt === '' || row.values.quantity === ''
     || !sameDraft(draftFromValues(row.values), row.saved);
 }
@@ -97,7 +101,7 @@ function totalForValues(values: RawLineValues): number {
   return billingRawLineTotal({ unitAmountHt, quantity });
 }
 
-export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager, disabled = false, showHeading = true, initializeBlankOnOpen = false, initialDate, onSave, onDelete, onCatalogOpen, onCatalogCreate, onDirtyChange }: ProjectBillingRawLinesProps) {
+export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager, disabled = false, showHeading = true, initializeBlankOnOpen = false, initialDate, startDate, endDate, onSave, onDelete, onCatalogOpen, onCatalogCreate, onDirtyChange }: ProjectBillingRawLinesProps) {
   const [rows, setRows] = useState<RawLineRow[]>(() => lines.map(rowFromLine));
   const [catalogRowKey, setCatalogRowKey] = useState<string | null>(null);
   const [catalogQuery, setCatalogQuery] = useState('');
@@ -112,6 +116,7 @@ export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager
   const nextKey = useRef(0);
   const initializedBlankOnOpen = useRef(false);
   const deletedIds = useRef(new Set<number>());
+  const visibleRange = useRef({ startDate, endDate });
   const dirty = rows.some(isDirty);
   const total = rows.reduce((sum, row) => sum + totalForValues(row.values), 0);
   const catalogRow = rows.find((row) => row.key === catalogRowKey);
@@ -121,6 +126,8 @@ export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager
     (entry.active || entry.id === catalogRow?.values.serviceCatalogId)
     && `${entry.category} ${catalogVesselName(entry)}`.toLocaleLowerCase('fr-FR').includes(search)
   ));
+
+  useEffect(() => { visibleRange.current = { startDate, endDate }; }, [startDate, endDate]);
 
   function availableVessels(selectedId?: number | null): VesselRecord[] {
     return vessels.filter((vessel) => (!vessel.assetKind || vessel.assetKind === 'vessel') && (vessel.active || vessel.id === selectedId)).sort(compareFleetAssets);
@@ -144,6 +151,7 @@ export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager
     }
     setRows((current) => {
       const merged = current
+        .filter((row) => !row.placeholder || !lines.length)
         .filter((row) => row.id === undefined || incoming.has(row.id) || row.pending || isDirty(row))
         .map((row) => {
           const line = row.id === undefined ? undefined : incoming.get(row.id);
@@ -166,7 +174,7 @@ export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager
     initializedBlankOnOpen.current = true;
     if (rows.length || lines.length) return;
     nextKey.current += 1;
-    const row: RawLineRow = { key: `new-${nextKey.current}`, values: blankValues(initialDate) };
+    const row: RawLineRow = { key: `new-${nextKey.current}`, values: blankValues(initialDate), placeholder: true };
     setRows((current) => current.length ? current : [row]);
   }, [initializeBlankOnOpen, isManager, disabled, rows.length, lines.length, initialDate]);
 
@@ -179,7 +187,7 @@ export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager
 
   function updateRow(key: string, update: Partial<RawLineValues>) {
     setRows((current) => current.map((row) => row.key === key
-      ? { ...row, values: { ...row.values, ...update }, error: undefined }
+      ? { ...row, values: { ...row.values, ...update }, placeholder: false, error: undefined }
       : row));
   }
 
@@ -262,6 +270,12 @@ export function ProjectBillingRawLines({ lines, catalog, vessels = [], isManager
     try {
       const line = await onSave(draft, row.id);
       const saved = draftFromLine(line);
+      const range = visibleRange.current;
+      const outsidePeriod = (range.startDate && line.serviceDate < range.startDate) || (range.endDate && line.serviceDate > range.endDate);
+      if (outsidePeriod) {
+        setRows((current) => current.filter((item) => item.key !== row.key && item.id !== line.id));
+        return;
+      }
       setRows((current) => current
         .filter((item) => item.key === row.key || item.id !== line.id)
         .map((item) => item.key === row.key

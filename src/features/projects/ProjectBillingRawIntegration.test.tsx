@@ -69,11 +69,13 @@ function panel(record = project, isManager = true) {
 }
 
 async function ready() {
+  await screen.findByLabelText('Catégorie de la prestation 1');
   await waitFor(() => expect(screen.getByRole('button', { name: 'Prévisualiser le PDF' })).toBeEnabled());
 }
 
 async function openRaw(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: /^Saisie brute/ }));
+  const toggle = screen.getByRole('button', { name: 'Saisie brute' });
+  if (toggle.getAttribute('aria-expanded') === 'false') await user.click(toggle);
   await waitFor(() => expect(screen.getByRole('region', { name: 'Tableau de saisie brute' })).toBeVisible());
 }
 
@@ -110,11 +112,172 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('raw billing workspace integration', () => {
+  it('shows every billing category expanded with its record count and keeps manual collapse available', async () => {
+    mocks.data.mockResolvedValue({
+      ...emptyData,
+      periods: [period()],
+      services: [{ id: 2, billingPeriodId: 10, serviceCatalogId: 7, category: catalog[0].category, descriptionHtml: '', unitAmountHt: 100, quantity: 1 }],
+      expenses: [{ id: 3, billingPeriodId: 10, category: 'port', nature: '', supplier: 'PORT DE RECETTE', supplierSpecialties: [], invoiceDate: '2026-09-15', invoiceNumber: 'PORT-1', amountHt: 25, amountTtc: null, currency: 'EUR', quantity: null, unit: '', comments: '', dprReportId: null }],
+      documents: [{ id: 4, billingPeriodId: 10, chargeableExpenseId: null, documentKind: 'client_invoice', bucketName: 'project-files', objectPath: 'invoice.pdf', fileName: 'Facture du mois.pdf', mimeType: 'application/pdf', fileSizeBytes: 10 }],
+      rawLines: [rawLine(), rawLine({ id: 51, serviceDate: '2026-09-30' }), rawLine({ id: 52, serviceDate: '2026-10-01' })],
+    });
+    const user = userEvent.setup();
+    render(panel());
+    await ready();
+    for (const [label, count] of [
+      ['Loyers d’affrètement', 0], ['Services refacturables', 1], ['Prestations BBTM', 1],
+      ['Saisie brute', 2], ['Suivi de la facture et pièces', 1],
+    ] as const) {
+      const toggle = screen.getByRole('button', { name: label });
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      const badge = within(toggle).getByLabelText(`${count} enregistrement${count === 1 ? '' : 's'}`);
+      expect(badge).toHaveTextContent(String(count));
+      expect(badge).toBeVisible();
+    }
+    expect(screen.getByLabelText('Désignation, ligne 1')).toBeVisible();
+    expect(screen.getByLabelText('Désignation, ligne 2')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Facture du mois.pdf' })).toBeVisible();
+    expect(screen.getByText('PORT DE RECETTE')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Saisie brute' }));
+    expect(screen.getByLabelText('Désignation, ligne 1')).not.toBeVisible();
+    expect(screen.getByRole('button', { name: 'Saisie brute' })).toHaveAttribute('aria-expanded', 'false');
+    await openRaw(user);
+    expect(screen.getByLabelText('Désignation, ligne 1')).toBeVisible();
+  });
+
+  it.each([true, false])('groups and exports raw lines by service date across September and October (October period exists: %s)', async hasOctoberPeriod => {
+    const september = period({ clientReference: 'REFERENCE-SEPTEMBRE' });
+    const october = period({ id: 20, periodMonth: '2026-10-01', clientReference: 'REFERENCE-OCTOBRE' });
+    const septemberLines = [
+      rawLine({ serviceDate: '2026-09-01', designation: 'Premier septembre' }),
+      rawLine({ id: 51, billingPeriodId: hasOctoberPeriod ? 20 : 10, serviceDate: '2026-09-30', designation: 'Dernier septembre', unitAmountHt: 150 }),
+    ];
+    const octoberLines = [
+      rawLine({ id: 52, serviceDate: '2026-10-01', designation: 'Premier octobre', unitAmountHt: 200 }),
+      rawLine({ id: 53, serviceDate: '2026-10-31', designation: 'Dernier octobre', unitAmountHt: 250 }),
+    ];
+    mocks.data.mockResolvedValue({ ...emptyData, periods: hasOctoberPeriod ? [september, october] : [september], rawLines: [...septemberLines, ...octoberLines, rawLine({ id: 54, serviceDate: '2026-11-01', designation: 'Premier novembre' })] });
+    mocks.ensurePeriod.mockResolvedValue(october);
+    const user = userEvent.setup();
+    render(panel());
+    await ready();
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Premier septembre');
+    expect(screen.getByLabelText('Désignation, ligne 2')).toHaveValue('Dernier septembre');
+    expect(screen.queryByLabelText('Désignation, ligne 3')).not.toBeInTheDocument();
+    expect(within(selectedTotal()).getByText(/500,00\s*€/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Prévisualiser le PDF' }));
+    await waitFor(() => expect(mocks.export).toHaveBeenCalledTimes(1));
+    expect(mocks.export.mock.calls[0][1]).toMatchObject({ rawLines: septemberLines, startDate: '2026-09-01', endDate: '2026-09-30' });
+    fireEvent.change(screen.getByLabelText('Mois', { exact: true }), { target: { value: '2026-10' } });
+    await ready();
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Premier octobre');
+    expect(screen.getByLabelText('Désignation, ligne 2')).toHaveValue('Dernier octobre');
+    expect(screen.queryByLabelText('Désignation, ligne 3')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('button', { name: 'Saisie brute' })).getByLabelText('2 enregistrements')).toHaveTextContent('2');
+    expect(within(selectedTotal()).getByText(/900,00\s*€/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Prévisualiser le PDF' }));
+    await waitFor(() => expect(mocks.export).toHaveBeenCalledTimes(2));
+    expect(mocks.export.mock.calls[1][1]).toMatchObject({ period: { id: 20 }, rawLines: octoberLines, startDate: '2026-10-01', endDate: '2026-10-31' });
+    expect(mocks.ensurePeriod).toHaveBeenCalledTimes(hasOctoberPeriod ? 0 : 1);
+    expect(mocks.saveRaw).not.toHaveBeenCalled();
+    expect(mocks.savePeriod).not.toHaveBeenCalled();
+  });
+
+  it('keeps the September legacy reference when its only linked raw line belongs to October', async () => {
+    mocks.data.mockResolvedValue({ ...emptyData, periods: [period({ clientReference: 'REFERENCE-HISTORIQUE-SEPTEMBRE' })], rawLines: [rawLine({ serviceDate: '2026-10-01' })] });
+    const user = userEvent.setup();
+    render(panel());
+    await ready();
+    expect(screen.getByLabelText('Référence client')).toHaveValue('REFERENCE-HISTORIQUE-SEPTEMBRE');
+    expect(within(selectedTotal()).getByText(/0,00\s*€/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Prévisualiser le PDF' }));
+    await waitFor(() => expect(mocks.export).toHaveBeenCalled());
+    expect(mocks.export.mock.calls[0][1]).toMatchObject({ period: { clientReference: 'REFERENCE-HISTORIQUE-SEPTEMBRE' }, rawLines: [] });
+  });
+
+  it('shows, counts and exports every raw line in a custom range crossing the month boundary', async () => {
+    const selected = [
+      rawLine({ serviceDate: '2026-09-30', designation: 'Fin septembre' }),
+      rawLine({ id: 51, billingPeriodId: 20, serviceDate: '2026-10-01', designation: 'Début octobre', unitAmountHt: 150 }),
+    ];
+    mocks.data.mockResolvedValue({ ...emptyData, periods: [period(), period({ id: 20, periodMonth: '2026-10-01' })], rawLines: [rawLine({ id: 52, serviceDate: '2026-09-29', designation: 'Avant la plage' }), ...selected, rawLine({ id: 53, serviceDate: '2026-10-02', designation: 'Après la plage' })] });
+    const user = userEvent.setup();
+    render(panel());
+    await ready();
+    const calendar = screen.getByRole('region', { name: 'Calendrier de facturation' });
+    await user.click(within(calendar).getByRole('button', { name: 'mercredi 30 septembre 2026' }));
+    await ready();
+    await user.click(within(calendar).getByRole('button', { name: 'jeudi 1 octobre 2026' }));
+    await ready();
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Fin septembre');
+    expect(screen.getByLabelText('Désignation, ligne 2')).toHaveValue('Début octobre');
+    expect(screen.queryByLabelText('Désignation, ligne 3')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('button', { name: 'Saisie brute' })).getByLabelText('2 enregistrements')).toHaveTextContent('2');
+    expect(within(selectedTotal()).getByText(/500,00\s*€/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Prévisualiser le PDF' }));
+    await waitFor(() => expect(mocks.export).toHaveBeenCalled());
+    expect(mocks.export.mock.calls[0][1]).toMatchObject({ rawLines: selected, startDate: '2026-09-30', endDate: '2026-10-01' });
+  });
+
+  it('moves a saved raw line into its new service month immediately without replacing the current invoice', async () => {
+    const september = period({ invoiceNumber: 'FACTURE-SEPTEMBRE' });
+    const october = period({ id: 20, periodMonth: '2026-10-01', invoiceNumber: 'FACTURE-OCTOBRE' });
+    mocks.data.mockResolvedValue({ ...emptyData, periods: [september, october], rawLines: [rawLine()] });
+    const user = userEvent.setup();
+    render(panel());
+    await ready();
+    fireEvent.change(screen.getByLabelText('Date, ligne 1'), { target: { value: '2026-10-15' } });
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
+    await waitFor(() => expect(mocks.saveRaw).toHaveBeenCalledWith(client, project.id, 20, expect.objectContaining({ serviceDate: '2026-10-15' }), 50));
+    await ready();
+    await waitFor(() => expect(screen.queryByDisplayValue('Ligne conservée')).not.toBeInTheDocument());
+    expect(screen.getByLabelText('Mois', { exact: true })).toHaveValue('2026-09');
+    expect(screen.getByLabelText('Numéro de facture')).toHaveValue('FACTURE-SEPTEMBRE');
+    expect(within(selectedTotal()).getByText(/0,00\s*€/)).toBeVisible();
+    expect(within(screen.getByRole('button', { name: 'Saisie brute' })).getByLabelText('0 enregistrements')).toHaveTextContent('0');
+    fireEvent.change(screen.getByLabelText('Mois', { exact: true }), { target: { value: '2026-10' } });
+    await ready();
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Ligne conservée');
+    expect(screen.getByLabelText('Date, ligne 1')).toHaveValue('2026-10-15');
+    expect(screen.getByLabelText('Numéro de facture')).toHaveValue('FACTURE-OCTOBRE');
+    expect(within(selectedTotal()).getByText(/200,00\s*€/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Prévisualiser le PDF' }));
+    await waitFor(() => expect(mocks.export).toHaveBeenCalled());
+    expect(mocks.export.mock.calls[0][1].rawLines).toEqual([expect.objectContaining({ id: 50, billingPeriodId: 20, serviceDate: '2026-10-15' })]);
+    expect(mocks.ensurePeriod).not.toHaveBeenCalled();
+  });
+
+  it('creates the service month for a new out-of-month line while preserving the selected month and invoice draft', async () => {
+    const september = period({ invoiceNumber: 'FACTURE-SEPTEMBRE', comments: 'Facture existante' });
+    const october = period({ id: 20, periodMonth: '2026-10-01' });
+    mocks.data.mockResolvedValue({ ...emptyData, periods: [september] });
+    mocks.ensurePeriod.mockResolvedValue(october);
+    const user = userEvent.setup();
+    render(panel());
+    await ready();
+    fireEvent.change(screen.getByLabelText('Numéro de facture'), { target: { value: 'BROUILLON-SEPTEMBRE' } });
+    fillManual('Prestation octobre', '125', '2');
+    fireEvent.change(screen.getByLabelText('Date, ligne 1'), { target: { value: '2026-10-06' } });
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
+    await waitFor(() => expect(mocks.ensurePeriod).toHaveBeenCalledWith(client, project.id, expect.objectContaining({ periodMonth: '2026-10', invoiceNumber: '', comments: '' })));
+    await waitFor(() => expect(mocks.saveRaw).toHaveBeenCalledWith(client, project.id, 20, expect.objectContaining({ serviceDate: '2026-10-06', designation: 'Prestation octobre' }), undefined));
+    await ready();
+    expect(screen.getByLabelText('Mois', { exact: true })).toHaveValue('2026-09');
+    expect(screen.getByLabelText('Numéro de facture')).toHaveValue('BROUILLON-SEPTEMBRE');
+    expect(screen.queryByDisplayValue('Prestation octobre')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Mois', { exact: true }), { target: { value: '2026-10' } });
+    await ready();
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Prestation octobre');
+    expect(within(selectedTotal()).getByText(/250,00\s*€/)).toBeVisible();
+    expect(mocks.savePeriod).not.toHaveBeenCalled();
+  });
+
   it('opens directly on one blank row without persisting it, then adds another row only on request', async () => {
     const user = userEvent.setup();
     render(panel());
     await ready();
-    expect(screen.queryByLabelText('Désignation, ligne 1')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Désignation, ligne 1')).toBeVisible();
+    expect(within(screen.getByRole('button', { name: 'Saisie brute' })).getByLabelText('0 enregistrements')).toHaveTextContent('0');
     await openRaw(user);
     expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('');
     expect(screen.queryByLabelText('Désignation, ligne 2')).not.toBeInTheDocument();
@@ -132,7 +295,7 @@ describe('raw billing workspace integration', () => {
     const user = userEvent.setup();
     render(panel());
     await ready();
-    await user.click(screen.getByRole('button', { name: /^Prestations BBTM/ }));
+    expect(screen.getByRole('button', { name: 'Prestations BBTM' })).toHaveAttribute('aria-expanded', 'true');
     const categorySelect = screen.getByLabelText('Catégorie de la prestation 1');
     expect(within(categorySelect).getAllByRole('option').map((option) => option.textContent)).toEqual(['Spread Antipollution — GOURY', 'Spread Antipollution — SUROIT']);
     await user.selectOptions(categorySelect, '9');

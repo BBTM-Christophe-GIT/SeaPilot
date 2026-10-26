@@ -65,6 +65,21 @@
   text-align: left;
 }
 .project-billing.is-workspace .project-billing-section-toggle > svg { color: var(--sp-primary); }
+.project-billing.is-workspace .project-billing-section-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 24px;
+  height: 24px;
+  padding-inline: 6px;
+  border-radius: 999px;
+  background: var(--sp-success);
+  color: var(--sp-surface);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
 .project-billing-section-toggle .is-expanded { transform: rotate(180deg); }
 .project-billing.is-workspace .project-billing-section-commands { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; overflow-x: auto; }
 .project-billing.is-workspace .project-billing-section-commands > button { flex-shrink: 0; white-space: nowrap; }

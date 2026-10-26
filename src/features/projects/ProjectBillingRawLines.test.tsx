@@ -61,9 +61,13 @@ describe('raw project billing lines', () => {
     expect(screen.getAllByLabelText(/^Désignation, ligne/)).toHaveLength(1);
     expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('');
     expect(screen.getByLabelText('Date, ligne 1')).toHaveValue('2026-10-01');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    expect(screen.getByRole('button', { name: 'Enregistrer la ligne 1' })).toBeDisabled();
+    expect(screen.queryByText('Non enregistrée')).not.toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(onSave).not.toHaveBeenCalled();
     change('Désignation, ligne 1', 'Brouillon conservé');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
     rerender(<ProjectBillingRawLines {...props()} initializeBlankOnOpen={false} />);
     rerender(<ProjectBillingRawLines {...props()} initializeBlankOnOpen />);
     expect(screen.getAllByLabelText(/^Désignation, ligne/)).toHaveLength(1);
@@ -93,6 +97,25 @@ describe('raw project billing lines', () => {
     confirm.mockRestore();
   });
 
+  it('replaces the automatic placeholder when saved rows finish loading', () => {
+    const { rerender } = render(<ProjectBillingRawLines {...props()} initializeBlankOnOpen />);
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('');
+    rerender(<ProjectBillingRawLines {...props([savedLine])} initializeBlankOnOpen />);
+    expect(screen.getAllByLabelText(/^Désignation, ligne/)).toHaveLength(1);
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Assistance');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('preserves edits to the automatic row when saved rows finish loading', () => {
+    const { rerender } = render(<ProjectBillingRawLines {...props()} initializeBlankOnOpen />);
+    change('Désignation, ligne 1', 'Brouillon en cours');
+    rerender(<ProjectBillingRawLines {...props([savedLine])} initializeBlankOnOpen />);
+    expect(screen.getAllByLabelText(/^Désignation, ligne/)).toHaveLength(2);
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Brouillon en cours');
+    expect(screen.getByLabelText('Désignation, ligne 2')).toHaveValue('Assistance');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  });
+
   it('only initializes the empty section once editing is allowed and global work has finished', () => {
     const { rerender } = render(<ProjectBillingRawLines {...props()} isManager={false} initializeBlankOnOpen />);
     expect(screen.queryByLabelText('Désignation, ligne 1')).not.toBeInTheDocument();
@@ -101,8 +124,61 @@ describe('raw project billing lines', () => {
     expect(screen.queryByLabelText('Désignation, ligne 1')).not.toBeInTheDocument();
     rerender(<ProjectBillingRawLines {...props()} initializeBlankOnOpen />);
     expect(screen.getAllByLabelText(/^Désignation, ligne/)).toHaveLength(1);
-    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['Date, ligne 1', '2026-10-02'],
+    ['Navire, ligne 1', '102'],
+    ['Prix unitaire HT, ligne 1', '25'],
+    ['Quantité, ligne 1', '2'],
+  ])('protects exports once the automatic blank row is edited through %s', (label, value) => {
+    render(<ProjectBillingRawLines {...props()} initializeBlankOnOpen />);
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    change(label, value);
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    expect(screen.getByRole('button', { name: 'Enregistrer la ligne 1' })).toBeEnabled();
+  });
+
+  it.each(['Ajouter une ligne', 'Dupliquer la ligne'])('protects exports for an explicitly requested blank row through %s', async (action) => {
+    const user = userEvent.setup();
+    render(<ProjectBillingRawLines {...props()} initializeBlankOnOpen />);
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    await user.click(screen.getByRole('button', { name: action }));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    expect(screen.getByRole('button', { name: 'Enregistrer la ligne 2' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Supprimer la ligne 2' }));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it.each(['2026-09-30', '2026-11-01'])('removes a row moved outside the visible dates even when the parent updates before the save resolves (%s)', async (serviceDate) => {
+    const user = userEvent.setup();
+    let resolveSave!: (line: ProjectBillingRawLine) => void;
+    onSave.mockImplementation(() => new Promise((resolve) => { resolveSave = resolve; }));
+    const range = { startDate: '2026-10-01', endDate: '2026-10-31' };
+    const { rerender } = render(<ProjectBillingRawLines {...props([savedLine])} {...range} />);
+    change('Date, ligne 1', serviceDate);
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
+    rerender(<ProjectBillingRawLines {...props()} {...range} />);
+    expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Assistance');
+    await act(async () => resolveSave({ ...savedLine, serviceDate }));
+    expect(screen.queryByLabelText('Désignation, ligne 1')).not.toBeInTheDocument();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    expect(screen.getByText('Aucune ligne de saisie brute pour cette période.')).toBeVisible();
+  });
+
+  it('uses the latest custom date range when an earlier save finishes', async () => {
+    const user = userEvent.setup();
+    let resolveSave!: (line: ProjectBillingRawLine) => void;
+    onSave.mockImplementation(() => new Promise((resolve) => { resolveSave = resolve; }));
+    const { rerender } = render(<ProjectBillingRawLines {...props([savedLine])} startDate="2026-10-01" endDate="2026-10-31" />);
+    change('Quantité, ligne 1', '3');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
+    rerender(<ProjectBillingRawLines {...props()} startDate="2026-10-10" endDate="2026-10-20" />);
+    await act(async () => resolveSave({ ...savedLine, quantity: 3 }));
+    expect(screen.queryByLabelText('Désignation, ligne 1')).not.toBeInTheDocument();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   });
 
   it.each(['vessel', 'office'] as const)('keeps the saved vessel name visible after a fleet rename or reclassification to %s', async (assetKind) => {
