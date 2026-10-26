@@ -45,6 +45,9 @@ jobs:
       - name: Test lifting register import preparation
         run: python3 -m unittest discover -s scripts -p test_prepare_lifting_inventory.py
 
+      - name: Test Copernicus point gateway and provider
+        run: python3 -m unittest discover -s scripts -p 'test_copernicus_*.py'
+
       - name: Build
         run: pnpm build
         env:

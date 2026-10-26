@@ -1,5 +1,18 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.21`, build `2026-10-26.001`, raccorde l’UKC indicative à NWS et
+IBI de Copernicus Marine, avec fond et niveau d’eau du même modèle/géoïde,
+interpolation à l’ETA et tirant d’eau canonique du navire. Le mode manuel et
+les fiches signées sont conservés ; une capture incompatible est invalidée.
+Le PDF conserve l’en-tête/pied Word et ajoute la provenance dans une annexe UKC.
+L’incertitude totale reste explicitement non quantifiée ; les petits fonds
+≤ 10 m et les cellules masquées ne donnent pas de calcul automatique.
+Appliquer `20261026084110_sea_operation_copernicus_ukc.sql` avant le frontend.
+Nouvelle fonction Python 3.12 / SDK officiel, dépendances fixées, identifiants
+Copernicus secrets Production et Preview. Voir
+[configuration et limites Copernicus](./sea-operation-copernicus-ukc.md).
+Aucune nouvelle dépendance Node ni note de mise à jour intégrée.
+
 Version `3.77.20`, build `2026-10-24.002`, affiche les coordonnées du Passage
 Plan en degrés et minutes décimales, avec hémisphères, dans la saisie, la carte,
 les résultats météo/cartes SHOM, l’aperçu et le PDF. La précision stockée et les

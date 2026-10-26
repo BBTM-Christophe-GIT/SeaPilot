@@ -1,5 +1,6 @@
 import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
-import { waypointRadioSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
+import { effectiveSeaOperationUkc, waypointRadioSnapshot, waypointUkcSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
+import type { SeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 import { isVesselWeatherMatrix, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 
 /** Digital transcription of OPE-FOR-10-C, GO / NO GO – OPÉRATION EN MER. */
@@ -44,6 +45,9 @@ export interface SeaOperationWaypoint {
   latitude: string;
   longitude: string;
   ukc: string;
+  /** Missing means historical/manual. The automatic estimate never overwrites ukc. */
+  ukcMode?: 'manual' | 'automatic';
+  ukcForecast?: SeaOperationCopernicusEstimate;
   /** The source permits a time alone when the point is reached on the same day. */
   eta: string;
   denseTraffic: boolean;
@@ -275,7 +279,11 @@ export function isSeaOperationPayload(value: unknown): value is SeaOperationPayl
     || typeof value.supplies.customerAccountsPrepared !== 'boolean' || !Array.isArray(value.supplies.items)
     || !value.supplies.items.every((item) => SEA_OPERATION_SUPPLY_ITEMS.some((known) => known.id === item))) return false;
   if (!hasStringFields(value.signature, ['captainName', 'date', 'place']) || typeof value.signature.acknowledged !== 'boolean') return false;
+  const ukcReference = { projectId: isObject(value.planning) ? value.planning.projectId as string : undefined,
+    vesselId: value.vessel.id as string, draftMeters: value.vessel.draftMeters as number | null | undefined };
   return Array.isArray(value.waypoints) && value.waypoints.every((point) => hasStringFields(point, ['id', 'number', 'descriptionVhf', 'latitude', 'longitude', 'ukc', 'eta']) && typeof point.denseTraffic === 'boolean'
+    && (point.ukcMode === undefined || point.ukcMode === 'manual' || point.ukcMode === 'automatic')
+    && (point.ukcForecast === undefined || point.ukcMode === 'automatic' && Boolean(waypointUkcSnapshot(point as unknown as SeaOperationWaypoint, ukcReference)))
     && (point.weather === undefined || Boolean(waypointWeatherSnapshot(point as unknown as SeaOperationWaypoint)))
     && (point.radio === undefined || Boolean(waypointRadioSnapshot(point as unknown as SeaOperationWaypoint))));
 }
@@ -372,7 +380,7 @@ export function validateSeaOperation(
   payload.waypoints.forEach((point, index) => {
     const fields = [
       [point.number, 'Le numéro'], [point.descriptionVhf, 'La description'],
-      [point.latitude, 'La latitude'], [point.longitude, 'La longitude'], [point.ukc, 'L’UKC'], [point.eta, 'L’ETA'],
+      [point.latitude, 'La latitude'], [point.longitude, 'La longitude'], [effectiveSeaOperationUkc(payload, point), 'L’UKC'], [point.eta, 'L’ETA'],
     ] as const;
     for (const [value, label] of fields) requireText(value, `${label} du point n° ${index + 1}`);
     if (point.eta && !/^([01]\d|2[0-3]):[0-5]\d$/.test(point.eta) && !validDate(point.eta)) errors.push(`L’ETA du point n° ${index + 1} doit être une date et une heure valides, ou une heure au format HH:mm.`);

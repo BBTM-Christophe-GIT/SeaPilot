@@ -5,6 +5,7 @@ import {
   getSeaOperationAssessment, isSeaOperationPayload, newSeaOperation, validateSeaOperation, seaOperationToday,
 } from './seaOperationModel';
 import type { SeaOperationCheckId } from './seaOperationModel';
+import { COPERNICUS_UKC_PRODUCTS, calculateSeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 
 function completePayload() {
   const payload = emptySeaOperation();
@@ -35,6 +36,28 @@ function completePayload() {
 }
 
 describe('sea operation form model', () => {
+  it('uses a retained automatic UKC for completeness without replacing manual text or deciding GO', () => {
+    const payload = completePayload();
+    payload.planning = { date: '2026-10-27', projectId: '12', operationId: '12:42', captainPersonId: '7' };
+    payload.vessel.draftMeters = 3;
+    const point = { ...payload.waypoints[0], latitude: '49.65', longitude: '-1.62', eta: '2026-10-27T12:05', ukc: '', ukcMode: 'automatic' as const };
+    point.ukcForecast = calculateSeaOperationCopernicusEstimate({ projectId: '12', pointId: point.id, vesselId: '42', latitude: 49.65,
+      longitude: -1.62, eta: point.eta, draftMeters: 3 }, { status: 'available', message: '',
+      source: { model: 'NWS', ...COPERNICUS_UKC_PRODUCTS.NWS, datum: 'model-geoid', referenceTimeUtc: null,
+        sourceUrl: 'https://data.marine.copernicus.eu/product/NWSHELF_ANALYSISFORECAST_PHY_004_013/description' },
+      cell: { latitude: 49.65, longitude: -1.62, bounds: { west: -1.635, east: -1.605, south: 49.643243, north: 49.656757 },
+        resolutionMeters: 2200, depthMeters: 20, depthMinMeters: null, depthMaxMeters: null },
+      waterLevel: { timeBeforeUtc: '2026-10-27T11:00:00Z', timeAfterUtc: '2026-10-27T11:15:00Z', heightBeforeMeters: 2, heightAfterMeters: 5 } }, '2026-10-26T08:00:00Z');
+    payload.waypoints = [point];
+    expect(isSeaOperationPayload(payload)).toBe(true);
+    expect(validateSeaOperation(payload, 'GO')).toEqual([]);
+    expect(point.ukc).toBe(''); expect(payload.decision).toBe('GO');
+    point.ukcForecast = { ...point.ukcForecast, status: 'unavailable', estimate: null, message: 'Hors horizon' };
+    expect(isSeaOperationPayload(payload)).toBe(true);
+    expect(validateSeaOperation(payload, 'GO')).toContain('L’UKC du point n° 1 est obligatoire.');
+    expect(payload.decision).toBe('GO');
+  });
+
   it('defaults the signature date to today in Paris, including the UTC day boundary', () => {
     expect(emptySeaOperation().signature.date).toBe(seaOperationToday());
     expect(seaOperationToday(new Date('2026-10-16T22:30:00Z'))).toBe('2026-10-17');

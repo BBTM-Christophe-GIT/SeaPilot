@@ -1,4 +1,5 @@
 import { render, within } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { emptySeaOperation } from './seaOperationModel';
 import type { SeaOperationRecord } from './seaOperationQueries';
@@ -6,6 +7,7 @@ import { SeaOperationPrint } from './SeaOperationPrint';
 import { SEA_METEO_FRANCE_SOURCE_URL } from './seaOperationWeatherModel';
 import { GOURY_WEATHER_MATRIX } from '../fleet/vesselWeatherMatrix';
 import { SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL, SEA_METEO_FRANCE_OBSERVATIONS_URL, type ObservationResult } from './seaOperationWeatherObservationsModel';
+import { calculateSeaOperationCopernicusEstimate, type SeaOperationCopernicusInput, type SeaOperationCopernicusProviderResult } from './seaOperationCopernicusModel';
 
 function recordedObservation(): ObservationResult {
   const common = { observedAt: '2026-10-23T10:15:00Z', station: { id: '62001', name: 'Bouée Manche', latitude: 49.6, longitude: -1.6, distanceKm: 5.8 },
@@ -17,6 +19,36 @@ function recordedObservation(): ObservationResult {
 }
 
 describe('Opération en Mer printable content', () => {
+  it('prints only the retained automatic UKC and its provenance annex, with no manual fallback after an input changes', () => {
+    const source = JSON.parse(readFileSync('src/features/seaOperations/testFixtures/copernicus-ukc.json', 'utf8')) as {
+      input: SeaOperationCopernicusInput; provider: SeaOperationCopernicusProviderResult; fetchedAt: string;
+    };
+    const draft = emptySeaOperation();
+    draft.planning = { date: '2026-10-27', operationId: '1', projectId: source.input.projectId, captainPersonId: '3' };
+    draft.vessel.id = source.input.vesselId; draft.vessel.draftMeters = source.input.draftMeters;
+    draft.waypoints = [{ id: source.input.pointId, number: '1', descriptionVhf: '', latitude: String(source.input.latitude), longitude: String(source.input.longitude), eta: source.input.eta,
+      ukc: 'MANUAL-OLD', ukcMode: 'automatic', denseTraffic: false, ukcForecast: calculateSeaOperationCopernicusEstimate(source.input, source.provider, source.fetchedAt) }];
+    const record: SeaOperationRecord = { id: 'ukc-auto-print', companyId: 1, version: 2, status: 'signed', draft,
+      createdBy: 'author', createdByName: 'Auteur', createdAt: '2026-10-26T08:00:00Z', updatedBy: 'author', updatedByName: 'Auteur', updatedAt: '2026-10-26T09:00:00Z',
+      signedBy: 'captain', signedByName: 'Capitaine', signedAt: '2026-10-26T09:00:00Z', captainName: 'Capitaine', canEdit: false, canSign: false };
+    const original = structuredClone(record);
+    const { container, rerender } = render(<SeaOperationPrint record={record} />);
+    const cell = container.querySelector('.so-print-passage tbody tr')!.children[4];
+    expect(cell.querySelector('.so-ukc-pill')).toHaveClass('is-success');
+    expect(cell.textContent).toContain('≈ 19,62 m');
+    expect(container.textContent).toContain('Annexe UKC');
+    expect(container.textContent).toContain('Incertitude totale non quantifiée');
+    expect(container.textContent).toContain('version 202511');
+    expect(container.textContent).toContain('49° 39.000′ N — 001° 37.200′ W');
+    expect(container.querySelector('a[href="https://doi.org/10.48670/moi-00054"]')).not.toBeNull();
+    expect(container.textContent).not.toContain('MANUAL-OLD');
+    expect(record).toEqual(original);
+    draft.vessel.draftMeters = 3;
+    rerender(<SeaOperationPrint record={record} />);
+    expect(cell.textContent).toContain('Indisponible');
+    expect(cell.querySelector('.so-ukc-pill')).toBeNull();
+    expect(container.textContent).not.toContain('MANUAL-OLD');
+  });
   it('prints the recorded draft reference and UKC pills without changing the captain decision', () => {
     const draft = emptySeaOperation(); draft.vessel.draftMeters = 2; draft.decision = 'GO';
     const values = ['2', '2,000001', '3', '4', '4,000001', '-0,2', 'À vérifier'];

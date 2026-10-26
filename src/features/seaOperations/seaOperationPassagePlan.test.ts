@@ -28,6 +28,14 @@ function recordedPoint(): SeaOperationWaypoint {
 }
 
 describe('recorded Passage Plan presentation', () => {
+  it('keeps a missing automatic capture unavailable instead of presenting the manual value', () => {
+    const point = { ...recordedPoint(), ukcMode: 'automatic' as const, ukc: 'MANUAL-OLD' };
+    const row = passagePlanCellData(point);
+    expect(row.ukc).toBe('Indisponible');
+    expect(row.ukcPresentation.rawValue).toBe('');
+    expect(row.ukcFootnote).toContain('UKC automatique indisponible');
+    expect(row.ukcFootnote).not.toContain('MANUAL-OLD');
+  });
   it('keeps each waypoint’s VHF, wind and Hs together with their recorded times and sources, without gusts', () => {
     const row = passagePlanCellData(recordedPoint());
     expect(row).toMatchObject({ waypoint: 'WP1', eta: '23/10/2026 à 12:00', ukc: '2 m', denseTraffic: 'Non' });

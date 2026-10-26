@@ -702,6 +702,24 @@ retrouvées ne fournissent pas ces sondes par leur seule emprise.
 
 Depuis la version 3.77.15, la validation du Capitaine conserve les prévisions disponibles avant la signature. Les observations officielles reçues après le passage sont enregistrées dans une annexe indépendante, avec leurs stations, horaires et sources ; elles ne modifient jamais la fiche signée. Voir [configuration et collecte quotidienne](./sea-operation-weather-history.md) et [sources officielles et couverture](./sea-operation-weather-observations.md).
 
+## UKC indicative Copernicus à l’ETA — v3.77.21
+
+Le Passage Plan propose le mode automatique sur les nouveaux waypoints et
+conserve la saisie manuelle pour les anciens points. NWS est prioritaire ;
+IBI complète sa couverture et son horizon. Le calcul combine uniquement la
+profondeur et le niveau d’eau du même modèle au même géoïde, puis soustrait le
+tirant d’eau du navire conservé dans la préparation. Les deux instants de
+quinze minutes encadrant l’ETA sont enregistrés avec la source et la maille.
+
+Les petits fonds ≤ 10 m, cellules masquées et dates hors horizon restent
+indisponibles. Aucun nombre manquant, décalage LAT ou niveau de confiance
+n’est inventé. La fiche et le PDF affichent la nature statique et indicative
+du calcul, son incertitude totale non quantifiée et sa provenance détaillée.
+Le résultat ne change pas la décision du Capitaine. Les captures signées
+restent historiques ; les captures de brouillon sont invalidées quand leurs
+références changent. Voir le
+[guide de déploiement Copernicus](./sea-operation-copernicus-ukc.md).
+
 ## Coordonnées SMCP et préparation UKC — v3.77.20
 
 Les positions s’affichent sous la forme `50° 04.264′ N — 001° 01.840′ E`, selon

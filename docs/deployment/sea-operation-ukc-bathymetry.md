@@ -1,5 +1,11 @@
 # Indicateur UKC et données bathymétriques — 24 octobre 2026
 
+Depuis **3.77.21**, une autre voie utilise la profondeur et le niveau d’eau du
+même modèle Copernicus NWS / IBI, au géoïde du modèle. Elle fournit une UKC
+statique indicative lorsque les données sont admissibles ; elle ne constitue
+pas un raccord CRV SHOM / LAT. Voir
+[configuration, règles et limites](./sea-operation-copernicus-ukc.md).
+
 Le raccord vertical et les démarches d’accès serveur sont détaillés dans
 [SHOM CRV : connexion et qualification](./sea-operation-shom-crv.md). En
 v3.77.20, le moteur de calcul est préparé et testé, mais reste non connecté :

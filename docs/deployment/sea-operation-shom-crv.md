@@ -2,6 +2,12 @@
 
 État vérifié le **24 octobre 2026**, version **3.77.20**.
 
+Depuis **3.77.21**, le calcul indicatif utilise une paire fond / niveau d’eau
+issue du même modèle Copernicus NWS ou IBI. Cette voie est décrite dans le
+[guide Copernicus](./sea-operation-copernicus-ukc.md). Le présent document reste
+la recherche du raccord SHOM / LAT ; l’accès CRV et ses deux raccords ne sont
+pas supposés résolus par le changement de fournisseur.
+
 ## Ce qui est gratuit et ce qui reste à confirmer
 
 Le compte utilisateur SHOM et la consultation des prévisions sur son portail
