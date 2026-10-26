@@ -1,5 +1,15 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.22`, build `2026-10-26.002`, ajoute au chapitre Passage Plan une
+carte par waypoint de la dernière version enregistrée : prévisions du brouillon
+ou données conservées à la signature, face aux mesures officielles proches de
+l’ETA. Les composantes, horaires, distances et sources restent identifiés.
+Les modifications en cours ne changent pas ces cartes avant sauvegarde.
+Le calendrier reste visible pendant la saisie, dans une largeur compacte ;
+l’heure se choisit en heures/minutes. La consultation remplace le calendrier
+désactivé par l’ETA sur une ligne. Aucun changement de schéma, de collecte, de
+droits ou de mise en page PDF ; aucune nouvelle dépendance ni note intégrée.
+
 Version `3.77.21`, build `2026-10-26.001`, raccorde l’UKC indicative à NWS et
 IBI de Copernicus Marine, avec fond et niveau d’eau du même modèle/géoïde,
 interpolation à l’ETA et tirant d’eau canonique du navire. Le mode manuel et

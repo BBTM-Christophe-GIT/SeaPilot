@@ -64,3 +64,62 @@
 .so-weather-history-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-block: .75rem; }
 .so-weather-history-actions > p { flex: 1 1 100%; margin: 0; }
 .so-waypoint-weather-card.is-editor.is-validated .so-waypoint-weather-heading > span:first-child { display: block; }
+
+/* Saved-record comparison is opt-in; the editor and exported cards keep their layout. */
+.so-waypoint-weather-card.is-comparison { container-type: inline-size; gap: var(--sp-space-2); padding: var(--sp-space-2); box-shadow: none; font-family: var(--sp-font); }
+.so-weather-comparison-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-space-1) var(--sp-space-2); }
+.so-weather-comparison-heading strong { display: inline-flex; align-items: center; gap: var(--sp-space-2); color: var(--sp-heading); font-size: .875rem; }
+.so-weather-comparison-heading svg { flex: 0 0 auto; color: var(--sp-primary); }
+.so-weather-comparison-heading > span { color: var(--sp-muted); font-size: .75rem; font-variant-numeric: tabular-nums; }
+.so-weather-comparison-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-space-3); }
+.so-weather-comparison-column { display: flex; flex-direction: column; gap: var(--sp-space-2); min-width: 0; padding: var(--sp-space-3); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface-subtle); }
+.so-weather-comparison-column.is-forecast { background: var(--sp-primary-soft); }
+.so-weather-comparison-column-heading { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--sp-space-1) var(--sp-space-2); }
+.so-weather-comparison-column-heading h5 { flex: 1 1 160px; min-width: 0; margin: 0; color: var(--sp-heading); font-size: .8125rem; line-height: 1.4; }
+.so-weather-comparison-state { display: inline-flex; align-items: center; flex: 0 0 auto; padding: var(--sp-space-1) var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface); color: var(--sp-muted); font-size: .625rem; font-weight: 600; line-height: 1; }
+.so-weather-comparison-state.is-recorded { color: var(--sp-primary); border-color: var(--sp-border-strong); }
+.so-weather-comparison-column > .so-weather-comparison-time, .so-weather-comparison-observed-times > p { margin: 0; color: var(--sp-muted); font-size: .6875rem; line-height: 1.45; font-variant-numeric: tabular-nums; }
+.so-weather-comparison-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-space-2); margin: var(--sp-space-1) 0; }
+.so-weather-comparison-metrics > div { min-width: 0; }
+.so-weather-comparison-metrics dt { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-1); min-height: 32px; color: var(--sp-muted); font-size: .6875rem; line-height: 1.35; }
+.so-weather-comparison-metrics dt svg { flex-shrink: 0; color: var(--sp-primary); }
+.so-weather-comparison-metrics dd { margin: var(--sp-space-1) 0 0; color: var(--sp-heading); font-size: 1.25rem; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.so-weather-comparison-metrics dd > small { color: var(--sp-muted); font-size: .75rem; font-weight: 500; }
+.so-weather-comparison-metric-detail { display: block; margin-top: var(--sp-space-1); color: var(--sp-muted); font-size: .6875rem; font-weight: 400; line-height: 1.35; }
+.so-weather-comparison-missing { color: var(--sp-muted); font-size: .75rem; font-weight: 500; }
+.so-weather-comparison-column > .so-weather-comparison-message, .so-waypoint-weather-card > .so-weather-comparison-note { margin: 0; font-size: .75rem; line-height: 1.45; overflow-wrap: anywhere; }
+.so-waypoint-weather-card > .so-weather-comparison-note { padding-top: var(--sp-space-2); border-top: 1px solid var(--sp-border); color: var(--sp-muted); font-size: .6875rem; }
+.so-weather-comparison-observed-times { display: grid; gap: var(--sp-space-1); }
+.so-weather-comparison-details { margin-top: auto; border-top: 1px solid var(--sp-border); color: var(--sp-muted); font-size: .6875rem; line-height: 1.45; }
+.so-weather-comparison-details summary { display: list-item; align-content: center; min-height: var(--sp-control-height); padding-block: var(--sp-space-2); color: var(--sp-primary); font-size: .75rem; font-weight: 600; cursor: pointer; }
+.so-weather-comparison-details summary:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; border-radius: var(--sp-control-radius); }
+.so-weather-comparison-details > div, .so-weather-comparison-details > div > div { display: grid; gap: var(--sp-space-1); min-width: 0; overflow-wrap: anywhere; }
+.so-weather-comparison-details > div { padding-bottom: var(--sp-space-1); }
+.so-weather-comparison-details p { margin: 0; }
+.so-weather-comparison-details strong, .so-weather-comparison-details small { font-size: inherit; }
+.so-weather-comparison-details a { color: var(--sp-primary); }
+@container (max-width: 620px) {
+  .so-weather-comparison-heading { gap: var(--sp-space-1); }
+  .so-weather-comparison-heading strong { font-size: .8125rem; }
+  .so-weather-comparison-heading > span { font-size: .6875rem; }
+  .so-weather-comparison-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-space-1); }
+  .so-weather-comparison-column { gap: var(--sp-space-1); padding: var(--sp-space-2); }
+  .so-weather-comparison-column-heading { gap: var(--sp-space-1); }
+  .so-weather-comparison-column-heading h5 { flex-basis: 100%; font-size: .6875rem; line-height: 1.35; }
+  .so-weather-comparison-state { padding: var(--sp-space-1); font-size: .6875rem; }
+  .so-weather-comparison-metrics { grid-template-columns: minmax(0, 1fr); gap: var(--sp-space-1); margin-block: var(--sp-space-1); }
+  .so-weather-comparison-metrics > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: var(--sp-space-1); }
+  .so-weather-comparison-metrics dt { display: block; min-height: 0; line-height: 1.35; }
+  .so-weather-comparison-metrics dt svg { display: inline-block; width: 11px; height: 11px; margin-right: var(--sp-space-1); vertical-align: -.1em; }
+  .so-weather-comparison-metrics dd { margin: 0; font-size: .875rem; line-height: 1.3; text-align: right; }
+  .so-weather-comparison-metrics dd > small { font-size: .6875rem; }
+  .so-weather-comparison-metric-detail { margin-top: 0; font-size: .6875rem; }
+  .so-weather-comparison-message { font-size: .6875rem; }
+  .so-weather-comparison-details summary { padding-block: var(--sp-space-1); font-size: .6875rem; }
+}
+@container (max-width: 260px) {
+  .so-weather-comparison-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (pointer: coarse) {
+  .so-weather-comparison-details summary { min-height: 44px; }
+}

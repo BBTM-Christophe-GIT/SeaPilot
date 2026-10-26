@@ -24,16 +24,18 @@ export function SeaOperationUkcField({ payload, point, index, disabled, readOnly
   const id = useId(), presentation = seaOperationUkcPresentation(payload, point), automatic = point.ukcMode === 'automatic';
   const value = automatic ? presentation.capture?.estimate?.ukcMeters : undefined;
   const display = value === undefined ? '' : `≈ ${new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`;
-  const message = status?.loading ? 'Calcul UKC en cours…' : status?.error || (presentation.capture?.status === 'unavailable' ? presentation.capture.message
+  const requestStatus = readOnly ? undefined : status;
+  const message = requestStatus?.loading ? 'Calcul UKC en cours…' : requestStatus?.error || (presentation.capture?.status === 'unavailable' ? presentation.capture.message
     : presentation.capture ? presentation.caption : readOnly ? 'UKC automatique non enregistrée dans cette version.' : waitingMessage(payload, point));
-  return <div role="cell" className="so-passage-field is-ukc so-ukc-editor-field">
+  return <div role="cell" className={`so-passage-field is-ukc so-ukc-editor-field${readOnly ? ' is-readonly' : ''}`}>
     <label htmlFor={id}>UKC</label>
-    <div className="so-ukc-mode" role="group" aria-label={`Mode UKC · point ${index + 1}`}>
-      <button type="button" className="sp-button sp-button--secondary" aria-pressed={automatic} disabled={disabled || readOnly} onClick={() => onChange({ ukcMode: 'automatic' })}>Auto</button>
-      <button type="button" className="sp-button sp-button--secondary" aria-pressed={!automatic} disabled={disabled || readOnly} onClick={() => onChange({ ukcMode: 'manual' })}>Manuel</button>
+    <div className={`so-ukc-mode${readOnly ? ' is-readonly' : ''}`} role="group" aria-label={`Mode UKC · point ${index + 1}`}>
+      {readOnly ? <span className="so-ukc-mode-label">{automatic ? 'Automatique' : 'Manuel'}</span> : <>
+      <button type="button" className="sp-button sp-button--secondary" aria-pressed={automatic} disabled={disabled} onClick={() => onChange({ ukcMode: 'automatic' })}>Auto</button>
+      <button type="button" className="sp-button sp-button--secondary" aria-pressed={!automatic} disabled={disabled} onClick={() => onChange({ ukcMode: 'manual' })}>Manuel</button></>}
     </div>
     <input id={id} aria-label={`UKC · point ${index + 1}`} type="text" readOnly={automatic || readOnly || disabled} value={automatic ? display : point.ukc}
-      onChange={event => onChange({ ukc: event.target.value, ukcMode: 'manual' })} />
+      onChange={event => { if (!automatic && !readOnly && !disabled) onChange({ ukc: event.target.value, ukcMode: 'manual' }); }} />
     {assessSeaOperationUkc(presentation.rawValue, payload.vessel.draftMeters) && <SeaOperationUkcIndicator value={presentation.rawValue}
       draftMeters={payload.vessel.draftMeters} approximate={presentation.approximate} />}
     {automatic && <small className="so-ukc-field-status" role="status">{message}</small>}

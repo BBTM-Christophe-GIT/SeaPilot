@@ -21,13 +21,13 @@ export function SeaOperationWeatherObservationCard({ point, observations }: {
         <strong><Waves size={14} aria-hidden="true" />{observation.waves.component === 'swell' ? 'Houle Hs observée' : 'Hs de mer totale observée'}</strong>
         <span>{metric(observation.waves.heightMeters, ' m')} · période {observation.waves.periodKind === 'peak' ? 'de pic' : 'moyenne'} : {metric(observation.waves.periodSeconds, ' s')}</span>
         <span>Provenance : {metric(observation.waves.directionDegrees, '°')}</span>
-        <ObservationOrigin component={observation.waves} />
+        <SeaOperationWeatherObservationOrigin component={observation.waves} />
       </div> : <p>Hs / période : aucune mesure officielle proche disponible.</p>}
       {observation.wind ? <div className="so-weather-observation-component">
         <strong><Wind size={14} aria-hidden="true" />Vent mesuré{observation.wind.instrumentHeightMeters !== null ? ` à ${value(observation.wind.instrumentHeightMeters)} m` : ''}</strong>
         <span>{metric(observation.wind.speedKnots, ' nd')} · de {metric(observation.wind.directionDegrees, '°')}</span>
         {observation.wind.instrumentHeightMeters === null && <small>Hauteur de mesure non renseignée.</small>}
-        <ObservationOrigin component={observation.wind} />
+        <SeaOperationWeatherObservationOrigin component={observation.wind} />
       </div> : <p>Vent : aucune mesure officielle proche disponible.</p>}
       {observation.message && <p>{observation.message}</p>}
       <small>Annexe mise à jour le {observationTime(observation.recordedAt)}. La prévision et la décision signées restent conservées.</small>
@@ -35,7 +35,7 @@ export function SeaOperationWeatherObservationCard({ point, observations }: {
   </section>;
 }
 
-function ObservationOrigin({ component }: { component: NonNullable<ObservationResult['wind']> | NonNullable<ObservationResult['waves']> }) {
+export function SeaOperationWeatherObservationOrigin({ component }: { component: NonNullable<ObservationResult['wind']> | NonNullable<ObservationResult['waves']> }) {
   return <>
     <small>{component.station.name} · {decimal.format(component.station.distanceKm)} km · {observationTime(component.observedAt)}</small>
     <small>{formatSeaPosition(component.station)}</small>

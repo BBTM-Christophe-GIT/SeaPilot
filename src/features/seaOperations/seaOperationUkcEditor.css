@@ -1,4 +1,6 @@
 .so-ukc-mode { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.so-ukc-mode.is-readonly { margin: 0 0 4px; }
+.so-ukc-mode-label { color: var(--sp-muted); font-size: .65rem; line-height: 1.4; }
 .so-page .so-ukc-mode > button.sp-button { flex: 1 1 44px; min-width: 0; min-height: 40px; padding: 4px; font-size: .72rem; justify-content: center; color: var(--sp-text); background: var(--sp-surface); border-color: var(--sp-border-strong); }
 .so-page .so-ukc-mode > button.sp-button[aria-pressed="true"], .so-page .so-ukc-mode > button.sp-button:hover:not(:disabled) { color: var(--sp-primary); background: var(--sp-primary-soft); border-color: var(--sp-primary); }
 .so-ukc-editor-field > label { font: inherit; color: var(--sp-muted); }

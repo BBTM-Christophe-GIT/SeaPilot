@@ -1,0 +1,12 @@
+.so-recorded-weather { min-width: 0; padding: var(--sp-space-3); border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); background: var(--sp-surface); margin-block: var(--sp-space-3); }
+.so-recorded-weather > header { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-space-2); }
+.so-recorded-weather h3, .so-recorded-weather h4 { color: var(--sp-heading); margin: 0; }
+.so-recorded-weather h3 { font-size: .9rem; }
+.so-recorded-weather h4 { font-size: .8rem; margin-bottom: var(--sp-space-2); overflow-wrap: anywhere; }
+.so-recorded-weather > header p, .so-recorded-weather > .so-help { margin: var(--sp-space-1) 0; color: var(--sp-muted); font-size: .7rem; line-height: 1.45; }
+.so-recorded-weather > header .sp-button { min-height: var(--sp-control-height); font-size: .72rem; padding: var(--sp-space-1) var(--sp-space-2); }
+.so-recorded-weather > ol { list-style: none; display: grid; gap: var(--sp-space-3); padding: 0; margin: var(--sp-space-3) 0 0; }
+.so-recorded-weather li { min-width: 0; }
+.so-weather-methods { color: var(--sp-muted); font-size: .7rem; line-height: 1.45; }
+.so-weather-methods summary { color: var(--sp-primary); cursor: pointer; padding-block: var(--sp-space-2); }
+@media (pointer: coarse) { .so-recorded-weather > header .sp-button { min-height: 44px; } }

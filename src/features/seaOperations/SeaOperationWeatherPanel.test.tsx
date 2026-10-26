@@ -141,4 +141,18 @@ describe('waypoint weather', () => {
     view.rerender(<SeaOperationWeatherPanel client={client} projectId="1" waypoints={[point]} active />);
     await waitFor(() => expect(fetchSeaOperationWaypointWeather).toHaveBeenCalled(), { timeout: 2000 });
   });
+  it('keeps the compact refresh engine active without repeating the waypoint weather cards', async () => {
+    const onWeatherLoaded = vi.fn(), onStatusChange = vi.fn();
+    vi.mocked(fetchSeaOperationWaypointWeather).mockResolvedValue(weather);
+    render(<SeaOperationWeatherPanel client={client} projectId="1" waypoints={[point]} compact onWeatherLoaded={onWeatherLoaded} onStatusChange={onStatusChange} />);
+    await load();
+    expect(onWeatherLoaded).toHaveBeenCalledWith(weather, expect.anything(), client);
+    expect(onStatusChange).toHaveBeenLastCalledWith({ [weatherRequestKey('1', point)]: { loading: false } }, client);
+    expect(screen.queryByText('Houle significative (Hs)')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Actualiser la météo' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Actualiser la météo' }));
+    await load();
+    expect(fetchSeaOperationWaypointWeather).toHaveBeenCalledTimes(2);
+  });
+
 });

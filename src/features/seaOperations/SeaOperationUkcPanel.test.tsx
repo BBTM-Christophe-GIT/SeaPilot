@@ -115,10 +115,34 @@ describe('UKC editor field', () => {
     expect(screen.queryByText(/12,5 m/)).not.toBeInTheDocument();
   });
 
-  it('keeps manual input and both mode buttons immutable in read-only records independently of disabled', () => {
+  it('replaces read-only manual mode commands with a compact indication and keeps the stored value readable', () => {
     const draft = payload(); delete draft.waypoints[0].ukcMode;
-    render(<SeaOperationUkcField payload={draft} point={draft.waypoints[0]} index={0} disabled={false} readOnly onChange={vi.fn()} />);
+    const onChange = vi.fn();
+    render(<SeaOperationUkcField payload={draft} point={draft.waypoints[0]} index={0} disabled={false} readOnly onChange={onChange} />);
     expect(screen.getByLabelText('UKC · point 1')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('UKC · point 1')).toHaveValue('12.5');
+    expect(screen.getByRole('group', { name: 'Mode UKC · point 1' })).toHaveTextContent('Manuel');
+    expect(screen.queryByRole('button', { name: 'Auto' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Manuel' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('UKC · point 1'), { target: { value: '99' } }); expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps the recorded automatic UKC, indicator and details without edit commands or live request messages', () => {
+    const draft = payload(); draft.waypoints[0].ukcForecast = forecast();
+    render(<SeaOperationUkcField payload={draft} point={draft.waypoints[0]} index={0} disabled readOnly status={{ loading: true }} onChange={vi.fn()} />);
+    expect(screen.getByLabelText('UKC · point 1')).toHaveValue('≈ 19,62');
+    expect(screen.getByRole('group', { name: 'Mode UKC · point 1' })).toHaveTextContent('Automatique');
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByText('Détails UKC')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /19,62 m/ })).toBeInTheDocument();
+    expect(screen.getByRole('status')).not.toHaveTextContent('Calcul UKC en cours');
+  });
+
+  it('keeps disabled mode commands during a transient busy state and restores them afterward', () => {
+    const draft = payload(), onChange = vi.fn();
+    const view = render(<SeaOperationUkcField payload={draft} point={draft.waypoints[0]} index={0} disabled onChange={onChange} />);
     expect(screen.getByRole('button', { name: 'Auto' })).toBeDisabled(); expect(screen.getByRole('button', { name: 'Manuel' })).toBeDisabled();
+    view.rerender(<SeaOperationUkcField payload={draft} point={draft.waypoints[0]} index={0} disabled={false} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Manuel' })); expect(onChange).toHaveBeenCalledWith({ ukcMode: 'manual' });
   });
 });
