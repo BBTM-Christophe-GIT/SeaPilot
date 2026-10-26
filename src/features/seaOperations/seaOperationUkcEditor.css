@@ -1,17 +1,22 @@
-.so-ukc-mode { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
-.so-ukc-mode.is-readonly { margin: 0 0 4px; }
-.so-ukc-mode-label { color: var(--sp-muted); font-size: .65rem; line-height: 1.4; }
-.so-page .so-ukc-mode > button.sp-button { flex: 1 1 44px; min-width: 0; min-height: 40px; padding: 4px; font-size: .72rem; justify-content: center; color: var(--sp-text); background: var(--sp-surface); border-color: var(--sp-border-strong); }
+.so-ukc-field-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-space-1) var(--sp-space-2); min-width: 0; }
+.so-ukc-mode { display: flex; flex: 0 0 auto; flex-wrap: nowrap; gap: var(--sp-space-1); margin: 0; }
+.so-ukc-mode-label { color: var(--sp-muted); font-size: .6875rem; line-height: 1.4; }
+.so-page .so-ukc-mode > button.sp-button { flex: 0 0 auto; min-width: 44px; min-height: 40px; padding: var(--sp-space-1) var(--sp-space-2); font-size: .72rem; justify-content: center; color: var(--sp-text); background: var(--sp-surface); border-color: var(--sp-border-strong); }
 .so-page .so-ukc-mode > button.sp-button[aria-pressed="true"], .so-page .so-ukc-mode > button.sp-button:hover:not(:disabled) { color: var(--sp-primary); background: var(--sp-primary-soft); border-color: var(--sp-primary); }
-.so-ukc-editor-field > label { font: inherit; color: var(--sp-muted); }
-.so-ukc-editor-field > input[readonly] { background: var(--sp-canvas); }
-.so-ukc-field-status { display: block; color: var(--sp-muted); font-size: .7rem; line-height: 1.4; overflow-wrap: anywhere; margin-top: 4px; }
-.so-ukc-details { font-size: .7rem; color: var(--sp-muted); overflow-wrap: anywhere; }
-.so-ukc-details summary { cursor: pointer; color: var(--sp-primary); padding: 4px 0; }
+.so-ukc-field-toolbar > label { flex: 0 0 auto; color: var(--sp-muted); font-size: .7rem; font-weight: 600; }
+.so-ukc-field-toolbar > input { flex: 0 1 140px; min-width: 0; }
+.so-ukc-field-toolbar > input[readonly] { background: var(--sp-canvas); }
+.so-ukc-field-value { display: inline-flex; align-items: center; min-height: var(--sp-control-height); min-width: 0; max-width: 100%; color: var(--sp-text); font-size: .75rem; font-variant-numeric: tabular-nums; }
+.so-ukc-field-toolbar .so-ukc-pill { margin-top: 0; }
+.so-ukc-field-status { display: block; width: 100%; min-width: 0; color: var(--sp-muted); font-size: .7rem; line-height: 1.4; overflow-wrap: anywhere; margin: 0; }
+.so-ukc-details { min-width: 0; max-width: 100%; font-size: .7rem; color: var(--sp-muted); overflow-wrap: anywhere; }
+.so-ukc-details[open] { flex-basis: 100%; }
+.so-ukc-details summary { align-content: center; min-height: var(--sp-control-height); cursor: pointer; color: var(--sp-primary); padding: var(--sp-space-1) 0; }
+.so-ukc-details summary:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; border-radius: var(--sp-control-radius); }
 .so-ukc-details p { margin: 4px 0; white-space: normal; }
 .so-ukc-details a { display: block; color: var(--sp-primary); }
 .so-ukc-panel { border-top: 1px solid var(--sp-border); margin-top: 12px; padding-top: 12px; }
 .so-ukc-panel > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .so-ukc-panel strong { color: var(--sp-heading); }
 .so-ukc-panel .sp-button { min-height: 40px; }
-@media (pointer: coarse) { .so-ukc-mode .sp-button, .so-ukc-panel .sp-button { min-height: 44px; } }
+@media (pointer: coarse) { .so-ukc-mode .sp-button, .so-ukc-panel .sp-button, .so-ukc-field-value, .so-ukc-details summary { min-height: 44px; } }

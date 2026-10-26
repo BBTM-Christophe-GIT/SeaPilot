@@ -100,9 +100,14 @@ describe('UKC editor field', () => {
   it('formats a long automatic value while retaining raw classification and provenance', () => {
     const draft = payload(); draft.waypoints[0].ukcForecast = forecast();
     render(<SeaOperationUkcField payload={draft} point={draft.waypoints[0]} index={0} disabled={false} onChange={vi.fn()} />);
-    expect(screen.getByLabelText('UKC · point 1')).toHaveValue('≈ 19,62');
-    expect(screen.getByLabelText('UKC · point 1')).toHaveAttribute('readonly');
+    const output = screen.getByRole('status', { name: 'UKC · point 1' });
+    expect(output.tagName).toBe('OUTPUT');
+    expect(output).toHaveTextContent('≈ 19,62 m');
+    expect(screen.queryByRole('textbox', { name: 'UKC · point 1' })).not.toBeInTheDocument();
+    expect(output.querySelectorAll('.so-ukc-pill')).toHaveLength(1);
+    expect(screen.getByRole('status', { name: 'État du calcul UKC · point 1' })).toHaveTextContent('Indicative · incertitude non quantifiée');
     expect(screen.getByText('Détails UKC')).toBeInTheDocument();
+    expect(screen.getByText('Détails UKC').closest('details')).not.toHaveAttribute('open');
     expect(screen.getAllByRole('link', { name: 'Source Copernicus Marine', hidden: true })[0]).toHaveAttribute('href', fixture.provider.source.sourceUrl);
   });
 
@@ -110,9 +115,38 @@ describe('UKC editor field', () => {
     const draft = payload();
     render(<SeaOperationUkcField payload={draft} point={draft.waypoints[0]} index={0} disabled={false}
       status={{ loading: false, error: 'Hors horizon du modèle.' }} onChange={vi.fn()} />);
-    expect(screen.getByLabelText('UKC · point 1')).toHaveValue('');
-    expect(screen.getByRole('status')).toHaveTextContent('Hors horizon du modèle.');
+    expect(screen.getByLabelText('UKC · point 1')).toHaveTextContent('Indisponible');
+    expect(screen.getByRole('status', { name: 'État du calcul UKC · point 1' })).toHaveTextContent('Hors horizon du modèle.');
     expect(screen.queryByText(/12,5 m/)).not.toBeInTheDocument();
+  });
+
+  it('keeps prerequisite and loading messages below the noneditable automatic output', () => {
+    const draft = payload(), onChange = vi.fn(); delete draft.planning;
+    const view = render(<SeaOperationUkcField payload={draft} point={draft.waypoints[0]} index={0} disabled={false} onChange={onChange} />);
+    expect(screen.getByRole('status', { name: 'État du calcul UKC · point 1' })).toHaveTextContent('Sélectionnez un projet du planning.');
+    expect(screen.getByLabelText('UKC · point 1').tagName).toBe('OUTPUT');
+    expect(screen.getByRole('button', { name: 'Auto' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Manuel' })).toHaveAttribute('aria-pressed', 'false');
+    view.rerender(<SeaOperationUkcField payload={draft} point={draft.waypoints[0]} index={0} disabled={false} status={{ loading: true }} onChange={onChange} />);
+    expect(screen.getByRole('status', { name: 'État du calcul UKC · point 1' })).toHaveTextContent('Calcul UKC en cours…');
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('classifies the raw automatic value in its only pill even when its rounded display sits on a threshold', () => {
+    const draft = payload(); draft.vessel.draftMeters = 6;
+    const provider = structuredClone(fixture.provider); provider.cell.depthMeters = 12.380001;
+    draft.waypoints[0].ukcForecast = calculateSeaOperationCopernicusEstimate({ ...fixture.input, draftMeters: 6 }, provider, fixture.fetchedAt);
+    const original = structuredClone(draft);
+    const view = render(<SeaOperationUkcField payload={draft} point={draft.waypoints[0]} index={0} disabled={false} onChange={vi.fn()} />);
+    const output = screen.getByLabelText('UKC · point 1');
+    expect(output).toHaveTextContent('≈ 8,00 m');
+    expect(output.querySelector('.so-ukc-pill')).toHaveClass('is-success');
+    expect(view.container.querySelectorAll('.so-ukc-pill')).toHaveLength(1);
+    expect(view.container.querySelector('input')).toBeNull();
+    expect(draft).toEqual(original);
+    fireEvent.click(screen.getByText('Détails UKC'));
+    expect(screen.getByText('Détails UKC').closest('details')).toHaveAttribute('open');
+    expect(screen.getAllByRole('link', { name: 'Source Copernicus Marine' })).toHaveLength(2);
   });
 
   it('replaces read-only manual mode commands with a compact indication and keeps the stored value readable', () => {
@@ -130,12 +164,13 @@ describe('UKC editor field', () => {
   it('keeps the recorded automatic UKC, indicator and details without edit commands or live request messages', () => {
     const draft = payload(); draft.waypoints[0].ukcForecast = forecast();
     render(<SeaOperationUkcField payload={draft} point={draft.waypoints[0]} index={0} disabled readOnly status={{ loading: true }} onChange={vi.fn()} />);
-    expect(screen.getByLabelText('UKC · point 1')).toHaveValue('≈ 19,62');
+    expect(screen.getByLabelText('UKC · point 1')).toHaveTextContent('≈ 19,62 m');
+    expect(screen.queryByRole('textbox', { name: 'UKC · point 1' })).not.toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Mode UKC · point 1' })).toHaveTextContent('Automatique');
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(screen.getByText('Détails UKC')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: /19,62 m/ })).toBeInTheDocument();
-    expect(screen.getByRole('status')).not.toHaveTextContent('Calcul UKC en cours');
+    expect(screen.getByRole('status', { name: 'État du calcul UKC · point 1' })).not.toHaveTextContent('Calcul UKC en cours');
   });
 
   it('keeps disabled mode commands during a transient busy state and restores them afterward', () => {

@@ -27,6 +27,12 @@ des jours font 32 px sur ordinateur et 44 px au pointeur tactile. Une fiche en
 lecture seule présente directement son ETA et le mode UKC sans commandes de
 modification. Ces adaptations concernent l’écran ; les exports sont conservés.
 
+Les minutes proposées avancent de cinq en cinq (00, 05, …, 55). Une minute
+historique hors pas reste affichée avec la mention « actuelle » et ne change
+pas automatiquement, y compris à l’ouverture ou à la validation sans édition.
+La valeur UKC automatique s’affiche une seule fois dans une pilule accessible,
+sur une barre dédiée ; ses hypothèses et sources restent dans les détails.
+
 ## Conservation et collecte
 
 Les mesures officielles sont enregistrées séparément des prévisions conservées
