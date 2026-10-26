@@ -218,6 +218,7 @@ export function ProjectBillingPanel({
   }));
   const [expenseEditor, setExpenseEditor] = useState<{
     id?: number;
+    billingMonth: string;
     draft: BillingExpenseDraft;
     files: File[];
   } | null>(null);
@@ -316,9 +317,11 @@ export function ProjectBillingPanel({
   const periodExpenses = selectedPeriod
     ? data.expenses.filter((expense) => expense.billingPeriodId === selectedPeriod.id)
     : [];
-  const periodDocuments = selectedPeriod
-    ? data.documents.filter((document) => document.billingPeriodId === selectedPeriod.id)
-    : [];
+  const periodExpenseIds = new Set(periodExpenses.map((expense) => expense.id));
+  // An attachment follows its expense, even when it was uploaded against an earlier billing month.
+  const periodDocuments = data.documents.filter((document) => document.chargeableExpenseId != null
+    ? periodExpenseIds.has(document.chargeableExpenseId)
+    : selectedPeriod && document.billingPeriodId === selectedPeriod.id);
   const periodServices = useMemo(
     () => selectedPeriod
       ? data.services.filter((service) => service.billingPeriodId === selectedPeriod.id)
@@ -643,6 +646,11 @@ export function ProjectBillingPanel({
   async function saveExpense() {
     if (!isManager || !expenseEditor || busy) return;
     const revision = contextRevision.current;
+    const billingMonth = expenseEditor.billingMonth;
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(billingMonth) || billingMonth.startsWith('0000')) {
+      setError('Sélectionnez le mois de refacturation.');
+      return;
+    }
     if (!expenseEditor.draft.supplier || !expenseEditor.draft.invoiceDate || expenseEditor.draft.amountHt <= 0) {
       setError('Renseignez le fournisseur, la date et un montant HT supérieur à 0.');
       return;
@@ -650,7 +658,9 @@ export function ProjectBillingPanel({
     setBusy('expense');
     setError('');
     try {
-      const period = await getOrCreatePeriod();
+      const period = await getOrCreatePeriod(billingMonth === selectedMonth
+        ? periodDraft
+        : { ...billingDraft(project), periodMonth: billingMonth });
       const saved = await saveProjectChargeableExpense(
         client,
         project.id,
@@ -676,7 +686,8 @@ export function ProjectBillingPanel({
         setExpenseEditor((current) => current ? { ...current, files: current.files.filter((pending) => pending !== file) } : null);
       }
       setExpenseEditor(null);
-      setMessage('Frais imputable enregistré.');
+      const monthLabel = new Date(`${billingMonth}-01T12:00:00`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+      setMessage(`Frais imputable enregistré pour ${monthLabel}.`);
     } catch (caught) {
       if (revision !== contextRevision.current) return;
       setError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer ce frais.');
@@ -692,6 +703,7 @@ export function ProjectBillingPanel({
     const specialties = draft.supplierSpecialties.length ? draft.supplierSpecialties : provider ? serviceProviderSpecialtyNames(provider) : [];
     setExpenseEditor({
       id: expense?.id,
+      billingMonth: (expense ? data.periods.find((period) => period.id === expense.billingPeriodId)?.periodMonth.slice(0, 7) : undefined) || selectedMonth,
       files: [],
       draft: {
         ...draft,
@@ -1287,6 +1299,7 @@ export function ProjectBillingPanel({
             }} providers={serviceProviders.filter((provider) => provider.active)} required value={expenseEditor.draft.supplier} />
             <label>Spécialités<input disabled value={expenseEditor.draft.supplierSpecialties.join(' · ') || 'Non renseignée'} /></label>
             <label>Date facture<input required onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, invoiceDate: event.target.value } } : null)} type="date" value={expenseEditor.draft.invoiceDate} /></label>
+            <label>À refacturer sur le mois<input disabled={busy === 'expense'} required onChange={(event) => setExpenseEditor((current) => current ? { ...current, billingMonth: event.target.value } : null)} type="month" value={expenseEditor.billingMonth} /></label>
             <label>N° facture<input onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, invoiceNumber: event.target.value } } : null)} value={expenseEditor.draft.invoiceNumber} /></label>
             <label>Montant HT<input inputMode="decimal" min="0" onFocus={(event) => event.currentTarget.select()} onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, amountHt: Number(event.target.value) } } : null)} placeholder="0,00" required step="0.01" type="number" value={!expenseEditor.id && expenseEditor.draft.amountHt === 0 ? '' : expenseEditor.draft.amountHt} /></label>
             <label>Montant TTC<input min="0" onChange={(event) => setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, amountTtc: event.target.value ? Number(event.target.value) : null } } : null)} step="0.01" type="number" value={expenseEditor.draft.amountTtc ?? ''} /></label>
@@ -1302,7 +1315,7 @@ export function ProjectBillingPanel({
               }} /></label>
               <small>Ajoutez un ou plusieurs justificatifs ; ils seront conservés avec ce service et disponibles dans l’export.</small>
               {expenseEditor.files.length ? <ul>{expenseEditor.files.map((file, index) => <li key={`${file.name}-${index}`}><span>{file.name}</span><button aria-label={`Retirer la pièce ${file.name}`} className="sp-button sp-button--secondary project-billing-row-icon" type="button" disabled={busy === 'expense'} onClick={() => setExpenseEditor((current) => current ? { ...current, files: current.files.filter((_, fileIndex) => fileIndex !== index) } : null)}><Trash2 aria-hidden="true" size={15} /></button></li>)}</ul> : null}
-              {expenseEditor.id ? periodDocuments.filter((document) => document.chargeableExpenseId === expenseEditor.id).map((document) => <button type="button" disabled={Boolean(busy)} key={document.id} onClick={() => void openDocument(document)}><FileText aria-hidden="true" size={15} />{document.fileName}</button>) : null}
+              {expenseEditor.id ? data.documents.filter((document) => document.chargeableExpenseId === expenseEditor.id).map((document) => <button type="button" disabled={Boolean(busy)} key={document.id} onClick={() => void openDocument(document)}><FileText aria-hidden="true" size={15} />{document.fileName}</button>) : null}
             </div>
             {error ? <p className="project-billing-error is-wide" role="alert">{error}</p> : null}
             <datalist id="project-billing-units">{unitOptions.map((unit) => <option key={unit} value={unit} />)}</datalist>

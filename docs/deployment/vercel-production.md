@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.78.0`, build `2026-10-26.005`, ajoute « À refacturer sur le mois »
+dans l'ajout et la modification d'un frais imputable du module Projet. Le mois
+de facturation devient sélectionnable indépendamment de la date de facture ;
+les totaux et justificatifs suivent le frais dans le mois choisi. Aucune
+migration ni nouvelle dépendance n'est requise. Voir
+[projects-expense-rebilling-month.md](./projects-expense-rebilling-month.md).
+
 Version `3.77.24`, build `2026-10-26.004`, classe les saisies brutes du module
 Projet selon leur date de prestation, y compris les lignes déjà enregistrées
 depuis un autre mois. Les catégories s'ouvrent systématiquement et affichent une
