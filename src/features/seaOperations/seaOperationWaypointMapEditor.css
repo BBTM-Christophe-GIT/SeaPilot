@@ -1,6 +1,8 @@
 .so-waypoint-map-editor { min-width: 0; max-width: 100%; margin: var(--sp-space-4) 0; font-family: var(--sp-font); }
 .so-waypoint-map-toolbar, .so-waypoint-map-navigation, .so-waypoint-map-controls { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-2); }
 .so-waypoint-map-editor .sp-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-space-2); min-height: 40px; white-space: normal; }
+.so-waypoint-map-editor .sp-button.sp-button--secondary { background: var(--sp-surface); color: var(--sp-primary); border-color: var(--sp-border); }
+.so-waypoint-map-editor .sp-button.sp-button--primary { background: var(--sp-primary); color: var(--sp-surface); border-color: var(--sp-primary); }
 .so-waypoint-map-editor .sp-button.sp-button--secondary:hover:not(:disabled) { background: var(--sp-primary-soft); color: var(--sp-primary); border-color: var(--sp-border-strong); }
 .so-waypoint-map-toolbar > .sp-button { max-width: 100%; }
 .so-waypoint-map-editor .so-waypoint-map-instructions { margin: var(--sp-space-2) 0; color: var(--sp-muted); font-size: .75rem; line-height: 1.5; }
@@ -12,6 +14,15 @@
 .so-waypoint-map-surface { fill: transparent; cursor: crosshair; touch-action: none; }
 .so-waypoint-map-surface:focus { outline: none; }
 .so-waypoint-map-surface:focus-visible { stroke: var(--sp-focus); stroke-width: 4px; }
+.so-waypoint-map-editor.is-grabbing .so-route-map-svg, .so-waypoint-map-editor.is-grabbing .so-waypoint-map-surface, .so-waypoint-map-editor.is-grabbing .so-waypoint-map-marker { cursor: grabbing; }
+.so-waypoint-map-marker { cursor: pointer; touch-action: none; outline: none; }
+.so-waypoint-map-marker circle { fill: transparent; stroke: transparent; stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.so-waypoint-map-marker:hover circle, .so-waypoint-map-marker.is-selected circle, .so-waypoint-map-marker:focus-visible circle { stroke: var(--sp-focus); }
+.so-waypoint-map-marker:focus-visible circle { stroke-width: 3px; }
+.so-waypoint-map-selection, .so-waypoint-map-selection > div[role=group] { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-2); min-width: 0; }
+.so-waypoint-map-selection { margin-block: var(--sp-space-2); padding: var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface); }
+.so-waypoint-map-selection strong { color: var(--sp-heading); font-size: .75rem; }
+.so-waypoint-map-selection .sp-button { gap: var(--sp-space-1); font-size: .75rem; }
 .so-waypoint-map-crosshair { pointer-events: none; }
 .so-waypoint-map-crosshair circle { fill: var(--sp-surface); fill-opacity: .8; stroke: var(--sp-primary); stroke-width: 1.5px; }
 .so-waypoint-map-crosshair path { stroke: var(--sp-primary); stroke-width: 1.5px; fill: none; }

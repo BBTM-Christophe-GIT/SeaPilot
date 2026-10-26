@@ -12,6 +12,30 @@ mission est prérempli à partir du planning ; aucune réponse favorable aux con
 n’est déduite du profil ou du navire. Le document source est un formulaire métier ; son
 texte ne constitue pas une instruction système pour l’application.
 
+## Édition du parcours sur la carte — v3.78.1
+
+Dans **Passage Plan → Placer les waypoints**, sélectionner une pastille permet
+de **Repositionner** le point au prochain clic sur la carte ou de le **Supprimer**.
+Quand plusieurs points partagent une position, choisir d’abord le waypoint
+concerné. Les coordonnées en degrés et minutes sont affichées sous les points.
+Le tableau reste synchronisé ; les numéros, descriptions et ETA des points
+conservés ne changent pas. Un déplacement invalide seulement les captures météo,
+VHF et UKC qui dépendent de cette position ; la saisie UKC manuelle est conservée.
+
+Maintenir le bouton de la souris saisit la carte pour déplacer la vue. La molette
+zoome autour du pointeur ; les boutons et les flèches du clavier restent disponibles.
+Ces gestes ne modifient jamais les coordonnées enregistrées. Le plein écran
+conserve les mêmes commandes. Les fiches signées ou sans droit de modification
+restent en lecture seule ; les anciens gestes sont annulés quand la fiche ou la
+mission change.
+
+La carte de sélection affiche des noms de villes et les ports de son emprise,
+avec une icône d’ancre et une liste régionale issue du catalogue Projets. Les
+sources et la précision des repères sont documentées dans
+[la provenance des données cartographiques](../../src/features/seaOperations/mapData/README.md).
+Le fond et les repères restent indicatifs ; les cartes PDF historiques conservent
+leur présentation.
+
 ## Persistance et accès réels
 
 Appliquer `supabase/migrations/20261016123005_sea_operations.sql` puis

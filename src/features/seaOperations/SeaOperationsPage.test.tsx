@@ -22,6 +22,7 @@ import { seaOperationUkcReference, type SeaOperationUkcCaptureContext } from './
 const weatherPanelMock = vi.hoisted(() => vi.fn());
 const chartsPanelMock = vi.hoisted(() => vi.fn());
 const ukcPanelMock = vi.hoisted(() => vi.fn());
+const waypointMapMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./seaOperationQueries', () => ({
   fetchSeaOperationData: vi.fn(), fetchSeaOperationDetail: vi.fn(), saveSeaOperation: vi.fn(), signSeaOperation: vi.fn(),
@@ -35,6 +36,12 @@ vi.mock('./seaOperationDocumentQueries', () => ({ fetchSeaOperationProjectDocume
 vi.mock('./SeaOperationWeatherPanel', () => ({ SeaOperationWeatherPanel: (props: Record<string, unknown>) => { weatherPanelMock(props); return null; } }));
 vi.mock('./SeaOperationChartsPanel', () => ({ SeaOperationChartsPanel: (props: Record<string, unknown>) => { chartsPanelMock(props); return <div data-testid="sea-charts-panel" />; } }));
 vi.mock('./SeaOperationUkcPanel', () => ({ SeaOperationUkcPanel: (props: Record<string, unknown>) => { ukcPanelMock(props); return null; } }));
+vi.mock('./SeaOperationWaypointMapEditor', async importOriginal => {
+  const original = await importOriginal<typeof import('./SeaOperationWaypointMapEditor')>();
+  return { SeaOperationWaypointMapEditor: (props: Parameters<typeof original.SeaOperationWaypointMapEditor>[0]) => {
+    waypointMapMock(props); return <original.SeaOperationWaypointMapEditor {...props} />;
+  } };
+});
 
 const captainAccount = { id: 'captain-server-account', name: 'Camille MARTIN', canSign: true };
 const sailorAccount = { id: 'sailor-server-account', name: 'Alex DUPONT', canSign: false };
@@ -651,6 +658,54 @@ describe('Opération en Mer administration with authenticated server permissions
 });
 
 describe('Opération en Mer with authenticated server permission fixtures', () => {
+  it('moves and deletes map points by identity, preserving other points and saving the updated route', async () => {
+    const draft = captureSeaOperationRadios(waypointCaptureDraft(), '2026-10-23T08:00:00Z');
+    draft.waypoints[0].weather = waypointWeather();
+    const first = structuredClone(draft.waypoints[0]);
+    const second = { ...structuredClone(first), id: 'second-map-point', number: '4', latitude: '49.8' };
+    draft.waypoints.push(second);
+    const record = recordFixture(captainAccount, { draft });
+    const { client } = renderAccount(captainAccount, record);
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, edited) => ({ ...record, version: 4, draft: structuredClone(edited) }));
+    await openRecord(record); fireEvent.click(stepButton(2));
+    const map = () => waypointMapMock.mock.lastCall![0] as {
+      onMoveWaypoint: (id: string, position: { latitude: number; longitude: number }) => void;
+      onDeleteWaypoint: (id: string) => void;
+    };
+    act(() => map().onMoveWaypoint(first.id, { latitude: 49.7, longitude: -1.7 }));
+    expect(capturingWeatherPanel().waypoints[0]).toEqual({ ...first, latitude: '49.7', longitude: '-1.7', weather: undefined, radio: undefined });
+    expect(capturingWeatherPanel().waypoints[1]).toEqual(second);
+    expect(formQueries().getByLabelText('Latitude · point 1')).toHaveValue(formatSeaLatitude('49.7'));
+    act(() => map().onDeleteWaypoint(first.id));
+    expect(capturingWeatherPanel().waypoints).toEqual([second]);
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await formQueries().findByText('Brouillon enregistré.');
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ waypoints: [expect.objectContaining({
+      id: second.id, number: second.number, latitude: second.latitude, longitude: second.longitude, eta: second.eta, ukc: second.ukc,
+    })] }), record);
+  });
+
+  it('ignores map callbacks retained by an old record after opening another record', async () => {
+    const draft = waypointCaptureDraft();
+    const first = recordFixture(captainAccount, { draft });
+    renderAccount(captainAccount, first);
+    await openRecord(first); fireEvent.click(stepButton(2));
+    const oldMap = waypointMapMock.mock.lastCall![0] as {
+      onMoveWaypoint: (id: string, position: { latitude: number; longitude: number }) => void;
+      onDeleteWaypoint: (id: string) => void;
+    };
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Annuler' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await openRecord(first); fireEvent.click(stepButton(2));
+    act(() => {
+      oldMap.onMoveWaypoint(draft.waypoints[0].id, { latitude: 1, longitude: 2 });
+      oldMap.onDeleteWaypoint(draft.waypoints[0].id);
+    });
+    expect(capturingWeatherPanel().waypoints).toEqual(draft.waypoints);
+    expect(footerQueries().queryByText('Modifications non enregistrées')).not.toBeInTheDocument();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
   it('keeps fullscreen placements and existing captures through return, save and reopening', async () => {
     const draft = waypointCaptureDraft();
     draft.waypoints[0].weather = waypointWeather();

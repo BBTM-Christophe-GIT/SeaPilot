@@ -80,6 +80,54 @@ describe('retained Copernicus UKC assistance', () => {
     expect(updateSeaOperationWaypoint(stored.waypoints[0], { latitude: '49.65' }).ukcForecast).toEqual(forecast);
   });
 
+  it('invalidates only the moved waypoint captures while preserving manual UKC text and the rest of the passage plan', () => {
+    const { draft, forecast, request } = ukcFixture();
+    const captured = captureSeaOperationRadios(retainSeaOperationWeather(retainSeaOperationUkc(draft, forecast, request), weather, context));
+    const movedPoint = captured.waypoints[0];
+    movedPoint.descriptionVhf = 'Approche du chenal'; movedPoint.denseTraffic = true;
+    const otherPoint = { ...movedPoint, id: 'p2', number: '2',
+      weather: { ...movedPoint.weather!, pointId: 'p2' }, ukcForecast: { ...movedPoint.ukcForecast!, pointId: 'p2' } };
+    captured.waypoints.push(otherPoint);
+    const original = structuredClone(captured);
+    expect(waypointWeatherSnapshot(movedPoint)).toBeDefined();
+    expect(waypointRadioSnapshot(movedPoint)).toBeDefined();
+    expect(waypointUkcSnapshot(movedPoint, seaOperationUkcReference(captured))).toBeDefined();
+
+    const updated = invalidateSeaOperationUkc({ ...captured, waypoints: captured.waypoints.map(item => item.id === 'p1'
+      ? updateSeaOperationWaypoint(item, { latitude: '49.7', longitude: '-1.7' }) : item) });
+    const changed = updated.waypoints[0];
+    expect(changed).toMatchObject({ id: 'p1', number: '1', descriptionVhf: 'Approche du chenal', denseTraffic: true,
+      eta: movedPoint.eta, latitude: '49.7', longitude: '-1.7', ukc: '2.3', ukcMode: 'automatic' });
+    for (const key of ['weather', 'radio', 'ukcForecast']) expect(changed).not.toHaveProperty(key);
+    expect(effectiveSeaOperationUkc(updated, changed)).toBe('');
+    expect(updated.waypoints[1]).toBe(otherPoint);
+    expect(waypointWeatherSnapshot(otherPoint)).toBe(otherPoint.weather);
+    expect(waypointRadioSnapshot(otherPoint)).toBe(otherPoint.radio);
+    expect(waypointUkcSnapshot(otherPoint, seaOperationUkcReference(updated))).toBe(otherPoint.ukcForecast);
+    expect(retainSeaOperationWeather(updated, weather, context)).toBe(updated);
+    expect(retainSeaOperationUkc(updated, forecast, request)).toBe(updated);
+    expect(captured).toEqual(original);
+  });
+
+  it('ignores pending weather and UKC responses after deletion without changing the surviving manual waypoint', () => {
+    const { draft, forecast, request } = ukcFixture();
+    const captured = retainSeaOperationWeather(retainSeaOperationUkc(draft, forecast, request), weather, context);
+    const survivor = { ...emptySeaOperationWaypoint('p2'), number: '2', latitude: '48 N', longitude: '2 W',
+      eta: point.eta, ukc: '4,75', ukcMode: 'manual' as const, descriptionVhf: 'Point conservé' };
+    captured.waypoints.push(survivor);
+    const original = structuredClone(captured);
+    const deleted = { ...captured, waypoints: captured.waypoints.filter(item => item.id !== 'p1') };
+
+    expect(retainSeaOperationWeather(deleted, weather, context)).toBe(deleted);
+    expect(retainSeaOperationUkc(deleted, forecast, request)).toBe(deleted);
+    expect(deleted.waypoints).toEqual([survivor]);
+    expect(deleted.waypoints[0]).toBe(survivor);
+    expect(effectiveSeaOperationUkc(deleted, survivor)).toBe('4,75');
+    expect(survivor).not.toHaveProperty('weather');
+    expect(survivor).not.toHaveProperty('ukcForecast');
+    expect(captured).toEqual(original);
+  });
+
   it.each(['project', 'vessel', 'draught'] as const)('invalidates a capture after parent %s changes, including a canonical save response', field => {
     const { draft, forecast, request } = ukcFixture(); const stored = retainSeaOperationUkc(draft, forecast, request);
     const changed = structuredClone(stored);
