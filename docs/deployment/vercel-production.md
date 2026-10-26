@@ -1,5 +1,13 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.23`, build `2026-10-26.003`, place l’UKC sur une barre large :
+modes horizontaux, valeur automatique unique et détails repliés. Les champs
+Waypoint et coordonnées sont moins larges ; le calendrier et la météo gardent
+leur présentation. Les nouvelles minutes ETA se choisissent par pas de cinq,
+avec conservation des anciennes minutes hors pas jusqu’à un choix explicite.
+Aucun changement de calcul, capture, droit ou export, aucune migration ni
+nouvelle dépendance.
+
 Version `3.77.22`, build `2026-10-26.002`, ajoute au chapitre Passage Plan une
 carte par waypoint de la dernière version enregistrée : prévisions du brouillon
 ou données conservées à la signature, face aux mesures officielles proches de

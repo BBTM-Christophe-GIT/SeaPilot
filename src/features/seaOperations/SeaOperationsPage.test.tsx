@@ -288,8 +288,8 @@ describe('Copernicus UKC in authenticated operation forms', () => {
     expect(capturingUkcPanel().payload.waypoints[0].ukcForecast).toEqual(forecast);
     expect(capturingUkcPanel().payload.waypoints[0].ukc).toBe(draft.waypoints[0].ukc);
     fireEvent.click(stepButton(2));
-    expect(formQueries().getByLabelText('UKC · point 1')).toHaveValue('≈ 21,00');
-    expect(formQueries().getByLabelText('UKC · point 1')).toHaveAttribute('readonly');
+    expect(formQueries().getByLabelText('UKC · point 1')).toHaveTextContent('≈ 21,00 m');
+    expect(formQueries().getByLabelText('UKC · point 1').tagName).toBe('OUTPUT');
     fireEvent.click(within(formQueries().getByRole('group', { name: 'Mode UKC · point 1' })).getByRole('button', { name: 'Manuel' }));
     expect(formQueries().getByLabelText('UKC · point 1')).toHaveValue(draft.waypoints[0].ukc);
     expect(capturingUkcPanel().payload.waypoints[0]).not.toHaveProperty('ukcForecast');
