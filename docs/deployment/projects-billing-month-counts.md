@@ -14,7 +14,7 @@ paramètres de la facture affichée.
 
 Les cinq catégories sont déroulées à l'ouverture et à chaque changement de mois
 ou de projet. Elles restent repliables manuellement. Chaque titre est précédé
-d'une pastille bleue indiquant le nombre d'enregistrements : journées de
+d'une pastille verte indiquant le nombre d'enregistrements : journées de
 loyers, services refacturables, prestations BBTM enregistrées, saisies brutes et documents du
 suivi de facture. Le compteur reste visible à zéro. Une ligne brute vierge
 proposée automatiquement ne compte pas comme un enregistrement et ne bloque pas

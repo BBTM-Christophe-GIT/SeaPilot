@@ -21,6 +21,7 @@ Les feuilles communes sont chargées après les styles historiques dans `src/mai
 | Panneaux | `--sp-surface` = blanc, bordure `--sp-border`, rayon 8 px |
 | Texte / titre / texte secondaire | `--sp-text` / `--sp-heading` / `--sp-muted` |
 | Action principale | `--sp-primary` = `#0c5598`, texte blanc |
+| Vert partagé | `--sp-success` = `#25815f`, texte `--sp-surface` pour les pastilles |
 | Survol / sélection / focus | `--sp-primary-hover` / `--sp-primary-soft` / `--sp-focus` |
 | Typographie d'interface | `--sp-font`, pile Inter et polices système |
 | Titre de module visible | 28 px, 24 px sous 720 px ; interligne 1,25 |
