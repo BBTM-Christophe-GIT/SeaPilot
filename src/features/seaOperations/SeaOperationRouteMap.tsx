@@ -1,4 +1,4 @@
-import { Anchor, MapPin } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import { buildSeaOperationRouteMap, type RouteMapViewport, type SeaOperationRouteMapGeometry } from './seaOperationRouteMapGeometry';
@@ -81,11 +81,11 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
           <g aria-hidden="true" className="so-route-map-land">{geometry.land.map((polygon, index) => <polygon key={index} points={polygon.map((point) => `${point.x},${point.y}`).join(' ')} vectorEffect="non-scaling-stroke" />)}</g>
           <g aria-hidden="true" className="so-route-map-grid">{geometry.grid.map((line, index) => <g key={index}><line x1={line.from.x} y1={line.from.y} x2={line.to.x} y2={line.to.y} vectorEffect="non-scaling-stroke" /><text x={line.labelAt.x} y={line.labelAt.y}>{line.label}</text></g>)}</g>
           {places && <g className="so-route-map-places-layer">
-            <g className="so-route-map-cities">{places.cities.map(city => <g key={city.id}><title>{city.name} · Natural Earth</title><circle cx={city.x} cy={city.y} r={1.6} /><text x={city.label.x} y={city.label.y} textAnchor={city.label.anchor}>{city.name}</text></g>)}</g>
+            <g className="so-route-map-cities">{places.cities.map(city => <g key={city.id}><title>{city.name} · Natural Earth</title><circle cx={city.x} cy={city.y} r={3} /><text x={city.label.x} y={city.label.y} textAnchor={city.label.anchor}>{city.name}</text></g>)}</g>
             <g className="so-route-map-ports">{places.markers.map(marker => <g key={`${marker.location.source}:${marker.location.sourceId}`} role="img"
               aria-label={`Port · ${marker.ports.map(item => item.port.port).join(' / ')}`} className="so-route-map-port">
               <title>{marker.ports.map(item => formatProjectPort(item.port)).join('\n')}{`\n${marker.location.source === 'sandre' ? 'SANDRE/SHOM' : 'NGA World Port Index'} · point de référence indicatif, précision non garantie · ne désigne ni une entrée ni un quai.`}</title>
-              <g className="so-route-map-anchor" aria-hidden="true" transform={`translate(${marker.x} ${marker.y})`}><circle cx={0} cy={-5} r={2} /><path d="M0 -3V7 M-6 0V3 Q-6 7 0 7 Q6 7 6 3 V0 M-8 2 L-6 0 L-4 2 M4 2 L6 0 L8 2" /></g>
+              <circle className="so-route-map-port-dot" aria-hidden="true" cx={marker.x} cy={marker.y} r={3} />
               {marker.label && <text x={marker.label.x} y={marker.label.y} textAnchor={marker.label.anchor}>{marker.ports[0].port.port}</text>}
             </g>)}</g>
           </g>}
@@ -124,14 +124,14 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
     {places && geometry.projection && <details className="so-route-map-places"><summary>Ports dans cette région · {places.ports.length}</summary>
       <div className="so-route-map-port-list">
         <p>Catalogue partagé avec Projets. Points de référence indicatifs : ni entrées de port ni positions de quai.</p>
-        <ul aria-label="Ports du catalogue dans le cadre affiché">{places.ports.map(item => <li key={item.key}><Anchor size={13} aria-hidden="true" /><span>{formatProjectPort(item.port)}<small>{item.location.source === 'sandre' ? 'Point publié SANDRE/SHOM' : 'Repère NGA World Port Index · position indicative'}</small></span></li>)}</ul>
+        <ul aria-label="Ports du catalogue dans le cadre affiché">{places.ports.map(item => <li key={item.key}><i className="so-route-map-port-list-dot" aria-hidden="true" /><span>{formatProjectPort(item.port)}<small>{item.location.source === 'sandre' ? 'Point publié SANDRE/SHOM' : 'Repère NGA World Port Index · position indicative'}</small></span></li>)}</ul>
         {places.ports.length === 0 && <p>Aucun port géoréférencé du catalogue dans ce cadre.</p>}
         {places.relatedPorts.length > 0 && <><p>Rattachements statistiques aux ports visibles · {places.relatedPorts.length}. Leur position propre n’est pas disponible ; ils ne sont pas placés sur la carte.</p>
           <ul aria-label="Ports rattachés sans position propre">{places.relatedPorts.map(item => <li key={item.key}><span>{formatProjectPort(item.port)}<small>Rattachement à {item.port.locodePort || item.parent.name} · position propre non disponible</small></span></li>)}</ul></>}
         <p>Couverture géographique du catalogue : France {places.coverage.france.located}/{places.coverage.france.total} ; Angleterre {places.coverage.england.located}/{places.coverage.england.total}. Les entrées sans position ne peuvent pas être filtrées géographiquement. Les libellés de carte sont espacés pour rester lisibles ; la liste conserve tous les ports localisés dans le cadre.</p>
       </div>
     </details>}
-    <figcaption className="so-route-map-caption"><span className="so-route-map-legend"><span><i className="is-start" aria-hidden="true" />Départ</span><span><i className="is-end" aria-hidden="true" />Arrivée</span><span>Numéros : ordre du tableau</span></span><span>Fond Natural Earth · Tracé indicatif</span></figcaption>
+    <figcaption className="so-route-map-caption"><span className="so-route-map-legend"><span><i className="is-start" aria-hidden="true" />Départ</span><span><i className="is-end" aria-hidden="true" />Arrivée</span>{places && <><span><i className="is-port" aria-hidden="true" />Ports</span><span><i className="is-city" aria-hidden="true" />Villes</span></>}<span>Numéros : ordre du tableau</span></span><span>Fond Natural Earth · Tracé indicatif</span></figcaption>
     {places && <p className="so-route-map-places-attribution">Villes : <a href="https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/" target="_blank" rel="noopener noreferrer">Natural Earth</a> · Ports : <a href="https://www.data.gouv.fr/datasets/ports-espace-maritime-francais" target="_blank" rel="noopener noreferrer">SANDRE/SHOM</a> et <a href="https://msi.nga.mil/Publications/WPI" target="_blank" rel="noopener noreferrer">NGA</a>. Couverture partielle et précision non garantie. Ne pas utiliser pour naviguer.</p>}
   </figure>;
 }

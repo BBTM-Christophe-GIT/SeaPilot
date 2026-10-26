@@ -30,7 +30,8 @@ restent en lecture seule ; les anciens gestes sont annulés quand la fiche ou la
 mission change.
 
 La carte de sélection affiche des noms de villes et les ports de son emprise,
-avec une icône d’ancre et une liste régionale issue du catalogue Projets. Les
+avec des points bleus pour les ports et des points verts à côté des noms des
+villes (v3.78.2), ainsi qu’une liste régionale issue du catalogue Projets. Les
 sources et la précision des repères sont documentées dans
 [la provenance des données cartographiques](../../src/features/seaOperations/mapData/README.md).
 Le fond et les repères restent indicatifs ; les cartes PDF historiques conservent
