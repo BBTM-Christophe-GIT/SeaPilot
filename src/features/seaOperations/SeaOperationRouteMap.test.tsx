@@ -143,11 +143,11 @@ describe('SeaOperationRouteMap', () => {
     expect(screen.getByRole('img')).toHaveAttribute('viewBox', '0 0 900 220');
   });
 
-  it('shows cities, port anchors and the complete regional project-port list only when explicitly enabled', () => {
+  it('shows cities, port markers and the complete regional project-port list only when explicitly enabled', () => {
     const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
     const { container } = render(<SeaOperationRouteMap waypoints={[]} showPlaces viewport={{ centerLatitude: 49, centerLongitude: -3, longitudeSpan: 16 }} />);
     expect(container.querySelector('.so-route-map-cities')).toHaveTextContent('Paris');
-    expect(container.querySelectorAll('.so-route-map-anchor').length).toBeGreaterThan(30);
+    expect(container.querySelectorAll('.so-route-map-port-dot').length).toBeGreaterThan(30);
     expect(container.querySelector('.so-route-map-port title')).toHaveTextContent(/point de référence indicatif/);
     const list = screen.getByRole('list', { name: 'Ports du catalogue dans le cadre affiché', hidden: true });
     expect(within(list).getAllByRole('listitem', { hidden: true }).length).toBeGreaterThan(30);

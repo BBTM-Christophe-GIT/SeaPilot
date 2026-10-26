@@ -84,9 +84,9 @@ villes proviennent de la géométrie SHP, également arrondie à six décimales.
 
 Les noms des villes sont espacés selon le rang Natural Earth et la place
 disponible. Les libellés des ports peuvent être masqués pour éviter les collisions,
-mais chaque point identifié reste une ancre et **tous les ports localisés dans le
+mais chaque point identifié reste un repère bleu et **tous les ports localisés dans le
 rectangle visible restent dans la liste régionale**, repliable et défilante.
-Plusieurs entrées partageant le même point source partagent une ancre dont le titre
+Plusieurs entrées partageant le même point source partagent un point bleu dont le titre
 énumère leurs noms. Le filtrage tient compte de l’antiméridien.
 
 ### Association au catalogue Projets
