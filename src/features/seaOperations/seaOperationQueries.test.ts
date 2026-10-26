@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { webcrypto } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { emptySeaOperation } from './seaOperationModel';
+import { emptySeaOperation, emptySeaOperationWaypoint } from './seaOperationModel';
 import { createEmptyVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { deleteSeaOperation, reviseSeaOperation, fetchSeaOperationCaptainSignature, fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, mapSeaOperationRecord, saveSeaOperation, signSeaOperation } from './seaOperationQueries';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
@@ -74,6 +74,28 @@ describe('sea operation queries', () => {
     expect(data.vessels.every((vessel) => vessel.draftMeters === null)).toBe(true);
   });
 
+  it('reads vessel maximum speed through the existing operational overview without adding it to the saved form', async () => {
+    const saved = record();
+    const rpc = vi.fn().mockResolvedValue({ data: { company_id: 1, actor_id: 'captain-server-account', actor_name: 'Capitaine réel', records: [saved],
+      vessels: [{ id: 1, name: 'Rapide', max_speed_knots: 12.5 }, { id: 2, name: 'Numérique', max_speed_knots: ' 8.25 ' }] }, error: null });
+    const data = await fetchSeaOperationData({ rpc } as unknown as SupabaseClient);
+    expect(data.vessels.find(vessel => vessel.id === 1)?.maxSpeedKnots).toBe(12.5);
+    expect(data.vessels.find(vessel => vessel.id === 2)?.maxSpeedKnots).toBe(8.25);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('sea_operations_overview', undefined);
+    expect(data.records[0].draft).toBe(saved.draft);
+    expect(data.records[0].draft.vessel).not.toHaveProperty('maxSpeedKnots');
+  });
+
+  it('keeps missing, unknown and invalid maximum speeds unusable instead of fabricating a sailing speed', async () => {
+    const invalid = [null, 0, -1, '', ' ', true, 'invalid', Infinity, 'Infinity', {}, 'NaN'];
+    const rpc = vi.fn().mockResolvedValue({ data: { company_id: 1, actor_id: 'sailor-server-account', actor_name: 'Marin réel', records: [],
+      vessels: [{ id: 100, name: 'Ancienne réponse' }, ...invalid.map((value, index) => ({ id: index + 1, name: `Inconnu ${index}`, max_speed_knots: value }))] }, error: null });
+    const data = await fetchSeaOperationData({ rpc } as unknown as SupabaseClient);
+    expect(data.vessels.find(vessel => vessel.id === 100)).not.toHaveProperty('maxSpeedKnots');
+    expect(data.vessels.filter(vessel => vessel.id !== 100).every(vessel => vessel.maxSpeedKnots === null)).toBe(true);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('sea_operations_overview', undefined);
+  });
+
   it('maps vessel matrices without substituting another vessel or guessing legacy absence', async () => {
     const matrix = createEmptyVesselWeatherMatrix(); matrix.levels[0][0] = 'unlivable';
     const rpc = vi.fn().mockResolvedValue({ data: { company_id: 1, actor_id: 'crew-id', actor_name: 'Marin réel', records: [], vessels: [
@@ -123,6 +145,19 @@ describe('sea operation queries', () => {
     expect(rpc).toHaveBeenLastCalledWith('sea_operation_save', { p_id: null, p_version: null, p_draft: draft });
     await saveSeaOperation(client, draft, { id: 'record-1', version: 2 });
     expect(rpc).toHaveBeenLastCalledWith('sea_operation_save', { p_id: 'record-1', p_version: 2, p_draft: draft });
+  });
+
+  it('round trips optional automatic and manual ETA modes without adding a mode to historical waypoints', async () => {
+    const draft = emptySeaOperation();
+    draft.waypoints = [{ ...emptySeaOperationWaypoint('legacy'), eta: '2026-10-27T12:00' },
+      { ...emptySeaOperationWaypoint('generated'), eta: '2026-10-27T13:00', etaMode: 'automatic' },
+      { ...emptySeaOperationWaypoint('override'), eta: '2026-10-27T15:30', etaMode: 'manual' }];
+    const rpc = vi.fn().mockResolvedValue({ data: record({ draft }), error: null });
+    const saved = await saveSeaOperation({ rpc } as unknown as SupabaseClient, draft);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('sea_operation_save', { p_id: null, p_version: null, p_draft: draft });
+    expect(saved.draft.waypoints[0]).not.toHaveProperty('etaMode');
+    expect(saved.draft.waypoints[1]).toMatchObject({ eta: '2026-10-27T13:00', etaMode: 'automatic' });
+    expect(saved.draft.waypoints[2]).toMatchObject({ eta: '2026-10-27T15:30', etaMode: 'manual' });
   });
 
   it('signs the saved version and preserves server-authenticated signatory metadata', async () => {

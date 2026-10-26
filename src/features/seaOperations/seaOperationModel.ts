@@ -50,6 +50,8 @@ export interface SeaOperationWaypoint {
   ukcForecast?: SeaOperationCopernicusEstimate;
   /** The source permits a time alone when the point is reached on the same day. */
   eta: string;
+  /** Missing with a nonempty ETA is historical/manual; a blank unmarked ETA can be calculated. */
+  etaMode?: 'automatic' | 'manual';
   denseTraffic: boolean;
   /** Optional captures retain the information consulted for this precise point. */
   weather?: SeaOperationWaypointWeather;
@@ -282,6 +284,7 @@ export function isSeaOperationPayload(value: unknown): value is SeaOperationPayl
   const ukcReference = { projectId: isObject(value.planning) ? value.planning.projectId as string : undefined,
     vesselId: value.vessel.id as string, draftMeters: value.vessel.draftMeters as number | null | undefined };
   return Array.isArray(value.waypoints) && value.waypoints.every((point) => hasStringFields(point, ['id', 'number', 'descriptionVhf', 'latitude', 'longitude', 'ukc', 'eta']) && typeof point.denseTraffic === 'boolean'
+    && (point.etaMode === undefined || point.etaMode === 'manual' || point.etaMode === 'automatic')
     && (point.ukcMode === undefined || point.ukcMode === 'manual' || point.ukcMode === 'automatic')
     && (point.ukcForecast === undefined || point.ukcMode === 'automatic' && Boolean(waypointUkcSnapshot(point as unknown as SeaOperationWaypoint, ukcReference)))
     && (point.weather === undefined || Boolean(waypointWeatherSnapshot(point as unknown as SeaOperationWaypoint)))

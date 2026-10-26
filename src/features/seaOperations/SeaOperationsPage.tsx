@@ -28,7 +28,7 @@ import { SeaOperationRouteMap } from './SeaOperationRouteMap';
 import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
 import { SeaOperationEtaPicker } from './SeaOperationEtaPicker';
 import { captureSeaOperationValidationWeather } from './seaOperationValidationWeather';
-import type { SeaPosition } from './seaOperationNavigation';
+import { seaWaypointPosition, type SeaPosition } from './seaOperationNavigation';
 import { initialSeaOperationWeatherStatus, weatherRequestKey, type WeatherRequestStatus } from './seaOperationWeatherStatus';
 import { isVesselDraftMeters } from './seaOperationUkc';
 import { SeaOperationCoordinateInput } from './SeaOperationCoordinateInput';
@@ -36,6 +36,8 @@ import type { SeaOperationCopernicusEstimate } from './seaOperationCopernicusMod
 import { SeaOperationUkcField } from './SeaOperationUkcField';
 import { SeaOperationUkcPanel } from './SeaOperationUkcPanel';
 import { captureSeaOperationValidationUkc, ukcRequestKey, type SeaOperationUkcRequestStatus } from './seaOperationValidationUkc';
+import { updateSeaOperationRouteEtas } from './seaOperationRouteEta';
+import { seaOperationVoyageTiming } from './seaOperationRouteLegs';
 
 const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'];
 const STEP_DETAILS = ['Mission, client et voyage', 'Préparation et sécurité du navire', 'Cartes et points de route', 'GO / NO GO et signature'];
@@ -106,6 +108,22 @@ function captureVesselDraft(payload: SeaOperationPayload, source?: { id: string 
   return invalidateSeaOperationUkc(payload.vessel.draftMeters === draftMeters ? payload : { ...payload, vessel: { ...payload.vessel, draftMeters } });
 }
 
+function captureRouteEtas(payload: SeaOperationPayload, vessels: SeaOperationData['vessels'] | undefined): SeaOperationPayload {
+  if (vessels === undefined) return payload;
+  const vessel = vessels?.find(source => String(source.id) === payload.vessel.id);
+  // Unknown vessel/speed invalidates automatic slots; historical/manual times are retained.
+  return updateSeaOperationRouteEtas(payload, vessel?.maxSpeedKnots ?? null);
+}
+
+function routeArrivalEta(payload: SeaOperationPayload): string | undefined {
+  if (payload.waypoints.length < 2) return;
+  for (const point of payload.waypoints) {
+    if (!seaWaypointPosition(point)) return;
+    if (!seaOperationVoyageTiming(point.eta, 0).etdUtc) return;
+  }
+  return payload.waypoints.at(-1)?.eta;
+}
+
 export function SeaOperationsPage() {
   const { client, previewMode = false } = useOutletContext<AppShellOutletContext>();
   const [data, setData] = useState<SeaOperationData | null>(null);
@@ -169,7 +187,7 @@ export function SeaOperationsPage() {
     }
     setRecord(existing ? { ...existing, version: recovery.version! } : null);
     const vessel = result.vessels.find((source) => String(source.id) === recovery.draft.vessel.id);
-    setDraft(captureVesselDraft(captureVesselMatrix(recovery.draft, vessel), vessel)); setPlanningDate(recovery.draft.planning?.date || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setStep(recovery.step); setEditing(true); setDirty(true);
+    setDraft(captureRouteEtas(captureVesselDraft(captureVesselMatrix(recovery.draft, vessel), vessel), result.vessels)); setPlanningDate(recovery.draft.planning?.date || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setStep(recovery.step); setEditing(true); setDirty(true);
     setNotice('Votre préparation non enregistrée a été récupérée dans cet onglet. Vérifiez-la avant de l’enregistrer.');
   }, []);
 
@@ -239,8 +257,8 @@ export function SeaOperationsPage() {
       if (mission && record?.canEdit !== false && current.planning?.date === result.date && !weatherEditor.current.busy && !weatherEditor.current.signed) {
         const vessel = data?.vessels.find((source) => String(source.id) === current.vessel.id);
         const source = mission.vessel.weatherMatrix === undefined ? vessel : mission.vessel;
-        if (captureVesselDraft(captureVesselMatrix(current, source), vessel) !== current) {
-          setDraft((value) => value.planning?.operationId === mission.operationId && value.planning.date === result.date ? captureVesselDraft(captureVesselMatrix(value, source), vessel) : value);
+        if (captureRouteEtas(captureVesselDraft(captureVesselMatrix(current, source), vessel), data?.vessels) !== current) {
+          setDraft((value) => value.planning?.operationId === mission.operationId && value.planning.date === result.date ? captureRouteEtas(captureVesselDraft(captureVesselMatrix(value, source), vessel), data?.vessels) : value);
           setDirty(true);
         }
       }
@@ -281,7 +299,7 @@ export function SeaOperationsPage() {
 
   const update = (patch: Partial<SeaOperationPayload> | ((current: SeaOperationPayload) => Partial<SeaOperationPayload>)) => {
     allowAutomaticMission.current = false; editRevision.current += 1;
-    setDraft(current => invalidateSeaOperationUkc({ ...current, ...(typeof patch === 'function' ? patch(current) : patch) }));
+    setDraft(current => invalidateSeaOperationUkc(captureRouteEtas({ ...current, ...(typeof patch === 'function' ? patch(current) : patch) }, data?.vessels)));
     setDirty(true); setNotice(''); setIssues([]);
   };
   const vesselUpdate = (patch: Partial<SeaOperationPayload['vessel']>) => {
@@ -289,12 +307,23 @@ export function SeaOperationsPage() {
     if (patch.id !== undefined && patch.id !== draft.vessel.id) delete next.vessel.draftMeters;
     update({ vessel: captureVesselDraft(next, data?.vessels.find((source) => String(source.id) === next.vessel.id)).vessel });
   };
-  const waypointUpdate = (index: number, patch: Partial<SeaOperationPayload['waypoints'][number]>) => update(current => ({ waypoints: current.waypoints.map((point, i) => i === index ? updateSeaOperationWaypoint(point, patch) : point) }));
+  const waypointUpdate = (index: number, patch: Partial<SeaOperationPayload['waypoints'][number]>) => update(current => ({ waypoints: current.waypoints.map((point, i) => i === index ? updateSeaOperationWaypoint(point, patch.eta !== undefined ? { ...patch, etaMode: patch.etaMode ?? 'manual' } : patch) : point) }));
   const editable = !record || record.canEdit;
   const signed = record?.status === 'signed';
   const weatherEditor = useRef({ client, draft, editing, editable, signed, busy, exporting });
   const pendingWeather = useRef(new globalThis.Map<string, { weather: SeaOperationWaypointWeather; context: SeaOperationWeatherCaptureContext; sourceClient: SupabaseClient }>());
   weatherEditor.current = { client, draft, editing, editable, signed, busy, exporting };
+  useEffect(() => {
+    const current = weatherEditor.current;
+    if (!data || loadedAccount.current !== recoveryKey(data) || current.client !== client
+      || !current.editing || !current.editable || current.signed || current.busy || current.exporting) return;
+    if (captureRouteEtas(current.draft, data.vessels) === current.draft) return;
+    const sequence = loadSequence.current;
+    setDraft(value => sequence === loadSequence.current && weatherEditor.current.client === client
+      ? captureRouteEtas(value, data.vessels) : value);
+    editRevision.current += 1;
+    setDirty(true); setIssues([]);
+  }, [client, data, editing, editable, signed, busy, exporting, draft.vessel.id]);
   // A gesture belongs to the open account/record/mission, even after a context switch.
   const mapEditSequence = loadSequence.current;
   const mapOperationId = draft.planning?.operationId;
@@ -306,7 +335,7 @@ export function SeaOperationsPage() {
       && current.draft.planning?.operationId === mapOperationId && current.editing
       && current.editable && !current.signed && !current.busy && !current.exporting;
   };
-  const addWaypoint = (position?: SeaPosition) => {
+  const addWaypoint = (position?: SeaPosition, port?: { name: string; portKey?: string }) => {
     if (!canEditMap()) return;
     if (position && (!Number.isFinite(position.latitude) || !Number.isFinite(position.longitude) || Math.abs(position.latitude) > 90 || Math.abs(position.longitude) > 180)) return;
     const id = crypto.randomUUID();
@@ -316,8 +345,8 @@ export function SeaOperationsPage() {
       const used = new Set(value.waypoints.map((point) => point.number.trim()));
       let number = value.waypoints.length + 1;
       while (used.has(String(number))) number += 1;
-      const point = { id, number: String(number), descriptionVhf: '', latitude: position ? String(Number(position.latitude.toFixed(6))) : '', longitude: position ? String(Number(position.longitude.toFixed(6))) : '', ukc: '', ukcMode: 'automatic' as const, eta: '', denseTraffic: false };
-      return { ...value, waypoints: [...value.waypoints, point] };
+      const point = { id, number: String(number), descriptionVhf: port?.name.trim() || '', latitude: position ? String(Number(position.latitude.toFixed(6))) : '', longitude: position ? String(Number(position.longitude.toFixed(6))) : '', ukc: '', ukcMode: 'automatic' as const, eta: '', denseTraffic: false };
+      return captureRouteEtas({ ...value, waypoints: [...value.waypoints, point] }, data?.vessels);
     });
     setDirty(true); setNotice(''); setIssues([]);
   };
@@ -450,7 +479,7 @@ export function SeaOperationsPage() {
       remember(loaded);
       if (loaded.status !== 'signed' && loaded.canEdit) {
         const vessel = data?.vessels.find((source) => String(source.id) === loaded.draft.vessel.id);
-        const prepared = captureVesselDraft(captureVesselMatrix(loaded.draft, vessel), vessel);
+        const prepared = captureRouteEtas(captureVesselDraft(captureVesselMatrix(loaded.draft, vessel), vessel), data?.vessels);
         if (prepared !== loaded.draft) { setDraft(prepared); setDirty(true); setNotice('Les données du navire ont été actualisées pour cette préparation. Enregistrez pour les conserver.'); }
       }
       setPlanningDate(loaded.draft.planning?.date || loaded.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setEditing(true); setStep(0); setMobilePane('form');
@@ -518,7 +547,7 @@ export function SeaOperationsPage() {
   async function save(sign = false) {
     if (busy) return;
     const matrixSource = selectedMission?.vessel.weatherMatrix === undefined ? data?.vessels.find((vessel) => String(vessel.id) === draft.vessel.id) : selectedMission.vessel;
-    const prepared = captureSeaOperationRadios(captureVesselDraft(captureVesselMatrix(draft, matrixSource), data?.vessels.find((vessel) => String(vessel.id) === draft.vessel.id)));
+    const prepared = captureSeaOperationRadios(captureRouteEtas(captureVesselDraft(captureVesselMatrix(draft, matrixSource), data?.vessels.find((vessel) => String(vessel.id) === draft.vessel.id)), data?.vessels));
     const automaticUkcErrors = new Set(prepared.waypoints.flatMap((point, index) => point.ukcMode === 'automatic' ? [`L’UKC du point n° ${index + 1} est obligatoire.`] : []));
     const validation = validateSeaOperation(prepared, sign ? prepared.decision || 'GO' : 'DRAFT').filter(message => !automaticUkcErrors.has(message));
     if (validation.length) { setIssues(validation); setStep(sign ? 3 : step); revealFormFeedback(); return; }
@@ -691,7 +720,7 @@ export function SeaOperationsPage() {
           <Field label="Tirant d’eau de référence (m)"><input type="number" readOnly value={referenceDraft ?? ''} /></Field>{referenceDraft == null && <p className="so-help">{signed ? 'Tirant d’eau de référence non enregistré dans cette version : indicateur UKC indisponible.' : 'Renseignez le tirant d’eau du navire dans le module Navires.'}</p>}
           <SeaOperationHydroSources />
           {step === 2 && (editable && !signed
-            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${draft.planning?.operationId || ''}`} waypoints={draft.waypoints} onAddWaypoint={addWaypoint} onMoveWaypoint={moveWaypoint} onDeleteWaypoint={removeWaypoint} disabled={busy || exporting} />
+            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${draft.planning?.operationId || ''}`} waypoints={draft.waypoints} maxSpeedKnots={data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id)?.maxSpeedKnots} etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={routeArrivalEta(draft)} onAddWaypoint={addWaypoint} onMoveWaypoint={moveWaypoint} onDeleteWaypoint={removeWaypoint} disabled={busy || exporting} />
             : <SeaOperationRouteMap waypoints={draft.waypoints} />)}
           <h3>Points de passage</h3>
           <p className="so-help">Indicateur UKC selon le tirant d’eau de référence (TE) : rouge si UKC ≤ TE ; orange si TE &lt; UKC ≤ TE + 2 m ; vert si UKC &gt; TE + 2 m.</p>
@@ -710,7 +739,7 @@ export function SeaOperationsPage() {
                 {!signed && editable && <div role="cell" className="so-passage-field is-weather"><span>Météo à l’ETA</span><SeaOperationWeatherCard point={point} matrix={draft.vessel.weatherMatrix} compact variant="editor" requestStatus={(weatherRequests.client === client ? weatherRequests.statuses[weatherRequestKey(draft.planning?.projectId || '', point)] : undefined) || initialSeaOperationWeatherStatus(draft.planning?.projectId || '', point)} /></div>}
                 <div role="cell" className="so-passage-field is-eta"><span>ETA · date et heure</span>{signed || !editable
                   ? <p className="so-passage-eta-summary" aria-label={`ETA · date et heure · point ${index + 1}`}>{navigation.eta}{point.eta.includes('T') && <small>Heure de Paris</small>}</p>
-                  : <><SeaOperationEtaPicker inline label={`ETA · date et heure · point ${index + 1}`} value={point.eta} disabled={busy || exporting} onChange={(eta) => { if (eta !== point.eta) waypointUpdate(index, { eta }); }} />{legacyEta && <small className="so-help">Ancienne ETA : {point.eta}. Renseignez une date et une heure pour la remplacer.</small>}{proposedEta && <button type="button" className="sp-button sp-button--secondary" aria-label={`Appliquer la date de l’opération à l’ETA du point ${index + 1}`} onClick={() => waypointUpdate(index, { eta: proposedEta })}>Utiliser le {operationDate.split('-').reverse().join('/')} à {point.eta}</button>}</>}</div>
+                  : <><SeaOperationEtaPicker inline label={`ETA · date et heure · point ${index + 1}`} value={point.eta} disabled={busy || exporting} onChange={(eta) => { if (eta !== point.eta) waypointUpdate(index, { eta }); }} />{point.etaMode === 'automatic' && <small className="so-help">Horaire calculé automatiquement · modifiable</small>}{index > 0 && point.etaMode !== 'automatic' && (point.eta || point.etaMode === 'manual') && <button type="button" className="sp-button sp-button--secondary so-secondary" disabled={busy || exporting} aria-label={`Reprendre le calcul de l’ETA du point ${index + 1}`} onClick={() => waypointUpdate(index, { etaMode: 'automatic' })}>Reprendre le calcul</button>}{legacyEta && <small className="so-help">Ancienne ETA : {point.eta}. Renseignez une date et une heure pour la remplacer.</small>}{proposedEta && <button type="button" className="sp-button sp-button--secondary" aria-label={`Appliquer la date de l’opération à l’ETA du point ${index + 1}`} onClick={() => waypointUpdate(index, { eta: proposedEta })}>Utiliser le {operationDate.split('-').reverse().join('/')} à {point.eta}</button>}</>}</div>
                 <label role="cell" className="so-passage-field is-traffic"><input aria-label={`Zone maritime à trafic dense · point ${index + 1}`} type="checkbox" checked={point.denseTraffic} onChange={(event) => waypointUpdate(index, { denseTraffic: event.target.checked })} /><span>Zone maritime à trafic dense</span></label>
                 <div role="cell" className="so-passage-field is-actions"><button type="button" className="so-secondary sp-button sp-button--secondary" aria-label={`Supprimer le point ${index + 1}`} onClick={() => removeWaypoint(point.id)}><Trash2 size={15} /></button></div>
               </div>;

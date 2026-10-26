@@ -23,6 +23,16 @@
 .so-waypoint-map-selection { margin-block: var(--sp-space-2); padding: var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface); }
 .so-waypoint-map-selection strong { color: var(--sp-heading); font-size: .75rem; }
 .so-waypoint-map-selection .sp-button { gap: var(--sp-space-1); font-size: .75rem; }
+.so-waypoint-map-port-target { cursor: pointer; outline: none; }
+.so-waypoint-map-port-target circle { fill: transparent; stroke: transparent; vector-effect: non-scaling-stroke; }
+.so-waypoint-map-port-target:hover circle, .so-waypoint-map-port-target:focus-visible circle { stroke: var(--sp-focus); stroke-width: 2px; }
+.so-waypoint-map-port-proposal, .so-waypoint-map-port-proposal > div[role=group] { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-2); min-width: 0; }
+.so-waypoint-map-port-proposal { margin-top: var(--sp-space-2); padding: var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface); }
+.so-waypoint-map-port-proposal > div:not([role]) { display: grid; flex: 1 1 200px; gap: var(--sp-space-1); }
+.so-waypoint-map-port-proposal strong { color: var(--sp-heading); font-size: .8125rem; }
+.so-waypoint-map-port-proposal span { color: var(--sp-text); font-size: .75rem; font-variant-numeric: tabular-nums; }
+.so-waypoint-map-port-proposal small { color: var(--sp-muted); font-size: .6875rem; }
+.so-waypoint-map-port-proposal .sp-button { font-size: .75rem; }
 .so-waypoint-map-crosshair { pointer-events: none; }
 .so-waypoint-map-crosshair circle { fill: var(--sp-surface); fill-opacity: .8; stroke: var(--sp-primary); stroke-width: 1.5px; }
 .so-waypoint-map-crosshair path { stroke: var(--sp-primary); stroke-width: 1.5px; fill: none; }

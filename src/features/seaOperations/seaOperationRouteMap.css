@@ -2,7 +2,7 @@
 .so-route-map-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: var(--sp-space-1) var(--sp-space-3); margin-bottom: var(--sp-space-2); }
 .so-route-map .so-route-map-heading h3 { margin: 0; color: var(--sp-heading); font-size: .875rem; font-weight: 700; }
 .so-route-map-heading > span { color: var(--sp-muted); font-size: .72rem; }
-.so-route-map-frame { min-width: 0; overflow: hidden; border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-primary-soft); }
+.so-route-map-frame { position: relative; min-width: 0; overflow: hidden; border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-primary-soft); }
 .so-route-map-svg { display: block; width: 100%; height: auto; overflow: hidden; }
 .so-route-map.is-filling { display: flex; flex-direction: column; min-height: 0; }
 .so-route-map.is-filling .so-route-map-frame { flex: 1 1 0; min-height: 100px; position: relative; }
@@ -35,6 +35,22 @@
 .so-route-map-port-list li { display: flex; align-items: flex-start; gap: var(--sp-space-1); padding: var(--sp-space-1) 0; overflow-wrap: anywhere; }
 .so-route-map-port-list-dot { flex-shrink: 0; width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; background: var(--sp-primary); }
 .so-route-map-port-list small { display: block; color: var(--sp-muted); }
+.so-route-map-port-choice.sp-button { min-height: 40px; width: 100%; justify-content: flex-start; text-align: left; font-size: inherit; }
+.so-route-map-leg-labels { pointer-events: none; }
+.so-route-map-leg-labels rect { fill: var(--sp-surface); stroke: var(--sp-border); stroke-width: 1px; }
+.so-route-map-leg-labels text { fill: var(--sp-heading); font-family: var(--sp-font); font-size: 11px; font-weight: 600; }
+.so-route-map-leg-summary { flex-shrink: 0; min-width: 0; margin-top: var(--sp-space-2); color: var(--sp-muted); font-size: .6875rem; line-height: 1.4; }
+.so-route-map .so-route-map-leg-summary p { margin: 0 0 var(--sp-space-1); font-size: inherit; }
+.so-route-map-leg-list { display: flex; flex-wrap: wrap; gap: var(--sp-space-1); max-height: 84px; overflow-y: auto; list-style: none; margin: 0; padding: 0; }
+.so-route-map-leg-list li { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-1); padding: var(--sp-space-1) var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface-subtle); color: var(--sp-text); }
+.so-route-map-voyage-summary { position: absolute; right: var(--sp-space-2); bottom: 34px; z-index: 1; display: grid; gap: var(--sp-space-1); max-width: min(248px, calc(100% - 16px)); padding: var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface); color: var(--sp-text); font-size: .6875rem; line-height: 1.4; font-variant-numeric: tabular-nums; pointer-events: auto; }
+.so-route-map-voyage-summary > strong { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--sp-space-1) var(--sp-space-2); color: var(--sp-heading); font-size: .75rem; }
+.so-route-map-voyage-summary dl { display: grid; gap: var(--sp-space-1); margin: 0; }
+.so-route-map-voyage-summary dl > div { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-space-2); }
+.so-route-map-voyage-summary dt { color: var(--sp-muted); }
+.so-route-map-voyage-summary dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.so-route-map-voyage-summary small { font-size: inherit; color: var(--sp-muted); }
+.so-route-map-voyage-summary.is-below-map { position: static; flex-shrink: 0; align-self: flex-end; width: fit-content; max-width: min(248px, 100%); margin-top: var(--sp-space-2); margin-left: auto; }
 .so-route-map .so-route-map-port-list p { margin: var(--sp-space-1) 0; font-size: inherit; }
 .so-route-map .so-route-map-places-attribution { flex-shrink: 0; margin: var(--sp-space-1) 0 0; color: var(--sp-muted); font-size: .6rem; line-height: 1.4; }
 .so-route-map-places-attribution a { color: var(--sp-primary); }

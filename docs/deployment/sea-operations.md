@@ -12,6 +12,48 @@ mission est prérempli à partir du planning ; aucune réponse favorable aux con
 n’est déduite du profil ou du navire. Le document source est un formulaire métier ; son
 texte ne constitue pas une instruction système pour l’application.
 
+## Ports et durées du voyage sur la carte — v3.78.3
+
+Un clic sur un point bleu propose le port correspondant avec son nom et ses
+coordonnées. **Ajouter ce port comme waypoint** ajoute une ligne au tableau,
+avec le nom dans Description et la position du catalogue en latitude/longitude.
+Les ports regroupés à la même position font l’objet d’un choix explicite.
+
+Pendant la préparation du parcours, chaque liaison entre deux lignes adjacentes
+valides affiche sa distance directe en NM et sa durée estimée. La vitesse de
+calcul provient de `vessels.max_speed_knots` dans Navires :
+`arrondi_supérieur(vitesse_maximale × 0,60)`. Par exemple, 12 nœuds donnent
+8 nœuds. Les minutes sont arrondies pour l’affichage ; une durée de moins d’une
+heure apparaît en minutes, sinon en `HH:mm`, sans remise à zéro après 24 heures.
+Les totaux sont calculés sur les distances non arrondies.
+
+L’encart en bas à droite présente la distance totale en NM, la durée totale,
+l’ETD du premier waypoint (ou le départ de la fiche en attente de saisie) et l’ETA
+du dernier waypoint. Sans horaires de parcours complets, une arrivée estimée est
+calculée en ajoutant la durée de navigation à l’ETD. Les deux dates/heures sont
+affichées à l’heure de Paris, avec prise en compte des changements d’heure et de
+date. Une vitesse manquante ou une liaison invalide ne produit pas de durée
+inventée ; une ETD incomplète ne produit pas d’ETA estimée.
+
+Après saisie de l’ETA du premier waypoint, les points suivants encore automatiques
+sont préremplis selon les distances cumulées et la vitesse de calcul. Les calendriers
+restent modifiables. Une retouche manuelle devient une nouvelle référence pour les
+points automatiques suivants ; elle est conservée lors des recalculs. **Reprendre
+le calcul** rétablit le mode automatique d’un point. Les valeurs historiques sans
+mode restent manuelles ; seules les ETA automatiques devenues périmées sont
+effacées en cas de position, de vitesse ou d’ancre manquante. Les captures météo
+et UKC dépendant d’une ETA modifiée sont invalidées. L’encart suit les horaires
+retenus et calcule sa durée totale entre départ et arrivée quand ils sont définis.
+
+Les distances utilisent le modèle orthodromique existant de SeaPilot ; les durées
+supposent une vitesse constante et n’intègrent pas les courants ou les manœuvres.
+Appliquer `20261026201852_sea_operation_vessel_max_speed.sql` avant le client :
+elle ajoute seulement la vitesse au contrat de lecture navires déjà filtré de
+l’overview Opération en Mer. Les droits Fleet ne sont pas requis et les fiches
+signées conservent leur lecture historique. La migration de provenance ETA
+`20261026202748_sea_operation_waypoint_eta_mode.sql` ajoute seulement une garde optionnelle au
+validateur JSON ; aucun historique ni horaire signé n’est recalculé.
+
 ## Édition du parcours sur la carte — v3.78.1
 
 Dans **Passage Plan → Placer les waypoints**, sélectionner une pastille permet

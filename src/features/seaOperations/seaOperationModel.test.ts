@@ -36,6 +36,18 @@ function completePayload() {
 }
 
 describe('sea operation form model', () => {
+  it('retains optional ETA edit modes while accepting historical unmarked values and rejecting malformed modes', () => {
+    const payload = completePayload();
+    expect(isSeaOperationPayload(payload)).toBe(true);
+    for (const etaMode of ['automatic', 'manual'] as const) {
+      payload.waypoints[0].etaMode = etaMode;
+      expect(isSeaOperationPayload(JSON.parse(JSON.stringify(payload)))).toBe(true);
+    }
+    for (const invalid of ['auto', '', null, false, 1, {}]) {
+      const malformed = structuredClone(payload) as unknown as { waypoints: Array<{ etaMode: unknown }> };
+      malformed.waypoints[0].etaMode = invalid; expect(isSeaOperationPayload(malformed)).toBe(false);
+    }
+  });
   it('uses a retained automatic UKC for completeness without replacing manual text or deciding GO', () => {
     const payload = completePayload();
     payload.planning = { date: '2026-10-27', projectId: '12', operationId: '12:42', captainPersonId: '7' };

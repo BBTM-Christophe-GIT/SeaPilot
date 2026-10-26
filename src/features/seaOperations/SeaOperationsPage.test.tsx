@@ -658,6 +658,60 @@ describe('Opération en Mer administration with authenticated server permissions
 });
 
 describe('Opération en Mer with authenticated server permission fixtures', () => {
+  it('adds a selected port with its name and exact coordinates and uses the selected vessel speed and departure', async () => {
+    const draft = waypointCaptureDraft();
+    const record = recordFixture(captainAccount, { draft });
+    const { client, data } = renderAccount(captainAccount, record);
+    data.vessels[0].maxSpeedKnots = 19;
+    data.vessels[1].maxSpeedKnots = 12;
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, edited) => ({ ...record, version: 4, draft: structuredClone(edited) }));
+    await openRecord(record); fireEvent.click(stepButton(2));
+    const map = waypointMapMock.mock.lastCall![0] as {
+      maxSpeedKnots?: number | null; etd?: string;
+      onAddWaypoint: (position: { latitude: number; longitude: number }, port?: { name: string; portKey?: string }) => void;
+    };
+    expect(map.maxSpeedKnots).toBe(12);
+    expect(map.etd).toBe(draft.waypoints[0].eta);
+    act(() => map.onAddWaypoint({ latitude: 49.646976, longitude: -1.622339 }, { name: 'Port de Cherbourg', portKey: 'public-port' }));
+    const point = capturingWeatherPanel().waypoints[1];
+    expect(point).toMatchObject({ descriptionVhf: 'Port de Cherbourg', latitude: '49.646976', longitude: '-1.622339', eta: '2026-10-23T14:02', etaMode: 'automatic', ukcMode: 'automatic' });
+    expect(formQueries().getByLabelText('Description · point 2')).toHaveValue('Port de Cherbourg');
+    expect(formQueries().getByLabelText('Latitude · point 2')).toHaveValue(formatSeaLatitude(point.latitude));
+    expect(formQueries().getByLabelText('Longitude · point 2')).toHaveValue(formatSeaLongitude(point.longitude));
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await formQueries().findByText('Brouillon enregistré.');
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ waypoints: [expect.anything(), expect.objectContaining(point)] }), record);
+  });
+
+  it('prefills later calendars from the first ETA, preserves manual anchors and can restore automatic scheduling', async () => {
+    const draft = waypointCaptureDraft();
+    const source = draft.waypoints[0];
+    draft.waypoints = ['49', '49.1', '49.2'].map((latitude, index) => ({ ...source, id: `eta-route-${index}`, number: String(index + 1), latitude, longitude: '-1', eta: '' }));
+    const record = recordFixture(captainAccount, { draft });
+    const { client, data } = renderAccount(captainAccount, record);
+    data.vessels[1].maxSpeedKnots = 10;
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, edited) => ({ ...record, version: 4, draft: structuredClone(edited) }));
+    await openRecord(record); fireEvent.click(stepButton(2));
+    applyEta('2026-10-26', '08:00');
+    expect(capturingWeatherPanel().waypoints.map(point => point.eta)).toEqual(['2026-10-26T08:00', '2026-10-26T09:00', '2026-10-26T10:00']);
+    expectEta('2026-10-26', '09:00', 2);
+    applyEta('2026-10-26', '10:30', 2);
+    expect(capturingWeatherPanel().waypoints[1]).toMatchObject({ etaMode: 'manual', eta: '2026-10-26T10:30' });
+    expect(capturingWeatherPanel().waypoints[2]).toMatchObject({ etaMode: 'automatic', eta: '2026-10-26T11:30' });
+    applyEta('2026-10-26', '07:00');
+    expect(capturingWeatherPanel().waypoints.map(point => point.eta)).toEqual(['2026-10-26T07:00', '2026-10-26T10:30', '2026-10-26T11:30']);
+    fireEvent.click(formQueries().getByRole('button', { name: 'Reprendre le calcul de l’ETA du point 2' }));
+    expect(capturingWeatherPanel().waypoints.map(point => point.eta)).toEqual(['2026-10-26T07:00', '2026-10-26T08:00', '2026-10-26T09:00']);
+    expectEta('2026-10-26', '08:00', 2);
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await formQueries().findByText('Brouillon enregistré.');
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ waypoints: [
+      expect.objectContaining({ eta: '2026-10-26T07:00', etaMode: 'manual' }),
+      expect.objectContaining({ eta: '2026-10-26T08:00', etaMode: 'automatic' }),
+      expect.objectContaining({ eta: '2026-10-26T09:00', etaMode: 'automatic' }),
+    ] }), record);
+  });
+
   it('moves and deletes map points by identity, preserving other points and saving the updated route', async () => {
     const draft = captureSeaOperationRadios(waypointCaptureDraft(), '2026-10-23T08:00:00Z');
     draft.waypoints[0].weather = waypointWeather();
@@ -691,6 +745,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     renderAccount(captainAccount, first);
     await openRecord(first); fireEvent.click(stepButton(2));
     const oldMap = waypointMapMock.mock.lastCall![0] as {
+      onAddWaypoint: (position: { latitude: number; longitude: number }, port?: { name: string }) => void;
       onMoveWaypoint: (id: string, position: { latitude: number; longitude: number }) => void;
       onDeleteWaypoint: (id: string) => void;
     };
@@ -698,6 +753,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await openRecord(first); fireEvent.click(stepButton(2));
     act(() => {
+      oldMap.onAddWaypoint({ latitude: 49.65, longitude: -1.62 }, { name: 'Port de la fiche précédente' });
       oldMap.onMoveWaypoint(draft.waypoints[0].id, { latitude: 1, longitude: 2 });
       oldMap.onDeleteWaypoint(draft.waypoints[0].id);
     });
@@ -896,7 +952,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
       fireEvent.change(formQueries().getByLabelText(`Latitude · point ${index}`), { target: { value: latitude } });
       fireEvent.change(formQueries().getByLabelText(`Longitude · point ${index}`), { target: { value: longitude } });
     }
-    expect(within(map).getByRole('img', { name: 'Carte du parcours · 2 points géolocalisés' })).toBeVisible();
+    expect(within(map).getByRole('group', { name: 'Carte du parcours · 2 points géolocalisés' })).toBeVisible();
     expect(map.querySelectorAll('.so-route-map-track line')).toHaveLength(1);
     fireEvent.change(formQueries().getByLabelText('Latitude · point 1'), { target: { value: '' } });
     expect(within(map).getByRole('status')).toHaveTextContent('1 point sans coordonnées valides');
@@ -976,7 +1032,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await openRecord(record);
     await userEvent.click(stepButton(2));
     const map = formQueries().getByRole('figure', { name: 'Carte du parcours' });
-    expect(within(map).getByRole('img', { name: 'Carte du parcours · 1 point géolocalisé' })).toBeVisible();
+    expect(within(map).getByRole('group', { name: 'Carte du parcours · 1 point géolocalisé' })).toBeVisible();
     expect(within(map).queryByRole('button')).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Placer les waypoints' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Afficher la carte en plein écran' })).not.toBeInTheDocument();
@@ -2429,7 +2485,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(capturingWeatherPanel().waypoints[0]).toEqual(originalPoint);
     expect(sessionStorage.length).toBe(0);
     fireEvent.click(picker.getByRole('button', { name: 'Appliquer' }));
-    expect(capturingWeatherPanel().waypoints[0]).toEqual({ ...originalPoint, eta: '2026-10-24T15:30', weather: undefined });
+    expect(capturingWeatherPanel().waypoints[0]).toEqual({ ...originalPoint, eta: '2026-10-24T15:30', etaMode: 'manual', weather: undefined });
     expect(capturingWeatherPanel().waypoints[0]).not.toHaveProperty('weather');
     expect(capturingWeatherPanel().waypoints[0].radio).toEqual(originalPoint.radio);
     await act(async () => previousCallback(waypointWeather(), waypointWeatherContext(draft), client));

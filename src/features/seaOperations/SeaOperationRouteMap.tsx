@@ -2,10 +2,11 @@ import { MapPin } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import { buildSeaOperationRouteMap, type RouteMapViewport, type SeaOperationRouteMapGeometry } from './seaOperationRouteMapGeometry';
-import { seaOperationMapPlaces } from './seaOperationMapPlaces';
+import { seaOperationMapPlaces, type SeaOperationMapPort } from './seaOperationMapPlaces';
 import { seaWaypointPosition } from './seaOperationNavigation';
 import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates';
 import { formatProjectPort } from '../projects/projectPorts';
+import { buildSeaOperationRouteLegs, seaOperationVoyageTiming } from './seaOperationRouteLegs';
 import './seaOperationRouteMap.css';
 
 interface Position { x: number; y: number }
@@ -31,15 +32,39 @@ function directionArrow(from: Position, to: Position): string | null {
   return `${x + ux * 5},${y + uy * 5} ${x - ux * 4 - uy * 3.5},${y - uy * 4 + ux * 3.5} ${x - ux * 4 + uy * 3.5},${y - uy * 4 - ux * 3.5}`;
 }
 
+function routeLegLabels(geometry: SeaOperationRouteMapGeometry, legs: ReturnType<typeof buildSeaOperationRouteLegs>['legs'], places: ReturnType<typeof seaOperationMapPlaces> | null) {
+  if (geometry.width < 600) return [];
+  const occupied = geometry.points.map(point => ({ west: point.x - 72, east: point.x + 72, north: point.y - 24, south: point.y + 45 }));
+  for (const marker of places?.markers || []) occupied.push({ west: marker.x - 16, east: marker.x + 16, north: marker.y - 16, south: marker.y + 16 });
+  occupied.push({ west: geometry.width - 248, east: geometry.width, north: geometry.height - 164, south: geometry.height });
+  const labels: Array<{ x: number; y: number; width: number; text: string; leg: typeof legs[number] }> = [];
+  for (const leg of legs) {
+    const from = geometry.points.find(point => point.index === leg.fromIndex), to = geometry.points.find(point => point.index === leg.toIndex);
+    if (!from || !to || Math.abs(from.x - to.x) > geometry.width * .8) continue;
+    const x = (from.x + to.x) / 2, y = (from.y + to.y) / 2;
+    const text = `${leg.distanceLabel} · ${leg.durationLabel || 'Durée indisponible'}`, width = Math.min(250, text.length * 6.3 + 16);
+    const box = { west: x - width / 2, east: x + width / 2, north: y - 11, south: y + 11 };
+    if (box.west < 4 || box.east > geometry.width - 4 || box.north < 4 || box.south > geometry.height - 4
+      || occupied.some(other => box.west < other.east + 4 && box.east > other.west - 4 && box.north < other.south + 4 && box.south > other.north - 4)) continue;
+    occupied.push(box); labels.push({ x, y, width, text, leg });
+  }
+  return labels;
+}
+
 /** Local situation map; placement is supplied explicitly by the editing wrapper. */
-export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onGeometry, renderOverlay, fillAvailableSpace = false, showPlaces = false, showWaypointCoordinates = false }: {
+export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onGeometry, renderOverlay, fillAvailableSpace = false, showPlaces = false, showWaypointCoordinates = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta }: {
   waypoints: readonly SeaOperationWaypoint[]; compact?: boolean;
   viewport?: RouteMapViewport;
   onGeometry?: (geometry: SeaOperationRouteMapGeometry) => void;
-  renderOverlay?: (geometry: SeaOperationRouteMapGeometry) => ReactNode;
+  renderOverlay?: (geometry: SeaOperationRouteMapGeometry, context: { places: ReturnType<typeof seaOperationMapPlaces> | null }) => ReactNode;
   fillAvailableSpace?: boolean;
   showPlaces?: boolean;
   showWaypointCoordinates?: boolean;
+  onPortSelect?: (ports: readonly SeaOperationMapPort[]) => void;
+  showRouteLegs?: boolean;
+  maxSpeedKnots?: number | null;
+  etd?: string;
+  eta?: string;
 }) {
   const titleId = useId();
   const descriptionId = useId();
@@ -53,6 +78,10 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
   const geometry = useMemo(() => buildSeaOperationRouteMap(waypoints, width, height, compact ? undefined : viewport), [waypoints, width, height, compact, viewport]);
   const groups = useMemo(() => groupCoincidentPoints(geometry.points), [geometry.points]);
   const places = useMemo(() => showPlaces && !compact ? seaOperationMapPlaces(geometry) : null, [showPlaces, compact, geometry]);
+  const route = useMemo(() => showRouteLegs && !compact ? buildSeaOperationRouteLegs(waypoints, maxSpeedKnots) : null, [showRouteLegs, compact, waypoints, maxSpeedKnots]);
+  const legLabels = useMemo(() => route ? routeLegLabels(geometry, route.legs, places) : [], [geometry, route, places]);
+  const voyage = route ? seaOperationVoyageTiming(etd, route.totalDurationMinutes, eta) : null;
+  const showLegList = Boolean(route && route.legs.length > 0 && (geometry.width < 600 || legLabels.length < route.legs.length));
   const countLabel = `${geometry.points.length} point${geometry.points.length === 1 ? '' : 's'} géolocalisé${geometry.points.length === 1 ? '' : 's'}`;
 
   useEffect(() => { onGeometry?.(geometry); }, [geometry, onGeometry]);
@@ -69,10 +98,19 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
     return () => observer.disconnect();
   }, []);
 
+  const summaryBelowMap = geometry.width < 600;
+  const transitDurationFallback = Boolean(route?.totalDurationLabel && !voyage?.durationLabel);
+  const voyageSummary = route && voyage && geometry.projection && waypoints.length > 1 ? <aside className={`so-route-map-voyage-summary${summaryBelowMap ? ' is-below-map' : ''}`} aria-label="Estimation du parcours">
+    <strong>{route.totalDistanceLabel || 'Distance totale indisponible'}<span>{voyage.durationLabel || route.totalDurationLabel || 'Durée indisponible'}</span></strong>
+    <dl><div><dt>ETD</dt><dd>{voyage.etdLabel || 'À renseigner'}</dd></div><div><dt>{eta?.trim() ? 'ETA arrivée' : 'ETA estimée'}</dt><dd>{voyage.etaLabel || 'Indisponible'}</dd></div></dl>
+    {voyage.etaSource === 'waypoint' && <small>Durée ETD → ETA retenue.</small>}
+    {(transitDurationFallback || voyage.etaSource === 'estimated') && <small>Durée estimée à vitesse constante.</small>}
+  </aside> : null;
+
   return <figure aria-labelledby={titleId} className={`so-route-map${compact ? ' is-compact' : ''}${filling ? ' is-filling' : ''}`}>
     <header className="so-route-map-heading"><h3 id={titleId}>Carte du parcours</h3><span>{countLabel}</span></header>
     <div className="so-route-map-frame" ref={frame}>
-      {geometry.projection ? <svg aria-labelledby={svgTitleId} aria-describedby={descriptionId} className="so-route-map-svg" role={!compact && renderOverlay ? 'group' : 'img'} viewBox={`0 0 ${geometry.width} ${geometry.height}`}>
+      {geometry.projection ? <svg aria-labelledby={svgTitleId} aria-describedby={descriptionId} className="so-route-map-svg" role={!compact && (renderOverlay || route) ? 'group' : 'img'} viewBox={`0 0 ${geometry.width} ${geometry.height}`}>
         <title id={svgTitleId}>{`Carte du parcours · ${countLabel}`}</title>
         <desc id={descriptionId}>Nord en haut. Les numéros suivent l’ordre du tableau. {geometry.points.map((point) => `Point ${point.index} : ${point.label}`).join(' ; ')}. Les points aux mêmes coordonnées partagent une pastille.</desc>
         <defs><clipPath id={clipId}><rect width={geometry.width} height={geometry.height} /></clipPath></defs>
@@ -93,6 +131,9 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
             const arrow = directionArrow(segment.from, segment.to);
             return <g key={index}><line x1={segment.from.x} y1={segment.from.y} x2={segment.to.x} y2={segment.to.y} vectorEffect="non-scaling-stroke" />{arrow && <polygon className="so-route-map-direction" points={arrow} />}</g>;
           })}</g>
+          {legLabels.length > 0 && <g className="so-route-map-leg-labels">{legLabels.map(label => <g key={`${label.leg.fromIndex}:${label.leg.toIndex}`} transform={`translate(${label.x} ${label.y})`} role="img" aria-label={`Waypoint ${label.leg.fromIndex} vers ${label.leg.toIndex} : ${label.text}`}>
+            <rect x={-label.width / 2} y={-11} width={label.width} height={22} rx={6} /><text textAnchor="middle" dominantBaseline="central">{label.text}</text>
+          </g>)}</g>}
           <g className="so-route-map-points">{groups.map((group) => {
             const first = group.points[0];
             const isStart = group.points.some((point) => point.index === 1);
@@ -116,15 +157,22 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
           })}</g>
           <g aria-hidden="true" className="so-route-map-north" transform={`translate(${geometry.width - 23} 31)`}><text textAnchor="middle" y={-15}>N</text><path d="M 0 9 V -7 M -4 -2 L 0 -7 L 4 -2" vectorEffect="non-scaling-stroke" /></g>
           {geometry.scale && <g aria-hidden="true" className="so-route-map-scale"><path d={`M ${geometry.scale.from.x} ${geometry.scale.from.y - 4} V ${geometry.scale.from.y + 4} M ${geometry.scale.from.x} ${geometry.scale.from.y} H ${geometry.scale.to.x} M ${geometry.scale.to.x} ${geometry.scale.to.y - 4} V ${geometry.scale.to.y + 4}`} vectorEffect="non-scaling-stroke" /><text x={(geometry.scale.from.x + geometry.scale.to.x) / 2} y={geometry.scale.from.y - 8} textAnchor="middle">{geometry.scale.label}</text></g>}
-          {!compact && renderOverlay?.(geometry)}
+          {!compact && renderOverlay?.(geometry, { places })}
         </g>
       </svg> : <div className="so-route-map-empty"><MapPin aria-hidden="true" size={22} /><p>Renseignez une latitude et une longitude valides pour afficher les points de passage.</p></div>}
+      {!summaryBelowMap && voyageSummary}
     </div>
+    {summaryBelowMap && voyageSummary}
+    {route && route.legs.length > 0 && <div className="so-route-map-leg-summary">
+      <p>{route.cruiseSpeedKnots === null ? 'Distance directe entre points ; durée indisponible sans vitesse maximale du navire.' : `Estimations à ${route.cruiseSpeedKnots} nd : 60 % de la vitesse maximale, arrondi au nœud supérieur. Distances directes, sans routage ; horaires manuels conservés.`}</p>
+      {showLegList && <ul className="so-route-map-leg-list" aria-label="Distances et durées entre les waypoints">{route.legs.map(leg => <li key={`${leg.fromIndex}:${leg.toIndex}`}><strong>{leg.fromIndex} → {leg.toIndex}</strong><span>{leg.distanceLabel} · {leg.durationLabel || 'Durée indisponible'}</span></li>)}</ul>}
+      {route.invalidLegCount > 0 && <p>Parcours incomplet : les totaux restent indisponibles si des coordonnées manquent.</p>}
+    </div>}
     {geometry.invalidCount > 0 && <p className="so-route-map-omissions" role="status">{geometry.invalidCount === 1 ? '1 point sans coordonnées valides n’est pas représenté ; la liaison est interrompue à cet endroit.' : `${geometry.invalidCount} points sans coordonnées valides ne sont pas représentés ; les liaisons sont interrompues à ces endroits.`}</p>}
     {places && geometry.projection && <details className="so-route-map-places"><summary>Ports dans cette région · {places.ports.length}</summary>
       <div className="so-route-map-port-list">
         <p>Catalogue partagé avec Projets. Points de référence indicatifs : ni entrées de port ni positions de quai.</p>
-        <ul aria-label="Ports du catalogue dans le cadre affiché">{places.ports.map(item => <li key={item.key}><i className="so-route-map-port-list-dot" aria-hidden="true" /><span>{formatProjectPort(item.port)}<small>{item.location.source === 'sandre' ? 'Point publié SANDRE/SHOM' : 'Repère NGA World Port Index · position indicative'}</small></span></li>)}</ul>
+        <ul aria-label="Ports du catalogue dans le cadre affiché">{places.ports.map(item => <li key={item.key}><i className="so-route-map-port-list-dot" aria-hidden="true" />{onPortSelect ? <button type="button" className="sp-button sp-button--secondary so-route-map-port-choice" aria-label={`Choisir le port ${formatProjectPort(item.port)}`} onClick={() => onPortSelect([item])}><span>{formatProjectPort(item.port)}<small>{item.location.source === 'sandre' ? 'Point publié SANDRE/SHOM' : 'Repère NGA World Port Index · position indicative'}</small></span></button> : <span>{formatProjectPort(item.port)}<small>{item.location.source === 'sandre' ? 'Point publié SANDRE/SHOM' : 'Repère NGA World Port Index · position indicative'}</small></span>}</li>)}</ul>
         {places.ports.length === 0 && <p>Aucun port géoréférencé du catalogue dans ce cadre.</p>}
         {places.relatedPorts.length > 0 && <><p>Rattachements statistiques aux ports visibles · {places.relatedPorts.length}. Leur position propre n’est pas disponible ; ils ne sont pas placés sur la carte.</p>
           <ul aria-label="Ports rattachés sans position propre">{places.relatedPorts.map(item => <li key={item.key}><span>{formatProjectPort(item.port)}<small>Rattachement à {item.port.locodePort || item.parent.name} · position propre non disponible</small></span></li>)}</ul></>}
