@@ -896,11 +896,11 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('button', { name: /^Loyers d’affrètement/ })).toHaveAttribute('aria-expanded', 'true');
     const expenseSection = within(screen.getByRole('button', { name: /^Services refacturables/ }).closest('article')!);
     expect(expenseSection.getByRole('button', { name: 'Ajouter' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^Suivi de la facture et pièces/ }));
+    expect(screen.getByRole('button', { name: /^Suivi de la facture et pièces/ })).toHaveAttribute('aria-expanded', 'true');
     await waitFor(() => expect(screen.getByLabelText('Numéro de facture')).toHaveValue('F-2026-07'));
     await user.clear(screen.getByLabelText('Numéro de facture'));
     await user.type(screen.getByLabelText('Numéro de facture'), 'F-2026-07-CORR');
-    await user.click(screen.getByRole('button', { name: /^Prestations BBTM/ }));
+    expect(screen.getByRole('button', { name: /^Prestations BBTM/ })).toHaveAttribute('aria-expanded', 'true');
     const quantity = screen.getByLabelText('Nombre d’unités');
     fireEvent.change(quantity, { target: { value: '7' } });
     expect(quantity).toHaveValue(7);

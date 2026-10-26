@@ -85,6 +85,7 @@ import {
 
 const EMPTY_DATA: ProjectBillingData = { periods: [], expenses: [], documents: [], services: [] };
 const BILLING_UNIT_OPTIONS = ['Unité', 'm²', 'm³', 'L'];
+const EXPANDED_BILLING_SECTIONS = { hire: true, expenses: true, services: true, raw: true, followup: true };
 
 interface BillingServiceLineDraft extends BillingServiceDraft {
   key: string;
@@ -206,7 +207,7 @@ export function ProjectBillingPanel({
   workspace?: boolean;
   vessels?: VesselRecord[];
 }) {
-  const [expandedSections, setExpandedSections] = useState({ hire: true, expenses: false, services: false, raw: false, followup: false });
+  const [expandedSections, setExpandedSections] = useState(EXPANDED_BILLING_SECTIONS);
   const [rawLinesDirty, setRawLinesDirty] = useState(false);
   const defaultMonth = initialMonth?.slice(0, 7) || currentMonth();
   const [data, setData] = useState<ProjectBillingData>(EMPTY_DATA);
@@ -289,6 +290,7 @@ export function ProjectBillingPanel({
     setReferences([]);
     setReferenceDrafts({});
     setSelectedMonth(month);
+    setExpandedSections(EXPANDED_BILLING_SECTIONS);
     setPeriodDraft({ ...billingDraft(project), periodMonth: month });
     const range = monthRange(month);
     setCustomStart(range.start);
@@ -308,7 +310,7 @@ export function ProjectBillingPanel({
     if (selectedPeriod) {
       if (autoCreatedPeriodId.current === selectedPeriod.id) autoCreatedPeriodId.current = null;
       else setPeriodDraft(billingDraft(project, selectedPeriod));
-      setLegacyReferenceScope(billingReferenceScope({ ...selectedPeriod, includeRawInPdf: selectedPeriod.includeRawInPdf !== false && (data.rawLines || []).some((line) => line.billingPeriodId === selectedPeriod.id) }));
+      setLegacyReferenceScope(billingReferenceScope({ ...selectedPeriod, includeRawInPdf: selectedPeriod.includeRawInPdf !== false && (data.rawLines || []).some((line) => line.serviceDate.startsWith(selectedMonth)) }));
     }
   }, [selectedPeriod?.id]);
   const periodExpenses = selectedPeriod
@@ -322,10 +324,6 @@ export function ProjectBillingPanel({
       ? data.services.filter((service) => service.billingPeriodId === selectedPeriod.id)
       : [],
     [data.services, selectedPeriod?.id],
-  );
-  const periodRawLines = useMemo(
-    () => selectedPeriod ? (data.rawLines || []).filter((line) => line.billingPeriodId === selectedPeriod.id) : [],
-    [data.rawLines, selectedPeriod?.id],
   );
   const expenseTotal = periodExpenses.reduce((sum, expense) => sum + expense.amountHt, 0);
   const expenseTotalsByCurrency = new Map<string, number>();
@@ -346,6 +344,10 @@ export function ProjectBillingPanel({
   const exportRange = periodMode === 'calendar-month'
     ? monthRange(selectedMonth)
     : { start: customStart, end: customEnd };
+  const periodRawLines = useMemo(
+    () => (data.rawLines || []).filter((line) => line.serviceDate >= exportRange.start && line.serviceDate <= exportRange.end),
+    [data.rawLines, exportRange.start, exportRange.end],
+  );
   const calendarRange = monthRange(selectedMonth);
   const dprRange = project.projectCode.trim().toUpperCase() === 'P144' ? {
     start: exportRange.start < calendarRange.start ? exportRange.start : calendarRange.start,
@@ -373,7 +375,7 @@ export function ProjectBillingPanel({
     ...service,
     quantity: automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) ?? service.quantity,
   }));
-  const rawLinesForExport = periodRawLines.filter((line) => line.serviceDate >= exportRange.start && line.serviceDate <= exportRange.end);
+  const rawLinesForExport = periodRawLines;
   const referenceScope = billingReferenceScope({
     ...(selectedPeriod || periodDraft),
     includeRawInPdf: (selectedPeriod?.includeRawInPdf ?? periodDraft.includeRawInPdf) !== false
@@ -479,9 +481,10 @@ export function ProjectBillingPanel({
     setMessage('');
     const normalized = month.slice(0, 7);
     setSelectedMonth(normalized);
+    setExpandedSections(EXPANDED_BILLING_SECTIONS);
     const period = data.periods.find((item) => item.periodMonth.startsWith(normalized));
     setPeriodDraft({ ...billingDraft(project, period), periodMonth: normalized });
-    setLegacyReferenceScope(period ? billingReferenceScope({ ...period, includeRawInPdf: period.includeRawInPdf !== false && (data.rawLines || []).some((line) => line.billingPeriodId === period.id) }) : null);
+    setLegacyReferenceScope(period ? billingReferenceScope({ ...period, includeRawInPdf: period.includeRawInPdf !== false && (data.rawLines || []).some((line) => line.serviceDate.startsWith(normalized)) }) : null);
     setReferenceDrafts({});
     setExpenseEditor(null);
     const range = monthRange(normalized);
@@ -498,10 +501,12 @@ export function ProjectBillingPanel({
   }
 
   async function getOrCreatePeriod(draft = periodDraft): Promise<ProjectBillingPeriod> {
-    if (selectedPeriod) return selectedPeriod;
+    const month = draft.periodMonth.slice(0, 7);
+    const existingPeriod = data.periods.find((period) => period.periodMonth.startsWith(month));
+    if (existingPeriod) return existingPeriod;
     if (!isManager) throw new Error('Aucune fiche de facturation n’est disponible pour ce mois.');
     const revision = contextRevision.current;
-    const key = `${project.id}/${draft.periodMonth.slice(0, 7)}`;
+    const key = `${project.id}/${month}`;
     let request = pendingPeriods.current.get(key);
     if (!request) {
       request = ensureProjectBillingPeriod(client, project.id, draft);
@@ -510,11 +515,13 @@ export function ProjectBillingPanel({
     try {
       const saved = await request;
       if (revision !== contextRevision.current) throw new Error('Le mois ou le projet a changé.');
-      autoCreatedPeriodId.current = saved.id;
-      setPeriodDraft((current) => ({
-        ...billingDraft(project, saved),
-        ...Object.fromEntries([...editedInvoiceFields.current].map((field) => [field, current[field]])),
-      }));
+      if (month === selectedMonth) {
+        autoCreatedPeriodId.current = saved.id;
+        setPeriodDraft((current) => ({
+          ...billingDraft(project, saved),
+          ...Object.fromEntries([...editedInvoiceFields.current].map((field) => [field, current[field]])),
+        }));
+      }
       setData((current) => ({ ...current, periods: [saved, ...current.periods.filter((period) => period.id !== saved.id && period.periodMonth.slice(0, 7) !== saved.periodMonth.slice(0, 7))] }));
       return saved;
     } finally {
@@ -878,7 +885,10 @@ export function ProjectBillingPanel({
     const revision = contextRevision.current;
     setBusy('raw-line');
     try {
-      const period = await getOrCreatePeriod();
+      const month = draft.serviceDate.slice(0, 7);
+      const period = await getOrCreatePeriod(month === selectedMonth
+        ? periodDraft
+        : { ...billingDraft(project), periodMonth: month });
       const saved = await saveProjectBillingRawLine(client, project.id, period.id, draft, id);
       if (referenceContext.current?.client !== client || referenceContext.current.projectId !== project.id) {
         throw new Error('Le projet a changé pendant l’enregistrement.');
@@ -986,9 +996,16 @@ export function ProjectBillingPanel({
     Compléter les {missingDates.length} jour{missingDates.length > 1 ? 's' : ''} sans DPR avec « 24/24 Operation » au tarif contractuel applicable à chaque journée.
   </button> : null;
   function sectionHeader(id: keyof typeof expandedSections, label: string, icon: ReactNode, actions?: ReactNode, total?: ReactNode) {
+    const count = {
+      hire: hireDays.length,
+      expenses: periodExpenses.length,
+      services: periodServices.length,
+      raw: periodRawLines.length,
+      followup: periodDocuments.filter((document) => document.documentKind !== 'chargeable_expense').length,
+    }[id];
     return <header className="project-billing-section-header">
-      <button className="project-billing-section-toggle" type="button" aria-expanded={expandedSections[id]} aria-controls={`billing-content-${id}`} onClick={() => setExpandedSections((current) => ({ ...current, [id]: !current[id] }))}>
-        {icon}<strong>{label}</strong><ChevronDown aria-hidden="true" size={16} className={expandedSections[id] ? 'is-expanded' : undefined} />
+      <button className="project-billing-section-toggle" type="button" aria-label={label} aria-describedby={`billing-count-${id}`} aria-expanded={expandedSections[id]} aria-controls={`billing-content-${id}`} onClick={() => setExpandedSections((current) => ({ ...current, [id]: !current[id] }))}>
+        <span id={`billing-count-${id}`} className="project-billing-section-count" aria-label={`${count} enregistrement${count === 1 ? '' : 's'}`}>{count}</span>{icon}<strong>{label}</strong><ChevronDown aria-hidden="true" size={16} className={expandedSections[id] ? 'is-expanded' : undefined} />
       </button>
       {actions ? <div className="project-billing-section-commands">{actions}</div> : null}
       {total ? <strong className="project-billing-section-total">{total}</strong> : null}
@@ -1197,6 +1214,8 @@ export function ProjectBillingPanel({
           isManager={isManager}
           disabled={Boolean(busy)}
           initialDate={`${selectedMonth}-01`}
+          startDate={exportRange.start}
+          endDate={exportRange.end}
           onSave={saveRawLine}
           onDelete={removeRawLine}
           onCatalogOpen={() => openServiceCatalog()}

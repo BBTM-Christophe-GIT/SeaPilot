@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.77.24`, build `2026-10-26.004`, classe les saisies brutes du module
+Projet selon leur date de prestation, y compris les lignes déjà enregistrées
+depuis un autre mois. Les catégories s'ouvrent systématiquement et affichent une
+pastille bleue avec leur nombre d'enregistrements. Les tableaux, totaux et PDF
+utilisent la même période. Aucune migration ni nouvelle dépendance n'est requise.
+Voir [projects-billing-month-counts.md](./projects-billing-month-counts.md).
+
 Version `3.77.23`, build `2026-10-26.003`, place l’UKC sur une barre large :
 modes horizontaux, valeur automatique unique et détails repliés. Les champs
 Waypoint et coordonnées sont moins larges ; le calendrier et la météo gardent

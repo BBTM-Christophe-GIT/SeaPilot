@@ -88,7 +88,7 @@ describe('P144 Spread Antipollution monthly rule', () => {
   it('recalculates an existing 28-unit line to 29, including a missing DPR day and excluded weather rent', async () => {
     renderPanel(project, true);
     await waitFor(() => expect(screen.getByLabelText('Nombre d’unités')).toHaveValue(29));
-    fireEvent.click(screen.getByRole('button', { name: /^Prestations BBTM/ }));
+    expect(screen.getByRole('button', { name: 'Prestations BBTM' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByLabelText('Nombre d’unités')).toHaveAttribute('readonly');
     expect((screen.getByLabelText('Montant total HT') as HTMLInputElement).value).toMatch(/2\s?684,82/);
     expect(screen.getByLabelText('Totaux sélectionnés pour l’export')).toHaveTextContent(/2\s?684,82/);
