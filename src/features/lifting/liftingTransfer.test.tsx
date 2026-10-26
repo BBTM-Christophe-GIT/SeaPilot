@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ROLE_KEYS } from '../permissions/roles';
 import { LiftingPage } from './LiftingPage';
 import { createLiftingPreviewClient, demoVessel, secondDemoVessel } from './liftingPreview';
@@ -20,9 +20,12 @@ async function openTransfer(item: LiftingItem) {
   return within(screen.getByRole('dialog', { name: `Transférer le matériel ${item.reference}` }));
 }
 const certificate = () => new File(['%PDF-1.7 isolated transfer fixture'], 'Certificat du matériel.pdf', { type: 'application/pdf' });
+afterEach(() => { vi.useRealTimers(); });
 
 describe('equipment transfers in isolated preview and client UI fixtures', () => {
   it.each(kinds)('moves %s equipment to the selected vessel without recreating identity, certificates or previous inspection entries', async (kind) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-26T10:00:00.000Z'));
     const client = createLiftingPreviewClient();
     const inspectionId = await startLiftingInspection(client, demoVessel.id, kind, '2026-10-01', '2027-10-01');
     const original = await transferable(client, kind);
@@ -37,6 +40,7 @@ describe('equipment transfers in isolated preview and client UI fixtures', () =>
     expect(dialog.getByRole('button', { name: 'Transférer' })).toBeDisabled();
     fireEvent.click(dialog.getByRole('button', { name: secondDemoVessel.name }));
     expect(dialog.getByRole('button', { name: secondDemoVessel.name })).toHaveAttribute('aria-pressed', 'true');
+    vi.setSystemTime(new Date('2026-10-26T10:00:01.000Z'));
     fireEvent.click(dialog.getByRole('button', { name: 'Transférer' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await waitFor(() => expect(screen.queryByRole('heading', { name: original.description })).not.toBeInTheDocument());
