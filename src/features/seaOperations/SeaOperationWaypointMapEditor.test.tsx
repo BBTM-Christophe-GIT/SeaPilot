@@ -5,6 +5,7 @@ import { AppDialog } from '../../components/AppDialog';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import type { SeaPosition } from './seaOperationNavigation';
 import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
+import { buildSeaOperationRouteMap, DEFAULT_ROUTE_MAP_VIEWPORT, routeMapPositionAt } from './seaOperationRouteMapGeometry';
 
 function point(index: number, latitude = '49.65', longitude = '-1.62'): SeaOperationWaypoint {
   return { id: `point-${index}`, number: String(index), descriptionVhf: '', latitude, longitude, eta: '', ukc: '', denseTraffic: false };
@@ -14,16 +15,17 @@ class TestPointerEvent extends MouseEvent {
   readonly pointerId: number;
   readonly isPrimary: boolean;
   readonly pointerType: string;
-  constructor(type: string, init: PointerEventInit = {}) {
+  constructor(type: string, init: PointerEventInit & { timeStamp?: number } = {}) {
     super(type, init);
     this.pointerId = init.pointerId ?? 1;
     this.isPrimary = init.isPrimary ?? true;
     this.pointerType = init.pointerType ?? 'mouse';
+    if (init.timeStamp !== undefined) Object.defineProperty(this, 'timeStamp', { value: init.timeStamp });
   }
 }
 
 beforeEach(() => { vi.stubGlobal('PointerEvent', TestPointerEvent); });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 function activate() {
   fireEvent.click(screen.getByRole('button', { name: 'Placer les waypoints' }));
@@ -34,12 +36,120 @@ function activate() {
   return { surface, svg };
 }
 
-function tap(surface: HTMLElement | SVGElement, x = 325, y = 130, pointerId = 1, pointerType = 'mouse') {
-  fireEvent.pointerDown(surface, { clientX: x, clientY: y, button: 0, pointerId, pointerType });
-  fireEvent.pointerUp(surface, { clientX: x, clientY: y, button: 0, pointerId, pointerType });
+function tap(surface: HTMLElement | SVGElement, x = 325, y = 130, pointerId = 1, pointerType = 'mouse', timeStamp?: number) {
+  fireEvent.pointerDown(surface, { clientX: x, clientY: y, button: 0, pointerId, pointerType, timeStamp });
+  fireEvent.pointerUp(surface, { clientX: x, clientY: y, button: 0, pointerId, pointerType, timeStamp });
 }
 
 describe('SeaOperationWaypointMapEditor', () => {
+  it('moves and deletes the selected original waypoint without adding or mutating the controlled route', () => {
+    const points = [point(1, 'invalid', ''), point(2), point(3, '50', '0')], original = structuredClone(points);
+    const add = vi.fn(), move = vi.fn(), remove = vi.fn();
+    render(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} onMoveWaypoint={move} onDeleteWaypoint={remove} />);
+    const { surface } = activate();
+    fireEvent.click(screen.getByRole('button', { name: 'Sélectionner le waypoint 2' }));
+    expect(document.querySelector('.so-waypoint-map-crosshair')).toBeNull();
+    expect(screen.getByRole('group', { name: 'Waypoint sélectionné' })).toHaveTextContent('Waypoint 2');
+    fireEvent.click(screen.getByRole('button', { name: 'Repositionner' }));
+    tap(surface);
+    expect(move).toHaveBeenCalledExactlyOnceWith('point-2', expect.objectContaining({ latitude: expect.any(Number), longitude: expect.any(Number) }));
+    expect(move.mock.calls[0][1].latitude).toBeCloseTo(49.825, 8); expect(move.mock.calls[0][1].longitude).toBeCloseTo(-.81, 8);
+    expect(add).not.toHaveBeenCalled();
+    expect(screen.queryByRole('group', { name: 'Waypoint sélectionné' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Sélectionner le waypoint 3' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Supprimer le waypoint' }));
+    expect(remove).toHaveBeenCalledExactlyOnceWith('point-3');
+    expect(add).not.toHaveBeenCalled(); expect(points).toEqual(original);
+  });
+
+  it('requires an explicit ID choice for coincident points and preserves original indices after invalid positions', () => {
+    const points = [point(1, 'invalid', ''), point(2), point(3)];
+    const add = vi.fn(), remove = vi.fn(), move = vi.fn();
+    render(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} onMoveWaypoint={move} onDeleteWaypoint={remove} />);
+    activate();
+    const group = screen.getByRole('button', { name: 'Sélectionner les waypoints 2, 3' });
+    fireEvent.keyDown(group, { key: 'Enter' });
+    expect(screen.getByRole('group', { name: 'Waypoints à cette position' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Supprimer le waypoint' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Repositionner' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Sélectionner le waypoint 3' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Supprimer le waypoint' }));
+    expect(remove).toHaveBeenCalledExactlyOnceWith('point-3');
+    expect(add).not.toHaveBeenCalled(); expect(move).not.toHaveBeenCalled();
+  });
+
+  it('lets a repositioning click land exactly on an existing marker instead of selecting it or adding', () => {
+    const add = vi.fn(), move = vi.fn();
+    const view = render(<SeaOperationWaypointMapEditor waypoints={[point(1), point(2, '50', '0')]} onAddWaypoint={add} onMoveWaypoint={move} />);
+    const { surface } = activate();
+    const target = view.container.querySelector('[data-point-indices="2"]')!.getAttribute('transform')!.match(/translate\(([-\d.]+) ([-\d.]+)\)/)!;
+    fireEvent.click(screen.getByRole('button', { name: 'Sélectionner le waypoint 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Repositionner' }));
+    expect(view.container.querySelector('.so-waypoint-map-marker')).toBeNull();
+    tap(surface, 100 + Number(target[1]) / 2, 50 + Number(target[2]) / 2);
+    expect(move).toHaveBeenCalledExactlyOnceWith('point-1', expect.objectContaining({ latitude: expect.any(Number), longitude: expect.any(Number) }));
+    // Displayed marker pixels are rounded to hundredths by the route geometry.
+    expect(move.mock.calls[0][1].latitude).toBeCloseTo(50, 4); expect(move.mock.calls[0][1].longitude).toBeCloseTo(0, 4);
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('cancels marker selection and repositioning without accidentally adding and supports keyboard relocation', () => {
+    const add = vi.fn(), move = vi.fn();
+    render(<SeaOperationWaypointMapEditor waypoints={[point(1)]} onAddWaypoint={add} onMoveWaypoint={move} />);
+    const { surface } = activate();
+    const marker = screen.getByRole('button', { name: 'Sélectionner le waypoint 1' });
+    fireEvent.keyDown(marker, { key: ' ' });
+    fireEvent.click(screen.getByRole('button', { name: 'Repositionner' }));
+    fireEvent.keyDown(surface, { key: 'Escape' });
+    expect(screen.getByRole('button', { name: 'Terminer le placement' })).toBeInTheDocument();
+    expect(add).not.toHaveBeenCalled(); expect(move).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Sélectionner le waypoint 1' })); fireEvent.click(screen.getByRole('button', { name: 'Repositionner' }));
+    fireEvent.keyDown(surface, { key: 'Enter', repeat: true }); expect(move).not.toHaveBeenCalled();
+    fireEvent.keyDown(surface, { key: 'Enter' });
+    expect(move).toHaveBeenCalledExactlyOnceWith('point-1', expect.objectContaining({ latitude: expect.any(Number), longitude: expect.any(Number) }));
+    expect(move.mock.calls[0][1].latitude).toBeCloseTo(49.65, 8); expect(move.mock.calls[0][1].longitude).toBeCloseTo(-1.62, 8);
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('grabs after a sustained press, suppresses addition even without movement and cleans the hold on blur or disable', () => {
+    vi.useFakeTimers();
+    const add = vi.fn();
+    const view = render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
+    const { surface } = activate();
+    fireEvent.pointerDown(surface, { clientX: 325, clientY: 130, pointerId: 1, button: 0 });
+    act(() => vi.advanceTimersByTime(299));
+    expect(view.container.querySelector('.is-grabbing')).toBeNull();
+    act(() => vi.advanceTimersByTime(1));
+    expect(view.container.querySelector('.is-grabbing')).not.toBeNull();
+    fireEvent.pointerUp(surface, { clientX: 325, clientY: 130, pointerId: 1 });
+    expect(add).not.toHaveBeenCalled(); expect(view.container.querySelector('.is-grabbing')).toBeNull();
+    fireEvent.pointerDown(surface, { clientX: 325, clientY: 130, pointerId: 2, button: 0 });
+    fireEvent.blur(window); act(() => vi.advanceTimersByTime(400));
+    expect(view.container.querySelector('.is-grabbing')).toBeNull();
+    fireEvent.pointerUp(surface, { clientX: 325, clientY: 130, pointerId: 2 });
+    fireEvent.pointerDown(surface, { clientX: 325, clientY: 130, pointerId: 3, button: 0 });
+    view.rerender(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} disabled />);
+    act(() => vi.advanceTimersByTime(400));
+    expect(view.container.querySelector('.is-grabbing')).toBeNull(); expect(add).not.toHaveBeenCalled();
+  });
+
+  it('zooms at the pointer coordinate with a nonpassive wheel listener and cancels any active pointer gesture', () => {
+    const add = vi.fn();
+    const view = render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
+    const { surface } = activate();
+    const pixel = { x: 675, y: 100 };
+    const expected = routeMapPositionAt(buildSeaOperationRouteMap([], 900, 320, { ...DEFAULT_ROUTE_MAP_VIEWPORT }), pixel.x, pixel.y)!;
+    fireEvent.pointerDown(surface, { clientX: 437.5, clientY: 100, pointerId: 1, button: 0 });
+    expect(fireEvent.wheel(surface, { deltaY: -120, clientX: 437.5, clientY: 100, cancelable: true })).toBe(false);
+    fireEvent.pointerUp(surface, { clientX: 437.5, clientY: 100, pointerId: 1 });
+    expect(add).not.toHaveBeenCalled();
+    tap(surface, 437.5, 100, 2);
+    expect(add).toHaveBeenCalledOnce();
+    expect(add.mock.calls[0][0].latitude).toBeCloseTo(expected.latitude, 8);
+    expect(add.mock.calls[0][0].longitude).toBeCloseTo(expected.longitude, 8);
+    view.rerender(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} disabled />);
+    expect(fireEvent.wheel(surface, { deltaY: -120, clientX: 437.5, clientY: 100, cancelable: true })).toBe(true);
+  });
   it('keeps gestures opt-in, shows a local background when empty, and ends placement explicitly', () => {
     const add = vi.fn();
     const { container } = render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
@@ -60,12 +170,12 @@ describe('SeaOperationWaypointMapEditor', () => {
     const add = vi.fn();
     render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
     const { surface } = activate();
-    tap(surface, 437.5, 130);
+    tap(surface, 437.5, 130, 1, 'mouse', 1000);
     fireEvent.click(surface, { clientX: 437.5, clientY: 130 });
     expect(add).toHaveBeenCalledExactlyOnceWith({ latitude: 49, longitude: 1 });
     expect(screen.getByRole('status')).toHaveTextContent('Point 1 ajouté au tableau');
     expect(screen.getByRole('status')).toHaveTextContent('49° 00.000′ N — 001° 00.000′ E');
-    tap(surface, 437.5, 130, 2); // accidental second click/tap at the same pixel
+    tap(surface, 437.5, 130, 2, 'mouse', 1100); // accidental second click/tap at the same pixel
     expect(add).toHaveBeenCalledOnce();
   });
 

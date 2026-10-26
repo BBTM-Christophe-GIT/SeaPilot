@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import { SeaOperationRouteMap } from './SeaOperationRouteMap';
@@ -141,5 +141,38 @@ describe('SeaOperationRouteMap', () => {
     render(<SeaOperationRouteMap waypoints={channelRoute()} compact fillAvailableSpace />);
     expect(screen.getByRole('figure')).not.toHaveClass('is-filling');
     expect(screen.getByRole('img')).toHaveAttribute('viewBox', '0 0 900 220');
+  });
+
+  it('shows cities, port anchors and the complete regional project-port list only when explicitly enabled', () => {
+    const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
+    const { container } = render(<SeaOperationRouteMap waypoints={[]} showPlaces viewport={{ centerLatitude: 49, centerLongitude: -3, longitudeSpan: 16 }} />);
+    expect(container.querySelector('.so-route-map-cities')).toHaveTextContent('Paris');
+    expect(container.querySelectorAll('.so-route-map-anchor').length).toBeGreaterThan(30);
+    expect(container.querySelector('.so-route-map-port title')).toHaveTextContent(/point de référence indicatif/);
+    const list = screen.getByRole('list', { name: 'Ports du catalogue dans le cadre affiché', hidden: true });
+    expect(within(list).getAllByRole('listitem', { hidden: true }).length).toBeGreaterThan(30);
+    expect(list).toHaveTextContent(/Cherbourg/);
+    expect(screen.getByText(/Catalogue partagé avec Projets/)).toBeInTheDocument();
+    expect(screen.getByText(/Couverture partielle et précision non garantie/)).toBeInTheDocument();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('prints no new places or coordinate labels even when editor-only options are requested', () => {
+    const { container, rerender } = render(<SeaOperationRouteMap waypoints={channelRoute()} showPlaces showWaypointCoordinates compact />);
+    expect(container.querySelector('.so-route-map-cities')).not.toBeInTheDocument();
+    expect(container.querySelector('.so-route-map-places')).not.toBeInTheDocument();
+    expect(container.querySelector('.so-route-map-point-coordinates')).not.toBeInTheDocument();
+    rerender(<SeaOperationRouteMap waypoints={channelRoute()} />);
+    expect(container.querySelector('.so-route-map-cities')).not.toBeInTheDocument();
+  });
+
+  it('labels marker positions in degrees and minutes using original table indices after missing rows', () => {
+    const points = channelRoute(); points[0].latitude = '';
+    const { container } = render(<SeaOperationRouteMap waypoints={points} showWaypointCoordinates />);
+    const labels = container.querySelectorAll('.so-route-map-point-coordinates'); expect(labels).toHaveLength(2);
+    expect(container.querySelector('[data-point-indices="2"] .so-route-map-point-coordinates')).toHaveTextContent('48° 21.600′ N');
+    expect(container.querySelector('[data-point-indices="2"] .so-route-map-point-coordinates')).toHaveTextContent('004° 31.800′ W');
+    expect(container.querySelector('[data-point-indices="3"] .so-route-map-point-coordinates')).toHaveTextContent('50° 22.200′ N');
+    expect(points[1].latitude).toBe('48.36');
   });
 });

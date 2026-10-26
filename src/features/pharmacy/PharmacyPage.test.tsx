@@ -26,7 +26,8 @@ function page(roles: RoleKey[] = ['admin'], initial = '/modules/pharmacy') { ret
 describe('PharmacyPage', () => {
   beforeEach(() => {
     configure({ asyncUtilTimeout: 5000 });
-    vi.clearAllMocks();
+    // Discard unconsumed one-shot responses if a previous test stopped before its request.
+    vi.resetAllMocks();
     vi.mocked(fetchPharmacyVessels).mockResolvedValue(vessels);
     vi.mocked(fetchPharmacyVesselExpiryCounts).mockResolvedValue(vesselExpiryCounts);
     vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item, expired, missing], controls: [], categories: categoryFixtures });
@@ -640,10 +641,13 @@ describe('PharmacyPage', () => {
     vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'Dotation B' }]);
     vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [articleB, articleC], categories: [parentB, parentC], controls: [] });
     page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
-    fireEvent.click(screen.getByRole('button', { name: 'Gérer les catégories' }));
-    fireEvent.change(screen.getByLabelText('Branche du catalogue'), { target: { value: 'medicines' } });
-    fireEvent.change(screen.getByLabelText('Nouvelle catégorie'), { target: { value: 'NOUVELLE B' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Ajouter' }));
+    const manage = screen.getByRole('button', { name: 'Gérer les catégories' });
+    await waitFor(() => expect(manage).toBeEnabled());
+    fireEvent.click(manage);
+    const dialog = await screen.findByRole('dialog', { name: 'Gérer les catégories' });
+    fireEvent.change(within(dialog).getByLabelText('Branche du catalogue'), { target: { value: 'medicines' } });
+    fireEvent.change(within(dialog).getByLabelText('Nouvelle catégorie'), { target: { value: 'NOUVELLE B' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Ajouter' }));
     expect(savePharmacyCategory).toHaveBeenCalledExactlyOnceWith(client, 1, 'NOUVELLE B', undefined, 'Dotation B', 'medicines');
     fireEvent.change(screen.getByRole('combobox', { name: 'Type de dotation médicale' }), { target: { value: 'dotation c' } });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

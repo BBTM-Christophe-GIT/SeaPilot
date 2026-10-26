@@ -295,13 +295,24 @@ export function SeaOperationsPage() {
   const weatherEditor = useRef({ client, draft, editing, editable, signed, busy, exporting });
   const pendingWeather = useRef(new globalThis.Map<string, { weather: SeaOperationWaypointWeather; context: SeaOperationWeatherCaptureContext; sourceClient: SupabaseClient }>());
   weatherEditor.current = { client, draft, editing, editable, signed, busy, exporting };
-  const addWaypoint = (position?: SeaPosition) => {
+  // A gesture belongs to the open account/record/mission, even after a context switch.
+  const mapEditSequence = loadSequence.current;
+  const mapOperationId = draft.planning?.operationId;
+  const mapAccount = actionContext.current.account;
+  const canEditMap = () => {
     const current = weatherEditor.current;
-    if (!current.editing || !current.editable || current.signed || current.busy || current.exporting) return;
+    return mapEditSequence === loadSequence.current && current.client === client
+      && actionContext.current.account === mapAccount
+      && current.draft.planning?.operationId === mapOperationId && current.editing
+      && current.editable && !current.signed && !current.busy && !current.exporting;
+  };
+  const addWaypoint = (position?: SeaPosition) => {
+    if (!canEditMap()) return;
     if (position && (!Number.isFinite(position.latitude) || !Number.isFinite(position.longitude) || Math.abs(position.latitude) > 90 || Math.abs(position.longitude) > 180)) return;
     const id = crypto.randomUUID();
     allowAutomaticMission.current = false; editRevision.current += 1;
     setDraft((value) => {
+      if (!canEditMap()) return value;
       const used = new Set(value.waypoints.map((point) => point.number.trim()));
       let number = value.waypoints.length + 1;
       while (used.has(String(number))) number += 1;
@@ -309,6 +320,17 @@ export function SeaOperationsPage() {
       return { ...value, waypoints: [...value.waypoints, point] };
     });
     setDirty(true); setNotice(''); setIssues([]);
+  };
+  const moveWaypoint = (id: string, position: SeaPosition) => {
+    if (!canEditMap() || !weatherEditor.current.draft.waypoints.some(point => point.id === id)
+      || !Number.isFinite(position.latitude) || !Number.isFinite(position.longitude)
+      || Math.abs(position.latitude) > 90 || Math.abs(position.longitude) > 180) return;
+    const patch = { latitude: String(Number(position.latitude.toFixed(6))), longitude: String(Number(position.longitude.toFixed(6))) };
+    update(current => canEditMap() ? { waypoints: current.waypoints.map(point => point.id === id ? updateSeaOperationWaypoint(point, patch) : point) } : {});
+  };
+  const removeWaypoint = (id: string) => {
+    if (!canEditMap() || !weatherEditor.current.draft.waypoints.some(point => point.id === id)) return;
+    update(current => canEditMap() ? { waypoints: current.waypoints.filter(point => point.id !== id) } : {});
   };
   const retainWeather = useCallback((weather: SeaOperationWaypointWeather, context: SeaOperationWeatherCaptureContext, sourceClient: SupabaseClient) => {
     const current = weatherEditor.current;
@@ -669,7 +691,7 @@ export function SeaOperationsPage() {
           <Field label="Tirant d’eau de référence (m)"><input type="number" readOnly value={referenceDraft ?? ''} /></Field>{referenceDraft == null && <p className="so-help">{signed ? 'Tirant d’eau de référence non enregistré dans cette version : indicateur UKC indisponible.' : 'Renseignez le tirant d’eau du navire dans le module Navires.'}</p>}
           <SeaOperationHydroSources />
           {step === 2 && (editable && !signed
-            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${draft.planning?.operationId || ''}`} waypoints={draft.waypoints} onAddWaypoint={addWaypoint} disabled={busy || exporting} />
+            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${draft.planning?.operationId || ''}`} waypoints={draft.waypoints} onAddWaypoint={addWaypoint} onMoveWaypoint={moveWaypoint} onDeleteWaypoint={removeWaypoint} disabled={busy || exporting} />
             : <SeaOperationRouteMap waypoints={draft.waypoints} />)}
           <h3>Points de passage</h3>
           <p className="so-help">Indicateur UKC selon le tirant d’eau de référence (TE) : rouge si UKC ≤ TE ; orange si TE &lt; UKC ≤ TE + 2 m ; vert si UKC &gt; TE + 2 m.</p>
@@ -690,7 +712,7 @@ export function SeaOperationsPage() {
                   ? <p className="so-passage-eta-summary" aria-label={`ETA · date et heure · point ${index + 1}`}>{navigation.eta}{point.eta.includes('T') && <small>Heure de Paris</small>}</p>
                   : <><SeaOperationEtaPicker inline label={`ETA · date et heure · point ${index + 1}`} value={point.eta} disabled={busy || exporting} onChange={(eta) => { if (eta !== point.eta) waypointUpdate(index, { eta }); }} />{legacyEta && <small className="so-help">Ancienne ETA : {point.eta}. Renseignez une date et une heure pour la remplacer.</small>}{proposedEta && <button type="button" className="sp-button sp-button--secondary" aria-label={`Appliquer la date de l’opération à l’ETA du point ${index + 1}`} onClick={() => waypointUpdate(index, { eta: proposedEta })}>Utiliser le {operationDate.split('-').reverse().join('/')} à {point.eta}</button>}</>}</div>
                 <label role="cell" className="so-passage-field is-traffic"><input aria-label={`Zone maritime à trafic dense · point ${index + 1}`} type="checkbox" checked={point.denseTraffic} onChange={(event) => waypointUpdate(index, { denseTraffic: event.target.checked })} /><span>Zone maritime à trafic dense</span></label>
-                <div role="cell" className="so-passage-field is-actions"><button type="button" className="so-secondary sp-button sp-button--secondary" aria-label={`Supprimer le point ${index + 1}`} onClick={() => update({ waypoints: draft.waypoints.filter((_, i) => i !== index) })}><Trash2 size={15} /></button></div>
+                <div role="cell" className="so-passage-field is-actions"><button type="button" className="so-secondary sp-button sp-button--secondary" aria-label={`Supprimer le point ${index + 1}`} onClick={() => removeWaypoint(point.id)}><Trash2 size={15} /></button></div>
               </div>;
             })}
             {draft.waypoints.length === 0 && <div className="so-waypoint-empty" role="row"><div role="cell">Ajoutez le premier point de passage.</div></div>}
