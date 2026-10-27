@@ -22,6 +22,12 @@ function calculatedEta(time: number): string {
   try { return Date.parse(seaOperationEtaUtc(value)) === rounded ? value : ''; } catch { return ''; }
 }
 
+/** Event-time default for a new route only; never run this while restoring saved records. */
+export function initialSeaOperationDepartureEta(now = new Date()): string {
+  // Keep the current Paris day and the picker's five-minute increments, including midnight.
+  return calculatedEta(Math.floor(now.getTime() / 300_000) * 300_000);
+}
+
 /**
  * Prefill editable automatic slots from explicit manual waypoint anchors, never from ETD.
  * Distances accumulate without per-leg rounding until the next manual anchor. A missing

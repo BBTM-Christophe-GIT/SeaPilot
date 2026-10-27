@@ -45,6 +45,9 @@ describe('Opération en Mer printable content', () => {
     expect(location.getByRole('cell', { name: 'Balise isolée' })).toBeInTheDocument();
     expect(location.getByRole('cell', { name: '49° 39.000′ N' })).toBeInTheDocument();
     expect(location.getByRole('cell', { name: '001° 37.200′ W' })).toBeInTheDocument();
+    const isolated = location.getAllByRole('table')[0];
+    expect(within(isolated).getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['Point', 'Description', 'Latitude', 'Longitude']);
+    expect(within(isolated).getAllByRole('cell')).toHaveLength(4); expect(isolated).not.toHaveTextContent('12:07');
     expect(container.querySelector('.so-print-passage')).toBeNull(); expect(record).toEqual(original);
   });
 

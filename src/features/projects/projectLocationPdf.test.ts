@@ -5,6 +5,7 @@ import { emptySeaOperationWaypoint } from '../seaOperations/seaOperationModel';
 import { emptyProjectLocationPlan } from './projectLocation';
 import { appendProjectLocationPdf, drawProjectLocationMapPdf, generateProjectLocationPdf, projectLocationVoyage } from './projectLocationPdf';
 import { projectSeaOperationMapPlace, resolveSeaOperationMapPorts } from '../seaOperations/seaOperationMapPlaces';
+import { writeFile } from 'node:fs/promises';
 
 function fixture() {
   const plan = emptyProjectLocationPlan();
@@ -30,6 +31,16 @@ function streams(document: PDFDocument) {
 }
 
 describe('Project location appendix', () => {
+  it('exports isolated points with four geographical columns without deleting historical navigation values', async () => {
+    const plan = fixture(); plan.waypoints = []; plan.zones = [];
+    Object.assign(plan.points[0], { ukc: 'ANNOTATION-UKC-ISOLEE', eta: '2026-10-27T12:07', denseTraffic: true });
+    const original = structuredClone(plan), bytes = await generateProjectLocationPdf(plan, { projectLabel: 'Points isoles seuls' });
+    const text = streams(await PDFDocument.load(bytes));
+    for (const label of ['Description', 'Latitude', 'Longitude', 'Point isol']) expect(text).toContain(label);
+    for (const omitted of ['UKC', 'ETA', 'Contacts VHF', 'Trafic dense', 'ANNOTATION-UKC-ISOLEE', '12:07']) expect(text).not.toContain(omitted);
+    expect(plan).toEqual(original);
+    if (process.env.SEAPILOT_PROJECT_ISOLATED_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PROJECT_ISOLATED_QA_OUTPUT, bytes);
+  });
   it('fits the defined ports as named context without adding voyage legs, and retains a manual frame', async () => {
     const plan = fixture(); plan.points = []; plan.zones = [];
     const original = structuredClone(plan), options = { departurePort: 'Cherbourg', arrivalPort: 'Brest', showVoyage: true, maxSpeedKnots: 12 };

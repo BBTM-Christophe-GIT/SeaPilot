@@ -74,7 +74,7 @@ function voyageFixture(): SeaOperationRecord {
 it('preserves imported isolated points and zones in the PDF without connecting them to the route', async () => {
   const record = voyageFixture();
   record.draft.locationOverlay = { version: 1,
-    points: [{ ...record.draft.waypoints[0], id: 'isole', descriptionVhf: 'POINT-ISOLE', latitude: '48.5', longitude: '-4', ukc: '6' }],
+    points: [{ ...record.draft.waypoints[0], id: 'isole', descriptionVhf: 'POINT-ISOLE', latitude: '48.5', longitude: '-4', ukc: 'ANNOTATION-UKC-ISOLEE', eta: '2026-10-27T12:07', denseTraffic: true }],
     zones: [{ id: 'zone-projet', name: 'ZONE-PROJET', vertices: [{ latitude: '49', longitude: '-3' }, { latitude: '49.1', longitude: '-3.1' }, { latitude: '49.05', longitude: '-3.2' }] }],
   };
   const original = structuredClone(record.draft);
@@ -82,7 +82,12 @@ it('preserves imported isolated points and zones in the PDF without connecting t
   const bodies = (await landscapeBodies(output.bytes)).join('\n');
   expect(bodies).toContain('POINT-ISOLE'); expect(bodies).toContain('ZONE-PROJET');
   expect(bodies).toContain('hors calcul de navigation');
+  const isolatedStart = bodies.indexOf('(Points isolés - hors calcul de navigation) Tj');
+  expect(isolatedStart).toBeGreaterThan(0);
+  const isolatedTable = bodies.slice(isolatedStart, bodies.indexOf('(Zones - hors calcul de navigation) Tj', isolatedStart));
+  for (const omitted of ['ANNOTATION-UKC-ISOLEE', 'UKC', 'Contacts VHF', '12:07']) expect(isolatedTable).not.toContain(omitted);
   expect(record.draft).toEqual(original);
+  if (process.env.SEAPILOT_PDF_ISOLATED_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_ISOLATED_QA_OUTPUT, output.bytes);
 });
 
 async function landscapeBodies(bytes: Uint8Array): Promise<string[]> {

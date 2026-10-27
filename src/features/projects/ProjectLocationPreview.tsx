@@ -39,7 +39,12 @@ export function ProjectLocationPreview({ plan, projectLabel, maxSpeedKnots, depa
     <h2>Annexe — Localisation / Passage plan</h2><p>{projectLabel}</p>
     <SeaOperationRouteMap waypoints={plan.waypoints} isolatedPoints={plan.points} zones={plan.zones} viewport={plan.mapViewport} departurePort={departurePort} arrivalPort={arrivalPort} showPlaces showRouteLegs maxSpeedKnots={maxSpeedKnots} etd={plan.waypoints[0]?.eta || plan.etd} eta={seaOperationRouteArrivalEta(plan)} />
     {plan.charts ? <p>Cartes marines : {plan.charts}</p> : null}
-    {table('Passage plan', plan.waypoints)}{table('Points isolés — hors calcul de navigation', plan.points)}
+    {table('Passage plan', plan.waypoints)}
+    {plan.points.length > 0 && <section><h3>Points isolés — hors calcul de navigation</h3>
+      <table><thead><tr>{['Point', 'Description', 'Latitude', 'Longitude'].map(label => <th key={label}>{label}</th>)}</tr></thead>
+        <tbody>{plan.points.map((point, index) => <tr key={point.id}><td>{point.number || index + 1}</td><td>{point.descriptionVhf || `Point isolé ${index + 1}`}</td>
+          <td>{formatSeaLatitude(point.latitude) || 'À compléter'}</td><td>{formatSeaLongitude(point.longitude) || 'À compléter'}</td></tr>)}</tbody></table>
+    </section>}
     {plan.zones.length ? <section><h3>Zones</h3><table><thead><tr><th>Zone</th><th>Sommet</th><th>Latitude</th><th>Longitude</th></tr></thead>
       <tbody>{plan.zones.flatMap((zone, index) => zone.vertices.length ? zone.vertices.map((vertex, vertexIndex) => <tr key={`${zone.id}:${vertexIndex}`}><td>{zone.name || `Zone ${index + 1}`}</td><td>{vertexIndex + 1}</td><td>{formatSeaLatitude(vertex.latitude) || 'À compléter'}</td><td>{formatSeaLongitude(vertex.longitude) || 'À compléter'}</td></tr>) : <tr key={zone.id}><td>{zone.name || `Zone ${index + 1}`}</td><td colSpan={3}>À compléter</td></tr>)}</tbody>
     </table></section> : null}

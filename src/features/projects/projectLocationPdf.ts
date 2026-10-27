@@ -201,26 +201,29 @@ export async function generateProjectLocationPdf(plan: ProjectLocationPlan, opti
     for (const line of lines) { if (y > pageHeight - 35) { document.addPage(); y = 34; } document.text(line, left, y); y += 9; }
     y += 3;
   }
-  const table = (title: string, points: readonly SeaOperationWaypoint[]) => {
+  const table = (title: string, points: readonly SeaOperationWaypoint[], isolated = false) => {
     if (!points.length) return;
     if (y > pageHeight - 90) { document.addPage(); y = 34; }
     document.setFont('helvetica', 'bold'); document.setFontSize(9); document.setTextColor(...BLUE); document.text(title, left, y); y += 8;
-    const rows = points.map(point => passagePlanCellData(point, { allowLiveRadio: true }));
+    const rows = isolated
+      ? points.map((point, index) => [point.number || String(index + 1), point.descriptionVhf || `Point isolé ${index + 1}`, formatSeaLatitude(point.latitude), formatSeaLongitude(point.longitude)])
+      : points.map(point => passagePlanCellData(point, { allowLiveRadio: true })).map(row => [row.waypoint, row.description, row.latitude, row.longitude, row.ukc, row.eta, row.vhf, 'À actualiser dans Opérations en mer', row.denseTraffic === 'Oui' ? 'Trafic dense' : 'Non']);
     autoTable(document, { startY: y, margin: { left, right: left, top: 30, bottom: 26 }, theme: 'grid',
-      head: [['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA\nDate - Heure', 'Contacts VHF', 'Météo à l’ETA', 'Trafic dense']],
-      body: rows.map(row => [row.waypoint, row.description, row.latitude, row.longitude, row.ukc, row.eta, row.vhf, 'À actualiser dans Opérations en mer', row.denseTraffic === 'Oui' ? 'Trafic dense' : 'Non'].map(clean)),
+      head: [isolated ? ['Point', 'Description', 'Latitude', 'Longitude'] : ['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA\nDate - Heure', 'Contacts VHF', 'Météo à l’ETA', 'Trafic dense']],
+      body: rows.map(row => row.map(clean)),
       styles: { font: 'helvetica', fontSize: 7, cellPadding: 4, valign: 'middle', halign: 'center', lineColor: [209, 220, 230], lineWidth: .35, overflow: 'linebreak' },
       headStyles: { fillColor: [246, 249, 252], textColor: [12, 85, 152], fontStyle: 'bold' }, rowPageBreak: 'avoid',
-      columnStyles: { 0: { cellWidth: 48 }, 1: { cellWidth: 95 }, 2: { cellWidth: 65 }, 3: { cellWidth: 65 }, 4: { cellWidth: 55 }, 5: { cellWidth: 76 }, 6: { cellWidth: 120 }, 7: { cellWidth: width - 569 }, 8: { cellWidth: 45 } },
+      columnStyles: isolated ? { 0: { cellWidth: 48 }, 1: { cellWidth: width - 288 }, 2: { cellWidth: 120 }, 3: { cellWidth: 120 } }
+        : { 0: { cellWidth: 48 }, 1: { cellWidth: 95 }, 2: { cellWidth: 65 }, 3: { cellWidth: 65 }, 4: { cellWidth: 55 }, 5: { cellWidth: 76 }, 6: { cellWidth: 120 }, 7: { cellWidth: width - 569 }, 8: { cellWidth: 45 } },
       didParseCell(cell) {
-        if (cell.section === 'head' && cell.column.index === 0) { cell.cell.styles.overflow = 'visible'; cell.cell.text = ['Waypoint']; }
-        if (cell.section === 'body' && points[cell.row.index]?.denseTraffic) {
+        if (cell.section === 'head' && cell.column.index === 0) { cell.cell.styles.overflow = 'visible'; cell.cell.text = [isolated ? 'Point' : 'Waypoint']; }
+        if (!isolated && cell.section === 'body' && points[cell.row.index]?.denseTraffic) {
           cell.cell.styles.fillColor = [...pale];
           if (cell.column.index === 8) { cell.cell.styles.minCellHeight = 40; cell.cell.styles.cellPadding = { top: 17, bottom: 4, left: 4, right: 4 }; }
         }
       },
       didDrawCell(cell) {
-        if (cell.section !== 'body' || cell.column.index !== 8 || !points[cell.row.index]?.denseTraffic) return;
+        if (isolated || cell.section !== 'body' || cell.column.index !== 8 || !points[cell.row.index]?.denseTraffic) return;
         const x = cell.cell.x + cell.cell.width / 2, y = cell.cell.y + cell.cell.height / 2 - 9;
         document.saveGraphicsState(); document.setDrawColor(138, 97, 0); document.setLineWidth(.6); document.ellipse(x, y, 5, 3, 'S');
         document.setFillColor(138, 97, 0); document.circle(x, y, 1.2, 'F'); document.restoreGraphicsState();
@@ -228,7 +231,7 @@ export async function generateProjectLocationPdf(plan: ProjectLocationPlan, opti
     });
     y = ((document as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || y) + 20;
   };
-  table('Passage plan', plan.waypoints); table('Points isolés - hors calcul de navigation', plan.points);
+  table('Passage plan', plan.waypoints); table('Points isolés - hors calcul de navigation', plan.points, true);
   if (plan.zones.length) {
     if (y > pageHeight - 90) { document.addPage(); y = 34; }
     document.setFont('helvetica', 'bold'); document.setFontSize(9); document.setTextColor(...BLUE); document.text('Zones', left, y); y += 8;

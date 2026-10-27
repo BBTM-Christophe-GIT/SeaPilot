@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { emptySeaOperation, emptySeaOperationWaypoint, isSeaOperationPayload, type SeaOperationPayload, type SeaOperationWaypoint } from './seaOperationModel';
-import { seaOperationWaypointEtaIsAutomatic, updateSeaOperationRouteEtas } from './seaOperationRouteEta';
+import { initialSeaOperationDepartureEta, seaOperationWaypointEtaIsAutomatic, updateSeaOperationRouteEtas } from './seaOperationRouteEta';
 import { captureSeaOperationRadios } from './seaOperationWaypointSnapshots';
 import { COPERNICUS_UKC_PRODUCTS, calculateSeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 
@@ -10,6 +10,15 @@ const point = (id: string, longitude: string, eta = '', etaMode?: SeaOperationWa
 const payload = (waypoints: SeaOperationWaypoint[]): SeaOperationPayload => ({ ...emptySeaOperation(), waypoints });
 
 describe('editable automatic waypoint ETAs', () => {
+  it.each([
+    ['2026-10-27T13:27:59Z', '2026-10-27T14:25'],
+    ['2026-07-11T22:02:00Z', '2026-07-12T00:00'],
+    ['2026-12-31T23:59:00Z', '2027-01-01T00:55'],
+    ['2026-10-25T01:15:00Z', ''],
+  ])('defaults new departures in Paris at five-minute precision for %s', (now, eta) => {
+    expect(initialSeaOperationDepartureEta(new Date(now))).toBe(eta);
+  });
+
   it('populates blank downstream slots at minute accuracy without per-leg rounding drift or mutation', () => {
     const draft = payload([point('a', '0', '2026-10-27T12:00'), point('b', '0.002'), point('c', '0.004')]);
     const original = structuredClone(draft); Object.freeze(draft.waypoints); draft.waypoints.forEach(Object.freeze);

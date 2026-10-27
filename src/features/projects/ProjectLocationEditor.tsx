@@ -8,6 +8,7 @@ import { ProjectLocationOverlayFields, ProjectLocationPointFields, type ProjectL
 import { emptyProjectLocationPlan, PROJECT_LOCATION_LIMITS, type ProjectLocationPlan } from './projectLocation';
 import { projectLocationRouteEtas } from './projectLocationRouteEtas';
 import { seaOperationRouteArrivalEta } from '../seaOperations/seaOperationVoyageSummary';
+import { initialSeaOperationDepartureEta } from '../seaOperations/seaOperationRouteEta';
 import './projectLocationEditor.css';
 
 export function ProjectLocationEditor({ value, onChange, disabled = false, vessel, projectId, departurePort, arrivalPort }: {
@@ -46,7 +47,8 @@ export function ProjectLocationEditor({ value, onChange, disabled = false, vesse
       const field = mode === 'point' ? 'points' : 'waypoints';
       if (current[field].length >= PROJECT_LOCATION_LIMITS[field]) return;
       const number = current[field].length + 1;
-      emit({ ...current, [field]: [...current[field], { ...emptySeaOperationWaypoint(), number: String(number), descriptionVhf: port?.name || (mode === 'route' ? `Waypoint ${number}` : `Point isolé ${number}`), ...coordinates, ...(mode === 'route' ? { etaMode: 'automatic' as const } : {}) }] });
+      const etd = mode === 'route' && !current.waypoints.length && !current.etd.trim() ? initialSeaOperationDepartureEta() : current.etd;
+      emit({ ...current, etd, [field]: [...current[field], { ...emptySeaOperationWaypoint(), number: String(number), descriptionVhf: port?.name || (mode === 'route' ? `Waypoint ${number}` : `Point isolé ${number}`), ...coordinates, ...(mode === 'route' ? { etaMode: 'automatic' as const } : {}) }] });
     }
   }
   function moveVertex(zoneId: string, index: number, position: SeaPosition) {
@@ -68,7 +70,7 @@ export function ProjectLocationEditor({ value, onChange, disabled = false, vesse
       onMoveIsolatedPoint={(id, position) => { const current = latest.current.plan; emit({ ...current, points: current.points.map(point => point.id === id ? updateSeaOperationWaypoint(point, { latitude: String(Number(position.latitude.toFixed(6))), longitude: String(Number(position.longitude.toFixed(6))) }) : point) }); }}
       onDeleteIsolatedPoint={id => { const current = latest.current.plan; emit({ ...current, points: current.points.filter(point => point.id !== id) }); }}
       onMoveZoneVertex={moveVertex} onDeleteZoneVertex={(id, index) => { const current = latest.current.plan; emit({ ...current, zones: current.zones.map(zone => zone.id === id ? { ...zone, vertices: zone.vertices.filter((_vertex, vertexIndex) => vertexIndex !== index) } : zone) }); }} />
-    <section aria-label="Route à compléter"><div className="project-location-subheading"><h3>Route</h3><button type="button" className="sp-button sp-button--secondary" disabled={disabled || plan.waypoints.length >= PROJECT_LOCATION_LIMITS.waypoints} onClick={() => emit({ ...plan, waypoints: [...plan.waypoints, { ...emptySeaOperationWaypoint(), number: String(plan.waypoints.length + 1), etaMode: 'automatic' }] })}>Ajouter un waypoint</button></div>
+    <section aria-label="Route à compléter"><div className="project-location-subheading"><h3>Route</h3><button type="button" className="sp-button sp-button--secondary" disabled={disabled || plan.waypoints.length >= PROJECT_LOCATION_LIMITS.waypoints} onClick={() => emit({ ...plan, etd: !plan.waypoints.length && !plan.etd.trim() ? initialSeaOperationDepartureEta() : plan.etd, waypoints: [...plan.waypoints, { ...emptySeaOperationWaypoint(), number: String(plan.waypoints.length + 1), etaMode: 'automatic' }] })}>Ajouter un waypoint</button></div>
       <div role="table" aria-label="Waypoints de la route">{plan.waypoints.map((point, index) => <ProjectLocationPointFields key={point.id} point={point} index={index} disabled={disabled} vessel={vessel} projectId={projectId}
         onChange={patch => emit({ ...plan, waypoints: plan.waypoints.map(item => item.id === point.id ? updateSeaOperationWaypoint(item, patch) : item) })} onDelete={() => emit({ ...plan, waypoints: plan.waypoints.filter(item => item.id !== point.id) })} />)}</div>
       {!plan.waypoints.length && <p className="project-location-help">Aucun waypoint. Les distances et durées concernent uniquement les points de cette route.</p>}

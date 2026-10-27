@@ -4,7 +4,7 @@
 .so-eta-picker .so-eta-trigger.sp-button { display: flex; width: 100%; min-width: 0; min-height: 40px; justify-content: flex-start; gap: var(--sp-space-2); padding: var(--sp-space-2); border-radius: var(--sp-control-radius); font: inherit; font-size: .75rem; text-align: left; }
 .so-eta-trigger > svg { flex-shrink: 0; }
 .so-eta-trigger > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
-.so-eta-picker .sp-button.sp-button--secondary:hover:not(:disabled), .so-eta-picker .so-eta-day:hover:not(:disabled) { background: var(--sp-primary-soft); color: var(--sp-primary); border-color: var(--sp-border-strong); }
+.so-eta-picker .sp-button.sp-button--secondary:hover:not(:disabled), .so-eta-picker .so-eta-calendar [aria-selected=false] > button.so-eta-day:hover:not(:disabled) { background: var(--sp-primary-soft); color: var(--sp-primary); border-color: var(--sp-border-strong); }
 .so-eta-panel { box-sizing: border-box; min-width: 0; width: min(100%, 320px); padding: var(--sp-space-2); margin-top: var(--sp-space-2); border: 1px solid var(--sp-border-strong); border-radius: var(--sp-panel-radius); color: var(--sp-text); background: var(--sp-surface); box-shadow: var(--sp-shadow); }
 .so-eta-navigation { display: grid; grid-template-columns: 40px minmax(0, 1fr) 40px; align-items: center; gap: var(--sp-space-1); }
 .so-eta-picker .so-eta-navigation h3 { display: grid; gap: 2px; min-width: 0; margin: 0; color: var(--sp-heading); text-align: center; font-size: .78rem; }
@@ -15,13 +15,15 @@
 .so-eta-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
 .so-eta-week > [role=columnheader] { padding: var(--sp-space-1) 0; color: var(--sp-muted); font-size: .7rem; text-align: center; }
 .so-eta-week > [role=gridcell] { min-width: 0; }
-.so-eta-picker button.so-eta-day { display: block; width: 100%; min-width: 0; min-height: 40px; padding: var(--sp-space-1) 0; border: 1px solid transparent; border-radius: var(--sp-control-radius); color: var(--sp-text); background: transparent; font: inherit; font-size: .75rem; font-weight: 500; cursor: pointer; }
-.so-eta-picker.is-inline button.so-eta-day { min-height: 32px; padding: 2px 0; font-size: .7rem; }
+/* Keep calendar days independent of host modules' generic primary-button rules,
+   including when their lazy-loaded stylesheet is inserted after this one. */
+.so-eta-picker .so-eta-calendar button.so-eta-day { display: block; width: 100%; min-width: 0; min-height: 40px; padding: var(--sp-space-1) 0; border: 1px solid transparent; border-radius: var(--sp-control-radius); color: var(--sp-text); background: transparent; font: inherit; font-size: .75rem; font-weight: 500; cursor: pointer; }
+.so-eta-picker.is-inline .so-eta-calendar button.so-eta-day { min-height: 32px; padding: 2px 0; font-size: .7rem; }
 .so-eta-picker.is-inline .so-eta-calendar { margin: var(--sp-space-1) 0; }
 .so-eta-picker.is-inline .so-eta-week > [role=columnheader] { padding: 2px 0; font-size: .65rem; }
 .so-eta-picker.is-inline .so-eta-navigation h3 > span { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.so-eta-picker button.so-eta-day[aria-current=date] { border-color: var(--sp-border-strong); font-weight: 750; }
-.so-eta-picker button.so-eta-day.is-selected { color: var(--sp-surface); background: var(--sp-primary); border-color: var(--sp-primary); }
+.so-eta-picker .so-eta-calendar button.so-eta-day[aria-current=date] { border-color: var(--sp-border-strong); font-weight: 750; }
+.so-eta-picker .so-eta-calendar [aria-selected=true] > button.so-eta-day { color: var(--sp-surface); background: var(--sp-primary); border-color: var(--sp-primary); }
 .so-eta-picker button:focus-visible, .so-eta-picker input:focus-visible, .so-eta-picker select:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 1px; }
 .so-eta-picker .so-eta-time { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, .65fr); align-items: center; gap: var(--sp-space-2); color: var(--sp-text); font-size: .75rem; }
 .so-eta-time > span { display: flex; align-items: center; gap: var(--sp-space-1); }
@@ -42,5 +44,5 @@
 .so-eta-picker.is-inline .so-eta-actions .so-eta-quiet-action:hover:not(:disabled) { background: var(--sp-primary-soft); color: var(--sp-primary); }
 @media (pointer: coarse) {
   .so-eta-picker.is-inline .so-eta-panel { width: min(100%, 338px); }
-  .so-eta-picker .so-eta-trigger.sp-button, .so-eta-picker .so-eta-navigation .sp-button, .so-eta-picker .so-eta-actions .sp-button, .so-eta-picker .so-eta-time input, .so-eta-picker .so-eta-time-parts select, .so-eta-picker button.so-eta-day, .so-eta-picker.is-inline button.so-eta-day { min-height: 44px; }
+  .so-eta-picker .so-eta-trigger.sp-button, .so-eta-picker .so-eta-navigation .sp-button, .so-eta-picker .so-eta-actions .sp-button, .so-eta-picker .so-eta-time input, .so-eta-picker .so-eta-time-parts select, .so-eta-picker .so-eta-calendar button.so-eta-day, .so-eta-picker.is-inline .so-eta-calendar button.so-eta-day { min-height: 44px; }
 }
