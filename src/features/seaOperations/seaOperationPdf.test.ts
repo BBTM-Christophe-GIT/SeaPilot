@@ -131,6 +131,17 @@ async function generatedBodies(bytes: Uint8Array): Promise<string[]> {
   });
 }
 
+it('lays out saved client coordinates as postal lines without changing the signed source', async () => {
+  const record = fixture();
+  record.draft.description = 'Mission courte';
+  record.draft.clientContact = 'CONTACT-ALPHA · client@example.test · +33 2 00 00 00 00 · AGENCE LE HAVRE\nRoute du Mole Central, quai 372\n76600 Le Havre, France';
+  const original = structuredClone(record), output = await generateSeaOperationPdf(record, { templateBytes: await template() });
+  const body = (await generatedBodies(output.bytes))[0];
+  for (const line of ['CONTACT-ALPHA', 'client@example.test', '+33 2 00 00 00 00', 'AGENCE LE HAVRE', 'Route du Mole Central, quai 372', '76600 Le Havre, France']) expect(body).toContain(`(${line}) Tj`);
+  expect(record).toEqual(original);
+  if (process.env.SEAPILOT_CLIENT_CONTACT_PDF_QA_OUTPUT) await writeFile(process.env.SEAPILOT_CLIENT_CONTACT_PDF_QA_OUTPUT, output.bytes);
+});
+
 function textPositions(body: string, text: string) {
   return [...body.matchAll(/BT\n([\s\S]*?)\nET/g)].filter((match) => match[1].includes(`(${text}) Tj`)).map((match) => {
     const position = /([\d.-]+) ([\d.-]+) Td/.exec(match[1]);

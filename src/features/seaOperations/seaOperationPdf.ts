@@ -16,6 +16,7 @@ import { drawDefinedMapPortsPdf, drawProjectLocationMapPdf, projectLocationMapPo
 import { resolveSeaOperationMapPorts } from './seaOperationMapPlaces';
 import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates';
 import { drawSeaOperationZoneLegendPdf, drawSeaOperationZoneTablePdf, seaOperationZoneTableMinimumHeight } from './seaOperationZonePdf';
+import { formatClientContactLines } from '../../lib/clientContact';
 
 export const SEA_OPERATION_WORD_TEMPLATE_URL = '/templates/sea-operation/word-header-footer.pdf';
 const PAGE_WIDTH = 595.32;
@@ -120,7 +121,7 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   paragraph(signed ? `Décision ${form.decision === 'NO_GO' ? 'NO GO' : 'GO'} signée.` : `BROUILLON - décision non signée${unsaved ? ' - modifications non enregistrées' : ''}.`, true);
   if (!unsaved && record.id) paragraph(`Fiche ${record.id} - Version ${record.version}.`);
   heading('À remplir par l’Armement');
-  fields([['Projet', form.project], ['Client', form.client], ['Coordonnées du client (information opérationnelle)', form.clientContact], ['Description', form.description]]);
+  fields([['Projet', form.project], ['Client', form.client], ['Coordonnées du client (information opérationnelle)', formatClientContactLines(form.clientContact)], ['Description', form.description]]);
   heading('Personnel spécial à embarquer', true);
   if (form.specialPersonnel.length) table(form.specialPersonnel.map((person) => [value(person.name), value(person.phone)]), ['Prénom NOM', 'N° téléphone']);
   else paragraph('Aucun personnel spécial renseigné.');

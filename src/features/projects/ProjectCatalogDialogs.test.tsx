@@ -113,6 +113,21 @@ afterEach(() => {
 });
 
 describe('ProjectCatalogDialogs', () => {
+  it('presents conventional client contact lines while retaining catalogue identity, website, status and read-only rights', async () => {
+    const user = userEvent.setup(), { client, rpc } = createClient();
+    const currentClients = [{ ...clients[0], postalCode: '29200', website: 'https://atlantique.example/' }, clients[1]], original = structuredClone(currentClients);
+    render(<ClientCatalogDialog canManage={false} client={client as never} clients={currentClients} onChanged={vi.fn()} onClose={vi.fn()} />);
+    await user.click(screen.getByRole('option', { name: /Compagnie Atlantique/ }));
+    const detail = within(screen.getByRole('region', { name: 'Données du client' })), contact = within(detail.getByRole('region', { name: 'Coordonnées du client' }));
+    expect(detail.getByRole('heading', { name: 'Compagnie Atlantique' })).toBeInTheDocument();
+    expect(contact.getByText('Marie MARTIN')).toBeInTheDocument();
+    expect(contact.getByText(/1 quai de la Douane/).closest('address')!.textContent).toBe('1 quai de la Douane\n29200 Brest\nFrance');
+    expect(contact.getByText('02 98 00 00 00')).toBeInTheDocument(); expect(contact.getByText('contact@atlantique.example')).toBeInTheDocument();
+    expect(detail.getByRole('link', { name: 'https://atlantique.example/' })).toHaveAttribute('href', 'https://atlantique.example/');
+    expect(detail.getByText('Actif')).toBeInTheDocument(); expect(detail.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument(); expect(detail.queryByRole('button', { name: 'Supprimer' })).not.toBeInTheDocument();
+    expect(rpc).not.toHaveBeenCalled(); expect(currentClients).toEqual(original);
+  });
+
   it('shows the service catalogue and its vessel selector sorted by vessel length', async () => {
     const user = userEvent.setup();
     const vessels = [{ id: 1, name: 'PETIT', active: true, acronym: '', fleetExitOn: '', sharePointItemId: '', lengthOverall: '20' }, { id: 2, name: 'GRAND', active: true, acronym: '', fleetExitOn: '', sharePointItemId: '', lengthOverall: '50' }];

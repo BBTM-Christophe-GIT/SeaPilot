@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { AppDialog } from '../../components/AppDialog';
+import { ClientContactDetails } from '../../components/ClientContactDetails';
 import {
   archiveClient,
   archiveProjectTowedAsset,
@@ -148,15 +149,9 @@ function ClientDetails({ client, imageUrl }: { client: ClientRecord; imageUrl: s
           <p>{client.code || 'Client sans code'}</p>
         </div>
       </div>
+      <ClientContactDetails contact={client} />
       <dl className="project-catalog-data-grid">
-        <div><dt>Représenté par</dt><dd>{displayValue(client.representedBy)}</dd></div>
-        <div><dt>Courriel</dt><dd>{displayValue(client.email)}</dd></div>
-        <div><dt>Téléphone</dt><dd>{displayValue(client.phone)}</dd></div>
         <div><dt>Site internet</dt><dd>{client.website ? <a href={client.website} rel="noreferrer" target="_blank">{client.website}</a> : 'Non renseigné'}</dd></div>
-        <div className="is-wide"><dt>Adresse</dt><dd>{displayValue(client.address)}</dd></div>
-        <div><dt>Code postal</dt><dd>{displayValue(client.postalCode)}</dd></div>
-        <div><dt>Ville</dt><dd>{displayValue(client.city)}</dd></div>
-        <div><dt>Pays</dt><dd>{displayValue(client.country)}</dd></div>
         <div><dt>Statut</dt><dd>{client.active ? 'Actif' : 'Inactif'}</dd></div>
       </dl>
     </div>

@@ -14,6 +14,7 @@ import { SeaOperationUkcIndicator } from './SeaOperationUkcIndicator';
 import { isVesselDraftMeters } from './seaOperationUkc';
 import { seaOperationWaypointDescription } from './seaOperationWaypointDescription';
 import { seaOperationVoyageSummary } from './seaOperationVoyageSummary';
+import { formatClientContactLines } from '../../lib/clientContact';
 import { formatSeaLatitude, formatSeaLongitude, formatSeaPosition } from './seaOperationCoordinates';
 import './seaOperationPrint.css';
 
@@ -91,7 +92,7 @@ export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOp
       <dl className="so-print-grid">
         <PrintField label="Projet">{text(form.project)}</PrintField>
         <PrintField label="Client">{text(form.client)}</PrintField>
-        <PrintField label="Coordonnées du client – informations opérationnelles" wide>{text(form.clientContact)}</PrintField>
+        <PrintField label="Coordonnées du client – informations opérationnelles" wide>{text(formatClientContactLines(form.clientContact))}</PrintField>
         <PrintField label="Description de l’opération" wide>{text(form.description)}</PrintField>
       </dl>
       <h3>Personnel spécial à embarquer pour l’opération</h3>

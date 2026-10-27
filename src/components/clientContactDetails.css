@@ -1,0 +1,8 @@
+.sp-client-contact-details { grid-column: 1 / -1; min-width: 0; padding: var(--sp-space-3); border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); background: var(--sp-surface-subtle); color: var(--sp-text); font-family: var(--sp-font); font-weight: 400; }
+.sp-client-contact-details > h4 { margin: 0 0 var(--sp-space-2); color: var(--sp-heading); font-size: .8125rem; line-height: 1.4; font-weight: 650; }
+.sp-client-contact-details > dl { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-space-2); margin: 0; }
+.sp-client-contact-details > dl > div { min-width: 0; }
+.sp-client-contact-details > dl > .is-wide { grid-column: 1 / -1; }
+.sp-client-contact-details dt { color: var(--sp-muted); font-size: .72rem; line-height: 1.4; }
+.sp-client-contact-details dd, .sp-client-contact-details address { margin: 0; color: var(--sp-text); font-size: .8125rem; line-height: 1.5; font-style: normal; white-space: pre-line; overflow-wrap: anywhere; }
+.sp-client-contact-details > p { margin: 0; color: var(--sp-muted); font-size: .8125rem; }
