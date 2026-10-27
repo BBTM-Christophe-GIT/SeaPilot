@@ -45,6 +45,7 @@
 .so-route-map-leg-list li { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-1); padding: var(--sp-space-1) var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface-subtle); color: var(--sp-text); }
 .so-route-map-voyage-summary { position: absolute; right: var(--sp-space-2); bottom: 34px; z-index: 1; display: grid; gap: var(--sp-space-1); max-width: min(248px, calc(100% - 16px)); padding: var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface); color: var(--sp-text); font-size: .6875rem; line-height: 1.4; font-variant-numeric: tabular-nums; pointer-events: auto; }
 .so-route-map-voyage-summary > strong { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--sp-space-1) var(--sp-space-2); color: var(--sp-heading); font-size: .75rem; }
+.so-route-map-voyage-duration { flex-basis: 100%; white-space: normal; }
 .so-route-map-voyage-summary dl { display: grid; gap: var(--sp-space-1); margin: 0; }
 .so-route-map-voyage-summary dl > div { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-space-2); }
 .so-route-map-voyage-summary dt { color: var(--sp-muted); }

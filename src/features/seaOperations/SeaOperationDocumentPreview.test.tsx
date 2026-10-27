@@ -12,6 +12,24 @@ afterEach(() => {
 });
 
 describe('SeaOperationPreview', () => {
+  it('updates the voyage summary from the current draft while leaving incomplete schedules unavailable', () => {
+    const draft = emptySeaOperation();
+    draft.vessel.etd = '2026-10-27T08:00';
+    draft.waypoints = [{ id: 'a', number: '1', descriptionVhf: '', latitude: '50', longitude: '0', eta: '2026-10-27T08:00', ukc: '', denseTraffic: false },
+      { id: 'b', number: '2', descriptionVhf: '', latitude: '51', longitude: '0', eta: '2026-10-29T11:50', ukc: '', denseTraffic: false }];
+    const original = structuredClone(draft);
+    const { rerender } = render(<SeaOperationPreview draft={draft} record={null} onChangeStep={vi.fn()} />);
+    const summary = within(screen.getByRole('region', { name: 'Récapitulatif du Passage Plan' }));
+    expect(summary.getByText('60,0 NM')).toBeInTheDocument();
+    expect(summary.getByText('2 jours 3 heures 50 minutes')).toBeInTheDocument();
+    expect(summary.getByText('29/10/2026 – 11:50')).toBeInTheDocument();
+    expect(draft).toEqual(original);
+    const changed = structuredClone(draft); changed.waypoints[1].eta = '';
+    rerender(<SeaOperationPreview draft={changed} record={null} onChangeStep={vi.fn()} />);
+    expect(summary.getByText('Durée indisponible')).toBeInTheDocument();
+    expect(summary.getByText('ETA indisponible')).toBeInTheDocument();
+  });
+
   it.each([{ width: 1731, zoom: '85' }, { width: 1599, zoom: '60' }, { width: 390, zoom: '40' }])('starts at $zoom% for a $width px viewport and keeps all zoom options available', async ({ width, zoom }) => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
     render(<SeaOperationPreview draft={emptySeaOperation()} record={null} onChangeStep={vi.fn()} />);

@@ -13,6 +13,15 @@ const channelRoute = () => [point(1, '49.65', '-1.62'), point(2, '48.36', '-4.53
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('SeaOperationRouteMap', () => {
+  it('shows total elapsed days, hours and minutes while keeping each leg compact', () => {
+    render(<SeaOperationRouteMap waypoints={[point(1, '0', '0'), point(2, '0', '1')]} showRouteLegs maxSpeedKnots={12} etd="2026-10-27T08:00" eta="2026-10-29T11:50" />);
+    const summary = screen.getByRole('complementary', { name: 'Estimation du parcours' });
+    expect(summary).toHaveTextContent('2 jours 3 heures 50 minutes');
+    expect(summary).toHaveTextContent('27/10/2026 – 08:00');
+    expect(summary).toHaveTextContent('29/10/2026 – 11:50');
+    expect(screen.getByRole('img', { name: 'Waypoint 1 vers 2 : 60,0 NM · 07:30' })).toBeInTheDocument();
+  });
+
   it('previews a dragged route while preserving controlled metrics, labels and layout until release', () => {
     const points = channelRoute(), original = structuredClone(points), report = vi.fn();
     const viewport = { centerLatitude: 49, centerLongitude: -3, longitudeSpan: 16 };
@@ -36,7 +45,7 @@ describe('SeaOperationRouteMap', () => {
     const { container } = render(<SeaOperationRouteMap waypoints={points} showRouteLegs maxSpeedKnots={12} etd="2026-10-27T10:00" />);
     expect(screen.getByRole('img', { name: 'Waypoint 1 vers 2 : 60,0 NM · 07:30' })).toBeInTheDocument();
     const summary = screen.getByRole('complementary', { name: 'Estimation du parcours' });
-    expect(summary).toHaveTextContent('60,0 NM'); expect(summary).toHaveTextContent('07:30');
+    expect(summary).toHaveTextContent('60,0 NM'); expect(summary).toHaveTextContent('7 heures 30 minutes');
     expect(summary).toHaveTextContent('27/10/2026 – 10:00'); expect(summary).toHaveTextContent('27/10/2026 – 17:30');
     expect(summary).toHaveTextContent('ETA estimée');
     expect(container.querySelector('.so-route-map-leg-summary')).toHaveTextContent('Estimations à 8 nd');
@@ -64,7 +73,7 @@ describe('SeaOperationRouteMap', () => {
   it('retains the supplied arrival time instead of replacing a manually adjusted final waypoint ETA', () => {
     render(<SeaOperationRouteMap waypoints={[point(1, '0', '0'), point(2, '0', '1')]} showRouteLegs maxSpeedKnots={12} etd="2026-10-27T10:00" eta="2026-10-27T19:15" />);
     const summary = screen.getByRole('complementary', { name: 'Estimation du parcours' });
-    expect(summary).toHaveTextContent('09:15'); expect(summary).toHaveTextContent('60,0 NM');
+    expect(summary).toHaveTextContent('9 heures 15 minutes'); expect(summary).toHaveTextContent('60,0 NM');
     expect(summary).toHaveTextContent('ETA arrivée27/10/2026 – 19:15');
     expect(summary).not.toHaveTextContent('17:30');
   });
@@ -72,7 +81,7 @@ describe('SeaOperationRouteMap', () => {
   it('shows constant-speed transit duration before departure is entered without inventing dates', () => {
     render(<SeaOperationRouteMap waypoints={[point(1, '0', '0'), point(2, '0', '1')]} showRouteLegs maxSpeedKnots={12} />);
     const summary = screen.getByRole('complementary', { name: 'Estimation du parcours' });
-    expect(summary).toHaveTextContent('60,0 NM'); expect(summary).toHaveTextContent('07:30');
+    expect(summary).toHaveTextContent('60,0 NM'); expect(summary).toHaveTextContent('7 heures 30 minutes');
     expect(summary).toHaveTextContent('Durée estimée à vitesse constante.');
     expect(summary).toHaveTextContent('ETDÀ renseigner'); expect(summary).toHaveTextContent('ETA estiméeIndisponible');
     expect(summary.textContent).not.toMatch(/\d{2}\/\d{2}\/\d{4}/);
@@ -81,7 +90,7 @@ describe('SeaOperationRouteMap', () => {
   it('keeps an invalid retained arrival unavailable while clearly qualifying the transit-duration fallback', () => {
     render(<SeaOperationRouteMap waypoints={[point(1, '0', '0'), point(2, '0', '1')]} showRouteLegs maxSpeedKnots={12} etd="2026-10-27T10:00" eta="2026-10-27T09:00" />);
     const summary = screen.getByRole('complementary', { name: 'Estimation du parcours' });
-    expect(summary).toHaveTextContent('07:30'); expect(summary).toHaveTextContent('Durée estimée à vitesse constante.');
+    expect(summary).toHaveTextContent('7 heures 30 minutes'); expect(summary).toHaveTextContent('Durée estimée à vitesse constante.');
     expect(summary).toHaveTextContent('ETA arrivéeIndisponible'); expect(summary).not.toHaveTextContent('17:30');
   });
 

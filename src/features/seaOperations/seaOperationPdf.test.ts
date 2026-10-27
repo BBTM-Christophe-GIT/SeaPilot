@@ -60,6 +60,15 @@ function fixture(): SeaOperationRecord {
 }
 const template = () => readFile(new URL('../../../public/templates/sea-operation/word-header-footer.pdf', import.meta.url));
 
+function voyageFixture(): SeaOperationRecord {
+  const record = fixture();
+  record.draft.description = 'Vérification du récapitulatif du voyage conservé dans la fiche.';
+  record.draft.vessel.etd = '2026-10-27T08:00'; record.draft.vessel.eta = '2026-10-27T18:00';
+  record.draft.waypoints = [{ id: 'departure', number: '1', descriptionVhf: 'Départ', latitude: '50', longitude: '0', eta: '2026-10-27T08:00', ukc: '', denseTraffic: false },
+    { id: 'arrival', number: '2', descriptionVhf: 'Arrivée', latitude: '51', longitude: '0', eta: '2026-10-29T11:50', ukc: '', denseTraffic: false }];
+  return record;
+}
+
 async function landscapeBodies(bytes: Uint8Array): Promise<string[]> {
   const document = await PDFDocument.load(bytes);
   return document.getPages().filter((page) => page.getWidth() > page.getHeight()).map((page) => {
@@ -90,6 +99,39 @@ function textPositions(body: string, text: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Sea operation PDF', () => {
+  it('exports a multi-day voyage summary using only the route and schedule retained in the declaration', async () => {
+    const record = voyageFixture(); const original = structuredClone(record);
+    const generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const bodies = await landscapeBodies(generated.bytes);
+    const summary = bodies.find(body => body.includes('Récapitulatif du Passage Plan'))!;
+    expect(summary).toContain('(Distance totale) Tj'); expect(summary).toContain('(Durée totale) Tj');
+    expect(summary).toContain('(60,0 NM) Tj'); expect(summary).toContain('(2 jours 3 heures 50 minutes) Tj');
+    expect(summary).toContain('(27/10/2026 - 08:00) Tj'); expect(summary).toContain('(29/10/2026 - 11:50) Tj');
+    expect(record).toEqual(original);
+    if (process.env.SEAPILOT_PDF_VOYAGE_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_VOYAGE_QA_OUTPUT, generated.bytes);
+  });
+
+  it('prints Paris dates and the retained duration across a year boundary', async () => {
+    const record = voyageFixture(); record.draft.vessel.etd = '2026-12-31T22:30Z';
+    record.draft.waypoints[0].eta = '2026-12-31T23:30'; record.draft.waypoints[1].eta = '2027-01-01T01:00';
+    const generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const summary = (await landscapeBodies(generated.bytes)).find(body => body.includes('Récapitulatif du Passage Plan'))!;
+    expect(summary).toContain('(31/12/2026 - 23:30) Tj'); expect(summary).toContain('(01/01/2027 - 01:00) Tj');
+    expect(summary).toContain('(1 heure 30 minutes) Tj');
+    if (process.env.SEAPILOT_PDF_VOYAGE_DATES_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_VOYAGE_DATES_QA_OUTPUT, generated.bytes);
+  });
+
+  it('leaves incomplete retained schedules and coordinates explicitly unavailable in the PDF summary', async () => {
+    const record = voyageFixture(); record.draft.waypoints[1].eta = '11:50'; record.draft.waypoints[1].latitude = '';
+    const original = structuredClone(record);
+    const generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const summary = (await landscapeBodies(generated.bytes)).find(body => body.includes('Récapitulatif du Passage Plan'))!;
+    expect(summary).toContain('(Distance indisponible) Tj'); expect(summary).toContain('(Durée indisponible) Tj');
+    expect(summary).toContain('(ETA indisponible) Tj'); expect(summary).toContain('(27/10/2026 - 08:00) Tj');
+    expect(summary).not.toContain('2 jours 3 heures 50 minutes'); expect(record).toEqual(original);
+    if (process.env.SEAPILOT_PDF_VOYAGE_MISSING_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_VOYAGE_MISSING_QA_OUTPUT, generated.bytes);
+  });
+
   it('uses port names, custom descriptions and a waypoint fallback without rewriting the declaration', async () => {
     const record = fixture(); record.draft.description = 'Vérification des descriptions du Passage Plan.';
     record.draft.waypoints = record.draft.waypoints.slice(0, 3).map((point, index) => ({ ...point,

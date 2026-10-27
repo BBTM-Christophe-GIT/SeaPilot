@@ -12,6 +12,7 @@ import { SeaOperationRouteMap } from './SeaOperationRouteMap';
 import { SeaOperationUkcIndicator } from './SeaOperationUkcIndicator';
 import { isVesselDraftMeters } from './seaOperationUkc';
 import { seaOperationWaypointDescription } from './seaOperationWaypointDescription';
+import { seaOperationVoyageSummary } from './seaOperationVoyageSummary';
 import './seaOperationPrint.css';
 
 const blank = 'À renseigner';
@@ -58,6 +59,7 @@ export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOp
   const passageRows = form.waypoints.map((point, index) => ({ ...passagePlanCellData(point, { payload: form, allowLiveRadio: !signed, weatherMatrix: form.vessel.weatherMatrix, observations: record.weatherObservations, includeObservations: signed, validatedAt: signed ? record.signedAt : undefined }), description: seaOperationWaypointDescription(point, index) }));
   const person = form.signature;
   const vessel = form.vessel;
+  const voyage = seaOperationVoyageSummary(form);
   const signatureImage = signed ? record.signatureUrl || null : signatureImageUrl || null;
   const method = form.dapaq.method === 'nomade' ? 'Préparée dans NOMADE'
     : form.dapaq.method === 'email' ? 'Réalisée par mail et transmise à la Capitainerie' : blank;
@@ -185,6 +187,15 @@ export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOp
       <p>ETA : date et heure locale de Paris. Les fiches historiques peuvent conserver une heure seule.</p>
       <p>Positions WGS84 : degrés et minutes décimales, N/S et E/W (Ouest).</p>
       <div className="so-print-route-map"><SeaOperationRouteMap waypoints={form.waypoints} compact /></div>
+      <section className="so-print-voyage-summary" aria-label="Récapitulatif du Passage Plan">
+        <h3>Récapitulatif du Passage Plan</h3>
+        <dl>
+          <PrintField label="Distance totale">{voyage.route.totalDistanceLabel || 'Distance indisponible'}</PrintField>
+          <PrintField label="Durée totale">{voyage.durationLabel || 'Durée indisponible'}</PrintField>
+          <PrintField label="ETD (heure de Paris)">{voyage.timing.etdLabel || 'ETD indisponible'}</PrintField>
+          <PrintField label="ETA (heure de Paris)">{voyage.timing.etaLabel || 'ETA indisponible'}</PrintField>
+        </dl>
+      </section>
       {passageRows.length ? <table className="so-print-passage"><caption>Points de passage, contacts VHF et météo à l’ETA</caption><thead><tr><th scope="col">Waypoint</th><th scope="col">Description</th><th scope="col">Latitude</th><th scope="col">Longitude</th><th scope="col">UKC</th><th scope="col">ETA – Date et heure</th><th scope="col">Contacts VHF</th><th scope="col">Météo à l’ETA</th><th scope="col">Trafic dense</th></tr></thead><tbody>
         {passageRows.map((row, index) => <tr key={`${index}:${form.waypoints[index].id}`}><td>{row.waypoint}</td><td>{row.description}</td><td>{row.latitude}</td><td>{row.longitude}</td><td className="so-print-ukc-cell"><div className="so-print-ukc-value">{row.ukcPresentation.automatic && !row.ukcPresentation.rawValue ? <strong>Indisponible</strong> : <SeaOperationUkcIndicator value={row.ukcPresentation.rawValue} draftMeters={vessel.draftMeters} approximate={row.ukcPresentation.approximate} />}</div>{row.ukcPresentation.automatic && <small className="so-print-ukc-note"><span>{row.ukcPresentation.approximate ? 'Indicative' : 'Automatique'}</span><span>Annexe UKC</span></small>}</td><td>{row.eta}</td><td>{row.vhf}</td><td><SeaOperationWeatherCard point={form.waypoints[index]} matrix={form.vessel.weatherMatrix} compact showObservations={signed} observations={record.weatherObservations} validatedAt={signed ? record.signedAt : undefined} /></td><td>{row.denseTraffic}</td></tr>)}
       </tbody></table> : <p>Aucun point de passage renseigné.</p>}
