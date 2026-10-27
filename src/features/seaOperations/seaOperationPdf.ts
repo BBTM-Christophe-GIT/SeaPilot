@@ -214,11 +214,13 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
       const endpoint = group.some((entry) => entry.index === 1 || entry.index === form.waypoints.length);
       const arrival = form.waypoints.length > 1 && group.some((entry) => entry.index === form.waypoints.length);
       const ordinal = group.length > 4 ? `${group[0].index}/.../${group[group.length - 1].index}` : group.map((entry) => entry.index).join('/');
+      let markerLeft = position.x - (arrival ? 8 : 6), markerRight = position.x + (arrival ? 8 : 6);
       document.setFont('helvetica', 'bold'); document.setFontSize(7);
       document.setFillColor(...(endpoint ? BLUE : WHITE)); document.setDrawColor(...BLUE); document.setLineWidth(.8);
       if (group.length > 1) {
         const width = Math.min(110, document.getTextWidth(ordinal) + 10);
         const markerX = Math.max(LEFT + 3, Math.min(position.x - width / 2, LEFT + routeMap.width - width - 3));
+        markerLeft = markerX - (arrival ? 2 : 0); markerRight = markerX + width + (arrival ? 2 : 0);
         document.roundedRect(markerX, position.y - 7, width, 14, 6, 6, 'FD');
         if (arrival) document.roundedRect(markerX - 2, position.y - 9, width + 4, 18, 7, 7, 'S');
         document.setTextColor(...(endpoint ? WHITE : BLUE));
@@ -230,6 +232,7 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
         document.text(ordinal, position.x, position.y + 2.4, { align: 'center' });
       }
       const labels = group.filter((entry) => entry.label !== String(entry.index)).map((entry) => entry.label);
+      let labelBounds: { left: number; right: number; top: number; bottom: number } | undefined;
       if (labels.length) {
         document.setFontSize(7); document.setTextColor(...BLUE);
         const complete = clean(labels.join(' / '));
@@ -237,7 +240,33 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
         while (label.length > 1 && document.getTextWidth(label) > 110) label = label.slice(0, -1);
         if (label !== complete) label = `${label.slice(0, -3)}...`;
         const width = document.getTextWidth(label);
-        document.text(label, Math.max(LEFT + 4, Math.min(position.x + 10, LEFT + routeMap.width - width - 4)), Math.max(mapY + 10, position.y - 10));
+        const x = Math.max(LEFT + 4, Math.min(position.x + 10, LEFT + routeMap.width - width - 4)), baseline = Math.max(mapY + 10, position.y - 10);
+        labelBounds = { left: x, right: x + width, top: baseline - 7, bottom: baseline + 1 };
+        document.text(label, x, baseline);
+      }
+      if (group.some(entry => form.waypoints[entry.index - 1]?.denseTraffic === true)) {
+        const candidates = [{ x: markerRight + 10, y: position.y }, { x: markerLeft - 10, y: position.y },
+          { x: position.x, y: position.y + 17 }, { x: position.x, y: position.y - 17 }]
+          .map(candidate => ({ x: Math.max(LEFT + 8, Math.min(candidate.x, LEFT + routeMap.width - 8)),
+            y: Math.max(mapY + 6, Math.min(candidate.y, mapY + routeMap.height - 6)) }));
+        const score = (candidate: { x: number; y: number }) => {
+          const overlaps = (left: number, right: number, top: number, bottom: number) => candidate.x + 7 > left && candidate.x - 7 < right && candidate.y + 5 > top && candidate.y - 5 < bottom;
+          let penalty = overlaps(markerLeft, markerRight, position.y - 9, position.y + 9) ? 1000 : 0;
+          if (labelBounds && overlaps(labelBounds.left, labelBounds.right, labelBounds.top, labelBounds.bottom)) penalty += 1000;
+          for (const segment of routeMap.segments) {
+            const from = at(segment.from), to = at(segment.to), dx = to.x - from.x, dy = to.y - from.y;
+            const fraction = dx || dy ? Math.max(0, Math.min(1, ((candidate.x - from.x) * dx + (candidate.y - from.y) * dy) / (dx * dx + dy * dy))) : 0;
+            if (Math.hypot(candidate.x - from.x - fraction * dx, candidate.y - from.y - fraction * dy) < 9) penalty += 100;
+          }
+          return penalty;
+        };
+        const badge = candidates.reduce((best, candidate) => score(candidate) < score(best) ? candidate : best);
+        document.saveGraphicsState();
+        document.setFillColor(255, 250, 240); document.setDrawColor(138, 97, 0); document.setLineWidth(.6);
+        document.roundedRect(badge.x - 7, badge.y - 5, 14, 10, 3, 3, 'FD');
+        document.ellipse(badge.x, badge.y, 5, 3, 'S');
+        document.setFillColor(138, 97, 0); document.circle(badge.x, badge.y, 1.3, 'F');
+        document.restoreGraphicsState();
       }
     }
     if (routeMap.scale) {

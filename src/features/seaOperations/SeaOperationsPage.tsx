@@ -708,12 +708,12 @@ export function SeaOperationsPage() {
         </section>
         <section id="sea-operation-step-2" hidden={step !== 2} className={`so-panel ${step === 2 ? 'is-active' : ''}`} aria-label="Passage Plan">
           <div className="so-section-title"><b aria-hidden="true">3</b><div><h2 tabIndex={-1}>Passage Plan</h2><p>Cartes, points de route et conditions de navigation.</p></div></div>
-          <Field label="Numéro de la ou des cartes marines"><input value={draft.charts} onChange={(event) => update({ charts: event.target.value })} /></Field>
           <Field label="Tirant d’eau de référence (m)"><input type="number" readOnly value={referenceDraft ?? ''} /></Field>{referenceDraft == null && <p className="so-help">{signed ? 'Tirant d’eau de référence non enregistré dans cette version : indicateur UKC indisponible.' : 'Renseignez le tirant d’eau du navire dans le module Navires.'}</p>}
           <SeaOperationHydroSources />
           {step === 2 && (editable && !signed
             ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${draft.planning?.operationId || ''}`} waypoints={draft.waypoints} maxSpeedKnots={data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id)?.maxSpeedKnots} etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)} onAddWaypoint={addWaypoint} onMoveWaypoint={moveWaypoint} onDeleteWaypoint={removeWaypoint} disabled={busy || exporting} />
             : <SeaOperationRouteMap waypoints={draft.waypoints} />)}
+          <Field label="Numéro de la ou des cartes marines"><input value={draft.charts} onChange={(event) => update({ charts: event.target.value })} /></Field>
           <h3>Points de passage</h3>
           <p className="so-help">Indicateur UKC selon le tirant d’eau de référence (TE) : rouge si UKC ≤ TE ; orange si TE &lt; UKC ≤ TE + 2 m ; vert si UKC &gt; TE + 2 m.</p>
           <div className="so-passage-grid" role="table" aria-label="Points de passage">

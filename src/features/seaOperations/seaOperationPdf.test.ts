@@ -9,6 +9,7 @@ import { SEA_METEO_FRANCE_SOURCE_URL } from './seaOperationWeatherModel';
 import { GOURY_WEATHER_MATRIX } from '../fleet/vesselWeatherMatrix';
 import { SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL, SEA_METEO_FRANCE_OBSERVATIONS_URL, type ObservationResult } from './seaOperationWeatherObservationsModel';
 import { calculateSeaOperationCopernicusEstimate, type SeaOperationCopernicusInput, type SeaOperationCopernicusProviderResult } from './seaOperationCopernicusModel';
+import { buildSeaOperationRouteMap } from './seaOperationRouteMapGeometry';
 
 function recordedObservation(pointId: string): ObservationResult {
   const common = { observedAt: '2026-10-16T10:15:00Z', station: { id: '62001',
@@ -105,6 +106,45 @@ function tableRectangles(body: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Sea operation PDF', () => {
+  it('draws a vector vigilance eye only beside marked map positions, including one shared badge for coincident waypoints', async () => {
+    const record = fixture(); record.draft.description = 'Recette des points de passage en zone maritime à trafic dense.';
+    const coordinates = [[49.65, -1.62], [49.65, -1.62], [49.72, -1.25], [49.82, -.95]];
+    record.draft.waypoints = record.draft.waypoints.slice(0, 4).map((point, index) => ({ ...point,
+      number: ['DEPART', 'GROUPED', 'CLEAR', 'DENSE'][index], latitude: String(coordinates[index][0]), longitude: String(coordinates[index][1]), denseTraffic: index === 1 || index === 3 }));
+    const original = structuredClone(record), unmarked = structuredClone(record);
+    unmarked.draft.waypoints.forEach(point => { point.denseTraffic = false; });
+    const [generated, withoutEyes] = await Promise.all([
+      generateSeaOperationPdf(record, { templateBytes: await template() }), generateSeaOperationPdf(unmarked, { templateBytes: await template() }),
+    ]);
+    const map = (await landscapeBodies(generated.bytes)).find(body => body.includes('(Carte du parcours) Tj'))!;
+    const baseline = (await landscapeBodies(withoutEyes.bytes)).find(body => body.includes('(Carte du parcours) Tj'))!;
+    expect(map.match(/0\.54 0\.38 0\. RG/g)).toHaveLength(2);
+    expect(baseline).not.toContain('0.54 0.38 0. RG');
+    for (const label of ['1/2', '3', '4', 'DEPART / GROUPED', 'CLEAR', 'DENSE']) {
+      expect(textPositions(map, label)).toHaveLength(1);
+      expect(textPositions(map, label)).toEqual(textPositions(baseline, label));
+    }
+    const badges = [...map.matchAll(/1\. 0\.98 0\.94 rg\n0\.54 0\.38 0\. RG\n0\.6 w\n([\d.-]+) ([\d.-]+) m\n/g)]
+      .map(match => ({ x: Number(match[1]) + 4, y: Number(match[2]) - 5 }));
+    expect(badges).toHaveLength(2);
+    const frame = tableRectangles(map).find(rect => rect.x === 49 && rect.width > 700 && rect.height === -190)!;
+    const geometry = buildSeaOperationRouteMap(record.draft.waypoints, frame.width, 190);
+    for (const badge of badges) {
+      expect(badge.x - 7).toBeGreaterThan(frame.x); expect(badge.x + 7).toBeLessThan(frame.x + frame.width);
+      expect(badge.y - 5).toBeGreaterThan(frame.y + frame.height); expect(badge.y + 5).toBeLessThan(frame.y);
+      for (const segment of geometry.segments) {
+        const from = { x: frame.x + segment.from.x, y: frame.y - segment.from.y }, to = { x: frame.x + segment.to.x, y: frame.y - segment.to.y };
+        const dx = to.x - from.x, dy = to.y - from.y, lengthSquared = dx * dx + dy * dy;
+        const fraction = lengthSquared ? Math.max(0, Math.min(1, ((badge.x - from.x) * dx + (badge.y - from.y) * dy) / lengthSquared)) : 0;
+        expect(Math.hypot(badge.x - from.x - fraction * dx, badge.y - from.y - fraction * dy)).toBeGreaterThanOrEqual(9);
+      }
+    }
+    expect(map).not.toContain('/Subtype /Image');
+    expect(Math.abs(generated.bytes.length - withoutEyes.bytes.length)).toBeLessThan(4096);
+    expect(record).toEqual(original);
+    if (process.env.SEAPILOT_PDF_MAP_VIGILANCE_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_MAP_VIGILANCE_QA_OUTPUT, generated.bytes);
+  });
+
   it('centers Passage Plan headers, body values, UKC and unchanged weather cards, with a lightweight dense-traffic eye', async () => {
     const record = fixture(); record.draft.description = 'Recette de centrage du tableau Passage Plan.';
     record.draft.vessel.draftMeters = 2;

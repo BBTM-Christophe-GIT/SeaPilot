@@ -962,6 +962,9 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await userEvent.click(stepButton(2));
     const map = formQueries().getByRole('figure', { name: 'Carte du parcours' });
     const table = formQueries().getByRole('table', { name: 'Points de passage' });
+    const charts = formQueries().getByLabelText('Numéro de la ou des cartes marines');
+    expect(map.compareDocumentPosition(charts) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(charts.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(map.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(within(map).getByText(/Renseignez une latitude et une longitude valides/)).toBeVisible();
     for (const [index, latitude, longitude] of [[1, '49.65', '-1.62'], [2, '48.36', '-4.53']] as const) {
@@ -971,6 +974,11 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     }
     expect(within(map).getByRole('group', { name: 'Carte du parcours · 2 points géolocalisés' })).toBeVisible();
     expect(map.querySelectorAll('.so-route-map-track line')).toHaveLength(1);
+    const denseTraffic = formQueries().getByLabelText('Zone maritime à trafic dense · point 2');
+    await userEvent.click(denseTraffic);
+    expect(map.querySelector('.so-route-map-point-vigilance')).toHaveAttribute('aria-label', 'Vigilance : trafic dense, risque de collision · Waypoint 2');
+    await userEvent.click(denseTraffic);
+    expect(map.querySelector('.so-route-map-point-vigilance')).toBeNull();
     fireEvent.change(formQueries().getByLabelText('Latitude · point 1'), { target: { value: '' } });
     expect(within(map).getByRole('status')).toHaveTextContent('1 point sans coordonnées valides');
     expect(map.querySelectorAll('.so-route-map-track line')).toHaveLength(0);
