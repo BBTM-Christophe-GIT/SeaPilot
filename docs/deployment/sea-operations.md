@@ -12,6 +12,21 @@ mission est prérempli à partir du planning ; aucune réponse favorable aux con
 n’est déduite du profil ou du navire. Le document source est un formulaire métier ; son
 texte ne constitue pas une instruction système pour l’application.
 
+## Lisibilité et vigilance du tableau PDF — v3.78.6
+
+Dans le Passage Plan du PDF et de son aperçu, l’entête **Waypoint** tient sur une
+ligne. Les titres des colonnes et les valeurs sont centrés horizontalement et
+verticalement ; l’entête ETA présente **ETA** puis **Date - Heure** sur deux lignes.
+Le bloc météo est centré dans sa cellule et conserve sa largeur, ses dimensions
+et ses alignements internes.
+
+Un waypoint dont la case **Trafic dense** est cochée reçoit un fond ambre très
+pâle et un œil accompagné du libellé **Traffic dense** dans la colonne correspondante.
+Les points non cochés gardent **Non**. Ce repère de vigilance est distinct des
+indicateurs UKC et météo. L’icône PDF est vectorielle ; aucune image supplémentaire
+n’est embarquée. Les entêtes et pieds de page Word restent inchangés. Aucune
+migration ni configuration supplémentaire n’est requise.
+
 ## Bilan du voyage dans le PDF — v3.78.5
 
 Le chapitre Passage Plan de l’aperçu et du PDF présente la distance totale en NM,

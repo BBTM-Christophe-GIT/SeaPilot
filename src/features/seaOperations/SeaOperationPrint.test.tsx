@@ -19,6 +19,54 @@ function recordedObservation(): ObservationResult {
 }
 
 describe('Opération en Mer printable content', () => {
+  it('centres all nine Passage Plan cells and marks only retained dense-traffic rows with accessible vigilance', () => {
+    const draft = emptySeaOperation(); draft.vessel.draftMeters = 2;
+    draft.waypoints = [
+      { id: 'dense', number: 'WP1', descriptionVhf: 'Approche du port', latitude: '50', longitude: '1', eta: '2026-10-27T10:00', ukc: '2,5', denseTraffic: true },
+      { id: 'clear', number: 'WP2', descriptionVhf: 'Au large', latitude: '50.1', longitude: '1.1', eta: '2026-10-27T11:00', ukc: '', ukcMode: 'automatic', denseTraffic: false },
+    ];
+    const record: SeaOperationRecord = { id: 'passage-alignment', companyId: 1, version: 1, status: 'draft', draft,
+      createdBy: 'author', createdByName: 'Auteur', createdAt: '2026-10-27T08:00:00Z', updatedBy: 'author', updatedByName: 'Auteur', updatedAt: '2026-10-27T09:00:00Z',
+      signedBy: null, signedByName: null, signedAt: null, captainName: null, canEdit: true, canSign: false };
+    const original = structuredClone(record);
+    const { container } = render(<SeaOperationPrint record={record} />);
+    const table = within(container.querySelector('.so-print-passage')!);
+    expect(table.getAllByRole('columnheader')).toHaveLength(9);
+    expect(table.getByRole('columnheader', { name: 'Waypoint' }).querySelector('br')).toBeNull();
+    expect(table.getByRole('columnheader', { name: 'ETA Date - Heure' }).querySelectorAll('br')).toHaveLength(1);
+    const rows = table.getAllByRole('row').slice(1);
+    expect(rows[0]).toHaveClass('is-dense-traffic'); expect(rows[1]).not.toHaveClass('is-dense-traffic');
+    expect(rows[0].querySelectorAll('td')).toHaveLength(9); expect(rows[1].querySelectorAll('td')).toHaveLength(9);
+    const warning = within(rows[0]).getByRole('img', { name: 'Vigilance : trafic dense, risque de collision' });
+    expect(warning.querySelector('small')).toHaveTextContent(/^Traffic dense$/); expect(warning.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(within(rows[1]).getByRole('cell', { name: 'Non' })).toBe(rows[1].lastElementChild);
+    expect(within(rows[1]).queryByRole('img')).not.toBeInTheDocument();
+    expect(rows[0].querySelector('.so-print-ukc-cell .so-ukc-pill')).toHaveTextContent('2,5 m');
+    expect(rows[1].querySelector('.so-print-ukc-note')).toHaveTextContent('AutomatiqueAnnexe UKC');
+    expect(rows[0].querySelector('.so-print-weather-cell > .so-waypoint-weather-card')).not.toBeNull();
+    expect(record).toEqual(original);
+  });
+
+  it('scopes centring and vigilance styles to the printed Passage Plan while preserving weather card composition and widths', () => {
+    const css = readFileSync('src/features/seaOperations/seaOperationPrint.css', 'utf8');
+    const declarations = (selector: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(match => match[1].split(',').some(item => item.trim() === selector)).map(match => match[2]).join(';');
+    for (const selector of ['.so-print table.so-print-passage > thead > tr > th', '.so-print table.so-print-passage > tbody > tr > td']) {
+      expect(declarations(selector)).toContain('text-align: center');
+      expect(declarations(selector)).toContain('vertical-align: middle');
+    }
+    expect(declarations('.so-print table.so-print-passage > thead > tr > th:first-child')).toContain('white-space: nowrap');
+    expect(declarations('.so-print table.so-print-passage .so-print-eta-header')).toContain('white-space: nowrap');
+    expect(declarations('.so-print table.so-print-passage > tbody > tr.is-dense-traffic > td')).toContain('background: #fffaf0');
+    expect(declarations('.so-print .so-print-passage .so-print-traffic-warning')).toContain('color: #8a6100');
+    expect(declarations('.so-print-traffic-warning small')).toContain('white-space: normal');
+    expect(declarations('.so-print-traffic-warning small')).toContain('max-width: 100%');
+    expect(declarations('.so-print .so-print-passage .so-print-ukc-note')).toContain('justify-items: center');
+    expect(declarations('.so-print table.so-print-passage > tbody > tr > .so-print-weather-cell > .so-waypoint-weather-card')).toContain('text-align: left');
+    expect(declarations('.so-print table.so-print-passage > tbody > tr > .so-print-weather-cell > .so-waypoint-weather-card')).not.toMatch(/width:|grid|padding/);
+    expect(declarations('.so-print .so-print-passage th:nth-child(8)')).toContain('width: 26.9%');
+  });
+
   it('summarizes the retained route and multi-day Paris schedule without reading or changing a vessel', () => {
     const draft = emptySeaOperation();
     draft.vessel.etd = '2026-10-27T08:00'; draft.vessel.eta = '2026-10-27T18:00';
@@ -207,7 +255,7 @@ describe('Opération en Mer printable content', () => {
     expect(map.querySelector('svg')).not.toBeNull();
     expect(map.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(map.querySelector('iframe, image')).toBeNull();
-    expect(within(table).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA – Date et heure', 'Contacts VHF', 'Météo à l’ETA', 'Trafic dense']);
+    expect(within(table).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETADate - Heure', 'Contacts VHF', 'Météo à l’ETA', 'Trafic dense']);
     expect(within(table).getAllByRole('row')[1].querySelectorAll('td')).toHaveLength(9);
     expect(within(table).queryByRole('columnheader', { name: 'Conditions de vie à bord' })).not.toBeInTheDocument();
     expect(within(table).getByRole('cell', { name: '<Approche du port>' })).toBeInTheDocument();

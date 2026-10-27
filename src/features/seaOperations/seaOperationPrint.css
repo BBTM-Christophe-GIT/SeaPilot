@@ -13,11 +13,19 @@
 .so-print .so-print-passage th:nth-child(7) { width: 12.9%; }
 .so-print .so-print-passage th:nth-child(8) { width: 26.9%; }
 .so-print .so-print-passage th:nth-child(9) { width: 4.8%; }
+.so-print table.so-print-passage > thead > tr > th, .so-print table.so-print-passage > tbody > tr > td { text-align: center; vertical-align: middle; }
+.so-print table.so-print-passage > thead > tr > th:first-child, .so-print table.so-print-passage .so-print-eta-header { white-space: nowrap; overflow-wrap: normal; }
+.so-print table.so-print-passage > tbody > tr.is-dense-traffic > td { background: #fffaf0; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.so-print .so-print-passage .so-print-traffic-warning { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; max-width: 100%; color: #8a6100; line-height: 1.2; }
+.so-print-traffic-warning svg { flex: 0 0 auto; }
+.so-print-traffic-warning small { max-width: 100%; font-size: .72em; line-height: 1.15; white-space: normal; overflow-wrap: normal; }
+.so-print table.so-print-passage > tbody > tr > .so-print-weather-cell > .so-waypoint-weather-card { margin-inline: auto; text-align: left; }
 .so-print .so-print-passage .so-print-ukc-cell { overflow-wrap: normal; word-break: normal; }
 .so-print-ukc-value { line-height: 1.4; }
 .so-print .so-print-passage .so-print-ukc-value .so-ukc-pill { white-space: nowrap; overflow-wrap: normal; }
 .so-print .so-print-passage .so-print-ukc-value .so-ukc-unclassified { overflow-wrap: normal; word-break: normal; }
 .so-print-ukc-note { display: grid; gap: 2px; margin-top: 6px; font-size: .8em; line-height: 1.35; }
+.so-print .so-print-passage .so-print-ukc-note { justify-items: center; }
 .so-print-ukc-note span { white-space: nowrap; }
 .so-print-voyage-summary { margin: 12px 0 16px; break-inside: avoid; }
 .so-print .so-print-voyage-summary h3 { margin: 0 0 8px; }

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { readFile, writeFile } from 'node:fs/promises';
-import { PDFDocument, PDFDict, PDFName, PDFArray, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
+import { PDFDocument, PDFDict, PDFName, PDFArray, PDFRawStream, StandardFonts, decodePDFRawStream } from 'pdf-lib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { emptySeaOperation, SEA_OPERATION_CHECKS } from './seaOperationModel';
 import { generateSeaOperationPdf } from './seaOperationPdf';
@@ -96,9 +96,80 @@ function textPositions(body: string, text: string) {
     return { x: Number(position[1]), y: Number(position[2]), commands: match[1] };
   });
 }
+function tableRectangles(body: string) {
+  return [...body.matchAll(/([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) re\n([BfS])/g)].map(match => ({
+    index: match.index, x: Number(match[1]), y: Number(match[2]), width: Number(match[3]), height: Number(match[4]), mode: match[5],
+    fill: [...body.slice(0, match.index).matchAll(/(?:^|\n)([\d.]+(?: [\d.]+){0,2}) (?:rg|g)\n/g)].at(-1)?.[1],
+  }));
+}
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Sea operation PDF', () => {
+  it('centers Passage Plan headers, body values, UKC and unchanged weather cards, with a lightweight dense-traffic eye', async () => {
+    const record = fixture(); record.draft.description = 'Recette de centrage du tableau Passage Plan.';
+    record.draft.vessel.draftMeters = 2;
+    record.draft.waypoints = record.draft.waypoints.slice(0, 2).map((point, index) => ({ ...point, number: index ? 'CLEAR' : 'DENSE',
+      descriptionVhf: 'Description complète pour conserver une grande ligne et vérifier son centrage. '.repeat(8),
+      ukc: '2,5', denseTraffic: index === 0 }));
+    const original = structuredClone(record);
+    const baseline = structuredClone(record); baseline.draft.waypoints[0].denseTraffic = false;
+    const [generated, withoutTraffic] = await Promise.all([
+      generateSeaOperationPdf(record, { templateBytes: await template() }), generateSeaOperationPdf(baseline, { templateBytes: await template() }),
+    ]);
+    if (process.env.SEAPILOT_PDF_ALIGNMENT_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_ALIGNMENT_QA_OUTPUT, generated.bytes);
+    const bodies = (await landscapeBodies(generated.bytes)).filter(body => body.includes('(Waypoint) Tj'));
+    const metrics = await PDFDocument.create();
+    const bold = await metrics.embedFont(StandardFonts.HelveticaBold), normal = await metrics.embedFont(StandardFonts.Helvetica);
+    expect(bodies.length).toBeGreaterThan(1);
+    for (const body of bodies) {
+      const rectangles = tableRectangles(body);
+      const headerAnchor = rectangles.filter(rect => rect.index < body.indexOf('(Waypoint) Tj')).at(-1)!;
+      const headers = rectangles.filter(rect => rect.y === headerAnchor.y && rect.height === headerAnchor.height);
+      expect(headers).toHaveLength(9); expect(headers[7].width).toBe(200);
+      for (const [index, labels] of [['Waypoint'], ['Description'], ['Latitude'], ['Longitude'], ['UKC'], ['ETA', 'Date - Heure'], ['Contacts VHF'], ['Météo à l\x92ETA'], ['Trafic', 'dense']].entries()) {
+        const placements = labels.map(label => textPositions(body, label).find(position => position.y <= headerAnchor.y && position.y >= headerAnchor.y + headerAnchor.height)!);
+        expect(placements.every(Boolean)).toBe(true);
+        expect(placements.reduce((sum, position) => sum + position.y, 0) / placements.length + 8.5 * .275).toBeCloseTo(headerAnchor.y + headerAnchor.height / 2, 1);
+        for (const [line, position] of placements.entries()) expect(position.x + bold.widthOfTextAtSize(labels[line].replace(/\x92/g, '’'), 8.5) / 2).toBeCloseTo(headers[index].x + headers[index].width / 2, 0);
+      }
+      const waypoint = textPositions(body, body.includes('(DENSE) Tj') ? 'DENSE' : 'CLEAR')[0];
+      const row = rectangles.find(rect => rect.x === 49 && waypoint.y < rect.y && waypoint.y > rect.y + rect.height)!;
+      expect(-row.height).toBeGreaterThan(250);
+      expect(waypoint.x + normal.widthOfTextAtSize(body.includes('(DENSE) Tj') ? 'DENSE' : 'CLEAR', 8.5) / 2).toBeCloseTo(row.x + row.width / 2, 0);
+      expect(waypoint.y + 8.5 * .275).toBeCloseTo(row.y + row.height / 2, 1);
+      const ukc = textPositions(body, '2,5 m')[0];
+      expect(ukc.y + 1.5).toBeCloseTo(row.y + row.height / 2, 1);
+      expect(ukc.x + bold.widthOfTextAtSize('2,5 m', 7.5) / 2).toBeCloseTo(309 + 76 / 2 + 4, 0);
+      const card = textPositions(body, 'MÉTÉO À L\x92ETA')[0];
+      const weatherBody = body.slice(body.lastIndexOf('1. g', body.indexOf('(MÉTÉO À L\x92ETA) Tj')), body.indexOf('(MÉTÉO À L\x92ETA) Tj'));
+      expect(weatherBody).toContain('200.');
+      // The card retains its existing 190 pt width and sits symmetrically within the taller row.
+      const frame = [...body.matchAll(/(?:^|\n)(567\.) ([\d.-]+) m\n([\s\S]*?)\nh\nB/g)].find(match => Number(match[2]) < row.y && Number(match[2]) > row.y + row.height)!;
+      expect(frame).toBeDefined();
+      const frameYs = [...frame[3].matchAll(/([\d.-]+) ([\d.-]+) [ml]/g)].map(match => Number(match[2]));
+      const frameTop = Number(frame[2]), frameBottom = Math.min(...frameYs);
+      expect((frameTop + frameBottom) / 2).toBeCloseTo(row.y + row.height / 2, 1);
+      expect(card.y).toBeCloseTo(frameTop - 14, 1);
+      if (body.includes('(DENSE) Tj')) {
+        const pale = rectangles.filter(rect => rect.fill === '1. 0.98 0.94' && rect.mode !== 'S' && rect.y === row.y);
+        expect(pale.map(rect => rect.x)).toEqual([49, 94, 189, 249, 309, 385, 461, 557, 757]);
+        const traffic = textPositions(body, 'Traffic'); expect(traffic).toHaveLength(1);
+        expect(traffic[0].commands).toContain('0.541 0.38 0. rg');
+        expect(traffic[0].commands).toContain('(dense) Tj');
+        expect(traffic[0].x + bold.widthOfTextAtSize('Traffic', 6.5) / 2).toBeCloseTo(757 + 35.92 / 2, 0);
+        expect(traffic[0].y + 2).toBeCloseTo(row.y + row.height / 2, 1);
+        expect(body).toContain('0.54 0.38 0. RG');
+      } else {
+        expect(body).not.toContain('(Traffic) Tj');
+        const non = textPositions(body, 'Non').find(position => position.x > 757)!;
+        expect(non.y + 8.5 * .275).toBeCloseTo(row.y + row.height / 2, 1);
+      }
+      expect(body).not.toContain('/Subtype /Image');
+    }
+    expect(Math.abs(generated.bytes.length - withoutTraffic.bytes.length)).toBeLessThan(2048);
+    expect(record).toEqual(original);
+  });
+
   it('exports a multi-day voyage summary using only the route and schedule retained in the declaration', async () => {
     const record = voyageFixture(); const original = structuredClone(record);
     const generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
@@ -169,6 +240,12 @@ describe('Sea operation PDF', () => {
     expect(textBody).toContain('0.09 0.396 0.247 rg');
     expect(textBody).not.toContain('MANUAL-OLD');
     expect(textBody).not.toContain('95 %');
+    const passage = bodies.find(body => body.includes('(Waypoint) Tj'))!;
+    const waypoint = textPositions(passage, 'AUTO-1')[0];
+    const row = tableRectangles(passage).find(rect => rect.x === 49 && waypoint.y < rect.y && waypoint.y > rect.y + rect.height)!;
+    expect(textPositions(passage, '~ 19,62 m')[0].y - 10).toBeCloseTo(row.y + row.height / 2, 1);
+    expect(textPositions(passage, 'Indicative')[0].y + 7).toBeCloseTo(row.y + row.height / 2, 1);
+    expect(textPositions(passage, 'Indicative')[0].commands).toContain('(Annexe UKC) Tj');
     expect(record).toEqual(original);
     if (process.env.SEAPILOT_PDF_COPERNICUS_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_COPERNICUS_QA_OUTPUT, generated.bytes);
     record.draft.vessel.draftMeters = 3;
@@ -336,8 +413,10 @@ describe('Sea operation PDF', () => {
       const waypointPosition = textPositions(body, waypoint)[0];
       expect(waypointPosition).toBeDefined();
       expect(waypointPosition.x).toBeLessThan(94);
-      expect(waypointPosition.y - badge.y).toBeGreaterThan(20);
-      expect(waypointPosition.y - badge.y).toBeLessThan(45);
+      const row = tableRectangles(body).find(rect => rect.x === 49 && waypointPosition.y < rect.y && waypointPosition.y > rect.y + rect.height)!;
+      expect(waypointPosition.y + 8.5 * .275).toBeCloseTo(row.y + row.height / 2, 1);
+      expect(badge.y).toBeGreaterThan(row.y + row.height);
+      expect(badge.y).toBeLessThan(row.y);
     }
     for (const body of bodies.filter((body) => body.includes('(Waypoint)'))) {
       const rectangles = [...body.matchAll(/([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) re\nB/g)].map((match) => ({ index: match.index, x: Number(match[1]), y: Number(match[2]), width: Number(match[3]), height: Number(match[4]) }));
