@@ -451,6 +451,25 @@ export async function generateProjectDocument(
   kind: ProjectGeneratedDocumentKind,
   input: ProjectDocumentGenerationInput,
 ): Promise<GeneratedProjectDocument> {
+  const generated = await generateProjectDocumentBase(kind, input);
+  if (!input.project.locationPlan?.includeInPdf) return generated;
+  const { appendProjectLocationPdf } = await import('./projectLocationPdf');
+  return {
+    ...generated,
+    blob: await appendProjectLocationPdf(generated.blob, input.project.locationPlan, {
+      projectLabel: `${input.project.projectCode} - ${input.project.title}`,
+      vesselName: input.vessel?.name,
+      maxSpeedKnots: input.vessel?.maxSpeedKnots,
+      draftMeters: input.vessel?.draftMeters,
+      language: input.language,
+    }),
+  };
+}
+
+async function generateProjectDocumentBase(
+  kind: ProjectGeneratedDocumentKind,
+  input: ProjectDocumentGenerationInput,
+): Promise<GeneratedProjectDocument> {
   if (kind === 'intellectual_service') {
     throw new Error('Le modèle de ce contrat doit encore être fourni avant sa génération.');
   }

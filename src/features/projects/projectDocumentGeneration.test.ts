@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { decodePDFRawStream, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
 import JSZip from 'jszip';
+import { emptyProjectLocationPlan } from './projectLocation';
+import { emptySeaOperationWaypoint } from '../seaOperations/seaOperationModel';
 import { describe, expect, it, vi } from 'vitest';
 import type { ClientRecord, ProjectContractRecord, ProjectRecord } from './projectQueries';
 import {
@@ -57,6 +59,27 @@ const project: ProjectRecord = {
   archivedAt: '',
   updatedAt: '2026-07-16T08:00:00Z',
 };
+
+describe('optional location in every supported contract PDF', () => {
+  it.each(['offer', 'towage_contract', 'bareboat_charter', 'bimco_supplytime'] as const)('appends only after explicit opt-in (%s)', async kind => {
+    const logo = await readFile(resolve('public/bbtm-report-logo.png'));
+    const partTwo = await readFile(resolve('public/templates/bimco-p144-part-ii.pdf'));
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async url => new Response(String(url).endsWith('bimco-p144-part-ii.pdf') ? partTwo : logo, { status: 200 }));
+    const plan = emptyProjectLocationPlan();
+    plan.points = [{ ...emptySeaOperationWaypoint('isolated-only'), number: '1', descriptionVhf: 'POINT-ANNEXE', latitude: '49.65', longitude: '-1.62' }];
+    try {
+      const absent = await generateProjectDocument(kind, { project });
+      const unchecked = await generateProjectDocument(kind, { project: { ...project, locationPlan: plan } });
+      const checked = await generateProjectDocument(kind, { project: { ...project, locationPlan: { ...plan, includeInPdf: true } } });
+      const documents = await Promise.all([absent, unchecked, checked].map(async result => PDFDocument.load(await result.blob.arrayBuffer())));
+      expect(documents[1].getPageCount()).toBe(documents[0].getPageCount());
+      expect(documents[2].getPageCount()).toBeGreaterThan(documents[0].getPageCount());
+      expect(documents[2].getPages().at(-1)!.getWidth()).toBeGreaterThan(documents[2].getPages().at(-1)!.getHeight());
+      expect(checked.fileName).toBe(absent.fileName);
+      expect(documents[2].getPages().slice(0, documents[0].getPageCount()).map(page => page.getSize())).toEqual(documents[0].getPages().map(page => page.getSize()));
+    } finally { fetchMock.mockRestore(); }
+  }, 20_000);
+});
 
 const contract: ProjectContractRecord = {
   id: 1,

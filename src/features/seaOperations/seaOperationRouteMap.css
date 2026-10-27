@@ -14,6 +14,13 @@
 .so-route-map-grid text { fill: var(--sp-muted); font-family: var(--sp-font); font-size: 10px; paint-order: stroke; stroke: var(--sp-primary-soft); stroke-width: 2px; }
 .so-route-map-track line { stroke: var(--sp-primary); stroke-width: 2.5px; stroke-linecap: round; }
 .so-route-map-direction { fill: var(--sp-primary); }
+.so-route-map-zones { pointer-events: none; }
+.so-route-map-zones polygon { fill: var(--sp-primary); fill-opacity: .12; stroke: var(--sp-primary); stroke-width: 1.5px; stroke-dasharray: 5 3; }
+.so-route-map-zones text, .so-route-map-zone-vertices text { fill: var(--sp-heading); font-family: var(--sp-font); font-size: 10px; paint-order: stroke; stroke: var(--sp-surface); stroke-width: 3px; }
+.so-route-map-zone-vertices { pointer-events: none; }
+.so-route-map-zone-vertices circle { fill: var(--sp-primary); stroke: var(--sp-surface); stroke-width: 1px; }
+.so-route-map-isolated-points rect { fill: var(--sp-surface); stroke: var(--sp-success); stroke-width: 2px; }
+.so-route-map-isolated-ordinal { fill: var(--sp-success); font-family: var(--sp-font); font-size: 11px; font-weight: 700; }
 .so-route-map-pin { fill: var(--sp-surface); stroke: var(--sp-primary); stroke-width: 2px; }
 .so-route-map-ordinal { fill: var(--sp-primary); font-family: var(--sp-font); font-size: 12px; font-weight: 750; }
 .so-route-map-point.is-start .so-route-map-pin { fill: var(--sp-primary); }

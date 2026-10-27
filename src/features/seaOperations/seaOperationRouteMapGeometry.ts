@@ -130,11 +130,13 @@ export function buildSeaOperationRouteMap(
   width = 900,
   height = 320,
   viewport?: RouteMapViewport,
+  extraPositions: readonly SeaPosition[] = [],
 ): SeaOperationRouteMapGeometry {
   ({ width, height } = dimensions(width, height));
   const positions = waypoints.map(seaWaypointPosition);
-  const validPositions = positions.filter((point) => point !== null);
-  const result: SeaOperationRouteMapGeometry = { width, height, land: [], grid: [], segments: [], points: [], invalidCount: waypoints.length - validPositions.length, scale: null, viewport: null, projection: null };
+  const routePositions = positions.filter((point) => point !== null);
+  const validPositions = [...routePositions, ...extraPositions.filter(point => Number.isFinite(point.latitude) && Number.isFinite(point.longitude) && Math.abs(point.latitude) <= 90 && Math.abs(point.longitude) <= 180)];
+  const result: SeaOperationRouteMapGeometry = { width, height, land: [], grid: [], segments: [], points: [], invalidCount: waypoints.length - routePositions.length, scale: null, viewport: null, projection: null };
   if (!validPositions.length && viewport === undefined) return result;
 
   let centerLon: number, centerLat: number, unitScale: number, longitudeFor: (longitude: number) => number;

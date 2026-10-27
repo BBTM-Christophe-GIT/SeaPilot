@@ -13,6 +13,32 @@ const channelRoute = () => [point(1, '49.65', '-1.62'), point(2, '48.36', '-4.53
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('SeaOperationRouteMap', () => {
+  it('shows routes, isolated points and valid zones together without including overlays in travel totals', () => {
+    const route = [point(1, '0', '0'), point(2, '0', '1')];
+    const isolated = [{ ...point(3, '0', '4'), descriptionVhf: 'Inspection isolée', denseTraffic: true }];
+    const zones = [{ id: 'zone', name: 'Travaux', vertices: [{ latitude: '-0.2', longitude: '2' }, { latitude: '0.2', longitude: '2' }, { latitude: '0', longitude: '2.5' }] }];
+    const original = structuredClone({ route, isolated, zones });
+    const { container, rerender } = render(<SeaOperationRouteMap waypoints={route} showRouteLegs maxSpeedKnots={12} />);
+    const summary = screen.getByRole('complementary', { name: 'Estimation du parcours' }).textContent;
+    rerender(<SeaOperationRouteMap waypoints={route} isolatedPoints={isolated} zones={zones} showRouteLegs maxSpeedKnots={12} />);
+    expect(container.querySelectorAll('.so-route-map-track line')).toHaveLength(1);
+    expect(container.querySelectorAll('.so-route-map-isolated-points > g')).toHaveLength(1);
+    expect(container.querySelectorAll('.so-route-map-zones polygon')).toHaveLength(1);
+    expect(screen.getByRole('img', { name: 'Vigilance : trafic dense, risque de collision · Point isolé 1' })).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Estimation du parcours' }).textContent).toBe(summary);
+    expect(container.querySelector('desc')).toHaveTextContent('Inspection isolée'); expect(container.querySelector('desc')).toHaveTextContent('Zone : Travaux');
+    expect({ route, isolated, zones }).toEqual(original);
+  });
+  it('frames overlays alone, keeps clipped zones visible and never closes incomplete or duplicate drafts', () => {
+    const zone = { id: 'zone', name: 'Zone cadrée', vertices: [{ latitude: '-1', longitude: '-1' }, { latitude: '1', longitude: '-1' }, { latitude: '1', longitude: '1' }, { latitude: '-1', longitude: '1' }] };
+    const { container, rerender } = render(<SeaOperationRouteMap waypoints={[]} zones={[zone]} viewport={{ centerLatitude: 0, centerLongitude: 0, longitudeSpan: .5 }} />);
+    expect(container.querySelector('.so-route-map-zones polygon')).not.toBeNull();
+    expect(container.querySelector('.so-route-map-track line')).toBeNull();
+    rerender(<SeaOperationRouteMap waypoints={[]} zones={[{ ...zone, vertices: [zone.vertices[0], zone.vertices[1], zone.vertices[0]] }]} />);
+    expect(container.querySelector('.so-route-map-svg')).not.toBeNull(); expect(container.querySelector('.so-route-map-zones polygon')).toBeNull();
+    rerender(<SeaOperationRouteMap waypoints={[]} isolatedPoints={[point(1, '49', '-2')]} compact />);
+    expect(container.querySelector('.so-route-map-svg')).not.toBeNull(); expect(container.querySelectorAll('.so-route-map-isolated-points > g')).toHaveLength(1);
+  });
   it('adds vigilance beside the original numbered waypoint without changing its label, coordinates or source', () => {
     const points = [point(1, '', ''), point(2, '49.65', '-1.62'), point(3, '50', '0')];
     points[1].denseTraffic = true;

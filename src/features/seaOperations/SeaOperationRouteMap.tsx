@@ -8,6 +8,11 @@ import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates
 import { formatProjectPort } from '../projects/projectPorts';
 import { buildSeaOperationRouteLegs, formatSeaOperationVoyageDuration, seaOperationVoyageTiming } from './seaOperationRouteLegs';
 import './seaOperationRouteMap.css';
+import { seaOperationMapExtraPositions, seaOperationMapLayers, type SeaOperationMapZone } from './seaOperationMapLayers';
+import { projectSeaOperationMapPlace } from './seaOperationMapPlaces';
+
+const NO_ISOLATED_POINTS: readonly SeaOperationWaypoint[] = [];
+const NO_ZONES: readonly SeaOperationMapZone[] = [];
 
 interface Position { x: number; y: number }
 type MapPoint = ReturnType<typeof buildSeaOperationRouteMap>['points'][number];
@@ -56,7 +61,7 @@ function routeLegLabels(geometry: SeaOperationRouteMapGeometry, legs: ReturnType
 }
 
 /** Local situation map; placement is supplied explicitly by the editing wrapper. */
-export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onGeometry, renderOverlay, fillAvailableSpace = false, showPlaces = false, showWaypointCoordinates = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint }: {
+export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onGeometry, renderOverlay, fillAvailableSpace = false, showPlaces = false, showWaypointCoordinates = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint, isolatedPoints = NO_ISOLATED_POINTS, zones = NO_ZONES, previewIsolatedPoint, previewZoneVertex }: {
   waypoints: readonly SeaOperationWaypoint[]; compact?: boolean;
   viewport?: RouteMapViewport;
   onGeometry?: (geometry: SeaOperationRouteMapGeometry) => void;
@@ -71,6 +76,10 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
   eta?: string;
   /** Visual drag preview only; totals, labels and layout retain the controlled route until release. */
   previewWaypoint?: { id: string; position: SeaPosition } | null;
+  isolatedPoints?: readonly SeaOperationWaypoint[];
+  zones?: readonly SeaOperationMapZone[];
+  previewIsolatedPoint?: { id: string; position: SeaPosition } | null;
+  previewZoneVertex?: { zoneId: string; index: number; position: SeaPosition } | null;
 }) {
   const titleId = useId();
   const descriptionId = useId();
@@ -81,18 +90,25 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
   const filling = fillAvailableSpace && !compact;
   const width = filling ? size.width : Math.max(280, Math.min(900, Math.round(size.width)));
   const height = compact ? 220 : filling ? size.height : width < 600 ? 280 : 320;
-  const recordedGeometry = useMemo(() => buildSeaOperationRouteMap(waypoints, width, height, compact ? undefined : viewport), [waypoints, width, height, compact, viewport]);
+  const extraPositions = useMemo(() => seaOperationMapExtraPositions(isolatedPoints, zones), [isolatedPoints, zones]);
+  const recordedGeometry = useMemo(() => buildSeaOperationRouteMap(waypoints, width, height, compact ? undefined : viewport, extraPositions), [waypoints, width, height, compact, viewport, extraPositions]);
   const visualWaypoints = useMemo(() => !compact && previewWaypoint ? waypoints.map(point => point.id === previewWaypoint.id
     ? { ...point, latitude: String(previewWaypoint.position.latitude), longitude: String(previewWaypoint.position.longitude) } : point) : waypoints, [compact, previewWaypoint, waypoints]);
   const geometry = useMemo(() => visualWaypoints === waypoints ? recordedGeometry
-    : buildSeaOperationRouteMap(visualWaypoints, width, height, viewport ?? recordedGeometry.viewport ?? undefined), [visualWaypoints, waypoints, recordedGeometry, width, height, viewport]);
+    : buildSeaOperationRouteMap(visualWaypoints, width, height, viewport ?? recordedGeometry.viewport ?? undefined, extraPositions), [visualWaypoints, waypoints, recordedGeometry, width, height, viewport, extraPositions]);
+  const visualIsolatedPoints = useMemo(() => !compact && previewIsolatedPoint ? isolatedPoints.map(point => point.id === previewIsolatedPoint.id
+    ? { ...point, latitude: String(previewIsolatedPoint.position.latitude), longitude: String(previewIsolatedPoint.position.longitude) } : point) : isolatedPoints, [compact, isolatedPoints, previewIsolatedPoint]);
+  const visualZones = useMemo(() => !compact && previewZoneVertex ? zones.map(zone => zone.id === previewZoneVertex.zoneId
+    ? { ...zone, vertices: zone.vertices.map((vertex, index) => index === previewZoneVertex.index ? { latitude: String(previewZoneVertex.position.latitude), longitude: String(previewZoneVertex.position.longitude) } : vertex) } : zone) : zones, [compact, zones, previewZoneVertex]);
+  const layers = useMemo(() => seaOperationMapLayers(geometry, visualIsolatedPoints, visualZones), [geometry, visualIsolatedPoints, visualZones]);
   const groups = useMemo(() => groupCoincidentPoints(geometry.points), [geometry.points]);
   const places = useMemo(() => showPlaces && !compact ? seaOperationMapPlaces(recordedGeometry) : null, [showPlaces, compact, recordedGeometry]);
   const route = useMemo(() => showRouteLegs && !compact ? buildSeaOperationRouteLegs(waypoints, maxSpeedKnots) : null, [showRouteLegs, compact, waypoints, maxSpeedKnots]);
   const legLabels = useMemo(() => route ? routeLegLabels(recordedGeometry, route.legs, places) : [], [recordedGeometry, route, places]);
   const voyage = route ? seaOperationVoyageTiming(etd, route.totalDurationMinutes, eta) : null;
   const showLegList = Boolean(route && route.legs.length > 0 && (geometry.width < 600 || legLabels.length < route.legs.length));
-  const countLabel = `${geometry.points.length} point${geometry.points.length === 1 ? '' : 's'} géolocalisé${geometry.points.length === 1 ? '' : 's'}`;
+  const routeCountLabel = `${geometry.points.length} point${geometry.points.length === 1 ? '' : 's'} géolocalisé${geometry.points.length === 1 ? '' : 's'}`;
+  const countLabel = [routeCountLabel, isolatedPoints.length ? `${isolatedPoints.length} point${isolatedPoints.length === 1 ? '' : 's'} isolé${isolatedPoints.length === 1 ? '' : 's'}` : '', zones.length ? `${zones.length} zone${zones.length === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
   const vigilanceDescription = vigilanceLabel(geometry.points.filter(point => waypoints[point.index - 1]?.denseTraffic).map(point => point.index));
 
   useEffect(() => { onGeometry?.(recordedGeometry); }, [recordedGeometry, onGeometry]);
@@ -123,12 +139,17 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
     <div className="so-route-map-frame" ref={frame}>
       {geometry.projection ? <svg aria-labelledby={svgTitleId} aria-describedby={descriptionId} className="so-route-map-svg" role={!compact && (renderOverlay || route) ? 'group' : 'img'} viewBox={`0 0 ${geometry.width} ${geometry.height}`}>
         <title id={svgTitleId}>{`Carte du parcours · ${countLabel}`}</title>
-        <desc id={descriptionId}>Nord en haut. Les numéros suivent l’ordre du tableau. {geometry.points.map((point) => `Point ${point.index} : ${point.label}`).join(' ; ')}. Les points aux mêmes coordonnées partagent une pastille. {vigilanceDescription && `${vigilanceDescription}.`}</desc>
+        <desc id={descriptionId}>Nord en haut. Les numéros suivent l’ordre du tableau. {geometry.points.map((point) => `Point ${point.index} : ${point.label}`).join(' ; ')}. Les points aux mêmes coordonnées partagent une pastille. {vigilanceDescription && `${vigilanceDescription}.`} {layers.isolated.map(item => `Point isolé ${item.index} : ${item.point.descriptionVhf || item.point.number}${item.point.denseTraffic ? ' · trafic dense, risque de collision' : ''}`).join(' ; ')} {layers.polygons.map(item => `Zone : ${item.zone.name}`).join(' ; ')}</desc>
         <defs><clipPath id={clipId}><rect width={geometry.width} height={geometry.height} /></clipPath></defs>
         <g clipPath={`url(#${clipId})`}>
           <rect className="so-route-map-sea" width={geometry.width} height={geometry.height} />
           <g aria-hidden="true" className="so-route-map-land">{geometry.land.map((polygon, index) => <polygon key={index} points={polygon.map((point) => `${point.x},${point.y}`).join(' ')} vectorEffect="non-scaling-stroke" />)}</g>
           <g aria-hidden="true" className="so-route-map-grid">{geometry.grid.map((line, index) => <g key={index}><line x1={line.from.x} y1={line.from.y} x2={line.to.x} y2={line.to.y} vectorEffect="non-scaling-stroke" /><text x={line.labelAt.x} y={line.labelAt.y}>{line.label}</text></g>)}</g>
+          <g className="so-route-map-zones">{layers.polygons.map(({ zone, vertices }) => <g key={zone.id} role="img" aria-label={`Zone : ${zone.name || 'Sans nom'}`}><title>{zone.name || 'Zone sans nom'} · {zone.vertices.length} sommets</title><polygon points={vertices.map(vertex => `${vertex.x},${vertex.y}`).join(' ')} /><text x={Math.max(12, Math.min(geometry.width - 12, vertices.reduce((sum, point) => sum + point.x, 0) / vertices.length))} y={Math.max(14, Math.min(geometry.height - 12, vertices.reduce((sum, point) => sum + point.y, 0) / vertices.length))} textAnchor="middle">{zone.name || 'Zone'}</text></g>)}</g>
+          <g className="so-route-map-zone-vertices" aria-hidden="true">{visualZones.flatMap((zone, zoneIndex) => zone.vertices.map((vertex, index) => {
+            const position = seaWaypointPosition(vertex), pixel = position && projectSeaOperationMapPlace(geometry, position);
+            return pixel ? <g key={`${zone.id}:${index}`}><circle cx={pixel.x} cy={pixel.y} r={3} /><text x={pixel.x + 6} y={pixel.y - 5}>Z{zoneIndex + 1}.{index + 1}</text></g> : null;
+          }))}</g>
           {places && <g className="so-route-map-places-layer">
             <g className="so-route-map-cities">{places.cities.map(city => <g key={city.id}><title>{city.name} · Natural Earth</title><circle cx={city.x} cy={city.y} r={3} /><text x={city.label.x} y={city.label.y} textAnchor={city.label.anchor}>{city.name}</text></g>)}</g>
             <g className="so-route-map-ports">{places.markers.map(marker => <g key={`${marker.location.source}:${marker.location.sourceId}`} role="img"
@@ -142,6 +163,12 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
             const arrow = directionArrow(segment.from, segment.to);
             return <g key={index}><line x1={segment.from.x} y1={segment.from.y} x2={segment.to.x} y2={segment.to.y} vectorEffect="non-scaling-stroke" />{arrow && <polygon className="so-route-map-direction" points={arrow} />}</g>;
           })}</g>
+          <g className="so-route-map-isolated-points">{layers.isolated.map(({ point, index, x, y, position }) => <g key={point.id} data-isolated-point-id={point.id} transform={`translate(${x} ${y})`} role="img" aria-label={`Point isolé ${index} : ${point.descriptionVhf || point.number || 'Sans nom'} · ${formatSeaLatitude(position.latitude)} · ${formatSeaLongitude(position.longitude)}`}>
+            <title>{point.descriptionVhf || `Point isolé ${index}`}</title><rect x={-15} y={-13} width={30} height={26} rx={4} /><text className="so-route-map-isolated-ordinal" textAnchor="middle" dominantBaseline="central">P{index}</text>
+            {point.descriptionVhf && <text className="so-route-map-point-label" x={0} y={-20} textAnchor="middle">{point.descriptionVhf.length > 20 ? `${point.descriptionVhf.slice(0, 19)}…` : point.descriptionVhf}</text>}
+            {showWaypointCoordinates && !compact && <text className="so-route-map-point-coordinates" textAnchor="middle" y={22}><tspan x={0}>{formatSeaLatitude(position.latitude)}</tspan><tspan x={0} dy={11}>{formatSeaLongitude(position.longitude)}</tspan></text>}
+            {point.denseTraffic && <g className="so-route-map-point-vigilance" role="img" aria-label={`Vigilance : trafic dense, risque de collision · Point isolé ${index}`}><title>Traffic dense · Point isolé {index} · risque de collision</title><circle cx={x > geometry.width * .7 ? -31 : 31} cy={0} r={10} /><Eye aria-hidden="true" x={(x > geometry.width * .7 ? -31 : 31) - 7} y={-7} size={14} strokeWidth={1.8} /></g>}
+          </g>)}</g>
           {legLabels.length > 0 && <g className="so-route-map-leg-labels">{legLabels.map(label => <g key={`${label.leg.fromIndex}:${label.leg.toIndex}`} transform={`translate(${label.x} ${label.y})`} role="img" aria-label={`Waypoint ${label.leg.fromIndex} vers ${label.leg.toIndex} : ${label.text}`}>
             <rect x={-label.width / 2} y={-11} width={label.width} height={22} rx={6} /><text textAnchor="middle" dominantBaseline="central">{label.text}</text>
           </g>)}</g>}

@@ -19,6 +19,7 @@ import { captureSeaOperationValidationUkc, ukcRequestKey, type SeaOperationUkcRe
 import { calculateSeaOperationCopernicusEstimate, COPERNICUS_UKC_PRODUCTS, type SeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 import { seaOperationUkcReference, type SeaOperationUkcCaptureContext } from './seaOperationWaypointSnapshots';
 import { seaOperationPlanningChoiceKey, seaOperationPlanningChoiceLabel, seaOperationPlanningWindowDates } from './seaOperationPlanningWindow';
+import { emptyProjectLocationPlan } from '../projects/projectLocation';
 
 const weatherPanelMock = vi.hoisted(() => vi.fn());
 const chartsPanelMock = vi.hoisted(() => vi.fn());
@@ -284,6 +285,50 @@ function adminRevision(record: SeaOperationRecord): SeaOperationRecord {
   return recordFixture(adminAccount, { id: 'admin-revised-preparation', version: 1, draft, canEdit: true, canSign: false,
     canRevise: false, canDelete: true, previousRevisionId: record.id, signatureSnapshot: null });
 }
+
+describe('project location copied into real-profile operation fixtures', () => {
+  it.each([captainAccount, sailorAccount])('copies selected route, ETD and editable independent overlays for $id', async account => {
+    const date = seaOperationToday(), choices = plannedMissions(date);
+    const point = { id: 'source-route', number: '1', descriptionVhf: 'Route du projet', latitude: '49.65', longitude: '-1.62', ukc: '3', eta: '', denseTraffic: true };
+    const location = { ...emptyProjectLocationPlan(), etd: `${date}T10:00`, charts: '7120 - 7421', waypoints: [point],
+      points: [{ ...point, id: 'source-isolated', number: 'P1', descriptionVhf: 'Repère du projet' }],
+      zones: [{ id: 'source-zone', name: 'Travaux', vertices: [{ latitude: '49.6', longitude: '-1.6' }, { latitude: '49.7', longitude: '-1.6' }, { latitude: '49.7', longitude: '-1.5' }] }] };
+    choices[0].locationPlan = location;
+    const source = structuredClone(location), { client } = renderAccount(account, undefined, 1, choices);
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, draft) => recordFixture(account, { draft: structuredClone(draft), version: 1 }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' })); await chooseMission(choices[0]);
+    expect(formQueries().getByLabelText('ETD · date et heure de départ')).toHaveValue(`${date}T10:00`);
+    await userEvent.click(stepButton(2));
+    expect(formQueries().getByLabelText('Numéro de la ou des cartes marines')).toHaveValue(location.charts);
+    const copied = capturingUkcPanel().payload;
+    expect(copied.waypoints[0]).toMatchObject({ descriptionVhf: 'Route du projet', eta: `${date}T10:00` });
+    expect(copied.waypoints[0].id).not.toBe('source-route');
+    expect(copied.locationOverlay!.points[0].id).not.toBe('source-isolated');
+    expect(copied.locationOverlay!.zones[0].id).not.toBe('source-zone');
+    const map = waypointMapMock.mock.calls.at(-1)![0] as { onMoveIsolatedPoint: (id: string, position: { latitude: number; longitude: number }) => void };
+    act(() => map.onMoveIsolatedPoint(copied.locationOverlay!.points[0].id, { latitude: 50.1, longitude: 1.2 }));
+    expect(capturingUkcPanel().payload.locationOverlay!.points[0]).toMatchObject({ latitude: '50.1', longitude: '1.2' });
+    expect(location).toEqual(source);
+    await saveDraft();
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ locationOverlay: expect.objectContaining({ points: [expect.objectContaining({ latitude: '50.1' })] }) }), undefined);
+    await userEvent.click(stepButton(0)); await chooseMission(choices[1]);
+    expect(capturingUkcPanel().payload.locationOverlay).toBeUndefined();
+    act(() => map.onMoveIsolatedPoint(copied.locationOverlay!.points[0].id, { latitude: 51, longitude: 2 }));
+    expect(capturingUkcPanel().payload.locationOverlay).toBeUndefined();
+  });
+
+  it.each([false, true])('does not refresh a retained location from the live project when reopening (signed=%s)', async signed => {
+    const choices = plannedMissions(), draft = waypointCaptureDraft(choices[0]);
+    draft.waypoints[0].descriptionVhf = 'Route modifiée par le Capitaine';
+    draft.locationOverlay = { version: 1, points: [], zones: [{ id: 'retained-zone', name: 'Zone retenue', vertices: [] }] };
+    choices[0].locationPlan = { ...emptyProjectLocationPlan(), charts: 'NOUVELLE CARTE', zones: [{ id: 'new-zone', name: 'Projet modifié', vertices: [] }] };
+    const record = recordFixture(captainAccount, { draft, status: signed ? 'signed' : 'draft', canEdit: !signed, canSign: !signed });
+    renderAccount(captainAccount, record, 1, choices); await openRecord(record); await userEvent.click(stepButton(2));
+    expect(capturingUkcPanel().payload.locationOverlay).toEqual(draft.locationOverlay);
+    expect(capturingUkcPanel().payload.waypoints[0].descriptionVhf).toBe('Route modifiée par le Capitaine');
+    expect(formQueries().getByLabelText('Numéro de la ou des cartes marines')).toHaveValue(draft.charts);
+  });
+});
 
 describe('Planning project choices across four Paris calendar days', () => {
   beforeEach(() => {

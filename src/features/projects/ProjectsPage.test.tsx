@@ -517,7 +517,7 @@ describe('ProjectsPage', () => {
     await user.type(editor.getByLabelText('Nom du projet *'), 'Manche modifiée');
     await user.click(editor.getByRole('button', { name: 'Enregistrer le projet' }));
     expect(await screen.findByText('P1087 enregistré dans Supabase.')).toBeVisible();
-    expect(rpc).toHaveBeenCalledWith('projects_save', expect.objectContaining({ target_project_id: 881, target_title: 'Manche modifiée', target_primary_vessel_id: 13, target_client_id: 51 }));
+    expect(rpc).toHaveBeenCalledWith('projects_save_with_location', expect.objectContaining({ target_project_id: 881, target_title: 'Manche modifiée', target_primary_vessel_id: 13, target_client_id: 51, target_location_plan: null }));
     expect(screen.getByRole('heading', { name: 'Portefeuille projet' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'P1086 Campagne Atlantique 2026' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('heading', { name: 'Campagne Atlantique 2026' })).toBeVisible();
@@ -540,6 +540,8 @@ describe('ProjectsPage', () => {
     expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_archive');
     expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_reactivate');
     expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_set_status');
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_save');
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_save_with_location');
   });
 
   it('hides closed favorites and reactivates a filtered historical project through its status pill', async () => {
@@ -643,6 +645,7 @@ describe('ProjectsPage', () => {
     expect(row.status).toBe('Validé');
     expect(row.archived_at).toBeNull();
     expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_save');
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_save_with_location');
   });
 
   it('updates only the status and keeps a failed closure visible with its data unchanged', async () => {
@@ -1235,7 +1238,8 @@ describe('ProjectsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Créer le projet' }));
 
     expect(await screen.findByText('P1196 enregistré dans Supabase.')).toBeInTheDocument();
-    expect(rpc).toHaveBeenCalledWith('projects_save', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('projects_save_with_location', expect.objectContaining({
+      target_location_plan: null,
       target_delivery_port: 'Port de Brest',
       target_project_id: null,
       target_title: 'Projet BBTM',

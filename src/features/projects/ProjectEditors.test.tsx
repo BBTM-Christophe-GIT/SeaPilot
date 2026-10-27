@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ClientEditor, ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
+import { ClientEditor, ProjectEditor, ProjectPlanningEditor, projectToWriteInput } from './ProjectEditors';
+import { emptyProjectLocationPlan } from './projectLocation';
 import { localTodayIso } from './projectBareboatContract';
 
 const mutationMocks = vi.hoisted(() => ({
@@ -47,6 +48,40 @@ const vessels = [
   { id: 1, name: 'LE ROZEL', acronym: 'LRZ', active: true, fleetExitOn: '', sharePointItemId: '' },
   { id: 2, name: 'SUROIT', acronym: 'SRT', active: true, fleetExitOn: '', sharePointItemId: '' },
 ];
+
+describe('ProjectEditor optional location', () => {
+  it('numbers Location five for every contract and moves BIMCO Documents to six', async () => {
+    const user = userEvent.setup();
+    render(<ProjectEditor client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never} clients={[]} contractTypes={[]} onClose={vi.fn()} onSaved={vi.fn()} statuses={['Non validé']} towedAssets={[]} vessels={vessels} />);
+    for (const contractType of ['Offre Commerciale', 'Contrat de Remorquage', "Contrat d'Affrètement à Temps", "Contrat d'Affrètement Coque Nue", 'BIMCO']) {
+      await user.selectOptions(screen.getByLabelText('Type de contrat'), contractType);
+      await user.click(screen.getByRole('button', { name: /Localisation/ }));
+      expect(screen.getByRole('group', { name: '5 Localisation' })).toBeVisible();
+      if (contractType === 'BIMCO') { await user.click(screen.getByRole('button', { name: /Documents/ })); expect(screen.getByRole('group', { name: '6 Documents' })).toBeVisible(); }
+    }
+  });
+  it('clones a saved location without aliasing its points or substituting commercial delivery for ETD', () => {
+    const locationPlan = emptyProjectLocationPlan(); locationPlan.etd = '2026-11-03T10:00';
+    locationPlan.zones = [{ id: 'zone', name: 'Zone', vertices: [{ latitude: '', longitude: '' }] }];
+    const saved = { ...project, contractType: 'Offre Commerciale', deliveryAt: '2026-11-01T08:00', locationPlan };
+    const form = projectToWriteInput(saved as never);
+    expect(form.locationPlan).toEqual(locationPlan); expect(form.locationPlan).not.toBe(locationPlan);
+    form.locationPlan!.zones[0].vertices[0].latitude = '49'; expect(locationPlan.zones[0].vertices[0].latitude).toBe('');
+    expect(form.locationPlan!.etd).toBe('2026-11-03T10:00');
+  });
+  it('keeps Location at step five for every contract and saves a location-only project change', async () => {
+    const user = userEvent.setup(), onSaved = vi.fn();
+    mutationMocks.saveProject.mockResolvedValue({ id: 145, projectCode: 'P145', title: project.title, updatedAt: '2026-11-01T10:00:00Z' });
+    render(<ProjectEditor client={{ rpc: vi.fn() } as never} clients={[]} contractTypes={[]} onClose={vi.fn()} onSaved={onSaved} project={{ ...project, status: 'Non validé', contractType: 'Offre Commerciale', clientId: null, primaryVesselId: null, secondaryVesselId: null, deliveryPort: '', redeliveryPort: '', operationArea: '', updatedAt: '2026-08-01T10:00:00Z' } as never} statuses={['Non validé']} towedAssets={[]} vessels={vessels} />);
+    await user.click(screen.getByRole('button', { name: /Localisation/ }));
+    expect(screen.getByRole('group', { name: '5 Localisation' })).toBeVisible();
+    expect(screen.getByRole('checkbox', { name: 'Joindre la localisation au PDF' })).not.toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Ajouter un waypoint' }));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(mutationMocks.saveProject).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ locationPlan: expect.objectContaining({ includeInPdf: false, waypoints: [expect.objectContaining({ latitude: '', longitude: '', etaMode: 'automatic' })] }) }));
+  });
+});
 
 describe('ProjectEditor document categories', () => {
   it('keeps a confirmed empty company catalog empty instead of inventing upload choices', async () => {

@@ -23,6 +23,8 @@ import bimcoPage02Url from './assets/contract-previews/bimco-p144-page-02.png';
 import bimcoPage03Url from './assets/contract-previews/bimco-p144-page-03.png';
 import bimcoPage04Url from './assets/contract-previews/bimco-p144-page-04.png';
 import { ProjectStyledContractPreview } from './ProjectStyledContractPreview';
+import { ProjectLocationPreview } from './ProjectLocationPreview';
+import { hasProjectLocationContent } from './projectLocation';
 import { buildStyledContract, contractPreviewFields } from './projectStyledContract';
 import {
   buildCommercialReserves,
@@ -442,7 +444,10 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
     const kind = contractType === TOWAGE_CONTRACT_TYPE ? 'towage' : 'bareboat';
     return buildStyledContract(kind, contractPreviewFields(kind, kind === 'towage' ? towageValues : bareboatValues), props.form.title, Boolean(props.emitter?.signatureUrl), contractType);
   }, [contractType, towageValues, bareboatValues, props.form.title, props.emitter?.signatureUrl]);
-  const pageCount = contractType === BIMCO_CONTRACT_TYPE ? 29 : styledDocument?.pages.length || 1;
+  const contractPageCount = contractType === BIMCO_CONTRACT_TYPE ? 29 : styledDocument?.pages.length || 1;
+  const locationPlan = props.form.locationPlan;
+  const hasAppendix = Boolean(locationPlan?.includeInPdf && hasProjectLocationContent(locationPlan));
+  const pageCount = contractPageCount + Number(hasAppendix);
   const [page, setPage] = useState(1);
   useEffect(() => setPage(1), [contractType]);
   const currentPage = Math.min(page, pageCount);
@@ -506,9 +511,10 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
           </div>
         </header>
         <div className="project-document-preview-canvas">
-          {contractType === COMMERCIAL_OFFER_CONTRACT_TYPE ? <OfferPreview {...props} /> : null}
-          {styledDocument ? <ProjectStyledContractPreview document={styledDocument} page={currentPage} signatureUrl={props.emitter?.signatureUrl} /> : null}
-          {contractType === BIMCO_CONTRACT_TYPE ? <BimcoPreview page={currentPage} values={bimcoValues} /> : null}
+          {currentPage <= contractPageCount && contractType === COMMERCIAL_OFFER_CONTRACT_TYPE ? <OfferPreview {...props} /> : null}
+          {currentPage <= contractPageCount && styledDocument ? <ProjectStyledContractPreview document={styledDocument} page={currentPage} signatureUrl={props.emitter?.signatureUrl} /> : null}
+          {currentPage <= contractPageCount && contractType === BIMCO_CONTRACT_TYPE ? <BimcoPreview page={currentPage} values={bimcoValues} /> : null}
+          {currentPage > contractPageCount && hasAppendix && locationPlan ? <ProjectLocationPreview plan={locationPlan} projectLabel={`${props.projectCode} - ${props.form.title}`} maxSpeedKnots={props.vessel?.maxSpeedKnots} draftMeters={props.vessel?.draftMeters} /> : null}
         </div>
       </section>
       <aside className="project-contract-completeness" aria-label="Complétude du document">

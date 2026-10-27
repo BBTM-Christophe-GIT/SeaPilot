@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { emptyProjectLocationPlan } from './projectLocation';
 import {
   fetchProjectsData,
   mapClientRows,
@@ -9,6 +10,7 @@ import {
   mapProjectPlanningOccurrenceRows,
   mapProjectRows,
   mapProjectTowedAssetRows,
+  mapVesselRows,
 } from './projectQueries';
 
 const projectRow = {
@@ -65,6 +67,31 @@ function createReadClient(results: Record<string, { data: unknown[] | null; erro
 }
 
 describe('projectQueries', () => {
+  it('maps optional canonical project locations without retaining captures or mutating the response', () => {
+    const location = emptyProjectLocationPlan();
+    location.waypoints = [{ id: 'route', number: '1', descriptionVhf: '', latitude: '49.651969', longitude: '-2.03169', ukc: '', eta: '', denseTraffic: true,
+      radio: { forged: true } as never }];
+    location.points = [{ ...location.waypoints[0], id: 'point', latitude: '' }];
+    location.zones = [{ id: 'zone', name: 'À compléter', vertices: [] }];
+    const original = structuredClone(location);
+    const [project] = mapProjectRows([{ ...projectRow, location_plan: location }] as never);
+    expect(project.locationPlan).toMatchObject({ includeInPdf: false, zones: location.zones,
+      waypoints: [expect.objectContaining({ latitude: '49.651969', longitude: '-2.03169', denseTraffic: true })] });
+    expect(project.locationPlan!.waypoints[0]).not.toHaveProperty('radio');
+    expect(location).toEqual(original);
+    expect(mapProjectRows([projectRow] as never)[0].locationPlan).toBeNull();
+    expect(() => mapProjectRows([{ ...projectRow, location_plan: { version: 99 } }] as never)).toThrow('localisation');
+  });
+
+  it('reads draught and maximum speed from the vessel catalogue without fabricating missing references', () => {
+    const values = [null, undefined, '', ' ', 'invalid', 'Infinity', 0, -1, true];
+    const rows = [{ id: 1, name: 'Référence', draft_m: '2.35', max_speed_knots: '12.5' },
+      ...values.map((value, index) => ({ id: index + 2, name: `Absent ${index}`, draft_m: value, max_speed_knots: value }))];
+    const vessels = mapVesselRows(rows as never);
+    expect(vessels.find(vessel => vessel.id === 1)).toMatchObject({ draftMeters: 2.35, maxSpeedKnots: 12.5 });
+    expect(vessels.filter(vessel => vessel.id !== 1).every(vessel => vessel.draftMeters === null && vessel.maxSpeedKnots === null)).toBe(true);
+  });
+
   it('maps the client representative stored in Supabase', () => {
     expect(mapClientRows([{
       id: 50,

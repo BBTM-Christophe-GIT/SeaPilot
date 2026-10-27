@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { parseProjectLocationPlan, type ProjectLocationPlan } from '../projects/projectLocation';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { parseVesselWeatherMatrix, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { isSeaOperationPayload, type SeaOperationPayload } from './seaOperationModel';
@@ -53,6 +54,7 @@ export interface SeaOperationPlanningCaptain {
   canSign: boolean;
 }
 export interface SeaOperationPlanningChoice {
+  locationPlan?: ProjectLocationPlan | null;
   operationId: string;
   projectId: string;
   project: string;
@@ -231,7 +233,8 @@ export async function fetchSeaOperationPlanning(client: SupabaseClient, date: st
     const vessel = object(row.vessel);
     if (!Array.isArray(row.captains) || !['operationId', 'projectId', 'project', 'client', 'clientContact', 'description'].every((key) => typeof row[key] === 'string')
       || !['id', 'name', 'registrationImo', 'departurePort', 'arrivalPort', 'etd', 'eta'].every((key) => typeof vessel[key] === 'string')) throw new Error('Le contexte Planning est invalide.');
-    return { operationId: String(row.operationId), projectId: String(row.projectId), project: String(row.project), client: String(row.client),
+    return { ...(row.locationPlan === undefined ? {} : { locationPlan: parseProjectLocationPlan(row.locationPlan) }),
+      operationId: String(row.operationId), projectId: String(row.projectId), project: String(row.project), client: String(row.client),
       clientContact: String(row.clientContact), description: String(row.description), vessel: { ...vessel, lengthOverall: nullableText(vessel.lengthOverall),
         ...(vessel.weatherMatrix === undefined ? {} : { weatherMatrix: vesselMatrix(vessel.weatherMatrix) }) } as SeaOperationPlanningChoice['vessel'],
       captains: row.captains.map((value) => { const person = object(value); return { personId: String(person.personId), name: String(person.name),

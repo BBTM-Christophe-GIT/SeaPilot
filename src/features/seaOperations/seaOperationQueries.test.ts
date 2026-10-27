@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { emptySeaOperation, emptySeaOperationWaypoint } from './seaOperationModel';
 import { createEmptyVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { deleteSeaOperation, reviseSeaOperation, fetchSeaOperationCaptainSignature, fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, mapSeaOperationRecord, saveSeaOperation, signSeaOperation } from './seaOperationQueries';
+import { emptyProjectLocationPlan } from '../projects/projectLocation';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -250,6 +251,20 @@ describe('sea operation queries', () => {
     expect(result.choices.map((choice) => [choice.operationId, choice.client, choice.captains[0].canSign])).toEqual([
       ['1:42', 'Client 1', true], ['2:42', 'Client 2', false],
     ]);
+  });
+
+  it('reads an optional operational project location without trusting provider captures or sharing mutable arrays', async () => {
+    const locationPlan = { ...emptyProjectLocationPlan(), etd: '2026-10-27T10:00', waypoints: [{ id: 'project-point', number: '1', descriptionVhf: 'Source projet',
+      latitude: '49', longitude: '1', ukc: '', eta: '', denseTraffic: false, weather: { stale: true } }] };
+    const choice = { operationId: '1:42', projectId: '1', project: 'Projet', client: '', clientContact: '', description: '', captains: [], canSign: false,
+      vessel: { id: '42', name: 'Navire', registrationImo: '', departurePort: '', arrivalPort: '', etd: '', eta: '' }, locationPlan };
+    const rpc = vi.fn().mockResolvedValue({ data: { date: '2026-10-27', choices: [choice] }, error: null });
+    const result = await fetchSeaOperationPlanning({ rpc } as unknown as SupabaseClient, '2026-10-27');
+    expect(result.choices[0].locationPlan!.waypoints[0]).not.toHaveProperty('weather');
+    result.choices[0].locationPlan!.waypoints[0].descriptionVhf = 'Copie';
+    expect(locationPlan.waypoints[0].descriptionVhf).toBe('Source projet');
+    rpc.mockResolvedValue({ data: { date: '2026-10-27', choices: [{ ...choice, locationPlan: { ...locationPlan, version: 2 } }] }, error: null });
+    await expect(fetchSeaOperationPlanning({ rpc } as unknown as SupabaseClient, '2026-10-27')).rejects.toThrow('localisation');
   });
 
   it('requests a signature for the exact planning choice before obtaining private image access', async () => {
