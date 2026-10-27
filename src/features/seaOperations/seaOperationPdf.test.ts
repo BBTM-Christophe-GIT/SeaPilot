@@ -153,13 +153,14 @@ describe('Sea operation PDF', () => {
       if (body.includes('(DENSE) Tj')) {
         const pale = rectangles.filter(rect => rect.fill === '1. 0.98 0.94' && rect.mode !== 'S' && rect.y === row.y);
         expect(pale.map(rect => rect.x)).toEqual([49, 94, 189, 249, 309, 385, 461, 557, 757]);
-        const vigilance = textPositions(body, 'Vigilance'); expect(vigilance).toHaveLength(1);
-        expect(vigilance[0].commands).toContain('0.541 0.38 0. rg');
-        expect(vigilance[0].x + bold.widthOfTextAtSize('Vigilance', 6.5) / 2).toBeCloseTo(757 + 35.92 / 2, 0);
-        expect(vigilance[0].y + 6).toBeCloseTo(row.y + row.height / 2, 1);
+        const traffic = textPositions(body, 'Traffic'); expect(traffic).toHaveLength(1);
+        expect(traffic[0].commands).toContain('0.541 0.38 0. rg');
+        expect(traffic[0].commands).toContain('(dense) Tj');
+        expect(traffic[0].x + bold.widthOfTextAtSize('Traffic', 6.5) / 2).toBeCloseTo(757 + 35.92 / 2, 0);
+        expect(traffic[0].y + 2).toBeCloseTo(row.y + row.height / 2, 1);
         expect(body).toContain('0.54 0.38 0. RG');
       } else {
-        expect(body).not.toContain('(Vigilance) Tj');
+        expect(body).not.toContain('(Traffic) Tj');
         const non = textPositions(body, 'Non').find(position => position.x > 757)!;
         expect(non.y + 8.5 * .275).toBeCloseTo(row.y + row.height / 2, 1);
       }

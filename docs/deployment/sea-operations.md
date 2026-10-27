@@ -21,7 +21,7 @@ Le bloc météo est centré dans sa cellule et conserve sa largeur, ses dimensio
 et ses alignements internes.
 
 Un waypoint dont la case **Trafic dense** est cochée reçoit un fond ambre très
-pâle et un œil accompagné du libellé **Vigilance** dans la colonne correspondante.
+pâle et un œil accompagné du libellé **Traffic dense** dans la colonne correspondante.
 Les points non cochés gardent **Non**. Ce repère de vigilance est distinct des
 indicateurs UKC et météo. L’icône PDF est vectorielle ; aucune image supplémentaire
 n’est embarquée. Les entêtes et pieds de page Word restent inchangés. Aucune

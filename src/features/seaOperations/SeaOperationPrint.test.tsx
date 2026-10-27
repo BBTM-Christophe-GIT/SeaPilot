@@ -38,7 +38,7 @@ describe('Opération en Mer printable content', () => {
     expect(rows[0]).toHaveClass('is-dense-traffic'); expect(rows[1]).not.toHaveClass('is-dense-traffic');
     expect(rows[0].querySelectorAll('td')).toHaveLength(9); expect(rows[1].querySelectorAll('td')).toHaveLength(9);
     const warning = within(rows[0]).getByRole('img', { name: 'Vigilance : trafic dense, risque de collision' });
-    expect(warning).toHaveTextContent('Vigilance'); expect(warning.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(warning.querySelector('small')).toHaveTextContent(/^Traffic dense$/); expect(warning.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
     expect(within(rows[1]).getByRole('cell', { name: 'Non' })).toBe(rows[1].lastElementChild);
     expect(within(rows[1]).queryByRole('img')).not.toBeInTheDocument();
     expect(rows[0].querySelector('.so-print-ukc-cell .so-ukc-pill')).toHaveTextContent('2,5 m');
@@ -59,6 +59,8 @@ describe('Opération en Mer printable content', () => {
     expect(declarations('.so-print table.so-print-passage .so-print-eta-header')).toContain('white-space: nowrap');
     expect(declarations('.so-print table.so-print-passage > tbody > tr.is-dense-traffic > td')).toContain('background: #fffaf0');
     expect(declarations('.so-print .so-print-passage .so-print-traffic-warning')).toContain('color: #8a6100');
+    expect(declarations('.so-print-traffic-warning small')).toContain('white-space: normal');
+    expect(declarations('.so-print-traffic-warning small')).toContain('max-width: 100%');
     expect(declarations('.so-print .so-print-passage .so-print-ukc-note')).toContain('justify-items: center');
     expect(declarations('.so-print table.so-print-passage > tbody > tr > .so-print-weather-cell > .so-waypoint-weather-card')).toContain('text-align: left');
     expect(declarations('.so-print table.so-print-passage > tbody > tr > .so-print-weather-cell > .so-waypoint-weather-card')).not.toMatch(/width:|grid|padding/);

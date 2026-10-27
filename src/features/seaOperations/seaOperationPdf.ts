@@ -395,13 +395,13 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
           return;
         }
         if (cell.column.index === 8 && form.waypoints[cell.row.index]?.denseTraffic === true) {
-          const centerX = cell.cell.x + cell.cell.width / 2, top = cell.cell.y + (cell.cell.height - 16) / 2;
+          const centerX = cell.cell.x + cell.cell.width / 2, top = cell.cell.y + (cell.cell.height - 24) / 2;
           document.saveGraphicsState();
           document.setDrawColor(138, 97, 0); document.setFillColor(138, 97, 0); document.setLineWidth(.6);
           document.ellipse(centerX, top + 3, 5, 3, 'S');
           document.circle(centerX, top + 3, 1.3, 'F');
           document.setFont('helvetica', 'bold'); document.setFontSize(6.5); document.setTextColor(138, 97, 0);
-          document.text('Vigilance', centerX, top + 14, { align: 'center' });
+          document.text(['Traffic', 'dense'], centerX, top + 14, { align: 'center', lineHeightFactor: 1.15 });
           document.restoreGraphicsState();
           return;
         }
