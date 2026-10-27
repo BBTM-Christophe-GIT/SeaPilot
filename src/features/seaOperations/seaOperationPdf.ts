@@ -324,11 +324,19 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     page(firstRowHeight + 32);
   }
   if (passageRows.length) table(passageRows.map((row) => [row.waypoint, row.description, row.latitude, row.longitude, row.ukc, row.eta, row.vhf, row.weather, row.denseTraffic]),
-    ['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA - Date / heure', 'Contacts VHF', 'Météo à l’ETA', 'Trafic dense'],
+    ['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA\nDate - Heure', 'Contacts VHF', 'Météo à l’ETA', 'Trafic dense'],
     { 0: { cellWidth: 45 }, 1: { cellWidth: descriptionColumnWidth }, 2: { cellWidth: 60 }, 3: { cellWidth: 60 }, 4: { cellWidth: ukcColumnWidth }, 5: { cellWidth: 76 }, 6: { cellWidth: 96 }, 7: { cellWidth: weatherColumnWidth }, 8: { cellWidth: PAGE_HEIGHT - LEFT - RIGHT - 708 } }, true, {
       didParseCell(cell) {
-        if (cell.section === 'head' && cell.column.index === 0) cell.cell.styles.cellPadding = 3;
+        cell.cell.styles.halign = 'center';
+        cell.cell.styles.valign = 'middle';
+        if (cell.section === 'head' && cell.column.index === 0) {
+          cell.cell.styles.cellPadding = 3;
+          cell.cell.styles.overflow = 'visible';
+          cell.cell.text = ['Waypoint'];
+        }
         if (cell.section !== 'body') return;
+        const dense = form.waypoints[cell.row.index]?.denseTraffic === true;
+        if (dense) cell.cell.styles.fillColor = [255, 250, 240];
         if (cell.column.index === 2 || cell.column.index === 3) cell.cell.styles.fontSize = 7;
         const ukc = ukcCards[cell.row.index];
         if (cell.column.index === 4 && ukc) {
@@ -343,18 +351,28 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
           cell.cell.styles.cellPadding = 0;
           cell.cell.styles.fillColor = false;
         }
+        if (cell.column.index === 8 && dense) {
+          cell.cell.text = [];
+          cell.cell.styles.minCellHeight = 22;
+          cell.cell.styles.cellPadding = 0;
+        }
       },
       willDrawCell(cell) {
         if (cell.section !== 'body' || cell.column.index !== 7) return;
+        if (form.waypoints[cell.row.index]?.denseTraffic === true) {
+          document.setFillColor(255, 250, 240);
+          document.rect(cell.cell.x, cell.cell.y, cell.cell.width, cell.cell.height, 'F');
+        }
+        const top = cell.cell.y + (cell.cell.height - weatherCards[cell.row.index].height) / 2;
         document.setFillColor(255, 255, 255); document.setDrawColor(209, 220, 230); document.setLineWidth(.6);
-        document.roundedRect(cell.cell.x + 5, cell.cell.y + 5, cell.cell.width - 10, weatherCards[cell.row.index].height, 5, 5, 'FD');
+        document.roundedRect(cell.cell.x + 5, top, cell.cell.width - 10, weatherCards[cell.row.index].height, 5, 5, 'FD');
       },
       didDrawCell(cell) {
         if (cell.section !== 'body') return;
         const ukc = ukcCards[cell.row.index];
         if (cell.column.index === 4 && ukc) {
           const colors = ukc.assessment ? UKC_COLORS[ukc.assessment.level] : { foreground: [87, 104, 117] as [number, number, number], background: WHITE };
-          const x = cell.cell.x + 3, top = cell.cell.y + 4, width = cell.cell.width - 6;
+          const x = cell.cell.x + 3, top = cell.cell.y + (cell.cell.height - ukc.height) / 2, width = cell.cell.width - 6;
           document.saveGraphicsState();
           document.setFillColor(...colors.background); document.setDrawColor(...colors.foreground); document.setLineWidth(.45);
           if (ukc.assessment) document.roundedRect(x, top, width, ukc.valueHeight, 6, 6, 'FD');
@@ -376,12 +394,23 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
           document.restoreGraphicsState();
           return;
         }
+        if (cell.column.index === 8 && form.waypoints[cell.row.index]?.denseTraffic === true) {
+          const centerX = cell.cell.x + cell.cell.width / 2, top = cell.cell.y + (cell.cell.height - 16) / 2;
+          document.saveGraphicsState();
+          document.setDrawColor(138, 97, 0); document.setFillColor(138, 97, 0); document.setLineWidth(.6);
+          document.ellipse(centerX, top + 3, 5, 3, 'S');
+          document.circle(centerX, top + 3, 1.3, 'F');
+          document.setFont('helvetica', 'bold'); document.setFontSize(6.5); document.setTextColor(138, 97, 0);
+          document.text('Vigilance', centerX, top + 14, { align: 'center' });
+          document.restoreGraphicsState();
+          return;
+        }
         if (cell.column.index !== 7) return;
         const row = passageRows[cell.row.index];
         const card = weatherCards[cell.row.index];
         const forecast = card.forecast;
         const x = cell.cell.x + 12;
-        let top = cell.cell.y + 19;
+        let top = cell.cell.y + (cell.cell.height - card.height) / 2 + 14;
         document.setFont('helvetica', 'bold'); document.setFontSize(6.5); document.setTextColor(87, 104, 117);
         document.text('MÉTÉO À L’ETA', x, top); top += 10;
         if (card.validationLines.length) {
