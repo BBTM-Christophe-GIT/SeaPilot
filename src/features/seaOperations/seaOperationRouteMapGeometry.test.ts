@@ -5,6 +5,109 @@ const point = (latitude: string, longitude: string, number = '') => ({ latitude,
 const allCoordinates = (map: ReturnType<typeof buildSeaOperationRouteMap>) => [...map.land.flat(), ...map.points, ...map.segments.flatMap(({ from, to }) => [from, to])];
 
 describe('Passage Plan situation map', () => {
+  it.each([[900, 320, 264], [744, 190, 250]])('reserves the right panel while fitting all short-route points at %sx%s', (width, height, inset) => {
+    const points = [point('49.65', '-1.64'), point('49.655', '-1.62'), point('49.65', '-1.60')];
+    const map = buildSeaOperationRouteMap(points, width, height, undefined, [], inset);
+    expect(map.segments).toHaveLength(2);
+    expect(map.points.every(point => point.x > 30 && point.x < width - inset - 30 && point.y > 25 && point.y < height - 25)).toBe(true);
+    const xs = map.points.map(point => point.x);
+    expect((Math.min(...xs) + Math.max(...xs)) / 2).toBeCloseTo((width - inset) / 2, 2);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan((width - inset) * .45);
+    const locked = buildSeaOperationRouteMap(points, width, height, map.viewport!, [], inset);
+    expect(locked.points).toEqual(map.points);
+    expect(locked.projection!.latitudePixelsPerDegree).toBeCloseTo(map.projection!.latitudePixelsPerDegree, 8);
+  });
+  it('fits isolated points and all zone vertices outside the reserved panel, including when there is no route', () => {
+    const positions = [{ latitude: 49.65, longitude: -1.64 }, { latitude: 49.65, longitude: -1.62 }, { latitude: 49.655, longitude: -1.62 }, { latitude: 49.655, longitude: -1.625 }];
+    const map = buildSeaOperationRouteMap([], 900, 320, undefined, positions, 264);
+    expect(map.points).toEqual([]); expect(map.segments).toEqual([]);
+    for (const position of positions) {
+      const projection = map.projection!;
+      const x = map.width / 2 + (position.longitude - projection.centerLongitude) * projection.longitudePixelsPerDegree;
+      const y = map.height / 2 - (position.latitude - projection.centerLatitude) * projection.latitudePixelsPerDegree;
+      expect(x).toBeGreaterThan(30); expect(x).toBeLessThan(900 - 264 - 30);
+      expect(y).toBeGreaterThan(25); expect(y).toBeLessThan(320 - 25);
+    }
+  });
+  it('ignores reserved space for an explicit viewport and normalizes invalid insets after dimensions', () => {
+    const points = [point('49.65', '-1.64'), point('49.65', '-1.6')];
+    const normal = buildSeaOperationRouteMap(points);
+    for (const inset of [NaN, Infinity, -Infinity, -1, 0]) expect(buildSeaOperationRouteMap(points, 900, 320, undefined, [], inset)).toEqual(normal);
+    expect(buildSeaOperationRouteMap(points, NaN, Infinity, undefined, [], 10000)).toEqual(buildSeaOperationRouteMap(points, 900, 320, undefined, [], 780));
+    expect(buildSeaOperationRouteMap(points, 120, 100, undefined, [], 10000)).toEqual(buildSeaOperationRouteMap(points, 120, 100));
+    expect(buildSeaOperationRouteMap(points, 900, 320, DEFAULT_ROUTE_MAP_VIEWPORT, [], 264)).toEqual(buildSeaOperationRouteMap(points, 900, 320, DEFAULT_ROUTE_MAP_VIEWPORT));
+  });
+  it('keeps reserved-space antimeridian and coincident framing stable through a locked viewport', () => {
+    for (const points of [[point('0', '179.99'), point('0', '-179.99')], [point('49.65', '-1.62'), point('49.65', '-1.62')], [point('90', '180')]]) {
+      const map = buildSeaOperationRouteMap(points, 900, 320, undefined, [], 264);
+      expect(map.viewport!.longitudeSpan).toBeGreaterThanOrEqual(.02);
+      expect(map.points.every(point => point.x >= 30 && point.x <= 900 - 264 - 30 && point.y >= 25 && point.y <= 320 - 25)).toBe(true);
+      const locked = buildSeaOperationRouteMap(points, 900, 320, map.viewport!);
+      expect(locked.points).toEqual(map.points);
+      expect(locked.projection!.longitudePixelsPerDegree).toBeCloseTo(map.projection!.longitudePixelsPerDegree, 8);
+    }
+  });
+  it.each([[900, 320], [744, 190]])('fits a roughly 1.6 NM Cherbourg route with distinct segments and margins at %sx%s', (width, height) => {
+    const map = buildSeaOperationRouteMap([point('49.65', '-1.64'), point('49.655', '-1.62'), point('49.65', '-1.60')], width, height);
+    expect(map.segments).toHaveLength(2);
+    expect(Math.max(...map.points.map(point => point.x)) - Math.min(...map.points.map(point => point.x))).toBeGreaterThan(width * .5);
+    expect(map.points.every(point => point.x > 35 && point.x < width - 35 && point.y > 25 && point.y < height - 25)).toBe(true);
+    expect(map.segments.every(segment => Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y) > width * .2)).toBe(true);
+    expect(map.viewport!.longitudeSpan).toBeLessThan(.1);
+  });
+  it.each([[900, 320], [744, 190]])('fits horizontal and vertical short routes without losing either zero-extent axis at %sx%s', (width, height) => {
+    const horizontal = buildSeaOperationRouteMap([point('49.65', '-1.64'), point('49.65', '-1.6')], width, height);
+    expect(horizontal.points[0].y).toBe(height / 2); expect(horizontal.points[1].y).toBe(height / 2);
+    expect(horizontal.points[1].x - horizontal.points[0].x).toBeGreaterThan(width * .5);
+    const vertical = buildSeaOperationRouteMap([point('49.65', '-1.62'), point('49.675', '-1.62')], width, height);
+    expect(vertical.points[0].x).toBe(width / 2); expect(vertical.points[1].x).toBe(width / 2);
+    expect(vertical.points[0].y - vertical.points[1].y).toBeGreaterThan(height * .4);
+    for (const map of [horizontal, vertical]) expect(map.points.every(point => point.x >= 32 && point.x <= width - 32 && point.y >= 25 && point.y <= height - 25)).toBe(true);
+  });
+  it.each([[900, 320], [744, 190], [390, 680], [120, 100]])('keeps single/coincident and very close positions finite, local and stable on entering a locked view at %sx%s', (width, height) => {
+    for (const waypoints of [[point('49.65', '-1.62')], [point('49.65', '-1.62'), point('49.65', '-1.62')],
+      [point('49.65', '-1.62'), point('49.650000001', '-1.620000001')], [point('49.65', '-1.62'), point('49.6509', '-1.62')], [point('90', '180')]]) {
+      const map = buildSeaOperationRouteMap(waypoints, width, height);
+      expect(map.viewport!.longitudeSpan).toBeGreaterThanOrEqual(.02);
+      expect(map.viewport!.longitudeSpan).toBeLessThan(1);
+      expect(allCoordinates(map).every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x <= width && y >= 0 && y <= height)).toBe(true);
+      const locked = buildSeaOperationRouteMap(waypoints, width, height, map.viewport!);
+      expect(locked.viewport).toEqual(map.viewport);
+      expect(locked.projection!.latitudePixelsPerDegree).toBeCloseTo(map.projection!.latitudePixelsPerDegree, 8);
+      expect(locked.projection!.longitudePixelsPerDegree).toBeCloseTo(map.projection!.longitudePixelsPerDegree, 8);
+      locked.points.forEach((projected, index) => {
+        expect(projected.x).toBeCloseTo(map.points[index].x, 2); expect(projected.y).toBeCloseTo(map.points[index].y, 2);
+      });
+    }
+  });
+  it.each([[900, 320], [390, 680], [120, 100]])('keeps the fitted coverage of a roughly 100m route through the first pan and zoom at %sx%s', (width, height) => {
+    const map = buildSeaOperationRouteMap([point('49.65', '-1.62'), point('49.6509', '-1.62')], width, height);
+    const viewport = map.viewport!;
+    expect(viewport.longitudeSpan).toBeGreaterThanOrEqual(.02);
+    expect(moveRouteMapViewport(viewport, .1, .1, width, height).longitudeSpan).toBe(viewport.longitudeSpan);
+    expect(zoomRouteMapViewport(viewport, .8).longitudeSpan).toBeCloseTo(viewport.longitudeSpan / .8, 12);
+    expect(zoomRouteMapViewport(viewport, 2).longitudeSpan).toBeCloseTo(Math.max(.02, viewport.longitudeSpan / 2), 12);
+  });
+  it('frames an isolated point and a short zone together without inventing navigation legs', () => {
+    const positions = [{ latitude: 49.65, longitude: -1.64 }, { latitude: 49.65, longitude: -1.62 }, { latitude: 49.655, longitude: -1.62 }, { latitude: 49.655, longitude: -1.625 }];
+    const map = buildSeaOperationRouteMap([], 744, 190, undefined, positions);
+    expect(map.points).toEqual([]); expect(map.segments).toEqual([]); expect(map.invalidCount).toBe(0);
+    expect(map.viewport!.longitudeSpan).toBeLessThan(.1);
+    for (const position of positions) {
+      const projection = map.projection!;
+      const x = 744 / 2 + (position.longitude - projection.centerLongitude) * projection.longitudePixelsPerDegree;
+      const y = 190 / 2 - (position.latitude - projection.centerLatitude) * projection.latitudePixelsPerDegree;
+      expect(x).toBeGreaterThan(30); expect(x).toBeLessThan(744 - 30);
+      expect(y).toBeGreaterThan(25); expect(y).toBeLessThan(190 - 25);
+    }
+  });
+  it('fits a short antimeridian route while preserving finite broad envelopes and original ordinals', () => {
+    const short = buildSeaOperationRouteMap([point('0', '179.99'), point('', ''), point('0', '-179.99')], 744, 190);
+    expect(short.viewport!.longitudeSpan).toBeLessThan(.1); expect(short.points.map(point => point.index)).toEqual([1, 3]);
+    expect(short.segments).toEqual([]);
+    const broad = buildSeaOperationRouteMap([point('52', '-170'), point('-40', '0'), point('40', '170')], 744, 190);
+    expect(allCoordinates(broad).every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x <= 744 && y >= 0 && y <= 190)).toBe(true);
+  });
   it('frames additional locations without connecting them or changing the route ordinals', () => {
     const route = [point('49', '-2'), point('49.2', '-1')];
     const map = buildSeaOperationRouteMap(route, 900, 320, undefined, [{ latitude: 48, longitude: -4 }, { latitude: 50.5, longitude: 2 }]);

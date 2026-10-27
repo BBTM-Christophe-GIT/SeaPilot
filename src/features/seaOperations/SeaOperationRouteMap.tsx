@@ -91,7 +91,9 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
   const width = filling ? size.width : Math.max(280, Math.min(900, Math.round(size.width)));
   const height = compact ? 220 : filling ? size.height : width < 600 ? 280 : 320;
   const extraPositions = useMemo(() => seaOperationMapExtraPositions(isolatedPoints, zones), [isolatedPoints, zones]);
-  const recordedGeometry = useMemo(() => buildSeaOperationRouteMap(waypoints, width, height, compact ? undefined : viewport, extraPositions), [waypoints, width, height, compact, viewport, extraPositions]);
+  // The voyage summary stays on the map; automatic fitting leaves it a clear column.
+  const fitRightInset = !compact && showRouteLegs && waypoints.length > 1 && width >= 600 ? 264 : 0;
+  const recordedGeometry = useMemo(() => buildSeaOperationRouteMap(waypoints, width, height, compact ? undefined : viewport, extraPositions, fitRightInset), [waypoints, width, height, compact, viewport, extraPositions, fitRightInset]);
   const visualWaypoints = useMemo(() => !compact && previewWaypoint ? waypoints.map(point => point.id === previewWaypoint.id
     ? { ...point, latitude: String(previewWaypoint.position.latitude), longitude: String(previewWaypoint.position.longitude) } : point) : waypoints, [compact, previewWaypoint, waypoints]);
   const geometry = useMemo(() => visualWaypoints === waypoints ? recordedGeometry

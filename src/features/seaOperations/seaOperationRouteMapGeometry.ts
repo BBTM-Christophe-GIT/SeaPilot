@@ -14,6 +14,7 @@ export interface RouteMapProjection {
   longitudePixelsPerDegree: number;
 }
 export const DEFAULT_ROUTE_MAP_VIEWPORT: Readonly<RouteMapViewport> = Object.freeze({ centerLatitude: 49, centerLongitude: -3, longitudeSpan: 16 });
+const MIN_ROUTE_MAP_LONGITUDE_SPAN = .02;
 export interface SeaOperationRouteMapGeometry {
   width: number;
   height: number;
@@ -46,7 +47,7 @@ const latitudeFactorAt = (latitude: number) => Math.max(.05, Math.cos(latitude *
 const normalizeViewport = (viewport: RouteMapViewport): RouteMapViewport => ({
   centerLatitude: Number.isFinite(viewport?.centerLatitude) ? Math.max(-90, Math.min(90, viewport.centerLatitude)) : DEFAULT_ROUTE_MAP_VIEWPORT.centerLatitude,
   centerLongitude: Number.isFinite(viewport?.centerLongitude) ? wrapLongitude(viewport.centerLongitude) : DEFAULT_ROUTE_MAP_VIEWPORT.centerLongitude,
-  longitudeSpan: Number.isFinite(viewport?.longitudeSpan) ? Math.max(.02, Math.min(360, viewport.longitudeSpan)) : DEFAULT_ROUTE_MAP_VIEWPORT.longitudeSpan,
+  longitudeSpan: Number.isFinite(viewport?.longitudeSpan) ? Math.max(MIN_ROUTE_MAP_LONGITUDE_SPAN, Math.min(360, viewport.longitudeSpan)) : DEFAULT_ROUTE_MAP_VIEWPORT.longitudeSpan,
 });
 
 /** Fractions of the visible width/height; positive values move east/north without changing waypoints. */
@@ -63,7 +64,7 @@ export function moveRouteMapViewport(viewport: RouteMapViewport, eastFraction: n
 export function zoomRouteMapViewport(viewport: RouteMapViewport, factor: number): RouteMapViewport {
   const normalized = normalizeViewport(viewport);
   if (!Number.isFinite(factor) || factor <= 0) return normalized;
-  return normalizeViewport({ ...normalized, longitudeSpan: Math.max(.02, Math.min(360, normalized.longitudeSpan / factor)) });
+  return normalizeViewport({ ...normalized, longitudeSpan: Math.max(MIN_ROUTE_MAP_LONGITUDE_SPAN, Math.min(360, normalized.longitudeSpan / factor)) });
 }
 
 /** Pixels must already be transformed into the SVG viewBox; no clamped or guessed maritime position. */
@@ -124,6 +125,7 @@ function clipSegment(from: RouteMapPosition, to: RouteMapPosition, width: number
  * North-up local equirectangular situation map, not a chart or route planner.
  * Uses only recorded WGS84 coordinates; an invalid row breaks its adjacent legs.
  * The shortest longitude envelope keeps antimeridian routes local.
+ * An optional right inset reserves panel space only during automatic framing.
  */
 export function buildSeaOperationRouteMap(
   waypoints: readonly Pick<SeaOperationWaypoint, 'latitude' | 'longitude' | 'number' | 'descriptionVhf'>[],
@@ -131,6 +133,7 @@ export function buildSeaOperationRouteMap(
   height = 320,
   viewport?: RouteMapViewport,
   extraPositions: readonly SeaPosition[] = [],
+  fitRightInset = 0,
 ): SeaOperationRouteMapGeometry {
   ({ width, height } = dimensions(width, height));
   const positions = waypoints.map(seaWaypointPosition);
@@ -146,7 +149,9 @@ export function buildSeaOperationRouteMap(
     unitScale = width / (locked.longitudeSpan * latitudeFactorAt(centerLat));
     longitudeFor = (longitude) => centerLon + wrapLongitude(longitude - centerLon);
   } else {
-    // Preserve the historical automatic framing used by signed print/PDF exports.
+    // Fit the actual envelope, including isolated points and zone vertices.
+    const rightInset = Number.isFinite(fitRightInset) ? Math.max(0, Math.min(width - 120, fitRightInset)) : 0;
+    const fitWidth = width - rightInset;
     const longitudes = validPositions.map(({ longitude }) => (longitude + 360) % 360).sort((a, b) => a - b);
     let cut = 0, largestGap = -1;
     longitudes.forEach((longitude, index) => {
@@ -159,10 +164,17 @@ export function buildSeaOperationRouteMap(
     const latitudes = validPositions.map(({ latitude }) => latitude);
     const minLat = Math.min(...latitudes), maxLat = Math.max(...latitudes);
     centerLon = (minLon + maxLon) / 2; centerLat = (minLat + maxLat) / 2;
-    unitScale = Math.min((width - 80) / Math.max(.8, (maxLon - minLon) * latitudeFactorAt(centerLat) * 1.35), (height - 64) / Math.max(.45, (maxLat - minLat) * 1.5));
+    const longitudeExtent = (maxLon - minLon) * latitudeFactorAt(centerLat), latitudeExtent = maxLat - minLat;
+    // Keep room for markers and labels instead of forcing short routes into a regional view.
+    // A local maximum zoom also handles single/coincident points and keeps automatic
+    // coverage compatible with the explicit viewport's 0.02° longitude minimum.
+    const maximumScale = Math.min(height / .005, width / (MIN_ROUTE_MAP_LONGITUDE_SPAN * latitudeFactorAt(centerLat)));
+    unitScale = Math.min(longitudeExtent > 0 ? (fitWidth - 80) / (longitudeExtent * 1.35) : Infinity,
+      latitudeExtent > 0 ? (height - 64) / (latitudeExtent * 1.5) : Infinity, maximumScale);
+    centerLon += rightInset / (2 * latitudeFactorAt(centerLat) * unitScale);
   }
   const latitudeFactor = latitudeFactorAt(centerLat);
-  result.viewport = locked ?? { centerLatitude: centerLat, centerLongitude: wrapLongitude(centerLon), longitudeSpan: width / (latitudeFactor * unitScale) };
+  result.viewport = locked ?? { centerLatitude: centerLat, centerLongitude: wrapLongitude(centerLon), longitudeSpan: Math.max(MIN_ROUTE_MAP_LONGITUDE_SPAN, width / (latitudeFactor * unitScale)) };
   result.projection = { centerLatitude: centerLat, centerLongitude: wrapLongitude(centerLon), latitudePixelsPerDegree: unitScale, longitudePixelsPerDegree: latitudeFactor * unitScale };
   const project = (longitude: number, latitude: number): RouteMapPosition => ({ x: rounded(width / 2 + (longitude - centerLon) * latitudeFactor * unitScale), y: rounded(height / 2 - (latitude - centerLat) * unitScale) });
   const west = centerLon - width / (2 * latitudeFactor * unitScale), east = centerLon + width / (2 * latitudeFactor * unitScale);
