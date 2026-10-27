@@ -12,6 +12,8 @@ import { seaOperationMapExtraPositions, seaOperationMapLayers, seaOperationZoneP
 import { projectSeaOperationMapPlace } from './seaOperationMapPlaces';
 import { SeaOperationIsolatedPointIcon } from './SeaOperationIsolatedPointIcon';
 import { seaOperationIsolatedPointIcon, seaOperationIsolatedPointLabel } from './seaOperationIsolatedPointIcons';
+import { layoutSeaOperationZoneLabels, seaOperationZoneAppearance, type SeaOperationZoneLabelObstacle } from './seaOperationZonePresentation';
+import { SeaOperationGmdssReference } from './SeaOperationGmdssReference';
 
 const NO_ISOLATED_POINTS: readonly SeaOperationWaypoint[] = [];
 const NO_ZONES: readonly SeaOperationMapZone[] = [];
@@ -34,27 +36,33 @@ function vigilanceLabel(indices: number[]) {
   return indices.length ? `Vigilance : trafic dense, risque de collision · ${indices.length === 1 ? 'Waypoint' : 'Waypoints'} ${indices.join(', ')}` : '';
 }
 
-function documentZoneLabels(geometry: SeaOperationRouteMapGeometry, layers: ReturnType<typeof seaOperationMapLayers>, zones: readonly SeaOperationMapZone[]) {
-  type Box = { west: number; east: number; north: number; south: number };
-  const occupied: Box[] = geometry.points.map(point => ({ west: point.x - 38, east: point.x + 38, north: point.y - 26, south: point.y + 48 }));
-  for (const point of layers.isolated) occupied.push({ west: point.x - 22, east: point.x + 22, north: point.y - 20, south: point.y + 20 });
-  for (const polygon of layers.polygons) for (const vertex of polygon.vertices) occupied.push({ west: vertex.x - 5, east: vertex.x + 38, north: vertex.y - 18, south: vertex.y + 5 });
-  const overlaps = (a: Box, b: Box) => a.west < b.east + 3 && a.east > b.west - 3 && a.north < b.south + 3 && a.south > b.north - 3;
-  const offsets = [0, -22, 22, -44, 44, -66, 66].flatMap(y => [0, -36, 36, -72, 72].map(x => ({ x, y })))
-    .sort((a, b) => a.x ** 2 + a.y ** 2 - b.x ** 2 - b.y ** 2);
-  const labels = new Map<string, { text: string; x: number; y: number; width: number }>();
-  for (const { zone, vertices } of layers.polygons) {
-    const text = `Z${zones.findIndex(item => item.id === zone.id) + 1}`, width = Math.max(28, text.length * 6 + 12);
-    const center = { x: vertices.reduce((sum, point) => sum + point.x, 0) / vertices.length, y: vertices.reduce((sum, point) => sum + point.y, 0) / vertices.length };
-    const candidates = offsets.map(offset => {
-      const x = Math.max(width / 2 + 5, Math.min(geometry.width - width / 2 - 5, center.x + offset.x));
-      const y = Math.max(14, Math.min(geometry.height - 14, center.y + offset.y));
-      return { x, y, box: { west: x - width / 2, east: x + width / 2, north: y - 9, south: y + 9 } };
-    });
-    const placed = candidates.find(candidate => occupied.every(box => !overlaps(candidate.box, box))) || candidates[0];
-    labels.set(zone.id, { text, x: placed.x, y: placed.y, width }); occupied.push(placed.box);
+function zonePresentation(geometry: SeaOperationRouteMapGeometry, layers: ReturnType<typeof seaOperationMapLayers>, zones: readonly SeaOperationMapZone[], extraObstacles: SeaOperationZoneLabelObstacle[]) {
+  const obstacles: SeaOperationZoneLabelObstacle[] = geometry.points.map(point => ({ west: point.x - 38, east: point.x + 38, north: point.y - 26, south: point.y + 48 }));
+  for (const point of layers.isolated) {
+    const labelWidth = Math.min(18, seaOperationIsolatedPointLabel(point.point, point.index).length) * 7 + 24;
+    const end = point.x > geometry.width * .7;
+    obstacles.push({ west: point.x - (end ? labelWidth : 38), east: point.x + (end ? 38 : labelWidth), north: point.y - 28, south: point.y + 40 });
   }
-  return labels;
+  obstacles.push(...extraObstacles);
+  const vertices = zones.flatMap((zone, zoneIndex) => zone.vertices.flatMap((vertex, index) => {
+    const position = seaWaypointPosition(vertex), pixel = position && projectSeaOperationMapPlace(geometry, position);
+    return pixel ? [{ ...pixel, id: `${zone.id}:${index}`, zoneIndex, index, text: `${seaOperationZoneAppearance(zoneIndex).code}.${index + 1}` }] : [];
+  }));
+  const circles = vertices.map(vertex => ({ west: vertex.x - 4, east: vertex.x + 4, north: vertex.y - 4, south: vertex.y + 4 }));
+  const labels = layoutSeaOperationZoneLabels(layers.polygons.map(({ zone, vertices }) => ({ id: zone.id, index: zones.findIndex(item => item.id === zone.id), vertices })), geometry.width, geometry.height, [...obstacles, ...circles]);
+  const occupied = [...obstacles, ...circles, ...labels.map(label => ({ west: label.x - label.width / 2, east: label.x + label.width / 2, north: label.y - label.height / 2, south: label.y + label.height / 2 }))];
+  const overlaps = (a: SeaOperationZoneLabelObstacle, b: SeaOperationZoneLabelObstacle) => a.west < b.east + 3 && a.east > b.west - 3 && a.north < b.south + 3 && a.south > b.north - 3;
+  const labelledVertices = vertices.map(vertex => {
+    const width = vertex.text.length * 6 + 4;
+    const candidates = [{ x: vertex.x + 7, y: vertex.y - 7, anchor: 'start' as const }, { x: vertex.x - 7, y: vertex.y - 7, anchor: 'end' as const }, { x: vertex.x + 7, y: vertex.y + 17, anchor: 'start' as const }, { x: vertex.x - 7, y: vertex.y + 17, anchor: 'end' as const }];
+    const label = candidates.find(candidate => {
+      const box = { west: candidate.anchor === 'start' ? candidate.x : candidate.x - width, east: candidate.anchor === 'start' ? candidate.x + width : candidate.x, north: candidate.y - 11, south: candidate.y + 2 };
+      if (box.west < 3 || box.east > geometry.width - 3 || box.north < 3 || box.south > geometry.height - 3 || occupied.some(other => overlaps(box, other))) return false;
+      occupied.push(box); return true;
+    });
+    return { ...vertex, label };
+  });
+  return { labels, vertices: labelledVertices };
 }
 
 function directionArrow(from: Position, to: Position): string | null {
@@ -136,7 +144,6 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
   const visualZones = useMemo(() => !compact && previewZoneVertex ? zones.map(zone => zone.id === previewZoneVertex.zoneId
     ? { ...zone, vertices: zone.vertices.map((vertex, index) => index === previewZoneVertex.index ? { latitude: String(previewZoneVertex.position.latitude), longitude: String(previewZoneVertex.position.longitude) } : vertex) } : zone) : zones, [compact, zones, previewZoneVertex]);
   const layers = useMemo(() => seaOperationMapLayers(geometry, visualIsolatedPoints, visualZones), [geometry, visualIsolatedPoints, visualZones]);
-  const zoneLabels = useMemo(() => ensureZonesVisible ? documentZoneLabels(geometry, layers, visualZones) : null, [ensureZonesVisible, geometry, layers, visualZones]);
   const groups = useMemo(() => groupCoincidentPoints(geometry.points), [geometry.points]);
   const visibleDefinedPorts = useMemo(() => definedPorts.ports.flatMap(port => {
     const position = projectSeaOperationMapPlace(geometry, port.location);
@@ -145,8 +152,28 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
   const places = useMemo(() => showPlaces && !compact ? seaOperationMapPlaces(recordedGeometry, definedPorts.ports.flatMap(port => {
     const point = projectSeaOperationMapPlace(recordedGeometry, port.location); return point ? [point] : [];
   })) : null, [showPlaces, compact, recordedGeometry, definedPorts]);
+  const presentedZones = useMemo(() => layers.polygons.map(polygon => ({ ...polygon, appearance: seaOperationZoneAppearance(visualZones.findIndex(zone => zone.id === polygon.zone.id)) })), [layers, visualZones]);
+  const zoneFills = useMemo(() => [...presentedZones].sort((a, b) => {
+    const area = (vertices: Position[]) => Math.abs(vertices.reduce((sum, vertex, index) => { const next = vertices[(index + 1) % vertices.length]; return sum + vertex.x * next.y - next.x * vertex.y; }, 0));
+    return area(b.vertices) - area(a.vertices);
+  }), [presentedZones]);
   const route = useMemo(() => showRouteLegs && !compact ? buildSeaOperationRouteLegs(waypoints, maxSpeedKnots) : null, [showRouteLegs, compact, waypoints, maxSpeedKnots]);
   const legLabels = useMemo(() => route ? routeLegLabels(recordedGeometry, route.legs, places) : [], [recordedGeometry, route, places]);
+  const zoneGraphics = useMemo(() => {
+    const obstacles: SeaOperationZoneLabelObstacle[] = [
+      { west: geometry.width - 48, east: geometry.width, north: 0, south: 70 },
+      { west: geometry.width - 150, east: geometry.width, north: geometry.height - 52, south: geometry.height },
+      ...visibleDefinedPorts.map(port => ({ west: port.x - 90, east: port.x + 90, north: port.y - 50, south: port.y + 35 })),
+      ...legLabels.map(label => ({ west: label.x - label.width / 2, east: label.x + label.width / 2, north: label.y - 11, south: label.y + 11 })),
+    ];
+    if (!compact && showRouteLegs && waypoints.length > 1 && geometry.width >= 600) obstacles.push({ west: geometry.width - 264, east: geometry.width, north: geometry.height - 170, south: geometry.height });
+    for (const city of places?.cities || []) obstacles.push({ west: city.label.anchor === 'end' ? city.label.x - city.name.length * 6 : city.label.x, east: city.label.anchor === 'end' ? city.label.x : city.label.x + city.name.length * 6, north: city.label.y - 12, south: city.label.y + 3 });
+    for (const port of places?.markers || []) {
+      obstacles.push({ west: port.x - 7, east: port.x + 7, north: port.y - 7, south: port.y + 7 });
+      if (port.label) obstacles.push({ west: port.label.anchor === 'end' ? port.label.x - port.ports[0].port.port.length * 6 : port.label.x, east: port.label.anchor === 'end' ? port.label.x : port.label.x + port.ports[0].port.port.length * 6, north: port.label.y - 12, south: port.label.y + 3 });
+    }
+    return zonePresentation(geometry, layers, visualZones, obstacles);
+  }, [geometry, layers, visualZones, visibleDefinedPorts, legLabels, compact, showRouteLegs, waypoints.length, places]);
   const voyage = route ? seaOperationVoyageTiming(etd, route.totalDurationMinutes, eta) : null;
   const showLegList = Boolean(route && route.legs.length > 0 && (geometry.width < 600 || legLabels.length < route.legs.length));
   const routeCountLabel = `${geometry.points.length} point${geometry.points.length === 1 ? '' : 's'} géolocalisé${geometry.points.length === 1 ? '' : 's'}`;
@@ -187,16 +214,14 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
           <rect className="so-route-map-sea" width={geometry.width} height={geometry.height} />
           <g aria-hidden="true" className="so-route-map-land">{geometry.land.map((polygon, index) => <polygon key={index} points={polygon.map((point) => `${point.x},${point.y}`).join(' ')} vectorEffect="non-scaling-stroke" />)}</g>
           <g aria-hidden="true" className="so-route-map-grid">{geometry.grid.map((line, index) => <g key={index}><line x1={line.from.x} y1={line.from.y} x2={line.to.x} y2={line.to.y} vectorEffect="non-scaling-stroke" /><text x={line.labelAt.x} y={line.labelAt.y}>{line.label}</text></g>)}</g>
-          <g className="so-route-map-zones">{layers.polygons.map(({ zone, vertices }) => {
-            const label = zoneLabels?.get(zone.id);
-            return <g key={zone.id} role="img" aria-label={`Zone : ${zone.name || 'Sans nom'}`}><title>{zone.name || 'Zone sans nom'} · {zone.vertices.length} sommets</title><polygon points={vertices.map(vertex => `${vertex.x},${vertex.y}`).join(' ')} />{label
-              ? <g className="so-route-map-zone-tag"><rect x={label.x - label.width / 2} y={label.y - 9} width={label.width} height={18} rx={3} /><text x={label.x} y={label.y + 3.5} textAnchor="middle">{label.text}</text></g>
-              : <text x={Math.max(12, Math.min(geometry.width - 12, vertices.reduce((sum, point) => sum + point.x, 0) / vertices.length))} y={Math.max(14, Math.min(geometry.height - 12, vertices.reduce((sum, point) => sum + point.y, 0) / vertices.length))} textAnchor="middle">{zone.name || 'Zone'}</text>}</g>;
+          <g className="so-route-map-zones">
+            <g className="so-route-map-zone-fills" aria-hidden="true">{zoneFills.map(({ zone, vertices, appearance }) => <path key={zone.id} data-zone-code={appearance.code} d={`M ${vertices.map(vertex => `${vertex.x} ${vertex.y}`).join(' L ')} Z`} style={{ fill: appearance.fill }} />)}</g>
+            <g className="so-route-map-zone-outlines">{presentedZones.map(({ zone, vertices, appearance }) => <g key={zone.id} role="img" aria-label={`Zone : ${zone.name || 'Sans nom'}`}><title>{appearance.code} — {zone.name || 'Zone sans nom'} · {zone.vertices.length} sommets</title><polygon data-zone-code={appearance.code} points={vertices.map(vertex => `${vertex.x},${vertex.y}`).join(' ')} style={{ stroke: appearance.stroke }} /></g>)}</g>
+          </g>
+          <g className="so-route-map-zone-vertices" aria-hidden="true">{zoneGraphics.vertices.map(vertex => {
+            const appearance = seaOperationZoneAppearance(vertex.zoneIndex);
+            return <g key={vertex.id}><title>{vertex.text}</title><circle cx={vertex.x} cy={vertex.y} r={3} style={{ fill: appearance.stroke }} />{vertex.label && <text x={vertex.label.x} y={vertex.label.y} textAnchor={vertex.label.anchor} style={{ fill: appearance.stroke }}>{vertex.text}</text>}</g>;
           })}</g>
-          <g className="so-route-map-zone-vertices" aria-hidden="true">{visualZones.flatMap((zone, zoneIndex) => zone.vertices.map((vertex, index) => {
-            const position = seaWaypointPosition(vertex), pixel = position && projectSeaOperationMapPlace(geometry, position);
-            return pixel ? <g key={`${zone.id}:${index}`}><circle cx={pixel.x} cy={pixel.y} r={3} /><text x={pixel.x + 6} y={pixel.y - 5}>Z{zoneIndex + 1}.{index + 1}</text></g> : null;
-          }))}</g>
           {places && <g className="so-route-map-places-layer">
             <g className="so-route-map-cities">{places.cities.map(city => <g key={city.id}><title>{city.name} · Natural Earth</title><circle cx={city.x} cy={city.y} r={3} /><text x={city.label.x} y={city.label.y} textAnchor={city.label.anchor}>{city.name}</text></g>)}</g>
             <g className="so-route-map-ports">{places.markers.filter(marker => !definedPorts.ports.some(port => port.key === `${marker.location.source}:${marker.location.sourceId}`)).map(marker => <g key={`${marker.location.source}:${marker.location.sourceId}`} role="img"
@@ -270,6 +295,13 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
               </g>}
             </g>;
           })}</g>
+          <g className="so-route-map-zone-tags" aria-hidden="true">{zoneGraphics.labels.map(label => {
+            const appearance = seaOperationZoneAppearance(label.index);
+            return <g className="so-route-map-zone-tag" data-zone-code={label.code} key={label.id} style={{ color: appearance.stroke }}><title>{label.code} — {visualZones[label.index]?.name || 'Sans nom'}</title>
+              {label.leader && <line className="so-route-map-zone-leader" x1={label.leader.from.x} y1={label.leader.from.y} x2={label.leader.to.x} y2={label.leader.to.y} />}
+              <rect x={label.x - label.width / 2} y={label.y - label.height / 2} width={label.width} height={label.height} rx={3} style={{ fill: appearance.fill }} /><text x={label.x} y={label.y + 3.5} textAnchor="middle">{label.code}</text>
+            </g>;
+          })}</g>
           <g aria-hidden="true" className="so-route-map-north" transform={`translate(${geometry.width - 23} 31)`}><text textAnchor="middle" y={-15}>N</text><path d="M 0 9 V -7 M -4 -2 L 0 -7 L 4 -2" vectorEffect="non-scaling-stroke" /></g>
           {geometry.scale && <g aria-hidden="true" className="so-route-map-scale"><path d={`M ${geometry.scale.from.x} ${geometry.scale.from.y - 4} V ${geometry.scale.from.y + 4} M ${geometry.scale.from.x} ${geometry.scale.from.y} H ${geometry.scale.to.x} M ${geometry.scale.to.x} ${geometry.scale.to.y - 4} V ${geometry.scale.to.y + 4}`} vectorEffect="non-scaling-stroke" /><text x={(geometry.scale.from.x + geometry.scale.to.x) / 2} y={geometry.scale.from.y - 8} textAnchor="middle">{geometry.scale.label}</text></g>}
           {!compact && renderOverlay?.(geometry, { places })}
@@ -297,7 +329,8 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
       </div>
     </details>}
     <figcaption className="so-route-map-caption"><span className="so-route-map-legend">{(!definedPorts.ports.length || waypoints.length > 0) && <><span><i className="is-start" aria-hidden="true" />{definedPorts.ports.length ? 'Premier waypoint' : 'Départ'}</span><span><i className="is-end" aria-hidden="true" />{definedPorts.ports.length ? 'Dernier waypoint' : 'Arrivée'}</span><span>Numéros : ordre du tableau</span></>}{definedPorts.ports.length > 0 && <span><i className="is-port" aria-hidden="true" />Ports de départ / arrivée</span>}{places && <><span><i className="is-port" aria-hidden="true" />Ports</span><span><i className="is-city" aria-hidden="true" />Villes</span></>}</span><span>Fond Natural Earth · Tracé indicatif</span></figcaption>
-    {ensureZonesVisible && layers.polygons.length > 0 && <p className="so-route-map-legend so-route-map-zone-legend" aria-label="Légende des zones"><span>Zones :</span>{layers.polygons.map(({ zone }) => <span key={zone.id}>Z{visualZones.findIndex(item => item.id === zone.id) + 1} — {zone.name || 'Sans nom'}</span>)}</p>}
+    {presentedZones.length > 0 && <p className="so-route-map-legend so-route-map-zone-legend" aria-label="Légende des zones"><span>Zones :</span>{presentedZones.map(({ zone, appearance }) => <span key={zone.id}><i className="so-route-map-zone-swatch" aria-hidden="true" style={{ background: appearance.fill, borderColor: appearance.stroke }} /><strong style={{ color: appearance.stroke }}>{appearance.code}</strong> — {zone.name || 'Sans nom'}</span>)}</p>}
+    {!compact && !ensureZonesVisible && <SeaOperationGmdssReference />}
     {(places || definedPorts.ports.length > 0) && <p className="so-route-map-places-attribution">{places && <>Villes : <a href="https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/" target="_blank" rel="noopener noreferrer">Natural Earth</a> · </>}Ports : <a href="https://www.data.gouv.fr/datasets/ports-espace-maritime-francais" target="_blank" rel="noopener noreferrer">SANDRE/SHOM</a> et <a href="https://msi.nga.mil/Publications/WPI" target="_blank" rel="noopener noreferrer">NGA</a>. Couverture partielle et précision non garantie. Ne pas utiliser pour naviguer.</p>}
   </figure>;
 }

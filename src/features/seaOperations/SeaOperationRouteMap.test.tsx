@@ -4,8 +4,10 @@ import type { SeaOperationWaypoint } from './seaOperationModel';
 import { SeaOperationRouteMap } from './SeaOperationRouteMap';
 import { projectSeaOperationMapPlace, resolveSeaOperationMapPorts, SEA_OPERATION_MAP_PORT_CATALOG } from './seaOperationMapPlaces';
 import { formatProjectPort } from '../projects/projectPorts';
-import { DEFAULT_ROUTE_MAP_VIEWPORT } from './seaOperationRouteMapGeometry';
+import { buildSeaOperationRouteMap, DEFAULT_ROUTE_MAP_VIEWPORT } from './seaOperationRouteMapGeometry';
 import { SEA_OPERATION_ISOLATED_POINT_ICONS } from './seaOperationIsolatedPointIcons';
+import { seaOperationMapExtraPositions } from './seaOperationMapLayers';
+import { seaOperationZoneAppearance } from './seaOperationZonePresentation';
 
 function point(index: number, latitude: string, longitude: string, number = `WP${index}`): SeaOperationWaypoint {
   return { id: `point-${index}`, number, descriptionVhf: `Description du point ${index}`, latitude, longitude, eta: '', ukc: '', denseTraffic: false };
@@ -104,9 +106,44 @@ describe('SeaOperationRouteMap', () => {
     expect(screen.getByRole('img', { name: 'Zone : Première zone de travaux détaillée' }).querySelector('title')).toHaveTextContent('Première zone de travaux détaillée');
     expect(container.querySelector('.so-route-map-zone-vertices')).toHaveTextContent('Z2.1');
     rerender(<SeaOperationRouteMap waypoints={route} zones={zones} viewport={viewport} />);
-    expect(container.querySelectorAll('.so-route-map-zone-tag')).toHaveLength(0);
+    expect(container.querySelectorAll('.so-route-map-zone-tag')).toHaveLength(2);
     expect(container.querySelector('.so-route-map-zones')).toHaveTextContent('Première zone de travaux détaillée');
-    expect(screen.queryByLabelText('Légende des zones')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Légende des zones')).toHaveTextContent('Z2 — Première zone de travaux détaillée');
+  });
+
+  it.each([false, true])('keeps nested zone outlines, codes and colours legible on every shared map without altering its geometry (compact=%s)', compact => {
+    const route = [point(1, '50.02', '1.02'), point(2, '50.1', '1.1'), point(3, '50.15', '1.13')];
+    const inner = [{ latitude: '50.08', longitude: '1.08' }, { latitude: '50.12', longitude: '1.08' }, { latitude: '50.12', longitude: '1.12' }, { latitude: '50.08', longitude: '1.12' }];
+    const outer = [{ latitude: '50.04', longitude: '1.04' }, { latitude: '50.16', longitude: '1.04' }, { latitude: '50.16', longitude: '1.16' }, { latitude: '50.04', longitude: '1.16' }];
+    const zones = [{ id: 'incomplete', name: 'Incomplète', vertices: inner.slice(0, 2) }, { id: 'inner', name: 'Zone intérieure détaillée', vertices: inner }, { id: 'outer', name: 'Zone extérieure détaillée', vertices: outer }];
+    const original = structuredClone({ route, zones }), onGeometry = vi.fn();
+    const { container } = render(<SeaOperationRouteMap waypoints={route} zones={zones} compact={compact} onGeometry={onGeometry} />);
+    expect([...container.querySelectorAll('.so-route-map-zone-fills path')].map(path => path.getAttribute('data-zone-code'))).toEqual(['Z3', 'Z2']);
+    const fills = container.querySelector('.so-route-map-zone-fills')!, outlines = container.querySelector('.so-route-map-zone-outlines')!;
+    expect(fills.compareDocumentPosition(outlines) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const tagBoxes = [...container.querySelectorAll('.so-route-map-zone-tag rect')].map(rect => ({ west: Number(rect.getAttribute('x')), east: Number(rect.getAttribute('x')) + Number(rect.getAttribute('width')), north: Number(rect.getAttribute('y')), south: Number(rect.getAttribute('y')) + Number(rect.getAttribute('height')) }));
+    expect(tagBoxes).toHaveLength(2); expect(tagBoxes[0].west < tagBoxes[1].east && tagBoxes[0].east > tagBoxes[1].west && tagBoxes[0].north < tagBoxes[1].south && tagBoxes[0].south > tagBoxes[1].north).toBe(false);
+    for (const index of [1, 2]) {
+      const appearance = seaOperationZoneAppearance(index), outline = container.querySelector(`.so-route-map-zone-outlines [data-zone-code="${appearance.code}"]`) as SVGElement;
+      expect(outline.style.stroke).toBe(`rgb(${appearance.rgb.join(', ')})`);
+      expect((container.querySelector(`.so-route-map-zone-fills [data-zone-code="${appearance.code}"]`) as SVGElement).style.fill).toBe(`rgb(${appearance.fillRgb.join(', ')})`);
+      expect((container.querySelector(`.so-route-map-zone-tag[data-zone-code="${appearance.code}"]`) as SVGElement).style.color).toBe(`rgb(${appearance.rgb.join(', ')})`);
+      const legendCode = within(screen.getByLabelText('Légende des zones')).getByText(appearance.code);
+      expect(legendCode).toHaveStyle({ color: appearance.stroke });
+    }
+    expect(container.querySelectorAll('.so-route-map-zone-vertices circle')).toHaveLength(10);
+    expect(container.querySelectorAll('.so-route-map-zone-vertices text').length).toBeLessThan(10);
+    const vertexLabels = [...container.querySelectorAll('.so-route-map-zone-vertices text')].map(text => {
+      const x = Number(text.getAttribute('x')), y = Number(text.getAttribute('y')), width = (text.textContent?.length || 0) * 6 + 4;
+      return { west: text.getAttribute('text-anchor') === 'end' ? x - width : x, east: text.getAttribute('text-anchor') === 'end' ? x : x + width, north: y - 11, south: y + 2 };
+    });
+    const overlap = (a: typeof tagBoxes[number], b: typeof tagBoxes[number]) => a.west < b.east && a.east > b.west && a.north < b.south && a.south > b.north;
+    vertexLabels.forEach((label, index) => { expect(tagBoxes.some(tag => overlap(label, tag))).toBe(false); expect(vertexLabels.slice(index + 1).some(other => overlap(label, other))).toBe(false); });
+    expect([...container.querySelectorAll('.so-route-map-zone-vertices circle')].map(circle => (circle as SVGElement).style.fill)).toEqual([0, 0, 1, 1, 1, 1, 2, 2, 2, 2].map(index => `rgb(${seaOperationZoneAppearance(index).rgb.join(', ')})`));
+    expect(container.querySelector('.so-route-map-zones')!.querySelectorAll('text')).toHaveLength(0);
+    expect(screen.getByLabelText('Légende des zones')).toHaveTextContent('Z2 — Zone intérieure détaillée');
+    expect(onGeometry.mock.calls.at(-1)![0]).toEqual(buildSeaOperationRouteMap(route, 900, compact ? 220 : 320, undefined, seaOperationMapExtraPositions([], zones)));
+    expect({ route, zones }).toEqual(original);
   });
 
   it('keeps an empty automatic editor cheap until an explicit temporary placement viewport is supplied', () => {

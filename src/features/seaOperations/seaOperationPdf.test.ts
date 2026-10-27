@@ -105,7 +105,7 @@ it('exports separate named zone tables and stable vertex identities without chan
   expect(zoneTables).not.toContain('Z1.1');
   for (const vertex of ['Z2.1', 'Z2.2', 'Z2.3', 'Z3.1']) expect(zoneTables).toContain(`(${vertex}) Tj`);
   for (const position of ["49° 39.000' N - 001° 37.200' W", "48° 30.500' S - 002° 10.250' E", 'invalide - 181', 'Latitude à renseigner - Longitude à renseigner']) expect(zoneTables).toContain(position);
-  expect((zoneTables.match(/\(Sommet\) Tj/g) || [])).toHaveLength(3);
+  expect((zoneTables.match(/\(Point\) Tj/g) || [])).toHaveLength(3);
   expect((zoneTables.match(/\(Coordonnées\) Tj/g) || [])).toHaveLength(3);
   expect(record).toEqual(original);
   if (process.env.SEAPILOT_PDF_ZONE_TABLES_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_ZONE_TABLES_QA_OUTPUT, output.bytes);
