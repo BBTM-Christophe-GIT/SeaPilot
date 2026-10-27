@@ -5,6 +5,7 @@ import { ProjectLocationEditor } from './ProjectLocationEditor';
 import { ProjectLocationOverlayFields } from './ProjectLocationOverlayFields';
 import { emptyProjectLocationPlan, parseProjectLocationPlan, type ProjectLocationPlan } from './projectLocation';
 import { emptySeaOperationWaypoint } from '../seaOperations/seaOperationModel';
+import type { SeaOperationMapViewport } from '../seaOperations/seaOperationMapViewport';
 
 const mapMock = vi.hoisted(() => vi.fn());
 vi.mock('../seaOperations/SeaOperationWaypointMapEditor', () => ({ SeaOperationWaypointMapEditor: (props: Record<string, unknown>) => { mapMock(props); return <span data-testid="location-map" />; } }));
@@ -15,9 +16,37 @@ function Harness({ initial = emptyProjectLocationPlan(), disabled = false }: { i
   return <><ProjectLocationEditor value={plan} onChange={setPlan} disabled={disabled} vessel={{ id: 12, maxSpeedKnots: 10, draftMeters: 2 }} /><output data-testid="plan">{JSON.stringify(plan)}</output></>;
 }
 const current = () => JSON.parse(screen.getByTestId('plan').textContent!) as ProjectLocationPlan;
-const map = () => mapMock.mock.calls.at(-1)![0] as { onAddWaypoint: (position: { latitude: number; longitude: number }, port?: { name: string }) => void; drawingMode: string; waypoints: unknown[]; isolatedPoints: unknown[]; zones: unknown[]; etd?: string; eta?: string; maxSpeedKnots?: number | null };
+const map = () => mapMock.mock.calls.at(-1)![0] as { onAddWaypoint: (position: { latitude: number; longitude: number }, port?: { name: string }) => void; drawingMode: string; waypoints: unknown[]; isolatedPoints: unknown[]; zones: unknown[]; etd?: string; eta?: string; maxSpeedKnots?: number | null;
+  mapViewport?: SeaOperationMapViewport; onMapViewportChange: (viewport?: SeaOperationMapViewport) => void; departurePort?: string; arrivalPort?: string; disabled: boolean };
 
 describe('ProjectLocationEditor', () => {
+  it('retains an independent manual viewport through state updates and removes the field when automatic framing resumes', () => {
+    const initial = { ...emptyProjectLocationPlan(), charts: '7120', points: [{ ...emptySeaOperationWaypoint('point'), latitude: '49.65', longitude: '-1.62' }] };
+    const original = structuredClone(initial);
+    render(<Harness initial={initial} />);
+    const viewport = { centerLatitude: 50.123456789, centerLongitude: -2.123456789, longitudeSpan: .345678901 };
+    act(() => map().onMapViewportChange(viewport));
+    expect(current()).toEqual({ ...initial, mapViewport: viewport }); expect(map().mapViewport).toEqual(viewport);
+    viewport.centerLatitude = 0;
+    expect(current().mapViewport!.centerLatitude).toBe(50.123456789);
+    act(() => map().onMapViewportChange(undefined));
+    expect(current()).not.toHaveProperty('mapViewport'); expect(current()).toEqual(initial); expect(initial).toEqual(original);
+  });
+  it('ignores callbacks from another project and callbacks retained before entering read-only mode', () => {
+    const first = { ...emptyProjectLocationPlan(), charts: 'Projet initial' }, second = { ...emptyProjectLocationPlan(), charts: 'Autre projet' };
+    const changed = vi.fn(), viewport = { centerLatitude: 49, centerLongitude: -1, longitudeSpan: 2 };
+    const view = render(<ProjectLocationEditor value={first} projectId="1" onChange={changed} />);
+    const staleProject = map().onMapViewportChange;
+    view.rerender(<ProjectLocationEditor value={second} projectId="2" onChange={changed} departurePort="Brest" arrivalPort="Cherbourg" />);
+    act(() => staleProject(viewport)); expect(changed).not.toHaveBeenCalled();
+    expect(map()).toMatchObject({ departurePort: 'Brest', arrivalPort: 'Cherbourg', disabled: false });
+    const active = map().onMapViewportChange;
+    act(() => active(viewport)); expect(changed).toHaveBeenCalledWith({ ...second, mapViewport: viewport });
+    changed.mockClear();
+    view.rerender(<ProjectLocationEditor value={{ ...second, mapViewport: viewport }} projectId="2" onChange={changed} disabled />);
+    act(() => active(undefined)); act(() => map().onMapViewportChange({ ...viewport, longitudeSpan: 10 }));
+    expect(changed).not.toHaveBeenCalled(); expect(map().disabled).toBe(true);
+  });
   it('keeps an untouched location optional with no inferred departure, PDF annex or network request', () => {
     const changed = vi.fn(), fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
     render(<ProjectLocationEditor onChange={changed} />);

@@ -1558,7 +1558,7 @@ export function ProjectEditor({
 
           <fieldset hidden={activeStep !== 'location'} id="project-step-location">
             <legend><span>5</span> Localisation</legend>
-            {activeStep === 'location' && <ProjectLocationEditor key={project?.id || 'new'} value={form.locationPlan} onChange={value => update('locationPlan', value)} disabled={isSaving} projectId={project?.id ? String(project.id) : undefined} vessel={vessels.find(item => item.id === form.primaryVesselId)} />}
+            {activeStep === 'location' && <ProjectLocationEditor key={project?.id || 'new'} value={form.locationPlan} onChange={value => update('locationPlan', value)} disabled={isSaving} projectId={project?.id ? String(project.id) : undefined} vessel={vessels.find(item => item.id === form.primaryVesselId)} departurePort={form.deliveryPort} arrivalPort={form.redeliveryPort} />}
           </fieldset>
           <fieldset hidden={activeStep !== 'documents'} id="project-step-documents">
             <legend><span>{isBimco ? 6 : 4}</span> Documents</legend>

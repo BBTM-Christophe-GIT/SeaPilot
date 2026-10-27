@@ -288,6 +288,52 @@ function adminSignedRecord(): SeaOperationRecord {
     signedAt: '2026-10-23T08:15:00Z', signatureSnapshot: profileSignature().snapshot });
 }
 
+describe('Saved route map framing in operation forms', () => {
+  it('forwards voyage ports and preserves manual map framing through save and reopen', async () => {
+    const record = recordFixture(captainAccount, { draft: waypointCaptureDraft() });
+    renderAccount(captainAccount, record, 1, plannedMissions());
+    let saved = record;
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, draft) => {
+      saved = { ...record, version: 4, draft: structuredClone(draft) }; return saved;
+    });
+    await openRecord(record); await userEvent.click(stepButton(2));
+    const map = () => waypointMapMock.mock.lastCall![0] as Parameters<typeof import('./SeaOperationWaypointMapEditor').SeaOperationWaypointMapEditor>[0];
+    expect(map()).toMatchObject({ departurePort: record.draft.vessel.departurePort, arrivalPort: record.draft.vessel.arrivalPort });
+    expect(map().mapViewport).toBeUndefined();
+    const retained = { centerLatitude: 49.6, centerLongitude: -1.4, longitudeSpan: 2.7 };
+    act(() => map().onMapViewportChange!(retained));
+    expect(capturingUkcPanel().payload.mapViewport).toEqual(retained); expect(capturingUkcPanel().payload.mapViewport).not.toBe(retained);
+    await saveDraft(); await waitFor(() => expect(footerQueries().getByText('Version 4 enregistrée')).toBeVisible());
+    expect(saved.draft.mapViewport).toEqual(retained);
+    await userEvent.click(footerQueries().getByRole('button', { name: 'Annuler' }));
+    vi.mocked(fetchSeaOperationDetail).mockResolvedValue(saved);
+    await openRecord(saved); await userEvent.click(stepButton(2));
+    expect(map().mapViewport).toEqual(retained);
+    act(() => map().onMapViewportChange!(undefined));
+    expect(capturingUkcPanel().payload.mapViewport).toBeUndefined(); expect(saved.draft.mapViewport).toEqual(retained);
+  });
+
+  it('rejects a framing callback from previous voyage ports and from a signed operation', async () => {
+    const record = recordFixture(captainAccount, { draft: waypointCaptureDraft() });
+    const signed = recordFixture(captainAccount, { id: 'signed-map-framing', draft: { ...waypointCaptureDraft(), project: 'Carte historique signée', mapViewport: { centerLatitude: 49, centerLongitude: -2, longitudeSpan: 4 } }, status: 'signed', canEdit: false });
+    const { data } = renderAccount(captainAccount, record, 1, plannedMissions()); data.records.push(signed);
+    vi.mocked(fetchSeaOperationDetail).mockImplementation(async (_client, id) => id === signed.id ? signed : record);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await openRecord(record); await userEvent.click(stepButton(2));
+    const old = waypointMapMock.mock.lastCall![0] as Parameters<typeof import('./SeaOperationWaypointMapEditor').SeaOperationWaypointMapEditor>[0];
+    await userEvent.click(stepButton(0));
+    fireEvent.change(formQueries().getByLabelText('Port de départ'), { target: { value: 'Port de Granville' } });
+    const stale = { centerLatitude: 44, centerLongitude: -5, longitudeSpan: 10 };
+    act(() => old.onMapViewportChange!(stale)); expect(capturingUkcPanel().payload.mapViewport).toBeUndefined();
+    await userEvent.click(footerQueries().getByRole('button', { name: 'Annuler' }));
+    await openRecord(signed); await userEvent.click(stepButton(2));
+    const snapshot = structuredClone(capturingUkcPanel().payload);
+    act(() => old.onMapViewportChange!(stale));
+    expect(capturingUkcPanel().payload).toEqual(snapshot); expect(signed.draft.mapViewport).toEqual(snapshot.mapViewport);
+    expect(formQueries().queryByRole('combobox', { name: 'Mode de cadrage de la carte' })).not.toBeInTheDocument();
+  });
+});
+
 describe('Transit and editable voyages with real-profile permission fixtures', () => {
   it.each([captainAccount, sailorAccount, adminAccount])('starts a free Transit form with registered clients and the actual vessel captain for $id', async account => {
     const choices = plannedMissions(), { client, data } = renderAccount(account, undefined, 1, choices);
@@ -1420,7 +1466,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await openRecord(record);
     await userEvent.click(stepButton(2));
     const map = formQueries().getByRole('figure', { name: 'Carte du parcours' });
-    expect(within(map).getByRole('img', { name: 'Carte du parcours · 1 point géolocalisé' })).toBeVisible();
+    expect(within(map).getByRole('img', { name: 'Carte du parcours · 1 point géolocalisé · 1 port défini' })).toBeVisible();
     expect(within(map).queryByRole('button')).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Placer les waypoints' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Afficher la carte en plein écran' })).not.toBeInTheDocument();

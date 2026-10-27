@@ -461,6 +461,8 @@ export async function generateProjectDocument(
       vesselName: input.vessel?.name,
       maxSpeedKnots: input.vessel?.maxSpeedKnots,
       draftMeters: input.vessel?.draftMeters,
+      departurePort: input.project.deliveryPort,
+      arrivalPort: input.project.redeliveryPort,
       language: input.language,
     }),
   };

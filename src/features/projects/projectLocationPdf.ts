@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { buildSeaOperationRouteMap } from '../seaOperations/seaOperationRouteMapGeometry';
-import { projectSeaOperationMapPlace, seaOperationMapPlaces } from '../seaOperations/seaOperationMapPlaces';
+import { buildSeaOperationRouteMap, type SeaOperationRouteMapGeometry } from '../seaOperations/seaOperationRouteMapGeometry';
+import { projectSeaOperationMapPlace, resolveSeaOperationMapPorts, seaOperationMapPlaces, type SeaOperationResolvedMapPort } from '../seaOperations/seaOperationMapPlaces';
 import { seaWaypointPosition } from '../seaOperations/seaOperationNavigation';
 import { buildSeaOperationRouteLegs, formatSeaOperationVoyageDuration, seaOperationVoyageTiming } from '../seaOperations/seaOperationRouteLegs';
 import { passagePlanCellData } from '../seaOperations/seaOperationPassagePlan';
@@ -24,8 +24,34 @@ export interface ProjectLocationPdfOptions {
   maxSpeedKnots?: number | null;
   draftMeters?: number | null;
   language?: 'fr' | 'en';
+  departurePort?: string;
+  arrivalPort?: string;
 }
-type LocationGeometry = Pick<ProjectLocationPlan, 'waypoints' | 'points' | 'zones'>;
+type LocationGeometry = Pick<ProjectLocationPlan, 'waypoints' | 'points' | 'zones' | 'mapViewport'>;
+
+/** Named voyage endpoints are contextual markers, never extra navigation legs. */
+export function drawDefinedMapPortsPdf(document: jsPDF, geometry: SeaOperationRouteMapGeometry,
+  bounds: { x: number; y: number; width: number; height: number }, ports: readonly SeaOperationResolvedMapPort[], labelRightInset = 0) {
+  const unit = (points: number) => points / document.internal.scaleFactor;
+  document.saveGraphicsState();
+  for (const port of ports) {
+    const pixel = projectSeaOperationMapPlace(geometry, port.location);
+    if (!pixel) continue;
+    const x = bounds.x + pixel.x / geometry.width * bounds.width, y = bounds.y + pixel.y / geometry.height * bounds.height;
+    document.setFillColor(...BLUE); document.setDrawColor(255, 255, 255); document.setLineWidth(unit(.9));
+    document.circle(x, y, unit(2.7), 'FD');
+    document.setFont('helvetica', 'bold'); document.setFontSize(6.5);
+    const maximumWidth = Math.min(unit(150), bounds.width - labelRightInset - unit(12));
+    const lines = document.splitTextToSize(clean(`${port.roleLabel} : ${port.port.port}`), maximumWidth) as string[];
+    const textWidth = Math.max(...lines.map(line => document.getTextWidth(line)));
+    const labelX = Math.max(bounds.x + unit(4), Math.min(x + unit(7), bounds.x + bounds.width - labelRightInset - textWidth - unit(4)));
+    const overlapsWaypoint = geometry.points.some(point => Math.hypot(point.x - pixel.x, point.y - pixel.y) < 28);
+    const labelY = Math.max(bounds.y + unit(9), Math.min(y + unit(overlapsWaypoint ? 18 : -6), bounds.y + bounds.height - unit(lines.length * 8 + 2)));
+    document.setFillColor(255, 255, 255); document.rect(labelX - unit(2), labelY - unit(7), textWidth + unit(4), unit(lines.length * 8 + 2), 'F');
+    document.setTextColor(...BLUE); document.text(lines, labelX, labelY, { lineHeightFactor: 1.2 });
+  }
+  document.restoreGraphicsState();
+}
 
 /** All three layers share a viewport, but only the ordered route creates navigation legs. */
 export function projectLocationMapPositions(location: Pick<ProjectLocationOverlay, 'points' | 'zones'>) {
@@ -42,11 +68,13 @@ export function projectLocationVoyage(location: Pick<ProjectLocationPlan, 'waypo
 
 /** Vector-only situational map, shared by project appendices and imported SeaOps overlays. */
 export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeometry, bounds: { x: number; y: number; width: number; height: number },
-  options?: { etd?: string; maxSpeedKnots?: number | null; showVoyage?: boolean }) {
+  options?: { etd?: string; maxSpeedKnots?: number | null; showVoyage?: boolean; departurePort?: string; arrivalPort?: string }) {
   const unit = (points: number) => points / document.internal.scaleFactor;
   const fitRightInset = options?.showVoyage && location.waypoints.length > 1
     ? (Math.min(bounds.width - unit(12), unit(200)) + unit(12)) / bounds.width * 900 : 0;
-  const geometry = buildSeaOperationRouteMap(location.waypoints, 900, Math.max(160, 900 * bounds.height / bounds.width), undefined, projectLocationMapPositions(location), fitRightInset);
+  const definedPorts = resolveSeaOperationMapPorts(options?.departurePort, options?.arrivalPort);
+  const geometry = buildSeaOperationRouteMap(location.waypoints, 900, Math.max(160, 900 * bounds.height / bounds.width), location.mapViewport,
+    [...projectLocationMapPositions(location), ...definedPorts.ports.map(port => port.location)], fitRightInset);
   const at = (point: { x: number; y: number }) => ({ x: bounds.x + point.x / geometry.width * bounds.width, y: bounds.y + point.y / geometry.height * bounds.height });
   const projected = (position: { latitude: number; longitude: number }) => {
     const point = projectSeaOperationMapPlace(geometry, position);
@@ -58,6 +86,7 @@ export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeo
   document.saveGraphicsState();
   document.setFillColor(236, 246, 251); document.setDrawColor(190, 208, 219); document.setLineWidth(unit(.6));
   document.rect(bounds.x, bounds.y, bounds.width, bounds.height, 'FD');
+  document.rect(bounds.x, bounds.y, bounds.width, bounds.height, null); document.clip(); document.discardPath();
   if (!geometry.projection) {
     document.setTextColor(...MUTED); write('Aucun point géolocalisé', bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, 9, 'center');
     document.restoreGraphicsState(); return geometry;
@@ -79,12 +108,15 @@ export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeo
     const center = { x: positions.reduce((sum, position) => sum + position.x, 0) / positions.length, y: positions.reduce((sum, position) => sum + position.y, 0) / positions.length };
     document.setTextColor(...BLUE); write(zone.name || 'Zone', center.x, center.y, 7, 'center');
   }
-  const places = seaOperationMapPlaces(geometry);
+  const places = seaOperationMapPlaces(geometry, definedPorts.ports.flatMap(port => {
+    const position = projectSeaOperationMapPlace(geometry, port.location); return position ? [position] : [];
+  }));
   for (const city of places.cities.slice(0, 50)) {
     const point = at(city), label = at(city.label); document.setFillColor(37, 129, 95); document.circle(point.x, point.y, unit(1.5), 'F');
     document.setTextColor(...MUTED); write(city.name, label.x, label.y, 5.5, city.label.anchor === 'end' ? 'right' : 'left');
   }
   for (const port of places.markers.slice(0, 80)) {
+    if (definedPorts.ports.some(defined => defined.key === `${port.location.source}:${port.location.sourceId}`)) continue;
     const point = at(port); document.setFillColor(...BLUE); document.circle(point.x, point.y, unit(1.4), 'F');
     if (port.label) { const label = at(port.label); document.setTextColor(...MUTED); write(port.ports[0].port.port, label.x, label.y, 5.5, port.label.anchor === 'end' ? 'right' : 'left'); }
   }
@@ -102,7 +134,7 @@ export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeo
     document.setTextColor(...BLUE); write(text, x, y, 6, 'center');
   }
   const groups = new Map<string, typeof geometry.points>();
-  for (const point of geometry.points) { const key = `${point.x}:${point.y}`; groups.set(key, [...(groups.get(key) || []), point]); }
+  for (const point of geometry.points) { if (point.x < 0 || point.x > geometry.width || point.y < 0 || point.y > geometry.height) continue; const key = `${point.x}:${point.y}`; groups.set(key, [...(groups.get(key) || []), point]); }
   for (const group of groups.values()) {
     const point = at(group[0]), ordinal = group.length > 4 ? `${group[0].index}/.../${group.at(-1)!.index}` : group.map(item => item.index).join('/'), start = group.some(item => item.index === 1);
     if (start) document.setFillColor(...BLUE); else document.setFillColor(255, 255, 255);
@@ -130,6 +162,8 @@ export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeo
       document.ellipse(x, p.y, unit(4), unit(2.5), 'S'); document.setFillColor(138, 97, 0); document.circle(x, p.y, unit(1), 'F');
     }
   });
+  drawDefinedMapPortsPdf(document, geometry, bounds, definedPorts.ports,
+    options?.showVoyage && location.waypoints.length > 1 ? Math.min(bounds.width - unit(12), unit(200)) + unit(12) : 0);
   if (options?.showVoyage && location.waypoints.length > 1) {
     const width = Math.min(bounds.width - unit(12), unit(200)), height = unit(67), x = bounds.x + bounds.width - width - unit(6), y = bounds.y + bounds.height - height - unit(6);
     document.setFillColor(255, 255, 255); document.setDrawColor(209, 220, 230); document.roundedRect(x, y, width, height, unit(3), unit(3), 'FD');
@@ -158,7 +192,7 @@ export async function generateProjectLocationPdf(plan: ProjectLocationPlan, opti
   document.text(options.language === 'en' ? 'APPENDIX - LOCATION / PASSAGE PLAN' : 'ANNEXE - LOCALISATION / PASSAGE PLAN', left, 32);
   document.setFont('helvetica', 'normal'); document.setFontSize(9); document.setTextColor(...MUTED);
   document.text(clean(`${options.projectLabel}${options.vesselName ? ` · ${options.vesselName}` : ''}`), left, 48);
-  drawProjectLocationMapPdf(document, plan, { x: left, y: 60, width, height: 190 }, { etd: plan.etd, maxSpeedKnots: options.maxSpeedKnots, showVoyage: true });
+  drawProjectLocationMapPdf(document, plan, { x: left, y: 60, width, height: 190 }, { etd: plan.etd, maxSpeedKnots: options.maxSpeedKnots, showVoyage: true, departurePort: options.departurePort, arrivalPort: options.arrivalPort });
   document.setFontSize(6.5); document.setTextColor(...MUTED);
   document.text('Fond Natural Earth · Tracé indicatif · Distances directes, sans routage · Coordonnées WGS84', left, 260);
   let y = 274;
@@ -210,7 +244,7 @@ export async function generateProjectLocationPdf(plan: ProjectLocationPlan, opti
 /** Opt-in appendix only; an absent/unchecked section returns the original contract bytes untouched. */
 export async function appendProjectLocationPdf(base: Blob, rawPlan: unknown, options: ProjectLocationPdfOptions): Promise<Blob> {
   const plan = parseProjectLocationPlan(rawPlan);
-  if (!plan?.includeInPdf || !hasProjectLocationContent(plan)) return base;
+  if (!plan?.includeInPdf || !hasProjectLocationContent(plan) && !resolveSeaOperationMapPorts(options.departurePort, options.arrivalPort).ports.length) return base;
   const [{ PDFDocument }, baseBytes, appendix] = await Promise.all([import('pdf-lib'), base.arrayBuffer(), generateProjectLocationPdf(plan, options)]);
   const document = await PDFDocument.load(baseBytes), annex = await PDFDocument.load(appendix);
   const pages = await document.copyPages(annex, annex.getPageIndices()); pages.forEach(page => document.addPage(page));

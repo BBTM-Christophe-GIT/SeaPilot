@@ -3,6 +3,7 @@ import { effectiveSeaOperationUkc, waypointRadioSnapshot, waypointUkcSnapshot, w
 import type { SeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 import { parseProjectLocationOverlay, type ProjectLocationOverlay } from '../projects/projectLocation';
 import { isVesselWeatherMatrix, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
+import { isSeaOperationMapViewport, type SeaOperationMapViewport } from './seaOperationMapViewport';
 
 /** Digital transcription of OPE-FOR-10-C, GO / NO GO – OPÉRATION EN MER. */
 export type SeaOperationAnswer = '' | 'yes' | 'no';
@@ -61,6 +62,8 @@ export interface SeaOperationWaypoint {
 
 export interface SeaOperationPayload {
   version: 1;
+  /** Manual framing retained with this revision; absence means automatic framing. */
+  mapViewport?: SeaOperationMapViewport;
   /** Independent editable project copy; never synchronized after selecting the mission. */
   locationOverlay?: ProjectLocationOverlay;
   /** Optional for compatibility with forms prepared before Planning integration. */
@@ -285,6 +288,7 @@ function isOptionalIdentifier(value: unknown): value is string {
 /** Reject malformed JSON instead of treating truthy or unknown values as confirmations. */
 export function isSeaOperationPayload(value: unknown): value is SeaOperationPayload {
   if (!hasStringFields(value, ['project', 'client', 'clientContact', 'description', 'charts', 'risks']) || value.version !== 1) return false;
+  if (value.mapViewport !== undefined && !isSeaOperationMapViewport(value.mapViewport)) return false;
   if (value.planning !== undefined && !hasStringFields(value.planning, ['date', 'operationId', 'projectId', 'captainPersonId'])) return false;
   if (value.transit !== undefined && (value.planning !== undefined || !hasStringFields(value.transit, ['date', 'captainPersonId'])
     || !validCalendarDate(value.transit.date as string) || Number((value.transit.date as string).slice(0, 4)) < 1000

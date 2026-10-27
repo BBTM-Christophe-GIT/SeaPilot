@@ -8,6 +8,25 @@ import {
 import type { SeaOperationCheckId } from './seaOperationModel';
 import { COPERNICUS_UKC_PRODUCTS, calculateSeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 
+describe('optional retained operation map frame', () => {
+  it('accepts historical automatic absence and keeps exact manual framing through JSON reopening', () => {
+    const payload = emptySeaOperation();
+    expect(payload).not.toHaveProperty('mapViewport'); expect(isSeaOperationPayload(payload)).toBe(true);
+    payload.mapViewport = { centerLatitude: 49.654321, centerLongitude: -1.789012, longitudeSpan: .023456789 };
+    const reopened = JSON.parse(JSON.stringify(payload));
+    expect(isSeaOperationPayload(reopened)).toBe(true); expect(reopened.mapViewport).toEqual(payload.mapViewport);
+    delete payload.mapViewport; expect(isSeaOperationPayload(payload)).toBe(true);
+  });
+  it('rejects invalid manual data without weakening strict overlays', () => {
+    for (const mapViewport of [null, {}, { centerLatitude: 91, centerLongitude: 0, longitudeSpan: 1 },
+      { centerLatitude: 0, centerLongitude: 0, longitudeSpan: .01 }, { centerLatitude: 0, centerLongitude: 0, longitudeSpan: 1, extra: true }]) {
+      expect(isSeaOperationPayload({ ...emptySeaOperation(), mapViewport })).toBe(false);
+    }
+    const mapViewport = { centerLatitude: 0, centerLongitude: 0, longitudeSpan: 1 };
+    expect(isSeaOperationPayload({ ...emptySeaOperation(), locationOverlay: { version: 1, points: [], zones: [], mapViewport } })).toBe(false);
+  });
+});
+
 describe('standalone Transit context', () => {
   it('creates independent manual forms without a Projects row or an inferred vessel/client/captain', () => {
     const first = createTransitSeaOperation('2026-10-27'), second = createTransitSeaOperation('2026-10-28');

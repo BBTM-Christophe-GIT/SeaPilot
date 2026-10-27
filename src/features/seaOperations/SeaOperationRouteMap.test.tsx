@@ -2,8 +2,9 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import { SeaOperationRouteMap } from './SeaOperationRouteMap';
-import { SEA_OPERATION_MAP_PORT_CATALOG } from './seaOperationMapPlaces';
+import { projectSeaOperationMapPlace, resolveSeaOperationMapPorts, SEA_OPERATION_MAP_PORT_CATALOG } from './seaOperationMapPlaces';
 import { formatProjectPort } from '../projects/projectPorts';
+import { DEFAULT_ROUTE_MAP_VIEWPORT } from './seaOperationRouteMapGeometry';
 
 function point(index: number, latitude: string, longitude: string, number = `WP${index}`): SeaOperationWaypoint {
   return { id: `point-${index}`, number, descriptionVhf: `Description du point ${index}`, latitude, longitude, eta: '', ukc: '', denseTraffic: false };
@@ -13,6 +14,65 @@ const channelRoute = () => [point(1, '49.65', '-1.62'), point(2, '48.36', '-4.53
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('SeaOperationRouteMap', () => {
+  it('keeps an empty automatic editor cheap until an explicit temporary placement viewport is supplied', () => {
+    const onGeometry = vi.fn();
+    const { container, rerender } = render(<SeaOperationRouteMap waypoints={[]} onGeometry={onGeometry} renderOverlay={() => <rect role="button" aria-label="Ajouter le premier waypoint" />} />);
+    expect(container.querySelector('.so-route-map-svg')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Ajouter le premier waypoint' })).not.toBeInTheDocument();
+    rerender(<SeaOperationRouteMap waypoints={[]} viewport={DEFAULT_ROUTE_MAP_VIEWPORT} onGeometry={onGeometry} renderOverlay={() => <rect role="button" aria-label="Ajouter le premier waypoint" />} />);
+    expect(screen.getByRole('button', { name: 'Ajouter le premier waypoint' })).toBeInTheDocument();
+    expect(onGeometry.mock.calls.at(-1)![0]).toMatchObject({ viewport: DEFAULT_ROUTE_MAP_VIEWPORT, points: [], segments: [] });
+    expect(container.querySelector('.so-route-map-point')).toBeNull();
+    rerender(<SeaOperationRouteMap waypoints={[]} onGeometry={onGeometry} />);
+    expect(container.querySelector('.so-route-map-svg')).toBeNull();
+    rerender(<SeaOperationRouteMap waypoints={[]} compact onGeometry={onGeometry} renderOverlay={() => <rect />} />);
+    expect(container.querySelector('.so-route-map-svg')).toBeNull();
+    rerender(<SeaOperationRouteMap waypoints={[]} departurePort="Cherbourg" onGeometry={onGeometry} renderOverlay={() => <rect />} />);
+    expect(onGeometry.mock.calls.at(-1)![0].viewport.longitudeSpan).toBeLessThan(1);
+    expect(screen.getByRole('img', { name: /Départ : .*Cherbourg/ })).toBeInTheDocument();
+  });
+  it.each([false, true])('frames and displays the defined ports even without regional places (compact=%s)', compact => {
+    const onGeometry = vi.fn(), route = [point(1, '49.65', '-1.62'), point(2, '49.66', '-1.60')];
+    const { container } = render(<SeaOperationRouteMap waypoints={route} departurePort="Cherbourg" arrivalPort="Brest" compact={compact} onGeometry={onGeometry} showRouteLegs={!compact} maxSpeedKnots={12} />);
+    expect(screen.getByRole('img', { name: /Départ : .*Cherbourg/ })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /Arrivée : .*Brest/ })).toBeInTheDocument();
+    expect(container.querySelectorAll('.so-route-map-defined-ports .so-route-map-port-dot')).toHaveLength(2);
+    expect(container.querySelector('.so-route-map-places-layer')).toBeNull();
+    expect(container.querySelectorAll('.so-route-map-track line')).toHaveLength(1);
+    const geometry = onGeometry.mock.calls.at(-1)![0];
+    expect(geometry.points.map((point: { index: number }) => point.index)).toEqual([1, 2]);
+    for (const port of resolveSeaOperationMapPorts('Cherbourg', 'Brest').ports) expect(projectSeaOperationMapPlace(geometry, port.location)).not.toBeNull();
+  });
+  it('shows a ports-only map, groups identical endpoints and reports unresolved ports without inventing positions', () => {
+    const { container, rerender } = render(<SeaOperationRouteMap waypoints={[]} departurePort="Cherbourg" arrivalPort="Cherbourg" compact />);
+    expect(screen.getByRole('img', { name: /Départ \/ Arrivée : .*Cherbourg/ })).toBeInTheDocument();
+    expect(container.querySelectorAll('.so-route-map-defined-ports .so-route-map-port-dot')).toHaveLength(1);
+    expect(container.querySelector('.so-route-map-track line')).toBeNull(); expect(container.querySelector('.so-route-map-point')).toBeNull();
+    rerender(<SeaOperationRouteMap waypoints={[]} departurePort="Port de Saint-Pierre" arrivalPort="Millbay Docks" />);
+    expect(screen.getByRole('status')).toHaveTextContent('plusieurs ports correspondent');
+    expect(screen.getByRole('status')).toHaveTextContent('position propre non disponible');
+    expect(container.querySelector('.so-route-map-svg')).toBeNull();
+  });
+  it('keeps defined ports distinct from regional port markers instead of drawing duplicate dots', () => {
+    const { container } = render(<SeaOperationRouteMap waypoints={[]} departurePort="Cherbourg" arrivalPort="Brest" showPlaces />);
+    const position = (circle: Element) => `${circle.getAttribute('cx')}:${circle.getAttribute('cy')}`;
+    const defined = new Set([...container.querySelectorAll('.so-route-map-defined-ports .so-route-map-port-dot')].map(position));
+    expect(defined.size).toBe(2);
+    expect([...container.querySelectorAll('.so-route-map-ports .so-route-map-port-dot')].every(circle => !defined.has(position(circle)))).toBe(true);
+  });
+  it('keeps navigation totals independent of ports and respects the saved manual frame in compact previews', () => {
+    const route = channelRoute(), onGeometry = vi.fn();
+    const { rerender } = render(<SeaOperationRouteMap waypoints={route} showRouteLegs maxSpeedKnots={12} etd="2026-10-27T10:00" />);
+    const summary = screen.getByRole('complementary', { name: 'Estimation du parcours' }).textContent;
+    rerender(<SeaOperationRouteMap waypoints={route} departurePort="Cherbourg" arrivalPort="Portsmouth" showRouteLegs maxSpeedKnots={12} etd="2026-10-27T10:00" />);
+    expect(screen.getByRole('complementary', { name: 'Estimation du parcours' }).textContent).toBe(summary);
+    const viewport = { centerLatitude: 49.65, centerLongitude: -1.62, longitudeSpan: .02 };
+    rerender(<SeaOperationRouteMap waypoints={route} departurePort="Cherbourg" arrivalPort="Brest" compact viewport={viewport} onGeometry={onGeometry} />);
+    const retained = onGeometry.mock.calls.at(-1)![0].viewport;
+    expect(retained.centerLatitude).toBe(viewport.centerLatitude); expect(retained.longitudeSpan).toBe(viewport.longitudeSpan);
+    expect(retained.centerLongitude).toBeCloseTo(viewport.centerLongitude, 10);
+    expect(screen.getByRole('status')).toHaveTextContent('Brest — hors du cadre conservé');
+  });
   it('keeps a short route visible beside the voyage summary instead of covering its arrival', () => {
     const onGeometry = vi.fn();
     const points = [point(1, '49.65', '-1.64'), point(2, '49.655', '-1.62'), point(3, '49.65', '-1.60')];

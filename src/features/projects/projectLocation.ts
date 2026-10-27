@@ -1,4 +1,5 @@
 import type { SeaOperationWaypoint } from '../seaOperations/seaOperationModel';
+import { parseSeaOperationMapViewport, type SeaOperationMapViewport } from '../seaOperations/seaOperationMapViewport';
 
 export interface ProjectLocationZone {
   id: string;
@@ -11,6 +12,7 @@ export interface ProjectLocationOverlay {
   zones: ProjectLocationZone[];
 }
 export interface ProjectLocationPlan extends ProjectLocationOverlay {
+  mapViewport?: SeaOperationMapViewport;
   etd: string;
   charts: string;
   waypoints: SeaOperationWaypoint[];
@@ -71,7 +73,10 @@ export function parseProjectLocationPlan(value: unknown): ProjectLocationPlan | 
   checkSize(value);
   const ids = new Set<string>();
   const waypoints = boundedArray(value.waypoints, PROJECT_LOCATION_LIMITS.waypoints).map(point => waypoint(point, ids));
-  return { ...overlay(value, ids), etd: string(value.etd, 80), charts: string(value.charts, 20000), waypoints, includeInPdf: value.includeInPdf };
+  let mapViewport: SeaOperationMapViewport | undefined;
+  try { mapViewport = parseSeaOperationMapViewport(value.mapViewport); } catch { throw invalid(); }
+  return { ...overlay(value, ids), etd: string(value.etd, 80), charts: string(value.charts, 20000), waypoints, includeInPdf: value.includeInPdf,
+    ...(mapViewport ? { mapViewport } : {}) };
 }
 export function parseProjectLocationOverlay(value: unknown): ProjectLocationOverlay | null {
   if (value === null || value === undefined) return null;
@@ -88,5 +93,5 @@ export function cloneProjectLocationPlan(value: ProjectLocationPlan): ProjectLoc
 export function cloneProjectLocationPlan(value: ProjectLocationPlan | null | undefined): ProjectLocationPlan | null;
 export function cloneProjectLocationPlan(value: ProjectLocationPlan | null | undefined): ProjectLocationPlan | null { return parseProjectLocationPlan(value); }
 export function hasProjectLocationContent(value: ProjectLocationPlan | null | undefined): boolean {
-  return Boolean(value && (value.etd.trim() || value.charts.trim() || value.waypoints.length || value.points.length || value.zones.length));
+  return Boolean(value && (value.mapViewport || value.etd.trim() || value.charts.trim() || value.waypoints.length || value.points.length || value.zones.length));
 }
