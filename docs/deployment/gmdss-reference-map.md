@@ -15,6 +15,8 @@ modifiée. Le composant est exclu des documents et masqué à l’impression.
 - [SVG original](https://assets.publishing.service.gov.uk/media/669a22da49b9c0597fdb0025/GMDSS_Map_2024.svg).
 - Copie locale inchangée : `public/maps/gmdss/mca-2024.svg`.
 - SHA256 : `cad0e07a71337b70034ae173bd1dd2c8e1b500a72b81f4e54f8d442569596f11`.
+- Les fins de ligne LF sont fixées dans `.gitattributes` pour préserver cette
+  identité sur Windows comme sur Linux.
 
 La publication indique © Crown copyright 2024 et l’Open Government Licence
 v3.0, sauf mention contraire. Le composant conserve l’attribution suivante :
