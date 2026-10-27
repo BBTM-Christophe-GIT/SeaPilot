@@ -1,6 +1,7 @@
 import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
 import { effectiveSeaOperationUkc, waypointRadioSnapshot, waypointUkcSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 import type { SeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
+import { parseProjectLocationOverlay, type ProjectLocationOverlay } from '../projects/projectLocation';
 import { isVesselWeatherMatrix, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 
 /** Digital transcription of OPE-FOR-10-C, GO / NO GO – OPÉRATION EN MER. */
@@ -60,6 +61,8 @@ export interface SeaOperationWaypoint {
 
 export interface SeaOperationPayload {
   version: 1;
+  /** Independent editable project copy; never synchronized after selecting the mission. */
+  locationOverlay?: ProjectLocationOverlay;
   /** Optional for compatibility with forms prepared before Planning integration. */
   planning?: { date: string; operationId: string; projectId: string; captainPersonId: string };
   project: string;
@@ -262,6 +265,9 @@ function isAnswer(value: unknown): value is SeaOperationAnswer { return value ==
 export function isSeaOperationPayload(value: unknown): value is SeaOperationPayload {
   if (!hasStringFields(value, ['project', 'client', 'clientContact', 'description', 'charts', 'risks']) || value.version !== 1) return false;
   if (value.planning !== undefined && !hasStringFields(value.planning, ['date', 'operationId', 'projectId', 'captainPersonId'])) return false;
+  if (value.locationOverlay !== undefined) {
+    try { if (!parseProjectLocationOverlay(value.locationOverlay)) return false; } catch { return false; }
+  }
   if (!['', 'GO', 'NO_GO'].includes(value.decision as string)) return false;
   if (!hasStringFields(value.vessel, ['id', 'name', 'registrationImo', 'captainName', 'departurePort', 'departureQuay', 'arrivalPort', 'arrivalQuay', 'etd', 'eta'])) return false;
   if (value.vessel.weatherMatrix !== undefined && value.vessel.weatherMatrix !== null && !isVesselWeatherMatrix(value.vessel.weatherMatrix)) return false;
@@ -283,12 +289,20 @@ export function isSeaOperationPayload(value: unknown): value is SeaOperationPayl
   if (!hasStringFields(value.signature, ['captainName', 'date', 'place']) || typeof value.signature.acknowledged !== 'boolean') return false;
   const ukcReference = { projectId: isObject(value.planning) ? value.planning.projectId as string : undefined,
     vesselId: value.vessel.id as string, draftMeters: value.vessel.draftMeters as number | null | undefined };
-  return Array.isArray(value.waypoints) && value.waypoints.every((point) => hasStringFields(point, ['id', 'number', 'descriptionVhf', 'latitude', 'longitude', 'ukc', 'eta']) && typeof point.denseTraffic === 'boolean'
+  const validWaypoints = Array.isArray(value.waypoints) && value.waypoints.every((point) => hasStringFields(point, ['id', 'number', 'descriptionVhf', 'latitude', 'longitude', 'ukc', 'eta']) && typeof point.denseTraffic === 'boolean'
     && (point.etaMode === undefined || point.etaMode === 'manual' || point.etaMode === 'automatic')
     && (point.ukcMode === undefined || point.ukcMode === 'manual' || point.ukcMode === 'automatic')
     && (point.ukcForecast === undefined || point.ukcMode === 'automatic' && Boolean(waypointUkcSnapshot(point as unknown as SeaOperationWaypoint, ukcReference)))
     && (point.weather === undefined || Boolean(waypointWeatherSnapshot(point as unknown as SeaOperationWaypoint)))
     && (point.radio === undefined || Boolean(waypointRadioSnapshot(point as unknown as SeaOperationWaypoint))));
+  if (!validWaypoints) return false;
+  if (value.locationOverlay !== undefined) {
+    const overlay = parseProjectLocationOverlay(value.locationOverlay)!;
+    const identities = (value.waypoints as SeaOperationWaypoint[]).map(point => point.id);
+    identities.push(...overlay.points.map(point => point.id), ...overlay.zones.map(zone => zone.id));
+    if (new Set(identities).size !== identities.length) return false;
+  }
+  return true;
 }
 
 /**

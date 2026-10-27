@@ -1,0 +1,9 @@
+.project-location-preview { box-sizing: border-box; width: 900px; min-height: 630px; margin: 1rem auto; padding: 25px; background: #fff; color: #172638; box-shadow: 0 2px 18px #233a501a; font-size: 10px; }
+.project-location-preview h2 { margin: 0 0 6px; color: #0c5598; font-size: 17px; }
+.project-location-preview h3 { margin: 14px 0 6px; color: #0c5598; font-size: 12px; }
+.project-location-preview table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.project-location-preview th, .project-location-preview td { padding: 5px; border: 1px solid #d1dce6; text-align: center; vertical-align: middle; overflow-wrap: anywhere; white-space: pre-line; }
+.project-location-preview th { background: #f6f9fc; }
+.project-location-preview th:first-child { width: 48px; white-space: nowrap; }
+.project-location-preview .is-dense { background: #fffaf0; }
+.project-location-preview small { display: block; margin-top: 12px; color: #526679; }

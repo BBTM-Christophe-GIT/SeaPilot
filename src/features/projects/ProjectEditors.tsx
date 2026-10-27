@@ -1,4 +1,4 @@
-import { CalendarDays, CreditCard, FileText, FileUp, FolderOpen, Plus, ReceiptText, X } from 'lucide-react';
+import { CalendarDays, CreditCard, FileText, FileUp, FolderOpen, Map as MapIcon, Plus, ReceiptText, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   EMPTY_PROJECT_WRITE_INPUT,
@@ -88,6 +88,8 @@ import {
   BAREBOAT_DELIVERY_TRUCK_LABEL,
   deriveBareboatCertificateFields,
 } from './projectBareboatContract';
+import { cloneProjectLocationPlan } from './projectLocation';
+import { ProjectLocationEditor } from './ProjectLocationEditor';
 
 interface ProjectEditorProps {
   client: SupabaseClient;
@@ -248,6 +250,7 @@ export function projectToWriteInput(
     redeliveryPort: project.redeliveryPort,
     contractType,
     operationArea: project.operationArea,
+    locationPlan: project.locationPlan === undefined ? undefined : cloneProjectLocationPlan(project.locationPlan),
     isRovSupport: project.isRovSupport,
     isDivingSupport: project.isDivingSupport,
     ownerIdentity: contract?.ownerIdentity
@@ -323,6 +326,7 @@ function projectCoreSnapshot(input: ProjectWriteInput): string {
     redeliveryPort: input.redeliveryPort,
     contractType: input.contractType,
     operationArea: input.operationArea,
+    locationPlan: input.locationPlan,
     isRovSupport: input.isRovSupport,
     isDivingSupport: input.isDivingSupport,
     expectedUpdatedAt: input.expectedUpdatedAt,
@@ -406,7 +410,7 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
   );
 }
 
-type ProjectAssistantStep = 'identification' | 'planning' | 'offer' | 'billing' | 'bimco' | 'documents';
+type ProjectAssistantStep = 'identification' | 'planning' | 'offer' | 'billing' | 'bimco' | 'documents' | 'location';
 
 interface ProjectAssistantStepDefinition {
   description: string;
@@ -523,7 +527,13 @@ export function ProjectEditor({
     { description: isBimco ? 'Cases du formulaire P144' : 'Champs du document', icon: ReceiptText, id: contractStep, label: normalizedContractType },
     { description: 'Dates, ports et première mission', icon: CalendarDays, id: 'planning', label: 'Opérations' },
     { description: 'Navires et conditions tarifaires', icon: CreditCard, id: 'billing', label: 'Facturation' },
-    { description: 'Pièces classées dans BBTM', icon: FileText, id: 'documents', label: 'Documents' },
+    ...(isBimco ? [
+      { description: 'Route, points et zones · facultatif', icon: MapIcon, id: 'location' as const, label: 'Localisation' },
+      { description: 'Pièces classées dans BBTM', icon: FileText, id: 'documents' as const, label: 'Documents' },
+    ] : [
+      { description: 'Pièces classées dans BBTM', icon: FileText, id: 'documents' as const, label: 'Documents' },
+      { description: 'Route, points et zones · facultatif', icon: MapIcon, id: 'location' as const, label: 'Localisation' },
+    ]),
   ];
   const bareboatCertificateFields = useMemo(
     () => vesselCertificates ? deriveBareboatCertificateFields(vesselCertificates) : undefined,
@@ -877,7 +887,7 @@ export function ProjectEditor({
           </button>
         </header>
         <form onSubmit={submit}>
-          <div className="project-assistant-layout">
+          <div className={`project-assistant-layout${activeStep === 'location' ? ' is-location' : ''}`}>
             <aside aria-label="Étapes de création du projet">
               <span>PARCOURS PROJET</span>
               <strong>{nextProjectCode}</strong>
@@ -1546,8 +1556,12 @@ export function ProjectEditor({
             </div>
           </fieldset>
 
+          <fieldset hidden={activeStep !== 'location'} id="project-step-location">
+            <legend><span>5</span> Localisation</legend>
+            {activeStep === 'location' && <ProjectLocationEditor key={project?.id || 'new'} value={form.locationPlan} onChange={value => update('locationPlan', value)} disabled={isSaving} projectId={project?.id ? String(project.id) : undefined} vessel={vessels.find(item => item.id === form.primaryVesselId)} />}
+          </fieldset>
           <fieldset hidden={activeStep !== 'documents'} id="project-step-documents">
-            <legend><span>{isBimco ? 5 : 4}</span> Documents</legend>
+            <legend><span>{isBimco ? 6 : 4}</span> Documents</legend>
             <section className="project-document-library" aria-label="Pièces jointes du projet">
               <div className="project-document-library-heading">
                 <div>

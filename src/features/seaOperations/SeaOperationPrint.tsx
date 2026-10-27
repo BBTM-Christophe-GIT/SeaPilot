@@ -14,6 +14,7 @@ import { SeaOperationUkcIndicator } from './SeaOperationUkcIndicator';
 import { isVesselDraftMeters } from './seaOperationUkc';
 import { seaOperationWaypointDescription } from './seaOperationWaypointDescription';
 import { seaOperationVoyageSummary } from './seaOperationVoyageSummary';
+import { formatSeaPosition } from './seaOperationCoordinates';
 import './seaOperationPrint.css';
 
 const blank = 'À renseigner';
@@ -187,7 +188,11 @@ export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOp
       {isVesselDraftMeters(vessel.draftMeters) && <p>Seuils UKC : rouge jusqu’au tirant d’eau inclus ; orange au-delà et jusqu’à +2 m inclus ; vert au-delà de +2 m. Indicateur distinct de la décision du Capitaine.</p>}
       <p>ETA : date et heure locale de Paris. Les fiches historiques peuvent conserver une heure seule.</p>
       <p>Positions WGS84 : degrés et minutes décimales, N/S et E/W (Ouest).</p>
-      <div className="so-print-route-map"><SeaOperationRouteMap waypoints={form.waypoints} compact /></div>
+      <div className="so-print-route-map"><SeaOperationRouteMap waypoints={form.waypoints} isolatedPoints={form.locationOverlay?.points} zones={form.locationOverlay?.zones} compact /></div>
+      {form.locationOverlay && (form.locationOverlay.points.length > 0 || form.locationOverlay.zones.length > 0) && <section aria-label="Localisation de la mission">
+        {form.locationOverlay.points.length > 0 && <><h3>Points isolés</h3><table><thead><tr><th>Point</th><th>Description</th><th>Latitude</th><th>Longitude</th><th>UKC</th><th>ETA</th><th>Trafic dense</th></tr></thead><tbody>{form.locationOverlay.points.map(point => { const row = passagePlanCellData(point); return <tr key={point.id}><td>{row.waypoint}</td><td>{text(point.descriptionVhf)}</td><td>{row.latitude}</td><td>{row.longitude}</td><td>{row.ukc}</td><td>{row.eta}</td><td>{row.denseTraffic}</td></tr>; })}</tbody></table></>}
+        {form.locationOverlay.zones.map(zone => <section key={zone.id}><h3>{zone.name || 'Zone de travail'}</h3><p>{zone.vertices.map(formatSeaPosition).join(' · ') || 'Sommets à renseigner'}</p></section>)}
+      </section>}
       <section className="so-print-voyage-summary" aria-label="Récapitulatif du Passage Plan">
         <h3>Récapitulatif du Passage Plan</h3>
         <dl>

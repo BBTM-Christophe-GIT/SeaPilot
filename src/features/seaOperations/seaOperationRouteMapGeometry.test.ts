@@ -5,6 +5,13 @@ const point = (latitude: string, longitude: string, number = '') => ({ latitude,
 const allCoordinates = (map: ReturnType<typeof buildSeaOperationRouteMap>) => [...map.land.flat(), ...map.points, ...map.segments.flatMap(({ from, to }) => [from, to])];
 
 describe('Passage Plan situation map', () => {
+  it('frames additional locations without connecting them or changing the route ordinals', () => {
+    const route = [point('49', '-2'), point('49.2', '-1')];
+    const map = buildSeaOperationRouteMap(route, 900, 320, undefined, [{ latitude: 48, longitude: -4 }, { latitude: 50.5, longitude: 2 }]);
+    expect(map.points).toHaveLength(2); expect(map.segments).toHaveLength(1); expect(map.points.map(item => item.index)).toEqual([1, 2]);
+    const extrasOnly = buildSeaOperationRouteMap([], 900, 320, undefined, [{ latitude: 48, longitude: -4 }]);
+    expect(extrasOnly.projection).not.toBeNull(); expect(extrasOnly.points).toEqual([]); expect(extrasOnly.segments).toEqual([]); expect(extrasOnly.invalidCount).toBe(0);
+  });
   it('fits the Channel route north-up, keeps input order and includes a local coastline', () => {
     const map = buildSeaOperationRouteMap([point('48.38', '-4.49', 'Brest'), point('50.35', '-4.15', 'Plymouth'), point('49°39 N', '001°37.2 O', 'Cherbourg')]);
     expect(map.points.map(({ label, index }) => [label, index])).toEqual([['Brest', 1], ['Plymouth', 2], ['Cherbourg', 3]]);

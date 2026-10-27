@@ -40,6 +40,9 @@ import { captureSeaOperationValidationUkc, ukcRequestKey, type SeaOperationUkcRe
 import { updateSeaOperationRouteEtas } from './seaOperationRouteEta';
 import { seaOperationRouteArrivalEta } from './seaOperationVoyageSummary';
 import { captureSeaOperationWaypointDescriptions, seaOperationWaypointDescription } from './seaOperationWaypointDescription';
+import { copyProjectLocationToSeaOperation } from './seaOperationProjectLocation';
+import { ProjectLocationOverlayFields } from '../projects/ProjectLocationOverlayFields';
+import type { ProjectLocationOverlay } from '../projects/projectLocation';
 
 const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'];
 const STEP_DETAILS = ['Mission, client et voyage', 'Préparation et sécurité du navire', 'Cartes et points de route', 'GO / NO GO et signature'];
@@ -86,14 +89,14 @@ function AnswerControl({ label, value, onChange, id }: { label: string; value: A
 }
 
 /** A change of mission must never inherit the previous mission's safety approvals. */
-function draftForPlanningChoice(choice: SeaOperationPlanningChoice, date: string): SeaOperationPayload {
+function draftForPlanningChoice(choice: SeaOperationPlanningChoice, date: string, maxSpeedKnots?: number | null): SeaOperationPayload {
   const draft = newSeaOperation();
   const captain = choice.captains.length === 1 ? choice.captains[0] : null;
-  return { ...draft, planning: { date, operationId: choice.operationId, projectId: choice.projectId, captainPersonId: captain?.personId || '' },
+  return copyProjectLocationToSeaOperation({ ...draft, planning: { date, operationId: choice.operationId, projectId: choice.projectId, captainPersonId: captain?.personId || '' },
     project: choice.project, client: choice.client, clientContact: choice.clientContact, description: choice.description,
     vessel: { ...draft.vessel, ...choice.vessel, id: String(choice.vessel.id), captainName: captain?.name || '',
       ...(choice.vessel.weatherMatrix === undefined ? {} : { weatherMatrix: structuredClone(choice.vessel.weatherMatrix) }) },
-    signature: { ...draft.signature, captainName: captain?.name || '', place: choice.vessel.departurePort } };
+    signature: { ...draft.signature, captainName: captain?.name || '', place: choice.vessel.departurePort } }, choice.locationPlan, maxSpeedKnots);
 }
 
 function retainedPlanningLabel(draft: SeaOperationPayload): string {
@@ -280,7 +283,8 @@ export function SeaOperationsPage() {
       // A unique planned mission can be selected directly. Multiple missions always require a choice.
       if (allowAutomaticMission.current && editRevision.current === revision && !latestDraft.current.project && !latestDraft.current.planning?.operationId && result.choices.length === 1) {
         allowAutomaticMission.current = false;
-        const selected = draftForPlanningChoice(result.choices[0], result.choices[0].date);
+        const selected = draftForPlanningChoice(result.choices[0], result.choices[0].date,
+          data?.vessels.find(source => String(source.id) === result.choices[0].vessel.id)?.maxSpeedKnots);
         const vessel = data?.vessels.find((source) => String(source.id) === selected.vessel.id);
         setPlanningDate(result.choices[0].date);
         setDraft(captureVesselDraft(result.choices[0].vessel.weatherMatrix === undefined ? captureVesselMatrix(selected, vessel) : selected, vessel));
@@ -340,6 +344,27 @@ export function SeaOperationsPage() {
       && actionContext.current.account === mapAccount
       && current.draft.planning?.operationId === mapOperationId && current.draft.planning?.date === mapOperationDate && current.editing
       && current.editable && !current.signed && !current.busy && !current.exporting;
+  };
+  const updateLocationOverlay = (change: (overlay: ProjectLocationOverlay) => ProjectLocationOverlay) => {
+    if (!canEditMap() || !latestDraft.current.locationOverlay) return;
+    update(current => current.locationOverlay ? { locationOverlay: change(current.locationOverlay) } : {});
+  };
+  const validMapPosition = (position: SeaPosition) => Number.isFinite(position.latitude) && Number.isFinite(position.longitude)
+    && Math.abs(position.latitude) <= 90 && Math.abs(position.longitude) <= 180;
+  const moveIsolatedPoint = (id: string, position: SeaPosition) => {
+    if (!validMapPosition(position)) return;
+    updateLocationOverlay(overlay => ({ ...overlay, points: overlay.points.map(point => point.id === id
+      ? updateSeaOperationWaypoint(point, { latitude: String(Number(position.latitude.toFixed(6))), longitude: String(Number(position.longitude.toFixed(6))) }) : point) }));
+  };
+  const deleteIsolatedPoint = (id: string) => updateLocationOverlay(overlay => ({ ...overlay, points: overlay.points.filter(point => point.id !== id) }));
+  const moveZoneVertex = (zoneId: string, index: number, position: SeaPosition) => {
+    if (!Number.isInteger(index) || index < 0 || !validMapPosition(position)) return;
+    updateLocationOverlay(overlay => ({ ...overlay, zones: overlay.zones.map(zone => zone.id === zoneId
+      ? { ...zone, vertices: zone.vertices.map((vertex, vertexIndex) => vertexIndex === index ? { latitude: String(Number(position.latitude.toFixed(6))), longitude: String(Number(position.longitude.toFixed(6))) } : vertex) } : zone) }));
+  };
+  const deleteZoneVertex = (zoneId: string, index: number) => {
+    if (!Number.isInteger(index) || index < 0) return;
+    updateLocationOverlay(overlay => ({ ...overlay, zones: overlay.zones.map(zone => zone.id === zoneId ? { ...zone, vertices: zone.vertices.filter((_, vertexIndex) => vertexIndex !== index) } : zone) }));
   };
   const addWaypoint = (position?: SeaPosition, port?: { name: string; portKey?: string }) => {
     if (!canEditMap()) return;
@@ -442,7 +467,7 @@ export function SeaOperationsPage() {
     allowAutomaticMission.current = false;
     editRevision.current += 1;
     const choice = planning?.choices.find(item => seaOperationPlanningChoiceKey(item) === choiceKey);
-    const next = choice ? draftForPlanningChoice(choice, choice.date) : newSeaOperation();
+    const next = choice ? draftForPlanningChoice(choice, choice.date, data?.vessels.find(source => String(source.id) === choice.vessel.id)?.maxSpeedKnots) : newSeaOperation();
     const vessel = data?.vessels.find((source) => String(source.id) === next.vessel.id);
     if (choice) setPlanningDate(choice.date);
     setDraft(captureVesselDraft(choice?.vessel.weatherMatrix === undefined ? captureVesselMatrix(next, vessel) : next, vessel));
@@ -729,9 +754,12 @@ export function SeaOperationsPage() {
           <Field label="Tirant d’eau de référence (m)"><input type="number" readOnly value={referenceDraft ?? ''} /></Field>{referenceDraft == null && <p className="so-help">{signed ? 'Tirant d’eau de référence non enregistré dans cette version : indicateur UKC indisponible.' : 'Renseignez le tirant d’eau du navire dans le module Navires.'}</p>}
           <SeaOperationHydroSources />
           {step === 2 && (editable && !signed
-            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${draft.planning?.date || ''}:${draft.planning?.operationId || ''}`} waypoints={draft.waypoints} maxSpeedKnots={data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id)?.maxSpeedKnots} etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)} onAddWaypoint={addWaypoint} onMoveWaypoint={moveWaypoint} onDeleteWaypoint={removeWaypoint} disabled={busy || exporting} />
-            : <SeaOperationRouteMap waypoints={draft.waypoints} />)}
+            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${draft.planning?.date || ''}:${draft.planning?.operationId || ''}`} waypoints={draft.waypoints} isolatedPoints={draft.locationOverlay?.points} zones={draft.locationOverlay?.zones} onMoveIsolatedPoint={moveIsolatedPoint} onDeleteIsolatedPoint={deleteIsolatedPoint} onMoveZoneVertex={moveZoneVertex} onDeleteZoneVertex={deleteZoneVertex} maxSpeedKnots={data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id)?.maxSpeedKnots} etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)} onAddWaypoint={addWaypoint} onMoveWaypoint={moveWaypoint} onDeleteWaypoint={removeWaypoint} disabled={busy || exporting} />
+            : <SeaOperationRouteMap waypoints={draft.waypoints} isolatedPoints={draft.locationOverlay?.points} zones={draft.locationOverlay?.zones} />)}
           <Field label="Numéro de la ou des cartes marines"><input value={draft.charts} onChange={(event) => update({ charts: event.target.value })} /></Field>
+          {draft.locationOverlay && <ProjectLocationOverlayFields value={draft.locationOverlay} disabled={busy || exporting || signed || !editable}
+            vessel={{ id: draft.vessel.id, draftMeters: draft.vessel.draftMeters }} etd={draft.vessel.etd} projectId={draft.planning?.projectId}
+            onChange={value => { if (canEditMap()) update({ locationOverlay: value }); }} />}
           <h3>Points de passage</h3>
           <p className="so-help">Indicateur UKC selon le tirant d’eau de référence (TE) : rouge si UKC ≤ TE ; orange si TE &lt; UKC ≤ TE + 2 m ; vert si UKC &gt; TE + 2 m.</p>
           <div className="so-passage-grid" role="table" aria-label="Points de passage">

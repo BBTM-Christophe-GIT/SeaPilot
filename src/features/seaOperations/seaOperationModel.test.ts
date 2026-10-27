@@ -7,6 +7,29 @@ import {
 import type { SeaOperationCheckId } from './seaOperationModel';
 import { COPERNICUS_UKC_PRODUCTS, calculateSeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 
+describe('independent optional project overlay in sea operations', () => {
+  it('rejects extra overlay captures and keys just like the retained geometry SQL guard', () => {
+    const payload = emptySeaOperation();
+    const point = emptySeaOperationWaypoint('isolated');
+    for (const overlay of [
+      { version: 1, points: [], zones: [], weather: {} },
+      { version: 1, points: [{ ...point, radio: {} }], zones: [] },
+      { version: 1, points: [{ ...point, ukcForecast: {} }], zones: [] },
+    ]) expect(isSeaOperationPayload({ ...payload, locationOverlay: overlay })).toBe(false);
+  });
+  it('accepts historical absence and editable incomplete points/zones, but rejects malformed or colliding identities', () => {
+    const payload = emptySeaOperation(); expect(isSeaOperationPayload(payload)).toBe(true);
+    payload.locationOverlay = { version: 1, points: [{ ...emptySeaOperationWaypoint('point'), number: 'P1' }], zones: [{ id: 'zone', name: 'Travail', vertices: [{ latitude: '', longitude: '' }] }] };
+    expect(isSeaOperationPayload(payload)).toBe(true);
+    payload.waypoints = [{ ...emptySeaOperationWaypoint('point'), number: '1' }];
+    expect(isSeaOperationPayload(payload)).toBe(false);
+    payload.waypoints[0].id = 'route';
+    expect(isSeaOperationPayload(payload)).toBe(true);
+    expect(isSeaOperationPayload({ ...payload, locationOverlay: { ...payload.locationOverlay, version: 2 } })).toBe(false);
+    expect(isSeaOperationPayload({ ...payload, locationOverlay: null })).toBe(false);
+  });
+});
+
 function completePayload() {
   const payload = emptySeaOperation();
   Object.assign(payload, {

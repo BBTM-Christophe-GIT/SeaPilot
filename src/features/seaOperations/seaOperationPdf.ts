@@ -12,6 +12,8 @@ import { buildSeaOperationRouteMap } from './seaOperationRouteMapGeometry';
 import { assessSeaOperationUkc, isVesselDraftMeters, type SeaOperationUkcLevel } from './seaOperationUkc';
 import { seaOperationWaypointDescription } from './seaOperationWaypointDescription';
 import { seaOperationVoyageSummary } from './seaOperationVoyageSummary';
+import { drawProjectLocationMapPdf, projectLocationMapPositions } from '../projects/projectLocationPdf';
+import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates';
 
 export const SEA_OPERATION_WORD_TEMPLATE_URL = '/templates/sea-operation/word-header-footer.pdf';
 const PAGE_WIDTH = 595.32;
@@ -169,10 +171,17 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   if (isVesselDraftMeters(form.vessel.draftMeters)) paragraph('Seuils UKC : rouge jusqu’au tirant d’eau inclus ; orange au-delà et jusqu’à +2 m inclus ; vert au-delà de +2 m. Indicateur distinct de la décision du Capitaine.');
   paragraph('ETA : date et heure locale de Paris. Les fiches historiques peuvent conserver une heure seule.');
   paragraph('Positions WGS84 : degrés et minutes décimales, N/S et E/W (Ouest).');
-  const routeMap = buildSeaOperationRouteMap(form.waypoints, pageWidth() - LEFT - RIGHT, 190);
-  page(routeMap.points.length ? routeMap.height + 65 : 65);
+  const overlay = form.locationOverlay;
+  const extraPositions = overlay ? projectLocationMapPositions(overlay) : [];
+  const routeMap = buildSeaOperationRouteMap(form.waypoints, pageWidth() - LEFT - RIGHT, 190, undefined, extraPositions);
+  const hasMap = Boolean(routeMap.points.length || extraPositions.length);
+  page(hasMap ? routeMap.height + 65 : 65);
   heading('Carte du parcours', true);
-  if (routeMap.points.length) {
+  if (overlay && hasMap) {
+    drawProjectLocationMapPdf(document, { waypoints: form.waypoints, ...overlay }, { x: LEFT, y, width: routeMap.width, height: routeMap.height });
+    y += routeMap.height + 12;
+    paragraph('Fond : Natural Earth · Tracé indicatif. Points isolés et zones hors calcul de navigation.');
+  } else if (routeMap.points.length) {
     const mapY = y;
     const at = (point: { x: number; y: number }) => ({ x: LEFT + point.x, y: mapY + point.y });
     document.saveGraphicsState();
@@ -489,6 +498,29 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
       },
     });
   else paragraph('Aucun point de passage renseigné.');
+  if (overlay?.points.length) {
+    heading('Points isolés - hors calcul de navigation', true);
+    const points = overlay.points.map(point => passagePlanCellData(point, { payload: form, allowLiveRadio: !signed }));
+    table(points.map(point => [point.waypoint, point.description, point.latitude, point.longitude, point.ukc, point.eta, point.vhf, point.weather, point.denseTraffic === 'Oui' ? 'Trafic dense' : 'Non']),
+      ['Point', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA\nDate - Heure', 'Contacts VHF', 'Météo à l’ETA', 'Trafic dense'], undefined, true,
+      { didParseCell: cell => {
+        Object.assign(cell.cell.styles, { fontSize: 7, halign: 'center', valign: 'middle' });
+        if (cell.section === 'body' && points[cell.row.index]?.denseTraffic === 'Oui') {
+          cell.cell.styles.fillColor = [255, 250, 240];
+          if (cell.column.index === 8) { cell.cell.styles.minCellHeight = 40; cell.cell.styles.cellPadding = { top: 17, bottom: 4, left: 4, right: 4 }; }
+        }
+      }, didDrawCell: cell => {
+        if (cell.section !== 'body' || cell.column.index !== 8 || points[cell.row.index]?.denseTraffic !== 'Oui') return;
+        const x = cell.cell.x + cell.cell.width / 2, y = cell.cell.y + cell.cell.height / 2 - 9;
+        document.saveGraphicsState(); document.setDrawColor(138, 97, 0); document.setLineWidth(.6); document.ellipse(x, y, 5, 3, 'S');
+        document.setFillColor(138, 97, 0); document.circle(x, y, 1.2, 'F'); document.restoreGraphicsState();
+      } });
+  }
+  if (overlay?.zones.length) {
+    heading('Zones - hors calcul de navigation', true);
+    table(overlay.zones.flatMap((zone, index) => zone.vertices.length ? zone.vertices.map((vertex, vertexIndex) => [zone.name || `Zone ${index + 1}`, String(vertexIndex + 1), formatSeaLatitude(vertex.latitude) || 'À renseigner', formatSeaLongitude(vertex.longitude) || 'À renseigner']) : [[zone.name || `Zone ${index + 1}`, 'À compléter', '-', '-']]),
+      ['Zone', 'Sommet', 'Latitude', 'Longitude'], undefined, true, { didParseCell: cell => { Object.assign(cell.cell.styles, { halign: 'center', valign: 'middle' }); } });
+  }
   if (signed && passageRows.some((row) => row.observation?.status === 'recorded')) {
     heading('Mesures officielles après le passage', true);
     paragraph('Annexe ajoutée après la validation. Les mesures des stations proches ne modifient ni la prévision conservée, ni la décision du Capitaine.');

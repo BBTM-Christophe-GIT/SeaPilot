@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeProjectStatus, PROJECT_STATUSES } from './projectStatus';
 import { DEFAULT_PROJECT_FUEL_TERMS, DEFAULT_PROJECT_OWNER_IDENTITY } from './projectContractOptions';
+import { parseProjectLocationPlan, type ProjectLocationPlan } from './projectLocation';
 
 export interface ProjectMutationResult {
   id: number;
@@ -75,6 +76,7 @@ export interface ProjectWriteInput {
   redeliveryPort: string;
   contractType: string;
   operationArea: string;
+  locationPlan?: ProjectLocationPlan | null;
   isRovSupport: boolean;
   isDivingSupport: boolean;
   ownerIdentity: string;
@@ -132,6 +134,7 @@ export const EMPTY_PROJECT_WRITE_INPUT: ProjectWriteInput = {
   redeliveryPort: '',
   contractType: '',
   operationArea: '',
+  locationPlan: null,
   isRovSupport: false,
   isDivingSupport: false,
   ownerIdentity: DEFAULT_PROJECT_OWNER_IDENTITY,
@@ -172,6 +175,10 @@ function mutationError(error: { message?: string } | null, fallback: string): Er
 
 export function validateProjectWriteInput(input: ProjectWriteInput): string[] {
   const errors: string[] = [];
+  if (input.locationPlan !== undefined) {
+    try { parseProjectLocationPlan(input.locationPlan); }
+    catch (error) { errors.push(error instanceof Error ? error.message : 'La localisation du projet est invalide.'); }
+  }
   if (!input.title.trim()) errors.push('Le nom du projet est obligatoire.');
   if (input.startsOn && input.endsOn && input.endsOn < input.startsOn) {
     errors.push('La fin du projet ne peut pas précéder son début.');
@@ -253,7 +260,10 @@ export async function saveProject(client: SupabaseClient, input: ProjectWriteInp
     target_expected_updated_at: optionalText(input.expectedUpdatedAt),
   };
 
-  const { data, error } = await client.rpc('projects_save', args);
+  const locationPlan = input.locationPlan === undefined ? undefined : parseProjectLocationPlan(input.locationPlan);
+  const { data, error } = locationPlan === undefined
+    ? await client.rpc('projects_save', args)
+    : await client.rpc('projects_save_with_location', { ...args, target_location_plan: locationPlan });
 
   if (error) throw mutationError(error, "Impossible d’enregistrer le projet.");
   const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;

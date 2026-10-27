@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { emptyProjectLocationPlan } from './projectLocation';
 import {
   EMPTY_PROJECT_WRITE_INPUT,
   archiveClient,
@@ -19,6 +20,36 @@ import {
 } from './projectMutations';
 
 describe('projectMutations', () => {
+  it('saves a canonical location in the same RPC and returns the final microsecond concurrency token', async () => {
+    const locationPlan = emptyProjectLocationPlan();
+    locationPlan.waypoints = [{ id: 'wp', number: '1', descriptionVhf: '', latitude: '49° 39.000 N', longitude: '', eta: '', ukc: '', denseTraffic: true,
+      weather: { untrusted: true } as never }];
+    locationPlan.zones = [{ id: 'zone', name: 'Brouillon', vertices: [{ latitude: '', longitude: '' }] }];
+    const original = structuredClone(locationPlan);
+    const rpc = vi.fn().mockResolvedValue({ data: { id: 901, project_code: 'P1107', title: 'Projet localisé', updated_at: '2026-10-27T08:00:00.123456+00:00' }, error: null });
+    const result = await saveProject({ rpc } as never, { ...EMPTY_PROJECT_WRITE_INPUT, title: 'Projet localisé', locationPlan });
+    expect(result.updatedAt).toBe('2026-10-27T08:00:00.123456+00:00');
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('projects_save_with_location', expect.objectContaining({ target_location_plan: expect.objectContaining({ includeInPdf: false,
+      waypoints: [expect.objectContaining({ latitude: '49° 39.000 N', longitude: '', denseTraffic: true })], zones: locationPlan.zones }) }));
+    expect(rpc.mock.calls[0][1].target_location_plan.waypoints[0]).not.toHaveProperty('weather');
+    expect(locationPlan).toEqual(original);
+  });
+
+  it('keeps legacy callers on the original RPC while null explicitly clears a location through the atomic writer', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { id: 42, project_code: 'P42', title: 'Projet', updated_at: '2026-10-27T08:00:00Z' }, error: null });
+    const legacy = { ...EMPTY_PROJECT_WRITE_INPUT, title: 'Projet', projectId: 42, locationPlan: undefined };
+    await saveProject({ rpc } as never, legacy);
+    expect(rpc).toHaveBeenLastCalledWith('projects_save', expect.not.objectContaining({ target_location_plan: expect.anything() }));
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty('target_location_plan');
+    await saveProject({ rpc } as never, { ...legacy, locationPlan: null });
+    expect(rpc).toHaveBeenLastCalledWith('projects_save_with_location', expect.objectContaining({ target_location_plan: null }));
+  });
+
+  it('rejects malformed locations before any write', async () => {
+    const rpc = vi.fn();
+    await expect(saveProject({ rpc } as never, { ...EMPTY_PROJECT_WRITE_INPUT, title: 'Projet', locationPlan: { ...emptyProjectLocationPlan(), includeInPdf: 'yes' } as never })).rejects.toThrow('localisation');
+    expect(rpc).not.toHaveBeenCalled();
+  });
   it('reactivates and updates only a valid project status through controlled RPCs', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
     await reactivateProject({ rpc } as never, 880);
@@ -54,7 +85,7 @@ describe('projectMutations', () => {
 
     await saveProject({ rpc } as never, { ...EMPTY_PROJECT_WRITE_INPUT, title: 'Projet sans dates' });
 
-    expect(rpc).toHaveBeenCalledExactlyOnceWith('projects_save', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('projects_save_with_location', expect.objectContaining({
       target_starts_on: null,
       target_ends_on: null,
       target_delivery_at: null,
@@ -94,7 +125,7 @@ describe('projectMutations', () => {
 
     await expect(saveProject({ rpc } as never, input)).resolves.toMatchObject({ id: 901, projectCode: 'P1107' });
     expect(rpc).toHaveBeenCalledTimes(1);
-    expect(rpc).toHaveBeenCalledWith('projects_save', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('projects_save_with_location', expect.objectContaining({
       target_project_id: null,
       target_title: 'Projet concurrent',
       target_client_id: 50,
@@ -119,7 +150,7 @@ describe('projectMutations', () => {
       title: 'ETPO FORT BOYARD',
     });
 
-    expect(rpc).toHaveBeenCalledWith('projects_save', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('projects_save_with_location', expect.objectContaining({
       target_expected_updated_at: expectedUpdatedAt,
     }));
   });

@@ -70,6 +70,20 @@ function voyageFixture(): SeaOperationRecord {
   return record;
 }
 
+it('preserves imported isolated points and zones in the PDF without connecting them to the route', async () => {
+  const record = voyageFixture();
+  record.draft.locationOverlay = { version: 1,
+    points: [{ ...record.draft.waypoints[0], id: 'isole', descriptionVhf: 'POINT-ISOLE', latitude: '48.5', longitude: '-4', ukc: '6' }],
+    zones: [{ id: 'zone-projet', name: 'ZONE-PROJET', vertices: [{ latitude: '49', longitude: '-3' }, { latitude: '49.1', longitude: '-3.1' }, { latitude: '49.05', longitude: '-3.2' }] }],
+  };
+  const original = structuredClone(record.draft);
+  const output = await generateSeaOperationPdf(record, { templateBytes: await template() });
+  const bodies = (await landscapeBodies(output.bytes)).join('\n');
+  expect(bodies).toContain('POINT-ISOLE'); expect(bodies).toContain('ZONE-PROJET');
+  expect(bodies).toContain('hors calcul de navigation');
+  expect(record.draft).toEqual(original);
+});
+
 async function landscapeBodies(bytes: Uint8Array): Promise<string[]> {
   const document = await PDFDocument.load(bytes);
   return document.getPages().filter((page) => page.getWidth() > page.getHeight()).map((page) => {

@@ -19,6 +19,22 @@ function recordedObservation(): ObservationResult {
 }
 
 describe('Opération en Mer printable content', () => {
+  it('prints the retained isolated points and zones independently from the route', () => {
+    const draft = emptySeaOperation();
+    draft.locationOverlay = { version: 1, points: [{ id: 'isolated', number: 'P1', descriptionVhf: 'Balise isolée', latitude: '49.65', longitude: '-1.62', ukc: '3', eta: '2026-10-27T12:07', denseTraffic: true }],
+      zones: [{ id: 'zone', name: 'Zone conservée', vertices: [{ latitude: '49.65', longitude: '-1.62' }] }] };
+    const record: SeaOperationRecord = { id: 'location-print', companyId: 1, version: 1, status: 'signed', draft,
+      createdBy: 'author', createdByName: 'Auteur', createdAt: '2026-10-27T08:00:00Z', updatedBy: 'author', updatedByName: 'Auteur', updatedAt: '2026-10-27T09:00:00Z',
+      signedBy: 'captain', signedByName: 'Capitaine', signedAt: '2026-10-27T09:00:00Z', captainName: 'Capitaine', canEdit: false, canSign: false };
+    const original = structuredClone(record), { container } = render(<SeaOperationPrint record={record} />);
+    const location = within(container.querySelector('[aria-label="Localisation de la mission"]')!);
+    expect(location.getByRole('heading', { name: 'Zone conservée' })).toBeInTheDocument();
+    expect(location.getByRole('cell', { name: 'Balise isolée' })).toBeInTheDocument();
+    expect(location.getByRole('cell', { name: '49° 39.000′ N' })).toBeInTheDocument();
+    expect(location.getByRole('cell', { name: '001° 37.200′ W' })).toBeInTheDocument();
+    expect(container.querySelector('.so-print-passage')).toBeNull(); expect(record).toEqual(original);
+  });
+
   it('centres all nine Passage Plan cells and marks only retained dense-traffic rows with accessible vigilance', () => {
     const draft = emptySeaOperation(); draft.vessel.draftMeters = 2;
     draft.waypoints = [

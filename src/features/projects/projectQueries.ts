@@ -4,6 +4,7 @@ import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { normalizeProjectStatus } from './projectStatus';
 import { projectDescriptionToPlainText } from './projectDescription';
 import { PROJECT_DOCUMENT_TYPES } from './projectDocumentTypes';
+import { parseProjectLocationPlan, type ProjectLocationPlan } from './projectLocation';
 
 const READ_PAGE_SIZE = 500;
 const PROJECT_LEVEL_DOCUMENT_TYPES = new Set(['project_attachment', ...PROJECT_DOCUMENT_TYPES.map((type) => type.kind)]);
@@ -31,6 +32,7 @@ const PROJECT_SELECT = [
   'redelivery_port',
   'contract_type',
   'operation_area',
+  'location_plan',
   'is_rov_support',
   'is_diving_support',
   'status',
@@ -65,6 +67,8 @@ const VESSEL_SELECT = [
   'fleet_exit_on',
   'sharepoint_item_id',
   'length_overall',
+  'draft_m',
+  'max_speed_knots',
   'bollard_pull_tonnes',
   'deck_equipment',
   'main_engine',
@@ -189,6 +193,7 @@ interface ProjectRow {
   redelivery_port: string | null;
   contract_type: string | null;
   operation_area: string | null;
+  location_plan?: unknown;
   is_rov_support: boolean | null;
   is_diving_support: boolean | null;
   status: string | null;
@@ -238,6 +243,8 @@ interface VesselRow {
   fleet_exit_on: string | null;
   sharepoint_item_id: string | null;
   length_overall: string | null;
+  draft_m?: number | string | null;
+  max_speed_knots?: number | string | null;
   bollard_pull_tonnes: number | string | null;
   deck_equipment: string | null;
   main_engine: string | null;
@@ -377,6 +384,7 @@ export interface ProjectRecord {
   redeliveryPort: string;
   contractType: string;
   operationArea: string;
+  locationPlan?: ProjectLocationPlan | null;
   isRovSupport: boolean;
   isDivingSupport: boolean;
   status: string;
@@ -533,6 +541,8 @@ export interface VesselRecord {
   fleetExitOn: string;
   sharePointItemId: string;
   lengthOverall?: string;
+  draftMeters?: number | null;
+  maxSpeedKnots?: number | null;
   bollardPullTonnes?: number | null;
   deckEquipment?: string;
   mainEngine?: string;
@@ -645,6 +655,12 @@ function nullableNumber(value: string | number | null | undefined): number | nul
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
+function positiveVesselReference(value: unknown): number | null {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  const amount = nullableNumber(value);
+  return amount !== null && amount > 0 ? amount : null;
+}
+
 function mapSupplytimeData(value: unknown): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
@@ -723,6 +739,7 @@ export function mapProjectRows(rows: ProjectRow[]): ProjectRecord[] {
     redeliveryPort: nullableText(row.redelivery_port),
     contractType: nullableText(row.contract_type),
     operationArea: nullableText(row.operation_area),
+    locationPlan: parseProjectLocationPlan(row.location_plan),
     isRovSupport: row.is_rov_support ?? false,
     isDivingSupport: row.is_diving_support ?? false,
     status: normalizeProjectStatus(row.status),
@@ -818,6 +835,8 @@ export function mapVesselRows(rows: VesselRow[]): VesselRecord[] {
     assetKind: row.asset_kind || 'vessel',
     sharePointItemId: nullableText(row.sharepoint_item_id),
     lengthOverall: nullableText(row.length_overall),
+    draftMeters: positiveVesselReference(row.draft_m),
+    maxSpeedKnots: positiveVesselReference(row.max_speed_knots),
     bollardPullTonnes: nullableNumber(row.bollard_pull_tonnes),
     deckEquipment: nullableText(row.deck_equipment),
     mainEngine: nullableText(row.main_engine),
