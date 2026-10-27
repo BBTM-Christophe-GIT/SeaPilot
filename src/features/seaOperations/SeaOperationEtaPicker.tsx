@@ -44,6 +44,8 @@ export function SeaOperationEtaPicker({ value, onChange, label, disabled = false
   const [month, setMonth] = useState(() => monthOf(inline ? readEta(value)?.date || seaOperationToday() : seaOperationToday()));
   const [focusDate, setFocusDate] = useState(() => inline ? readEta(value)?.date || seaOperationToday() : seaOperationToday());
   const [error, setError] = useState('');
+  const selection = useRef({ date: selectedDate, time });
+  selection.current = { date: selectedDate, time };
   const current = readEta(value);
   const selectedMinute = time.split(':')[1] || '';
   const legacyMinute = selectedMinute && selectedMinute === current?.time.slice(3) && !minutes.includes(selectedMinute) ? selectedMinute : null;
@@ -54,6 +56,7 @@ export function SeaOperationEtaPicker({ value, onChange, label, disabled = false
     if (inline) {
       const initial = readEta(value), initialFocus = initial?.date || seaOperationToday();
       source.current = value; pendingFocus.current = false;
+      selection.current = { date: initial?.date || '', time: initial?.time || '' };
       setSelectedDate(initial?.date || ''); setTime(initial?.time || '');
       setMonth(monthOf(initialFocus)); setFocusDate(initialFocus); setError('');
       return;
@@ -80,16 +83,25 @@ export function SeaOperationEtaPicker({ value, onChange, label, disabled = false
     if (!canEdit() || openRef.current) return;
     const initial = readEta(value), initialFocus = initial?.date || seaOperationToday();
     source.current = value;
+    selection.current = { date: initial?.date || '', time: initial?.time || '' };
     setSelectedDate(initial?.date || ''); setTime(initial?.time || '');
     setMonth(monthOf(initialFocus)); setFocusDate(initialFocus); setError('');
     pendingFocus.current = true; openRef.current = true; setOpen(true);
   }
-  function choose(date: string) { if (canEdit()) { setSelectedDate(date); setFocusDate(date); setError(''); } }
+  function choose(date: string) {
+    if (!canEdit()) return;
+    selection.current.date = date;
+    setSelectedDate(date); setFocusDate(date); setError('');
+    if (inline) publish(date, selection.current.time);
+  }
   function changeTimePart(part: 0 | 1, value: string) {
     if (!canEdit()) return;
-    const parts = time.split(':');
+    const parts = selection.current.time.split(':');
     parts[part] = value;
-    setTime(`${parts[0] || ''}:${parts[1] || ''}`); setError('');
+    const next = `${parts[0] || ''}:${parts[1] || ''}`;
+    selection.current.time = next;
+    setTime(next); setError('');
+    if (inline) publish(selection.current.date, next);
   }
   function moveFocus(date: string) {
     if (!canEdit() || !validDate(date)) return;
@@ -111,18 +123,27 @@ export function SeaOperationEtaPicker({ value, onChange, label, disabled = false
     else if (event.key === 'PageDown') next = shiftPlanningMonths(date, 1);
     if (next) { event.preventDefault(); event.stopPropagation(); moveFocus(next); }
   }
-  function apply() {
-    if (!canEdit() || !validDate(selectedDate) || !timePattern.test(time)) return;
+  function publish(date: string, selectedTime: string) {
+    if (!canEdit() || !validDate(date) || !timePattern.test(selectedTime)) return;
     const original = readEta(source.current);
-    if (original?.date === selectedDate && original.time === time) { close(); return; }
-    const next = `${selectedDate}T${time}`;
+    if (original?.date === date && original.time === selectedTime) { if (!inline) close(); return; }
+    const next = `${date}T${selectedTime}`;
     try { seaOperationEtaUtc(next); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Choisissez une date et une heure de Paris valides.'); return; }
+    if (inline) source.current = next;
     onChange(next); if (!inline) close();
+  }
+  function clear() {
+    if (!canEdit()) return;
+    const hasValue = Boolean(source.current); source.current = '';
+    selection.current = { date: '', time: '' };
+    setSelectedDate(''); setTime(''); setError('');
+    if (hasValue) onChange('');
+    if (!inline) close();
   }
 
   return <div className={`so-eta-picker${inline ? ' is-inline' : ''}`} ref={wrapper} onKeyDownCapture={(event) => {
-    if (event.key === 'Escape' && (inline || openRef.current || event.repeat)) { event.preventDefault(); event.stopPropagation(); if (!event.repeat && canEdit()) close(); }
+    if (event.key === 'Escape' && (inline || openRef.current || event.repeat)) { event.preventDefault(); event.stopPropagation(); if (!inline && !event.repeat && canEdit()) close(); }
     else if ((inline || openRef.current) && event.key === 'Enter' && (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement)) { event.preventDefault(); event.stopPropagation(); }
   }}>
     {!inline && <button type="button" className="sp-button sp-button--secondary so-eta-trigger" ref={trigger} aria-label={label} aria-haspopup="dialog" aria-expanded={open && !disabled} aria-controls={open && !disabled ? panelId : undefined} disabled={disabled} onClick={() => open ? close() : show()} onKeyDown={(event) => {
@@ -137,10 +158,10 @@ export function SeaOperationEtaPicker({ value, onChange, label, disabled = false
       <div className="so-eta-controls">{inline ? <div className="so-eta-time" role="group" aria-label="Heure de l’ETA (Paris)"><span><Clock3 size={14} aria-hidden="true" />Heure (Paris)</span>
         <div className="so-eta-time-parts"><select ref={hourSelect} aria-label="Heures de l’ETA (Paris)" disabled={disabled} value={time.split(':')[0] || ''} onChange={event => changeTimePart(0, event.target.value)}><option value="">HH</option>{hours.map(hour => <option value={hour} key={hour}>{hour}</option>)}</select><span aria-hidden="true">:</span>
         <select aria-label="Minutes de l’ETA (Paris)" disabled={disabled} value={selectedMinute} onChange={event => changeTimePart(1, event.target.value)}><option value="">mm</option>{minuteOptions.map(minute => <option value={minute} key={minute}>{minute === legacyMinute ? `${minute} (actuelle)` : minute}</option>)}</select></div>
-      </div> : <label className="so-eta-time"><span><Clock3 size={15} aria-hidden="true" />Heure de l’ETA (Paris)</span><input ref={timeInput} disabled={disabled} type="time" step={300} value={time} onChange={(event) => { if (canEdit()) { setTime(event.target.value); setError(''); } }} /></label>}
+      </div> : <label className="so-eta-time"><span><Clock3 size={15} aria-hidden="true" />Heure de l’ETA (Paris)</span><input ref={timeInput} disabled={disabled} type="time" step={300} value={time} onChange={(event) => { if (canEdit()) { selection.current.time = event.target.value; setTime(event.target.value); setError(''); } }} /></label>}
       <p className="so-eta-help" id={helpId}>{inline ? 'Date et heure locale · Europe/Paris' : 'Sélectionnez une date et une heure. Heure locale Europe/Paris.'}</p>
       {error && <p className="so-eta-error" role="alert">{error}</p>}
-      <footer className="so-eta-actions"><button type="button" className="sp-button sp-button--secondary so-eta-quiet-action" disabled={disabled || !value} onClick={() => { if (canEdit()) { onChange(''); close(); } }}>Effacer</button><button type="button" className="sp-button sp-button--secondary so-eta-quiet-action" disabled={disabled} onClick={() => { if (canEdit()) close(); }}>Annuler</button><button type="button" className="sp-button sp-button--primary" disabled={disabled || !selectedDate || !timePattern.test(time)} onClick={apply}>Appliquer</button></footer></div>
+      {(!inline || source.current || selectedDate || time) && <footer className="so-eta-actions"><button type="button" className="sp-button sp-button--secondary so-eta-quiet-action" disabled={disabled || !source.current && !selectedDate && !time} onClick={clear}>Effacer</button>{!inline && <><button type="button" className="sp-button sp-button--secondary so-eta-quiet-action" disabled={disabled} onClick={() => { if (canEdit()) close(); }}>Annuler</button><button type="button" className="sp-button sp-button--primary" disabled={disabled || !selectedDate || !timePattern.test(time)} onClick={() => publish(selection.current.date, selection.current.time)}>Appliquer</button></>}</footer>}</div>
     </div>}
   </div>;
 }

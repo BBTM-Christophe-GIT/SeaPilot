@@ -3,7 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'rea
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import { buildSeaOperationRouteMap, type RouteMapViewport, type SeaOperationRouteMapGeometry } from './seaOperationRouteMapGeometry';
 import { seaOperationMapPlaces, type SeaOperationMapPort } from './seaOperationMapPlaces';
-import { seaWaypointPosition } from './seaOperationNavigation';
+import { seaWaypointPosition, type SeaPosition } from './seaOperationNavigation';
 import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates';
 import { formatProjectPort } from '../projects/projectPorts';
 import { buildSeaOperationRouteLegs, seaOperationVoyageTiming } from './seaOperationRouteLegs';
@@ -52,7 +52,7 @@ function routeLegLabels(geometry: SeaOperationRouteMapGeometry, legs: ReturnType
 }
 
 /** Local situation map; placement is supplied explicitly by the editing wrapper. */
-export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onGeometry, renderOverlay, fillAvailableSpace = false, showPlaces = false, showWaypointCoordinates = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta }: {
+export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onGeometry, renderOverlay, fillAvailableSpace = false, showPlaces = false, showWaypointCoordinates = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint }: {
   waypoints: readonly SeaOperationWaypoint[]; compact?: boolean;
   viewport?: RouteMapViewport;
   onGeometry?: (geometry: SeaOperationRouteMapGeometry) => void;
@@ -65,6 +65,8 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
   maxSpeedKnots?: number | null;
   etd?: string;
   eta?: string;
+  /** Visual drag preview only; totals, labels and layout retain the controlled route until release. */
+  previewWaypoint?: { id: string; position: SeaPosition } | null;
 }) {
   const titleId = useId();
   const descriptionId = useId();
@@ -75,16 +77,20 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
   const filling = fillAvailableSpace && !compact;
   const width = filling ? size.width : Math.max(280, Math.min(900, Math.round(size.width)));
   const height = compact ? 220 : filling ? size.height : width < 600 ? 280 : 320;
-  const geometry = useMemo(() => buildSeaOperationRouteMap(waypoints, width, height, compact ? undefined : viewport), [waypoints, width, height, compact, viewport]);
+  const recordedGeometry = useMemo(() => buildSeaOperationRouteMap(waypoints, width, height, compact ? undefined : viewport), [waypoints, width, height, compact, viewport]);
+  const visualWaypoints = useMemo(() => !compact && previewWaypoint ? waypoints.map(point => point.id === previewWaypoint.id
+    ? { ...point, latitude: String(previewWaypoint.position.latitude), longitude: String(previewWaypoint.position.longitude) } : point) : waypoints, [compact, previewWaypoint, waypoints]);
+  const geometry = useMemo(() => visualWaypoints === waypoints ? recordedGeometry
+    : buildSeaOperationRouteMap(visualWaypoints, width, height, viewport ?? recordedGeometry.viewport ?? undefined), [visualWaypoints, waypoints, recordedGeometry, width, height, viewport]);
   const groups = useMemo(() => groupCoincidentPoints(geometry.points), [geometry.points]);
-  const places = useMemo(() => showPlaces && !compact ? seaOperationMapPlaces(geometry) : null, [showPlaces, compact, geometry]);
+  const places = useMemo(() => showPlaces && !compact ? seaOperationMapPlaces(recordedGeometry) : null, [showPlaces, compact, recordedGeometry]);
   const route = useMemo(() => showRouteLegs && !compact ? buildSeaOperationRouteLegs(waypoints, maxSpeedKnots) : null, [showRouteLegs, compact, waypoints, maxSpeedKnots]);
-  const legLabels = useMemo(() => route ? routeLegLabels(geometry, route.legs, places) : [], [geometry, route, places]);
+  const legLabels = useMemo(() => route ? routeLegLabels(recordedGeometry, route.legs, places) : [], [recordedGeometry, route, places]);
   const voyage = route ? seaOperationVoyageTiming(etd, route.totalDurationMinutes, eta) : null;
   const showLegList = Boolean(route && route.legs.length > 0 && (geometry.width < 600 || legLabels.length < route.legs.length));
   const countLabel = `${geometry.points.length} point${geometry.points.length === 1 ? '' : 's'} géolocalisé${geometry.points.length === 1 ? '' : 's'}`;
 
-  useEffect(() => { onGeometry?.(geometry); }, [geometry, onGeometry]);
+  useEffect(() => { onGeometry?.(recordedGeometry); }, [recordedGeometry, onGeometry]);
 
   useEffect(() => {
     if (!frame.current || typeof ResizeObserver === 'undefined') return;
@@ -143,7 +149,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
             const markerWidth = Math.max(26, Math.min(110, ordinals.length * 7 + 14));
             const label = group.points.length === 1 && first.label !== String(first.index) ? first.label : '';
             const alignEnd = group.x > geometry.width * .7;
-            const position = showWaypointCoordinates && !compact ? seaWaypointPosition(waypoints[first.index - 1]) : null;
+            const position = showWaypointCoordinates && !compact ? seaWaypointPosition(visualWaypoints[first.index - 1]) : null;
             const coordinateX = Math.max(60 - group.x, Math.min(geometry.width - group.x - 60, 0));
             const coordinateY = Math.min(21, geometry.height - group.y - 16);
             return <g className={`so-route-map-point${isStart ? ' is-start' : ''}${isEnd ? ' is-end' : ''}`} data-point-indices={allOrdinals} key={`${group.x}:${group.y}`} transform={`translate(${group.x} ${group.y})`}>
@@ -172,7 +178,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
     {places && geometry.projection && <details className="so-route-map-places"><summary>Ports dans cette région · {places.ports.length}</summary>
       <div className="so-route-map-port-list">
         <p>Catalogue partagé avec Projets. Points de référence indicatifs : ni entrées de port ni positions de quai.</p>
-        <ul aria-label="Ports du catalogue dans le cadre affiché">{places.ports.map(item => <li key={item.key}><i className="so-route-map-port-list-dot" aria-hidden="true" />{onPortSelect ? <button type="button" className="sp-button sp-button--secondary so-route-map-port-choice" aria-label={`Choisir le port ${formatProjectPort(item.port)}`} onClick={() => onPortSelect([item])}><span>{formatProjectPort(item.port)}<small>{item.location.source === 'sandre' ? 'Point publié SANDRE/SHOM' : 'Repère NGA World Port Index · position indicative'}</small></span></button> : <span>{formatProjectPort(item.port)}<small>{item.location.source === 'sandre' ? 'Point publié SANDRE/SHOM' : 'Repère NGA World Port Index · position indicative'}</small></span>}</li>)}</ul>
+        <ul aria-label="Ports du catalogue dans le cadre affiché">{places.ports.map(item => <li key={item.key}><i className="so-route-map-port-list-dot" aria-hidden="true" />{onPortSelect ? <button type="button" className="sp-button sp-button--secondary so-route-map-port-choice" aria-label={`Ajouter le port ${formatProjectPort(item.port)} comme waypoint`} onClick={() => onPortSelect([item])}><span>{formatProjectPort(item.port)}<small>{item.location.source === 'sandre' ? 'Point publié SANDRE/SHOM' : 'Repère NGA World Port Index · position indicative'}</small></span></button> : <span>{formatProjectPort(item.port)}<small>{item.location.source === 'sandre' ? 'Point publié SANDRE/SHOM' : 'Repère NGA World Port Index · position indicative'}</small></span>}</li>)}</ul>
         {places.ports.length === 0 && <p>Aucun port géoréférencé du catalogue dans ce cadre.</p>}
         {places.relatedPorts.length > 0 && <><p>Rattachements statistiques aux ports visibles · {places.relatedPorts.length}. Leur position propre n’est pas disponible ; ils ne sont pas placés sur la carte.</p>
           <ul aria-label="Ports rattachés sans position propre">{places.relatedPorts.map(item => <li key={item.key}><span>{formatProjectPort(item.port)}<small>Rattachement à {item.port.locodePort || item.parent.name} · position propre non disponible</small></span></li>)}</ul></>}

@@ -114,9 +114,11 @@ describe('Planning P1.3 exports', () => {
     });
     const content = await result.blob.text();
     expect(content.match(/BEGIN:VEVENT/g)).toHaveLength(2);
-    expect(content).toContain('DTSTART:20261024T060000Z\r\nDTEND:20261024T180000Z');
-    expect(content).toContain('DTSTART:20261026T070000Z\r\nDTEND:20261026T190000Z');
-    expect(content).not.toMatch(/20261025|20261027/);
+    // DTSTAMP legitimately uses today's date; only the event intervals are clipped.
+    expect(content.split('\r\n').filter(line => /^(?:DTSTART|DTEND):/.test(line))).toEqual([
+      'DTSTART:20261024T060000Z', 'DTEND:20261024T180000Z',
+      'DTSTART:20261026T070000Z', 'DTEND:20261026T190000Z',
+    ]);
   });
 
   it('adds the sailor export and applies sailor and vessel filters', async () => {

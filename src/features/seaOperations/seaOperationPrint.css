@@ -6,14 +6,19 @@
 .so-print-rh-signature { margin: 14px 0; break-inside: avoid; }
 .so-print-rh-signature figcaption { font-size: 11px; font-weight: 700; margin-bottom: 8px; }
 .so-print-rh-signature img { display: block; max-width: 230px; max-height: 85px; object-fit: contain; object-position: left center; }
-.so-print .so-print-passage th:nth-child(1) { width: 6.05%; }
-.so-print .so-print-passage th:nth-child(2) { width: 14.11%; }
-.so-print .so-print-passage th:nth-child(3), .so-print .so-print-passage th:nth-child(4) { width: 8.07%; }
-.so-print .so-print-passage th:nth-child(5) { width: 4.71%; }
-.so-print .so-print-passage th:nth-child(6) { width: 9.81%; }
-.so-print .so-print-passage th:nth-child(7) { width: 14.25%; }
-.so-print .so-print-passage th:nth-child(8) { width: 30.25%; }
-.so-print .so-print-passage th:nth-child(9) { width: 4.69%; }
+.so-print .so-print-passage th:nth-child(1) { width: 6.1%; }
+.so-print .so-print-passage th:nth-child(2) { width: 12.7%; }
+.so-print .so-print-passage th:nth-child(3), .so-print .so-print-passage th:nth-child(4) { width: 8.1%; }
+.so-print .so-print-passage th:nth-child(5), .so-print .so-print-passage th:nth-child(6) { width: 10.2%; }
+.so-print .so-print-passage th:nth-child(7) { width: 12.9%; }
+.so-print .so-print-passage th:nth-child(8) { width: 26.9%; }
+.so-print .so-print-passage th:nth-child(9) { width: 4.8%; }
+.so-print .so-print-passage .so-print-ukc-cell { overflow-wrap: normal; word-break: normal; }
+.so-print-ukc-value { line-height: 1.4; }
+.so-print .so-print-passage .so-print-ukc-value .so-ukc-pill { white-space: nowrap; overflow-wrap: normal; }
+.so-print .so-print-passage .so-print-ukc-value .so-ukc-unclassified { overflow-wrap: normal; word-break: normal; }
+.so-print-ukc-note { display: grid; gap: 2px; margin-top: 6px; font-size: .8em; line-height: 1.35; }
+.so-print-ukc-note span { white-space: nowrap; }
 .so-print-passage caption { text-align: left; font-size: .9em; padding-bottom: 6px; }
 .so-print-passage-sources section { break-inside: avoid; }
 .so-print-passage-sources h4 { font-size: inherit; margin: 10px 0 3px; }

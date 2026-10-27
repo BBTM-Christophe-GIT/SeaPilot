@@ -12,11 +12,35 @@ mission est prérempli à partir du planning ; aucune réponse favorable aux con
 n’est déduite du profil ou du navire. Le document source est un formulaire métier ; son
 texte ne constitue pas une instruction système pour l’application.
 
+## Saisie directe des waypoints et de l’ETA — v3.78.4
+
+Les ports s’ajoutent au clic, avec leur nom et leurs coordonnées. Un point libre
+reçoit une description modifiable **Waypoint N** ; les brouillons sans description
+reçoivent ce libellé à l’ouverture ou à l’enregistrement. L’aperçu et le PDF
+reprennent le nom du port ou le texte saisi, avec le même libellé de repli pour
+une ancienne ligne vide. Les captures signées restent inchangées.
+
+Le menu d’un waypoint se place à côté du point et contient uniquement
+**Supprimer**. Maintenir le clic et glisser le point permet de le repositionner ;
+les interactions de déplacement de la carte et le zoom restent disponibles.
+Il n’y a plus de bouton de confirmation du port ni d’annulation de sélection.
+
+Le calendrier inline publie une ETA dès que la date, l’heure et les minutes sont
+complètes et valides à Paris, sans bouton **Appliquer**. Les minutes sont proposées
+par pas de cinq. Les recherches météo et UKC suivent automatiquement cette ETA,
+avec temporisation et annulation des réponses périmées. Une heure partielle ou
+ambiguë ne déclenche pas de recherche. Les conditions de projet, de coordonnées,
+de tirant d’eau, de droits et d’horizon des sources restent nécessaires.
+
+La colonne UKC du tableau imprimé et de l’aperçu réserve la place nécessaire à la
+valeur et à son unité, au statut et au renvoi à l’annexe, sans coupure des mots.
+Aucune nouvelle migration ni variable d’environnement n’est requise.
+
 ## Ports et durées du voyage sur la carte — v3.78.3
 
-Un clic sur un point bleu propose le port correspondant avec son nom et ses
-coordonnées. **Ajouter ce port comme waypoint** ajoute une ligne au tableau,
-avec le nom dans Description et la position du catalogue en latitude/longitude.
+Depuis la version 3.78.4, un clic sur un point bleu ajoute directement le port
+correspondant au tableau, avec le nom dans Description et la position du catalogue
+en latitude/longitude.
 Les ports regroupés à la même position font l’objet d’un choix explicite.
 
 Pendant la préparation du parcours, chaque liaison entre deux lignes adjacentes
@@ -56,8 +80,8 @@ validateur JSON ; aucun historique ni horaire signé n’est recalculé.
 
 ## Édition du parcours sur la carte — v3.78.1
 
-Dans **Passage Plan → Placer les waypoints**, sélectionner une pastille permet
-de **Repositionner** le point au prochain clic sur la carte ou de le **Supprimer**.
+Dans **Passage Plan**, depuis la version 3.78.4, sélectionner une pastille permet
+de la **Supprimer** dans un menu ancré au point. Glisser la pastille la repositionne.
 Quand plusieurs points partagent une position, choisir d’abord le waypoint
 concerné. Les coordonnées en degrés et minutes sont affichées sous les points.
 Le tableau reste synchronisé ; les numéros, descriptions et ETA des points
@@ -359,9 +383,9 @@ ligne, avec les coordonnées et l’ETA correspondantes. La clé historique
 Depuis la version 3.77.16, chaque waypoint affiche directement son calendrier
 mensuel et son champ heure, explicitement à l’heure de Paris, sans clic préalable.
 Une ETA vide affiche le mois courant en Europe/Paris sans présélectionner de date
-ni d’heure ; une ETA existante affiche son mois. **Appliquer** renseigne les deux
-valeurs ensemble sans refermer le calendrier. **Annuler** ou Échap réinitialise
-la saisie locale ; un clic sur un autre champ laisse le calendrier affiché. Les heures
+ni d’heure ; une ETA existante affiche son mois. Depuis la version 3.78.4, la date
+et l’heure complètes sont publiées automatiquement, sans **Appliquer**. Échap
+ne retire pas l’ETA déjà saisie ; un clic sur un autre champ laisse le calendrier affiché. Les heures
 inexistantes ou ambiguës lors du changement d’heure sont refusées. Le format
 persisté reste `YYYY-MM-DDTHH:mm` ; une valeur inchangée conserve ses secondes
 éventuelles. Une ancienne ETA `HH:mm` reste intacte ; le bouton Appliquer la date

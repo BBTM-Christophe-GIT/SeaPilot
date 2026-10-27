@@ -10,6 +10,7 @@ import { waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 import { seaOperationWeatherLocation } from './seaOperationWeatherLocation';
 import { buildSeaOperationRouteMap } from './seaOperationRouteMapGeometry';
 import { assessSeaOperationUkc, isVesselDraftMeters, type SeaOperationUkcLevel } from './seaOperationUkc';
+import { seaOperationWaypointDescription } from './seaOperationWaypointDescription';
 
 export const SEA_OPERATION_WORD_TEMPLATE_URL = '/templates/sea-operation/word-header-footer.pdf';
 const PAGE_WIDTH = 595.32;
@@ -256,28 +257,30 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     paragraph('Fond : Natural Earth · Tracé indicatif. Repères numérotés dans l’ordre du tableau ; les positions identiques regroupent leurs numéros.');
   } else paragraph('Aucun waypoint avec une latitude et une longitude valides à placer sur la carte.');
   if (routeMap.invalidCount) paragraph(`${routeMap.invalidCount} waypoint${routeMap.invalidCount > 1 ? 's' : ''} non placé${routeMap.invalidCount > 1 ? 's' : ''} : coordonnées absentes ou invalides. Le tracé est interrompu à ces positions.`);
-  const passageRows = form.waypoints.map((point) => passagePlanCellData(point, { payload: form, allowLiveRadio: !signed, weatherMatrix: form.vessel.weatherMatrix, observations: record.weatherObservations, includeObservations: signed, validatedAt: signed ? record.signedAt : undefined }));
+  const passageRows = form.waypoints.map((point, index) => ({ ...passagePlanCellData(point, { payload: form, allowLiveRadio: !signed, weatherMatrix: form.vessel.weatherMatrix, observations: record.weatherObservations, includeObservations: signed, validatedAt: signed ? record.signedAt : undefined }), description: seaOperationWaypointDescription(point, index) }));
   if (passageRows.some(row => row.ukcPresentation.automatic)) paragraph('UKC précédées de ~ : estimations statiques indicatives. Calcul, sources conservées et limites dans l’annexe UKC par waypoint.');
-  // Reserve the alert icon's width without widening the page or moving the weather column.
-  const ukcColumnWidth = passageRows.some(row => assessSeaOperationUkc(row.ukcPresentation.rawValue, form.vessel.draftMeters)) ? 45 : 35;
-  const descriptionColumnWidth = 140 - ukcColumnWidth;
+  // A stable landscape column keeps numbers, status and annex references readable.
+  const ukcColumnWidth = 76;
+  const descriptionColumnWidth = 95;
   const ukcCards = passageRows.map((row) => {
     const assessment = assessSeaOperationUkc(row.ukcPresentation.rawValue, form.vessel.draftMeters);
-    if (!assessment) return undefined;
-    document.setFont('helvetica', 'bold'); document.setFontSize(6.5);
-    const label = clean(row.ukcPresentation.automatic ? row.ukcPresentation.pdfValue : assessment.formattedValue);
-    const warning = assessment.level !== 'success';
+    if (!assessment && !row.ukcPresentation.automatic) return undefined;
+    document.setFont('helvetica', 'bold'); document.setFontSize(7.5);
+    const label = clean(row.ukcPresentation.automatic ? row.ukcPresentation.pdfValue || 'Indisponible' : assessment!.formattedValue);
+    const warning = Boolean(assessment && assessment.level !== 'success');
     const maxTextWidth = ukcColumnWidth - 12;
     const inline = document.getTextWidth(label) + (warning ? 8 : 0) <= maxTextWidth;
-    const number = label.slice(0, -2);
+    const number = assessment ? label.slice(0, -2) : label;
     const lines = inline ? [label] : document.getTextWidth(number) <= maxTextWidth ? [number, 'm'] : document.splitTextToSize(label, maxTextWidth) as string[];
-    return { assessment, warning, inline, lines, height: 8 + lines.length * 8 + (warning && !inline ? 9 : 0) };
+    const valueHeight = 8 + lines.length * 9 + (warning && !inline ? 9 : 0);
+    const notes = row.ukcPresentation.automatic ? [row.ukcPresentation.approximate ? 'Indicative' : 'Automatique', 'Annexe UKC'] : [];
+    return { assessment, warning, inline, lines, notes, valueHeight, height: valueHeight + (notes.length ? 7 + notes.length * 8 : 0) };
   });
   const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
   const height = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const integer = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
   const metric = (amount: number | null | undefined, unit: string, formatter = decimal) => amount === null || amount === undefined ? '—' : `${formatter.format(amount)} ${unit}`;
-  const weatherColumnWidth = 225;
+  const weatherColumnWidth = 200;
   const weatherCards = form.waypoints.map((point, index) => {
     const forecast = waypointWeatherSnapshot(point);
     const row = passageRows[index];
@@ -306,14 +309,14 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   if (passageRows.length) {
     document.setFont('helvetica', 'normal'); document.setFontSize(8.5);
     const first = passageRows[0];
-    const textCells: Array<[string, number]> = [[first.waypoint, 45], [first.description, descriptionColumnWidth], [first.latitude, 60], [first.longitude, 60], [first.ukc, ukcColumnWidth], [first.eta, 73], [first.vhf, 106]];
-    const firstRowHeight = Math.max(weatherCards[0].height + 10, ...textCells.map(([content, width]) => (document.splitTextToSize(clean(content), width - 8) as string[]).length * 8.5 * 1.15 + 8));
+    const textCells: Array<[string, number]> = [[first.waypoint, 45], [first.description, descriptionColumnWidth], [first.latitude, 60], [first.longitude, 60], [first.ukc, ukcColumnWidth], [first.eta, 76], [first.vhf, 96]];
+    const firstRowHeight = Math.max(weatherCards[0].height + 10, (ukcCards[0]?.height || 0) + 6, ...textCells.map(([content, width]) => (document.splitTextToSize(clean(content), width - 8) as string[]).length * 8.5 * 1.15 + 8));
     // Keep the repeated header with the first text/card block, even when a missing forecast makes its card shorter.
     page(firstRowHeight + 32);
   }
   if (passageRows.length) table(passageRows.map((row) => [row.waypoint, row.description, row.latitude, row.longitude, row.ukc, row.eta, row.vhf, row.weather, row.denseTraffic]),
     ['Waypoint', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA - Date / heure', 'Contacts VHF', 'Météo à l’ETA', 'Trafic dense'],
-    { 0: { cellWidth: 45 }, 1: { cellWidth: descriptionColumnWidth }, 2: { cellWidth: 60 }, 3: { cellWidth: 60 }, 4: { cellWidth: ukcColumnWidth }, 5: { cellWidth: 73 }, 6: { cellWidth: 106 }, 7: { cellWidth: weatherColumnWidth }, 8: { cellWidth: PAGE_HEIGHT - LEFT - RIGHT - 709 } }, true, {
+    { 0: { cellWidth: 45 }, 1: { cellWidth: descriptionColumnWidth }, 2: { cellWidth: 60 }, 3: { cellWidth: 60 }, 4: { cellWidth: ukcColumnWidth }, 5: { cellWidth: 76 }, 6: { cellWidth: 96 }, 7: { cellWidth: weatherColumnWidth }, 8: { cellWidth: PAGE_HEIGHT - LEFT - RIGHT - 708 } }, true, {
       didParseCell(cell) {
         if (cell.section === 'head' && cell.column.index === 0) cell.cell.styles.cellPadding = 3;
         if (cell.section !== 'body') return;
@@ -341,11 +344,11 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
         if (cell.section !== 'body') return;
         const ukc = ukcCards[cell.row.index];
         if (cell.column.index === 4 && ukc) {
-          const colors = UKC_COLORS[ukc.assessment.level];
+          const colors = ukc.assessment ? UKC_COLORS[ukc.assessment.level] : { foreground: [87, 104, 117] as [number, number, number], background: WHITE };
           const x = cell.cell.x + 3, top = cell.cell.y + 4, width = cell.cell.width - 6;
           document.saveGraphicsState();
           document.setFillColor(...colors.background); document.setDrawColor(...colors.foreground); document.setLineWidth(.45);
-          document.roundedRect(x, top, width, ukc.height, 6, 6, 'FD');
+          if (ukc.assessment) document.roundedRect(x, top, width, ukc.valueHeight, 6, 6, 'FD');
           let textY = top + 10;
           if (ukc.warning) {
             const iconX = ukc.inline ? x + 3 : x + width / 2 - 3;
@@ -355,8 +358,12 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
             document.text('!', iconX + 3, iconY + 5, { align: 'center' });
             if (!ukc.inline) textY += 9;
           }
-          document.setFont('helvetica', 'bold'); document.setFontSize(6.5); document.setTextColor(...colors.foreground);
+          document.setFont('helvetica', 'bold'); document.setFontSize(7.5); document.setTextColor(...colors.foreground);
           document.text(ukc.lines, x + width / 2 + (ukc.warning && ukc.inline ? 4 : 0), textY, { align: 'center', lineHeightFactor: 1.23 });
+          if (ukc.notes.length) {
+            document.setFont('helvetica', 'normal'); document.setFontSize(6.5); document.setTextColor(87, 104, 117);
+            document.text(ukc.notes, x + width / 2, top + ukc.valueHeight + 10, { align: 'center', lineHeightFactor: 1.23 });
+          }
           document.restoreGraphicsState();
           return;
         }

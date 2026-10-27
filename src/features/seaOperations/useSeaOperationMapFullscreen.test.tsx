@@ -47,8 +47,15 @@ describe('Sea operation map fullscreen lifecycle', () => {
     expect(outside).toHaveAttribute('aria-hidden', 'true');
     expect(document.body.style.overflow).toBe('hidden');
     const exit = screen.getByRole('button', { name: 'Quitter le plein écran' });
-    const lastPort = within(editor).getAllByRole('button', { name: /^Sélectionner le port |^Choisir un port parmi / }).at(-1)!;
+    fireEvent.click(screen.getByText(/^Ports dans cette région/));
+    expect(screen.getByText(/^Ports dans cette région/).closest('details')).toHaveAttribute('open');
+    // JSDOM concatenates HTML and SVG selector-list results by namespace. A single
+    // :is() selector restores the browser's document order for this focus-trap test.
+    const browserQuery = editor.querySelectorAll.bind(editor);
+    vi.spyOn(editor, 'querySelectorAll').mockImplementation(((selector: string) => browserQuery(`:is(${selector})`)) as typeof editor.querySelectorAll);
+    const lastPort = within(editor).getAllByRole('button', { name: /^Ajouter le port |^Choisir un port parmi / }).at(-1)!;
     lastPort.focus();
+    expect(lastPort).toHaveFocus();
     fireEvent.keyDown(lastPort, { key: 'Tab' });
     expect(screen.getByRole('button', { name: 'Terminer le placement' })).toHaveFocus();
     fireEvent.keyDown(screen.getByRole('button', { name: 'Terminer le placement' }), { key: 'Tab', shiftKey: true });

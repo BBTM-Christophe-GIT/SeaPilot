@@ -111,7 +111,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); sessionStorage.clear(); });
 
 describe('Passage Plan weather through the real editor and preview', () => {
-  it('keeps the forecast acquisition after applying an ETA and leaving Passage Plan before the debounce expires', async () => {
+  it('keeps the forecast acquisition after an immediate inline ETA edit and leaving Passage Plan before the debounce expires', async () => {
     vi.mocked(fetchSeaOperationWaypointWeather).mockImplementation(async (_client, input) => forecast(input));
     await openFixture(); await step(2);
     const picker = within(form().getByRole('group', { name: 'ETA · date et heure · point 1' }));
@@ -119,7 +119,7 @@ describe('Passage Plan weather through the real editor and preview', () => {
       fireEvent.change(picker.getByLabelText('Heures de l’ETA (Paris)'), { target: { value: '21' } });
       fireEvent.change(picker.getByLabelText('Minutes de l’ETA (Paris)'), { target: { value: '45' } });
     });
-    await act(async () => { fireEvent.click(picker.getByRole('button', { name: 'Appliquer' })); });
+    expect(picker.queryByRole('button', { name: 'Appliquer' })).not.toBeInTheDocument();
     await step(3);
     expect(fetchSeaOperationWaypointWeather).not.toHaveBeenCalled();
     await advance(750);

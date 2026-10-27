@@ -36,11 +36,10 @@
 .so-eta-actions { display: flex; flex-wrap: wrap; gap: var(--sp-space-1); }
 .so-eta-picker .so-eta-actions .sp-button { flex: 1 1 72px; min-width: 0; min-height: 40px; padding: var(--sp-space-1); font-size: .72rem; }
 .so-eta-picker.is-inline .so-eta-help { margin: var(--sp-space-1) 0; font-size: .6rem; }
-.so-eta-picker.is-inline .so-eta-actions { flex-wrap: nowrap; align-items: center; }
+.so-eta-picker.is-inline .so-eta-actions { flex-wrap: nowrap; align-items: center; justify-content: flex-end; }
 .so-eta-picker.is-inline .so-eta-actions .sp-button { flex: 0 1 auto; padding: var(--sp-space-1) 6px; font-size: .68rem; }
 .so-eta-picker.is-inline .so-eta-actions .so-eta-quiet-action { border-color: transparent; background: transparent; color: var(--sp-muted); }
 .so-eta-picker.is-inline .so-eta-actions .so-eta-quiet-action:hover:not(:disabled) { background: var(--sp-primary-soft); color: var(--sp-primary); }
-.so-eta-picker.is-inline .so-eta-actions .sp-button--primary { margin-left: auto; }
 @media (pointer: coarse) {
   .so-eta-picker.is-inline .so-eta-panel { width: min(100%, 338px); }
   .so-eta-picker .so-eta-trigger.sp-button, .so-eta-picker .so-eta-navigation .sp-button, .so-eta-picker .so-eta-actions .sp-button, .so-eta-picker .so-eta-time input, .so-eta-picker .so-eta-time-parts select, .so-eta-picker button.so-eta-day, .so-eta-picker.is-inline button.so-eta-day { min-height: 44px; }

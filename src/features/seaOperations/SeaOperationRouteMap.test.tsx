@@ -13,6 +13,23 @@ const channelRoute = () => [point(1, '49.65', '-1.62'), point(2, '48.36', '-4.53
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('SeaOperationRouteMap', () => {
+  it('previews a dragged route while preserving controlled metrics, labels and layout until release', () => {
+    const points = channelRoute(), original = structuredClone(points), report = vi.fn();
+    const viewport = { centerLatitude: 49, centerLongitude: -3, longitudeSpan: 16 };
+    const { container, rerender } = render(<SeaOperationRouteMap waypoints={points} showPlaces showWaypointCoordinates showRouteLegs maxSpeedKnots={12} viewport={viewport} onGeometry={report} />);
+    const transform = container.querySelector('[data-point-indices="2"]')!.getAttribute('transform');
+    const metrics = container.querySelector('.so-route-map-leg-summary')!.innerHTML;
+    const summary = screen.getByRole('complementary', { name: 'Estimation du parcours' }).innerHTML;
+    const places = container.querySelector('.so-route-map-places')!.innerHTML;
+    rerender(<SeaOperationRouteMap waypoints={points} showPlaces showWaypointCoordinates showRouteLegs maxSpeedKnots={12} viewport={viewport} onGeometry={report} previewWaypoint={{ id: points[1].id, position: { latitude: 51, longitude: -3 } }} />);
+    expect(container.querySelector('[data-point-indices="2"]')!.getAttribute('transform')).not.toBe(transform);
+    expect(container.querySelector('[data-point-indices="2"] .so-route-map-point-coordinates')).toHaveTextContent('51° 00.000′ N');
+    expect(container.querySelector('.so-route-map-leg-summary')!.innerHTML).toBe(metrics);
+    expect(screen.getByRole('complementary', { name: 'Estimation du parcours' }).innerHTML).toBe(summary);
+    expect(container.querySelector('.so-route-map-places')!.innerHTML).toBe(places);
+    expect(report).toHaveBeenCalledOnce(); expect(points).toEqual(original);
+  });
+
   it('shows leg distances, elapsed duration and Paris ETD/estimated ETA without changing waypoint ETA', () => {
     const points = [point(1, '0', '0'), point(2, '0', '1')]; points[1].eta = '2026-10-27T19:15';
     const original = structuredClone(points);
@@ -73,7 +90,7 @@ describe('SeaOperationRouteMap', () => {
     const { container, rerender } = render(<SeaOperationRouteMap waypoints={[]} showPlaces viewport={{ centerLatitude: 49, centerLongitude: -3, longitudeSpan: 16 }} onPortSelect={select} />);
     fireEvent.click(screen.getByText(/^Ports dans cette région/));
     const port = SEA_OPERATION_MAP_PORT_CATALOG.find(item => item.port.port === 'Port de Barfleur')!;
-    fireEvent.click(screen.getByRole('button', { name: `Choisir le port ${formatProjectPort(port.port)}` }));
+    fireEvent.click(screen.getByRole('button', { name: `Ajouter le port ${formatProjectPort(port.port)} comme waypoint` }));
     expect(select).toHaveBeenCalledExactlyOnceWith([expect.objectContaining({ key: port.key, location: port.location })]);
     const unlocated = screen.queryByRole('list', { name: 'Ports rattachés sans position propre' });
     if (unlocated) expect(within(unlocated).queryByRole('button')).not.toBeInTheDocument();
