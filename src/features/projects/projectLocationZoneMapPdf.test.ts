@@ -33,8 +33,9 @@ describe('Sea-operation zone maps in PDF', () => {
     const output = await generateSeaOperationPdf(record, { templateBytes });
     const pdf = await PDFDocument.load(output.bytes);
     const bodies = pageBodies(pdf);
+    expect(bodies.find(body => body.includes('(Zones - hors calcul de navigation) Tj'))).toContain('(Z1 - Zone de Travaux) Tj');
     for (const [index, zone] of plan.zones.entries()) {
-      const tablePage = bodies.find(body => body.includes(`(${zone.name}) Tj`));
+      const tablePage = bodies.find(body => body.includes(`(Z${index + 1} - ${zone.name}) Tj`) && body.includes('(Rang / Sommet) Tj'));
       expect(tablePage).toBeDefined();
       for (let vertex = 1; vertex <= 6; vertex++) expect(tablePage).toContain(`(Z${index + 1}.${vertex}) Tj`);
     }
@@ -56,11 +57,13 @@ describe('Sea-operation zone maps in PDF', () => {
     pageBodies(pdf).forEach((body, pageIndex) => {
       for (const run of body.matchAll(/BT\n([\s\S]*?)\nET/g)) {
         if (!run[1].includes('LONG-TITLE-') || !run[1].includes('/F2 ')) continue;
-        const size = /\/F2 ([\d.]+) Tf/.exec(run[1]), position = /([\d.-]+) ([\d.-]+) Td/.exec(run[1]), text = /\(([^)]*)\) Tj/.exec(run[1]);
-        if (!size || !position || !text) continue;
+        const size = /\/F2 ([\d.]+) Tf/.exec(run[1]), position = /([\d.-]+) ([\d.-]+) Td/.exec(run[1]);
+        if (!size || !position) continue;
         measure.setFont('helvetica', 'bold'); measure.setFontSize(Number(size[1]));
-        expect(Number(position[1]) + measure.getTextWidth(text[1])).toBeLessThanOrEqual(pdf.getPages()[pageIndex].getWidth() - 48);
-        lines++;
+        for (const text of run[1].matchAll(/\(([^)]*)\) Tj/g)) {
+          expect(Number(position[1]) + measure.getTextWidth(text[1])).toBeLessThanOrEqual(pdf.getPages()[pageIndex].getWidth() - 48);
+          lines++;
+        }
       }
     });
     expect(lines).toBeGreaterThan(3);

@@ -14,7 +14,8 @@ import { seaOperationWaypointDescription } from './seaOperationWaypointDescripti
 import { seaOperationVoyageSummary } from './seaOperationVoyageSummary';
 import { drawDefinedMapPortsPdf, drawProjectLocationMapPdf, projectLocationMapPositions } from '../projects/projectLocationPdf';
 import { resolveSeaOperationMapPorts } from './seaOperationMapPlaces';
-import { formatSeaLatitude, formatSeaLongitude, formatSeaPosition } from './seaOperationCoordinates';
+import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates';
+import { drawSeaOperationZoneLegendPdf, drawSeaOperationZoneTablePdf, seaOperationZoneTableMinimumHeight } from './seaOperationZonePdf';
 
 export const SEA_OPERATION_WORD_TEMPLATE_URL = '/templates/sea-operation/word-header-footer.pdf';
 const PAGE_WIDTH = 595.32;
@@ -183,7 +184,7 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     drawProjectLocationMapPdf(document, { waypoints: form.waypoints, ...overlay, mapViewport: form.mapViewport }, { x: LEFT, y, width: routeMap.width, height: routeMap.height }, { departurePort: form.vessel.departurePort, arrivalPort: form.vessel.arrivalPort, ensureZonesVisible: true });
     y += routeMap.height + 12;
     paragraph('Fond : Natural Earth · Tracé indicatif. Points isolés et zones hors calcul de navigation.');
-    if (overlay.zones.length) paragraph(`Zones : ${overlay.zones.map((zone, index) => `Z${index + 1} - ${zone.name || `Zone ${index + 1}`}`).join(' ; ')}`);
+    if (overlay.zones.length) y = drawSeaOperationZoneLegendPdf(document, overlay.zones, { y, left: LEFT, right: RIGHT, top: TOP, bottom: BOTTOM, fontSize: 8 });
   } else if (hasMap || form.mapViewport) {
     const mapY = y;
     const at = (point: { x: number; y: number }) => ({ x: LEFT + point.x, y: mapY + point.y });
@@ -513,17 +514,10 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
       } });
   }
   if (overlay?.zones.length) {
+    page(25 + seaOperationZoneTableMinimumHeight(document, overlay.zones[0], 0, { left: LEFT, right: RIGHT }));
     heading('Zones - hors calcul de navigation', true);
     overlay.zones.forEach((zone, zoneIndex) => {
-      document.setFont('helvetica', 'bold'); document.setFontSize(10);
-      const titleLines = document.splitTextToSize(clean(zone.name || `Zone ${zoneIndex + 1}`), pageWidth() - LEFT - RIGHT) as string[];
-      // Keep ordinary zones together with their title; very large tables still paginate normally.
-      page(45 + titleLines.length * 17 + Math.min(12, Math.max(1, zone.vertices.length)) * 20);
-      heading(titleLines[0], true);
-      titleLines.slice(1).forEach(line => paragraph(line, true));
-      table(zone.vertices.length ? zone.vertices.map((vertex, vertexIndex) => [`Z${zoneIndex + 1}.${vertexIndex + 1}`, formatSeaPosition(vertex)])
-        : [['-', 'Aucun sommet renseigné']], ['Sommet', 'Coordonnées'], { 0: { cellWidth: 90 } }, true,
-      { didParseCell: cell => { Object.assign(cell.cell.styles, { halign: 'center', valign: 'middle' }); } });
+      y = drawSeaOperationZoneTablePdf(document, zone, zoneIndex, { y, left: LEFT, right: RIGHT, top: TOP, bottom: BOTTOM });
     });
   }
   if (signed && passageRows.some((row) => row.observation?.status === 'recorded')) {

@@ -11,12 +11,13 @@ import { seaOperationMapLayers, seaOperationZonePositions } from '../seaOperatio
 import { parseProjectLocationPlan, hasProjectLocationContent, type ProjectLocationPlan, type ProjectLocationOverlay } from './projectLocation';
 import type { SeaOperationWaypoint } from '../seaOperations/seaOperationModel';
 import { drawSeaOperationIsolatedPointPdf } from '../seaOperations/seaOperationIsolatedPointPdf';
+import { layoutSeaOperationZoneLabels, seaOperationZoneAppearance } from '../seaOperations/seaOperationZonePresentation';
+import { drawSeaOperationZoneLegendPdf, drawSeaOperationZoneTablePdf, seaOperationZoneTableMinimumHeight } from '../seaOperations/seaOperationZonePdf';
 
 const BLUE = [12, 85, 152] as const;
 const MUTED = [82, 102, 121] as const;
 const pale = [255, 250, 240] as const;
 const clean = (value: string) => value.replace(/[′’]/g, "'").replace(/[–—−]/g, '-').replace(/…/g, '...').replace(/\u00a0|\u202f/g, ' ');
-const value = (text: string) => clean(text.trim() || '—');
 
 export interface ProjectLocationPdfOptions {
   projectLabel: string;
@@ -105,12 +106,15 @@ export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeo
     document.line(from.x, from.y, to.x, to.y); write(line.label, label.x, label.y, 6);
   }
   const zoneLayers = seaOperationMapLayers(geometry, [], location.zones).polygons;
+  const places = seaOperationMapPlaces(geometry, definedPorts.ports.flatMap(port => {
+    const position = projectSeaOperationMapPlace(geometry, port.location); return position ? [position] : [];
+  }));
   const vertexPixels = zoneLayers.flatMap(({ vertices }) => vertices.map(at));
   const occupiedLabels = geometry.points.map(point => {
     const pixel = at(point); return { left: pixel.x - unit(10), right: pixel.x + unit(10), top: pixel.y - unit(10), bottom: pixel.y + unit(10) };
   });
   let vertexLabelCount = 0;
-  const zoneLabel = (label: string, position: { x: number; y: number }, size: number) => {
+  const zoneLabel = (label: string, position: { x: number; y: number }, size: number, color: readonly [number, number, number]) => {
     document.setFont('helvetica', 'normal'); document.setFontSize(size);
     const textWidth = document.getTextWidth(label), padding = unit(1.5), textHeight = unit(size);
     const overlaps = (a: { left: number; right: number; top: number; bottom: number }, b: typeof a) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
@@ -126,34 +130,53 @@ export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeo
           + Math.hypot(x + textWidth / 2 - position.x, y - textHeight / 2 - position.y);
         return { x, y, rect, score };
       });
-    const selected = candidates.reduce((best, candidate) => candidate.score < best.score ? candidate : best);
+    const available = candidates.filter(candidate => occupiedLabels.every(other => !overlaps(candidate.rect, other)));
+    if (!available.length) return;
+    const selected = available.reduce((best, candidate) => candidate.score < best.score ? candidate : best);
     occupiedLabels.push(selected.rect);
     document.setFillColor(255, 255, 255);
     document.rect(selected.rect.left, selected.rect.top, selected.rect.right - selected.rect.left, selected.rect.bottom - selected.rect.top, 'F');
-    document.setTextColor(...BLUE); write(label, selected.x, selected.y, size);
+    document.setTextColor(...color); write(label, selected.x, selected.y, size);
   };
+  const local = (point: { x: number; y: number }) => { const pixel = at(point); return { x: (pixel.x - bounds.x) / unit(1), y: (pixel.y - bounds.y) / unit(1) }; };
+  const obstacles = [...geometry.points.map(point => ({ point, width: 42, height: 40 })),
+    ...seaOperationMapLayers(geometry, location.points, []).isolated.map(point => ({ point, width: 150, height: 30 }))]
+    .map(({ point, width, height }) => { const p = local(point); return { west: p.x - width / 2, east: p.x + width / 2, north: p.y - height / 2, south: p.y + height / 2 }; });
+  document.setFont('helvetica', 'normal'); document.setFontSize(5.5);
+  const placeLabelObstacle = (label: { x: number; y: number; anchor: string }, text: string) => {
+    const position = local(label), width = document.getTextWidth(clean(text)) / unit(1);
+    return { west: label.anchor === 'end' ? position.x - width : position.x,
+      east: label.anchor === 'end' ? position.x : position.x + width, north: position.y - 7, south: position.y + 2 };
+  };
+  for (const city of places.cities.slice(0, 50)) obstacles.push(placeLabelObstacle(city.label, city.name));
+  for (const port of places.markers.slice(0, 80)) if (port.label) obstacles.push(placeLabelObstacle(port.label, port.ports[0].port.port));
+  obstacles.push({ west: bounds.width / unit(1) - 30, east: bounds.width / unit(1), north: 0, south: 26 });
+  if (options?.showVoyage && location.waypoints.length > 1) obstacles.push({ west: bounds.width / unit(1) - 212, east: bounds.width / unit(1), north: bounds.height / unit(1) - 80, south: bounds.height / unit(1) });
+  const zoneTags = layoutSeaOperationZoneLabels(zoneLayers.map(({ zone, vertices }) => ({ id: zone.id,
+    index: location.zones.findIndex(item => item.id === zone.id), vertices: vertices.map(local) })), bounds.width / unit(1), bounds.height / unit(1), obstacles);
+  for (const box of obstacles) occupiedLabels.push({ left: bounds.x + unit(box.west), right: bounds.x + unit(box.east),
+    top: bounds.y + unit(box.north), bottom: bounds.y + unit(box.south) });
+  for (const tag of zoneTags) occupiedLabels.push({ left: bounds.x + unit(tag.x - tag.width / 2), right: bounds.x + unit(tag.x + tag.width / 2),
+    top: bounds.y + unit(tag.y - tag.height / 2), bottom: bounds.y + unit(tag.y + tag.height / 2) });
   // Draw every fill before the outlines so overlapping zones remain distinguishable.
-  for (const { vertices } of zoneLayers) {
+  const area = (vertices: { x: number; y: number }[]) => Math.abs(vertices.reduce((sum, point, index) => {
+    const next = vertices[(index + 1) % vertices.length]; return sum + point.x * next.y - next.x * point.y;
+  }, 0));
+  for (const { zone, vertices } of [...zoneLayers].sort((a, b) => area(b.vertices) - area(a.vertices))) {
     const positions = vertices.map(at);
-    document.setFillColor(216, 231, 244);
+    document.setFillColor(...seaOperationZoneAppearance(location.zones.findIndex(item => item.id === zone.id)).fillRgb);
     document.path([...positions.map((position, index) => ({ op: index ? 'l' : 'm', c: [position.x, position.y] })), { op: 'h', c: [] }]); document.fill();
   }
   for (const { zone, vertices } of zoneLayers) {
-    const positions = vertices.map(at), zoneNumber = location.zones.findIndex(item => item.id === zone.id) + 1;
-    document.setDrawColor(...BLUE); document.setLineWidth(unit(.9));
+    const positions = vertices.map(at), zoneIndex = location.zones.findIndex(item => item.id === zone.id), appearance = seaOperationZoneAppearance(zoneIndex);
+    document.setDrawColor(...appearance.rgb); document.setLineWidth(unit(.9));
     document.path([...positions.map((position, index) => ({ op: index ? 'l' : 'm', c: [position.x, position.y] })), { op: 'h', c: [] }]); document.stroke();
     if (options?.ensureZonesVisible) positions.forEach((position, vertexIndex) => {
-      document.setFillColor(...BLUE); document.circle(position.x, position.y, unit(1.8), 'F');
+      document.setFillColor(...appearance.rgb); document.circle(position.x, position.y, unit(1.8), 'F');
       // Large plans retain every table row and vertex; a bounded label budget keeps the map legible.
-      if (vertexLabelCount++ < 120) zoneLabel(`Z${zoneNumber}.${vertexIndex + 1}`, position, 5.5);
+      if (vertexLabelCount++ < 120) zoneLabel(`${appearance.code}.${vertexIndex + 1}`, position, 5.5, appearance.rgb);
     });
-    const center = { x: positions.reduce((sum, position) => sum + position.x, 0) / positions.length, y: positions.reduce((sum, position) => sum + position.y, 0) / positions.length };
-    if (options?.ensureZonesVisible) zoneLabel(`Z${zoneNumber}`, center, 7);
-    else { document.setTextColor(...BLUE); write(zone.name || 'Zone', center.x, center.y, 7, 'center'); }
   }
-  const places = seaOperationMapPlaces(geometry, definedPorts.ports.flatMap(port => {
-    const position = projectSeaOperationMapPlace(geometry, port.location); return position ? [position] : [];
-  }));
   for (const city of places.cities.slice(0, 50)) {
     const point = at(city), label = at(city.label); document.setFillColor(37, 129, 95); document.circle(point.x, point.y, unit(1.5), 'F');
     document.setTextColor(...MUTED); write(city.name, label.x, label.y, 5.5, city.label.anchor === 'end' ? 'right' : 'left');
@@ -222,6 +245,16 @@ export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeo
     document.setDrawColor(...MUTED); document.setLineWidth(unit(.6)); document.line(x, y, x + length, y);
     write(geometry.scale.label, x + length / 2, y - unit(4), 6, 'center');
   }
+  for (const tag of zoneTags) {
+    const appearance = seaOperationZoneAppearance(tag.index), x = bounds.x + unit(tag.x), y = bounds.y + unit(tag.y);
+    document.setDrawColor(...appearance.rgb); document.setLineWidth(unit(.65));
+    if (tag.leader) document.line(bounds.x + unit(tag.leader.from.x), bounds.y + unit(tag.leader.from.y),
+      bounds.x + unit(tag.leader.to.x), bounds.y + unit(tag.leader.to.y));
+    document.setFillColor(255, 255, 255);
+    document.roundedRect(x - unit(tag.width / 2), y - unit(tag.height / 2), unit(tag.width), unit(tag.height), unit(2), unit(2), 'FD');
+    document.setTextColor(...appearance.rgb); document.setFont('helvetica', 'bold'); document.setFontSize(7);
+    document.text(tag.code, x, y + unit(2.4), { align: 'center' });
+  }
   document.restoreGraphicsState(); return geometry;
 }
 
@@ -233,10 +266,10 @@ export async function generateProjectLocationPdf(plan: ProjectLocationPlan, opti
   document.text(options.language === 'en' ? 'APPENDIX - LOCATION / PASSAGE PLAN' : 'ANNEXE - LOCALISATION / PASSAGE PLAN', left, 32);
   document.setFont('helvetica', 'normal'); document.setFontSize(9); document.setTextColor(...MUTED);
   document.text(clean(`${options.projectLabel}${options.vesselName ? ` · ${options.vesselName}` : ''}`), left, 48);
-  drawProjectLocationMapPdf(document, plan, { x: left, y: 60, width, height: 190 }, { etd: plan.etd, maxSpeedKnots: options.maxSpeedKnots, showVoyage: true, departurePort: options.departurePort, arrivalPort: options.arrivalPort });
+  drawProjectLocationMapPdf(document, plan, { x: left, y: 60, width, height: 190 }, { etd: plan.etd, maxSpeedKnots: options.maxSpeedKnots, showVoyage: true, departurePort: options.departurePort, arrivalPort: options.arrivalPort, ensureZonesVisible: true });
   document.setFontSize(6.5); document.setTextColor(...MUTED);
   document.text('Fond Natural Earth · Tracé indicatif · Distances directes, sans routage · Coordonnées WGS84', left, 260);
-  let y = 274;
+  let y = drawSeaOperationZoneLegendPdf(document, plan.zones, { y: 274, left, right: left, top: 34, bottom: 26, fontSize: 7 });
   if (plan.charts) {
     const lines = document.splitTextToSize(clean(`Cartes marines : ${plan.charts}`), width) as string[];
     for (const line of lines) { if (y > pageHeight - 35) { document.addPage(); y = 34; } document.text(line, left, y); y += 9; }
@@ -274,12 +307,9 @@ export async function generateProjectLocationPdf(plan: ProjectLocationPlan, opti
   };
   table('Passage plan', plan.waypoints); table('Points isolés - hors calcul de navigation', plan.points, true);
   if (plan.zones.length) {
-    if (y > pageHeight - 90) { document.addPage(); y = 34; }
+    if (y + 20 + seaOperationZoneTableMinimumHeight(document, plan.zones[0], 0, { left, right: left, fontSize: 7 }) > pageHeight - 26) { document.addPage(); y = 34; }
     document.setFont('helvetica', 'bold'); document.setFontSize(9); document.setTextColor(...BLUE); document.text('Zones', left, y); y += 8;
-    autoTable(document, { startY: y, margin: { left, right: left, top: 30, bottom: 26 }, theme: 'grid', head: [['Zone', 'Sommet', 'Latitude', 'Longitude']],
-      body: plan.zones.flatMap((zone, index) => zone.vertices.length ? zone.vertices.map((vertex, vertexIndex) => [value(zone.name || `Zone ${index + 1}`), String(vertexIndex + 1), value(formatSeaLatitude(vertex.latitude)), value(formatSeaLongitude(vertex.longitude))]) : [[value(zone.name || `Zone ${index + 1}`), 'À compléter', '—', '—']]),
-      styles: { font: 'helvetica', fontSize: 7, cellPadding: 4, halign: 'center', valign: 'middle', lineColor: [209, 220, 230], lineWidth: .35 }, headStyles: { fillColor: [246, 249, 252], textColor: [12, 85, 152] },
-    });
+    plan.zones.forEach((zone, index) => { y = drawSeaOperationZoneTablePdf(document, zone, index, { y, left, right: left, top: 34, bottom: 26, fontSize: 7 }); });
   }
   for (let page = 1; page <= document.getNumberOfPages(); page++) { document.setPage(page); document.setFont('helvetica', 'normal'); document.setFontSize(6.5); document.setTextColor(...MUTED); document.text(`Annexe Localisation · ${page} / ${document.getNumberOfPages()}`, document.internal.pageSize.getWidth() - left, pageHeight - 12, { align: 'right' }); }
   return new Uint8Array(document.output('arraybuffer'));

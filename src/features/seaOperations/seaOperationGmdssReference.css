@@ -1,0 +1,14 @@
+.so-gmdss-reference { min-width: 0; margin-top: var(--sp-space-2); border-top: 1px solid var(--sp-border); color: var(--sp-text); font-family: var(--sp-font); font-size: .75rem; line-height: 1.5; }
+.so-gmdss-reference > summary { min-height: 40px; padding: var(--sp-space-2) 0; color: var(--sp-primary); font-weight: 600; cursor: pointer; }
+.so-gmdss-reference > summary:focus-visible, .so-gmdss-reference a:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; border-radius: var(--sp-control-radius); }
+.so-gmdss-reference-content { min-width: 0; padding-bottom: var(--sp-space-2); }
+.so-gmdss-reference .so-gmdss-reference-content > p { margin: 0 0 var(--sp-space-2); font-size: inherit; line-height: inherit; }
+.so-gmdss-reference figure { min-width: 0; margin: var(--sp-space-3) 0; padding: var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); background: var(--sp-surface); }
+.so-gmdss-reference img { display: block; width: 100%; max-width: 100%; height: auto; background: var(--sp-surface); }
+.so-gmdss-reference figcaption { margin-top: var(--sp-space-2); }
+.so-gmdss-reference a { color: var(--sp-primary); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.so-gmdss-reference .so-gmdss-reference-credit { color: var(--sp-muted); font-size: .6875rem; }
+.so-gmdss-reference nav { display: flex; flex-wrap: wrap; gap: var(--sp-space-1) var(--sp-space-3); }
+.so-print .so-gmdss-reference, .project-location-preview .so-gmdss-reference { display: none; }
+@media (pointer: coarse) { .so-gmdss-reference > summary { min-height: 44px; } }
+@media print { .so-gmdss-reference { display: none !important; } }
