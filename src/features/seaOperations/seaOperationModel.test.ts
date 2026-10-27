@@ -8,6 +8,25 @@ import {
 import type { SeaOperationCheckId } from './seaOperationModel';
 import { COPERNICUS_UKC_PRODUCTS, calculateSeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 
+describe('isolated-point symbol boundaries', () => {
+  it.each(['buoy', 'pin', 'platform', 'wind-farm', 'mooring', 'anchor'] as const)('accepts %s only on retained isolated points', isolatedPointIcon => {
+    const payload = emptySeaOperation(), point = emptySeaOperationWaypoint('isolated');
+    payload.locationOverlay = { version: 1, points: [{ ...point, isolatedPointIcon }], zones: [] };
+    expect(isSeaOperationPayload(JSON.parse(JSON.stringify(payload)))).toBe(true);
+    expect(isSeaOperationPayload({ ...emptySeaOperation(), waypoints: [{ ...point, isolatedPointIcon }] })).toBe(false);
+  });
+  it('preserves historical absent icons and rejects malformed symbols or icons on zones', () => {
+    const point = emptySeaOperationWaypoint('point'), payload = emptySeaOperation();
+    payload.locationOverlay = { version: 1, points: [point], zones: [] };
+    expect(isSeaOperationPayload(payload)).toBe(true); expect(point).not.toHaveProperty('isolatedPointIcon');
+    for (const isolatedPointIcon of [null, 1, '', 'vessel', 'other']) {
+      expect(isSeaOperationPayload({ ...payload, locationOverlay: { version: 1, points: [{ ...point, isolatedPointIcon }], zones: [] } })).toBe(false);
+    }
+    expect(isSeaOperationPayload({ ...emptySeaOperation(), waypoints: [{ ...point, isolatedPointIcon: undefined }] })).toBe(false);
+    expect(isSeaOperationPayload({ ...payload, locationOverlay: { version: 1, points: [], zones: [{ id: 'zone', name: '', vertices: [], isolatedPointIcon: 'anchor' }] } })).toBe(false);
+  });
+});
+
 describe('optional retained operation map frame', () => {
   it('accepts historical automatic absence and keeps exact manual framing through JSON reopening', () => {
     const payload = emptySeaOperation();

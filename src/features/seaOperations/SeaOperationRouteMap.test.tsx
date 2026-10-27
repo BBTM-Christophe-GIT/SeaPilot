@@ -5,6 +5,7 @@ import { SeaOperationRouteMap } from './SeaOperationRouteMap';
 import { projectSeaOperationMapPlace, resolveSeaOperationMapPorts, SEA_OPERATION_MAP_PORT_CATALOG } from './seaOperationMapPlaces';
 import { formatProjectPort } from '../projects/projectPorts';
 import { DEFAULT_ROUTE_MAP_VIEWPORT } from './seaOperationRouteMapGeometry';
+import { SEA_OPERATION_ISOLATED_POINT_ICONS } from './seaOperationIsolatedPointIcons';
 
 function point(index: number, latitude: string, longitude: string, number = `WP${index}`): SeaOperationWaypoint {
   return { id: `point-${index}`, number, descriptionVhf: `Description du point ${index}`, latitude, longitude, eta: '', ukc: '', denseTraffic: false };
@@ -14,6 +15,48 @@ const channelRoute = () => [point(1, '49.65', '-1.62'), point(2, '48.36', '-4.53
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('SeaOperationRouteMap', () => {
+  it.each(SEA_OPERATION_ISOLATED_POINT_ICONS)('renders the shared green $label SVG with its recorded isolated point number in compact documents', icon => {
+    const invalid = { ...point(1, '', ''), id: 'invalid', number: '' };
+    const isolated = { ...point(2, '49.65', '-1.62'), number: '  B04  ', isolatedPointIcon: icon.value, descriptionVhf: 'Balise de contrôle' };
+    const original = structuredClone(isolated);
+    const { container } = render(<SeaOperationRouteMap waypoints={[]} isolatedPoints={[invalid, isolated]} compact />);
+    const marker = container.querySelector('[data-isolated-point-id="point-2"]')!;
+    expect(marker.querySelector('.so-route-map-isolated-ordinal')).toHaveTextContent('B04');
+    expect([...marker.querySelectorAll('text')].map(text => text.textContent)).toEqual(['B04']);
+    expect(marker.querySelector('.so-route-map-isolated-ordinal')).not.toHaveTextContent('P2');
+    expect(marker).toHaveAttribute('aria-label', expect.stringContaining('Point isolé 2 : B04 · Balise de contrôle'));
+    expect(marker.querySelector('title')).toHaveTextContent(`B04 · Balise de contrôle · ${icon.label}`);
+    const svg = marker.querySelector('.so-route-map-isolated-icon')!;
+    expect(svg).toHaveAttribute('stroke', 'currentColor'); expect(svg).toHaveAttribute('viewBox', '0 0 24 24');
+    expect([...svg.querySelectorAll('path')].map(path => path.getAttribute('d'))).toEqual(icon.paths.map(path => path.d));
+    expect(marker.querySelector(':scope > rect')).toBeNull(); expect(container.querySelector('image')).toBeNull();
+    expect(isolated).toEqual(original);
+  });
+
+  it('keeps the legacy square with a custom number, bounds long visual labels and falls back to the original ordinal when blank', () => {
+    const isolated = { ...point(2, '49.65', '-1.62'), number: 'B04' };
+    const { container, rerender } = render(<SeaOperationRouteMap waypoints={[]} isolatedPoints={[{ ...point(1, '', ''), number: '' }, isolated]} />);
+    const marker = () => container.querySelector('[data-isolated-point-id="point-2"]')!;
+    expect(marker().querySelector(':scope > rect')).not.toBeNull(); expect(marker().querySelector('.so-route-map-isolated-ordinal')).toHaveTextContent('B04');
+    expect(marker().querySelector('.so-route-map-point-label')).toBeNull();
+    rerender(<SeaOperationRouteMap waypoints={[]} isolatedPoints={[{ ...point(1, '', ''), number: '' }, { ...isolated, number: '   ' }]} />);
+    expect(marker().querySelector('.so-route-map-isolated-ordinal')).toHaveTextContent('P2');
+    const longNumber = 'BALISE-'.repeat(11).slice(0, 80);
+    rerender(<SeaOperationRouteMap waypoints={[]} isolatedPoints={[{ ...isolated, number: longNumber, isolatedPointIcon: 'anchor' }]} />);
+    expect(marker().querySelector('.so-route-map-isolated-ordinal')!.textContent).toBe(`${longNumber.slice(0, 17)}…`);
+    expect(marker().querySelector('title')).toHaveTextContent(longNumber); expect(marker()).toHaveAttribute('aria-label', expect.stringContaining(longNumber));
+  });
+
+  it('changes only isolated marker rendering when an icon is selected, preserving the route, zones and port symbols', () => {
+    const route = channelRoute(), isolated = { ...point(4, '49.7', '-1.4'), number: 'B04' };
+    const zones = [{ id: 'zone', name: 'Zone conservée', vertices: [{ latitude: '49.7', longitude: '-1.4' }, { latitude: '49.8', longitude: '-1.4' }, { latitude: '49.75', longitude: '-1.3' }] }];
+    const { container, rerender } = render(<SeaOperationRouteMap waypoints={route} isolatedPoints={[isolated]} zones={zones} departurePort="Cherbourg" />);
+    const layers = () => ['.so-route-map-track', '.so-route-map-points', '.so-route-map-zones', '.so-route-map-zone-vertices', '.so-route-map-defined-ports'].map(selector => container.querySelector(selector)!.innerHTML);
+    const before = layers();
+    rerender(<SeaOperationRouteMap waypoints={route} isolatedPoints={[{ ...isolated, isolatedPointIcon: 'platform' }]} zones={zones} departurePort="Cherbourg" />);
+    expect(layers()).toEqual(before);
+  });
+
   it('widens a compact document only when requested to contain complete zones, preserving its saved manual frame', () => {
     const route = [point(1, '49.93', '1.08'), point(2, '49.99', '1.02'), point(3, '50.15', '1.13')];
     const viewport = { centerLatitude: 50.05, centerLongitude: 1.2, longitudeSpan: 1.7 };
@@ -147,7 +190,7 @@ describe('SeaOperationRouteMap', () => {
     expect(container.querySelectorAll('.so-route-map-track line')).toHaveLength(1);
     expect(container.querySelectorAll('.so-route-map-isolated-points > g')).toHaveLength(1);
     expect(container.querySelectorAll('.so-route-map-zones polygon')).toHaveLength(1);
-    expect(screen.getByRole('img', { name: 'Vigilance : trafic dense, risque de collision · Point isolé 1' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Vigilance : trafic dense, risque de collision · Point isolé 1 : WP3' })).toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: 'Estimation du parcours' }).textContent).toBe(summary);
     expect(container.querySelector('desc')).toHaveTextContent('Inspection isolée'); expect(container.querySelector('desc')).toHaveTextContent('Zone : Travaux');
     expect({ route, isolated, zones }).toEqual(original);

@@ -6,6 +6,17 @@ import { copyProjectLocationToSeaOperation } from './seaOperationProjectLocation
 
 const point = (id: string, longitude = '0') => ({ id, number: id, descriptionVhf: 'Description conservée', latitude: '0', longitude, eta: '', ukc: '3', denseTraffic: false });
 describe('project location copied when selecting a sea-operation mission', () => {
+  it('preserves all isolated icons in a fresh independent operation copy without adding symbols to the route', () => {
+    const icons = ['buoy', 'pin', 'platform', 'wind-farm', 'mooring', 'anchor'] as const;
+    const plan = { ...emptyProjectLocationPlan(), waypoints: [point('route')], points: icons.map((isolatedPointIcon, index) => ({ ...point(`isolated-${index}`), isolatedPointIcon })) };
+    const original = structuredClone(plan); let id = 0;
+    const copied = copyProjectLocationToSeaOperation(emptySeaOperation(), plan, null, () => `new-${++id}`);
+    expect(copied.locationOverlay!.points.map(point => point.isolatedPointIcon)).toEqual(icons);
+    expect(copied.waypoints[0]).not.toHaveProperty('isolatedPointIcon'); expect(isSeaOperationPayload(copied)).toBe(true);
+    expect(copied.locationOverlay!.points[0]).not.toBe(plan.points[0]);
+    copied.locationOverlay!.points[0].isolatedPointIcon = 'anchor';
+    expect(plan).toEqual(original);
+  });
   it('imports an independent project frame and clears the previous manual frame when the chosen plan uses automatic framing', () => {
     const plan = { ...emptyProjectLocationPlan(), mapViewport: { centerLatitude: 49.654321, centerLongitude: -1.789012, longitudeSpan: .023456789 } };
     const draft = emptySeaOperation(); draft.mapViewport = { centerLatitude: 0, centerLongitude: 0, longitudeSpan: 20 };

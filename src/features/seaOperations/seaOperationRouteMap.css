@@ -23,6 +23,7 @@
 .so-route-map-zone-vertices { pointer-events: none; }
 .so-route-map-zone-vertices circle { fill: var(--sp-primary); stroke: var(--sp-surface); stroke-width: 1px; }
 .so-route-map-isolated-points rect { fill: var(--sp-surface); stroke: var(--sp-success); stroke-width: 2px; }
+.so-route-map-isolated-icon { color: var(--sp-success); }
 .so-route-map-isolated-ordinal { fill: var(--sp-success); font-family: var(--sp-font); font-size: 11px; font-weight: 700; }
 .so-route-map-pin { fill: var(--sp-surface); stroke: var(--sp-primary); stroke-width: 2px; }
 .so-route-map-ordinal { fill: var(--sp-primary); font-family: var(--sp-font); font-size: 12px; font-weight: 750; }

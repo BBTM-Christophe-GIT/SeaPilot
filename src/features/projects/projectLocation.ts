@@ -1,5 +1,6 @@
 import type { SeaOperationWaypoint } from '../seaOperations/seaOperationModel';
 import { parseSeaOperationMapViewport, type SeaOperationMapViewport } from '../seaOperations/seaOperationMapViewport';
+import { isSeaOperationIsolatedPointIconName } from '../seaOperations/seaOperationIsolatedPointIcons';
 
 export interface ProjectLocationZone {
   id: string;
@@ -45,21 +46,23 @@ function sameJsonValue(value: unknown, canonical: unknown): boolean {
   const keys = Object.keys(canonical);
   return Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key) && sameJsonValue(value[key], canonical[key]));
 }
-function waypoint(value: unknown, ids: Set<string>): SeaOperationWaypoint {
+function waypoint(value: unknown, ids: Set<string>, isolated = false): SeaOperationWaypoint {
   if (!object(value) || typeof value.denseTraffic !== 'boolean') throw invalid();
+  if (Object.hasOwn(value, 'isolatedPointIcon') && (!isolated || !isSeaOperationIsolatedPointIconName(value.isolatedPointIcon))) throw invalid();
   if (value.ukcMode !== undefined && value.ukcMode !== 'manual' && value.ukcMode !== 'automatic'
     || value.etaMode !== undefined && value.etaMode !== 'manual' && value.etaMode !== 'automatic') throw invalid();
   return { id: identity(value.id, ids), number: string(value.number, 80), descriptionVhf: string(value.descriptionVhf, 4000),
     latitude: string(value.latitude, 80), longitude: string(value.longitude, 80), ukc: string(value.ukc, 200), eta: string(value.eta, 80), denseTraffic: value.denseTraffic,
-    ...(value.ukcMode === undefined ? {} : { ukcMode: value.ukcMode }), ...(value.etaMode === undefined ? {} : { etaMode: value.etaMode }) };
+    ...(value.ukcMode === undefined ? {} : { ukcMode: value.ukcMode }), ...(value.etaMode === undefined ? {} : { etaMode: value.etaMode }),
+    ...(isSeaOperationIsolatedPointIconName(value.isolatedPointIcon) ? { isolatedPointIcon: value.isolatedPointIcon } : {}) };
 }
 function overlay(value: Record<string, unknown>, ids: Set<string>): ProjectLocationOverlay {
   if (value.version !== 1) throw invalid();
-  const points = boundedArray(value.points, PROJECT_LOCATION_LIMITS.points).map(point => waypoint(point, ids));
+  const points = boundedArray(value.points, PROJECT_LOCATION_LIMITS.points).map(point => waypoint(point, ids, true));
   const zones = boundedArray(value.zones, PROJECT_LOCATION_LIMITS.zones).map(value => {
-    if (!object(value)) throw invalid();
+    if (!object(value) || Object.hasOwn(value, 'isolatedPointIcon')) throw invalid();
     return { id: identity(value.id, ids), name: string(value.name, 500), vertices: boundedArray(value.vertices, PROJECT_LOCATION_LIMITS.vertices).map(vertex => {
-      if (!object(vertex)) throw invalid();
+      if (!object(vertex) || Object.hasOwn(vertex, 'isolatedPointIcon')) throw invalid();
       return { latitude: string(vertex.latitude, 80), longitude: string(vertex.longitude, 80) };
     }) };
   });

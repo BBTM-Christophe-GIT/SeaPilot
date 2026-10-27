@@ -4,6 +4,23 @@ import { cloneProjectLocationPlan, emptyProjectLocationPlan, hasProjectLocationC
 
 const point = (id = 'route') => ({ id, number: '1', descriptionVhf: 'Point de passage', latitude: '49° 39′ N', longitude: '', ukc: '', eta: '', denseTraffic: false });
 describe('optional project location plan', () => {
+  it.each(['buoy', 'pin', 'platform', 'wind-farm', 'mooring', 'anchor'] as const)('clones only isolated-point icon %s and keeps legacy absence unchanged', isolatedPointIcon => {
+    const source = { ...emptyProjectLocationPlan(), waypoints: [point('route')], points: [{ ...point('isolated'), isolatedPointIcon }] };
+    const original = structuredClone(source), retained = cloneProjectLocationPlan(source);
+    expect(retained).toEqual(source); expect(retained.points[0]).not.toBe(source.points[0]);
+    expect(parseProjectLocationOverlay({ version: 1, points: source.points, zones: [] })?.points[0].isolatedPointIcon).toBe(isolatedPointIcon);
+    expect(retained.waypoints[0]).not.toHaveProperty('isolatedPointIcon'); expect(source).toEqual(original);
+  });
+  it('rejects invalid isolated icons and any icon on route waypoints, zones or vertices', () => {
+    for (const isolatedPointIcon of ['', 'square', 'vessel', 'Buoy', 'wind_farm', null, undefined, 1, {}]) {
+      expect(() => parseProjectLocationPlan({ ...emptyProjectLocationPlan(), points: [{ ...point('isolated'), isolatedPointIcon }] })).toThrow('localisation');
+    }
+    for (const patch of [
+      { waypoints: [{ ...point('route'), isolatedPointIcon: 'anchor' }] },
+      { zones: [{ id: 'zone', name: '', vertices: [], isolatedPointIcon: 'anchor' }] },
+      { zones: [{ id: 'zone', name: '', vertices: [{ latitude: '', longitude: '', isolatedPointIcon: 'anchor' }] }] },
+    ]) expect(() => parseProjectLocationPlan({ ...emptyProjectLocationPlan(), ...patch })).toThrow('localisation');
+  });
   it('retains a manual frame independently while legacy plans stay automatic and overlays stay geometry-only', () => {
     const legacy = emptyProjectLocationPlan(); expect(parseProjectLocationPlan(legacy)).not.toHaveProperty('mapViewport');
     const source = { ...legacy, mapViewport: { centerLatitude: 49.654321, centerLongitude: -1.789012, longitudeSpan: .023456789 } };

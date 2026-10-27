@@ -7,6 +7,8 @@ import { SeaOperationWeatherCard } from '../seaOperations/SeaOperationWeatherCar
 import { passagePlanCellData } from '../seaOperations/seaOperationPassagePlan';
 import { updateSeaOperationWaypoint } from '../seaOperations/seaOperationWaypointSnapshots';
 import { seaOperationZonePositions } from '../seaOperations/seaOperationMapLayers';
+import { SeaOperationIsolatedPointIcon } from '../seaOperations/SeaOperationIsolatedPointIcon';
+import { SEA_OPERATION_ISOLATED_POINT_ICONS } from '../seaOperations/seaOperationIsolatedPointIcons';
 import type { VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { PROJECT_LOCATION_LIMITS, type ProjectLocationOverlay } from './projectLocation';
 import './projectLocationEditor.css';
@@ -23,6 +25,10 @@ export function ProjectLocationPointFields({ point, index, kind = 'Waypoint', di
   payload.planning = { date: '', operationId: '', projectId: projectId || '', captainPersonId: '' };
   return <div role="row" aria-label={label} className="project-location-point">
     <div role="cell" className="project-location-point-head"><label>Numéro<input aria-label={`Numéro · ${label}`} value={point.number} maxLength={80} onChange={event => onChange({ number: event.target.value })} /></label><label>Description<input aria-label={`Description · ${label}`} value={point.descriptionVhf} maxLength={4000} onChange={event => onChange({ descriptionVhf: event.target.value })} /></label><button type="button" className="sp-button sp-button--secondary" aria-label={`Supprimer ${label}`} disabled={disabled} onClick={onDelete}><Trash2 size={16} aria-hidden="true" /></button></div>
+    {kind === 'Point isolé' && <div role="cell" className="project-location-point-icons"><span>Icône</span><div role="group" aria-label={`Icône · ${label}`}>
+      <button type="button" className="sp-button sp-button--secondary project-location-icon-choice" aria-label={`Repère simple · ${label}`} aria-pressed={!point.isolatedPointIcon} title="Repère carré simple" disabled={disabled} onClick={event => { if (!disabled && !event.currentTarget.closest('fieldset:disabled, [inert]')) onChange({ isolatedPointIcon: undefined }); }}><svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden="true"><rect x={4} y={5} width={16} height={14} rx={2} /></svg><span>Simple</span></button>
+      {SEA_OPERATION_ISOLATED_POINT_ICONS.map(icon => <button key={icon.value} type="button" className="sp-button sp-button--secondary project-location-icon-choice" aria-label={`${icon.label} · ${label}`} aria-pressed={point.isolatedPointIcon === icon.value} title={icon.label} disabled={disabled} onClick={event => { if (!disabled && !event.currentTarget.closest('fieldset:disabled, [inert]')) onChange({ isolatedPointIcon: icon.value }); }}><SeaOperationIsolatedPointIcon icon={icon.value} /><span>{icon.label}</span></button>)}
+    </div></div>}
     <div role="cell" className="project-location-coordinates"><div><span>Latitude</span><SeaOperationCoordinateInput axis="latitude" value={point.latitude} label={`Latitude · ${label}`} onChange={latitude => onChange({ latitude })} /></div><div><span>Longitude</span><SeaOperationCoordinateInput axis="longitude" value={point.longitude} label={`Longitude · ${label}`} onChange={longitude => onChange({ longitude })} /></div></div>
     {kind === 'Waypoint' && <><div role="cell" className="project-location-eta"><span>ETA · date et heure</span><SeaOperationEtaPicker value={point.eta} label={`ETA · ${label}`} inline disabled={disabled} onChange={eta => onChange({ eta, etaMode: 'manual' })} />{point.etaMode === 'manual' && <button type="button" className="sp-button sp-button--secondary" disabled={disabled} onClick={() => onChange({ eta: '', etaMode: 'automatic' })}>Rétablir l’ETA automatique</button>}</div>
     <SeaOperationUkcField payload={payload} point={point} index={index} disabled={disabled} status={{ loading: false, error: 'Le calcul automatique est disponible dans la fiche Opération en Mer.' }} onChange={onChange} />
@@ -40,7 +46,12 @@ export function ProjectLocationOverlayFields({ value, onChange, disabled = false
     <legend>Points isolés et zones</legend>
     <section aria-label="Points isolés"><div className="project-location-subheading"><h3>Points isolés</h3><button type="button" className="sp-button sp-button--secondary" disabled={disabled || value.points.length >= PROJECT_LOCATION_LIMITS.points} onClick={() => emit({ ...value, points: [...value.points, { ...emptySeaOperationWaypoint(), number: String(value.points.length + 1) }] })}><Plus size={16} aria-hidden="true" />Ajouter un point isolé</button></div>
       <div role="table" aria-label="Points isolés à compléter">{value.points.map((point, index) => <ProjectLocationPointFields key={point.id} point={point} index={index} kind="Point isolé" disabled={disabled} vessel={vessel} projectId={projectId}
-        onChange={patch => emit({ ...value, points: value.points.map(item => item.id === point.id ? updateSeaOperationWaypoint(item, patch) : item) })} onDelete={() => emit({ ...value, points: value.points.filter(item => item.id !== point.id) })} />)}</div>
+        onChange={patch => emit({ ...value, points: value.points.map(item => {
+          if (item.id !== point.id) return item;
+          const next = updateSeaOperationWaypoint(item, patch);
+          if (Object.hasOwn(patch, 'isolatedPointIcon') && patch.isolatedPointIcon === undefined) delete next.isolatedPointIcon;
+          return next;
+        }) })} onDelete={() => emit({ ...value, points: value.points.filter(item => item.id !== point.id) })} />)}</div>
       {!value.points.length && <p className="project-location-help">Aucun point isolé. Ils ne sont pas reliés à la route.</p>}
     </section>
     <section aria-label="Zones"><div className="project-location-subheading"><h3>Zones</h3><button type="button" className="sp-button sp-button--secondary" disabled={disabled || value.zones.length >= PROJECT_LOCATION_LIMITS.zones} onClick={() => {
