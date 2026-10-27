@@ -38,6 +38,8 @@
 .so-print-passage-sources h4 { font-size: inherit; margin: 10px 0 3px; }
 .so-print-passage .so-waypoint-weather-card { white-space: normal; }
 .so-print-route-map { margin: 12px 0 16px; break-inside: avoid; }
+.so-print table.so-print-zone-table > thead > tr > th:first-child { width: 90px; white-space: nowrap; }
+.so-print table.so-print-zone-table > thead > tr > th, .so-print table.so-print-zone-table > tbody > tr > td { text-align: center; vertical-align: middle; }
 
 @media print {
   @page sea-operation-portrait { size: A4 portrait; margin: 14mm; }

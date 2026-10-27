@@ -1,0 +1,26 @@
+{
+  "mapViewport": { "centerLatitude": 50.05, "centerLongitude": 1.2, "longitudeSpan": 1.7 },
+  "waypoints": [
+    { "latitude": "49.93", "longitude": "1.08" },
+    { "latitude": "49.99", "longitude": "1.02" },
+    { "latitude": "50.15", "longitude": "1.13" }
+  ],
+  "zones": [
+    { "id": "works", "name": "Zone de Travaux", "vertices": [
+      { "latitude": "50° 06.212′ N", "longitude": "001° 01.668′ E" },
+      { "latitude": "50° 07.663′ N", "longitude": "001° 04.055′ E" },
+      { "latitude": "50° 08.986′ N", "longitude": "001° 02.110′ E" },
+      { "latitude": "50° 13.547′ N", "longitude": "001° 09.637′ E" },
+      { "latitude": "50° 10.160′ N", "longitude": "001° 14.592′ E" },
+      { "latitude": "50° 04.162′ N", "longitude": "001° 04.678′ E" }
+    ] },
+    { "id": "buffer", "name": "Zone Tampon", "vertices": [
+      { "latitude": "50° 15.665′ N", "longitude": "001° 09.735′ E" },
+      { "latitude": "50° 10.100′ N", "longitude": "001° 17.890′ E" },
+      { "latitude": "50° 02.043′ N", "longitude": "001° 04.583′ E" },
+      { "latitude": "50° 06.271′ N", "longitude": "000° 58.373′ E" },
+      { "latitude": "50° 07.723′ N", "longitude": "001° 00.759′ E" },
+      { "latitude": "50° 09.045′ N", "longitude": "000° 58.813′ E" }
+    ] }
+  ]
+}

@@ -188,10 +188,16 @@ export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOp
       {isVesselDraftMeters(vessel.draftMeters) && <p>Seuils UKC : rouge jusqu’au tirant d’eau inclus ; orange au-delà et jusqu’à +2 m inclus ; vert au-delà de +2 m. Indicateur distinct de la décision du Capitaine.</p>}
       <p>ETA : date et heure locale de Paris. Les fiches historiques peuvent conserver une heure seule.</p>
       <p>Positions WGS84 : degrés et minutes décimales, N/S et E/W (Ouest).</p>
-      <div className="so-print-route-map"><SeaOperationRouteMap waypoints={form.waypoints} isolatedPoints={form.locationOverlay?.points} zones={form.locationOverlay?.zones} viewport={form.mapViewport} departurePort={vessel.departurePort} arrivalPort={vessel.arrivalPort} compact /></div>
+      <div className="so-print-route-map"><SeaOperationRouteMap waypoints={form.waypoints} isolatedPoints={form.locationOverlay?.points} zones={form.locationOverlay?.zones} viewport={form.mapViewport} departurePort={vessel.departurePort} arrivalPort={vessel.arrivalPort} compact ensureZonesVisible /></div>
       {form.locationOverlay && (form.locationOverlay.points.length > 0 || form.locationOverlay.zones.length > 0) && <section aria-label="Localisation de la mission">
         {form.locationOverlay.points.length > 0 && <><h3>Points isolés</h3><table><thead><tr><th>Point</th><th>Description</th><th>Latitude</th><th>Longitude</th></tr></thead><tbody>{form.locationOverlay.points.map((point, index) => <tr key={point.id}><td>{point.number || index + 1}</td><td>{text(point.descriptionVhf)}</td><td>{text(formatSeaLatitude(point.latitude))}</td><td>{text(formatSeaLongitude(point.longitude))}</td></tr>)}</tbody></table></>}
-        {form.locationOverlay.zones.map(zone => <section key={zone.id}><h3>{zone.name || 'Zone de travail'}</h3><p>{zone.vertices.map(formatSeaPosition).join(' · ') || 'Sommets à renseigner'}</p></section>)}
+        {form.locationOverlay.zones.map((zone, zoneIndex) => <section key={zone.id} aria-label={`Zone Z${zoneIndex + 1} : ${zone.name || `Zone ${zoneIndex + 1}`}`}>
+          <h3>{zone.name || `Zone ${zoneIndex + 1}`}</h3>
+          <table className="so-print-zone-table"><thead><tr><th scope="col">Sommet</th><th scope="col">Coordonnées</th></tr></thead><tbody>
+            {zone.vertices.length ? zone.vertices.map((vertex, vertexIndex) => <tr key={vertexIndex}><td>{`Z${zoneIndex + 1}.${vertexIndex + 1}`}</td><td>{formatSeaPosition(vertex)}</td></tr>)
+              : <tr><td colSpan={2}>Aucun sommet renseigné</td></tr>}
+          </tbody></table>
+        </section>)}
       </section>}
       <section className="so-print-voyage-summary" aria-label="Récapitulatif du Passage Plan">
         <h3>Récapitulatif du Passage Plan</h3>

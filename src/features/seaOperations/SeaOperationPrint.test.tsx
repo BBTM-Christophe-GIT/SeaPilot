@@ -43,12 +43,38 @@ describe('Opération en Mer printable content', () => {
     const location = within(container.querySelector('[aria-label="Localisation de la mission"]')!);
     expect(location.getByRole('heading', { name: 'Zone conservée' })).toBeInTheDocument();
     expect(location.getByRole('cell', { name: 'Balise isolée' })).toBeInTheDocument();
-    expect(location.getByRole('cell', { name: '49° 39.000′ N' })).toBeInTheDocument();
-    expect(location.getByRole('cell', { name: '001° 37.200′ W' })).toBeInTheDocument();
+    expect(location.getByRole('cell', { name: '49° 39.000′ N — 001° 37.200′ W' })).toBeInTheDocument();
     const isolated = location.getAllByRole('table')[0];
     expect(within(isolated).getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['Point', 'Description', 'Latitude', 'Longitude']);
     expect(within(isolated).getAllByRole('cell')).toHaveLength(4); expect(isolated).not.toHaveTextContent('12:07');
     expect(container.querySelector('.so-print-passage')).toBeNull(); expect(record).toEqual(original);
+  });
+  it('prints one named vertex table per zone with stable Z indices, including empty and invalid geometry', () => {
+    const draft = emptySeaOperation();
+    draft.locationOverlay = { version: 1, points: [], zones: [
+      { id: 'empty', name: 'Zone sans sommet', vertices: [] },
+      { id: 'operation', name: 'Zone opérationnelle', vertices: [{ latitude: '49.65', longitude: '-1.62' }, { latitude: 'invalide', longitude: '181' }, { latitude: '', longitude: '' }] },
+      { id: 'unnamed', name: '', vertices: [{ latitude: '48° 30.500′ S', longitude: '002° 10.250′ E' }] },
+    ] };
+    const record: SeaOperationRecord = { id: 'zone-tables', companyId: 1, version: 1, status: 'signed', draft,
+      createdBy: 'author', createdByName: 'Auteur', createdAt: '2026-10-27T08:00:00Z', updatedBy: 'author', updatedByName: 'Auteur', updatedAt: '2026-10-27T09:00:00Z',
+      signedBy: 'captain', signedByName: 'Capitaine', signedAt: '2026-10-27T09:00:00Z', captainName: 'Capitaine', canEdit: false, canSign: false };
+    const original = structuredClone(record), { container } = render(<SeaOperationPrint record={record} />);
+    const location = within(container.querySelector('[aria-label="Localisation de la mission"]')!);
+    const empty = within(location.getByRole('region', { name: 'Zone Z1 : Zone sans sommet' }));
+    expect(empty.getByRole('heading', { name: 'Zone sans sommet' })).toBeInTheDocument();
+    expect(empty.getByRole('cell', { name: 'Aucun sommet renseigné' })).toHaveAttribute('colspan', '2');
+    const operation = within(location.getByRole('region', { name: 'Zone Z2 : Zone opérationnelle' }));
+    expect(operation.getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['Sommet', 'Coordonnées']);
+    expect(operation.getByRole('cell', { name: 'Z2.1' })).toBeInTheDocument(); expect(operation.getByRole('cell', { name: 'Z2.2' })).toBeInTheDocument();
+    expect(operation.getByRole('cell', { name: '49° 39.000′ N — 001° 37.200′ W' })).toBeInTheDocument();
+    expect(operation.getByRole('cell', { name: 'invalide — 181' })).toBeInTheDocument();
+    expect(operation.getByRole('cell', { name: 'Z2.3' })).toBeInTheDocument();
+    expect(operation.getByRole('cell', { name: 'Latitude à renseigner — Longitude à renseigner' })).toBeInTheDocument();
+    const unnamed = within(location.getByRole('region', { name: 'Zone Z3 : Zone 3' }));
+    expect(unnamed.getByRole('heading', { name: 'Zone 3' })).toBeInTheDocument(); expect(unnamed.getByRole('cell', { name: 'Z3.1' })).toBeInTheDocument();
+    expect(unnamed.getByRole('cell', { name: '48° 30.500′ S — 002° 10.250′ E' })).toBeInTheDocument();
+    expect(location.queryByRole('cell', { name: 'Z1.1' })).not.toBeInTheDocument(); expect(record).toEqual(original);
   });
 
   it('centres all nine Passage Plan cells and marks only retained dense-traffic rows with accessible vigilance', () => {
