@@ -215,7 +215,7 @@ describe('SeaOperationWaypointMapEditor', () => {
   });
 
   it('requires an explicit layer choice at coincident route, isolated point and zone vertex positions', () => {
-    const route = [point(1)], isolated = [{ ...point(2), id: 'isolated' }];
+    const route = [point(1)], isolated = [{ ...point(2), id: 'isolated', number: 'B04', isolatedPointIcon: 'buoy' as const }];
     const zones = [{ id: 'zone', name: 'Travaux', vertices: [{ latitude: route[0].latitude, longitude: route[0].longitude }] }];
     const removeRoute = vi.fn(), removePoint = vi.fn(), removeVertex = vi.fn(), movePoint = vi.fn(), add = vi.fn();
     render(<SeaOperationWaypointMapEditor waypoints={route} isolatedPoints={isolated} zones={zones} onAddWaypoint={add} onDeleteWaypoint={removeRoute} onDeleteIsolatedPoint={removePoint} onDeleteZoneVertex={removeVertex} onMoveIsolatedPoint={movePoint} />);
@@ -223,24 +223,24 @@ describe('SeaOperationWaypointMapEditor', () => {
     const cluster = screen.getByRole('button', { name: /^Sélectionner les localisations : Waypoint 1,/ });
     fireEvent.click(cluster);
     expect(screen.getByRole('menuitem', { name: 'Waypoint 1' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'Point isolé 1' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Point isolé 1 · B04' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Sommet 1 · Travaux' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Point isolé 1' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Point isolé 1 · B04' }));
     fireEvent.keyDown(cluster, { key: 'ArrowRight', altKey: true }); expect(movePoint).toHaveBeenCalledExactlyOnceWith('isolated', expect.any(Object));
-    fireEvent.click(cluster); fireEvent.click(screen.getByRole('menuitem', { name: 'Point isolé 1' })); fireEvent.click(screen.getByRole('menuitem', { name: 'Supprimer' }));
+    fireEvent.click(cluster); fireEvent.click(screen.getByRole('menuitem', { name: 'Point isolé 1 · B04' })); fireEvent.click(screen.getByRole('menuitem', { name: 'Supprimer' }));
     expect(removePoint).toHaveBeenCalledExactlyOnceWith('isolated'); expect(removeRoute).not.toHaveBeenCalled(); expect(removeVertex).not.toHaveBeenCalled();
     fireEvent.click(cluster); fireEvent.click(screen.getByRole('menuitem', { name: 'Waypoint 1' })); fireEvent.click(screen.getByRole('menuitem', { name: 'Supprimer' })); expect(removeRoute).toHaveBeenCalledExactlyOnceWith('point-1');
     fireEvent.click(cluster); fireEvent.click(screen.getByRole('menuitem', { name: 'Sommet 1 · Travaux' })); fireEvent.click(screen.getByRole('menuitem', { name: 'Supprimer' })); expect(removeVertex).toHaveBeenCalledExactlyOnceWith('zone', 0);
     expect(add).not.toHaveBeenCalled();
   });
   it('moves and deletes overlay points and zone vertices through their own callbacks without adding route legs', () => {
-    const route = [point(1)], isolated = [{ ...point(2, '49.4', '-2'), id: 'isolated' }];
+    const route = [point(1)], isolated = [{ ...point(2, '49.4', '-2'), id: 'isolated', number: 'B04', isolatedPointIcon: 'buoy' as const }];
     const zones = [{ id: 'zone', name: 'Travaux', vertices: [{ latitude: '49.2', longitude: '-2.2' }, { latitude: '49.25', longitude: '-2.1' }, { latitude: '49.15', longitude: '-2' }] }];
     const original = structuredClone({ route, isolated, zones });
     const movePoint = vi.fn(), deletePoint = vi.fn(), moveVertex = vi.fn(), deleteVertex = vi.fn(), add = vi.fn();
     render(<SeaOperationWaypointMapEditor waypoints={route} isolatedPoints={isolated} zones={zones} onAddWaypoint={add} onMoveIsolatedPoint={movePoint} onDeleteIsolatedPoint={deletePoint} onMoveZoneVertex={moveVertex} onDeleteZoneVertex={deleteVertex} />);
     activate();
-    const isolatedTarget = screen.getByRole('button', { name: 'Sélectionner Point isolé 1' });
+    const isolatedTarget = screen.getByRole('button', { name: 'Sélectionner Point isolé 1 · B04' });
     fireEvent.keyDown(isolatedTarget, { key: 'ArrowRight', altKey: true });
     expect(movePoint).toHaveBeenCalledExactlyOnceWith('isolated', expect.objectContaining({ latitude: expect.any(Number), longitude: expect.any(Number) }));
     fireEvent.click(isolatedTarget); fireEvent.click(screen.getByRole('menuitem', { name: 'Supprimer' })); expect(deletePoint).toHaveBeenCalledExactlyOnceWith('isolated');

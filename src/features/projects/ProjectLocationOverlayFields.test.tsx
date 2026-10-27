@@ -1,10 +1,12 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { emptySeaOperationWaypoint, type SeaOperationWaypoint } from '../seaOperations/seaOperationModel';
 import { SEA_METEO_FRANCE_SOURCE_URL } from '../seaOperations/seaOperationWeatherModel';
 import { ProjectLocationOverlayFields, ProjectLocationPointFields } from './ProjectLocationOverlayFields';
 import { ProjectLocationPreview } from './ProjectLocationPreview';
-import { emptyProjectLocationPlan } from './projectLocation';
+import { emptyProjectLocationPlan, type ProjectLocationOverlay } from './projectLocation';
 
 vi.mock('../seaOperations/SeaOperationRouteMap', () => ({ SeaOperationRouteMap: () => <div>Carte conservée</div> }));
 
@@ -17,6 +19,39 @@ function retainedPoint(): SeaOperationWaypoint {
 }
 
 describe('isolated project and operation location points', () => {
+  it('selects a labelled icon with the keyboard, switches symbols and restores the legacy marker without clearing retained data', async () => {
+    const changed = vi.fn(), point = { ...retainedPoint(), number: 'B04' }, original = structuredClone(point);
+    function Controlled() {
+      const [value, setValue] = useState<ProjectLocationOverlay>({ version: 1, points: [point], zones: [] });
+      return <ProjectLocationOverlayFields value={value} onChange={next => { changed(next); setValue(next); }} />;
+    }
+    const user = userEvent.setup(); render(<Controlled />);
+    const choices = within(screen.getByRole('group', { name: 'Icône · Point isolé 1' }));
+    expect(choices.getAllByRole('button')).toHaveLength(7);
+    expect(choices.getByRole('button', { name: 'Repère simple · Point isolé 1' })).toHaveAttribute('aria-pressed', 'true');
+    choices.getByRole('button', { name: 'Bouée · Point isolé 1' }).focus(); await user.keyboard('[Space]');
+    expect(changed.mock.calls.at(-1)![0].points[0]).toEqual({ ...point, isolatedPointIcon: 'buoy' });
+    expect(choices.getByRole('button', { name: 'Bouée · Point isolé 1' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(choices.getByRole('button', { name: 'Corps-mort · Point isolé 1' }));
+    expect(changed.mock.calls.at(-1)![0].points[0]).toEqual({ ...point, isolatedPointIcon: 'mooring' });
+    expect(choices.getAllByRole('button').filter(button => button.getAttribute('aria-pressed') === 'true')).toHaveLength(1);
+    await user.click(choices.getByRole('button', { name: 'Repère simple · Point isolé 1' }));
+    expect(changed.mock.calls.at(-1)![0].points[0]).toStrictEqual(point);
+    expect(changed.mock.calls.at(-1)![0].points[0]).not.toHaveProperty('isolatedPointIcon');
+    expect(point).toEqual(original);
+  });
+
+  it('blocks every icon choice in disabled or inert views', () => {
+    const changed = vi.fn(), point = retainedPoint();
+    const { rerender } = render(<ProjectLocationOverlayFields value={{ version: 1, points: [point], zones: [] }} onChange={changed} disabled />);
+    let choices = within(screen.getByRole('group', { name: 'Icône · Point isolé 1' }));
+    for (const button of choices.getAllByRole('button')) { expect(button).toBeDisabled(); fireEvent.click(button); }
+    expect(changed).not.toHaveBeenCalled();
+    rerender(<div inert><ProjectLocationPointFields point={point} kind="Point isolé" index={0} onChange={changed} onDelete={vi.fn()} /></div>);
+    choices = within(screen.getByRole('group', { name: 'Icône · Point isolé 1' })); fireEvent.click(choices.getByRole('button', { name: 'Bouée · Point isolé 1' }));
+    expect(changed).not.toHaveBeenCalled();
+  });
+
   it('shows only number, description, coordinates and deletion without publishing or clearing retained navigation data', () => {
     const point = retainedPoint(), original = structuredClone(point), changed = vi.fn();
     render(<ProjectLocationPointFields point={point} index={0} kind="Point isolé" onChange={changed} onDelete={vi.fn()} />);
@@ -52,6 +87,7 @@ describe('isolated project and operation location points', () => {
     expect(row.getByRole('checkbox', { name: 'Zone maritime à trafic dense' })).toBeChecked();
     expect(row.getByText('Contacts VHF et météo')).toBeInTheDocument();
     expect(row.getByRole('button', { name: 'Rétablir l’ETA automatique' })).toBeInTheDocument();
+    expect(row.queryByRole('group', { name: 'Icône · Waypoint 1' })).not.toBeInTheDocument();
     expect(changed).not.toHaveBeenCalled();
   });
   it('previews only four isolated-point columns while keeping all nine route columns and the retained snapshot', () => {

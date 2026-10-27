@@ -4,6 +4,7 @@ import type { SeaOperationCopernicusEstimate } from './seaOperationCopernicusMod
 import { parseProjectLocationOverlay, type ProjectLocationOverlay } from '../projects/projectLocation';
 import { isVesselWeatherMatrix, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { isSeaOperationMapViewport, type SeaOperationMapViewport } from './seaOperationMapViewport';
+import type { SeaOperationIsolatedPointIconName } from './seaOperationIsolatedPointIcons';
 
 /** Digital transcription of OPE-FOR-10-C, GO / NO GO – OPÉRATION EN MER. */
 export type SeaOperationAnswer = '' | 'yes' | 'no';
@@ -42,6 +43,8 @@ export interface SeaOperationWaypointRadio {
 }
 export interface SeaOperationWaypoint {
   id: string;
+  /** Visual metadata accepted only in isolated-point collections, never route waypoints. */
+  isolatedPointIcon?: SeaOperationIsolatedPointIconName;
   number: string;
   descriptionVhf: string;
   latitude: string;
@@ -319,7 +322,7 @@ export function isSeaOperationPayload(value: unknown): value is SeaOperationPayl
   const ukcReference = { projectId: value.transit ? '' : isObject(value.planning) ? value.planning.projectId as string : undefined,
     ...(value.transit ? { transit: { date: (value.transit as Record<string, string>).date, vesselId: value.vessel.id as string } } : {}),
     vesselId: value.vessel.id as string, draftMeters: value.vessel.draftMeters as number | null | undefined };
-  const validWaypoints = Array.isArray(value.waypoints) && value.waypoints.every((point) => hasStringFields(point, ['id', 'number', 'descriptionVhf', 'latitude', 'longitude', 'ukc', 'eta']) && typeof point.denseTraffic === 'boolean'
+  const validWaypoints = Array.isArray(value.waypoints) && value.waypoints.every((point) => hasStringFields(point, ['id', 'number', 'descriptionVhf', 'latitude', 'longitude', 'ukc', 'eta']) && !Object.hasOwn(point, 'isolatedPointIcon') && typeof point.denseTraffic === 'boolean'
     && (point.etaMode === undefined || point.etaMode === 'manual' || point.etaMode === 'automatic')
     && (point.ukcMode === undefined || point.ukcMode === 'manual' || point.ukcMode === 'automatic')
     && (point.ukcForecast === undefined || point.ukcMode === 'automatic' && Boolean(waypointUkcSnapshot(point as unknown as SeaOperationWaypoint, ukcReference)))

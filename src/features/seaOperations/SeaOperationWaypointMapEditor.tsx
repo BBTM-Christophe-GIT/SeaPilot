@@ -16,6 +16,7 @@ import { formatProjectPort } from '../projects/projectPorts';
 import { seaOperationMapExtraPositions, seaOperationMapLayers, type SeaOperationMapZone } from './seaOperationMapLayers';
 import { projectSeaOperationMapPlace } from './seaOperationMapPlaces';
 import { seaWaypointPosition } from './seaOperationNavigation';
+import { seaOperationIsolatedPointLabel } from './seaOperationIsolatedPointIcons';
 
 interface OverlayTarget { id: string; kind: 'route' | 'point' | 'vertex'; label: string; x: number; y: number; zoneId?: string; index?: number }
 const NO_POINTS: readonly SeaOperationWaypoint[] = [];
@@ -349,7 +350,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
   }
 
   function overlayTargets(geometry: SeaOperationRouteMapGeometry): OverlayTarget[] {
-    const points: OverlayTarget[] = seaOperationMapLayers(geometry, isolatedPoints, []).isolated.map(item => ({ id: item.point.id, kind: 'point', label: `Point isolé ${item.index}`, x: item.x, y: item.y }));
+    const points: OverlayTarget[] = seaOperationMapLayers(geometry, isolatedPoints, []).isolated.map(item => ({ id: item.point.id, kind: 'point', label: `Point isolé ${item.index} · ${seaOperationIsolatedPointLabel(item.point, item.index)}`, x: item.x, y: item.y }));
     for (const zone of zones) zone.vertices.forEach((vertex, index) => {
       const position = seaWaypointPosition(vertex), pixel = position && projectSeaOperationMapPlace(geometry, position);
       if (pixel) points.push({ id: `${zone.id}:vertex:${index}`, kind: 'vertex', label: `Sommet ${index + 1} · ${zone.name || 'Zone'}`, ...pixel, zoneId: zone.id, index });

@@ -10,9 +10,9 @@ import { seaOperationRouteArrivalEta } from '../seaOperations/seaOperationVoyage
 import { seaOperationMapLayers, seaOperationZonePositions } from '../seaOperations/seaOperationMapLayers';
 import { parseProjectLocationPlan, hasProjectLocationContent, type ProjectLocationPlan, type ProjectLocationOverlay } from './projectLocation';
 import type { SeaOperationWaypoint } from '../seaOperations/seaOperationModel';
+import { drawSeaOperationIsolatedPointPdf } from '../seaOperations/seaOperationIsolatedPointPdf';
 
 const BLUE = [12, 85, 152] as const;
-const GREEN = [37, 129, 95] as const;
 const MUTED = [82, 102, 121] as const;
 const pale = [255, 250, 240] as const;
 const clean = (value: string) => value.replace(/[′’]/g, "'").replace(/[–—−]/g, '-').replace(/…/g, '...').replace(/\u00a0|\u202f/g, ' ');
@@ -195,9 +195,7 @@ export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeo
   }
   location.points.forEach((point, index) => {
     const position = seaWaypointPosition(point), p = position && projected(position); if (!p) return;
-    document.setFillColor(255, 255, 255); document.setDrawColor(...GREEN); document.setLineWidth(unit(.8));
-    document.rect(p.x - unit(4), p.y - unit(4), unit(8), unit(8), 'FD'); document.setTextColor(...GREEN);
-    write(`P${index + 1}`, p.x + unit(7), Math.max(bounds.y + unit(9), p.y - unit(5)), 7);
+    drawSeaOperationIsolatedPointPdf(document, point, index + 1, { x: p.x, y: p.y, left: bounds.x, right: bounds.x + bounds.width, top: bounds.y, bottom: bounds.y + bounds.height });
     if (point.denseTraffic) {
       const x = Math.min(bounds.x + bounds.width - unit(7), p.x + unit(14));
       document.setDrawColor(138, 97, 0); document.setFillColor(...pale);

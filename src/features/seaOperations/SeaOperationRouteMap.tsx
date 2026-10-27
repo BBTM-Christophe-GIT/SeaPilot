@@ -10,6 +10,8 @@ import { buildSeaOperationRouteLegs, formatSeaOperationVoyageDuration, seaOperat
 import './seaOperationRouteMap.css';
 import { seaOperationMapExtraPositions, seaOperationMapLayers, seaOperationZonePositions, type SeaOperationMapZone } from './seaOperationMapLayers';
 import { projectSeaOperationMapPlace } from './seaOperationMapPlaces';
+import { SeaOperationIsolatedPointIcon } from './SeaOperationIsolatedPointIcon';
+import { seaOperationIsolatedPointIcon, seaOperationIsolatedPointLabel } from './seaOperationIsolatedPointIcons';
 
 const NO_ISOLATED_POINTS: readonly SeaOperationWaypoint[] = [];
 const NO_ZONES: readonly SeaOperationMapZone[] = [];
@@ -179,7 +181,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
     <div className="so-route-map-frame" ref={frame}>
       {geometry.projection ? <svg aria-labelledby={svgTitleId} aria-describedby={descriptionId} className="so-route-map-svg" role={!compact && (renderOverlay || route) ? 'group' : 'img'} viewBox={`0 0 ${geometry.width} ${geometry.height}`}>
         <title id={svgTitleId}>{`Carte du parcours · ${countLabel}`}</title>
-        <desc id={descriptionId}>Nord en haut. Les numéros suivent l’ordre du tableau. {geometry.points.map((point) => `Point ${point.index} : ${point.label}`).join(' ; ')}. Les points aux mêmes coordonnées partagent une pastille. {visibleDefinedPorts.map(port => `${port.roleLabel} : ${port.port.port}`).join(' ; ')} {vigilanceDescription && `${vigilanceDescription}.`} {layers.isolated.map(item => `Point isolé ${item.index} : ${item.point.descriptionVhf || item.point.number}${item.point.denseTraffic ? ' · trafic dense, risque de collision' : ''}`).join(' ; ')} {layers.polygons.map(item => `Zone : ${item.zone.name}`).join(' ; ')}</desc>
+        <desc id={descriptionId}>Nord en haut. Les numéros suivent l’ordre du tableau. {geometry.points.map((point) => `Point ${point.index} : ${point.label}`).join(' ; ')}. Les points aux mêmes coordonnées partagent une pastille. {visibleDefinedPorts.map(port => `${port.roleLabel} : ${port.port.port}`).join(' ; ')} {vigilanceDescription && `${vigilanceDescription}.`} {layers.isolated.map(item => `Point isolé ${item.index} : ${seaOperationIsolatedPointLabel(item.point, item.index)}${item.point.descriptionVhf ? ` · ${item.point.descriptionVhf}` : ''}${item.point.denseTraffic ? ' · trafic dense, risque de collision' : ''}`).join(' ; ')} {layers.polygons.map(item => `Zone : ${item.zone.name}`).join(' ; ')}</desc>
         <defs><clipPath id={clipId}><rect width={geometry.width} height={geometry.height} /></clipPath></defs>
         <g clipPath={`url(#${clipId})`}>
           <rect className="so-route-map-sea" width={geometry.width} height={geometry.height} />
@@ -222,12 +224,19 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
             const arrow = directionArrow(segment.from, segment.to);
             return <g key={index}><line x1={segment.from.x} y1={segment.from.y} x2={segment.to.x} y2={segment.to.y} vectorEffect="non-scaling-stroke" />{arrow && <polygon className="so-route-map-direction" points={arrow} />}</g>;
           })}</g>
-          <g className="so-route-map-isolated-points">{layers.isolated.map(({ point, index, x, y, position }) => <g key={point.id} data-isolated-point-id={point.id} transform={`translate(${x} ${y})`} role="img" aria-label={`Point isolé ${index} : ${point.descriptionVhf || point.number || 'Sans nom'} · ${formatSeaLatitude(position.latitude)} · ${formatSeaLongitude(position.longitude)}`}>
-            <title>{point.descriptionVhf || `Point isolé ${index}`}</title><rect x={-15} y={-13} width={30} height={26} rx={4} /><text className="so-route-map-isolated-ordinal" textAnchor="middle" dominantBaseline="central">P{index}</text>
-            {point.descriptionVhf && <text className="so-route-map-point-label" x={0} y={-20} textAnchor="middle">{point.descriptionVhf.length > 20 ? `${point.descriptionVhf.slice(0, 19)}…` : point.descriptionVhf}</text>}
-            {showWaypointCoordinates && !compact && <text className="so-route-map-point-coordinates" textAnchor="middle" y={22}><tspan x={0}>{formatSeaLatitude(position.latitude)}</tspan><tspan x={0} dy={11}>{formatSeaLongitude(position.longitude)}</tspan></text>}
-            {point.denseTraffic && <g className="so-route-map-point-vigilance" role="img" aria-label={`Vigilance : trafic dense, risque de collision · Point isolé ${index}`}><title>Traffic dense · Point isolé {index} · risque de collision</title><circle cx={x > geometry.width * .7 ? -31 : 31} cy={0} r={10} /><Eye aria-hidden="true" x={(x > geometry.width * .7 ? -31 : 31) - 7} y={-7} size={14} strokeWidth={1.8} /></g>}
-          </g>)}</g>
+          <g className="so-route-map-isolated-points">{layers.isolated.map(({ point, index, x, y, position }) => {
+            const fullLabel = seaOperationIsolatedPointLabel(point, index), label = fullLabel.length > 18 ? `${fullLabel.slice(0, 17)}…` : fullLabel;
+            const icon = seaOperationIsolatedPointIcon(point.isolatedPointIcon), alignEnd = x > geometry.width * .7;
+            const markerWidth = Math.max(30, Math.min(140, label.length * 7 + 14));
+            const vigilanceX = (alignEnd ? -1 : 1) * (icon ? Math.max(31, label.length * 7 + 34) : markerWidth / 2 + 16);
+            return <g key={point.id} data-isolated-point-id={point.id} transform={`translate(${x} ${y})`} role="img" aria-label={`Point isolé ${index} : ${fullLabel}${point.descriptionVhf ? ` · ${point.descriptionVhf}` : ''} · ${formatSeaLatitude(position.latitude)} · ${formatSeaLongitude(position.longitude)}`}>
+              <title>{`Point isolé ${index} · ${fullLabel}${point.descriptionVhf ? ` · ${point.descriptionVhf}` : ''}${icon ? ` · ${icon.label}` : ''}`}</title>
+              {icon ? <><SeaOperationIsolatedPointIcon icon={icon.value} className="so-route-map-isolated-icon" x={-12} y={-12} /><text className="so-route-map-isolated-ordinal" x={alignEnd ? -18 : 18} textAnchor={alignEnd ? 'end' : 'start'} dominantBaseline="central">{label}</text></>
+                : <><rect x={-markerWidth / 2} y={-13} width={markerWidth} height={26} rx={4} /><text className="so-route-map-isolated-ordinal" textAnchor="middle" dominantBaseline="central">{label}</text></>}
+              {showWaypointCoordinates && !compact && <text className="so-route-map-point-coordinates" textAnchor="middle" y={22}><tspan x={0}>{formatSeaLatitude(position.latitude)}</tspan><tspan x={0} dy={11}>{formatSeaLongitude(position.longitude)}</tspan></text>}
+              {point.denseTraffic && <g className="so-route-map-point-vigilance" role="img" aria-label={`Vigilance : trafic dense, risque de collision · Point isolé ${index} : ${fullLabel}`}><title>Traffic dense · Point isolé {index} · {fullLabel} · risque de collision</title><circle cx={vigilanceX} cy={0} r={10} /><Eye aria-hidden="true" x={vigilanceX - 7} y={-7} size={14} strokeWidth={1.8} /></g>}
+            </g>;
+          })}</g>
           {legLabels.length > 0 && <g className="so-route-map-leg-labels">{legLabels.map(label => <g key={`${label.leg.fromIndex}:${label.leg.toIndex}`} transform={`translate(${label.x} ${label.y})`} role="img" aria-label={`Waypoint ${label.leg.fromIndex} vers ${label.leg.toIndex} : ${label.text}`}>
             <rect x={-label.width / 2} y={-11} width={label.width} height={22} rx={6} /><text textAnchor="middle" dominantBaseline="central">{label.text}</text>
           </g>)}</g>}
