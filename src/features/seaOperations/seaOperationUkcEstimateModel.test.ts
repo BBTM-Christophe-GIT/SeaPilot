@@ -28,6 +28,9 @@ function sources(): SeaOperationUkcEstimateSources {
 }
 
 describe('static UKC computation and auditable captures', () => {
+  it('keeps the historical LAT pathway separate from explicit Copernicus Transit captures', () => {
+    expect(() => validateSeaOperationUkcEstimateInput({ ...input, projectId: '', transit: { date: '2026-10-24', vesselId: input.vesselId } })).toThrow('LAT historique');
+  });
   it('adds the qualified source-to-LAT offset, then subtracts the retained draught', () => {
     const before = sources();
     const result = calculateSeaOperationUkcEstimate(input, before, fetchedAt);

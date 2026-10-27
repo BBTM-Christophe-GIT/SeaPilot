@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import { seaWaypointPosition } from './seaOperationNavigation';
 import { fetchSeaOperationWaypointWeather, type SeaOperationWaypointWeather } from './seaOperationWeatherQueries';
-import { seaOperationEtaUtc } from './seaOperationWeatherModel';
+import { isSeaOperationTransitRequestContext, seaOperationEtaUtc, type SeaOperationTransitRequestContext } from './seaOperationWeatherModel';
 import { preservedWaypointWeather, waypointWeatherSnapshot, type SeaOperationWeatherCaptureContext } from './seaOperationWaypointSnapshots';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 import { SeaOperationWeatherObservationCard } from './SeaOperationWeatherObservationCard';
@@ -15,6 +15,7 @@ import './seaOperationNavigation.css';
 
 interface Props {
   client: SupabaseClient; projectId: string; waypoints: readonly SeaOperationWaypoint[]; preview?: boolean; active?: boolean;
+  transit?: SeaOperationTransitRequestContext;
   readOnly?: boolean; validatedAt?: string | null;
   compact?: boolean;
   observations?: readonly ObservationResult[];
@@ -27,7 +28,7 @@ const utc = (value: string) => new Intl.DateTimeFormat('fr-FR', { timeZone: 'UTC
 const collectionHelp = 'Hs de la houle seule, hors mer du vent. Sans donnée marine à la maille du waypoint, la maille marine disponible la plus proche est recherchée à 10 km maximum, à la même échéance. Sa position et sa distance sont affichées. Les dates hors horizon ou sans donnée proche restent indisponibles. Les prévisions disponibles sont conservées à l’enregistrement du brouillon et à la validation du Capitaine. Une consultation en direct ne modifie jamais une fiche signée.';
 
 /** Forecasts are contextual assistance, never an automatic safety answer or a signed-form mutation. */
-export function SeaOperationWeatherPanel({ client, projectId, waypoints, preview = false, active = true, readOnly = false, compact = false, validatedAt, observations, onWeatherLoaded, onStatusChange }: Props) {
+export function SeaOperationWeatherPanel({ client, projectId, transit, waypoints, preview = false, active = true, readOnly = false, compact = false, validatedAt, observations, onWeatherLoaded, onStatusChange }: Props) {
   const [refresh, setRefresh] = useState(0);
   const [state, setState] = useState<{ key: string; client: SupabaseClient; results: Record<string, PointResult>; loading: boolean } | null>(null);
   const currentClient = useRef(client);
@@ -39,12 +40,14 @@ export function SeaOperationWeatherPanel({ client, projectId, waypoints, preview
   currentWaypoints.current = waypoints;
   capture.current = onWeatherLoaded;
   statusChange.current = onStatusChange;
-  const inputKey = JSON.stringify({ projectId, preview, readOnly, points: waypoints.map(({ id, latitude, longitude, eta }) => ({ id, latitude, longitude, eta })) });
+  const hasContext = Boolean(projectId || isSeaOperationTransitRequestContext(transit));
+  const inputKey = JSON.stringify({ projectId, ...(transit ? { transit } : {}), preview, readOnly, points: waypoints.map(({ id, latitude, longitude, eta }) => ({ id, latitude, longitude, eta })) });
   const current = state?.key === inputKey && state.client === client ? state : null;
 
   useEffect(() => {
-    if (readOnly || !active || !projectId) return;
-    const input = JSON.parse(inputKey) as { projectId: string; preview: boolean; points: Pick<SeaOperationWaypoint, 'id' | 'latitude' | 'longitude' | 'eta'>[] };
+    if (readOnly || !active || !hasContext) return;
+    const input = JSON.parse(inputKey) as { projectId: string; transit?: SeaOperationTransitRequestContext; preview: boolean; points: Pick<SeaOperationWaypoint, 'id' | 'latitude' | 'longitude' | 'eta'>[] };
+    const reference = { projectId: input.projectId, ...(input.transit ? { transit: input.transit } : {}) };
     const controller = new AbortController();
     let cancelled = false;
     const refreshing = lastRefresh.current !== refresh;
@@ -59,14 +62,14 @@ export function SeaOperationWeatherPanel({ client, projectId, waypoints, preview
       const weather = stored?.id === point.id ? waypointWeatherSnapshot(stored) : undefined;
       if (weather) { results[key] = { weather }; if (!refreshing && (weather.wind || weather.waves)) return null; }
       results[key] = { ...results[key], loading: true };
-      return { key, point: { projectId: input.projectId, pointId: point.id, ...position, eta: point.eta }, context: { projectId: input.projectId, pointId: point.id, latitude: point.latitude, longitude: point.longitude, eta: point.eta } };
+      return { key, point: { ...reference, pointId: point.id, ...position, eta: point.eta }, context: { ...reference, pointId: point.id, latitude: point.latitude, longitude: point.longitude, eta: point.eta } };
     }).filter((entry) => entry !== null);
     const publish = (loading: boolean) => {
       if (!cancelled && currentClient.current === client) {
         setState({ key: inputKey, client, results: { ...results }, loading });
         statusChange.current?.(Object.fromEntries(input.points.map((point, index) => {
           const result = results[`${index}:${point.id}`];
-          return [weatherRequestKey(input.projectId, point), { loading: result?.loading === true, ...(result?.error ? { error: result.error } : {}) }];
+          return [weatherRequestKey(reference, point), { loading: result?.loading === true, ...(result?.error ? { error: result.error } : {}) }];
         })), client);
       }
     };
@@ -95,13 +98,13 @@ export function SeaOperationWeatherPanel({ client, projectId, waypoints, preview
       void Promise.all(Array.from({ length: Math.min(3, pending.length) }, worker)).finally(() => publish(false));
     }, 700);
     return () => { cancelled = true; window.clearTimeout(timer); controller.abort(); };
-  }, [active, client, inputKey, projectId, readOnly, refresh]);
+  }, [active, client, inputKey, hasContext, readOnly, refresh]);
 
   return <section className="so-weather-panel" aria-label="Prévisions météo du Passage Plan">
-    <div className="so-weather-heading"><h3><CloudSun size={17} aria-hidden="true" />Prévisions aux points de passage</h3>{!readOnly && <button type="button" className="sp-button sp-button--secondary" disabled={!projectId || !waypoints.length || current?.loading} onClick={() => setRefresh((value) => value + 1)}><RefreshCw size={14} aria-hidden="true" />Actualiser la météo</button>}</div>
+    <div className="so-weather-heading"><h3><CloudSun size={17} aria-hidden="true" />Prévisions aux points de passage</h3>{!readOnly && <button type="button" className="sp-button sp-button--secondary" disabled={!hasContext || !waypoints.length || current?.loading} onClick={() => setRefresh((value) => value + 1)}><RefreshCw size={14} aria-hidden="true" />Actualiser la météo</button>}</div>
     <p className="so-help">ETA saisies à l’heure de Paris. Prévisions horaires : l’heure du modèle est affichée en UTC, au plus près de l’ETA (30 min maximum). {readOnly ? 'Les prévisions enregistrées sont conservées avec la décision signée.' : 'Les conditions météo restent à valider par le Capitaine.'}</p>
     {readOnly && validatedAt && Number.isFinite(Date.parse(validatedAt)) && <p className="so-help">Décision du Capitaine validée le {utc(validatedAt)} UTC.</p>}
-    {!projectId ? <p>Sélectionnez le projet du planning pour consulter la météo.</p> : !waypoints.length ? <p>Ajoutez un point avec ses coordonnées et sa date / heure d’arrivée.</p> : !compact && <ul className="so-weather-points">{waypoints.map((point, index) => {
+    {!hasContext ? <p>Sélectionnez le projet du planning ou le navire et la date du Transit pour consulter la météo.</p> : !waypoints.length ? <p>Ajoutez un point avec ses coordonnées et sa date / heure d’arrivée.</p> : !compact && <ul className="so-weather-points">{waypoints.map((point, index) => {
       const result = current?.results[`${index}:${point.id}`] ?? { weather: waypointWeatherSnapshot(point) };
       const weather = result?.weather;
       return <li className="so-weather-point" key={`${index}:${point.id}`}>

@@ -6,6 +6,15 @@ import { SEA_METEO_FRANCE_SOURCE_URL, type SeaOperationWaypointWeather } from '.
 const point = { ...emptySeaOperationWaypoint('p1'), latitude: '49.65', longitude: '-1.62', eta: '2026-10-24T12:00' };
 
 describe('inline weather acquisition status', () => {
+  it('isolates Transit by vessel and operation date without inventing a project', () => {
+    const reference = { projectId: '', transit: { date: '2026-10-27', vesselId: '1' } };
+    expect(initialSeaOperationWeatherStatus(reference, point)).toEqual({ loading: true });
+    expect(weatherRequestKey(reference, point)).not.toBe(weatherRequestKey('', point));
+    for (const transit of [{ date: '2026-10-28', vesselId: '1' }, { date: '2026-10-27', vesselId: '2' }]) {
+      expect(weatherRequestKey({ projectId: '', transit }, point)).not.toBe(weatherRequestKey(reference, point));
+    }
+    expect(initialSeaOperationWeatherStatus({ ...reference, transit: { ...reference.transit, vesselId: '' } }, point).loading).toBe(false);
+  });
   it('identifies incomplete inputs before starting a forecast', () => {
     expect(initialSeaOperationWeatherStatus('', point).error).toContain('projet du planning');
     expect(initialSeaOperationWeatherStatus('1', { ...point, latitude: '' }).error).toContain('latitude');

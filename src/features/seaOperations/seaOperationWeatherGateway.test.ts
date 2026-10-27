@@ -24,6 +24,57 @@ const request = (body: unknown = point, headers: Record<string, string> = {}) =>
 });
 
 describe('authenticated sea operation weather endpoint', () => {
+  it('authorizes the explicit Transit vessel/day before fetching or returning a cached forecast', async () => {
+    const { handler, authorize, fetcher } = fixture();
+    const transit = { date: '2026-10-22', vesselId: '2' }, input = { ...point, projectId: '', transit };
+    expect((await handler(request(input))).status).toBe(200);
+    expect(authorize).toHaveBeenCalledExactlyOnceWith('', transit);
+    expect(authorize.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(fetcher).mock.invocationCallOrder[0]);
+    const next = { ...transit, date: '2026-10-23' };
+    expect((await handler(request({ ...input, transit: next, pointId: 'next' }))).status).toBe(200);
+    expect(authorize).toHaveBeenLastCalledWith('', next); expect(fetcher).toHaveBeenCalledTimes(2);
+    authorize.mockRejectedValueOnce(new Error('Assignment or module revoked'));
+    expect((await handler(request(input))).ok).toBe(false); expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it('rejects incomplete or mixed Transit/project contexts before authentication and provider work', async () => {
+    const { handler, backend, fetcher } = fixture();
+    for (const patch of [{ projectId: '' }, { transit: { date: '2026-10-22', vesselId: '2' } },
+      { projectId: '', transit: { date: '2026-02-30', vesselId: '2' } }, { projectId: '', transit: { date: '2026-10-22', vesselId: '0' } }]) {
+      expect((await handler(request({ ...point, ...patch }))).status).toBe(400);
+    }
+    expect(backend).not.toHaveBeenCalled(); expect(fetcher).not.toHaveBeenCalled();
+  });
+  it.each(['denied', 'date', 'vessel', 'array'] as const)('fails closed when the actual Transit vessel RPC returns %s', async reason => {
+    vi.stubEnv('SUPABASE_URL', 'https://backend.example'); vi.stubEnv('SUPABASE_PUBLISHABLE_KEY', 'public-key');
+    const transit = { date: '2026-10-22', vesselId: '2' };
+    const fetcher = vi.fn(async (url, init?: RequestInit) => {
+      if (String(url).endsWith('/auth/v1/user')) return Response.json({ id: 'a6320000-0000-0000-0000-000000000001' });
+      expect(String(url)).toBe('https://backend.example/rest/v1/rpc/sea_operation_vessel_context');
+      expect(new Headers(init?.headers).get('authorization')).toBe('Bearer actual-jwt');
+      expect(new Headers(init?.headers).get('apikey')).toBe('public-key');
+      expect(JSON.parse(init?.body as string)).toEqual({ p_date: transit.date, p_vessel_id: transit.vesselId });
+      if (reason === 'denied') return Response.json({ code: '42501', message: 'Foreign company or module denied' }, { status: 403 });
+      return Response.json(reason === 'array' ? [] : { date: reason === 'date' ? '2026-10-23' : transit.date, vesselId: reason === 'vessel' ? '3' : transit.vesselId });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const response = await gateway.fetch(request({ ...point, projectId: '', transit }));
+    expect(response.status).toBe(403); expect(await response.json()).toEqual({ error: 'WEATHER_ACCESS_DENIED' });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it('accepts the matching Transit RPC without a Projects lookup and keeps the verified caller token', async () => {
+    vi.stubEnv('SUPABASE_URL', 'https://backend.example'); vi.stubEnv('SUPABASE_PUBLISHABLE_KEY', 'public-key');
+    const transit = { date: '2026-10-22', vesselId: '2' };
+    const fetcher = vi.fn(async (url, init?: RequestInit) => {
+      if (String(url).endsWith('/auth/v1/user')) return Response.json({ id: 'a6320000-0000-0000-0000-000000000001' });
+      expect(String(url)).toBe('https://backend.example/rest/v1/rpc/sea_operation_vessel_context');
+      expect(new Headers(init?.headers).get('authorization')).toBe('Bearer actual-jwt');
+      return Response.json({ ...transit, captains: [], canSign: false });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    // A historical ETA needs no provider request, but still requires the full current authorization.
+    const response = await gateway.fetch(request({ ...point, eta: '2000-01-01T12:25', projectId: '', transit }));
+    expect(response.status).toBe(200); expect(fetcher).toHaveBeenCalledTimes(2);
+  });
   it('uses public Météo-France data by default without an API subscription after authorizing the actor', async () => {
     const authorize = vi.fn().mockResolvedValue(undefined);
     const meteoFrance = vi.fn().mockResolvedValue({ pointId: point.pointId, etaUtc: '2026-10-22T10:25:00Z', wind: null, waves: null, attribution: 'Météo-France' });

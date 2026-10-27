@@ -13,6 +13,17 @@ function fixture() {
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('authenticated Copernicus UKC client', () => {
+  it('sends an explicit Transit vessel/day and rejects a capture made for another operation day', async () => {
+    const { client } = fixture(), transit = { date: '2026-10-27', vesselId: point.vesselId };
+    const input = { ...point, projectId: '', transit };
+    const capture = calculateSeaOperationCopernicusEstimate(input, { status: 'unavailable', message: 'Hors horizon', source: null, cell: null, waterLevel: null }, '2026-10-26T08:00:00Z');
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(capture))
+      .mockResolvedValueOnce(Response.json({ ...capture, transit: { ...transit, date: '2026-10-28' } }));
+    vi.stubGlobal('fetch', fetcher);
+    expect(await fetchSeaOperationWaypointUkc(client, input)).toEqual(capture);
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual(input);
+    await expect(fetchSeaOperationWaypointUkc(client, input)).rejects.toThrow('ne correspond pas');
+  });
   it('sends only waypoint and vessel metadata with the existing session, forwarding cancellation', async () => {
     const { client } = fixture(), controller = new AbortController();
     const fetcher = vi.fn().mockResolvedValue(Response.json(result)); vi.stubGlobal('fetch', fetcher);

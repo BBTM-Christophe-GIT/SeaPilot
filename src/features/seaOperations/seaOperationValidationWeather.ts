@@ -1,16 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SeaOperationPayload } from './seaOperationModel';
 import { seaWaypointPosition } from './seaOperationNavigation';
-import { seaOperationEtaUtc } from './seaOperationWeatherModel';
+import { isSeaOperationTransitRequestContext, seaOperationEtaUtc } from './seaOperationWeatherModel';
 import { fetchSeaOperationWaypointWeather } from './seaOperationWeatherQueries';
-import { retainSeaOperationWeather, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
+import { retainSeaOperationWeather, seaOperationWeatherReference, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 
 /** Collect available forecasts before a draft save or the revision the Captain will sign. */
 export async function captureSeaOperationValidationWeather(client: SupabaseClient, payload: SeaOperationPayload,
   options: { preview?: boolean; signal?: AbortSignal; now?: number; missingOnly?: boolean } = {}): Promise<SeaOperationPayload> {
   options.signal?.throwIfAborted();
-  const projectId = payload.planning?.projectId;
-  if (!projectId) return payload;
+  const reference = seaOperationWeatherReference(payload);
+  if (!reference.projectId && !isSeaOperationTransitRequestContext(reference.transit)) return payload;
   const now = options.now ?? Date.now();
   const pending = payload.waypoints.flatMap((point) => {
     const stored = waypointWeatherSnapshot(point);
@@ -18,8 +18,8 @@ export async function captureSeaOperationValidationWeather(client: SupabaseClien
     const position = seaWaypointPosition(point);
     if (!position) return [];
     try { if (Date.parse(seaOperationEtaUtc(point.eta)) <= now) return []; } catch { return []; }
-    return [{ input: { projectId, pointId: point.id, ...position, eta: point.eta },
-      context: { projectId, pointId: point.id, latitude: point.latitude, longitude: point.longitude, eta: point.eta } }];
+    return [{ input: { ...reference, pointId: point.id, ...position, eta: point.eta },
+      context: { ...reference, pointId: point.id, latitude: point.latitude, longitude: point.longitude, eta: point.eta } }];
   });
   let captured = payload;
   let next = 0;

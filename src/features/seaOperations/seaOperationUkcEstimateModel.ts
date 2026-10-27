@@ -120,6 +120,7 @@ function cellContains(bounds: SeaOperationUkcCellBounds, point: { latitude: numb
 export function validateSeaOperationUkcEstimateInput(value: unknown): SeaOperationUkcEstimateInput {
   const point = validateSeaOperationWeatherInput(value);
   const input = value as Record<string, unknown>;
+  if (point.transit !== undefined) throw new Error('Le calcul LAT historique ne prend pas en charge le contexte Transit.');
   if (!identifier(input.vesselId) || !isVesselDraftMeters(input.draftMeters)) throw new Error('Le navire ou son tirant d’eau de référence est invalide.');
   return { ...point, vesselId: input.vesselId, draftMeters: input.draftMeters };
 }

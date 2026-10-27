@@ -13,6 +13,19 @@ const weather: SeaOperationWaypointWeather = { pointId: 'p1', latitude: 49.65, l
 const load = async () => { await act(() => new Promise((resolve) => setTimeout(resolve, 750))); };
 beforeEach(() => vi.clearAllMocks());
 describe('waypoint weather', () => {
+  it('loads a Transit with its real vessel/date and cancels old context responses', async () => {
+    let resolveOld!: (value: SeaOperationWaypointWeather) => void;
+    vi.mocked(fetchSeaOperationWaypointWeather).mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve; })).mockResolvedValue(weather);
+    const transit = { date: '2026-10-27', vesselId: '1' }, onWeatherLoaded = vi.fn();
+    const view = render(<SeaOperationWeatherPanel client={client} projectId="" transit={transit} waypoints={[point]} onWeatherLoaded={onWeatherLoaded} />);
+    await load();
+    expect(fetchSeaOperationWaypointWeather).toHaveBeenCalledWith(client, expect.objectContaining({ projectId: '', transit }), expect.anything());
+    view.rerender(<SeaOperationWeatherPanel client={client} projectId="" transit={{ ...transit, vesselId: '2' }} waypoints={[point]} onWeatherLoaded={onWeatherLoaded} />);
+    await act(async () => resolveOld(weather));
+    expect(onWeatherLoaded).not.toHaveBeenCalled();
+    await load();
+    expect(onWeatherLoaded).toHaveBeenCalledWith(weather, expect.objectContaining({ projectId: '', transit: { ...transit, vesselId: '2' } }), client);
+  });
   it('publishes contextual loading and network status for the inline weather card', async () => {
     let reject!: (error: Error) => void;
     vi.mocked(fetchSeaOperationWaypointWeather).mockReturnValue(new Promise((_, fail) => { reject = fail; }));

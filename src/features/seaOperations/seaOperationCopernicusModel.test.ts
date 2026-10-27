@@ -18,6 +18,16 @@ function provider(): SeaOperationCopernicusProviderResult {
 }
 
 describe('Copernicus model-geoid UKC captures', () => {
+  it('calculates an explicit Transit without a fabricated project and validates the matching vessel/day capture', () => {
+    const transitInput = { ...input, projectId: '', transit: { date: '2026-10-27', vesselId: input.vesselId } };
+    expect(validateSeaOperationCopernicusInput(transitInput)).toEqual(transitInput);
+    const capture = calculateSeaOperationCopernicusEstimate(transitInput, provider(), fetchedAt);
+    expect(capture.status).toBe('available'); expect(capture.projectId).toBe(''); expect(capture.transit).toEqual(transitInput.transit);
+    expect(isSeaOperationCopernicusEstimate(capture)).toBe(true);
+    for (const value of [{ ...capture, transit: undefined }, { ...capture, projectId: '12' }, { ...capture, transit: { date: '2026-02-30', vesselId: input.vesselId } },
+      { ...capture, transit: { date: '2026-10-27', vesselId: '99' } }]) expect(isSeaOperationCopernicusEstimate(value)).toBe(false);
+    expect(() => validateSeaOperationCopernicusInput({ ...transitInput, vesselId: '99' })).toThrow('contexte Transit');
+  });
   it('agrees with the shared Python/TypeScript fixture without manufacturing uncertainty', () => {
     const fixture = JSON.parse(readFileSync(new URL('./testFixtures/copernicus-ukc.json', import.meta.url), 'utf8')) as {
       input: SeaOperationCopernicusInput; provider: SeaOperationCopernicusProviderResult; fetchedAt: string;

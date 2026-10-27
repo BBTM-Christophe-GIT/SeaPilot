@@ -13,6 +13,15 @@ function fixture() {
 }
 
 describe('sea operation weather queries', () => {
+  it('authenticates a Transit using explicit vessel/day metadata without substituting a project ID', async () => {
+    const { client } = fixture();
+    const input = { ...point, projectId: '', transit: { date: '2026-10-22', vesselId: '2' } };
+    const fetcher = vi.fn().mockResolvedValue(Response.json(result)); vi.stubGlobal('fetch', fetcher);
+    expect(await fetchSeaOperationWaypointWeather(client, input)).toEqual(result);
+    expect(fetcher).toHaveBeenCalledWith('/api/sea-operation-weather', expect.objectContaining({
+      headers: { Authorization: 'Bearer actual-token', 'Content-Type': 'application/json' } }));
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual(input);
+  });
   it('uses the server public-data demo only on a real preview and accepts a traced Météo-France model', async () => {
     const { client, getSession } = fixture();
     vi.stubGlobal('window', { location: { hostname: 'sea-pilot-git-codex-sea-operations-bbtm-app.vercel.app', search: '?preview=1' } });

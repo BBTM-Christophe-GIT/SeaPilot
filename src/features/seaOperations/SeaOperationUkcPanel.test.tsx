@@ -26,6 +26,17 @@ beforeEach(() => { vi.resetAllMocks(); vi.useFakeTimers(); vi.setSystemTime(new 
 afterEach(() => vi.useRealTimers());
 
 describe('automatic UKC editor loader', () => {
+  it('loads Transit UKC using explicit operation date and selected vessel', async () => {
+    const draft = payload(); delete draft.planning;
+    draft.transit = { date: '2026-10-27', captainPersonId: '3' };
+    const input = { ...fixture.input, projectId: '', transit: { date: draft.transit.date, vesselId: draft.vessel.id } };
+    const result = forecast(input), onUkcLoaded = vi.fn();
+    vi.mocked(fetchSeaOperationWaypointUkc).mockResolvedValue(result);
+    render(<SeaOperationUkcPanel client={client} payload={draft} active onUkcLoaded={onUkcLoaded} />);
+    await load();
+    expect(fetchSeaOperationWaypointUkc).toHaveBeenCalledWith(client, input, expect.anything());
+    expect(onUkcLoaded).toHaveBeenCalledWith(result, expect.objectContaining({ transit: input.transit, projectId: '' }), client);
+  });
   it('waits for a complete identity, debounces edits, and publishes visible loading and failure statuses', async () => {
     let reject!: (error: Error) => void;
     vi.mocked(fetchSeaOperationWaypointUkc).mockReturnValue(new Promise((_, fail) => { reject = fail; }));

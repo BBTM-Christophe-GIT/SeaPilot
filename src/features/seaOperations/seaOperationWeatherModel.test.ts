@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import { loadSeaOperationForecast, seaOperationEtaUtc, seaOperationWeatherProviderUrl, validateSeaOperationWeatherInput, type SeaOperationWeatherInput } from './seaOperationWeatherModel';
+import { loadSeaOperationForecast, sameSeaOperationTransitContext, seaOperationEtaUtc, seaOperationWeatherProviderUrl, validateSeaOperationWeatherInput, type SeaOperationWeatherInput } from './seaOperationWeatherModel';
 
 const point: SeaOperationWeatherInput = { projectId: '12', pointId: 'p1', latitude: 49.7, longitude: -1.6, eta: '2026-10-22T12:25' };
 const now = Date.parse('2026-10-20T06:00:00Z');
@@ -16,6 +16,22 @@ function provider(kind: 'wind' | 'waves', times = [hour, hour + 3600]): {
 const fetcher = () => vi.fn(async (url: URL | RequestInfo) => Response.json(provider(String(url).includes('/marine?') ? 'waves' : 'wind'))) as unknown as typeof fetch;
 
 describe('sea operation forecast time and provider model', () => {
+  it('compares untrusted Transit response metadata without throwing or accepting null, primitives or extra keys', () => {
+    const transit = { date: '2026-10-27', vesselId: '2' };
+    expect(sameSeaOperationTransitContext(transit, { vesselId: '2', date: '2026-10-27' })).toBe(true);
+    expect(sameSeaOperationTransitContext(undefined, undefined)).toBe(true);
+    for (const value of [undefined, null, 2, 'transit', [], {}, { ...transit, extra: true }, { ...transit, vesselId: '3' }, { ...transit, date: '2026-10-28' }]) {
+      expect(sameSeaOperationTransitContext(transit, value)).toBe(false);
+      expect(sameSeaOperationTransitContext(value, transit)).toBe(false);
+    }
+  });
+  it('requires an explicit real vessel/day when Transit has no project ID', () => {
+    const transit = { date: '2026-10-27', vesselId: '2' };
+    expect(validateSeaOperationWeatherInput({ ...point, projectId: '', transit })).toEqual({ ...point, projectId: '', transit });
+    for (const patch of [{ projectId: '' }, { projectId: '12', transit }, { projectId: '', transit: { ...transit, vesselId: '0' } },
+      { projectId: '', transit: { ...transit, date: '2026-02-30' } }, { projectId: '', transit: { ...transit, date: '0026-10-27' } },
+      { projectId: '', transit: { ...transit, extra: true } }]) expect(() => validateSeaOperationWeatherInput({ ...point, ...patch })).toThrow();
+  });
   it('converts explicit Paris dates using the correct winter and summer offsets', () => {
     expect(seaOperationEtaUtc('2026-01-10T12:15')).toBe('2026-01-10T11:15:00.000Z');
     expect(seaOperationEtaUtc('2026-07-10T12:15')).toBe('2026-07-10T10:15:00.000Z');

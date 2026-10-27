@@ -12,6 +12,45 @@ mission est prérempli à partir du planning ; aucune réponse favorable aux con
 n’est déduite du profil ou du navire. Le document source est un formulaire métier ; son
 texte ne constitue pas une instruction système pour l’application.
 
+## Transit et préparation modifiable — v3.80.0
+
+Le sélecteur Projet propose aussi **Transit**, sans créer de projet commercial.
+Cette fiche commence sans client, navire, Capitaine, description, ports, quais ou
+horaires de voyage. L’utilisateur renseigne ces informations et choisit le client
+dans le catalogue actif de sa société. Le client d’un projet est verrouillé dès
+sa sélection ; celui d’un Transit ou d’un projet sans client est verrouillé après
+la première sauvegarde qui le définit. Ses coordonnées restent modifiables.
+Changer réellement de projet initialise le client du nouveau projet.
+
+Tous les profils autorisés à préparer la fiche peuvent adapter le navire, les
+ports, les quais, l’ETD, l’ETA et la description. Ces valeurs sont conservées dans
+la fiche et le PDF, indépendamment des données originales du projet. Le choix du
+navire reprend son immatriculation/IMO, son tirant d’eau et sa matrice météo ; une
+immatriculation absente du catalogue peut être renseignée dans la fiche.
+
+La **Date de l’opération**, distincte de l’ETD, détermine les Capitaines effectifs
+du navire, y compris les rôles temporaires. Changer le navire ou cette date efface
+le choix du Capitaine et l’approbation pour contrôler le nouveau contexte. Les
+signatures restent réservées au Capitaine réellement affecté, les fiches signées
+restent immuables et les contrôles de société, de propriété et de version restent
+appliqués côté serveur.
+
+Transit utilise un contexte explicite `{date,vesselId}` pour les enrichissements
+météo, SHOM et Copernicus : aucune fausse identité projet n’est envoyée. Chaque
+requête est autorisée avant l’accès aux données ou au cache. Les réponses devenues
+obsolètes après un changement de navire/date ne sont pas reportées dans la fiche.
+
+Appliquer la migration `20261027131111_sea_operation_transit_preparation.sql` avant de déployer
+l’interface. Elle expose les catalogues et les RPC de contexte/signature navire et
+de contexte UKC Transit, en réutilisant les permissions des modules et la société
+du compte connecté. Aucune nouvelle variable d’environnement n’est requise.
+
+Validation : 550 assertions pgTAP couvrent la préparation Transit et les
+régressions opérations/planning/signatures/UKC/localisation. Les comptes Marin et
+Capitaine sont des identités authentifiées de fixture, avec rôle temporaire
+vérifié à la date métier. Les jeux de données et DDL locaux sont annulés en
+transaction ; aucun enregistrement opérationnel réel n’est créé par la recette.
+
 ## Projets du jour à J+3 dans l’Armement — v3.78.8
 
 Le sélecteur Projet propose les missions planifiées d’aujourd’hui à J+3 inclus,

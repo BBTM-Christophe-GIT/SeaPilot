@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SeaOperationPayload, SeaOperationWaypoint } from './seaOperationModel';
 import { seaWaypointPosition } from './seaOperationNavigation';
-import { seaOperationEtaUtc } from './seaOperationWeatherModel';
+import { isSeaOperationTransitRequestContext, seaOperationEtaUtc } from './seaOperationWeatherModel';
 import { isVesselDraftMeters } from './seaOperationUkc';
 import { fetchSeaOperationWaypointUkc } from './seaOperationUkcQueries';
 import { retainSeaOperationUkc, seaOperationUkcReference, waypointUkcSnapshot, type SeaOperationUkcReference } from './seaOperationWaypointSnapshots';
@@ -9,6 +9,7 @@ import { retainSeaOperationUkc, seaOperationUkcReference, waypointUkcSnapshot, t
 export interface SeaOperationUkcRequestStatus { loading: boolean; error?: string }
 export function ukcRequestKey(reference: SeaOperationUkcReference, point: SeaOperationWaypoint): string {
   return JSON.stringify([reference.projectId || '', reference.vesselId, reference.draftMeters ?? null,
+    reference.transit?.date ?? null, reference.transit?.vesselId ?? null,
     point.id, point.latitude, point.longitude, point.eta, point.ukcMode || 'manual']);
 }
 
@@ -17,15 +18,17 @@ export async function captureSeaOperationValidationUkc(client: SupabaseClient, p
   options: { signal?: AbortSignal; now?: number; missingOnly?: boolean; preview?: boolean;
     onError?: (point: SeaOperationWaypoint, error: string) => void } = {}): Promise<SeaOperationPayload> {
   options.signal?.throwIfAborted();
-  const projectId = payload.planning?.projectId, draftMeters = payload.vessel.draftMeters, vesselId = payload.vessel.id;
-  if (options.preview || !projectId || !vesselId || !isVesselDraftMeters(draftMeters)) return payload;
-  const now = options.now ?? Date.now(), reference = seaOperationUkcReference(payload);
+  const reference = seaOperationUkcReference(payload), { projectId, transit } = reference;
+  const draftMeters = payload.vessel.draftMeters, vesselId = payload.vessel.id;
+  if (options.preview || !projectId && !isSeaOperationTransitRequestContext(transit) || !vesselId || !isVesselDraftMeters(draftMeters)) return payload;
+  const request = { projectId: projectId ?? '', ...(transit === undefined ? {} : { transit }) };
+  const now = options.now ?? Date.now();
   const pending = payload.waypoints.flatMap(point => {
     if (point.ukcMode !== 'automatic' || options.missingOnly && waypointUkcSnapshot(point, reference)?.status === 'available') return [];
     const position = seaWaypointPosition(point); if (!position) return [];
     try { if (Date.parse(seaOperationEtaUtc(point.eta)) <= now) return []; } catch { return []; }
-    return [{ point, input: { projectId, vesselId, draftMeters, pointId: point.id, ...position, eta: point.eta },
-      context: { projectId, vesselId, draftMeters, pointId: point.id, latitude: point.latitude, longitude: point.longitude, eta: point.eta } }];
+    return [{ point, input: { ...request, vesselId, draftMeters, pointId: point.id, ...position, eta: point.eta },
+      context: { ...request, vesselId, draftMeters, pointId: point.id, latitude: point.latitude, longitude: point.longitude, eta: point.eta } }];
   });
   let captured = payload, next = 0;
   const worker = async () => {

@@ -1,8 +1,8 @@
-import { validateSeaOperationUkcEstimateInput, type SeaOperationUkcEstimateInput } from './seaOperationUkcEstimateModel';
+import type { SeaOperationUkcEstimateInput } from './seaOperationUkcEstimateModel';
 import { isVesselDraftMeters } from './seaOperationUkc';
-import { seaOperationEtaUtc } from './seaOperationWeatherModel';
+import { isSeaOperationTransitRequestContext, seaOperationEtaUtc, validateSeaOperationWeatherInput, type SeaOperationTransitRequestContext } from './seaOperationWeatherModel';
 
-export type SeaOperationCopernicusInput = SeaOperationUkcEstimateInput;
+export type SeaOperationCopernicusInput = SeaOperationUkcEstimateInput & { transit?: SeaOperationTransitRequestContext };
 export type SeaOperationCopernicusModel = 'NWS' | 'IBI';
 export const COPERNICUS_UKC_PRODUCTS = {
   NWS: { productId: 'NWSHELF_ANALYSISFORECAST_PHY_004_013',
@@ -41,6 +41,7 @@ export interface SeaOperationCopernicusStaticEstimate {
 }
 export interface SeaOperationCopernicusEstimate {
   version: 1; projectId: string; pointId: string; vesselId: string;
+  transit?: SeaOperationTransitRequestContext;
   latitude: number; longitude: number; etaUtc: string; draftMeters: number; fetchedAt: string;
   status: 'available' | 'unavailable'; message: string;
   source: SeaOperationCopernicusSource | null; cell: SeaOperationCopernicusCell | null;
@@ -63,7 +64,12 @@ const utc = (value: unknown): value is string => typeof value === 'string' && /^
   && Number(value.slice(0, 4)) >= 1000 && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 19) === value.slice(0, 19);
 const near = (a: number, b: number) => Math.abs(a - b) <= 1e-8;
 
-export const validateSeaOperationCopernicusInput = validateSeaOperationUkcEstimateInput;
+export function validateSeaOperationCopernicusInput(value: unknown): SeaOperationCopernicusInput {
+  const point = validateSeaOperationWeatherInput(value), input = value as Record<string, unknown>;
+  if (!identifier(input.vesselId) || !isVesselDraftMeters(input.draftMeters)) throw new Error('Le navire ou son tirant d’eau de référence est invalide.');
+  if (point.transit && point.transit.vesselId !== input.vesselId) throw new Error('Le navire ne correspond pas au contexte Transit.');
+  return { ...point, vesselId: input.vesselId, draftMeters: input.draftMeters };
+}
 
 export function isSeaOperationCopernicusSource(value: unknown): value is SeaOperationCopernicusSource {
   if (!object(value) || value.model !== 'NWS' && value.model !== 'IBI' || value.datum !== 'model-geoid'
@@ -132,6 +138,7 @@ export function calculateSeaOperationCopernicusEstimate(inputValue: SeaOperation
   const cell = isSeaOperationCopernicusCell(provider.cell) ? provider.cell : null;
   const waterLevel = isSeaOperationCopernicusWaterLevel(provider.waterLevel) ? provider.waterLevel : null;
   const result: SeaOperationCopernicusEstimate = { version: 1, projectId: input.projectId, pointId: input.pointId, vesselId: input.vesselId,
+    ...(input.transit === undefined ? {} : { transit: { ...input.transit } }),
     latitude: input.latitude, longitude: input.longitude, etaUtc: seaOperationEtaUtc(input.eta), draftMeters: input.draftMeters, fetchedAt,
     status: 'unavailable', message: '', source, cell, waterLevel, estimate: null };
   if (provider.status !== 'available') return { ...result, message: text(provider.message) ? provider.message : 'Données Copernicus indisponibles à cette position et cette ETA.' };
@@ -146,7 +153,9 @@ export function calculateSeaOperationCopernicusEstimate(inputValue: SeaOperation
 
 /** Validate the provenance and recompute arithmetic rather than trusting a recorded number. */
 export function isSeaOperationCopernicusEstimate(value: unknown): value is SeaOperationCopernicusEstimate {
-  if (!object(value) || value.version !== 1 || !identifier(value.projectId) || !identifier(value.vesselId)
+  if (!object(value) || value.version !== 1 || !identifier(value.vesselId)
+    || (value.transit === undefined ? !identifier(value.projectId)
+      : value.projectId !== '' || !isSeaOperationTransitRequestContext(value.transit) || value.transit.vesselId !== value.vesselId)
     || typeof value.pointId !== 'string' || !/^[A-Za-z0-9._:-]{1,100}$/.test(value.pointId)
     || !position(value) || !utc(value.etaUtc) || !utc(value.fetchedAt) || !isVesselDraftMeters(value.draftMeters) || !text(value.message)
     || !(value.source === null || isSeaOperationCopernicusSource(value.source))

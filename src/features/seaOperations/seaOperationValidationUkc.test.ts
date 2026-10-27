@@ -22,6 +22,14 @@ function payload(): SeaOperationPayload {
 beforeEach(() => vi.resetAllMocks());
 
 describe('UKC capture before save and captain signature', () => {
+  it('captures an explicitly scoped Transit and preserves its manual UKC text', async () => {
+    const draft = payload(); delete draft.planning; draft.transit = { date: '2026-10-27', captainPersonId: '3' };
+    vi.mocked(fetchSeaOperationWaypointUkc).mockImplementation(async (_client, input) => forecast(input));
+    const captured = await captureSeaOperationValidationUkc(client, draft, { now });
+    expect(fetchSeaOperationWaypointUkc).toHaveBeenCalledWith(client, expect.objectContaining({ projectId: '', vesselId: '1', transit: { date: '2026-10-27', vesselId: '1' } }), { signal: undefined });
+    expect(captured.waypoints[0].ukcForecast).toMatchObject({ projectId: '', transit: { date: '2026-10-27', vesselId: '1' } });
+    expect(captured.waypoints[0].ukc).toBe('Annotation manuelle conservée');
+  });
   it('fills missing captures on save, preserves manual input, and refreshes a future capture before signature', async () => {
     vi.mocked(fetchSeaOperationWaypointUkc).mockImplementation(async (_client, input) => forecast(input));
     const draft = payload(), original = structuredClone(draft);

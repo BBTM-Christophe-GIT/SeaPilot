@@ -1,9 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { webcrypto } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { emptySeaOperation, emptySeaOperationWaypoint } from './seaOperationModel';
+import { createTransitSeaOperation, emptySeaOperation, emptySeaOperationWaypoint } from './seaOperationModel';
 import { createEmptyVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
-import { deleteSeaOperation, reviseSeaOperation, fetchSeaOperationCaptainSignature, fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, mapSeaOperationRecord, saveSeaOperation, signSeaOperation } from './seaOperationQueries';
+import { deleteSeaOperation, reviseSeaOperation, fetchSeaOperationCaptainSignature, fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, mapSeaOperationRecord, saveSeaOperation, signSeaOperation,
+  fetchSeaOperationVesselContext, fetchSeaOperationVesselCaptainSignature } from './seaOperationQueries';
 import { emptyProjectLocationPlan } from '../projects/projectLocation';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 
@@ -22,6 +23,43 @@ const observation = (): ObservationResult => ({ pointId: 'point-1', latitude: 49
   status: 'unavailable', message: 'Aucune mesure officielle proche disponible.' });
 
 describe('sea operation queries', () => {
+  it.each(['Marin réel', 'Capitaine réel'])('reads the minimal scoped client catalogue for %s without querying Projects', async actor => {
+    const rpc = vi.fn().mockResolvedValue({ data: { company_id: 1, actor_id: 'real-account', actor_name: actor, records: [], vessels: [],
+      clients: [{ id: '2', name: 'Client maritime', contact: '12 quai du port · contact@example.invalid' }] }, error: null });
+    expect((await fetchSeaOperationData({ rpc } as unknown as SupabaseClient)).clients).toEqual([{ id: '2', name: 'Client maritime', contact: '12 quai du port · contact@example.invalid' }]);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('sea_operations_overview', undefined);
+    rpc.mockResolvedValueOnce({ data: { company_id: 1, records: [], vessels: [], clients: [{ id: '0', name: 'Client', contact: '' }] }, error: null });
+    await expect(fetchSeaOperationData({ rpc } as unknown as SupabaseClient)).rejects.toThrow('catalogue clients');
+  });
+  it('uses the vessel/day RPC for the actual temporary captain and rejects a mismatched context', async () => {
+    const captain = { personId: '4', name: 'Arthur DUPONT', functionLabel: 'Capitaine temporaire', hasSignature: true, canSign: true };
+    const rpc = vi.fn().mockResolvedValue({ data: { date: '2026-10-27', vesselId: '12', captains: [captain], canSign: true }, error: null });
+    expect(await fetchSeaOperationVesselContext({ rpc } as unknown as SupabaseClient, '2026-10-27', '12')).toEqual({ date: '2026-10-27', vesselId: '12', captains: [captain], canSign: true });
+    expect(rpc).toHaveBeenCalledWith('sea_operation_vessel_context', { p_date: '2026-10-27', p_vessel_id: '12' });
+    rpc.mockResolvedValueOnce({ data: { date: '2026-10-28', vesselId: '12', captains: [captain] }, error: null });
+    await expect(fetchSeaOperationVesselContext({ rpc } as unknown as SupabaseClient, '2026-10-27', '12')).rejects.toThrow('contexte du navire');
+    rpc.mockResolvedValueOnce({ data: { date: '2026-10-27', vesselId: '13', captains: [captain] }, error: null });
+    await expect(fetchSeaOperationVesselContext({ rpc } as unknown as SupabaseClient, '2026-10-27', '12')).rejects.toThrow('contexte du navire');
+  });
+  it('loads a vessel/day captain signature only for the selected person', async () => {
+    const createSignedUrl = vi.fn().mockResolvedValue({ data: { signedUrl: 'https://storage.example.invalid/immutable.png' }, error: null });
+    const rpc = vi.fn().mockResolvedValue({ data: signature, error: null });
+    const client = { rpc, storage: { from: vi.fn().mockReturnValue({ createSignedUrl }) } } as unknown as SupabaseClient;
+    expect(await fetchSeaOperationVesselCaptainSignature(client, '2026-10-27', '12', '4')).toMatchObject({ snapshot: signature });
+    expect(rpc).toHaveBeenCalledWith('sea_operation_vessel_captain_signature', { p_date: '2026-10-27', p_vessel_id: '12', p_captain_person_id: '4' });
+    expect(createSignedUrl).toHaveBeenCalledWith('immutable/captain-v1.png', 600);
+    await expect(fetchSeaOperationVesselCaptainSignature(client, '2026-10-27', '12', '9')).rejects.toThrow('Capitaine sélectionné');
+    expect(createSignedUrl).toHaveBeenCalledTimes(1);
+  });
+  it('round trips a Transit and its manually prepared operational fields without inventing a project context', async () => {
+    const draft = createTransitSeaOperation('2026-10-27'); draft.clientId = '2'; draft.client = 'Client choisi';
+    Object.assign(draft.vessel, { id: '12', name: 'Navire choisi', departurePort: 'Port manuel', departureQuay: 'Quai manuel', etd: '2026-10-28T09:00' });
+    draft.description = 'Transit préparé manuellement'; draft.transit!.captainPersonId = '4';
+    const rpc = vi.fn().mockResolvedValue({ data: record({ draft }), error: null });
+    const result = await saveSeaOperation({ rpc } as unknown as SupabaseClient, draft);
+    expect(result.draft).toEqual(draft); expect(result.draft).not.toHaveProperty('planning');
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('sea_operation_save', { p_id: null, p_version: null, p_draft: draft });
+  });
   it('fails closed for absent or non-boolean administrator capabilities', () => {
     expect(mapSeaOperationRecord(record())).toMatchObject({ canRevise: false, canDelete: false, previousRevisionId: null, supersededById: null });
     expect(mapSeaOperationRecord(record({ can_revise: 'true', can_delete: 1 }))).toMatchObject({ canRevise: false, canDelete: false });

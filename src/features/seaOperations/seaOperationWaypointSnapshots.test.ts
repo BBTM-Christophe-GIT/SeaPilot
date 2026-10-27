@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptySeaOperation, emptySeaOperationWaypoint, isSeaOperationPayload } from './seaOperationModel';
+import { createTransitSeaOperation, emptySeaOperation, emptySeaOperationWaypoint, isSeaOperationPayload } from './seaOperationModel';
 import { captureSeaOperationRadios, effectiveSeaOperationUkc, invalidateSeaOperationUkc, retainSeaOperationUkc, retainSeaOperationWeather,
   seaOperationUkcReference, updateSeaOperationWaypoint, waypointRadioSnapshot, waypointUkcSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
@@ -31,6 +31,25 @@ function ukcFixture() {
 }
 
 describe('retained Copernicus UKC assistance', () => {
+  it('binds Transit captures to their explicit vessel/day and rejects delayed responses after changing that context', () => {
+    const source = ukcFixture(), draft = createTransitSeaOperation('2026-10-23');
+    draft.vessel = { ...source.draft.vessel }; draft.waypoints = source.draft.waypoints;
+    const transit = { date: '2026-10-23', vesselId: '2' }, request = { ...source.request, projectId: '', transit };
+    const forecast = { ...source.forecast, projectId: '', transit };
+    const stored = retainSeaOperationUkc(draft, forecast, request);
+    expect(stored.waypoints[0].ukcForecast).toEqual(forecast); expect(isSeaOperationPayload(stored)).toBe(true);
+    expect(effectiveSeaOperationUkc(stored, stored.waypoints[0])).toBe('18');
+    for (const changed of [{ ...stored, transit: { date: '2026-10-24', captainPersonId: '' } },
+      { ...stored, vessel: { ...stored.vessel, id: '3' } }]) {
+      expect(retainSeaOperationUkc(changed, forecast, request)).toBe(changed);
+      expect(invalidateSeaOperationUkc(changed).waypoints[0].ukcForecast).toBeUndefined();
+      expect(retainSeaOperationWeather(changed, weather, { ...context, projectId: '', transit })).toBe(changed);
+    }
+    expect(retainSeaOperationWeather(draft, weather, { ...context, projectId: '', transit }).waypoints[0].weather).toEqual(weather);
+    expect(retainSeaOperationUkc(source.draft, forecast, request)).toBe(source.draft);
+    const unlinked = { ...emptySeaOperation(), waypoints: [point] };
+    expect(retainSeaOperationWeather(unlinked, weather, { ...context, projectId: '' })).toBe(unlinked);
+  });
   it('retains an exact automatic capture without overwriting any manual text or other form edits', () => {
     const { draft, forecast, request } = ukcFixture(); draft.risks = 'Travaux en cours';
     const stored = retainSeaOperationUkc(draft, forecast, request);
