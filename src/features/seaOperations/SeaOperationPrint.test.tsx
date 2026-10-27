@@ -19,6 +19,27 @@ function recordedObservation(): ObservationResult {
 }
 
 describe('Opération en Mer printable content', () => {
+  it('keeps descriptive waypoint labels and automatic UKC status in separate readable blocks', () => {
+    const draft = emptySeaOperation(); draft.vessel.draftMeters = 2;
+    draft.waypoints = [{ id: 'port', number: '1', descriptionVhf: 'Port de Barfleur', latitude: '', longitude: '', eta: '', ukc: '2,5', denseTraffic: false },
+      { id: 'custom', number: '2', descriptionVhf: 'Route personnalisée', latitude: '', longitude: '', eta: '', ukc: '4,000001', denseTraffic: false },
+      { id: 'blank', number: 'A-3', descriptionVhf: '   ', latitude: '', longitude: '', eta: '', ukc: '', ukcMode: 'automatic', denseTraffic: false }];
+    const record: SeaOperationRecord = { id: 'ukc-layout', companyId: 1, version: 2, status: 'draft', draft,
+      createdBy: 'author', createdByName: 'Auteur', createdAt: '2026-10-27T08:00:00Z', updatedBy: 'author', updatedByName: 'Auteur', updatedAt: '2026-10-27T09:00:00Z',
+      signedBy: null, signedByName: null, signedAt: null, captainName: null, canEdit: true, canSign: false };
+    const original = structuredClone(record);
+    const { container } = render(<SeaOperationPrint record={record} />);
+    const rows = container.querySelectorAll('.so-print-passage tbody tr');
+    expect(rows[0].children[1]).toHaveTextContent('Port de Barfleur');
+    expect(rows[1].children[1]).toHaveTextContent('Route personnalisée');
+    expect(rows[2].children[1]).toHaveTextContent('Waypoint A-3');
+    expect(rows[0].children[4].querySelector('.so-ukc-pill')).toHaveTextContent('2,5 m');
+    const unavailable = rows[2].children[4];
+    expect(unavailable.querySelector('.so-print-ukc-value')).toHaveTextContent('Indisponible');
+    expect([...unavailable.querySelectorAll('.so-print-ukc-note span')].map(span => span.textContent)).toEqual(['Automatique', 'Annexe UKC']);
+    expect(record).toEqual(original);
+  });
+
   it('prints only the retained automatic UKC and its provenance annex, with no manual fallback after an input changes', () => {
     const source = JSON.parse(readFileSync('src/features/seaOperations/testFixtures/copernicus-ukc.json', 'utf8')) as {
       input: SeaOperationCopernicusInput; provider: SeaOperationCopernicusProviderResult; fetchedAt: string;

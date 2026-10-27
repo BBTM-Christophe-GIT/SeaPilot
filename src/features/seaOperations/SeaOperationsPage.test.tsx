@@ -228,7 +228,6 @@ function applyEta(date: string, time: string, index = 1) {
   for (let month = 0; month < Math.abs(months); month++) fireEvent.click(picker.getByRole('button', { name: months < 0 ? 'Mois précédent' : 'Mois suivant' }));
   fireEvent.click(picker.getByRole('button', { name: etaDayLabel(date) }));
   changeEtaTime(picker, time);
-  fireEvent.click(picker.getByRole('button', { name: 'Appliquer' }));
 }
 async function selectChoice(label: string, value: string) {
   if (value === 'yes' || value === 'no') {
@@ -658,6 +657,24 @@ describe('Opération en Mer administration with authenticated server permissions
 });
 
 describe('Opération en Mer with authenticated server permission fixtures', () => {
+  it('defaults missing descriptions to waypoint names, keeps them editable and saves the edited label', async () => {
+    const draft = waypointCaptureDraft();
+    draft.waypoints[0].number = '2'; draft.waypoints[0].descriptionVhf = '';
+    const record = recordFixture(captainAccount, { draft });
+    const { client } = renderAccount(captainAccount, record);
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, edited) => ({ ...record, version: 4, draft: structuredClone(edited) }));
+    await openRecord(record); fireEvent.click(stepButton(2));
+    const description = formQueries().getByLabelText('Description · point 1');
+    expect(description).toHaveValue('Waypoint 2');
+    fireEvent.change(description, { target: { value: 'Attente pilote' } });
+    fireEvent.blur(description);
+    expect(description).toHaveValue('Attente pilote');
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await formQueries().findByText('Brouillon enregistré.');
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ waypoints: [expect.objectContaining({ descriptionVhf: 'Attente pilote' })] }), record);
+    expect(record.draft.waypoints[0].descriptionVhf).toBe('');
+  });
+
   it('adds a selected port with its name and exact coordinates and uses the selected vessel speed and departure', async () => {
     const draft = waypointCaptureDraft();
     const record = recordFixture(captainAccount, { draft });
@@ -776,7 +793,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     fireEvent.click(formQueries().getByRole('button', { name: 'Afficher la carte en plein écran' }));
     fireEvent.click(formQueries().getByRole('button', { name: 'Ajouter au centre' }));
     const placed = structuredClone(capturingWeatherPanel().waypoints[1]);
-    expect(placed).toMatchObject({ number: '2', eta: '', ukc: '', descriptionVhf: '', denseTraffic: false });
+    expect(placed).toMatchObject({ number: '2', eta: '', ukc: '', descriptionVhf: 'Waypoint 2', denseTraffic: false });
     expect(placed.latitude).not.toBe('');
     expect(placed.longitude).not.toBe('');
     expect(placed).not.toHaveProperty('weather');
@@ -872,7 +889,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(new Set(points.map((point) => point.id)).size).toBe(2);
     expect(points.map((point) => point.number)).toEqual(['1', '2']);
     for (const [index, point] of points.entries()) {
-      expect(point).toMatchObject({ latitude: '49', longitude: '-3', eta: '', ukc: '', descriptionVhf: '', denseTraffic: false });
+      expect(point).toMatchObject({ latitude: '49', longitude: '-3', eta: '', ukc: '', descriptionVhf: `Waypoint ${index + 1}`, denseTraffic: false });
       expect(point).not.toHaveProperty('weather');
       expect(point).not.toHaveProperty('radio');
       expect(formQueries().getByLabelText(`Latitude · point ${index + 1}`)).toHaveValue('49° 00.000′ N');
@@ -924,7 +941,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await userEvent.click(formQueries().getByRole('button', { name: 'Placer les waypoints' }));
     await userEvent.click(formQueries().getByRole('button', { name: 'Ajouter au centre' }));
     const placed = capturingWeatherPanel().waypoints[1];
-    expect(placed).toMatchObject({ eta: '', ukc: '', denseTraffic: false, descriptionVhf: '' });
+    expect(placed).toMatchObject({ eta: '', ukc: '', denseTraffic: false, descriptionVhf: 'Waypoint 2' });
     expect(placed).not.toHaveProperty('weather');
     expect(placed).not.toHaveProperty('radio');
     expect(capturingWeatherPanel().waypoints[0]).toEqual(draft.waypoints[0]);
@@ -1290,7 +1307,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const { client, data } = renderAccount(captainAccount, record, 1, [mission], true);
     data.vessels[0].draftMeters = 2.65;
     await openRecord(record);
-    expect(weatherPanelMock).toHaveBeenLastCalledWith(expect.objectContaining({ client, projectId: mission.projectId, preview: true, active: true, waypoints: draft.waypoints }));
+    expect(weatherPanelMock).toHaveBeenLastCalledWith(expect.objectContaining({ client, projectId: mission.projectId, preview: true, active: true, waypoints: [{ ...draft.waypoints[0], descriptionVhf: 'Waypoint 1' }] }));
     await userEvent.click(stepButton(2));
     expect(formQueries().getByLabelText('Tirant d’eau de référence (m)')).toHaveValue(2.65);
     expect(formQueries().getByLabelText('Tirant d’eau de référence (m)')).toHaveAttribute('readonly');
@@ -1979,6 +1996,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(within(table).getAllByRole('row').filter((row) => row.parentElement === table)).toHaveLength(1);
     expect(table).toHaveClass('so-passage-grid');
     expect(formQueries().queryByLabelText(/Description.*VHF/)).not.toBeInTheDocument();
+    await userEvent.clear(formQueries().getByLabelText('Description · point 1'));
     await userEvent.type(formQueries().getByLabelText('Description · point 1'), 'Entrée du chenal');
     await userEvent.click(formQueries().getByRole('checkbox', { name: 'Zone maritime à trafic dense · point 1' }));
     expect(formQueries().getByLabelText('Description · point 1')).toHaveValue('Entrée du chenal');
@@ -2423,12 +2441,11 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(saveSeaOperation).toHaveBeenLastCalledWith(client, expect.objectContaining({ waypoints: [expect.objectContaining({ eta: '2026-10-16T12:00' })] }), expect.objectContaining({ version: 4 }));
   });
 
-  it.each(['Annuler', 'Escape'])('shows an empty ETA on the current Paris month and resets pending edits with %s while keeping its calendar visible and the saved operation unchanged', async (action) => {
+  it('publishes a complete inline ETA immediately to weather and UKC without Apply and keeps it through Escape', async () => {
     const draft = waypointCaptureDraft();
     delete draft.planning;
     draft.vessel.etd = '2025-01-16T08:00';
     draft.waypoints[0].eta = '';
-    const original = structuredClone(draft);
     const record = recordFixture(captainAccount, { draft });
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     renderAccount(captainAccount, record);
@@ -2444,31 +2461,31 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(picker.getByRole('grid', { name: `Calendrier · ${currentMonth}` })).toBeVisible();
     expect(picker.queryByRole('gridcell', { selected: true })).not.toBeInTheDocument();
     expectEtaTime('', picker);
-    expect(picker.getByRole('button', { name: 'Appliquer' })).toBeDisabled();
+    expect(picker.queryByRole('button', { name: 'Appliquer' })).not.toBeInTheDocument();
+    expect(picker.queryByRole('button', { name: 'Annuler' })).not.toBeInTheDocument();
     fireEvent.click(picker.getByRole('button', { name: etaDayLabel(today) }));
-    changeEtaTime(picker, '16:45');
-    expect(capturingWeatherPanel().waypoints).toEqual(original.waypoints);
-    if (action === 'Escape') {
-      picker.getByLabelText('Heures de l’ETA (Paris)').focus();
-      await userEvent.keyboard('{Escape}');
-    }
-    else fireEvent.click(picker.getByRole('button', { name: 'Annuler' }));
+    fireEvent.change(picker.getByLabelText('Heures de l’ETA (Paris)'), { target: { value: '16' } });
+    expect(capturingWeatherPanel().waypoints[0].eta).toBe('');
+    fireEvent.change(picker.getByLabelText('Minutes de l’ETA (Paris)'), { target: { value: '45' } });
+    expect(capturingWeatherPanel().waypoints[0]).toMatchObject({ eta: `${today}T16:45`, etaMode: 'manual' });
+    expect(capturingUkcPanel().payload.waypoints[0].eta).toBe(`${today}T16:45`);
+    expect(capturingUkcPanel().active).toBe(true);
+    picker.getByLabelText('Heures de l’ETA (Paris)').focus();
+    await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'Choisir l’ETA' })).not.toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: 'Fiche Opération en Mer' })).toBeVisible();
     expect(etaGroup()).toBeVisible();
     expect(picker.getByRole('grid', { name: `Calendrier · ${currentMonth}` })).toBeVisible();
-    expect(picker.queryByRole('gridcell', { selected: true })).not.toBeInTheDocument();
-    expectEtaTime('', picker);
-    expect(picker.getByRole('button', { name: 'Appliquer' })).toBeDisabled();
-    expect(capturingWeatherPanel().waypoints).toEqual(original.waypoints);
-    expect(footerQueries().queryByText('Modifications non enregistrées')).not.toBeInTheDocument();
-    expect(sessionStorage.length).toBe(0);
+    expect(picker.getByRole('gridcell', { selected: true })).toHaveTextContent(String(Number(today.slice(-2))));
+    expectEtaTime('16:45', picker);
+    expect(capturingWeatherPanel().waypoints[0].eta).toBe(`${today}T16:45`);
+    expect(footerQueries().getByText('Modifications non enregistrées')).toBeVisible();
     expect(confirm).not.toHaveBeenCalled();
     expect(saveSeaOperation).not.toHaveBeenCalled();
     expect(signSeaOperation).not.toHaveBeenCalled();
   });
 
-  it('applies one complete calendar ETA, invalidates only weather and rejects its late response while preserving radio', async () => {
+  it('immediately publishes calendar ETA edits, invalidates weather and rejects its late response while preserving radio', async () => {
     const draft = captureSeaOperationRadios(waypointCaptureDraft(), '2026-10-23T08:00:00Z');
     draft.waypoints[0].weather = waypointWeather();
     const originalPoint = structuredClone(draft.waypoints[0]);
@@ -2482,9 +2499,6 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const picker = etaQueries();
     fireEvent.click(picker.getByRole('button', { name: etaDayLabel('2026-10-24') }));
     changeEtaTime(picker, '15:30');
-    expect(capturingWeatherPanel().waypoints[0]).toEqual(originalPoint);
-    expect(sessionStorage.length).toBe(0);
-    fireEvent.click(picker.getByRole('button', { name: 'Appliquer' }));
     expect(capturingWeatherPanel().waypoints[0]).toEqual({ ...originalPoint, eta: '2026-10-24T15:30', etaMode: 'manual', weather: undefined });
     expect(capturingWeatherPanel().waypoints[0]).not.toHaveProperty('weather');
     expect(capturingWeatherPanel().waypoints[0].radio).toEqual(originalPoint.radio);

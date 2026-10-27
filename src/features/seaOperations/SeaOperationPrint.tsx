@@ -11,6 +11,7 @@ import { SeaOperationWeatherCard } from './SeaOperationWeatherCard';
 import { SeaOperationRouteMap } from './SeaOperationRouteMap';
 import { SeaOperationUkcIndicator } from './SeaOperationUkcIndicator';
 import { isVesselDraftMeters } from './seaOperationUkc';
+import { seaOperationWaypointDescription } from './seaOperationWaypointDescription';
 import './seaOperationPrint.css';
 
 const blank = 'À renseigner';
@@ -54,7 +55,7 @@ export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOp
   const form = record.draft;
   const signed = record.status === 'signed';
   const radioContacts = signed ? [] : seaOperationRadioContacts(form.waypoints).contacts;
-  const passageRows = form.waypoints.map((point) => passagePlanCellData(point, { payload: form, allowLiveRadio: !signed, weatherMatrix: form.vessel.weatherMatrix, observations: record.weatherObservations, includeObservations: signed, validatedAt: signed ? record.signedAt : undefined }));
+  const passageRows = form.waypoints.map((point, index) => ({ ...passagePlanCellData(point, { payload: form, allowLiveRadio: !signed, weatherMatrix: form.vessel.weatherMatrix, observations: record.weatherObservations, includeObservations: signed, validatedAt: signed ? record.signedAt : undefined }), description: seaOperationWaypointDescription(point, index) }));
   const person = form.signature;
   const vessel = form.vessel;
   const signatureImage = signed ? record.signatureUrl || null : signatureImageUrl || null;
@@ -185,7 +186,7 @@ export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOp
       <p>Positions WGS84 : degrés et minutes décimales, N/S et E/W (Ouest).</p>
       <div className="so-print-route-map"><SeaOperationRouteMap waypoints={form.waypoints} compact /></div>
       {passageRows.length ? <table className="so-print-passage"><caption>Points de passage, contacts VHF et météo à l’ETA</caption><thead><tr><th scope="col">Waypoint</th><th scope="col">Description</th><th scope="col">Latitude</th><th scope="col">Longitude</th><th scope="col">UKC</th><th scope="col">ETA – Date et heure</th><th scope="col">Contacts VHF</th><th scope="col">Météo à l’ETA</th><th scope="col">Trafic dense</th></tr></thead><tbody>
-        {passageRows.map((row, index) => <tr key={`${index}:${form.waypoints[index].id}`}><td>{row.waypoint}</td><td>{row.description}</td><td>{row.latitude}</td><td>{row.longitude}</td><td>{row.ukcPresentation.automatic && !row.ukcPresentation.rawValue ? 'Indisponible' : <SeaOperationUkcIndicator value={row.ukcPresentation.rawValue} draftMeters={vessel.draftMeters} approximate={row.ukcPresentation.approximate} />}{row.ukcPresentation.automatic && <><br /><small>Indicative · annexe UKC</small></>}</td><td>{row.eta}</td><td>{row.vhf}</td><td><SeaOperationWeatherCard point={form.waypoints[index]} matrix={form.vessel.weatherMatrix} compact showObservations={signed} observations={record.weatherObservations} validatedAt={signed ? record.signedAt : undefined} /></td><td>{row.denseTraffic}</td></tr>)}
+        {passageRows.map((row, index) => <tr key={`${index}:${form.waypoints[index].id}`}><td>{row.waypoint}</td><td>{row.description}</td><td>{row.latitude}</td><td>{row.longitude}</td><td className="so-print-ukc-cell"><div className="so-print-ukc-value">{row.ukcPresentation.automatic && !row.ukcPresentation.rawValue ? <strong>Indisponible</strong> : <SeaOperationUkcIndicator value={row.ukcPresentation.rawValue} draftMeters={vessel.draftMeters} approximate={row.ukcPresentation.approximate} />}</div>{row.ukcPresentation.automatic && <small className="so-print-ukc-note"><span>{row.ukcPresentation.approximate ? 'Indicative' : 'Automatique'}</span><span>Annexe UKC</span></small>}</td><td>{row.eta}</td><td>{row.vhf}</td><td><SeaOperationWeatherCard point={form.waypoints[index]} matrix={form.vessel.weatherMatrix} compact showObservations={signed} observations={record.weatherObservations} validatedAt={signed ? record.signedAt : undefined} /></td><td>{row.denseTraffic}</td></tr>)}
       </tbody></table> : <p>Aucun point de passage renseigné.</p>}
       {passageRows.some((row) => row.weatherFootnote || row.radioFootnote) && <div className="so-print-passage-sources"><h3>Sources et horaires du Passage Plan</h3>{passageRows.map((row, index) => (row.weatherFootnote || row.radioFootnote) ? <section key={`${index}:${form.waypoints[index].id}`}><h4>Waypoint {row.waypoint}</h4>{row.weatherFootnote && <p>{row.weatherFootnote}</p>}{row.radioFootnote && <p>{row.radioFootnote}</p>}</section> : null)}</div>}
       {passageRows.some(row => row.ukcFootnote) && <div className="so-print-passage-sources"><h3>Annexe UKC – estimations statiques indicatives</h3>{passageRows.map((row, index) => row.ukcFootnote ? <section key={`${index}:${form.waypoints[index].id}`}><h4>Waypoint {row.waypoint}</h4>{row.ukcPresentation.details.map((detail, detailIndex) => <p key={detailIndex}>{detail}</p>)}{row.ukcPresentation.sourceUrls.map(url => <p key={url}><a href={url}>Source : Copernicus Marine Service</a></p>)}</section> : null)}</div>}

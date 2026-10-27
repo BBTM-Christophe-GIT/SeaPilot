@@ -38,6 +38,7 @@ import { SeaOperationUkcPanel } from './SeaOperationUkcPanel';
 import { captureSeaOperationValidationUkc, ukcRequestKey, type SeaOperationUkcRequestStatus } from './seaOperationValidationUkc';
 import { updateSeaOperationRouteEtas } from './seaOperationRouteEta';
 import { seaOperationVoyageTiming } from './seaOperationRouteLegs';
+import { captureSeaOperationWaypointDescriptions, seaOperationWaypointDescription } from './seaOperationWaypointDescription';
 
 const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'];
 const STEP_DETAILS = ['Mission, client et voyage', 'Préparation et sécurité du navire', 'Cartes et points de route', 'GO / NO GO et signature'];
@@ -187,7 +188,7 @@ export function SeaOperationsPage() {
     }
     setRecord(existing ? { ...existing, version: recovery.version! } : null);
     const vessel = result.vessels.find((source) => String(source.id) === recovery.draft.vessel.id);
-    setDraft(captureRouteEtas(captureVesselDraft(captureVesselMatrix(recovery.draft, vessel), vessel), result.vessels)); setPlanningDate(recovery.draft.planning?.date || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setStep(recovery.step); setEditing(true); setDirty(true);
+    setDraft(captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(recovery.draft, vessel), vessel), result.vessels))); setPlanningDate(recovery.draft.planning?.date || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setStep(recovery.step); setEditing(true); setDirty(true);
     setNotice('Votre préparation non enregistrée a été récupérée dans cet onglet. Vérifiez-la avant de l’enregistrer.');
   }, []);
 
@@ -345,7 +346,7 @@ export function SeaOperationsPage() {
       const used = new Set(value.waypoints.map((point) => point.number.trim()));
       let number = value.waypoints.length + 1;
       while (used.has(String(number))) number += 1;
-      const point = { id, number: String(number), descriptionVhf: port?.name.trim() || '', latitude: position ? String(Number(position.latitude.toFixed(6))) : '', longitude: position ? String(Number(position.longitude.toFixed(6))) : '', ukc: '', ukcMode: 'automatic' as const, eta: '', denseTraffic: false };
+      const point = { id, number: String(number), descriptionVhf: port?.name.trim() || `Waypoint ${number}`, latitude: position ? String(Number(position.latitude.toFixed(6))) : '', longitude: position ? String(Number(position.longitude.toFixed(6))) : '', ukc: '', ukcMode: 'automatic' as const, eta: '', denseTraffic: false };
       return captureRouteEtas({ ...value, waypoints: [...value.waypoints, point] }, data?.vessels);
     });
     setDirty(true); setNotice(''); setIssues([]);
@@ -479,7 +480,7 @@ export function SeaOperationsPage() {
       remember(loaded);
       if (loaded.status !== 'signed' && loaded.canEdit) {
         const vessel = data?.vessels.find((source) => String(source.id) === loaded.draft.vessel.id);
-        const prepared = captureRouteEtas(captureVesselDraft(captureVesselMatrix(loaded.draft, vessel), vessel), data?.vessels);
+        const prepared = captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(loaded.draft, vessel), vessel), data?.vessels));
         if (prepared !== loaded.draft) { setDraft(prepared); setDirty(true); setNotice('Les données du navire ont été actualisées pour cette préparation. Enregistrez pour les conserver.'); }
       }
       setPlanningDate(loaded.draft.planning?.date || loaded.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setEditing(true); setStep(0); setMobilePane('form');
@@ -547,7 +548,7 @@ export function SeaOperationsPage() {
   async function save(sign = false) {
     if (busy) return;
     const matrixSource = selectedMission?.vessel.weatherMatrix === undefined ? data?.vessels.find((vessel) => String(vessel.id) === draft.vessel.id) : selectedMission.vessel;
-    const prepared = captureSeaOperationRadios(captureRouteEtas(captureVesselDraft(captureVesselMatrix(draft, matrixSource), data?.vessels.find((vessel) => String(vessel.id) === draft.vessel.id)), data?.vessels));
+    const prepared = captureSeaOperationRadios(captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(draft, matrixSource), data?.vessels.find((vessel) => String(vessel.id) === draft.vessel.id)), data?.vessels)));
     const automaticUkcErrors = new Set(prepared.waypoints.flatMap((point, index) => point.ukcMode === 'automatic' ? [`L’UKC du point n° ${index + 1} est obligatoire.`] : []));
     const validation = validateSeaOperation(prepared, sign ? prepared.decision || 'GO' : 'DRAFT').filter(message => !automaticUkcErrors.has(message));
     if (validation.length) { setIssues(validation); setStep(sign ? 3 : step); revealFormFeedback(); return; }
@@ -731,7 +732,7 @@ export function SeaOperationsPage() {
               const proposedEta = legacyEta && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(point.eta) && /^\d{4}-\d{2}-\d{2}$/.test(operationDate) ? `${operationDate}T${point.eta}` : '';
               const navigation = passagePlanCellData(point, { allowLiveRadio: !signed, weatherMatrix: draft.vessel.weatherMatrix });
               return <div className={`so-passage-row${signed || !editable ? ' is-readonly' : ''}`} role="row" key={point.id}>
-                {([['number', 'Waypoint', 'number'], ['descriptionVhf', 'Description', 'description']] as const).map(([key, label, variant]) => <label role="cell" className={`so-passage-field is-${variant}`} key={key}><span>{label}</span><input aria-label={`${label} · point ${index + 1}`} type="text" value={point[key]} onChange={(event) => waypointUpdate(index, { [key]: event.target.value })} /></label>)}
+                {([['number', 'Waypoint', 'number'], ['descriptionVhf', 'Description', 'description']] as const).map(([key, label, variant]) => <label role="cell" className={`so-passage-field is-${variant}`} key={key}><span>{label}</span><input aria-label={`${label} · point ${index + 1}`} type="text" value={point[key]} onChange={(event) => waypointUpdate(index, { [key]: event.target.value })} onBlur={key === 'descriptionVhf' ? () => { if (!point.descriptionVhf.trim()) waypointUpdate(index, { descriptionVhf: seaOperationWaypointDescription(point, index) }); } : undefined} /></label>)}
                 <div className="so-passage-position" role="presentation">{([['latitude', 'Latitude'], ['longitude', 'Longitude']] as const).map(([axis, label]) => <label role="cell" className={`so-passage-field is-${axis}`} key={axis}><span>{label}</span><SeaOperationCoordinateInput axis={axis} value={point[axis]} label={`${label} · point ${index + 1}`} onChange={(value) => waypointUpdate(index, { [axis]: value })} /></label>)}</div>
                 <SeaOperationUkcField payload={draft} point={point} index={index} disabled={!editable || signed || busy || exporting} readOnly={signed || !editable}
                   onChange={patch => waypointUpdate(index, patch)} status={signed || ukcRequests.client !== client ? undefined : ukcRequests.statuses[ukcRequestKey(seaOperationUkcReference(draft), point)]} />

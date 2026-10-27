@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppDialog } from '../../components/AppDialog';
@@ -8,7 +8,6 @@ import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
 import { buildSeaOperationRouteMap, DEFAULT_ROUTE_MAP_VIEWPORT, routeMapPositionAt } from './seaOperationRouteMapGeometry';
 import { SEA_OPERATION_MAP_PORT_CATALOG, seaOperationMapPlaces } from './seaOperationMapPlaces';
 import { formatProjectPort } from '../projects/projectPorts';
-import { formatSeaPosition } from './seaOperationCoordinates';
 
 function point(index: number, latitude = '49.65', longitude = '-1.62'): SeaOperationWaypoint {
   return { id: `point-${index}`, number: String(index), descriptionVhf: '', latitude, longitude, eta: '', ukc: '', denseTraffic: false };
@@ -45,66 +44,47 @@ function tap(surface: HTMLElement | SVGElement, x = 325, y = 130, pointerId = 1,
 }
 
 describe('SeaOperationWaypointMapEditor', () => {
-  it('proposes an exact catalog port before placement and adds its name only after explicit confirmation', () => {
-    let resize!: ResizeObserverCallback;
-    vi.stubGlobal('ResizeObserver', class { constructor(callback: ResizeObserverCallback) { resize = callback; } observe() {} disconnect() {} });
+  it('adds an exact catalog port immediately on click before placement, without confirmation or route mutation', () => {
     const port = SEA_OPERATION_MAP_PORT_CATALOG.find(item => item.port.port === 'Port de Barfleur')!;
     const points = [point(1, String(port.location!.latitude), String(port.location!.longitude))], original = structuredClone(points);
     const add = vi.fn();
     render(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} />);
-    const button = screen.getByRole('button', { name: `Sélectionner le port ${formatProjectPort(port.port)}` });
-    fireEvent.keyDown(button, { key: 'Enter' });
-    const proposal = screen.getByRole('group', { name: 'Port proposé comme waypoint' });
-    expect(proposal).toHaveTextContent(port.port.port); expect(proposal).toHaveTextContent(formatSeaPosition(port.location!));
-    expect(screen.getByRole('button', { name: 'Ajouter ce port comme waypoint' })).toHaveFocus();
-    expect(add).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Placer les waypoints' })).toBeInTheDocument();
-    act(() => resize([{ contentRect: { width: 600, height: 280 } } as ResizeObserverEntry], {} as ResizeObserver));
-    expect(screen.getByRole('group', { name: 'Port proposé comme waypoint' })).toHaveTextContent(port.port.port);
-    fireEvent.click(screen.getByRole('button', { name: 'Ajouter ce port comme waypoint' }));
+    fireEvent.click(within(screen.getByRole('group', { name: /Carte du parcours ·/ })).getByRole('button', { name: `Ajouter le port ${formatProjectPort(port.port)} comme waypoint` }));
     expect(add).toHaveBeenCalledExactlyOnceWith({ latitude: port.location!.latitude, longitude: port.location!.longitude }, { name: port.port.port, portKey: port.key });
-    expect(screen.queryByRole('group', { name: 'Port proposé comme waypoint' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Ajouter ce port comme waypoint')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Terminer le placement' })).toBeInTheDocument();
     expect(points).toEqual(original);
   });
 
-  it('requires choosing a named port when several catalog entries share its position', () => {
+  it('adds a port with Enter and ignores repeated key events', () => {
+    const port = SEA_OPERATION_MAP_PORT_CATALOG.find(item => item.port.port === 'Port de Barfleur')!;
+    const add = vi.fn();
+    render(<SeaOperationWaypointMapEditor waypoints={[point(1, String(port.location!.latitude), String(port.location!.longitude))]} onAddWaypoint={add} />);
+    const target = within(screen.getByRole('group', { name: /Carte du parcours ·/ })).getByRole('button', { name: `Ajouter le port ${formatProjectPort(port.port)} comme waypoint` });
+    fireEvent.keyDown(target, { key: 'Enter', repeat: true }); expect(add).not.toHaveBeenCalled();
+    fireEvent.keyDown(target, { key: 'Enter' });
+    expect(add).toHaveBeenCalledExactlyOnceWith({ latitude: port.location!.latitude, longitude: port.location!.longitude }, { name: port.port.port, portKey: port.key });
+  });
+
+  it('requires choosing an identity for coincident ports, then adds it without a second confirmation', () => {
     const first = SEA_OPERATION_MAP_PORT_CATALOG.find(item => item.port.port === 'Port de Barfleur')!;
     const second = SEA_OPERATION_MAP_PORT_CATALOG.find(item => item.port.port === 'Port de Dieppe')!;
     const originalLocation = second.location;
-    // Synthetic coincidence fixture; the production catalogue is restored even if an assertion fails.
     second.location = first.location;
     try {
-    const model = seaOperationMapPlaces(buildSeaOperationRouteMap([], 900, 320, { ...DEFAULT_ROUTE_MAP_VIEWPORT }));
-    const marker = model.markers.find(item => item.ports.length > 1)!;
-    expect(marker).toBeDefined();
-    const add = vi.fn();
-    render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
-    activate();
-    fireEvent.click(screen.getByRole('button', { name: `Choisir un port parmi ${marker.ports.map(port => port.port.port).join(', ')}` }));
-    expect(screen.getByRole('group', { name: 'Ports à cette position' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Ajouter ce port comme waypoint' })).not.toBeInTheDocument();
-    const port = marker.ports[1];
-    fireEvent.click(screen.getByRole('button', { name: formatProjectPort(port.port) }));
-    expect(add).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Ajouter ce port comme waypoint' }));
-    expect(add).toHaveBeenCalledExactlyOnceWith({ latitude: port.location!.latitude, longitude: port.location!.longitude }, { name: port.port.port, portKey: port.key });
+      const model = seaOperationMapPlaces(buildSeaOperationRouteMap([], 900, 320, { ...DEFAULT_ROUTE_MAP_VIEWPORT }));
+      const marker = model.markers.find(item => item.ports.length > 1)!;
+      const add = vi.fn();
+      render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
+      activate();
+      fireEvent.click(screen.getByRole('button', { name: `Choisir un port parmi ${marker.ports.map(port => port.port.port).join(', ')}` }));
+      expect(screen.getByRole('menu', { name: 'Ports à cette position' })).toBeInTheDocument();
+      expect(add).not.toHaveBeenCalled();
+      const port = marker.ports[1];
+      fireEvent.click(screen.getByRole('menuitem', { name: formatProjectPort(port.port) }));
+      expect(add).toHaveBeenCalledExactlyOnceWith({ latitude: port.location!.latitude, longitude: port.location!.longitude }, { name: port.port.port, portKey: port.key });
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     } finally { second.location = originalLocation; }
-  });
-
-  it('cancels port proposals on Escape or disabled state without adding a waypoint', () => {
-    const port = SEA_OPERATION_MAP_PORT_CATALOG.find(item => item.port.port === 'Port de Barfleur')!;
-    const points = [point(1, String(port.location!.latitude), String(port.location!.longitude))];
-    const add = vi.fn(), close = vi.fn();
-    const view = render(<AppDialog title="Mission" onClose={close}><SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} /></AppDialog>);
-    fireEvent.click(screen.getByRole('button', { name: `Sélectionner le port ${formatProjectPort(port.port)}` }));
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Ajouter ce port comme waypoint' }), { key: 'Escape' });
-    expect(screen.queryByRole('group', { name: 'Port proposé comme waypoint' })).not.toBeInTheDocument(); expect(close).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: `Sélectionner le port ${formatProjectPort(port.port)}` }));
-    view.rerender(<AppDialog title="Mission" onClose={close}><SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} disabled /></AppDialog>);
-    expect(screen.queryByRole('group', { name: 'Port proposé comme waypoint' })).not.toBeInTheDocument();
-    view.rerender(<AppDialog title="Mission" onClose={close}><SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} /></AppDialog>);
-    expect(screen.queryByRole('group', { name: 'Port proposé comme waypoint' })).not.toBeInTheDocument(); expect(add).not.toHaveBeenCalled();
   });
 
   it('keeps clicks on the read-only voyage summary separate from waypoint placement', () => {
@@ -117,73 +97,114 @@ describe('SeaOperationWaypointMapEditor', () => {
     expect(add).not.toHaveBeenCalled();
     expect(summary).toHaveTextContent('ETD'); expect(summary).toHaveTextContent('ETA estimée');
   });
-  it('moves and deletes the selected original waypoint without adding or mutating the controlled route', () => {
+
+  it('opens a menu beside the original waypoint containing only Delete, then deletes its ID', () => {
     const points = [point(1, 'invalid', ''), point(2), point(3, '50', '0')], original = structuredClone(points);
     const add = vi.fn(), move = vi.fn(), remove = vi.fn();
     render(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} onMoveWaypoint={move} onDeleteWaypoint={remove} />);
-    const { surface } = activate();
-    fireEvent.click(screen.getByRole('button', { name: 'Sélectionner le waypoint 2' }));
+    activate();
+    const marker = screen.getByRole('button', { name: 'Sélectionner le waypoint 3' });
+    vi.spyOn(marker, 'getBoundingClientRect').mockReturnValue({ left: 210, right: 250, top: 120, bottom: 160, width: 40, height: 40, x: 210, y: 120, toJSON: () => ({}) });
+    fireEvent.click(marker);
+    const menu = screen.getByRole('menu', { name: 'Waypoint 3' });
+    expect(menu).toHaveStyle({ left: '258px', top: '120px' });
+    expect(screen.getAllByRole('menuitem')).toHaveLength(1);
+    expect(screen.getByRole('menuitem', { name: 'Supprimer' })).toBeInTheDocument();
+    expect(screen.queryByText('Repositionner')).not.toBeInTheDocument();
+    expect(screen.queryByText('Annuler la sélection')).not.toBeInTheDocument();
     expect(document.querySelector('.so-waypoint-map-crosshair')).toBeNull();
-    expect(screen.getByRole('group', { name: 'Waypoint sélectionné' })).toHaveTextContent('Waypoint 2');
-    fireEvent.click(screen.getByRole('button', { name: 'Repositionner' }));
-    tap(surface);
-    expect(move).toHaveBeenCalledExactlyOnceWith('point-2', expect.objectContaining({ latitude: expect.any(Number), longitude: expect.any(Number) }));
-    expect(move.mock.calls[0][1].latitude).toBeCloseTo(49.825, 8); expect(move.mock.calls[0][1].longitude).toBeCloseTo(-.81, 8);
-    expect(add).not.toHaveBeenCalled();
-    expect(screen.queryByRole('group', { name: 'Waypoint sélectionné' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Sélectionner le waypoint 3' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Supprimer le waypoint' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Supprimer' }));
     expect(remove).toHaveBeenCalledExactlyOnceWith('point-3');
+    expect(add).not.toHaveBeenCalled(); expect(move).not.toHaveBeenCalled(); expect(points).toEqual(original);
+  });
+
+  it('previews a held waypoint drag and commits its original ID only on release without adding', () => {
+    vi.useFakeTimers();
+    const points = [point(1, 'invalid', ''), point(2), point(3, '50', '0')], original = structuredClone(points);
+    const add = vi.fn(), move = vi.fn();
+    const view = render(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} onMoveWaypoint={move} />);
+    activate();
+    const marker = screen.getByRole('button', { name: 'Sélectionner le waypoint 2' });
+    const transform = marker.getAttribute('transform')!.match(/translate\(([-\d.]+) ([-\d.]+)\)/)!;
+    const x = 100 + Number(transform[1]) / 2, y = 50 + Number(transform[2]) / 2;
+    fireEvent.pointerDown(marker, { clientX: x, clientY: y, pointerId: 1, button: 0 });
+    act(() => vi.advanceTimersByTime(300));
+    expect(view.container.querySelector('.is-grabbing')).not.toBeNull();
+    fireEvent.pointerMove(marker, { clientX: x + 30, clientY: y - 10, pointerId: 1 });
+    expect(move).not.toHaveBeenCalled();
+    expect(view.container.querySelector('[data-point-indices="2"]')!.getAttribute('transform')).not.toBe(marker.getAttribute('transform'));
+    fireEvent.pointerUp(marker, { clientX: x + 30, clientY: y - 10, pointerId: 1 });
+    expect(move).toHaveBeenCalledExactlyOnceWith('point-2', expect.objectContaining({ latitude: expect.any(Number), longitude: expect.any(Number) }));
+    expect(move.mock.calls[0][1].latitude).toBeGreaterThan(49.65); expect(move.mock.calls[0][1].longitude).toBeGreaterThan(-1.62);
+    fireEvent.click(marker);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     expect(add).not.toHaveBeenCalled(); expect(points).toEqual(original);
   });
 
-  it('requires an explicit ID choice for coincident points and preserves original indices after invalid positions', () => {
-    const points = [point(1, 'invalid', ''), point(2), point(3)];
-    const add = vi.fn(), remove = vi.fn(), move = vi.fn();
-    render(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} onMoveWaypoint={move} onDeleteWaypoint={remove} />);
-    activate();
-    const group = screen.getByRole('button', { name: 'Sélectionner les waypoints 2, 3' });
-    fireEvent.keyDown(group, { key: 'Enter' });
-    expect(screen.getByRole('group', { name: 'Waypoints à cette position' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Supprimer le waypoint' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Repositionner' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Sélectionner le waypoint 3' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Supprimer le waypoint' }));
-    expect(remove).toHaveBeenCalledExactlyOnceWith('point-3');
-    expect(add).not.toHaveBeenCalled(); expect(move).not.toHaveBeenCalled();
-  });
-
-  it('lets a repositioning click land exactly on an existing marker instead of selecting it or adding', () => {
+  it('lets a direct drag finish exactly on an occupied waypoint position without losing capture or adding', () => {
     const add = vi.fn(), move = vi.fn();
-    const view = render(<SeaOperationWaypointMapEditor waypoints={[point(1), point(2, '50', '0')]} onAddWaypoint={add} onMoveWaypoint={move} />);
-    const { surface } = activate();
-    const target = view.container.querySelector('[data-point-indices="2"]')!.getAttribute('transform')!.match(/translate\(([-\d.]+) ([-\d.]+)\)/)!;
-    fireEvent.click(screen.getByRole('button', { name: 'Sélectionner le waypoint 1' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Repositionner' }));
-    expect(view.container.querySelector('.so-waypoint-map-marker')).toBeNull();
-    tap(surface, 100 + Number(target[1]) / 2, 50 + Number(target[2]) / 2);
+    render(<SeaOperationWaypointMapEditor waypoints={[point(1), point(2, '50', '0')]} onAddWaypoint={add} onMoveWaypoint={move} />);
+    activate();
+    const first = screen.getByRole('button', { name: 'Sélectionner le waypoint 1' });
+    const second = screen.getByRole('button', { name: 'Sélectionner le waypoint 2' });
+    const position = (marker: HTMLElement) => {
+      const match = marker.getAttribute('transform')!.match(/translate\(([-\d.]+) ([-\d.]+)\)/)!;
+      return { clientX: 100 + Number(match[1]) / 2, clientY: 50 + Number(match[2]) / 2 };
+    };
+    const start = position(first), end = position(second);
+    fireEvent.pointerDown(first, { ...start, pointerId: 1, button: 0 });
+    fireEvent.pointerMove(first, { ...end, pointerId: 1 });
+    expect(first).toBeInTheDocument();
+    fireEvent.pointerUp(first, { ...end, pointerId: 1 });
     expect(move).toHaveBeenCalledExactlyOnceWith('point-1', expect.objectContaining({ latitude: expect.any(Number), longitude: expect.any(Number) }));
-    // Displayed marker pixels are rounded to hundredths by the route geometry.
     expect(move.mock.calls[0][1].latitude).toBeCloseTo(50, 4); expect(move.mock.calls[0][1].longitude).toBeCloseTo(0, 4);
     expect(add).not.toHaveBeenCalled();
   });
 
-  it('cancels marker selection and repositioning without accidentally adding and supports keyboard relocation', () => {
-    const add = vi.fn(), move = vi.fn();
-    render(<SeaOperationWaypointMapEditor waypoints={[point(1)]} onAddWaypoint={add} onMoveWaypoint={move} />);
+  it('requires an explicit identity before deleting coincident waypoints', () => {
+    const add = vi.fn(), remove = vi.fn();
+    render(<SeaOperationWaypointMapEditor waypoints={[point(1, 'invalid', ''), point(2), point(3)]} onAddWaypoint={add} onDeleteWaypoint={remove} />);
+    activate();
+    fireEvent.click(screen.getByRole('button', { name: 'Sélectionner les waypoints 2, 3' }));
+    expect(screen.getByRole('menu', { name: 'Waypoints à cette position' })).toBeVisible();
+    expect(screen.queryByRole('menuitem', { name: 'Supprimer' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Waypoint 3' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Supprimer' }));
+    expect(remove).toHaveBeenCalledExactlyOnceWith('point-3'); expect(add).not.toHaveBeenCalled();
+  });
+
+  it('closes the waypoint menu with Escape without closing the form and supports keyboard movement', () => {
+    const add = vi.fn(), move = vi.fn(), close = vi.fn();
+    render(<AppDialog title="Mission" onClose={close}><SeaOperationWaypointMapEditor waypoints={[point(1)]} onAddWaypoint={add} onMoveWaypoint={move} onDeleteWaypoint={vi.fn()} /></AppDialog>);
     const { surface } = activate();
     const marker = screen.getByRole('button', { name: 'Sélectionner le waypoint 1' });
-    fireEvent.keyDown(marker, { key: ' ' });
-    fireEvent.click(screen.getByRole('button', { name: 'Repositionner' }));
-    fireEvent.keyDown(surface, { key: 'Escape' });
-    expect(screen.getByRole('button', { name: 'Terminer le placement' })).toBeInTheDocument();
-    expect(add).not.toHaveBeenCalled(); expect(move).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Sélectionner le waypoint 1' })); fireEvent.click(screen.getByRole('button', { name: 'Repositionner' }));
-    fireEvent.keyDown(surface, { key: 'Enter', repeat: true }); expect(move).not.toHaveBeenCalled();
-    fireEvent.keyDown(surface, { key: 'Enter' });
+    fireEvent.keyDown(marker, { key: 'Enter' });
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Supprimer' }), { key: 'Escape' });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument(); expect(close).not.toHaveBeenCalled();
+    expect(surface).toHaveFocus();
+    fireEvent.keyDown(marker, { key: 'ArrowRight', altKey: true });
     expect(move).toHaveBeenCalledExactlyOnceWith('point-1', expect.objectContaining({ latitude: expect.any(Number), longitude: expect.any(Number) }));
-    expect(move.mock.calls[0][1].latitude).toBeCloseTo(49.65, 8); expect(move.mock.calls[0][1].longitude).toBeCloseTo(-1.62, 8);
-    expect(add).not.toHaveBeenCalled();
+    expect(move.mock.calls[0][1].longitude).toBeGreaterThan(-1.62); expect(add).not.toHaveBeenCalled();
+  });
+
+  it('cancels waypoint drag previews on pointer cancellation, blur and permission changes', () => {
+    vi.useFakeTimers();
+    const add = vi.fn(), move = vi.fn();
+    const view = render(<SeaOperationWaypointMapEditor waypoints={[point(1)]} onAddWaypoint={add} onMoveWaypoint={move} />);
+    activate();
+    const marker = screen.getByRole('button', { name: 'Sélectionner le waypoint 1' });
+    const begin = () => {
+      fireEvent.pointerDown(marker, { clientX: 325, clientY: 130, pointerId: 1, button: 0 });
+      fireEvent.pointerMove(marker, { clientX: 345, clientY: 140, pointerId: 1 });
+    };
+    begin(); fireEvent.pointerCancel(marker, { pointerId: 1 });
+    begin(); fireEvent.blur(window);
+    begin(); view.rerender(<SeaOperationWaypointMapEditor waypoints={[point(1)]} onAddWaypoint={add} onMoveWaypoint={move} disabled />);
+    act(() => vi.advanceTimersByTime(500));
+    fireEvent.pointerUp(marker, { clientX: 345, clientY: 140, pointerId: 1 });
+    expect(move).not.toHaveBeenCalled(); expect(add).not.toHaveBeenCalled();
+    expect(view.container.querySelector('.is-grabbing')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Ajouter le port/ })).not.toBeInTheDocument();
   });
 
   it('grabs after a sustained press, suppresses addition even without movement and cleans the hold on blur or disable', () => {
@@ -233,7 +254,7 @@ describe('SeaOperationWaypointMapEditor', () => {
     expect(screen.getByText(/Renseignez une latitude/)).toBeVisible();
     const { surface } = activate();
     expect(surface).toHaveFocus();
-    expect(screen.getByText(/Glissez pour déplacer la carte/)).toBeVisible();
+    expect(screen.getByText(/Glissez le fond pour naviguer/)).toBeVisible();
     expect(container.querySelectorAll('.so-route-map-land polygon').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: 'Terminer le placement' }));
     expect(screen.queryByRole('button', { name: 'Zone de placement des waypoints' })).not.toBeInTheDocument();

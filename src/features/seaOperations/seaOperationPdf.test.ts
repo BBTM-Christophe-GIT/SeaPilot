@@ -90,6 +90,20 @@ function textPositions(body: string, text: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Sea operation PDF', () => {
+  it('uses port names, custom descriptions and a waypoint fallback without rewriting the declaration', async () => {
+    const record = fixture(); record.draft.description = 'Vérification des descriptions du Passage Plan.';
+    record.draft.waypoints = record.draft.waypoints.slice(0, 3).map((point, index) => ({ ...point,
+      number: index === 2 ? 'A-3' : point.number,
+      descriptionVhf: ['Port de Barfleur', 'Route personnalisée', '   '][index] }));
+    const original = structuredClone(record);
+    const bodies = await generatedBodies((await generateSeaOperationPdf(record, { templateBytes: await template() })).bytes);
+    const text = bodies.join('\n');
+    expect(text).toContain('(Port de Barfleur) Tj');
+    expect(text).toContain('(Route personnalisée) Tj');
+    expect(text).toContain('(Waypoint A-3) Tj');
+    expect(record).toEqual(original);
+  });
+
   it('exports the retained automatic UKC, compact indicative pill and model provenance annex without manual fallback', async () => {
     const source = JSON.parse(await readFile(new URL('./testFixtures/copernicus-ukc.json', import.meta.url), 'utf8')) as {
       input: SeaOperationCopernicusInput; provider: SeaOperationCopernicusProviderResult; fetchedAt: string;
@@ -116,10 +130,14 @@ describe('Sea operation PDF', () => {
     expect(record).toEqual(original);
     if (process.env.SEAPILOT_PDF_COPERNICUS_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_COPERNICUS_QA_OUTPUT, generated.bytes);
     record.draft.vessel.draftMeters = 3;
-    const stale = (await generatedBodies((await generateSeaOperationPdf(record, { templateBytes: await template() })).bytes)).join('\n');
-    expect([...stale.matchAll(/\(([^()]*)\) Tj/g)].map(match => match[1]).join('')).toContain('Indisponible');
+    const staleGenerated = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const stale = (await generatedBodies(staleGenerated.bytes)).join('\n');
+    expect(stale).toContain('(Indisponible) Tj');
+    expect(stale).toContain('(Automatique) Tj');
+    expect(stale).toContain('(Annexe UKC) Tj');
     expect(stale).not.toContain('MANUAL-OLD');
     expect(stale).not.toContain('(~ 19,62 m) Tj');
+    if (process.env.SEAPILOT_PDF_UKC_UNAVAILABLE_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_UKC_UNAVAILABLE_QA_OUTPUT, staleGenerated.bytes);
   });
   it('draws compact UKC pills from the recorded draft reference and keeps historical values neutral without it', async () => {
     const record = fixture();
@@ -138,7 +156,7 @@ describe('Sea operation PDF', () => {
     const ukcText = [...passage.matchAll(/BT\n([\s\S]*?)\nET/g)].map((match) => {
       const position = /([\d.-]+) ([\d.-]+) Td/.exec(match[1]);
       return { commands: match[1], x: Number(position?.[1]) };
-    }).filter((item) => item.x > 309 && item.x < 354);
+    }).filter((item) => item.x > 309 && item.x < 385);
     const textBody = bodies.join('\n').replace(/\x92/g, '’');
     expect(textBody.includes('Tirant d’eau de référence conservé')).toBe(true);
     expect(textBody.includes('orange au-delà et jusqu’à +2 m inclus')).toBe(true);
@@ -270,8 +288,8 @@ describe('Sea operation PDF', () => {
       const badges = textPositions(body, label);
       expect(badges).toHaveLength(1);
       const badge = badges[0];
-      expect(badge.x).toBeGreaterThan(533);
-      expect(badge.x).toBeLessThan(758);
+      expect(badge.x).toBeGreaterThan(557);
+      expect(badge.x).toBeLessThan(757);
       expect(badge.commands).toContain(color);
       const waypointPosition = textPositions(body, waypoint)[0];
       expect(waypointPosition).toBeDefined();
@@ -283,8 +301,9 @@ describe('Sea operation PDF', () => {
       const rectangles = [...body.matchAll(/([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) re\nB/g)].map((match) => ({ index: match.index, x: Number(match[1]), y: Number(match[2]), width: Number(match[3]), height: Number(match[4]) }));
       const header = rectangles.filter((rectangle) => rectangle.index < body.indexOf('(Waypoint)')).at(-1)!;
       const cells = rectangles.filter((rectangle) => rectangle.y === header.y && rectangle.height === header.height);
-      expect(cells.map((cell) => cell.x)).toEqual([49, 94, 199, 259, 319, 354, 427, 533, 758]);
-      expect(cells[7].width).toBe(225);
+      expect(cells.map((cell) => cell.x)).toEqual([49, 94, 189, 249, 309, 385, 461, 557, 757]);
+      expect(cells[4].width).toBe(76);
+      expect(cells[7].width).toBe(200);
     }
     expect(record).toEqual(original);
   });
@@ -311,19 +330,21 @@ describe('Sea operation PDF', () => {
     expect(nearBody).toContain("001° 37.200' W");
     expect(nearBody).toContain("(49° 39.000' N) Tj");
     expect(nearBody).toContain("(001° 37.200' W) Tj");
-    expect(nearBody).toContain('5,6 km');
-    expect(nearBody).toContain('position approchée.');
+    const nearText = nearBody.replace(/\) Tj\s*T\* \(/g, ' ');
+    expect(nearText).toContain('5,6 km');
+    expect(nearText).toContain('position approchée.');
     expect(nearBody).toContain('MESURES APRÈS LE PASSAGE');
     const locations = [...nearBody.matchAll(/BT\n([\s\S]*?)\nET/g)]
       .filter((match) => match[1].includes("(Point météo : 49° 42.000' N -"))
       .map((match) => /([\d.-]+) ([\d.-]+) Td/.exec(match[1])!);
     expect(locations).toHaveLength(1);
     const location = { x: Number(locations[0][1]), y: Number(locations[0][2]) };
-    expect(location.x).toBeGreaterThan(533); expect(location.x).toBeLessThan(758);
+    expect(location.x).toBeGreaterThan(557); expect(location.x).toBeLessThan(757);
     expect(textPositions(nearBody, 'Vent moyen 10 m')[0].y - location.y).toBeGreaterThan(20);
     expect(location.y - textPositions(nearBody, 'MESURES APRÈS LE PASSAGE')[0].y).toBeGreaterThan(15);
     const exactBody = bodies.find((body) => textPositions(body, 'GRID').length > 0)!;
-    expect(exactBody).toContain("49° 39.000' N -"); expect(exactBody).toContain('0,0 km');
+    expect(exactBody).toContain("49° 39.000' N -");
+    expect(exactBody.replace(/\) Tj\s*T\* \(/g, ' ')).toContain('0,0 km');
     const unavailableBody = bodies.find((body) => textPositions(body, 'H3').length > 0)!;
     expect(unavailableBody).toContain('horizon dépassé.');
     expect(unavailableBody).not.toContain('Point météo');
