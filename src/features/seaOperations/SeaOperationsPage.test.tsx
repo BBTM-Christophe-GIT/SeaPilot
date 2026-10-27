@@ -2413,6 +2413,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
   });
 
   it('uses one accessible binary switch per question and an editable responsive Passage Plan', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-27T13:27:00Z'));
     renderAccount();
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     await userEvent.click(stepButton(1));
@@ -2445,7 +2446,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(formQueries().getByLabelText('Description · point 1')).toHaveValue('Entrée du chenal');
     expect(etaGroup()).toBeVisible();
     expect(etaQueries().getByRole('grid', { name: /Calendrier ·/ })).toBeVisible();
-    expectEtaTime('', etaQueries());
+    expectEtaTime('14:25', etaQueries());
     expect(formQueries().getByRole('checkbox', { name: 'Zone maritime à trafic dense · point 1' })).toBeChecked();
     await userEvent.click(formQueries().getByRole('button', { name: 'Supprimer le point 1' }));
     expect(within(table).getByText('Ajoutez le premier point de passage.')).toBeInTheDocument();
