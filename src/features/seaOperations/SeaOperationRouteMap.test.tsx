@@ -13,6 +13,17 @@ const channelRoute = () => [point(1, '49.65', '-1.62'), point(2, '48.36', '-4.53
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('SeaOperationRouteMap', () => {
+  it('keeps a short route visible beside the voyage summary instead of covering its arrival', () => {
+    const onGeometry = vi.fn();
+    const points = [point(1, '49.65', '-1.64'), point(2, '49.655', '-1.62'), point(3, '49.65', '-1.60')];
+    render(<SeaOperationRouteMap waypoints={points} showRouteLegs maxSpeedKnots={12} onGeometry={onGeometry} />);
+    const map = onGeometry.mock.calls.at(-1)![0] as ReturnType<typeof import('./seaOperationRouteMapGeometry').buildSeaOperationRouteMap>;
+    expect(map.points).toHaveLength(3);
+    expect(map.points.every(point => point.x > 30 && point.x < map.width - 264 - 25)).toBe(true);
+    expect(map.segments).toHaveLength(2);
+    expect(screen.getByLabelText('Estimation du parcours')).toBeInTheDocument();
+  });
+
   it('shows routes, isolated points and valid zones together without including overlays in travel totals', () => {
     const route = [point(1, '0', '0'), point(2, '0', '1')];
     const isolated = [{ ...point(3, '0', '4'), descriptionVhf: 'Inspection isolée', denseTraffic: true }];

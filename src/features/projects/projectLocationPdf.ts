@@ -43,8 +43,10 @@ export function projectLocationVoyage(location: Pick<ProjectLocationPlan, 'waypo
 /** Vector-only situational map, shared by project appendices and imported SeaOps overlays. */
 export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeometry, bounds: { x: number; y: number; width: number; height: number },
   options?: { etd?: string; maxSpeedKnots?: number | null; showVoyage?: boolean }) {
-  const geometry = buildSeaOperationRouteMap(location.waypoints, 900, Math.max(160, 900 * bounds.height / bounds.width), undefined, projectLocationMapPositions(location));
   const unit = (points: number) => points / document.internal.scaleFactor;
+  const fitRightInset = options?.showVoyage && location.waypoints.length > 1
+    ? (Math.min(bounds.width - unit(12), unit(200)) + unit(12)) / bounds.width * 900 : 0;
+  const geometry = buildSeaOperationRouteMap(location.waypoints, 900, Math.max(160, 900 * bounds.height / bounds.width), undefined, projectLocationMapPositions(location), fitRightInset);
   const at = (point: { x: number; y: number }) => ({ x: bounds.x + point.x / geometry.width * bounds.width, y: bounds.y + point.y / geometry.height * bounds.height });
   const projected = (position: { latitude: number; longitude: number }) => {
     const point = projectSeaOperationMapPlace(geometry, position);

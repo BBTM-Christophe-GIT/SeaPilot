@@ -5,7 +5,8 @@ import { AppDialog } from '../../components/AppDialog';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import type { SeaPosition } from './seaOperationNavigation';
 import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
-import { buildSeaOperationRouteMap, DEFAULT_ROUTE_MAP_VIEWPORT, routeMapPositionAt } from './seaOperationRouteMapGeometry';
+import { buildSeaOperationRouteMap, DEFAULT_ROUTE_MAP_VIEWPORT, routeMapPositionAt, zoomRouteMapViewport } from './seaOperationRouteMapGeometry';
+import * as mapGeometry from './seaOperationRouteMapGeometry';
 import { SEA_OPERATION_MAP_PORT_CATALOG, seaOperationMapPlaces } from './seaOperationMapPlaces';
 import { formatProjectPort } from '../projects/projectPorts';
 
@@ -41,6 +42,20 @@ function activate() {
 function tap(surface: HTMLElement | SVGElement, x = 325, y = 130, pointerId = 1, pointerType = 'mouse', timeStamp?: number) {
   fireEvent.pointerDown(surface, { clientX: x, clientY: y, button: 0, pointerId, pointerType, timeStamp });
   fireEvent.pointerUp(surface, { clientX: x, clientY: y, button: 0, pointerId, pointerType, timeStamp });
+}
+
+function animationFrames() {
+  let time = 0, nextId = 0;
+  const frames = new Map<number, FrameRequestCallback>();
+  vi.spyOn(performance, 'now').mockImplementation(() => time);
+  const request = vi.fn((callback: FrameRequestCallback) => { nextId += 1; frames.set(nextId, callback); return nextId; });
+  const cancel = vi.fn((id: number) => { frames.delete(id); });
+  vi.stubGlobal('requestAnimationFrame', request); vi.stubGlobal('cancelAnimationFrame', cancel);
+  return { request, cancel, has: (id: number) => frames.has(id), get pending() { return frames.size; }, advance(milliseconds: number) {
+    time += milliseconds;
+    const callbacks = [...frames.values()]; frames.clear();
+    act(() => callbacks.forEach(callback => callback(time)));
+  } };
 }
 
 describe('SeaOperationWaypointMapEditor', () => {
@@ -267,6 +282,7 @@ describe('SeaOperationWaypointMapEditor', () => {
   });
 
   it('zooms at the pointer coordinate with a nonpassive wheel listener and cancels any active pointer gesture', () => {
+    const frames = animationFrames();
     const add = vi.fn();
     const view = render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
     const { surface } = activate();
@@ -276,12 +292,109 @@ describe('SeaOperationWaypointMapEditor', () => {
     expect(fireEvent.wheel(surface, { deltaY: -120, clientX: 437.5, clientY: 100, cancelable: true })).toBe(false);
     fireEvent.pointerUp(surface, { clientX: 437.5, clientY: 100, pointerId: 1 });
     expect(add).not.toHaveBeenCalled();
+    frames.advance(100);
     tap(surface, 437.5, 100, 2);
     expect(add).toHaveBeenCalledOnce();
     expect(add.mock.calls[0][0].latitude).toBeCloseTo(expected.latitude, 8);
     expect(add.mock.calls[0][0].longitude).toBeCloseTo(expected.longitude, 8);
     view.rerender(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} disabled />);
     expect(fireEvent.wheel(surface, { deltaY: -120, clientX: 437.5, clientY: 100, cancelable: true })).toBe(true);
+  });
+
+  it('coalesces wheel input into one map projection per frame, interpolates briefly and keeps the latest cursor coordinate fixed', () => {
+    const frames = animationFrames(), add = vi.fn(), build = vi.spyOn(mapGeometry, 'buildSeaOperationRouteMap');
+    const view = render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
+    const { surface } = activate(); build.mockClear();
+    const originalCentre = view.container.querySelector('.so-waypoint-map-centre')!.textContent;
+    for (const clientX of [325, 400, 437.5]) fireEvent.wheel(surface, { deltaY: -40, clientX, clientY: 100, cancelable: true });
+    expect(frames.request).toHaveBeenCalledOnce(); expect(frames.pending).toBe(1);
+    expect(build).not.toHaveBeenCalled();
+    frames.advance(20);
+    const intermediate = view.container.querySelector('.so-waypoint-map-centre')!.textContent;
+    expect(intermediate).not.toBe(originalCentre); expect(build).toHaveBeenCalledOnce(); expect(frames.pending).toBe(1);
+    frames.advance(20);
+    expect(view.container.querySelector('.so-waypoint-map-centre')!.textContent).not.toBe(intermediate);
+    frames.advance(60); expect(frames.pending).toBe(0);
+    const original = routeMapPositionAt(buildSeaOperationRouteMap([], 900, 320, { ...DEFAULT_ROUTE_MAP_VIEWPORT }), 675, 100)!;
+    tap(surface, 437.5, 100, 2);
+    expect(add.mock.calls[0][0].latitude).toBeCloseTo(original.latitude, 8);
+    expect(add.mock.calls[0][0].longitude).toBeCloseTo(original.longitude, 8);
+    tap(surface, 325, 100, 3);
+    const span = (add.mock.calls[0][0].longitude - add.mock.calls[1][0].longitude) * 4;
+    expect(span).toBeCloseTo(DEFAULT_ROUTE_MAP_VIEWPORT.longitudeSpan * Math.exp(-120 * .002), 8);
+  });
+
+  it('accumulates new wheel deltas between frames but reverses immediately from the visible view', () => {
+    const frames = animationFrames(), add = vi.fn();
+    render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
+    const { surface } = activate();
+    fireEvent.wheel(surface, { deltaY: -60, clientX: 325, clientY: 130 }); frames.advance(50);
+    fireEvent.wheel(surface, { deltaY: -60, clientX: 325, clientY: 130 }); frames.advance(100);
+    tap(surface, 437.5, 130, 1);
+    expect(add.mock.calls[0][0].longitude).toBeCloseTo(-3 + 4 * Math.exp(-.24), 8);
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 }); frames.advance(50);
+    fireEvent.wheel(surface, { deltaY: 60, clientX: 325, clientY: 130 }); frames.advance(100);
+    tap(surface, 437.5, 130, 2, 'mouse', 1000);
+    expect(add.mock.calls[1][0].longitude).toBeCloseTo(add.mock.calls[0][0].longitude, 8);
+  });
+
+  it.each([{ deltaY: -7.5, deltaMode: 1 }, { deltaY: -.375, deltaMode: 2 }, { deltaY: -120, deltaMode: 0 }])('normalizes wheel mode $deltaMode without changing the final zoom', input => {
+    const frames = animationFrames(), add = vi.fn();
+    render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
+    const { surface } = activate();
+    fireEvent.wheel(surface, { ...input, clientX: 325, clientY: 130 }); frames.advance(100);
+    tap(surface, 437.5, 130);
+    expect(add.mock.calls[0][0].longitude).toBeCloseTo(-3 + 4 * Math.exp(-.24), 8);
+  });
+
+  it('finishes exactly at the zoom limit and does not keep animating against that limit', () => {
+    const frames = animationFrames(), add = vi.fn();
+    render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
+    const { surface } = activate();
+    for (let index = 0; index < 20; index += 1) fireEvent.wheel(surface, { deltaY: -800, clientX: 325, clientY: 130 });
+    frames.advance(100);
+    expect(frames.pending).toBe(0); const requests = frames.request.mock.calls.length;
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 });
+    expect(frames.pending).toBe(0); expect(frames.request).toHaveBeenCalledTimes(requests);
+    tap(surface, 437.5, 130);
+    const minimum = zoomRouteMapViewport({ ...DEFAULT_ROUTE_MAP_VIEWPORT }, 1e12).longitudeSpan;
+    expect(add.mock.calls[0][0].longitude).toBeCloseTo(-3 + minimum / 4, 8);
+  });
+
+  it.each(['blur', 'fit', 'zoom', 'pan', 'pointer', 'fullscreen', 'finish', 'disabled', 'source', 'unmount'] as const)('cancels scheduled wheel frames on %s instead of applying stale zoom later', action => {
+    const frames = animationFrames(), add = vi.fn(), points: SeaOperationWaypoint[] = [];
+    const view = render(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} />);
+    const { surface } = activate();
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 437.5, clientY: 100 });
+    expect(frames.pending).toBe(1);
+    const zoomFrame = frames.request.mock.results[0].value as number;
+    if (action === 'blur') fireEvent.blur(window);
+    else if (action === 'fit') fireEvent.click(screen.getByRole('button', { name: 'Cadrer le parcours' }));
+    else if (action === 'zoom') fireEvent.click(screen.getByRole('button', { name: 'Zoomer sur la carte' }));
+    else if (action === 'pan') fireEvent.click(screen.getByRole('button', { name: 'Déplacer la carte vers le nord' }));
+    else if (action === 'pointer') fireEvent.pointerDown(surface, { clientX: 325, clientY: 130, pointerId: 2, button: 0 });
+    else if (action === 'fullscreen') fireEvent.click(screen.getByRole('button', { name: 'Afficher la carte en plein écran' }));
+    else if (action === 'finish') fireEvent.click(screen.getByRole('button', { name: 'Terminer le placement' }));
+    else if (action === 'disabled') view.rerender(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} disabled />);
+    else if (action === 'source') view.rerender(<SeaOperationWaypointMapEditor waypoints={[point(1)]} onAddWaypoint={add} />);
+    else view.unmount();
+    expect(frames.has(zoomFrame)).toBe(false); expect(frames.cancel).toHaveBeenCalledWith(zoomFrame);
+    // Fullscreen may schedule its own focus restoration frame; it must not retain the zoom frame.
+    if (action !== 'fullscreen') expect(frames.pending).toBe(0);
+    const before = view.container.textContent;
+    frames.advance(1000); expect(view.container.textContent).toBe(before); expect(add).not.toHaveBeenCalled();
+  });
+
+  it('cancels wheel interpolation when the map is resized', () => {
+    let onResize!: ResizeObserverCallback;
+    vi.stubGlobal('ResizeObserver', class { constructor(callback: ResizeObserverCallback) { onResize = callback; } observe() {} disconnect() {} });
+    const frames = animationFrames();
+    render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={vi.fn()} />);
+    const { surface } = activate();
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 });
+    act(() => onResize([{ contentRect: { width: 330, height: 280 } } as ResizeObserverEntry], {} as ResizeObserver));
+    expect(frames.pending).toBe(0); frames.advance(1000);
+    expect(screen.getByText('Centre : 49° 00.000′ N — 003° 00.000′ W')).toBeVisible();
   });
   it('keeps gestures opt-in, shows a local background when empty, and ends placement explicitly', () => {
     const add = vi.fn();

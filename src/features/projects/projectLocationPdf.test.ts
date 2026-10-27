@@ -29,6 +29,19 @@ function streams(document: PDFDocument) {
 }
 
 describe('Project location appendix', () => {
+  it('keeps every short-route marker outside the bottom-right navigation summary', () => {
+    const plan = fixture();
+    plan.waypoints = [['49.65', '-1.64'], ['49.655', '-1.62'], ['49.65', '-1.60']].map(([latitude, longitude], index) => ({ ...emptySeaOperationWaypoint(`short-${index}`), number: String(index + 1), latitude, longitude }));
+    plan.points = []; plan.zones = [];
+    const document = new jsPDF({ unit: 'pt', orientation: 'landscape' });
+    const bounds = { x: 30, y: 60, width: 782, height: 190 };
+    const map = drawProjectLocationMapPdf(document, plan, bounds, { maxSpeedKnots: 12, showVoyage: true });
+    const summaryLeft = bounds.x + bounds.width - 206;
+    expect(map.points).toHaveLength(3);
+    expect(map.points.every(point => bounds.x + point.x / map.width * bounds.width + 12 < summaryLeft)).toBe(true);
+    expect(map.segments).toHaveLength(2);
+  });
+
   it('returns the exact original contract when absent, unchecked or empty', async () => {
     const base = new Blob(['untouched contract']); const plan = fixture(); plan.includeInPdf = false;
     for (const location of [null, plan, { ...emptyProjectLocationPlan(), includeInPdf: true }]) {
