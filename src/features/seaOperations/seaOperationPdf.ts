@@ -11,6 +11,7 @@ import { seaOperationWeatherLocation } from './seaOperationWeatherLocation';
 import { buildSeaOperationRouteMap } from './seaOperationRouteMapGeometry';
 import { assessSeaOperationUkc, isVesselDraftMeters, type SeaOperationUkcLevel } from './seaOperationUkc';
 import { seaOperationWaypointDescription } from './seaOperationWaypointDescription';
+import { seaOperationVoyageSummary } from './seaOperationVoyageSummary';
 
 export const SEA_OPERATION_WORD_TEMPLATE_URL = '/templates/sea-operation/word-header-footer.pdf';
 const PAGE_WIDTH = 595.32;
@@ -257,6 +258,14 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     paragraph('Fond : Natural Earth · Tracé indicatif. Repères numérotés dans l’ordre du tableau ; les positions identiques regroupent leurs numéros.');
   } else paragraph('Aucun waypoint avec une latitude et une longitude valides à placer sur la carte.');
   if (routeMap.invalidCount) paragraph(`${routeMap.invalidCount} waypoint${routeMap.invalidCount > 1 ? 's' : ''} non placé${routeMap.invalidCount > 1 ? 's' : ''} : coordonnées absentes ou invalides. Le tracé est interrompu à ces positions.`);
+  const voyage = seaOperationVoyageSummary(form);
+  page(75);
+  heading('Récapitulatif du Passage Plan', true);
+  table([[voyage.route.totalDistanceLabel || 'Distance indisponible', voyage.durationLabel || 'Durée indisponible',
+    voyage.timing.etdLabel || 'ETD indisponible', voyage.timing.etaLabel || 'ETA indisponible']],
+  ['Distance totale', 'Durée totale', 'ETD (heure de Paris)', 'ETA (heure de Paris)'],
+  { 0: { cellWidth: (pageWidth() - LEFT - RIGHT) / 4 }, 1: { cellWidth: (pageWidth() - LEFT - RIGHT) / 4 },
+    2: { cellWidth: (pageWidth() - LEFT - RIGHT) / 4 }, 3: { cellWidth: (pageWidth() - LEFT - RIGHT) / 4 } });
   const passageRows = form.waypoints.map((point, index) => ({ ...passagePlanCellData(point, { payload: form, allowLiveRadio: !signed, weatherMatrix: form.vessel.weatherMatrix, observations: record.weatherObservations, includeObservations: signed, validatedAt: signed ? record.signedAt : undefined }), description: seaOperationWaypointDescription(point, index) }));
   if (passageRows.some(row => row.ukcPresentation.automatic)) paragraph('UKC précédées de ~ : estimations statiques indicatives. Calcul, sources conservées et limites dans l’annexe UKC par waypoint.');
   // A stable landscape column keeps numbers, status and annex references readable.

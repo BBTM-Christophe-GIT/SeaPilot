@@ -28,7 +28,7 @@ import { SeaOperationRouteMap } from './SeaOperationRouteMap';
 import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
 import { SeaOperationEtaPicker } from './SeaOperationEtaPicker';
 import { captureSeaOperationValidationWeather } from './seaOperationValidationWeather';
-import { seaWaypointPosition, type SeaPosition } from './seaOperationNavigation';
+import type { SeaPosition } from './seaOperationNavigation';
 import { initialSeaOperationWeatherStatus, weatherRequestKey, type WeatherRequestStatus } from './seaOperationWeatherStatus';
 import { isVesselDraftMeters } from './seaOperationUkc';
 import { SeaOperationCoordinateInput } from './SeaOperationCoordinateInput';
@@ -37,7 +37,7 @@ import { SeaOperationUkcField } from './SeaOperationUkcField';
 import { SeaOperationUkcPanel } from './SeaOperationUkcPanel';
 import { captureSeaOperationValidationUkc, ukcRequestKey, type SeaOperationUkcRequestStatus } from './seaOperationValidationUkc';
 import { updateSeaOperationRouteEtas } from './seaOperationRouteEta';
-import { seaOperationVoyageTiming } from './seaOperationRouteLegs';
+import { seaOperationRouteArrivalEta } from './seaOperationVoyageSummary';
 import { captureSeaOperationWaypointDescriptions, seaOperationWaypointDescription } from './seaOperationWaypointDescription';
 
 const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'];
@@ -114,15 +114,6 @@ function captureRouteEtas(payload: SeaOperationPayload, vessels: SeaOperationDat
   const vessel = vessels?.find(source => String(source.id) === payload.vessel.id);
   // Unknown vessel/speed invalidates automatic slots; historical/manual times are retained.
   return updateSeaOperationRouteEtas(payload, vessel?.maxSpeedKnots ?? null);
-}
-
-function routeArrivalEta(payload: SeaOperationPayload): string | undefined {
-  if (payload.waypoints.length < 2) return;
-  for (const point of payload.waypoints) {
-    if (!seaWaypointPosition(point)) return;
-    if (!seaOperationVoyageTiming(point.eta, 0).etdUtc) return;
-  }
-  return payload.waypoints.at(-1)?.eta;
 }
 
 export function SeaOperationsPage() {
@@ -721,7 +712,7 @@ export function SeaOperationsPage() {
           <Field label="Tirant d’eau de référence (m)"><input type="number" readOnly value={referenceDraft ?? ''} /></Field>{referenceDraft == null && <p className="so-help">{signed ? 'Tirant d’eau de référence non enregistré dans cette version : indicateur UKC indisponible.' : 'Renseignez le tirant d’eau du navire dans le module Navires.'}</p>}
           <SeaOperationHydroSources />
           {step === 2 && (editable && !signed
-            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${draft.planning?.operationId || ''}`} waypoints={draft.waypoints} maxSpeedKnots={data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id)?.maxSpeedKnots} etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={routeArrivalEta(draft)} onAddWaypoint={addWaypoint} onMoveWaypoint={moveWaypoint} onDeleteWaypoint={removeWaypoint} disabled={busy || exporting} />
+            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${draft.planning?.operationId || ''}`} waypoints={draft.waypoints} maxSpeedKnots={data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id)?.maxSpeedKnots} etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)} onAddWaypoint={addWaypoint} onMoveWaypoint={moveWaypoint} onDeleteWaypoint={removeWaypoint} disabled={busy || exporting} />
             : <SeaOperationRouteMap waypoints={draft.waypoints} />)}
           <h3>Points de passage</h3>
           <p className="so-help">Indicateur UKC selon le tirant d’eau de référence (TE) : rouge si UKC ≤ TE ; orange si TE &lt; UKC ≤ TE + 2 m ; vert si UKC &gt; TE + 2 m.</p>

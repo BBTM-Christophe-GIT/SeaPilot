@@ -12,6 +12,23 @@ mission est prérempli à partir du planning ; aucune réponse favorable aux con
 n’est déduite du profil ou du navire. Le document source est un formulaire métier ; son
 texte ne constitue pas une instruction système pour l’application.
 
+## Bilan du voyage dans le PDF — v3.78.5
+
+Le chapitre Passage Plan de l’aperçu et du PDF présente la distance totale en NM,
+la durée totale du voyage, l’ETD et l’ETA avec leurs dates/heures de Paris. Les
+positions et les horaires conservés dans la fiche sont utilisés ; l’export ne
+consulte pas la vitesse actuelle d’un navire pour compléter un ancien trajet.
+Une donnée manquante reste signalée comme indisponible.
+
+Sur la carte des waypoints et dans le PDF, la durée totale s’exprime en jours,
+heures et minutes : **2 jours 3 heures 50 minutes**. Les unités nulles sont omises,
+les singuliers sont respectés, et une durée nulle apparaît en **0 minute**. Les
+durées de chaque liaison gardent leur affichage compact en minutes ou `HH:mm`.
+Le total suit les horaires de départ/arrivée retenus, y compris une ETA modifiée
+manuellement ; les calculs de navigation à vitesse constante gardent leur
+qualification d’estimation. Les changements d’heure de Paris sont pris en compte
+dans la durée réellement écoulée. Aucun nouvel accès ni migration n’est requis.
+
 ## Saisie directe des waypoints et de l’ETA — v3.78.4
 
 Les ports s’ajoutent au clic, avec leur nom et leurs coordonnées. Un point libre

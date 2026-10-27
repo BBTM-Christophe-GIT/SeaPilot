@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { buildSeaOperationRouteLegs, formatSeaOperationDuration, seaOperationCruiseSpeedKnots, seaOperationVoyageTiming } from './seaOperationRouteLegs';
+import { buildSeaOperationRouteLegs, formatSeaOperationDuration, formatSeaOperationVoyageDuration, seaOperationCruiseSpeedKnots, seaOperationVoyageTiming } from './seaOperationRouteLegs';
 
 const point = (id: string, latitude: string, longitude: string, number = id) => ({ id, latitude, longitude, number });
 
@@ -69,6 +69,25 @@ describe('estimated route-leg distances and durations', () => {
 
   it.each([[0, '00'], [7, '07'], [59, '59'], [59.6, '01:00'], [60, '01:00'], [75, '01:15'], [1505, '25:05'], [6000, '100:00']])('formats %s elapsed minutes as %s without 24-hour rollover', (minutes, expected) => {
     expect(formatSeaOperationDuration(minutes as number)).toBe(expected);
+  });
+});
+
+describe('French voyage duration', () => {
+  it.each([
+    [0, '0 minute'], [0.49, '0 minute'], [1, '1 minute'], [7, '7 minutes'], [59, '59 minutes'],
+    [59.6, '1 heure'], [60, '1 heure'], [61, '1 heure 1 minute'], [120, '2 heures'], [125, '2 heures 5 minutes'],
+    [1439.6, '1 jour'], [1440, '1 jour'], [1441, '1 jour 1 minute'], [1500, '1 jour 1 heure'],
+    [1501, '1 jour 1 heure 1 minute'], [3110, '2 jours 3 heures 50 minutes'], [144_000, '100 jours'],
+  ] as const)('formats %s minutes as %s', (minutes, label) => {
+    expect(formatSeaOperationVoyageDuration(minutes)).toBe(label);
+  });
+
+  it.each([undefined, null, -1, -0.1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.MAX_VALUE])('leaves an unavailable or invalid duration %s unavailable', minutes => {
+    expect(formatSeaOperationVoyageDuration(minutes)).toBeNull();
+  });
+
+  it('keeps the compact leg formatter unchanged for long voyages', () => {
+    expect(formatSeaOperationDuration(3110)).toBe('51:50');
   });
 });
 

@@ -19,6 +19,38 @@ function recordedObservation(): ObservationResult {
 }
 
 describe('Opération en Mer printable content', () => {
+  it('summarizes the retained route and multi-day Paris schedule without reading or changing a vessel', () => {
+    const draft = emptySeaOperation();
+    draft.vessel.etd = '2026-10-27T08:00'; draft.vessel.eta = '2026-10-27T18:00';
+    draft.waypoints = [{ id: 'departure', number: '1', descriptionVhf: 'Départ', latitude: '50', longitude: '0', eta: '2026-10-27T08:00', ukc: '', denseTraffic: false },
+      { id: 'arrival', number: '2', descriptionVhf: 'Arrivée', latitude: '51', longitude: '0', eta: '2026-10-29T11:50', ukc: '', denseTraffic: false }];
+    const record: SeaOperationRecord = { id: 'summary-print', companyId: 1, version: 2, status: 'signed', draft,
+      createdBy: 'author', createdByName: 'Auteur', createdAt: '2026-10-26T08:00:00Z', updatedBy: 'author', updatedByName: 'Auteur', updatedAt: '2026-10-26T09:00:00Z',
+      signedBy: 'captain', signedByName: 'Capitaine', signedAt: '2026-10-26T09:00:00Z', captainName: 'Capitaine', canEdit: false, canSign: false };
+    const original = structuredClone(record);
+    const { rerender } = render(<SeaOperationPrint record={record} />);
+    const summary = within(document.querySelector('[aria-label="Récapitulatif du Passage Plan"]') as HTMLElement);
+    expect(summary.getByText('Distance totale').nextElementSibling).toHaveTextContent('60,0 NM');
+    expect(summary.getByText('Durée totale').nextElementSibling).toHaveTextContent('2 jours 3 heures 50 minutes');
+    expect(summary.getByText('ETD (heure de Paris)').nextElementSibling).toHaveTextContent('27/10/2026 – 08:00');
+    expect(summary.getByText('ETA (heure de Paris)').nextElementSibling).toHaveTextContent('29/10/2026 – 11:50');
+    expect(record).toEqual(original);
+    const changed = structuredClone(record);
+    changed.draft.vessel.etd = '2026-12-31T22:30Z';
+    changed.draft.waypoints[0].eta = '2026-12-31T23:30'; changed.draft.waypoints[1].eta = '2027-01-01T01:00';
+    rerender(<SeaOperationPrint record={changed} />);
+    expect(summary.getByText('Durée totale').nextElementSibling).toHaveTextContent('1 heure 30 minutes');
+    expect(summary.getByText('ETD (heure de Paris)').nextElementSibling).toHaveTextContent('31/12/2026 – 23:30');
+    expect(summary.getByText('ETA (heure de Paris)').nextElementSibling).toHaveTextContent('01/01/2027 – 01:00');
+    changed.draft.waypoints[1].eta = '01:00';
+    rerender(<SeaOperationPrint record={changed} />);
+    expect(summary.getByText('Durée indisponible')).toBeInTheDocument();
+    expect(summary.getByText('ETA indisponible')).toBeInTheDocument();
+    changed.draft.waypoints[1].latitude = '';
+    rerender(<SeaOperationPrint record={changed} />);
+    expect(summary.getByText('Distance indisponible')).toBeInTheDocument();
+  });
+
   it('keeps descriptive waypoint labels and automatic UKC status in separate readable blocks', () => {
     const draft = emptySeaOperation(); draft.vessel.draftMeters = 2;
     draft.waypoints = [{ id: 'port', number: '1', descriptionVhf: 'Port de Barfleur', latitude: '', longitude: '', eta: '', ukc: '2,5', denseTraffic: false },

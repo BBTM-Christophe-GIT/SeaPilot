@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ProcedureTagCatalogueDialog } from './ProcedureTagCatalogueDialog';
@@ -55,7 +55,7 @@ describe('ProcedureTagCatalogueDialog', () => {
     expect(props.onClose).not.toHaveBeenCalled();
     finish('THOMSEA');
     await screen.findByText('Tag « THOMSEA » ajouté.');
-    expect(screen.getByLabelText('Nouveau tag')).toHaveFocus();
+    await waitFor(() => expect(screen.getByLabelText('Nouveau tag')).toHaveFocus());
     await user.keyboard('{Escape}');
     expect(props.onClose).toHaveBeenCalledOnce();
   });

@@ -6,7 +6,7 @@ import { seaOperationMapPlaces, type SeaOperationMapPort } from './seaOperationM
 import { seaWaypointPosition, type SeaPosition } from './seaOperationNavigation';
 import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates';
 import { formatProjectPort } from '../projects/projectPorts';
-import { buildSeaOperationRouteLegs, seaOperationVoyageTiming } from './seaOperationRouteLegs';
+import { buildSeaOperationRouteLegs, formatSeaOperationVoyageDuration, seaOperationVoyageTiming } from './seaOperationRouteLegs';
 import './seaOperationRouteMap.css';
 
 interface Position { x: number; y: number }
@@ -107,7 +107,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
   const summaryBelowMap = geometry.width < 600;
   const transitDurationFallback = Boolean(route?.totalDurationLabel && !voyage?.durationLabel);
   const voyageSummary = route && voyage && geometry.projection && waypoints.length > 1 ? <aside className={`so-route-map-voyage-summary${summaryBelowMap ? ' is-below-map' : ''}`} aria-label="Estimation du parcours">
-    <strong>{route.totalDistanceLabel || 'Distance totale indisponible'}<span>{voyage.durationLabel || route.totalDurationLabel || 'Durée indisponible'}</span></strong>
+    <strong>{route.totalDistanceLabel || 'Distance totale indisponible'}<span className="so-route-map-voyage-duration">{formatSeaOperationVoyageDuration(voyage.durationMinutes ?? route.totalDurationMinutes) || 'Durée indisponible'}</span></strong>
     <dl><div><dt>ETD</dt><dd>{voyage.etdLabel || 'À renseigner'}</dd></div><div><dt>{eta?.trim() ? 'ETA arrivée' : 'ETA estimée'}</dt><dd>{voyage.etaLabel || 'Indisponible'}</dd></div></dl>
     {voyage.etaSource === 'waypoint' && <small>Durée ETD → ETA retenue.</small>}
     {(transitDurationFallback || voyage.etaSource === 'estimated') && <small>Durée estimée à vitesse constante.</small>}

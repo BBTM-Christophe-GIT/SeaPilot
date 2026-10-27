@@ -45,6 +45,18 @@ export function formatSeaOperationDuration(minutes: number | null | undefined): 
   return rounded < 60 ? String(rounded).padStart(2, '0')
     : `${String(Math.floor(rounded / 60)).padStart(2, '0')}:${String(rounded % 60).padStart(2, '0')}`;
 }
+
+/** French elapsed voyage duration, rounded once to minutes and omitting zero components. */
+export function formatSeaOperationVoyageDuration(minutes: number | null | undefined): string | null {
+  if (typeof minutes !== 'number' || !Number.isFinite(minutes) || minutes < 0) return null;
+  const rounded = Math.round(minutes);
+  if (!Number.isSafeInteger(rounded)) return null;
+  const parts: string[] = [];
+  for (const [value, unit] of [[Math.floor(rounded / 1440), 'jour'], [Math.floor(rounded % 1440 / 60), 'heure'], [rounded % 60, 'minute']] as const) {
+    if (value > 0) parts.push(`${value} ${unit}${value === 1 ? '' : 's'}`);
+  }
+  return parts.join(' ') || '0 minute';
+}
 const durationLabel = (minutes: number | null) => {
   const formatted = formatSeaOperationDuration(minutes);
   return formatted === null ? null : minutes! < 60 ? `${formatted} min` : formatted;
