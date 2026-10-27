@@ -59,6 +59,7 @@ export interface SeaOperationPlanningChoice {
   projectId: string;
   project: string;
   client: string;
+  clientId?: string;
   clientContact: string;
   description: string;
   vessel: Pick<SeaOperationPayload['vessel'], 'id' | 'name' | 'registrationImo' | 'departurePort' | 'arrivalPort' | 'etd' | 'eta'> & { lengthOverall?: string | null; weatherMatrix?: VesselWeatherMatrix | null };
@@ -66,6 +67,13 @@ export interface SeaOperationPlanningChoice {
   canSign: boolean;
 }
 export interface SeaOperationPlanningContext { date: string; choices: SeaOperationPlanningChoice[] }
+export interface SeaOperationVesselContext {
+  date: string;
+  vesselId: string;
+  captains: SeaOperationPlanningCaptain[];
+  canSign: boolean;
+}
+export interface SeaOperationClient { id: string; name: string; contact: string }
 
 export interface SeaOperationVessel {
   id: number;
@@ -85,6 +93,8 @@ export interface SeaOperationData {
   actorName: string;
   records: SeaOperationRecord[];
   vessels: SeaOperationVessel[];
+  /** Missing on historical overviews; this catalogue never expands Projects access. */
+  clients?: SeaOperationClient[];
 }
 
 type Row = Record<string, unknown>;
@@ -167,8 +177,15 @@ export async function fetchSeaOperationData(client: SupabaseClient): Promise<Sea
       ...(row.weather_matrix === undefined ? {} : { weatherMatrix: vesselMatrix(row.weather_matrix) }),
       canSign: row.can_sign === true };
   }).sort(compareFleetAssets);
+  if (data.clients !== undefined && !Array.isArray(data.clients)) throw new Error('Le catalogue clients est invalide.');
+  const clients = data.clients === undefined ? undefined : (data.clients as unknown[]).map(value => {
+    const row = object(value);
+    if (typeof row.id !== 'string' || !/^[1-9]\d{0,18}$/.test(row.id) || BigInt(row.id) > 9223372036854775807n
+      || typeof row.name !== 'string' || !row.name.trim() || typeof row.contact !== 'string') throw new Error('Le catalogue clients est invalide.');
+    return { id: row.id, name: row.name, contact: row.contact };
+  });
   return { companyId: Number(data.company_id), actorId: String(data.actor_id), actorName: String(data.actor_name),
-    records: data.records.map(mapSeaOperationRecord), vessels };
+    records: data.records.map(mapSeaOperationRecord), vessels, ...(clients === undefined ? {} : { clients }) };
 }
 
 export async function fetchSeaOperationDetail(client: SupabaseClient, id: string): Promise<SeaOperationRecord> {
@@ -233,8 +250,11 @@ export async function fetchSeaOperationPlanning(client: SupabaseClient, date: st
     const vessel = object(row.vessel);
     if (!Array.isArray(row.captains) || !['operationId', 'projectId', 'project', 'client', 'clientContact', 'description'].every((key) => typeof row[key] === 'string')
       || !['id', 'name', 'registrationImo', 'departurePort', 'arrivalPort', 'etd', 'eta'].every((key) => typeof vessel[key] === 'string')) throw new Error('Le contexte Planning est invalide.');
+    if (row.clientId !== undefined && row.clientId !== null && (typeof row.clientId !== 'string'
+      || row.clientId !== '' && (!/^[1-9]\d{0,18}$/.test(row.clientId) || BigInt(row.clientId) > 9223372036854775807n))) throw new Error('Le client du contexte Planning est invalide.');
     return { ...(row.locationPlan === undefined ? {} : { locationPlan: parseProjectLocationPlan(row.locationPlan) }),
       operationId: String(row.operationId), projectId: String(row.projectId), project: String(row.project), client: String(row.client),
+      ...(row.clientId === undefined ? {} : { clientId: String(row.clientId ?? '') }),
       clientContact: String(row.clientContact), description: String(row.description), vessel: { ...vessel, lengthOverall: nullableText(vessel.lengthOverall),
         ...(vessel.weatherMatrix === undefined ? {} : { weatherMatrix: vesselMatrix(vessel.weatherMatrix) }) } as SeaOperationPlanningChoice['vessel'],
       captains: row.captains.map((value) => { const person = object(value); return { personId: String(person.personId), name: String(person.name),
@@ -248,6 +268,30 @@ export async function fetchSeaOperationPlanning(client: SupabaseClient, date: st
     byOccurrence.set(occurrence, group);
   }
   return { date: context.date, choices: [...byOccurrence.values()].flatMap((group) => group.sort((a, b) => compareFleetAssets(a.vessel, b.vessel))) };
+}
+
+/** Read the actual daily captain assignment for a manually selected vessel, including temporary roles. */
+export async function fetchSeaOperationVesselContext(client: SupabaseClient, date: string, vesselId: string): Promise<SeaOperationVesselContext> {
+  const context = await rpc(client, 'sea_operation_vessel_context', { p_date: date, p_vessel_id: vesselId });
+  if (context.date !== date || context.vesselId !== vesselId || !Array.isArray(context.captains)) throw new Error('Le contexte du navire est invalide.');
+  return { date, vesselId, canSign: context.canSign === true, captains: context.captains.map(value => {
+    const person = object(value);
+    if (!['personId', 'name', 'functionLabel'].every(field => typeof person[field] === 'string')) throw new Error('Le contexte du navire est invalide.');
+    return { personId: person.personId as string, name: person.name as string, functionLabel: person.functionLabel as string,
+      hasSignature: person.hasSignature === true, canSign: person.canSign === true };
+  }) };
+}
+
+export async function fetchSeaOperationVesselCaptainSignature(client: SupabaseClient, date: string, vesselId: string, personId: string): Promise<{ snapshot: SeaOperationSignatureSnapshot; url: string } | null> {
+  const { data, error } = await client.rpc('sea_operation_vessel_captain_signature', { p_date: date, p_vessel_id: vesselId, p_captain_person_id: personId });
+  if (error) throw error;
+  const snapshot = mapSignature(data);
+  if (!snapshot) return null;
+  if (String(snapshot.signer_person_id) !== personId) throw new Error('La signature RH ne correspond pas au Capitaine sélectionné.');
+  const result = await client.storage.from(snapshot.storage_bucket).createSignedUrl(snapshot.storage_path, 600);
+  if (result.error) throw result.error;
+  if (!result.data?.signedUrl) throw new Error('La signature RH est indisponible.');
+  return { snapshot, url: result.data.signedUrl };
 }
 
 export async function fetchSeaOperationCaptainSignature(client: SupabaseClient, date: string, operationId: string, personId: string): Promise<{ snapshot: SeaOperationSignatureSnapshot; url: string } | null> {

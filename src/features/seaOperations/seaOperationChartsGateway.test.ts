@@ -1,6 +1,8 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from 'vitest';
-import { createSeaOperationChartsGateway } from '../../../api/sea-operation-charts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import gateway, { createSeaOperationChartsGateway } from '../../../api/sea-operation-charts';
+
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 const point = { projectId: '12', pointId: 'p1', latitude: 48.36, longitude: -4.53 };
 const result = { charts: [], sourceUrl: 'https://services.data.shom.fr/INSPIRE/wfs', fetchedAt: '2026-10-23T00:00:00Z', truncated: false };
@@ -16,6 +18,60 @@ const request = (body: unknown = point, headers: Record<string, string> = {}, pr
 });
 
 describe('SHOM chart gateway', () => {
+  it('authorizes and echoes the explicit Transit vessel/day before every geographic lookup', async () => {
+    const { handler, authorize, lookup } = fixture(), transit = { date: '2026-10-27', vesselId: '2' };
+    const input = { ...point, projectId: '', transit };
+    const response = await handler(request(input));
+    expect(response.status).toBe(200); expect(await response.json()).toEqual({ ...input, ...result });
+    expect(authorize).toHaveBeenCalledExactlyOnceWith('', transit);
+    expect(authorize.mock.invocationCallOrder[0]).toBeLessThan(lookup.mock.invocationCallOrder[0]);
+    authorize.mockRejectedValueOnce(new Error('Access revoked'));
+    expect((await handler(request(input))).ok).toBe(false); expect(lookup).toHaveBeenCalledTimes(1);
+  });
+  it('rejects incomplete or mixed Transit requests before authentication and SHOM access', async () => {
+    const { handler, backend, lookup } = fixture();
+    for (const patch of [{ projectId: '' }, { transit: { date: '2026-10-27', vesselId: '2' } },
+      { projectId: '', transit: { date: '2026-02-30', vesselId: '2' } }, { projectId: '', transit: { date: '2026-10-27', vesselId: '0' } }]) {
+      expect((await handler(request({ ...point, ...patch }))).status).toBe(400);
+    }
+    expect(backend).not.toHaveBeenCalled(); expect(lookup).not.toHaveBeenCalled();
+  });
+  it.each(['denied', 'date', 'vessel', 'array'] as const)('fails closed when the actual Transit RPC returns %s without contacting SHOM', async reason => {
+    vi.stubEnv('SUPABASE_URL', 'https://backend.example'); vi.stubEnv('SUPABASE_PUBLISHABLE_KEY', 'public-key');
+    const transit = { date: '2026-10-27', vesselId: '2' };
+    const fetcher = vi.fn(async (url, init?: RequestInit) => {
+      if (String(url).endsWith('/auth/v1/user')) return Response.json({ id: 'a6320000-0000-0000-0000-000000000001' });
+      expect(String(url)).toBe('https://backend.example/rest/v1/rpc/sea_operation_vessel_context');
+      expect(new Headers(init?.headers).get('authorization')).toBe('Bearer actual-jwt');
+      expect(new Headers(init?.headers).get('apikey')).toBe('public-key');
+      expect(JSON.parse(init?.body as string)).toEqual({ p_date: transit.date, p_vessel_id: transit.vesselId });
+      if (reason === 'denied') return Response.json({ code: '42501', message: 'Foreign company or module denied' }, { status: 403 });
+      return Response.json(reason === 'array' ? [] : { date: reason === 'date' ? '2026-10-28' : transit.date, vesselId: reason === 'vessel' ? '3' : transit.vesselId });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const response = await gateway.fetch(request({ ...point, projectId: '', transit }));
+    expect(response.status).toBe(403); expect(await response.json()).toEqual({ error: 'CHARTS_ACCESS_DENIED' });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it('uses the real vessel RPC and actor JWT then reads only public SHOM data for an authorized Transit', async () => {
+    vi.stubEnv('SUPABASE_URL', 'https://backend.example'); vi.stubEnv('SUPABASE_PUBLISHABLE_KEY', 'public-key');
+    const transit = { date: '2026-10-27', vesselId: '2' };
+    const fetcher = vi.fn(async (url, init?: RequestInit) => {
+      if (String(url).endsWith('/auth/v1/user')) return Response.json({ id: 'a6320000-0000-0000-0000-000000000001' });
+      if (String(url).startsWith('https://backend.example')) {
+        expect(String(url)).toBe('https://backend.example/rest/v1/rpc/sea_operation_vessel_context');
+        expect(new Headers(init?.headers).get('authorization')).toBe('Bearer actual-jwt');
+        return Response.json({ ...transit, captains: [], canSign: false });
+      }
+      expect(new URL(String(url)).origin).toBe('https://services.data.shom.fr');
+      expect(new Headers(init?.headers).has('authorization')).toBe(false);
+      return Response.json({ type: 'FeatureCollection', features: [] });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const response = await gateway.fetch(request({ ...point, projectId: '', transit }));
+    expect(response.status).toBe(200); expect(await response.json()).toMatchObject({ projectId: '', transit, charts: [] });
+    expect(fetcher).toHaveBeenCalledTimes(6);
+  });
   it('authenticates and authorizes the selected project before lookup/cache access', async () => {
     const { handler, authorize, lookup } = fixture();
     const response = await handler(request());

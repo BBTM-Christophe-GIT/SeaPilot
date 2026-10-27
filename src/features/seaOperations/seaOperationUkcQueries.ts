@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isSeaOperationCopernicusEstimate, validateSeaOperationCopernicusInput, type SeaOperationCopernicusEstimate,
   type SeaOperationCopernicusInput } from './seaOperationCopernicusModel';
-import { seaOperationEtaUtc } from './seaOperationWeatherModel';
+import { sameSeaOperationTransitContext, seaOperationEtaUtc } from './seaOperationWeatherModel';
 
 const messages: Record<string, string> = {
   UKC_NOT_CONFIGURED: 'La connexion Copernicus Marine n’est pas encore configurée. Contactez l’Armement.',
@@ -33,6 +33,7 @@ export async function fetchSeaOperationWaypointUkc(client: SupabaseClient, input
   const current = await client.auth.getSession();
   if (current.error || current.data.session?.user.id !== actorId) throw new Error(messages.UKC_AUTHENTICATION_REQUIRED);
   if (!isSeaOperationCopernicusEstimate(data) || data.projectId !== point.projectId || data.pointId !== point.pointId
+    || !sameSeaOperationTransitContext(data.transit, point.transit)
     || data.vesselId !== point.vesselId || data.draftMeters !== point.draftMeters
     || data.latitude !== point.latitude || data.longitude !== point.longitude || Date.parse(data.etaUtc) !== Date.parse(seaOperationEtaUtc(point.eta))) {
     throw new Error('La réponse UKC ne correspond pas au waypoint, au navire ou au tirant d’eau demandé.');

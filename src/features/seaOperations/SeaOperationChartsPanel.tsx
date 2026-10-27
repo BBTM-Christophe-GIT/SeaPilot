@@ -6,9 +6,10 @@ import { seaWaypointPosition } from './seaOperationNavigation';
 import { fetchSeaOperationPointCharts, type SeaOperationPointCharts } from './seaOperationChartQueries';
 import { addShomChartReferences, type ShomChart } from './seaOperationHydroModel';
 import { formatSeaPosition } from './seaOperationCoordinates';
+import { isSeaOperationTransitRequestContext, type SeaOperationTransitRequestContext } from './seaOperationWeatherModel';
 import './seaOperationNavigation.css';
 
-interface Props { client: SupabaseClient; projectId: string; waypoints: readonly SeaOperationWaypoint[]; charts: string; onChartsChange: (value: string) => void; canEdit?: boolean; preview?: boolean; active?: boolean }
+interface Props { client: SupabaseClient; projectId: string; transit?: SeaOperationTransitRequestContext; waypoints: readonly SeaOperationWaypoint[]; charts: string; onChartsChange: (value: string) => void; canEdit?: boolean; preview?: boolean; active?: boolean }
 type Result = { lookup?: SeaOperationPointCharts; error?: string };
 
 function ChartList({ matches }: { matches: ShomChart[] }) {
@@ -17,12 +18,13 @@ function ChartList({ matches }: { matches: ShomChart[] }) {
   )}</ul>;
 }
 
-export function SeaOperationChartsPanel({ client, projectId, waypoints, charts, onChartsChange, canEdit = true, preview = false, active = true }: Props) {
+export function SeaOperationChartsPanel({ client, projectId, transit, waypoints, charts, onChartsChange, canEdit = true, preview = false, active = true }: Props) {
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{ key: string; client: SupabaseClient; results: Record<string, Result>; loading: boolean } | null>(null);
   const currentClient = useRef(client);
   currentClient.current = client;
-  const inputKey = JSON.stringify({ projectId, preview, points: waypoints.map(({ id, latitude, longitude }) => ({ id, latitude, longitude })) });
+  const hasContext = Boolean(projectId || isSeaOperationTransitRequestContext(transit));
+  const inputKey = JSON.stringify({ projectId, ...(transit ? { transit } : {}), preview, points: waypoints.map(({ id, latitude, longitude }) => ({ id, latitude, longitude })) });
   const current = state?.key === inputKey && state.client === client ? state : null;
   const identifiedNumbersKey = JSON.stringify(current && !current.loading
     ? waypoints.flatMap((point, index) => current.results[`${index}:${point.id}`]?.lookup?.charts.map((chart) => chart.number) ?? [])
@@ -35,8 +37,8 @@ export function SeaOperationChartsPanel({ client, projectId, waypoints, charts, 
     if (active && canEdit && identifiedNumbersKey !== '[]') retainIdentifiedCharts(JSON.parse(identifiedNumbersKey) as string[]);
   }, [active, canEdit, identifiedNumbersKey]);
   useEffect(() => {
-    if (!active || !projectId) return;
-    const input = JSON.parse(inputKey) as { projectId: string; preview: boolean; points: Pick<SeaOperationWaypoint, 'id' | 'latitude' | 'longitude'>[] };
+    if (!active || !hasContext) return;
+    const input = JSON.parse(inputKey) as { projectId: string; transit?: SeaOperationTransitRequestContext; preview: boolean; points: Pick<SeaOperationWaypoint, 'id' | 'latitude' | 'longitude'>[] };
     const controller = new AbortController();
     let cancelled = false;
     const results: Record<string, Result> = {};
@@ -44,7 +46,7 @@ export function SeaOperationChartsPanel({ client, projectId, waypoints, charts, 
       const position = seaWaypointPosition(point);
       const key = `${index}:${point.id}`;
       if (!position) { results[key] = { error: 'Renseignez la latitude et la longitude pour rechercher les cartes.' }; return null; }
-      return { key, point: { projectId: input.projectId, pointId: point.id, ...position } };
+      return { key, point: { projectId: input.projectId, ...(input.transit ? { transit: input.transit } : {}), pointId: point.id, ...position } };
     }).filter((entry) => entry !== null);
     const publish = (loading: boolean) => {
       if (!cancelled && currentClient.current === client) setState({ key: inputKey, client, results: { ...results }, loading });
@@ -63,12 +65,12 @@ export function SeaOperationChartsPanel({ client, projectId, waypoints, charts, 
       void Promise.all(Array.from({ length: Math.min(2, pending.length) }, worker)).finally(() => publish(false));
     }, 700);
     return () => { cancelled = true; window.clearTimeout(timer); controller.abort(); };
-  }, [active, client, inputKey, projectId, attempt]);
+  }, [active, client, inputKey, hasContext, attempt]);
 
   return <section className="so-charts-panel" aria-label="Cartes SHOM aux points de passage">
-    <div className="so-weather-heading"><h3><Map size={17} aria-hidden="true" />Cartes SHOM aux points de passage</h3><button type="button" className="sp-button sp-button--secondary" disabled={!projectId || !waypoints.length || current?.loading} onClick={() => setAttempt((value) => value + 1)}><RefreshCw size={14} aria-hidden="true" />Actualiser les cartes</button></div>
+    <div className="so-weather-heading"><h3><Map size={17} aria-hidden="true" />Cartes SHOM aux points de passage</h3><button type="button" className="sp-button sp-button--secondary" disabled={!hasContext || !waypoints.length || current?.loading} onClick={() => setAttempt((value) => value + 1)}><RefreshCw size={14} aria-hidden="true" />Actualiser les cartes</button></div>
     <p className="so-help">Recherche automatique à partir de la latitude et de la longitude, sans attendre l’ETA. Les cartes sont classées de l’échelle la plus détaillée à la plus générale.</p>
-    {!projectId ? <p>Sélectionnez le projet du planning pour rechercher les cartes.</p> : !waypoints.length ? <p>Ajoutez un point de passage avec ses coordonnées.</p> : <ul className="so-chart-points">{waypoints.map((point, index) => {
+    {!hasContext ? <p>Sélectionnez le projet du planning ou le navire et la date du Transit pour rechercher les cartes.</p> : !waypoints.length ? <p>Ajoutez un point de passage avec ses coordonnées.</p> : <ul className="so-chart-points">{waypoints.map((point, index) => {
       const result = current?.results[`${index}:${point.id}`];
       const lookup = result?.lookup;
       return <li key={`${index}:${point.id}`}><details open={waypoints.length === 1}>

@@ -19,6 +19,19 @@ function recordedObservation(): ObservationResult {
 }
 
 describe('Opération en Mer printable content', () => {
+  it('prints the saved Transit client and manually adapted voyage instead of project defaults', () => {
+    const draft = emptySeaOperation();
+    draft.project = 'Transit'; draft.transit = { date: '2026-10-27', captainPersonId: '3' };
+    draft.clientId = '7'; draft.client = 'Client Transit'; draft.clientContact = 'Contact adapté'; draft.description = 'Convoyage saisi manuellement';
+    Object.assign(draft.vessel, { id: '1', name: 'Navire sélectionné', registrationImo: 'FR-123', departurePort: 'Départ adapté', arrivalPort: 'Arrivée adaptée', departureQuay: 'Quai A', arrivalQuay: 'Quai B', etd: '2026-10-27T08:00', eta: '2026-10-28T10:00' });
+    const record: SeaOperationRecord = { id: 'transit-print', companyId: 1, version: 1, status: 'draft', draft,
+      createdBy: 'author', createdByName: 'Auteur', createdAt: '2026-10-27T08:00:00Z', updatedBy: 'author', updatedByName: 'Auteur', updatedAt: '2026-10-27T09:00:00Z',
+      signedBy: null, signedByName: null, signedAt: null, captainName: '', canEdit: true, canSign: false };
+    const original = structuredClone(record), { container } = render(<SeaOperationPrint record={record} />);
+    for (const value of ['Transit', 'Client Transit', 'Contact adapté', 'Convoyage saisi manuellement', 'Navire sélectionné', 'FR-123', 'Départ adapté', 'Arrivée adaptée', 'Quai A', 'Quai B']) expect(container).toHaveTextContent(value);
+    expect(container).toHaveTextContent('27/10/2026'); expect(container).toHaveTextContent('28/10/2026');
+    expect(record).toEqual(original);
+  });
   it('prints the retained isolated points and zones independently from the route', () => {
     const draft = emptySeaOperation();
     draft.locationOverlay = { version: 1, points: [{ id: 'isolated', number: 'P1', descriptionVhf: 'Balise isolée', latitude: '49.65', longitude: '-1.62', ukc: '3', eta: '2026-10-27T12:07', denseTraffic: true }],

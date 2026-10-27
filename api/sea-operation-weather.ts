@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
-import { loadSeaOperationForecast, validateSeaOperationWeatherInput, type SeaOperationWaypointWeather } from '../src/features/seaOperations/seaOperationWeatherModel.js';
+import { isSeaOperationTransitRequestContext, loadSeaOperationForecast, validateSeaOperationWeatherInput, type SeaOperationTransitRequestContext, type SeaOperationWaypointWeather } from '../src/features/seaOperations/seaOperationWeatherModel.js';
 import { loadMeteoFranceForecast } from '../server/seaOperationMeteoFrance.js';
 
 type Json = Record<string, unknown>;
-interface Backend { user: () => Promise<string | null>; authorize: (projectId: string) => Promise<void> }
+interface Backend { user: () => Promise<string | null>; authorize: (projectId: string, transit?: SeaOperationTransitRequestContext) => Promise<void> }
 interface Dependencies { getEnv: (name: string) => string | undefined; backend: (jwt: string) => Backend; fetcher?: typeof fetch; now?: () => number; meteoFrance?: typeof loadMeteoFranceForecast }
 const HEADERS = { 'Cache-Control': 'private, no-store', 'Pragma': 'no-cache', 'X-Content-Type-Options': 'nosniff' };
 class WeatherError extends Error {
@@ -39,7 +39,8 @@ export function createSeaOperationWeatherGateway(deps: Dependencies) {
         const actorId = await backend.user();
         if (!actorId) throw new WeatherError(401, 'WEATHER_AUTHENTICATION_REQUIRED');
         userId = actorId;
-        await backend.authorize(point.projectId);
+        if (point.transit) await backend.authorize('', point.transit);
+        else await backend.authorize(point.projectId);
       }
       const provider = deps.getEnv('SEA_OPERATION_WEATHER_PROVIDER') || 'meteo-france';
       const key = deps.getEnv('OPEN_METEO_API_KEY')?.trim();
@@ -84,7 +85,15 @@ const handler = createSeaOperationWeatherGateway({ getEnv: (name) => process.env
       const user = await result.json() as Json;
       return typeof user.id === 'string' && /^[a-f0-9-]{36}$/i.test(user.id) ? user.id : null;
     },
-    authorize: async (projectId) => {
+    authorize: async (projectId, transit) => {
+      if (transit !== undefined) {
+        if (projectId !== '' || !isSeaOperationTransitRequestContext(transit)) throw new WeatherError(403, 'WEATHER_ACCESS_DENIED');
+        const result = await client.rpc('sea_operation_vessel_context', { p_date: transit.date, p_vessel_id: transit.vesselId }).abortSignal(AbortSignal.timeout(10_000));
+        if (result.error) throw new WeatherError(result.error.code === '42501' ? 403 : 502, result.error.code === '42501' ? 'WEATHER_ACCESS_DENIED' : 'WEATHER_SERVICE_UNAVAILABLE');
+        const context = result.data as Json | null;
+        if (!context || Array.isArray(context) || context.date !== transit.date || context.vesselId !== transit.vesselId) throw new WeatherError(403, 'WEATHER_ACCESS_DENIED');
+        return;
+      }
       const result = await client.rpc('sea_operation_project_documents', { p_project_id: projectId }).abortSignal(AbortSignal.timeout(10_000));
       if (result.error) throw new WeatherError(result.error.code === '42501' ? 403 : 502, result.error.code === '42501' ? 'WEATHER_ACCESS_DENIED' : 'WEATHER_SERVICE_UNAVAILABLE');
       if (!Array.isArray(result.data)) throw new WeatherError(403, 'WEATHER_ACCESS_DENIED');

@@ -35,7 +35,7 @@ export function SeaOperationUkcPanel({ client, payload, active, readOnly = false
     const pending = input.points.flatMap(point => {
       if (point.ukcMode !== 'automatic') return [];
       const key = ukcRequestKey(input, point);
-      if (!input.projectId) { statuses[key] = { loading: false, error: 'Sélectionnez un projet du planning pour calculer l’UKC.' }; return []; }
+      if (!input.projectId && !input.transit) { statuses[key] = { loading: false, error: 'Sélectionnez un projet ou un Transit pour calculer l’UKC.' }; return []; }
       if (!input.vesselId || !isVesselDraftMeters(input.draftMeters)) { statuses[key] = { loading: false, error: 'Renseignez le tirant d’eau du navire dans Navires.' }; return []; }
       const position = seaWaypointPosition(point);
       if (!position) { statuses[key] = { loading: false, error: 'Renseignez la latitude et la longitude.' }; return []; }
@@ -45,8 +45,9 @@ export function SeaOperationUkcPanel({ client, payload, active, readOnly = false
         if (Date.parse(seaOperationEtaUtc(point.eta)) <= Date.now()) { statuses[key] = { loading: false, error: 'L’ETA est passée : les captures enregistrées restent conservées.' }; return []; }
       } catch (error) { statuses[key] = { loading: false, error: error instanceof Error ? error.message : 'Renseignez une ETA complète.' }; return []; }
       statuses[key] = { loading: true };
-      return [{ key, input: { projectId: input.projectId, vesselId: input.vesselId, draftMeters: input.draftMeters, pointId: point.id, ...position, eta: point.eta },
-        context: { projectId: input.projectId, vesselId: input.vesselId, draftMeters: input.draftMeters, pointId: point.id, latitude: point.latitude, longitude: point.longitude, eta: point.eta } }];
+      const identity = { projectId: input.projectId ?? '', ...(input.transit ? { transit: input.transit } : {}), vesselId: input.vesselId, draftMeters: input.draftMeters };
+      return [{ key, input: { ...identity, pointId: point.id, ...position, eta: point.eta },
+        context: { ...identity, pointId: point.id, latitude: point.latitude, longitude: point.longitude, eta: point.eta } }];
     });
     const publish = (running: boolean) => {
       if (cancelled || latest.current.client !== client) return;

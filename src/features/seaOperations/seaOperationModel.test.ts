@@ -3,9 +3,35 @@ import {
   DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS,
   emptySeaOperation, emptySeaOperationWaypoint, getActiveSeaOperationChecks,
   getSeaOperationAssessment, isSeaOperationPayload, newSeaOperation, validateSeaOperation, seaOperationToday,
+  createTransitSeaOperation, seaOperationContextDate, seaOperationProjectId,
 } from './seaOperationModel';
 import type { SeaOperationCheckId } from './seaOperationModel';
 import { COPERNICUS_UKC_PRODUCTS, calculateSeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
+
+describe('standalone Transit context', () => {
+  it('creates independent manual forms without a Projects row or an inferred vessel/client/captain', () => {
+    const first = createTransitSeaOperation('2026-10-27'), second = createTransitSeaOperation('2026-10-28');
+    expect(first).toMatchObject({ project: 'Transit', transit: { date: '2026-10-27', captainPersonId: '' }, client: '', vessel: { id: '', captainName: '', etd: '' } });
+    expect(first).not.toHaveProperty('planning'); expect(first).not.toHaveProperty('clientId');
+    expect(seaOperationProjectId(first)).toBe(''); expect(isSeaOperationPayload(first)).toBe(true);
+    first.waypoints.push(emptySeaOperationWaypoint('point')); expect(second.waypoints).toEqual([]);
+  });
+  it('uses the explicit business day for Transit and project contexts, independently of manual ETD', () => {
+    const transit = createTransitSeaOperation('2026-10-27'); transit.vessel.etd = '2026-11-03T10:00';
+    expect(seaOperationContextDate(transit)).toBe('2026-10-27');
+    const project = emptySeaOperation(); project.planning = { date: '2026-10-28', projectId: '2', operationId: '4:1', captainPersonId: '' };
+    expect(seaOperationContextDate(project)).toBe('2026-10-28'); expect(seaOperationProjectId(project)).toBe('2');
+    expect(seaOperationProjectId(emptySeaOperation())).toBeUndefined();
+  });
+  it('rejects mixed, malformed or forged contexts and invalid catalogue identities', () => {
+    const transit = createTransitSeaOperation('2026-10-27');
+    for (const value of [{ ...transit, planning: { date: '2026-10-27', projectId: '2', operationId: '4:1', captainPersonId: '' } },
+      { ...transit, transit: { date: '2026-02-30', captainPersonId: '' } }, { ...transit, transit: { date: '0026-10-27', captainPersonId: '' } },
+      { ...transit, transit: { date: '2026-10-27', captainPersonId: 'captain' } }, { ...transit, transit: { date: '2026-10-27', captainPersonId: '', projectId: 'fake' } },
+      { ...transit, clientId: '0' }, { ...transit, clientId: 1 }, { ...transit, clientId: '9223372036854775808' }]) expect(isSeaOperationPayload(value)).toBe(false);
+    expect(isSeaOperationPayload({ ...transit, clientId: '9223372036854775807', transit: { date: '2026-10-27', captainPersonId: '4' } })).toBe(true);
+  });
+});
 
 describe('independent optional project overlay in sea operations', () => {
   it('rejects extra overlay captures and keys just like the retained geometry SQL guard', () => {

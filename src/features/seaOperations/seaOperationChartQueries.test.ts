@@ -12,6 +12,16 @@ function fixture() {
   return { getSession, client: { auth: { getSession } } as unknown as SupabaseClient };
 }
 describe('SHOM chart browser queries', () => {
+  it('sends Transit context and rejects a response for another operation date', async () => {
+    const { client } = fixture();
+    const transit = { date: '2026-10-27', vesselId: '1' }, query = { ...input, projectId: '', transit };
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ ...result, ...query }));
+    vi.stubGlobal('fetch', fetcher);
+    expect(await fetchSeaOperationPointCharts(client, query)).toEqual({ ...result, ...query });
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual(query);
+    fetcher.mockResolvedValue(Response.json({ ...result, ...query, transit: { ...transit, date: '2026-10-28' } }));
+    await expect(fetchSeaOperationPointCharts(client, query)).rejects.toThrow('correspond pas');
+  });
   it('uses the current JWT, cancels requests and checks the resulting account and point', async () => {
     const { client, getSession } = fixture();
     const fetcher = vi.fn().mockResolvedValue(Response.json(result));

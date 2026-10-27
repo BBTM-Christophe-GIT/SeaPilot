@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isSeaPilotPreviewDeployment } from '../preview/previewMode';
 import { isSeaOperationWaypointWeather, loadSeaOperationForecast, seaOperationEtaUtc, validateSeaOperationWeatherInput, type SeaOperationWeatherInput, type SeaOperationWaypointWeather } from './seaOperationWeatherModel';
-export type { SeaOperationWeatherInput, SeaOperationWaypointWeather } from './seaOperationWeatherModel';
+export type { SeaOperationWeatherInput, SeaOperationWaypointWeather, SeaOperationTransitRequestContext } from './seaOperationWeatherModel';
 
 const messages: Record<string, string> = {
   WEATHER_NOT_CONFIGURED: 'Le service météo n’est pas encore activé. Contactez l’Armement.',

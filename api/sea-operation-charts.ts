@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { findShomCharts } from '../server/seaOperationShomCharts.js';
+import { isSeaOperationTransitRequestContext, type SeaOperationTransitRequestContext } from '../src/features/seaOperations/seaOperationWeatherModel.js';
 
-export interface ChartInput { projectId: string; pointId: string; latitude: number; longitude: number }
-interface Backend { user: () => Promise<string | null>; authorize: (projectId: string) => Promise<void> }
+export interface ChartInput { projectId: string; pointId: string; latitude: number; longitude: number; transit?: SeaOperationTransitRequestContext }
+interface Backend { user: () => Promise<string | null>; authorize: (projectId: string, transit?: SeaOperationTransitRequestContext) => Promise<void> }
 interface Dependencies { getEnv: (name: string) => string | undefined; backend: (jwt: string) => Backend; lookup?: typeof findShomCharts; now?: () => number }
 const HEADERS = { 'Cache-Control': 'private, no-store', Pragma: 'no-cache', 'X-Content-Type-Options': 'nosniff' };
 class ChartError extends Error {
@@ -34,11 +35,15 @@ async function requestBody(request: Request): Promise<unknown> {
 
 export function validateChartInput(value: unknown): ChartInput {
   const input = value && typeof value === 'object' ? value as Record<string, unknown> : {};
-  if (typeof input.projectId !== 'string' || !/^[1-9][0-9]{0,18}$/.test(input.projectId) || BigInt(input.projectId) > 9223372036854775807n
+  const validContext = input.transit === undefined
+    ? typeof input.projectId === 'string' && /^[1-9][0-9]{0,18}$/.test(input.projectId) && BigInt(input.projectId) <= 9223372036854775807n
+    : input.projectId === '' && isSeaOperationTransitRequestContext(input.transit);
+  if (!validContext
     || typeof input.pointId !== 'string' || !/^[a-zA-Z0-9._:-]{1,100}$/.test(input.pointId)
     || typeof input.latitude !== 'number' || !Number.isFinite(input.latitude) || Math.abs(input.latitude) > 90
     || typeof input.longitude !== 'number' || !Number.isFinite(input.longitude) || Math.abs(input.longitude) > 180) throw new ChartError(400, 'CHARTS_INVALID_REQUEST');
-  return { projectId: input.projectId, pointId: input.pointId, latitude: input.latitude, longitude: input.longitude };
+  return { projectId: input.projectId as string, ...(input.transit === undefined ? {} : { transit: { ...input.transit as SeaOperationTransitRequestContext } }),
+    pointId: input.pointId, latitude: input.latitude, longitude: input.longitude };
 }
 
 export function createSeaOperationChartsGateway(deps: Dependencies) {
@@ -65,7 +70,8 @@ export function createSeaOperationChartsGateway(deps: Dependencies) {
         const actor = await backend.user();
         if (!actor) throw new ChartError(401, 'CHARTS_AUTHENTICATION_REQUIRED');
         userId = actor;
-        await backend.authorize(input.projectId);
+        if (input.transit) await backend.authorize('', input.transit);
+        else await backend.authorize(input.projectId);
       }
       for (const [key, rate] of rates) if (rate.expires <= now()) rates.delete(key);
       const rate = rates.get(userId) ?? { count: 0, expires: now() + 60_000 };
@@ -96,7 +102,15 @@ const handler = createSeaOperationChartsGateway({ getEnv: (name) => process.env[
       const user = await response.json() as Record<string, unknown>;
       return typeof user.id === 'string' && /^[a-f0-9-]{36}$/i.test(user.id) ? user.id : null;
     },
-    authorize: async (projectId) => {
+    authorize: async (projectId, transit) => {
+      if (transit !== undefined) {
+        if (projectId !== '' || !isSeaOperationTransitRequestContext(transit)) throw new ChartError(403, 'CHARTS_ACCESS_DENIED');
+        const result = await client.rpc('sea_operation_vessel_context', { p_date: transit.date, p_vessel_id: transit.vesselId }).abortSignal(AbortSignal.timeout(10_000));
+        if (result.error) throw new ChartError(result.error.code === '42501' ? 403 : 502, result.error.code === '42501' ? 'CHARTS_ACCESS_DENIED' : 'CHARTS_SERVICE_UNAVAILABLE');
+        const context = result.data as Record<string, unknown> | null;
+        if (!context || Array.isArray(context) || context.date !== transit.date || context.vesselId !== transit.vesselId) throw new ChartError(403, 'CHARTS_ACCESS_DENIED');
+        return;
+      }
       const result = await client.rpc('sea_operation_project_documents', { p_project_id: projectId }).abortSignal(AbortSignal.timeout(10_000));
       if (result.error || !Array.isArray(result.data)) throw new ChartError(result.error?.code === '42501' ? 403 : 502, result.error?.code === '42501' ? 'CHARTS_ACCESS_DENIED' : 'CHARTS_SERVICE_UNAVAILABLE');
     },

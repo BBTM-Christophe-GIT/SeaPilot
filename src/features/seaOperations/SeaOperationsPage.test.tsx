@@ -2,8 +2,8 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { emptySeaOperation, DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, seaOperationToday, validateSeaOperation, type SeaOperationPayload } from './seaOperationModel';
-import { fetchSeaOperationCaptainSignature, fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, reviseSeaOperation, deleteSeaOperation, type SeaOperationData, type SeaOperationPlanningContext, type SeaOperationPlanningChoice, type SeaOperationRecord } from './seaOperationQueries';
+import { emptySeaOperation, createTransitSeaOperation, DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, seaOperationToday, validateSeaOperation, type SeaOperationPayload } from './seaOperationModel';
+import { fetchSeaOperationCaptainSignature, fetchSeaOperationVesselContext, fetchSeaOperationVesselCaptainSignature, fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, reviseSeaOperation, deleteSeaOperation, type SeaOperationData, type SeaOperationPlanningContext, type SeaOperationPlanningChoice, type SeaOperationRecord, type SeaOperationVesselContext } from './seaOperationQueries';
 import { exportSeaOperationPdf } from './seaOperationPdf';
 import { SeaOperationsPage } from './SeaOperationsPage';
 import { fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries';
@@ -28,7 +28,7 @@ const waypointMapMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./seaOperationQueries', () => ({
   fetchSeaOperationData: vi.fn(), fetchSeaOperationDetail: vi.fn(), saveSeaOperation: vi.fn(), signSeaOperation: vi.fn(),
-  fetchSeaOperationPlanning: vi.fn(), fetchSeaOperationCaptainSignature: vi.fn(), loadSeaOperationSignature: vi.fn().mockResolvedValue(null),
+  fetchSeaOperationPlanning: vi.fn(), fetchSeaOperationCaptainSignature: vi.fn(), fetchSeaOperationVesselContext: vi.fn(), fetchSeaOperationVesselCaptainSignature: vi.fn(), loadSeaOperationSignature: vi.fn().mockResolvedValue(null),
   fetchSeaOperationWeatherObservations: vi.fn(), reviseSeaOperation: vi.fn(), deleteSeaOperation: vi.fn(),
 }));
 vi.mock('./seaOperationValidationWeather', () => ({ captureSeaOperationValidationWeather: vi.fn() }));
@@ -170,6 +170,8 @@ function renderAccount(account: Account = captainAccount, record?: SeaOperationR
   const data: SeaOperationData = {
     companyId, actorId: account.id, actorName: account.name,
     records: record ? [record] : [],
+    clients: [{ id: '701', name: 'Client du port', contact: 'Service maritime · contact@example.test' },
+      { id: '702', name: 'Client chantier', contact: 'Chantier · chantier@example.test' }],
     vessels: [
       { id: 12, name: 'GOURY', registrationImo: 'IMO-1234567', lengthOverall: '36', canSign: account.canSign },
       { id: 13, name: 'LE ROZEL', registrationImo: 'IMO-7654321', lengthOverall: '19.2', canSign: account.canSign },
@@ -179,6 +181,8 @@ function renderAccount(account: Account = captainAccount, record?: SeaOperationR
   const choicesDate = record?.draft.planning?.date || seaOperationToday();
   vi.mocked(fetchSeaOperationPlanning).mockImplementation(async (_client, date) => ({ date, choices: date === choicesDate ? choices : [] }));
   vi.mocked(fetchSeaOperationCaptainSignature).mockResolvedValue(null);
+  vi.mocked(fetchSeaOperationVesselContext).mockImplementation(async (_client, date, vesselId) => ({ date, vesselId, captains: [], canSign: false }));
+  vi.mocked(fetchSeaOperationVesselCaptainSignature).mockResolvedValue(null);
   vi.mocked(loadSeaOperationSignature).mockResolvedValue(null);
   vi.mocked(fetchSeaOperationProjectDocuments).mockResolvedValue([]);
   if (record) vi.mocked(fetchSeaOperationDetail).mockResolvedValue(record);
@@ -247,6 +251,11 @@ async function chooseMission(choice: SeaOperationPlanningChoice, date = seaOpera
   await userEvent.selectOptions(formQueries().getByLabelText('Projet'), seaOperationPlanningChoiceKey(dated));
 }
 
+async function chooseTransit() {
+  await waitFor(() => expect(formQueries().getByLabelText('Projet')).toBeEnabled());
+  await userEvent.selectOptions(formQueries().getByLabelText('Projet'), '__transit');
+}
+
 async function saveDraft() {
   await userEvent.click(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' }));
 }
@@ -278,6 +287,187 @@ function adminSignedRecord(): SeaOperationRecord {
     canRevise: true, canDelete: true, signedBy: captainAccount.id, signedByName: captainAccount.name,
     signedAt: '2026-10-23T08:15:00Z', signatureSnapshot: profileSignature().snapshot });
 }
+
+describe('Transit and editable voyages with real-profile permission fixtures', () => {
+  it.each([captainAccount, sailorAccount, adminAccount])('starts a free Transit form with registered clients and the actual vessel captain for $id', async account => {
+    const choices = plannedMissions(), { client, data } = renderAccount(account, undefined, 1, choices);
+    data.vessels.reverse();
+    data.vessels.forEach(vessel => { vessel.canSign = false; }); // A temporary captain grant comes from the dated context.
+    vi.mocked(fetchSeaOperationVesselContext).mockImplementation(async (_client, date, vesselId) => ({ date, vesselId,
+      captains: [{ personId: '301', name: 'Capitaine du transit', functionLabel: 'Capitaine temporaire', hasSignature: true, canSign: account.canSign }], canSign: account.canSign }));
+    vi.mocked(fetchSeaOperationVesselCaptainSignature).mockResolvedValue(profileSignature('301'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await chooseMission(choices[0]); await chooseTransit();
+    expect(formQueries().getByLabelText('Projet')).toHaveDisplayValue('Transit');
+    for (const label of ['Description de l’opération', 'Coordonnées du client', 'Port de départ', 'Port d’arrivée', 'ETD · date et heure de départ', 'ETA · date et heure d’arrivée']) expect(formQueries().getByLabelText(label)).toHaveValue('');
+    expect(formQueries().getByLabelText('Navire')).toHaveValue('');
+    expect(within(formQueries().getByLabelText('Navire')).getAllByRole('option').map(option => option.textContent)).toEqual(['Choisir un navire', 'GOURY', 'LE ROZEL']);
+    expect(formQueries().getByLabelText('Client')).toBeEnabled();
+    await userEvent.selectOptions(formQueries().getByLabelText('Client'), '701');
+    expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(data.clients![0].contact);
+    fireEvent.change(formQueries().getByLabelText('Coordonnées du client'), { target: { value: 'Contact opérationnel' } });
+    fireEvent.change(formQueries().getByLabelText('Description de l’opération'), { target: { value: 'Transit de Cherbourg à Caen' } });
+    await userEvent.selectOptions(formQueries().getByLabelText('Navire'), '12');
+    await waitFor(() => expect(formQueries().getByLabelText('Prénom NOM du Capitaine')).toHaveValue('Capitaine du transit'));
+    expect(fetchSeaOperationVesselContext).toHaveBeenLastCalledWith(client, seaOperationToday(), '12');
+    expect(formQueries().getByLabelText('Immatriculation / IMO')).toHaveValue('IMO-1234567');
+    expect(formQueries().getByLabelText('Immatriculation / IMO')).toHaveAttribute('readonly');
+    const payload = capturingUkcPanel().payload;
+    expect(payload.planning).toBeUndefined(); expect(payload.transit).toEqual({ date: seaOperationToday(), captainPersonId: '301' });
+    expect(payload).toMatchObject({ project: 'Transit', clientId: '701', client: 'Client du port', clientContact: 'Contact opérationnel' });
+    await decisionStep(); await selectChoice('Décision', 'NO_GO');
+    expect(await formQueries().findByRole('img', { name: 'Signature de Capitaine du transit' })).toHaveAttribute('src', profileSignature('301').url);
+    const sign = footerQueries().getByRole('button', { name: 'Signer la décision NO GO' });
+    if (account.canSign) expect(sign).toBeEnabled(); else expect(sign).toBeDisabled();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it.each([captainAccount, sailorAccount, adminAccount])('lets $id override a planned voyage and recaptures vessel safety references without retaining the old captain', async account => {
+    const choices = plannedMissions();
+    choices.forEach(choice => choice.captains.forEach(captain => { captain.canSign = account.canSign; }));
+    const draft = automaticUkcDraft(), original = structuredClone(draft);
+    draft.vessel.draftMeters = 2; draft.vessel.weatherMatrix = structuredClone(GOURY_WEATHER_MATRIX);
+    draft.waypoints[0].ukcForecast = waypointUkc(draft);
+    const record = recordFixture(account, { draft }), pending = deferred<SeaOperationVesselContext>();
+    const { data } = renderAccount(account, record, 1, choices);
+    data.vessels[0].draftMeters = 3.2; data.vessels[0].weatherMatrix = null;
+    data.vessels[1].draftMeters = 2; data.vessels[1].weatherMatrix = structuredClone(GOURY_WEATHER_MATRIX);
+    vi.mocked(fetchSeaOperationVesselContext).mockReturnValue(pending.promise);
+    vi.mocked(fetchSeaOperationVesselCaptainSignature).mockResolvedValue(profileSignature('303'));
+    await openRecord(record);
+    await waitFor(() => expect(formQueries().getByLabelText('Projet')).toBeEnabled());
+    expect(formQueries().getByLabelText('Client')).toBeDisabled();
+    for (const [label, value] of [['Port de départ', 'Granville'], ['Quai de départ', 'Quai 5'], ['Port d’arrivée', 'Saint-Malo'], ['Quai d’arrivée', 'Quai 8'], ['ETD · date et heure de départ', '2026-11-01T07:00'], ['ETA · date et heure d’arrivée', '2026-11-01T14:00'], ['Description de l’opération', 'Voyage adapté'], ['Coordonnées du client', 'Autre contact autorisé']]) {
+      const input = formQueries().getByLabelText(label); expect(input).toBeEnabled(); expect(input).not.toHaveAttribute('readonly');
+      fireEvent.change(input, { target: { value } });
+    }
+    await userEvent.selectOptions(formQueries().getByLabelText('Navire'), '12');
+    expect(formQueries().getByLabelText('Prénom NOM du Capitaine')).toHaveValue('');
+    const changed = capturingUkcPanel().payload;
+    expect(changed.vessel).toMatchObject({ id: '12', registrationImo: 'IMO-1234567', draftMeters: 3.2, weatherMatrix: null, departurePort: 'Granville', arrivalPort: 'Saint-Malo' });
+    expect(changed.waypoints[0].ukcForecast).toBeUndefined();
+    expect(changed.signature).toMatchObject({ captainName: '', acknowledged: false });
+    expect(changed.planning).toMatchObject({ operationId: choices[1].operationId, projectId: choices[1].projectId, captainPersonId: '' });
+    await act(async () => pending.resolve({ date: draft.planning!.date, vesselId: '12', captains: [{ personId: '303', name: 'Capitaine remplaçant', functionLabel: 'Capitaine temporaire', hasSignature: true, canSign: account.canSign }], canSign: account.canSign }));
+    await waitFor(() => expect(formQueries().getByLabelText('Prénom NOM du Capitaine')).toHaveValue('Capitaine remplaçant'));
+    await decisionStep(); await selectChoice('Décision', 'NO_GO');
+    expect(await formQueries().findByRole('img', { name: 'Signature de Capitaine remplaçant' })).toHaveAttribute('src', profileSignature('303').url);
+    if (account.canSign) expect(footerQueries().getByRole('button', { name: 'Signer la décision NO GO' })).toBeEnabled();
+    else expect(footerQueries().getByRole('button', { name: 'Signer la décision NO GO' })).toBeDisabled();
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, payload) => ({ ...record, draft: structuredClone(payload), version: record.version + 1 }));
+    await saveDraft();
+    await waitFor(() => expect(saveSeaOperation).toHaveBeenCalled());
+    expect(vi.mocked(saveSeaOperation).mock.lastCall![1].vessel).toMatchObject({ etd: '2026-11-01T07:00', eta: '2026-11-01T14:00' });
+    expect(record.draft.vessel.id).toBe(original.vessel.id);
+  });
+
+  it('saves Transit departure and arrival times with route points and locks the recorded client identity only after saving', async () => {
+    const { client, data } = renderAccount(); data.vessels[0].maxSpeedKnots = 12;
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, draft) => recordFixture(captainAccount, { version: 1, draft: structuredClone(draft) }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' })); await chooseTransit();
+    await userEvent.selectOptions(formQueries().getByLabelText('Client'), '701');
+    expect(formQueries().getByLabelText('Client')).toBeEnabled();
+    await userEvent.selectOptions(formQueries().getByLabelText('Navire'), '12');
+    fireEvent.change(formQueries().getByLabelText('ETD · date et heure de départ'), { target: { value: '2026-11-01T08:00' } });
+    fireEvent.change(formQueries().getByLabelText('ETA · date et heure d’arrivée'), { target: { value: '2026-11-01T17:00' } });
+    await userEvent.click(stepButton(2));
+    const map = waypointMapMock.mock.lastCall![0] as Parameters<typeof import('./SeaOperationWaypointMapEditor').SeaOperationWaypointMapEditor>[0];
+    act(() => { map.onAddWaypoint({ latitude: 49.65, longitude: -1.62 }); map.onAddWaypoint({ latitude: 49.67, longitude: -1.25 }); });
+    await saveDraft();
+    await waitFor(() => expect(footerQueries().getByText('Version 1 enregistrée')).toBeVisible());
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ project: 'Transit', clientId: '701',
+      vessel: expect.objectContaining({ etd: '2026-11-01T08:00', eta: '2026-11-01T17:00' }), waypoints: expect.any(Array) }), undefined);
+    expect(vi.mocked(saveSeaOperation).mock.lastCall![1].waypoints).toHaveLength(2);
+    await userEvent.click(stepButton(0));
+    expect(formQueries().getByLabelText('Client')).toBeDisabled(); expect(formQueries().getByLabelText('Client')).toHaveDisplayValue('Client du port');
+    fireEvent.change(formQueries().getByLabelText('Client'), { target: { value: '702' } });
+    fireEvent.change(formQueries().getByLabelText('Coordonnées du client'), { target: { value: 'Contact après sauvegarde' } });
+    expect(capturingUkcPanel().payload).toMatchObject({ clientId: '701', client: 'Client du port', clientContact: 'Contact après sauvegarde' });
+    expect(formQueries().getByLabelText('ETD · date et heure de départ')).toHaveValue('2026-11-01T08:00');
+    expect(formQueries().getByLabelText('ETA · date et heure d’arrivée')).toHaveValue('2026-11-01T17:00');
+  });
+
+  it('loads captain authority for the selected vessel when the original planned mission is no longer available', async () => {
+    const draft = waypointCaptureDraft(), record = recordFixture(captainAccount, { draft });
+    const { client, data } = renderAccount(captainAccount, record);
+    data.vessels.forEach(vessel => { vessel.canSign = false; });
+    vi.mocked(fetchSeaOperationVesselContext).mockImplementation(async (_client, date, vesselId) => ({ date, vesselId,
+      captains: [{ personId: '303', name: 'Capitaine affecté conservé', functionLabel: 'Capitaine temporaire', hasSignature: true, canSign: true }], canSign: true }));
+    vi.mocked(fetchSeaOperationVesselCaptainSignature).mockResolvedValue(profileSignature('303'));
+    await openRecord(record);
+    await waitFor(() => expect(fetchSeaOperationVesselContext).toHaveBeenCalledWith(client, draft.planning!.date, draft.vessel.id));
+    await waitFor(() => expect(formQueries().getByLabelText('Prénom NOM du Capitaine')).toHaveValue('Capitaine affecté conservé'));
+    expect(fetchSeaOperationVesselContext).toHaveBeenLastCalledWith(client, draft.planning!.date, draft.vessel.id);
+    fireEvent.change(formQueries().getByLabelText('Port de départ'), { target: { value: 'Granville' } });
+    expect(formQueries().getByLabelText('Port de départ')).toHaveValue('Granville');
+    await decisionStep();
+    expect(footerQueries().getByRole('button', { name: 'Signer la décision NO GO' })).toBeEnabled();
+  });
+
+  it('keeps a saved Transit client identity outside the active catalog while allowing contact edits and a real mission change', async () => {
+    const draft = { ...createTransitSeaOperation(), clientId: '701', client: 'Client historique', clientContact: 'Ancien contact' };
+    const record = recordFixture(captainAccount, { draft }), choices = plannedMissions();
+    const { data } = renderAccount(captainAccount, record, 1, choices);
+    data.clients = data.clients!.filter(client => client.id !== '701');
+    await openRecord(record); await waitFor(() => expect(formQueries().getByLabelText('Projet')).toBeEnabled());
+    expect(formQueries().getByLabelText('Client')).toHaveDisplayValue('Client historique'); expect(formQueries().getByLabelText('Client')).toBeDisabled();
+    fireEvent.change(formQueries().getByLabelText('Coordonnées du client'), { target: { value: 'Nouveau contact' } });
+    expect(capturingUkcPanel().payload).toMatchObject({ clientId: '701', client: 'Client historique', clientContact: 'Nouveau contact' });
+    await chooseMission(choices[0]);
+    expect(formQueries().getByLabelText('Client')).toHaveDisplayValue(choices[0].client);
+    expect(capturingUkcPanel().payload.transit).toBeUndefined();
+  });
+
+  it('uses the explicit Transit date for captain authority, preserves voyage edits and ignores an old vessel signature response', async () => {
+    const { client } = renderAccount(captainAccount), oldSignature = deferred<ReturnType<typeof profileSignature> | null>();
+    vi.mocked(fetchSeaOperationVesselContext).mockImplementation(async (_client, date, vesselId) => ({ date, vesselId,
+      captains: [{ personId: vesselId === '12' ? '301' : '302', name: `Capitaine ${vesselId} · ${date}`, functionLabel: 'Capitaine temporaire', hasSignature: true, canSign: true }], canSign: true }));
+    vi.mocked(fetchSeaOperationVesselCaptainSignature).mockImplementation(async (_client, _date, vesselId) => vesselId === '12' ? oldSignature.promise : profileSignature('302'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' })); await chooseTransit();
+    fireEvent.change(formQueries().getByLabelText('Description de l’opération'), { target: { value: 'Transit conservé' } });
+    await userEvent.selectOptions(formQueries().getByLabelText('Navire'), '12');
+    await waitFor(() => expect(fetchSeaOperationVesselCaptainSignature).toHaveBeenCalled());
+    fireEvent.change(formQueries().getByLabelText('ETD · date et heure de départ'), { target: { value: '2026-11-02T09:00' } });
+    expect(fetchSeaOperationVesselContext).toHaveBeenCalledTimes(1);
+    await userEvent.selectOptions(formQueries().getByLabelText('Navire'), '13');
+    await waitFor(() => expect(formQueries().getByLabelText('Prénom NOM du Capitaine')).toHaveValue(`Capitaine 13 · ${seaOperationToday()}`));
+    fireEvent.change(formQueries().getByLabelText('Date de l’opération'), { target: { value: '2026-10-20' } });
+    await waitFor(() => expect(formQueries().getByLabelText('Prénom NOM du Capitaine')).toHaveValue('Capitaine 13 · 2026-10-20'));
+    expect(fetchSeaOperationVesselContext).toHaveBeenLastCalledWith(client, '2026-10-20', '13');
+    expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue('Transit conservé');
+    expect(formQueries().getByLabelText('ETD · date et heure de départ')).toHaveValue('2026-11-02T09:00');
+    await decisionStep();
+    expect(await formQueries().findByRole('img', { name: 'Signature de Capitaine 13 · 2026-10-20' })).toHaveAttribute('src', profileSignature('302').url);
+    await act(async () => oldSignature.resolve(profileSignature('301')));
+    expect(formQueries().getByRole('img', { name: 'Signature de Capitaine 13 · 2026-10-20' })).toHaveAttribute('src', profileSignature('302').url);
+    expect(formQueries().queryByRole('img', { name: /Signature de Capitaine 12/ })).not.toBeInTheDocument();
+  });
+
+  it('ignores old map callbacks after selecting another Transit vessel or operation date', async () => {
+    renderAccount(); await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' })); await chooseTransit();
+    await userEvent.selectOptions(formQueries().getByLabelText('Navire'), '12'); await userEvent.click(stepButton(2));
+    const old = waypointMapMock.mock.lastCall![0] as Parameters<typeof import('./SeaOperationWaypointMapEditor').SeaOperationWaypointMapEditor>[0];
+    await userEvent.click(stepButton(0)); await userEvent.selectOptions(formQueries().getByLabelText('Navire'), '13');
+    act(() => old.onAddWaypoint({ latitude: 49.5, longitude: -1.5 }));
+    expect(capturingUkcPanel().payload.waypoints).toHaveLength(0);
+    await userEvent.click(stepButton(2));
+    const beforeDate = waypointMapMock.mock.lastCall![0] as typeof old;
+    await userEvent.click(stepButton(0)); fireEvent.change(formQueries().getByLabelText('Date de l’opération'), { target: { value: '2026-10-20' } });
+    act(() => beforeDate.onAddWaypoint({ latitude: 49.6, longitude: -1.6 }));
+    expect(capturingUkcPanel().payload.waypoints).toHaveLength(0);
+  });
+
+  it('keeps a signed Transit immutable without loading live captain authority or signatures', async () => {
+    const draft = { ...noGoDraft(), ...createTransitSeaOperation('2026-10-16') };
+    draft.vessel = { ...draft.vessel, id: '12', name: 'GOURY', captainName: 'Capitaine historique' };
+    draft.signature.captainName = 'Capitaine historique';
+    const original = structuredClone(draft), record = recordFixture(captainAccount, { draft, status: 'signed', canEdit: false });
+    renderAccount(captainAccount, record); await openRecord(record);
+    for (const label of ['Projet', 'Client', 'Navire', 'Port de départ', 'Port d’arrivée']) expect(formQueries().getByLabelText(label)).toBeDisabled();
+    expect(fetchSeaOperationVesselContext).not.toHaveBeenCalled(); expect(fetchSeaOperationVesselCaptainSignature).not.toHaveBeenCalled();
+    expect(record.draft).toEqual(original);
+  });
+});
 function adminRevision(record: SeaOperationRecord): SeaOperationRecord {
   const draft = structuredClone(record.draft);
   draft.decision = '';
@@ -345,7 +535,7 @@ describe('Planning project choices across four Paris calendar days', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     const selector = formQueries().getByLabelText('Projet');
     await waitFor(() => expect(selector).toBeEnabled());
-    expect(within(selector).getAllByRole('option').map(option => option.textContent)).toEqual(['Choisir un projet du planning',
+    expect(within(selector).getAllByRole('option').map(option => option.textContent)).toEqual(['Choisir un projet du planning', 'Transit',
       ...missions.map((mission, index) => seaOperationPlanningChoiceLabel({ ...mission, date: dates[index] }))]);
     expect(formQueries().getByText('Projets planifiés du 17/10/2026 au 20/10/2026 inclus.')).toBeVisible();
     expect(fetchSeaOperationPlanning).not.toHaveBeenCalledWith(client, '2026-10-16');
@@ -353,7 +543,7 @@ describe('Planning project choices across four Paris calendar days', () => {
     await chooseMission(missions[0], dates[0]);
     await chooseMission(missions[3], dates[3]);
     expect(formQueries().getByLabelText('Date de l’opération')).toHaveValue('2026-10-20');
-    expect(formQueries().getByLabelText('Client')).toHaveValue(missions[3].client);
+    expect(formQueries().getByLabelText('Client')).toHaveDisplayValue(missions[3].client);
     expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(missions[3].clientContact);
     expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue(missions[3].description);
     expect(formQueries().getByLabelText('Navire')).toHaveValue(missions[3].vessel.id);
@@ -367,11 +557,11 @@ describe('Planning project choices across four Paris calendar days', () => {
     fireEvent.change(formQueries().getByLabelText('Date de l’opération'), { target: { value: '2026-09-01' } });
     await waitFor(() => expect(selector).toBeEnabled());
     expect(formQueries().getByLabelText('Date de l’opération')).toHaveValue('2026-09-01');
-    expect(within(selector).getAllByRole('option')).toHaveLength(5);
+    expect(within(selector).getAllByRole('option')).toHaveLength(6);
     expect(selector).toHaveValue('');
     fireEvent.change(formQueries().getByLabelText('Date de l’opération'), { target: { value: '' } });
     await waitFor(() => expect(selector).toBeEnabled());
-    expect(within(selector).getAllByRole('option')).toHaveLength(5);
+    expect(within(selector).getAllByRole('option')).toHaveLength(6);
     expect(selector).toHaveValue('');
   });
 
@@ -1934,7 +2124,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     vi.mocked(fetchSeaOperationCaptainSignature).mockImplementation(async (_client, _date, _operationId, personId) => profileSignature(personId));
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     await chooseMission(first);
-    expect(formQueries().getByLabelText('Client')).toHaveValue(first.client);
+    expect(formQueries().getByLabelText('Client')).toHaveDisplayValue(first.client);
     expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(first.clientContact);
     expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue(first.description);
     expect(formQueries().getByLabelText('Navire')).toHaveValue('12');
@@ -1944,7 +2134,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(await formQueries().findByRole('img', { name: `Signature de ${first.captains[0].name}` })).toHaveAttribute('src', 'https://signature.example.test/101.png');
     await userEvent.click(stepButton(0));
     await chooseMission(second);
-    expect(formQueries().getByLabelText('Client')).toHaveValue(second.client);
+    expect(formQueries().getByLabelText('Client')).toHaveDisplayValue(second.client);
     expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(second.clientContact);
     expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue(second.description);
     expect(formQueries().getByLabelText('Navire')).toHaveValue('13');
@@ -1952,7 +2142,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(formQueries().getByLabelText('Port de départ')).toHaveValue('Caen');
     expect(formQueries().getByLabelText('Port d’arrivée')).toHaveValue('Dieppe');
     expect(formQueries().getByLabelText('Prénom NOM du Capitaine')).toHaveValue(second.captains[0].name);
-    expect(formQueries().getByLabelText('Client')).toHaveAttribute('readonly');
+    expect(formQueries().getByLabelText('Client')).toBeDisabled();
     await decisionStep();
     expect(formQueries().getByLabelText('Prénom NOM du Capitaine signataire')).toHaveValue(second.captains[0].name);
     expect(await formQueries().findByRole('img', { name: `Signature de ${second.captains[0].name}` })).toHaveAttribute('src', 'https://signature.example.test/102.png');
@@ -2324,7 +2514,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const progress = screen.getByRole('progressbar', { name: 'Champs de préparation renseignés' });
     const before = Number(progress.getAttribute('aria-valuenow'));
     await userEvent.type(formQueries().getByLabelText('Description de l’opération'), 'Mission aperçue en direct');
-    await userEvent.type(formQueries().getByLabelText('Client'), 'Client du port');
+    await userEvent.selectOptions(formQueries().getByLabelText('Client'), '701');
     expect(preview).toHaveTextContent('Mission aperçue en direct');
     expect(preview).toHaveTextContent('Client du port');
     expect(Number(progress.getAttribute('aria-valuenow'))).toBeGreaterThan(before);
@@ -2338,7 +2528,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(stepButton(2)).toHaveAttribute('aria-current', 'step');
     expect(formQueries().getByRole('region', { name: 'Passage Plan' })).toBeVisible();
     await userEvent.click(stepButton(0));
-    expect(formQueries().getByLabelText('Client')).toHaveValue('Client du port');
+    expect(formQueries().getByLabelText('Client')).toHaveDisplayValue('Client du port');
   });
 
   it('switches compact 390px panes without losing fields and keeps footer actions available', async () => {

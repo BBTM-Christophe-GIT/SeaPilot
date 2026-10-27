@@ -99,8 +99,8 @@ select is(public.sea_operation_ukc_context((select project_id from copernicus_co
   '2.65'::jsonb,'a real Captain obtains the canonical Navires reference');
 select is(public.sea_operation_ukc_context((select project_id from copernicus_context where kind='unknown'),(select vessel_id from copernicus_context where kind='unknown'))->'draftMeters',
   'null'::jsonb,'a planned secondary vessel with unknown draught returns null rather than zero');
-select throws_ok($$select public.sea_operation_ukc_context((select project_id from copernicus_context where kind='unrelated'),(select vessel_id from copernicus_context where kind='unrelated'))$$,
-  '42501',null,'an unrelated same-company vessel cannot be substituted for the planned one');
+select is(public.sea_operation_ukc_context((select project_id from copernicus_context where kind='unrelated'),(select vessel_id from copernicus_context where kind='unrelated'))->'draftMeters',
+  '3'::jsonb,'another active same-company vessel can be selected independently of commercial planning');
 select throws_ok($$select public.sea_operation_ukc_context((select project_id from copernicus_context where kind='project-2'),(select vessel_id from copernicus_context where kind='project-2'))$$,
   '42501',null,'an unplanned project cannot authorize the provider');
 select throws_ok($$select public.sea_operation_ukc_context((select project_id from copernicus_context where kind='project-3'),(select vessel_id from copernicus_context where kind='project-3'))$$,
@@ -276,8 +276,10 @@ select is(public.sea_operation_sign((select id from copernicus_fixture where kin
 reset role;
 
 -- Fully complete GO fixture: only automatic UKC availability may block it.
+insert into public.clients(company_id,name) select id,'SEA-COP-SYNTHETIC-CLIENT' from public.companies where code='bbtm';
 insert into copernicus_fixture(kind,payload)
-select 'go',jsonb_set(jsonb_set(payload||jsonb_build_object('decision','GO','client','Synthetic client','clientContact','Synthetic contact',
+select 'go',jsonb_set(jsonb_set(payload||jsonb_build_object('decision','GO','client','SEA-COP-SYNTHETIC-CLIENT',
+  'clientId',(select id::text from public.clients where name='SEA-COP-SYNTHETIC-CLIENT'),'clientContact','Synthetic contact',
   'description','Synthetic operation','charts','Synthetic chart','portServices','["none"]'::jsonb,
   'checks',(select jsonb_object_agg(key,'yes') from jsonb_object_keys(payload->'checks')key),
   'dapaq','{"method":"email","preparedBy":"captain","agentName":"","agentContact":""}'::jsonb,

@@ -1,11 +1,11 @@
-import { cloneElement, isValidElement, useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { cloneElement, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { AlertTriangle, Anchor, ArrowLeft, CheckCircle2, ChevronRight, ClipboardCheck, Compass, Eye, FileDown, FileText, Map, Pencil, Plus, Printer, Save, Search, Ship, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS, emptySeaOperation, newSeaOperation, getSeaOperationAssessment, isSeaOperationPayload, validateSeaOperation, seaOperationToday, type SeaOperationPayload, type SeaOperationAnswer as Answer } from './seaOperationModel';
-import { fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationCaptainSignature, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, reviseSeaOperation, deleteSeaOperation, type SeaOperationData, type SeaOperationRecord, type SeaOperationPlanningChoice } from './seaOperationQueries';
+import { DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS, emptySeaOperation, newSeaOperation, createTransitSeaOperation, seaOperationContextDate, getSeaOperationAssessment, isSeaOperationPayload, validateSeaOperation, seaOperationToday, type SeaOperationPayload, type SeaOperationAnswer as Answer } from './seaOperationModel';
+import { fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationCaptainSignature, fetchSeaOperationVesselContext, fetchSeaOperationVesselCaptainSignature, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, reviseSeaOperation, deleteSeaOperation, type SeaOperationData, type SeaOperationRecord, type SeaOperationPlanningChoice, type SeaOperationVesselContext } from './seaOperationQueries';
 import { fetchSeaOperationPlanningWindow, seaOperationPlanningChoiceKey, seaOperationPlanningChoiceLabel, type SeaOperationPlanningWindow } from './seaOperationPlanningWindow';
 import './seaOperations.css';
 import { SeaOperationPrint } from './SeaOperationPrint';
@@ -16,7 +16,7 @@ import { SeaOperationRadioPanel } from './SeaOperationRadioPanel';
 import { SeaOperationWeatherPanel } from './SeaOperationWeatherPanel';
 import { SeaOperationHydroSources } from './SeaOperationHydroSources';
 import { SeaOperationChartsPanel } from './SeaOperationChartsPanel';
-import { captureSeaOperationRadios, invalidateSeaOperationUkc, retainSeaOperationUkc, retainSeaOperationWeather, seaOperationUkcReference,
+import { captureSeaOperationRadios, invalidateSeaOperationUkc, retainSeaOperationUkc, retainSeaOperationWeather, seaOperationUkcReference, seaOperationWeatherReference,
   updateSeaOperationWaypoint, waypointUkcSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 import type { SeaOperationUkcCaptureContext, SeaOperationWeatherCaptureContext } from './seaOperationWaypointSnapshots';
 import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
@@ -43,6 +43,7 @@ import { captureSeaOperationWaypointDescriptions, seaOperationWaypointDescriptio
 import { copyProjectLocationToSeaOperation } from './seaOperationProjectLocation';
 import { ProjectLocationOverlayFields } from '../projects/ProjectLocationOverlayFields';
 import type { ProjectLocationOverlay } from '../projects/projectLocation';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 
 const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'];
 const STEP_DETAILS = ['Mission, client et voyage', 'Préparation et sécurité du navire', 'Cartes et points de route', 'GO / NO GO et signature'];
@@ -93,10 +94,18 @@ function draftForPlanningChoice(choice: SeaOperationPlanningChoice, date: string
   const draft = newSeaOperation();
   const captain = choice.captains.length === 1 ? choice.captains[0] : null;
   return copyProjectLocationToSeaOperation({ ...draft, planning: { date, operationId: choice.operationId, projectId: choice.projectId, captainPersonId: captain?.personId || '' },
-    project: choice.project, client: choice.client, clientContact: choice.clientContact, description: choice.description,
+    project: choice.project, client: choice.client, ...(choice.clientId ? { clientId: choice.clientId } : {}), clientContact: choice.clientContact, description: choice.description,
     vessel: { ...draft.vessel, ...choice.vessel, id: String(choice.vessel.id), captainName: captain?.name || '',
       ...(choice.vessel.weatherMatrix === undefined ? {} : { weatherMatrix: structuredClone(choice.vessel.weatherMatrix) }) },
     signature: { ...draft.signature, captainName: captain?.name || '', place: choice.vessel.departurePort } }, choice.locationPlan, maxSpeedKnots);
+}
+
+function sameClientContext(left: SeaOperationPayload, right: SeaOperationPayload): boolean {
+  if (left.transit || right.transit) return Boolean(left.transit && right.transit);
+  if (left.planning?.projectId || right.planning?.projectId) return Boolean(left.planning?.projectId && left.planning.projectId === right.planning?.projectId);
+  if (left.planning?.operationId || right.planning?.operationId) return Boolean(left.planning?.operationId
+    && left.planning.operationId.split(':')[0] === right.planning?.operationId.split(':')[0]);
+  return left.project === right.project;
 }
 
 function retainedPlanningLabel(draft: SeaOperationPayload): string {
@@ -144,6 +153,9 @@ export function SeaOperationsPage() {
   const [captainSignature, setCaptainSignature] = useState<Awaited<ReturnType<typeof fetchSeaOperationCaptainSignature>> | null>(null);
   const [signatureLoading, setSignatureLoading] = useState(false);
   const [signatureError, setSignatureError] = useState('');
+  const [vesselContext, setVesselContext] = useState<{ client: SupabaseClient; context: SeaOperationVesselContext } | null>(null);
+  const [vesselContextLoading, setVesselContextLoading] = useState(false);
+  const [vesselContextError, setVesselContextError] = useState('');
   const [dirty, setDirty] = useState(false);
   const [step, setStep] = useState(0);
   const [search, setSearch] = useState('');
@@ -171,6 +183,22 @@ export function SeaOperationsPage() {
   const recordActionSequence = useRef(0);
   const actionContext = useRef({ client, account: '' });
   actionContext.current = { client, account: data ? recoveryKey(data) : '' };
+  const selectedWindowMission = planning?.choices.find(choice => choice.operationId === draft.planning?.operationId && choice.date === draft.planning?.date);
+  const selectedMission = selectedWindowMission ?? (planning?.selectedContext?.date === draft.planning?.date
+    ? planning?.selectedContext?.choices.find(choice => choice.operationId === draft.planning?.operationId) : undefined);
+  const linkedToPlanning = Boolean(draft.planning?.operationId);
+  const linkedToCaptainContext = Boolean(draft.transit || linkedToPlanning);
+  const contextDate = seaOperationContextDate(draft);
+  const usesVesselContext = Boolean(draft.transit || linkedToPlanning && (!selectedMission || selectedMission.vessel.id !== draft.vessel.id));
+  const matchingVesselContext = vesselContext?.client === client && vesselContext.context.date === contextDate
+    && vesselContext.context.vesselId === draft.vessel.id ? vesselContext.context : null;
+  const captains = usesVesselContext ? matchingVesselContext?.captains : selectedMission?.vessel.id === draft.vessel.id ? selectedMission.captains : undefined;
+  const captainPersonId = draft.transit?.captainPersonId ?? draft.planning?.captainPersonId;
+  const selectedCaptain = captains?.find(captain => captain.personId === captainPersonId);
+  const sortedVessels = useMemo(() => [...(data?.vessels ?? [])].sort(compareFleetAssets), [data?.vessels]);
+  const recordedClientLocked = Boolean(record?.draft.client.trim() && sameClientContext(record.draft, draft));
+  const clientLocked = recordedClientLocked || Boolean(selectedMission?.client.trim());
+  const selectedClientValue = clientLocked && draft.client ? '__retained' : draft.clientId || (draft.client ? '__existing' : '');
   useEffect(() => { latestDraft.current = draft; }, [draft]);
   const applyData = useCallback((result: SeaOperationData) => {
     setData(result);
@@ -192,7 +220,7 @@ export function SeaOperationsPage() {
     }
     setRecord(existing ? { ...existing, version: recovery.version! } : null);
     const vessel = result.vessels.find((source) => String(source.id) === recovery.draft.vessel.id);
-    setDraft(captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(recovery.draft, vessel), vessel), result.vessels))); setPlanningDate(recovery.draft.planning?.date || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setStep(recovery.step); setEditing(true); setDirty(true);
+    setDraft(captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(recovery.draft, vessel), vessel), result.vessels))); setPlanningDate(seaOperationContextDate(recovery.draft) || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setStep(recovery.step); setEditing(true); setDirty(true);
     setNotice('Votre préparation non enregistrée a été récupérée dans cet onglet. Vérifiez-la avant de l’enregistrer.');
   }, []);
 
@@ -263,7 +291,7 @@ export function SeaOperationsPage() {
       const missionDate = datedMission?.date ?? selectedContext?.date;
       if (mission && record?.canEdit !== false && current.planning?.date === missionDate && !weatherEditor.current.busy && !weatherEditor.current.signed) {
         const vessel = data?.vessels.find((source) => String(source.id) === current.vessel.id);
-        const source = mission.vessel.weatherMatrix === undefined ? vessel : mission.vessel;
+        const source = mission.vessel.id !== current.vessel.id || mission.vessel.weatherMatrix === undefined ? vessel : mission.vessel;
         if (captureRouteEtas(captureVesselDraft(captureVesselMatrix(current, source), vessel), data?.vessels) !== current) {
           setDraft((value) => value.planning?.operationId === mission.operationId && value.planning.date === missionDate ? captureRouteEtas(captureVesselDraft(captureVesselMatrix(value, source), vessel), data?.vessels) : value);
           setDirty(true);
@@ -272,8 +300,8 @@ export function SeaOperationsPage() {
       const captain = mission?.captains.find((person) => person.personId === current.planning?.captainPersonId)
         || (!current.planning?.captainPersonId && mission?.captains.length === 1 ? mission.captains[0] : undefined);
       // Repair missing draft identity only; signed decisions and existing names remain historical.
-      if (captain && record?.canEdit !== false && current.planning?.date === missionDate && (!current.signature.captainName.trim() || !current.vessel.captainName.trim())) {
-        setDraft((draft) => draft.planning && mission && draft.planning.operationId === mission.operationId && draft.planning.date === missionDate && draft.planning.captainPersonId === current.planning?.captainPersonId ? {
+      if (captain && mission?.vessel.id === current.vessel.id && record?.canEdit !== false && current.planning?.date === missionDate && (!current.signature.captainName.trim() || !current.vessel.captainName.trim())) {
+        setDraft((draft) => draft.planning && mission && draft.vessel.id === mission.vessel.id && draft.planning.operationId === mission.operationId && draft.planning.date === missionDate && draft.planning.captainPersonId === current.planning?.captainPersonId ? {
           ...draft, planning: { ...draft.planning, captainPersonId: draft.planning.captainPersonId || captain.personId },
           vessel: { ...draft.vessel, captainName: draft.vessel.captainName.trim() ? draft.vessel.captainName : captain.name },
           signature: { ...draft.signature, captainName: draft.signature.captainName.trim() ? draft.signature.captainName : captain.name, acknowledged: draft.signature.captainName.trim() ? draft.signature.acknowledged : false },
@@ -295,16 +323,32 @@ export function SeaOperationsPage() {
     return () => { active = false; };
   }, [client, editing, planningDate, planningStartDate, record?.id, record?.status, record?.canEdit, data?.vessels]);
   useEffect(() => {
+    setVesselContext(null); setVesselContextLoading(false); setVesselContextError('');
+    if (!editing || record?.status === 'signed' || !usesVesselContext || !contextDate || !draft.vessel.id) return;
+    if (linkedToPlanning && !planning && !planningError) return;
+    let active = true;
+    setVesselContextLoading(true);
+    fetchSeaOperationVesselContext(client, contextDate, draft.vessel.id)
+      .then(context => { if (active) setVesselContext({ client, context }); })
+      .catch((reason: unknown) => { if (active) setVesselContextError(errorMessage(reason)); })
+      .finally(() => { if (active) setVesselContextLoading(false); });
+    return () => { active = false; };
+  }, [client, editing, record?.status, usesVesselContext, contextDate, draft.vessel.id, linkedToPlanning, planning, planningError]);
+  useEffect(() => {
     setCaptainSignature(null); setSignatureError(''); setSignatureLoading(false);
-    if (!editing || record?.status === 'signed' || !draft.planning?.operationId || !draft.planning.captainPersonId) return;
+    if (!editing || record?.status === 'signed' || !contextDate || !captainPersonId
+      || !usesVesselContext && !selectedMission || usesVesselContext && !selectedCaptain) return;
     let active = true;
     setSignatureLoading(true);
-    fetchSeaOperationCaptainSignature(client, draft.planning.date, draft.planning.operationId, draft.planning.captainPersonId)
+    const request = usesVesselContext
+      ? fetchSeaOperationVesselCaptainSignature(client, contextDate, draft.vessel.id, captainPersonId)
+      : fetchSeaOperationCaptainSignature(client, contextDate, draft.planning!.operationId, captainPersonId);
+    request
       .then((result) => { if (active) setCaptainSignature(result); })
       .catch((reason: unknown) => { if (active) setSignatureError(errorMessage(reason)); })
       .finally(() => { if (active) setSignatureLoading(false); });
     return () => { active = false; };
-  }, [client, editing, record?.status, draft.planning?.date, draft.planning?.operationId, draft.planning?.captainPersonId]);
+  }, [client, editing, record?.status, contextDate, draft.planning?.operationId, captainPersonId, draft.vessel.id, usesVesselContext, selectedMission, selectedCaptain]);
 
   const update = (patch: Partial<SeaOperationPayload> | ((current: SeaOperationPayload) => Partial<SeaOperationPayload>)) => {
     allowAutomaticMission.current = false; editRevision.current += 1;
@@ -312,9 +356,17 @@ export function SeaOperationsPage() {
     setDirty(true); setNotice(''); setIssues([]);
   };
   const vesselUpdate = (patch: Partial<SeaOperationPayload['vessel']>) => {
-    const next = { ...draft, vessel: { ...draft.vessel, ...patch } };
-    if (patch.id !== undefined && patch.id !== draft.vessel.id) delete next.vessel.draftMeters;
-    update({ vessel: captureVesselDraft(next, data?.vessels.find((source) => String(source.id) === next.vessel.id)).vessel });
+    const changed = patch.id !== undefined && patch.id !== draft.vessel.id;
+    const source = data?.vessels.find(vessel => String(vessel.id) === (patch.id ?? draft.vessel.id));
+    if (changed) { setCaptainSignature(null); setVesselContext(null); setSignatureError(''); setVesselContextError(''); }
+    update(current => {
+      const next = { ...current, vessel: { ...current.vessel, ...patch,
+        ...(changed ? { captainName: '', draftMeters: source?.draftMeters ?? null, weatherMatrix: structuredClone(source?.weatherMatrix ?? null) } : {}) } };
+      if (changed && source?.draftMeters === undefined) delete next.vessel.draftMeters;
+      const vessel = captureVesselDraft(next, source).vessel;
+      return { vessel, ...(changed ? { signature: { ...current.signature, captainName: '', acknowledged: false },
+        ...(current.transit ? { transit: { ...current.transit, captainPersonId: '' } } : current.planning ? { planning: { ...current.planning, captainPersonId: '' } } : {}) } : {}) };
+    });
   };
   const waypointUpdate = (index: number, patch: Partial<SeaOperationPayload['waypoints'][number]>) => update(current => ({ waypoints: current.waypoints.map((point, i) => i === index ? updateSeaOperationWaypoint(point, patch.eta !== undefined ? { ...patch, etaMode: patch.etaMode ?? 'manual' } : patch) : point) }));
   const editable = !record || record.canEdit;
@@ -322,6 +374,25 @@ export function SeaOperationsPage() {
   const weatherEditor = useRef({ client, draft, editing, editable, signed, busy, exporting });
   const pendingWeather = useRef(new globalThis.Map<string, { weather: SeaOperationWaypointWeather; context: SeaOperationWeatherCaptureContext; sourceClient: SupabaseClient }>());
   weatherEditor.current = { client, draft, editing, editable, signed, busy, exporting };
+  useEffect(() => {
+    const current = weatherEditor.current;
+    if (!usesVesselContext || !matchingVesselContext || !current.editing || !current.editable || current.signed || current.busy || current.exporting) return;
+    const captain = matchingVesselContext.captains.find(person => person.personId === captainPersonId)
+      ?? (matchingVesselContext.captains.length === 1 ? matchingVesselContext.captains[0] : undefined);
+    // An unavailable assignment must not rewrite an existing saved identity merely by opening it.
+    // Explicit vessel/date changes already clear the previous identity before this request.
+    if (!captain) return;
+    const personId = captain?.personId || '', name = captain?.name || '';
+    if (captainPersonId === personId && draft.vessel.captainName === name && draft.signature.captainName === name) return;
+    editRevision.current += 1;
+    setDraft(value => seaOperationContextDate(value) === matchingVesselContext.date && value.vessel.id === matchingVesselContext.vesselId
+      && (value.transit?.captainPersonId ?? value.planning?.captainPersonId) === captainPersonId ? {
+      ...value, ...(value.transit ? { transit: { ...value.transit, captainPersonId: personId } }
+        : value.planning ? { planning: { ...value.planning, captainPersonId: personId } } : {}),
+      vessel: { ...value.vessel, captainName: name }, signature: { ...value.signature, captainName: name, acknowledged: false },
+    } : value);
+    setDirty(true);
+  }, [usesVesselContext, matchingVesselContext, captainPersonId, draft.vessel.captainName, draft.signature.captainName, busy, exporting, editing, editable, signed]);
   useEffect(() => {
     const current = weatherEditor.current;
     if (!data || loadedAccount.current !== recoveryKey(data) || current.client !== client
@@ -336,13 +407,15 @@ export function SeaOperationsPage() {
   // A gesture belongs to the open account/record/mission, even after a context switch.
   const mapEditSequence = loadSequence.current;
   const mapOperationId = draft.planning?.operationId;
-  const mapOperationDate = draft.planning?.date;
+  const mapOperationDate = seaOperationContextDate(draft);
+  const mapVesselId = draft.vessel.id;
   const mapAccount = actionContext.current.account;
   const canEditMap = () => {
     const current = weatherEditor.current;
     return mapEditSequence === loadSequence.current && current.client === client
       && actionContext.current.account === mapAccount
-      && current.draft.planning?.operationId === mapOperationId && current.draft.planning?.date === mapOperationDate && current.editing
+      && current.draft.planning?.operationId === mapOperationId && seaOperationContextDate(current.draft) === mapOperationDate
+      && current.draft.vessel.id === mapVesselId && current.editing
       && current.editable && !current.signed && !current.busy && !current.exporting;
   };
   const updateLocationOverlay = (change: (overlay: ProjectLocationOverlay) => ProjectLocationOverlay) => {
@@ -397,7 +470,7 @@ export function SeaOperationsPage() {
     if (sourceClient !== current.client || !current.editing || !current.editable || current.signed
       || retainSeaOperationWeather(current.draft, weather, context) === current.draft) return;
     if (current.busy) {
-      const key = `${context.projectId}:${context.pointId}`;
+      const key = JSON.stringify([context.projectId, context.transit?.date, context.transit?.vesselId, context.pointId]);
       if (!pendingWeather.current.has(key) && pendingWeather.current.size >= 64) pendingWeather.current.delete(pendingWeather.current.keys().next().value!);
       pendingWeather.current.set(key, { weather, context, sourceClient });
       return;
@@ -408,8 +481,8 @@ export function SeaOperationsPage() {
   const receiveWeatherStatuses = useCallback((statuses: Record<string, WeatherRequestStatus>, sourceClient: SupabaseClient) => {
     const current = weatherEditor.current;
     if (sourceClient !== current.client || !current.editing || current.signed) return;
-    const projectId = current.draft.planning?.projectId || '';
-    const keys = new Set(current.draft.waypoints.map((point) => weatherRequestKey(projectId, point)));
+    const reference = seaOperationWeatherReference(current.draft);
+    const keys = new Set(current.draft.waypoints.map(point => weatherRequestKey(reference, point)));
     const entries = Object.entries(statuses).filter(([key]) => keys.has(key));
     if (Object.keys(statuses).length && !entries.length) return;
     setWeatherRequests((previous) => {
@@ -425,7 +498,7 @@ export function SeaOperationsPage() {
     if (sourceClient !== current.client || !current.editing || !current.editable || current.signed
       || retainSeaOperationUkc(current.draft, capture, context) === current.draft) return;
     if (current.busy) {
-      const key = `${context.projectId}:${context.vesselId}:${context.pointId}`;
+      const key = JSON.stringify([context.projectId, context.transit?.date, context.vesselId, context.pointId]);
       if (!pendingUkc.current.has(key) && pendingUkc.current.size >= 64) pendingUkc.current.delete(pendingUkc.current.keys().next().value!);
       pendingUkc.current.set(key, { capture, context, sourceClient }); return;
     }
@@ -456,31 +529,42 @@ export function SeaOperationsPage() {
     if (editing && editable && !signed) for (const entry of pending) retainUkc(entry.capture, entry.context, entry.sourceClient);
   }, [busy, client, editing, editable, signed, retainUkc]);
   const assessment = getSeaOperationAssessment(draft);
-  const selectedWindowMission = planning?.choices.find(choice => choice.operationId === draft.planning?.operationId && choice.date === draft.planning?.date);
-  const selectedMission = selectedWindowMission ?? (planning?.selectedContext?.date === draft.planning?.date
-    ? planning?.selectedContext?.choices.find(choice => choice.operationId === draft.planning?.operationId) : undefined);
-  const selectedCaptain = selectedMission?.captains.find((captain) => captain.personId === draft.planning?.captainPersonId);
-  const linkedToPlanning = Boolean(draft.planning?.operationId);
   const referenceDraft = draft.vessel.draftMeters;
-  const canSign = linkedToPlanning ? selectedCaptain?.canSign === true : record?.canSign || (!record && data?.vessels.some((vessel) => String(vessel.id) === draft.vessel.id && vessel.canSign));
+  const canSign = linkedToCaptainContext ? selectedCaptain?.canSign === true : record?.canSign || (!record && data?.vessels.some((vessel) => String(vessel.id) === draft.vessel.id && vessel.canSign));
   function selectMission(choiceKey: string) {
+    if (choiceKey === '__existing') return;
     allowAutomaticMission.current = false;
     editRevision.current += 1;
     const choice = planning?.choices.find(item => seaOperationPlanningChoiceKey(item) === choiceKey);
-    const next = choice ? draftForPlanningChoice(choice, choice.date, data?.vessels.find(source => String(source.id) === choice.vessel.id)?.maxSpeedKnots) : newSeaOperation();
+    let next = choice ? draftForPlanningChoice(choice, choice.date, data?.vessels.find(source => String(source.id) === choice.vessel.id)?.maxSpeedKnots)
+      : choiceKey === '__transit' ? createTransitSeaOperation(planningDate || seaOperationToday()) : newSeaOperation();
+    if (record?.draft.client.trim() && sameClientContext(record.draft, next)) next = { ...next, client: record.draft.client,
+      clientId: record.draft.clientId, clientContact: record.draft.clientContact };
     const vessel = data?.vessels.find((source) => String(source.id) === next.vessel.id);
     if (choice) setPlanningDate(choice.date);
+    setCaptainSignature(null); setVesselContext(null); setSignatureError(''); setVesselContextError('');
     setDraft(captureVesselDraft(choice?.vessel.weatherMatrix === undefined ? captureVesselMatrix(next, vessel) : next, vessel));
     setDirty(true); setIssues([]); setNotice(''); setError('');
   }
   function changePlanningDate(value: string) {
     allowAutomaticMission.current = false;
     editRevision.current += 1;
-    setPlanningDate(value); setPlanning(null); setDraft(newSeaOperation()); setDirty(true); setIssues([]); setNotice('');
+    setPlanningDate(value); setPlanning(null); setCaptainSignature(null); setVesselContext(null);
+    setDraft(current => current.transit ? invalidateSeaOperationUkc({ ...current, transit: { date: value, captainPersonId: '' },
+      vessel: { ...current.vessel, captainName: '' }, signature: { ...current.signature, captainName: '', acknowledged: false } }) : newSeaOperation());
+    setDirty(true); setIssues([]); setNotice('');
   }
   function selectCaptain(personId: string) {
-    const captain = selectedMission?.captains.find((item) => item.personId === personId);
-    update({ planning: { ...draft.planning!, captainPersonId: captain?.personId || '' }, vessel: { ...draft.vessel, captainName: captain?.name || '' }, signature: { ...draft.signature, captainName: captain?.name || '', acknowledged: false } });
+    const captain = captains?.find(item => item.personId === personId);
+    setCaptainSignature(null);
+    update({ ...(draft.transit ? { transit: { ...draft.transit, captainPersonId: captain?.personId || '' } }
+      : draft.planning ? { planning: { ...draft.planning, captainPersonId: captain?.personId || '' } } : {}),
+    vessel: { ...draft.vessel, captainName: captain?.name || '' }, signature: { ...draft.signature, captainName: captain?.name || '', acknowledged: false } });
+  }
+  function selectClient(id: string) {
+    if (clientLocked) return;
+    const selected = data?.clients?.find(item => item.id === id);
+    update({ clientId: selected?.id || '', client: selected?.name || '', clientContact: selected?.contact || '' });
   }
   const confirmLeave = () => !dirty || window.confirm('Quitter cette fiche sans enregistrer les modifications ?');
   function closeEditor() {
@@ -516,7 +600,7 @@ export function SeaOperationsPage() {
         const prepared = captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(loaded.draft, vessel), vessel), data?.vessels));
         if (prepared !== loaded.draft) { setDraft(prepared); setDirty(true); setNotice('Les données du navire ont été actualisées pour cette préparation. Enregistrez pour les conserver.'); }
       }
-      setPlanning(null); setPlanningDate(loaded.draft.planning?.date || loaded.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setEditing(true); setStep(0); setMobilePane('form');
+      setPlanning(null); setPlanningDate(seaOperationContextDate(loaded.draft) || loaded.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setEditing(true); setStep(0); setMobilePane('form');
     } }
     catch (reason) { if (request === loadSequence.current && actionContext.current.client === client) setError(errorMessage(reason)); }
     finally { if (request === loadSequence.current && actionContext.current.client === client) setBusy(false); }
@@ -558,7 +642,7 @@ export function SeaOperationsPage() {
         if (!isCurrent()) return;
         remember(revised);
         setData((current) => current ? { ...current, records: current.records.filter((item) => item.id !== action.record.id) } : current);
-        setPlanningDate(revised.draft.planning?.date || revised.draft.vessel.etd.slice(0, 10) || seaOperationToday());
+        setPlanningDate(seaOperationContextDate(revised.draft) || revised.draft.vessel.etd.slice(0, 10) || seaOperationToday());
         allowAutomaticMission.current = false;
         setPlanning(null); setEditing(true); setStep(0); setMobilePane('form'); setIssues([]); setError('');
         setNotice('Nouvelle préparation créée. La version signée précédente reste conservée. Le Capitaine devra signer cette nouvelle fiche.');
@@ -580,7 +664,8 @@ export function SeaOperationsPage() {
   }
   async function save(sign = false) {
     if (busy) return;
-    const matrixSource = selectedMission?.vessel.weatherMatrix === undefined ? data?.vessels.find((vessel) => String(vessel.id) === draft.vessel.id) : selectedMission.vessel;
+    const matrixSource = selectedMission?.vessel.id !== draft.vessel.id || selectedMission?.vessel.weatherMatrix === undefined
+      ? data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id) : selectedMission.vessel;
     const prepared = captureSeaOperationRadios(captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(draft, matrixSource), data?.vessels.find((vessel) => String(vessel.id) === draft.vessel.id)), data?.vessels)));
     const automaticUkcErrors = new Set(prepared.waypoints.flatMap((point, index) => point.ukcMode === 'automatic' ? [`L’UKC du point n° ${index + 1} est obligatoire.`] : []));
     const validation = validateSeaOperation(prepared, sign ? prepared.decision || 'GO' : 'DRAFT').filter(message => !automaticUkcErrors.has(message));
@@ -609,7 +694,7 @@ export function SeaOperationsPage() {
       const saved = await saveSeaOperation(client, captured, record || undefined);
       if (sequence !== loadSequence.current || weatherEditor.current.client !== client || !weatherEditor.current.editing) return;
       const recordedWeatherKeys = new Set(saved.draft.waypoints.filter((point) => waypointWeatherSnapshot(point))
-        .map((point) => weatherRequestKey(saved.draft.planning?.projectId || '', point)));
+        .map(point => weatherRequestKey(seaOperationWeatherReference(saved.draft), point)));
       setWeatherRequests((previous) => {
         if (previous.client !== client) return previous;
         const entries = Object.entries(previous.statuses).filter(([key]) => !recordedWeatherKeys.has(key));
@@ -721,18 +806,34 @@ export function SeaOperationsPage() {
           <div className="so-section-title"><b aria-hidden="true">1</b><div><h2 tabIndex={-1}>Préparation de l’Armement</h2><p>Informations opérationnelles et organisation de la mission.</p></div></div>
           <div className="so-grid so-armament-grid">
             <Field label="Date de l’opération"><input type="date" autoFocus={!record} value={planningDate} onChange={(event) => changePlanningDate(event.target.value)} /></Field>
-            <Field label="Projet"><select value={draft.planning?.operationId ? seaOperationPlanningChoiceKey(draft.planning) : draft.project ? '__existing' : ''} disabled={planningLoading || Boolean(planningError)} onChange={(event) => selectMission(event.target.value)}><option value="">{planningLoading ? 'Chargement du planning…' : 'Choisir un projet du planning'}</option>{draft.project && !draft.planning?.operationId && <option value="__existing">{draft.project}</option>}{draft.planning?.operationId && !selectedWindowMission && <option value={seaOperationPlanningChoiceKey(draft.planning)}>{retainedPlanningLabel(draft)}</option>}{planning?.choices.map((choice) => <option key={seaOperationPlanningChoiceKey(choice)} value={seaOperationPlanningChoiceKey(choice)}>{seaOperationPlanningChoiceLabel(choice)}</option>)}</select></Field>
+            <Field label="Projet"><select value={draft.transit ? '__transit' : draft.planning?.operationId ? seaOperationPlanningChoiceKey(draft.planning) : draft.project ? '__existing' : ''} disabled={planningLoading} onChange={(event) => selectMission(event.target.value)}><option value="">{planningLoading ? 'Chargement du planning…' : 'Choisir un projet du planning'}</option><option value="__transit">Transit</option>{draft.project && !draft.planning?.operationId && !draft.transit && <option value="__existing">{draft.project}</option>}{draft.planning?.operationId && !selectedWindowMission && <option value={seaOperationPlanningChoiceKey(draft.planning)}>{retainedPlanningLabel(draft)}</option>}{planning?.choices.map((choice) => <option key={seaOperationPlanningChoiceKey(choice)} value={seaOperationPlanningChoiceKey(choice)}>{seaOperationPlanningChoiceLabel(choice)}</option>)}</select></Field>
             {planning && <p className="so-help so-wide">Projets planifiés du {planningDateLabel(planning.startDate)} au {planningDateLabel(planning.endDate)} inclus.</p>}
             {planningError && <p className="so-planning-status so-wide" role="alert">{planningError}</p>}
             {!planningLoading && !planningError && planning?.choices.length === 0 && <p className="so-planning-status so-wide" role="status">Aucun projet planifié entre aujourd’hui et J+3 inclus.</p>}
-            <Field label="Client" wide><input readOnly={linkedToPlanning && Boolean(selectedMission?.client)} value={draft.client} onChange={(event) => update({ client: event.target.value })} /></Field>
-            <Field label="Coordonnées du client" wide><input readOnly={linkedToPlanning && Boolean(selectedMission?.clientContact)} value={draft.clientContact} onChange={(event) => update({ clientContact: event.target.value })} /></Field>
-            <Field label="Description de l’opération" wide><textarea rows={2} readOnly={linkedToPlanning && Boolean(selectedMission?.description)} value={draft.description} onChange={(event) => update({ description: event.target.value })} /></Field>
+            <Field label="Client" wide><select value={selectedClientValue} disabled={clientLocked} onChange={event => selectClient(event.target.value)}><option value="">Choisir un client</option>{clientLocked && draft.client && <option value="__retained">{draft.client}</option>}{!clientLocked && draft.client && !draft.clientId && <option value="__existing">{draft.client}</option>}{!clientLocked && draft.clientId && !data?.clients?.some(item => item.id === draft.clientId) && <option value={draft.clientId}>{draft.client}</option>}{data?.clients?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+            {clientLocked && <p className="so-help so-wide">{recordedClientLocked ? 'Client conservé avec la fiche.' : 'Client défini par le projet sélectionné.'}</p>}
+            <Field label="Coordonnées du client" wide><input value={draft.clientContact} onChange={(event) => update({ clientContact: event.target.value })} /></Field>
+            <Field label="Description de l’opération" wide><textarea rows={2} value={draft.description} onChange={(event) => update({ description: event.target.value })} /></Field>
           </div>
-          {linkedToPlanning && <p className="so-help">Données du projet et du planning sélectionnés. Complétez les informations absentes du planning. Un changement de mission réinitialise les contrôles et la décision.</p>}
+          {linkedToPlanning && <p className="so-help">Données du projet et du planning sélectionnés. Les informations du voyage restent modifiables. Un changement de mission réinitialise les contrôles et la décision.</p>}
+          {draft.transit && <p className="so-help">Transit : renseignez librement le client, le navire et le voyage.</p>}
           <div className="so-armament-personnel-heading"><h3>Personnel spécial à embarquer</h3><button className="so-secondary sp-button sp-button--secondary" onClick={() => update({ specialPersonnel: [...draft.specialPersonnel, { name: '', phone: '' }] })}><Plus size={15} />Ajouter une personne</button></div>{draft.specialPersonnel.map((person, index) => <div className="so-contact" key={index}><Field label={`Prénom NOM ${index + 1}`}><input value={person.name} onChange={(event) => update({ specialPersonnel: draft.specialPersonnel.map((row, i) => i === index ? { ...row, name: event.target.value } : row) })} /></Field><Field label={`Téléphone ${index + 1}`}><input type="tel" value={person.phone} onChange={(event) => update({ specialPersonnel: draft.specialPersonnel.map((row, i) => i === index ? { ...row, phone: event.target.value } : row) })} /></Field><button type="button" className="so-secondary sp-button sp-button--secondary" aria-label={`Retirer la personne ${index + 1}`} onClick={() => update({ specialPersonnel: draft.specialPersonnel.filter((_, i) => i !== index) })}><Trash2 size={16} /></button></div>)}
           <h3>Demande d’attribution de poste à quai (DAPAQ)</h3><details className="so-armament-help"><summary>Consignes DAPAQ</summary><p className="so-help">Caen, Le Havre, Dieppe et Rouen : préparation dans NOMADE par l’Armement ou le Capitaine. Autres ports : transmission par mail à la Capitainerie.</p></details><div className="so-grid so-armament-grid"><Field label="Mode de déclaration"><ChoiceControl label="Mode de déclaration" value={draft.dapaq.method} onChange={(method) => update({ dapaq: { ...draft.dapaq, method: method as SeaOperationPayload['dapaq']['method'], preparedBy: method === 'nomade' && draft.dapaq.preparedBy === 'agent' ? '' : draft.dapaq.preparedBy } })} options={[{ value: 'nomade', label: 'NOMADE' }, { value: 'email', label: 'Mail à la Capitainerie' }]} /></Field><Field label="Préparée par"><ChoiceControl label="Préparée par" value={draft.dapaq.preparedBy} onChange={(preparedBy) => update({ dapaq: { ...draft.dapaq, preparedBy: preparedBy as SeaOperationPayload['dapaq']['preparedBy'] } })} options={[{ value: 'armament', label: 'Armement' }, { value: 'captain', label: 'Capitaine' }, ...(draft.dapaq.method !== 'nomade' ? [{ value: 'agent', label: 'Agent consignataire' }] : [])]} /></Field>{draft.dapaq.preparedBy === 'agent' && <><Field label="Nom de l’agent consignataire"><input value={draft.dapaq.agentName} onChange={(event) => update({ dapaq: { ...draft.dapaq, agentName: event.target.value } })} /></Field><Field label="Coordonnées de l’agent"><input value={draft.dapaq.agentContact} onChange={(event) => update({ dapaq: { ...draft.dapaq, agentContact: event.target.value } })} /></Field></>}</div>
-          <h3>Navire et voyage</h3><div className="so-grid so-armament-grid"><Field label="Navire"><select disabled={linkedToPlanning} value={draft.vessel.id ?? ''} onChange={(event) => { const vessel = data?.vessels.find((item) => item.id === Number(event.target.value)); vesselUpdate({ id: vessel ? String(vessel.id) : '', name: vessel?.name || '', registrationImo: vessel?.registrationImo || '' }); }}><option value="">Choisir un navire</option>{data?.vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></Field><Field label="Immatriculation / IMO"><input readOnly={linkedToPlanning && Boolean(selectedMission?.vessel.registrationImo)} value={draft.vessel.registrationImo} onChange={(event) => vesselUpdate({ registrationImo: event.target.value })} /></Field><Field label="Prénom NOM du Capitaine" wide>{linkedToPlanning && (selectedMission?.captains.length || 0) > 1 ? <select value={draft.planning?.captainPersonId || ''} onChange={(event) => selectCaptain(event.target.value)}><option value="">Choisir le Capitaine affecté</option>{selectedMission?.captains.map((captain) => <option value={captain.personId} key={captain.personId}>{captain.name} · {captain.functionLabel}</option>)}</select> : <input readOnly={linkedToPlanning} value={draft.vessel.captainName} onChange={(event) => vesselUpdate({ captainName: event.target.value })} />}</Field>{linkedToPlanning && selectedMission?.captains.length === 0 && <p className="so-help" role="status">Aucun Capitaine confirmé n’est affecté à ce navire à cette date.</p>}<Field label="Port de départ"><input readOnly={linkedToPlanning && Boolean(selectedMission?.vessel.departurePort)} value={draft.vessel.departurePort} onChange={(event) => vesselUpdate({ departurePort: event.target.value })} /></Field><Field label="Quai de départ"><input value={draft.vessel.departureQuay} onChange={(event) => vesselUpdate({ departureQuay: event.target.value })} /></Field><Field label="Port d’arrivée"><input readOnly={linkedToPlanning && Boolean(selectedMission?.vessel.arrivalPort)} value={draft.vessel.arrivalPort} onChange={(event) => vesselUpdate({ arrivalPort: event.target.value })} /></Field><Field label="Quai d’arrivée"><input value={draft.vessel.arrivalQuay} onChange={(event) => vesselUpdate({ arrivalQuay: event.target.value })} /></Field><Field label="ETD · date et heure de départ"><input type="datetime-local" value={draft.vessel.etd} onChange={(event) => vesselUpdate({ etd: event.target.value })} /></Field><Field label="ETA · date et heure d’arrivée"><input type="datetime-local" value={draft.vessel.eta} onChange={(event) => vesselUpdate({ eta: event.target.value })} /></Field></div><p className="so-help">Les horaires sont saisis dans l’heure locale de l’opération.</p>
+          <h3>Navire et voyage</h3><div className="so-grid so-armament-grid">
+            <Field label="Navire"><select value={draft.vessel.id ?? ''} onChange={event => { const vessel = data?.vessels.find(item => String(item.id) === event.target.value); vesselUpdate({ id: vessel ? String(vessel.id) : '', name: vessel?.name || '', registrationImo: vessel?.registrationImo || '' }); }}><option value="">Choisir un navire</option>{sortedVessels.map(vessel => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></Field>
+            <Field label="Immatriculation / IMO"><input readOnly={Boolean(draft.vessel.id && data?.vessels.some(item => String(item.id) === draft.vessel.id))} value={draft.vessel.registrationImo} onChange={event => vesselUpdate({ registrationImo: event.target.value })} /></Field>
+            <Field label="Prénom NOM du Capitaine" wide>{linkedToCaptainContext && (captains?.length || 0) > 1 ? <select value={captainPersonId || ''} onChange={event => selectCaptain(event.target.value)}><option value="">Choisir le Capitaine affecté</option>{captains?.map(captain => <option value={captain.personId} key={captain.personId}>{captain.name} · {captain.functionLabel}</option>)}</select> : <input readOnly={linkedToCaptainContext} value={draft.vessel.captainName} onChange={event => vesselUpdate({ captainName: event.target.value })} />}</Field>
+            {linkedToCaptainContext && contextDate && <p className="so-help so-wide">Capitaine affecté au navire le {planningDateLabel(contextDate)} · fonctions temporaires prises en compte.</p>}
+            {usesVesselContext && vesselContextLoading && <p className="so-help so-wide" role="status">Recherche du Capitaine affecté à ce navire…</p>}
+            {usesVesselContext && vesselContextError && <p className="so-help so-wide" role="alert">{vesselContextError}</p>}
+            {linkedToCaptainContext && draft.vessel.id && captains?.length === 0 && <p className="so-help so-wide" role="status">Aucun Capitaine confirmé n’est affecté à ce navire à cette date.</p>}
+            <Field label="Port de départ"><input value={draft.vessel.departurePort} onChange={event => vesselUpdate({ departurePort: event.target.value })} /></Field>
+            <Field label="Quai de départ"><input value={draft.vessel.departureQuay} onChange={event => vesselUpdate({ departureQuay: event.target.value })} /></Field>
+            <Field label="Port d’arrivée"><input value={draft.vessel.arrivalPort} onChange={event => vesselUpdate({ arrivalPort: event.target.value })} /></Field>
+            <Field label="Quai d’arrivée"><input value={draft.vessel.arrivalQuay} onChange={event => vesselUpdate({ arrivalQuay: event.target.value })} /></Field>
+            <Field label="ETD · date et heure de départ"><input type="datetime-local" value={draft.vessel.etd} onChange={event => vesselUpdate({ etd: event.target.value })} /></Field>
+            <Field label="ETA · date et heure d’arrivée"><input type="datetime-local" value={draft.vessel.eta} onChange={event => vesselUpdate({ eta: event.target.value })} /></Field>
+          </div><p className="so-help">Les horaires sont saisis dans l’heure locale de l’opération.</p>
         </section>
         <section id="sea-operation-step-1" hidden={step !== 1} className={`so-panel ${step === 1 ? 'is-active' : ''}`} aria-label="Contrôles du Capitaine">
           <div className="so-section-title"><b aria-hidden="true">2</b><div><h2 tabIndex={-1}>Contrôles avant appareillage</h2><p>Réponses préremplies : à vérifier avant signature. Toute réponse bloquante impose un NO GO.</p></div></div>
@@ -754,7 +855,7 @@ export function SeaOperationsPage() {
           <Field label="Tirant d’eau de référence (m)"><input type="number" readOnly value={referenceDraft ?? ''} /></Field>{referenceDraft == null && <p className="so-help">{signed ? 'Tirant d’eau de référence non enregistré dans cette version : indicateur UKC indisponible.' : 'Renseignez le tirant d’eau du navire dans le module Navires.'}</p>}
           <SeaOperationHydroSources />
           {step === 2 && (editable && !signed
-            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${draft.planning?.date || ''}:${draft.planning?.operationId || ''}`} waypoints={draft.waypoints} isolatedPoints={draft.locationOverlay?.points} zones={draft.locationOverlay?.zones} onMoveIsolatedPoint={moveIsolatedPoint} onDeleteIsolatedPoint={deleteIsolatedPoint} onMoveZoneVertex={moveZoneVertex} onDeleteZoneVertex={deleteZoneVertex} maxSpeedKnots={data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id)?.maxSpeedKnots} etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)} onAddWaypoint={addWaypoint} onMoveWaypoint={moveWaypoint} onDeleteWaypoint={removeWaypoint} disabled={busy || exporting} />
+            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${contextDate || ''}:${draft.planning?.operationId || 'transit'}:${draft.vessel.id}`} waypoints={draft.waypoints} isolatedPoints={draft.locationOverlay?.points} zones={draft.locationOverlay?.zones} onMoveIsolatedPoint={moveIsolatedPoint} onDeleteIsolatedPoint={deleteIsolatedPoint} onMoveZoneVertex={moveZoneVertex} onDeleteZoneVertex={deleteZoneVertex} maxSpeedKnots={data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id)?.maxSpeedKnots} etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)} onAddWaypoint={addWaypoint} onMoveWaypoint={moveWaypoint} onDeleteWaypoint={removeWaypoint} disabled={busy || exporting} />
             : <SeaOperationRouteMap waypoints={draft.waypoints} isolatedPoints={draft.locationOverlay?.points} zones={draft.locationOverlay?.zones} />)}
           <Field label="Numéro de la ou des cartes marines"><input value={draft.charts} onChange={(event) => update({ charts: event.target.value })} /></Field>
           {draft.locationOverlay && <ProjectLocationOverlayFields value={draft.locationOverlay} disabled={busy || exporting || signed || !editable}
@@ -765,7 +866,7 @@ export function SeaOperationsPage() {
           <div className="so-passage-grid" role="table" aria-label="Points de passage">
             {draft.waypoints.map((point, index) => {
               const legacyEta = point.eta && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(point.eta);
-              const operationDate = draft.planning?.date || planningDate;
+              const operationDate = contextDate || planningDate;
               const proposedEta = legacyEta && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(point.eta) && /^\d{4}-\d{2}-\d{2}$/.test(operationDate) ? `${operationDate}T${point.eta}` : '';
               const navigation = passagePlanCellData(point, { allowLiveRadio: !signed, weatherMatrix: draft.vessel.weatherMatrix });
               return <div className={`so-passage-row${signed || !editable ? ' is-readonly' : ''}`} role="row" key={point.id}>
@@ -774,7 +875,7 @@ export function SeaOperationsPage() {
                 <SeaOperationUkcField payload={draft} point={point} index={index} disabled={!editable || signed || busy || exporting} readOnly={signed || !editable}
                   onChange={patch => waypointUpdate(index, patch)} status={signed || ukcRequests.client !== client ? undefined : ukcRequests.statuses[ukcRequestKey(seaOperationUkcReference(draft), point)]} />
                 <div role="cell" className="so-passage-field is-vhf"><span>Contacts VHF</span><p>{navigation.vhf.split('\n\n').map((contact) => contact.replace(/\n/g, ' · ')).join('\n')}</p></div>
-                {!signed && editable && <div role="cell" className="so-passage-field is-weather"><span>Météo à l’ETA</span><SeaOperationWeatherCard point={point} matrix={draft.vessel.weatherMatrix} compact variant="editor" requestStatus={(weatherRequests.client === client ? weatherRequests.statuses[weatherRequestKey(draft.planning?.projectId || '', point)] : undefined) || initialSeaOperationWeatherStatus(draft.planning?.projectId || '', point)} /></div>}
+                {!signed && editable && <div role="cell" className="so-passage-field is-weather"><span>Météo à l’ETA</span><SeaOperationWeatherCard point={point} matrix={draft.vessel.weatherMatrix} compact variant="editor" requestStatus={(weatherRequests.client === client ? weatherRequests.statuses[weatherRequestKey(seaOperationWeatherReference(draft), point)] : undefined) || initialSeaOperationWeatherStatus(seaOperationWeatherReference(draft), point)} /></div>}
                 <div role="cell" className="so-passage-field is-eta"><span>ETA · date et heure</span>{signed || !editable
                   ? <p className="so-passage-eta-summary" aria-label={`ETA · date et heure · point ${index + 1}`}>{navigation.eta}{point.eta.includes('T') && <small>Heure de Paris</small>}</p>
                   : <><SeaOperationEtaPicker inline label={`ETA · date et heure · point ${index + 1}`} value={point.eta} disabled={busy || exporting} onChange={(eta) => { if (eta !== point.eta) waypointUpdate(index, { eta }); }} />{point.etaMode === 'automatic' && <small className="so-help">Horaire calculé automatiquement · modifiable</small>}{index > 0 && point.etaMode !== 'automatic' && (point.eta || point.etaMode === 'manual') && <button type="button" className="sp-button sp-button--secondary so-secondary" disabled={busy || exporting} aria-label={`Reprendre le calcul de l’ETA du point ${index + 1}`} onClick={() => waypointUpdate(index, { etaMode: 'automatic' })}>Reprendre le calcul</button>}{legacyEta && <small className="so-help">Ancienne ETA : {point.eta}. Renseignez une date et une heure pour la remplacer.</small>}{proposedEta && <button type="button" className="sp-button sp-button--secondary" aria-label={`Appliquer la date de l’opération à l’ETA du point ${index + 1}`} onClick={() => waypointUpdate(index, { eta: proposedEta })}>Utiliser le {operationDate.split('-').reverse().join('/')} à {point.eta}</button>}</>}</div>
@@ -785,18 +886,18 @@ export function SeaOperationsPage() {
             {draft.waypoints.length === 0 && <div className="so-waypoint-empty" role="row"><div role="cell">Ajoutez le premier point de passage.</div></div>}
           </div>
           <button type="button" className="so-secondary sp-button sp-button--secondary" disabled={exporting} onClick={() => addWaypoint()}><Plus size={16} />Ajouter un point de passage</button>
-          <div hidden={signed || !editable}><SeaOperationWeatherPanel client={client} projectId={draft.planning?.projectId || ''} waypoints={draft.waypoints} preview={previewMode} active={editing && editable && !signed} readOnly={signed || !editable} validatedAt={record?.signedAt} observations={record?.weatherObservations} compact onWeatherLoaded={retainWeather} onStatusChange={receiveWeatherStatuses} /></div>
+          <div hidden={signed || !editable}><SeaOperationWeatherPanel client={client} projectId={draft.planning?.projectId || ''} transit={draft.transit ? { date: draft.transit.date, vesselId: draft.vessel.id } : undefined} waypoints={draft.waypoints} preview={previewMode} active={editing && editable && !signed} readOnly={signed || !editable} validatedAt={record?.signedAt} observations={record?.weatherObservations} compact onWeatherLoaded={retainWeather} onStatusChange={receiveWeatherStatuses} /></div>
           <SeaOperationUkcPanel client={client} payload={draft} active={editing && editable && !signed} readOnly={signed || !editable} preview={previewMode}
             onUkcLoaded={retainUkc} onStatusChange={receiveUkcStatuses} />
         </section>
         <section id="sea-operation-step-3" hidden={step !== 3} className={`so-panel so-decision-panel ${step === 3 ? 'is-active' : ''}`} aria-label="Décision du Capitaine"><div className="so-section-title"><b aria-hidden="true">4</b><div><h2 tabIndex={-1}>Décision du Capitaine</h2><p>Le Capitaine consigne sa décision après examen des conditions de la mission.</p></div></div>
           <div className={`so-assessment ${assessment.blockingChecks.length ? 'is-nogo' : 'is-pending'}`}><AlertTriangle size={22} /><div><strong>{assessment.blockingChecks.length ? `NO GO imposé · ${assessment.blockingChecks.length} contrôle(s) bloquant(s)` : 'Vérification de la préparation'}</strong><p>Toute réponse Non à un contrôle bloquant impose un NO GO. Le Capitaine doit trouver une solution et justifier toute situation empêchant l’appareillage.</p>{assessment.blockingChecks.length > 0 && <ul>{assessment.blockingChecks.map((check) => <li key={check.id}>{check.label}</li>)}</ul>}</div></div>
-          <Field label="Décision"><ChoiceControl label="Décision" value={draft.decision} onChange={(decision) => update({ decision: decision as SeaOperationPayload['decision'] })} options={[{ value: 'GO', label: 'GO · la mission peut être réalisée', disabled: assessment.blockingChecks.length > 0 }, { value: 'NO_GO', label: 'NO GO · la mission ne peut être réalisée' }]} /></Field><Field label="Risques identifiés / informations à transmettre à l’Armement"><textarea rows={2} value={draft.risks} onChange={(event) => update({ risks: event.target.value })} /></Field><div className="so-grid so-decision-identity-grid"><Field label="Prénom NOM du Capitaine signataire"><input readOnly={linkedToPlanning} value={draft.signature.captainName} onChange={(event) => update({ signature: { ...draft.signature, captainName: event.target.value } })} /></Field><Field label="Date de la décision"><input type="date" value={draft.signature.date} onChange={(event) => update({ signature: { ...draft.signature, date: event.target.value } })} /></Field><Field label="Lieu de la décision"><input value={draft.signature.place} onChange={(event) => update({ signature: { ...draft.signature, place: event.target.value } })} /></Field></div>{linkedToPlanning && <div className="so-signature-preview"><strong>Signature du Capitaine</strong>{(signed ? record?.signatureUrl : captainSignature?.url) ? <img src={signed ? record?.signatureUrl : captainSignature?.url} alt={`Signature de ${draft.signature.captainName}`} /> : <p className="so-help">{signed ? 'Aucune image de signature attachée à cette fiche.' : signatureError || (signatureLoading ? 'Chargement de la signature…' : selectedCaptain?.hasSignature ? 'La signature RH est indisponible. Rechargez la fiche avant de signer.' : 'Aucune signature RH active enregistrée pour ce Capitaine.')}</p>}<small>{signed ? 'Signature conservée avec la décision.' : 'La signature est apposée lors de la confirmation de la décision par le Capitaine.'}</small></div>}<label className="so-checkbox so-attestation"><input type="checkbox" checked={draft.signature.acknowledged} onChange={(event) => update({ signature: { ...draft.signature, acknowledged: event.target.checked } })} />En qualité de Capitaine, je confirme les informations renseignées et signe cette décision.</label>
+          <Field label="Décision"><ChoiceControl label="Décision" value={draft.decision} onChange={(decision) => update({ decision: decision as SeaOperationPayload['decision'] })} options={[{ value: 'GO', label: 'GO · la mission peut être réalisée', disabled: assessment.blockingChecks.length > 0 }, { value: 'NO_GO', label: 'NO GO · la mission ne peut être réalisée' }]} /></Field><Field label="Risques identifiés / informations à transmettre à l’Armement"><textarea rows={2} value={draft.risks} onChange={(event) => update({ risks: event.target.value })} /></Field><div className="so-grid so-decision-identity-grid"><Field label="Prénom NOM du Capitaine signataire"><input readOnly={linkedToCaptainContext} value={draft.signature.captainName} onChange={(event) => update({ signature: { ...draft.signature, captainName: event.target.value } })} /></Field><Field label="Date de la décision"><input type="date" value={draft.signature.date} onChange={(event) => update({ signature: { ...draft.signature, date: event.target.value } })} /></Field><Field label="Lieu de la décision"><input value={draft.signature.place} onChange={(event) => update({ signature: { ...draft.signature, place: event.target.value } })} /></Field></div>{linkedToCaptainContext && <div className="so-signature-preview"><strong>Signature du Capitaine</strong>{(signed ? record?.signatureUrl : captainSignature?.url) ? <img src={signed ? record?.signatureUrl : captainSignature?.url} alt={`Signature de ${draft.signature.captainName}`} /> : <p className="so-help">{signed ? 'Aucune image de signature attachée à cette fiche.' : signatureError || (signatureLoading ? 'Chargement de la signature…' : selectedCaptain?.hasSignature ? 'La signature RH est indisponible. Rechargez la fiche avant de signer.' : 'Aucune signature RH active enregistrée pour ce Capitaine.')}</p>}<small>{signed ? 'Signature conservée avec la décision.' : 'La signature est apposée lors de la confirmation de la décision par le Capitaine.'}</small></div>}<label className="so-checkbox so-attestation"><input type="checkbox" checked={draft.signature.acknowledged} onChange={(event) => update({ signature: { ...draft.signature, acknowledged: event.target.checked } })} />En qualité de Capitaine, je confirme les informations renseignées et signe cette décision.</label>
         </section>
       </fieldset>
           {record && step === 2 && <SeaOperationRecordedWeather record={record} hasUnsavedChanges={dirty} loading={historyLoading} onRefresh={() => void refreshWeatherHistory()} />}
           {step === 2 && <SeaOperationRadioPanel waypoints={draft.waypoints} />}
-          {step === 2 && <SeaOperationChartsPanel client={client} projectId={draft.planning?.projectId || ''} waypoints={draft.waypoints} charts={draft.charts} onChartsChange={(charts) => update({ charts })} canEdit={editable && !busy && !signed} preview={previewMode} active />}
+          {step === 2 && <SeaOperationChartsPanel client={client} projectId={draft.planning?.projectId || ''} transit={draft.transit ? { date: draft.transit.date, vesselId: draft.vessel.id } : undefined} waypoints={draft.waypoints} charts={draft.charts} onChartsChange={charts => { if (canEditMap()) update({ charts }); }} canEdit={editable && !busy && !signed} preview={previewMode} active />}
           {step === 3 && <div className="so-signature-footer">{signed ? <p><CheckCircle2 size={18} />Décision signée par {record.signedByName} le {formatDate(record.signedAt)}. Cette fiche est figée.</p> : <p>{canSign ? 'La signature enregistre votre identité et fige définitivement cette fiche.' : 'La signature est réservée au compte réel du Capitaine affecté au navire. Enregistrez la préparation pour lui transmettre la fiche.'}</p>}</div>}
         </div>
         <div className="so-editor-document-pane" hidden={compactLayout && mobilePane === 'form'}><SeaOperationPreview draft={draft} record={record} signatureImageUrl={captainSignature?.url} hasUnsavedChanges={dirty} onChangeStep={changeStep} /></div>

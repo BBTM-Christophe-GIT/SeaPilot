@@ -63,9 +63,25 @@ def identifier(value):
     return isinstance(value, str) and re.fullmatch(r"[1-9]\d{0,18}", value) is not None and int(value) <= 9223372036854775807
 
 
+def transit_context(value):
+    if not isinstance(value, dict) or set(value) != {"date", "vesselId"} or not identifier(value.get("vesselId")):
+        return False
+    date = value.get("date")
+    try:
+        return isinstance(date, str) and re.fullmatch(r"[1-9]\d{3}-\d{2}-\d{2}", date) is not None and datetime.fromisoformat(date).date().isoformat() == date
+    except ValueError:
+        return False
+
+
 def validate_input(value):
-    if not isinstance(value, dict) or not all(identifier(value.get(key)) for key in ("projectId", "vesselId")):
+    if not isinstance(value, dict) or not identifier(value.get("vesselId")):
         raise ValueError("invalid identifiers")
+    transit = value.get("transit")
+    if "transit" in value:
+        if value.get("projectId") != "" or not transit_context(transit) or transit["vesselId"] != value["vesselId"]:
+            raise ValueError("invalid Transit context")
+    elif not identifier(value.get("projectId")):
+        raise ValueError("invalid project")
     if not isinstance(value.get("pointId"), str) or not re.fullmatch(r"[A-Za-z0-9._:-]{1,100}", value["pointId"]):
         raise ValueError("invalid point")
     if not finite(value.get("latitude")) or not finite(value.get("longitude")) or abs(value["latitude"]) > 90 or abs(value["longitude"]) > 180:
@@ -73,7 +89,10 @@ def validate_input(value):
     if not finite(value.get("draftMeters")) or not 0 < value["draftMeters"] <= 50:
         raise ValueError("invalid draught")
     eta = paris_eta(value.get("eta"))
-    return {key: value[key] for key in ("projectId", "pointId", "vesselId", "latitude", "longitude", "eta", "draftMeters")}, eta
+    point = {key: value[key] for key in ("projectId", "pointId", "vesselId", "latitude", "longitude", "eta", "draftMeters")}
+    if transit is not None:
+        point["transit"] = {"date": transit["date"], "vesselId": transit["vesselId"]}
+    return point, eta
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -117,6 +136,10 @@ class SupabaseBackend:
         return backend_json(f"{self.url}/rest/v1/rpc/sea_operation_ukc_context", self.key, self.jwt,
                             {"p_project_id": project_id, "p_vessel_id": vessel_id})
 
+    def transit_context(self, date, vessel_id):
+        return backend_json(f"{self.url}/rest/v1/rpc/sea_operation_transit_ukc_context", self.key, self.jwt,
+                            {"p_date": date, "p_vessel_id": vessel_id})
+
 
 def contains(bounds, latitude, longitude):
     if not isinstance(bounds, dict) or any(not finite(bounds.get(key)) for key in ("west", "east", "south", "north")):
@@ -136,6 +159,7 @@ def build_estimate(point, eta, provider, fetched_at):
         raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
     source, cell, water = (provider.get(key) for key in ("source", "cell", "waterLevel"))
     result = {"version": 1, **{key: point[key] for key in ("projectId", "pointId", "vesselId", "latitude", "longitude", "draftMeters")},
+              **({"transit": point["transit"]} if "transit" in point else {}),
               "etaUtc": iso(eta), "fetchedAt": iso(fetched_at), "status": "unavailable", "message": "Données Copernicus indisponibles à cette position et cette ETA.",
               "source": source, "cell": cell, "waterLevel": water, "estimate": None}
     if source is not None:
@@ -226,8 +250,8 @@ class UkcGateway:
             actor = backend.user()
             if not actor:
                 raise UkcError(401, "UKC_AUTHENTICATION_REQUIRED")
-            context = backend.context(point["projectId"], point["vesselId"])
-            if not isinstance(context, dict) or context.get("projectId") != point["projectId"] or context.get("vesselId") != point["vesselId"]:
+            context = backend.transit_context(point["transit"]["date"], point["vesselId"]) if "transit" in point else backend.context(point["projectId"], point["vesselId"])
+            if not isinstance(context, dict) or context.get("projectId") != point["projectId"] or context.get("vesselId") != point["vesselId"] or context.get("transit") != point.get("transit"):
                 raise UkcError(403, "UKC_ACCESS_DENIED")
             canonical = context.get("draftMeters")
             if not finite(canonical) or not 0 < canonical <= 50:
@@ -246,6 +270,7 @@ class UkcGateway:
             stamp = datetime.fromtimestamp(current, timezone.utc)
             if eta < stamp:
                 return 200, {"version": 1, **{key: point[key] for key in ("projectId", "pointId", "vesselId", "latitude", "longitude", "draftMeters")},
+                             **({"transit": point["transit"]} if "transit" in point else {}),
                              "etaUtc": iso(eta), "fetchedAt": iso(stamp), "status": "unavailable", "message": "L’ETA est passée : aucune nouvelle prévision UKC n’est calculée. Les captures enregistrées restent conservées.",
                              "source": None, "cell": None, "waterLevel": None, "estimate": None}
             username, password = self.env.get("COPERNICUSMARINE_SERVICE_USERNAME"), self.env.get("COPERNICUSMARINE_SERVICE_PASSWORD")

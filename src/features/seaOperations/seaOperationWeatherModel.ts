@@ -1,5 +1,8 @@
+export interface SeaOperationTransitRequestContext { date: string; vesselId: string }
+
 export interface SeaOperationWeatherInput {
   projectId: string;
+  transit?: SeaOperationTransitRequestContext;
   pointId: string;
   latitude: number;
   longitude: number;
@@ -24,6 +27,19 @@ export interface SeaOperationWaypointWeather {
 }
 
 export const SEA_METEO_FRANCE_SOURCE_URL = 'https://www.data.gouv.fr/datasets/paquets-de-modele-de-vagues-mfwam-resolution-0-025deg';
+
+/** The explicit business day and real vessel replace a project ID for a Transit request. */
+export function isSeaOperationTransitRequestContext(value: unknown): value is SeaOperationTransitRequestContext {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const context = value as Record<string, unknown>;
+  return Object.keys(context).length === 2 && typeof context.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(context.date)
+    && Number(context.date.slice(0, 4)) >= 1000 && Number.isFinite(Date.parse(context.date)) && new Date(context.date).toISOString().slice(0, 10) === context.date
+    && typeof context.vesselId === 'string' && /^[1-9]\d{0,18}$/.test(context.vesselId) && BigInt(context.vesselId) <= 9223372036854775807n;
+}
+export function sameSeaOperationTransitContext(a: unknown, b: unknown): boolean {
+  return a === undefined ? b === undefined : isSeaOperationTransitRequestContext(a) && isSeaOperationTransitRequestContext(b)
+    && a.date === b.date && a.vesselId === b.vesselId;
+}
 
 export function isSeaOperationWaypointWeather(value: unknown): value is SeaOperationWaypointWeather {
   if (!value || typeof value !== 'object') return false;
@@ -83,13 +99,17 @@ export function seaOperationEtaUtc(eta: string): string {
 
 export function validateSeaOperationWeatherInput(value: unknown): SeaOperationWeatherInput {
   const input = value && typeof value === 'object' ? value as Record<string, unknown> : {};
-  if (typeof input.projectId !== 'string' || !/^[1-9][0-9]{0,18}$/.test(input.projectId) || BigInt(input.projectId) > 9223372036854775807n
+  const validContext = input.transit === undefined
+    ? typeof input.projectId === 'string' && /^[1-9][0-9]{0,18}$/.test(input.projectId) && BigInt(input.projectId) <= 9223372036854775807n
+    : input.projectId === '' && isSeaOperationTransitRequestContext(input.transit);
+  if (!validContext
     || typeof input.pointId !== 'string' || !/^[a-zA-Z0-9._:-]{1,100}$/.test(input.pointId)
     || typeof input.latitude !== 'number' || !Number.isFinite(input.latitude) || Math.abs(input.latitude) > 90
     || typeof input.longitude !== 'number' || !Number.isFinite(input.longitude) || Math.abs(input.longitude) > 180
     || typeof input.eta !== 'string') throw new Error('Le projet, les coordonnées ou l’ETA du point sont invalides.');
   seaOperationEtaUtc(input.eta);
-  return { projectId: input.projectId, pointId: input.pointId, latitude: input.latitude, longitude: input.longitude, eta: input.eta };
+  return { projectId: input.projectId as string, ...(input.transit === undefined ? {} : { transit: { ...input.transit as SeaOperationTransitRequestContext } }),
+    pointId: input.pointId, latitude: input.latitude, longitude: input.longitude, eta: input.eta };
 }
 
 type WeatherKind = 'wind' | 'waves';

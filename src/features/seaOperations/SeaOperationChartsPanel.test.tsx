@@ -16,6 +16,19 @@ const load = () => act(() => new Promise((resolve) => setTimeout(resolve, 750)))
 beforeEach(() => vi.resetAllMocks());
 
 describe('SHOM charts in Passage Plan', () => {
+  it('searches Transit charts without a commercial project and guards changed vessel context', async () => {
+    const transit = { date: '2026-10-27', vesselId: '1' }, onChartsChange = vi.fn();
+    let resolveOld!: (value: SeaOperationPointCharts) => void;
+    vi.mocked(fetchSeaOperationPointCharts).mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve; })).mockResolvedValue({ ...lookup, projectId: '', transit: { ...transit, vesselId: '2' } });
+    const view = render(<SeaOperationChartsPanel client={client} projectId="" transit={transit} waypoints={[point]} charts="" onChartsChange={onChartsChange} />);
+    await load();
+    expect(fetchSeaOperationPointCharts).toHaveBeenCalledWith(client, expect.objectContaining({ projectId: '', transit }), expect.anything());
+    view.rerender(<SeaOperationChartsPanel client={client} projectId="" transit={{ ...transit, vesselId: '2' }} waypoints={[point]} charts="" onChartsChange={onChartsChange} />);
+    await act(async () => resolveOld({ ...lookup, projectId: '', transit }));
+    expect(onChartsChange).not.toHaveBeenCalled();
+    await load();
+    expect(onChartsChange).toHaveBeenCalledExactlyOnceWith('7399');
+  });
   it('automatically adds identified numbers with dashes without requiring an ETA or a click', async () => {
     vi.mocked(fetchSeaOperationPointCharts).mockResolvedValue(lookup);
     const onChartsChange = vi.fn();

@@ -71,6 +71,42 @@ class GatewayTests(unittest.TestCase):
             self.assertEqual(self.call()[0], status)
         self.provider.assert_not_called()
 
+    def transit_input(self):
+        return {**self.input, "projectId": "", "transit": {"date": "2026-10-27", "vesselId": self.input["vesselId"]}}
+
+    def test_transit_uses_real_vessel_context_and_reidentifies_cached_physics(self):
+        self.call()
+        point = self.transit_input()
+        self.backend.transit_context.side_effect = lambda date, vessel: {"projectId": "", "vesselId": vessel, "transit": {"date": date, "vesselId": vessel}, "draftMeters": 2}
+        status, result = self.call(point)
+        self.assertEqual(status, 200)
+        self.assertEqual(result["transit"], point["transit"])
+        self.assertEqual(result["projectId"], "")
+        self.backend.transit_context.assert_called_once_with("2026-10-27", point["vesselId"])
+        self.assertEqual(self.backend.context.call_count, 1)
+        self.assertEqual(self.provider.call_count, 1)
+        self.backend.transit_context.side_effect = UkcError(403, "UKC_ACCESS_DENIED")
+        self.assertEqual(self.call(point)[0], 403)
+
+    def test_transit_rejects_missing_mixed_or_invalid_context_before_backend(self):
+        point = self.transit_input()
+        for patch in ({"transit": None}, {"transit": {"date": "2026-02-30", "vesselId": "1"}},
+                      {"transit": {"date": "2026-10-27", "vesselId": "2"}}, {"projectId": "2"}, {"transit": {"date": "2026-10-27", "vesselId": True}}):
+            with self.subTest(patch=patch):
+                self.assertEqual(self.call({**point, **patch})[0], 400)
+        self.assertEqual(self.call({**self.input, "projectId": ""})[0], 400)
+        self.backend.user.assert_not_called()
+        self.provider.assert_not_called()
+
+    def test_transit_verifies_context_and_canonical_draft_before_provider(self):
+        point = self.transit_input()
+        valid = {"projectId": "", "vesselId": "1", "transit": point["transit"], "draftMeters": 2}
+        for patch, expected in (({"transit": {**point["transit"], "date": "2026-10-28"}}, 403),
+                                ({"vesselId": "2"}, 403), ({"projectId": "2"}, 403), ({"draftMeters": 3}, 409)):
+            self.backend.transit_context.return_value = {**valid, **patch}
+            self.assertEqual(self.call(point)[0], expected)
+        self.provider.assert_not_called()
+
     def test_does_not_pass_request_urls_or_supplied_credentials_to_sdk(self):
         self.call({**self.input, "providerUrl": "https://other.example", "username": "caller", "password": "caller"})
         self.provider.assert_called_once_with(49.65, -1.62, FIXTURE["expected"]["etaUtc"], ENV["COPERNICUSMARINE_SERVICE_USERNAME"], ENV["COPERNICUSMARINE_SERVICE_PASSWORD"])

@@ -13,7 +13,7 @@ import { seaOperationEtaUtc, type SeaOperationWeatherInput, type SeaOperationWay
 // Mock only authenticated RPC/provider boundaries and unrelated heavyweight maps.
 vi.mock('./seaOperationQueries', () => ({
   fetchSeaOperationData: vi.fn(), fetchSeaOperationDetail: vi.fn(), fetchSeaOperationPlanning: vi.fn(),
-  fetchSeaOperationCaptainSignature: vi.fn(), loadSeaOperationSignature: vi.fn(), saveSeaOperation: vi.fn(),
+  fetchSeaOperationCaptainSignature: vi.fn(), fetchSeaOperationVesselContext: vi.fn(), fetchSeaOperationVesselCaptainSignature: vi.fn(), loadSeaOperationSignature: vi.fn(), saveSeaOperation: vi.fn(),
   signSeaOperation: vi.fn(), fetchSeaOperationWeatherObservations: vi.fn(), reviseSeaOperation: vi.fn(), deleteSeaOperation: vi.fn(),
 }));
 vi.mock('./seaOperationWeatherQueries', () => ({ fetchSeaOperationWaypointWeather: vi.fn() }));

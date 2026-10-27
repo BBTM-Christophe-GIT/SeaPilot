@@ -20,6 +20,13 @@ const input = { projectId: '1', pointId: 'p1', latitude: 49.65, longitude: -1.62
 beforeEach(() => vi.resetAllMocks());
 
 describe('forecast capture before captain validation', () => {
+  it('fetches and retains weather for a real vessel/day Transit without a project identifier', async () => {
+    const draft = payload(); delete draft.planning; draft.transit = { date: '2026-10-23', captainPersonId: '3' }; draft.vessel.id = '20';
+    vi.mocked(fetchSeaOperationWaypointWeather).mockImplementation(async (_client, input) => forecast(input));
+    const captured = await captureSeaOperationValidationWeather(client, draft, { now });
+    expect(fetchSeaOperationWaypointWeather).toHaveBeenCalledWith(client, { ...input, projectId: '', transit: { date: '2026-10-23', vesselId: '20' } }, { preview: undefined, signal: undefined });
+    expect(captured.waypoints[0].weather?.wind?.speedKnots).toBe(12); expect(draft.waypoints[0].weather).toBeUndefined();
+  });
   it('fills a previously unavailable forecast on draft save while keeping recorded values without another request', async () => {
     const draft = payload();
     draft.waypoints[0].weather = { ...forecast(input), wind: null, waves: null, windMessage: 'Hors horizon.', wavesMessage: 'Hors horizon.' };

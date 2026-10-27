@@ -65,6 +65,10 @@ export interface SeaOperationPayload {
   locationOverlay?: ProjectLocationOverlay;
   /** Optional for compatibility with forms prepared before Planning integration. */
   planning?: { date: string; operationId: string; projectId: string; captainPersonId: string };
+  /** Standalone transit: the selected business day identifies the real vessel/captain assignment. */
+  transit?: { date: string; captainPersonId: string };
+  /** An operational client chosen from the company catalogue when no project client is defined. */
+  clientId?: string;
   project: string;
   client: string;
   clientContact: string;
@@ -238,6 +242,20 @@ export function newSeaOperation(): SeaOperationPayload {
   return draft;
 }
 
+/** Transit is a virtual choice, never a synthetic Projects row or project identifier. */
+export function createTransitSeaOperation(date: string = seaOperationToday()): SeaOperationPayload {
+  return { ...newSeaOperation(), project: 'Transit', transit: { date, captainPersonId: '' } };
+}
+
+/** A changed ETD does not silently change the business day used for captain permissions. */
+export function seaOperationContextDate(payload: Pick<SeaOperationPayload, 'planning' | 'transit'>): string | undefined {
+  return payload.transit?.date ?? payload.planning?.date;
+}
+
+export function seaOperationProjectId(payload: Pick<SeaOperationPayload, 'planning' | 'transit'>): string | undefined {
+  return payload.transit ? '' : payload.planning?.projectId;
+}
+
 export function isSeaOperationCheckActive(check: SeaOperationCheck, payload: SeaOperationPayload): boolean {
   return !check.applicability || payload.applicability[check.applicability] === 'yes';
 }
@@ -260,11 +278,18 @@ function hasStringFields(value: unknown, fields: readonly string[]): value is Re
   return isObject(value) && fields.every((field) => typeof value[field] === 'string');
 }
 function isAnswer(value: unknown): value is SeaOperationAnswer { return value === '' || value === 'yes' || value === 'no'; }
+function isOptionalIdentifier(value: unknown): value is string {
+  return typeof value === 'string' && (value === '' || /^[1-9]\d{0,18}$/.test(value) && BigInt(value) <= 9223372036854775807n);
+}
 
 /** Reject malformed JSON instead of treating truthy or unknown values as confirmations. */
 export function isSeaOperationPayload(value: unknown): value is SeaOperationPayload {
   if (!hasStringFields(value, ['project', 'client', 'clientContact', 'description', 'charts', 'risks']) || value.version !== 1) return false;
   if (value.planning !== undefined && !hasStringFields(value.planning, ['date', 'operationId', 'projectId', 'captainPersonId'])) return false;
+  if (value.transit !== undefined && (value.planning !== undefined || !hasStringFields(value.transit, ['date', 'captainPersonId'])
+    || !validCalendarDate(value.transit.date as string) || Number((value.transit.date as string).slice(0, 4)) < 1000
+    || !isOptionalIdentifier(value.transit.captainPersonId) || Object.keys(value.transit).length !== 2)) return false;
+  if (value.clientId !== undefined && !isOptionalIdentifier(value.clientId)) return false;
   if (value.locationOverlay !== undefined) {
     try { if (!parseProjectLocationOverlay(value.locationOverlay)) return false; } catch { return false; }
   }
@@ -287,7 +312,8 @@ export function isSeaOperationPayload(value: unknown): value is SeaOperationPayl
     || typeof value.supplies.customerAccountsPrepared !== 'boolean' || !Array.isArray(value.supplies.items)
     || !value.supplies.items.every((item) => SEA_OPERATION_SUPPLY_ITEMS.some((known) => known.id === item))) return false;
   if (!hasStringFields(value.signature, ['captainName', 'date', 'place']) || typeof value.signature.acknowledged !== 'boolean') return false;
-  const ukcReference = { projectId: isObject(value.planning) ? value.planning.projectId as string : undefined,
+  const ukcReference = { projectId: value.transit ? '' : isObject(value.planning) ? value.planning.projectId as string : undefined,
+    ...(value.transit ? { transit: { date: (value.transit as Record<string, string>).date, vesselId: value.vessel.id as string } } : {}),
     vesselId: value.vessel.id as string, draftMeters: value.vessel.draftMeters as number | null | undefined };
   const validWaypoints = Array.isArray(value.waypoints) && value.waypoints.every((point) => hasStringFields(point, ['id', 'number', 'descriptionVhf', 'latitude', 'longitude', 'ukc', 'eta']) && typeof point.denseTraffic === 'boolean'
     && (point.etaMode === undefined || point.etaMode === 'manual' || point.etaMode === 'automatic')

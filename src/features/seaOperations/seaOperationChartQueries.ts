@@ -1,8 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isSeaPilotPreviewDeployment } from '../preview/previewMode';
 import { isShomChart, type ShomChartLookup } from './seaOperationHydroModel';
+import { sameSeaOperationTransitContext, type SeaOperationTransitRequestContext } from './seaOperationWeatherModel';
 
-export interface SeaOperationChartInput { projectId: string; pointId: string; latitude: number; longitude: number }
+export interface SeaOperationChartInput { projectId: string; transit?: SeaOperationTransitRequestContext; pointId: string; latitude: number; longitude: number }
 export interface SeaOperationPointCharts extends ShomChartLookup, SeaOperationChartInput {}
 const messages: Record<string, string> = {
   CHARTS_AUTHENTICATION_REQUIRED: 'Reconnectez-vous pour rechercher les cartes.',
@@ -34,6 +35,7 @@ export async function fetchSeaOperationPointCharts(client: SupabaseClient, input
     if (session.error || session.data.session?.user.id !== actorId) throw new Error(messages.CHARTS_AUTHENTICATION_REQUIRED);
   }
   if (data.pointId !== input.pointId || data.projectId !== input.projectId || data.latitude !== input.latitude || data.longitude !== input.longitude
+    || !sameSeaOperationTransitContext(data.transit, input.transit)
     || !Array.isArray(data.charts) || data.charts.length > 400 || !data.charts.every(isShomChart)
     || typeof data.truncated !== 'boolean' || typeof data.fetchedAt !== 'string' || !Number.isFinite(Date.parse(data.fetchedAt))
     || data.sourceUrl !== 'https://services.data.shom.fr/INSPIRE/wfs') throw new Error('La réponse du catalogue ne correspond pas au point demandé.');

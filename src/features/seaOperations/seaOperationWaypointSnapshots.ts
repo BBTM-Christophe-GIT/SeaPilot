@@ -1,11 +1,12 @@
 import type { SeaOperationPayload, SeaOperationWaypoint, SeaOperationWaypointRadio } from './seaOperationModel';
 import { seaWaypointPosition } from './seaOperationNavigation';
 import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperationRadio';
-import { isSeaOperationWaypointWeather, seaOperationEtaUtc, type SeaOperationWaypointWeather } from './seaOperationWeatherModel';
+import { isSeaOperationTransitRequestContext, isSeaOperationWaypointWeather, sameSeaOperationTransitContext, seaOperationEtaUtc, type SeaOperationTransitRequestContext, type SeaOperationWaypointWeather } from './seaOperationWeatherModel';
 import { isSeaOperationCopernicusEstimate, type SeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 
 export interface SeaOperationWeatherCaptureContext {
   projectId: string;
+  transit?: SeaOperationTransitRequestContext;
   pointId: string;
   latitude: string;
   longitude: string;
@@ -14,6 +15,7 @@ export interface SeaOperationWeatherCaptureContext {
 
 export interface SeaOperationUkcReference {
   projectId?: string;
+  transit?: SeaOperationTransitRequestContext;
   vesselId: string;
   draftMeters?: number | null;
 }
@@ -71,7 +73,9 @@ export function waypointRadioSnapshot(point: SeaOperationWaypoint): SeaOperation
 
 /** Preserve all concurrent form edits; responses from another mission/input are ignored. */
 export function retainSeaOperationWeather(payload: SeaOperationPayload, weather: SeaOperationWaypointWeather, context: SeaOperationWeatherCaptureContext): SeaOperationPayload {
-  if (payload.planning?.projectId !== context.projectId) return payload;
+  const reference = seaOperationWeatherReference(payload);
+  if (!reference.projectId && !isSeaOperationTransitRequestContext(reference.transit)) return payload;
+  if (reference.projectId !== context.projectId || !sameSeaOperationTransitContext(reference.transit, context.transit)) return payload;
   let changed = false;
   const waypoints = payload.waypoints.map((point) => {
     if (point.id !== context.pointId || point.latitude !== context.latitude || point.longitude !== context.longitude || point.eta !== context.eta) return point;
@@ -81,6 +85,11 @@ export function retainSeaOperationWeather(payload: SeaOperationPayload, weather:
     return { ...point, weather: structuredClone(retained) };
   });
   return changed ? { ...payload, waypoints } : payload;
+}
+
+export function seaOperationWeatherReference(payload: SeaOperationPayload): Pick<SeaOperationWeatherCaptureContext, 'projectId' | 'transit'> {
+  return payload.transit ? { projectId: '', transit: { date: payload.transit.date, vesselId: payload.vessel.id } }
+    : { projectId: payload.planning?.projectId ?? '' };
 }
 
 /** Coordinate/ETA edits invalidate only the captures that no longer match. */
@@ -107,11 +116,13 @@ function waypointUkcIdentity(point: SeaOperationWaypoint): SeaOperationCopernicu
 export function waypointUkcSnapshot(point: SeaOperationWaypoint, reference: SeaOperationUkcReference): SeaOperationCopernicusEstimate | undefined {
   const forecast = waypointUkcIdentity(point);
   return forecast && point.ukcMode === 'automatic' && forecast.projectId === reference.projectId
+    && sameSeaOperationTransitContext(forecast.transit, reference.transit)
     && forecast.vesselId === reference.vesselId && forecast.draftMeters === reference.draftMeters ? forecast : undefined;
 }
 
 export function seaOperationUkcReference(payload: SeaOperationPayload): SeaOperationUkcReference {
-  return { projectId: payload.planning?.projectId, vesselId: payload.vessel.id, draftMeters: payload.vessel.draftMeters };
+  return { ...(payload.transit ? seaOperationWeatherReference(payload) : { projectId: payload.planning?.projectId }),
+    vesselId: payload.vessel.id, draftMeters: payload.vessel.draftMeters };
 }
 
 /** Manual text is used only in manual mode; an unavailable automatic calculation has no fallback. */
@@ -136,10 +147,10 @@ export function invalidateSeaOperationUkc(payload: SeaOperationPayload): SeaOper
 /** Retain a response only while every request field and the real reference draught still match. */
 export function retainSeaOperationUkc(payload: SeaOperationPayload, incoming: SeaOperationCopernicusEstimate,
   context: SeaOperationUkcCaptureContext): SeaOperationPayload {
-  if (payload.planning?.projectId !== context.projectId || payload.vessel.id !== context.vesselId
+  const reference = seaOperationUkcReference(payload);
+  if (reference.projectId !== context.projectId || !sameSeaOperationTransitContext(reference.transit, context.transit) || payload.vessel.id !== context.vesselId
     || payload.vessel.draftMeters !== context.draftMeters) return payload;
   let changed = false;
-  const reference = seaOperationUkcReference(payload);
   const waypoints = payload.waypoints.map(point => {
     if (point.ukcMode !== 'automatic' || point.id !== context.pointId || point.latitude !== context.latitude
       || point.longitude !== context.longitude || point.eta !== context.eta) return point;
