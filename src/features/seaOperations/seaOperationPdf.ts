@@ -14,7 +14,7 @@ import { seaOperationWaypointDescription } from './seaOperationWaypointDescripti
 import { seaOperationVoyageSummary } from './seaOperationVoyageSummary';
 import { drawDefinedMapPortsPdf, drawProjectLocationMapPdf, projectLocationMapPositions } from '../projects/projectLocationPdf';
 import { resolveSeaOperationMapPorts } from './seaOperationMapPlaces';
-import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates';
+import { formatSeaLatitude, formatSeaLongitude, formatSeaPosition } from './seaOperationCoordinates';
 
 export const SEA_OPERATION_WORD_TEMPLATE_URL = '/templates/sea-operation/word-header-footer.pdf';
 const PAGE_WIDTH = 595.32;
@@ -180,9 +180,10 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   page(hasMap ? routeMap.height + 65 : 65);
   heading('Carte du parcours', true);
   if (overlay && hasMap) {
-    drawProjectLocationMapPdf(document, { waypoints: form.waypoints, ...overlay, mapViewport: form.mapViewport }, { x: LEFT, y, width: routeMap.width, height: routeMap.height }, { departurePort: form.vessel.departurePort, arrivalPort: form.vessel.arrivalPort });
+    drawProjectLocationMapPdf(document, { waypoints: form.waypoints, ...overlay, mapViewport: form.mapViewport }, { x: LEFT, y, width: routeMap.width, height: routeMap.height }, { departurePort: form.vessel.departurePort, arrivalPort: form.vessel.arrivalPort, ensureZonesVisible: true });
     y += routeMap.height + 12;
     paragraph('Fond : Natural Earth · Tracé indicatif. Points isolés et zones hors calcul de navigation.');
+    if (overlay.zones.length) paragraph(`Zones : ${overlay.zones.map((zone, index) => `Z${index + 1} - ${zone.name || `Zone ${index + 1}`}`).join(' ; ')}`);
   } else if (hasMap || form.mapViewport) {
     const mapY = y;
     const at = (point: { x: number; y: number }) => ({ x: LEFT + point.x, y: mapY + point.y });
@@ -513,8 +514,17 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   }
   if (overlay?.zones.length) {
     heading('Zones - hors calcul de navigation', true);
-    table(overlay.zones.flatMap((zone, index) => zone.vertices.length ? zone.vertices.map((vertex, vertexIndex) => [zone.name || `Zone ${index + 1}`, String(vertexIndex + 1), formatSeaLatitude(vertex.latitude) || 'À renseigner', formatSeaLongitude(vertex.longitude) || 'À renseigner']) : [[zone.name || `Zone ${index + 1}`, 'À compléter', '-', '-']]),
-      ['Zone', 'Sommet', 'Latitude', 'Longitude'], undefined, true, { didParseCell: cell => { Object.assign(cell.cell.styles, { halign: 'center', valign: 'middle' }); } });
+    overlay.zones.forEach((zone, zoneIndex) => {
+      document.setFont('helvetica', 'bold'); document.setFontSize(10);
+      const titleLines = document.splitTextToSize(clean(zone.name || `Zone ${zoneIndex + 1}`), pageWidth() - LEFT - RIGHT) as string[];
+      // Keep ordinary zones together with their title; very large tables still paginate normally.
+      page(45 + titleLines.length * 17 + Math.min(12, Math.max(1, zone.vertices.length)) * 20);
+      heading(titleLines[0], true);
+      titleLines.slice(1).forEach(line => paragraph(line, true));
+      table(zone.vertices.length ? zone.vertices.map((vertex, vertexIndex) => [`Z${zoneIndex + 1}.${vertexIndex + 1}`, formatSeaPosition(vertex)])
+        : [['-', 'Aucun sommet renseigné']], ['Sommet', 'Coordonnées'], { 0: { cellWidth: 90 } }, true,
+      { didParseCell: cell => { Object.assign(cell.cell.styles, { halign: 'center', valign: 'middle' }); } });
+    });
   }
   if (signed && passageRows.some((row) => row.observation?.status === 'recorded')) {
     heading('Mesures officielles après le passage', true);

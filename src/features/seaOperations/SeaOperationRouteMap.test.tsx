@@ -14,6 +14,58 @@ const channelRoute = () => [point(1, '49.65', '-1.62'), point(2, '48.36', '-4.53
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('SeaOperationRouteMap', () => {
+  it('widens a compact document only when requested to contain complete zones, preserving its saved manual frame', () => {
+    const route = [point(1, '49.93', '1.08'), point(2, '49.99', '1.02'), point(3, '50.15', '1.13')];
+    const viewport = { centerLatitude: 50.05, centerLongitude: 1.2, longitudeSpan: 1.7 };
+    const zones = [{ id: 'z1', name: 'Zone nord', vertices: [{ latitude: '50.22', longitude: '1.02' }, { latitude: '50.26', longitude: '1.16' }, { latitude: '50.17', longitude: '1.24' }] }];
+    const original = structuredClone({ route, viewport, zones }), onGeometry = vi.fn();
+    const { container, rerender } = render(<SeaOperationRouteMap waypoints={route} zones={zones} viewport={viewport} compact onGeometry={onGeometry} />);
+    const polygon = () => container.querySelector('.so-route-map-zones polygon')!.getAttribute('points')!.split(' ').map(point => point.split(',').map(Number));
+    expect(polygon().some(([, y]) => y < 0)).toBe(true);
+    expect(onGeometry.mock.calls.at(-1)![0].viewport.longitudeSpan).toBe(1.7);
+    rerender(<SeaOperationRouteMap waypoints={route} zones={zones} viewport={viewport} compact ensureZonesVisible onGeometry={onGeometry} />);
+    expect(polygon().every(([x, y]) => x >= 40 && x <= 860 && y >= 31.99 && y <= 188.01)).toBe(true);
+    const adapted = onGeometry.mock.calls.at(-1)![0].viewport;
+    expect(adapted.longitudeSpan).toBeGreaterThan(1.7); expect(adapted.centerLatitude).toBe(50.05); expect(adapted.centerLongitude).toBeCloseTo(1.2, 10);
+    expect(container.querySelectorAll('.so-route-map-zone-vertices circle')).toHaveLength(3);
+    expect(container.querySelector('.so-route-map-zone-vertices')).toHaveTextContent('Z1.1');
+    expect({ route, viewport, zones }).toEqual(original);
+    rerender(<SeaOperationRouteMap waypoints={route} zones={zones} viewport={viewport} onGeometry={onGeometry} />);
+    expect(onGeometry.mock.calls.at(-1)![0].viewport.longitudeSpan).toBe(1.7);
+  });
+
+  it('does not expand a document for an incomplete or duplicate-only polygon', () => {
+    const viewport = { centerLatitude: 50, centerLongitude: 1, longitudeSpan: 1 };
+    const onGeometry = vi.fn();
+    const vertices = [{ latitude: '60', longitude: '1' }, { latitude: '61', longitude: '1' }];
+    const { container } = render(<SeaOperationRouteMap waypoints={[]} zones={[{ id: 'incomplete', name: 'Inachevée', vertices }, { id: 'duplicate', name: 'Doublons', vertices: [...vertices, vertices[0]] }]} viewport={viewport} compact ensureZonesVisible onGeometry={onGeometry} />);
+    expect(onGeometry.mock.calls.at(-1)![0].viewport).toEqual(viewport);
+    expect(container.querySelectorAll('.so-route-map-zones polygon')).toHaveLength(0);
+  });
+
+  it('uses separated document zone tags with original ordinals and keeps complete names in the legend and accessibility text', () => {
+    const route = [point(1, '49.93', '1.08'), point(2, '49.99', '1.02'), point(3, '50.15', '1.13')];
+    const vertices = [{ latitude: '50.12', longitude: '1.1' }, { latitude: '50.18', longitude: '1.1' }, { latitude: '50.15', longitude: '1.19' }];
+    const zones = [{ id: 'unfinished', name: 'Inachevée', vertices: vertices.slice(0, 2) }, { id: 'a', name: 'Première zone de travaux détaillée', vertices }, { id: 'b', name: 'Deuxième zone de travaux détaillée', vertices }];
+    const viewport = { centerLatitude: 50.05, centerLongitude: 1.2, longitudeSpan: 1.7 }, onGeometry = vi.fn();
+    const { container, rerender } = render(<SeaOperationRouteMap waypoints={route} zones={zones} viewport={viewport} compact ensureZonesVisible onGeometry={onGeometry} />);
+    const tags = [...container.querySelectorAll('.so-route-map-zone-tag')];
+    expect(tags.map(tag => tag.querySelector('text')!.textContent)).toEqual(['Z2', 'Z3']);
+    const boxes = tags.map(tag => { const rect = tag.querySelector('rect')!; return { x: Number(rect.getAttribute('x')), y: Number(rect.getAttribute('y')), width: Number(rect.getAttribute('width')), height: Number(rect.getAttribute('height')) }; });
+    expect(boxes[0].x + boxes[0].width <= boxes[1].x || boxes[1].x + boxes[1].width <= boxes[0].x || boxes[0].y + boxes[0].height <= boxes[1].y || boxes[1].y + boxes[1].height <= boxes[0].y).toBe(true);
+    const waypoint = onGeometry.mock.calls.at(-1)![0].points[2];
+    for (const box of boxes) expect(waypoint.x >= box.x && waypoint.x <= box.x + box.width && waypoint.y >= box.y && waypoint.y <= box.y + box.height).toBe(false);
+    const legend = screen.getByLabelText('Légende des zones');
+    expect(legend).toHaveTextContent('Z2 — Première zone de travaux détaillée'); expect(legend).toHaveTextContent('Z3 — Deuxième zone de travaux détaillée');
+    expect(legend).not.toHaveTextContent('Z1'); expect(legend).not.toHaveTextContent('Inachevée');
+    expect(screen.getByRole('img', { name: 'Zone : Première zone de travaux détaillée' }).querySelector('title')).toHaveTextContent('Première zone de travaux détaillée');
+    expect(container.querySelector('.so-route-map-zone-vertices')).toHaveTextContent('Z2.1');
+    rerender(<SeaOperationRouteMap waypoints={route} zones={zones} viewport={viewport} />);
+    expect(container.querySelectorAll('.so-route-map-zone-tag')).toHaveLength(0);
+    expect(container.querySelector('.so-route-map-zones')).toHaveTextContent('Première zone de travaux détaillée');
+    expect(screen.queryByLabelText('Légende des zones')).not.toBeInTheDocument();
+  });
+
   it('keeps an empty automatic editor cheap until an explicit temporary placement viewport is supplied', () => {
     const onGeometry = vi.fn();
     const { container, rerender } = render(<SeaOperationRouteMap waypoints={[]} onGeometry={onGeometry} renderOverlay={() => <rect role="button" aria-label="Ajouter le premier waypoint" />} />);

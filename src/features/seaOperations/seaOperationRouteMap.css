@@ -17,6 +17,9 @@
 .so-route-map-zones { pointer-events: none; }
 .so-route-map-zones polygon { fill: var(--sp-primary); fill-opacity: .12; stroke: var(--sp-primary); stroke-width: 1.5px; stroke-dasharray: 5 3; }
 .so-route-map-zones text, .so-route-map-zone-vertices text { fill: var(--sp-heading); font-family: var(--sp-font); font-size: 10px; paint-order: stroke; stroke: var(--sp-surface); stroke-width: 3px; }
+.so-route-map-zone-tag rect { fill: var(--sp-surface); stroke: var(--sp-primary); stroke-width: 1px; }
+.so-route-map-zone-tag text { stroke-width: 0; font-weight: 700; }
+.so-route-map-zone-legend { margin: var(--sp-space-2) 0 0; color: var(--sp-muted); font-size: .68rem; overflow-wrap: anywhere; }
 .so-route-map-zone-vertices { pointer-events: none; }
 .so-route-map-zone-vertices circle { fill: var(--sp-primary); stroke: var(--sp-surface); stroke-width: 1px; }
 .so-route-map-isolated-points rect { fill: var(--sp-surface); stroke: var(--sp-success); stroke-width: 2px; }

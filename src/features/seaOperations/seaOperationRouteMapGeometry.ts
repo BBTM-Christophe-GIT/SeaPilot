@@ -67,6 +67,31 @@ export function zoomRouteMapViewport(viewport: RouteMapViewport, factor: number)
   return normalizeViewport({ ...normalized, longitudeSpan: Math.max(MIN_ROUTE_MAP_LONGITUDE_SPAN, Math.min(360, normalized.longitudeSpan / factor)) });
 }
 
+/**
+ * Document-only containment when a saved manual frame is rendered at another aspect ratio.
+ * Retains its centre and never zooms in or mutates the saved frame. Automatic framing
+ * already contains its positions and remains automatic. The one-world limit still applies.
+ */
+export function routeMapViewportContainingPositions(viewport: RouteMapViewport | undefined, positions: readonly SeaPosition[], width = 900, height = 320): RouteMapViewport | undefined {
+  if (viewport === undefined) return undefined;
+  ({ width, height } = dimensions(width, height));
+  const normalized = normalizeViewport(viewport);
+  const frame = { ...normalized, centerLongitude: Number.isFinite(viewport.centerLongitude) && Math.abs(viewport.centerLongitude) <= 180 ? viewport.centerLongitude : normalized.centerLongitude };
+  const horizontalRoom = width / 2 - Math.min(40, width / 4);
+  const verticalRoom = height / 2 - Math.min(32, height / 4);
+  const latitudeFactor = latitudeFactorAt(frame.centerLatitude);
+  let longitudeSpan = frame.longitudeSpan;
+  for (const position of positions) {
+    if (!Number.isFinite(position.latitude) || !Number.isFinite(position.longitude) || Math.abs(position.latitude) > 90 || Math.abs(position.longitude) > 180) continue;
+    longitudeSpan = Math.max(longitudeSpan,
+      Math.abs(wrapLongitude(position.longitude - frame.centerLongitude)) * width / horizontalRoom,
+      Math.abs(position.latitude - frame.centerLatitude) * width / (latitudeFactor * verticalRoom));
+  }
+  longitudeSpan = Math.min(360, longitudeSpan);
+  if (frame.centerLatitude === viewport.centerLatitude && frame.centerLongitude === viewport.centerLongitude && longitudeSpan === viewport.longitudeSpan) return viewport;
+  return { ...frame, longitudeSpan };
+}
+
 /** Pixels must already be transformed into the SVG viewBox; no clamped or guessed maritime position. */
 export function routeMapPositionAt(geometry: SeaOperationRouteMapGeometry, x: number, y: number): SeaPosition | null {
   const projection = geometry.projection;

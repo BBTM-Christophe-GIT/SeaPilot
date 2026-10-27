@@ -90,6 +90,27 @@ it('preserves imported isolated points and zones in the PDF without connecting t
   if (process.env.SEAPILOT_PDF_ISOLATED_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_ISOLATED_QA_OUTPUT, output.bytes);
 });
 
+it('exports separate named zone tables and stable vertex identities without changing incomplete coordinates', async () => {
+  const record = voyageFixture();
+  record.draft.locationOverlay = { version: 1, points: [], zones: [
+    { id: 'empty', name: 'Zone sans sommet', vertices: [] },
+    { id: 'operation', name: 'Zone operationnelle', vertices: [{ latitude: '49.65', longitude: '-1.62' }, { latitude: 'invalide', longitude: '181' }, { latitude: '', longitude: '' }] },
+    { id: 'unnamed', name: '', vertices: [{ latitude: '48° 30.500′ S', longitude: '002° 10.250′ E' }] },
+  ] };
+  const original = structuredClone(record), output = await generateSeaOperationPdf(record, { templateBytes: await template() });
+  const bodies = (await landscapeBodies(output.bytes)).join('\n');
+  const zoneTables = bodies.slice(bodies.indexOf('(Zones - hors calcul de navigation) Tj'));
+  expect(zoneTables).toContain('Zone sans sommet'); expect(zoneTables).toContain('Aucun sommet renseigné');
+  expect(zoneTables).toContain('Zone operationnelle'); expect(zoneTables).toContain('Zone 3');
+  expect(zoneTables).not.toContain('Z1.1');
+  for (const vertex of ['Z2.1', 'Z2.2', 'Z2.3', 'Z3.1']) expect(zoneTables).toContain(`(${vertex}) Tj`);
+  for (const position of ["49° 39.000' N - 001° 37.200' W", "48° 30.500' S - 002° 10.250' E", 'invalide - 181', 'Latitude à renseigner - Longitude à renseigner']) expect(zoneTables).toContain(position);
+  expect((zoneTables.match(/\(Sommet\) Tj/g) || [])).toHaveLength(3);
+  expect((zoneTables.match(/\(Coordonnées\) Tj/g) || [])).toHaveLength(3);
+  expect(record).toEqual(original);
+  if (process.env.SEAPILOT_PDF_ZONE_TABLES_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_ZONE_TABLES_QA_OUTPUT, output.bytes);
+});
+
 async function landscapeBodies(bytes: Uint8Array): Promise<string[]> {
   const document = await PDFDocument.load(bytes);
   return document.getPages().filter((page) => page.getWidth() > page.getHeight()).map((page) => {

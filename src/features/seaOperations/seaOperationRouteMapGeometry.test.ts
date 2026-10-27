@@ -1,8 +1,56 @@
 import { describe, expect, it } from 'vitest';
-import { buildSeaOperationRouteMap, DEFAULT_ROUTE_MAP_VIEWPORT, moveRouteMapViewport, routeMapPositionAt, zoomRouteMapViewport } from './seaOperationRouteMapGeometry';
+import { buildSeaOperationRouteMap, DEFAULT_ROUTE_MAP_VIEWPORT, moveRouteMapViewport, routeMapPositionAt, routeMapViewportContainingPositions, zoomRouteMapViewport } from './seaOperationRouteMapGeometry';
 
 const point = (latitude: string, longitude: string, number = '') => ({ latitude, longitude, number, descriptionVhf: '' });
 const allCoordinates = (map: ReturnType<typeof buildSeaOperationRouteMap>) => [...map.land.flat(), ...map.points, ...map.segments.flatMap(({ from, to }) => [from, to])];
+
+describe('Document containment of saved manual frames', () => {
+  // The two six-vertex zones supplied in the report, converted from degrees/minutes.
+  const vertices = [[50, 6.212, 1, 1.668], [50, 7.663, 1, 4.055], [50, 8.986, 1, 2.110], [50, 13.547, 1, 9.637], [50, 10.160, 1, 14.592], [50, 4.162, 1, 4.678],
+    [50, 15.665, 1, 9.735], [50, 10.100, 1, 17.890], [50, 2.043, 1, 4.583], [50, 6.271, 0, 58.373], [50, 7.723, 1, 0.759], [50, 9.045, 0, 58.813]]
+    .map(([lat, latMinutes, lon, lonMinutes]) => ({ latitude: lat + latMinutes / 60, longitude: lon + lonMinutes / 60 }));
+  const route = [point('49.93', '1.08'), point('49.99', '1.02'), point('50.15', '1.13')];
+  const manual = { centerLatitude: 50.05, centerLongitude: 1.2, longitudeSpan: 1.7 };
+
+  it.each([[900, 220], [744, 190], [280, 220], [120, 100]])('keeps both reported zones inside a %sx%s document without changing the saved centre or route', (width, height) => {
+    const original = structuredClone({ manual, route, vertices });
+    const before = buildSeaOperationRouteMap(route, width, height, manual, vertices);
+    if (width / height > 3.5) expect(vertices.some(position => position.latitude > before.projection!.centerLatitude + height / (2 * before.projection!.latitudePixelsPerDegree))).toBe(true);
+    const expanded = routeMapViewportContainingPositions(manual, vertices, width, height)!;
+    const after = buildSeaOperationRouteMap(route, width, height, expanded, vertices);
+    expect(expanded).toMatchObject({ centerLatitude: manual.centerLatitude, centerLongitude: manual.centerLongitude });
+    expect(expanded.longitudeSpan).toBeGreaterThanOrEqual(manual.longitudeSpan);
+    expect(after.points.map(point => point.index)).toEqual([1, 2, 3]); expect(after.segments).toHaveLength(2);
+    for (const vertex of vertices) {
+      const x = width / 2 + (vertex.longitude - after.projection!.centerLongitude) * after.projection!.longitudePixelsPerDegree;
+      const y = height / 2 - (vertex.latitude - after.projection!.centerLatitude) * after.projection!.latitudePixelsPerDegree;
+      expect(x).toBeGreaterThanOrEqual(Math.min(40, width / 4) - .01); expect(x).toBeLessThanOrEqual(width - Math.min(40, width / 4) + .01);
+      expect(y).toBeGreaterThanOrEqual(Math.min(32, height / 4) - .01); expect(y).toBeLessThanOrEqual(height - Math.min(32, height / 4) + .01);
+    }
+    expect({ manual, route, vertices }).toEqual(original);
+    expect(buildSeaOperationRouteMap(route, width, height, manual, vertices)).toEqual(before);
+  });
+
+  it('leaves automatic or already sufficient manual frames unchanged and ignores invalid positions', () => {
+    expect(routeMapViewportContainingPositions(undefined, vertices, 900, 220)).toBeUndefined();
+    const automatic = buildSeaOperationRouteMap(route, 900, 220, undefined, vertices);
+    expect(routeMapViewportContainingPositions(automatic.viewport!, vertices, 900, 220)).toBe(automatic.viewport);
+    expect(routeMapViewportContainingPositions(manual, [])).toBe(manual);
+    expect(routeMapViewportContainingPositions(manual, [{ latitude: NaN, longitude: 1 }, { latitude: 91, longitude: 1 }, { latitude: 50, longitude: 181 }, { latitude: 50, longitude: Infinity }])).toBe(manual);
+  });
+
+  it('uses the local longitude across the antimeridian and keeps finite bounds for poles and malformed dimensions', () => {
+    const frame = { centerLatitude: 0, centerLongitude: 179.9, longitudeSpan: .02 };
+    const expanded = routeMapViewportContainingPositions(frame, [{ latitude: .1, longitude: -179.9 }], 900, 220)!;
+    expect(expanded.centerLongitude).toBe(179.9); expect(expanded.longitudeSpan).toBeLessThan(2);
+    const map = buildSeaOperationRouteMap([point('0.1', '-179.9')], 900, 220, expanded);
+    expect(map.points[0].x).toBeGreaterThan(40); expect(map.points[0].x).toBeLessThan(860); expect(map.points[0].y).toBeCloseTo(32, 2);
+    expect(routeMapViewportContainingPositions(manual, vertices, NaN, Infinity)).toEqual(routeMapViewportContainingPositions(manual, vertices, 900, 320));
+    const polar = routeMapViewportContainingPositions({ centerLatitude: 89.9, centerLongitude: 180, longitudeSpan: .02 }, [{ latitude: -89, longitude: -179 }], 4000, 100)!;
+    expect(polar).toEqual({ centerLatitude: 89.9, centerLongitude: 180, longitudeSpan: 360 });
+    expect(buildSeaOperationRouteMap([], 4000, 100, polar).projection!.latitudePixelsPerDegree).toBeGreaterThan(0);
+  });
+});
 
 describe('Passage Plan situation map', () => {
   it.each([[900, 320, 264], [744, 190, 250]])('reserves the right panel while fitting all short-route points at %sx%s', (width, height, inset) => {
