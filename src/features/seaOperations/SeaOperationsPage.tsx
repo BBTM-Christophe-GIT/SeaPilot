@@ -37,7 +37,7 @@ import type { SeaOperationCopernicusEstimate } from './seaOperationCopernicusMod
 import { SeaOperationUkcField } from './SeaOperationUkcField';
 import { SeaOperationUkcPanel } from './SeaOperationUkcPanel';
 import { captureSeaOperationValidationUkc, ukcRequestKey, type SeaOperationUkcRequestStatus } from './seaOperationValidationUkc';
-import { updateSeaOperationRouteEtas } from './seaOperationRouteEta';
+import { initialSeaOperationDepartureEta, updateSeaOperationRouteEtas } from './seaOperationRouteEta';
 import { seaOperationRouteArrivalEta } from './seaOperationVoyageSummary';
 import { captureSeaOperationWaypointDescriptions, seaOperationWaypointDescription } from './seaOperationWaypointDescription';
 import { copyProjectLocationToSeaOperation } from './seaOperationProjectLocation';
@@ -452,7 +452,8 @@ export function SeaOperationsPage() {
       const used = new Set(value.waypoints.map((point) => point.number.trim()));
       let number = value.waypoints.length + 1;
       while (used.has(String(number))) number += 1;
-      const point = { id, number: String(number), descriptionVhf: port?.name.trim() || `Waypoint ${number}`, latitude: position ? String(Number(position.latitude.toFixed(6))) : '', longitude: position ? String(Number(position.longitude.toFixed(6))) : '', ukc: '', ukcMode: 'automatic' as const, eta: '', denseTraffic: false };
+      const eta = value.waypoints.length ? '' : initialSeaOperationDepartureEta();
+      const point = { id, number: String(number), descriptionVhf: port?.name.trim() || `Waypoint ${number}`, latitude: position ? String(Number(position.latitude.toFixed(6))) : '', longitude: position ? String(Number(position.longitude.toFixed(6))) : '', ukc: '', ukcMode: 'automatic' as const, eta, ...(eta ? { etaMode: 'manual' as const } : {}), denseTraffic: false };
       return captureRouteEtas({ ...value, waypoints: [...value.waypoints, point] }, data?.vessels);
     });
     setDirty(true); setNotice(''); setIssues([]);

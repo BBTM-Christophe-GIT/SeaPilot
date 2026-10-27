@@ -44,7 +44,24 @@ describe('project location copied when selecting a sea-operation mission', () =>
     expect(result.waypoints[0]).toMatchObject({ eta: '2026-10-27T10:00', etaMode: 'manual' });
     expect(result.waypoints[1]).toMatchObject({ eta: '2026-10-27T15:00', etaMode: 'automatic' });
   });
-  it.each(['', '10:00', '2026-03-29T02:30', '2026-10-25T02:30'])('does not guess a first ETA from absent, incomplete or ambiguous ETD %s', etd => {
+  it('retains a populated automatic template departure without an ETD instead of replacing it with now', () => {
+    const plan = { ...emptyProjectLocationPlan(), waypoints: [
+      { ...point('a'), eta: '2026-11-02T08:00', etaMode: 'automatic' as const }, point('b', '0.1')] };
+    const original = structuredClone(plan);
+    const result = copyProjectLocationToSeaOperation(emptySeaOperation(), plan, 10, () => crypto.randomUUID(), new Date('2026-10-27T13:27:00Z'));
+    expect(result.waypoints.map(point => point.eta)).toEqual(['2026-11-02T08:00', '2026-11-02T09:00']);
+    expect(plan).toEqual(original);
+  });
+  it('defaults a new multi-day project declaration to now when its template has no departure and keeps the source independent', () => {
+    const plan = { ...emptyProjectLocationPlan(), waypoints: [point('a'), point('b', '0.1')] };
+    const original = structuredClone(plan), now = new Date('2026-10-27T13:27:00Z');
+    const result = copyProjectLocationToSeaOperation(emptySeaOperation(), plan, 10, () => crypto.randomUUID(), now);
+    expect(result.waypoints.map(point => point.eta)).toEqual(['2026-10-27T14:25', '2026-10-27T15:25']);
+    expect(result.waypoints.map(point => point.etaMode)).toEqual(['manual', 'automatic']);
+    expect(plan).toEqual(original);
+    expect(copyProjectLocationToSeaOperation(emptySeaOperation(), { ...plan, waypoints: [{ ...point('a'), etaMode: 'manual' }] }, 10, () => crypto.randomUUID(), now).waypoints[0].eta).toBe('');
+  });
+  it.each(['10:00', '2026-03-29T02:30', '2026-10-25T02:30'])('does not guess a first ETA from incomplete or ambiguous ETD %s', etd => {
     const result = copyProjectLocationToSeaOperation(emptySeaOperation(), { ...emptyProjectLocationPlan(), etd, waypoints: [point('a'), point('b', '1')] }, 20);
     expect(result.waypoints.map(point => point.eta)).toEqual(['', '']);
   });

@@ -523,6 +523,26 @@ function adminRevision(record: SeaOperationRecord): SeaOperationRecord {
 }
 
 describe('project location copied into real-profile operation fixtures', () => {
+  it.each([captainAccount, sailorAccount])('prefills a new P144 route without dates at the current Paris time for $id and allows overrides', async account => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-27T13:27:00Z'));
+    const date = seaOperationToday(), choices = plannedMissions(date);
+    choices[0].project = 'P144 · Projet sur plusieurs jours';
+    choices[0].locationPlan = { ...emptyProjectLocationPlan(), waypoints: [0, .1].map((longitude, index) => ({
+      id: `p144-${index}`, number: String(index + 1), descriptionVhf: `Waypoint ${index + 1}`, latitude: '0', longitude: String(longitude), eta: '', ukc: '', denseTraffic: false,
+    })) };
+    const { data } = renderAccount(account, undefined, 1, choices);
+    data.vessels.find(vessel => String(vessel.id) === String(choices[0].vessel.id))!.maxSpeedKnots = 10;
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' })); await chooseMission(choices[0]);
+    await userEvent.click(stepButton(2));
+    expect(capturingWeatherPanel().waypoints.map(point => point.eta)).toEqual(['2026-10-27T14:25', '2026-10-27T15:25']);
+    const picker = etaQueries();
+    expect(picker.getAllByRole('gridcell', { selected: true })).toHaveLength(1);
+    expect(picker.getByRole('gridcell', { selected: true })).toHaveTextContent('27');
+    applyEta('2026-10-28', '10:35');
+    expect(capturingWeatherPanel().waypoints.map(point => point.eta)).toEqual(['2026-10-28T10:35', '2026-10-28T11:35']);
+    expect(choices[0].locationPlan.waypoints.every(point => point.eta === '')).toBe(true);
+  });
+
   it.each([captainAccount, sailorAccount])('copies selected route, ETD and editable independent overlays for $id', async account => {
     const date = seaOperationToday(), choices = plannedMissions(date);
     const point = { id: 'source-route', number: '1', descriptionVhf: 'Route du projet', latitude: '49.65', longitude: '-1.62', ukc: '3', eta: '', denseTraffic: true };
@@ -1286,7 +1306,8 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(signSeaOperation).not.toHaveBeenCalled();
   });
 
-  it('adds consecutive map placements to the table without losing batched clicks or guessing ETA and UKC', async () => {
+  it('adds consecutive map placements without losing clicks, defaults the departure to now and leaves unavailable estimates empty', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-27T13:27:00Z'));
     renderAccount();
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     await userEvent.click(stepButton(2));
@@ -1298,14 +1319,14 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(new Set(points.map((point) => point.id)).size).toBe(2);
     expect(points.map((point) => point.number)).toEqual(['1', '2']);
     for (const [index, point] of points.entries()) {
-      expect(point).toMatchObject({ latitude: '49', longitude: '-3', eta: '', ukc: '', descriptionVhf: `Waypoint ${index + 1}`, denseTraffic: false });
+      expect(point).toMatchObject({ latitude: '49', longitude: '-3', eta: index === 0 ? '2026-10-27T14:25' : '', ukc: '', descriptionVhf: `Waypoint ${index + 1}`, denseTraffic: false });
       expect(point).not.toHaveProperty('weather');
       expect(point).not.toHaveProperty('radio');
       expect(formQueries().getByLabelText(`Latitude · point ${index + 1}`)).toHaveValue('49° 00.000′ N');
       expect(formQueries().getByLabelText(`Longitude · point ${index + 1}`)).toHaveValue('003° 00.000′ W');
       expect(etaGroup(index + 1)).toBeVisible();
       expect(etaQueries(index + 1).getByRole('grid', { name: /Calendrier ·/ })).toBeVisible();
-      expectEtaTime('', etaQueries(index + 1));
+      expectEtaTime(index === 0 ? '14:25' : '', etaQueries(index + 1));
     }
     expect(saveSeaOperation).not.toHaveBeenCalled();
   });
@@ -2392,6 +2413,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
   });
 
   it('uses one accessible binary switch per question and an editable responsive Passage Plan', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-27T13:27:00Z'));
     renderAccount();
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     await userEvent.click(stepButton(1));
@@ -2424,7 +2446,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(formQueries().getByLabelText('Description · point 1')).toHaveValue('Entrée du chenal');
     expect(etaGroup()).toBeVisible();
     expect(etaQueries().getByRole('grid', { name: /Calendrier ·/ })).toBeVisible();
-    expectEtaTime('', etaQueries());
+    expectEtaTime('14:25', etaQueries());
     expect(formQueries().getByRole('checkbox', { name: 'Zone maritime à trafic dense · point 1' })).toBeChecked();
     await userEvent.click(formQueries().getByRole('button', { name: 'Supprimer le point 1' }));
     expect(within(table).getByText('Ajoutez le premier point de passage.')).toBeInTheDocument();

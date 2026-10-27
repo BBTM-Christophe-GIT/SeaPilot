@@ -505,20 +505,10 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   else paragraph('Aucun point de passage renseigné.');
   if (overlay?.points.length) {
     heading('Points isolés - hors calcul de navigation', true);
-    const points = overlay.points.map(point => passagePlanCellData(point, { payload: form, allowLiveRadio: !signed }));
-    table(points.map(point => [point.waypoint, point.description, point.latitude, point.longitude, point.ukc, point.eta, point.vhf, point.weather, point.denseTraffic === 'Oui' ? 'Trafic dense' : 'Non']),
-      ['Point', 'Description', 'Latitude', 'Longitude', 'UKC', 'ETA\nDate - Heure', 'Contacts VHF', 'Météo à l’ETA', 'Trafic dense'], undefined, true,
+    table(overlay.points.map((point, index) => [point.number || String(index + 1), point.descriptionVhf, formatSeaLatitude(point.latitude), formatSeaLongitude(point.longitude)]),
+      ['Point', 'Description', 'Latitude', 'Longitude'], undefined, true,
       { didParseCell: cell => {
         Object.assign(cell.cell.styles, { fontSize: 7, halign: 'center', valign: 'middle' });
-        if (cell.section === 'body' && points[cell.row.index]?.denseTraffic === 'Oui') {
-          cell.cell.styles.fillColor = [255, 250, 240];
-          if (cell.column.index === 8) { cell.cell.styles.minCellHeight = 40; cell.cell.styles.cellPadding = { top: 17, bottom: 4, left: 4, right: 4 }; }
-        }
-      }, didDrawCell: cell => {
-        if (cell.section !== 'body' || cell.column.index !== 8 || points[cell.row.index]?.denseTraffic !== 'Oui') return;
-        const x = cell.cell.x + cell.cell.width / 2, y = cell.cell.y + cell.cell.height / 2 - 9;
-        document.saveGraphicsState(); document.setDrawColor(138, 97, 0); document.setLineWidth(.6); document.ellipse(x, y, 5, 3, 'S');
-        document.setFillColor(138, 97, 0); document.circle(x, y, 1.2, 'F'); document.restoreGraphicsState();
       } });
   }
   if (overlay?.zones.length) {

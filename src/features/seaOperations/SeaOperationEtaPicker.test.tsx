@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { readFileSync } from 'node:fs';
 import { StrictMode, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppDialog } from '../../components/AppDialog';
@@ -183,6 +184,21 @@ describe('SeaOperationEtaPicker inline', () => {
     const [value, setValue] = useState(initial);
     return inlinePicker(value, next => { change(next); setValue(next); });
   }
+
+  it('keeps only the selected day blue when the host module stylesheet loads after the embedded calendar', () => {
+    // jsdom does not resolve custom properties; resolve the shared primary token
+    // to exercise the actual stylesheet cascade rather than a DOM-only selection.
+    const resolvedPrimary = (css: string) => css.replaceAll('var(--sp-primary)', 'rgb(12, 85, 152)');
+    const pickerCss = readFileSync('src/features/seaOperations/seaOperationEtaPicker.css', 'utf8');
+    const seaOperationsCss = readFileSync('src/features/seaOperations/seaOperations.css', 'utf8');
+    render(<><style>{resolvedPrimary(pickerCss)}</style><style>{resolvedPrimary(seaOperationsCss)}</style><div className="so-page"><fieldset className="project-location-overlay"><div className="project-location-point"><div className="project-location-eta">{inlinePicker('2026-10-23T12:00')}</div></div></fieldset></div></>);
+    const calendar = inlineQueries().getByRole('grid', { name: 'Calendrier · octobre 2026' });
+    const selectedDay = within(calendar).getByRole('gridcell', { selected: true }).querySelector('button')!;
+    const days = within(calendar).getAllByRole('button');
+    expect(getComputedStyle(selectedDay).backgroundColor).toBe('rgb(12, 85, 152)');
+    expect(days.filter(day => getComputedStyle(day).backgroundColor === 'rgb(12, 85, 152)')).toEqual([selectedDay]);
+    expect(days.filter(day => day !== selectedDay).every(day => getComputedStyle(day).backgroundColor === 'rgba(0, 0, 0, 0)')).toBe(true);
+  });
 
   it('shows the current Paris calendar and empty hour without implicit ETA, focus theft or confirmation controls', () => {
     vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-31T23:30:00Z'));

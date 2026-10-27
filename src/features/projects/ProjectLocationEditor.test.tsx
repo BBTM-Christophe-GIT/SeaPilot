@@ -9,7 +9,7 @@ import type { SeaOperationMapViewport } from '../seaOperations/seaOperationMapVi
 
 const mapMock = vi.hoisted(() => vi.fn());
 vi.mock('../seaOperations/SeaOperationWaypointMapEditor', () => ({ SeaOperationWaypointMapEditor: (props: Record<string, unknown>) => { mapMock(props); return <span data-testid="location-map" />; } }));
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 beforeEach(() => mapMock.mockClear());
 function Harness({ initial = emptyProjectLocationPlan(), disabled = false }: { initial?: ProjectLocationPlan; disabled?: boolean }) {
   const [plan, setPlan] = useState(initial);
@@ -20,6 +20,24 @@ const map = () => mapMock.mock.calls.at(-1)![0] as { onAddWaypoint: (position: {
   mapViewport?: SeaOperationMapViewport; onMapViewportChange: (viewport?: SeaOperationMapViewport) => void; departurePort?: string; arrivalPort?: string; disabled: boolean };
 
 describe('ProjectLocationEditor', () => {
+  it.each(['map', 'table'])('prefills only a new route departure with the current Paris date and editable time (%s)', source => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-27T13:27:00Z'));
+    render(<Harness />);
+    if (source === 'map') act(() => map().onAddWaypoint({ latitude: 0, longitude: 0 }));
+    else fireEvent.click(screen.getByRole('button', { name: 'Ajouter un waypoint' }));
+    expect(current().etd).toBe('2026-10-27T14:25');
+    expect(current().waypoints[0]).toMatchObject({ eta: '2026-10-27T14:25', etaMode: 'automatic' });
+    const first = screen.getByRole('row', { name: 'Waypoint 1' });
+    expect(within(first).getAllByRole('gridcell', { selected: true })).toHaveLength(1);
+    expect(within(first).getByRole('gridcell', { selected: true })).toHaveTextContent('27');
+    fireEvent.change(screen.getByLabelText('ETD de la localisation'), { target: { value: '2026-10-28T10:35' } });
+    expect(current().waypoints[0].eta).toBe('2026-10-28T10:35');
+    fireEvent.change(within(first).getByLabelText('Heures de l’ETA (Paris)'), { target: { value: '11' } });
+    expect(current().waypoints[0]).toMatchObject({ eta: '2026-10-28T11:35', etaMode: 'manual' });
+    fireEvent.change(screen.getByLabelText('ETD de la localisation'), { target: { value: '2026-10-29T08:00' } });
+    expect(current().waypoints[0].eta).toBe('2026-10-28T11:35');
+  });
+
   it('retains an independent manual viewport through state updates and removes the field when automatic framing resumes', () => {
     const initial = { ...emptyProjectLocationPlan(), charts: '7120', points: [{ ...emptySeaOperationWaypoint('point'), latitude: '49.65', longitude: '-1.62' }] };
     const original = structuredClone(initial);
