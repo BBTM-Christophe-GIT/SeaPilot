@@ -18,6 +18,7 @@ import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates
 import { captureSeaOperationValidationUkc, ukcRequestKey, type SeaOperationUkcRequestStatus } from './seaOperationValidationUkc';
 import { calculateSeaOperationCopernicusEstimate, COPERNICUS_UKC_PRODUCTS, type SeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 import { seaOperationUkcReference, type SeaOperationUkcCaptureContext } from './seaOperationWaypointSnapshots';
+import { seaOperationPlanningChoiceKey, seaOperationPlanningChoiceLabel, seaOperationPlanningWindowDates } from './seaOperationPlanningWindow';
 
 const weatherPanelMock = vi.hoisted(() => vi.fn());
 const chartsPanelMock = vi.hoisted(() => vi.fn());
@@ -174,7 +175,8 @@ function renderAccount(account: Account = captainAccount, record?: SeaOperationR
     ],
   };
   vi.mocked(fetchSeaOperationData).mockResolvedValue(data);
-  vi.mocked(fetchSeaOperationPlanning).mockImplementation(async (_client, date) => ({ date, choices }));
+  const choicesDate = record?.draft.planning?.date || seaOperationToday();
+  vi.mocked(fetchSeaOperationPlanning).mockImplementation(async (_client, date) => ({ date, choices: date === choicesDate ? choices : [] }));
   vi.mocked(fetchSeaOperationCaptainSignature).mockResolvedValue(null);
   vi.mocked(loadSeaOperationSignature).mockResolvedValue(null);
   vi.mocked(fetchSeaOperationProjectDocuments).mockResolvedValue([]);
@@ -238,9 +240,10 @@ async function selectChoice(label: string, value: string) {
   const input = choiceInput(label, value);
   if (!(input as HTMLInputElement).checked) await userEvent.click(input);
 }
-async function chooseMission(choice: SeaOperationPlanningChoice) {
-  await screen.findByRole('option', { name: `${choice.project} · ${choice.vessel.name}` });
-  await userEvent.selectOptions(formQueries().getByLabelText('Projet'), choice.operationId);
+async function chooseMission(choice: SeaOperationPlanningChoice, date = seaOperationToday()) {
+  const dated = { ...choice, date };
+  await screen.findByRole('option', { name: seaOperationPlanningChoiceLabel(dated) });
+  await userEvent.selectOptions(formQueries().getByLabelText('Projet'), seaOperationPlanningChoiceKey(dated));
 }
 
 async function saveDraft() {
@@ -281,6 +284,131 @@ function adminRevision(record: SeaOperationRecord): SeaOperationRecord {
   return recordFixture(adminAccount, { id: 'admin-revised-preparation', version: 1, draft, canEdit: true, canSign: false,
     canRevise: false, canDelete: true, previousRevisionId: record.id, signatureSnapshot: null });
 }
+
+describe('Planning project choices across four Paris calendar days', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-16T22:30:00Z')); // Already 17 October in Paris.
+  });
+
+  it('offers today through J+3 independently of the operation date and selects the dated temporary captain', async () => {
+    const dates = seaOperationPlanningWindowDates(seaOperationToday());
+    const missions = dates.map((date, index) => plannedMissions(date)[index % 2]);
+    const { client } = renderAccount(captainAccount);
+    vi.mocked(fetchSeaOperationPlanning).mockImplementation(async (_client, date) => ({ date, choices: dates.includes(date) ? [missions[dates.indexOf(date)]] : plannedMissions(date) }));
+    vi.mocked(fetchSeaOperationCaptainSignature).mockImplementation(async (_client, _date, _operation, personId) => profileSignature(personId));
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    const selector = formQueries().getByLabelText('Projet');
+    await waitFor(() => expect(selector).toBeEnabled());
+    expect(within(selector).getAllByRole('option').map(option => option.textContent)).toEqual(['Choisir un projet du planning',
+      ...missions.map((mission, index) => seaOperationPlanningChoiceLabel({ ...mission, date: dates[index] }))]);
+    expect(formQueries().getByText('Projets planifiés du 17/10/2026 au 20/10/2026 inclus.')).toBeVisible();
+    expect(fetchSeaOperationPlanning).not.toHaveBeenCalledWith(client, '2026-10-16');
+    expect(fetchSeaOperationPlanning).not.toHaveBeenCalledWith(client, '2026-10-21');
+    await chooseMission(missions[0], dates[0]);
+    await chooseMission(missions[3], dates[3]);
+    expect(formQueries().getByLabelText('Date de l’opération')).toHaveValue('2026-10-20');
+    expect(formQueries().getByLabelText('Client')).toHaveValue(missions[3].client);
+    expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(missions[3].clientContact);
+    expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue(missions[3].description);
+    expect(formQueries().getByLabelText('Navire')).toHaveValue(missions[3].vessel.id);
+    expect(formQueries().getByLabelText('Immatriculation / IMO')).toHaveValue(missions[3].vessel.registrationImo);
+    expect(formQueries().getByLabelText('Prénom NOM du Capitaine')).toHaveValue(missions[3].captains[0].name);
+    await decisionStep();
+    expect(await formQueries().findByRole('img', { name: `Signature de ${missions[3].captains[0].name}` })).toHaveAttribute('src', profileSignature('102').url);
+    expect(formQueries().getByLabelText('Date de la décision')).toHaveValue('2026-10-17');
+    expect(fetchSeaOperationCaptainSignature).toHaveBeenLastCalledWith(client, dates[3], missions[3].operationId, '102');
+    await userEvent.click(stepButton(0));
+    fireEvent.change(formQueries().getByLabelText('Date de l’opération'), { target: { value: '2026-09-01' } });
+    await waitFor(() => expect(selector).toBeEnabled());
+    expect(formQueries().getByLabelText('Date de l’opération')).toHaveValue('2026-09-01');
+    expect(within(selector).getAllByRole('option')).toHaveLength(5);
+    expect(selector).toHaveValue('');
+    fireEvent.change(formQueries().getByLabelText('Date de l’opération'), { target: { value: '' } });
+    await waitFor(() => expect(selector).toBeEnabled());
+    expect(within(selector).getAllByRole('option')).toHaveLength(5);
+    expect(selector).toHaveValue('');
+  });
+
+  it('selects the sole future mission on creation but preserves a subsequently entered manual date', async () => {
+    const date = '2026-10-19', [mission] = plannedMissions(date);
+    renderAccount(captainAccount);
+    vi.mocked(fetchSeaOperationPlanning).mockImplementation(async (_client, requested) => ({ date: requested, choices: requested === date ? [mission] : [] }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await waitFor(() => expect(formQueries().getByLabelText('Projet')).toHaveValue(seaOperationPlanningChoiceKey({ ...mission, date })));
+    expect(formQueries().getByLabelText('Date de l’opération')).toHaveValue(date);
+    fireEvent.change(formQueries().getByLabelText('Date de l’opération'), { target: { value: '2026-09-01' } });
+    await waitFor(() => expect(formQueries().getByLabelText('Projet')).toBeEnabled());
+    expect(formQueries().getByLabelText('Date de l’opération')).toHaveValue('2026-09-01');
+    expect(formQueries().getByLabelText('Projet')).toHaveValue('');
+    expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue('');
+  });
+
+  it('offers the same dated window to a real sailor fixture while retaining its server refusal to sign', async () => {
+    const date = '2026-10-20', mission = plannedMissions(date)[1];
+    mission.canSign = false; mission.captains[0].canSign = false;
+    renderAccount(sailorAccount);
+    vi.mocked(fetchSeaOperationPlanning).mockImplementation(async (_client, requested) => ({ date: requested, choices: requested === date ? [mission] : [] }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await waitFor(() => expect(formQueries().getByLabelText('Date de l’opération')).toHaveValue(date));
+    expect(formQueries().getByLabelText('Projet')).toHaveDisplayValue(seaOperationPlanningChoiceLabel({ ...mission, date }));
+    await decisionStep(); await selectChoice('Décision', 'NO_GO');
+    expect(formQueries().getByText(/La signature est réservée au compte réel du Capitaine affecté au navire/)).toBeVisible();
+    expect(footerQueries().getByRole('button', { name: 'Signer la décision NO GO' })).toBeDisabled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('retains only the captured historical mission outside the offered window and uses its own date context', async () => {
+    const date = '2026-09-01', historic = plannedMissions(date)[0], otherHistoric = plannedMissions(date)[1];
+    historic.canSign = true; historic.captains[0].canSign = true;
+    const draft = waypointCaptureDraft(historic); draft.planning!.date = date;
+    draft.planning!.captainPersonId = ''; draft.vessel.captainName = ''; draft.signature.captainName = '';
+    const record = recordFixture(captainAccount, { draft });
+    const fresh = plannedMissions('2026-10-17')[0]; fresh.captains[0].name = 'Capitaine du nouveau jour';
+    const { client } = renderAccount(captainAccount, record);
+    vi.mocked(fetchSeaOperationCaptainSignature).mockResolvedValue(profileSignature('101'));
+    vi.mocked(fetchSeaOperationPlanning).mockImplementation(async (_client, requested) => ({ date: requested,
+      choices: requested === date ? [historic, otherHistoric] : requested === '2026-10-17' ? [fresh] : [] }));
+    await openRecord(record);
+    await waitFor(() => expect(formQueries().getByLabelText('Projet')).toBeEnabled());
+    expect(formQueries().getByLabelText('Projet')).toHaveValue(seaOperationPlanningChoiceKey({ ...historic, date }));
+    expect(formQueries().getByLabelText('Projet')).toHaveDisplayValue(seaOperationPlanningChoiceLabel({ ...historic, date }));
+    expect(formQueries().queryByRole('option', { name: seaOperationPlanningChoiceLabel({ ...otherHistoric, date }) })).not.toBeInTheDocument();
+    expect(formQueries().getByRole('option', { name: seaOperationPlanningChoiceLabel({ ...fresh, date: '2026-10-17' }) })).toBeInTheDocument();
+    expect(formQueries().getByLabelText('Prénom NOM du Capitaine')).toHaveValue(historic.captains[0].name);
+    expect(fetchSeaOperationCaptainSignature).toHaveBeenCalledWith(client, date, historic.operationId, historic.captains[0].personId);
+    await decisionStep();
+    expect(await formQueries().findByRole('img', { name: `Signature de ${historic.captains[0].name}` })).toHaveAttribute('src', profileSignature('101').url);
+    expect(footerQueries().getByRole('button', { name: 'Signer la décision NO GO' })).toBeEnabled();
+  });
+
+  it('rejects a retained map callback after selecting the same operation on another day', async () => {
+    const firstDate = '2026-10-17', secondDate = '2026-10-18';
+    const first = plannedMissions(firstDate)[0], second = plannedMissions(secondDate)[0];
+    renderAccount(captainAccount);
+    vi.mocked(fetchSeaOperationPlanning).mockImplementation(async (_client, date) => ({ date, choices: date === firstDate ? [first] : date === secondDate ? [second] : [] }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await chooseMission(first, firstDate); await userEvent.click(stepButton(2));
+    const oldMap = waypointMapMock.mock.calls.at(-1)![0] as { onAddWaypoint: (position: { latitude: number; longitude: number }) => void };
+    await userEvent.click(stepButton(0)); await chooseMission(second, secondDate); await userEvent.click(stepButton(2));
+    const currentPoints = structuredClone(capturingWeatherPanel().waypoints);
+    act(() => oldMap.onAddWaypoint({ latitude: 50, longitude: 1 }));
+    expect(capturingWeatherPanel().waypoints).toEqual(currentPoints);
+    expect(formQueries().getByLabelText('Date de l’opération')).toHaveValue(secondDate);
+  });
+
+  it('opens a signed legacy planning date without formatting it as a new dated choice or fetching Planning', async () => {
+    const draft = noGoDraft();
+    draft.planning = { date: 'ancienne date', operationId: 'legacy-operation', projectId: '501', captainPersonId: '101' };
+    const record = recordFixture(captainAccount, { draft, status: 'signed', canEdit: false, canSign: false });
+    const original = structuredClone(record);
+    renderAccount(captainAccount, record);
+    await openRecord(record);
+    expect(formQueries().getByLabelText('Projet')).toHaveDisplayValue(`${draft.project} · ${draft.vessel.name}`);
+    expect(fetchSeaOperationPlanning).not.toHaveBeenCalled();
+    expect(record).toEqual(original);
+  });
+});
 
 describe('Copernicus UKC in authenticated operation forms', () => {
   it('retains a calculation across wizard sections while preserving the original manual annotation', async () => {
@@ -1794,9 +1922,11 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     vi.setSystemTime(new Date('2026-10-16T22:30:00Z'));
     const choices = plannedMissions('2026-10-20');
     renderAccount(captainAccount, undefined, 1, choices);
+    vi.mocked(fetchSeaOperationPlanning).mockImplementation(async (_client, date) => ({ date, choices: date === '2026-10-20' ? choices : [] }));
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     fireEvent.change(formQueries().getByLabelText('Date de l’opération'), { target: { value: '2026-10-20' } });
-    await chooseMission(choices[0]);
+    await chooseMission(choices[0], '2026-10-20');
+    expect(formQueries().getByLabelText('Date de l’opération')).toHaveValue('2026-10-20');
     await decisionStep();
     expect(formQueries().getByLabelText('Prénom NOM du Capitaine signataire')).toHaveValue('MARTIN Camille');
     expect(formQueries().getByLabelText('Date de la décision')).toHaveValue('2026-10-17');
@@ -1883,28 +2013,31 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-16T10:00:00Z'));
     const oldContext = deferred<SeaOperationPlanningContext>();
-    const newContext = deferred<SeaOperationPlanningContext>();
     const oldChoices = plannedMissions('2026-10-16').map((choice) => ({ ...choice, project: `${choice.project} - ancien jour` }));
     const newChoices = plannedMissions('2026-10-17').map((choice) => ({ ...choice, project: `${choice.project} - nouveau jour` }));
     const { client } = renderAccount();
-    vi.mocked(fetchSeaOperationPlanning).mockImplementation((_client, date) => date === '2026-10-16' ? oldContext.promise : newContext.promise);
+    let batch = 0;
+    vi.mocked(fetchSeaOperationPlanning).mockImplementation(async (_client, date) => {
+      if (date === '2026-10-16') batch += 1;
+      if (batch === 1 && date === '2026-10-16') return oldContext.promise;
+      return { date, choices: date === '2026-10-17' ? newChoices : [] };
+    });
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     fireEvent.change(formQueries().getByLabelText('Date de l’opération'), { target: { value: '2026-10-17' } });
-    await act(async () => newContext.resolve({ date: '2026-10-17', choices: newChoices }));
-    await chooseMission(newChoices[1]);
+    await chooseMission(newChoices[1], '2026-10-17');
     await act(async () => oldContext.resolve({ date: '2026-10-16', choices: oldChoices }));
     expect(formQueries().getByLabelText('Date de l’opération')).toHaveValue('2026-10-17');
-    expect(formQueries().getByLabelText('Projet')).toHaveDisplayValue(`${newChoices[1].project} · LE ROZEL`);
+    expect(formQueries().getByLabelText('Projet')).toHaveDisplayValue(seaOperationPlanningChoiceLabel({ ...newChoices[1], date: '2026-10-17' }));
     expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue(newChoices[1].description);
-    expect(screen.queryByRole('option', { name: `${oldChoices[1].project} · LE ROZEL` })).not.toBeInTheDocument();
-    expect(fetchSeaOperationPlanning).toHaveBeenLastCalledWith(client, '2026-10-17');
+    expect(screen.queryByRole('option', { name: seaOperationPlanningChoiceLabel({ ...oldChoices[1], date: '2026-10-16' }) })).not.toBeInTheDocument();
+    expect(fetchSeaOperationPlanning).toHaveBeenCalledWith(client, '2026-10-17');
   });
 
   it('preserves user input entered while a unique Planning mission is still loading', async () => {
     const context = deferred<SeaOperationPlanningContext>();
     const [choice] = plannedMissions();
     renderAccount();
-    vi.mocked(fetchSeaOperationPlanning).mockReturnValue(context.promise);
+    vi.mocked(fetchSeaOperationPlanning).mockImplementation(async (_client, date) => date === seaOperationToday() ? context.promise : { date, choices: [] });
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     expect(formQueries().getByLabelText('Projet')).toBeDisabled();
     fireEvent.change(formQueries().getByLabelText('Description de l’opération'), { target: { value: 'Saisie conservée pendant le chargement' } });
@@ -1931,7 +2064,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const { client } = renderAccount(captainAccount, record, 1, [choice]);
     await userEvent.click(await screen.findByRole('button', { name: /Opération sans titre/ }));
     await screen.findByRole('dialog', { name: 'Fiche Opération en Mer' });
-    await screen.findByRole('option', { name: `${choice.project} · ${choice.vessel.name}` });
+    await screen.findByRole('option', { name: seaOperationPlanningChoiceLabel({ ...choice, date: seaOperationToday() }) });
     expect(formQueries().getByLabelText('Projet')).toHaveValue('');
     expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue(draft.description);
     await userEvent.click(stepButton(1));

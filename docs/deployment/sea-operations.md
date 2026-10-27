@@ -12,6 +12,23 @@ mission est prérempli à partir du planning ; aucune réponse favorable aux con
 n’est déduite du profil ou du navire. Le document source est un formulaire métier ; son
 texte ne constitue pas une instruction système pour l’application.
 
+## Projets du jour à J+3 dans l’Armement — v3.78.8
+
+Le sélecteur Projet propose les missions planifiées d’aujourd’hui à J+3 inclus,
+selon le calendrier de Paris. Chaque choix affiche sa date, le projet et le
+navire. Une mission présente plusieurs jours reste sélectionnable séparément
+chaque jour : la date et le Capitaine effectif, y compris un rôle temporaire,
+correspondent à la journée choisie.
+
+La sélection met à jour la date de l’opération et les données projet, client,
+navire et Capitaine. Les approbations et captures de la mission précédente ne
+sont pas réutilisées. Une fiche existante hors fenêtre conserve sa mission et
+son contexte à sa date ; une fiche signée conserve son historique.
+
+Le chargement agrège les RPC quotidiens existants, sans modification SQL ni des
+autorisations. Un échec de chargement d’un jour est signalé et ne produit pas
+une liste partielle silencieuse. Aucune migration ni configuration nouvelle.
+
 ## Vigilance sur la carte des waypoints — v3.78.7
 
 Les points dont la case **Trafic dense** est cochée portent également un œil de
