@@ -5,7 +5,7 @@ import { AppDialog } from '../../components/AppDialog';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import type { SeaPosition } from './seaOperationNavigation';
 import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
-import { buildSeaOperationRouteMap, DEFAULT_ROUTE_MAP_VIEWPORT, routeMapPositionAt, zoomRouteMapViewport } from './seaOperationRouteMapGeometry';
+import { buildSeaOperationRouteMap, DEFAULT_ROUTE_MAP_VIEWPORT, routeMapPositionAt, zoomRouteMapViewport, type RouteMapViewport } from './seaOperationRouteMapGeometry';
 import * as mapGeometry from './seaOperationRouteMapGeometry';
 import { SEA_OPERATION_MAP_PORT_CATALOG, seaOperationMapPlaces } from './seaOperationMapPlaces';
 import { formatProjectPort } from '../projects/projectPorts';
@@ -59,6 +59,161 @@ function animationFrames() {
 }
 
 describe('SeaOperationWaypointMapEditor', () => {
+  it('follows points and ports automatically until manual framing is chosen, then restores the saved frame on remount', () => {
+    const changed = vi.fn(), build = vi.spyOn(mapGeometry, 'buildSeaOperationRouteMap');
+    const initial = [point(1)], add = vi.fn();
+    const view = render(<SeaOperationWaypointMapEditor waypoints={initial} onAddWaypoint={add} departurePort="Port de Cherbourg" arrivalPort="Port de Barfleur" onMapViewportChange={changed} />);
+    const mode = () => screen.getByRole('combobox', { name: 'Mode de cadrage de la carte' });
+    expect(mode()).toHaveDisplayValue('Cadrage automatique');
+    const original = build.mock.results.at(-1)!.value.viewport;
+    view.rerender(<SeaOperationWaypointMapEditor waypoints={[point(1, '49.8', '-1.3')]} onAddWaypoint={add} departurePort="Port de Cherbourg" arrivalPort="Port de Barfleur" onMapViewportChange={changed} />);
+    expect(build.mock.results.at(-1)!.value.viewport).not.toEqual(original); expect(changed).not.toHaveBeenCalled();
+    fireEvent.change(mode(), { target: { value: 'manual' } });
+    expect(changed).toHaveBeenCalledOnce(); const retained = changed.mock.calls[0][0];
+    expect(retained.longitudeSpan).toBeGreaterThanOrEqual(.02);
+    view.rerender(<SeaOperationWaypointMapEditor waypoints={[point(1, '48.5', '-4.5')]} onAddWaypoint={add} departurePort="Port de Brest" arrivalPort="Port de Dieppe" onMapViewportChange={changed} />);
+    expect(mode()).toHaveDisplayValue('Cadrage manuel'); expect(build.mock.calls.at(-1)![3]).toEqual(retained); expect(changed).toHaveBeenCalledOnce();
+    view.unmount();
+    render(<SeaOperationWaypointMapEditor waypoints={initial} onAddWaypoint={add} mapViewport={retained} onMapViewportChange={changed} />);
+    expect(mode()).toHaveDisplayValue('Cadrage manuel'); expect(build.mock.calls.at(-1)![3]).toEqual(retained);
+    activate(); fireEvent.click(screen.getByRole('button', { name: 'Cadrer le parcours' }));
+    expect(mode()).toHaveDisplayValue('Cadrage automatique'); expect(changed).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it('allows manual camera navigation and zoom without enabling waypoint placement or adding on a tap or Enter', () => {
+    const changed = vi.fn(), add = vi.fn(), frames = animationFrames();
+    render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} onMapViewportChange={changed} />);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'manual' } });
+    const surface = screen.getByRole('button', { name: 'Zone de navigation de la carte' });
+    if (!(surface instanceof SVGElement) || !surface.ownerSVGElement) throw new Error('The navigation surface must belong to its SVG map.');
+    const svg = surface.ownerSVGElement;
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({ left: 100, top: 50, width: 450, height: 160, right: 550, bottom: 210, x: 100, y: 50, toJSON: () => ({}) });
+    expect(screen.getByRole('button', { name: 'Placer les waypoints' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('button', { name: 'Ajouter au centre' })).not.toBeInTheDocument();
+    tap(surface); fireEvent.keyDown(surface, { key: 'Enter' }); expect(add).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Zoomer sur la carte' }));
+    expect(changed).toHaveBeenCalledTimes(2);
+    fireEvent.pointerDown(surface, { clientX: 325, clientY: 130, pointerId: 2, button: 0 });
+    fireEvent.pointerMove(surface, { clientX: 345, clientY: 130, pointerId: 2 }); expect(changed).toHaveBeenCalledTimes(2);
+    fireEvent.pointerUp(surface, { clientX: 345, clientY: 130, pointerId: 2 }); expect(changed).toHaveBeenCalledTimes(3);
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 }); frames.advance(100);
+    expect(changed).toHaveBeenCalledTimes(4); expect(add).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cadrer le parcours' }));
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage automatique'); expect(changed).toHaveBeenLastCalledWith(undefined);
+    expect(screen.queryByRole('button', { name: 'Zone de navigation de la carte' })).not.toBeInTheDocument();
+  });
+
+  it('publishes a pan once on release and keeps manual framing when placement ends', () => {
+    const changed = vi.fn(); render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={vi.fn()} onMapViewportChange={changed} />);
+    const { surface } = activate();
+    fireEvent.pointerDown(surface, { clientX: 325, clientY: 130, pointerId: 1, button: 0 });
+    fireEvent.pointerMove(surface, { clientX: 365, clientY: 130, pointerId: 1 });
+    expect(changed).not.toHaveBeenCalled(); expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage manuel');
+    fireEvent.pointerUp(surface, { clientX: 365, clientY: 130, pointerId: 1 });
+    expect(changed).toHaveBeenCalledOnce(); expect(changed.mock.calls[0][0].longitudeSpan).toBe(16);
+    fireEvent.click(screen.getByRole('button', { name: 'Terminer le placement' }));
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage manuel'); expect(changed).toHaveBeenCalledOnce();
+  });
+
+  it.each([{ key: 'Tab', target: 'surface' }, { key: 'Escape', target: 'surface' }, { key: 'ArrowDown', target: 'mode' }])('restores the committed manual frame when $key interrupts a wheel animation outside placement on $target', ({ key, target }) => {
+    const frames = animationFrames(), changed = vi.fn(), build = vi.spyOn(mapGeometry, 'buildSeaOperationRouteMap');
+    render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={vi.fn()} mapViewport={{ ...DEFAULT_ROUTE_MAP_VIEWPORT }} onMapViewportChange={changed} />);
+    const surface = screen.getByRole('button', { name: 'Zone de navigation de la carte' });
+    if (!(surface instanceof SVGElement) || !surface.ownerSVGElement) throw new Error('The navigation surface must belong to its SVG map.');
+    vi.spyOn(surface.ownerSVGElement, 'getBoundingClientRect').mockReturnValue({ left: 100, top: 50, width: 450, height: 160, right: 550, bottom: 210, x: 100, y: 50, toJSON: () => ({}) });
+    const committedCentre = screen.getByText(/^Centre :/).textContent;
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 437.5, clientY: 100 }); frames.advance(50);
+    expect(screen.getByText(/^Centre :/).textContent).not.toBe(committedCentre); expect(changed).not.toHaveBeenCalled();
+    fireEvent.keyDown(target === 'surface' ? surface : screen.getByRole('combobox'), { key });
+    expect(screen.getByText(/^Centre :/).textContent).toBe(committedCentre);
+    expect(build.mock.results.at(-1)!.value.viewport).toEqual(DEFAULT_ROUTE_MAP_VIEWPORT);
+    expect(frames.pending).toBe(0); frames.advance(1000); expect(changed).not.toHaveBeenCalled();
+  });
+
+  it('starts keyboard navigation from the visible intermediate wheel frame', () => {
+    const frames = animationFrames(), changed = vi.fn();
+    render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={vi.fn()} mapViewport={{ ...DEFAULT_ROUTE_MAP_VIEWPORT }} onMapViewportChange={changed} />);
+    const surface = screen.getByRole('button', { name: 'Zone de navigation de la carte' });
+    if (!(surface instanceof SVGElement) || !surface.ownerSVGElement) throw new Error('The navigation surface must belong to its SVG map.');
+    vi.spyOn(surface.ownerSVGElement, 'getBoundingClientRect').mockReturnValue({ left: 100, top: 50, width: 450, height: 160, right: 550, bottom: 210, x: 100, y: 50, toJSON: () => ({}) });
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 }); frames.advance(50);
+    fireEvent.keyDown(surface, { key: 'ArrowRight' });
+    expect(changed).toHaveBeenCalledOnce(); expect(changed.mock.calls[0][0].longitudeSpan).toBeCloseTo(16 * Math.exp(-.12), 10);
+    frames.advance(1000); expect(changed).toHaveBeenCalledOnce();
+  });
+
+  it.each(['heading', 'summary'])('commits the visible manual frame when a pointer presses the map %s during wheel interpolation', target => {
+    const frames = animationFrames(), changed = vi.fn(), build = vi.spyOn(mapGeometry, 'buildSeaOperationRouteMap');
+    render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={vi.fn()} mapViewport={{ ...DEFAULT_ROUTE_MAP_VIEWPORT }} onMapViewportChange={changed} />);
+    const surface = screen.getByRole('button', { name: 'Zone de navigation de la carte' });
+    if (!(surface instanceof SVGElement) || !surface.ownerSVGElement) throw new Error('The navigation surface must belong to its SVG map.');
+    vi.spyOn(surface.ownerSVGElement, 'getBoundingClientRect').mockReturnValue({ left: 100, top: 50, width: 450, height: 160, right: 550, bottom: 210, x: 100, y: 50, toJSON: () => ({}) });
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 }); frames.advance(50);
+    expect(build.mock.results.at(-1)!.value.viewport.longitudeSpan).toBeCloseTo(16 * Math.exp(-.12), 10);
+    fireEvent.pointerDown(target === 'heading' ? screen.getByRole('heading', { name: 'Carte du parcours' }) : screen.getByText(/^Ports dans cette région/), { pointerId: 2, button: 0 });
+    expect(build.mock.results.at(-1)!.value.viewport.longitudeSpan).toBeCloseTo(16 * Math.exp(-.12), 10);
+    expect(changed).toHaveBeenCalledOnce(); expect(changed.mock.calls[0][0]).toEqual(build.mock.results.at(-1)!.value.viewport);
+    expect(frames.pending).toBe(0); frames.advance(1000); expect(changed).toHaveBeenCalledOnce();
+  });
+
+  it('continues a camera zoom button from the visible intermediate wheel frame', () => {
+    const frames = animationFrames(), changed = vi.fn();
+    render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={vi.fn()} mapViewport={{ ...DEFAULT_ROUTE_MAP_VIEWPORT }} onMapViewportChange={changed} />);
+    const surface = screen.getByRole('button', { name: 'Zone de navigation de la carte' });
+    if (!(surface instanceof SVGElement) || !surface.ownerSVGElement) throw new Error('The navigation surface must belong to its SVG map.');
+    vi.spyOn(surface.ownerSVGElement, 'getBoundingClientRect').mockReturnValue({ left: 100, top: 50, width: 450, height: 160, right: 550, bottom: 210, x: 100, y: 50, toJSON: () => ({}) });
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 }); frames.advance(50);
+    const zoom = screen.getByRole('button', { name: 'Zoomer sur la carte' });
+    fireEvent.pointerDown(zoom, { pointerId: 2, button: 0 }); fireEvent.pointerUp(zoom, { pointerId: 2, button: 0 }); fireEvent.click(zoom);
+    expect(changed).toHaveBeenCalledTimes(2); expect(changed.mock.calls[0][0].longitudeSpan).toBeCloseTo(16 * Math.exp(-.12), 10);
+    expect(changed.mock.calls[1][0].longitudeSpan).toBeCloseTo(8 * Math.exp(-.12), 10);
+    frames.advance(1000); expect(changed).toHaveBeenCalledTimes(2);
+  });
+
+  it('commits the intermediate frame before a waypoint tap opens its menu without repositioning it', () => {
+    const frames = animationFrames(), changed = vi.fn(), move = vi.fn(), build = vi.spyOn(mapGeometry, 'buildSeaOperationRouteMap');
+    render(<SeaOperationWaypointMapEditor waypoints={[point(1)]} onAddWaypoint={vi.fn()} onMoveWaypoint={move} onDeleteWaypoint={vi.fn()} mapViewport={{ ...DEFAULT_ROUTE_MAP_VIEWPORT }} onMapViewportChange={changed} />);
+    const { surface } = activate();
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 }); frames.advance(50);
+    const marker = screen.getByRole('button', { name: 'Sélectionner le waypoint 1' });
+    tap(marker, 350, 120, 2); fireEvent.click(marker);
+    expect(screen.getByRole('menuitem', { name: 'Supprimer' })).toBeVisible(); expect(move).not.toHaveBeenCalled();
+    expect(changed).toHaveBeenCalledOnce(); expect(changed.mock.calls[0][0].longitudeSpan).toBeCloseTo(16 * Math.exp(-.12), 10);
+    expect(build.mock.results.at(-1)!.value.viewport).toEqual(changed.mock.calls[0][0]);
+    frames.advance(1000); expect(changed).toHaveBeenCalledOnce(); expect(move).not.toHaveBeenCalled();
+  });
+
+  it('publishes wheel framing only at its final frame and resumes a pan from the visible intermediate zoom', () => {
+    const frames = animationFrames(), changed = vi.fn();
+    render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={vi.fn()} onMapViewportChange={changed} />);
+    const { surface } = activate();
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 }); frames.advance(20);
+    expect(changed).not.toHaveBeenCalled(); expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage manuel');
+    frames.advance(80); expect(changed).toHaveBeenCalledOnce(); expect(changed.mock.calls[0][0].longitudeSpan).toBeCloseTo(16 * Math.exp(-.24), 10);
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 }); frames.advance(20);
+    fireEvent.pointerDown(surface, { clientX: 325, clientY: 130, pointerId: 2, button: 0 });
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage manuel');
+    fireEvent.pointerMove(surface, { clientX: 345, clientY: 130, pointerId: 2 });
+    fireEvent.pointerUp(surface, { clientX: 345, clientY: 130, pointerId: 2 });
+    expect(changed).toHaveBeenCalledTimes(3); expect(changed.mock.calls[2][0].longitudeSpan).toBeCloseTo(16 * Math.exp(-.288), 10);
+    frames.advance(1000); expect(changed).toHaveBeenCalledTimes(3);
+  });
+
+  it('restores the last committed frame on cancellation and honors external automatic/readonly changes without callbacks', () => {
+    const frames = animationFrames(), changed = vi.fn(), points = [point(1)], initial = { ...DEFAULT_ROUTE_MAP_VIEWPORT };
+    const view = render(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={vi.fn()} mapViewport={initial} onMapViewportChange={changed} />);
+    const { surface } = activate();
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 }); frames.advance(20);
+    fireEvent.blur(window); frames.advance(1000); expect(changed).not.toHaveBeenCalled();
+    const external = { centerLatitude: 48, centerLongitude: -4, longitudeSpan: 2 };
+    view.rerender(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={vi.fn()} mapViewport={external} onMapViewportChange={changed} />);
+    expect(screen.getByText('Centre : 48° 00.000′ N — 004° 00.000′ W')).toBeVisible();
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 });
+    view.rerender(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={vi.fn()} onMapViewportChange={changed} disabled />);
+    frames.advance(1000); expect(changed).not.toHaveBeenCalled();
+    expect(screen.getByRole('combobox')).toBeDisabled(); expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage automatique');
+  });
+
   it('requires an explicit layer choice at coincident route, isolated point and zone vertex positions', () => {
     const route = [point(1)], isolated = [{ ...point(2), id: 'isolated' }];
     const zones = [{ id: 'zone', name: 'Travaux', vertices: [{ latitude: route[0].latitude, longitude: route[0].longitude }] }];
@@ -305,7 +460,7 @@ describe('SeaOperationWaypointMapEditor', () => {
     const frames = animationFrames(), add = vi.fn(), build = vi.spyOn(mapGeometry, 'buildSeaOperationRouteMap');
     const view = render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
     const { surface } = activate(); build.mockClear();
-    const originalCentre = view.container.querySelector('.so-waypoint-map-centre')!.textContent;
+    const originalCentre = view.container.querySelector('.so-waypoint-map-centre')?.textContent ?? '';
     for (const clientX of [325, 400, 437.5]) fireEvent.wheel(surface, { deltaY: -40, clientX, clientY: 100, cancelable: true });
     expect(frames.request).toHaveBeenCalledOnce(); expect(frames.pending).toBe(1);
     expect(build).not.toHaveBeenCalled();
@@ -394,14 +549,14 @@ describe('SeaOperationWaypointMapEditor', () => {
     fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 });
     act(() => onResize([{ contentRect: { width: 330, height: 280 } } as ResizeObserverEntry], {} as ResizeObserver));
     expect(frames.pending).toBe(0); frames.advance(1000);
-    expect(screen.getByText('Centre : 49° 00.000′ N — 003° 00.000′ W')).toBeVisible();
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage automatique');
   });
   it('keeps gestures opt-in, shows a local background when empty, and ends placement explicitly', () => {
     const add = vi.fn();
     const { container } = render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
     expect(screen.queryByRole('button', { name: 'Ajouter au centre' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Zone de placement des waypoints' })).not.toBeInTheDocument();
-    expect(screen.getByText(/Renseignez une latitude/)).toBeVisible();
+    expect(screen.getByText('0 points géolocalisés')).toBeVisible();
     const { surface } = activate();
     expect(surface).toHaveFocus();
     expect(screen.getByText(/Glissez le fond pour naviguer/)).toBeVisible();
@@ -425,11 +580,13 @@ describe('SeaOperationWaypointMapEditor', () => {
     expect(add).toHaveBeenCalledOnce();
   });
 
-  it('appends controlled positions without recentering and only fits the route on request', () => {
+  it('keeps automatic placement steady between clicks, fits on exit and preserves later additions in manual mode', () => {
+    const changed = vi.fn();
     function ControlledEditor() {
       const [points, setPoints] = useState<SeaOperationWaypoint[]>([]);
+      const [frame, setFrame] = useState<RouteMapViewport>();
       const add = (position: SeaPosition) => setPoints((previous) => [...previous, point(previous.length + 1, String(position.latitude), String(position.longitude))]);
-      return <SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} />;
+      return <SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} mapViewport={frame} onMapViewportChange={next => { changed(next); setFrame(next); }} />;
     }
     const { container } = render(<ControlledEditor />);
     const { surface } = activate();
@@ -439,8 +596,19 @@ describe('SeaOperationWaypointMapEditor', () => {
     expect(screen.getByText('2 points géolocalisés')).toBeVisible();
     expect(container.querySelector('[data-point-indices="1"]')).toHaveAttribute('transform', 'translate(450 160)');
     expect(container.querySelector('[data-point-indices="2"]')).toHaveAttribute('transform', 'translate(675 160)');
-    fireEvent.click(screen.getByRole('button', { name: 'Cadrer le parcours' }));
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage automatique'); expect(changed).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Terminer le placement' }));
     expect(container.querySelector('[data-point-indices="1"]')).not.toHaveAttribute('transform', 'translate(450 160)');
+    expect(changed).not.toHaveBeenCalled();
+    const { surface: resumed } = activate();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'manual' } });
+    const firstPosition = container.querySelector('[data-point-indices="1"]')!.getAttribute('transform');
+    tap(resumed, 325, 130, 3);
+    expect(screen.getByText('3 points géolocalisés')).toBeVisible();
+    expect(container.querySelector('[data-point-indices="1"]')).toHaveAttribute('transform', firstPosition);
+    expect(changed).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'Cadrer le parcours' }));
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage automatique'); expect(changed).toHaveBeenLastCalledWith(undefined);
     expect(screen.getByRole('button', { name: 'Terminer le placement' })).toBeVisible();
   });
 
@@ -536,6 +704,7 @@ describe('SeaOperationWaypointMapEditor', () => {
     const add = vi.fn();
     render(<SeaOperationWaypointMapEditor waypoints={[point(1), point(2, '48.36', '-4.53')]} onAddWaypoint={add} />);
     activate();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'manual' } });
     fireEvent.click(screen.getByRole('button', { name: 'Ajouter au centre' }));
     const originalCentre = add.mock.calls[0][0];
     act(() => onResize([{ contentRect: { width: 330 } } as ResizeObserverEntry], {} as ResizeObserver));

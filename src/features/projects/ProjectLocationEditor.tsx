@@ -10,8 +10,9 @@ import { projectLocationRouteEtas } from './projectLocationRouteEtas';
 import { seaOperationRouteArrivalEta } from '../seaOperations/seaOperationVoyageSummary';
 import './projectLocationEditor.css';
 
-export function ProjectLocationEditor({ value, onChange, disabled = false, vessel, projectId }: {
+export function ProjectLocationEditor({ value, onChange, disabled = false, vessel, projectId, departurePort, arrivalPort }: {
   value?: ProjectLocationPlan | null; onChange: (value: ProjectLocationPlan) => void; disabled?: boolean; vessel?: ProjectLocationVessel; projectId?: string;
+  departurePort?: string; arrivalPort?: string;
 }) {
   const plan = useMemo(() => value ?? emptyProjectLocationPlan(), [value]);
   const [mode, setMode] = useState<'route' | 'point' | 'zone'>('route');
@@ -59,6 +60,8 @@ export function ProjectLocationEditor({ value, onChange, disabled = false, vesse
     <label className="project-location-pdf"><input type="checkbox" checked={plan.includeInPdf} onChange={event => emit({ ...plan, includeInPdf: event.target.checked })} />Joindre la localisation au PDF</label>
     <div className="project-location-modes" role="group" aria-label="Mode de dessin"><button type="button" className="sp-button sp-button--secondary" aria-pressed={mode === 'route'} onClick={() => setMode('route')}><Route size={16} aria-hidden="true" />Route</button><button type="button" className="sp-button sp-button--secondary" aria-pressed={mode === 'point'} onClick={() => setMode('point')}><MapPin size={16} aria-hidden="true" />Point isolé</button><button type="button" className="sp-button sp-button--secondary" aria-pressed={mode === 'zone'} onClick={() => startZone()}><Shapes size={16} aria-hidden="true" />Zone</button>{mode === 'zone' && plan.zones.length > 0 && <label>Zone à compléter<select value={activeZoneId || ''} onChange={event => setActiveZoneId(event.target.value)}>{plan.zones.map((zone, index) => <option key={zone.id} value={zone.id}>{zone.name || `Zone ${index + 1}`}</option>)}</select></label>}</div>
     <SeaOperationWaypointMapEditor waypoints={plan.waypoints} isolatedPoints={plan.points} zones={plan.zones} drawingMode={mode} maxSpeedKnots={vessel?.maxSpeedKnots} etd={plan.waypoints[0]?.eta || plan.etd} eta={seaOperationRouteArrivalEta(plan)} disabled={disabled}
+      departurePort={departurePort} arrivalPort={arrivalPort} mapViewport={plan.mapViewport}
+      onMapViewportChange={mapViewport => { const current = latest.current.plan; const next = { ...current }; if (mapViewport) next.mapViewport = { ...mapViewport }; else delete next.mapViewport; emit(next); }}
       onAddWaypoint={(position, port) => { if (position) addOnMap(position, port); }}
       onMoveWaypoint={(id, position) => { const current = latest.current.plan; emit({ ...current, waypoints: current.waypoints.map(point => point.id === id ? updateSeaOperationWaypoint(point, { latitude: String(Number(position.latitude.toFixed(6))), longitude: String(Number(position.longitude.toFixed(6))) }) : point) }); }}
       onDeleteWaypoint={id => { const current = latest.current.plan; emit({ ...current, waypoints: current.waypoints.filter(point => point.id !== id) }); }}

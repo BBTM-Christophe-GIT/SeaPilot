@@ -15,5 +15,7 @@ export function copyProjectLocationToSeaOperation(payload: SeaOperationPayload, 
   const result: SeaOperationPayload = { ...payload, charts: plan.charts, waypoints,
     vessel: plan.etd.trim() ? { ...payload.vessel, etd: plan.etd } : payload.vessel,
     locationOverlay: { version: 1, points: plan.points.map(copyPoint), zones: plan.zones.map(zone => ({ ...zone, id: newId() })) } };
+  if (plan.mapViewport) result.mapViewport = { ...plan.mapViewport };
+  else delete result.mapViewport;
   return updateSeaOperationRouteEtas(result, maxSpeedKnots);
 }

@@ -10,6 +10,7 @@ import { GOURY_WEATHER_MATRIX } from '../fleet/vesselWeatherMatrix';
 import { SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL, SEA_METEO_FRANCE_OBSERVATIONS_URL, type ObservationResult } from './seaOperationWeatherObservationsModel';
 import { calculateSeaOperationCopernicusEstimate, type SeaOperationCopernicusInput, type SeaOperationCopernicusProviderResult } from './seaOperationCopernicusModel';
 import { buildSeaOperationRouteMap } from './seaOperationRouteMapGeometry';
+import { resolveSeaOperationMapPorts } from './seaOperationMapPlaces';
 
 function recordedObservation(pointId: string): ObservationResult {
   const common = { observedAt: '2026-10-16T10:15:00Z', station: { id: '62001',
@@ -120,6 +121,19 @@ function tableRectangles(body: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Sea operation PDF', () => {
+  it('draws defined departure and arrival ports even without waypoints and preserves a manual frame', async () => {
+    const record = voyageFixture(); record.draft.vessel.departurePort = 'Cherbourg'; record.draft.vessel.arrivalPort = 'Brest';
+    record.draft.waypoints = [];
+    const original = structuredClone(record.draft);
+    const automatic = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const autoMap = (await landscapeBodies(automatic.bytes)).find(body => body.includes('(Carte du parcours) Tj'))!;
+    expect(autoMap).toContain('Cherbourg'); expect(autoMap).toContain('Brest'); expect(autoMap).toContain('W\nn');
+    record.draft.mapViewport = { centerLatitude: 49.65, centerLongitude: -1.62, longitudeSpan: .2 };
+    const manual = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const manualMap = (await landscapeBodies(manual.bytes)).find(body => body.includes('(Carte du parcours) Tj'))!;
+    expect(manualMap).not.toContain('Brest'); expect(manualMap).toContain('W\nn');
+    expect(record.draft).toEqual({ ...original, mapViewport: { centerLatitude: 49.65, centerLongitude: -1.62, longitudeSpan: .2 } });
+  });
   it('draws a vector vigilance eye only beside marked map positions, including one shared badge for coincident waypoints', async () => {
     const record = fixture(); record.draft.description = 'Recette des points de passage en zone maritime à trafic dense.';
     const coordinates = [[49.65, -1.62], [49.65, -1.62], [49.72, -1.25], [49.82, -.95]];
@@ -142,7 +156,8 @@ describe('Sea operation PDF', () => {
       .map(match => ({ x: Number(match[1]) + 4, y: Number(match[2]) - 5 }));
     expect(badges).toHaveLength(2);
     const frame = tableRectangles(map).find(rect => rect.x === 49 && rect.width > 700 && rect.height === -190)!;
-    const geometry = buildSeaOperationRouteMap(record.draft.waypoints, frame.width, 190);
+    const geometry = buildSeaOperationRouteMap(record.draft.waypoints, frame.width, 190, record.draft.mapViewport,
+      resolveSeaOperationMapPorts(record.draft.vessel.departurePort, record.draft.vessel.arrivalPort).ports.map(port => port.location));
     for (const badge of badges) {
       expect(badge.x - 7).toBeGreaterThan(frame.x); expect(badge.x + 7).toBeLessThan(frame.x + frame.width);
       expect(badge.y - 5).toBeGreaterThan(frame.y + frame.height); expect(badge.y + 5).toBeLessThan(frame.y);

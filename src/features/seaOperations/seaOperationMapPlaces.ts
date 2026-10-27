@@ -1,5 +1,5 @@
 import placesJson from './mapData/places.json?raw';
-import { PROJECT_PORTS, type ProjectPort } from '../projects/projectPorts';
+import { formatProjectPort, PROJECT_PORTS, type ProjectPort } from '../projects/projectPorts';
 import type { SeaOperationRouteMapGeometry, RouteMapPosition } from './seaOperationRouteMapGeometry';
 
 export interface SeaOperationMapLocation {
@@ -7,6 +7,18 @@ export interface SeaOperationMapLocation {
   departmentCode: string; locode: string; longitude: number; latitude: number; precisionCode: string;
 }
 export interface SeaOperationMapPort { key: string; port: ProjectPort; location: SeaOperationMapLocation | null }
+export type SeaOperationMapPortRole = 'departure' | 'arrival';
+export interface SeaOperationResolvedMapPort extends SeaOperationMapPort {
+  location: SeaOperationMapLocation;
+  roles: SeaOperationMapPortRole[];
+  roleLabel: 'Départ' | 'Arrivée' | 'Départ / Arrivée';
+}
+export interface SeaOperationMapPortIssue {
+  role: SeaOperationMapPortRole;
+  input: string;
+  reason: 'not-found' | 'ambiguous' | 'unlocated';
+  candidates: SeaOperationMapPort[];
+}
 interface City { id: string; name: string; longitude: number; latitude: number; rank: number; population: number }
 interface Label extends RouteMapPosition { anchor: 'start' | 'end' }
 interface Box { west: number; east: number; north: number; south: number }
@@ -53,6 +65,35 @@ export function findSeaOperationMapPortLocation(port: ProjectPort): SeaOperation
 export const SEA_OPERATION_MAP_PORT_CATALOG: readonly SeaOperationMapPort[] = [...new Map(PROJECT_PORTS.map(port => {
   const key = catalogKey(port); return [key, { key, port, location: findSeaOperationMapPortLocation(port) }] as const;
 })).values()];
+
+function portNames(port: ProjectPort): string[] {
+  const name = normalize(port.port);
+  return [...new Set([name, name.replace(/^port (?:de |du |des |d )?/, ''),
+    name.replace(/^port du /, 'le '), name.replace(/^port des /, 'les ')])];
+}
+
+/** Resolve named catalogue ports only; municipalities and associated LOCODEs never supply a guessed position. */
+export function resolveSeaOperationMapPorts(departurePort?: string, arrivalPort?: string): { ports: SeaOperationResolvedMapPort[]; issues: SeaOperationMapPortIssue[] } {
+  const ports: SeaOperationResolvedMapPort[] = [], issues: SeaOperationMapPortIssue[] = [];
+  for (const [role, input] of [['departure', departurePort], ['arrival', arrivalPort]] as const) {
+    if (!input?.trim()) continue;
+    const name = normalize(input);
+    const full = SEA_OPERATION_MAP_PORT_CATALOG.filter(item => normalize(formatProjectPort(item.port)) === name);
+    const candidates = full.length ? full : SEA_OPERATION_MAP_PORT_CATALOG.filter(item => portNames(item.port).includes(name));
+    const identities = new Map(candidates.map(item => [item.location ? `${item.location.source}:${item.location.sourceId}` : item.key, item]));
+    if (identities.size !== 1) { issues.push({ role, input, reason: identities.size ? 'ambiguous' : 'not-found', candidates }); continue; }
+    const candidate = identities.values().next().value!;
+    if (!candidate.location || !Number.isFinite(candidate.location.latitude) || !Number.isFinite(candidate.location.longitude)
+      || Math.abs(candidate.location.latitude) > 90 || Math.abs(candidate.location.longitude) > 180) {
+      issues.push({ role, input, reason: 'unlocated', candidates }); continue;
+    }
+    const identity = `${candidate.location.source}:${candidate.location.sourceId}`;
+    const existing = ports.find(item => item.key === identity);
+    if (existing) { existing.roles.push(role); existing.roleLabel = 'Départ / Arrivée'; }
+    else ports.push({ ...candidate, key: identity, location: candidate.location, roles: [role], roleLabel: role === 'departure' ? 'Départ' : 'Arrivée' });
+  }
+  return { ports, issues };
+}
 export const SEA_OPERATION_MAP_PORT_COVERAGE = {
   france: { total: SEA_OPERATION_MAP_PORT_CATALOG.filter(item => item.port.country === 'France').length,
     located: SEA_OPERATION_MAP_PORT_CATALOG.filter(item => item.port.country === 'France' && item.location).length },
@@ -80,12 +121,13 @@ function labelAt(position: RouteMapPosition, name: string, geometry: SeaOperatio
   return null;
 }
 
-export function seaOperationMapPlaces(geometry: SeaOperationRouteMapGeometry) {
+export function seaOperationMapPlaces(geometry: SeaOperationRouteMapGeometry, definedPortPositions: readonly RouteMapPosition[] = []) {
   const ports = SEA_OPERATION_MAP_PORT_CATALOG.flatMap(item => {
     const position = item.location && projectSeaOperationMapPlace(geometry, item.location);
     return position ? [{ ...item, ...position, location: item.location! }] : [];
   }).sort((a, b) => a.port.port.localeCompare(b.port.port, 'fr'));
   const occupied: Box[] = geometry.points.map(point => ({ west: point.x - 24, east: point.x + 24, north: point.y - 24, south: point.y + 40 }));
+  for (const point of definedPortPositions) occupied.push({ west: point.x - 95, east: point.x + 95, north: point.y - 55, south: point.y + 65 });
   const cityLabels: Array<City & RouteMapPosition & { label: Label }> = [];
   const maxCities = Math.max(8, Math.min(48, Math.floor(geometry.width * geometry.height / 9000)));
   for (const city of rankedCities) {

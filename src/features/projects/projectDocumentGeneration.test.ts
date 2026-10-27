@@ -4,6 +4,7 @@ import { decodePDFRawStream, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
 import JSZip from 'jszip';
 import { emptyProjectLocationPlan } from './projectLocation';
 import { emptySeaOperationWaypoint } from '../seaOperations/seaOperationModel';
+import * as projectLocationPdf from './projectLocationPdf';
 import { describe, expect, it, vi } from 'vitest';
 import type { ClientRecord, ProjectContractRecord, ProjectRecord } from './projectQueries';
 import {
@@ -61,6 +62,22 @@ const project: ProjectRecord = {
 };
 
 describe('optional location in every supported contract PDF', () => {
+  it('forwards the retained manual map frame and commercial ports to the appendix without changing the saved plan', async () => {
+    const logo = await readFile(resolve('public/bbtm-report-logo.png'));
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(logo, { status: 200 }));
+    const appendix = new Blob(['appendix fixture'], { type: 'application/pdf' });
+    const append = vi.spyOn(projectLocationPdf, 'appendProjectLocationPdf').mockResolvedValue(appendix);
+    const plan = { ...emptyProjectLocationPlan(), includeInPdf: true, mapViewport: { centerLatitude: 49.654321, centerLongitude: -1.789012, longitudeSpan: .023456789 },
+      points: [{ ...emptySeaOperationWaypoint('isolated-only'), latitude: '49.65', longitude: '-1.62' }] };
+    const original = structuredClone(plan);
+    try {
+      const result = await generateProjectDocument('offer', { project: { ...project, locationPlan: plan } });
+      expect(result.blob).toBe(appendix);
+      expect(append).toHaveBeenCalledWith(expect.any(Blob), plan, expect.objectContaining({ departurePort: project.deliveryPort, arrivalPort: project.redeliveryPort }));
+      expect(append.mock.calls[0][1]).toEqual(expect.objectContaining({ mapViewport: plan.mapViewport }));
+      expect(plan).toEqual(original);
+    } finally { append.mockRestore(); fetchMock.mockRestore(); }
+  });
   it.each(['offer', 'towage_contract', 'bareboat_charter', 'bimco_supplytime'] as const)('appends only after explicit opt-in (%s)', async kind => {
     const logo = await readFile(resolve('public/bbtm-report-logo.png'));
     const partTwo = await readFile(resolve('public/templates/bimco-p144-part-ii.pdf'));

@@ -409,6 +409,8 @@ export function SeaOperationsPage() {
   const mapOperationId = draft.planning?.operationId;
   const mapOperationDate = seaOperationContextDate(draft);
   const mapVesselId = draft.vessel.id;
+  const mapDeparturePort = draft.vessel.departurePort;
+  const mapArrivalPort = draft.vessel.arrivalPort;
   const mapAccount = actionContext.current.account;
   const canEditMap = () => {
     const current = weatherEditor.current;
@@ -416,6 +418,7 @@ export function SeaOperationsPage() {
       && actionContext.current.account === mapAccount
       && current.draft.planning?.operationId === mapOperationId && seaOperationContextDate(current.draft) === mapOperationDate
       && current.draft.vessel.id === mapVesselId && current.editing
+      && current.draft.vessel.departurePort === mapDeparturePort && current.draft.vessel.arrivalPort === mapArrivalPort
       && current.editable && !current.signed && !current.busy && !current.exporting;
   };
   const updateLocationOverlay = (change: (overlay: ProjectLocationOverlay) => ProjectLocationOverlay) => {
@@ -855,8 +858,8 @@ export function SeaOperationsPage() {
           <Field label="Tirant d’eau de référence (m)"><input type="number" readOnly value={referenceDraft ?? ''} /></Field>{referenceDraft == null && <p className="so-help">{signed ? 'Tirant d’eau de référence non enregistré dans cette version : indicateur UKC indisponible.' : 'Renseignez le tirant d’eau du navire dans le module Navires.'}</p>}
           <SeaOperationHydroSources />
           {step === 2 && (editable && !signed
-            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${contextDate || ''}:${draft.planning?.operationId || 'transit'}:${draft.vessel.id}`} waypoints={draft.waypoints} isolatedPoints={draft.locationOverlay?.points} zones={draft.locationOverlay?.zones} onMoveIsolatedPoint={moveIsolatedPoint} onDeleteIsolatedPoint={deleteIsolatedPoint} onMoveZoneVertex={moveZoneVertex} onDeleteZoneVertex={deleteZoneVertex} maxSpeedKnots={data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id)?.maxSpeedKnots} etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)} onAddWaypoint={addWaypoint} onMoveWaypoint={moveWaypoint} onDeleteWaypoint={removeWaypoint} disabled={busy || exporting} />
-            : <SeaOperationRouteMap waypoints={draft.waypoints} isolatedPoints={draft.locationOverlay?.points} zones={draft.locationOverlay?.zones} />)}
+            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${contextDate || ''}:${draft.planning?.operationId || 'transit'}:${draft.vessel.id}`} waypoints={draft.waypoints} isolatedPoints={draft.locationOverlay?.points} zones={draft.locationOverlay?.zones} onMoveIsolatedPoint={moveIsolatedPoint} onDeleteIsolatedPoint={deleteIsolatedPoint} onMoveZoneVertex={moveZoneVertex} onDeleteZoneVertex={deleteZoneVertex} maxSpeedKnots={data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id)?.maxSpeedKnots} etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)} departurePort={draft.vessel.departurePort} arrivalPort={draft.vessel.arrivalPort} mapViewport={draft.mapViewport} onMapViewportChange={mapViewport => { if (canEditMap()) update({ mapViewport: mapViewport ? { ...mapViewport } : undefined }); }} onAddWaypoint={addWaypoint} onMoveWaypoint={moveWaypoint} onDeleteWaypoint={removeWaypoint} disabled={busy || exporting} />
+            : <SeaOperationRouteMap waypoints={draft.waypoints} isolatedPoints={draft.locationOverlay?.points} zones={draft.locationOverlay?.zones} viewport={draft.mapViewport} departurePort={draft.vessel.departurePort} arrivalPort={draft.vessel.arrivalPort} />)}
           <Field label="Numéro de la ou des cartes marines"><input value={draft.charts} onChange={(event) => update({ charts: event.target.value })} /></Field>
           {draft.locationOverlay && <ProjectLocationOverlayFields value={draft.locationOverlay} disabled={busy || exporting || signed || !editable}
             vessel={{ id: draft.vessel.id, draftMeters: draft.vessel.draftMeters }} etd={draft.vessel.etd} projectId={draft.planning?.projectId}

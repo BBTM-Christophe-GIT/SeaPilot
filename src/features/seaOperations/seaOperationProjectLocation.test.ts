@@ -6,6 +6,16 @@ import { copyProjectLocationToSeaOperation } from './seaOperationProjectLocation
 
 const point = (id: string, longitude = '0') => ({ id, number: id, descriptionVhf: 'Description conservée', latitude: '0', longitude, eta: '', ukc: '3', denseTraffic: false });
 describe('project location copied when selecting a sea-operation mission', () => {
+  it('imports an independent project frame and clears the previous manual frame when the chosen plan uses automatic framing', () => {
+    const plan = { ...emptyProjectLocationPlan(), mapViewport: { centerLatitude: 49.654321, centerLongitude: -1.789012, longitudeSpan: .023456789 } };
+    const draft = emptySeaOperation(); draft.mapViewport = { centerLatitude: 0, centerLongitude: 0, longitudeSpan: 20 };
+    const result = copyProjectLocationToSeaOperation(draft, plan);
+    expect(result.mapViewport).toEqual(plan.mapViewport); expect(result.mapViewport).not.toBe(plan.mapViewport);
+    result.mapViewport!.centerLongitude = 10;
+    expect(plan.mapViewport.centerLongitude).toBe(-1.789012); expect(draft.mapViewport.centerLongitude).toBe(0);
+    expect(copyProjectLocationToSeaOperation(result, emptyProjectLocationPlan())).not.toHaveProperty('mapViewport');
+    expect(copyProjectLocationToSeaOperation(draft, null)).toBe(draft);
+  });
   it('copies independent route/points/zones with fresh identities and no retained provider captures', () => {
     const plan = { ...emptyProjectLocationPlan(), charts: '7120 - 7421', etd: '2026-10-27T10:00', waypoints: [point('a'), point('b', '1')],
       points: [{ ...point('isolated', '40'), weather: { stale: true } }], zones: [{ id: 'zone', name: 'Zone', vertices: [{ latitude: '1', longitude: '1' }] }] };

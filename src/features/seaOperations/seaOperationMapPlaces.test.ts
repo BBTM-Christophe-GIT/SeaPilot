@@ -1,10 +1,34 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { PROJECT_PORTS } from '../projects/projectPorts';
+import { formatProjectPort, PROJECT_PORTS } from '../projects/projectPorts';
 import { buildSeaOperationRouteMap } from './seaOperationRouteMapGeometry';
-import { findSeaOperationMapPortLocation, projectSeaOperationMapPlace, SEA_OPERATION_MAP_PORT_CATALOG, SEA_OPERATION_MAP_PORT_COVERAGE, seaOperationMapPlaces } from './seaOperationMapPlaces';
+import { findSeaOperationMapPortLocation, projectSeaOperationMapPlace, resolveSeaOperationMapPorts, SEA_OPERATION_MAP_PORT_CATALOG, SEA_OPERATION_MAP_PORT_COVERAGE, seaOperationMapPlaces } from './seaOperationMapPlaces';
 
 describe('offline city and project-port reference points', () => {
+  it('resolves named departure and arrival ports from the same catalogue, including historical short names', () => {
+    const result = resolveSeaOperationMapPorts('  CHERBOURG ', 'Brest');
+    expect(result.issues).toEqual([]); expect(result.ports).toHaveLength(2);
+    expect(result.ports.map(port => port.roleLabel)).toEqual(['Départ', 'Arrivée']);
+    expect(result.ports.every(port => PROJECT_PORTS.includes(port.port) && Number.isFinite(port.location.latitude))).toBe(true);
+    expect(resolveSeaOperationMapPorts(formatProjectPort(result.ports[0].port)).ports[0].location).toBe(result.ports[0].location);
+  });
+  it('groups the same published reference into one departure/arrival marker without modifying the catalogue', () => {
+    const source = structuredClone(SEA_OPERATION_MAP_PORT_CATALOG);
+    const located = resolveSeaOperationMapPorts('Cherbourg').ports[0];
+    const result = resolveSeaOperationMapPorts('Cherbourg', formatProjectPort(located.port));
+    expect(result.ports).toHaveLength(1); expect(result.ports[0]).toMatchObject({ roles: ['departure', 'arrival'], roleLabel: 'Départ / Arrivée' });
+    expect(SEA_OPERATION_MAP_PORT_CATALOG).toEqual(source);
+    expect(resolveSeaOperationMapPorts()).toEqual({ ports: [], issues: [] });
+  });
+  it('keeps homonyms ambiguous, permits their full catalogue label, and never substitutes a parent or municipal LOCODE', () => {
+    const homonyms = resolveSeaOperationMapPorts('Port de Saint-Pierre');
+    expect(homonyms.ports).toEqual([]); expect(homonyms.issues[0]).toMatchObject({ role: 'departure', reason: 'ambiguous' });
+    expect(homonyms.issues[0].candidates.length).toBeGreaterThan(1);
+    const located = homonyms.issues[0].candidates.find(port => port.location)!;
+    expect(resolveSeaOperationMapPorts(formatProjectPort(located.port)).ports).toHaveLength(1);
+    expect(resolveSeaOperationMapPorts('Millbay Docks').issues[0]).toMatchObject({ reason: 'unlocated' });
+    for (const input of ['FRCER', 'GBSOU', 'Port sans référence']) expect(resolveSeaOperationMapPorts(input)).toMatchObject({ ports: [], issues: [{ reason: 'not-found' }] });
+  });
   it('joins the shared project catalogue without creating a major-port shortlist or losing small French ports', () => {
     expect(SEA_OPERATION_MAP_PORT_CATALOG.every(item => PROJECT_PORTS.includes(item.port))).toBe(true);
     expect(new Set(SEA_OPERATION_MAP_PORT_CATALOG.map(item => item.key)).size).toBe(SEA_OPERATION_MAP_PORT_CATALOG.length);

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClientEditor, ProjectEditor, ProjectPlanningEditor, projectToWriteInput } from './ProjectEditors';
@@ -13,6 +13,8 @@ const mutationMocks = vi.hoisted(() => ({
   saveProjectContractHirePeriods: vi.fn(),
   saveProjectTowedAsset: vi.fn(),
 }));
+const locationMapMock = vi.hoisted(() => vi.fn());
+vi.mock('../seaOperations/SeaOperationWaypointMapEditor', () => ({ SeaOperationWaypointMapEditor: (props: Record<string, unknown>) => { locationMapMock(props); return <span data-testid="project-location-map" />; } }));
 
 vi.mock('./projectMutations', async (importOriginal) => ({
   ...await importOriginal<typeof import('./projectMutations')>(),
@@ -50,6 +52,24 @@ const vessels = [
 ];
 
 describe('ProjectEditor optional location', () => {
+  it('forwards commercial ports to the location map and saves manual framing without changing the ports', async () => {
+    const user = userEvent.setup(), onSaved = vi.fn();
+    const mapViewport = { centerLatitude: 49.654321, centerLongitude: -1.789012, longitudeSpan: .023456789 };
+    mutationMocks.saveProject.mockResolvedValue({ id: 145, projectCode: 'P145', title: project.title, updatedAt: '2026-11-01T10:00:00Z' });
+    render(<ProjectEditor client={{ rpc: vi.fn() } as never} clients={[]} contractTypes={[]} onClose={vi.fn()} onSaved={onSaved}
+      project={{ ...project, status: 'Non validé', contractType: 'Offre Commerciale', clientId: null, primaryVesselId: null, secondaryVesselId: null, deliveryPort: 'Brest', redeliveryPort: 'Cherbourg', operationArea: '', updatedAt: '2026-08-01T10:00:00Z', locationPlan: emptyProjectLocationPlan() } as never}
+      statuses={['Non validé']} towedAssets={[]} vessels={vessels} />);
+    await user.click(screen.getByRole('button', { name: /Localisation/ }));
+    expect(locationMapMock).toHaveBeenLastCalledWith(expect.objectContaining({ departurePort: 'Brest', arrivalPort: 'Cherbourg' }));
+    const map = locationMapMock.mock.calls.at(-1)![0] as { onMapViewportChange: (value: typeof mapViewport) => void };
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Joindre la localisation au PDF' }));
+    // Calling the child callback models the final retained pan/zoom frame.
+    fireEvent.change(screen.getByLabelText('Numéro des cartes marines'), { target: { value: '7120' } });
+    act(() => map.onMapViewportChange(mapViewport));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(mutationMocks.saveProject).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ deliveryPort: 'Brest', redeliveryPort: 'Cherbourg', locationPlan: expect.objectContaining({ mapViewport, charts: '7120', includeInPdf: true }) }));
+  });
   it('numbers Location five for every contract and moves BIMCO Documents to six', async () => {
     const user = userEvent.setup();
     render(<ProjectEditor client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never} clients={[]} contractTypes={[]} onClose={vi.fn()} onSaved={vi.fn()} statuses={['Non validé']} towedAssets={[]} vessels={vessels} />);

@@ -4,6 +4,18 @@ import { cloneProjectLocationPlan, emptyProjectLocationPlan, hasProjectLocationC
 
 const point = (id = 'route') => ({ id, number: '1', descriptionVhf: 'Point de passage', latitude: '49° 39′ N', longitude: '', ukc: '', eta: '', denseTraffic: false });
 describe('optional project location plan', () => {
+  it('retains a manual frame independently while legacy plans stay automatic and overlays stay geometry-only', () => {
+    const legacy = emptyProjectLocationPlan(); expect(parseProjectLocationPlan(legacy)).not.toHaveProperty('mapViewport');
+    const source = { ...legacy, mapViewport: { centerLatitude: 49.654321, centerLongitude: -1.789012, longitudeSpan: .023456789 } };
+    expect(hasProjectLocationContent(source)).toBe(true);
+    const retained = cloneProjectLocationPlan(source);
+    expect(retained.mapViewport).toEqual(source.mapViewport); expect(retained.mapViewport).not.toBe(source.mapViewport);
+    retained.mapViewport!.centerLatitude = 0; expect(source.mapViewport.centerLatitude).toBe(49.654321);
+    expect(() => parseProjectLocationOverlay({ version: 1, points: [], zones: [], mapViewport: source.mapViewport })).toThrow('localisation');
+    for (const mapViewport of [null, {}, { ...source.mapViewport, longitudeSpan: .01 }, { ...source.mapViewport, extra: true }]) {
+      expect(() => parseProjectLocationPlan({ ...legacy, mapViewport })).toThrow('localisation');
+    }
+  });
   it('creates independent empty plans and distinguishes absence, PDF preference and content', () => {
     const first = emptyProjectLocationPlan(), second = emptyProjectLocationPlan();
     first.waypoints.push(point()); first.includeInPdf = true;

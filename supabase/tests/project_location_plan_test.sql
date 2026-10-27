@@ -37,6 +37,7 @@ grant all on location_fixture to authenticated;
 create temporary table location_sea_fixture(kind text primary key,payload jsonb,id uuid,version integer);
 grant all on location_sea_fixture to authenticated;
 insert into location_fixture(kind,payload) values ('plan','{"version":1,"etd":"","charts":"","includeInPdf":false,"waypoints":[{"id":"route","number":"1","descriptionVhf":"","latitude":"49° 39.","longitude":"","ukc":"","eta":"","denseTraffic":true,"etaMode":"automatic","weather":{"untrusted":true}}],"points":[{"id":"isolated","number":"","descriptionVhf":"Point","latitude":"","longitude":"","ukc":"","eta":"","denseTraffic":false}],"zones":[{"id":"zone","name":"À compléter","vertices":[{"latitude":"","longitude":""}]}]}'::jsonb);
+update location_fixture set payload=payload||'{"mapViewport":{"centerLatitude":49.654321987,"centerLongitude":-1.987654321,"longitudeSpan":0.020000001}}'::jsonb where kind='plan';
 select set_config('test.location.vessel',(select id::text from public.vessels where name='LOCATION-VESSEL'),true);
 select set_config('test.location.foreign',(select id::text from public.projects where title='LOCATION-FOREIGN'),true);
 
@@ -57,6 +58,7 @@ select 'created',saved.id,saved.updated_at,saved.location_plan from public.proje
 select ok((select payload#>>'{waypoints,0,latitude}'='49° 39.' and payload#>>'{waypoints,0,longitude}'='' from location_fixture where kind='created'),'partial coordinates are retained exactly');
 select ok((select payload#>'{waypoints,0,weather}' is null from location_fixture where kind='created'),'weather capture is stripped from project geography');
 select is((select payload->'includeInPdf' from location_fixture where kind='created'),'false'::jsonb,'PDF location defaults remain disabled');
+select is((select payload->'mapViewport' from location_fixture where kind='created'),(select payload->'mapViewport' from location_fixture where kind='plan'),'real project RPC preserves exact manual map framing');
 select is((select jsonb_array_length(payload#>'{zones,0,vertices}') from location_fixture where kind='created'),1,'an incomplete polygon is a valid editable draft');
 select ok((select project.updated_at=fixture.stamp and project.location_plan=fixture.payload from public.projects project join location_fixture fixture on fixture.id=project.id where fixture.kind='created'),'RPC returns the final stored location and exact concurrency token');
 select is((select count(*)::integer from public.project_contracts where project_id=(select id from location_fixture where kind='created')),1,'creation still produces exactly one contract');
@@ -115,6 +117,7 @@ select 'draft',jsonb_build_object('version',1,'project','Localisation en mer','c
   'towedVesselBoarding','{"required":"","measures":"","details":""}'::jsonb,'portServices','[]'::jsonb,'mandatoryServicesNotified',false,
   'supplies','{"delegated":"","shipchandlerName":"","shipchandlerContact":"","items":[],"suppliers":"","customerAccountsPrepared":false}'::jsonb,
   'charts','','waypoints',jsonb_build_array(jsonb_build_object('id','sea-route','number','1','descriptionVhf','','latitude','','longitude','','ukc','','eta','','denseTraffic',false)),
+  'mapViewport','{"centerLatitude":50.123456789,"centerLongitude":-2.123456789,"longitudeSpan":0.345678901}'::jsonb,
   'locationOverlay','{"version":1,"points":[],"zones":[{"id":"sea-zone","name":"Géométrie adaptée","vertices":[]}]}'::jsonb,
   'decision','NO_GO','risks','Opération interrompue, Armement informé',
   'signature',jsonb_build_object('captainName','Localisation CAPITAINE TEMPORAIRE','date',(now() at time zone 'Europe/Paris')::date,'place','Cherbourg','acknowledged',true),
@@ -123,6 +126,10 @@ select 'draft',jsonb_build_object('version',1,'project','Localisation en mer','c
 from public.planning_projects occurrence where occurrence.catalog_project_id=(select id from location_fixture where kind='created');
 select lives_ok($$select sea_operation_private.validate_draft(payload,false) from location_sea_fixture where kind='draft'$$,'draft validator accepts independent overlay');
 select lives_ok($$select sea_operation_private.validate_draft(payload,true) from location_sea_fixture where kind='draft'$$,'signature validator accepts incomplete NO GO geometry');
+select throws_ok(format($$select sea_operation_private.validate_draft(jsonb_set(payload,'{mapViewport}',%L::jsonb),%L) from location_sea_fixture where kind='draft'$$,value,signing),
+  '22023',null,'save/sign rejects malformed retained map frame: '||value||' signing='||signing)
+from (values('null'),('{"centerLatitude":0,"centerLongitude":0,"longitudeSpan":0.01}'),('{"centerLatitude":0,"centerLongitude":0,"longitudeSpan":1,"extra":true}')) invalid(value)
+cross join (values(false),(true)) mode(signing);
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set(payload,'{locationOverlay,zones,0,id}','"sea-route"'),false) from location_sea_fixture where kind='draft'$$,'22023','Identifiant partagé entre route et localisation complémentaire.','save validator rejects route-overlay ID collisions');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set(payload,'{locationOverlay,zones,0,id}','"sea-route"'),true) from location_sea_fixture where kind='draft'$$,'22023','Identifiant partagé entre route et localisation complémentaire.','signature validator rejects route-overlay ID collisions');
 
@@ -159,9 +166,11 @@ select lives_ok($$select public.sea_operation_save(null,null,payload) from locat
 select lives_ok($$insert into location_sea_fixture(kind,id,version,payload) select 'saved',(record->>'id')::uuid,(record->>'version')::integer,record->'draft' from (select public.sea_operation_save(null,null,payload) as record from location_sea_fixture where kind='draft')saved$$,'management saves an independently edited route and overlay');
 select public.projects_save_with_location(target_project_id=>(select id from location_fixture where kind='created'),target_title=>'LOCATION-PROJECT-CHANGED',target_primary_vessel_id=>current_setting('test.location.vessel')::bigint,target_location_plan=>null);
 select is((select payload->'locationOverlay' from location_sea_fixture where kind='saved'),(select payload->'locationOverlay' from location_sea_fixture where kind='draft'),'project edits do not replace the saved independent geometry');
+select is((public.sea_operation_detail((select id from location_sea_fixture where kind='saved'))#>'{draft,mapViewport}'),(select payload->'mapViewport' from location_sea_fixture where kind='draft'),'reopened operation retains independent manual map framing after project edit');
 select set_config('request.jwt.claim.sub','c1080000-0000-0000-0000-000000000004',true);
 select lives_ok($$select public.sea_operation_sign((select id from location_sea_fixture where kind='saved'),(select version from location_sea_fixture where kind='saved'),'Localisation CAPITAINE TEMPORAIRE',true)$$,'actual temporary captain can sign the independent overlay');
 select is((select draft->'locationOverlay' from public.sea_operations where id=(select id from location_sea_fixture where kind='saved')),(select payload->'locationOverlay' from location_sea_fixture where kind='draft'),'signing does not reload geometry from the changed project');
+select is((select draft->'mapViewport' from public.sea_operations where id=(select id from location_sea_fixture where kind='saved')),(select payload->'mapViewport' from location_sea_fixture where kind='draft'),'actual temporary captain signature retains the saved manual frame');
 select throws_ok($$select public.sea_operation_save((select id from location_sea_fixture where kind='saved'),2,(select payload from location_sea_fixture where kind='draft'))$$,'42501',null,'signed independent geometry remains immutable through the authenticated RPC');
 select set_config('request.jwt.claim.sub','c1080000-0000-0000-0000-000000000001',true);
 select public.projects_save_with_location(target_project_id=>(select id from location_fixture where kind='created'),target_title=>'LOCATION-PLANNING',target_primary_vessel_id=>current_setting('test.location.vessel')::bigint,target_location_plan=>(select payload from location_fixture where kind='plan'));

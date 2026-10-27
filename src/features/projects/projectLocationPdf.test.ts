@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { emptySeaOperationWaypoint } from '../seaOperations/seaOperationModel';
 import { emptyProjectLocationPlan } from './projectLocation';
 import { appendProjectLocationPdf, drawProjectLocationMapPdf, generateProjectLocationPdf, projectLocationVoyage } from './projectLocationPdf';
+import { projectSeaOperationMapPlace, resolveSeaOperationMapPorts } from '../seaOperations/seaOperationMapPlaces';
 
 function fixture() {
   const plan = emptyProjectLocationPlan();
@@ -29,6 +30,25 @@ function streams(document: PDFDocument) {
 }
 
 describe('Project location appendix', () => {
+  it('fits the defined ports as named context without adding voyage legs, and retains a manual frame', async () => {
+    const plan = fixture(); plan.points = []; plan.zones = [];
+    const original = structuredClone(plan), options = { departurePort: 'Cherbourg', arrivalPort: 'Brest', showVoyage: true, maxSpeedKnots: 12 };
+    const ports = resolveSeaOperationMapPorts(options.departurePort, options.arrivalPort).ports;
+    expect(ports).toHaveLength(2);
+    const document = new jsPDF({ unit: 'pt', orientation: 'landscape' });
+    const map = drawProjectLocationMapPdf(document, plan, { x: 30, y: 60, width: 782, height: 190 }, options);
+    for (const port of ports) expect(projectSeaOperationMapPlace(map, port.location)).not.toBeNull();
+    expect(map.points).toHaveLength(2); expect(map.segments).toHaveLength(1); expect(plan).toEqual(original);
+    const bytes = await generateProjectLocationPdf(plan, { ...options, projectLabel: 'Ports conserves' });
+    const text = streams(await PDFDocument.load(bytes));
+    expect(text).toContain('Cherbourg'); expect(text).toContain('Brest');
+    const viewport = { centerLatitude: 49.65, centerLongitude: -1.62, longitudeSpan: .25 };
+    const manual = drawProjectLocationMapPdf(document, { ...plan, mapViewport: viewport }, { x: 30, y: 60, width: 782, height: 190 }, options);
+    expect(manual.viewport?.centerLatitude).toBeCloseTo(viewport.centerLatitude, 10);
+    expect(manual.viewport?.centerLongitude).toBeCloseTo(viewport.centerLongitude, 10);
+    expect(manual.viewport?.longitudeSpan).toBe(viewport.longitudeSpan);
+    expect(projectSeaOperationMapPlace(manual, ports.find(port => port.roles.includes('arrival'))!.location)).toBeNull();
+  });
   it('keeps every short-route marker outside the bottom-right navigation summary', () => {
     const plan = fixture();
     plan.waypoints = [['49.65', '-1.64'], ['49.655', '-1.62'], ['49.65', '-1.60']].map(([latitude, longitude], index) => ({ ...emptySeaOperationWaypoint(`short-${index}`), number: String(index + 1), latitude, longitude }));

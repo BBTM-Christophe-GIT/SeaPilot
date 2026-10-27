@@ -35,6 +35,10 @@
 .so-route-map-cities text, .so-route-map-port text { fill: var(--sp-heading); font-family: var(--sp-font); font-size: 10px; paint-order: stroke; stroke: var(--sp-surface); stroke-width: 3px; stroke-linejoin: round; }
 .so-route-map-port { color: var(--sp-primary); }
 .so-route-map-port-dot { fill: var(--sp-primary); stroke: var(--sp-surface); stroke-width: 1px; }
+.so-route-map-defined-ports { pointer-events: none; }
+.so-route-map-defined-ports text { fill: var(--sp-heading); font-family: var(--sp-font); font-size: 10px; paint-order: stroke; stroke: var(--sp-surface); stroke-width: 3px; stroke-linejoin: round; }
+.so-route-map-defined-port-role { fill: var(--sp-primary); font-weight: 750; }
+.so-route-map-defined-port-ring { fill: none; stroke: var(--sp-primary); stroke-width: 1.5px; stroke-dasharray: 3 2; }
 .so-route-map-port text { font-size: 9px; }
 .so-route-map-places { flex-shrink: 0; min-width: 0; margin-top: var(--sp-space-2); color: var(--sp-text); font-size: .72rem; }
 .so-route-map-places summary { width: fit-content; cursor: pointer; color: var(--sp-primary); padding: var(--sp-space-1) 0; }

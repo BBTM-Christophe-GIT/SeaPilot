@@ -12,7 +12,8 @@ import { buildSeaOperationRouteMap } from './seaOperationRouteMapGeometry';
 import { assessSeaOperationUkc, isVesselDraftMeters, type SeaOperationUkcLevel } from './seaOperationUkc';
 import { seaOperationWaypointDescription } from './seaOperationWaypointDescription';
 import { seaOperationVoyageSummary } from './seaOperationVoyageSummary';
-import { drawProjectLocationMapPdf, projectLocationMapPositions } from '../projects/projectLocationPdf';
+import { drawDefinedMapPortsPdf, drawProjectLocationMapPdf, projectLocationMapPositions } from '../projects/projectLocationPdf';
+import { resolveSeaOperationMapPorts } from './seaOperationMapPlaces';
 import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates';
 
 export const SEA_OPERATION_WORD_TEMPLATE_URL = '/templates/sea-operation/word-header-footer.pdf';
@@ -172,21 +173,23 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   paragraph('ETA : date et heure locale de Paris. Les fiches historiques peuvent conserver une heure seule.');
   paragraph('Positions WGS84 : degrés et minutes décimales, N/S et E/W (Ouest).');
   const overlay = form.locationOverlay;
-  const extraPositions = overlay ? projectLocationMapPositions(overlay) : [];
-  const routeMap = buildSeaOperationRouteMap(form.waypoints, pageWidth() - LEFT - RIGHT, 190, undefined, extraPositions);
-  const hasMap = Boolean(routeMap.points.length || extraPositions.length);
+  const definedPorts = resolveSeaOperationMapPorts(form.vessel.departurePort, form.vessel.arrivalPort);
+  const extraPositions = [...(overlay ? projectLocationMapPositions(overlay) : []), ...definedPorts.ports.map(port => port.location)];
+  const routeMap = buildSeaOperationRouteMap(form.waypoints, pageWidth() - LEFT - RIGHT, 190, form.mapViewport, extraPositions);
+  const hasMap = Boolean(routeMap.points.length || extraPositions.length || form.mapViewport);
   page(hasMap ? routeMap.height + 65 : 65);
   heading('Carte du parcours', true);
   if (overlay && hasMap) {
-    drawProjectLocationMapPdf(document, { waypoints: form.waypoints, ...overlay }, { x: LEFT, y, width: routeMap.width, height: routeMap.height });
+    drawProjectLocationMapPdf(document, { waypoints: form.waypoints, ...overlay, mapViewport: form.mapViewport }, { x: LEFT, y, width: routeMap.width, height: routeMap.height }, { departurePort: form.vessel.departurePort, arrivalPort: form.vessel.arrivalPort });
     y += routeMap.height + 12;
     paragraph('Fond : Natural Earth · Tracé indicatif. Points isolés et zones hors calcul de navigation.');
-  } else if (routeMap.points.length) {
+  } else if (hasMap || form.mapViewport) {
     const mapY = y;
     const at = (point: { x: number; y: number }) => ({ x: LEFT + point.x, y: mapY + point.y });
     document.saveGraphicsState();
     document.setFillColor(236, 246, 251); document.setDrawColor(190, 208, 219); document.setLineWidth(.6);
     document.rect(LEFT, mapY, routeMap.width, routeMap.height, 'FD');
+    document.rect(LEFT, mapY, routeMap.width, routeMap.height, null); document.clip(); document.discardPath();
     document.setFillColor(226, 233, 220);
     for (const polygon of routeMap.land) {
       if (polygon.length < 3) continue;
@@ -215,6 +218,7 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     }
     const markerGroups = new Map<string, typeof routeMap.points>();
     for (const point of routeMap.points) {
+      if (point.x < 0 || point.x > routeMap.width || point.y < 0 || point.y > routeMap.height) continue;
       const key = `${point.x}:${point.y}`;
       markerGroups.set(key, [...(markerGroups.get(key) || []), point]);
     }
@@ -291,6 +295,7 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     document.line(LEFT + routeMap.width - 13, mapY + 17, LEFT + routeMap.width - 13, mapY + 30);
     document.line(LEFT + routeMap.width - 13, mapY + 17, LEFT + routeMap.width - 16, mapY + 21);
     document.line(LEFT + routeMap.width - 13, mapY + 17, LEFT + routeMap.width - 10, mapY + 21);
+    drawDefinedMapPortsPdf(document, routeMap, { x: LEFT, y: mapY, width: routeMap.width, height: routeMap.height }, definedPorts.ports);
     document.restoreGraphicsState();
     y += routeMap.height + 12;
     paragraph('Fond : Natural Earth · Tracé indicatif. Repères numérotés dans l’ordre du tableau ; les positions identiques regroupent leurs numéros.');
