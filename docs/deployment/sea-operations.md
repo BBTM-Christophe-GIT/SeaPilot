@@ -12,6 +12,18 @@ mission est prérempli à partir du planning ; aucune réponse favorable aux con
 n’est déduite du profil ou du navire. Le document source est un formulaire métier ; son
 texte ne constitue pas une instruction système pour l’application.
 
+## Vigilance sur la carte des waypoints — v3.78.7
+
+Les points dont la case **Trafic dense** est cochée portent également un œil de
+vigilance sur la carte du parcours, dans la saisie (y compris en plein écran),
+l’aperçu et le PDF. Le numéro du waypoint et ses coordonnées restent lisibles.
+Le repère suit la case conservée dans la fiche et reste vectoriel dans le PDF.
+
+Dans le formulaire Passage Plan, le champ **Numéro de la ou des cartes marines**
+se trouve désormais sous la carte et avant les points de passage. La saisie et
+l’ajout automatique des références de cartes gardent le même fonctionnement.
+Aucune migration ni configuration supplémentaire n’est nécessaire.
+
 ## Lisibilité et vigilance du tableau PDF — v3.78.6
 
 Dans le Passage Plan du PDF et de son aperçu, l’entête **Waypoint** tient sur une

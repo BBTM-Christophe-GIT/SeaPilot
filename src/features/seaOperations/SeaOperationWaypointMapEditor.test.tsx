@@ -120,10 +120,12 @@ describe('SeaOperationWaypointMapEditor', () => {
 
   it('previews a held waypoint drag and commits its original ID only on release without adding', () => {
     vi.useFakeTimers();
-    const points = [point(1, 'invalid', ''), point(2), point(3, '50', '0')], original = structuredClone(points);
+    const points = [point(1, 'invalid', ''), point(2), point(3, '50', '0')]; points[1].denseTraffic = true;
+    const original = structuredClone(points);
     const add = vi.fn(), move = vi.fn();
     const view = render(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} onMoveWaypoint={move} />);
     activate();
+    expect(screen.getByRole('img', { name: 'Vigilance : trafic dense, risque de collision · Waypoint 2' })).toBeInTheDocument();
     const marker = screen.getByRole('button', { name: 'Sélectionner le waypoint 2' });
     const transform = marker.getAttribute('transform')!.match(/translate\(([-\d.]+) ([-\d.]+)\)/)!;
     const x = 100 + Number(transform[1]) / 2, y = 50 + Number(transform[2]) / 2;

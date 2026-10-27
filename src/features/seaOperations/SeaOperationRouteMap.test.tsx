@@ -13,6 +13,54 @@ const channelRoute = () => [point(1, '49.65', '-1.62'), point(2, '48.36', '-4.53
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('SeaOperationRouteMap', () => {
+  it('adds vigilance beside the original numbered waypoint without changing its label, coordinates or source', () => {
+    const points = [point(1, '', ''), point(2, '49.65', '-1.62'), point(3, '50', '0')];
+    points[1].denseTraffic = true;
+    const original = structuredClone(points);
+    const { container, rerender } = render(<SeaOperationRouteMap waypoints={points} showWaypointCoordinates />);
+    const badge = screen.getByRole('img', { name: 'Vigilance : trafic dense, risque de collision · Waypoint 2' });
+    expect(badge).toHaveClass('so-route-map-point-vigilance'); expect(badge.querySelector('.lucide-eye')).not.toBeNull();
+    const pin = container.querySelector('[data-point-indices="2"]')!;
+    const transform = pin.getAttribute('transform');
+    expect(pin.querySelector('.so-route-map-ordinal')).toHaveTextContent('2');
+    expect(pin.querySelector('.so-route-map-point-label')).toHaveTextContent('WP2');
+    expect(pin.querySelector('.so-route-map-point-coordinates')).toHaveTextContent('49° 39.000′ N');
+    expect(pin.querySelector('title')).toHaveTextContent('Vigilance : trafic dense, risque de collision · Waypoint 2');
+    expect(container.querySelectorAll('.so-route-map-point-vigilance')).toHaveLength(1);
+    const circle = badge.querySelector('circle')!;
+    expect(Math.abs(Number(circle.getAttribute('cx')))).toBeGreaterThan(23);
+    expect(circle).toHaveAttribute('cy', '0');
+    expect(points).toEqual(original);
+    rerender(<SeaOperationRouteMap waypoints={points.map(point => ({ ...point, denseTraffic: false }))} showWaypointCoordinates />);
+    expect(container.querySelector('.so-route-map-point-vigilance')).toBeNull();
+    expect(container.querySelector('[data-point-indices="2"]')).toHaveAttribute('transform', transform);
+    expect(container.querySelector('desc')).not.toHaveTextContent('trafic dense');
+  });
+
+  it.each([false, true])('gives coincident dense waypoints a single eye and global accessible description (compact=%s)', (compact) => {
+    const points = [point(1, '', ''), point(2, '49.65', '-1.62'), point(3, '49.65', '-1.62'), point(4, '49.65', '-1.62')];
+    points[0].denseTraffic = true; points[1].denseTraffic = true; points[3].denseTraffic = true;
+    const { container } = render(<SeaOperationRouteMap waypoints={points} compact={compact} fillAvailableSpace={!compact} showWaypointCoordinates />);
+    expect(container.querySelectorAll('.so-route-map-point-vigilance')).toHaveLength(1);
+    const badge = container.querySelector('.so-route-map-point-vigilance')!;
+    expect(badge).toHaveAttribute('aria-label', 'Vigilance : trafic dense, risque de collision · Waypoints 2, 4');
+    expect(badge.querySelector('title')).toHaveTextContent('Waypoints 2, 4');
+    expect(container.querySelector('.so-route-map-ordinal')).toHaveTextContent('2/3/4');
+    const map = container.querySelector('.so-route-map-svg')!;
+    expect(map).toHaveAccessibleDescription(/Vigilance : trafic dense, risque de collision · Waypoints 2, 4/);
+    expect(container.querySelector('desc')).not.toHaveTextContent('Waypoints 1');
+  });
+
+  it.each(['-2.75', '-2.28'])('keeps the vigilance eye clear of names and coordinates near the lower map edge at latitude %s', (latitude) => {
+    const waypoint = point(1, latitude, '0'); waypoint.denseTraffic = true;
+    const { container } = render(<SeaOperationRouteMap waypoints={[waypoint]} showWaypointCoordinates viewport={{ centerLatitude: 0, centerLongitude: 0, longitudeSpan: 16 }} />);
+    const badge = container.querySelector('.so-route-map-point-vigilance')!;
+    const coordinateY = Number(container.querySelector('.so-route-map-point-coordinates')!.getAttribute('y'));
+    const badgeY = Number(badge.querySelector('circle')!.getAttribute('cy'));
+    expect(badgeY).toBe(-44); expect(badgeY + 10).toBeLessThan(-29);
+    expect(badgeY + 10).toBeLessThan(coordinateY - 10);
+  });
+
   it('shows total elapsed days, hours and minutes while keeping each leg compact', () => {
     render(<SeaOperationRouteMap waypoints={[point(1, '0', '0'), point(2, '0', '1')]} showRouteLegs maxSpeedKnots={12} etd="2026-10-27T08:00" eta="2026-10-29T11:50" />);
     const summary = screen.getByRole('complementary', { name: 'Estimation du parcours' });

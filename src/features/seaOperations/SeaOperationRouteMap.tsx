@@ -1,4 +1,4 @@
-import { MapPin } from 'lucide-react';
+import { Eye, MapPin } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import { buildSeaOperationRouteMap, type RouteMapViewport, type SeaOperationRouteMapGeometry } from './seaOperationRouteMapGeometry';
@@ -21,6 +21,10 @@ function groupCoincidentPoints(points: MapPoint[]) {
     else groups.set(key, { x: point.x, y: point.y, points: [point] });
   }
   return [...groups.values()];
+}
+
+function vigilanceLabel(indices: number[]) {
+  return indices.length ? `Vigilance : trafic dense, risque de collision · ${indices.length === 1 ? 'Waypoint' : 'Waypoints'} ${indices.join(', ')}` : '';
 }
 
 function directionArrow(from: Position, to: Position): string | null {
@@ -89,6 +93,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
   const voyage = route ? seaOperationVoyageTiming(etd, route.totalDurationMinutes, eta) : null;
   const showLegList = Boolean(route && route.legs.length > 0 && (geometry.width < 600 || legLabels.length < route.legs.length));
   const countLabel = `${geometry.points.length} point${geometry.points.length === 1 ? '' : 's'} géolocalisé${geometry.points.length === 1 ? '' : 's'}`;
+  const vigilanceDescription = vigilanceLabel(geometry.points.filter(point => waypoints[point.index - 1]?.denseTraffic).map(point => point.index));
 
   useEffect(() => { onGeometry?.(recordedGeometry); }, [recordedGeometry, onGeometry]);
 
@@ -118,7 +123,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
     <div className="so-route-map-frame" ref={frame}>
       {geometry.projection ? <svg aria-labelledby={svgTitleId} aria-describedby={descriptionId} className="so-route-map-svg" role={!compact && (renderOverlay || route) ? 'group' : 'img'} viewBox={`0 0 ${geometry.width} ${geometry.height}`}>
         <title id={svgTitleId}>{`Carte du parcours · ${countLabel}`}</title>
-        <desc id={descriptionId}>Nord en haut. Les numéros suivent l’ordre du tableau. {geometry.points.map((point) => `Point ${point.index} : ${point.label}`).join(' ; ')}. Les points aux mêmes coordonnées partagent une pastille.</desc>
+        <desc id={descriptionId}>Nord en haut. Les numéros suivent l’ordre du tableau. {geometry.points.map((point) => `Point ${point.index} : ${point.label}`).join(' ; ')}. Les points aux mêmes coordonnées partagent une pastille. {vigilanceDescription && `${vigilanceDescription}.`}</desc>
         <defs><clipPath id={clipId}><rect width={geometry.width} height={geometry.height} /></clipPath></defs>
         <g clipPath={`url(#${clipId})`}>
           <rect className="so-route-map-sea" width={geometry.width} height={geometry.height} />
@@ -152,13 +157,22 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, onG
             const position = showWaypointCoordinates && !compact ? seaWaypointPosition(visualWaypoints[first.index - 1]) : null;
             const coordinateX = Math.max(60 - group.x, Math.min(geometry.width - group.x - 60, 0));
             const coordinateY = Math.min(21, geometry.height - group.y - 16);
+            const densePoints = group.points.filter(point => waypoints[point.index - 1]?.denseTraffic).map(point => point.index);
+            const vigilance = vigilanceLabel(densePoints);
+            const vigilanceX = (alignEnd ? -1 : 1) * (markerWidth / 2 + 16);
+            // Near the lower edge, the coordinate labels move upwards; keep the eye above both labels instead.
+            const vigilanceY = position && coordinateY < 21 ? -44 : 0;
             return <g className={`so-route-map-point${isStart ? ' is-start' : ''}${isEnd ? ' is-end' : ''}`} data-point-indices={allOrdinals} key={`${group.x}:${group.y}`} transform={`translate(${group.x} ${group.y})`}>
-              <title>{group.points.map((point) => `Point ${point.index} · ${point.label}${point.description ? ` · ${point.description}` : ''}`).join('\n')}</title>
+              <title>{[group.points.map((point) => `Point ${point.index} · ${point.label}${point.description ? ` · ${point.description}` : ''}`).join('\n'), vigilance].filter(Boolean).join('\n')}</title>
               {isEnd && <rect className="so-route-map-finish-ring" x={-markerWidth / 2 - 4} y={-17} width={markerWidth + 8} height={34} rx={17} vectorEffect="non-scaling-stroke" />}
               <rect className="so-route-map-pin" x={-markerWidth / 2} y={-13} width={markerWidth} height={26} rx={13} vectorEffect="non-scaling-stroke" />
               <text className="so-route-map-ordinal" textAnchor="middle" dominantBaseline="central">{ordinals}</text>
               {label && <text className="so-route-map-point-label" x={alignEnd ? -markerWidth / 2 - 7 : markerWidth / 2 + 7} y={-18} textAnchor={alignEnd ? 'end' : 'start'}>{label.length > 20 ? `${label.slice(0, 19)}…` : label}</text>}
               {position && <text className="so-route-map-point-coordinates" textAnchor="middle" x={coordinateX} y={coordinateY}><tspan x={coordinateX}>{formatSeaLatitude(position.latitude)}</tspan><tspan x={coordinateX} dy={11}>{formatSeaLongitude(position.longitude)}</tspan></text>}
+              {vigilance && <g className="so-route-map-point-vigilance" role="img" aria-label={vigilance}>
+                <title>{vigilance}</title><circle cx={vigilanceX} cy={vigilanceY} r={10} />
+                <Eye aria-hidden="true" x={vigilanceX - 7} y={vigilanceY - 7} size={14} strokeWidth={1.8} />
+              </g>}
             </g>;
           })}</g>
           <g aria-hidden="true" className="so-route-map-north" transform={`translate(${geometry.width - 23} 31)`}><text textAnchor="middle" y={-15}>N</text><path d="M 0 9 V -7 M -4 -2 L 0 -7 L 4 -2" vectorEffect="non-scaling-stroke" /></g>
