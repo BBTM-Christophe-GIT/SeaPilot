@@ -5,7 +5,8 @@ import { AppDialog } from '../../components/AppDialog';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS, emptySeaOperation, newSeaOperation, getSeaOperationAssessment, isSeaOperationPayload, validateSeaOperation, seaOperationToday, type SeaOperationPayload, type SeaOperationAnswer as Answer } from './seaOperationModel';
-import { fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, fetchSeaOperationCaptainSignature, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, reviseSeaOperation, deleteSeaOperation, type SeaOperationData, type SeaOperationRecord, type SeaOperationPlanningContext, type SeaOperationPlanningChoice } from './seaOperationQueries';
+import { fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationCaptainSignature, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, reviseSeaOperation, deleteSeaOperation, type SeaOperationData, type SeaOperationRecord, type SeaOperationPlanningChoice } from './seaOperationQueries';
+import { fetchSeaOperationPlanningWindow, seaOperationPlanningChoiceKey, seaOperationPlanningChoiceLabel, type SeaOperationPlanningWindow } from './seaOperationPlanningWindow';
 import './seaOperations.css';
 import { SeaOperationPrint } from './SeaOperationPrint';
 import { SeaOperationPreview } from './SeaOperationDocumentPreview';
@@ -44,6 +45,7 @@ const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Dé
 const STEP_DETAILS = ['Mission, client et voyage', 'Préparation et sécurité du navire', 'Cartes et points de route', 'GO / NO GO et signature'];
 const STEP_ICONS = [FileText, ClipboardCheck, Compass, Anchor];
 const formatDate = (value: string | null) => value ? new Date(value).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : 'Non renseignée';
+const planningDateLabel = (value: string) => value.split('-').reverse().join('/');
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : typeof error === 'object' && error && 'message' in error ? String(error.message) : 'Une erreur est survenue. Réessayez.';
 const recoveryKey = (data: SeaOperationData) => `seapilot:sea-operation-draft:v1:${data.companyId}:${data.actorId}`;
 interface DraftRecovery { draft: SeaOperationPayload; recordId: string | null; version: number | null; step: number }
@@ -94,6 +96,13 @@ function draftForPlanningChoice(choice: SeaOperationPlanningChoice, date: string
     signature: { ...draft.signature, captainName: captain?.name || '', place: choice.vessel.departurePort } };
 }
 
+function retainedPlanningLabel(draft: SeaOperationPayload): string {
+  const fallback = `${draft.project} · ${draft.vessel.name}`;
+  if (!draft.planning) return fallback;
+  try { return seaOperationPlanningChoiceLabel({ date: draft.planning.date, project: draft.project, vessel: draft.vessel }); }
+  catch { return fallback; } // Legacy snapshots may contain a free-text planning date.
+}
+
 /** Undefined means an older/unloaded source; null explicitly records a vessel without a configured matrix. */
 function captureVesselMatrix(payload: SeaOperationPayload, source?: { id: string | number; weatherMatrix?: VesselWeatherMatrix | null }): SeaOperationPayload {
   const fingerprint = (matrix: VesselWeatherMatrix | null | undefined) => JSON.stringify(matrix ? cloneVesselWeatherMatrix(matrix) : matrix);
@@ -125,7 +134,8 @@ export function SeaOperationsPage() {
   const latestDraft = useRef(draft);
   const [editing, setEditing] = useState(false);
   const [planningDate, setPlanningDate] = useState(seaOperationToday);
-  const [planning, setPlanning] = useState<SeaOperationPlanningContext | null>(null);
+  const [planning, setPlanning] = useState<SeaOperationPlanningWindow | null>(null);
+  const planningStartDate = seaOperationToday();
   const [planningLoading, setPlanningLoading] = useState(false);
   const [planningError, setPlanningError] = useState('');
   const [captainSignature, setCaptainSignature] = useState<Awaited<ReturnType<typeof fetchSeaOperationCaptainSignature>> | null>(null);
@@ -237,28 +247,30 @@ export function SeaOperationsPage() {
 
   useEffect(() => {
     if (!editing || record?.status === 'signed') return;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(planningDate)) return;
     let active = true;
     const revision = editRevision.current;
     setPlanning(null); setPlanningLoading(true); setPlanningError('');
-    fetchSeaOperationPlanning(client, planningDate).then((result) => {
+    fetchSeaOperationPlanningWindow(client, planningStartDate, planningDate).then((result) => {
       if (!active) return;
       setPlanning(result);
       const current = latestDraft.current;
-      const mission = result.choices.find((choice) => choice.operationId === current.planning?.operationId);
-      if (mission && record?.canEdit !== false && current.planning?.date === result.date && !weatherEditor.current.busy && !weatherEditor.current.signed) {
+      const datedMission = result.choices.find((choice) => choice.operationId === current.planning?.operationId && choice.date === current.planning?.date);
+      const selectedContext = result.selectedContext?.date === current.planning?.date ? result.selectedContext : null;
+      const mission = datedMission ?? selectedContext?.choices.find(choice => choice.operationId === current.planning?.operationId);
+      const missionDate = datedMission?.date ?? selectedContext?.date;
+      if (mission && record?.canEdit !== false && current.planning?.date === missionDate && !weatherEditor.current.busy && !weatherEditor.current.signed) {
         const vessel = data?.vessels.find((source) => String(source.id) === current.vessel.id);
         const source = mission.vessel.weatherMatrix === undefined ? vessel : mission.vessel;
         if (captureRouteEtas(captureVesselDraft(captureVesselMatrix(current, source), vessel), data?.vessels) !== current) {
-          setDraft((value) => value.planning?.operationId === mission.operationId && value.planning.date === result.date ? captureRouteEtas(captureVesselDraft(captureVesselMatrix(value, source), vessel), data?.vessels) : value);
+          setDraft((value) => value.planning?.operationId === mission.operationId && value.planning.date === missionDate ? captureRouteEtas(captureVesselDraft(captureVesselMatrix(value, source), vessel), data?.vessels) : value);
           setDirty(true);
         }
       }
       const captain = mission?.captains.find((person) => person.personId === current.planning?.captainPersonId)
         || (!current.planning?.captainPersonId && mission?.captains.length === 1 ? mission.captains[0] : undefined);
       // Repair missing draft identity only; signed decisions and existing names remain historical.
-      if (captain && record?.canEdit !== false && current.planning?.date === result.date && (!current.signature.captainName.trim() || !current.vessel.captainName.trim())) {
-        setDraft((draft) => draft.planning && mission && draft.planning.operationId === mission.operationId && draft.planning.date === result.date && draft.planning.captainPersonId === current.planning?.captainPersonId ? {
+      if (captain && record?.canEdit !== false && current.planning?.date === missionDate && (!current.signature.captainName.trim() || !current.vessel.captainName.trim())) {
+        setDraft((draft) => draft.planning && mission && draft.planning.operationId === mission.operationId && draft.planning.date === missionDate && draft.planning.captainPersonId === current.planning?.captainPersonId ? {
           ...draft, planning: { ...draft.planning, captainPersonId: draft.planning.captainPersonId || captain.personId },
           vessel: { ...draft.vessel, captainName: draft.vessel.captainName.trim() ? draft.vessel.captainName : captain.name },
           signature: { ...draft.signature, captainName: draft.signature.captainName.trim() ? draft.signature.captainName : captain.name, acknowledged: draft.signature.captainName.trim() ? draft.signature.acknowledged : false },
@@ -268,15 +280,16 @@ export function SeaOperationsPage() {
       // A unique planned mission can be selected directly. Multiple missions always require a choice.
       if (allowAutomaticMission.current && editRevision.current === revision && !latestDraft.current.project && !latestDraft.current.planning?.operationId && result.choices.length === 1) {
         allowAutomaticMission.current = false;
-        const selected = draftForPlanningChoice(result.choices[0], planningDate);
+        const selected = draftForPlanningChoice(result.choices[0], result.choices[0].date);
         const vessel = data?.vessels.find((source) => String(source.id) === selected.vessel.id);
+        setPlanningDate(result.choices[0].date);
         setDraft(captureVesselDraft(result.choices[0].vessel.weatherMatrix === undefined ? captureVesselMatrix(selected, vessel) : selected, vessel));
         setDirty(true);
       }
     }).catch((reason: unknown) => { if (active) setPlanningError(errorMessage(reason)); })
       .finally(() => { if (active) setPlanningLoading(false); });
     return () => { active = false; };
-  }, [client, editing, planningDate, record?.status, record?.canEdit, data?.vessels]);
+  }, [client, editing, planningDate, planningStartDate, record?.id, record?.status, record?.canEdit, data?.vessels]);
   useEffect(() => {
     setCaptainSignature(null); setSignatureError(''); setSignatureLoading(false);
     if (!editing || record?.status === 'signed' || !draft.planning?.operationId || !draft.planning.captainPersonId) return;
@@ -319,12 +332,13 @@ export function SeaOperationsPage() {
   // A gesture belongs to the open account/record/mission, even after a context switch.
   const mapEditSequence = loadSequence.current;
   const mapOperationId = draft.planning?.operationId;
+  const mapOperationDate = draft.planning?.date;
   const mapAccount = actionContext.current.account;
   const canEditMap = () => {
     const current = weatherEditor.current;
     return mapEditSequence === loadSequence.current && current.client === client
       && actionContext.current.account === mapAccount
-      && current.draft.planning?.operationId === mapOperationId && current.editing
+      && current.draft.planning?.operationId === mapOperationId && current.draft.planning?.date === mapOperationDate && current.editing
       && current.editable && !current.signed && !current.busy && !current.exporting;
   };
   const addWaypoint = (position?: SeaPosition, port?: { name: string; portKey?: string }) => {
@@ -417,22 +431,25 @@ export function SeaOperationsPage() {
     if (editing && editable && !signed) for (const entry of pending) retainUkc(entry.capture, entry.context, entry.sourceClient);
   }, [busy, client, editing, editable, signed, retainUkc]);
   const assessment = getSeaOperationAssessment(draft);
-  const selectedMission = planning?.choices.find((choice) => choice.operationId === draft.planning?.operationId);
+  const selectedWindowMission = planning?.choices.find(choice => choice.operationId === draft.planning?.operationId && choice.date === draft.planning?.date);
+  const selectedMission = selectedWindowMission ?? (planning?.selectedContext?.date === draft.planning?.date
+    ? planning?.selectedContext?.choices.find(choice => choice.operationId === draft.planning?.operationId) : undefined);
   const selectedCaptain = selectedMission?.captains.find((captain) => captain.personId === draft.planning?.captainPersonId);
   const linkedToPlanning = Boolean(draft.planning?.operationId);
   const referenceDraft = draft.vessel.draftMeters;
   const canSign = linkedToPlanning ? selectedCaptain?.canSign === true : record?.canSign || (!record && data?.vessels.some((vessel) => String(vessel.id) === draft.vessel.id && vessel.canSign));
-  function selectMission(operationId: string) {
+  function selectMission(choiceKey: string) {
     allowAutomaticMission.current = false;
     editRevision.current += 1;
-    const choice = planning?.choices.find((item) => item.operationId === operationId);
-    const next = choice ? draftForPlanningChoice(choice, planningDate) : newSeaOperation();
+    const choice = planning?.choices.find(item => seaOperationPlanningChoiceKey(item) === choiceKey);
+    const next = choice ? draftForPlanningChoice(choice, choice.date) : newSeaOperation();
     const vessel = data?.vessels.find((source) => String(source.id) === next.vessel.id);
+    if (choice) setPlanningDate(choice.date);
     setDraft(captureVesselDraft(choice?.vessel.weatherMatrix === undefined ? captureVesselMatrix(next, vessel) : next, vessel));
     setDirty(true); setIssues([]); setNotice(''); setError('');
   }
   function changePlanningDate(value: string) {
-    allowAutomaticMission.current = true;
+    allowAutomaticMission.current = false;
     editRevision.current += 1;
     setPlanningDate(value); setPlanning(null); setDraft(newSeaOperation()); setDirty(true); setIssues([]); setNotice('');
   }
@@ -474,7 +491,7 @@ export function SeaOperationsPage() {
         const prepared = captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(loaded.draft, vessel), vessel), data?.vessels));
         if (prepared !== loaded.draft) { setDraft(prepared); setDirty(true); setNotice('Les données du navire ont été actualisées pour cette préparation. Enregistrez pour les conserver.'); }
       }
-      setPlanningDate(loaded.draft.planning?.date || loaded.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setEditing(true); setStep(0); setMobilePane('form');
+      setPlanning(null); setPlanningDate(loaded.draft.planning?.date || loaded.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setEditing(true); setStep(0); setMobilePane('form');
     } }
     catch (reason) { if (request === loadSequence.current && actionContext.current.client === client) setError(errorMessage(reason)); }
     finally { if (request === loadSequence.current && actionContext.current.client === client) setBusy(false); }
@@ -679,9 +696,10 @@ export function SeaOperationsPage() {
           <div className="so-section-title"><b aria-hidden="true">1</b><div><h2 tabIndex={-1}>Préparation de l’Armement</h2><p>Informations opérationnelles et organisation de la mission.</p></div></div>
           <div className="so-grid so-armament-grid">
             <Field label="Date de l’opération"><input type="date" autoFocus={!record} value={planningDate} onChange={(event) => changePlanningDate(event.target.value)} /></Field>
-            <Field label="Projet"><select value={draft.planning?.operationId || (draft.project ? '__existing' : '')} disabled={planningLoading || Boolean(planningError)} onChange={(event) => selectMission(event.target.value)}><option value="">{planningLoading ? 'Chargement du planning…' : 'Choisir un projet du planning'}</option>{draft.project && !draft.planning?.operationId && <option value="__existing">{draft.project}</option>}{draft.planning?.operationId && !selectedMission && <option value={draft.planning.operationId}>{draft.project} · {draft.vessel.name}</option>}{planning?.choices.map((choice) => <option key={choice.operationId} value={choice.operationId}>{choice.project} · {choice.vessel.name}</option>)}</select></Field>
+            <Field label="Projet"><select value={draft.planning?.operationId ? seaOperationPlanningChoiceKey(draft.planning) : draft.project ? '__existing' : ''} disabled={planningLoading || Boolean(planningError)} onChange={(event) => selectMission(event.target.value)}><option value="">{planningLoading ? 'Chargement du planning…' : 'Choisir un projet du planning'}</option>{draft.project && !draft.planning?.operationId && <option value="__existing">{draft.project}</option>}{draft.planning?.operationId && !selectedWindowMission && <option value={seaOperationPlanningChoiceKey(draft.planning)}>{retainedPlanningLabel(draft)}</option>}{planning?.choices.map((choice) => <option key={seaOperationPlanningChoiceKey(choice)} value={seaOperationPlanningChoiceKey(choice)}>{seaOperationPlanningChoiceLabel(choice)}</option>)}</select></Field>
+            {planning && <p className="so-help so-wide">Projets planifiés du {planningDateLabel(planning.startDate)} au {planningDateLabel(planning.endDate)} inclus.</p>}
             {planningError && <p className="so-planning-status so-wide" role="alert">{planningError}</p>}
-            {!planningLoading && !planningError && planning?.choices.length === 0 && <p className="so-planning-status so-wide" role="status">Aucun projet planifié à cette date. Choisissez la date de la mission dans le planning.</p>}
+            {!planningLoading && !planningError && planning?.choices.length === 0 && <p className="so-planning-status so-wide" role="status">Aucun projet planifié entre aujourd’hui et J+3 inclus.</p>}
             <Field label="Client" wide><input readOnly={linkedToPlanning && Boolean(selectedMission?.client)} value={draft.client} onChange={(event) => update({ client: event.target.value })} /></Field>
             <Field label="Coordonnées du client" wide><input readOnly={linkedToPlanning && Boolean(selectedMission?.clientContact)} value={draft.clientContact} onChange={(event) => update({ clientContact: event.target.value })} /></Field>
             <Field label="Description de l’opération" wide><textarea rows={2} readOnly={linkedToPlanning && Boolean(selectedMission?.description)} value={draft.description} onChange={(event) => update({ description: event.target.value })} /></Field>
@@ -711,7 +729,7 @@ export function SeaOperationsPage() {
           <Field label="Tirant d’eau de référence (m)"><input type="number" readOnly value={referenceDraft ?? ''} /></Field>{referenceDraft == null && <p className="so-help">{signed ? 'Tirant d’eau de référence non enregistré dans cette version : indicateur UKC indisponible.' : 'Renseignez le tirant d’eau du navire dans le module Navires.'}</p>}
           <SeaOperationHydroSources />
           {step === 2 && (editable && !signed
-            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${draft.planning?.operationId || ''}`} waypoints={draft.waypoints} maxSpeedKnots={data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id)?.maxSpeedKnots} etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)} onAddWaypoint={addWaypoint} onMoveWaypoint={moveWaypoint} onDeleteWaypoint={removeWaypoint} disabled={busy || exporting} />
+            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${draft.planning?.date || ''}:${draft.planning?.operationId || ''}`} waypoints={draft.waypoints} maxSpeedKnots={data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id)?.maxSpeedKnots} etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)} onAddWaypoint={addWaypoint} onMoveWaypoint={moveWaypoint} onDeleteWaypoint={removeWaypoint} disabled={busy || exporting} />
             : <SeaOperationRouteMap waypoints={draft.waypoints} />)}
           <Field label="Numéro de la ou des cartes marines"><input value={draft.charts} onChange={(event) => update({ charts: event.target.value })} /></Field>
           <h3>Points de passage</h3>

@@ -87,7 +87,7 @@ async function openFixture(linked = true) {
     vessels: [{ id: 12, name: 'GOURY', registrationImo: 'RECETTE-12', lengthOverall: '30.62', canSign: true }] };
   vi.mocked(fetchSeaOperationData).mockResolvedValue(data);
   vi.mocked(fetchSeaOperationDetail).mockImplementation(async () => structuredClone(stored));
-  vi.mocked(fetchSeaOperationPlanning).mockImplementation(async (_client, date) => ({ date, choices: linked ? [mission()] : [] }));
+  vi.mocked(fetchSeaOperationPlanning).mockImplementation(async (_client, date) => ({ date, choices: linked && date === stored.draft.planning?.date ? [mission()] : [] }));
   vi.mocked(saveSeaOperation).mockImplementation(async (_client, draft) => (stored = { ...stored, draft: structuredClone(draft), version: stored.version + 1 }));
   await act(async () => {
     render(<MemoryRouter initialEntries={['/modules/seaOperations']}><Routes><Route element={<Outlet context={{ client, previewMode: false }} />}>
