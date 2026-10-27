@@ -51,6 +51,50 @@ const vessels = [
   { id: 2, name: 'SUROIT', acronym: 'SRT', active: true, fleetExitOn: '', sharePointItemId: '' },
 ];
 
+describe('ProjectEditor client contact presentation', () => {
+  it('shows the selected client postal details for every contract and updates them without mutating or saving the client', async () => {
+    const user = userEvent.setup();
+    const clients = [{ id: 50, name: 'Compagnie Atlantique', active: true, representedBy: 'Marie MARTIN', address: 'Bâtiment A\n1 quai de la Douane', postalCode: '29200', city: 'Brest', country: 'France', phone: '02 98 00 00 00', email: 'contact@atlantique.example' },
+      { id: 51, name: 'Client suivant', active: true, representedBy: 'Yves DUPONT', address: '2 quai du Port', postalCode: '50100', city: 'Cherbourg', country: 'France', phone: '02 33 00 00 00', email: 'contact@suivant.example' }];
+    const original = structuredClone(clients);
+    render(<ProjectEditor client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never} clients={clients as never} contractTypes={[]} statuses={[]} towedAssets={[]} vessels={vessels} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const selector = screen.getByLabelText('Client / affréteur');
+    expect(screen.queryByRole('region', { name: 'Coordonnées du client' })).not.toBeInTheDocument();
+    await user.selectOptions(selector, '50');
+    for (const type of ['Offre Commerciale', 'Contrat de Remorquage', "Contrat d'Affrètement à Temps", "Contrat d'Affrètement Coque Nue", 'BIMCO']) {
+      await user.selectOptions(screen.getByLabelText('Type de contrat'), type);
+      expect(selector).toHaveValue('50');
+      const details = within(screen.getByRole('region', { name: 'Coordonnées du client' }));
+      expect(details.getByText('Marie MARTIN')).toBeInTheDocument();
+      expect(details.getByText(/Bâtiment A/).closest('address')!.textContent).toBe('Bâtiment A\n1 quai de la Douane\n29200 Brest\nFrance');
+      expect(details.getByText('02 98 00 00 00')).toBeInTheDocument(); expect(details.getByText('contact@atlantique.example')).toBeInTheDocument();
+    }
+    await user.selectOptions(selector, '51');
+    const details = within(screen.getByRole('region', { name: 'Coordonnées du client' }));
+    expect(details.getByText('Yves DUPONT')).toBeInTheDocument(); expect(details.queryByText('Marie MARTIN')).not.toBeInTheDocument();
+    expect(details.getByText('contact@suivant.example')).toBeInTheDocument();
+    expect(clients).toEqual(original); expect(mutationMocks.saveClient).not.toHaveBeenCalled(); expect(mutationMocks.saveProject).not.toHaveBeenCalled();
+  });
+
+  it('retains the contact data of a newly created client in the project without waiting for a catalogue reload', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ features: [] }) }));
+    const user = userEvent.setup(); mutationMocks.saveClient.mockResolvedValue(52);
+    render(<ProjectEditor client={{ rpc: vi.fn().mockResolvedValue({ data: 'P999', error: null }) } as never} clients={[]} contractTypes={[]} statuses={[]} towedAssets={[]} vessels={vessels} onClose={vi.fn()} onSaved={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Ajouter un client ou affréteur' }));
+    const editor = within(screen.getByRole('dialog', { name: 'Créer un client' }));
+    await user.type(editor.getByLabelText('Nom du client *'), 'Nouveau client maritime');
+    await user.type(editor.getByLabelText('Prénom'), 'marie'); await user.type(editor.getByLabelText('NOM'), 'martin');
+    await user.type(editor.getByLabelText('Adresse'), '10 quai du Port');
+    await user.type(editor.getByLabelText('Téléphone'), '02 33 00 00 00'); await user.type(editor.getByLabelText('Courriel'), 'contact@nouveau.example');
+    await user.click(editor.getByRole('button', { name: 'Enregistrer dans Supabase' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Créer un client' })).not.toBeInTheDocument());
+    expect(screen.getByLabelText('Client / affréteur')).toHaveValue('52');
+    const details = within(screen.getByRole('region', { name: 'Coordonnées du client' }));
+    for (const value of ['Marie MARTIN', '10 quai du Port', '02 33 00 00 00', 'contact@nouveau.example']) expect(details.getByText(value)).toBeInTheDocument();
+    expect(mutationMocks.saveClient).toHaveBeenCalledTimes(1); expect(mutationMocks.saveProject).not.toHaveBeenCalled();
+  });
+});
+
 describe('ProjectEditor optional location', () => {
   it('forwards commercial ports to the location map and saves manual framing without changing the ports', async () => {
     const user = userEvent.setup(), onSaved = vi.fn();

@@ -44,6 +44,7 @@ import { copyProjectLocationToSeaOperation } from './seaOperationProjectLocation
 import { ProjectLocationOverlayFields } from '../projects/ProjectLocationOverlayFields';
 import type { ProjectLocationOverlay } from '../projects/projectLocation';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
+import { formatClientContactLines } from '../../lib/clientContact';
 
 const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'];
 const STEP_DETAILS = ['Mission, client et voyage', 'Préparation et sécurité du navire', 'Cartes et points de route', 'GO / NO GO et signature'];
@@ -815,8 +816,8 @@ export function SeaOperationsPage() {
             {planningError && <p className="so-planning-status so-wide" role="alert">{planningError}</p>}
             {!planningLoading && !planningError && planning?.choices.length === 0 && <p className="so-planning-status so-wide" role="status">Aucun projet planifié entre aujourd’hui et J+3 inclus.</p>}
             <Field label="Client" wide><select value={selectedClientValue} disabled={clientLocked} onChange={event => selectClient(event.target.value)}><option value="">Choisir un client</option>{clientLocked && draft.client && <option value="__retained">{draft.client}</option>}{!clientLocked && draft.client && !draft.clientId && <option value="__existing">{draft.client}</option>}{!clientLocked && draft.clientId && !data?.clients?.some(item => item.id === draft.clientId) && <option value={draft.clientId}>{draft.client}</option>}{data?.clients?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-            {clientLocked && <p className="so-help so-wide">{recordedClientLocked ? 'Client conservé avec la fiche.' : 'Client défini par le projet sélectionné.'}</p>}
-            <Field label="Coordonnées du client" wide><input value={draft.clientContact} onChange={(event) => update({ clientContact: event.target.value })} /></Field>
+            {clientLocked && recordedClientLocked && <p className="so-help so-wide">Client conservé avec la fiche.</p>}
+            <Field label="Coordonnées du client" wide><textarea rows={Math.min(10, Math.max(3, formatClientContactLines(draft.clientContact).split('\n').length))} value={formatClientContactLines(draft.clientContact)} onChange={(event) => update({ clientContact: event.target.value })} /></Field>
             <Field label="Description de l’opération" wide><textarea rows={2} value={draft.description} onChange={(event) => update({ description: event.target.value })} /></Field>
           </div>
           {linkedToPlanning && <p className="so-help">Données du projet et du planning sélectionnés. Les informations du voyage restent modifiables. Un changement de mission réinitialise les contrôles et la décision.</p>}

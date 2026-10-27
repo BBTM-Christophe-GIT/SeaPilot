@@ -40,6 +40,7 @@ import { resolveClientCountry } from './clientLocation';
 import { normalizeProjectStatus, PROJECT_STATUSES } from './projectStatus';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AppDialog } from '../../components/AppDialog';
+import { ClientContactDetails, type ClientContactInfo } from '../../components/ClientContactDetails';
 import { ServiceNoteRichTextEditor } from '../serviceNotes/ServiceNoteRichTextEditor';
 import {
   projectDescriptionToPlainText,
@@ -473,8 +474,9 @@ export function ProjectEditor({
   const [towedAsset, setTowedAsset] = useState<ProjectTowedAssetWriteInput | null>(() => initialTowedAsset);
   const [activeStep, setActiveStep] = useState<ProjectAssistantStep>('identification');
   const [availableClients, setAvailableClients] = useState<
-    Pick<ClientRecord, 'active' | 'id' | 'name'>[]
+    (Pick<ClientRecord, 'active' | 'id' | 'name'> & ClientContactInfo)[]
   >(() => clients);
+  const selectedClientContact = availableClients.find(item => item.id === form.clientId);
   const [clientEditorOpen, setClientEditorOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -838,7 +840,12 @@ export function ProjectEditor({
   function handleClientSaved(clientId: number, savedClient: ClientWriteInput) {
     setAvailableClients((current) => [
       ...current.filter((item) => item.id !== clientId),
-      { active: savedClient.active, id: clientId, name: savedClient.name.trim() },
+      {
+        active: savedClient.active, id: clientId, name: savedClient.name.trim(),
+        representedBy: savedClient.representedBy, address: savedClient.address,
+        postalCode: savedClient.postalCode, city: savedClient.city, country: savedClient.country,
+        phone: savedClient.phone, email: savedClient.email,
+      },
     ]);
     update('clientId', clientId);
     setClientEditorOpen(false);
@@ -962,6 +969,7 @@ export function ProjectEditor({
                   ))}
                 </select>
               </div>
+              {isCharter && selectedClientContact && <ClientContactDetails contact={selectedClientContact} />}
               {!isCharter ? (
                 <>
                   <Field label="Statut">
@@ -969,6 +977,7 @@ export function ProjectEditor({
                       {PROJECT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
                     </select>
                   </Field>
+                  {selectedClientContact && <ClientContactDetails contact={selectedClientContact} />}
                   <RichField label="Description">
                     <div className="project-service-rich-field project-description-rich-field">
                       <ServiceNoteRichTextEditor

@@ -20,6 +20,7 @@ import { calculateSeaOperationCopernicusEstimate, COPERNICUS_UKC_PRODUCTS, type 
 import { seaOperationUkcReference, type SeaOperationUkcCaptureContext } from './seaOperationWaypointSnapshots';
 import { seaOperationPlanningChoiceKey, seaOperationPlanningChoiceLabel, seaOperationPlanningWindowDates } from './seaOperationPlanningWindow';
 import { emptyProjectLocationPlan } from '../projects/projectLocation';
+import { formatClientContactLines } from '../../lib/clientContact';
 
 const weatherPanelMock = vi.hoisted(() => vi.fn());
 const chartsPanelMock = vi.hoisted(() => vi.fn());
@@ -334,6 +335,42 @@ describe('Saved route map framing in operation forms', () => {
   });
 });
 
+describe('Client contact layout with real-profile permission fixtures', () => {
+  it('displays multiline client coordinates without rewriting their saved source or unlocking the client', async () => {
+    const choices = plannedMissions(), mission = choices[1];
+    const source = 'Léa CLIENT · lea@example.test · +33 2 10 20 30 40 · 12, quai du Port\n50100 Cherbourg-en-Cotentin\nFrance';
+    const draft = waypointCaptureDraft(mission);
+    draft.client = mission.client; draft.clientContact = source; draft.waypoints = [];
+    const record = recordFixture(captainAccount, { draft }), original = structuredClone(record);
+    const { client } = renderAccount(captainAccount, record, 1, choices);
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, payload) => ({ ...record, draft: structuredClone(payload), version: 4 }));
+    await openRecord(record);
+    await waitFor(() => expect(formQueries().getByLabelText('Projet')).toBeEnabled());
+    const contact = formQueries().getByRole('textbox', { name: 'Coordonnées du client' });
+    expect(contact.tagName).toBe('TEXTAREA');
+    expect(contact).toHaveValue('Léa CLIENT\nlea@example.test\n+33 2 10 20 30 40\n12, quai du Port\n50100 Cherbourg-en-Cotentin\nFrance');
+    expect(contact).toBeEnabled();
+    expect(formQueries().getByLabelText('Client')).toBeDisabled();
+    expect(formQueries().queryByText('Client défini par le projet sélectionné.')).not.toBeInTheDocument();
+    expect(footerQueries().getByText('Version 3 enregistrée')).toBeVisible();
+    expect(footerQueries().queryByText('Modifications non enregistrées')).not.toBeInTheDocument();
+    expect(sessionStorage.length).toBe(0);
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+    expect(record).toEqual(original);
+
+    await saveDraft();
+    await waitFor(() => expect(footerQueries().getByText('Version 4 enregistrée')).toBeVisible());
+    expect(saveSeaOperation).toHaveBeenCalledTimes(1);
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ clientContact: source }), record);
+    expect(record).toEqual(original);
+    expect(contact).toHaveValue(formatClientContactLines(source));
+    fireEvent.change(contact, { target: { value: 'Contact opérationnel\nAutre adresse, conservée telle quelle' } });
+    expect(capturingUkcPanel().payload.clientContact).toBe('Contact opérationnel\nAutre adresse, conservée telle quelle');
+    expect(formQueries().getByLabelText('Client')).toBeDisabled();
+  });
+});
+
 describe('Transit and editable voyages with real-profile permission fixtures', () => {
   it.each([captainAccount, sailorAccount, adminAccount])('starts a free Transit form with registered clients and the actual vessel captain for $id', async account => {
     const choices = plannedMissions(), { client, data } = renderAccount(account, undefined, 1, choices);
@@ -350,7 +387,7 @@ describe('Transit and editable voyages with real-profile permission fixtures', (
     expect(within(formQueries().getByLabelText('Navire')).getAllByRole('option').map(option => option.textContent)).toEqual(['Choisir un navire', 'GOURY', 'LE ROZEL']);
     expect(formQueries().getByLabelText('Client')).toBeEnabled();
     await userEvent.selectOptions(formQueries().getByLabelText('Client'), '701');
-    expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(data.clients![0].contact);
+    expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(formatClientContactLines(data.clients![0].contact));
     fireEvent.change(formQueries().getByLabelText('Coordonnées du client'), { target: { value: 'Contact opérationnel' } });
     fireEvent.change(formQueries().getByLabelText('Description de l’opération'), { target: { value: 'Transit de Cherbourg à Caen' } });
     await userEvent.selectOptions(formQueries().getByLabelText('Navire'), '12');
@@ -610,7 +647,7 @@ describe('Planning project choices across four Paris calendar days', () => {
     await chooseMission(missions[3], dates[3]);
     expect(formQueries().getByLabelText('Date de l’opération')).toHaveValue('2026-10-20');
     expect(formQueries().getByLabelText('Client')).toHaveDisplayValue(missions[3].client);
-    expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(missions[3].clientContact);
+    expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(formatClientContactLines(missions[3].clientContact));
     expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue(missions[3].description);
     expect(formQueries().getByLabelText('Navire')).toHaveValue(missions[3].vessel.id);
     expect(formQueries().getByLabelText('Immatriculation / IMO')).toHaveValue(missions[3].vessel.registrationImo);
@@ -2192,7 +2229,8 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     await chooseMission(first);
     expect(formQueries().getByLabelText('Client')).toHaveDisplayValue(first.client);
-    expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(first.clientContact);
+    expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(formatClientContactLines(first.clientContact));
+    expect(formQueries().queryByText('Client défini par le projet sélectionné.')).not.toBeInTheDocument();
     expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue(first.description);
     expect(formQueries().getByLabelText('Navire')).toHaveValue('12');
     expect(formQueries().getByLabelText('Immatriculation / IMO')).toHaveValue(first.vessel.registrationImo);
@@ -2202,7 +2240,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await userEvent.click(stepButton(0));
     await chooseMission(second);
     expect(formQueries().getByLabelText('Client')).toHaveDisplayValue(second.client);
-    expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(second.clientContact);
+    expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(formatClientContactLines(second.clientContact));
     expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue(second.description);
     expect(formQueries().getByLabelText('Navire')).toHaveValue('13');
     expect(formQueries().getByLabelText('Immatriculation / IMO')).toHaveValue(second.vessel.registrationImo);
