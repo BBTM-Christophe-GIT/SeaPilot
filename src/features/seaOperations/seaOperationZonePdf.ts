@@ -30,7 +30,7 @@ export function drawSeaOperationZoneTablePdf(document: jsPDF, zone: SeaOperation
     startY: y, margin: { left: options.left, right: options.right, top: options.top, bottom: options.bottom },
     theme: 'grid', showHead: 'everyPage', rowPageBreak: 'avoid',
     head: [[{ content: title, colSpan: 2, styles: { fillColor: [...appearance.fillRgb], textColor: [...appearance.rgb],
-      fontStyle: 'bold', fontSize: fontSize + 1, halign: 'left', cellPadding: 7 } }], ['Rang / Sommet', 'Coordonnées']],
+      fontStyle: 'bold', fontSize: fontSize + 1, halign: 'left', cellPadding: 7 } }], ['Point', 'Coordonnées']],
     body: zone.vertices.length ? zone.vertices.map((vertex, vertexIndex) => [
       `${appearance.code}.${vertexIndex + 1}`, printable(formatSeaPosition(vertex)),
     ]) : [['-', 'Aucun sommet renseigné']],

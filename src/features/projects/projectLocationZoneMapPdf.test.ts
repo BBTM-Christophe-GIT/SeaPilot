@@ -35,7 +35,7 @@ describe('Sea-operation zone maps in PDF', () => {
     const bodies = pageBodies(pdf);
     expect(bodies.find(body => body.includes('(Zones - hors calcul de navigation) Tj'))).toContain('(Z1 - Zone de Travaux) Tj');
     for (const [index, zone] of plan.zones.entries()) {
-      const tablePage = bodies.find(body => body.includes(`(Z${index + 1} - ${zone.name}) Tj`) && body.includes('(Rang / Sommet) Tj'));
+      const tablePage = bodies.find(body => body.includes(`(Z${index + 1} - ${zone.name}) Tj`) && body.includes('(Point) Tj') && body.includes('(Coordonnées) Tj'));
       expect(tablePage).toBeDefined();
       for (let vertex = 1; vertex <= 6; vertex++) expect(tablePage).toContain(`(Z${index + 1}.${vertex}) Tj`);
     }

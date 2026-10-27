@@ -26,7 +26,7 @@ describe('coloured zone hierarchy in PDF', () => {
     const pdf = document.output();
     expect(pdf.match(/Zone de Travaux/g)).toHaveLength(1);
     expect(pdf).toContain('(Z1 - Zone de Travaux) Tj');
-    expect(pdf).toContain('(Rang / Sommet) Tj');
+    expect(pdf).toContain('(Point) Tj');
     for (let i = 1; i <= 6; i++) expect(pdf).toContain(`(Z1.${i}) Tj`);
     expect(line).toHaveBeenCalled(); expect(zone).toEqual(original);
   });

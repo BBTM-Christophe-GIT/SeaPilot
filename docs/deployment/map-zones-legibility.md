@@ -18,7 +18,8 @@ les points isolés et les gestes de déplacement ne sont pas réécrits.
 
 Les deux PDF utilisent une arborescence : un entête parent « Z1 - nom de la
 zone », suivi des sommets indentés Z1.1, Z1.2… et de leurs coordonnées WGS84
-en degrés/minutes. Le nom de la zone n’est plus répété sur chaque ligne.
+en degrés/minutes, dans les colonnes « Point » et « Coordonnées ». Le nom
+de la zone n’est plus répété sur chaque ligne.
 L’entête parent et les titres de colonnes se répètent quand une grande zone
 continue sur une autre page. Les petits groupes restent ensemble si possible.
 Les cartes sont vectorielles et les en-têtes/pieds de page Word sont conservés.
