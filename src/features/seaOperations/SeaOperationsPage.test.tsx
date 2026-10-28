@@ -208,7 +208,7 @@ const footerQueries = () => within(screen.getByRole('dialog').querySelector('.ap
 const recordActions = (record: SeaOperationRecord) => within(screen.getByRole('group', { name: `Actions pour ${record.draft.project || 'Opération sans titre'}` }));
 const stepButton = (index: number) => within(screen.getByRole('navigation', { name: 'Étapes de la préparation' })).getAllByRole('button')[index];
 const choiceQueries = (label: string) => within(formQueries().getByRole('group', { name: label }));
-const optionLabels: Record<string, string> = { yes: 'Oui', no: 'Non', nomade: 'NOMADE', email: 'Mail à la Capitainerie', armament: 'Armement', captain: 'Capitaine', agent: 'Agent consignataire', sms: 'Pas de mesures autres que le SMS', specific: 'Mesures spécifiques prises', GO: 'GO · la mission peut être réalisée', NO_GO: 'NO GO · la mission ne peut être réalisée' };
+const optionLabels: Record<string, string> = { yes: 'Oui', no: 'Non', nomade: 'NOMADE', email: 'Mail à la Capitainerie', s_wing: 'S-WING', armament: 'Armement', captain: 'Capitaine', agent: 'Agent consignataire', sms: 'Pas de mesures autres que le SMS', specific: 'Mesures spécifiques prises', GO: 'GO · la mission peut être réalisée', NO_GO: 'NO GO · la mission ne peut être réalisée' };
 const choiceInput = (label: string, value: string) => choiceQueries(label).getByRole('checkbox', { name: optionLabels[value] });
 const answerInput = (label: string) => formQueries().getByRole('switch', { name: label });
 const etaGroup = (index = 1) => formQueries().getByRole('group', { name: `ETA · date et heure · point ${index}` });
@@ -2489,6 +2489,20 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(formQueries().getByRole('checkbox', { name: 'Zone maritime à trafic dense · point 1' })).toBeChecked();
     await userEvent.click(formQueries().getByRole('button', { name: 'Supprimer le point 1' }));
     expect(within(table).getByText('Ajoutez le premier point de passage.')).toBeInTheDocument();
+  });
+
+  it('saves the S-WING DAPAQ checkbox as an exclusive declaration method for a real captain fixture', async () => {
+    const { client } = renderAccount(captainAccount);
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, draft) => recordFixture(captainAccount, { draft, version: 1 }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await selectChoice('Mode de déclaration', 'nomade');
+    await selectChoice('Mode de déclaration', 's_wing');
+    expect(choiceInput('Mode de déclaration', 's_wing')).toBeChecked();
+    expect(choiceInput('Mode de déclaration', 'nomade')).not.toBeChecked();
+    await selectChoice('Préparée par', 'captain');
+    await saveDraft();
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ dapaq: expect.objectContaining({ method: 's_wing', preparedBy: 'captain' }) }), undefined);
   });
 
   it('keeps explicit DAPAQ and safety choices clearable while binary boarding and shipchandler switches stay Oui or Non', async () => {

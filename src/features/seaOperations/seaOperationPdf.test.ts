@@ -158,6 +158,14 @@ function tableRectangles(body: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Sea operation PDF', () => {
+  it('exports the saved S-WING declaration method without altering the signed record', async () => {
+    const record = fixture(); record.draft.description = 'Déclaration DAPAQ S-WING'; record.draft.dapaq.method = 's_wing';
+    const original = structuredClone(record);
+    const generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    expect((await generatedBodies(generated.bytes)).join('\n')).toContain('(S-WING) Tj');
+    expect(record).toEqual(original);
+  });
+
   it('draws defined departure and arrival ports even without waypoints and preserves a manual frame', async () => {
     const record = voyageFixture(); record.draft.vessel.departurePort = 'Cherbourg'; record.draft.vessel.arrivalPort = 'Brest';
     record.draft.waypoints = [];

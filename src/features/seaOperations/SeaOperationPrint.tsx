@@ -65,7 +65,8 @@ export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOp
   const voyage = seaOperationVoyageSummary(form);
   const signatureImage = signed ? record.signatureUrl || null : signatureImageUrl || null;
   const method = form.dapaq.method === 'nomade' ? 'Préparée dans NOMADE'
-    : form.dapaq.method === 'email' ? 'Réalisée par mail et transmise à la Capitainerie' : blank;
+    : form.dapaq.method === 'email' ? 'Réalisée par mail et transmise à la Capitainerie'
+      : form.dapaq.method === 's_wing' ? 'S-WING' : blank;
   const responsible = form.dapaq.preparedBy === 'armament' ? 'L’Armement'
     : form.dapaq.preparedBy === 'captain' ? 'Le Capitaine'
       : form.dapaq.preparedBy === 'agent' ? 'L’agent consignataire' : blank;

@@ -329,6 +329,18 @@ describe('sea operation form model', () => {
     expect(validateSeaOperation(payload, 'NO_GO').some((error) => error.includes('motif de NO GO'))).toBe(true);
   });
 
+  it('preserves S-WING through serialization and validates its DAPAQ responsibility', () => {
+    const payload = completePayload();
+    payload.dapaq = { method: 's_wing', preparedBy: 'captain', agentName: '', agentContact: '' };
+    const stored = JSON.parse(JSON.stringify(payload));
+    expect(isSeaOperationPayload(stored)).toBe(true);
+    expect(validateSeaOperation(stored, 'GO')).toEqual([]);
+    payload.dapaq.preparedBy = 'agent';
+    expect(validateSeaOperation(payload, 'GO')).toContain('Les coordonnées de l’agent consignataire sont obligatoires.');
+    payload.dapaq.agentName = 'Agent'; payload.dapaq.agentContact = 'agent@example.test';
+    expect(validateSeaOperation(payload, 'GO')).toEqual([]);
+  });
+
   it('requires the agent contact only when an agent prepares an email DAPAQ', () => {
     const payload = completePayload();
     payload.dapaq = { method: 'email', preparedBy: 'agent', agentName: '', agentContact: '' };
