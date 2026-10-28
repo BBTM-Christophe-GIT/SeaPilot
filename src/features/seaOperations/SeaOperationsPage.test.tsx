@@ -2338,6 +2338,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
   });
 
   it('ignores a late signature response from the previous mission after another captain is selected', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-27T13:27:00Z'));
     const choices = plannedMissions();
     const staleSignature = deferred<Awaited<ReturnType<typeof fetchSeaOperationCaptainSignature>>>();
     renderAccount(captainAccount, undefined, 1, choices);
@@ -2424,6 +2425,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
   });
 
   it('resets safety approvals, passage points and signature acknowledgment when the mission changes', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-27T13:27:00Z'));
     const choices = plannedMissions();
     const draft = noGoDraft();
     draft.project = choices[0].project;
