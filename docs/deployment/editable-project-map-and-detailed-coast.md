@@ -7,6 +7,7 @@ Version 3.80.9 — 28 octobre 2026.
 L’onglet Carte propose **Modifier la carte**, puis **Enregistrer la carte** et
 **Annuler**. Il réutilise l’éditeur de localisation pour créer, déplacer ou
 supprimer une route, des points isolés et des zones, avec leurs champs existants.
+La sauvegarde fonctionne dans le volet du portefeuille comme dans la fiche ouverte.
 ETD, cartes marines, icônes, cadrage et option d’annexe PDF restent conservés.
 La consultation initiale ne modifie aucune donnée. Les changements de dossier,
 d’onglet ou de page protègent les modifications non enregistrées.

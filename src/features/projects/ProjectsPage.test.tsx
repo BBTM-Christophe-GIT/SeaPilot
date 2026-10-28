@@ -868,6 +868,24 @@ describe('ProjectsPage', () => {
     expect(plan).toEqual(original);
   });
 
+  it('saves the automatically selected portfolio map without requiring the full dossier to be opened', async () => {
+    const plan = editableMapPlan(), original = structuredClone(plan);
+    const { client, rpc } = createClient({ projects: { data: [{ ...atlantiqueProjectRow, location_plan: plan }], error: null } },
+      { data: { id: 880, project_code: 'P1086', title: atlantiqueProjectRow.title, updated_at: '2026-07-15T14:00:00.123456Z' }, error: null });
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+    // The portfolio exposes this automatically selected map before any project-card click.
+    fireEvent.click(await screen.findByRole('tab', { name: 'Carte' }));
+    expect(screen.queryByLabelText('Changer de projet')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier la carte' }));
+    fireEvent.change(screen.getByLabelText('Description · Waypoint 1'), { target: { value: 'Port de Cherbourg' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la carte' }));
+    expect(await screen.findByText('La carte du projet a été enregistrée.')).toBeVisible();
+    expect(rpc).toHaveBeenCalledWith('projects_set_location', expect.objectContaining({ target_project_id: 880, target_expected_updated_at: atlantiqueProjectRow.updated_at,
+      target_location_plan: expect.objectContaining({ waypoints: [expect.objectContaining({ id: 'route-1', descriptionVhf: 'Port de Cherbourg' })] }) }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument(); expect(screen.queryByLabelText('Changer de projet')).not.toBeInTheDocument();
+    expect(plan).toEqual(original);
+  });
+
   it('retains map edits and expected version when the server rejects a concurrent update', async () => {
     const { client, rpc } = createClient({ projects: { data: [{ ...atlantiqueProjectRow, location_plan: editableMapPlan() }], error: null } },
       { data: null, error: { code: '40001', message: 'Le projet a été modifié. Rechargez sa carte.' } });

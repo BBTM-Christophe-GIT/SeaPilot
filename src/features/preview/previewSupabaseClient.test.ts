@@ -7,8 +7,21 @@ import { emptySeaOperation, emptySeaOperationWaypoint, seaOperationToday } from 
 import { cloneVesselWeatherMatrix, GOURY_WEATHER_MATRIX } from '../fleet/vesselWeatherMatrix';
 import { emptyProjectLocationPlan } from '../projects/projectLocation';
 import { saveProjectLocation } from '../projects/projectMutations';
+import { fetchProjects } from '../projects/projectQueries';
 
 describe('previewSupabaseClient', () => {
+  it('loads every project with a map concurrency token and saves an initially loaded P902 map', async () => {
+    const projects = await fetchProjects(previewSupabaseClient);
+    expect(projects.length).toBeGreaterThan(0);
+    for (const project of projects) expect(Number.isFinite(Date.parse(project.updatedAt)), project.projectCode).toBe(true);
+    const source = projects.find(project => project.projectCode === 'P902')!;
+    const plan = { ...emptyProjectLocationPlan(), waypoints: [{ ...emptySeaOperationWaypoint('p902-map-port'), number: '1', descriptionVhf: 'Port de Cherbourg', latitude: '49.65', longitude: '-1.62' }] };
+    const saved = await saveProjectLocation(previewSupabaseClient, source.id, plan, source.updatedAt);
+    const stored = (await fetchProjects(previewSupabaseClient)).find(project => project.id === source.id)!;
+    expect(stored.updatedAt).toBe(saved.updatedAt); expect(stored.updatedAt).not.toBe(source.updatedAt);
+    expect(stored.locationPlan).toEqual(plan);
+    await saveProjectLocation(previewSupabaseClient, source.id, source.locationPlan ?? null, saved.updatedAt);
+  });
   it('saves only a demo project location and rejects stale or malformed map writes', async () => {
     const rows = await previewSupabaseClient.from('projects').select('*').order('id');
     const source = structuredClone(rows.data!.find(project => project.project_code === 'P902')!);

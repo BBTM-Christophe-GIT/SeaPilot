@@ -1544,7 +1544,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
 
   async function saveMap(plan: ProjectLocationPlan, source: ProjectRecord) {
     const context = currentMapContext.current;
-    if (mapMutationRunning.current || !context.ready || !context.isManager || !context.dossierOpen || !context.project || context.project.archivedAt
+    if (mapMutationRunning.current || !context.ready || !context.isManager || !context.project || context.project.archivedAt
       || context.project.id !== source.id || context.project.updatedAt !== source.updatedAt || context.client !== effectiveClient
       || context.userId !== effectiveUserId || context.generation !== mapAccount.current.generation) {
       throw new Error('Rechargez le projet avant de modifier sa carte.');
@@ -1555,7 +1555,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     const isCurrent = () => request === mapRequest.current && currentMapContext.current.client === context.client
       && currentMapContext.current.userId === context.userId && currentMapContext.current.generation === context.generation
       && currentMapContext.current.project?.id === source.id && currentMapContext.current.project.updatedAt === source.updatedAt
-      && currentMapContext.current.isManager && currentMapContext.current.dossierOpen && !currentMapContext.current.project.archivedAt;
+      && currentMapContext.current.isManager && currentMapContext.current.dossierOpen === context.dossierOpen && !currentMapContext.current.project.archivedAt;
     try {
       const saved = await saveProjectLocation(context.client, source.id, canonical, source.updatedAt);
       if (!isCurrent()) throw new Error('Le projet ou votre accès a changé. Rechargez sa carte.');
