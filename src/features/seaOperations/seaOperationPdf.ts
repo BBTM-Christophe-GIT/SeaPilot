@@ -128,7 +128,7 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   heading('Demande d’Attribution de Poste À Quai (DAPAQ)', true);
   paragraph('Caen, Le Havre, Dieppe et Rouen : DAPAQ préparée dans NOMADE par l’Armement ou le Capitaine. Autres ports : DAPAQ réalisée par mail et transmise à la Capitainerie.');
   fields([
-    ['Mode', form.dapaq.method === 'nomade' ? 'NOMADE' : form.dapaq.method === 'email' ? 'Mail à la Capitainerie' : ''],
+    ['Mode', form.dapaq.method === 'nomade' ? 'NOMADE' : form.dapaq.method === 'email' ? 'Mail à la Capitainerie' : form.dapaq.method === 's_wing' ? 'S-WING' : ''],
     ['Réalisée par', form.dapaq.preparedBy === 'armament' ? 'L’Armement' : form.dapaq.preparedBy === 'captain' ? 'Le Capitaine' : form.dapaq.preparedBy === 'agent' ? 'L’agent consignataire' : ''],
     ...(form.dapaq.preparedBy === 'agent' ? [['Agent consignataire', form.dapaq.agentName], ['Coordonnées de l’agent', form.dapaq.agentContact]] as Array<[string, string]> : []),
     ['Port de départ / Quai', `${value(form.vessel.departurePort)} / ${value(form.vessel.departureQuay)}`],
