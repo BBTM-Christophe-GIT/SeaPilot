@@ -8,8 +8,68 @@ import { cloneVesselWeatherMatrix, GOURY_WEATHER_MATRIX } from '../fleet/vesselW
 import { emptyProjectLocationPlan } from '../projects/projectLocation';
 import { saveProjectLocation } from '../projects/projectMutations';
 import { fetchProjects } from '../projects/projectQueries';
+import { fetchProjectSeaOperationDocuments, saveProjectSeaOperationDocuments } from '../projects/projectSeaOperationDocumentsQueries';
 
 describe('previewSupabaseClient', () => {
+  it('retains an explicit operational document selection without selecting later demo uploads', async () => {
+    const original = await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001);
+    expect(original.configured).toBe(false);
+    expect(original.documents.map(document => document.id).sort()).toEqual(['generated:9451', 'generated:9452', 'project:9401']);
+    expect(original.documents.every(document => document.selected && document.projectId === '9001')).toBe(true);
+    const generated = (await previewSupabaseClient.from('project_generated_documents').select('*')).data!;
+    const imported = (await previewSupabaseClient.from('project_documents').select('*')).data!;
+    const generatedCount = generated.length, importedCount = imported.length;
+    try {
+      const empty = await saveProjectSeaOperationDocuments(previewSupabaseClient, 9001, []);
+      expect(empty.configured).toBe(true);
+      expect(empty.documents.every(document => !document.selected)).toBe(true);
+      expect(await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001)).toEqual(empty);
+      await saveProjectSeaOperationDocuments(previewSupabaseClient, 9001, ['generated:9452']);
+      generated.push(
+        { ...generated[0], id: 9471, file_name: 'Nouvelle consigne.pdf' },
+        { ...generated[0], id: 9472, category_key: 'billing', file_name: 'Facture exclue.pdf' },
+        { ...generated[0], id: 9473, document_type: 'commercial_offer', file_name: 'Offre exclue.pdf' },
+        { ...generated[0], id: 9474, category_key: 'commercial_contract', file_name: 'Contrat exclu.pdf' },
+        { ...generated[0], id: 9475, category_key: 'unknown', file_name: 'Classement inconnu.pdf' },
+      );
+      imported.push(
+        { ...imported[0], id: 9476, is_folder: true, title: 'Dossier exclu' },
+        { ...imported[0], id: 9477, category_key: 'billing', title: 'Facture importée exclue.pdf' },
+      );
+      const reloaded = await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001);
+      expect(reloaded.documents.map(document => document.id).sort()).toEqual(['generated:9451', 'generated:9452', 'generated:9471', 'project:9401']);
+      expect(reloaded.documents.filter(document => document.selected).map(document => document.id)).toEqual(['generated:9452']);
+      const raw = await previewSupabaseClient.rpc('project_sea_operation_documents', { p_project_id: '9001' });
+      expect(JSON.stringify(raw.data)).not.toMatch(/sharepoint|storage_|file_url|source_path/);
+      const beforeInvalid = structuredClone(reloaded);
+      for (const id of ['generated:9472', 'generated:9473', 'generated:9474', 'generated:9475', 'project:9476', 'project:9477', 'project:991011']) {
+        const rejected = await previewSupabaseClient.rpc('set_project_sea_operation_documents', { p_project_id: '9001', p_document_ids: [id] });
+        expect(rejected.error).toMatchObject({ code: '42501' });
+        expect(await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001)).toEqual(beforeInvalid);
+      }
+    } finally {
+      generated.splice(generatedCount); imported.splice(importedCount);
+      await saveProjectSeaOperationDocuments(previewSupabaseClient, 9001, original.documents.map(document => document.id));
+    }
+  });
+
+  it('keeps document preferences scoped to exact Projects IDs and rejects malformed RPC arguments atomically', async () => {
+    const before = await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001);
+    for (const p_project_id of ['9001x', '9001.0', '09001', '9e3', '', null, [], {}, 9001.5, '9007199254740993']) {
+      const result = await previewSupabaseClient.rpc('project_sea_operation_documents', { p_project_id });
+      expect(result.error).toMatchObject({ code: '22023' });
+    }
+    for (const p_project_id of ['99101', '99102', '999999']) {
+      expect((await previewSupabaseClient.rpc('project_sea_operation_documents', { p_project_id })).error).toMatchObject({ code: '42501' });
+    }
+    for (const p_document_ids of [null, 'generated:9451', [null], [['generated:9451']], ['generated:0'], Array(5001).fill('generated:9451')]) {
+      const result = await previewSupabaseClient.rpc('set_project_sea_operation_documents', { p_project_id: '9001', p_document_ids });
+      expect(result.error).toMatchObject({ code: '22023' });
+    }
+    expect(await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001)).toEqual(before);
+    expect(await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9002)).toEqual({ configured: false, documents: [] });
+  });
+
   it('loads every project with a map concurrency token and saves an initially loaded P902 map', async () => {
     const projects = await fetchProjects(previewSupabaseClient);
     expect(projects.length).toBeGreaterThan(0);

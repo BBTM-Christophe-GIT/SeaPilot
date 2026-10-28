@@ -213,3 +213,11 @@ Marin continuent à interdire toute modification : ils reconnaissent uniquement
 le bouton d'affichage hérité du fieldset en lecture seule, désactivé dans ce
 contexte. Le test du portefeuille Projet attend le montage asynchrone de sa
 commande Carte avant d'interagir.
+
+## Couleur de la 2e catégorie — version 3.80.14
+
+Build `2026-10-28.008`. Le libellé et l'accent de la case de la 2e catégorie
+utilisent désormais le violet de son tracé (`#7e429f`) dans les deux modules.
+Le libellé de la 3e catégorie reste vert et seule cette catégorie est cochée
+à la première activation. Les géométries, leurs pointillés et les gestes de
+navigation restent identiques.

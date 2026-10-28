@@ -12,6 +12,7 @@ import {
 } from './projectDocumentCategories';
 import { storeProjectAttachment, type ProjectAttachmentDraft } from './projectDocumentStorage';
 import type { ProjectDocumentRecord, ProjectOperationDocumentRecord } from './projectQueries';
+import { ProjectSeaOperationDocuments } from './ProjectSeaOperationDocuments';
 import './ProjectDocumentLibrary.css';
 
 interface LibraryDocuments {
@@ -181,6 +182,7 @@ export function ProjectDocumentLibrary({
       {canManage ? <div className="project-documents-actions">
         <button className="sp-button sp-button--primary" disabled={busy || !canUpload} onClick={beginUpload} type="button"><Plus aria-hidden="true" size={17} /> Ajouter un document</button>
         <button className="sp-button sp-button--secondary" disabled={busy || !currentCatalog || Boolean(currentCatalog.error)} onClick={beginCategories} type="button"><FolderCog aria-hidden="true" size={17} /> Gérer les catégories</button>
+        <ProjectSeaOperationDocuments accessKey={accessKey} archived={archived} canManage={canManage} client={client} projectId={projectId} />
       </div> : null}
     </div>
     {!currentCatalog ? <p role="status">Chargement des catégories…</p> : currentCatalog.error ? <div role="alert" className="project-documents-error">{currentCatalog.error}<button className="sp-button sp-button--secondary" onClick={() => setLoadAttempt((attempt) => attempt + 1)} type="button">Réessayer les catégories</button></div> : canManage && !roots.length ? <p role="status">Ajoutez une catégorie pour classer un document.</p> : null}

@@ -46,7 +46,7 @@ export function SeaOperationNavigationCategoryLegend({ selected, onToggle, proje
   return <section className="so-navigation-category-legend" aria-label="Catégories de navigation professionnelles">
     <div className="so-navigation-category-choices">
       <span className="so-navigation-category-first"><strong>1re catégorie</strong> · sans limite géographique propre</span>
-      {([2, 3] as const).map(category => <label key={category} className="so-navigation-category-choice">
+      {([2, 3] as const).map(category => <label key={category} className={`so-navigation-category-choice is-category-${category}`}>
         <input type="checkbox" checked={selected.has(category)} onChange={() => onToggle(category)} />
         <i className={`so-navigation-category-swatch so-navigation-category-${category}`} aria-hidden="true" />
         <span className="so-navigation-category-label"><strong>{category}e catégorie</strong> · {category === 2 ? 'limite SHOM · 200 NM' : 'limite SHOM · 20 NM'}</span>
