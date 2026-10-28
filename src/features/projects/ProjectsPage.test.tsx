@@ -886,6 +886,29 @@ describe('ProjectsPage', () => {
     expect(plan).toEqual(original);
   });
 
+  it('keeps an edited automatic portfolio selection pinned when searching hides its project card', async () => {
+    const plan = editableMapPlan();
+    const { client, rpc } = createClient({ projects: { data: [{ ...mancheProjectRow, location_plan: plan }, atlantiqueProjectRow], error: null } },
+      { data: { id: 881, project_code: 'P1087', title: mancheProjectRow.title, updated_at: '2026-07-15T14:00:00.123456Z' }, error: null });
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Tous les projets/ }));
+    await screen.findByRole('heading', { name: mancheProjectRow.title });
+    fireEvent.click(screen.getByRole('tab', { name: 'Carte' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier la carte' })); changeMapDescription();
+    expect(screen.queryByLabelText('Changer de projet')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Rechercher un contrat' }), { target: { value: 'Atlantique' } });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'P1087 Campagne Manche 2026' })).not.toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: mancheProjectRow.title })).toBeVisible();
+    expect(screen.getByRole('tab', { name: 'Carte' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('Description · Waypoint 1')).toHaveValue('Départ modifié');
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la carte' }));
+    expect(await screen.findByText('La carte du projet a été enregistrée.')).toBeVisible();
+    expect(rpc).toHaveBeenCalledWith('projects_set_location', expect.objectContaining({ target_project_id: 881,
+      target_expected_updated_at: mancheProjectRow.updated_at,
+      target_location_plan: expect.objectContaining({ waypoints: [expect.objectContaining({ descriptionVhf: 'Départ modifié' })] }) }));
+    expect(screen.queryByLabelText('Changer de projet')).not.toBeInTheDocument();
+  });
+
   it('retains map edits and expected version when the server rejects a concurrent update', async () => {
     const { client, rpc } = createClient({ projects: { data: [{ ...atlantiqueProjectRow, location_plan: editableMapPlan() }], error: null } },
       { data: null, error: { code: '40001', message: 'Le projet a été modifié. Rechargez sa carte.' } });

@@ -1252,7 +1252,10 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const mapDirtyRef = useRef(false);
   const mapMutationRunning = useRef(false);
   const mapRequest = useRef(0);
-  const onMapDirtyChange = useCallback((value: boolean) => { mapDirtyRef.current = value; setMapDirty(value); }, []);
+  const onMapDirtyChange = useCallback((value: boolean) => {
+    if (value && currentMapContext.current.project) setSelectedProjectId(currentMapContext.current.project.id);
+    mapDirtyRef.current = value; setMapDirty(value);
+  }, []);
   const allowMapLeave = useCallback(() => {
     if (mapMutationRunning.current) return false;
     if (mapDirtyRef.current && !window.confirm('Quitter la carte sans enregistrer les modifications ?')) return false;
