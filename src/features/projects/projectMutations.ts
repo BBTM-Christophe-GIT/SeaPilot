@@ -276,6 +276,27 @@ export async function saveProject(client: SupabaseClient, input: ProjectWriteInp
   };
 }
 
+/** A map save changes only geography and keeps the server's exact concurrency token. */
+export async function saveProjectLocation(
+  client: SupabaseClient, projectId: number, locationPlan: ProjectLocationPlan | null, expectedUpdatedAt: string,
+): Promise<ProjectMutationResult> {
+  if (!Number.isSafeInteger(projectId) || projectId <= 0) throw new Error('Le projet est obligatoire.');
+  if (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt.trim() || !Number.isFinite(Date.parse(expectedUpdatedAt))) {
+    throw new Error('Rechargez le projet avant de modifier sa carte.');
+  }
+  if (locationPlan === undefined) throw new Error('La localisation du projet est invalide.');
+  const plan = parseProjectLocationPlan(locationPlan);
+  const { data, error } = await client.rpc('projects_set_location', {
+    target_project_id: projectId, target_location_plan: plan, target_expected_updated_at: expectedUpdatedAt,
+  });
+  if (error) throw mutationError(error, 'Impossible d’enregistrer la carte du projet.');
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+  if (!row || Number(row.id) !== projectId || typeof row.updated_at !== 'string' || !Number.isFinite(Date.parse(row.updated_at))) {
+    throw new Error('L’enregistrement de la carte du projet n’a pas été confirmé. Rechargez le projet.');
+  }
+  return { id: projectId, projectCode: String(row.project_code || ''), title: String(row.title || ''), updatedAt: row.updated_at };
+}
+
 export async function saveProjectContractDetails(
   client: SupabaseClient,
   projectId: number,

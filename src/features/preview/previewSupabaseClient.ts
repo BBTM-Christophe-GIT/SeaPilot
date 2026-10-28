@@ -12,6 +12,7 @@ import { normalizeQhsePolicyAxisIconKey, resolveQhsePolicyAxisIcon } from '../qh
 import { DEFAULT_PROCEDURE_TAGS } from '../procedures/procedureTagCatalogue';
 import { seaOperationPreviewRpc } from '../seaOperations/seaOperationPreview';
 import { GOURY_WEATHER_MATRIX, isVesselWeatherMatrix, cloneVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
+import { parseProjectLocationPlan } from '../projects/projectLocation';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
@@ -609,6 +610,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       redelivery_port: 'Cherbourg',
       operation_area: 'Manche — démonstration',
       description: 'Jeu de démonstration P144 pour la fiche projet. Les conditions ci-dessous ne sont pas celles du contrat réel.',
+      updated_at: '2026-07-15T09:00:00Z',
       starts_on: '2026-01-01',
       ends_on: '2026-08-31',
       status: 'Contrat signé',
@@ -620,6 +622,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       project_code: 'P280',
       contract_type: 'Offre Commerciale',
       client_name: 'CONSTRUCTIONS MECANIQUES DE NORMANDIE',
+      updated_at: '2026-07-15T09:30:00Z',
       primary_vessel_name: 'HIRONDELLE DE LA MANCHE',
       status: 'Non validé',
       is_rov_support: false,
@@ -2936,6 +2939,22 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   }
   if (functionName === 'projects_contracts') {
     return createPreviewQuery({ data: previewRows('project_contracts'), error: null });
+  }
+  if (functionName === 'projects_set_location') {
+    const projectId = Number(args.target_project_id);
+    const project = previewRows('projects').find(row => Number(row.id) === projectId);
+    if (!Number.isSafeInteger(projectId) || !project || project.archived_at) {
+      return createPreviewQuery({ data: null, error: { code: 'P0002', message: 'Projet de démonstration inaccessible.' } });
+    }
+    if (!args.target_expected_updated_at || args.target_expected_updated_at !== project.updated_at) {
+      return createPreviewQuery({ data: null, error: { code: 'P0001', message: 'Le projet a été modifié par un autre utilisateur.' } });
+    }
+    let plan;
+    try { plan = parseProjectLocationPlan(args.target_location_plan); }
+    catch { return createPreviewQuery({ data: null, error: { code: '22023', message: 'La localisation du projet est invalide.' } }); }
+    project.location_plan = plan;
+    project.updated_at = new Date(Math.max(Date.now(), (Date.parse(String(project.updated_at)) || 0) + 1)).toISOString();
+    return createPreviewQuery({ data: { ...project }, error: null });
   }
   if (functionName === 'projects_towed_assets') {
     return createPreviewQuery({ data: previewRows('project_towed_assets'), error: null });

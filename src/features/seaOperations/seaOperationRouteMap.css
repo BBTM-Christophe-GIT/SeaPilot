@@ -101,3 +101,7 @@
   .so-route-map-heading > span, .so-route-map-caption, .so-route-map .so-route-map-omissions { font-size: 7.5pt; }
   .so-route-map .so-route-map-empty p { font-size: 8pt; white-space: normal; }
 }
+.so-route-map .so-route-map-detail-toggle { margin-left: auto; min-height: 40px; padding: var(--sp-space-2) var(--sp-space-3); font-size: .72rem; white-space: nowrap; }
+.so-route-map .so-route-map-detail-toggle[aria-pressed=true] { border-color: var(--sp-primary); background: var(--sp-primary-soft); color: var(--sp-primary); }
+.so-route-map-detailed-attribution { flex-shrink: 0; margin: var(--sp-space-2) 0 0; font-size: .72rem; line-height: 1.5; color: var(--sp-muted); }
+.so-route-map-detailed-attribution a { color: var(--sp-primary); }
