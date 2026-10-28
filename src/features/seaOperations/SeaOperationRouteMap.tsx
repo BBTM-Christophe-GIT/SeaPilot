@@ -13,7 +13,7 @@ import { projectSeaOperationMapPlace } from './seaOperationMapPlaces';
 import { SeaOperationIsolatedPointIcon } from './SeaOperationIsolatedPointIcon';
 import { seaOperationIsolatedPointIcon, seaOperationIsolatedPointLabel } from './seaOperationIsolatedPointIcons';
 import { layoutSeaOperationZoneLabels, seaOperationZoneAppearance, type SeaOperationZoneLabelObstacle } from './seaOperationZonePresentation';
-import { SeaOperationGmdssReference } from './SeaOperationGmdssReference';
+import { SeaOperationNavigationCategoryLayer, SeaOperationNavigationCategoryLegend, useNavigationCategoryOverlay, type NavigationCategory } from './SeaOperationNavigationCategories';
 import { SeaOperationDetailedBasemap, DETAILED_BASEMAP_ATTRIBUTION } from './SeaOperationDetailedBasemap';
 import type { DetailedBasemapStatus } from './seaOperationDetailedBasemapModel';
 
@@ -96,7 +96,7 @@ function routeLegLabels(geometry: SeaOperationRouteMapGeometry, legs: ReturnType
 }
 
 /** Local situation map; placement is supplied explicitly by the editing wrapper. */
-export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ensureZonesVisible = false, onGeometry, renderOverlay, fillAvailableSpace = false, showPlaces = false, showWaypointCoordinates = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint, isolatedPoints = NO_ISOLATED_POINTS, zones = NO_ZONES, previewIsolatedPoint, previewZoneVertex, departurePort, arrivalPort, allowDetailedBasemap = false, basemapControlsDisabled = false }: {
+export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ensureZonesVisible = false, onGeometry, renderOverlay, fillAvailableSpace = false, showPlaces = false, showWaypointCoordinates = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint, isolatedPoints = NO_ISOLATED_POINTS, zones = NO_ZONES, previewIsolatedPoint, previewZoneVertex, departurePort, arrivalPort, allowDetailedBasemap = false, allowNavigationCategories = false, basemapControlsDisabled = false }: {
   waypoints: readonly SeaOperationWaypoint[]; compact?: boolean;
   viewport?: RouteMapViewport;
   /** Document view only: widen a saved frame when its zones would be cropped. */
@@ -115,6 +115,8 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
   arrivalPort?: string;
   /** Interactive maps only; documents keep their existing autonomous vector background. */
   allowDetailedBasemap?: boolean;
+  /** Screen maps opt in; document previews and PDFs remain autonomous. */
+  allowNavigationCategories?: boolean;
   basemapControlsDisabled?: boolean;
   /** Visual drag preview only; totals, labels and layout retain the controlled route until release. */
   previewWaypoint?: { id: string; position: SeaPosition } | null;
@@ -131,6 +133,9 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
   const [size, setSize] = useState({ width: 900, height: 320 });
   const [detailedBasemap, setDetailedBasemap] = useState(true);
   const [basemapStatus, setBasemapStatus] = useState<DetailedBasemapStatus>('loading');
+  const [showNavigationCategories, setShowNavigationCategories] = useState(false);
+  const [navigationCategories, setNavigationCategories] = useState<ReadonlySet<NavigationCategory>>(() => new Set([2, 3]));
+  const navigationCategoriesAvailable = allowNavigationCategories && !compact && !ensureZonesVisible;
   const detailedEnabled = allowDetailedBasemap && !compact && detailedBasemap;
   const filling = fillAvailableSpace && !compact;
   const width = filling ? size.width : Math.max(280, Math.min(900, Math.round(size.width)));
@@ -147,6 +152,10 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
     ? { ...point, latitude: String(previewWaypoint.position.latitude), longitude: String(previewWaypoint.position.longitude) } : point) : waypoints, [compact, previewWaypoint, waypoints]);
   const geometry = useMemo(() => visualWaypoints === waypoints ? recordedGeometry
     : buildSeaOperationRouteMap(visualWaypoints, width, height, displayViewport ?? recordedGeometry.viewport ?? undefined, extraPositions), [visualWaypoints, waypoints, recordedGeometry, width, height, displayViewport, extraPositions]);
+  const categoryOverlay = useNavigationCategoryOverlay(navigationCategoriesAvailable && showNavigationCategories, recordedGeometry);
+  function toggleNavigationCategory(category: NavigationCategory) {
+    setNavigationCategories(previous => { const next = new Set(previous); if (next.has(category)) next.delete(category); else next.add(category); return next; });
+  }
   const visualIsolatedPoints = useMemo(() => !compact && previewIsolatedPoint ? isolatedPoints.map(point => point.id === previewIsolatedPoint.id
     ? { ...point, latitude: String(previewIsolatedPoint.position.latitude), longitude: String(previewIsolatedPoint.position.longitude) } : point) : isolatedPoints, [compact, isolatedPoints, previewIsolatedPoint]);
   const visualZones = useMemo(() => !compact && previewZoneVertex ? zones.map(zone => zone.id === previewZoneVertex.zoneId
@@ -212,9 +221,10 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
     {(transitDurationFallback || voyage.etaSource === 'estimated') && <small>Durée estimée à vitesse constante.</small>}
   </aside> : null;
 
-  return <figure aria-labelledby={titleId} className={`so-route-map${compact ? ' is-compact' : ''}${filling ? ' is-filling' : ''}`}>
+  return <figure aria-labelledby={titleId} className={`so-route-map${compact ? ' is-compact' : ''}${filling ? ' is-filling' : ''}${navigationCategoriesAvailable && showNavigationCategories ? ' has-navigation-categories' : ''}`}>
     <header className="so-route-map-heading"><h3 id={titleId}>Carte du parcours</h3><span>{countLabel}</span>
       {allowDetailedBasemap && !compact ? <button type="button" className="sp-button sp-button--secondary so-route-map-detail-toggle" disabled={basemapControlsDisabled} aria-pressed={detailedBasemap} onClick={() => setDetailedBasemap(value => !value)}>Fond côtier détaillé</button> : null}
+      {navigationCategoriesAvailable && <button type="button" className="sp-button sp-button--secondary so-route-map-category-toggle" disabled={basemapControlsDisabled} aria-pressed={showNavigationCategories} onClick={() => setShowNavigationCategories(value => !value)}>Catégories de navigation</button>}
     </header>
     <div className="so-route-map-frame" ref={frame}>
       {geometry.projection ? <svg aria-labelledby={svgTitleId} aria-describedby={descriptionId} className="so-route-map-svg" role={!compact && (renderOverlay || route) ? 'group' : 'img'} viewBox={`0 0 ${geometry.width} ${geometry.height}`}>
@@ -227,6 +237,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
           <g aria-hidden="true" className="so-route-map-land">{geometry.land.map((polygon, index) => <polygon key={index} points={polygon.map((point) => `${point.x},${point.y}`).join(' ')} vectorEffect="non-scaling-stroke" />)}</g>
           {detailedEnabled ? <SeaOperationDetailedBasemap geometry={recordedGeometry} onStatusChange={setBasemapStatus} /> : null}
           <g aria-hidden="true" className="so-route-map-grid">{geometry.grid.map((line, index) => <g key={index}><line x1={line.from.x} y1={line.from.y} x2={line.to.x} y2={line.to.y} vectorEffect="non-scaling-stroke" /><text x={line.labelAt.x} y={line.labelAt.y}>{line.label}</text></g>)}</g>
+          {navigationCategoriesAvailable && showNavigationCategories && <SeaOperationNavigationCategoryLayer projected={categoryOverlay.projected} selected={navigationCategories} />}
           <g className="so-route-map-zones">
             <g className="so-route-map-zone-fills" aria-hidden="true">{zoneFills.map(({ zone, vertices, appearance }) => <path key={zone.id} data-zone-code={appearance.code} d={`M ${vertices.map(vertex => `${vertex.x} ${vertex.y}`).join(' L ')} Z`} style={{ fill: appearance.fill }} />)}</g>
             <g className="so-route-map-zone-outlines">{presentedZones.map(({ zone, vertices, appearance }) => <g key={zone.id} role="img" aria-label={`Zone : ${zone.name || 'Sans nom'}`}><title>{appearance.code} — {zone.name || 'Zone sans nom'} · {zone.vertices.length} sommets</title><polygon data-zone-code={appearance.code} points={vertices.map(vertex => `${vertex.x},${vertex.y}`).join(' ')} style={{ stroke: appearance.stroke }} /></g>)}</g>
@@ -348,7 +359,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
       <a href={DETAILED_BASEMAP_ATTRIBUTION.providerUrl} target="_blank" rel="noopener noreferrer">{DETAILED_BASEMAP_ATTRIBUTION.provider}</a> · © <a href={DETAILED_BASEMAP_ATTRIBUTION.schemaUrl} target="_blank" rel="noopener noreferrer">{DETAILED_BASEMAP_ATTRIBUTION.schema}</a> · © <a href={DETAILED_BASEMAP_ATTRIBUTION.dataUrl} target="_blank" rel="noopener noreferrer">{DETAILED_BASEMAP_ATTRIBUTION.data}</a>
       <span aria-live="polite">{basemapStatus === 'loading' ? ' · Chargement du détail…' : basemapStatus === 'partial' ? ' · Détail partiel, fond simplifié en complément.' : basemapStatus === 'unavailable' ? ' · Fond détaillé indisponible, fond simplifié affiché.' : ''}</span>
     </p>}
-    {!compact && !ensureZonesVisible && <SeaOperationGmdssReference />}
+    {navigationCategoriesAvailable && showNavigationCategories && <SeaOperationNavigationCategoryLegend selected={navigationCategories} onToggle={toggleNavigationCategory} projected={categoryOverlay.projected} loading={categoryOverlay.loading} failed={categoryOverlay.failed} onRetry={categoryOverlay.retry} />}
     {(places || definedPorts.ports.length > 0) && <p className="so-route-map-places-attribution">{places && <>Villes : <a href="https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/" target="_blank" rel="noopener noreferrer">Natural Earth</a> · </>}Ports : <a href="https://www.data.gouv.fr/datasets/ports-espace-maritime-francais" target="_blank" rel="noopener noreferrer">SANDRE/SHOM</a> et <a href="https://msi.nga.mil/Publications/WPI" target="_blank" rel="noopener noreferrer">NGA</a>. Couverture partielle et précision non garantie. Ne pas utiliser pour naviguer.</p>}
   </figure>;
 }

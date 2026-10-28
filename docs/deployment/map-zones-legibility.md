@@ -24,12 +24,11 @@ L’entête parent et les titres de colonnes se répètent quand une grande zone
 continue sur une autre page. Les petits groupes restent ensemble si possible.
 Les cartes sont vectorielles et les en-têtes/pieds de page Word sont conservés.
 
-La carte officielle SMDSM britannique choisie par l’utilisateur est accessible
-en consultation sous les cartes interactives des deux modules. Son SVG original
-est chargé seulement à l’ouverture du panneau. Ce document illustratif reste
-séparé des géométries du parcours : aucune limite A1/A2 française ni bande
-A3/A4 n’est inventée. Voir [la provenance et la licence](gmdss-reference-map.md).
-La consultation ne classe aucun waypoint et n’ajoute pas d’image aux PDF.
+Le précédent volet de consultation SMDSM britannique est remplacé par le
+[calque vectoriel des catégories professionnelles de navigation](navigation-categories-overlay.md).
+La [provenance du document MCA](gmdss-reference-map.md) est conservée pour
+l’historique. Aucune limite radio A1/A2 française ni bande A3/A4 n’est inventée.
+Le calque ne classe aucun waypoint et n’ajoute pas d’image aux PDF.
 
 Aucune migration, autorisation, RPC, RLS ou donnée métier n’est modifiée.
 Validation : tests des 50 couleurs et du placement, zones imbriquées,

@@ -1,10 +1,11 @@
 # Carte documentaire des zones radio SMDSM
 
-La carte Projet et Opération en Mer propose un volet « Carte officielle des
-zones radio SMDSM ». Il affiche le document original MCA à la demande, dans
-son propre cadre. Aucune surface radio n’est ajoutée au fond géoréférencé,
-aucun waypoint n’est classé automatiquement et aucune donnée métier n’est
-modifiée. Le composant est exclu des documents et masqué à l’impression.
+Référence historique : le volet « Carte officielle des zones radio SMDSM »
+est remplacé dans les cartes Projet et Opération en Mer par le
+[calque des catégories professionnelles de navigation](navigation-categories-overlay.md).
+Le document original MCA et sa provenance restent archivés ci-dessous ; il
+n’est plus monté par les cartes du parcours. Aucune surface radio A1/A2/A3/A4
+n’est superposée et aucun waypoint n’est classé automatiquement.
 
 ## Provenance et droits
 
