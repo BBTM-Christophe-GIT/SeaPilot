@@ -158,6 +158,21 @@ function tableRectangles(body: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Sea operation PDF', () => {
+  it('prints the saved zone names as map callouts in the sea-operation export', async () => {
+    const record = fixture(); record.draft.description = 'Zones nommées et sommets distincts.'; record.draft.waypoints = [];
+    record.draft.vessel.departurePort = 'Dieppe'; record.draft.vessel.arrivalPort = 'Dieppe';
+    const source = JSON.parse(await readFile(new URL('./testFixtures/sea-operation-zones.json', import.meta.url), 'utf8')) as {
+      zones: NonNullable<SeaOperationRecord['draft']['locationOverlay']>['zones'];
+    };
+    record.draft.locationOverlay = { version: 1, points: [], zones: source.zones };
+    const original = structuredClone(record), generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const map = (await landscapeBodies(generated.bytes)).find(body => body.includes('(Carte du parcours) Tj'))!;
+    expect(map).toContain('(Zone de Travaux) Tj'); expect(map).toContain('(Zone Tampon) Tj');
+    expect(map).not.toContain('(Z1) Tj'); expect(map).not.toContain('(Z2) Tj');
+    expect(record).toEqual(original);
+    if (process.env.SEAPILOT_SEA_NAMED_ZONE_QA_OUTPUT) await writeFile(process.env.SEAPILOT_SEA_NAMED_ZONE_QA_OUTPUT, generated.bytes);
+  });
+
   it('exports the saved S-WING declaration method without altering the signed record', async () => {
     const record = fixture(); record.draft.description = 'Déclaration DAPAQ S-WING'; record.draft.dapaq.method = 's_wing';
     const original = structuredClone(record);
