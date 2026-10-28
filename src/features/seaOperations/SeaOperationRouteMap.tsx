@@ -1,5 +1,5 @@
 import { Eye, MapPin } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import { buildSeaOperationRouteMap, routeMapViewportContainingPositions, type RouteMapViewport, type SeaOperationRouteMapGeometry } from './seaOperationRouteMapGeometry';
 import { resolveSeaOperationMapPorts, seaOperationMapPlaces, type SeaOperationMapPort } from './seaOperationMapPlaces';
@@ -180,7 +180,8 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
   const countLabel = [routeCountLabel, isolatedPoints.length ? `${isolatedPoints.length} point${isolatedPoints.length === 1 ? '' : 's'} isolé${isolatedPoints.length === 1 ? '' : 's'}` : '', zones.length ? `${zones.length} zone${zones.length === 1 ? '' : 's'}` : '', definedPorts.ports.length ? `${definedPorts.ports.length} port${definedPorts.ports.length === 1 ? '' : 's'} défini${definedPorts.ports.length === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
   const vigilanceDescription = vigilanceLabel(geometry.points.filter(point => waypoints[point.index - 1]?.denseTraffic).map(point => point.index));
 
-  useEffect(() => { onGeometry?.(recordedGeometry); }, [recordedGeometry, onGeometry]);
+  // Reconcile a transient camera transform before the new exact geometry is painted.
+  useLayoutEffect(() => { onGeometry?.(recordedGeometry); }, [recordedGeometry, onGeometry]);
 
   useEffect(() => {
     if (!frame.current || typeof ResizeObserver === 'undefined') return;
@@ -212,6 +213,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
         <defs><clipPath id={clipId}><rect width={geometry.width} height={geometry.height} /></clipPath></defs>
         <g clipPath={`url(#${clipId})`}>
           <rect className="so-route-map-sea" width={geometry.width} height={geometry.height} />
+          <g className="so-route-map-camera">
           <g aria-hidden="true" className="so-route-map-land">{geometry.land.map((polygon, index) => <polygon key={index} points={polygon.map((point) => `${point.x},${point.y}`).join(' ')} vectorEffect="non-scaling-stroke" />)}</g>
           <g aria-hidden="true" className="so-route-map-grid">{geometry.grid.map((line, index) => <g key={index}><line x1={line.from.x} y1={line.from.y} x2={line.to.x} y2={line.to.y} vectorEffect="non-scaling-stroke" /><text x={line.labelAt.x} y={line.labelAt.y}>{line.label}</text></g>)}</g>
           <g className="so-route-map-zones">
@@ -302,6 +304,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
               <rect x={label.x - label.width / 2} y={label.y - label.height / 2} width={label.width} height={label.height} rx={3} style={{ fill: appearance.fill }} /><text x={label.x} y={label.y + 3.5} textAnchor="middle">{label.code}</text>
             </g>;
           })}</g>
+          </g>
           <g aria-hidden="true" className="so-route-map-north" transform={`translate(${geometry.width - 23} 31)`}><text textAnchor="middle" y={-15}>N</text><path d="M 0 9 V -7 M -4 -2 L 0 -7 L 4 -2" vectorEffect="non-scaling-stroke" /></g>
           {geometry.scale && <g aria-hidden="true" className="so-route-map-scale"><path d={`M ${geometry.scale.from.x} ${geometry.scale.from.y - 4} V ${geometry.scale.from.y + 4} M ${geometry.scale.from.x} ${geometry.scale.from.y} H ${geometry.scale.to.x} M ${geometry.scale.to.x} ${geometry.scale.to.y - 4} V ${geometry.scale.to.y + 4}`} vectorEffect="non-scaling-stroke" /><text x={(geometry.scale.from.x + geometry.scale.to.x) / 2} y={geometry.scale.from.y - 8} textAnchor="middle">{geometry.scale.label}</text></g>}
           {!compact && renderOverlay?.(geometry, { places })}

@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, LocateFixed, MapPin, Maximize, Minimize, Minus, Plus, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { AppContextMenu, AppContextMenuItem, type AppContextMenuPosition } from '../../components/AppContextMenu';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import type { SeaPosition } from './seaOperationNavigation';
@@ -17,11 +18,14 @@ import { seaOperationMapExtraPositions, seaOperationMapLayers, type SeaOperation
 import { projectSeaOperationMapPlace } from './seaOperationMapPlaces';
 import { seaWaypointPosition } from './seaOperationNavigation';
 import { seaOperationIsolatedPointLabel } from './seaOperationIsolatedPointIcons';
+import { routeMapCameraTransform } from './seaOperationMapCamera';
 
 interface OverlayTarget { id: string; kind: 'route' | 'point' | 'vertex'; label: string; x: number; y: number; zoneId?: string; index?: number }
 const NO_POINTS: readonly SeaOperationWaypoint[] = [];
 const NO_MAP_ZONES: readonly SeaOperationMapZone[] = [];
 const WHEEL_ZOOM_DURATION_MS = 100;
+const WHEEL_CONTINUOUS_DURATION_MS = 40;
+const WHEEL_REPROJECT_INTERVAL_MS = 160;
 type ViewportChange = (viewport: RouteMapViewport | undefined) => void;
 const sameViewport = (left: RouteMapViewport | undefined, right: RouteMapViewport | undefined) => left?.centerLatitude === right?.centerLatitude
   && left?.centerLongitude === right?.centerLongitude && left?.longitudeSpan === right?.longitudeSpan;
@@ -31,6 +35,8 @@ interface WheelZoom {
   startSpan: number;
   targetSpan: number;
   startedAt: number;
+  duration: number;
+  lastReprojectedAt: number;
   direction: number;
   pixel: { x: number; y: number };
   onViewportCommit?: ViewportChange;
@@ -47,7 +53,7 @@ function zoomAtPixel(geometry: SeaOperationRouteMapGeometry, current: RouteMapVi
   const anchor = routeMapPositionAt(geometryAtViewport(geometry, current), pixel.x, pixel.y);
   if (!anchor) return current;
   let centered = zoomRouteMapViewport(current, current.longitudeSpan / span);
-  // Only invert the local projection here; coastlines and labels rebuild once per frame.
+  // Only invert the local projection here; no coastline or label layout is needed.
   for (let iteration = 0; iteration < 20; iteration += 1) {
     const moved = routeMapPositionAt(geometryAtViewport(geometry, centered), pixel.x, pixel.y);
     if (!moved) break;
@@ -97,7 +103,8 @@ function groupPortTargets(markers: readonly { x: number; y: number; ports: reado
     if (existing) existing.ports.push(...marker.ports.filter(port => !existing.ports.some(item => item.key === port.key)));
     else groups.set(key, { key, x: marker.x, y: marker.y, ports: [...marker.ports] });
   }
-  return [...groups.values()];
+  // A camera refresh must not unmount a port being pressed during a wheel gesture.
+  return [...groups.values()].map(group => ({ ...group, key: group.ports.map(port => port.key).sort().join('|') }));
 }
 
 function groupOverlayTargets(targets: OverlayTarget[]) {
@@ -135,6 +142,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
   const [placing, setPlacing] = useState(false);
   const [manualViewport, setManualViewport] = useState(mapViewport);
   const [workingViewport, setWorkingViewport] = useState<RouteMapViewport>();
+  const [wheelPreviewActive, setWheelPreviewActive] = useState(false);
   const [placementViewport, setPlacementViewport] = useState<RouteMapViewport>();
   const viewport = workingViewport ?? manualViewport;
   const displayedViewport = viewport ?? (placing ? placementViewport : undefined);
@@ -158,6 +166,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
   const lastPointerAdd = useRef<{ time: number; x: number; y: number } | null>(null);
   const wheelZoomRef = useRef<WheelZoom | null>(null);
   const wheelFrameRef = useRef<number | null>(null);
+  const cameraLayers = useRef<SVGGElement[]>([]);
   const committedViewport = useRef(mapViewport);
   const viewportPermissions = useRef({ disabled, onMapViewportChange });
   viewportPermissions.current = { disabled, onMapViewportChange };
@@ -170,12 +179,23 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
     if (changed) (notify ?? viewportPermissions.current.onMapViewportChange)?.(next);
   }, []);
 
+  const paintCamera = useCallback((geometry: SeaOperationRouteMapGeometry, next?: RouteMapViewport) => {
+    const transform = next && routeMapCameraTransform(geometry, next);
+    for (const layer of cameraLayers.current) {
+      if (transform) layer.setAttribute('transform', transform); else layer.removeAttribute('transform');
+    }
+  }, []);
+
   const cancelWheelZoom = useCallback((restore = true) => {
-    if (restore) setWorkingViewport(undefined);
+    if (restore) {
+      setWorkingViewport(undefined);
+      if (geometryRef.current) paintCamera(geometryRef.current);
+    }
+    setWheelPreviewActive(false);
     if (wheelFrameRef.current !== null) cancelAnimationFrame(wheelFrameRef.current);
     wheelFrameRef.current = null;
     wheelZoomRef.current = null;
-  }, []);
+  }, [paintCamera]);
 
   const cancelGesture = useCallback(() => {
     const gesture = gestureRef.current;
@@ -196,7 +216,10 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
     const previous = geometryRef.current;
     if (previous && (previous.width !== geometry.width || previous.height !== geometry.height)) resetInteraction();
     geometryRef.current = geometry;
-  }, [resetInteraction]);
+    const svg = surfaceRef.current?.ownerSVGElement;
+    cameraLayers.current = svg ? Array.from(svg.querySelectorAll<SVGGElement>('.so-route-map-camera, .so-waypoint-map-camera-targets')) : [];
+    paintCamera(geometry, wheelZoomRef.current?.current);
+  }, [resetInteraction, paintCamera]);
   const fullscreen = useSeaOperationMapFullscreen(editorRef, fullscreenToggleRef, resetInteraction, toggleRef);
 
   useEffect(() => {
@@ -230,12 +253,22 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
       wheelFrameRef.current = null;
       const zoom = wheelZoomRef.current, geometry = geometryRef.current;
       if (!zoom || !geometry?.viewport) return;
-      const progress = Math.min(1, Math.max(0, (time - zoom.startedAt) / WHEEL_ZOOM_DURATION_MS));
+      const progress = Math.min(1, Math.max(0, (time - zoom.startedAt) / zoom.duration));
       const span = progress === 1 ? zoom.targetSpan
         : zoom.startSpan * Math.exp(Math.log(zoom.targetSpan / zoom.startSpan) * progress);
       zoom.current = zoomAtPixel(geometry, zoom.current, zoom.pixel, span);
-      if (progress < 1) { setWorkingViewport(zoom.current); wheelFrameRef.current = requestAnimationFrame(advanceZoom); }
-      else { wheelZoomRef.current = null; commitViewport(zoom.current, zoom.onViewportCommit); }
+      paintCamera(geometry, zoom.current);
+      if (progress < 1) {
+        // Reveal newly visible coastlines during a long gesture without rebuilding
+        // hundreds of SVG labels and hit targets on every animation frame.
+        if (time - zoom.lastReprojectedAt >= WHEEL_REPROJECT_INTERVAL_MS) {
+          zoom.lastReprojectedAt = time; setWorkingViewport(zoom.current);
+        }
+        wheelFrameRef.current = requestAnimationFrame(advanceZoom);
+      } else {
+        wheelZoomRef.current = null; setWheelPreviewActive(false);
+        commitViewport(zoom.current, zoom.onViewportCommit);
+      }
     };
     const wheel = (event: WheelEvent) => {
       const geometry = geometryRef.current;
@@ -245,7 +278,10 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
       if (!routeMapPositionAt(geometryAtViewport(geometry, current), pixel.x, pixel.y)) return;
       event.preventDefault();
       if (!pending) {
+        // Editable hit targets can have remounted since the last geometry change.
+        cameraLayers.current = Array.from(svg.querySelectorAll<SVGGElement>('.so-route-map-camera, .so-waypoint-map-camera-targets'));
         cancelGesture(); lastPointerAdd.current = null; closeMenu();
+        setWheelPreviewActive(true);
       }
       const delta = Math.max(-800, Math.min(800, event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? geometry.height : 1)));
       const direction = Math.sign(delta);
@@ -254,12 +290,14 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
       const target = zoomRouteMapViewport({ ...current, longitudeSpan: baseSpan }, Math.exp(-delta * .002));
       if (target.longitudeSpan === current.longitudeSpan) { cancelWheelZoom(); return; }
       wheelZoomRef.current = { current, startSpan: current.longitudeSpan, targetSpan: target.longitudeSpan,
-        startedAt: performance.now(), direction, pixel, onViewportCommit: pending?.onViewportCommit ?? viewportPermissions.current.onMapViewportChange };
+        startedAt: performance.now(), duration: pending ? WHEEL_CONTINUOUS_DURATION_MS : WHEEL_ZOOM_DURATION_MS,
+        lastReprojectedAt: pending?.lastReprojectedAt ?? performance.now(), direction, pixel,
+        onViewportCommit: pending?.onViewportCommit ?? viewportPermissions.current.onMapViewportChange };
       if (wheelFrameRef.current === null) wheelFrameRef.current = requestAnimationFrame(advanceZoom);
     };
     svg.addEventListener('wheel', wheel, { passive: false });
     return () => { svg.removeEventListener('wheel', wheel); cancelWheelZoom(); };
-  }, [disabled, navigating, cancelGesture, closeMenu, cancelWheelZoom, commitViewport]);
+  }, [disabled, navigating, cancelGesture, closeMenu, cancelWheelZoom, commitViewport, paintCamera]);
 
   function togglePlacement() {
     if (disabled) return;
@@ -501,11 +539,14 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
 
   return <section aria-label="Placement des waypoints" ref={editorRef} tabIndex={fullscreen.isFullscreen ? -1 : undefined} className={`so-waypoint-map-editor${placing ? ' is-placing' : ''}${grabbing ? ' is-grabbing' : ''}${fullscreen.isFullscreen ? ' is-fullscreen' : ''}${fullscreen.isFallbackFullscreen ? ' is-fallback-fullscreen' : ''}`} onPointerDownCapture={() => {
     const zoom = wheelZoomRef.current;
-    cancelWheelZoom();
-    if (zoom) commitViewport(zoom.current, zoom.onViewportCommit);
+    cancelWheelZoom(!zoom);
+    // Hit testing and subsequent pointer handlers must use the exact visible view.
+    if (zoom) flushSync(() => commitViewport(zoom.current, zoom.onViewportCommit));
   }} onKeyDownCapture={event => {
     const cameraArrow = event.target === surfaceRef.current && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key);
+    const zoom = wheelZoomRef.current;
     cancelWheelZoom(!cameraArrow);
+    if (cameraArrow && zoom) flushSync(() => setWorkingViewport(zoom.current));
     if (menuPosition && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeMenu(); surfaceRef.current?.focus({ preventScroll: true }); }
     else fullscreen.onKeyDownCapture(event);
   }} onKeyDown={(event) => {
@@ -519,7 +560,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
         {placing ? <Check aria-hidden="true" size={16} /> : <MapPin aria-hidden="true" size={16} />}{placing ? 'Terminer le placement' : 'Placer les waypoints'}
       </button>
       <select className="so-waypoint-map-framing" aria-label="Mode de cadrage de la carte" tabIndex={disabled ? -1 : 0} disabled={disabled}
-        value={viewport ? 'manual' : 'automatic'} onChange={event => changeFraming(event.target.value)}>
+        value={viewport || wheelPreviewActive ? 'manual' : 'automatic'} onChange={event => changeFraming(event.target.value)}>
         <option value="automatic">Cadrage automatique</option><option value="manual">Cadrage manuel</option>
       </select>
       {navigating && <>
@@ -551,6 +592,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
       onPortSelect={!disabled && !dragPreview ? selectPorts : undefined} renderOverlay={!disabled ? (geometry, { places }) => <>
       {navigating && <rect className="so-waypoint-map-surface" ref={surfaceRef} width={geometry.width} height={geometry.height} role="button" tabIndex={0} aria-label={placing ? 'Zone de placement des waypoints' : 'Zone de navigation de la carte'} aria-describedby={instructionsId} aria-keyshortcuts={placing ? 'ArrowUp ArrowDown ArrowLeft ArrowRight Enter Escape' : 'ArrowUp ArrowDown ArrowLeft ArrowRight'} onKeyDown={keyDown} onPointerDown={(event) => pointerDown(event, geometry)} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={cancelGesture} onLostPointerCapture={cancelGesture} />}
       {placing && !menuPosition && !dragPreview && <g aria-hidden="true" className="so-waypoint-map-crosshair" transform={`translate(${geometry.width / 2} ${geometry.height / 2})`}><circle r={10} /><path d="M -17 0 H -5 M 5 0 H 17 M 0 -17 V -5 M 0 5 V 17" /></g>}
+      <g className="so-waypoint-map-camera-targets">
       {!dragPreview && groupPortTargets(places?.markers || []).map(marker => <g key={marker.key} className="so-waypoint-map-port-target" role="button" tabIndex={0}
         aria-label={marker.ports.length === 1 ? `Ajouter le port ${formatProjectPort(marker.ports[0].port)} comme waypoint` : `Choisir un port parmi ${marker.ports.map(port => port.port.port).join(', ')}`}
         onPointerDown={event => { event.stopPropagation(); cancelGesture(); }} onClick={event => {
@@ -594,6 +636,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
             if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); if (!event.repeat) { const bounds = event.currentTarget.getBoundingClientRect(); select({ x: bounds.right + 8, y: bounds.top }); } }
           }}><circle r={20} /></g>;
       })}
+      </g>
     </> : undefined} />
     {!disabled && menuPosition && (selected || selectedGroup.length > 1 || proposedPorts.length > 1 || selectedOverlay || overlayGroup.length > 1) && <AppContextMenu label={selected ? `Waypoint ${waypoints.indexOf(selected) + 1}` : selectedOverlay?.label || (overlayGroup.length ? 'Localisations à cette position' : selectedGroup.length ? 'Waypoints à cette position' : 'Ports à cette position')} position={menuPosition} onClose={closeMenu}>
       {selected && onDeleteWaypoint && <AppContextMenuItem danger onSelect={() => {
