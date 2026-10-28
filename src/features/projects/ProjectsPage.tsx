@@ -2,6 +2,7 @@ import { ProjectPortfolioInsights } from './ProjectPortfolioInsights';
 import { localCalendarDate } from './projectPortfolioMetrics';
 import { useProjectFavorites } from './useProjectFavorites';
 import { ProjectHistory } from './ProjectHistory';
+import { ProjectDetailMap } from './ProjectDetailMap';
 import './ProjectWorkspace.css';
 import './ProjectDesign.css';
 import './ProjectsProductionWorkspace.css';
@@ -22,6 +23,7 @@ import {
   Download,
   Filter,
   Info,
+  Map,
   Pencil,
   PackageCheck,
   Plus,
@@ -269,6 +271,7 @@ function ProjectRibbonLink({ icon, label, to }: { icon: React.ReactNode; label: 
 type ProjectContractVariant = 'towage' | 'bareboat' | 'time-charter' | 'bimco';
 type ProjectDetailTab =
   | 'operations'
+  | 'map'
   | 'billing'
   | 'offer-contract'
   | 'history'
@@ -307,6 +310,7 @@ const PROJECT_BASE_TABS: ProjectDetailTabDefinition[] = [
   { icon: CalendarDays, id: 'operations', label: 'Opérations' },
   { icon: ReceiptText, id: 'billing', label: 'Facturation' },
   { icon: FileText, id: 'offer-contract', label: 'Offre & contrat' },
+  { icon: Map, id: 'map', label: 'Carte' },
 ];
 
 const PROJECT_CONTRACT_TABS: Record<ProjectContractVariant, ProjectDetailTabDefinition[]> = {
@@ -817,6 +821,7 @@ function ProjectDetail({
           {contractNavigation}
         </div>
       ) : null}
+      {activeTab === 'map' ? <ProjectDetailMap key={project.id} project={project} maxSpeedKnots={vessels.find(vessel => vessel.id === project.primaryVesselId)?.maxSpeedKnots} /> : null}
       {activeTab === 'offer-contract' ? (
       <section aria-label="Offre et contrat" className="project-detail-section project-offer-contract-panel">
         <div className="project-context-heading">

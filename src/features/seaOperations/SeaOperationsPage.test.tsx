@@ -198,7 +198,8 @@ function renderAccount(account: Account = captainAccount, record?: SeaOperationR
 }
 
 async function openRecord(record: SeaOperationRecord) {
-  await userEvent.click(await screen.findByRole('button', { name: new RegExp(record.draft.project) }));
+  const actions = await screen.findByRole('group', { name: `Actions pour ${record.draft.project || 'Opération sans titre'}` });
+  await userEvent.click(within(actions).getByRole('button', { name: 'Ouvrir la fiche' }));
   await screen.findByRole('dialog', { name: 'Fiche Opération en Mer' });
 }
 
@@ -1101,7 +1102,7 @@ describe('Opération en Mer administration with authenticated server permissions
     const pendingDelete = deferred<void>();
     const view = renderAccount(adminAccount, original);
     vi.mocked(fetchSeaOperationDetail).mockImplementation(async () => { await staleDetail.promise; throw new Error('Ancienne lecture à ignorer.'); });
-    fireEvent.click(await screen.findByRole('button', { name: new RegExp(original.draft.project) }));
+    fireEvent.click(within(await screen.findByRole('group', { name: `Actions pour ${original.draft.project}` })).getByRole('button', { name: 'Ouvrir la fiche' }));
     expect(fetchSeaOperationDetail).toHaveBeenCalledWith(view.client, original.id);
     const other = recordFixture(adminAccount, { id: 'other-admin-record', companyId: 2, canDelete: true,
       draft: { ...noGoDraft(), project: 'Préparation du second compte' } });
@@ -2402,7 +2403,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const record = recordFixture(captainAccount, { draft });
     const [choice] = plannedMissions();
     const { client } = renderAccount(captainAccount, record, 1, [choice]);
-    await userEvent.click(await screen.findByRole('button', { name: /Opération sans titre/ }));
+    await openRecord(record);
     await screen.findByRole('dialog', { name: 'Fiche Opération en Mer' });
     await screen.findByRole('option', { name: seaOperationPlanningChoiceLabel({ ...choice, date: seaOperationToday() }) });
     expect(formQueries().getByLabelText('Projet')).toHaveValue('');

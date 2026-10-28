@@ -72,6 +72,78 @@ function cameraScale(container: HTMLElement) {
 }
 
 describe('SeaOperationWaypointMapEditor', () => {
+  it('browses an automatically framed read-only map with wheel, pan, keyboard and fullscreen while every point action stays unavailable', () => {
+    const frames = animationFrames(), changed = vi.fn();
+    const add = vi.fn(), move = vi.fn(), remove = vi.fn(), movePoint = vi.fn(), removePoint = vi.fn(), moveVertex = vi.fn(), removeVertex = vi.fn();
+    const waypoints = [point(1), point(2, '49.8', '-1.3')];
+    const isolated = [{ ...point(3, '49.7', '-1.5'), id: 'isolated', number: 'B04' }];
+    const zones = [{ id: 'zone', name: 'Travaux', vertices: [{ latitude: '49.6', longitude: '-1.6' }, { latitude: '49.8', longitude: '-1.6' }, { latitude: '49.7', longitude: '-1.4' }] }];
+    const original = structuredClone({ waypoints, isolated, zones });
+    const view = render(<SeaOperationWaypointMapEditor readOnly drawingMode="route" waypoints={waypoints} isolatedPoints={isolated} zones={zones}
+      onAddWaypoint={add} onMoveWaypoint={move} onDeleteWaypoint={remove} onMoveIsolatedPoint={movePoint} onDeleteIsolatedPoint={removePoint}
+      onMoveZoneVertex={moveVertex} onDeleteZoneVertex={removeVertex} onMapViewportChange={changed} />);
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage automatique');
+    expect(screen.queryByRole('button', { name: /Placer les waypoints|Terminer le placement|Ajouter au centre/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Ajouter le port|Choisir un port|Sélectionner/ })).not.toBeInTheDocument();
+    expect(view.container.querySelector('.so-waypoint-map-crosshair')).not.toBeInTheDocument();
+    const surface = screen.getByRole('button', { name: 'Zone de navigation de la carte' });
+    if (!(surface instanceof SVGElement) || !surface.ownerSVGElement) throw new Error('Expected the navigation SVG.');
+    vi.spyOn(surface.ownerSVGElement, 'getBoundingClientRect').mockReturnValue({ left: 100, top: 50, width: 450, height: 160, right: 550, bottom: 210, x: 100, y: 50, toJSON: () => ({}) });
+    tap(surface); fireEvent.keyDown(surface, { key: 'Enter' }); fireEvent.keyDown(surface, { key: ' ' });
+    expect(changed).not.toHaveBeenCalled();
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 }); frames.advance(100);
+    expect(changed).toHaveBeenCalledOnce(); expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage manuel');
+    fireEvent.pointerDown(surface, { clientX: 325, clientY: 130, pointerId: 2, button: 0 });
+    fireEvent.pointerMove(surface, { clientX: 345, clientY: 130, pointerId: 2 });
+    fireEvent.pointerUp(surface, { clientX: 345, clientY: 130, pointerId: 2 });
+    expect(changed).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(surface, { key: 'ArrowRight' }); expect(changed).toHaveBeenCalledTimes(3);
+    fireEvent.click(screen.getByRole('button', { name: 'Cadrer le parcours' }));
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage automatique');
+    expect(screen.getByRole('button', { name: 'Zone de navigation de la carte' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher la carte en plein écran' }));
+    expect(screen.getByRole('button', { name: 'Quitter le plein écran' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Quitter le plein écran' }));
+    expect(screen.getByRole('button', { name: 'Afficher la carte en plein écran' })).toBeInTheDocument();
+    for (const mutation of [add, move, remove, movePoint, removePoint, moveVertex, removeVertex]) expect(mutation).not.toHaveBeenCalled();
+    expect({ waypoints, isolated, zones }).toEqual(original);
+  });
+
+  it.each(['route', 'point', 'vertex'] as const)('cancels a pending %s edit when the map becomes read-only without disabling camera browsing', kind => {
+    vi.useFakeTimers();
+    const add = vi.fn(), move = vi.fn(), remove = vi.fn(), movePoint = vi.fn(), removePoint = vi.fn(), moveVertex = vi.fn(), removeVertex = vi.fn();
+    const waypoints = [point(1)];
+    const isolated = [{ ...point(2, '49.4', '-2'), id: 'isolated', number: 'B04' }];
+    const zones = [{ id: 'zone', name: 'Travaux', vertices: [{ latitude: '49.9', longitude: '-1' }, { latitude: '49.8', longitude: '-1' }, { latitude: '49.8', longitude: '-1.2' }] }];
+    const props = { waypoints, isolatedPoints: isolated, zones, onAddWaypoint: add, onMoveWaypoint: move, onDeleteWaypoint: remove, onMoveIsolatedPoint: movePoint, onDeleteIsolatedPoint: removePoint, onMoveZoneVertex: moveVertex, onDeleteZoneVertex: removeVertex };
+    const view = render(<SeaOperationWaypointMapEditor {...props} />);
+    activate();
+    const name = kind === 'route' ? 'Sélectionner le waypoint 1' : kind === 'point' ? 'Sélectionner Point isolé 1 · B04' : 'Sélectionner Sommet 1 · Travaux';
+    const target = screen.getByRole('button', { name });
+    fireEvent.pointerDown(target, { clientX: 325, clientY: 130, pointerId: 4, button: 0 });
+    fireEvent.pointerMove(target, { clientX: 345, clientY: 130, pointerId: 4 });
+    view.rerender(<SeaOperationWaypointMapEditor {...props} readOnly />);
+    act(() => vi.advanceTimersByTime(500));
+    fireEvent.pointerUp(target, { clientX: 345, clientY: 130, pointerId: 4 });
+    fireEvent.keyDown(target, { key: 'ArrowRight', altKey: true });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Sélectionner|Ajouter le port/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Zone de navigation de la carte' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Zoomer sur la carte' }));
+    for (const mutation of [add, move, remove, movePoint, removePoint, moveVertex, removeVertex]) expect(mutation).not.toHaveBeenCalled();
+  });
+
+  it('keeps disabled as a complete interaction lock even when read-only browsing is requested', () => {
+    const add = vi.fn(), changed = vi.fn();
+    render(<SeaOperationWaypointMapEditor readOnly disabled waypoints={[point(1)]} onAddWaypoint={add} onMapViewportChange={changed} />);
+    expect(screen.getByRole('combobox')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Afficher la carte en plein écran' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Zoomer sur la carte' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Zone de navigation de la carte' })).not.toBeInTheDocument();
+    fireEvent.wheel(screen.getByRole('img', { name: /Carte du parcours/ }), { deltaY: -120 });
+    expect(add).not.toHaveBeenCalled(); expect(changed).not.toHaveBeenCalled();
+  });
+
   it('follows points and ports automatically until manual framing is chosen, then restores the saved frame on remount', () => {
     const changed = vi.fn(), build = vi.spyOn(mapGeometry, 'buildSeaOperationRouteMap');
     const initial = [point(1)], add = vi.fn();

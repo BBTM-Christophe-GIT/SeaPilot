@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectsPage } from './ProjectsPage';
+import { emptyProjectLocationPlan } from './projectLocation';
+import { emptySeaOperationWaypoint } from '../seaOperations/seaOperationModel';
 import { DEFAULT_PROJECT_DOCUMENT_CATEGORIES } from './projectDocumentCategories';
 
 const documentGenerationMocks = vi.hoisted(() => ({
@@ -537,6 +539,10 @@ describe('ProjectsPage', () => {
     expect(screen.queryByRole('button', { name: 'Modifier le statut de P1086' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Opérations' })).getByRole('button', { name: 'Nouvelle opération' })).toBeDisabled();
+    await user.click(screen.getByRole('tab', { name: 'Carte' }));
+    expect(screen.getByRole('region', { name: 'Carte du projet' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Afficher la carte en plein écran' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Placer les waypoints' })).not.toBeInTheDocument();
     expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_archive');
     expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_reactivate');
     expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_set_status');
@@ -789,6 +795,30 @@ describe('ProjectsPage', () => {
     expect(otherBanner.getByText('Loyer du contrat').closest('div')).toHaveTextContent('Non renseigné');
   });
 
+  it('shows the selected project layers in the Carte tab independently of the PDF appendix', async () => {
+    const plan = { ...emptyProjectLocationPlan(), waypoints: [{ ...emptySeaOperationWaypoint('route'), number: '1', latitude: '50', longitude: '1', descriptionVhf: 'Waypoint essai' }],
+      points: [{ ...emptySeaOperationWaypoint('isolated'), number: 'OSS', latitude: '50.1', longitude: '1.1' }],
+      zones: [{ id: 'works', name: 'Zone de travaux', vertices: [{ latitude: '50', longitude: '1' }, { latitude: '50.2', longitude: '1' }, { latitude: '50.2', longitude: '1.2' }] }] };
+    const original = structuredClone(plan);
+    const { client, rpc } = createClient({ projects: { data: [{ ...atlantiqueProjectRow, location_plan: plan }, { ...mancheProjectRow, contract_type: 'Offre Commerciale' }], error: null } });
+    const user = userEvent.setup();
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: 'P1086 Campagne Atlantique 2026' }));
+    await user.click(screen.getByRole('tab', { name: 'Carte' }));
+    const mapRegion = within(screen.getByRole('region', { name: 'Carte du projet' }));
+    expect(mapRegion.getByText('OSS')).toBeVisible();
+    expect(mapRegion.getAllByText(/Zone de travaux/).length).toBeGreaterThan(0);
+    expect(mapRegion.getByRole('button', { name: 'Afficher la carte en plein écran' })).toBeEnabled();
+    expect(mapRegion.queryByRole('button', { name: 'Placer les waypoints' })).not.toBeInTheDocument();
+    await user.click(mapRegion.getByRole('button', { name: 'Zoomer sur la carte' }));
+    expect(plan).toEqual(original);
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_save_with_location');
+    await user.click(screen.getByRole('button', { name: 'P1087 Campagne Manche 2026' }));
+    await user.click(screen.getByRole('tab', { name: 'Carte' }));
+    expect(screen.getByText('Aucun waypoint, point isolé ou zone enregistré pour ce projet.')).toBeVisible();
+    expect(screen.queryByText('OSS')).not.toBeInTheDocument();
+  });
+
   it('selects a project and exposes contract-aware read-only sections as accessible tabs', async () => {
     const user = userEvent.setup();
     const { client, createSignedUrl, from } = createClient({
@@ -827,6 +857,7 @@ describe('ProjectsPage', () => {
       'Opérations',
       'Facturation',
       'Offre & contrat',
+      'Carte',
       'Documents',
       'Historique',
     ]);

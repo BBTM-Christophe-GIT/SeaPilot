@@ -27,6 +27,7 @@ import { SeaOperationWeatherCard } from './SeaOperationWeatherCard';
 import { SeaOperationRecordedWeather } from './SeaOperationRecordedWeather';
 import { SeaOperationRouteMap } from './SeaOperationRouteMap';
 import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
+import { SeaOperationRegisterMap } from './SeaOperationRegisterMap';
 import { SeaOperationEtaPicker } from './SeaOperationEtaPicker';
 import { captureSeaOperationValidationWeather } from './seaOperationValidationWeather';
 import type { SeaPosition } from './seaOperationNavigation';
@@ -171,6 +172,14 @@ export function SeaOperationsPage() {
   const pendingUkc = useRef(new globalThis.Map<string, { capture: SeaOperationCopernicusEstimate; context: SeaOperationUkcCaptureContext; sourceClient: SupabaseClient }>());
   const [recordAction, setRecordAction] = useState<RecordAction | null>(null);
   const [recordActionError, setRecordActionError] = useState('');
+  const [mapRecord, setMapRecord] = useState<SeaOperationRecord | null>(null);
+  const [mapSelectionId, setMapSelectionId] = useState<string | null>(null);
+  const [mapLoading, setMapLoading] = useState(false);
+  const [mapError, setMapError] = useState('');
+  const [mapDirty, setMapDirty] = useState(false);
+  const mapLoadSequence = useRef(0);
+  const latestMapRecord = useRef(mapRecord);
+  latestMapRecord.current = mapRecord;
   const [compactLayout, setCompactLayout] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 1100px)').matches);
   const [mobilePane, setMobilePane] = useState<'form' | 'preview'>('form');
   const formPane = useRef<HTMLDivElement>(null);
@@ -207,6 +216,8 @@ export function SeaOperationsPage() {
     if (loadedAccount.current === account) return;
     ++recordActionSequence.current;
     mutationRunning.current = false;
+    ++mapLoadSequence.current;
+    setMapRecord(null); setMapSelectionId(null); setMapDirty(false); setMapLoading(false); setMapError('');
     setRecordAction(null); setRecordActionError(''); setBusy(false);
     loadedAccount.current = account;
     pendingUkc.current.clear(); setUkcRequests({ client: currentClient.current, statuses: {} });
@@ -228,6 +239,8 @@ export function SeaOperationsPage() {
   useEffect(() => {
     if (currentClient.current === client) return;
     currentClient.current = client;
+    ++mapLoadSequence.current;
+    setMapRecord(null); setMapSelectionId(null); setMapDirty(false); setMapLoading(false); setMapError('');
     ++loadSequence.current; ++recordActionSequence.current;
     mutationRunning.current = false;
     loadedAccount.current = '';
@@ -262,9 +275,9 @@ export function SeaOperationsPage() {
     catch { /* Editing and server saves remain available when local storage is unavailable. */ }
   }, [data, dirty, draft, record, step]);
   useEffect(() => {
-    const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty) { event.preventDefault(); event.returnValue = ''; } };
+    const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty || mapDirty) { event.preventDefault(); event.returnValue = ''; } };
     const beforeNavigation = (event: MouseEvent) => {
-      if (!dirty || event.defaultPrevented || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+      if (!(dirty || mapDirty) || event.defaultPrevented || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
       const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null;
       if (!link || link.target === '_blank' || link.hasAttribute('download')) return;
       const target = new URL(link.href, window.location.href);
@@ -275,7 +288,8 @@ export function SeaOperationsPage() {
     window.addEventListener('beforeunload', beforeUnload);
     document.addEventListener('click', beforeNavigation, true);
     return () => { window.removeEventListener('beforeunload', beforeUnload); document.removeEventListener('click', beforeNavigation, true); };
-  }, [dirty, data]);
+  }, [dirty, mapDirty, data]);
+  useEffect(() => () => { ++mapLoadSequence.current; }, []);
 
   useEffect(() => {
     if (!editing || record?.status === 'signed') return;
@@ -571,7 +585,51 @@ export function SeaOperationsPage() {
     const selected = data?.clients?.find(item => item.id === id);
     update({ clientId: selected?.id || '', client: selected?.name || '', clientContact: selected?.contact || '' });
   }
-  const confirmLeave = () => !dirty || window.confirm('Quitter cette fiche sans enregistrer les modifications ?');
+  const confirmLeave = () => !(dirty || mapDirty) || window.confirm('Quitter cette fiche sans enregistrer les modifications ?');
+  function clearMapSelection() {
+    ++mapLoadSequence.current;
+    setMapRecord(null); setMapSelectionId(null); setMapDirty(false); setMapLoading(false); setMapError('');
+  }
+  async function selectMapOperation(item: SeaOperationRecord) {
+    if (busy || exporting || mutationRunning.current || item.id === mapSelectionId && mapLoading || !confirmLeave()) return;
+    const request = ++mapLoadSequence.current;
+    const account = actionContext.current.account;
+    setMapSelectionId(item.id); setMapRecord(null); setMapDirty(false); setMapLoading(true); setMapError('');
+    const isCurrent = () => request === mapLoadSequence.current && actionContext.current.client === client && actionContext.current.account === account;
+    try {
+      const loaded = await fetchSeaOperationDetail(client, item.id);
+      if (!isCurrent()) return;
+      if (loaded.id !== item.id || loaded.companyId !== data?.companyId) throw new Error('Cette opération ne correspond pas à la sélection.');
+      setMapRecord(loaded);
+      setData(current => current ? { ...current, records: current.records.map(value => value.id === loaded.id ? loaded : value) } : current);
+    } catch (reason) { if (isCurrent()) setMapError(errorMessage(reason)); }
+    finally { if (isCurrent()) setMapLoading(false); }
+  }
+  async function saveMapOperation(payload: SeaOperationPayload, source: SeaOperationRecord) {
+    if (busy || exporting || mutationRunning.current || !source.canEdit || source.status !== 'draft'
+      || !latestMapRecord.current?.canEdit || latestMapRecord.current.status !== 'draft'
+      || source.id !== latestMapRecord.current.id || source.version !== latestMapRecord.current.version
+      || source.companyId !== latestMapRecord.current.companyId) {
+      throw new Error('Rechargez cette opération avant de modifier ses points.');
+    }
+    mutationRunning.current = true; setBusy(true);
+    const request = mapLoadSequence.current;
+    const account = actionContext.current.account;
+    const isCurrent = () => request === mapLoadSequence.current && actionContext.current.client === client && actionContext.current.account === account;
+    try {
+      const vessel = data?.vessels.find(value => String(value.id) === payload.vessel.id);
+      const prepared = captureSeaOperationRadios(captureSeaOperationWaypointDescriptions(updateSeaOperationRouteEtas(payload, vessel?.maxSpeedKnots)));
+      const weather = await captureSeaOperationValidationWeather(client, prepared, { preview: previewMode, missingOnly: true });
+      if (!isCurrent()) throw new Error('La sélection a changé. Les modifications n’ont pas été enregistrées.');
+      const captured = await captureSeaOperationValidationUkc(client, weather, { preview: previewMode, missingOnly: true });
+      if (!isCurrent()) throw new Error('La sélection a changé. Les modifications n’ont pas été enregistrées.');
+      const saved = await saveSeaOperation(client, captured, { id: source.id, version: source.version });
+      if (!isCurrent()) return;
+      setMapRecord(saved); setMapDirty(false);
+      setData(current => current ? { ...current, records: current.records.map(value => value.id === saved.id ? saved : value) } : current);
+      setNotice('Les points de l’opération ont été enregistrés.');
+    } finally { if (isCurrent()) { mutationRunning.current = false; setBusy(false); } }
+  }
   function closeEditor() {
     if (busy || exporting || !confirmLeave()) return;
     pendingUkc.current.clear(); clearRecovery(data); setEditing(false); setDirty(false); setNotice(''); setIssues([]); setError('');
@@ -592,6 +650,7 @@ export function SeaOperationsPage() {
   };
   async function open(item: Pick<SeaOperationRecord, 'id'>) {
     if (!confirmLeave()) return;
+    clearMapSelection();
     allowAutomaticMission.current = false;
     editorOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const request = ++loadSequence.current;
@@ -612,6 +671,7 @@ export function SeaOperationsPage() {
   }
   function create() {
     if (!confirmLeave()) return;
+    clearMapSelection();
     allowAutomaticMission.current = true;
     editorOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     clearRecovery(data);
@@ -624,6 +684,7 @@ export function SeaOperationsPage() {
     if (!data || busy || exporting || mutationRunning.current || recordAction
       || (kind === 'revise' ? item.status !== 'signed' || !item.canRevise : !item.canDelete)) return;
     if (!confirmLeave()) return;
+    clearMapSelection();
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     editorOpener.current = opener?.closest('.so-record-entry')?.querySelector<HTMLButtonElement>('.so-record') || editorOpener.current;
     setRecordActionError(''); setRecordAction({ kind, record: item, client, account: recoveryKey(data) });
@@ -762,14 +823,22 @@ export function SeaOperationsPage() {
     {!data && !error && <p role="status">Chargement des opérations en mer…</p>}
     {data && <>
       <div className="so-metrics">{[['Fiches enregistrées', data.records.length], ['En préparation', data.records.filter((item) => item.status === 'draft').length], ['Décisions GO', data.records.filter((item) => item.status === 'signed' && item.draft.decision === 'GO').length], ['Décisions NO GO', data.records.filter((item) => item.status === 'signed' && item.draft.decision === 'NO_GO').length]].map(([label, count]) => <div key={label}><span>{label}</span><strong>{count}</strong></div>)}</div>
-      <section className="so-register sp-panel"><header><div><h2>Registre des opérations</h2><p>Les préparations et décisions de votre société.</p></div><div className="so-filters sp-filters"><label className="so-search"><Search size={17} /><input aria-label="Rechercher une opération" placeholder="Projet, client ou navire…" value={search} onChange={(event) => setSearch(event.target.value)} /></label><select aria-label="Filtrer par état" value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">Tous les états</option><option value="draft">Brouillons</option><option value="GO">GO signés</option><option value="NO_GO">NO GO signés</option></select></div></header>
+      <div className="so-register-workspace"><section className="so-register sp-panel"><header><div><h2>Registre des opérations</h2><p>Sélectionnez une opération pour afficher sa carte.</p></div><div className="so-filters sp-filters"><label className="so-search"><Search size={17} /><input aria-label="Rechercher une opération" placeholder="Projet, client ou navire…" value={search} onChange={(event) => setSearch(event.target.value)} /></label><select aria-label="Filtrer par état" value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">Tous les états</option><option value="draft">Brouillons</option><option value="GO">GO signés</option><option value="NO_GO">NO GO signés</option></select></div></header>
       {records.length ? <div className="so-records">{records.map((item) => <div className="so-record-entry" key={item.id}>
-        <button className="so-record" disabled={busy || exporting} onClick={() => void open(item)}><span className="so-record-icon"><Ship size={21} /></span><span><strong>{item.draft.project || 'Opération sans titre'}</strong><small>{item.draft.vessel.name || 'Navire à renseigner'} · {item.draft.client || 'Client à renseigner'}</small></span><span className={`so-badge ${item.status === 'draft' ? '' : item.draft.decision === 'GO' ? 'is-go' : 'is-nogo'}`}>{item.status === 'draft' ? 'Brouillon' : item.draft.decision === 'NO_GO' ? 'NO GO' : 'GO'}</span><span className="so-record-date">{formatDate(item.updatedAt)}<small>{item.updatedByName}</small></span><ChevronRight size={18} /></button>
-        {((item.status === 'draft' && item.canEdit) || item.canRevise || item.canDelete) && <div className="so-record-actions" role="group" aria-label={`Actions pour ${item.draft.project || 'Opération sans titre'}`}>
+        <button className="so-record" aria-pressed={mapSelectionId === item.id} aria-controls="sea-operation-register-map" disabled={busy || exporting} onClick={() => void selectMapOperation(item)}><span className="so-record-icon"><Ship size={21} /></span><span><strong>{item.draft.project || 'Opération sans titre'}</strong><small>{item.draft.vessel.name || 'Navire à renseigner'} · {item.draft.client || 'Client à renseigner'}</small></span><span className={`so-badge ${item.status === 'draft' ? '' : item.draft.decision === 'GO' ? 'is-go' : 'is-nogo'}`}>{item.status === 'draft' ? 'Brouillon' : item.draft.decision === 'NO_GO' ? 'NO GO' : 'GO'}</span><span className="so-record-date">{formatDate(item.updatedAt)}<small>{item.updatedByName}</small></span><ChevronRight size={18} /></button>
+        <div className="so-record-actions" role="group" aria-label={`Actions pour ${item.draft.project || 'Opération sans titre'}`}>
+          <button type="button" className="sp-button sp-button--secondary so-secondary" disabled={busy || exporting} onClick={() => void open(item)}><Eye size={16} />Ouvrir la fiche</button>
           {((item.status === 'draft' && item.canEdit) || item.canRevise) && <button type="button" className="sp-button sp-button--secondary so-secondary" disabled={busy || exporting} onClick={() => item.status === 'draft' ? void open(item) : requestRecordAction('revise', item)}><Pencil size={16} />Modifier</button>}
           {item.canDelete && <button type="button" className="sp-button sp-button--secondary so-secondary so-delete-record" disabled={busy || exporting} onClick={() => requestRecordAction('delete', item)}><Trash2 size={16} />Supprimer</button>}
-        </div>}
+        </div>
       </div>)}</div> : <div className="so-empty"><Compass size={42} /><h3>{search || status !== 'all' ? 'Aucune opération correspondante' : 'Préparez votre première opération en mer'}</h3><p>Renseignez la mission puis les contrôles du formulaire GO / NO GO.</p>{!search && status === 'all' && <button onClick={create}><Plus size={16} />Créer une opération</button>}</div>}</section>
+      <div id="sea-operation-register-map" className="so-register-map-pane" aria-busy={mapLoading}>
+        {mapLoading ? <p className="so-map-loading" role="status">Chargement de la carte de l’opération…</p> : null}
+        {mapError ? <div className="so-alert so-danger" role="alert"><span>{mapError}</span><button type="button" className="so-secondary" onClick={() => { const item = data.records.find(value => value.id === mapSelectionId); if (item) void selectMapOperation(item); }}>Réessayer</button></div> : null}
+        <SeaOperationRegisterMap key={recoveryKey(data)} record={mapRecord} disabled={busy || exporting || mapLoading}
+          maxSpeedKnots={data.vessels.find(value => String(value.id) === mapRecord?.draft.vessel.id)?.maxSpeedKnots}
+          onSave={saveMapOperation} onDirtyChange={setMapDirty} />
+      </div></div>
       <p className="so-source">Référence : formulaire « GO / NO GO – Opération en Mer », OPE-FOR-10-C.</p>
     </>}
 

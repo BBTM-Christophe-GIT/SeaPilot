@@ -1,0 +1,13 @@
+.so-register-map { min-width: 0; padding: 16px; }
+.so-register-map-heading { display: flex; align-items: flex-start; gap: 8px; color: var(--sp-primary); }
+.so-register-map-heading h2 { margin: 0; color: var(--sp-heading); font-size: 18px; }
+.so-register-map-heading p { margin: 4px 0 0; color: var(--sp-muted); font-size: 14px; overflow-wrap: anywhere; }
+.so-register-map-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.so-register-map-actions:empty { display: none; }
+.so-register-map-help, .so-register-map-empty { margin: 12px 0; color: var(--sp-muted); font-size: 13px; line-height: 1.5; }
+
+.so-register-map .so-waypoint-map-editor { margin-top: 12px; }
+@media (max-width: 720px) {
+  .so-register-map { padding: 12px; }
+  .so-register-map-actions .sp-button { flex: 1 1 auto; }
+}
