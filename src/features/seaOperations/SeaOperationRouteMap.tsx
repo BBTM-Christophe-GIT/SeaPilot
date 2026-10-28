@@ -13,7 +13,7 @@ import { projectSeaOperationMapPlace } from './seaOperationMapPlaces';
 import { SeaOperationIsolatedPointIcon } from './SeaOperationIsolatedPointIcon';
 import { seaOperationIsolatedPointIcon, seaOperationIsolatedPointLabel } from './seaOperationIsolatedPointIcons';
 import { layoutSeaOperationZoneLabels, seaOperationZoneAppearance, type SeaOperationZoneLabelObstacle } from './seaOperationZonePresentation';
-import { SeaOperationGmdssReference } from './SeaOperationGmdssReference';
+import { SeaOperationNavigationCategoryLayer, SeaOperationNavigationCategoryLegend, useNavigationCategoryOverlay, type NavigationCategory } from './SeaOperationNavigationCategories';
 import { SeaOperationDetailedBasemap, DETAILED_BASEMAP_ATTRIBUTION } from './SeaOperationDetailedBasemap';
 import type { DetailedBasemapStatus } from './seaOperationDetailedBasemapModel';
 
@@ -96,7 +96,7 @@ function routeLegLabels(geometry: SeaOperationRouteMapGeometry, legs: ReturnType
 }
 
 /** Local situation map; placement is supplied explicitly by the editing wrapper. */
-export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ensureZonesVisible = false, onGeometry, renderOverlay, fillAvailableSpace = false, showPlaces = false, showWaypointCoordinates = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint, isolatedPoints = NO_ISOLATED_POINTS, zones = NO_ZONES, previewIsolatedPoint, previewZoneVertex, departurePort, arrivalPort, allowDetailedBasemap = false, basemapControlsDisabled = false }: {
+export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ensureZonesVisible = false, onGeometry, renderOverlay, fillAvailableSpace = false, showPlaces = false, showWaypointCoordinates = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint, isolatedPoints = NO_ISOLATED_POINTS, zones = NO_ZONES, previewIsolatedPoint, previewZoneVertex, departurePort, arrivalPort, allowDetailedBasemap = false, allowNavigationCategories = false, basemapControlsDisabled = false }: {
   waypoints: readonly SeaOperationWaypoint[]; compact?: boolean;
   viewport?: RouteMapViewport;
   /** Document view only: widen a saved frame when its zones would be cropped. */
@@ -115,6 +115,8 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
   arrivalPort?: string;
   /** Interactive maps only; documents keep their existing autonomous vector background. */
   allowDetailedBasemap?: boolean;
+  /** Screen maps opt in; document previews and PDFs remain autonomous. */
+  allowNavigationCategories?: boolean;
   basemapControlsDisabled?: boolean;
   /** Visual drag preview only; totals, labels and layout retain the controlled route until release. */
   previewWaypoint?: { id: string; position: SeaPosition } | null;
@@ -131,6 +133,10 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
   const [size, setSize] = useState({ width: 900, height: 320 });
   const [detailedBasemap, setDetailedBasemap] = useState(true);
   const [basemapStatus, setBasemapStatus] = useState<DetailedBasemapStatus>('loading');
+  const [showNavigationCategories, setShowNavigationCategories] = useState(false);
+  const [navigationCategories, setNavigationCategories] = useState<ReadonlySet<NavigationCategory>>(() => new Set([3]));
+  const [portsOpen, setPortsOpen] = useState(false);
+  const navigationCategoriesAvailable = allowNavigationCategories && !compact && !ensureZonesVisible;
   const detailedEnabled = allowDetailedBasemap && !compact && detailedBasemap;
   const filling = fillAvailableSpace && !compact;
   const width = filling ? size.width : Math.max(280, Math.min(900, Math.round(size.width)));
@@ -147,6 +153,10 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
     ? { ...point, latitude: String(previewWaypoint.position.latitude), longitude: String(previewWaypoint.position.longitude) } : point) : waypoints, [compact, previewWaypoint, waypoints]);
   const geometry = useMemo(() => visualWaypoints === waypoints ? recordedGeometry
     : buildSeaOperationRouteMap(visualWaypoints, width, height, displayViewport ?? recordedGeometry.viewport ?? undefined, extraPositions), [visualWaypoints, waypoints, recordedGeometry, width, height, displayViewport, extraPositions]);
+  const categoryOverlay = useNavigationCategoryOverlay(navigationCategoriesAvailable && showNavigationCategories, recordedGeometry);
+  function toggleNavigationCategory(category: NavigationCategory) {
+    setNavigationCategories(previous => { const next = new Set(previous); if (next.has(category)) next.delete(category); else next.add(category); return next; });
+  }
   const visualIsolatedPoints = useMemo(() => !compact && previewIsolatedPoint ? isolatedPoints.map(point => point.id === previewIsolatedPoint.id
     ? { ...point, latitude: String(previewIsolatedPoint.position.latitude), longitude: String(previewIsolatedPoint.position.longitude) } : point) : isolatedPoints, [compact, isolatedPoints, previewIsolatedPoint]);
   const visualZones = useMemo(() => !compact && previewZoneVertex ? zones.map(zone => zone.id === previewZoneVertex.zoneId
@@ -212,9 +222,10 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
     {(transitDurationFallback || voyage.etaSource === 'estimated') && <small>Durée estimée à vitesse constante.</small>}
   </aside> : null;
 
-  return <figure aria-labelledby={titleId} className={`so-route-map${compact ? ' is-compact' : ''}${filling ? ' is-filling' : ''}`}>
+  return <figure aria-labelledby={titleId} className={`so-route-map${compact ? ' is-compact' : ''}${filling ? ' is-filling' : ''}${navigationCategoriesAvailable && showNavigationCategories ? ' has-navigation-categories' : ''}`}>
     <header className="so-route-map-heading"><h3 id={titleId}>Carte du parcours</h3><span>{countLabel}</span>
       {allowDetailedBasemap && !compact ? <button type="button" className="sp-button sp-button--secondary so-route-map-detail-toggle" disabled={basemapControlsDisabled} aria-pressed={detailedBasemap} onClick={() => setDetailedBasemap(value => !value)}>Fond côtier détaillé</button> : null}
+      {navigationCategoriesAvailable && <button type="button" className="sp-button sp-button--secondary so-route-map-category-toggle" disabled={basemapControlsDisabled} aria-pressed={showNavigationCategories} onClick={() => setShowNavigationCategories(value => !value)}>Catégories de navigation</button>}
     </header>
     <div className="so-route-map-frame" ref={frame}>
       {geometry.projection ? <svg aria-labelledby={svgTitleId} aria-describedby={descriptionId} className="so-route-map-svg" role={!compact && (renderOverlay || route) ? 'group' : 'img'} viewBox={`0 0 ${geometry.width} ${geometry.height}`}>
@@ -227,6 +238,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
           <g aria-hidden="true" className="so-route-map-land">{geometry.land.map((polygon, index) => <polygon key={index} points={polygon.map((point) => `${point.x},${point.y}`).join(' ')} vectorEffect="non-scaling-stroke" />)}</g>
           {detailedEnabled ? <SeaOperationDetailedBasemap geometry={recordedGeometry} onStatusChange={setBasemapStatus} /> : null}
           <g aria-hidden="true" className="so-route-map-grid">{geometry.grid.map((line, index) => <g key={index}><line x1={line.from.x} y1={line.from.y} x2={line.to.x} y2={line.to.y} vectorEffect="non-scaling-stroke" /><text x={line.labelAt.x} y={line.labelAt.y}>{line.label}</text></g>)}</g>
+          {navigationCategoriesAvailable && showNavigationCategories && <SeaOperationNavigationCategoryLayer projected={categoryOverlay.projected} selected={navigationCategories} />}
           <g className="so-route-map-zones">
             <g className="so-route-map-zone-fills" aria-hidden="true">{zoneFills.map(({ zone, vertices, appearance }) => <path key={zone.id} data-zone-code={appearance.code} d={`M ${vertices.map(vertex => `${vertex.x} ${vertex.y}`).join(' L ')} Z`} style={{ fill: appearance.fill }} />)}</g>
             <g className="so-route-map-zone-outlines">{presentedZones.map(({ zone, vertices, appearance }) => <g key={zone.id} role="img" aria-label={`Zone : ${zone.name || 'Sans nom'}`}><title>{appearance.code} — {zone.name || 'Zone sans nom'} · {zone.vertices.length} sommets</title><polygon data-zone-code={appearance.code} points={vertices.map(vertex => `${vertex.x},${vertex.y}`).join(' ')} style={{ stroke: appearance.stroke }} /></g>)}</g>
@@ -332,15 +344,15 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
     {geometry.invalidCount > 0 && <p className="so-route-map-omissions" role="status">{geometry.invalidCount === 1 ? '1 point sans coordonnées valides n’est pas représenté ; la liaison est interrompue à cet endroit.' : `${geometry.invalidCount} points sans coordonnées valides ne sont pas représentés ; les liaisons sont interrompues à ces endroits.`}</p>}
     {definedPorts.issues.length > 0 && <p className="so-route-map-omissions" role="status">{definedPorts.issues.map(issue => `${issue.role === 'departure' ? 'Départ' : 'Arrivée'} : ${issue.input} — ${issue.reason === 'ambiguous' ? 'plusieurs ports correspondent, précisez le libellé du catalogue' : issue.reason === 'unlocated' ? 'position propre non disponible dans le catalogue' : 'port non identifié dans le catalogue'}.`).join(' ')}</p>}
     {definedPorts.ports.length > visibleDefinedPorts.length && <p className="so-route-map-omissions" role="status">{definedPorts.ports.filter(port => !visibleDefinedPorts.some(visible => visible.key === port.key)).map(port => `${port.roleLabel} : ${port.port.port} — hors du cadre conservé.`).join(' ')}</p>}
-    {places && geometry.projection && <details className="so-route-map-places"><summary>Ports dans cette région · {places.ports.length}</summary>
-      <div className="so-route-map-port-list">
+    {places && geometry.projection && <details className="so-route-map-places" onToggle={event => setPortsOpen(event.currentTarget.open)}><summary>Ports dans cette région · {places.ports.length}</summary>
+      {portsOpen && <div className="so-route-map-port-list">
         <p>Catalogue partagé avec Projets. Points de référence indicatifs : ni entrées de port ni positions de quai.</p>
         <ul aria-label="Ports du catalogue dans le cadre affiché">{places.ports.map(item => <li key={item.key}><i className="so-route-map-port-list-dot" aria-hidden="true" />{onPortSelect ? <button type="button" className="sp-button sp-button--secondary so-route-map-port-choice" aria-label={`Ajouter le port ${formatProjectPort(item.port)} comme waypoint`} onClick={() => onPortSelect([item])}><span>{formatProjectPort(item.port)}<small>{item.location.source === 'sandre' ? 'Point publié SANDRE/SHOM' : 'Repère NGA World Port Index · position indicative'}</small></span></button> : <span>{formatProjectPort(item.port)}<small>{item.location.source === 'sandre' ? 'Point publié SANDRE/SHOM' : 'Repère NGA World Port Index · position indicative'}</small></span>}</li>)}</ul>
         {places.ports.length === 0 && <p>Aucun port géoréférencé du catalogue dans ce cadre.</p>}
         {places.relatedPorts.length > 0 && <><p>Rattachements statistiques aux ports visibles · {places.relatedPorts.length}. Leur position propre n’est pas disponible ; ils ne sont pas placés sur la carte.</p>
           <ul aria-label="Ports rattachés sans position propre">{places.relatedPorts.map(item => <li key={item.key}><span>{formatProjectPort(item.port)}<small>Rattachement à {item.port.locodePort || item.parent.name} · position propre non disponible</small></span></li>)}</ul></>}
         <p>Couverture géographique du catalogue : France {places.coverage.france.located}/{places.coverage.france.total} ; Angleterre {places.coverage.england.located}/{places.coverage.england.total}. Les entrées sans position ne peuvent pas être filtrées géographiquement. Les libellés de carte sont espacés pour rester lisibles ; la liste conserve tous les ports localisés dans le cadre.</p>
-      </div>
+      </div>}
     </details>}
     <figcaption className="so-route-map-caption"><span className="so-route-map-legend">{(!definedPorts.ports.length || waypoints.length > 0) && <><span><i className="is-start" aria-hidden="true" />{definedPorts.ports.length ? 'Premier waypoint' : 'Départ'}</span><span><i className="is-end" aria-hidden="true" />{definedPorts.ports.length ? 'Dernier waypoint' : 'Arrivée'}</span><span>Numéros : ordre du tableau</span></>}{definedPorts.ports.length > 0 && <span><i className="is-port" aria-hidden="true" />Ports de départ / arrivée</span>}{places && <><span><i className="is-port" aria-hidden="true" />Ports</span><span><i className="is-city" aria-hidden="true" />Villes</span></>}</span><span>{detailedEnabled ? 'Fond OpenStreetMap · Natural Earth en repli' : 'Fond Natural Earth'} · Tracé indicatif</span></figcaption>
     {presentedZones.length > 0 && <p className="so-route-map-legend so-route-map-zone-legend" aria-label="Légende des zones"><span>Zones :</span>{presentedZones.map(({ zone, appearance }) => <span key={zone.id}><i className="so-route-map-zone-swatch" aria-hidden="true" style={{ background: appearance.fill, borderColor: appearance.stroke }} /><strong style={{ color: appearance.stroke }}>{appearance.code}</strong> — {zone.name || 'Sans nom'}</span>)}</p>}
@@ -348,7 +360,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
       <a href={DETAILED_BASEMAP_ATTRIBUTION.providerUrl} target="_blank" rel="noopener noreferrer">{DETAILED_BASEMAP_ATTRIBUTION.provider}</a> · © <a href={DETAILED_BASEMAP_ATTRIBUTION.schemaUrl} target="_blank" rel="noopener noreferrer">{DETAILED_BASEMAP_ATTRIBUTION.schema}</a> · © <a href={DETAILED_BASEMAP_ATTRIBUTION.dataUrl} target="_blank" rel="noopener noreferrer">{DETAILED_BASEMAP_ATTRIBUTION.data}</a>
       <span aria-live="polite">{basemapStatus === 'loading' ? ' · Chargement du détail…' : basemapStatus === 'partial' ? ' · Détail partiel, fond simplifié en complément.' : basemapStatus === 'unavailable' ? ' · Fond détaillé indisponible, fond simplifié affiché.' : ''}</span>
     </p>}
-    {!compact && !ensureZonesVisible && <SeaOperationGmdssReference />}
+    {navigationCategoriesAvailable && showNavigationCategories && <SeaOperationNavigationCategoryLegend selected={navigationCategories} onToggle={toggleNavigationCategory} projected={categoryOverlay.projected} loading={categoryOverlay.loading} failed={categoryOverlay.failed} onRetry={categoryOverlay.retry} />}
     {(places || definedPorts.ports.length > 0) && <p className="so-route-map-places-attribution">{places && <>Villes : <a href="https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/" target="_blank" rel="noopener noreferrer">Natural Earth</a> · </>}Ports : <a href="https://www.data.gouv.fr/datasets/ports-espace-maritime-francais" target="_blank" rel="noopener noreferrer">SANDRE/SHOM</a> et <a href="https://msi.nga.mil/Publications/WPI" target="_blank" rel="noopener noreferrer">NGA</a>. Couverture partielle et précision non garantie. Ne pas utiliser pour naviguer.</p>}
   </figure>;
 }

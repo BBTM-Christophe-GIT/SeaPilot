@@ -185,7 +185,44 @@ describe('SeaOperationWaypointMapEditor', () => {
     expect(changed).toHaveBeenCalledTimes(4); expect(add).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Cadrer le parcours' }));
     expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage automatique'); expect(changed).toHaveBeenLastCalledWith(undefined);
+    // With no point or defined port, automatic framing intentionally has no SVG.
     expect(screen.queryByRole('button', { name: 'Zone de navigation de la carte' })).not.toBeInTheDocument();
+  });
+
+  it('responds to camera gestures immediately in automatic editable mode while tap and Enter leave all points unchanged', () => {
+    const frames = animationFrames(), changed = vi.fn(), add = vi.fn(), move = vi.fn(), remove = vi.fn();
+    const points = [point(1)], original = structuredClone(points);
+    render(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} onMoveWaypoint={move} onDeleteWaypoint={remove} onMapViewportChange={changed} />);
+    const surface = screen.getByRole('button', { name: 'Zone de navigation de la carte' });
+    if (!(surface instanceof SVGElement) || !surface.ownerSVGElement) throw new Error('The navigation surface must belong to its SVG map.');
+    const svg = surface.ownerSVGElement;
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({ left: 100, top: 50, width: 450, height: 160, right: 550, bottom: 210, x: 100, y: 50, toJSON: () => ({}) });
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage automatique');
+    expect(screen.getByRole('button', { name: 'Placer les waypoints' })).toHaveAttribute('aria-pressed', 'false');
+    tap(surface); fireEvent.keyDown(surface, { key: 'Enter' });
+    expect(changed).not.toHaveBeenCalled();
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 }); frames.advance(100);
+    expect(changed).toHaveBeenCalledOnce(); expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage manuel');
+    fireEvent.click(screen.getByRole('button', { name: 'Cadrer le parcours' }));
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage automatique');
+    expect(screen.getByRole('button', { name: 'Zone de navigation de la carte' })).toBeInTheDocument();
+    expect(points).toEqual(original); expect(add).not.toHaveBeenCalled(); expect(move).not.toHaveBeenCalled(); expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('attaches wheel browsing when an empty automatic map gains its SVG without a mode change', () => {
+    const frames = animationFrames(), add = vi.fn(), changed = vi.fn();
+    const view = render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} onMapViewportChange={changed} />);
+    expect(screen.queryByRole('button', { name: 'Zone de navigation de la carte' })).not.toBeInTheDocument();
+    view.rerender(<SeaOperationWaypointMapEditor waypoints={[point(1)]} onAddWaypoint={add} onMapViewportChange={changed} />);
+    const surface = screen.getByRole('button', { name: 'Zone de navigation de la carte' });
+    if (!(surface instanceof SVGElement) || !surface.ownerSVGElement) throw new Error('The navigation surface must belong to its SVG map.');
+    const svg = surface.ownerSVGElement;
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({ left: 100, top: 50, width: 450, height: 160, right: 550, bottom: 210, x: 100, y: 50, toJSON: () => ({}) });
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage automatique');
+    expect(fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130, cancelable: true })).toBe(false);
+    expect(frames.pending).toBe(1); frames.advance(100);
+    expect(changed).toHaveBeenCalledOnce(); expect(add).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Placer les waypoints' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('publishes a pan once on release and keeps manual framing when placement ends', () => {
@@ -198,6 +235,47 @@ describe('SeaOperationWaypointMapEditor', () => {
     expect(changed).toHaveBeenCalledOnce(); expect(changed.mock.calls[0][0].longitudeSpan).toBe(16);
     fireEvent.click(screen.getByRole('button', { name: 'Terminer le placement' }));
     expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage manuel'); expect(changed).toHaveBeenCalledOnce();
+  });
+
+  it('coalesces a pointer burst into camera frames without rebuilding the route or places until release', () => {
+    const frames = animationFrames(), changed = vi.fn(), add = vi.fn(), move = vi.fn(), remove = vi.fn();
+    const build = vi.spyOn(mapGeometry, 'buildSeaOperationRouteMap'), places = vi.spyOn(mapPlaces, 'seaOperationMapPlaces');
+    const points = [point(1), point(2, '49.8', '-2.5')], original = structuredClone(points);
+    const view = render(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} onMoveWaypoint={move} onDeleteWaypoint={remove} mapViewport={{ ...DEFAULT_ROUTE_MAP_VIEWPORT }} onMapViewportChange={changed} />);
+    const { surface } = activate(); build.mockClear(); places.mockClear();
+    fireEvent.pointerDown(surface, { clientX: 325, clientY: 130, pointerId: 1, button: 0 });
+    for (let event = 1; event <= 100; event += 1) fireEvent.pointerMove(surface, { clientX: 325 + event, clientY: 130, pointerId: 1 });
+    expect(frames.pending).toBe(1); expect(build).not.toHaveBeenCalled(); expect(places).not.toHaveBeenCalled();
+    frames.advance(16);
+    const firstFrame = cameraTransform(view.container);
+    expect(firstFrame).not.toBeNull();
+    expect(view.container.querySelector('.so-waypoint-map-camera-targets')).toHaveAttribute('transform', firstFrame!);
+    expect(build).not.toHaveBeenCalled(); expect(places).not.toHaveBeenCalled(); expect(changed).not.toHaveBeenCalled();
+    for (let event = 101; event <= 120; event += 1) fireEvent.pointerMove(surface, { clientX: 325 + event, clientY: 140, pointerId: 1 });
+    frames.advance(16); expect(cameraTransform(view.container)).not.toBe(firstFrame);
+    expect(build).not.toHaveBeenCalled(); expect(places).not.toHaveBeenCalled();
+    fireEvent.pointerUp(surface, { clientX: 445, clientY: 140, pointerId: 1 });
+    expect(changed).toHaveBeenCalledOnce(); expect(build).toHaveBeenCalledOnce(); expect(places).toHaveBeenCalledOnce();
+    expect(changed.mock.calls[0][0].centerLongitude).toBeCloseTo(-3 - 120 / 450 * 16, 8);
+    expect(cameraTransform(view.container)).toBeNull(); expect(frames.pending).toBe(0); expect(points).toEqual(original);
+    expect(add).not.toHaveBeenCalled(); expect(move).not.toHaveBeenCalled(); expect(remove).not.toHaveBeenCalled();
+  });
+
+  it.each(['pointercancel', 'blur', 'disabled', 'source', 'unmount'] as const)('cancels a queued pan frame on %s without a delayed viewport write', action => {
+    const frames = animationFrames(), changed = vi.fn(), add = vi.fn(), points = [point(1)];
+    const view = render(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} mapViewport={{ ...DEFAULT_ROUTE_MAP_VIEWPORT }} onMapViewportChange={changed} />);
+    const { surface } = activate();
+    fireEvent.pointerDown(surface, { clientX: 325, clientY: 130, pointerId: 1, button: 0 });
+    fireEvent.pointerMove(surface, { clientX: 365, clientY: 130, pointerId: 1 });
+    expect(frames.pending).toBe(1);
+    if (action === 'pointercancel') fireEvent.pointerCancel(surface, { pointerId: 1 });
+    else if (action === 'blur') fireEvent(window, new Event('blur'));
+    else if (action === 'disabled') view.rerender(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={add} mapViewport={{ ...DEFAULT_ROUTE_MAP_VIEWPORT }} onMapViewportChange={changed} disabled />);
+    else if (action === 'source') view.rerender(<SeaOperationWaypointMapEditor waypoints={[...points]} onAddWaypoint={add} mapViewport={{ ...DEFAULT_ROUTE_MAP_VIEWPORT }} onMapViewportChange={changed} />);
+    else view.unmount();
+    expect(frames.pending).toBe(0); frames.advance(20);
+    expect(changed).not.toHaveBeenCalled(); expect(add).not.toHaveBeenCalled();
+    if (action !== 'unmount') expect(cameraTransform(view.container)).toBeNull();
   });
 
   it.each([{ key: 'Tab', target: 'surface' }, { key: 'Escape', target: 'surface' }, { key: 'ArrowDown', target: 'mode' }])('restores the committed manual frame when $key interrupts a wheel animation outside placement on $target', ({ key, target }) => {
@@ -607,12 +685,12 @@ describe('SeaOperationWaypointMapEditor', () => {
       if (event === 3) expect(cameraTransform(view.container)).not.toBe(firstFrame);
       expect(changed).not.toHaveBeenCalled();
     }
-    expect(build.mock.calls.length).toBeLessThanOrEqual(3); expect(places.mock.calls.length).toBeLessThanOrEqual(3);
+    expect(build).not.toHaveBeenCalled(); expect(places).not.toHaveBeenCalled();
     expect(view.container.querySelector('.so-route-map-north')?.closest('.so-route-map-camera')).toBeNull();
     expect(surface.closest('.so-waypoint-map-camera-targets')).toBeNull();
     frames.advance(100);
     expect(frames.pending).toBe(0); expect(changed).toHaveBeenCalledOnce();
-    expect(build.mock.calls.length).toBeLessThanOrEqual(4); expect(places.mock.calls.length).toBeLessThanOrEqual(4);
+    expect(build).toHaveBeenCalledOnce(); expect(places).toHaveBeenCalledOnce();
     expect(changed.mock.calls[0][0].longitudeSpan).toBeCloseTo(16 * Math.exp(-50 * 4 * .002), 10);
     const final = build.mock.results.at(-1)!.value;
     const anchor = routeMapPositionAt(buildSeaOperationRouteMap([], 900, 320, { ...DEFAULT_ROUTE_MAP_VIEWPORT }), 675, 100)!;
@@ -795,11 +873,12 @@ describe('SeaOperationWaypointMapEditor', () => {
   });
 
   it('pans on drag and never adds, including when the pointer returns to its starting position', () => {
-    const add = vi.fn();
+    const frames = animationFrames(), add = vi.fn();
     render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} />);
     const { surface } = activate();
     fireEvent.pointerDown(surface, { clientX: 325, clientY: 130, pointerId: 1, button: 0 });
     fireEvent.pointerMove(surface, { clientX: 415, clientY: 130, pointerId: 1 });
+    frames.advance(16);
     expect(screen.getByText('Centre : 49° 00.000′ N — 006° 12.000′ W')).toBeVisible();
     fireEvent.pointerMove(surface, { clientX: 325, clientY: 130, pointerId: 1 });
     fireEvent.pointerUp(surface, { clientX: 325, clientY: 130, pointerId: 1 });

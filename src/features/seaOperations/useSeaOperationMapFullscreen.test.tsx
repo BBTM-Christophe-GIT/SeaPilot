@@ -181,14 +181,15 @@ describe('Sea operation map fullscreen lifecycle', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('returns focus to Placer les waypoints when finishing placement removes the fullscreen toggle', async () => {
+  it('returns focus to the persistent fullscreen toggle when finishing placement leaves browsing available', async () => {
     property(HTMLElement.prototype, 'requestFullscreen', { value: undefined });
     const { editor, onClose } = setup();
     fireEvent.click(screen.getByRole('button', { name: 'Afficher la carte en plein écran' }));
     fireEvent.click(screen.getByRole('button', { name: 'Terminer le placement' }));
     expect(editor).not.toHaveClass('is-fullscreen', 'is-placing');
     await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)); });
-    expect(screen.getByRole('button', { name: 'Placer les waypoints' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Afficher la carte en plein écran' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Placer les waypoints' })).toBeEnabled();
     expect(onClose).not.toHaveBeenCalled();
   });
 });

@@ -876,7 +876,7 @@ describe('ProjectsPage', () => {
     // The portfolio exposes this automatically selected map before any project-card click.
     fireEvent.click(await screen.findByRole('tab', { name: 'Carte' }));
     expect(screen.queryByLabelText('Changer de projet')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Modifier la carte' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Modifier la carte' }));
     fireEvent.change(screen.getByLabelText('Description · Waypoint 1'), { target: { value: 'Port de Cherbourg' } });
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la carte' }));
     expect(await screen.findByText('La carte du projet a été enregistrée.')).toBeVisible();
