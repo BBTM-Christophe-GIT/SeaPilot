@@ -172,3 +172,44 @@ plein écran, changement de limite, glisser et molette. Génération fraîche pu
 `--check` identique et rejet des sources altérées (coordonnée, comptes, CRS,
 ordre des axes ou fermeture). La livraison est préparée en prévisualisation
 pour permettre la vérification visuelle demandée.
+
+## Réglages et réactivité — version 3.80.13
+
+Build `2026-10-28.007`. À la première activation du calque, seule la 3e catégorie
+est cochée. Les deux libellés de catégories utilisent le vert partagé
+`--sp-success` ; leurs traits gardent leurs couleurs et pointillés distincts.
+Le texte SVG de la carte n'est plus sélectionnable à la souris, y compris les
+libellés de villes, ports, zones et coordonnées. Les champs et les textes autour
+de la carte restent normalement sélectionnables.
+
+Le glisser et la molette fonctionnent aussi dans le cadrage automatique de
+l'éditeur, sans activer le placement. Les clics de fond et la touche Entrée
+n'ajoutent toujours aucun point tant que le placement n'est pas activé. Les
+boutons des ports conservent leur action explicite existante. Les contrôles
+désactivés et les droits de modification restent appliqués.
+
+Le déplacement de caméra coalesce les événements pointeur dans une seule
+transformation SVG par frame. La projection exacte et les libellés ne sont
+reconstruits qu'au relâchement, avec un seul rappel du cadrage contrôlé. Le zoom
+continu suit le même principe et ne force plus une projection complète toutes
+les 160 ms. Les détails nouvellement découverts au bord du cadre sont actualisés
+quand le geste se termine. L'annulation, le changement de source, la perte de
+focus et le plein écran annulent les frames en attente et restaurent le cadre.
+
+La liste régionale des ports n'est montée dans le DOM que lorsque son volet
+est ouvert. Le catalogue complet et le compteur restent conservés. Les noms,
+tris et rattachements sont indexés une fois ; un index de villes par cases de
+2° réduit les recherches après un changement de cadrage. L'ordre d'origine est
+rétabli avant le placement des libellés. Les vues presque mondiales utilisent
+le catalogue complet pour ne pas perdre les villes de part et d'autre de
+l'antiméridien. Les six scénarios de comparaison (monde, Europe, Manche, port,
+mobile et antiméridien) conservent les mêmes ports, coordonnées et libellés,
+vérifiés par empreinte de leur sortie complète.
+
+Les tests de gestes vérifient qu'une rafale de 120 déplacements ou un flux de
+50 événements de molette n'effectue aucune projection complète pendant le geste
+et une seule à la fin. Les tests des véritables fixtures serveur Capitaine et
+Marin continuent à interdire toute modification : ils reconnaissent uniquement
+le bouton d'affichage hérité du fieldset en lecture seule, désactivé dans ce
+contexte. Le test du portefeuille Projet attend le montage asynchrone de sa
+commande Carte avant d'interagir.

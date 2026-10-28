@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { formatProjectPort, PROJECT_PORTS } from '../projects/projectPorts';
 import { buildSeaOperationRouteMap } from './seaOperationRouteMapGeometry';
 import { findSeaOperationMapPortLocation, projectSeaOperationMapPlace, resolveSeaOperationMapPorts, SEA_OPERATION_MAP_PORT_CATALOG, SEA_OPERATION_MAP_PORT_COVERAGE, seaOperationMapPlaces } from './seaOperationMapPlaces';
@@ -79,5 +79,53 @@ describe('offline city and project-port reference points', () => {
     expect(result.markers.reduce((count, marker) => count + marker.ports.length, 0)).toBe(result.ports.length);
     expect(result.ports.length).toBeGreaterThan(result.cities.length);
     expect(seaOperationMapPlaces(buildSeaOperationRouteMap([])).ports).toEqual([]);
+  });
+
+  it('limits local camera work to nearby city references while retaining all visible ports', () => {
+    const view = buildSeaOperationRouteMap([], 900, 320, { centerLatitude: 49.65, centerLongitude: -1.62, longitudeSpan: 1 });
+    let projectionReads = 0;
+    const measured = { ...view, get projection() { projectionReads += 1; return view.projection; } };
+    const result = seaOperationMapPlaces(measured);
+    expect(result.cities.map(city => city.name)).toEqual(['Cherbourg']);
+    expect(result.ports).toEqual(seaOperationMapPlaces(view).ports);
+    // The port catalogue remains exhaustive; a local view must not also scan all 7,342 cities.
+    expect(projectionReads).toBeLessThan(SEA_OPERATION_MAP_PORT_CATALOG.length + 500);
+  });
+
+  it('retains ranked city labels from both sides of the antimeridian', () => {
+    const view = buildSeaOperationRouteMap([], 900, 700, { centerLatitude: -20, centerLongitude: 179, longitudeSpan: 20 });
+    const result = seaOperationMapPlaces(view);
+    expect(result.cities.map(city => city.name)).toEqual(expect.arrayContaining(['Suva', "Nuku'alofa"]));
+    const suva = result.cities.find(city => city.name === 'Suva')!, nuku = result.cities.find(city => city.name === "Nuku'alofa")!;
+    expect(suva.x).toBeLessThan(view.width / 2); expect(nuku.x).toBeGreaterThan(view.width / 2);
+    expect(result.cities.every(city => city.x >= 0 && city.x <= view.width && city.y >= 0 && city.y <= view.height)).toBe(true);
+  });
+
+  it.each([-.5, .5])('keeps almost-global longitude arcs exhaustive when their ends share a bucket (centre %s)', centerLongitude => {
+    const view = buildSeaOperationRouteMap([], 4000, 100, { centerLatitude: 0, centerLongitude, longitudeSpan: 359.8 });
+    const result = seaOperationMapPlaces(view);
+    expect(result.cities.map(city => city.name)).toEqual(expect.arrayContaining(['Singapore', 'Quito']));
+    expect(result.cities.length).toBeGreaterThan(10);
+    expect(new Set(result.cities.map(city => city.id)).size).toBe(result.cities.length);
+  });
+
+  it('resolves indexed port names without renormalizing the catalogue or exposing its candidate arrays', () => {
+    const normalize = vi.spyOn(String.prototype, 'normalize');
+    let calls: number;
+    try { resolveSeaOperationMapPorts('Cherbourg', 'Brest'); calls = normalize.mock.calls.length; }
+    finally { normalize.mockRestore(); }
+    expect(calls).toBe(2);
+    const issue = resolveSeaOperationMapPorts('Port de Saint-Pierre').issues[0];
+    const originalCount = issue.candidates.length;
+    issue.candidates.splice(0);
+    expect(resolveSeaOperationMapPorts('Port de Saint-Pierre').issues[0].candidates).toHaveLength(originalCount);
+  });
+
+  it('returns fresh related-port wrappers instead of exposing the prepared parent join', () => {
+    const view = buildSeaOperationRouteMap([], 900, 320, { centerLatitude: 50.37, centerLongitude: -4.14, longitudeSpan: 2 });
+    const item = seaOperationMapPlaces(view).relatedPorts.find(port => port.port.port === 'Millbay Docks')!;
+    const original = item.parent;
+    item.parent = { ...original, name: 'Changed by caller' };
+    expect(seaOperationMapPlaces(view).relatedPorts.find(port => port.key === item.key)?.parent).toBe(original);
   });
 });

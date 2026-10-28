@@ -30,6 +30,38 @@ const locations: readonly SeaOperationMapLocation[] = data.ports.map(([source, s
   ({ source, sourceId, name, municipality, departmentCode, locode, longitude, latitude, precisionCode }));
 const cities: readonly City[] = data.cities.map(([id, name, longitude, latitude, rank, population]) => ({ id, name, longitude, latitude, rank, population }));
 const rankedCities = [...cities].sort((a, b) => a.rank - b.rank || b.population - a.population || a.id.localeCompare(b.id));
+// Two-degree buckets avoid visiting all 7,342 city references after each camera gesture.
+// Original rank order is restored before label placement, so the visible result is unchanged.
+const cityBuckets = new Map<number, Array<{ city: City; order: number }>>();
+for (const [order, city] of rankedCities.entries()) {
+  const key = Math.min(89, Math.floor((city.latitude + 90) / 2)) * 180 + Math.floor((wrapped(city.longitude) + 180) / 2);
+  const bucket = cityBuckets.get(key), item = { city, order };
+  if (bucket) bucket.push(item); else cityBuckets.set(key, [item]);
+}
+
+function candidateCities(geometry: SeaOperationRouteMapGeometry): readonly City[] {
+  const p = geometry.projection;
+  if (!p) return [];
+  const longitudeSpan = geometry.width / p.longitudePixelsPerDegree, latitudeSpan = geometry.height / p.latitudePixelsPerDegree;
+  if (![longitudeSpan, latitudeSpan, p.centerLatitude, p.centerLongitude].every(Number.isFinite) || longitudeSpan <= 0 || latitudeSpan <= 0) return [];
+  // Almost-global arcs can start and finish inside the same wrapped two-degree bucket.
+  // Scan ranked cities in that rare case; exact projection still excludes the small gap.
+  if (longitudeSpan >= 358) return rankedCities;
+  const south = Math.max(-90, p.centerLatitude - latitudeSpan / 2), north = Math.min(90, p.centerLatitude + latitudeSpan / 2);
+  if (south > north) return [];
+  const firstRow = Math.min(89, Math.floor((south + 90) / 2)), lastRow = Math.min(89, Math.floor((north + 90) / 2));
+  const firstColumn = Math.floor((wrapped(p.centerLongitude - longitudeSpan / 2) + 180) / 2), lastColumn = Math.floor((wrapped(p.centerLongitude + longitudeSpan / 2) + 180) / 2);
+  const columns = longitudeSpan >= 360 ? [[0, 179]] : firstColumn <= lastColumn ? [[firstColumn, lastColumn]] : [[firstColumn, 179], [0, lastColumn]];
+  const count = columns.reduce((sum, [from, to]) => sum + to - from + 1, 0) * (lastRow - firstRow + 1);
+  if (count > 2000) return rankedCities;
+  const candidates: Array<{ city: City; order: number }> = [];
+  for (let row = firstRow; row <= lastRow; row += 1) for (const [from, to] of columns) {
+    for (let column = from; column <= to; column += 1) {
+      const bucket = cityBuckets.get(row * 180 + column); if (bucket) candidates.push(...bucket);
+    }
+  }
+  return candidates.sort((a, b) => a.order - b.order).map(item => item.city);
+}
 const exactOne = <T,>(values: readonly T[]) => values.length === 1 ? values[0] : null;
 function locationIndex(key: (location: SeaOperationMapLocation) => string) {
   const index = new Map<string, SeaOperationMapLocation[]>();
@@ -72,14 +104,31 @@ function portNames(port: ProjectPort): string[] {
     name.replace(/^port du /, 'le '), name.replace(/^port des /, 'les ')])];
 }
 
+const sortedPortCatalog = [...SEA_OPERATION_MAP_PORT_CATALOG].sort((a, b) => a.port.port.localeCompare(b.port.port, 'fr'));
+function catalogNameIndex(names: (port: ProjectPort) => readonly string[]) {
+  const result = new Map<string, SeaOperationMapPort[]>();
+  for (const item of SEA_OPERATION_MAP_PORT_CATALOG) for (const name of names(item.port)) {
+    const bucket = result.get(name); if (bucket) bucket.push(item); else result.set(name, [item]);
+  }
+  return result;
+}
+const catalogByFullName = catalogNameIndex(port => [normalize(formatProjectPort(port))]);
+const catalogByName = catalogNameIndex(portNames);
+const locatedByCode = new Map(SEA_OPERATION_MAP_PORT_CATALOG.filter(item => item.location && item.port.locode).map(item => [item.port.locode, item.location!]));
+const relatedPortCatalog = sortedPortCatalog.flatMap(item => {
+  if (item.location || !item.port.parentLocode) return [];
+  const parent = locatedByCode.get(item.port.parentLocode) || exactOne(wpiByCode.get(item.port.parentLocode) || []);
+  return parent ? [{ ...item, parent }] : [];
+});
+
 /** Resolve named catalogue ports only; municipalities and associated LOCODEs never supply a guessed position. */
 export function resolveSeaOperationMapPorts(departurePort?: string, arrivalPort?: string): { ports: SeaOperationResolvedMapPort[]; issues: SeaOperationMapPortIssue[] } {
   const ports: SeaOperationResolvedMapPort[] = [], issues: SeaOperationMapPortIssue[] = [];
   for (const [role, input] of [['departure', departurePort], ['arrival', arrivalPort]] as const) {
     if (!input?.trim()) continue;
     const name = normalize(input);
-    const full = SEA_OPERATION_MAP_PORT_CATALOG.filter(item => normalize(formatProjectPort(item.port)) === name);
-    const candidates = full.length ? full : SEA_OPERATION_MAP_PORT_CATALOG.filter(item => portNames(item.port).includes(name));
+    const full = catalogByFullName.get(name);
+    const candidates = [...(full?.length ? full : catalogByName.get(name) || [])];
     const identities = new Map(candidates.map(item => [item.location ? `${item.location.source}:${item.location.sourceId}` : item.key, item]));
     if (identities.size !== 1) { issues.push({ role, input, reason: identities.size ? 'ambiguous' : 'not-found', candidates }); continue; }
     const candidate = identities.values().next().value!;
@@ -122,15 +171,15 @@ function labelAt(position: RouteMapPosition, name: string, geometry: SeaOperatio
 }
 
 export function seaOperationMapPlaces(geometry: SeaOperationRouteMapGeometry, definedPortPositions: readonly RouteMapPosition[] = []) {
-  const ports = SEA_OPERATION_MAP_PORT_CATALOG.flatMap(item => {
+  const ports = sortedPortCatalog.flatMap(item => {
     const position = item.location && projectSeaOperationMapPlace(geometry, item.location);
     return position ? [{ ...item, ...position, location: item.location! }] : [];
-  }).sort((a, b) => a.port.port.localeCompare(b.port.port, 'fr'));
+  });
   const occupied: Box[] = geometry.points.map(point => ({ west: point.x - 24, east: point.x + 24, north: point.y - 24, south: point.y + 40 }));
   for (const point of definedPortPositions) occupied.push({ west: point.x - 95, east: point.x + 95, north: point.y - 55, south: point.y + 65 });
   const cityLabels: Array<City & RouteMapPosition & { label: Label }> = [];
   const maxCities = Math.max(8, Math.min(48, Math.floor(geometry.width * geometry.height / 9000)));
-  for (const city of rankedCities) {
+  for (const city of candidateCities(geometry)) {
     const position = projectSeaOperationMapPlace(geometry, city); if (!position) continue;
     const label = labelAt(position, city.name, geometry, occupied);
     if (label) cityLabels.push({ ...city, ...position, label });
@@ -142,12 +191,6 @@ export function seaOperationMapPlaces(geometry: SeaOperationRouteMapGeometry, de
     if (existing) existing.ports.push(port); else grouped.set(key, { ...port, ports: [port] });
   }
   const markers = [...grouped.values()].map(marker => ({ ...marker, label: labelAt(marker, marker.ports[0].port.port, geometry, occupied) }));
-  const locatedByCode = new Map(SEA_OPERATION_MAP_PORT_CATALOG.filter(item => item.location && item.port.locode).map(item => [item.port.locode, item.location!]));
-  const relatedPorts = SEA_OPERATION_MAP_PORT_CATALOG.flatMap(item => {
-    if (item.location || !item.port.parentLocode) return [];
-    const parent = locatedByCode.get(item.port.parentLocode)
-      || exactOne(wpiByCode.get(item.port.parentLocode) || []);
-    return parent && projectSeaOperationMapPlace(geometry, parent) ? [{ ...item, parent }] : [];
-  }).sort((a, b) => a.port.port.localeCompare(b.port.port, 'fr'));
+  const relatedPorts = relatedPortCatalog.flatMap(item => projectSeaOperationMapPlace(geometry, item.parent) ? [{ ...item }] : []);
   return { cities: cityLabels, ports, markers, relatedPorts, coverage: SEA_OPERATION_MAP_PORT_COVERAGE };
 }

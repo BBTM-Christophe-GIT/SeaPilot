@@ -1526,7 +1526,10 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await userEvent.click(stepButton(2));
     const map = formQueries().getByRole('figure', { name: 'Carte du parcours' });
     expect(within(map).getByRole('img', { name: 'Carte du parcours · 1 point géolocalisé · 1 port défini' })).toBeVisible();
-    expect(within(map).queryByRole('button')).not.toBeInTheDocument();
+    const categoryToggle = within(map).getByRole('button', { name: 'Catégories de navigation' });
+    expect(within(map).getAllByRole('button')).toEqual([categoryToggle]);
+    expect(categoryToggle).toHaveAttribute('aria-pressed', 'false');
+    expect(categoryToggle).toBeDisabled();
     expect(formQueries().queryByRole('button', { name: 'Placer les waypoints' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Afficher la carte en plein écran' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Quitter le plein écran' })).not.toBeInTheDocument();

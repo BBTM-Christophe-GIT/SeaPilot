@@ -6,6 +6,7 @@
 .so-navigation-category-legend { flex-shrink: 0; min-width: 0; margin-top: var(--sp-space-2); padding: var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface-subtle); color: var(--sp-text); font-family: var(--sp-font); font-size: .72rem; line-height: 1.5; }
 .so-navigation-category-choices { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-space-1) var(--sp-space-3); }
 .so-navigation-category-choice { display: inline-flex; align-items: center; gap: var(--sp-space-1); min-height: 40px; cursor: pointer; }
+.so-navigation-category-label { color: var(--sp-success); }
 .so-navigation-category-choice input { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; accent-color: var(--sp-primary); }
 .so-navigation-category-choice input:focus-visible, .so-navigation-category-legend summary:focus-visible, .so-navigation-category-legend a:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 3px; }
 .so-navigation-category-swatch { display: inline-block; flex: 0 0 24px; width: 24px; height: 0; border-top: 2px dashed var(--so-category-colour); }

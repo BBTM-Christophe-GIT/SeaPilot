@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import { SeaOperationRouteMap } from './SeaOperationRouteMap';
@@ -376,12 +376,12 @@ describe('SeaOperationRouteMap', () => {
     expect(summary).toHaveTextContent('ETA arrivéeIndisponible'); expect(summary).not.toHaveTextContent('17:30');
   });
 
-  it('offers only genuinely located regional ports as explicit choices and keeps compact export free of new controls', () => {
+  it('offers only genuinely located regional ports as explicit choices and keeps compact export free of new controls', async () => {
     const select = vi.fn();
     const { container, rerender } = render(<SeaOperationRouteMap waypoints={[]} showPlaces viewport={{ centerLatitude: 49, centerLongitude: -3, longitudeSpan: 16 }} onPortSelect={select} />);
     fireEvent.click(screen.getByText(/^Ports dans cette région/));
     const port = SEA_OPERATION_MAP_PORT_CATALOG.find(item => item.port.port === 'Port de Barfleur')!;
-    fireEvent.click(screen.getByRole('button', { name: `Ajouter le port ${formatProjectPort(port.port)} comme waypoint` }));
+    fireEvent.click(await screen.findByRole('button', { name: `Ajouter le port ${formatProjectPort(port.port)} comme waypoint` }));
     expect(select).toHaveBeenCalledExactlyOnceWith([expect.objectContaining({ key: port.key, location: port.location })]);
     const unlocated = screen.queryByRole('list', { name: 'Ports rattachés sans position propre' });
     if (unlocated) expect(within(unlocated).queryByRole('button')).not.toBeInTheDocument();
@@ -522,18 +522,22 @@ describe('SeaOperationRouteMap', () => {
     expect(screen.getByRole('img')).toHaveAttribute('viewBox', '0 0 900 220');
   });
 
-  it('shows cities, port markers and the complete regional project-port list only when explicitly enabled', () => {
+  it('shows cities and port markers, mounting the complete port list only while its disclosure is open', async () => {
     const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
     const { container } = render(<SeaOperationRouteMap waypoints={[]} showPlaces viewport={{ centerLatitude: 49, centerLongitude: -3, longitudeSpan: 16 }} />);
     expect(container.querySelector('.so-route-map-cities')).toHaveTextContent('Paris');
     expect(container.querySelectorAll('.so-route-map-port-dot').length).toBeGreaterThan(30);
     expect(container.querySelector('.so-route-map-port title')).toHaveTextContent(/point de référence indicatif/);
-    const list = screen.getByRole('list', { name: 'Ports du catalogue dans le cadre affiché', hidden: true });
+    expect(screen.queryByRole('list', { name: 'Ports du catalogue dans le cadre affiché', hidden: true })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText(/^Ports dans cette région/));
+    const list = await screen.findByRole('list', { name: 'Ports du catalogue dans le cadre affiché' });
     expect(within(list).getAllByRole('listitem', { hidden: true }).length).toBeGreaterThan(30);
     expect(list).toHaveTextContent(/Cherbourg/);
     expect(screen.getByText(/Catalogue partagé avec Projets/)).toBeInTheDocument();
     expect(screen.getByText(/Couverture partielle et précision non garantie/)).toBeInTheDocument();
     expect(fetcher).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText(/^Ports dans cette région/));
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Ports du catalogue dans le cadre affiché', hidden: true })).not.toBeInTheDocument());
   });
 
   it('prints no new places or coordinate labels even when editor-only options are requested', () => {

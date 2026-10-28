@@ -49,7 +49,7 @@ export function SeaOperationNavigationCategoryLegend({ selected, onToggle, proje
       {([2, 3] as const).map(category => <label key={category} className="so-navigation-category-choice">
         <input type="checkbox" checked={selected.has(category)} onChange={() => onToggle(category)} />
         <i className={`so-navigation-category-swatch so-navigation-category-${category}`} aria-hidden="true" />
-        <span><strong>{category}e catégorie</strong> · {category === 2 ? 'limite SHOM · 200 NM' : 'limite SHOM · 20 NM'}</span>
+        <span className="so-navigation-category-label"><strong>{category}e catégorie</strong> · {category === 2 ? 'limite SHOM · 200 NM' : 'limite SHOM · 20 NM'}</span>
       </label>)}
     </div>
     <p role="status">{loading ? 'Chargement du calque vectoriel…' : failed ? <>Calque indisponible. <button type="button" className="sp-button sp-button--secondary" onClick={onRetry}>Réessayer</button></> : !selected.size ? 'Sélectionnez une limite à afficher.' : visibleCount === 0 ? 'Aucune limite SHOM sélectionnée dans ce cadre. Dézoomez pour les voir ; cela ne détermine pas la catégorie de la position.' : 'Limites vectorielles SHOM · France métropolitaine et Corse.'}</p>

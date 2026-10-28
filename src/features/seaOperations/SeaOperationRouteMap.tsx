@@ -134,7 +134,8 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
   const [detailedBasemap, setDetailedBasemap] = useState(true);
   const [basemapStatus, setBasemapStatus] = useState<DetailedBasemapStatus>('loading');
   const [showNavigationCategories, setShowNavigationCategories] = useState(false);
-  const [navigationCategories, setNavigationCategories] = useState<ReadonlySet<NavigationCategory>>(() => new Set([2, 3]));
+  const [navigationCategories, setNavigationCategories] = useState<ReadonlySet<NavigationCategory>>(() => new Set([3]));
+  const [portsOpen, setPortsOpen] = useState(false);
   const navigationCategoriesAvailable = allowNavigationCategories && !compact && !ensureZonesVisible;
   const detailedEnabled = allowDetailedBasemap && !compact && detailedBasemap;
   const filling = fillAvailableSpace && !compact;
@@ -343,15 +344,15 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
     {geometry.invalidCount > 0 && <p className="so-route-map-omissions" role="status">{geometry.invalidCount === 1 ? '1 point sans coordonnées valides n’est pas représenté ; la liaison est interrompue à cet endroit.' : `${geometry.invalidCount} points sans coordonnées valides ne sont pas représentés ; les liaisons sont interrompues à ces endroits.`}</p>}
     {definedPorts.issues.length > 0 && <p className="so-route-map-omissions" role="status">{definedPorts.issues.map(issue => `${issue.role === 'departure' ? 'Départ' : 'Arrivée'} : ${issue.input} — ${issue.reason === 'ambiguous' ? 'plusieurs ports correspondent, précisez le libellé du catalogue' : issue.reason === 'unlocated' ? 'position propre non disponible dans le catalogue' : 'port non identifié dans le catalogue'}.`).join(' ')}</p>}
     {definedPorts.ports.length > visibleDefinedPorts.length && <p className="so-route-map-omissions" role="status">{definedPorts.ports.filter(port => !visibleDefinedPorts.some(visible => visible.key === port.key)).map(port => `${port.roleLabel} : ${port.port.port} — hors du cadre conservé.`).join(' ')}</p>}
-    {places && geometry.projection && <details className="so-route-map-places"><summary>Ports dans cette région · {places.ports.length}</summary>
-      <div className="so-route-map-port-list">
+    {places && geometry.projection && <details className="so-route-map-places" onToggle={event => setPortsOpen(event.currentTarget.open)}><summary>Ports dans cette région · {places.ports.length}</summary>
+      {portsOpen && <div className="so-route-map-port-list">
         <p>Catalogue partagé avec Projets. Points de référence indicatifs : ni entrées de port ni positions de quai.</p>
         <ul aria-label="Ports du catalogue dans le cadre affiché">{places.ports.map(item => <li key={item.key}><i className="so-route-map-port-list-dot" aria-hidden="true" />{onPortSelect ? <button type="button" className="sp-button sp-button--secondary so-route-map-port-choice" aria-label={`Ajouter le port ${formatProjectPort(item.port)} comme waypoint`} onClick={() => onPortSelect([item])}><span>{formatProjectPort(item.port)}<small>{item.location.source === 'sandre' ? 'Point publié SANDRE/SHOM' : 'Repère NGA World Port Index · position indicative'}</small></span></button> : <span>{formatProjectPort(item.port)}<small>{item.location.source === 'sandre' ? 'Point publié SANDRE/SHOM' : 'Repère NGA World Port Index · position indicative'}</small></span>}</li>)}</ul>
         {places.ports.length === 0 && <p>Aucun port géoréférencé du catalogue dans ce cadre.</p>}
         {places.relatedPorts.length > 0 && <><p>Rattachements statistiques aux ports visibles · {places.relatedPorts.length}. Leur position propre n’est pas disponible ; ils ne sont pas placés sur la carte.</p>
           <ul aria-label="Ports rattachés sans position propre">{places.relatedPorts.map(item => <li key={item.key}><span>{formatProjectPort(item.port)}<small>Rattachement à {item.port.locodePort || item.parent.name} · position propre non disponible</small></span></li>)}</ul></>}
         <p>Couverture géographique du catalogue : France {places.coverage.france.located}/{places.coverage.france.total} ; Angleterre {places.coverage.england.located}/{places.coverage.england.total}. Les entrées sans position ne peuvent pas être filtrées géographiquement. Les libellés de carte sont espacés pour rester lisibles ; la liste conserve tous les ports localisés dans le cadre.</p>
-      </div>
+      </div>}
     </details>}
     <figcaption className="so-route-map-caption"><span className="so-route-map-legend">{(!definedPorts.ports.length || waypoints.length > 0) && <><span><i className="is-start" aria-hidden="true" />{definedPorts.ports.length ? 'Premier waypoint' : 'Départ'}</span><span><i className="is-end" aria-hidden="true" />{definedPorts.ports.length ? 'Dernier waypoint' : 'Arrivée'}</span><span>Numéros : ordre du tableau</span></>}{definedPorts.ports.length > 0 && <span><i className="is-port" aria-hidden="true" />Ports de départ / arrivée</span>}{places && <><span><i className="is-port" aria-hidden="true" />Ports</span><span><i className="is-city" aria-hidden="true" />Villes</span></>}</span><span>{detailedEnabled ? 'Fond OpenStreetMap · Natural Earth en repli' : 'Fond Natural Earth'} · Tracé indicatif</span></figcaption>
     {presentedZones.length > 0 && <p className="so-route-map-legend so-route-map-zone-legend" aria-label="Légende des zones"><span>Zones :</span>{presentedZones.map(({ zone, appearance }) => <span key={zone.id}><i className="so-route-map-zone-swatch" aria-hidden="true" style={{ background: appearance.fill, borderColor: appearance.stroke }} /><strong style={{ color: appearance.stroke }}>{appearance.code}</strong> — {zone.name || 'Sans nom'}</span>)}</p>}

@@ -18,7 +18,10 @@ describe('shared navigation category overlay', () => {
     expect(container.querySelector('.so-navigation-category-layer')).toBeNull();
     const frame = onGeometry.mock.calls.at(-1)![0];
     fireEvent.click(toggle);
-    await waitFor(() => expect(container.querySelectorAll('[data-navigation-category]')).toHaveLength(2));
+    await waitFor(() => expect(container.querySelectorAll('[data-navigation-category]')).toHaveLength(1));
+    expect(screen.getByRole('checkbox', { name: /3e catégorie/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /2e catégorie/ })).not.toBeChecked();
+    expect(container.querySelector('[data-navigation-category="2"]')).toBeNull();
     expect(toggle).toHaveAttribute('aria-pressed', 'true');
     expect(container.querySelectorAll('.so-route-map-camera > .so-navigation-category-layer')).toHaveLength(1);
     for (const path of container.querySelectorAll('[data-navigation-category]')) {
@@ -37,7 +40,9 @@ describe('shared navigation category overlay', () => {
     const { container } = render(<SeaOperationRouteMap allowNavigationCategories waypoints={waypoints} zones={zones} viewport={viewport} />);
     const track = container.querySelector('.so-route-map-points')!.innerHTML;
     fireEvent.click(screen.getByRole('button', { name: 'Catégories de navigation' }));
-    await waitFor(() => expect(container.querySelectorAll('[data-navigation-category]')).toHaveLength(2));
+    await waitFor(() => expect(container.querySelectorAll('[data-navigation-category]')).toHaveLength(1));
+    fireEvent.click(screen.getByRole('checkbox', { name: /2e catégorie/ }));
+    expect(container.querySelectorAll('[data-navigation-category]')).toHaveLength(2);
     fireEvent.click(screen.getByRole('checkbox', { name: /2e catégorie/ }));
     expect(container.querySelector('[data-navigation-category="2"]')).toBeNull();
     expect(container.querySelector('[data-navigation-category="3"]')).not.toBeNull();
@@ -71,7 +76,7 @@ describe('shared navigation category overlay', () => {
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Aucune limite SHOM sélectionnée dans ce cadre'));
     expect(container.querySelectorAll('[data-navigation-category]')).toHaveLength(0);
     rerender(<SeaOperationRouteMap allowNavigationCategories waypoints={waypoints} viewport={viewport} />);
-    expect(container.querySelectorAll('[data-navigation-category]')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-navigation-category]')).toHaveLength(1);
   });
 
   it.each([{ compact: true }, { ensureZonesVisible: true }])('keeps document maps free of interactive layer controls (%o)', props => {
