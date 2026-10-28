@@ -10,7 +10,7 @@
 .so-navigation-category-label { color: var(--sp-success); }
 .so-navigation-category-choice input { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; accent-color: var(--sp-primary); }
 .so-navigation-category-choice.is-category-2 .so-navigation-category-label { color: var(--so-category-colour); }
-.so-navigation-category-choice.is-category-2 input { accent-color: var(--so-category-colour); }
+.so-navigation-category-choice.is-category-2 input[type=checkbox] { accent-color: var(--so-category-colour); }
 .so-navigation-category-choice input:focus-visible, .so-navigation-category-legend summary:focus-visible, .so-navigation-category-legend a:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 3px; }
 .so-navigation-category-swatch { display: inline-block; flex: 0 0 24px; width: 24px; height: 0; border-top: 2px dashed var(--so-category-colour); }
 .so-navigation-category-legend p { margin: var(--sp-space-1) 0 0; color: var(--sp-muted); font-size: inherit; }

@@ -74,7 +74,7 @@ function ProjectSeaOperationDocumentDialog({ client, projectId, onClose, onSaved
       <p>Les catégories Offre commerciale et Facturation ne sont pas proposées. Après enregistrement, les nouveaux documents devront également être cochés ici.</p>
       {!current ? <p role="status">Chargement des documents disponibles…</p> : current.error ? <div role="alert"><p>{current.error}</p><button className="sp-button sp-button--secondary" onClick={() => setAttempt(value => value + 1)} type="button">Réessayer les documents</button></div> : selection ? <>
         <div className="project-sea-operation-documents-toolbar">
-          <span role="status">{selectedIds.size} / {selection.documents.length} document{selection.documents.length > 1 ? 's' : ''} sélectionné{selectedIds.size > 1 ? 's' : ''}</span>
+          <span role="status">{selectedIds.size} document{selectedIds.size > 1 ? 's' : ''} sélectionné{selectedIds.size > 1 ? 's' : ''} sur {selection.documents.length}</span>
           {selection.documents.length ? <><button className="sp-button sp-button--secondary" disabled={busy} onClick={() => setSelectedIds(new Set(selection.documents.map(document => document.id)))} type="button">Tout sélectionner</button><button className="sp-button sp-button--secondary" disabled={busy} onClick={() => setSelectedIds(new Set())} type="button">Tout désélectionner</button></> : null}
         </div>
         {selection.documents.length ? <ul className="project-sea-operation-document-choices">{selection.documents.map(document => <li key={document.id}><label>

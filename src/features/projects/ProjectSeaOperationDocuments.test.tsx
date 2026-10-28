@@ -55,7 +55,7 @@ describe('ProjectSeaOperationDocuments', () => {
     expect(mocks.fetch).toHaveBeenCalledWith(client, 880);
     expect(within(dialog).getByRole('checkbox', { name: /Procédure du chantier/ })).toBeChecked();
     expect(within(dialog).getByRole('checkbox', { name: /Plan de prévention/ })).toBeChecked();
-    expect(within(dialog).getByRole('status')).toHaveTextContent('2 / 2 documents sélectionnés');
+    expect(within(dialog).getByRole('status')).toHaveTextContent('2 documents sélectionnés sur 2');
     await user.click(within(dialog).getByRole('checkbox', { name: /Plan de prévention/ }));
     await user.click(within(dialog).getByRole('button', { name: 'Enregistrer la sélection' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
@@ -75,7 +75,7 @@ describe('ProjectSeaOperationDocuments', () => {
     render(<ProjectSeaOperationDocuments {...props} />);
     const dialog = await openSelection();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Tout désélectionner' }));
-    expect(within(dialog).getByRole('status')).toHaveTextContent('0 / 2 documents sélectionné');
+    expect(within(dialog).getByRole('status')).toHaveTextContent('0 document sélectionné sur 2');
     fireEvent.submit(dialog);
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(client, 880, []));
   });
