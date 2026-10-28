@@ -83,7 +83,8 @@ describe('Sea-operation zone maps in PDF', () => {
     expect(vertices.every(vertex => projectSeaOperationMapPlace(fitted, vertex) !== null)).toBe(true);
     expect(fitted.points).toHaveLength(3); expect(fitted.segments).toHaveLength(2); expect(plan).toEqual(original);
     const commands = document.output();
-    for (const label of ['Z1.1', 'Z1.6', 'Z2.1', 'Z2.6', '(Z1)', '(Z2)']) expect(commands).toContain(label);
+    for (const label of ['Z1.1', 'Z1.6', 'Z2.1', 'Z2.6', '(Zone de Travaux)', '(Zone Tampon)']) expect(commands).toContain(label);
+    expect(commands).not.toContain('(Z1) Tj'); expect(commands).not.toContain('(Z2) Tj');
     const bytes = new Uint8Array(document.output('arraybuffer')), pdf = await PDFDocument.load(bytes);
     expect(pdf.getPages().every(page => {
       const images = page.node.Resources()?.lookup(PDFName.of('XObject'), PDFDict);
