@@ -94,7 +94,7 @@ async function openFixture(linked = true) {
       <Route path="modules/seaOperations" element={<SeaOperationsPage />} />
     </Route></Routes></MemoryRouter>);
   });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^METEO-26/ })); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Ouvrir la fiche' })); });
   expect(screen.getByRole('dialog', { name: 'Fiche Opération en Mer' })).toBeVisible();
   return () => structuredClone(stored);
 }

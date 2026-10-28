@@ -117,12 +117,14 @@ function groupOverlayTargets(targets: OverlayTarget[]) {
 }
 
 /** Only this wrapper accepts gestures. Moving its viewport never modifies the recorded route. */
-export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMoveWaypoint, onDeleteWaypoint, disabled = false, maxSpeedKnots, etd, eta, isolatedPoints = NO_POINTS, zones = NO_MAP_ZONES, onMoveIsolatedPoint, onDeleteIsolatedPoint, onMoveZoneVertex, onDeleteZoneVertex, drawingMode, mapViewport, onMapViewportChange, departurePort, arrivalPort }: {
+export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMoveWaypoint, onDeleteWaypoint, disabled = false, readOnly = false, maxSpeedKnots, etd, eta, isolatedPoints = NO_POINTS, zones = NO_MAP_ZONES, onMoveIsolatedPoint, onDeleteIsolatedPoint, onMoveZoneVertex, onDeleteZoneVertex, drawingMode, mapViewport, onMapViewportChange, departurePort, arrivalPort }: {
   waypoints: readonly SeaOperationWaypoint[];
   onAddWaypoint: (position: SeaPosition, port?: { name: string; portKey?: string }) => void;
   onMoveWaypoint?: (id: string, position: SeaPosition) => void;
   onDeleteWaypoint?: (id: string) => void;
   disabled?: boolean;
+  /** Browse the camera without exposing or invoking any point mutation. */
+  readOnly?: boolean;
   maxSpeedKnots?: number | null;
   etd?: string;
   eta?: string;
@@ -139,14 +141,17 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
   arrivalPort?: string;
 }) {
   const instructionsId = useId();
-  const [placing, setPlacing] = useState(false);
+  const [placementRequested, setPlacing] = useState(false);
+  const placing = placementRequested && !readOnly;
+  const modificationAllowed = useRef(!disabled && !readOnly);
+  modificationAllowed.current = !disabled && !readOnly;
   const [manualViewport, setManualViewport] = useState(mapViewport);
   const [workingViewport, setWorkingViewport] = useState<RouteMapViewport>();
   const [wheelPreviewActive, setWheelPreviewActive] = useState(false);
   const [placementViewport, setPlacementViewport] = useState<RouteMapViewport>();
   const viewport = workingViewport ?? manualViewport;
   const displayedViewport = viewport ?? (placing ? placementViewport : undefined);
-  const navigating = placing || Boolean(viewport);
+  const navigating = readOnly || placing || Boolean(viewport);
   const [announcement, setAnnouncement] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
@@ -229,14 +234,18 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
   }, [mapViewport, resetInteraction]);
 
   useEffect(() => {
-    if (!drawingMode || disabled) return;
+    if (!drawingMode || disabled || readOnly) return;
     resetInteraction(); setPlacementViewport(current => current ?? geometryRef.current?.viewport ?? { ...DEFAULT_ROUTE_MAP_VIEWPORT }); setPlacing(true);
-  }, [drawingMode, disabled, resetInteraction]);
+  }, [drawingMode, disabled, readOnly, resetInteraction]);
 
   useEffect(() => {
     if (disabled || !navigating) resetInteraction();
     else if (placing) surfaceRef.current?.focus({ preventScroll: true });
   }, [disabled, navigating, placing, resetInteraction]);
+
+  useEffect(() => {
+    if (readOnly) { resetInteraction(); setPlacing(false); }
+  }, [readOnly, resetInteraction]);
 
   useEffect(() => {
     const blur = () => resetInteraction();
@@ -300,6 +309,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
   }, [disabled, navigating, cancelGesture, closeMenu, cancelWheelZoom, commitViewport, paintCamera]);
 
   function togglePlacement() {
+    if (!modificationAllowed.current) return;
     if (disabled) return;
     resetInteraction();
     lastPointerAdd.current = null;
@@ -311,6 +321,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
   }
 
   function addPosition(position: SeaPosition | null) {
+    if (!modificationAllowed.current) return;
     if (disabled || !placing || !position) return;
     onAddWaypoint(position);
     setAnnouncement(`${drawingMode === 'zone' ? 'Sommet ajouté' : drawingMode === 'point' ? 'Point isolé ajouté' : `Point ${waypoints.length + 1} ajouté au tableau`} · ${formatSeaPosition(position)}.`);
@@ -321,6 +332,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
   const proposedPorts = SEA_OPERATION_MAP_PORT_CATALOG.filter(port => selectedPortKeys.includes(port.key) && port.location);
 
   function addPort(port: SeaOperationMapPort) {
+    if (!modificationAllowed.current) return;
     if (disabled || !port.location) return;
     const position = { latitude: port.location.latitude, longitude: port.location.longitude };
     if (!placing) { setPlacementViewport(geometryRef.current?.viewport ?? { ...DEFAULT_ROUTE_MAP_VIEWPORT }); setPlacing(true); }
@@ -330,6 +342,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
   }
 
   function selectPorts(ports: readonly SeaOperationMapPort[], position?: AppContextMenuPosition) {
+    if (!modificationAllowed.current) return;
     if (disabled || gestureRef.current?.waypointId) return;
     const located = ports.filter(port => port.location);
     if (!located.length) return;
@@ -340,11 +353,13 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
   }
 
   function selectWaypoint(id: string, position: AppContextMenuPosition) {
+    if (!modificationAllowed.current) return;
     if (disabled || !placing) return;
     resetInteraction(); setSelectedId(id); setMenuPosition(position);
   }
 
   function placePosition(position: SeaPosition | null) {
+    if (!modificationAllowed.current) return;
     if (disabled || !placing || !position) return;
     closeMenu(); addPosition(position);
   }
@@ -396,11 +411,13 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
     return points;
   }
   function moveOverlay(target: OverlayTarget, position: SeaPosition) {
+    if (!modificationAllowed.current) return;
     if (target.kind === 'route' && waypoints.some(point => point.id === target.id)) onMoveWaypoint?.(target.id, position);
     else if (target.kind === 'point' && isolatedPoints.some(point => point.id === target.id)) onMoveIsolatedPoint?.(target.id, position);
     else if (target.kind === 'vertex' && zones.some(zone => zone.id === target.zoneId && zone.vertices[target.index!] !== undefined)) onMoveZoneVertex?.(target.zoneId!, target.index!, position);
   }
   function selectOverlay(targets: OverlayTarget[], position: AppContextMenuPosition) {
+    if (!modificationAllowed.current) return;
     if (disabled || !placing) return;
     resetInteraction(); setMenuPosition(position);
     if (targets.length === 1) setSelectedOverlay(targets[0]); else setOverlayGroup(targets);
@@ -461,7 +478,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
 
   function waypointPointerDown(event: PointerEvent<SVGGElement>, geometry: SeaOperationRouteMapGeometry, id: string | undefined, overlay?: OverlayTarget) {
     event.stopPropagation();
-    if (disabled || !placing || event.button !== 0) return;
+    if (!modificationAllowed.current || !placing || event.button !== 0) return;
     if (gestureRef.current) { cancelGesture(); return; }
     suppressedMarkerClick.current = null;
     const movable = !overlay || overlay.kind === 'route' ? onMoveWaypoint : overlay.kind === 'point' ? onMoveIsolatedPoint : onMoveZoneVertex;
@@ -495,7 +512,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
   function waypointPointerMove(event: PointerEvent<SVGGElement>) {
     event.stopPropagation();
     const gesture = gestureRef.current;
-    if (disabled || !placing || !gesture?.waypointId || gesture.pointerId !== event.pointerId) return;
+    if (!modificationAllowed.current || !placing || !gesture?.waypointId || gesture.pointerId !== event.pointerId) return;
     if (Math.hypot(event.clientX - gesture.clientX, event.clientY - gesture.clientY) <= 6 && !gesture.moved) return;
     const position = waypointDragPosition(gesture, event.clientX, event.clientY);
     if (!position) return;
@@ -512,8 +529,8 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
     const position = gesture.moved ? waypointDragPosition(gesture, event.clientX, event.clientY) : null;
     if (gesture.dragging) suppressedMarkerClick.current = gesture.waypointId;
     cancelGesture();
-    if (!disabled && placing && position && gesture.overlay) { moveOverlay(gesture.overlay, position); setAnnouncement(`${gesture.overlay.label} repositionné · ${formatSeaPosition(position)}.`); return; }
-    if (disabled || !placing || !position || !onMoveWaypoint || !waypoints.some(point => point.id === gesture.waypointId)) return;
+    if (modificationAllowed.current && placing && position && gesture.overlay) { moveOverlay(gesture.overlay, position); setAnnouncement(`${gesture.overlay.label} repositionné · ${formatSeaPosition(position)}.`); return; }
+    if (!modificationAllowed.current || !placing || !position || !onMoveWaypoint || !waypoints.some(point => point.id === gesture.waypointId)) return;
     onMoveWaypoint(gesture.waypointId, position);
     setAnnouncement(`Waypoint ${waypoints.findIndex(point => point.id === gesture.waypointId) + 1} repositionné · ${formatSeaPosition(position)}.`);
   }
@@ -522,7 +539,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
     const directions: Record<string, [number, number]> = { ArrowUp: [0, -5], ArrowDown: [0, 5], ArrowLeft: [-5, 0], ArrowRight: [5, 0] };
     const direction = directions[event.key];
     const movable = !overlay || overlay.kind === 'route' ? onMoveWaypoint : overlay.kind === 'point' ? onMoveIsolatedPoint : onMoveZoneVertex;
-    if (!event.altKey || !direction || disabled || !placing || !id || !movable) return false;
+    if (!event.altKey || !direction || !modificationAllowed.current || !placing || !id || !movable) return false;
     event.preventDefault(); event.stopPropagation();
     const point = overlay ?? geometry.points.find(item => waypoints[item.index - 1]?.id === id);
     const position = point && routeMapPositionAt(geometry, point.x + direction[0], point.y + direction[1]);
@@ -556,9 +573,9 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
     }
   }}>
     <div className="so-waypoint-map-toolbar">
-      <button type="button" className={`sp-button ${placing ? 'sp-button--primary' : 'sp-button--secondary'}`} ref={toggleRef} aria-pressed={placing} onClick={togglePlacement} disabled={disabled}>
+      {!readOnly && <button type="button" className={`sp-button ${placing ? 'sp-button--primary' : 'sp-button--secondary'}`} ref={toggleRef} aria-pressed={placing} onClick={togglePlacement} disabled={disabled}>
         {placing ? <Check aria-hidden="true" size={16} /> : <MapPin aria-hidden="true" size={16} />}{placing ? 'Terminer le placement' : 'Placer les waypoints'}
-      </button>
+      </button>}
       <select className="so-waypoint-map-framing" aria-label="Mode de cadrage de la carte" tabIndex={disabled ? -1 : 0} disabled={disabled}
         value={viewport || wheelPreviewActive ? 'manual' : 'automatic'} onChange={event => changeFraming(event.target.value)}>
         <option value="automatic">Cadrage automatique</option><option value="manual">Cadrage manuel</option>
@@ -572,7 +589,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
       }}>{fullscreen.isFullscreen ? <Minimize aria-hidden="true" size={16} /> : <Maximize aria-hidden="true" size={16} />}{fullscreen.isFullscreen ? 'Quitter le plein écran' : 'Plein écran'}</button>}
     </div>
     {navigating && <>
-      <p id={instructionsId} className="so-waypoint-map-instructions">{placing ? <>Cliquez pour ajouter, maintenez et glissez un waypoint pour le déplacer. Clic sur un waypoint : supprimer. Glissez le fond pour naviguer, molette pour zoomer. Clavier : flèches, Entrée ; Alt+flèches sur un waypoint. {fullscreen.isFullscreen ? 'Échap : quitter le plein écran.' : 'Échap : fermer le menu ou terminer.'}{!viewport && ' Le cadrage automatique s’ajuste en fin de placement.'}</> : <>Glissez pour déplacer la carte, utilisez la molette ou les boutons pour zoomer. Clavier : flèches. Activez « Placer les waypoints » pour ajouter des points.</>}</p>
+      <p id={instructionsId} className="so-waypoint-map-instructions">{placing ? <>Cliquez pour ajouter, maintenez et glissez un waypoint pour le déplacer. Clic sur un waypoint : supprimer. Glissez le fond pour naviguer, molette pour zoomer. Clavier : flèches, Entrée ; Alt+flèches sur un waypoint. {fullscreen.isFullscreen ? 'Échap : quitter le plein écran.' : 'Échap : fermer le menu ou terminer.'}{!viewport && ' Le cadrage automatique s’ajuste en fin de placement.'}</> : <>Glissez pour déplacer la carte, utilisez la molette ou les boutons pour zoomer. Clavier : flèches.{!readOnly && ' Activez « Placer les waypoints » pour ajouter des points.'}</>}</p>
       <div className="so-waypoint-map-navigation" aria-label="Déplacement et zoom de la carte">
         <div className="so-waypoint-map-controls">
           <button type="button" className="sp-button sp-button--secondary" aria-label="Zoomer sur la carte" onClick={() => zoomView(2)} disabled={disabled}><Plus aria-hidden="true" size={18} /></button>
@@ -589,11 +606,11 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
       previewIsolatedPoint={dragPreview?.overlay?.kind === 'point' ? dragPreview : undefined}
       previewZoneVertex={dragPreview?.overlay?.kind === 'vertex' ? { zoneId: dragPreview.overlay.zoneId!, index: dragPreview.overlay.index!, position: dragPreview.position } : undefined}
       showPlaces showWaypointCoordinates showRouteLegs={placing || waypoints.length > 1} maxSpeedKnots={maxSpeedKnots} etd={etd} eta={eta} viewport={displayedViewport} departurePort={departurePort} arrivalPort={arrivalPort} onGeometry={recordGeometry} fillAvailableSpace={fullscreen.isFullscreen}
-      onPortSelect={!disabled && !dragPreview ? selectPorts : undefined} renderOverlay={!disabled ? (geometry, { places }) => <>
+      onPortSelect={!disabled && !readOnly && !dragPreview ? selectPorts : undefined} renderOverlay={!disabled ? (geometry, { places }) => <>
       {navigating && <rect className="so-waypoint-map-surface" ref={surfaceRef} width={geometry.width} height={geometry.height} role="button" tabIndex={0} aria-label={placing ? 'Zone de placement des waypoints' : 'Zone de navigation de la carte'} aria-describedby={instructionsId} aria-keyshortcuts={placing ? 'ArrowUp ArrowDown ArrowLeft ArrowRight Enter Escape' : 'ArrowUp ArrowDown ArrowLeft ArrowRight'} onKeyDown={keyDown} onPointerDown={(event) => pointerDown(event, geometry)} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={cancelGesture} onLostPointerCapture={cancelGesture} />}
       {placing && !menuPosition && !dragPreview && <g aria-hidden="true" className="so-waypoint-map-crosshair" transform={`translate(${geometry.width / 2} ${geometry.height / 2})`}><circle r={10} /><path d="M -17 0 H -5 M 5 0 H 17 M 0 -17 V -5 M 0 5 V 17" /></g>}
       <g className="so-waypoint-map-camera-targets">
-      {!dragPreview && groupPortTargets(places?.markers || []).map(marker => <g key={marker.key} className="so-waypoint-map-port-target" role="button" tabIndex={0}
+      {!readOnly && !dragPreview && groupPortTargets(places?.markers || []).map(marker => <g key={marker.key} className="so-waypoint-map-port-target" role="button" tabIndex={0}
         aria-label={marker.ports.length === 1 ? `Ajouter le port ${formatProjectPort(marker.ports[0].port)} comme waypoint` : `Choisir un port parmi ${marker.ports.map(port => port.port.port).join(', ')}`}
         onPointerDown={event => { event.stopPropagation(); cancelGesture(); }} onClick={event => {
           event.preventDefault(); event.stopPropagation();
@@ -623,7 +640,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
         const chosen = Boolean(dragOverlay) || group.some(candidate => waypoints[candidate.index - 1]?.id === selectedId || selectedGroupIds.includes(waypoints[candidate.index - 1]?.id));
         const dragId = overlaps.length ? dragOverlay?.id : group.length === 1 ? original.id : group.map(candidate => waypoints[candidate.index - 1]?.id).find(id => id === selectedId);
         const select = (position: AppContextMenuPosition) => {
-          if (disabled) return;
+          if (!modificationAllowed.current) return;
           if (mixed.length) { selectOverlay(mixed, position); return; }
           if (group.length > 1) { resetInteraction(); setSelectedGroupIds(group.map(candidate => waypoints[candidate.index - 1].id)); setMenuPosition(position); }
           else selectWaypoint(original.id, position);
@@ -638,14 +655,14 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
       })}
       </g>
     </> : undefined} />
-    {!disabled && menuPosition && (selected || selectedGroup.length > 1 || proposedPorts.length > 1 || selectedOverlay || overlayGroup.length > 1) && <AppContextMenu label={selected ? `Waypoint ${waypoints.indexOf(selected) + 1}` : selectedOverlay?.label || (overlayGroup.length ? 'Localisations à cette position' : selectedGroup.length ? 'Waypoints à cette position' : 'Ports à cette position')} position={menuPosition} onClose={closeMenu}>
+    {!disabled && !readOnly && menuPosition && (selected || selectedGroup.length > 1 || proposedPorts.length > 1 || selectedOverlay || overlayGroup.length > 1) && <AppContextMenu label={selected ? `Waypoint ${waypoints.indexOf(selected) + 1}` : selectedOverlay?.label || (overlayGroup.length ? 'Localisations à cette position' : selectedGroup.length ? 'Waypoints à cette position' : 'Ports à cette position')} position={menuPosition} onClose={closeMenu}>
       {selected && onDeleteWaypoint && <AppContextMenuItem danger onSelect={() => {
-        if (disabled) return; resetInteraction(); onDeleteWaypoint(selected.id);
+        if (!modificationAllowed.current) return; resetInteraction(); onDeleteWaypoint(selected.id);
         setAnnouncement(`Waypoint ${selected.number || waypoints.indexOf(selected) + 1} supprimé du tableau.`); surfaceRef.current?.focus({ preventScroll: true });
       }}><Trash2 size={15} aria-hidden="true" />Supprimer</AppContextMenuItem>}
       {!selected && selectedGroup.map(point => <AppContextMenuItem key={point.id} onSelect={() => selectWaypoint(point.id, menuPosition)}>Waypoint {waypoints.indexOf(point) + 1}</AppContextMenuItem>)}
       {selectedOverlay && <AppContextMenuItem danger disabled={selectedOverlay.kind === 'route' ? !onDeleteWaypoint : selectedOverlay.kind === 'point' ? !onDeleteIsolatedPoint : !onDeleteZoneVertex} onSelect={() => {
-        if (disabled) return;
+        if (!modificationAllowed.current) return;
         if (selectedOverlay.kind === 'route') onDeleteWaypoint?.(selectedOverlay.id);
         else if (selectedOverlay.kind === 'point') onDeleteIsolatedPoint?.(selectedOverlay.id);
         else onDeleteZoneVertex?.(selectedOverlay.zoneId!, selectedOverlay.index!);

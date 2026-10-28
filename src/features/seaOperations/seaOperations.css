@@ -33,6 +33,17 @@
 .so-empty h3 { color: var(--sp-heading); font-size: 1.05rem; margin-bottom: 0; }
 .so-empty p { font-size: .82rem; line-height: 1.6; margin-bottom: 22px; }
 .so-source { font-size: .72rem; color: var(--sp-muted); margin-top: 16px; }
+.so-register-workspace { display: grid; grid-template-columns: minmax(320px, 2fr) minmax(0, 3fr); align-items: start; gap: var(--sp-space-4); }
+.so-register-workspace > *, .so-register-map-pane { min-width: 0; }
+.so-register-workspace .so-register > header { padding: var(--sp-space-4); }
+.so-register-workspace .so-record-entry { flex-wrap: wrap; }
+.so-page .so-register-workspace button.so-record { grid-template-columns: 32px minmax(0, 1fr) auto 16px; padding: var(--sp-space-3); gap: var(--sp-space-2); }
+.so-register-workspace .so-record-date { grid-column: 2 / 4; grid-row: 2; }
+.so-register-workspace .so-record > svg { grid-column: 4; grid-row: 1; }
+.so-register-workspace .so-record-actions { width: 100%; flex-wrap: wrap; padding: 0 var(--sp-space-3) var(--sp-space-3); }
+.so-page .so-register-workspace button.so-record[aria-pressed=true] { background: var(--sp-primary-soft); box-shadow: inset 3px 0 var(--sp-primary); }
+.so-map-loading { padding: var(--sp-space-3); color: var(--sp-muted); }
+@media (max-width: 1100px) { .so-register-workspace { grid-template-columns: minmax(0, 1fr); } }
 .so-page button.so-record { display: grid; grid-template-columns: 42px minmax(0, 1fr) 90px 155px 20px; gap: 14px; background: var(--sp-surface); color: var(--sp-text); width: 100%; border: 0; border-bottom: 1px solid var(--sp-border); border-radius: 0; text-align: left; padding: 20px 22px; }
 .so-page button.so-record:hover { background: var(--sp-primary-soft); }
 .so-record-entry { display: flex; align-items: stretch; min-width: 0; border-bottom: 1px solid var(--sp-border); }
