@@ -95,7 +95,12 @@ describe('SeaOperationRouteMap', () => {
     const viewport = { centerLatitude: 50.05, centerLongitude: 1.2, longitudeSpan: 1.7 }, onGeometry = vi.fn();
     const { container, rerender } = render(<SeaOperationRouteMap waypoints={route} zones={zones} viewport={viewport} compact ensureZonesVisible onGeometry={onGeometry} />);
     const tags = [...container.querySelectorAll('.so-route-map-zone-tag')];
-    expect(tags.map(tag => tag.querySelector('text')!.textContent)).toEqual(['Z2', 'Z3']);
+    expect(tags.map(tag => [...tag.querySelectorAll('text tspan')].map(line => line.textContent).join(' '))).toEqual(['Première zone de travaux détaillée', 'Deuxième zone de travaux détaillée']);
+    expect(tags.map(tag => tag.getAttribute('data-zone-code'))).toEqual(['Z2', 'Z3']);
+    const anchors = tags.map(tag => { const line = tag.querySelector('line')!; return { x: Number(line.getAttribute('x1')), y: Number(line.getAttribute('y1')) }; });
+    const projectedVertices = [...container.querySelectorAll('.so-route-map-zone-vertices circle')].map(circle => ({ x: Number(circle.getAttribute('cx')), y: Number(circle.getAttribute('cy')) }));
+    expect(anchors.every(anchor => projectedVertices.some(vertex => vertex.x === anchor.x && vertex.y === anchor.y))).toBe(true);
+    expect(Math.hypot(anchors[0].x - anchors[1].x, anchors[0].y - anchors[1].y)).toBeGreaterThan(20);
     const boxes = tags.map(tag => { const rect = tag.querySelector('rect')!; return { x: Number(rect.getAttribute('x')), y: Number(rect.getAttribute('y')), width: Number(rect.getAttribute('width')), height: Number(rect.getAttribute('height')) }; });
     expect(boxes[0].x + boxes[0].width <= boxes[1].x || boxes[1].x + boxes[1].width <= boxes[0].x || boxes[0].y + boxes[0].height <= boxes[1].y || boxes[1].y + boxes[1].height <= boxes[0].y).toBe(true);
     const waypoint = onGeometry.mock.calls.at(-1)![0].points[2];

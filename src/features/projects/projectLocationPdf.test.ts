@@ -1,10 +1,11 @@
 import { PDFDocument, PDFArray, PDFName, PDFDict, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
 import { jsPDF } from 'jspdf';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { emptySeaOperationWaypoint } from '../seaOperations/seaOperationModel';
 import { emptyProjectLocationPlan } from './projectLocation';
 import { appendProjectLocationPdf, drawProjectLocationMapPdf, generateProjectLocationPdf, projectLocationVoyage } from './projectLocationPdf';
 import { projectSeaOperationMapPlace, resolveSeaOperationMapPorts } from '../seaOperations/seaOperationMapPlaces';
+import { seaWaypointPosition } from '../seaOperations/seaOperationNavigation';
 import { writeFile } from 'node:fs/promises';
 
 function fixture() {
@@ -30,7 +31,55 @@ function streams(document: PDFDocument) {
   }).join('\n');
 }
 
+function namedZoneFixture() {
+  const plan = emptyProjectLocationPlan(); plan.includeInPdf = true;
+  const vertices = (positions: number[][]) => positions.map(([latitude, longitude]) => ({ latitude: String(latitude), longitude: String(longitude) }));
+  plan.zones = [
+    { id: 'works', name: 'Zone de Travaux', vertices: vertices([[50.1, 1], [50.14, 1.08], [50.1, 1.16], [50.06, 1.08]]) },
+    { id: 'buffer', name: 'Zone Tampon', vertices: vertices([[50.1, 1], [50.18, 1.08], [50.1, 1.2], [50.02, 1.08]]) },
+  ];
+  return plan;
+}
+
 describe('Project location appendix', () => {
+  it('prints zone names on the map and points their callouts at separate real vertices', async () => {
+    const plan = namedZoneFixture(), original = structuredClone(plan), document = new jsPDF({ unit: 'pt', orientation: 'landscape' });
+    const line = vi.spyOn(document, 'line'), bounds = { x: 30, y: 55, width: 782, height: 260 };
+    const geometry = drawProjectLocationMapPdf(document, plan, bounds);
+    const starts = line.mock.calls.slice(-2).map(([x, y]) => ({ x, y }));
+    expect(starts).toHaveLength(2);
+    plan.zones.forEach((zone, index) => {
+      const projected = zone.vertices.map(vertex => projectSeaOperationMapPlace(geometry, seaWaypointPosition(vertex)!))
+        .filter(point => point !== null).map(point => ({ x: bounds.x + point.x / geometry.width * bounds.width, y: bounds.y + point.y / geometry.height * bounds.height }));
+      expect(projected.some(point => Math.hypot(point.x - starts[index].x, point.y - starts[index].y) < .01)).toBe(true);
+    });
+    expect(Math.hypot(starts[0].x - starts[1].x, starts[0].y - starts[1].y)).toBeGreaterThan(24);
+    const text = streams(await PDFDocument.load(document.output('arraybuffer')));
+    expect(text).toContain('(Zone de Travaux) Tj'); expect(text).toContain('(Zone Tampon) Tj');
+    expect(text).not.toContain('(Z1) Tj'); expect(text).not.toContain('(Z2) Tj');
+    expect(plan).toEqual(original);
+    if (process.env.SEAPILOT_PROJECT_NAMED_ZONE_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PROJECT_NAMED_ZONE_QA_OUTPUT,
+      await generateProjectLocationPdf(plan, { projectLabel: 'P144 - Zones nommees (demonstration)', departurePort: 'Dieppe', arrivalPort: 'Dieppe' }));
+  });
+
+  it('wraps the complete zone name inside its PDF tag with measured Helvetica widths', async () => {
+    const plan = namedZoneFixture();
+    const longName = 'Zone Tampon - protection des interventions maritimes et du personnel'; plan.zones[1].name = longName;
+    const original = structuredClone(plan);
+    const document = new jsPDF({ unit: 'pt', orientation: 'landscape' }), text = vi.spyOn(document, 'text'), rect = vi.spyOn(document, 'roundedRect');
+    drawProjectLocationMapPdf(document, plan, { x: 30, y: 55, width: 782, height: 190 });
+    const tag = text.mock.calls.find(([value]) => Array.isArray(value) && value.join(' ') === longName);
+    expect(tag).toBeDefined(); const lines = tag![0] as string[];
+    expect(lines.length).toBeGreaterThan(1);
+    const [, , width, height] = rect.mock.calls.at(-1)!;
+    document.setFont('helvetica', 'bold'); document.setFontSize(10);
+    expect(lines.every(value => document.getTextWidth(value) <= width - 12 + .01)).toBe(true);
+    expect(height).toBe(lines.length * 12 + 8);
+    expect(plan).toEqual(original);
+    if (process.env.SEAPILOT_PROJECT_LONG_ZONE_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PROJECT_LONG_ZONE_QA_OUTPUT,
+      await generateProjectLocationPdf(plan, { projectLabel: 'Zones nommees longues (demonstration)', departurePort: 'Dieppe', arrivalPort: 'Dieppe' }));
+  });
+
   it('exports isolated points with four geographical columns without deleting historical navigation values', async () => {
     const plan = fixture(); plan.waypoints = []; plan.zones = [];
     Object.assign(plan.points[0], { ukc: 'ANNOTATION-UKC-ISOLEE', eta: '2026-10-27T12:07', denseTraffic: true });

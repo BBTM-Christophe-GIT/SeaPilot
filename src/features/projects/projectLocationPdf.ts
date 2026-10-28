@@ -152,8 +152,10 @@ export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeo
   for (const port of places.markers.slice(0, 80)) if (port.label) obstacles.push(placeLabelObstacle(port.label, port.ports[0].port.port));
   obstacles.push({ west: bounds.width / unit(1) - 30, east: bounds.width / unit(1), north: 0, south: 26 });
   if (options?.showVoyage && location.waypoints.length > 1) obstacles.push({ west: bounds.width / unit(1) - 212, east: bounds.width / unit(1), north: bounds.height / unit(1) - 80, south: bounds.height / unit(1) });
-  const zoneTags = layoutSeaOperationZoneLabels(zoneLayers.map(({ zone, vertices }) => ({ id: zone.id,
-    index: location.zones.findIndex(item => item.id === zone.id), vertices: vertices.map(local) })), bounds.width / unit(1), bounds.height / unit(1), obstacles);
+  document.setFont('helvetica', 'bold'); document.setFontSize(10);
+  const zoneTags = layoutSeaOperationZoneLabels(zoneLayers.map(({ zone, vertices }) => ({ id: zone.id, name: zone.name,
+    index: location.zones.findIndex(item => item.id === zone.id), vertices: vertices.map(local) })), bounds.width / unit(1), bounds.height / unit(1), obstacles,
+  text => document.getTextWidth(clean(text)) / unit(1));
   for (const box of obstacles) occupiedLabels.push({ left: bounds.x + unit(box.west), right: bounds.x + unit(box.east),
     top: bounds.y + unit(box.north), bottom: bounds.y + unit(box.south) });
   for (const tag of zoneTags) occupiedLabels.push({ left: bounds.x + unit(tag.x - tag.width / 2), right: bounds.x + unit(tag.x + tag.width / 2),
@@ -252,8 +254,9 @@ export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeo
       bounds.x + unit(tag.leader.to.x), bounds.y + unit(tag.leader.to.y));
     document.setFillColor(255, 255, 255);
     document.roundedRect(x - unit(tag.width / 2), y - unit(tag.height / 2), unit(tag.width), unit(tag.height), unit(2), unit(2), 'FD');
-    document.setTextColor(...appearance.rgb); document.setFont('helvetica', 'bold'); document.setFontSize(7);
-    document.text(tag.code, x, y + unit(2.4), { align: 'center' });
+    document.setTextColor(...appearance.rgb); document.setFont('helvetica', 'bold'); document.setFontSize(tag.fontSize);
+    const firstBaseline = y - unit((tag.lines.length - 1) * tag.lineHeight / 2) + unit(tag.fontSize * .35);
+    document.text(tag.lines.map(clean), x, firstBaseline, { align: 'center', lineHeightFactor: tag.lineHeight / tag.fontSize });
   }
   document.restoreGraphicsState(); return geometry;
 }

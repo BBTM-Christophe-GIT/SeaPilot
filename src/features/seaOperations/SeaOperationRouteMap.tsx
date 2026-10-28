@@ -51,7 +51,7 @@ function zonePresentation(geometry: SeaOperationRouteMapGeometry, layers: Return
     return pixel ? [{ ...pixel, id: `${zone.id}:${index}`, zoneIndex, index, text: `${seaOperationZoneAppearance(zoneIndex).code}.${index + 1}` }] : [];
   }));
   const circles = vertices.map(vertex => ({ west: vertex.x - 4, east: vertex.x + 4, north: vertex.y - 4, south: vertex.y + 4 }));
-  const labels = layoutSeaOperationZoneLabels(layers.polygons.map(({ zone, vertices }) => ({ id: zone.id, index: zones.findIndex(item => item.id === zone.id), vertices })), geometry.width, geometry.height, [...obstacles, ...circles]);
+  const labels = layoutSeaOperationZoneLabels(layers.polygons.map(({ zone, vertices }) => ({ id: zone.id, name: zone.name, index: zones.findIndex(item => item.id === zone.id), vertices })), geometry.width, geometry.height, [...obstacles, ...circles]);
   const occupied = [...obstacles, ...circles, ...labels.map(label => ({ west: label.x - label.width / 2, east: label.x + label.width / 2, north: label.y - label.height / 2, south: label.y + label.height / 2 }))];
   const overlaps = (a: SeaOperationZoneLabelObstacle, b: SeaOperationZoneLabelObstacle) => a.west < b.east + 3 && a.east > b.west - 3 && a.north < b.south + 3 && a.south > b.north - 3;
   const labelledVertices = vertices.map(vertex => {
@@ -310,9 +310,9 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
           })}</g>
           <g className="so-route-map-zone-tags" aria-hidden="true">{zoneGraphics.labels.map(label => {
             const appearance = seaOperationZoneAppearance(label.index);
-            return <g className="so-route-map-zone-tag" data-zone-code={label.code} key={label.id} style={{ color: appearance.stroke }}><title>{label.code} — {visualZones[label.index]?.name || 'Sans nom'}</title>
+            return <g className="so-route-map-zone-tag" data-zone-code={label.code} data-zone-name={label.text} key={label.id} style={{ color: appearance.stroke }}><title>{label.text}</title>
               {label.leader && <line className="so-route-map-zone-leader" x1={label.leader.from.x} y1={label.leader.from.y} x2={label.leader.to.x} y2={label.leader.to.y} />}
-              <rect x={label.x - label.width / 2} y={label.y - label.height / 2} width={label.width} height={label.height} rx={3} style={{ fill: appearance.fill }} /><text x={label.x} y={label.y + 3.5} textAnchor="middle">{label.code}</text>
+              <rect x={label.x - label.width / 2} y={label.y - label.height / 2} width={label.width} height={label.height} rx={3} style={{ fill: appearance.fill }} /><text x={label.x} y={label.y - (label.lines.length - 1) * label.lineHeight / 2 + label.fontSize * .35} textAnchor="middle" style={{ fontSize: label.fontSize }}>{label.lines.map((line, index) => <tspan key={index} x={label.x} dy={index ? label.lineHeight : 0}>{line}</tspan>)}</text>
             </g>;
           })}</g>
           </g>

@@ -37,8 +37,8 @@ describe('coloured zone hierarchy in PDF', () => {
     drawProjectLocationMapPdf(document, plan, { x: 30, y: 60, width: 782, height: 190 }, { ensureZonesVisible: true });
     for (const index of [0, 1]) expect(colors).toHaveBeenCalledWith(...seaOperationZoneAppearance(index).rgb);
     const text = document.output();
-    expect(text).toContain('(Z1) Tj'); expect(text).toContain('(Z2) Tj');
-    expect(text).not.toContain('(Zone de Travaux) Tj'); expect(text).not.toContain('(Zone Tampon) Tj');
+    expect(text).toContain('(Zone de Travaux) Tj'); expect(text).toContain('(Zone Tampon) Tj');
+    expect(text).not.toContain('(Z1) Tj'); expect(text).not.toContain('(Z2) Tj');
   });
 
   it('exports the reported project as a readable hierarchy, keeping source data and vector maps', async () => {

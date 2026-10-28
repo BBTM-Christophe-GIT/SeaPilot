@@ -50,7 +50,7 @@ export function drawSeaOperationZoneTablePdf(document: jsPDF, zone: SeaOperation
   return ((document as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 12;
 }
 
-/** Full names stay outside the map; map tags use only the stable short code. */
+/** The legend links named map tags to the stable codes used by vertex tables. */
 export function drawSeaOperationZoneLegendPdf(document: jsPDF, zones: readonly SeaOperationMapZone[],
   options: { y: number; left: number; right: number; top: number; bottom: number; fontSize?: number }) {
   let y = options.y;
