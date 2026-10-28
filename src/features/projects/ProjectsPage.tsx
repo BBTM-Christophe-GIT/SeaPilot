@@ -62,7 +62,8 @@ import {
 } from './projectContractOptions';
 import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import type { ProjectDocumentLanguage } from './projectDocumentGeneration';
-import { archiveProject, deleteProjectPlanningOccurrence, reactivateProject, setProjectStatus } from './projectMutations';
+import { archiveProject, deleteProjectPlanningOccurrence, reactivateProject, saveProjectLocation, setProjectStatus } from './projectMutations';
+import { parseProjectLocationPlan, type ProjectLocationPlan } from './projectLocation';
 import { PROJECT_STATUSES } from './projectStatus';
 import { deduplicateProjectDocuments, getSharePointDocumentLinkState } from './projectDocuments';
 import { fetchProjectDocumentEmitter } from './projectCommercialOffer';
@@ -361,17 +362,19 @@ function ProjectDetailTabs({
   onChange,
   tabs,
   counts,
+  disabled = false,
 }: {
   counts: Record<string, number>;
   activeTab: ProjectDetailTab;
-  onChange: (tab: ProjectDetailTab) => void;
+  onChange: (tab: ProjectDetailTab) => void | boolean;
   tabs: ProjectDetailTabDefinition[];
+  disabled?: boolean;
 }) {
   function moveFocus(currentTab: ProjectDetailTab, direction: -1 | 1) {
     const currentIndex = tabs.findIndex((tab) => tab.id === currentTab);
     const nextIndex = (currentIndex + direction + tabs.length) % tabs.length;
     const nextTab = tabs[nextIndex];
-    onChange(nextTab.id);
+    if (onChange(nextTab.id) === false) return;
     window.requestAnimationFrame(() => document.getElementById(`project-tab-${nextTab.id}`)?.focus());
   }
 
@@ -387,6 +390,7 @@ function ProjectDetailTabs({
               aria-label={tab.label}
               aria-controls="project-detail-panel"
               aria-selected={activeTab === tab.id}
+              disabled={disabled}
               id={`project-tab-${tab.id}`}
               onClick={() => onChange(tab.id)}
               onKeyDown={(event) => {
@@ -399,7 +403,7 @@ function ProjectDetailTabs({
                 } else if (event.key === 'Home' || event.key === 'End') {
                   event.preventDefault();
                   const target = event.key === 'Home' ? tabs[0] : tabs.at(-1)!;
-                  onChange(target.id);
+                  if (onChange(target.id) === false) return;
                   window.requestAnimationFrame(() => document.getElementById(`project-tab-${target.id}`)?.focus());
                 }
               }}
@@ -698,6 +702,11 @@ function ProjectDetail({
   statusMenuOpen,
   changingProjectState,
   onOpenPlanning,
+  onSaveMap,
+  onMapDirtyChange,
+  onBeforeLeaveMap,
+  mapSaving,
+  mapSessionKey,
   operationDocuments,
   planningOccurrences,
   towedAsset,
@@ -724,6 +733,11 @@ function ProjectDetail({
   statusMenuOpen: boolean;
   changingProjectState: boolean;
   onOpenPlanning: (occurrence: ProjectPlanningOccurrenceRecord) => void;
+  onSaveMap: (plan: ProjectLocationPlan, source: ProjectRecord) => Promise<void>;
+  onMapDirtyChange: (dirty: boolean) => void;
+  onBeforeLeaveMap: () => boolean;
+  mapSaving: boolean;
+  mapSessionKey: string;
   operationDocuments: ProjectOperationDocumentRecord[];
   planningOccurrences: ProjectPlanningOccurrenceRecord[];
   towedAsset?: ProjectTowedAssetRecord;
@@ -764,8 +778,10 @@ function ProjectDetail({
   const primaryTab = isContractSection ? 'offer-contract' : activeTab;
   const documentCount = contractDocuments.length + projectDocuments.length + operationDocuments.length;
   function openContractSection(tab: ProjectDetailTab) {
+    if (mapSaving || activeTab === 'map' && tab !== 'map' && !onBeforeLeaveMap()) return false;
     setActiveTab(tab);
     window.requestAnimationFrame(() => document.getElementById('project-detail-panel')?.focus({ preventScroll: true }));
+    return true;
   }
   const contractNavigation = (
     <nav aria-label="Rubriques du contrat" className="project-sheet-contract-links">
@@ -795,7 +811,7 @@ function ProjectDetail({
           <DetailField label="Loyer du contrat" value={formatMoney(contract?.charterHire ?? null, contract?.hireCurrency || '', contract?.hireUnit)} />
         </dl>
       </header>
-      <ProjectDetailTabs activeTab={primaryTab} counts={{ operations: planningOccurrences.length, documents: documentCount }} onChange={setActiveTab} tabs={projectDetailTabs(null)} />
+      <ProjectDetailTabs activeTab={primaryTab} counts={{ operations: planningOccurrences.length, documents: documentCount }} disabled={mapSaving} onChange={openContractSection} tabs={projectDetailTabs(null)} />
       {contractUnavailable ? (
         <p className="project-partial-state" role="status">
           Les informations contractuelles et BIMCO sont temporairement indisponibles. Les autres sections restent consultables.
@@ -821,7 +837,9 @@ function ProjectDetail({
           {contractNavigation}
         </div>
       ) : null}
-      {activeTab === 'map' ? <ProjectDetailMap key={project.id} project={project} maxSpeedKnots={vessels.find(vessel => vessel.id === project.primaryVesselId)?.maxSpeedKnots} /> : null}
+      {activeTab === 'map' ? <ProjectDetailMap key={mapSessionKey} project={project} canManage={isManager && !project.archivedAt}
+        disabled={mapSaving || changingProjectState} onSave={onSaveMap} onDirtyChange={onMapDirtyChange}
+        maxSpeedKnots={vessels.find(vessel => vessel.id === project.primaryVesselId)?.maxSpeedKnots} /> : null}
       {activeTab === 'offer-contract' ? (
       <section aria-label="Offre et contrat" className="project-detail-section project-offer-contract-panel">
         <div className="project-context-heading">
@@ -1180,6 +1198,11 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
   const isManager = canManageProjects(effectiveRoles);
+  const effectiveUserId = outletContext?.userId || '';
+  const mapAccount = useRef({ client: effectiveClient, userId: effectiveUserId, generation: 0 });
+  if (mapAccount.current.client !== effectiveClient || mapAccount.current.userId !== effectiveUserId) {
+    mapAccount.current = { client: effectiveClient, userId: effectiveUserId, generation: mapAccount.current.generation + 1 };
+  }
   const creationQueryHandled = useRef(false);
   const creationRequest = useMemo(() => {
     const parameters = new URLSearchParams(window.location.search);
@@ -1222,11 +1245,48 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [documentEmissionRequest, setDocumentEmissionRequest] = useState<ProjectDocumentEmissionRequest | null>(null);
   const [documentDownloadMode, setDocumentDownloadMode] = useState<ProjectDocumentDownloadMode>('document');
   const [documentLanguage, setDocumentLanguage] = useState<ProjectDocumentLanguage>('fr');
+  const [mapDirty, setMapDirty] = useState(false);
+  const [mapSaving, setMapSaving] = useState(false);
+  const [mapReset, setMapReset] = useState(0);
+  const [mapDataContext, setMapDataContext] = useState<{ client: SupabaseClient; userId: string } | null>(null);
+  const mapDirtyRef = useRef(false);
+  const mapMutationRunning = useRef(false);
+  const mapRequest = useRef(0);
+  const onMapDirtyChange = useCallback((value: boolean) => {
+    if (value && currentMapContext.current.project) setSelectedProjectId(currentMapContext.current.project.id);
+    mapDirtyRef.current = value; setMapDirty(value);
+  }, []);
+  const allowMapLeave = useCallback(() => {
+    if (mapMutationRunning.current) return false;
+    if (mapDirtyRef.current && !window.confirm('Quitter la carte sans enregistrer les modifications ?')) return false;
+    if (mapDirtyRef.current) { onMapDirtyChange(false); setMapReset(value => value + 1); }
+    return true;
+  }, [onMapDirtyChange]);
   const deferredSearch = useDeferredValue(filters.search);
+
+  useEffect(() => {
+    ++mapRequest.current; mapMutationRunning.current = false;
+    onMapDirtyChange(false); setMapSaving(false); setMapReset(value => value + 1);
+  }, [effectiveClient, effectiveUserId, onMapDirtyChange]);
+  useEffect(() => () => { ++mapRequest.current; mapMutationRunning.current = false; }, []);
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => { if (mapDirtyRef.current || mapMutationRunning.current) { event.preventDefault(); event.returnValue = ''; } };
+    const beforeNavigation = (event: MouseEvent) => {
+      if (!(mapDirtyRef.current || mapMutationRunning.current) || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null;
+      if (!anchor || anchor.target === '_blank' || anchor.hasAttribute('download')) return;
+      const target = new URL(anchor.href, window.location.href);
+      if (target.origin === location.origin && target.pathname === location.pathname && target.search === location.search) return;
+      if (!allowMapLeave()) { event.preventDefault(); event.stopPropagation(); }
+    };
+    window.addEventListener('beforeunload', beforeUnload); document.addEventListener('click', beforeNavigation, true);
+    return () => { window.removeEventListener('beforeunload', beforeUnload); document.removeEventListener('click', beforeNavigation, true); };
+  }, [mapDirty, mapSaving, allowMapLeave]);
 
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
+    setMapDataContext(null);
     setErrorMessage(null);
 
     fetchProjectsData(effectiveClient)
@@ -1243,6 +1303,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
             projectDocuments: sortDocuments(loadedData.projectDocuments),
             projects: sortProjects(loadedData.projects),
           });
+          setMapDataContext({ client: effectiveClient, userId: effectiveUserId });
         }
       })
       .catch((error: unknown) => {
@@ -1259,7 +1320,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     return () => {
       isMounted = false;
     };
-  }, [effectiveClient, loadAttempt]);
+  }, [effectiveClient, effectiveUserId, loadAttempt]);
 
   useEffect(() => {
     if (isLoading || !isManager || !creationRequest.open || creationQueryHandled.current) return;
@@ -1341,6 +1402,13 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   );
   const selectedProject = projectsData.projects.find((project) => project.id === selectedProjectId)
     || resolveSelectedProject(filteredProjects, selectedProjectId);
+  const currentMapContext = useRef({ client: effectiveClient, userId: effectiveUserId, generation: mapAccount.current.generation,
+    project: selectedProject, isManager, dossierOpen, ready: false });
+  currentMapContext.current = { client: effectiveClient, userId: effectiveUserId, generation: mapAccount.current.generation,
+    project: selectedProject, isManager, dossierOpen,
+    ready: mapDataContext?.client === effectiveClient && mapDataContext.userId === effectiveUserId && !isLoading && !changingProjectState
+      && !projectEditorOpen && !planningEditorOpen && !statusMenu && !documentEmissionRequest && !closingProject && !generatingDocument
+      && !clientCatalogOpen && !towedAssetCatalogOpen && !serviceCatalogOpen };
   const selectedContract = selectedProject
     ? projectsData.projectContracts.find((contract) => contract.projectId === selectedProject.id && !contract.archivedAt)
     : undefined;
@@ -1402,8 +1470,14 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     setShowClosedProjects(false);
   }
 
+  function selectProject(id: number, openDossier = true) {
+    if (!allowMapLeave()) return;
+    setSelectedProjectId(id);
+    if (openDossier) setDossierOpen(true);
+  }
+
   function openProjectEditor(project?: ProjectRecord) {
-    if (!isManager || changingProjectState || project?.archivedAt) return;
+    if (!isManager || changingProjectState || project?.archivedAt || !allowMapLeave()) return;
     setMutationError('');
     if (project && selectedProject) setSelectedProjectId((current) => current ?? selectedProject.id);
     setEditingProject(project);
@@ -1430,7 +1504,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   }, [statusMenu, closeProjectStatusMenu]);
 
   function openProjectStatus(project: ProjectRecord, event: React.MouseEvent<HTMLButtonElement>, inDossier = false) {
-    if (!isManager || changingProjectState) return;
+    if (!isManager || changingProjectState || !allowMapLeave()) return;
     if (statusMenu?.trigger === event.currentTarget) { closeProjectStatusMenu(); return; }
     setMutationError('');
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -1438,7 +1512,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   }
 
   async function changeProjectState(project: ProjectRecord, action: 'close' | 'reactivate' | 'status', status?: string) {
-    if (!isManager || changingProjectState || (action !== 'reactivate' && project.archivedAt)) return;
+    if (!isManager || changingProjectState || (action !== 'reactivate' && project.archivedAt) || !allowMapLeave()) return;
     setChangingProjectState(true);
     setMutationError('');
     setMutationMessage('');
@@ -1457,16 +1531,44 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   }
 
   function openPlanningEditor(occurrence?: ProjectPlanningOccurrenceRecord) {
+    if (!allowMapLeave()) return;
     setMutationError('');
     setEditingOccurrence(occurrence);
     setPlanningEditorOpen(true);
   }
 
   function openProjectDocumentEmission(kind: ProjectGeneratedDocumentKind, planningOccurrenceId: number | null, contractType?: string) {
+    if (!allowMapLeave()) return;
     setMutationError('');
     setDocumentDownloadMode('document');
     setDocumentLanguage('fr');
     setDocumentEmissionRequest({ kind, planningOccurrenceId, contractType });
+  }
+
+  async function saveMap(plan: ProjectLocationPlan, source: ProjectRecord) {
+    const context = currentMapContext.current;
+    if (mapMutationRunning.current || !context.ready || !context.isManager || !context.project || context.project.archivedAt
+      || context.project.id !== source.id || context.project.updatedAt !== source.updatedAt || context.client !== effectiveClient
+      || context.userId !== effectiveUserId || context.generation !== mapAccount.current.generation) {
+      throw new Error('Rechargez le projet avant de modifier sa carte.');
+    }
+    const canonical = parseProjectLocationPlan(plan)!;
+    const request = ++mapRequest.current;
+    mapMutationRunning.current = true; setMapSaving(true); setMutationMessage('');
+    const isCurrent = () => request === mapRequest.current && currentMapContext.current.client === context.client
+      && currentMapContext.current.userId === context.userId && currentMapContext.current.generation === context.generation
+      && currentMapContext.current.project?.id === source.id && currentMapContext.current.project.updatedAt === source.updatedAt
+      && currentMapContext.current.isManager && currentMapContext.current.dossierOpen === context.dossierOpen && !currentMapContext.current.project.archivedAt;
+    try {
+      const saved = await saveProjectLocation(context.client, source.id, canonical, source.updatedAt);
+      if (!isCurrent()) throw new Error('Le projet ou votre accès a changé. Rechargez sa carte.');
+      setProjectsData(current => ({ ...current, projects: current.projects.map(project => project.id === source.id && project.updatedAt === source.updatedAt
+        ? { ...project, locationPlan: canonical, updatedAt: saved.updatedAt } : project) }));
+      onMapDirtyChange(false); setMutationMessage('La carte du projet a été enregistrée.');
+    } finally {
+      if (request === mapRequest.current && currentMapContext.current.client === context.client && currentMapContext.current.userId === context.userId
+        && currentMapContext.current.generation === context.generation) { mapMutationRunning.current = false; setMapSaving(false); }
+    }
   }
 
   async function deletePlanningOccurrence(occurrence: ProjectPlanningOccurrenceRecord) {
@@ -1646,24 +1748,24 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
 
       <ModuleRibbon ariaLabel="Commandes du module Projets" className="project-production-ribbon" singleRow>
         <ModuleRibbonGroup label="Projet">
-          <ProjectRibbonButton disabled={!isManager || changingProjectState} icon={<Plus size={22} />} label="Nouveau projet" onClick={() => openProjectEditor()} />
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || changingProjectState} icon={<Archive size={22} />} label="Archiver le projet" onClick={() => { if (selectedProject) { setMutationError(''); setClosingProject(selectedProject); } }} />
+          <ProjectRibbonButton disabled={!isManager || changingProjectState || mapSaving} icon={<Plus size={22} />} label="Nouveau projet" onClick={() => openProjectEditor()} />
+          <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || changingProjectState || mapSaving} icon={<Archive size={22} />} label="Archiver le projet" onClick={() => { if (selectedProject && allowMapLeave()) { setMutationError(''); setClosingProject(selectedProject); } }} />
         </ModuleRibbonGroup>
         <ModuleRibbonGroup label="Catalogue">
-          <ProjectRibbonButton disabled={!isManager} icon={<Users size={22} />} label="Clients" onClick={() => setClientCatalogOpen(true)} />
-          <ProjectRibbonButton disabled={!isManager} icon={<Ship size={22} />} label="Remorqués" onClick={() => setTowedAssetCatalogOpen(true)} />
-          <ProjectRibbonButton disabled={!isManager} icon={<PackageCheck size={22} />} label="Prestations" aria-label="Catalogue de prestations" onClick={() => setServiceCatalogOpen(true)} />
+          <ProjectRibbonButton disabled={!isManager || mapSaving} icon={<Users size={22} />} label="Clients" onClick={() => { if (allowMapLeave()) setClientCatalogOpen(true); }} />
+          <ProjectRibbonButton disabled={!isManager || mapSaving} icon={<Ship size={22} />} label="Remorqués" onClick={() => { if (allowMapLeave()) setTowedAssetCatalogOpen(true); }} />
+          <ProjectRibbonButton disabled={!isManager || mapSaving} icon={<PackageCheck size={22} />} label="Prestations" aria-label="Catalogue de prestations" onClick={() => { if (allowMapLeave()) setServiceCatalogOpen(true); }} />
         </ModuleRibbonGroup>
         <ModuleRibbonGroup label="Documents">
-          <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null} icon={<FileText size={22} />} label="Émettre le document" onClick={() => openProjectDocumentEmission(selectedGeneratedDocumentKind, selectedGeneratedDocumentKind === 'offer' ? null : selectedPlanningOccurrences[0]?.id ?? null)} />
+          <ProjectRibbonButton disabled={!isManager || !selectedProject || generatingDocument !== null || mapSaving} icon={<FileText size={22} />} label="Émettre le document" onClick={() => openProjectDocumentEmission(selectedGeneratedDocumentKind, selectedGeneratedDocumentKind === 'offer' ? null : selectedPlanningOccurrences[0]?.id ?? null)} />
           <ProjectRibbonButton icon={<Share2 size={22} />} label="Dossiers Google Drive" onClick={() => window.open('https://drive.google.com/drive/folders/1H5kB4ppiKQAm4hqhYjMHcP4pRZaTncj_', '_blank', 'noopener,noreferrer')} />
           <ProjectRibbonLink icon={<ReceiptText size={22} />} label="Éléments de facturation" to={billingElementsUrl()} />
         </ModuleRibbonGroup>
       </ModuleRibbon>
       <ProjectPortfolioInsights client={effectiveClient} data={projectsData} />
       {dossierOpen ? <nav className="project-workspace-actions project-dossier-actions" aria-label="Actions du dossier">
-        <button type="button" onClick={() => setDossierOpen(false)}><ChevronLeft size={16} /> Liste des projets</button>
-        <label className="project-dossier-switcher">Projet<select aria-label="Changer de projet" disabled={changingProjectState} value={selectedProject?.id || ''} onChange={(event) => setSelectedProjectId(Number(event.target.value))}>{projectsData.projects.filter((project) => !project.archivedAt || project.id === selectedProject?.id).map((project) => <option key={project.id} value={project.id} disabled={Boolean(project.archivedAt)}>{project.projectCode} – {project.title}{project.archivedAt ? ' (Clôturé)' : ''}</option>)}</select></label>
+        <button type="button" disabled={mapSaving} onClick={() => { if (allowMapLeave()) setDossierOpen(false); }}><ChevronLeft size={16} /> Liste des projets</button>
+        <label className="project-dossier-switcher">Projet<select aria-label="Changer de projet" disabled={changingProjectState || mapSaving} value={selectedProject?.id || ''} onChange={(event) => selectProject(Number(event.target.value))}>{projectsData.projects.filter((project) => !project.archivedAt || project.id === selectedProject?.id).map((project) => <option key={project.id} value={project.id} disabled={Boolean(project.archivedAt)}>{project.projectCode} – {project.title}{project.archivedAt ? ' (Clôturé)' : ''}</option>)}</select></label>
       </nav> : null}
       {favorites.error ? <p role="alert" className="project-favorites-error">{favorites.error} <button type="button" onClick={favorites.retry}>Réessayer les favoris</button></p> : null}
 
@@ -1814,7 +1916,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                       aria-label={`${project.projectCode || ''} ${project.title}`}
                       aria-pressed={isSelected}
                       className="project-select-button project-contract-list-row"
-                      onClick={() => { setSelectedProjectId(project.id); setDossierOpen(true); }}
+                      disabled={mapSaving}
+                      onClick={() => selectProject(project.id)}
                       type="button"
                     >
                       <span className="project-contract-list-title">
@@ -1826,8 +1929,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                       </span>
                     </button>
                     <div className="project-portfolio-row-actions">
-                      <ProjectStatusPill project={project} canManage={isManager} busy={changingProjectState} menuOpen={statusMenu?.project.id === project.id && !statusMenu.inDossier} onChange={(event) => openProjectStatus(project, event)} />
-                      {isManager ? <button type="button" className="project-card-modify" disabled={Boolean(project.archivedAt) || changingProjectState} aria-label={`Modifier ${project.projectCode || project.title}`} onClick={() => openProjectEditor(project)}><Pencil aria-hidden="true" size={14} />Modifier</button> : null}
+                      <ProjectStatusPill project={project} canManage={isManager} busy={changingProjectState || mapSaving} menuOpen={statusMenu?.project.id === project.id && !statusMenu.inDossier} onChange={(event) => openProjectStatus(project, event)} />
+                      {isManager ? <button type="button" className="project-card-modify" disabled={Boolean(project.archivedAt) || changingProjectState || mapSaving} aria-label={`Modifier ${project.projectCode || project.title}`} onClick={() => openProjectEditor(project)}><Pencil aria-hidden="true" size={14} />Modifier</button> : null}
                     </div>
                   </li>
                 );
@@ -1850,6 +1953,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
 
           {selectedProject ? (
             <ProjectDetail
+              key={mapAccount.current.generation}
               documentAccessKey={outletContext?.userId || ''}
               onDocumentStored={(document) => setProjectsData((current) => ({
                 ...current,
@@ -1870,8 +1974,13 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               onGenerateDocument={openProjectDocumentEmission}
               onChangeStatus={(event) => openProjectStatus(selectedProject, event, true)}
               statusMenuOpen={statusMenu?.project.id === selectedProject.id && statusMenu.inDossier}
-              changingProjectState={changingProjectState}
-              onOpenPlanning={(occurrence) => window.location.assign(planningOperationUrl(occurrence.id))}
+              changingProjectState={changingProjectState || mapSaving}
+              onOpenPlanning={(occurrence) => { if (allowMapLeave()) window.location.assign(planningOperationUrl(occurrence.id)); }}
+              onSaveMap={saveMap}
+              onMapDirtyChange={onMapDirtyChange}
+              onBeforeLeaveMap={allowMapLeave}
+              mapSaving={mapSaving || projectEditorOpen || planningEditorOpen || clientCatalogOpen || towedAssetCatalogOpen || serviceCatalogOpen || Boolean(statusMenu) || Boolean(documentEmissionRequest) || Boolean(closingProject)}
+              mapSessionKey={`${mapAccount.current.generation}:${selectedProject.id}:${mapReset}`}
               operationDocuments={selectedOperationDocuments}
               planningOccurrences={selectedPlanningOccurrences}
               project={selectedProject}

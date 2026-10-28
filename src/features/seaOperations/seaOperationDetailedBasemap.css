@@ -1,0 +1,7 @@
+.so-detailed-basemap { pointer-events: none; }
+.so-detailed-basemap-land { fill: var(--sp-surface-subtle); }
+.so-detailed-basemap-water { fill: var(--sp-primary-soft); stroke: none; }
+.so-detailed-basemap-building { fill: var(--sp-border); stroke: none; }
+.so-detailed-basemap-road { fill: none; stroke: var(--sp-border-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.so-detailed-basemap-pier { fill: var(--sp-surface); stroke: var(--sp-muted); stroke-width: .6; vector-effect: non-scaling-stroke; }
+.so-detailed-basemap-pier-line { fill: none; stroke: var(--sp-muted); stroke-width: 1.4; vector-effect: non-scaling-stroke; }

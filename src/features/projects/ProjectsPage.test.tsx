@@ -1,10 +1,12 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectsPage } from './ProjectsPage';
-import { emptyProjectLocationPlan } from './projectLocation';
+import { emptyProjectLocationPlan, type ProjectLocationPlan } from './projectLocation';
 import { emptySeaOperationWaypoint } from '../seaOperations/seaOperationModel';
 import { DEFAULT_PROJECT_DOCUMENT_CATEGORIES } from './projectDocumentCategories';
+import type { ComponentProps } from 'react';
+import type { ProjectLocationEditor } from './ProjectLocationEditor';
 
 const documentGenerationMocks = vi.hoisted(() => ({
   downloadGeneratedProjectDocument: vi.fn(),
@@ -19,6 +21,17 @@ const documentStorageMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('./projectDocumentGeneration', () => documentGenerationMocks);
+// Geometry gestures are exercised by ProjectDetailMap/ProjectLocationEditor tests;
+// this suite keeps the edit surface small while testing the real page and scoped RPC.
+vi.mock('./ProjectLocationEditor', () => ({ ProjectLocationEditor: ({ value, onChange, disabled }: ComponentProps<typeof ProjectLocationEditor>) => {
+  const plan = value ?? emptyProjectLocationPlan();
+  return <fieldset disabled={disabled} aria-label="Éditeur de localisation de test">
+    <input aria-label="ETD de la localisation" value={plan.etd} onChange={event => onChange({ ...plan, etd: event.target.value })} />
+    {plan.waypoints.map((point, index) => <input key={point.id} aria-label={`Description · Waypoint ${index + 1}`} value={point.descriptionVhf} onChange={event => onChange({ ...plan, waypoints: plan.waypoints.map(item => item.id === point.id ? { ...item, descriptionVhf: event.target.value } : item) })} />)}
+    {plan.points.map((point, index) => <input key={point.id} aria-label={`Description · Point isolé ${index + 1}`} value={point.descriptionVhf} onChange={event => onChange({ ...plan, points: plan.points.map(item => item.id === point.id ? { ...item, descriptionVhf: event.target.value } : item) })} />)}
+    {plan.zones.map((zone, index) => <input key={zone.id} aria-label={`Nom · zone ${index + 1}`} value={zone.name} onChange={event => onChange({ ...plan, zones: plan.zones.map(item => item.id === zone.id ? { ...item, name: event.target.value } : item) })} />)}
+  </fieldset>;
+} }));
 vi.mock('./projectDocumentStorage', async (importOriginal) => ({
   ...await importOriginal<typeof import('./projectDocumentStorage')>(),
   ...documentStorageMocks,
@@ -313,6 +326,20 @@ function createClient(
   return { client: { from, rpc, storage }, createSignedUrl, from, rpc };
 }
 
+function editableMapPlan(): ProjectLocationPlan {
+  return { ...emptyProjectLocationPlan(), etd: '2026-07-15T08:00', charts: '7000 - 7001', includeInPdf: true,
+    waypoints: [{ ...emptySeaOperationWaypoint('route-1'), number: '1', descriptionVhf: 'Départ', latitude: '49.6', longitude: '-1.5', eta: '2026-07-15T08:00', etaMode: 'manual' }],
+    points: [{ ...emptySeaOperationWaypoint('isolated-1'), number: 'OSS', latitude: '49.7', longitude: '-1.4', isolatedPointIcon: 'platform' }],
+    zones: [{ id: 'works', name: 'Zone de travaux', vertices: [{ latitude: '49.6', longitude: '-1.5' }, { latitude: '49.7', longitude: '-1.5' }, { latitude: '49.7', longitude: '-1.4' }] }] };
+}
+async function openEditableMap() {
+  fireEvent.click(await screen.findByRole('button', { name: 'P1086 Campagne Atlantique 2026' }));
+  fireEvent.click(screen.getByRole('tab', { name: 'Carte' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Modifier la carte' }));
+}
+const changeMapDescription = () => fireEvent.change(screen.getByLabelText('Description · Waypoint 1'), { target: { value: 'Départ modifié' } });
+function mapPromise<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(accept => { resolve = accept; }); return { promise, resolve }; }
+
 describe('ProjectsPage', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -340,7 +367,7 @@ describe('ProjectsPage', () => {
     documentStorageMocks.storeProjectAttachment.mockResolvedValue({ fileName: 'Rapport HSE.pdf', folderPath: 'projects/880/attachments/hse', id: 9901, storageBucket: 'project-files', storagePath: 'projects/880/attachments/hse/report.pdf', webUrl: '' });
   });
 
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
   it('adds a classified document directly from Documents and immediately exposes its fresh private reader', async () => {
     const user = userEvent.setup(); const { client, from, createSignedUrl } = createClient();
@@ -542,10 +569,12 @@ describe('ProjectsPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Carte' }));
     expect(screen.getByRole('region', { name: 'Carte du projet' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Afficher la carte en plein écran' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Modifier la carte' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Placer les waypoints' })).not.toBeInTheDocument();
     expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_archive');
     expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_reactivate');
     expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_set_status');
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_set_location');
     expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_save');
     expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_save_with_location');
   });
@@ -817,6 +846,140 @@ describe('ProjectsPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Carte' }));
     expect(screen.getByText('Aucun waypoint, point isolé ou zone enregistré pour ce projet.')).toBeVisible();
     expect(screen.queryByText('OSS')).not.toBeInTheDocument();
+  });
+
+  it('saves all map geometry through the scoped RPC and remains in Carte without rewriting contract fields', async () => {
+    const plan = editableMapPlan(), original = structuredClone(plan);
+    const { client, rpc } = createClient({ projects: { data: [{ ...atlantiqueProjectRow, location_plan: plan }, mancheProjectRow], error: null } },
+      { data: { id: 880, project_code: 'P1086', title: atlantiqueProjectRow.title, updated_at: '2026-07-15T14:00:00Z' }, error: null });
+    render(<ProjectsPage client={client as never} roles={['direction']} />); await openEditableMap();
+    changeMapDescription();
+    fireEvent.change(screen.getByLabelText('Description · Point isolé 1'), { target: { value: 'Plateforme modifiée' } });
+    fireEvent.change(screen.getByLabelText('Nom · zone 1'), { target: { value: 'Travaux modifiés' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la carte' }));
+    await screen.findByText('La carte du projet a été enregistrée.');
+    expect(rpc).toHaveBeenCalledWith('projects_set_location', { target_project_id: 880, target_expected_updated_at: atlantiqueProjectRow.updated_at,
+      target_location_plan: expect.objectContaining({ etd: plan.etd, charts: plan.charts, includeInPdf: true,
+        waypoints: [expect.objectContaining({ descriptionVhf: 'Départ modifié' })], points: [expect.objectContaining({ descriptionVhf: 'Plateforme modifiée' })], zones: [expect.objectContaining({ name: 'Travaux modifiés' })] }) });
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_save'); expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_save_with_location');
+    expect(screen.getByRole('tab', { name: 'Carte' })).toHaveAttribute('aria-selected', 'true'); expect(screen.getByRole('heading', { name: atlantiqueProjectRow.title })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier la carte' }));
+    expect(screen.getByLabelText('Description · Waypoint 1')).toHaveValue('Départ modifié'); expect(screen.getByLabelText('ETD de la localisation')).toHaveValue(plan.etd);
+    expect(plan).toEqual(original);
+  });
+
+  it('saves the automatically selected portfolio map without requiring the full dossier to be opened', async () => {
+    const plan = editableMapPlan(), original = structuredClone(plan);
+    const { client, rpc } = createClient({ projects: { data: [{ ...atlantiqueProjectRow, location_plan: plan }], error: null } },
+      { data: { id: 880, project_code: 'P1086', title: atlantiqueProjectRow.title, updated_at: '2026-07-15T14:00:00.123456Z' }, error: null });
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+    // The portfolio exposes this automatically selected map before any project-card click.
+    fireEvent.click(await screen.findByRole('tab', { name: 'Carte' }));
+    expect(screen.queryByLabelText('Changer de projet')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier la carte' }));
+    fireEvent.change(screen.getByLabelText('Description · Waypoint 1'), { target: { value: 'Port de Cherbourg' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la carte' }));
+    expect(await screen.findByText('La carte du projet a été enregistrée.')).toBeVisible();
+    expect(rpc).toHaveBeenCalledWith('projects_set_location', expect.objectContaining({ target_project_id: 880, target_expected_updated_at: atlantiqueProjectRow.updated_at,
+      target_location_plan: expect.objectContaining({ waypoints: [expect.objectContaining({ id: 'route-1', descriptionVhf: 'Port de Cherbourg' })] }) }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument(); expect(screen.queryByLabelText('Changer de projet')).not.toBeInTheDocument();
+    expect(plan).toEqual(original);
+  });
+
+  it('keeps an edited automatic portfolio selection pinned when searching hides its project card', async () => {
+    const plan = editableMapPlan();
+    const { client, rpc } = createClient({ projects: { data: [{ ...mancheProjectRow, location_plan: plan }, atlantiqueProjectRow], error: null } },
+      { data: { id: 881, project_code: 'P1087', title: mancheProjectRow.title, updated_at: '2026-07-15T14:00:00.123456Z' }, error: null });
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Tous les projets/ }));
+    await screen.findByRole('heading', { name: mancheProjectRow.title });
+    fireEvent.click(screen.getByRole('tab', { name: 'Carte' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier la carte' })); changeMapDescription();
+    expect(screen.queryByLabelText('Changer de projet')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Rechercher un contrat' }), { target: { value: 'Atlantique' } });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'P1087 Campagne Manche 2026' })).not.toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: mancheProjectRow.title })).toBeVisible();
+    expect(screen.getByRole('tab', { name: 'Carte' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('Description · Waypoint 1')).toHaveValue('Départ modifié');
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la carte' }));
+    expect(await screen.findByText('La carte du projet a été enregistrée.')).toBeVisible();
+    expect(rpc).toHaveBeenCalledWith('projects_set_location', expect.objectContaining({ target_project_id: 881,
+      target_expected_updated_at: mancheProjectRow.updated_at,
+      target_location_plan: expect.objectContaining({ waypoints: [expect.objectContaining({ descriptionVhf: 'Départ modifié' })] }) }));
+    expect(screen.queryByLabelText('Changer de projet')).not.toBeInTheDocument();
+  });
+
+  it('retains map edits and expected version when the server rejects a concurrent update', async () => {
+    const { client, rpc } = createClient({ projects: { data: [{ ...atlantiqueProjectRow, location_plan: editableMapPlan() }], error: null } },
+      { data: null, error: { code: '40001', message: 'Le projet a été modifié. Rechargez sa carte.' } });
+    render(<ProjectsPage client={client as never} roles={['admin']} />); await openEditableMap(); changeMapDescription();
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la carte' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Le projet a été modifié');
+    expect(screen.getByLabelText('Description · Waypoint 1')).toHaveValue('Départ modifié'); expect(screen.getByRole('button', { name: 'Enregistrer la carte' })).toBeEnabled();
+    expect(rpc).toHaveBeenCalledWith('projects_set_location', expect.objectContaining({ target_expected_updated_at: atlantiqueProjectRow.updated_at }));
+  });
+
+  it.each(['tab', 'project', 'list'] as const)('protects map edits before leaving by %s, and discards only after confirmation', async action => {
+    const { client, rpc } = createClient({ projects: { data: [{ ...atlantiqueProjectRow, location_plan: editableMapPlan() }, mancheProjectRow], error: null } });
+    render(<ProjectsPage client={client as never} roles={['admin']} />); await openEditableMap(); changeMapDescription();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const leave = () => action === 'tab' ? fireEvent.click(screen.getByRole('tab', { name: 'Documents' }))
+      : action === 'project' ? fireEvent.change(screen.getByLabelText('Changer de projet'), { target: { value: '881' } })
+      : fireEvent.click(screen.getByRole('button', { name: 'Liste des projets' }));
+    leave(); expect(confirm).toHaveBeenCalledOnce(); expect(screen.getByLabelText('Description · Waypoint 1')).toHaveValue('Départ modifié');
+    const unload = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(unload); expect(unload.defaultPrevented).toBe(true);
+    confirm.mockReturnValue(true); leave();
+    expect(screen.queryByLabelText('Description · Waypoint 1')).not.toBeInTheDocument();
+    if (action === 'tab') expect(screen.getByRole('tab', { name: 'Documents' })).toHaveAttribute('aria-selected', 'true');
+    if (action === 'project') expect(within(screen.getByLabelText('Informations du projet')).getByRole('heading', { name: mancheProjectRow.title })).toBeVisible();
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_set_location'); confirm.mockRestore();
+  });
+
+  it('protects dirty map edits before opening full project, status, document and catalogue actions', async () => {
+    const { client } = createClient({ projects: { data: [{ ...atlantiqueProjectRow, location_plan: editableMapPlan() }], error: null } });
+    render(<ProjectsPage client={client as never} roles={['admin']} />); await openEditableMap(); changeMapDescription();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Nouveau projet' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier le statut du dossier P1086' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Émettre le document' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clients' }));
+    expect(confirm).toHaveBeenCalledTimes(4); expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Description · Waypoint 1')).toHaveValue('Départ modifié');
+    expect(fireEvent.click(screen.getByRole('link', { name: 'Éléments de facturation' }))).toBe(false);
+    expect(confirm).toHaveBeenCalledTimes(5); confirm.mockRestore();
+  });
+
+  it('locks record navigation during map persistence and ignores duplicate clicks', async () => {
+    const pending = mapPromise<{ data: unknown; error: unknown }>(), plan = editableMapPlan();
+    const { client, rpc } = createClient({ projects: { data: [{ ...atlantiqueProjectRow, location_plan: plan }, mancheProjectRow], error: null } });
+    const originalRpc = rpc.getMockImplementation()!;
+    rpc.mockImplementation((name: string, args: unknown) => name === 'projects_set_location' ? pending.promise : originalRpc(name, args));
+    render(<ProjectsPage client={client as never} roles={['admin']} />); await openEditableMap(); changeMapDescription();
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la carte' }));
+    expect(screen.getByLabelText('Changer de projet')).toBeDisabled(); expect(screen.getByRole('button', { name: 'Liste des projets' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Nouveau projet' })).toBeDisabled(); expect(screen.getByRole('tab', { name: 'Documents' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrement…' }));
+    expect(rpc.mock.calls.filter(([name]) => name === 'projects_set_location')).toHaveLength(1);
+    await act(async () => pending.resolve({ data: { id: 880, updated_at: '2026-07-15T14:00:00Z' }, error: null }));
+    expect(screen.getByRole('tab', { name: 'Carte' })).toHaveAttribute('aria-selected', 'true'); expect(screen.getByLabelText('Changer de projet')).toBeEnabled();
+  });
+
+  it('blocks persistence when edit permission is revoked and ignores an in-flight success after an account/client switch', async () => {
+    const pending = mapPromise<{ data: unknown; error: unknown }>();
+    const { client, rpc } = createClient({ projects: { data: [{ ...atlantiqueProjectRow, location_plan: editableMapPlan() }], error: null } });
+    const originalRpc = rpc.getMockImplementation()!; rpc.mockImplementation((name: string, args: unknown) => name === 'projects_set_location' ? pending.promise : originalRpc(name, args));
+    const view = render(<ProjectsPage client={client as never} roles={['admin']} />); await openEditableMap(); changeMapDescription();
+    view.rerender(<ProjectsPage client={client as never} roles={['marin']} />);
+    expect(screen.getByRole('button', { name: 'Enregistrer la carte' })).toBeDisabled(); expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_set_location');
+    view.rerender(<ProjectsPage client={client as never} roles={['admin']} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la carte' }));
+    const other = createClient({ projects: { data: [{ ...atlantiqueProjectRow, title: 'Projet autre compte', location_plan: null }], error: null } });
+    view.rerender(<ProjectsPage client={other.client as never} roles={['marin']} />);
+    await screen.findByRole('heading', { name: 'Projet autre compte' });
+    await act(async () => pending.resolve({ data: { id: 880, updated_at: '2026-07-15T14:00:00Z' }, error: null }));
+    expect(screen.queryByText('La carte du projet a été enregistrée.')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Carte' })); expect(screen.getByText('Aucun waypoint, point isolé ou zone enregistré pour ce projet.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Modifier la carte' })).not.toBeInTheDocument(); expect(other.rpc.mock.calls.map(([name]) => name)).not.toContain('projects_set_location');
   });
 
   it('selects a project and exposes contract-aware read-only sections as accessible tabs', async () => {

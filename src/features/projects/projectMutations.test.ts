@@ -12,6 +12,7 @@ import {
   fetchProjectCatalogOptions,
   saveClient,
   saveProject,
+  saveProjectLocation,
   saveProjectContractDetails,
   saveProjectTowedAsset,
   validateProjectWriteInput,
@@ -20,6 +21,49 @@ import {
 } from './projectMutations';
 
 describe('projectMutations', () => {
+  it('saves only canonical geography without sending contract or client fields and preserves microseconds', async () => {
+    const plan = { ...emptyProjectLocationPlan(), includeInPdf: true,
+      points: [{ id: 'isolated', number: 'OSS', descriptionVhf: 'Plateforme', latitude: '50', longitude: '1', ukc: '', eta: '', denseTraffic: false, isolatedPointIcon: 'platform' as const }] };
+    const original = structuredClone(plan), stamp = '2026-10-28T08:00:00.123456+00:00';
+    const rpc = vi.fn().mockResolvedValue({ data: { id: 42, project_code: 'P42', title: 'Contrat conservé', updated_at: '2026-10-28T09:00:00.765432+00:00' }, error: null });
+    const result = await saveProjectLocation({ rpc } as never, 42, plan, stamp);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('projects_set_location', { target_project_id: 42, target_location_plan: original, target_expected_updated_at: stamp });
+    expect(result).toEqual({ id: 42, projectCode: 'P42', title: 'Contrat conservé', updatedAt: '2026-10-28T09:00:00.765432+00:00' });
+    expect(plan).toEqual(original); expect(rpc.mock.calls[0][1].target_location_plan).not.toBe(plan);
+  });
+
+  it('allows an explicit empty location without treating it as an omitted write', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [{ id: 42, updated_at: '2026-10-28T08:00:00.123456Z' }], error: null });
+    await saveProjectLocation({ rpc } as never, 42, null, '2026-10-28T07:00:00.654321Z');
+    expect(rpc.mock.calls[0][1].target_location_plan).toBeNull();
+  });
+
+  it('rejects invalid map save identity, timestamp or geography before an RPC', async () => {
+    const rpc = vi.fn();
+    for (const id of [0, -1, 1.5, NaN, Number.MAX_SAFE_INTEGER + 1]) {
+      await expect(saveProjectLocation({ rpc } as never, id, emptyProjectLocationPlan(), '2026-10-28T08:00:00Z')).rejects.toThrow('projet est obligatoire');
+    }
+    for (const stamp of ['', ' ', 'invalide']) {
+      await expect(saveProjectLocation({ rpc } as never, 42, emptyProjectLocationPlan(), stamp)).rejects.toThrow('Rechargez le projet');
+    }
+    await expect(saveProjectLocation({ rpc } as never, 42, { ...emptyProjectLocationPlan(), includeInPdf: 'yes' } as never, '2026-10-28T08:00:00Z')).rejects.toThrow('localisation');
+    await expect(saveProjectLocation({ rpc } as never, 42, undefined as never, '2026-10-28T08:00:00Z')).rejects.toThrow('localisation');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('propagates concurrent and unauthorized map errors without retrying', async () => {
+    for (const message of ['Le projet a été modifié par un autre utilisateur.', 'Droits insuffisants pour modifier la localisation du projet.']) {
+      const rpc = vi.fn().mockResolvedValue({ data: null, error: { message } });
+      await expect(saveProjectLocation({ rpc } as never, 42, emptyProjectLocationPlan(), '2026-10-28T08:00:00Z')).rejects.toThrow(message);
+      expect(rpc).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it.each([null, { id: 99, updated_at: '2026-10-28T09:00:00Z' }, { id: 42, updated_at: '' }])('rejects an unconfirmed scoped map response %s', async (data) => {
+    const rpc = vi.fn().mockResolvedValue({ data, error: null });
+    await expect(saveProjectLocation({ rpc } as never, 42, emptyProjectLocationPlan(), '2026-10-28T08:00:00Z')).rejects.toThrow('n’a pas été confirmé');
+  });
+
   it('saves a canonical location in the same RPC and returns the final microsecond concurrency token', async () => {
     const locationPlan = emptyProjectLocationPlan();
     locationPlan.waypoints = [{ id: 'wp', number: '1', descriptionVhf: '', latitude: '49° 39.000 N', longitude: '', eta: '', ukc: '', denseTraffic: true,

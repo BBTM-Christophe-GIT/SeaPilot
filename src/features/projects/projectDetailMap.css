@@ -1,0 +1,4 @@
+.project-detail-map-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-2); margin-block: var(--sp-space-3); }
+.project-detail-map-actions:empty { display: none; }
+.project-detail-map-actions button { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-space-2); }
+@media (max-width: 720px) { .project-detail-map-actions button { flex: 1 1 auto; } }
