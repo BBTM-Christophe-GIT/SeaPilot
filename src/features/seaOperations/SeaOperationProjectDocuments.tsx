@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ExternalLink, FileText } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AppDialog } from '../../components/AppDialog';
 import { createSeaOperationProjectDocumentUrl, fetchSeaOperationProjectDocuments, type SeaOperationProjectDocument } from './seaOperationDocumentQueries';
 
@@ -14,6 +14,7 @@ const message = (error: unknown) => error instanceof Error ? error.message : typ
 
 /** Read-only project documents: access is checked again when opening each file. */
 export function SeaOperationProjectDocuments({ client, projectId, disabled = false }: SeaOperationProjectDocumentsProps) {
+  const titleId = useId();
   const [attempt, setAttempt] = useState(0);
   const context = useMemo(() => ({ client, projectId, attempt }), [client, projectId, attempt]);
   const currentContext = useRef(context);
@@ -64,8 +65,8 @@ export function SeaOperationProjectDocuments({ client, projectId, disabled = fal
   const isPdf = !externalReader && currentViewer?.document.mimeType === 'application/pdf';
   const isImage = Boolean(!externalReader && currentViewer && /^image\/(png|jpe?g|webp|gif|avif)$/i.test(currentViewer.document.mimeType));
 
-  return <details className="so-project-documents">
-    <summary><FileText aria-hidden="true" size={17} /><span>Documents du projet</span>{currentCatalog && !currentCatalog.error ? <small>{currentCatalog.documents.length} document{currentCatalog.documents.length > 1 ? 's' : ''}</small> : null}</summary>
+  return <section aria-labelledby={titleId} className="so-project-documents">
+    <header><FileText aria-hidden="true" size={17} /><h3 id={titleId}>Documents</h3>{currentCatalog && !currentCatalog.error ? <small>{currentCatalog.documents.length} document{currentCatalog.documents.length > 1 ? 's' : ''}</small> : null}</header>
     {!currentCatalog ? <p role="status">Chargement des documents du projet…</p> : currentCatalog.error ? <div role="alert"><p>{currentCatalog.error}</p><button className="sp-button sp-button--secondary" disabled={disabled} onClick={() => setAttempt((value) => value + 1)} type="button">Réessayer les documents</button></div> : currentCatalog.documents.length ? <ul>{currentCatalog.documents.map((document) => <li key={document.id}>
       <div><strong>{document.title || document.fileName}</strong><small>{[document.categoryLabel, document.subcategoryLabel, document.fileName].filter(Boolean).join(' · ')}</small></div>
       <button aria-label={`Ouvrir : ${document.title || document.fileName}`} className="sp-button sp-button--secondary" disabled={disabled} onClick={() => void openDocument(document)} type="button">Ouvrir</button>
@@ -77,5 +78,5 @@ export function SeaOperationProjectDocuments({ client, projectId, disabled = fal
         </div>
       </AppDialog>
     </div> : null}
-  </details>;
+  </section>;
 }

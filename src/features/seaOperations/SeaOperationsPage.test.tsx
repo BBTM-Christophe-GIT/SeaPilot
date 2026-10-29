@@ -2338,6 +2338,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
   });
 
   it('ignores a late signature response from the previous mission after another captain is selected', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-27T13:27:00Z'));
     const choices = plannedMissions();
     const staleSignature = deferred<Awaited<ReturnType<typeof fetchSeaOperationCaptainSignature>>>();
     renderAccount(captainAccount, undefined, 1, choices);
@@ -2424,6 +2425,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
   });
 
   it('resets safety approvals, passage points and signature acknowledgment when the mission changes', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-27T13:27:00Z'));
     const choices = plannedMissions();
     const draft = noGoDraft();
     draft.project = choices[0].project;
@@ -2879,7 +2881,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(screen.queryByRole('button', { name: /Signer la décision/ })).not.toBeInTheDocument();
   });
 
-  it('loads only the selected project documents and leaves them consultable on a signed operation', async () => {
+  it('shows selected project documents below Armement as an open section and leaves them consultable on a signed operation', async () => {
     const mission = plannedMissions()[0];
     const draft = noGoDraft();
     draft.project = mission.project;
@@ -2888,13 +2890,17 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const { client } = renderAccount(captainAccount, record, 1, plannedMissions());
     vi.mocked(fetchSeaOperationProjectDocuments).mockResolvedValue([{ id: 'project:101', projectId: mission.projectId, title: 'Plan de prévention autorisé', fileName: 'prevention.pdf', mimeType: 'application/pdf', categoryLabel: 'Sécurité', subcategoryLabel: '', createdAt: '2026-10-22T08:00:00Z', expiresOn: null }]);
     await openRecord(record);
-    await userEvent.click(formQueries().getByText('Documents du projet'));
+    const armament = formQueries().getByRole('region', { name: 'Préparation de l’Armement' });
+    const documents = formQueries().getByRole('region', { name: /^Documents$/ });
+    expect(armament.compareDocumentPosition(documents) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(documents.closest('fieldset')).toBeNull();
+    expect(documents.querySelector('summary')).toBeNull();
     expect(await formQueries().findByRole('button', { name: 'Ouvrir : Plan de prévention autorisé' })).toBeEnabled();
     expect(fetchSeaOperationProjectDocuments).toHaveBeenCalledWith(client, mission.projectId);
     expect(formQueries().getByLabelText('Projet')).toBeDisabled();
     expect(formQueries().queryByText(/Offre commerciale|Facturation/)).not.toBeInTheDocument();
     await userEvent.click(stepButton(1));
-    expect(formQueries().queryByText('Documents du projet')).not.toBeInTheDocument();
+    expect(formQueries().queryByRole('region', { name: /^Documents$/ })).not.toBeInTheDocument();
     expect(saveSeaOperation).not.toHaveBeenCalled();
     expect(signSeaOperation).not.toHaveBeenCalled();
   });

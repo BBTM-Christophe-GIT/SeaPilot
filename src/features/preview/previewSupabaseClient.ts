@@ -13,6 +13,7 @@ import { DEFAULT_PROCEDURE_TAGS } from '../procedures/procedureTagCatalogue';
 import { seaOperationPreviewRpc } from '../seaOperations/seaOperationPreview';
 import { GOURY_WEATHER_MATRIX, isVesselWeatherMatrix, cloneVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { parseProjectLocationPlan } from '../projects/projectLocation';
+import { DEFAULT_PROJECT_DOCUMENT_CATEGORIES } from '../projects/projectDocumentCategories';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
@@ -1838,6 +1839,88 @@ function previewRows(table: string): Array<Record<string, unknown>> {
   return (PREVIEW_ROWS[table] || []) as Array<Record<string, unknown>>;
 }
 
+// Preview-only preferences: no production request, storage location or ID alias.
+const previewProjectDocumentSelections = new Map<number, ReadonlySet<string>>();
+const previewProjectDocumentCategories = new Map([
+  ...DEFAULT_PROJECT_DOCUMENT_CATEGORIES,
+  { key: 'project_document', label: 'Documents du projet', parentKey: null },
+].map(category => [category.key, category]));
+
+function previewProjectDocumentCategoryAllowed(key: unknown): boolean {
+  const compact = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr').replace(/[^a-z0-9]/g, '');
+  const visited = new Set<string>();
+  let category = typeof key === 'string' ? previewProjectDocumentCategories.get(key) : undefined;
+  while (category && !visited.has(category.key)) {
+    visited.add(category.key);
+    if (['commercialoffer', 'commercialoffers', 'commercialcontract', 'commercialcontracts', 'commercialappendix', 'billing', 'offer', 'offers',
+      'contractdocument', 'contractdocuments', 'contract', 'contracts', 'contrat', 'contrats'].includes(compact(category.key))
+      || ['offrecommerciale', 'offrescommerciales', 'facturation', 'contrat', 'contrats', 'contract', 'contracts', 'commercialoffer', 'commercialoffers'].includes(compact(category.label))) return false;
+    if (category.parentKey === null) return true;
+    category = previewProjectDocumentCategories.get(category.parentKey);
+  }
+  return false;
+}
+
+function previewProjectOperationalDocumentCandidates(projectId: number) {
+  const generated = previewRows('project_generated_documents').filter(document => Number(document.project_id) === projectId
+    && ['operation_attachment', 'project_attachment'].includes(String(document.document_type))
+    && (document.document_type === 'operation_attachment' && document.category_key == null || previewProjectDocumentCategoryAllowed(document.category_key))
+    && (document.subcategory_key == null || previewProjectDocumentCategories.get(String(document.subcategory_key))?.parentKey === document.category_key
+      && previewProjectDocumentCategoryAllowed(document.subcategory_key)))
+    .map(document => ({
+      id: `generated:${document.id}`, project_id: String(projectId), title: String(document.file_name), file_name: String(document.file_name),
+      mime_type: String(document.mime_type || 'application/octet-stream'),
+      category_label: previewProjectDocumentCategories.get(String(document.category_key))?.label || 'Opérations',
+      subcategory_label: previewProjectDocumentCategories.get(String(document.subcategory_key))?.label || '',
+      created_at: String(document.created_at), expires_on: document.expires_on ?? null,
+    }));
+  const imported = previewRows('project_documents').filter(document => Number(document.project_id) === projectId
+    && document.is_folder === false && previewProjectDocumentCategoryAllowed(document.category_key))
+    .map(document => ({
+      id: `project:${document.id}`, project_id: String(projectId),
+      title: String(document.title || document.file_name || 'Document du projet'),
+      file_name: String(document.file_name || document.title || 'Document du projet'),
+      mime_type: String(document.mime_type || 'application/octet-stream'),
+      category_label: previewProjectDocumentCategories.get(String(document.category_key))!.label, subcategory_label: '',
+      created_at: String(document.created_at || document.source_modified_at), expires_on: null,
+    }));
+  return [...generated, ...imported].sort((first, second) => first.category_label.localeCompare(second.category_label, 'fr')
+    || first.subcategory_label.localeCompare(second.subcategory_label, 'fr') || first.title.localeCompare(second.title, 'fr') || first.id.localeCompare(second.id));
+}
+
+function previewProjectDocumentSelectionRpc(functionName: string, args: Record<string, unknown>): PreviewResult {
+  const key = typeof args.p_project_id === 'string' || typeof args.p_project_id === 'number' ? String(args.p_project_id) : '';
+  const projectId = Number(key);
+  if (!/^[1-9][0-9]*$/.test(key) || !Number.isSafeInteger(projectId)) {
+    return { data: null, error: { code: '22023', message: 'Le projet sélectionné est invalide.' } };
+  }
+  const project = previewRows('projects').find(row => Number(row.id) === projectId);
+  const singleDocument = functionName === 'set_project_sea_operation_document';
+  const writing = singleDocument || functionName === 'set_project_sea_operation_documents';
+  if (!project || writing && project.archived_at) {
+    return { data: null, error: { code: '42501', message: 'La gestion des documents de ce projet est inaccessible.' } };
+  }
+  const documents = previewProjectOperationalDocumentCandidates(projectId);
+  if (writing) {
+    const ids = singleDocument ? [args.p_document_id] : args.p_document_ids;
+    if (singleDocument && typeof args.p_selected !== 'boolean' || !Array.isArray(ids) || ids.length > 5000
+      || ids.some(id => typeof id !== 'string' || !/^(generated|project):[1-9][0-9]{0,18}$/.test(id))) {
+      return { data: null, error: { code: '22023', message: 'La sélection des documents est invalide.' } };
+    }
+    if (ids.some(id => !documents.some(document => document.id === id))) {
+      return { data: null, error: { code: '42501', message: 'Un document sélectionné est inaccessible pour ce projet.' } };
+    }
+    const next = singleDocument ? new Set(previewProjectDocumentSelections.get(projectId)) : new Set<string>(ids);
+    if (singleDocument) {
+      if (args.p_selected) next.add(String(args.p_document_id));
+      else next.delete(String(args.p_document_id));
+    }
+    previewProjectDocumentSelections.set(projectId, next);
+  }
+  const selected = previewProjectDocumentSelections.get(projectId);
+  return { data: { configured: selected !== undefined, documents: documents.map(document => ({ ...document, selected: selected?.has(document.id) ?? false })) }, error: null };
+}
+
 /** Fleet edits are retained only in this demonstration module instance. */
 function createPreviewVesselQuery(): object {
   const filters: Array<(row: Record<string, unknown>) => boolean> = [];
@@ -2148,6 +2231,9 @@ function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'project_sea_operation_documents' || functionName === 'set_project_sea_operation_documents' || functionName === 'set_project_sea_operation_document') {
+    return createPreviewQuery(previewProjectDocumentSelectionRpc(functionName, args));
+  }
   // The pharmacy editor owns its synthetic register; the shared home never reads real inventory.
   if (functionName === 'pharmacy_notifications') return createPreviewQuery({ data: [], error: null });
   if (functionName === 'document_blob_lookup') return createPreviewQuery({ data: null, error: null });

@@ -35,6 +35,12 @@ export async function fetchSeaOperationProjectDocuments(client: SupabaseClient, 
   const key = projectKey(projectId);
   const { data, error } = await client.rpc('sea_operation_project_documents', { p_project_id: key });
   if (error) throw error;
+  return parseSeaOperationProjectDocuments(data, key);
+}
+
+/** Shared metadata validation for operational readers and the Project selector. */
+export function parseSeaOperationProjectDocuments(data: unknown, projectId: string): SeaOperationProjectDocument[] {
+  const key = projectKey(projectId);
   if (!Array.isArray(data)) throw new Error('La réponse des documents du projet est invalide.');
   return data.map((value) => {
     const row = object(value);

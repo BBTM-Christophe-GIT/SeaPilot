@@ -12,6 +12,8 @@ const documentGenerationMocks = vi.hoisted(() => ({
   downloadGeneratedProjectDocument: vi.fn(),
   generateProjectDocument: vi.fn(),
 }));
+const operationSelectionMocks = vi.hoisted(() => ({ fetch: vi.fn(), save: vi.fn() }));
+vi.mock('./projectSeaOperationDocumentsQueries', () => ({ fetchProjectSeaOperationDocuments: operationSelectionMocks.fetch, saveProjectSeaOperationDocument: operationSelectionMocks.save }));
 
 const documentStorageMocks = vi.hoisted(() => ({
   createProjectDocumentBundle: vi.fn(),
@@ -345,6 +347,7 @@ describe('ProjectsPage', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-07-15T12:00:00Z'));
     vi.clearAllMocks();
+    operationSelectionMocks.fetch.mockResolvedValue({ configured: false, documents: [] });
     documentGenerationMocks.generateProjectDocument.mockResolvedValue({
       blob: new Blob(['pdf'], { type: 'application/pdf' }),
       fileName: 'P1086 - Offre - R1.pdf',
@@ -425,6 +428,38 @@ describe('ProjectsPage', () => {
     expect(screen.getAllByText('Offre émise.pdf')).toHaveLength(1);
     expect(screen.getAllByText('Ordre de mission.pdf')).toHaveLength(1);
     expect(screen.getByRole('button', { name: /Ouvrir le document.*Offre émise.pdf/ })).toBeVisible();
+  });
+
+  it('places opt-in checkboxes after Ouvrir and never offers an emitted commercial document', async () => {
+    const user = userEvent.setup();
+    const metadata = { projectId: '880', mimeType: 'application/pdf', categoryLabel: 'Opérations', subcategoryLabel: '', createdAt: '2026-07-15T10:00:00Z', expiresOn: null, selected: false };
+    const catalog = { configured: false, documents: [
+      { ...metadata, id: 'generated:91', title: 'Offre émise.pdf', fileName: 'Offre émise.pdf' },
+      { ...metadata, id: 'generated:92', title: 'Ordre de mission.pdf', fileName: 'Ordre de mission.pdf' },
+    ] };
+    operationSelectionMocks.fetch.mockResolvedValue(catalog);
+    operationSelectionMocks.save.mockResolvedValue({ ...catalog, configured: true, documents: catalog.documents.map(document => ({ ...document, selected: document.id === 'generated:92' })) });
+    const base = { project_id: 880, category_key: null, subcategory_key: null, expires_on: null, mime_type: 'application/pdf', file_size_bytes: 512, sharepoint_web_url: null, sharepoint_folder_path: null, storage_bucket: 'project-files', created_at: '2026-07-15T10:00:00Z' };
+    const { client } = createClient({ project_generated_documents: { data: [
+      { ...base, id: 91, document_type: 'offer', planning_occurrence_id: null, file_name: 'Offre émise.pdf', storage_path: 'projects/880/generated/offer.pdf' },
+      { ...base, id: 92, document_type: 'operation_attachment', planning_occurrence_id: 1201, file_name: 'Ordre de mission.pdf', storage_path: 'projects/880/operations/order.pdf' },
+    ], error: null } });
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Documents' }));
+    const table = screen.getByRole('table', { name: 'Documents du projet' });
+    expect(within(table).getAllByRole('columnheader').map(header => header.textContent)).toEqual(['Document', 'Ouvrir', 'Opération en Mer']);
+    expect(screen.queryByRole('button', { name: 'Documents pour Opération en Mer' })).not.toBeInTheDocument();
+    const order = screen.getByText('Ordre de mission.pdf').closest('tr')!;
+    const checkbox = await within(order).findByRole('checkbox');
+    expect(checkbox).not.toBeChecked();
+    expect(within(order).getByRole('button', { name: /Ouvrir le document/ })).toHaveTextContent(/^Ouvrir$/);
+    expect(order.cells[1].querySelector('button')).toBeTruthy();
+    expect(order.cells[2].querySelector('input')).toBe(checkbox);
+    expect(within(screen.getByText('Offre émise.pdf').closest('tr')!).queryByRole('checkbox')).not.toBeInTheDocument();
+    await user.click(checkbox);
+    await waitFor(() => expect(checkbox).toBeChecked());
+    expect(operationSelectionMocks.save).toHaveBeenCalledWith(client, 880, 'generated:92', true);
   });
 
   it('starts with a compact fleet summary and expands only the eligible vessels', async () => {
@@ -1349,7 +1384,7 @@ describe('ProjectsPage', () => {
     await waitFor(() => expect(createSignedUrl).toHaveBeenCalled());
 
     expect(link).toBeEnabled();
-    expect(link).toHaveTextContent('Ouvrir le document');
+    expect(link).toHaveTextContent('Ouvrir');
     expect(screen.getAllByText(/Document du projet/).length).toBeGreaterThan(0);
     expect(createSignedUrl).toHaveBeenCalledWith(
       'projects/880/contract-documents/884-Contrat-Atlantique-signe.pdf',

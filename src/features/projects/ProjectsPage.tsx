@@ -47,6 +47,7 @@ import type { AppShellOutletContext } from '../shell/AppShell';
 import { ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
 import { ProjectStoredDocumentLink } from './ProjectStoredDocumentLink';
 import { ProjectDocumentLibrary } from './ProjectDocumentLibrary';
+import { ProjectSeaOperationDocumentCheckbox } from './ProjectSeaOperationDocuments';
 import type { StoredProjectDocument } from './projectDocumentStorage';
 import { ClientCatalogDialog, ServiceCatalogDialog, TowedAssetCatalogDialog } from './ProjectCatalogDialogs';
 import { ProjectBillingPanel } from './ProjectBillingPanel';
@@ -468,10 +469,14 @@ function ProjectDocuments({
   client,
   documents,
   categoryLabels,
+  selectionColumn = false,
+  canSelect = true,
 }: {
   client: SupabaseClient;
   documents: ProjectDocumentRecord[];
   categoryLabels: ReadonlyMap<string, string>;
+  selectionColumn?: boolean;
+  canSelect?: boolean;
 }) {
   if (documents.length === 0) {
     return null;
@@ -479,7 +484,7 @@ function ProjectDocuments({
 
   return (
     <>
-      <ul className="project-document-list">
+      <tbody>
         {documents.map((document) => {
           const linkState = getSharePointDocumentLinkState(document.fileUrl);
           const metadata = [
@@ -491,16 +496,16 @@ function ProjectDocuments({
           ].filter(Boolean);
 
           return (
-            <li key={document.id}>
-              <FileText aria-hidden="true" size={18} />
-              <div>
+            <tr key={document.id}>
+              <td className="project-document-file"><div className="project-document-identity"><FileText aria-hidden="true" size={18} /><div>
                 <strong>{document.fileName || document.title}</strong>
                 {metadata.length > 0 ? <span>{metadata.join(' · ')}</span> : null}
                 {document.folderPath || document.notes ? <small>{document.folderPath || document.notes}</small> : null}
                 {document.projectId === null ? (
                   <small className="project-document-warning">Rattachement au projet Supabase non résolu</small>
                 ) : null}
-              </div>
+              </div></div></td>
+              <td className="project-document-open">
               {document.storageBucket && document.storagePath ? (
                 <ProjectStoredDocumentLink
                   client={client}
@@ -518,10 +523,12 @@ function ProjectDocuments({
                   {linkState.status === 'missing' ? 'URL SharePoint absente' : 'URL SharePoint invalide ou non autorisée'}
                 </span>
               )}
-            </li>
+              </td>
+              {selectionColumn ? <td className="project-document-operation">{canSelect && !document.isFolder ? <ProjectSeaOperationDocumentCheckbox documentId={`project:${document.id}`} documentName={document.fileName || document.title} /> : null}</td> : null}
+            </tr>
           );
         })}
-      </ul>
+      </tbody>
     </>
   );
 }
@@ -530,10 +537,12 @@ function ProjectStoredAttachments({
   client,
   documents,
   categoryLabels,
+  selectionColumn = false,
 }: {
   client: SupabaseClient;
   documents: ProjectOperationDocumentRecord[];
   categoryLabels: ReadonlyMap<string, string>;
+  selectionColumn?: boolean;
 }) {
   if (documents.length === 0) {
     return null;
@@ -541,7 +550,7 @@ function ProjectStoredAttachments({
 
   return (
     <>
-      <ul className="project-document-list">
+      <tbody>
         {documents.map((document) => {
           const category = document.categoryKey ? categoryLabels.get(document.categoryKey) || document.categoryKey : '';
           const subcategory = document.subcategoryKey
@@ -555,18 +564,18 @@ function ProjectStoredAttachments({
             document.createdAt ? `ajouté le ${formatDate(document.createdAt)}` : '',
           ].filter(Boolean);
           return (
-            <li key={document.id}>
-              <FileText aria-hidden="true" size={18} />
-              <div>
+            <tr key={document.id}>
+              <td className="project-document-file"><div className="project-document-identity"><FileText aria-hidden="true" size={18} /><div>
                 <strong>{document.fileName}</strong>
                 {metadata.length > 0 ? <span>{metadata.join(' · ')}</span> : null}
                 {document.expiresOn ? <small>Échéance : {formatDate(document.expiresOn)}</small> : null}
-              </div>
-              <ProjectStoredDocumentLink client={client} document={document} />
-            </li>
+              </div></div></td>
+              <td className="project-document-open"><ProjectStoredDocumentLink client={client} document={document} /></td>
+              {selectionColumn ? <td className="project-document-operation">{['operation_attachment', 'project_attachment'].includes(document.documentType) ? <ProjectSeaOperationDocumentCheckbox documentId={`generated:${document.id}`} documentName={document.fileName} /> : null}</td> : null}
+            </tr>
           );
         })}
-      </ul>
+      </tbody>
     </>
   );
 }
@@ -936,18 +945,19 @@ function ProjectDetail({
           otherDocuments={operationDocuments.filter((document) => !projectAttachments.includes(document))}
           projectDocuments={projectDocuments}
           projectId={project.id}
-          renderDocuments={(documents, labels) => <>
-            <ProjectStoredAttachments categoryLabels={labels} client={supabaseClient} documents={documents.attachments} />
+          renderDocuments={(documents, labels) => <div className="project-documents-table-scroll"><table aria-label="Documents du projet" className="project-documents-table">
+            <thead><tr><th scope="col">Document</th><th scope="col">Ouvrir</th>{isManager ? <th scope="col">Opération en Mer</th> : null}</tr></thead>
+            <ProjectStoredAttachments categoryLabels={labels} client={supabaseClient} documents={documents.attachments} selectionColumn={isManager} />
             {documents.otherDocuments?.length ? (
-              <ProjectStoredAttachments categoryLabels={labels} client={supabaseClient} documents={documents.otherDocuments} />
+              <ProjectStoredAttachments categoryLabels={labels} client={supabaseClient} documents={documents.otherDocuments} selectionColumn={isManager} />
             ) : null}
-            <ProjectDocuments categoryLabels={labels} client={supabaseClient} documents={documents.projectDocuments} />
+            <ProjectDocuments categoryLabels={labels} client={supabaseClient} documents={documents.projectDocuments} selectionColumn={isManager} />
             {contractDocumentsUnavailable ? (
-              <p className="project-section-empty">Documents contractuels indisponibles en raison d’une erreur de chargement.</p>
+              <tbody><tr><td colSpan={isManager ? 3 : 2}>Documents contractuels indisponibles en raison d’une erreur de chargement.</td></tr></tbody>
             ) : (
-              <ProjectDocuments categoryLabels={labels} client={supabaseClient} documents={documents.contractDocuments} />
+              <ProjectDocuments categoryLabels={labels} client={supabaseClient} documents={documents.contractDocuments} selectionColumn={isManager} canSelect={false} />
             )}
-          </>}
+          </table></div>}
         />
       </section>
       ) : null}
