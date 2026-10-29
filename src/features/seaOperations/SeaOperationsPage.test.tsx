@@ -2595,7 +2595,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
       dapaq: { method: '', preparedBy: '', agentName: '', agentContact: '' },
       supplies: expect.objectContaining({ delegated: 'yes', suppliers: '', items: [] }),
       signature: { captainName: choices[1].captains[0].name, date: seaOperationToday(), place: 'Caen', acknowledged: false },
-    }), record);
+    }), record, { projectId: choices[1].projectId, departurePort: choices[1].vessel.departurePort, arrivalPort: choices[1].vessel.arrivalPort });
   });
 
   it('uses one accessible binary switch per question and an editable responsive Passage Plan', async () => {
