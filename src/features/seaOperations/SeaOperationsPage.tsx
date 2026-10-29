@@ -5,7 +5,7 @@ import { AppDialog } from '../../components/AppDialog';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS, emptySeaOperation, newSeaOperation, createTransitSeaOperation, seaOperationContextDate, getSeaOperationAssessment, isSeaOperationPayload, validateSeaOperation, seaOperationToday, type SeaOperationPayload, type SeaOperationAnswer as Answer } from './seaOperationModel';
-import { fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationCaptainSignature, fetchSeaOperationVesselContext, fetchSeaOperationVesselCaptainSignature, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, reviseSeaOperation, deleteSeaOperation, type SeaOperationData, type SeaOperationRecord, type SeaOperationPlanningChoice, type SeaOperationVesselContext } from './seaOperationQueries';
+import { fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationCaptainSignature, fetchSeaOperationVesselContext, fetchSeaOperationVesselCaptainSignature, fetchSeaOperationWeatherObservations, loadSeaOperationSignature, saveSeaOperation, signSeaOperation, reviseSeaOperation, deleteSeaOperation, type SeaOperationData, type SeaOperationRecord, type SeaOperationPlanningChoice, type SeaOperationVesselContext, type SeaOperationProjectPorts } from './seaOperationQueries';
 import { fetchSeaOperationPlanningWindow, seaOperationPlanningChoiceKey, seaOperationPlanningChoiceLabel, type SeaOperationPlanningWindow } from './seaOperationPlanningWindow';
 import './seaOperations.css';
 import { SeaOperationPrint } from './SeaOperationPrint';
@@ -46,6 +46,7 @@ import { ProjectLocationOverlayFields } from '../projects/ProjectLocationOverlay
 import type { ProjectLocationOverlay } from '../projects/projectLocation';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { formatClientContactLines } from '../../lib/clientContact';
+import { ProjectPortCombobox } from '../projects/ProjectPortCombobox';
 
 const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'];
 const STEP_DETAILS = ['Mission, client et voyage', 'Préparation et sécurité du navire', 'Cartes et points de route', 'GO / NO GO et signature'];
@@ -54,8 +55,12 @@ const formatDate = (value: string | null) => value ? new Date(value).toLocaleStr
 const planningDateLabel = (value: string) => value.split('-').reverse().join('/');
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : typeof error === 'object' && error && 'message' in error ? String(error.message) : 'Une erreur est survenue. Réessayez.';
 const recoveryKey = (data: SeaOperationData) => `seapilot:sea-operation-draft:v1:${data.companyId}:${data.actorId}`;
-interface DraftRecovery { draft: SeaOperationPayload; recordId: string | null; version: number | null; step: number }
+interface DraftRecovery { draft: SeaOperationPayload; recordId: string | null; version: number | null; step: number; projectPorts?: SeaOperationProjectPorts | null }
 interface RecordAction { kind: 'revise' | 'delete'; record: SeaOperationRecord; client: SupabaseClient; account: string }
+interface ProjectPortsContext { client: SupabaseClient; account: string; ports: SeaOperationProjectPorts }
+function planningProjectPorts(choice: SeaOperationPlanningChoice): SeaOperationProjectPorts {
+  return { projectId: choice.projectId, departurePort: choice.vessel.departurePort, arrivalPort: choice.vessel.arrivalPort };
+}
 function readRecovery(data: SeaOperationData): DraftRecovery | null {
   try {
     const value: unknown = JSON.parse(sessionStorage.getItem(recoveryKey(data)) || 'null');
@@ -63,6 +68,10 @@ function readRecovery(data: SeaOperationData): DraftRecovery | null {
     const saved = value as Partial<DraftRecovery>;
     if (!isSeaOperationPayload(saved.draft) || !Number.isInteger(saved.step) || saved.step! < 0 || saved.step! >= STEPS.length
       || !(saved.recordId === null && saved.version === null || typeof saved.recordId === 'string' && Number.isInteger(saved.version) && saved.version! > 0)) return null;
+    if (saved.projectPorts != null && (typeof saved.projectPorts !== 'object' || Array.isArray(saved.projectPorts)
+      || typeof saved.projectPorts.projectId !== 'string' || !/^[1-9]\d{0,18}$/.test(saved.projectPorts.projectId)
+      || BigInt(saved.projectPorts.projectId) > 9223372036854775807n || saved.projectPorts.projectId !== saved.draft.planning?.projectId
+      || saved.draft.transit || typeof saved.projectPorts.departurePort !== 'string' || typeof saved.projectPorts.arrivalPort !== 'string')) return null;
     return saved as DraftRecovery;
   } catch { return null; }
 }
@@ -74,6 +83,13 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
   const id = useId();
   const nativeControl = isValidElement(children) && typeof children.type === 'string';
   return <div className={wide ? 'so-field so-wide' : 'so-field'}>{nativeControl ? <label htmlFor={id}>{label}</label> : <span className="so-field-label">{label}</span>}{isValidElement<{ id?: string }>(children) ? cloneElement(children, { id }) : children}</div>;
+}
+
+function PortField({ label, value, onChange, disabled }: {
+  label: string; value: string; onChange: (value: string) => void; disabled: boolean;
+}) {
+  const id = useId();
+  return <div className="so-field"><label htmlFor={id}>{label}</label><ProjectPortCombobox id={id} fitWithinScrollContainer disabled={disabled} value={value} onChange={onChange} /></div>;
 }
 
 interface ChoiceOption { value: string; label: string; disabled?: boolean }
@@ -143,6 +159,7 @@ export function SeaOperationsPage() {
   const { client, previewMode = false } = useOutletContext<AppShellOutletContext>();
   const [data, setData] = useState<SeaOperationData | null>(null);
   const [record, setRecord] = useState<SeaOperationRecord | null>(null);
+  const [projectPortsContext, setProjectPortsContext] = useState<ProjectPortsContext | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [draft, setDraft] = useState<SeaOperationPayload>(newSeaOperation);
   const latestDraft = useRef(draft);
@@ -162,6 +179,9 @@ export function SeaOperationsPage() {
   const [step, setStep] = useState(0);
   const [documentsContext, setDocumentsContext] = useState<{ client: SupabaseClient; account: string } | null>(null);
   const documentsOpen = documentsContext?.client === client && documentsContext.account === (data ? recoveryKey(data) : '');
+  const projectPorts = !draft.transit && projectPortsContext?.client === client
+    && projectPortsContext.account === (data ? recoveryKey(data) : '')
+    && projectPortsContext.ports.projectId === draft.planning?.projectId ? projectPortsContext.ports : undefined;
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const [busy, setBusy] = useState(false);
@@ -223,7 +243,7 @@ export function SeaOperationsPage() {
     setRecordAction(null); setRecordActionError(''); setBusy(false);
     loadedAccount.current = account;
     pendingUkc.current.clear(); setUkcRequests({ client: currentClient.current, statuses: {} });
-    setRecord(null); setDraft(emptySeaOperation()); setEditing(false); setDirty(false); setDocumentsContext(null); setStep(0);
+    setRecord(null); setProjectPortsContext(null); setDraft(emptySeaOperation()); setEditing(false); setDirty(false); setDocumentsContext(null); setStep(0);
     const recovery = readRecovery(result);
     if (!recovery) return;
     const existing = recovery.recordId ? result.records.find((item) => item.id === recovery.recordId) : null;
@@ -233,6 +253,10 @@ export function SeaOperationsPage() {
       return;
     }
     setRecord(existing ? { ...existing, version: recovery.version! } : null);
+    const retainedPorts = recovery.projectPorts ?? existing?.projectPorts;
+    if (retainedPorts && !recovery.draft.transit && retainedPorts.projectId === recovery.draft.planning?.projectId) {
+      setProjectPortsContext({ client: currentClient.current, account, ports: retainedPorts });
+    }
     const vessel = result.vessels.find((source) => String(source.id) === recovery.draft.vessel.id);
     setDraft(captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(recovery.draft, vessel), vessel), result.vessels))); setPlanningDate(seaOperationContextDate(recovery.draft) || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setDocumentsContext(null); setStep(recovery.step); setEditing(true); setDirty(true);
     setNotice('Votre préparation non enregistrée a été récupérée dans cet onglet. Vérifiez-la avant de l’enregistrer.');
@@ -249,7 +273,7 @@ export function SeaOperationsPage() {
     setRecordAction(null); setRecordActionError(''); setBusy(false); setExporting(false); setHistoryLoading(false);
     setWeatherRequests({ client, statuses: {} });
     pendingUkc.current.clear(); setUkcRequests({ client, statuses: {} });
-    setData(null); setRecord(null); setEditing(false); setDirty(false); setDocumentsContext(null); setNotice(''); setError('');
+    setData(null); setRecord(null); setProjectPortsContext(null); setEditing(false); setDirty(false); setDocumentsContext(null); setNotice(''); setError('');
   }, [client]);
 
   useEffect(() => {
@@ -272,10 +296,10 @@ export function SeaOperationsPage() {
   }, [editing]);
   useEffect(() => { if (formPane.current) formPane.current.scrollTop = 0; }, [step, documentsOpen]);
   useEffect(() => {
-    if (!data || !dirty) return;
-    try { sessionStorage.setItem(recoveryKey(data), JSON.stringify({ draft, recordId: record?.id ?? null, version: record?.version ?? null, step })); }
+    if (!data || !dirty || loadedAccount.current !== recoveryKey(data)) return;
+    try { sessionStorage.setItem(recoveryKey(data), JSON.stringify({ draft, recordId: record?.id ?? null, version: record?.version ?? null, step, projectPorts: projectPorts ?? null })); }
     catch { /* Editing and server saves remain available when local storage is unavailable. */ }
-  }, [data, dirty, draft, record, step]);
+  }, [data, dirty, draft, record, step, projectPorts]);
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty || mapDirty) { event.preventDefault(); event.returnValue = ''; } };
     const beforeNavigation = (event: MouseEvent) => {
@@ -332,6 +356,7 @@ export function SeaOperationsPage() {
           data?.vessels.find(source => String(source.id) === result.choices[0].vessel.id)?.maxSpeedKnots);
         const vessel = data?.vessels.find((source) => String(source.id) === selected.vessel.id);
         setPlanningDate(result.choices[0].date);
+        setProjectPortsContext(data ? { client, account: recoveryKey(data), ports: planningProjectPorts(result.choices[0]) } : null);
         setDraft(captureVesselDraft(result.choices[0].vessel.weatherMatrix === undefined ? captureVesselMatrix(selected, vessel) : selected, vessel));
         setDirty(true);
       }
@@ -562,6 +587,7 @@ export function SeaOperationsPage() {
     if (record?.draft.client.trim() && sameClientContext(record.draft, next)) next = { ...next, client: record.draft.client,
       clientId: record.draft.clientId, clientContact: record.draft.clientContact };
     const vessel = data?.vessels.find((source) => String(source.id) === next.vessel.id);
+    setProjectPortsContext(choice && data ? { client, account: recoveryKey(data), ports: planningProjectPorts(choice) } : null);
     if (choice) setPlanningDate(choice.date);
     setCaptainSignature(null); setVesselContext(null); setSignatureError(''); setVesselContextError('');
     setDraft(captureVesselDraft(choice?.vessel.weatherMatrix === undefined ? captureVesselMatrix(next, vessel) : next, vessel));
@@ -571,6 +597,7 @@ export function SeaOperationsPage() {
     allowAutomaticMission.current = false;
     editRevision.current += 1;
     setPlanningDate(value); setPlanning(null); setCaptainSignature(null); setVesselContext(null);
+    setProjectPortsContext(null);
     setDraft(current => current.transit ? invalidateSeaOperationUkc({ ...current, transit: { date: value, captainPersonId: '' },
       vessel: { ...current.vessel, captainName: '' }, signature: { ...current.signature, captainName: '', acknowledged: false } }) : newSeaOperation());
     setDirty(true); setIssues([]); setNotice('');
@@ -625,7 +652,9 @@ export function SeaOperationsPage() {
       if (!isCurrent()) throw new Error('La sélection a changé. Les modifications n’ont pas été enregistrées.');
       const captured = await captureSeaOperationValidationUkc(client, weather, { preview: previewMode, missingOnly: true });
       if (!isCurrent()) throw new Error('La sélection a changé. Les modifications n’ont pas été enregistrées.');
-      const saved = await saveSeaOperation(client, captured, { id: source.id, version: source.version });
+      const saved = source.projectPorts
+        ? await saveSeaOperation(client, captured, { id: source.id, version: source.version }, source.projectPorts)
+        : await saveSeaOperation(client, captured, { id: source.id, version: source.version });
       if (!isCurrent()) return;
       setMapRecord(saved); setMapDirty(false);
       setData(current => current ? { ...current, records: current.records.map(value => value.id === saved.id ? saved : value) } : current);
@@ -634,7 +663,7 @@ export function SeaOperationsPage() {
   }
   function closeEditor() {
     if (busy || exporting || !confirmLeave()) return;
-    pendingUkc.current.clear(); clearRecovery(data); setEditing(false); setDirty(false); setDocumentsContext(null); setNotice(''); setIssues([]); setError('');
+    pendingUkc.current.clear(); clearRecovery(data); setProjectPortsContext(null); setEditing(false); setDirty(false); setDocumentsContext(null); setNotice(''); setIssues([]); setError('');
     window.requestAnimationFrame(() => { if (editorOpener.current?.isConnected) editorOpener.current.focus(); });
   }
   function showDocuments() {
@@ -652,6 +681,14 @@ export function SeaOperationsPage() {
   const remember = (saved: SeaOperationRecord) => {
     clearRecovery(data);
     setRecord(saved); setDraft(saved.draft); setDirty(false);
+    setProjectPortsContext(saved.projectPorts && data ? { client, account: recoveryKey(data), ports: saved.projectPorts } : null);
+    const ports = saved.projectPorts;
+    if (ports && data && currentClient.current === client && loadedAccount.current === recoveryKey(data)) {
+      const refreshPorts = <T extends SeaOperationPlanningChoice,>(choice: T): T => choice.projectId === ports.projectId
+        ? { ...choice, vessel: { ...choice.vessel, departurePort: ports.departurePort, arrivalPort: ports.arrivalPort } } : choice;
+      setPlanning(current => current ? { ...current, choices: current.choices.map(refreshPorts),
+        ...(current.selectedContext ? { selectedContext: { ...current.selectedContext, choices: current.selectedContext.choices.map(refreshPorts) } } : {}) } : current);
+    }
     setData((current) => current ? { ...current, records: [ ...(saved.supersededById ? [] : [saved]), ...current.records.filter((item) => item.id !== saved.id)] } : current);
   };
   async function open(item: Pick<SeaOperationRecord, 'id'>) {
@@ -684,7 +721,7 @@ export function SeaOperationsPage() {
     ++loadSequence.current;
     setWeatherRequests({ client, statuses: {} });
     pendingUkc.current.clear(); setUkcRequests({ client, statuses: {} });
-    setRecord(null); setDraft(newSeaOperation()); setPlanningDate(seaOperationToday()); setPlanning(null); setDirty(false); setEditing(true); setDocumentsContext(null); setStep(0); setMobilePane('form'); setError(''); setNotice(''); setIssues([]);
+    setRecord(null); setProjectPortsContext(null); setDraft(newSeaOperation()); setPlanningDate(seaOperationToday()); setPlanning(null); setDirty(false); setEditing(true); setDocumentsContext(null); setStep(0); setMobilePane('form'); setError(''); setNotice(''); setIssues([]);
   }
   function requestRecordAction(kind: RecordAction['kind'], item: SeaOperationRecord) {
     if (!data || busy || exporting || mutationRunning.current || recordAction
@@ -723,7 +760,7 @@ export function SeaOperationsPage() {
         if (!isCurrent()) return;
         setData((current) => current ? { ...current, records: current.records.filter((item) => item.id !== action.record.id) } : current);
         if (record?.id === action.record.id) {
-          clearRecovery(data); setRecord(null); setEditing(false); setDirty(false); setIssues([]);
+          clearRecovery(data); setRecord(null); setProjectPortsContext(null); setEditing(false); setDirty(false); setIssues([]);
         }
         setError(''); setNotice('Opération supprimée du registre.');
       }
@@ -763,7 +800,9 @@ export function SeaOperationsPage() {
       if (beforeSave.length) {
         setDraft(captured); setDirty(true); setIssues([...beforeSave, ...ukcErrors]); setDocumentsContext(null); setStep(3); revealFormFeedback(); return;
       }
-      const saved = await saveSeaOperation(client, captured, record || undefined);
+      const saved = projectPorts
+        ? await saveSeaOperation(client, captured, record || undefined, projectPorts)
+        : await saveSeaOperation(client, captured, record || undefined);
       if (sequence !== loadSequence.current || weatherEditor.current.client !== client || !weatherEditor.current.editing) return;
       const recordedWeatherKeys = new Set(saved.draft.waypoints.filter((point) => waypointWeatherSnapshot(point))
         .map(point => weatherRequestKey(seaOperationWeatherReference(saved.draft), point)));
@@ -906,9 +945,9 @@ export function SeaOperationsPage() {
             {usesVesselContext && vesselContextLoading && <p className="so-help so-wide" role="status">Recherche du Capitaine affecté à ce navire…</p>}
             {usesVesselContext && vesselContextError && <p className="so-help so-wide" role="alert">{vesselContextError}</p>}
             {linkedToCaptainContext && draft.vessel.id && captains?.length === 0 && <p className="so-help so-wide" role="status">Aucun Capitaine confirmé n’est affecté à ce navire à cette date.</p>}
-            <Field label="Port de départ"><input value={draft.vessel.departurePort} onChange={event => vesselUpdate({ departurePort: event.target.value })} /></Field>
+            <PortField label="Port de départ" value={draft.vessel.departurePort} disabled={!editable || busy || signed} onChange={departurePort => vesselUpdate({ departurePort })} />
             <Field label="Quai de départ"><input value={draft.vessel.departureQuay} onChange={event => vesselUpdate({ departureQuay: event.target.value })} /></Field>
-            <Field label="Port d’arrivée"><input value={draft.vessel.arrivalPort} onChange={event => vesselUpdate({ arrivalPort: event.target.value })} /></Field>
+            <PortField label="Port d’arrivée" value={draft.vessel.arrivalPort} disabled={!editable || busy || signed} onChange={arrivalPort => vesselUpdate({ arrivalPort })} />
             <Field label="Quai d’arrivée"><input value={draft.vessel.arrivalQuay} onChange={event => vesselUpdate({ arrivalQuay: event.target.value })} /></Field>
             <Field label="ETD · date et heure de départ"><input type="datetime-local" value={draft.vessel.etd} onChange={event => vesselUpdate({ etd: event.target.value })} /></Field>
             <Field label="ETA · date et heure d’arrivée"><input type="datetime-local" value={draft.vessel.eta} onChange={event => vesselUpdate({ eta: event.target.value })} /></Field>

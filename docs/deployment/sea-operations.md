@@ -889,6 +889,15 @@ réel, marée, fond, position, squat et mouvements. Aucun zéro, marge arbitrair
 intervalle de confiance inventé ne remplace ces données manquantes. Les cartes
 retrouvées ne fournissent pas ces sondes par leur seule emprise.
 
+## Ports du projet — v3.80.17
+
+Les ports de départ et d’arrivée utilisent le même sélecteur et le même catalogue
+que les ports de livraison et de restitution du module Projet. L’enregistrement
+de la fiche reporte les ports modifiés dans le projet lié en une seule transaction.
+Fermer une fiche sans l’enregistrer ne modifie pas le projet. Le Transit reste
+indépendant et les fiches signées restent figées. Voir le
+[contrat de synchronisation et les contrôles de déploiement](./sea-operation-project-ports.md).
+
 ## Conservation météo après validation
 
 Depuis la version 3.77.15, la validation du Capitaine conserve les prévisions disponibles avant la signature. Les observations officielles reçues après le passage sont enregistrées dans une annexe indépendante, avec leurs stations, horaires et sources ; elles ne modifient jamais la fiche signée. Voir [configuration et collecte quotidienne](./sea-operation-weather-history.md) et [sources officielles et couverture](./sea-operation-weather-observations.md).

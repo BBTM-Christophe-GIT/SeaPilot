@@ -11,6 +11,29 @@ import { fetchProjects } from '../projects/projectQueries';
 import { fetchProjectSeaOperationDocuments, saveProjectSeaOperationDocuments } from '../projects/projectSeaOperationDocumentsQueries';
 
 describe('previewSupabaseClient', () => {
+  it('synchronizes demo project ports only on an atomic save and leaves conflicts unsaved', async () => {
+    const { choices } = await fetchSeaOperationPlanning(previewSupabaseClient, seaOperationToday());
+    const choice = choices[0];
+    const baseline = { projectId: choice.projectId, departurePort: choice.vessel.departurePort, arrivalPort: choice.vessel.arrivalPort };
+    const draft = emptySeaOperation();
+    draft.project = choice.project;
+    draft.planning = { date: seaOperationToday(), projectId: choice.projectId, operationId: choice.operationId, captainPersonId: '' };
+    draft.vessel = { ...draft.vessel, ...choice.vessel, departurePort: 'Port de Brest' };
+    let saved = await saveSeaOperation(previewSupabaseClient, draft, null, baseline);
+    try {
+      expect(saved.projectPorts).toEqual({ ...baseline, departurePort: 'Port de Brest' });
+      expect((await fetchSeaOperationPlanning(previewSupabaseClient, seaOperationToday())).choices[0].vessel.departurePort).toBe('Port de Brest');
+      await expect(saveSeaOperation(previewSupabaseClient, { ...draft, vessel: { ...draft.vessel, departurePort: 'Port de Caen' } },
+        null, baseline)).rejects.toMatchObject({ message: expect.stringContaining('modifiés') });
+      expect((await fetchSeaOperationDetail(previewSupabaseClient, saved.id)).version).toBe(saved.version);
+      expect((await fetchSeaOperationPlanning(previewSupabaseClient, seaOperationToday())).choices[0].vessel.departurePort).toBe('Port de Brest');
+    } finally {
+      saved = await saveSeaOperation(previewSupabaseClient, { ...saved.draft, vessel: { ...saved.draft.vessel,
+        departurePort: baseline.departurePort, arrivalPort: baseline.arrivalPort } }, saved, saved.projectPorts);
+    }
+    expect(saved.projectPorts).toEqual(baseline);
+  });
+
   it('retains an explicit operational document selection without selecting later demo uploads', async () => {
     const original = await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001);
     expect(original.configured).toBe(false);

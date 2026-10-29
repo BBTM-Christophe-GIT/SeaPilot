@@ -21,6 +21,7 @@ import { seaOperationUkcReference, type SeaOperationUkcCaptureContext } from './
 import { seaOperationPlanningChoiceKey, seaOperationPlanningChoiceLabel, seaOperationPlanningWindowDates } from './seaOperationPlanningWindow';
 import { emptyProjectLocationPlan } from '../projects/projectLocation';
 import { formatClientContactLines } from '../../lib/clientContact';
+import { PROJECT_PORTS } from '../projects/projectPorts';
 
 const weatherPanelMock = vi.hoisted(() => vi.fn());
 const chartsPanelMock = vi.hoisted(() => vi.fn());
@@ -292,6 +293,143 @@ function adminSignedRecord(): SeaOperationRecord {
     canRevise: true, canDelete: true, signedBy: captainAccount.id, signedByName: captainAccount.name,
     signedAt: '2026-10-23T08:15:00Z', signatureSnapshot: profileSignature().snapshot });
 }
+
+describe('Project port selectors in operation forms', () => {
+  it.each([captainAccount, sailorAccount])('uses the same searchable port catalogue for both voyage ports with $id', async (account) => {
+    const record = recordFixture(account, { draft: waypointCaptureDraft() });
+    const { client } = renderAccount(account, record, 1, plannedMissions());
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, draft) => ({ ...record, draft: structuredClone(draft), version: 4 }));
+    const port = PROJECT_PORTS.find(item => item.locode === 'FRDPE')!;
+    await openRecord(record);
+    const departure = formQueries().getByRole('combobox', { name: 'Port de départ' });
+    const arrival = formQueries().getByRole('combobox', { name: 'Port d’arrivée' });
+    expect(departure).toBeEnabled(); expect(arrival).toBeEnabled();
+    await userEvent.click(departure);
+    fireEvent.change(departure, { target: { value: 'FRDPE' } });
+    const departureOption = await screen.findByRole('option', { name: new RegExp(`^${port.port}`) });
+    expect(within(screen.getByRole('listbox')).getByRole('group', { name: port.department })).toContainElement(departureOption);
+    const optionLabel = departureOption.textContent;
+    await userEvent.click(departureOption);
+    expect(departure).toHaveValue(port.port);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    await userEvent.click(arrival);
+    fireEvent.change(arrival, { target: { value: 'FRDPE' } });
+    const arrivalOption = await screen.findByRole('option', { name: new RegExp(`^${port.port}`) });
+    expect(arrivalOption.textContent).toBe(optionLabel);
+    await userEvent.click(arrivalOption);
+    expect(arrival).toHaveValue(port.port);
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    await saveDraft();
+    await waitFor(() => expect(saveSeaOperation).toHaveBeenCalledTimes(1));
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({
+      planning: record.draft.planning,
+      vessel: expect.objectContaining({ departurePort: port.port, arrivalPort: port.port }),
+    }), expect.objectContaining({ id: record.id, version: record.version }));
+  });
+
+  it('preserves legacy port names and does not write discarded port edits', async () => {
+    const draft = waypointCaptureDraft();
+    draft.vessel.departurePort = 'Ancien mouillage hors catalogue';
+    const record = recordFixture(captainAccount, { draft });
+    renderAccount(captainAccount, record, 1, plannedMissions());
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await openRecord(record);
+    const departure = formQueries().getByRole('combobox', { name: 'Port de départ' });
+    expect(departure).toHaveValue(draft.vessel.departurePort);
+    fireEvent.change(departure, { target: { value: 'Port libre saisi pour le voyage' } });
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    await userEvent.click(footerQueries().getByRole('button', { name: 'Annuler' }));
+    expect(confirm).toHaveBeenCalled();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(record.draft.vessel.departurePort).toBe('Ancien mouillage hors catalogue');
+  });
+
+  it('keeps signed voyage ports read-only without opening a port list', async () => {
+    const record = adminSignedRecord();
+    renderAccount(adminAccount, record);
+    await openRecord(record);
+    for (const name of ['Port de départ', 'Port d’arrivée']) {
+      const port = formQueries().getByRole('combobox', { name });
+      expect(port).toBeDisabled();
+      await userEvent.click(port);
+    }
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('keeps the original project-port baseline after a failed atomic save and refreshes it after success', async () => {
+    const draft = waypointCaptureDraft(), projectPorts = { projectId: draft.planning!.projectId, departurePort: 'Port actuel du projet', arrivalPort: 'Arrivée actuelle du projet' };
+    const record = recordFixture(captainAccount, { draft, projectPorts });
+    const choices = plannedMissions(), { client } = renderAccount(captainAccount, record, 1, choices);
+    vi.mocked(saveSeaOperation).mockRejectedValueOnce(new Error('Les ports du projet ont changé. Rechargez la fiche.'));
+    await openRecord(record);
+    fireEvent.change(formQueries().getByLabelText('Port de départ'), { target: { value: 'Port de Dieppe' } });
+    await saveDraft();
+    expect(await formQueries().findByRole('alert')).toHaveTextContent('Les ports du projet ont changé.');
+    expect(formQueries().getByLabelText('Port de départ')).toHaveValue('Port de Dieppe');
+    expect(saveSeaOperation).toHaveBeenLastCalledWith(client, expect.objectContaining({ vessel: expect.objectContaining({ departurePort: 'Port de Dieppe' }) }), record, projectPorts);
+    const updatedPorts = { ...projectPorts, departurePort: 'Port de Dieppe' };
+    const saved = { ...record, version: 4, projectPorts: updatedPorts };
+    let savedVersion = record.version;
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, payload) => ({ ...saved, version: ++savedVersion, draft: structuredClone(payload),
+      projectPorts: { ...updatedPorts, ...(payload.vessel.arrivalPort !== draft.vessel.arrivalPort ? { arrivalPort: payload.vessel.arrivalPort } : {}) } }));
+    await saveDraft();
+    await waitFor(() => expect(footerQueries().getByText('Version 4 enregistrée')).toBeVisible());
+    expect(vi.mocked(saveSeaOperation).mock.calls[1][3]).toEqual(projectPorts);
+    fireEvent.change(formQueries().getByLabelText('Port d’arrivée'), { target: { value: 'Port de Cherbourg' } });
+    await saveDraft();
+    await waitFor(() => expect(footerQueries().getByText('Version 5 enregistrée')).toBeVisible());
+    expect(vi.mocked(saveSeaOperation).mock.calls[2][3]).toEqual(updatedPorts);
+    expect(record.projectPorts).toEqual(projectPorts);
+    expect(record.draft).toEqual(draft);
+    await chooseMission(choices[0]); await chooseMission(choices[1]);
+    expect(formQueries().getByLabelText('Port de départ')).toHaveValue('Port de Dieppe');
+    expect(formQueries().getByLabelText('Port d’arrivée')).toHaveValue('Port de Cherbourg');
+    expect(saveSeaOperation).toHaveBeenCalledTimes(3);
+  });
+
+  it('captures the newly selected project ports and clears them for Transit and a different project', async () => {
+    const choices = plannedMissions(), { client } = renderAccount(captainAccount, undefined, 1, choices);
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, payload) => recordFixture(captainAccount, { draft: structuredClone(payload), version: 1 }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await chooseMission(choices[0]);
+    fireEvent.change(formQueries().getByLabelText('Port de départ'), { target: { value: 'Port adapté de la mission 1' } });
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    await chooseMission(choices[1]);
+    fireEvent.change(formQueries().getByLabelText('Port d’arrivée'), { target: { value: 'Port adapté de la mission 2' } });
+    await saveDraft();
+    await waitFor(() => expect(saveSeaOperation).toHaveBeenCalledTimes(1));
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ planning: expect.objectContaining({ projectId: choices[1].projectId }) }), undefined,
+      { projectId: choices[1].projectId, departurePort: choices[1].vessel.departurePort, arrivalPort: choices[1].vessel.arrivalPort });
+    await chooseTransit();
+    fireEvent.change(formQueries().getByLabelText('Port de départ'), { target: { value: 'Port libre du transit' } });
+    await saveDraft();
+    await waitFor(() => expect(saveSeaOperation).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(saveSeaOperation).mock.lastCall).toHaveLength(3);
+    expect(vi.mocked(saveSeaOperation).mock.lastCall![1]).toMatchObject({ project: 'Transit', vessel: expect.objectContaining({ departurePort: 'Port libre du transit' }) });
+  });
+
+  it.each([false, true])('recovers unsaved port edits with their original project baseline (existing=%s)', async existing => {
+    const choices = plannedMissions(), mission = choices[0];
+    const projectPorts = { projectId: mission.projectId, departurePort: mission.vessel.departurePort, arrivalPort: mission.vessel.arrivalPort };
+    const original = existing ? recordFixture(captainAccount, { draft: waypointCaptureDraft(mission), projectPorts }) : undefined;
+    const first = renderAccount(captainAccount, original, 1, choices);
+    if (original) await openRecord(original);
+    else { await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' })); await chooseMission(mission); }
+    fireEvent.change(formQueries().getByLabelText('Port de départ'), { target: { value: 'Port conservé après rechargement' } });
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    first.unmount();
+    const newer = original ? { ...original, projectPorts: { ...projectPorts, departurePort: 'Port changé par une autre personne' } } : undefined;
+    const recovered = renderAccount(captainAccount, newer, 1, choices);
+    expect(await screen.findByText(/Votre préparation non enregistrée a été récupérée/)).toBeInTheDocument();
+    expect(formQueries().getByLabelText('Port de départ')).toHaveValue('Port conservé après rechargement');
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, payload) => recordFixture(captainAccount, { draft: structuredClone(payload), version: existing ? 4 : 1, projectPorts }));
+    await saveDraft();
+    await waitFor(() => expect(saveSeaOperation).toHaveBeenCalledTimes(1));
+    expect(saveSeaOperation).toHaveBeenCalledWith(recovered.client, expect.objectContaining({ vessel: expect.objectContaining({ departurePort: 'Port conservé après rechargement' }) }),
+      existing ? expect.objectContaining({ id: original!.id, version: original!.version }) : undefined, projectPorts);
+  });
+});
 
 describe('Saved route map framing in operation forms', () => {
   it('forwards voyage ports and preserves manual map framing through save and reopen', async () => {
@@ -607,7 +745,8 @@ describe('project location copied into real-profile operation fixtures', () => {
     expect(capturingUkcPanel().payload.locationOverlay!.points[0]).toMatchObject({ latitude: '50.1', longitude: '1.2' });
     expect(location).toEqual(source);
     await saveDraft();
-    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ locationOverlay: expect.objectContaining({ points: [expect.objectContaining({ latitude: '50.1' })] }) }), undefined);
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ locationOverlay: expect.objectContaining({ points: [expect.objectContaining({ latitude: '50.1' })] }) }), undefined,
+      { projectId: choices[0].projectId, departurePort: choices[0].vessel.departurePort, arrivalPort: choices[0].vessel.arrivalPort });
     await userEvent.click(stepButton(0)); await chooseMission(choices[1]);
     expect(capturingUkcPanel().payload.locationOverlay).toBeUndefined();
     act(() => map.onMoveIsolatedPoint(copied.locationOverlay!.points[0].id, { latitude: 51, longitude: 2 }));
@@ -2456,7 +2595,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
       dapaq: { method: '', preparedBy: '', agentName: '', agentContact: '' },
       supplies: expect.objectContaining({ delegated: 'yes', suppliers: '', items: [] }),
       signature: { captainName: choices[1].captains[0].name, date: seaOperationToday(), place: 'Caen', acknowledged: false },
-    }), record);
+    }), record, { projectId: choices[1].projectId, departurePort: choices[1].vessel.departurePort, arrivalPort: choices[1].vessel.arrivalPort });
   });
 
   it('uses one accessible binary switch per question and an editable responsive Passage Plan', async () => {

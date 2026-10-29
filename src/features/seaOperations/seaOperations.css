@@ -242,6 +242,7 @@
   .so-armament-panel .so-field > label, .so-armament-panel .so-field-label { white-space: normal; overflow-wrap: anywhere; }
   .so-armament-panel .so-field > .so-field-label { font-weight: 650; white-space: normal; overflow-wrap: anywhere; }
   .so-page .so-armament-panel :is(input:not([type=checkbox]), select) { min-height: 32px; padding: var(--sp-space-1) var(--sp-space-2); font-size: .76rem; line-height: 1.4; }
+  .so-page .so-armament-panel .project-port-combobox__control > input { padding-inline: 35px; }
   .so-page .so-armament-panel textarea { min-height: 64px; padding: var(--sp-space-1) var(--sp-space-2); font-size: .76rem; line-height: 1.4; }
   .so-page .so-armament-panel > h3 { margin: var(--sp-space-3) 0 var(--sp-space-1); font-size: .8rem; line-height: 1.4; }
   .so-armament-panel > .so-help { margin: var(--sp-space-1) 0 var(--sp-space-2); font-size: .7rem; line-height: 1.45; }
