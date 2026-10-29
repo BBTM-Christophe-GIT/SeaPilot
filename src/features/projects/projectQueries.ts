@@ -100,6 +100,7 @@ const PROJECT_DOCUMENT_SELECT = [
   'project_code',
   'project_title',
   'category_key',
+  'subcategory_key',
   'title',
   'source_label',
   'source_sharepoint_id',
@@ -265,6 +266,7 @@ interface ProjectDocumentRow {
   project_code: string | null;
   project_title: string | null;
   category_key: string | null;
+  subcategory_key?: string | null;
   title: string;
   source_label: string | null;
   source_sharepoint_id: string | null;
@@ -484,6 +486,7 @@ export interface ProjectDocumentRecord {
   projectCode: string;
   projectTitle: string;
   categoryKey: string;
+  subcategoryKey?: string;
   title: string;
   sourceLabel: string;
   sourceSharePointId: string;
@@ -874,6 +877,7 @@ export function mapProjectDocumentRows(rows: ProjectDocumentRow[]): ProjectDocum
     projectCode: nullableText(row.project_code),
     projectTitle: nullableText(row.project_title),
     categoryKey: nullableText(row.category_key),
+    ...(row.subcategory_key === undefined ? {} : { subcategoryKey: nullableText(row.subcategory_key) }),
     title: row.title,
     sourceLabel: nullableText(row.source_label),
     sourceSharePointId: nullableText(row.source_sharepoint_id),

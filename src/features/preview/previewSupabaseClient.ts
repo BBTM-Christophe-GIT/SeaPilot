@@ -13,7 +13,7 @@ import { DEFAULT_PROCEDURE_TAGS } from '../procedures/procedureTagCatalogue';
 import { seaOperationPreviewRpc } from '../seaOperations/seaOperationPreview';
 import { GOURY_WEATHER_MATRIX, isVesselWeatherMatrix, cloneVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { parseProjectLocationPlan } from '../projects/projectLocation';
-import { DEFAULT_PROJECT_DOCUMENT_CATEGORIES } from '../projects/projectDocumentCategories';
+import { DEFAULT_PROJECT_DOCUMENT_CATEGORIES, validateProjectDocumentCategories } from '../projects/projectDocumentCategories';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
@@ -289,6 +289,10 @@ function createPreviewFleetFindingEvents(): unknown[] {
 }
 
 const PREVIEW_ROWS: Record<string, unknown[]> = {
+  project_document_categories: [...DEFAULT_PROJECT_DOCUMENT_CATEGORIES,
+    { active: true, displayOrder: 50, key: 'project_document', label: 'Documents du projet', parentKey: null },
+  ].map((category, index) => ({ id: index + 1, company_id: 1, category_key: category.key, parent_key: category.parentKey,
+    label: category.label, active: category.active, display_order: category.displayOrder })),
   project_favorites: previewFavoriteIds.map((project_id) => ({ project_id })),
   project_drive_files: [],
   project_change_log: [],
@@ -1846,6 +1850,33 @@ const previewProjectDocumentCategories = new Map([
   { key: 'project_document', label: 'Documents du projet', parentKey: null },
 ].map(category => [category.key, category]));
 
+function previewProjectDocumentCategoryCommercial(key: unknown): boolean {
+  const compact = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr').replace(/[^a-z0-9]/g, '');
+  const visited = new Set<string>();
+  while (typeof key === 'string' && !visited.has(key)) {
+    visited.add(key);
+    if (['commercialoffer', 'commercialoffers', 'commercialcontract', 'commercialcontracts', 'commercialappendix', 'billing', 'offer', 'offers',
+      'contractdocument', 'contractdocuments', 'contract', 'contracts', 'contrat', 'contrats'].includes(compact(key))) return true;
+    const category = previewProjectDocumentCategories.get(key);
+    if (!category) return false;
+    if (['offrecommerciale', 'offrescommerciales', 'facturation', 'contrat', 'contrats', 'contract', 'contracts', 'commercialoffer', 'commercialoffers'].includes(compact(category.label))) return true;
+    key = category.parentKey;
+  }
+  return false;
+}
+
+const previewDocumentCommercialOrigins = new Map<string, boolean>();
+function previewDocumentOrigin(kind: 'generated' | 'project' | 'contract', document: Record<string, unknown>): boolean {
+  const id = `${kind}:${document.id}`;
+  if (!previewDocumentCommercialOrigins.has(id)) previewDocumentCommercialOrigins.set(id, kind === 'contract'
+    || kind === 'generated' && !['operation_attachment', 'project_attachment'].includes(String(document.document_type))
+    || previewProjectDocumentCategoryCommercial(document.category_key) || previewProjectDocumentCategoryCommercial(document.subcategory_key));
+  return previewDocumentCommercialOrigins.get(id)!;
+}
+for (const [kind, table] of [['generated', 'project_generated_documents'], ['project', 'project_documents'], ['contract', 'contract_documents']] as const) {
+  previewRows(table).forEach(document => previewDocumentOrigin(kind, document));
+}
+
 function previewProjectDocumentCategoryAllowed(key: unknown): boolean {
   const compact = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr').replace(/[^a-z0-9]/g, '');
   const visited = new Set<string>();
@@ -1863,6 +1894,7 @@ function previewProjectDocumentCategoryAllowed(key: unknown): boolean {
 
 function previewProjectOperationalDocumentCandidates(projectId: number) {
   const generated = previewRows('project_generated_documents').filter(document => Number(document.project_id) === projectId
+    && !previewDocumentOrigin('generated', document)
     && ['operation_attachment', 'project_attachment'].includes(String(document.document_type))
     && (document.document_type === 'operation_attachment' && document.category_key == null || previewProjectDocumentCategoryAllowed(document.category_key))
     && (document.subcategory_key == null || previewProjectDocumentCategories.get(String(document.subcategory_key))?.parentKey === document.category_key
@@ -1875,13 +1907,16 @@ function previewProjectOperationalDocumentCandidates(projectId: number) {
       created_at: String(document.created_at), expires_on: document.expires_on ?? null,
     }));
   const imported = previewRows('project_documents').filter(document => Number(document.project_id) === projectId
-    && document.is_folder === false && previewProjectDocumentCategoryAllowed(document.category_key))
+    && document.is_folder === false && !previewDocumentOrigin('project', document) && previewProjectDocumentCategoryAllowed(document.category_key)
+    && (document.subcategory_key == null || previewProjectDocumentCategories.get(String(document.subcategory_key))?.parentKey === document.category_key
+      && previewProjectDocumentCategoryAllowed(document.subcategory_key)))
     .map(document => ({
       id: `project:${document.id}`, project_id: String(projectId),
       title: String(document.title || document.file_name || 'Document du projet'),
       file_name: String(document.file_name || document.title || 'Document du projet'),
       mime_type: String(document.mime_type || 'application/octet-stream'),
-      category_label: previewProjectDocumentCategories.get(String(document.category_key))!.label, subcategory_label: '',
+      category_label: previewProjectDocumentCategories.get(String(document.category_key))!.label,
+      subcategory_label: previewProjectDocumentCategories.get(String(document.subcategory_key))?.label || '',
       created_at: String(document.created_at || document.source_modified_at), expires_on: null,
     }));
   return [...generated, ...imported].sort((first, second) => first.category_label.localeCompare(second.category_label, 'fr')
@@ -2231,6 +2266,49 @@ function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'projects_set_document_category') {
+    const failure = (code: string, message: string) => createPreviewQuery({ data: null, error: { code, message } });
+    const projectId = Number(args.target_project_id);
+    const project = previewRows('projects').find(row => Number(row.id) === projectId);
+    const match = typeof args.target_document_id === 'string' ? /^(generated|project|contract):([1-9][0-9]{0,18})$/.exec(args.target_document_id) : null;
+    if (!Number.isSafeInteger(projectId) || !project || project.archived_at || !match) return failure('42501', 'Le document du projet est inaccessible.');
+    const kind = match[1] as 'generated' | 'project' | 'contract';
+    const table = { generated: 'project_generated_documents', project: 'project_documents', contract: 'contract_documents' }[kind];
+    const document = previewRows(table).find(row => String(row.id) === match[2] && Number(row.project_id) === projectId && !row.is_folder);
+    if (!document) return failure('42501', 'Le document du projet est inaccessible.');
+    const category = previewProjectDocumentCategories.get(String(args.target_category_key));
+    const subcategory = args.target_subcategory_key == null ? null : previewProjectDocumentCategories.get(String(args.target_subcategory_key));
+    const active = (key: string) => previewRows('project_document_categories').some(row => row.category_key === key && row.active !== false);
+    if (!category || category.parentKey !== null || !active(category.key)
+      || args.target_subcategory_key != null && (!subcategory || subcategory.parentKey !== category.key || !active(subcategory.key))) return failure('22023', 'La catégorie ou sous-catégorie est invalide.');
+    const normalized = (value: unknown) => typeof value === 'string' ? value.trim() || null : null;
+    const currentCategory = normalized(document.category_key), currentSubcategory = normalized(document.subcategory_key);
+    const nextSubcategory = subcategory?.key ?? null;
+    if ((currentCategory !== category.key || currentSubcategory !== nextSubcategory)
+      && (currentCategory !== normalized(args.target_expected_category_key) || currentSubcategory !== normalized(args.target_expected_subcategory_key))) return failure('40001', 'Le classement du document a été modifié. Rechargez la liste.');
+    previewDocumentOrigin(kind, document);
+    if (currentCategory !== category.key || currentSubcategory !== nextSubcategory) {
+      document.category_key = category.key; document.subcategory_key = nextSubcategory;
+      const selected = previewProjectDocumentSelections.get(projectId);
+      if (selected) previewProjectDocumentSelections.set(projectId, new Set([...selected].filter(id => id !== args.target_document_id)));
+    }
+    return createPreviewQuery({ data: { project_id: String(projectId), document_id: args.target_document_id,
+      category_key: category.key, subcategory_key: nextSubcategory }, error: null });
+  }
+  if (functionName === 'projects_save_document_categories') {
+    const rows = args.target_categories;
+    if (!Array.isArray(rows) || !rows.every(row => row && typeof row === 'object' && !Array.isArray(row)
+      && typeof row.active === 'boolean' && typeof row.display_order === 'number' && typeof row.category_key === 'string'
+      && typeof row.label === 'string' && (row.parent_key === null || typeof row.parent_key === 'string'))) return createPreviewQuery({ data: null, error: { code: '22023', message: 'Catalogue documentaire invalide.' } });
+    const categories = rows.map(row => ({ active: row.active, displayOrder: row.display_order, key: row.category_key,
+      label: row.label, parentKey: row.parent_key }));
+    const errors = validateProjectDocumentCategories(categories);
+    if (errors.length) return createPreviewQuery({ data: null, error: { code: '22023', message: errors.join(' ') } });
+    const omitted = previewRows('project_document_categories').filter(row => !categories.some(category => category.key === row.category_key));
+    PREVIEW_ROWS.project_document_categories = [...omitted, ...rows.map((row, index) => ({ ...row, id: index + 1, company_id: 1 }))];
+    categories.forEach(category => previewProjectDocumentCategories.set(category.key, category));
+    return createPreviewQuery({ data: null, error: null });
+  }
   if (functionName === 'project_sea_operation_documents' || functionName === 'set_project_sea_operation_documents' || functionName === 'set_project_sea_operation_document') {
     return createPreviewQuery(previewProjectDocumentSelectionRpc(functionName, args));
   }

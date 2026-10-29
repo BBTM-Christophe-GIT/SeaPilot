@@ -7,7 +7,8 @@ import { emptySeaOperation, emptySeaOperationWaypoint, seaOperationToday } from 
 import { cloneVesselWeatherMatrix, GOURY_WEATHER_MATRIX } from '../fleet/vesselWeatherMatrix';
 import { emptyProjectLocationPlan } from '../projects/projectLocation';
 import { saveProjectLocation } from '../projects/projectMutations';
-import { fetchProjects } from '../projects/projectQueries';
+import { fetchProjects, fetchProjectDocuments, fetchContractDocuments } from '../projects/projectQueries';
+import { saveProjectDocumentClassification } from '../projects/projectDocumentClassification';
 import { fetchProjectSeaOperationDocuments, saveProjectSeaOperationDocuments } from '../projects/projectSeaOperationDocumentsQueries';
 
 describe('previewSupabaseClient', () => {
@@ -400,5 +401,60 @@ describe('previewSupabaseClient', () => {
       defaultValidatorPersonId: 9301,
       people: [expect.objectContaining({ id: 9301, functionLabel: 'Capitaine', isDprValidator: true })],
     });
+  });
+
+  it('persists each document source classification, retains its file and clears the operational opt-in', async () => {
+    const selection = await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001);
+    const sources = [
+      { table: 'project_generated_documents', id: 9451, documentId: 'generated:9451' },
+      { table: 'project_documents', id: 9401, documentId: 'project:9401' },
+      { table: 'contract_documents', id: 9501, documentId: 'contract:9501' },
+    ];
+    const snapshots: { row: Record<string, unknown>; original: Record<string, unknown> }[] = [];
+    try {
+      for (const source of sources) {
+        const rows = (await previewSupabaseClient.from(source.table).select('*')).data!;
+        const row = rows.find(item => Number(item.id) === source.id)!;
+        const original = structuredClone(row); snapshots.push({ row, original });
+        if (source.table !== 'contract_documents') await saveProjectSeaOperationDocuments(previewSupabaseClient, 9001, [source.documentId]);
+        const saved = await saveProjectDocumentClassification(previewSupabaseClient, { projectId: 9001, documentId: source.documentId,
+          categoryKey: 'hse', subcategoryKey: 'hse_audits', expectedCategoryKey: row.category_key as string ?? null,
+          expectedSubcategoryKey: row.subcategory_key as string ?? null });
+        expect(saved).toMatchObject({ categoryKey: 'hse', subcategoryKey: 'hse_audits' });
+        // Retrying an acknowledged classification is harmless, even with its original baseline.
+        await expect(saveProjectDocumentClassification(previewSupabaseClient, { projectId: 9001, documentId: source.documentId,
+          categoryKey: 'hse', subcategoryKey: 'hse_audits', expectedCategoryKey: original.category_key as string ?? null,
+          expectedSubcategoryKey: original.subcategory_key as string ?? null })).resolves.toEqual(saved);
+        const withoutClassification = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).filter(([key]) => !['category_key', 'subcategory_key'].includes(key)));
+        expect(withoutClassification(row)).toEqual(withoutClassification(original));
+        const selected = await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001);
+        expect(selected.documents.some(document => document.id === source.documentId && document.selected)).toBe(false);
+        if (source.table === 'project_documents') expect((await fetchProjectDocuments(previewSupabaseClient)).find(document => document.id === source.id))
+          .toMatchObject({ categoryKey: 'hse', subcategoryKey: 'hse_audits' });
+        if (source.table === 'contract_documents') expect((await fetchContractDocuments(previewSupabaseClient)).find(document => document.id === source.id))
+          .toMatchObject({ categoryKey: 'hse', subcategoryKey: 'hse_audits' });
+        await expect(saveProjectDocumentClassification(previewSupabaseClient, { projectId: 9001, documentId: source.documentId,
+          categoryKey: 'billing', subcategoryKey: null, expectedCategoryKey: original.category_key as string ?? null,
+          expectedSubcategoryKey: original.subcategory_key as string ?? null })).rejects.toMatchObject({ code: '40001' });
+        expect(row.category_key).toBe('hse');
+      }
+    } finally {
+      snapshots.forEach(({ row, original }) => {
+        Object.keys(row).filter(key => !(key in original)).forEach(key => delete row[key]);
+        Object.assign(row, original);
+      });
+      await saveProjectSeaOperationDocuments(previewSupabaseClient, 9001, selection.documents.filter(document => document.selected).map(document => document.id));
+    }
+  });
+
+  it('does not expose originally commercial demo files after a different display classification', async () => {
+    const rows = (await previewSupabaseClient.from('project_documents').select('*')).data!;
+    const count = rows.length;
+    rows.push({ ...rows[0], id: 9489, category_key: 'billing', file_name: 'Facture de démonstration.pdf' });
+    try {
+      await saveProjectDocumentClassification(previewSupabaseClient, { projectId: 9001, documentId: 'project:9489', categoryKey: 'hse',
+        subcategoryKey: null, expectedCategoryKey: 'billing', expectedSubcategoryKey: null });
+      expect((await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001)).documents.some(document => document.id === 'project:9489')).toBe(false);
+    } finally { rows.splice(count); }
   });
 });

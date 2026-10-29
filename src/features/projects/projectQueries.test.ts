@@ -250,6 +250,7 @@ describe('projectQueries', () => {
       project_code: 'P1086',
       project_title: 'Campagne Atlantique',
       category_key: 'contract',
+      subcategory_key: 'commercial_contract',
       title: 'Contrat signé.pdf',
       source_label: 'SharePoint',
       source_sharepoint_id: '884',
@@ -276,6 +277,7 @@ describe('projectQueries', () => {
       storageBucket: 'project-files',
       storageMigratedAt: '2026-08-29T06:45:00Z',
       storagePath: 'projects/880/contract-documents/884-Contrat-signe.pdf',
+      subcategoryKey: 'commercial_contract',
     })]);
   });
 

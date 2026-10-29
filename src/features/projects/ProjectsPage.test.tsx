@@ -372,6 +372,44 @@ describe('ProjectsPage', () => {
 
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
+  it.each(['generated', 'project', 'contract'])('reclassifies the %s document without changing another source with the same numeric ID', async source => {
+    const generated = { id: 91, project_id: 880, category_key: 'hse', subcategory_key: null, expires_on: null, document_type: 'project_attachment',
+      planning_occurrence_id: null, mime_type: 'application/pdf', file_size_bytes: 512, sharepoint_web_url: null, sharepoint_folder_path: null,
+      storage_bucket: 'project-files', storage_path: 'projects/880/attachments/rapport.pdf', created_at: '2026-07-15T10:00:00Z', file_name: 'Rapport HSE.pdf' };
+    const projectDocument = { ...atlantiqueProjectDocumentRow, id: 91, category_key: 'hse', subcategory_key: null };
+    const contractDocument = { ...atlantiqueContractDocumentRow, id: 91, category_key: 'billing', subcategory_key: null };
+    const files = { generated: generated.file_name, project: projectDocument.file_name, contract: contractDocument.file_name };
+    const { client, from, rpc } = createClient({ project_generated_documents: { data: [generated], error: null },
+      project_documents: { data: [projectDocument], error: null }, contract_documents: { data: [contractDocument], error: null } });
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+    fireEvent.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Documents' }));
+    const fileName = files[source as keyof typeof files];
+    const action = screen.getByRole('button', { name: `Modifier la catégorie de ${fileName}` });
+    await waitFor(() => expect(action).toBeEnabled());
+    fireEvent.click(action);
+    const dialog = screen.getByRole('dialog', { name: 'Modifier la catégorie' });
+    expect(within(dialog).getByLabelText('Catégorie')).toHaveValue(source === 'contract' ? 'billing' : 'hse');
+    fireEvent.change(within(dialog).getByLabelText('Catégorie'), { target: { value: 'toilette_de_mer' } });
+    const readsBeforeSave = from.mock.calls.length;
+    rpc.mockResolvedValueOnce({ data: { project_id: '880', document_id: `${source}:91`, category_key: 'toilette_de_mer', subcategory_key: null }, error: null });
+    fireEvent.submit(dialog);
+    await screen.findByText(`La catégorie du document « ${fileName} » a été enregistrée.`);
+    expect(rpc).toHaveBeenCalledWith('projects_set_document_category', {
+      target_project_id: '880', target_document_id: `${source}:91`, target_category_key: 'toilette_de_mer', target_subcategory_key: null,
+      target_expected_category_key: source === 'contract' ? 'billing' : 'hse', target_expected_subcategory_key: null,
+    });
+    expect(screen.getByRole('tab', { name: 'Documents' })).toHaveAttribute('aria-selected', 'true');
+    expect(from.mock.calls).toHaveLength(readsBeforeSave);
+    for (const [otherSource, otherFile] of Object.entries(files)) {
+      const row = screen.getByText(otherFile, { exact: true }).closest('tr')!;
+      expect(row).toHaveTextContent(otherSource === source ? 'Toilette de Mer' : otherSource === 'contract' ? 'Facturation' : 'HSE');
+    }
+    fireEvent.click(screen.getByRole('tab', { name: 'Opérations' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Documents' }));
+    await waitFor(() => expect(screen.getByText(fileName, { exact: true }).closest('tr')).toHaveTextContent('Toilette de Mer'));
+  });
+
   it('adds a classified document directly from Documents and immediately exposes its fresh private reader', async () => {
     const user = userEvent.setup(); const { client, from, createSignedUrl } = createClient();
     render(<ProjectsPage client={client as never} roles={['admin']} />);

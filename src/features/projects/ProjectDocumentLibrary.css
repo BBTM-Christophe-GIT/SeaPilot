@@ -78,6 +78,10 @@
 .project-documents-error { color: var(--sp-text); }
 .project-documents-error button { margin-left: 12px; }
 
+.project-document-name { display: flex; align-items: center; gap: var(--sp-space-2); min-width: 0; }
+.project-document-name > strong { flex: 1; }
+.project-document-name .project-document-category-action { flex: 0 0 auto; width: 40px; min-width: 40px; min-height: 40px; padding: var(--sp-space-2); }
+
 @media (pointer: coarse), (max-width: 640px) {
   .app-shell .content-area .project-documents-workspace button.sp-button,
   .project-documents-workspace button.sp-button,
@@ -87,6 +91,7 @@
   .project-documents-category-editor input {
     min-height: 44px;
   }
+  .project-document-name .project-document-category-action { width: 44px; min-width: 44px; }
   .app-shell .content-area .project-documents-workspace .app-dialog__close,
   .project-documents-workspace .app-dialog__close {
     min-height: 44px;
