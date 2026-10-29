@@ -3,10 +3,12 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectDocumentLibrary } from './ProjectDocumentLibrary';
 import { ProjectSeaOperationDocumentCheckbox } from './ProjectSeaOperationDocuments';
+import { ProjectDocumentCategoryAction } from './ProjectDocumentClassificationEditor';
 import type { ProjectDocumentCategory } from './projectDocumentCategories';
 import type { ProjectOperationDocumentRecord } from './projectQueries';
 
-const mocks = vi.hoisted(() => ({ fetch: vi.fn(), save: vi.fn(), store: vi.fn(), selectionFetch: vi.fn(), selectionSave: vi.fn() }));
+const mocks = vi.hoisted(() => ({ fetch: vi.fn(), save: vi.fn(), store: vi.fn(), selectionFetch: vi.fn(), selectionSave: vi.fn(), classify: vi.fn() }));
+vi.mock('./projectDocumentClassification', () => ({ saveProjectDocumentClassification: mocks.classify }));
 vi.mock('./projectDocumentCategories', async (original) => ({
   ...await original<typeof import('./projectDocumentCategories')>(),
   fetchProjectDocumentCategories: mocks.fetch,
@@ -60,6 +62,51 @@ describe('ProjectDocumentLibrary', () => {
     mocks.store.mockResolvedValue({ id: 91, fileName: 'preuve.pdf', folderPath: 'projects/880/attachments/hse', storageBucket: 'project-files', storagePath: 'projects/880/attachments/hse/proof.pdf', webUrl: '' });
     mocks.selectionFetch.mockResolvedValue({ configured: false, documents: [] });
     mocks.selectionSave.mockResolvedValue({ configured: true, documents: [] });
+    mocks.classify.mockImplementation(async (_client, input) => ({ projectId: input.projectId, documentId: input.documentId, categoryKey: input.categoryKey, subcategoryKey: input.subcategoryKey }));
+  });
+
+  it('reclassifies an existing attachment, refreshes its filter and operational eligibility without selecting it', async () => {
+    mocks.selectionFetch.mockResolvedValue({ configured: true, documents: [{
+      id: 'generated:77', projectId: '880', title: 'audit.pdf', fileName: 'audit.pdf', mimeType: 'application/pdf',
+      categoryLabel: 'HSE', subcategoryLabel: 'Audits', createdAt: attachment.createdAt, expiresOn: null, selected: true,
+    }] });
+    const onClassified = vi.fn();
+    render(<ProjectDocumentLibrary {...props} onClassified={onClassified} renderDocuments={(documents, labels) => <ul>{documents.attachments.map(document => <li key={document.id}>
+      {document.fileName} · {labels.get(document.categoryKey || '')}
+      <ProjectDocumentCategoryAction documentId={`generated:${document.id}`} />
+      <ProjectSeaOperationDocumentCheckbox documentId={`generated:${document.id}`} documentName={document.fileName} />
+    </li>)}</ul>} />);
+    const action = await screen.findByRole('button', { name: 'Modifier la catégorie de audit.pdf' });
+    await waitFor(() => expect(action).toBeEnabled());
+    expect(await screen.findByRole('checkbox', { name: 'Afficher audit.pdf dans Opération en Mer' })).toBeChecked();
+    const refreshesBeforeClassification = mocks.selectionFetch.mock.calls.length;
+    fireEvent.change(screen.getByLabelText('Catégorie'), { target: { value: 'hse' } });
+    fireEvent.click(action);
+    const dialog = screen.getByRole('dialog', { name: 'Modifier la catégorie' });
+    fireEvent.change(within(dialog).getByLabelText('Catégorie'), { target: { value: 'billing' } });
+    mocks.selectionFetch.mockResolvedValue({ configured: true, documents: [] });
+    fireEvent.submit(dialog);
+    await screen.findByText('La catégorie du document « audit.pdf » a été enregistrée.');
+    expect(onClassified).toHaveBeenCalledExactlyOnceWith({ projectId: 880, documentId: 'generated:77', categoryKey: 'billing', subcategoryKey: null });
+    expect(screen.getByText('Aucun document dans cette catégorie.')).toBeVisible();
+    fireEvent.change(screen.getByLabelText('Catégorie'), { target: { value: 'billing' } });
+    expect(screen.getByText('audit.pdf · Facturation')).toBeVisible();
+    await waitFor(() => expect(mocks.selectionFetch).toHaveBeenCalledTimes(refreshesBeforeClassification + 1));
+    expect(screen.queryByRole('checkbox', { name: 'Afficher audit.pdf dans Opération en Mer' })).not.toBeInTheDocument();
+    expect(mocks.selectionSave).not.toHaveBeenCalled();
+    expect(attachment.categoryKey).toBe('hse');
+    expect(attachment.storagePath).toBe('projects/880/attachments/hse/audit.pdf');
+  });
+
+  it('does not expose classification actions for folders or unresolved project links', async () => {
+    const unresolved = { ...attachment, projectId: null, isFolder: false, title: 'Ancien document' };
+    const folder = { ...unresolved, id: 91, projectId: 880, isFolder: true };
+    render(<ProjectDocumentLibrary {...props} attachments={[]} projectDocuments={[unresolved, folder] as never} renderDocuments={documents => <>
+      {documents.projectDocuments.map(document => <ProjectDocumentCategoryAction key={document.id} documentId={`project:${document.id}`} />)}
+    </>} />);
+    await screen.findByRole('option', { name: 'HSE' });
+    expect(screen.queryByRole('button', { name: /Modifier la catégorie de/ })).not.toBeInTheDocument();
+    expect(mocks.classify).not.toHaveBeenCalled();
   });
 
   it('uploads through the existing private attachment workflow with its classification and optional date', async () => {

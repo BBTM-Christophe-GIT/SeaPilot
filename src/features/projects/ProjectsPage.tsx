@@ -47,6 +47,8 @@ import type { AppShellOutletContext } from '../shell/AppShell';
 import { ProjectEditor, ProjectPlanningEditor } from './ProjectEditors';
 import { ProjectStoredDocumentLink } from './ProjectStoredDocumentLink';
 import { ProjectDocumentLibrary } from './ProjectDocumentLibrary';
+import { ProjectDocumentCategoryAction } from './ProjectDocumentClassificationEditor';
+import type { ProjectDocumentClassification } from './projectDocumentClassification';
 import { ProjectSeaOperationDocumentCheckbox } from './ProjectSeaOperationDocuments';
 import type { StoredProjectDocument } from './projectDocumentStorage';
 import { ClientCatalogDialog, ServiceCatalogDialog, TowedAssetCatalogDialog } from './ProjectCatalogDialogs';
@@ -471,12 +473,14 @@ function ProjectDocuments({
   categoryLabels,
   selectionColumn = false,
   canSelect = true,
+  documentSource = 'project',
 }: {
   client: SupabaseClient;
   documents: ProjectDocumentRecord[];
   categoryLabels: ReadonlyMap<string, string>;
   selectionColumn?: boolean;
   canSelect?: boolean;
+  documentSource?: 'project' | 'contract';
 }) {
   if (documents.length === 0) {
     return null;
@@ -489,6 +493,7 @@ function ProjectDocuments({
           const linkState = getSharePointDocumentLinkState(document.fileUrl);
           const metadata = [
             categoryLabels.get(document.categoryKey) || document.categoryKey,
+            document.subcategoryKey ? categoryLabels.get(document.subcategoryKey) || document.subcategoryKey : '',
             document.fileExtension || document.mimeType,
             formatFileSize(document.fileSizeBytes),
             document.sourceModifiedAt ? `modifié le ${formatDate(document.sourceModifiedAt)}` : '',
@@ -498,7 +503,7 @@ function ProjectDocuments({
           return (
             <tr key={document.id}>
               <td className="project-document-file"><div className="project-document-identity"><FileText aria-hidden="true" size={18} /><div>
-                <strong>{document.fileName || document.title}</strong>
+                <div className="project-document-name"><strong>{document.fileName || document.title}</strong><ProjectDocumentCategoryAction documentId={`${documentSource}:${document.id}`} /></div>
                 {metadata.length > 0 ? <span>{metadata.join(' · ')}</span> : null}
                 {document.folderPath || document.notes ? <small>{document.folderPath || document.notes}</small> : null}
                 {document.projectId === null ? (
@@ -566,7 +571,7 @@ function ProjectStoredAttachments({
           return (
             <tr key={document.id}>
               <td className="project-document-file"><div className="project-document-identity"><FileText aria-hidden="true" size={18} /><div>
-                <strong>{document.fileName}</strong>
+                <div className="project-document-name"><strong>{document.fileName}</strong><ProjectDocumentCategoryAction documentId={`generated:${document.id}`} /></div>
                 {metadata.length > 0 ? <span>{metadata.join(' · ')}</span> : null}
                 {document.expiresOn ? <small>Échéance : {formatDate(document.expiresOn)}</small> : null}
               </div></div></td>
@@ -691,6 +696,7 @@ function ProjectDocumentEmissionDialog({
 
 function ProjectDetail({
   documentAccessKey,
+  onDocumentClassified,
   onDocumentStored,
   project,
   contract,
@@ -722,6 +728,7 @@ function ProjectDetail({
   vessels,
 }: {
   documentAccessKey: string;
+  onDocumentClassified: (classification: ProjectDocumentClassification) => void;
   onDocumentStored: (document: ProjectOperationDocumentRecord) => void;
   project: ProjectRecord;
   contract?: ProjectContractRecord;
@@ -942,6 +949,7 @@ function ProjectDetail({
           client={supabaseClient}
           contractDocuments={contractDocuments}
           onStored={onDocumentStored}
+          onClassified={onDocumentClassified}
           otherDocuments={operationDocuments.filter((document) => !projectAttachments.includes(document))}
           projectDocuments={projectDocuments}
           projectId={project.id}
@@ -955,7 +963,7 @@ function ProjectDetail({
             {contractDocumentsUnavailable ? (
               <tbody><tr><td colSpan={isManager ? 3 : 2}>Documents contractuels indisponibles en raison d’une erreur de chargement.</td></tr></tbody>
             ) : (
-              <ProjectDocuments categoryLabels={labels} client={supabaseClient} documents={documents.contractDocuments} selectionColumn={isManager} canSelect={false} />
+              <ProjectDocuments categoryLabels={labels} client={supabaseClient} documents={documents.contractDocuments} selectionColumn={isManager} canSelect={false} documentSource="contract" />
             )}
           </table></div>}
         />
@@ -1969,6 +1977,14 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                 ...current,
                 operationDocuments: [document, ...current.operationDocuments.filter((existing) => existing.id !== document.id)],
               }))}
+              onDocumentClassified={(classification) => setProjectsData(current => {
+                const [source, id] = classification.documentId.split(':');
+                const update = <T extends { id: number; projectId: number | null }>(items: T[]) => items.map(document => document.id === Number(id) && document.projectId === classification.projectId
+                  ? { ...document, categoryKey: classification.categoryKey, subcategoryKey: classification.subcategoryKey || '' } : document);
+                return { ...current, operationDocuments: source === 'generated' ? update(current.operationDocuments) : current.operationDocuments,
+                  projectDocuments: source === 'project' ? update(current.projectDocuments) : current.projectDocuments,
+                  contractDocuments: source === 'contract' ? update(current.contractDocuments) : current.contractDocuments };
+              })}
               client={selectedClient}
               supabaseClient={effectiveClient}
               contract={selectedContract}

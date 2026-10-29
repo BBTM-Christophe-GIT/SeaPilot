@@ -28,6 +28,8 @@ restent consultables dans les fiches signées ou en lecture seule.
   les dossiers. Les documents contractuels importés sont également exclus.
 - Les fichiers restent dans Projet ; la sélection ne les supprime pas, ne change
   pas leur classement et ne les ajoute pas aux PDF.
+- Un [reclassement individuel](project-document-classification.md) décoche le
+  document. Les pièces initialement commerciales restent exclues après reclassement.
 - Pendant une sauvegarde, les cases sont verrouillées. Un refus restaure le choix
   antérieur et affiche une erreur. Un ajout de document ou un changement de
   catégorie recharge le catalogue autorisé. Les réponses tardives ne sont pas

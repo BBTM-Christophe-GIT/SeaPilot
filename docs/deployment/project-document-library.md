@@ -18,6 +18,10 @@ L’ancien éditeur de projet respecte aussi un catalogue confirmé vide. Les ca
 
 ## Catégories communes aux projets
 
+Le crayon près du nom de chaque fichier permet aussi de [modifier sa catégorie et
+sa sous-catégorie](project-document-classification.md). Ce changement conserve le
+fichier et s’applique immédiatement à la liste et aux filtres.
+
 La gestion utilise le catalogue documentaire de la société et le RPC `projects_save_document_categories`. Elle permet de créer ou renommer une catégorie ou une sous-catégorie. Retirer une catégorie désactive aussi ses sous-catégories sans supprimer de documents ni modifier leurs clés historiques. Les libellés des catégories retirées restent visibles et filtrables lorsqu’elles contiennent des documents ; elles ne sont jamais proposées pour un nouvel ajout.
 
 Un chargement du catalogue refusé ou indisponible bloque les ajouts et sa gestion, tout en conservant la consultation des documents. Le bouton de nouvelle tentative ne lance qu’une lecture du catalogue. Un catalogue vide permet de créer des catégories, sans inventer un catalogue d’envoi local.

@@ -13,6 +13,8 @@ import {
 import { storeProjectAttachment, type ProjectAttachmentDraft } from './projectDocumentStorage';
 import type { ProjectDocumentRecord, ProjectOperationDocumentRecord } from './projectQueries';
 import { ProjectSeaOperationDocuments } from './ProjectSeaOperationDocuments';
+import { ProjectDocumentClassificationEditor, type ClassificationDocument } from './ProjectDocumentClassificationEditor';
+import type { ProjectDocumentClassification } from './projectDocumentClassification';
 import './ProjectDocumentLibrary.css';
 
 interface LibraryDocuments {
@@ -28,12 +30,13 @@ interface ProjectDocumentLibraryProps extends LibraryDocuments {
   canManage: boolean;
   client: SupabaseClient;
   onStored: (document: ProjectOperationDocumentRecord) => void;
+  onClassified?: (classification: ProjectDocumentClassification) => void;
   projectId: number;
   renderDocuments: (documents: LibraryDocuments, labels: ReadonlyMap<string, string>) => ReactNode;
 }
 
 export function ProjectDocumentLibrary({
-  accessKey, archived = false, attachments, canManage, client, contractDocuments, onStored, otherDocuments = [], projectDocuments, projectId, renderDocuments,
+  accessKey, archived = false, attachments, canManage, client, contractDocuments, onClassified, onStored, otherDocuments = [], projectDocuments, projectId, renderDocuments,
 }: ProjectDocumentLibraryProps) {
   const fileHelpId = useId();
   const context = useMemo(() => ({ accessKey, archived, canManage, client, projectId }), [accessKey, archived, canManage, client, projectId]);
@@ -53,6 +56,41 @@ export function ProjectDocumentLibrary({
   const [categoryFilter, setCategoryFilter] = useState('');
   const [subcategoryFilter, setSubcategoryFilter] = useState('');
   const [feedback, setFeedback] = useState<{ context: typeof context; error?: string; message?: string } | null>(null);
+  const [classifications, setClassifications] = useState<{ context: typeof context; entries: Map<string, { sourceKey: string; value: ProjectDocumentClassification }> } | null>(null);
+
+  const sourceKey = (documentId: string, document: ProjectDocumentRecord | ProjectOperationDocumentRecord) => JSON.stringify([documentId, document]);
+  const rawDocuments = new Map<string, ProjectDocumentRecord | ProjectOperationDocumentRecord>([
+    ...[...attachments, ...otherDocuments].map(document => [`generated:${document.id}`, document] as const),
+    ...projectDocuments.map(document => [`project:${document.id}`, document] as const),
+    ...contractDocuments.map(document => [`contract:${document.id}`, document] as const),
+  ]);
+  function classified<T extends ProjectDocumentRecord | ProjectOperationDocumentRecord>(items: T[], prefix: string): T[] {
+    return items.map(document => {
+      const documentId = `${prefix}:${document.id}`;
+      const update = classifications?.context === context ? classifications.entries.get(documentId) : undefined;
+      return update?.sourceKey === sourceKey(documentId, document) ? { ...document, categoryKey: update.value.categoryKey, subcategoryKey: update.value.subcategoryKey || '' } : document;
+    });
+  }
+  const displayedDocuments = { attachments: classified(attachments, 'generated'), otherDocuments: classified(otherDocuments, 'generated'),
+    projectDocuments: classified(projectDocuments, 'project'), contractDocuments: classified(contractDocuments, 'contract') };
+  const classificationDocuments: ClassificationDocument[] = [
+    ...[...displayedDocuments.attachments, ...displayedDocuments.otherDocuments].map(document => ({ documentId: `generated:${document.id}`, document })),
+    ...displayedDocuments.projectDocuments.map(document => ({ documentId: `project:${document.id}`, document })),
+    ...displayedDocuments.contractDocuments.map(document => ({ documentId: `contract:${document.id}`, document })),
+  ].filter(({ document }) => document.projectId === projectId && !('isFolder' in document && document.isFolder)).map(({ documentId, document }) => ({
+    documentId, fileName: document.fileName || ('title' in document ? document.title : ''), categoryKey: document.categoryKey || null,
+    subcategoryKey: document.subcategoryKey || null, sourceKey: sourceKey(documentId, document),
+  }));
+  function documentClassified(classification: ProjectDocumentClassification) {
+    const source = rawDocuments.get(classification.documentId);
+    if (!source || classification.projectId !== projectId) return;
+    setClassifications(current => {
+      const entries = current?.context === context ? new Map(current.entries) : new Map();
+      entries.set(classification.documentId, { sourceKey: sourceKey(classification.documentId, source), value: classification });
+      return { context, entries };
+    });
+    onClassified?.(classification);
+  }
 
   useEffect(() => {
     mounted.current = true;
@@ -79,15 +117,15 @@ export function ProjectDocumentLibrary({
   const labels = new Map(DEFAULT_PROJECT_DOCUMENT_CATEGORIES.map((category) => [category.key, category.label]));
   categories.forEach((category) => labels.set(category.key, category.label));
   const categoryKeys = new Set([
-    ...attachments.map((document) => document.categoryKey || ''),
-    ...otherDocuments.map((document) => document.categoryKey || ''),
-    ...projectDocuments.map((document) => document.categoryKey),
-    ...contractDocuments.map((document) => document.categoryKey),
+    ...displayedDocuments.attachments.map((document) => document.categoryKey || ''),
+    ...displayedDocuments.otherDocuments.map((document) => document.categoryKey || ''),
+    ...displayedDocuments.projectDocuments.map((document) => document.categoryKey),
+    ...displayedDocuments.contractDocuments.map((document) => document.categoryKey),
   ].filter(Boolean));
   const filterCategories = categories.filter((category) => category.parentKey === null && (category.active || categoryKeys.has(category.key)));
   const knownKeys = new Set(filterCategories.map((category) => category.key));
   const extraFilterKeys = [...categoryKeys].filter((key) => !knownKeys.has(key));
-  const filterSubcategories = categories.filter((category) => category.parentKey === categoryFilter && (category.active || attachments.some((document) => document.subcategoryKey === category.key)));
+  const filterSubcategories = categories.filter((category) => category.parentKey === categoryFilter && (category.active || Object.values(displayedDocuments).some(items => items.some(document => document.subcategoryKey === category.key))));
   const uploadSubcategories = activeCategories.filter((category) => category.parentKey === uploadCategory);
   const busy = busyContext === context;
   const currentModal = modal?.context === context ? modal.kind : null;
@@ -98,10 +136,10 @@ export function ProjectDocumentLibrary({
     && (!subcategoryFilter || document.subcategoryKey === subcategoryFilter)
   );
   const filteredDocuments = {
-    attachments: attachments.filter(matches),
-    otherDocuments: otherDocuments.filter(matches),
-    contractDocuments: contractDocuments.filter(matches),
-    projectDocuments: projectDocuments.filter(matches),
+    attachments: displayedDocuments.attachments.filter(matches),
+    otherDocuments: displayedDocuments.otherDocuments.filter(matches),
+    contractDocuments: displayedDocuments.contractDocuments.filter(matches),
+    projectDocuments: displayedDocuments.projectDocuments.filter(matches),
   };
   const count = filteredDocuments.attachments.length + filteredDocuments.otherDocuments.length + filteredDocuments.contractDocuments.length + filteredDocuments.projectDocuments.length;
 
@@ -197,10 +235,13 @@ export function ProjectDocumentLibrary({
     </div>
     {!currentModal && currentFeedback?.message ? <p role="status">{currentFeedback.message}</p> : null}
     {!currentModal && currentFeedback?.error ? <p role="alert">{currentFeedback.error}</p> : null}
-    <ProjectSeaOperationDocuments accessKey={accessKey} archived={archived} canManage={canManage} client={client} projectId={projectId}
-      refreshKey={JSON.stringify([categories.map(category => [category.key, category.parentKey, category.label]), [attachments, otherDocuments, projectDocuments, contractDocuments].map(items => items.map(item => [item.id, item.categoryKey, 'subcategoryKey' in item ? item.subcategoryKey : '', item.fileName]))])}>
-      {(categoryFilter || subcategoryFilter) && !count ? <p className="project-section-empty">Aucun document dans cette catégorie.</p> : renderDocuments(filteredDocuments, labels)}
-    </ProjectSeaOperationDocuments>
+    <ProjectDocumentClassificationEditor accessKey={accessKey} archived={archived} canManage={canManage} categories={categories} client={client} documents={classificationDocuments}
+      onClassified={documentClassified} projectId={projectId} ready={Boolean(currentCatalog && !currentCatalog.error && roots.length)}>
+      <ProjectSeaOperationDocuments accessKey={accessKey} archived={archived} canManage={canManage} client={client} projectId={projectId}
+        refreshKey={JSON.stringify([categories.map(category => [category.key, category.parentKey, category.label]), Object.values(displayedDocuments).map(items => items.map(item => [item.id, item.categoryKey, item.subcategoryKey, item.fileName]))])}>
+        {(categoryFilter || subcategoryFilter) && !count ? <p className="project-section-empty">Aucun document dans cette catégorie.</p> : renderDocuments(filteredDocuments, labels)}
+      </ProjectSeaOperationDocuments>
+    </ProjectDocumentClassificationEditor>
     {currentModal === 'upload' ? <AppDialog title="Ajouter un document" eyebrow="Projet · Documents" description="Le fichier sera classé dans l’espace privé du projet." icon={<FileText aria-hidden="true" size={20} />} isBusy={busy} onClose={() => setModal(null)} onSubmit={(event) => { event.preventDefault(); void upload(); }} size="sm" footer={<div className="app-dialog__actions"><button className="sp-button sp-button--secondary" disabled={busy} onClick={() => setModal(null)} type="button">Annuler</button><button className="sp-button sp-button--primary" disabled={busy || !file || !canUpload} type="submit"><Upload aria-hidden="true" size={17} />{busy ? 'Ajout en cours…' : 'Ajouter au projet'}</button></div>}>
       <div className="project-documents-form">
         <label>Fichier<input aria-describedby={fileHelpId} disabled={busy} onChange={(event) => setFile(event.target.files?.[0] || null)} required type="file" /></label>
