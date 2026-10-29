@@ -77,7 +77,9 @@ const preview = () => within(document.querySelector('.so-editor-document-pane')!
 const editorWeather = () => within(document.querySelector('.so-editor-form-pane .so-passage-field.is-weather')!);
 const footer = () => within(screen.getByRole('dialog', { name: 'Fiche Opération en Mer' }).querySelector('.app-dialog__footer')!);
 async function step(index: number) {
-  await act(async () => { fireEvent.click(within(screen.getByRole('navigation', { name: 'Étapes de la préparation' })).getAllByRole('button')[index]); });
+  const buttons = within(screen.getByRole('navigation', { name: 'Étapes de la préparation' })).getAllByRole('button')
+    .filter(button => /^sea-operation-step-[0-3]$/.test(button.getAttribute('aria-controls') || ''));
+  await act(async () => { fireEvent.click(buttons[index]); });
 }
 async function advance(milliseconds: number) { await act(async () => { await vi.advanceTimersByTimeAsync(milliseconds); }); }
 
