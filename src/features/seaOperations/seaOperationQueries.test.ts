@@ -186,6 +186,60 @@ describe('sea operation queries', () => {
     expect(rpc).toHaveBeenLastCalledWith('sea_operation_save', { p_id: 'record-1', p_version: 2, p_draft: draft });
   });
 
+  it('sends the project port baseline in the atomic RPC without adding it to the saved form', async () => {
+    const draft = emptySeaOperation();
+    draft.planning = { date: '2026-10-29', projectId: '144', operationId: '1:12', captainPersonId: '' };
+    draft.vessel.departurePort = 'Port de Brest';
+    draft.vessel.arrivalPort = 'Port de Dieppe';
+    const baseline = { projectId: '144', departurePort: 'Cherbourg', arrivalPort: 'Dieppe' };
+    const refreshed = { ...baseline, departurePort: 'Port de Brest', arrivalPort: 'Port de Dieppe' };
+    const rpc = vi.fn().mockResolvedValue({ data: record({ draft, project_ports: refreshed }), error: null });
+    const saved = await saveSeaOperation({ rpc } as unknown as SupabaseClient, draft, { id: 'record-1', version: 2 }, baseline);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('sea_operation_save_with_project_ports', {
+      p_id: 'record-1', p_version: 2, p_draft: draft, p_project_ports: baseline,
+    });
+    expect(saved.projectPorts).toEqual(refreshed);
+    expect(saved.draft).toEqual(draft);
+    expect(saved.draft).not.toHaveProperty('projectPorts');
+    expect(saved.draft).not.toHaveProperty('project_ports');
+    expect(baseline.departurePort).toBe('Cherbourg');
+  });
+
+  it('rejects a stale project or Transit baseline before sending a write', async () => {
+    const draft = emptySeaOperation();
+    draft.planning = { date: '2026-10-29', projectId: '144', operationId: '1:12', captainPersonId: '' };
+    const rpc = vi.fn();
+    const client = { rpc } as unknown as SupabaseClient;
+    await expect(saveSeaOperation(client, draft, null, { projectId: '287', departurePort: 'Brest', arrivalPort: 'Dieppe' })).rejects.toThrow('ports du projet');
+    await expect(saveSeaOperation(client, createTransitSeaOperation('2026-10-29'), null,
+      { projectId: '144', departurePort: 'Brest', arrivalPort: 'Dieppe' })).rejects.toThrow('ports du projet');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('keeps conflicts atomic and never retries through the unsynchronized legacy writer', async () => {
+    const draft = emptySeaOperation();
+    draft.planning = { date: '2026-10-29', projectId: '144', operationId: '1:12', captainPersonId: '' };
+    const baseline = { projectId: '144', departurePort: 'Brest', arrivalPort: 'Dieppe' };
+    const conflict = { code: '40001', message: 'Le port du projet a été modifié. Rechargez la fiche.' };
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: conflict });
+    await expect(saveSeaOperation({ rpc } as unknown as SupabaseClient, draft, null, baseline)).rejects.toBe(conflict);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc.mock.calls[0][0]).toBe('sea_operation_save_with_project_ports');
+  });
+
+  it('accepts legacy port metadata absence but rejects malformed or cross-project server metadata', () => {
+    const draft = emptySeaOperation();
+    draft.planning = { date: '2026-10-29', projectId: '144', operationId: '1:12', captainPersonId: '' };
+    expect(mapSeaOperationRecord(record({ draft }))).not.toHaveProperty('projectPorts');
+    expect(mapSeaOperationRecord(record({ draft, project_ports: null })).projectPorts).toBeNull();
+    for (const ports of [
+      { projectId: '287', departurePort: '', arrivalPort: '' },
+      { projectId: '144', departurePort: null, arrivalPort: '' },
+      { projectId: '144', departurePort: '', arrivalPort: 12 },
+      { projectId: '9223372036854775808', departurePort: '', arrivalPort: '' },
+    ]) expect(() => mapSeaOperationRecord(record({ draft, project_ports: ports }))).toThrow('ports du projet');
+  });
+
   it('round trips optional automatic and manual ETA modes without adding a mode to historical waypoints', async () => {
     const draft = emptySeaOperation();
     draft.waypoints = [{ ...emptySeaOperationWaypoint('legacy'), eta: '2026-10-27T12:00' },

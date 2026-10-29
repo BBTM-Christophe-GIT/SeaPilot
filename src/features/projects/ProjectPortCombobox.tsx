@@ -4,6 +4,7 @@ import { filterProjectPortGroups, formatProjectPort, type ProjectPort } from './
 
 interface ProjectPortComboboxProps {
   disabled?: boolean;
+  id?: string;
   onChange: (value: string) => void;
   placeholder?: string;
   value?: string;
@@ -11,6 +12,7 @@ interface ProjectPortComboboxProps {
 
 export function ProjectPortCombobox({
   disabled = false,
+  id,
   onChange,
   placeholder = 'Rechercher un port français ou anglais, un département ou un LOCODE…',
   value = '',
@@ -63,6 +65,7 @@ export function ProjectPortCombobox({
     <div className="project-port-combobox__control">
       <Search aria-hidden="true" size={16} />
       <input
+        id={id}
         aria-activedescendant={open && activePort ? `${listboxId}-option-${activeIndex}` : undefined}
         aria-autocomplete="list"
         aria-controls={listboxId}

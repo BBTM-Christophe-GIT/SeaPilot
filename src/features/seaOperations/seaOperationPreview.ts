@@ -7,13 +7,17 @@ const vessels: PreviewVessel[] = [
   { id: 9901, name: 'GOURY', registration_imo: 'DEMO-9901 / IMO 9900001', length_overall: '30.62', draft_m: 2.1, weather_matrix: cloneVesselWeatherMatrix(GOURY_WEATHER_MATRIX), can_sign: false },
   { id: 9902, name: 'LE ROZEL', registration_imo: 'DEMO-9902 / IMO 9900002', length_overall: '19.2', draft_m: 1.4, weather_matrix: null, can_sign: false },
 ];
+const projectPorts = new Map([
+  ['99101', { departurePort: 'Cherbourg', arrivalPort: 'Le Havre' }],
+  ['99102', { departurePort: 'Caen', arrivalPort: 'Dieppe' }],
+]);
 function planningContext(date: string, references = vessels) {
   return { date, choices: [
     {
       operationId: '990101:9901', projectId: '99101', project: 'DEMO-01 - Inspection des balises',
       client: 'Port de démonstration de Cherbourg', clientContact: 'Léa DEMO · +33 2 00 00 00 01 · lea@example.test',
       description: 'Inspection et relevé des balises du chenal — opération fictive de démonstration.',
-      vessel: { id: '9901', name: 'GOURY', registrationImo: vessels[0].registration_imo, departurePort: 'Cherbourg', arrivalPort: 'Le Havre', etd: `${date}T08:00`, eta: `${date}T16:00`, weatherMatrix: references[0].weather_matrix },
+      vessel: { id: '9901', name: 'GOURY', registrationImo: vessels[0].registration_imo, ...projectPorts.get('99101')!, etd: `${date}T08:00`, eta: `${date}T16:00`, weatherMatrix: references[0].weather_matrix },
       captains: [{ personId: '99001', name: 'Camille DEMO', functionLabel: 'Capitaine', hasSignature: false, canSign: false }],
       canSign: false,
     },
@@ -21,7 +25,7 @@ function planningContext(date: string, references = vessels) {
       operationId: '990102:9902', projectId: '99102', project: 'DEMO-02 - Mesures bathymétriques',
       client: 'Chantier de démonstration de Caen', clientContact: 'Hugo DEMO · +33 2 00 00 00 02 · hugo@example.test',
       description: 'Mesures bathymétriques avant travaux — seconde opération fictive le même jour.',
-      vessel: { id: '9902', name: 'LE ROZEL', registrationImo: vessels[1].registration_imo, departurePort: 'Caen', arrivalPort: 'Dieppe', etd: `${date}T09:30`, eta: `${date}T18:00`, weatherMatrix: references[1].weather_matrix },
+      vessel: { id: '9902', name: 'LE ROZEL', registrationImo: vessels[1].registration_imo, ...projectPorts.get('99102')!, etd: `${date}T09:30`, eta: `${date}T18:00`, weatherMatrix: references[1].weather_matrix },
       // This is an isolated example of a temporary Planning captain, never a real account permission.
       captains: [{ personId: '99002', name: 'Alex DEMO', functionLabel: 'Capitaine temporaire', hasSignature: false, canSign: false }],
       canSign: false,
@@ -48,11 +52,16 @@ const records: PreviewRecord[] = [{
   updated_by: 'preview-user', updated_by_name: 'Compte de démonstration', updated_at: now(),
   signed_by: null, signed_by_name: null, signed_at: null, captain_name: null, signature_snapshot: null, can_edit: true, can_sign: false,
 }];
+function withProjectPorts(record: PreviewRecord) {
+  const projectId = record.draft.planning?.projectId;
+  const ports = projectId && !record.draft.transit ? projectPorts.get(projectId) : undefined;
+  return { ...record, project_ports: ports ? { projectId, ...ports } : null };
+}
 export function seaOperationPreviewRpc(name: string, args: Record<string, unknown> = {}, vesselSource?: (id: number) => Record<string, unknown> | undefined): { data: unknown; error: { message: string } | null } {
   const fail = (message: string) => ({ data: null, error: { message } });
   const success = (data: unknown) => ({ data: structuredClone(data), error: null });
   let references = vessels;
-  if (['sea_operations_overview', 'sea_operation_planning_context', 'sea_operation_save'].includes(name)) {
+  if (['sea_operations_overview', 'sea_operation_planning_context', 'sea_operation_save', 'sea_operation_save_with_project_ports'].includes(name)) {
     try {
       references = vessels.map((vessel) => {
         const source = vesselSource ? vesselSource(vessel.id) : vessel;
@@ -63,7 +72,7 @@ export function seaOperationPreviewRpc(name: string, args: Record<string, unknow
       });
     } catch (error) { return fail(error instanceof Error ? error.message : 'Configuration du navire indisponible.'); }
   }
-  if (name === 'sea_operations_overview') return success({ company_id: 9901, actor_id: 'preview-user', actor_name: 'Compte de démonstration', records, vessels: references });
+  if (name === 'sea_operations_overview') return success({ company_id: 9901, actor_id: 'preview-user', actor_name: 'Compte de démonstration', records: records.map(withProjectPorts), vessels: references });
   if (name === 'sea_operation_planning_context') return success(planningContext(typeof args.p_date === 'string' ? args.p_date : seaOperationToday(), references));
   if (name === 'sea_operation_captain_signature') return success(null);
   if (name === 'sea_operation_project_documents') return success(projectDocuments.filter((document) => document.project_id === Number(args.p_project_id)).map((document) => Object.fromEntries(Object.entries(document).filter(([key]) => key !== 'path'))));
@@ -72,19 +81,33 @@ export function seaOperationPreviewRpc(name: string, args: Record<string, unknow
     return document ? success({ bucket: 'project-files', path: document.path, file_name: document.file_name, mime_type: document.mime_type }) : fail('Document indisponible pour ce projet.');
   }
   const record = records.find((item) => item.id === args.p_id);
-  if (name === 'sea_operation_detail') return record ? success(record) : fail('Fiche introuvable.');
-  if (name === 'sea_operation_save') {
+  if (name === 'sea_operation_detail') return record ? success(withProjectPorts(record)) : fail('Fiche introuvable.');
+  if (name === 'sea_operation_save' || name === 'sea_operation_save_with_project_ports') {
     if (args.p_id && (!record || record.version !== args.p_version)) return fail('La fiche a été modifiée. Rechargez-la avant de réessayer.');
     const draft = structuredClone(args.p_draft) as SeaOperationPayload;
     if (!isSeaOperationPayload(draft)) return fail('Formulaire invalide.');
     if (record?.status === 'signed') return fail('Une opération signée est conservée sans modification.');
     const vessel = references.find((item) => String(item.id) === draft.vessel.id);
     if (draft.vessel.id && !vessel) return fail('Navire de démonstration inaccessible.');
+    let nextPorts: { projectId: string; departurePort: string; arrivalPort: string } | undefined;
+    if (name === 'sea_operation_save_with_project_ports') {
+      const baseline = args.p_project_ports as Record<string, unknown> | null;
+      const projectId = draft.planning?.projectId;
+      const current = projectId ? projectPorts.get(projectId) : undefined;
+      if (!baseline || !current || draft.transit || baseline.projectId !== projectId
+        || typeof baseline.departurePort !== 'string' || typeof baseline.arrivalPort !== 'string') return fail('Les ports du projet reçus sont invalides.');
+      const previous = record?.draft.planning?.projectId === projectId ? record.draft.vessel : baseline;
+      const changes = (['departurePort', 'arrivalPort'] as const).filter(key => draft.vessel[key] !== previous[key]);
+      if (changes.some(key => current[key] !== baseline[key] && current[key] !== draft.vessel[key])) return fail('Les ports du projet ont été modifiés. Rechargez la fiche.');
+      nextPorts = { projectId: projectId!, ...current };
+      for (const key of changes) nextPorts[key] = draft.vessel[key];
+    }
     if (vessel) draft.vessel.weatherMatrix = structuredClone(vessel.weather_matrix);
     else delete draft.vessel.weatherMatrix;
-    if (record) { record.draft = draft; record.version += 1; record.updated_at = now(); return success(record); }
+    if (nextPorts) projectPorts.set(nextPorts.projectId, { departurePort: nextPorts.departurePort, arrivalPort: nextPorts.arrivalPort });
+    if (record) { record.draft = draft; record.version += 1; record.updated_at = now(); return success(withProjectPorts(record)); }
     const created: PreviewRecord = { ...structuredClone(records[0]), id: crypto.randomUUID(), version: 1, draft, created_at: now(), updated_at: now() };
-    records.unshift(created); return success(created);
+    records.unshift(created); return success(withProjectPorts(created));
   }
   return fail('La signature nécessite le compte réel du Capitaine affecté au navire.');
 }

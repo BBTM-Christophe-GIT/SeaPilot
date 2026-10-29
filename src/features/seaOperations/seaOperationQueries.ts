@@ -33,6 +33,14 @@ export interface SeaOperationRecord {
   /** Post-passage measurements are a separate annex, never part of the signed draft. */
   weatherObservations?: ObservationResult[];
   weatherHistoryError?: string;
+  /** Current project ports for optimistic synchronization; outside the signed form. */
+  projectPorts?: SeaOperationProjectPorts | null;
+}
+
+export interface SeaOperationProjectPorts {
+  projectId: string;
+  departurePort: string;
+  arrivalPort: string;
 }
 
 export interface SeaOperationSignatureSnapshot {
@@ -117,6 +125,17 @@ function object(value: unknown): Row {
   return value as Row;
 }
 
+function mapProjectPorts(value: unknown, draft: SeaOperationPayload): SeaOperationProjectPorts | null {
+  if (value == null) return null;
+  const row = object(value);
+  if (typeof row.projectId !== 'string' || !/^[1-9]\d{0,18}$/.test(row.projectId)
+    || BigInt(row.projectId) > 9223372036854775807n || row.projectId !== draft.planning?.projectId
+    || draft.transit || typeof row.departurePort !== 'string' || typeof row.arrivalPort !== 'string') {
+    throw new Error('Les ports du projet reçus sont invalides.');
+  }
+  return { projectId: row.projectId, departurePort: row.departurePort, arrivalPort: row.arrivalPort };
+}
+
 export function mapSeaOperationRecord(value: unknown): SeaOperationRecord {
   const row = object(value);
   const draft = row.draft;
@@ -134,6 +153,7 @@ export function mapSeaOperationRecord(value: unknown): SeaOperationRecord {
     canRevise: row.can_revise === true, canDelete: row.can_delete === true,
     previousRevisionId: nullableText(row.previous_revision_id), supersededById: nullableText(row.superseded_by_id),
     signatureSnapshot: mapSignature(row.signature_snapshot),
+    ...(row.project_ports === undefined ? {} : { projectPorts: mapProjectPorts(row.project_ports, draft) }),
   };
 }
 
@@ -209,9 +229,12 @@ async function hydrateWeatherHistory(client: SupabaseClient, record: SeaOperatio
 
 export async function saveSeaOperation(
   client: SupabaseClient, draft: SeaOperationPayload, existing?: Pick<SeaOperationRecord, 'id' | 'version'> | null,
+  projectPorts?: SeaOperationProjectPorts | null,
 ): Promise<SeaOperationRecord> {
-  return hydrateSignature(client, mapSeaOperationRecord(await rpc(client, 'sea_operation_save', {
+  const baseline = projectPorts ? mapProjectPorts(projectPorts, draft) : null;
+  return hydrateSignature(client, mapSeaOperationRecord(await rpc(client, baseline ? 'sea_operation_save_with_project_ports' : 'sea_operation_save', {
     p_id: existing?.id ?? null, p_version: existing?.version ?? null, p_draft: draft,
+    ...(baseline ? { p_project_ports: baseline } : {}),
   })));
 }
 
