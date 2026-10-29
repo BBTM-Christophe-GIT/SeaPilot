@@ -137,4 +137,14 @@ describe('read-only Sea Operation project documents', () => {
     await userEvent.click(opener);
     expect(createSeaOperationProjectDocumentUrl).not.toHaveBeenCalled();
   });
+
+  it('shows an explicit project-selection prompt when opened as a standalone Documents view without a linked project', () => {
+    render(<SeaOperationProjectDocuments client={client} projectId="" showWithoutProject />);
+    const section = screen.getByRole('region', { name: 'Documents' });
+    expect(within(section).getByRole('heading', { name: 'Documents', level: 3 })).toBeVisible();
+    expect(within(section).getByText('Sélectionnez un projet dans Armement pour consulter ses documents.')).toBeVisible();
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+    expect(fetchSeaOperationProjectDocuments).not.toHaveBeenCalled();
+    expect(createSeaOperationProjectDocumentUrl).not.toHaveBeenCalled();
+  });
 });

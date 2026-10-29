@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, cloneElement, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { AlertTriangle, Anchor, ArrowLeft, CheckCircle2, ChevronRight, ClipboardCheck, Compass, Eye, FileDown, FileText, Map, Pencil, Plus, Printer, Save, Search, Ship, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
@@ -160,6 +160,8 @@ export function SeaOperationsPage() {
   const [vesselContextError, setVesselContextError] = useState('');
   const [dirty, setDirty] = useState(false);
   const [step, setStep] = useState(0);
+  const [documentsContext, setDocumentsContext] = useState<{ client: SupabaseClient; account: string } | null>(null);
+  const documentsOpen = documentsContext?.client === client && documentsContext.account === (data ? recoveryKey(data) : '');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const [busy, setBusy] = useState(false);
@@ -221,7 +223,7 @@ export function SeaOperationsPage() {
     setRecordAction(null); setRecordActionError(''); setBusy(false);
     loadedAccount.current = account;
     pendingUkc.current.clear(); setUkcRequests({ client: currentClient.current, statuses: {} });
-    setRecord(null); setDraft(emptySeaOperation()); setEditing(false); setDirty(false); setStep(0);
+    setRecord(null); setDraft(emptySeaOperation()); setEditing(false); setDirty(false); setDocumentsContext(null); setStep(0);
     const recovery = readRecovery(result);
     if (!recovery) return;
     const existing = recovery.recordId ? result.records.find((item) => item.id === recovery.recordId) : null;
@@ -232,7 +234,7 @@ export function SeaOperationsPage() {
     }
     setRecord(existing ? { ...existing, version: recovery.version! } : null);
     const vessel = result.vessels.find((source) => String(source.id) === recovery.draft.vessel.id);
-    setDraft(captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(recovery.draft, vessel), vessel), result.vessels))); setPlanningDate(seaOperationContextDate(recovery.draft) || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setStep(recovery.step); setEditing(true); setDirty(true);
+    setDraft(captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(recovery.draft, vessel), vessel), result.vessels))); setPlanningDate(seaOperationContextDate(recovery.draft) || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setDocumentsContext(null); setStep(recovery.step); setEditing(true); setDirty(true);
     setNotice('Votre préparation non enregistrée a été récupérée dans cet onglet. Vérifiez-la avant de l’enregistrer.');
   }, []);
 
@@ -247,7 +249,7 @@ export function SeaOperationsPage() {
     setRecordAction(null); setRecordActionError(''); setBusy(false); setExporting(false); setHistoryLoading(false);
     setWeatherRequests({ client, statuses: {} });
     pendingUkc.current.clear(); setUkcRequests({ client, statuses: {} });
-    setData(null); setRecord(null); setEditing(false); setDirty(false); setNotice(''); setError('');
+    setData(null); setRecord(null); setEditing(false); setDirty(false); setDocumentsContext(null); setNotice(''); setError('');
   }, [client]);
 
   useEffect(() => {
@@ -268,7 +270,7 @@ export function SeaOperationsPage() {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = previousOverflow; };
   }, [editing]);
-  useEffect(() => { if (formPane.current) formPane.current.scrollTop = 0; }, [step]);
+  useEffect(() => { if (formPane.current) formPane.current.scrollTop = 0; }, [step, documentsOpen]);
   useEffect(() => {
     if (!data || !dirty) return;
     try { sessionStorage.setItem(recoveryKey(data), JSON.stringify({ draft, recordId: record?.id ?? null, version: record?.version ?? null, step })); }
@@ -632,11 +634,15 @@ export function SeaOperationsPage() {
   }
   function closeEditor() {
     if (busy || exporting || !confirmLeave()) return;
-    pendingUkc.current.clear(); clearRecovery(data); setEditing(false); setDirty(false); setNotice(''); setIssues([]); setError('');
+    pendingUkc.current.clear(); clearRecovery(data); setEditing(false); setDirty(false); setDocumentsContext(null); setNotice(''); setIssues([]); setError('');
     window.requestAnimationFrame(() => { if (editorOpener.current?.isConnected) editorOpener.current.focus(); });
   }
+  function showDocuments() {
+    setStep(0); setDocumentsContext({ client, account: data ? recoveryKey(data) : '' }); setMobilePane('form');
+    window.requestAnimationFrame(() => formPane.current?.querySelector<HTMLElement>('#sea-operation-documents-panel h3')?.focus());
+  }
   function changeStep(index: number) {
-    setStep(index); setMobilePane('form');
+    setDocumentsContext(null); setStep(index); setMobilePane('form');
     window.requestAnimationFrame(() => formPane.current?.querySelector<HTMLElement>(`#sea-operation-step-${index} h2`)?.focus());
   }
   function revealFormFeedback() {
@@ -664,7 +670,7 @@ export function SeaOperationsPage() {
         const prepared = captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(loaded.draft, vessel), vessel), data?.vessels));
         if (prepared !== loaded.draft) { setDraft(prepared); setDirty(true); setNotice('Les données du navire ont été actualisées pour cette préparation. Enregistrez pour les conserver.'); }
       }
-      setPlanning(null); setPlanningDate(seaOperationContextDate(loaded.draft) || loaded.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setEditing(true); setStep(0); setMobilePane('form');
+      setPlanning(null); setPlanningDate(seaOperationContextDate(loaded.draft) || loaded.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setEditing(true); setDocumentsContext(null); setStep(0); setMobilePane('form');
     } }
     catch (reason) { if (request === loadSequence.current && actionContext.current.client === client) setError(errorMessage(reason)); }
     finally { if (request === loadSequence.current && actionContext.current.client === client) setBusy(false); }
@@ -678,7 +684,7 @@ export function SeaOperationsPage() {
     ++loadSequence.current;
     setWeatherRequests({ client, statuses: {} });
     pendingUkc.current.clear(); setUkcRequests({ client, statuses: {} });
-    setRecord(null); setDraft(newSeaOperation()); setPlanningDate(seaOperationToday()); setPlanning(null); setDirty(false); setEditing(true); setStep(0); setMobilePane('form'); setError(''); setNotice(''); setIssues([]);
+    setRecord(null); setDraft(newSeaOperation()); setPlanningDate(seaOperationToday()); setPlanning(null); setDirty(false); setEditing(true); setDocumentsContext(null); setStep(0); setMobilePane('form'); setError(''); setNotice(''); setIssues([]);
   }
   function requestRecordAction(kind: RecordAction['kind'], item: SeaOperationRecord) {
     if (!data || busy || exporting || mutationRunning.current || recordAction
@@ -710,7 +716,7 @@ export function SeaOperationsPage() {
         setData((current) => current ? { ...current, records: current.records.filter((item) => item.id !== action.record.id) } : current);
         setPlanningDate(seaOperationContextDate(revised.draft) || revised.draft.vessel.etd.slice(0, 10) || seaOperationToday());
         allowAutomaticMission.current = false;
-        setPlanning(null); setEditing(true); setStep(0); setMobilePane('form'); setIssues([]); setError('');
+        setPlanning(null); setEditing(true); setDocumentsContext(null); setStep(0); setMobilePane('form'); setIssues([]); setError('');
         setNotice('Nouvelle préparation créée. La version signée précédente reste conservée. Le Capitaine devra signer cette nouvelle fiche.');
       } else {
         await deleteSeaOperation(action.client, { id: action.record.id, version: action.record.version });
@@ -735,7 +741,7 @@ export function SeaOperationsPage() {
     const prepared = captureSeaOperationRadios(captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(draft, matrixSource), data?.vessels.find((vessel) => String(vessel.id) === draft.vessel.id)), data?.vessels)));
     const automaticUkcErrors = new Set(prepared.waypoints.flatMap((point, index) => point.ukcMode === 'automatic' ? [`L’UKC du point n° ${index + 1} est obligatoire.`] : []));
     const validation = validateSeaOperation(prepared, sign ? prepared.decision || 'GO' : 'DRAFT').filter(message => !automaticUkcErrors.has(message));
-    if (validation.length) { setIssues(validation); setStep(sign ? 3 : step); revealFormFeedback(); return; }
+    if (validation.length) { setIssues(validation); setDocumentsContext(null); setStep(sign ? 3 : step); revealFormFeedback(); return; }
     setBusy(true); setError(''); setIssues([]); setNotice('');
     const sequence = loadSequence.current;
     try {
@@ -755,7 +761,7 @@ export function SeaOperationsPage() {
       for (const entry of queued) if (entry.sourceClient === client) captured = retainSeaOperationUkc(captured, entry.capture, entry.context);
       const beforeSave = sign ? validateSeaOperation(captured, captured.decision || 'GO') : [];
       if (beforeSave.length) {
-        setDraft(captured); setDirty(true); setIssues([...beforeSave, ...ukcErrors]); setStep(3); revealFormFeedback(); return;
+        setDraft(captured); setDirty(true); setIssues([...beforeSave, ...ukcErrors]); setDocumentsContext(null); setStep(3); revealFormFeedback(); return;
       }
       const saved = await saveSeaOperation(client, captured, record || undefined);
       if (sequence !== loadSequence.current || weatherEditor.current.client !== client || !weatherEditor.current.editing) return;
@@ -777,7 +783,7 @@ export function SeaOperationsPage() {
       if (sign) {
         const afterSave = validateSeaOperation(saved.draft, saved.draft.decision || 'GO');
         if (afterSave.length) {
-          setIssues(afterSave); setStep(3); setNotice('Le brouillon est enregistré. Complétez les données signalées avant de signer.');
+          setIssues(afterSave); setDocumentsContext(null); setStep(3); setNotice('Le brouillon est enregistré. Complétez les données signalées avant de signer.');
           revealFormFeedback(); return;
         }
         const finalized = await signSeaOperation(client, saved, saved.draft.signature.captainName, saved.draft.signature.acknowledged);
@@ -850,7 +856,7 @@ export function SeaOperationsPage() {
       isBusy={busy || exporting}
       onClose={closeEditor}
       footer={<div className="so-dialog-footer">
-        <div className="so-footer-state">{step > 0 && <button className="sp-button sp-button--secondary so-secondary" disabled={busy} onClick={() => changeStep(step - 1)}><ArrowLeft size={16} />Précédent</button>}<span>{exporting ? 'Export du PDF…' : busy ? 'Enregistrement…' : dirty ? 'Modifications non enregistrées' : signed ? 'Décision signée et figée' : record ? `Version ${record.version} enregistrée` : 'Brouillon à compléter'}</span></div>
+        <div className="so-footer-state">{(documentsOpen || step > 0) && <button className="sp-button sp-button--secondary so-secondary" disabled={busy} onClick={() => changeStep(documentsOpen ? 0 : step - 1)}><ArrowLeft size={16} />Précédent</button>}<span>{exporting ? 'Export du PDF…' : busy ? 'Enregistrement…' : dirty ? 'Modifications non enregistrées' : signed ? 'Décision signée et figée' : record ? `Version ${record.version} enregistrée` : 'Brouillon à compléter'}</span></div>
         <div className="so-footer-actions"><button className="sp-button sp-button--secondary so-secondary so-footer-cancel" disabled={busy} onClick={closeEditor}>{signed || !editable ? 'Fermer' : 'Annuler'}</button>
           {record?.canRevise && signed && <button type="button" className="sp-button sp-button--secondary so-secondary" disabled={busy || exporting} onClick={() => requestRecordAction('revise', record)}><Pencil size={16} />Modifier cette fiche</button>}
           {record?.canDelete && !dirty && <button type="button" className="sp-button sp-button--secondary so-secondary so-delete-record" disabled={busy || exporting} onClick={() => requestRecordAction('delete', record)}><Trash2 size={16} />Supprimer cette fiche</button>}
@@ -863,7 +869,7 @@ export function SeaOperationsPage() {
     >
       <div className="so-editor-workspace">
         <aside className="so-wizard-sidebar" aria-label="Parcours de l’opération"><span className="so-wizard-eyebrow">PARCOURS OPÉRATION</span><strong>{draft.vessel.name || 'Opération en Mer'}</strong><small>Préparation GO / NO GO</small>
-          <nav className="so-wizard-steps" aria-label="Étapes de la préparation">{STEPS.map((label, index) => { const Icon = STEP_ICONS[index]; return <button type="button" key={label} aria-controls={`sea-operation-step-${index}`} aria-current={step === index ? 'step' : undefined} className={step === index ? 'is-active' : ''} onClick={() => changeStep(index)}><b>{index + 1}</b><Icon aria-hidden="true" size={20} /><span><strong>{label}</strong><small>{STEP_DETAILS[index]}</small></span></button>; })}</nav>
+          <nav className="so-wizard-steps" aria-label="Étapes de la préparation">{STEPS.map((label, index) => { const Icon = STEP_ICONS[index]; return <Fragment key={label}><button type="button" aria-controls={`sea-operation-step-${index}`} aria-current={!documentsOpen && step === index ? 'step' : undefined} className={!documentsOpen && step === index ? 'is-active' : ''} onClick={() => changeStep(index)}><b>{index + 1}</b><Icon aria-hidden="true" size={20} /><span><strong>{label}</strong><small>{STEP_DETAILS[index]}</small></span></button>{index === 0 && <button type="button" aria-label="Documents" aria-controls="sea-operation-documents-panel" aria-current={documentsOpen ? 'page' : undefined} className={`so-wizard-documents ${documentsOpen ? 'is-active' : ''}`} onClick={showDocuments}><span aria-hidden="true" /><FileText aria-hidden="true" size={20} /><span><strong>Documents</strong><small>Pièces du projet</small></span></button>}</Fragment>; })}</nav>
           <p className="so-wizard-note"><Anchor aria-hidden="true" size={17} /><span>La décision est signée par le Capitaine affecté au navire.</span></p>
         </aside>
         <div className="so-mobile-switch" hidden={!compactLayout} role="group" aria-label="Affichage de la fiche"><button aria-pressed={mobilePane === 'form'} onClick={() => setMobilePane('form')}><FileText size={16} />Saisie</button><button aria-pressed={mobilePane === 'preview'} onClick={() => setMobilePane('preview')}><Eye size={16} />Aperçu et complétude</button></div>
@@ -874,7 +880,7 @@ export function SeaOperationsPage() {
           {error && <div className="so-alert so-danger" tabIndex={-1} role="alert"><AlertTriangle size={18} /><span>{error}</span></div>}
           {notice && <div className="so-alert so-success" role="status"><CheckCircle2 size={18} />{notice}</div>}
           {issues.length > 0 && <div className="so-alert so-danger" tabIndex={-1} role="alert"><div><strong>La fiche doit être complétée</strong><ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div></div>}
-      <fieldset className="so-form" disabled={!editable || busy || signed}>
+      <fieldset className="so-form" hidden={documentsOpen} disabled={!editable || busy || signed}>
         <section id="sea-operation-step-0" hidden={step !== 0} className={`so-panel so-armament-panel ${step === 0 ? 'is-active' : ''}`} aria-label="Préparation de l’Armement">
           <div className="so-section-title"><b aria-hidden="true">1</b><div><h2 tabIndex={-1}>Préparation de l’Armement</h2><p>Informations opérationnelles et organisation de la mission.</p></div></div>
           <div className="so-grid so-armament-grid">
@@ -968,7 +974,7 @@ export function SeaOperationsPage() {
           <Field label="Décision"><ChoiceControl label="Décision" value={draft.decision} onChange={(decision) => update({ decision: decision as SeaOperationPayload['decision'] })} options={[{ value: 'GO', label: 'GO · la mission peut être réalisée', disabled: assessment.blockingChecks.length > 0 }, { value: 'NO_GO', label: 'NO GO · la mission ne peut être réalisée' }]} /></Field><Field label="Risques identifiés / informations à transmettre à l’Armement"><textarea rows={2} value={draft.risks} onChange={(event) => update({ risks: event.target.value })} /></Field><div className="so-grid so-decision-identity-grid"><Field label="Prénom NOM du Capitaine signataire"><input readOnly={linkedToCaptainContext} value={draft.signature.captainName} onChange={(event) => update({ signature: { ...draft.signature, captainName: event.target.value } })} /></Field><Field label="Date de la décision"><input type="date" value={draft.signature.date} onChange={(event) => update({ signature: { ...draft.signature, date: event.target.value } })} /></Field><Field label="Lieu de la décision"><input value={draft.signature.place} onChange={(event) => update({ signature: { ...draft.signature, place: event.target.value } })} /></Field></div>{linkedToCaptainContext && <div className="so-signature-preview"><strong>Signature du Capitaine</strong>{(signed ? record?.signatureUrl : captainSignature?.url) ? <img src={signed ? record?.signatureUrl : captainSignature?.url} alt={`Signature de ${draft.signature.captainName}`} /> : <p className="so-help">{signed ? 'Aucune image de signature attachée à cette fiche.' : signatureError || (signatureLoading ? 'Chargement de la signature…' : selectedCaptain?.hasSignature ? 'La signature RH est indisponible. Rechargez la fiche avant de signer.' : 'Aucune signature RH active enregistrée pour ce Capitaine.')}</p>}<small>{signed ? 'Signature conservée avec la décision.' : 'La signature est apposée lors de la confirmation de la décision par le Capitaine.'}</small></div>}<label className="so-checkbox so-attestation"><input type="checkbox" checked={draft.signature.acknowledged} onChange={(event) => update({ signature: { ...draft.signature, acknowledged: event.target.checked } })} />En qualité de Capitaine, je confirme les informations renseignées et signe cette décision.</label>
         </section>
       </fieldset>
-          {step === 0 && <SeaOperationProjectDocuments client={client} projectId={draft.planning?.projectId || ''} disabled={busy || exporting} />}
+          <div id="sea-operation-documents-panel" className="so-documents-view" hidden={!documentsOpen}>{documentsOpen && <SeaOperationProjectDocuments client={client} projectId={draft.planning?.projectId || ''} disabled={busy || exporting} showWithoutProject />}</div>
           {record && step === 2 && <SeaOperationRecordedWeather record={record} hasUnsavedChanges={dirty} loading={historyLoading} onRefresh={() => void refreshWeatherHistory()} />}
           {step === 2 && <SeaOperationRadioPanel waypoints={draft.waypoints} />}
           {step === 2 && <SeaOperationChartsPanel client={client} projectId={draft.planning?.projectId || ''} transit={draft.transit ? { date: draft.transit.date, vesselId: draft.vessel.id } : undefined} waypoints={draft.waypoints} charts={draft.charts} onChartsChange={charts => { if (canEditMap()) update({ charts }); }} canEdit={editable && !busy && !signed} preview={previewMode} active />}

@@ -206,7 +206,10 @@ async function openRecord(record: SeaOperationRecord) {
 const formQueries = () => within(document.querySelector('.so-editor-form-pane')!);
 const footerQueries = () => within(screen.getByRole('dialog').querySelector('.app-dialog__footer')!);
 const recordActions = (record: SeaOperationRecord) => within(screen.getByRole('group', { name: `Actions pour ${record.draft.project || 'Opération sans titre'}` }));
-const stepButton = (index: number) => within(screen.getByRole('navigation', { name: 'Étapes de la préparation' })).getAllByRole('button')[index];
+const preparationButtons = () => within(screen.getByRole('navigation', { name: 'Étapes de la préparation' })).getAllByRole('button');
+const businessStepButtons = () => preparationButtons().filter(button => /^sea-operation-step-[0-3]$/.test(button.getAttribute('aria-controls') || ''));
+const stepButton = (index: number) => businessStepButtons()[index];
+const documentsButton = () => within(screen.getByRole('navigation', { name: 'Étapes de la préparation' })).getByRole('button', { name: /^Documents$/ });
 const choiceQueries = (label: string) => within(formQueries().getByRole('group', { name: label }));
 const optionLabels: Record<string, string> = { yes: 'Oui', no: 'Non', nomade: 'NOMADE', email: 'Mail à la Capitainerie', s_wing: 'S-WING', armament: 'Armement', captain: 'Capitaine', agent: 'Agent consignataire', sms: 'Pas de mesures autres que le SMS', specific: 'Mesures spécifiques prises', GO: 'GO · la mission peut être réalisée', NO_GO: 'NO GO · la mission ne peut être réalisée' };
 const choiceInput = (label: string, value: string) => choiceQueries(label).getByRole('checkbox', { name: optionLabels[value] });
@@ -2578,7 +2581,9 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(dialog).toHaveClass('app-dialog--fullscreen');
     expect(dialog).toHaveAttribute('aria-modal', 'true');
     expect(modal.getByRole('complementary', { name: 'Parcours de l’opération' })).toBeInTheDocument();
-    expect(within(modal.getByRole('navigation', { name: 'Étapes de la préparation' })).getAllByRole('button')).toHaveLength(4);
+    expect(businessStepButtons()).toHaveLength(4);
+    expect(preparationButtons()).toHaveLength(5);
+    expect(documentsButton()).toHaveAttribute('aria-controls', 'sea-operation-documents-panel');
     expect(formQueries().getByRole('region', { name: 'Préparation de l’Armement' })).toBeVisible();
     expect(modal.getByRole('region', { name: 'Aperçu de la fiche' })).toBeInTheDocument();
     expect(modal.getByRole('complementary', { name: 'Complétude de la fiche' })).toBeInTheDocument();
@@ -2881,7 +2886,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(screen.queryByRole('button', { name: /Signer la décision/ })).not.toBeInTheDocument();
   });
 
-  it('shows selected project documents below Armement as an open section and leaves them consultable on a signed operation', async () => {
+  it('opens project documents from the sidebar as a separate consultable view on a signed operation', async () => {
     const mission = plannedMissions()[0];
     const draft = noGoDraft();
     draft.project = mission.project;
@@ -2890,9 +2895,14 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const { client } = renderAccount(captainAccount, record, 1, plannedMissions());
     vi.mocked(fetchSeaOperationProjectDocuments).mockResolvedValue([{ id: 'project:101', projectId: mission.projectId, title: 'Plan de prévention autorisé', fileName: 'prevention.pdf', mimeType: 'application/pdf', categoryLabel: 'Sécurité', subcategoryLabel: '', createdAt: '2026-10-22T08:00:00Z', expiresOn: null }]);
     await openRecord(record);
-    const armament = formQueries().getByRole('region', { name: 'Préparation de l’Armement' });
+    expect(formQueries().getByRole('region', { name: 'Préparation de l’Armement' })).toBeVisible();
+    expect(formQueries().queryByRole('region', { name: /^Documents$/ })).not.toBeInTheDocument();
+    expect(fetchSeaOperationProjectDocuments).not.toHaveBeenCalled();
+    await userEvent.click(documentsButton());
     const documents = formQueries().getByRole('region', { name: /^Documents$/ });
-    expect(armament.compareDocumentPosition(documents) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(documents).toBeVisible();
+    expect(formQueries().queryByRole('region', { name: 'Préparation de l’Armement' })).not.toBeInTheDocument();
+    expect(formQueries().getByLabelText('Projet')).not.toBeVisible();
     expect(documents.closest('fieldset')).toBeNull();
     expect(documents.querySelector('summary')).toBeNull();
     expect(await formQueries().findByRole('button', { name: 'Ouvrir : Plan de prévention autorisé' })).toBeEnabled();
@@ -2901,6 +2911,139 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(formQueries().queryByText(/Offre commerciale|Facturation/)).not.toBeInTheDocument();
     await userEvent.click(stepButton(1));
     expect(formQueries().queryByRole('region', { name: /^Documents$/ })).not.toBeInTheDocument();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('keeps Documents unnumbered after Armement and preserves the four preparation steps and unsaved inputs', async () => {
+    const user = userEvent.setup();
+    renderAccount(sailorAccount);
+    await user.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    fireEvent.change(formQueries().getByLabelText('Description de l’opération'), { target: { value: 'Mission conservée entre les vues' } });
+    expect(businessStepButtons().map(button => button.getAttribute('aria-controls'))).toEqual([
+      'sea-operation-step-0', 'sea-operation-step-1', 'sea-operation-step-2', 'sea-operation-step-3',
+    ]);
+    expect(businessStepButtons().map(button => button.querySelector('b')?.textContent)).toEqual(['1', '2', '3', '4']);
+    expect(preparationButtons()[1]).toBe(documentsButton());
+    expect(documentsButton().querySelector('b')).toBeNull();
+    documentsButton().focus();
+    await user.keyboard('{Enter}');
+    const heading = formQueries().getByRole('heading', { name: 'Documents', level: 3 });
+    await waitFor(() => expect(heading).toHaveFocus());
+    expect(documentsButton()).toHaveAttribute('aria-current', 'page');
+    expect(businessStepButtons().every(button => !button.hasAttribute('aria-current'))).toBe(true);
+    expect(formQueries().queryByRole('region', { name: 'Préparation de l’Armement' })).not.toBeInTheDocument();
+    expect(formQueries().getByLabelText('Description de l’opération')).not.toBeVisible();
+    expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue('Mission conservée entre les vues');
+    expect(formQueries().getByText('Sélectionnez un projet dans Armement pour consulter ses documents.')).toBeVisible();
+    expect(fetchSeaOperationProjectDocuments).not.toHaveBeenCalled();
+    const completion = within(screen.getByRole('navigation', { name: 'Complétude par étape' }));
+    expect(completion.getAllByRole('button')).toHaveLength(4);
+    expect(completion.queryByRole('button', { name: /^Documents$/ })).not.toBeInTheDocument();
+
+    await user.click(footerQueries().getByRole('button', { name: 'Précédent' }));
+    expect(stepButton(0)).toHaveAttribute('aria-current', 'step');
+    expect(formQueries().getByLabelText('Description de l’opération')).toBeVisible();
+    expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue('Mission conservée entre les vues');
+    expect(formQueries().queryByRole('region', { name: /^Documents$/ })).not.toBeInTheDocument();
+
+    await user.click(documentsButton());
+    await user.click(footerQueries().getByRole('button', { name: 'Suivant' }));
+    expect(stepButton(1)).toHaveAttribute('aria-current', 'step');
+    expect(formQueries().getByRole('region', { name: 'Contrôles du Capitaine' })).toBeVisible();
+    expect(documentsButton()).not.toHaveAttribute('aria-current');
+
+    await user.click(documentsButton());
+    await user.click(completion.getAllByRole('button')[2]);
+    expect(stepButton(2)).toHaveAttribute('aria-current', 'step');
+    expect(formQueries().getByRole('region', { name: 'Passage Plan' })).toBeVisible();
+    expect(formQueries().queryByRole('region', { name: /^Documents$/ })).not.toBeInTheDocument();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('returns to Armement instead of the Documents view when reopening a record or starting a new operation', async () => {
+    const mission = plannedMissions()[0];
+    const draft = noGoDraft();
+    draft.planning = { date: seaOperationToday(), projectId: mission.projectId, operationId: mission.operationId, captainPersonId: mission.captains[0].personId };
+    const record = recordFixture(captainAccount, { draft, status: 'signed', canEdit: false, canSign: false });
+    renderAccount(captainAccount, record, 1, plannedMissions());
+    await openRecord(record);
+    await userEvent.click(documentsButton());
+    expect(formQueries().getByRole('region', { name: /^Documents$/ })).toBeVisible();
+    await userEvent.click(footerQueries().getByRole('button', { name: /^Fermer$/ }));
+    await openRecord(record);
+    expect(stepButton(0)).toHaveAttribute('aria-current', 'step');
+    expect(formQueries().getByRole('region', { name: 'Préparation de l’Armement' })).toBeVisible();
+    expect(formQueries().queryByRole('region', { name: /^Documents$/ })).not.toBeInTheDocument();
+    await userEvent.click(documentsButton());
+    await userEvent.click(footerQueries().getByRole('button', { name: /^Fermer$/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^Nouvelle opération$/ }));
+    expect(stepButton(0)).toHaveAttribute('aria-current', 'step');
+    expect(formQueries().getByRole('region', { name: 'Préparation de l’Armement' })).toBeVisible();
+    expect(formQueries().queryByRole('region', { name: /^Documents$/ })).not.toBeInTheDocument();
+    expect(documentsButton()).not.toHaveAttribute('aria-current');
+  });
+
+  it('clears a former account Documents view and catalogue before opening the new account record', async () => {
+    const draft = waypointCaptureDraft(plannedMissions()[0]);
+    const record = recordFixture(captainAccount, { draft, status: 'signed', canEdit: false, canSign: false });
+    const view = renderAccount(captainAccount, record, 1, plannedMissions());
+    vi.mocked(fetchSeaOperationProjectDocuments).mockResolvedValue([{ id: 'project:101', projectId: draft.planning!.projectId, title: 'Document du premier compte', fileName: 'premier.pdf', mimeType: 'application/pdf', categoryLabel: 'HSE', subcategoryLabel: '', createdAt: '2026-10-22T08:00:00Z', expiresOn: null }]);
+    await openRecord(record);
+    await userEvent.click(documentsButton());
+    expect(await formQueries().findByText('Document du premier compte')).toBeVisible();
+    const other = recordFixture(sailorAccount, { id: 'other-account-record', companyId: 2, canEdit: false, canSign: false,
+      draft: { ...noGoDraft(), project: 'Mission du second compte' } });
+    vi.mocked(fetchSeaOperationData).mockResolvedValue({ ...view.data, companyId: 2, actorId: sailorAccount.id, actorName: sailorAccount.name, records: [other] });
+    vi.mocked(fetchSeaOperationDetail).mockResolvedValue(other);
+    view.rerenderClient({ fixtureAccountId: sailorAccount.id });
+    expect(await screen.findByRole('button', { name: /Mission du second compte/ })).toBeVisible();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Document du premier compte')).not.toBeInTheDocument();
+    await openRecord(other);
+    expect(formQueries().getByRole('region', { name: 'Préparation de l’Armement' })).toBeVisible();
+    expect(formQueries().queryByRole('region', { name: /^Documents$/ })).not.toBeInTheDocument();
+    expect(documentsButton()).not.toHaveAttribute('aria-current');
+    expect(fetchSeaOperationProjectDocuments).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens Documents in the compact form pane from the preview without losing entered fields', async () => {
+    viewport(390);
+    renderAccount(sailorAccount);
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    fireEvent.change(formQueries().getByLabelText('Description de l’opération'), { target: { value: 'Mission mobile à conserver' } });
+    const switcher = within(screen.getByRole('group', { name: 'Affichage de la fiche' }));
+    await userEvent.click(switcher.getByRole('button', { name: 'Aperçu et complétude' }));
+    expect(document.querySelector('.so-editor-form-pane')).toHaveAttribute('hidden');
+    await userEvent.click(documentsButton());
+    expect(switcher.getByRole('button', { name: 'Saisie' })).toHaveAttribute('aria-pressed', 'true');
+    expect(document.querySelector('.so-editor-form-pane')).not.toHaveAttribute('hidden');
+    expect(document.querySelector('.so-editor-document-pane')).toHaveAttribute('hidden');
+    expect(formQueries().getByRole('region', { name: /^Documents$/ })).toBeVisible();
+    await userEvent.click(stepButton(0));
+    expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue('Mission mobile à conserver');
+    expect(formQueries().getByLabelText('Description de l’opération')).toBeVisible();
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('returns from Documents to the invalid voyage fields when draft validation requires a correction', async () => {
+    renderAccount(sailorAccount);
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    await chooseTransit();
+    fireEvent.change(formQueries().getByLabelText('ETD · date et heure de départ'), { target: { value: '2026-10-29T12:00' } });
+    fireEvent.change(formQueries().getByLabelText('ETA · date et heure d’arrivée'), { target: { value: '2026-10-29T11:00' } });
+    await userEvent.click(documentsButton());
+    expect(formQueries().getByRole('region', { name: /^Documents$/ })).toBeVisible();
+    await saveDraft();
+    const alert = await formQueries().findByRole('alert');
+    expect(alert).toHaveTextContent('L’ETA ne peut pas précéder l’ETD.');
+    expect(formQueries().getByRole('region', { name: 'Préparation de l’Armement' })).toBeVisible();
+    expect(formQueries().getByLabelText('ETA · date et heure d’arrivée')).toBeVisible();
+    expect(formQueries().getByLabelText('ETA · date et heure d’arrivée')).toHaveValue('2026-10-29T11:00');
+    expect(formQueries().queryByRole('region', { name: /^Documents$/ })).not.toBeInTheDocument();
+    expect(documentsButton()).not.toHaveAttribute('aria-current');
     expect(saveSeaOperation).not.toHaveBeenCalled();
     expect(signSeaOperation).not.toHaveBeenCalled();
   });

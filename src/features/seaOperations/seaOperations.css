@@ -154,6 +154,10 @@
 .so-wizard-steps button > span { display: grid; gap: 6px; }
 .so-wizard-steps strong { font-size: .84rem; line-height: 1.4; }
 .so-wizard-steps small { color: inherit; opacity: .75; font-size: .71rem; line-height: 1.5; font-weight: 450; }
+.so-page .so-wizard-steps .so-wizard-documents { min-height: 60px; padding-block: var(--sp-space-2); }
+.so-editor-form-pane .so-form[hidden], .so-documents-view[hidden] { display: none !important; }
+.so-documents-view .so-project-documents { margin-top: 0; background: var(--sp-surface); }
+.so-documents-view .so-project-documents > header { padding: var(--sp-space-3); color: var(--sp-primary); font-size: 1rem; }
 .so-wizard-note { display: flex; align-items: flex-start; gap: 9px; font-size: .72rem; line-height: 1.6; margin-top: auto; padding: 20px 4px 0; color: color-mix(in srgb, var(--sp-surface) 65%, transparent); }
 .so-wizard-note svg { flex: 0 0 auto; margin-top: 2px; }
 .so-editor-form-pane { min-width: 0; min-height: 0; padding: 20px; background: var(--sp-canvas); overflow-y: auto; overscroll-behavior: contain; border-right: 1px solid var(--sp-border); }
