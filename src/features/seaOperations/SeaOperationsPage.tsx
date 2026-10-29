@@ -160,7 +160,8 @@ export function SeaOperationsPage() {
   const [vesselContextError, setVesselContextError] = useState('');
   const [dirty, setDirty] = useState(false);
   const [step, setStep] = useState(0);
-  const [documentsOpen, setDocumentsOpen] = useState(false);
+  const [documentsContext, setDocumentsContext] = useState<{ client: SupabaseClient; account: string } | null>(null);
+  const documentsOpen = documentsContext?.client === client && documentsContext.account === (data ? recoveryKey(data) : '');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const [busy, setBusy] = useState(false);
@@ -222,7 +223,7 @@ export function SeaOperationsPage() {
     setRecordAction(null); setRecordActionError(''); setBusy(false);
     loadedAccount.current = account;
     pendingUkc.current.clear(); setUkcRequests({ client: currentClient.current, statuses: {} });
-    setRecord(null); setDraft(emptySeaOperation()); setEditing(false); setDirty(false); setDocumentsOpen(false); setStep(0);
+    setRecord(null); setDraft(emptySeaOperation()); setEditing(false); setDirty(false); setDocumentsContext(null); setStep(0);
     const recovery = readRecovery(result);
     if (!recovery) return;
     const existing = recovery.recordId ? result.records.find((item) => item.id === recovery.recordId) : null;
@@ -233,7 +234,7 @@ export function SeaOperationsPage() {
     }
     setRecord(existing ? { ...existing, version: recovery.version! } : null);
     const vessel = result.vessels.find((source) => String(source.id) === recovery.draft.vessel.id);
-    setDraft(captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(recovery.draft, vessel), vessel), result.vessels))); setPlanningDate(seaOperationContextDate(recovery.draft) || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setDocumentsOpen(false); setStep(recovery.step); setEditing(true); setDirty(true);
+    setDraft(captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(recovery.draft, vessel), vessel), result.vessels))); setPlanningDate(seaOperationContextDate(recovery.draft) || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setDocumentsContext(null); setStep(recovery.step); setEditing(true); setDirty(true);
     setNotice('Votre préparation non enregistrée a été récupérée dans cet onglet. Vérifiez-la avant de l’enregistrer.');
   }, []);
 
@@ -248,7 +249,7 @@ export function SeaOperationsPage() {
     setRecordAction(null); setRecordActionError(''); setBusy(false); setExporting(false); setHistoryLoading(false);
     setWeatherRequests({ client, statuses: {} });
     pendingUkc.current.clear(); setUkcRequests({ client, statuses: {} });
-    setData(null); setRecord(null); setEditing(false); setDirty(false); setDocumentsOpen(false); setNotice(''); setError('');
+    setData(null); setRecord(null); setEditing(false); setDirty(false); setDocumentsContext(null); setNotice(''); setError('');
   }, [client]);
 
   useEffect(() => {
@@ -633,15 +634,15 @@ export function SeaOperationsPage() {
   }
   function closeEditor() {
     if (busy || exporting || !confirmLeave()) return;
-    pendingUkc.current.clear(); clearRecovery(data); setEditing(false); setDirty(false); setDocumentsOpen(false); setNotice(''); setIssues([]); setError('');
+    pendingUkc.current.clear(); clearRecovery(data); setEditing(false); setDirty(false); setDocumentsContext(null); setNotice(''); setIssues([]); setError('');
     window.requestAnimationFrame(() => { if (editorOpener.current?.isConnected) editorOpener.current.focus(); });
   }
   function showDocuments() {
-    setStep(0); setDocumentsOpen(true); setMobilePane('form');
+    setStep(0); setDocumentsContext({ client, account: data ? recoveryKey(data) : '' }); setMobilePane('form');
     window.requestAnimationFrame(() => formPane.current?.querySelector<HTMLElement>('#sea-operation-documents-panel h3')?.focus());
   }
   function changeStep(index: number) {
-    setDocumentsOpen(false); setStep(index); setMobilePane('form');
+    setDocumentsContext(null); setStep(index); setMobilePane('form');
     window.requestAnimationFrame(() => formPane.current?.querySelector<HTMLElement>(`#sea-operation-step-${index} h2`)?.focus());
   }
   function revealFormFeedback() {
@@ -669,7 +670,7 @@ export function SeaOperationsPage() {
         const prepared = captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(loaded.draft, vessel), vessel), data?.vessels));
         if (prepared !== loaded.draft) { setDraft(prepared); setDirty(true); setNotice('Les données du navire ont été actualisées pour cette préparation. Enregistrez pour les conserver.'); }
       }
-      setPlanning(null); setPlanningDate(seaOperationContextDate(loaded.draft) || loaded.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setEditing(true); setDocumentsOpen(false); setStep(0); setMobilePane('form');
+      setPlanning(null); setPlanningDate(seaOperationContextDate(loaded.draft) || loaded.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setEditing(true); setDocumentsContext(null); setStep(0); setMobilePane('form');
     } }
     catch (reason) { if (request === loadSequence.current && actionContext.current.client === client) setError(errorMessage(reason)); }
     finally { if (request === loadSequence.current && actionContext.current.client === client) setBusy(false); }
@@ -683,7 +684,7 @@ export function SeaOperationsPage() {
     ++loadSequence.current;
     setWeatherRequests({ client, statuses: {} });
     pendingUkc.current.clear(); setUkcRequests({ client, statuses: {} });
-    setRecord(null); setDraft(newSeaOperation()); setPlanningDate(seaOperationToday()); setPlanning(null); setDirty(false); setEditing(true); setDocumentsOpen(false); setStep(0); setMobilePane('form'); setError(''); setNotice(''); setIssues([]);
+    setRecord(null); setDraft(newSeaOperation()); setPlanningDate(seaOperationToday()); setPlanning(null); setDirty(false); setEditing(true); setDocumentsContext(null); setStep(0); setMobilePane('form'); setError(''); setNotice(''); setIssues([]);
   }
   function requestRecordAction(kind: RecordAction['kind'], item: SeaOperationRecord) {
     if (!data || busy || exporting || mutationRunning.current || recordAction
@@ -715,7 +716,7 @@ export function SeaOperationsPage() {
         setData((current) => current ? { ...current, records: current.records.filter((item) => item.id !== action.record.id) } : current);
         setPlanningDate(seaOperationContextDate(revised.draft) || revised.draft.vessel.etd.slice(0, 10) || seaOperationToday());
         allowAutomaticMission.current = false;
-        setPlanning(null); setEditing(true); setDocumentsOpen(false); setStep(0); setMobilePane('form'); setIssues([]); setError('');
+        setPlanning(null); setEditing(true); setDocumentsContext(null); setStep(0); setMobilePane('form'); setIssues([]); setError('');
         setNotice('Nouvelle préparation créée. La version signée précédente reste conservée. Le Capitaine devra signer cette nouvelle fiche.');
       } else {
         await deleteSeaOperation(action.client, { id: action.record.id, version: action.record.version });
@@ -740,7 +741,7 @@ export function SeaOperationsPage() {
     const prepared = captureSeaOperationRadios(captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(draft, matrixSource), data?.vessels.find((vessel) => String(vessel.id) === draft.vessel.id)), data?.vessels)));
     const automaticUkcErrors = new Set(prepared.waypoints.flatMap((point, index) => point.ukcMode === 'automatic' ? [`L’UKC du point n° ${index + 1} est obligatoire.`] : []));
     const validation = validateSeaOperation(prepared, sign ? prepared.decision || 'GO' : 'DRAFT').filter(message => !automaticUkcErrors.has(message));
-    if (validation.length) { setIssues(validation); setDocumentsOpen(false); setStep(sign ? 3 : step); revealFormFeedback(); return; }
+    if (validation.length) { setIssues(validation); setDocumentsContext(null); setStep(sign ? 3 : step); revealFormFeedback(); return; }
     setBusy(true); setError(''); setIssues([]); setNotice('');
     const sequence = loadSequence.current;
     try {
@@ -760,7 +761,7 @@ export function SeaOperationsPage() {
       for (const entry of queued) if (entry.sourceClient === client) captured = retainSeaOperationUkc(captured, entry.capture, entry.context);
       const beforeSave = sign ? validateSeaOperation(captured, captured.decision || 'GO') : [];
       if (beforeSave.length) {
-        setDraft(captured); setDirty(true); setIssues([...beforeSave, ...ukcErrors]); setDocumentsOpen(false); setStep(3); revealFormFeedback(); return;
+        setDraft(captured); setDirty(true); setIssues([...beforeSave, ...ukcErrors]); setDocumentsContext(null); setStep(3); revealFormFeedback(); return;
       }
       const saved = await saveSeaOperation(client, captured, record || undefined);
       if (sequence !== loadSequence.current || weatherEditor.current.client !== client || !weatherEditor.current.editing) return;
@@ -782,7 +783,7 @@ export function SeaOperationsPage() {
       if (sign) {
         const afterSave = validateSeaOperation(saved.draft, saved.draft.decision || 'GO');
         if (afterSave.length) {
-          setIssues(afterSave); setDocumentsOpen(false); setStep(3); setNotice('Le brouillon est enregistré. Complétez les données signalées avant de signer.');
+          setIssues(afterSave); setDocumentsContext(null); setStep(3); setNotice('Le brouillon est enregistré. Complétez les données signalées avant de signer.');
           revealFormFeedback(); return;
         }
         const finalized = await signSeaOperation(client, saved, saved.draft.signature.captainName, saved.draft.signature.acknowledged);
