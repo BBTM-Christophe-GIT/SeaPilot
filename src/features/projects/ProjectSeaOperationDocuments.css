@@ -1,13 +1,28 @@
-.project-sea-operation-documents { display: grid; gap: var(--sp-space-3); min-width: 0; }
-.project-sea-operation-documents > p { margin: 0; color: var(--sp-muted); font-size: 13px; line-height: 1.5; }
-.project-sea-operation-documents-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-space-2); }
-.project-sea-operation-documents-toolbar > span { margin-right: auto; color: var(--sp-muted); font-size: 13px; }
-.project-sea-operation-document-choices { display: grid; gap: var(--sp-space-2); padding: 0; margin: 0; list-style: none; }
-.project-sea-operation-document-choices li { min-width: 0; }
-.project-sea-operation-document-choices label { display: flex; align-items: center; gap: var(--sp-space-3); min-height: 44px; padding: var(--sp-space-3); color: var(--sp-text); background: var(--sp-surface); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); cursor: pointer; }
-.project-sea-operation-document-choices input { flex: 0 0 18px; width: 18px; height: 18px; margin: 0; accent-color: var(--sp-primary); }
-.project-sea-operation-document-choices input:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 3px; }
-.project-sea-operation-document-choices span { display: grid; gap: var(--sp-space-1); min-width: 0; overflow-wrap: anywhere; }
-.project-sea-operation-document-choices strong { font-size: 14px; font-weight: 600; }
-.project-sea-operation-document-choices small { color: var(--sp-muted); font-size: 12px; }
+.project-sea-operation-documents-help { color: var(--sp-muted); font-size: 13px; line-height: 1.5; }
 .project-sea-operation-documents-saved { color: var(--sp-success); font-size: 13px; }
+.project-documents-table-scroll { max-width: 100%; overflow-x: auto; }
+.project-documents-table { width: 100%; border-collapse: collapse; table-layout: fixed; color: var(--sp-text); font-size: 13px; }
+.project-documents-table th, .project-documents-table td { padding: var(--sp-space-3); border-bottom: 1px solid var(--sp-border); vertical-align: middle; }
+.project-documents-table th { color: var(--sp-heading); background: var(--sp-surface-subtle); text-align: left; }
+.project-documents-table th:nth-child(2) { width: 112px; text-align: center; }
+.project-documents-table th:nth-child(3) { width: 160px; text-align: center; }
+.project-document-identity { display: flex; gap: var(--sp-space-2); align-items: flex-start; min-width: 0; }
+.project-document-identity > svg { flex: 0 0 18px; color: var(--sp-primary); }
+.project-document-identity > div { display: grid; min-width: 0; gap: var(--sp-space-1); overflow-wrap: anywhere; }
+.project-document-identity strong { font-weight: 600; font-size: 14px; }
+.project-document-identity span, .project-document-identity small { color: var(--sp-muted); font-size: 12px; }
+.project-document-open, .project-document-operation { text-align: center; }
+.project-sea-operation-document-choice { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; cursor: pointer; }
+.project-sea-operation-document-choice input[type=checkbox] { width: 18px; height: 18px; margin: 0; accent-color: var(--sp-primary); }
+.project-sea-operation-document-choice input:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 3px; }
+@media (max-width: 640px) {
+  .project-documents-table, .project-documents-table tbody { display: block; }
+  .project-documents-table thead { display: none; }
+  .project-documents-table tr { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-space-2); padding: var(--sp-space-3) 0; border-bottom: 1px solid var(--sp-border); }
+  .project-documents-table td { display: block; padding: 0; border: 0; min-width: 0; }
+  .project-documents-table .project-document-file { grid-column: 1 / -1; }
+  .project-documents-table .project-document-open { text-align: left; }
+  .project-documents-table .project-document-operation { display: flex; align-items: center; justify-content: flex-end; font-size: 12px; }
+  .project-document-operation:has(input)::before { content: 'Opération en Mer'; }
+  .project-document-operation:empty { display: none !important; }
+}

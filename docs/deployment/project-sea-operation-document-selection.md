@@ -1,78 +1,83 @@
 # Documents Projet affichés dans Opération en Mer
 
-Version `3.80.14`, build `2026-10-28.008`.
+Version `3.80.15`, build `2026-10-29.001`.
 
-Dans une fiche Projet, onglet **Documents**, **Documents pour Opération en Mer**
-ouvre la liste des documents éligibles. Cocher les documents puis **Enregistrer
-la sélection** définit la liste commune aux fiches d'opération de ce projet.
-**Tout sélectionner** et **Tout désélectionner** permettent notamment de ne
-proposer aucun document. Annuler ne sauvegarde rien.
+Dans la fiche Projet, onglet **Documents**, la colonne **Opération en Mer** suit
+le bouton **Ouvrir**. Chaque case enregistre immédiatement le choix pour ce
+document, commun aux opérations du projet. Le bouton de gestion séparé et sa
+fenêtre de sélection ont été retirés. Dans la fiche Opération en Mer, la section
+**Documents** apparaît sous **1 Armement** ; ses liens restent consultables
+dans les fiches signées ou en lecture seule.
 
-## Comportement et compatibilité
+## Comportement
 
-- Un projet sans configuration conserve le comportement précédent : tous ses
-  documents opérationnels éligibles sont affichés.
-- Dès le premier enregistrement, seuls les identifiants cochés sont affichés.
-  Les fichiers ajoutés ensuite doivent être sélectionnés explicitement.
-- Une sélection vide est conservée ; elle ne réactive pas l'affichage de tous
-  les documents. Le remplacement d'un fichier par un nouvel identifiant demande
-  une nouvelle sélection.
-- Les documents restent dans Projet. Cette sélection ne les supprime pas, ne
-  change pas leurs catégories et ne les ajoute pas aux PDF.
+- Tous les documents sont décochés sans configuration préalable. Chaque nouveau
+  fichier commence décoché, y compris après une sélection enregistrée.
+- Les choix explicitement enregistrés sont conservés. Décocher le dernier
+  document conserve une sélection vide ; aucun affichage automatique n'est réactivé.
+- Les contrats, offres commerciales, factures et leurs catégories descendantes
+  sont exclus côté serveur. Aucune case n'est proposée pour ces documents ni pour
+  les dossiers. Les documents contractuels importés sont également exclus.
+- Les fichiers restent dans Projet ; la sélection ne les supprime pas, ne change
+  pas leur classement et ne les ajoute pas aux PDF.
+- Pendant une sauvegarde, les cases sont verrouillées. Un refus restaure le choix
+  antérieur et affiche une erreur. Un ajout de document ou un changement de
+  catégorie recharge le catalogue autorisé. Les réponses tardives ne sont pas
+  appliquées à un autre projet, compte ou contexte de droits.
 
 ## Serveur et droits
 
-Migration `20261028224001_project_sea_operation_document_selection.sql`.
-La table `sea_operation_private.project_document_selections` stocke une ligne
-par projet, la société, les identifiants et l'auteur/date de la modification.
-RLS activée, aucun accès direct accordé à `anon` ou `authenticated`.
+La migration initiale est
+`20261028224001_project_sea_operation_document_selection.sql`. La migration
+additive `20261029060215_project_sea_operation_document_opt_in.sql` applique le
+défaut décoché, renforce l'exclusion des contrats importés et ajoute la RPC
+`set_project_sea_operation_document(p_project_id bigint, p_document_id text,
+p_selected boolean)`. Elle ne réécrit aucune sélection existante.
 
-Les RPC publics `project_sea_operation_documents(p_project_id bigint)` et
-`set_project_sea_operation_documents(p_project_id bigint, p_document_ids text[])`
-sont des enveloppes SECURITY INVOKER. Leurs implémentations privées valident
-l'utilisateur, son appartenance à la société et son rôle admin/direction comme
-la gestion des projets. Le catalogue est configurable avant la création d'une
-occurrence Planning et indépendamment de l'accès au module Opération en Mer.
-Les projets clôturés ne peuvent pas recevoir de nouvelle sélection.
+La table privée `sea_operation_private.project_document_selections` contient une
+ligne par projet, avec société, identifiants, auteur et date. La RLS est activée
+et aucun accès direct n'est accordé à `anon` ou `authenticated`.
 
-Le résultat est `{ configured: boolean, documents: [...] }`. Chaque entrée
-reprend les métadonnées documentaires autorisées et `selected: boolean` ; aucun
-chemin privé ou URL n'est fourni. Les identifiants `generated:<id>` et
-`project:<id>` sont vérifiés dans le même projet et la même société.
+Le catalogue `project_sea_operation_documents` et la nouvelle RPC sont des
+enveloppes SECURITY INVOKER. Les fonctions privées valident les droits de gestion
+Projet admin/direction, l'appartenance à la société et l'état du projet. Les
+projets clôturés sont consultables sans pouvoir changer les cases. Les profils
+Marin et Capitaine peuvent consulter les documents retenus selon leurs droits
+habituels, sans pouvoir modifier cette sélection.
 
-Les catégories Offre commerciale, Facturation et leurs descendants, les
-dossiers et les contrats générés restent exclus. La sélection filtre le chemin
-commun à la liste d'Opération en Mer et à la résolution de chaque ouverture.
-Les grants des documents retirés sont supprimés et la RLS revalide la sélection.
-Les protections contre les alias vers un fichier commercial restent présentes.
-Une URL Storage déjà signée conserve sa validité jusqu'à son expiration
-(cinq minutes) ; les liens SharePoint restent soumis aux droits SharePoint.
+La RPC atomique verrouille le projet avant de lire les identifiants, puis ne
+modifie que le choix du document ciblé. Deux sessions ne remplacent donc pas
+leurs choix indépendants avec des listes périmées. Les anciens endpoints de
+lecture et de sauvegarde groupée restent compatibles.
 
-## Validation
+Le résultat `{ configured, documents }` comprend les métadonnées autorisées et
+`selected`, sans chemin privé ni URL. Les identifiants `generated:<id>` et
+`project:<id>` sont contrôlés dans le projet et la société. La liste Opération
+en Mer et l'ouverture d'un document utilisent le même filtre. La désélection
+révoque les grants et la RLS Storage revalide l'accès ; les protections contre
+les alias vers un fichier commercial sont conservées. Une URL Storage déjà
+signée reste valide jusqu'à son expiration de cinq minutes. SharePoint conserve
+ses propres droits.
 
-La suite pgTAP `project_sea_operation_document_selection_test.sql` couvre la
-compatibilité, tous/aucun, les nouveaux fichiers, les catégories exclues, les
-identifiants forgés, les autres projets/sociétés, les grants et la RLS Storage,
-les vrais profils Marin/Capitaine/Armement, la Direction, l'appartenance révoquée,
-le module masqué, les projets non planifiés et clôturés. Elle crée des fixtures
-dans une transaction et termine par ROLLBACK.
+## Validation et déploiement
 
-Les tests React/requêtes couvrent la sauvegarde, les erreurs et le retry,
-l'annulation, la double soumission, les métadonnées invalides et les réponses
-tardives après un changement de compte, de client, de projet ou de droits.
-La préversion conserve ses propres données fictives et ses sélections en mémoire.
+Appliquer les deux migrations avant de déployer l'interface. Elles sont déjà
+appliquées sur Supabase SeaPilot. Aucun secret, variable ou paquet supplémentaire
+n'est nécessaire.
 
-Appliquer la migration avant de déployer l'interface. Elle ne crée aucune
-sélection pour les projets existants. Aucune variable, clé ou dépendance nouvelle.
+Les suites pgTAP vérifient 74 cas de sélection et 57 régressions documentaires,
+notamment les vrais profils Marin/Capitaine/Armement, les autres sociétés,
+catégories interdites, identifiants forgés et accès directs aux fichiers. Une
+sonde sur la base distante valide 12 assertions sans extension pgTAP, dans une
+transaction annulée par ROLLBACK. Les contrôles après sonde confirment qu'aucune
+fixture ni sélection de projet existant n'a été créée.
 
-La migration a été appliquée au projet Supabase SeaPilot sous la version
-`20261028224001`. Les contrôles après application confirment la RLS, l'absence
-d'accès direct et de droit anonyme aux RPC. Une sonde réelle sans extension
-pgTAP valide 12 assertions sur des fixtures synthétiques, puis les annule par
-ROLLBACK ; aucun projet existant n'a reçu de sélection lors de ces contrôles.
-Les 54 assertions de la nouvelle suite et les 57 de régression passent aussi
-sur la base locale.
+Les tests React et requêtes couvrent les cases en ligne, le défaut décoché,
+l'enregistrement immédiat, le clavier, les refus, les mises à jour concurrentes,
+les changements de contexte, l'ordre des colonnes, l'exclusion des offres et la
+position de Documents sous Armement. La préversion utilise ses propres documents
+fictifs et conserve les choix en mémoire.
 
 L'[information du linter RLS sans policy](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)
-est attendue pour cette table privée : aucune policy ni aucun grant ne permet
-de la lire directement ; seules les fonctions privées autorisées y accèdent.
+est attendue pour cette table privée : aucun accès direct n'est accordé ; seules
+les fonctions privées autorisées y accèdent.

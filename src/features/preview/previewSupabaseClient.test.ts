@@ -15,7 +15,7 @@ describe('previewSupabaseClient', () => {
     const original = await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001);
     expect(original.configured).toBe(false);
     expect(original.documents.map(document => document.id).sort()).toEqual(['generated:9451', 'generated:9452', 'project:9401']);
-    expect(original.documents.every(document => document.selected && document.projectId === '9001')).toBe(true);
+    expect(original.documents.every(document => !document.selected && document.projectId === '9001')).toBe(true);
     const generated = (await previewSupabaseClient.from('project_generated_documents').select('*')).data!;
     const imported = (await previewSupabaseClient.from('project_documents').select('*')).data!;
     const generatedCount = generated.length, importedCount = imported.length;
@@ -49,7 +49,7 @@ describe('previewSupabaseClient', () => {
       }
     } finally {
       generated.splice(generatedCount); imported.splice(importedCount);
-      await saveProjectSeaOperationDocuments(previewSupabaseClient, 9001, original.documents.map(document => document.id));
+      await saveProjectSeaOperationDocuments(previewSupabaseClient, 9001, original.documents.filter(document => document.selected).map(document => document.id));
     }
   });
 
@@ -68,6 +68,32 @@ describe('previewSupabaseClient', () => {
     }
     expect(await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001)).toEqual(before);
     expect(await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9002)).toEqual({ configured: false, documents: [] });
+  });
+
+  it('changes one document checkbox atomically while preserving other selections and validating its boolean state', async () => {
+    const original = await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001);
+    const selectedIds = (value: typeof original) => value.documents.filter(document => document.selected).map(document => document.id).sort();
+    try {
+      await saveProjectSeaOperationDocuments(previewSupabaseClient, 9001, []);
+      const updates = await Promise.all(['generated:9451', 'project:9401'].map(p_document_id => previewSupabaseClient.rpc('set_project_sea_operation_document', {
+        p_project_id: '9001', p_document_id, p_selected: true,
+      })));
+      expect(updates.every(result => result.error === null)).toBe(true);
+      expect(selectedIds(await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001))).toEqual(['generated:9451', 'project:9401']);
+      await previewSupabaseClient.rpc('set_project_sea_operation_document', { p_project_id: '9001', p_document_id: 'generated:9451', p_selected: false });
+      const kept = await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001);
+      expect(selectedIds(kept)).toEqual(['project:9401']);
+      expect(kept.configured).toBe(true);
+      for (const p_selected of [null, undefined, 0, 1, 'false', 'true', {}]) {
+        const rejected = await previewSupabaseClient.rpc('set_project_sea_operation_document', { p_project_id: '9001', p_document_id: 'project:9401', p_selected });
+        expect(rejected.error).toMatchObject({ code: '22023' });
+      }
+      expect((await previewSupabaseClient.rpc('set_project_sea_operation_document', { p_project_id: '9001', p_document_id: 'generated:0', p_selected: true })).error).toMatchObject({ code: '22023' });
+      expect((await previewSupabaseClient.rpc('set_project_sea_operation_document', { p_project_id: '9001', p_document_id: 'project:991011', p_selected: true })).error).toMatchObject({ code: '42501' });
+      expect(await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001)).toEqual(kept);
+    } finally {
+      await saveProjectSeaOperationDocuments(previewSupabaseClient, 9001, selectedIds(original));
+    }
   });
 
   it('loads every project with a map concurrency token and saves an initially loaded P902 map', async () => {

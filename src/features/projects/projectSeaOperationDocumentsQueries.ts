@@ -40,6 +40,16 @@ export async function fetchProjectSeaOperationDocuments(client: SupabaseClient, 
   return selection(data, key);
 }
 
+/** Change one document atomically without replacing another manager's choices. */
+export async function saveProjectSeaOperationDocument(client: SupabaseClient, projectId: number, documentId: string, selected: boolean): Promise<ProjectSeaOperationDocumentSelection> {
+  const key = projectKey(projectId);
+  const match = /^(generated|project):([1-9][0-9]{0,18})$/.exec(documentId);
+  if (!match || BigInt(match[2]) > 9223372036854775807n || typeof selected !== 'boolean') throw new Error('La sélection du document est invalide.');
+  const { data, error } = await client.rpc('set_project_sea_operation_document', { p_project_id: key, p_document_id: documentId, p_selected: selected });
+  if (error) throw error;
+  return selection(data, key);
+}
+
 export async function saveProjectSeaOperationDocuments(client: SupabaseClient, projectId: number, documentIds: readonly string[]): Promise<ProjectSeaOperationDocumentSelection> {
   const key = projectKey(projectId);
   const seen = new Set<string>();

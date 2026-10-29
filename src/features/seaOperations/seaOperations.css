@@ -260,13 +260,11 @@
   .so-page :is(.so-answer-option, .so-questionnaire-options > label) > input[type=checkbox] { width: 16px; height: 16px; margin: 0; padding: 0; flex: 0 0 auto; accent-color: var(--sp-primary); }
   .so-editor-form-pane .so-check > :is(.so-answer-options, .so-answer-switches) { justify-self: start; align-self: start; }
 
-  .so-project-documents { min-width: 0; margin: 0 0 var(--sp-space-3); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface-subtle); }
-  .so-project-documents > summary { display: flex; align-items: center; gap: var(--sp-space-2); padding: var(--sp-space-2); color: var(--sp-text); font-size: .72rem; line-height: 1.4; font-weight: 650; cursor: pointer; }
-  .so-project-documents > summary > svg { flex: 0 0 auto; color: var(--sp-primary); }
-  .so-project-documents > summary > span { min-width: 0; overflow-wrap: anywhere; }
-  .so-project-documents > summary > small { margin-left: auto; color: var(--sp-muted); font-size: .65rem; font-weight: 400; white-space: nowrap; }
-  .so-project-documents > summary::after { content: ''; flex: 0 0 auto; width: 6px; height: 6px; margin-left: var(--sp-space-1); border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); }
-  .so-project-documents[open] > summary::after { transform: rotate(45deg); }
+  .so-project-documents { min-width: 0; margin: var(--sp-space-3) 0 0; border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface-subtle); }
+  .so-project-documents > header { display: flex; align-items: center; gap: var(--sp-space-2); padding: var(--sp-space-2); color: var(--sp-text); font-size: .72rem; line-height: 1.4; font-weight: 650; }
+  .so-project-documents > header > svg { flex: 0 0 auto; color: var(--sp-primary); }
+  .so-project-documents > header > h3 { min-width: 0; margin: 0; color: inherit; font: inherit; overflow-wrap: anywhere; }
+  .so-project-documents > header > small { margin-left: auto; color: var(--sp-muted); font-size: .65rem; font-weight: 400; white-space: nowrap; }
   .so-project-documents > ul { margin: 0; padding: 0 var(--sp-space-2) var(--sp-space-2); list-style: none; }
   .so-project-documents li { display: flex; align-items: center; gap: var(--sp-space-2); min-width: 0; padding: var(--sp-space-2) 0; border-top: 1px solid var(--sp-border); }
   .so-project-documents li > div { flex: 1 1 auto; min-width: 0; }
@@ -298,7 +296,6 @@
   .so-answer-option, .so-questionnaire-options > label { min-height: 44px; }
   .so-editor-form-pane .so-armament-panel .so-contact { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; }
   .so-armament-panel .so-contact > button { width: 44px; height: 44px; }
-  .so-project-documents > summary { min-height: 44px; }
   .so-armament-help > summary { min-height: 44px; display: flex; align-items: center; }
 }
 

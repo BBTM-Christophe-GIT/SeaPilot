@@ -74,6 +74,13 @@ select 'project-drive',file.id::text,'documents/sea-doc/alias-'||file.id||'.pdf'
  'alias.pdf','application/pdf',file.bytes,file.sha256,file.sha256,now(),jsonb_build_object('source_reference',file.path)
 from public.project_drive_files file where file.id::text in(select path from sea_doc_fixture where key in('alias-safe','alias-offer'));
 
+-- Explicit project selections are fixture setup. The opt-in workflow itself is
+-- covered by project_sea_operation_document_selection_test.sql.
+insert into sea_operation_private.project_document_selections(project_id,company_id,document_ids)
+select project.id,project.company_id,array_agg(document.id order by document.id)
+from public.projects project cross join lateral sea_operation_private.project_document_candidates(project.id,project.company_id) document
+where project.title in('SEA-DOC-PROJECT-1','SEA-DOC-PROJECT-2') group by project.id,project.company_id;
+
 -- Real profile identities, with no admin role override or simulated UI profile.
 set local role authenticated;
 select set_config('request.jwt.claim.sub','a6320000-0000-0000-0000-000000000001',true);

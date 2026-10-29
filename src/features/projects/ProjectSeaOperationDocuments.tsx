@@ -1,88 +1,90 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Files } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { AppDialog } from '../../components/AppDialog';
-import { fetchProjectSeaOperationDocuments, saveProjectSeaOperationDocuments, type ProjectSeaOperationDocumentSelection } from './projectSeaOperationDocumentsQueries';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { fetchProjectSeaOperationDocuments, saveProjectSeaOperationDocument, type ProjectSeaOperationDocument, type ProjectSeaOperationDocumentSelection } from './projectSeaOperationDocumentsQueries';
 import './ProjectSeaOperationDocuments.css';
 
 interface Props {
   accessKey: string;
   archived: boolean;
   canManage: boolean;
+  children: ReactNode;
   client: SupabaseClient;
   projectId: number;
+  refreshKey: string;
 }
-
+interface SelectionContext {
+  documents: ReadonlyMap<string, ProjectSeaOperationDocument>;
+  pending: { id: string; selected: boolean } | null;
+  disabled: boolean;
+  toggle: (id: string, selected: boolean) => void;
+}
+const DocumentSelection = createContext<SelectionContext | null>(null);
 const errorMessage = (error: unknown) => error instanceof Error ? error.message
-  : error && typeof error === 'object' && 'message' in error ? String(error.message) : 'Impossible d’enregistrer la sélection documentaire. Réessayez.';
+  : error && typeof error === 'object' && 'message' in error ? String(error.message) : 'L’enregistrement de la sélection n’a pas été confirmé. Réessayez.';
 
-export function ProjectSeaOperationDocuments({ accessKey, archived, canManage, client, projectId }: Props) {
-  const context = useMemo(() => ({ accessKey, archived, canManage, client, projectId }), [accessKey, archived, canManage, client, projectId]);
-  const [opened, setOpened] = useState<typeof context | null>(null);
-  const [saved, setSaved] = useState<typeof context | null>(null);
-  if (!canManage) return null;
-  return <>
-    <button className="sp-button sp-button--secondary" disabled={archived} onClick={() => { setSaved(null); setOpened(context); }} type="button"><Files aria-hidden="true" size={17} />Documents pour Opération en Mer</button>
-    {saved === context ? <span className="project-sea-operation-documents-saved" role="status">Sélection enregistrée.</span> : null}
-    {opened === context && !archived ? <ProjectSeaOperationDocumentDialog client={client} projectId={projectId} onClose={() => setOpened(null)} onSaved={() => { setSaved(context); setOpened(null); }} /> : null}
-  </>;
-}
-
-function ProjectSeaOperationDocumentDialog({ client, projectId, onClose, onSaved }: {
-  client: SupabaseClient; projectId: number; onClose: () => void; onSaved: () => void;
-}) {
+/** Server eligibility is authoritative; commercial documents never get a local fallback checkbox. */
+export function ProjectSeaOperationDocuments({ accessKey, archived, canManage, children, client, projectId, refreshKey }: Props) {
   const [attempt, setAttempt] = useState(0);
-  const context = useMemo(() => ({ client, projectId, attempt }), [client, projectId, attempt]);
-  const [catalog, setCatalog] = useState<{ context: typeof context; selection?: ProjectSeaOperationDocumentSelection; error?: string } | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [busy, setBusy] = useState(false);
-  const [saveError, setSaveError] = useState('');
-  const busyRef = useRef(false);
+  const context = useMemo(() => ({ accessKey, archived, canManage, client, projectId, refreshKey, attempt }), [accessKey, archived, canManage, client, projectId, refreshKey, attempt]);
+  const sameProjectAccess = (other: typeof context) => other.accessKey === context.accessKey && other.archived === context.archived
+    && other.canManage === context.canManage && other.client === context.client && other.projectId === context.projectId;
+  const currentContext = useRef(context); currentContext.current = context;
   const mounted = useRef(false);
-
+  const busyRef = useRef<typeof context | null>(null);
+  const [catalog, setCatalog] = useState<{ context: typeof context; selection?: ProjectSeaOperationDocumentSelection; error?: string } | null>(null);
+  const [pending, setPending] = useState<{ context: typeof context; id: string; selected: boolean } | null>(null);
+  const [feedback, setFeedback] = useState<{ context: typeof context; error?: string; message?: string } | null>(null);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
+    if (!canManage) return;
     let active = true;
     void fetchProjectSeaOperationDocuments(client, projectId).then(selection => {
-      if (!active) return;
-      setCatalog({ context, selection });
-      setSelectedIds(new Set(selection.documents.filter(document => document.selected).map(document => document.id)));
-    }).catch((error: unknown) => { if (active) setCatalog({ context, error: errorMessage(error) }); });
+      if (active && currentContext.current === context) setCatalog({ context, selection });
+    }).catch((error: unknown) => { if (active && currentContext.current === context) setCatalog({ context, error: errorMessage(error) }); });
     return () => { active = false; };
-  }, [client, context, projectId]);
+  }, [canManage, client, context, projectId]);
 
   const current = catalog?.context === context ? catalog : null;
-  const selection = current?.selection;
-  const changed = Boolean(selection && (!selection.configured || selection.documents.some(document => document.selected !== selectedIds.has(document.id))));
-
-  async function save() {
-    if (!selection || !changed || busyRef.current) return;
-    busyRef.current = true; setBusy(true); setSaveError('');
+  const currentPending = pending && sameProjectAccess(pending.context) ? pending : null;
+  const currentFeedback = feedback?.context === context ? feedback : null;
+  const documents = useMemo(() => new Map(current?.selection?.documents.map(document => [document.id, document]) ?? []), [current?.selection]);
+  async function toggle(id: string, selected: boolean) {
+    if (!canManage || archived || (busyRef.current && sameProjectAccess(busyRef.current)) || !documents.has(id)) return;
+    const operationContext = context;
+    busyRef.current = operationContext; setPending({ context, id, selected }); setFeedback(null);
     try {
-      await saveProjectSeaOperationDocuments(client, projectId, selection.documents.filter(document => selectedIds.has(document.id)).map(document => document.id));
-      if (mounted.current) onSaved();
+      const selection = await saveProjectSeaOperationDocument(client, projectId, id, selected);
+      if (!mounted.current || currentContext.current !== operationContext) return;
+      setCatalog({ context: operationContext, selection });
+      setFeedback({ context: operationContext, message: 'Sélection enregistrée.' });
     } catch (error) {
-      if (mounted.current) setSaveError(errorMessage(error));
+      if (mounted.current && currentContext.current === operationContext) setFeedback({ context: operationContext, error: errorMessage(error) });
     } finally {
-      busyRef.current = false;
-      if (mounted.current) setBusy(false);
+      if (busyRef.current === operationContext) busyRef.current = null;
+      if (mounted.current) {
+        const latest = currentContext.current;
+        if (latest === operationContext) setPending(null);
+        else if (latest.accessKey === operationContext.accessKey && latest.archived === operationContext.archived
+          && latest.canManage === operationContext.canManage && latest.client === operationContext.client && latest.projectId === operationContext.projectId) {
+          // An upload or category refresh may have read before this write committed.
+          // Re-read after completion; never apply an old response to a new context.
+          setPending(null); setAttempt(value => value + 1);
+        }
+      }
     }
   }
+  return <DocumentSelection.Provider value={{ documents, pending: currentPending, disabled: !canManage || archived || Boolean(currentPending), toggle: (id, selected) => { void toggle(id, selected); } }}>
+    {canManage ? <p className="project-sea-operation-documents-help">Si la case est cochée, le document apparaîtra dans Opération en Mer. Les nouveaux documents sont décochés par défaut.</p> : null}
+    {canManage && !current ? <p role="status">Chargement des cases Opération en Mer…</p> : current?.error ? <p role="alert">{current.error} <button className="sp-button sp-button--secondary" onClick={() => setAttempt(value => value + 1)} type="button">Réessayer les cases Opération en Mer</button></p> : null}
+    {currentPending ? <p role="status">Enregistrement de la sélection…</p> : currentFeedback?.error ? <p role="alert">{currentFeedback.error} <button className="sp-button sp-button--secondary" onClick={() => setAttempt(value => value + 1)} type="button">Actualiser les cases</button></p> : currentFeedback?.message ? <p className="project-sea-operation-documents-saved" role="status">{currentFeedback.message}</p> : null}
+    {children}
+  </DocumentSelection.Provider>;
+}
 
-  return <AppDialog title="Documents pour Opération en Mer" eyebrow="Projet · Documents" description="Cochez les documents à afficher dans les fiches d’opération de ce projet." icon={<Files aria-hidden="true" size={20} />} isBusy={busy} onClose={() => { if (!busyRef.current) onClose(); }} onSubmit={event => { event.preventDefault(); void save(); }} size="lg" footer={<div className="app-dialog__actions"><button className="sp-button sp-button--secondary" disabled={busy} onClick={onClose} type="button">Annuler</button><button className="sp-button sp-button--primary" disabled={busy || !selection || !changed} type="submit">{busy ? 'Enregistrement…' : 'Enregistrer la sélection'}</button></div>}>
-    <div className="project-sea-operation-documents">
-      <p>Les catégories Offre commerciale et Facturation ne sont pas proposées. Après enregistrement, les nouveaux documents devront également être cochés ici.</p>
-      {!current ? <p role="status">Chargement des documents disponibles…</p> : current.error ? <div role="alert"><p>{current.error}</p><button className="sp-button sp-button--secondary" onClick={() => setAttempt(value => value + 1)} type="button">Réessayer les documents</button></div> : selection ? <>
-        <div className="project-sea-operation-documents-toolbar">
-          <span role="status">{selectedIds.size} document{selectedIds.size > 1 ? 's' : ''} sélectionné{selectedIds.size > 1 ? 's' : ''} sur {selection.documents.length}</span>
-          {selection.documents.length ? <><button className="sp-button sp-button--secondary" disabled={busy} onClick={() => setSelectedIds(new Set(selection.documents.map(document => document.id)))} type="button">Tout sélectionner</button><button className="sp-button sp-button--secondary" disabled={busy} onClick={() => setSelectedIds(new Set())} type="button">Tout désélectionner</button></> : null}
-        </div>
-        {selection.documents.length ? <ul className="project-sea-operation-document-choices">{selection.documents.map(document => <li key={document.id}><label>
-          <input checked={selectedIds.has(document.id)} disabled={busy} onChange={event => { const checked = event.target.checked; setSelectedIds(previous => { const next = new Set(previous); if (checked) next.add(document.id); else next.delete(document.id); return next; }); }} type="checkbox" />
-          <span><strong>{document.title}</strong><small>{[document.categoryLabel, document.subcategoryLabel, document.title !== document.fileName ? document.fileName : ''].filter(Boolean).join(' · ')}</small></span>
-        </label></li>)}</ul> : <p>Aucun document éligible dans ce projet.</p>}
-      </> : null}
-      {saveError ? <p role="alert">{saveError}</p> : null}
-    </div>
-  </AppDialog>;
+export function ProjectSeaOperationDocumentCheckbox({ documentId, documentName }: { documentId: string; documentName: string }) {
+  const context = useContext(DocumentSelection);
+  const document = context?.documents.get(documentId);
+  if (!context || !document) return null;
+  const checked = context.pending?.id === documentId ? context.pending.selected : document.selected;
+  return <label className="project-sea-operation-document-choice"><input aria-label={`Afficher ${documentName} dans Opération en Mer`} checked={checked} disabled={context.disabled} onChange={event => context.toggle(documentId, event.target.checked)} type="checkbox" /></label>;
 }

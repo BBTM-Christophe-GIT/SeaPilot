@@ -1,221 +1,220 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ProjectSeaOperationDocuments } from './ProjectSeaOperationDocuments';
+import { ProjectSeaOperationDocumentCheckbox, ProjectSeaOperationDocuments } from './ProjectSeaOperationDocuments';
 import type { ProjectSeaOperationDocumentSelection } from './projectSeaOperationDocumentsQueries';
 
 const mocks = vi.hoisted(() => ({ fetch: vi.fn(), save: vi.fn() }));
-vi.mock('./projectSeaOperationDocumentsQueries', () => ({ fetchProjectSeaOperationDocuments: mocks.fetch, saveProjectSeaOperationDocuments: mocks.save }));
+vi.mock('./projectSeaOperationDocumentsQueries', () => ({ fetchProjectSeaOperationDocuments: mocks.fetch, saveProjectSeaOperationDocument: mocks.save }));
 
 const client = {} as SupabaseClient;
-const props = { accessKey: 'manager-a', archived: false, canManage: true, client, projectId: 880 };
+const props = { accessKey: 'manager-a', archived: false, canManage: true, client, projectId: 880, refreshKey: 'files-a' };
 const document = {
   id: 'generated:41', projectId: '880', title: 'Procédure du chantier', fileName: 'procedure.pdf', mimeType: 'application/pdf',
-  categoryLabel: 'HSE', subcategoryLabel: 'Procédure', createdAt: '2026-10-22T08:00:00Z', expiresOn: null, selected: true,
+  categoryLabel: 'HSE', subcategoryLabel: 'Procédure', createdAt: '2026-10-22T08:00:00Z', expiresOn: null, selected: false,
 };
 const catalog = (overrides: Partial<ProjectSeaOperationDocumentSelection> = {}): ProjectSeaOperationDocumentSelection => ({
   configured: false,
   documents: [{ ...document }, { ...document, id: 'project:42', title: 'Plan de prévention', fileName: 'plan.pdf' }],
   ...overrides,
 });
+const selectedCatalog = (ids: readonly string[]) => catalog({ configured: true, documents: catalog().documents.map(item => ({ ...item, selected: ids.includes(item.id) })) });
+function Harness(overrides: Partial<typeof props>) {
+  return <ProjectSeaOperationDocuments {...props} {...overrides}>
+    <ul>{[
+      ['generated:41', 'Procédure du chantier'], ['project:42', 'Plan de prévention'],
+      ['generated:43', 'Nouveau rapport'], ['generated:99', 'Offre commerciale'],
+    ].map(([id, name]) => <li key={id}><a href={`#${id}`}>{name}</a><ProjectSeaOperationDocumentCheckbox documentId={id} documentName={name} /></li>)}</ul>
+  </ProjectSeaOperationDocuments>;
+}
+const first = () => screen.getByRole('checkbox', { name: 'Afficher Procédure du chantier dans Opération en Mer' });
+const second = () => screen.getByRole('checkbox', { name: 'Afficher Plan de prévention dans Opération en Mer' });
+const load = () => screen.findByRole('checkbox', { name: 'Afficher Procédure du chantier dans Opération en Mer' });
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  let reject!: (error: Error) => void;
+  let reject!: (error: unknown) => void;
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
-async function openSelection() {
-  fireEvent.click(screen.getByRole('button', { name: 'Documents pour Opération en Mer' }));
-  const dialog = screen.getByRole('dialog', { name: 'Documents pour Opération en Mer' });
-  await within(dialog).findByRole('checkbox', { name: /Procédure du chantier/ });
-  return dialog;
-}
 const changedProps = (change: string) => ({
-  ...props,
-  accessKey: change === 'account' ? 'manager-b' : props.accessKey,
-  archived: change === 'archived',
-  canManage: change !== 'permission',
+  ...props, accessKey: change === 'account' ? 'manager-b' : props.accessKey,
+  archived: change === 'archived', canManage: change !== 'permission',
   client: change === 'client' ? { changedClient: true } as unknown as SupabaseClient : props.client,
-  projectId: change === 'project' ? 881 : props.projectId,
+  projectId: change === 'project' ? 881 : props.projectId, refreshKey: change === 'refresh' ? 'files-b' : props.refreshKey,
 });
 
-describe('ProjectSeaOperationDocuments', () => {
+describe('ProjectSeaOperationDocuments inline checkboxes', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.fetch.mockResolvedValue(catalog());
-    mocks.save.mockResolvedValue(catalog({ configured: true }));
+    vi.clearAllMocks(); mocks.fetch.mockResolvedValue(catalog()); mocks.save.mockResolvedValue(selectedCatalog(['generated:41']));
   });
 
-  it('loads only when opened, preserves the legacy selection, and stores checked document IDs', async () => {
-    const user = userEvent.setup();
-    render(<ProjectSeaOperationDocuments {...props} />);
-    expect(mocks.fetch).not.toHaveBeenCalled();
-    const dialog = await openSelection();
+  it('loads automatically, leaves eligible documents unchecked by default, and saves a click without a modal', async () => {
+    const user = userEvent.setup(); render(<Harness />);
     expect(mocks.fetch).toHaveBeenCalledWith(client, 880);
-    expect(within(dialog).getByRole('checkbox', { name: /Procédure du chantier/ })).toBeChecked();
-    expect(within(dialog).getByRole('checkbox', { name: /Plan de prévention/ })).toBeChecked();
-    expect(within(dialog).getByRole('status')).toHaveTextContent('2 documents sélectionnés sur 2');
-    await user.click(within(dialog).getByRole('checkbox', { name: /Plan de prévention/ }));
-    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer la sélection' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(mocks.save).toHaveBeenCalledWith(client, 880, ['generated:41']);
-    expect(screen.getByRole('status')).toHaveTextContent('Sélection enregistrée.');
-  });
-
-  it('can explicitly save the legacy all-selected catalog without changing a checkbox', async () => {
-    render(<ProjectSeaOperationDocuments {...props} />);
-    const dialog = await openSelection();
-    expect(within(dialog).getByRole('button', { name: 'Enregistrer la sélection' })).toBeEnabled();
-    fireEvent.submit(dialog);
-    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(client, 880, ['generated:41', 'project:42']));
-  });
-
-  it('saves an explicit empty selection instead of returning to automatic legacy visibility', async () => {
-    render(<ProjectSeaOperationDocuments {...props} />);
-    const dialog = await openSelection();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Tout désélectionner' }));
-    expect(within(dialog).getByRole('status')).toHaveTextContent('0 document sélectionné sur 2');
-    fireEvent.submit(dialog);
-    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(client, 880, []));
-  });
-
-  it('keeps newly added documents unchecked in a configured project until the user selects them', async () => {
-    mocks.fetch.mockResolvedValue(catalog({ configured: true, documents: [{ ...document, selected: true }, { ...document, id: 'project:42', title: 'Nouveau plan', selected: false }] }));
-    render(<ProjectSeaOperationDocuments {...props} />);
-    const dialog = await openSelection();
-    expect(within(dialog).getByRole('checkbox', { name: /Nouveau plan/ })).not.toBeChecked();
-    expect(within(dialog).getByRole('button', { name: 'Enregistrer la sélection' })).toBeDisabled();
-    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Nouveau plan/ }));
-    fireEvent.submit(dialog);
-    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(client, 880, ['generated:41', 'project:42']));
-  });
-
-  it('shows a configured empty allow-list without silently selecting its documents', async () => {
-    mocks.fetch.mockResolvedValue(catalog({ configured: true, documents: catalog().documents.map(item => ({ ...item, selected: false })) }));
-    render(<ProjectSeaOperationDocuments {...props} />);
-    const dialog = await openSelection();
-    expect(within(dialog).getAllByRole('checkbox').every(item => !(item as HTMLInputElement).checked)).toBe(true);
-    expect(within(dialog).getByRole('button', { name: 'Enregistrer la sélection' })).toBeDisabled();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Tout sélectionner' }));
-    expect(within(dialog).getAllByRole('checkbox').every(item => (item as HTMLInputElement).checked)).toBe(true);
-  });
-
-  it('can explicitly configure an empty catalog before any eligible document exists', async () => {
-    mocks.fetch.mockResolvedValue(catalog({ documents: [] }));
-    render(<ProjectSeaOperationDocuments {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Documents pour Opération en Mer' }));
-    const dialog = screen.getByRole('dialog', { name: 'Documents pour Opération en Mer' });
-    await within(dialog).findByText('Aucun document éligible dans ce projet.');
-    fireEvent.submit(dialog);
-    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(client, 880, []));
-  });
-
-  it('does not offer editing to a non-manager and disables it for a closed project', () => {
-    const view = render(<ProjectSeaOperationDocuments {...props} canManage={false} />);
+    await load(); expect(first()).not.toBeChecked(); expect(second()).not.toBeChecked();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Documents pour Opération en Mer' })).not.toBeInTheDocument();
-    view.rerender(<ProjectSeaOperationDocuments {...props} archived />);
-    expect(screen.getByRole('button', { name: 'Documents pour Opération en Mer' })).toBeDisabled();
-    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /Enregistrer la sélection/ })).not.toBeInTheDocument();
+    await user.click(first());
+    expect(mocks.save).toHaveBeenCalledWith(client, 880, 'generated:41', true);
+    await screen.findByText('Sélection enregistrée.'); expect(first()).toBeChecked(); expect(second()).not.toBeChecked();
   });
 
-  it('keeps saving disabled during a load refusal and retries only the management catalog', async () => {
+  it('only exposes server-catalogued checkboxes while preserving document links and content', async () => {
+    render(<Harness />); await load();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+    expect(screen.getByRole('link', { name: 'Offre commerciale' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Nouveau rapport' })).toBeVisible();
+    expect(screen.queryByRole('checkbox', { name: /Offre commerciale|Nouveau rapport/ })).not.toBeInTheDocument();
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it('optimistically unchecks only the clicked document, locks every checkbox, and prevents duplicate writes', async () => {
+    const pending = deferred<ProjectSeaOperationDocumentSelection>(); mocks.fetch.mockResolvedValue(selectedCatalog(['generated:41', 'project:42']));
+    mocks.save.mockReturnValue(pending.promise); render(<Harness />); await load();
+    act(() => { fireEvent.click(first()); fireEvent.click(first()); });
+    expect(mocks.save).toHaveBeenCalledTimes(1); expect(mocks.save).toHaveBeenCalledWith(client, 880, 'generated:41', false);
+    expect(first()).not.toBeChecked(); expect(second()).toBeChecked();
+    expect(first()).toBeDisabled(); expect(second()).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('Enregistrement de la sélection…');
+    fireEvent.click(second()); expect(mocks.save).toHaveBeenCalledTimes(1);
+    await act(async () => pending.resolve(selectedCatalog(['project:42'])));
+    expect(first()).not.toBeChecked(); expect(second()).toBeChecked(); expect(first()).toBeEnabled(); expect(second()).toBeEnabled();
+  });
+
+  it('reloads after an upload refresh and leaves a newly eligible document unchecked', async () => {
+    mocks.fetch.mockResolvedValueOnce(selectedCatalog(['generated:41']));
+    const view = render(<Harness />); await load(); expect(first()).toBeChecked();
+    mocks.fetch.mockResolvedValue(catalog({ configured: true, documents: [...selectedCatalog(['generated:41']).documents, { ...document, id: 'generated:43', title: 'Nouveau rapport', selected: false }] }));
+    view.rerender(<Harness refreshKey="files-b" />);
+    const added = await screen.findByRole('checkbox', { name: 'Afficher Nouveau rapport dans Opération en Mer' });
+    expect(added).not.toBeChecked(); expect(first()).toBeChecked(); expect(mocks.fetch).toHaveBeenCalledTimes(2); expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it('preserves a configured empty selection and never creates fallback checkboxes for an empty catalog', async () => {
+    mocks.fetch.mockResolvedValueOnce(selectedCatalog([])).mockResolvedValueOnce(catalog({ configured: true, documents: [] }));
+    const view = render(<Harness />); await load(); expect(first()).not.toBeChecked(); expect(second()).not.toBeChecked();
+    view.rerender(<Harness refreshKey="empty" />);
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument(); expect(screen.getByRole('link', { name: 'Procédure du chantier' })).toBeVisible();
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it('hides write controls from non-managers and disables eligible checkboxes on an archived project', async () => {
+    const view = render(<Harness canManage={false} />);
+    expect(mocks.fetch).not.toHaveBeenCalled(); expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Procédure du chantier' })).toBeVisible();
+    view.rerender(<Harness archived />); await load(); expect(first()).toBeDisabled(); expect(second()).toBeDisabled();
+    fireEvent.click(first()); expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps documents readable after a catalog refusal and retries the management catalog only', async () => {
     mocks.fetch.mockRejectedValueOnce({ code: '42501', message: 'Gestion documentaire interdite.' }).mockResolvedValueOnce(catalog());
-    render(<ProjectSeaOperationDocuments {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Documents pour Opération en Mer' }));
-    const dialog = screen.getByRole('dialog', { name: 'Documents pour Opération en Mer' });
-    await within(dialog).findByText('Gestion documentaire interdite.');
-    expect(within(dialog).getByRole('button', { name: 'Enregistrer la sélection' })).toBeDisabled();
-    expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument();
-    fireEvent.submit(dialog);
-    expect(mocks.save).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Réessayer les documents' }));
-    await within(dialog).findByRole('checkbox', { name: /Procédure du chantier/ });
-    expect(mocks.fetch).toHaveBeenCalledTimes(2);
-    expect(mocks.fetch).toHaveBeenNthCalledWith(2, client, 880);
+    render(<Harness />); expect(await screen.findByRole('alert')).toHaveTextContent('Gestion documentaire interdite.');
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument(); expect(screen.getByRole('link', { name: 'Procédure du chantier' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Réessayer les cases Opération en Mer' })); await load();
+    expect(mocks.fetch).toHaveBeenCalledTimes(2); expect(mocks.fetch).toHaveBeenNthCalledWith(2, client, 880); expect(mocks.save).not.toHaveBeenCalled();
   });
 
-  it('does not submit until the catalog has loaded', async () => {
-    const pending = deferred<ProjectSeaOperationDocumentSelection>();
-    mocks.fetch.mockReturnValue(pending.promise);
-    render(<ProjectSeaOperationDocuments {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Documents pour Opération en Mer' }));
-    const dialog = screen.getByRole('dialog', { name: 'Documents pour Opération en Mer' });
-    expect(within(dialog).getByRole('button', { name: 'Enregistrer la sélection' })).toBeDisabled();
-    fireEvent.submit(dialog);
-    expect(mocks.save).not.toHaveBeenCalled();
-    await act(async () => pending.resolve(catalog()));
+  it('does not expose writable checkboxes until their catalog has loaded', async () => {
+    const pending = deferred<ProjectSeaOperationDocumentSelection>(); mocks.fetch.mockReturnValue(pending.promise); render(<Harness />);
+    expect(screen.getByRole('status')).toHaveTextContent('Chargement des cases Opération en Mer…'); expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(mocks.save).not.toHaveBeenCalled(); await act(async () => pending.resolve(catalog())); expect(first()).toBeEnabled();
   });
 
-  it('cancelling discards local changes and reloads the saved selection on reopening', async () => {
-    render(<ProjectSeaOperationDocuments {...props} />);
-    let dialog = await openSelection();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Tout désélectionner' }));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Annuler' }));
-    expect(mocks.save).not.toHaveBeenCalled();
-    dialog = await openSelection();
-    expect(within(dialog).getByRole('checkbox', { name: /Procédure du chantier/ })).toBeChecked();
-    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+  it('rolls back an optimistic checkbox when saving is refused and permits a later retry', async () => {
+    const pending = deferred<ProjectSeaOperationDocumentSelection>(); mocks.save.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(selectedCatalog(['generated:41']));
+    render(<Harness />); await load(); fireEvent.click(first()); expect(first()).toBeChecked();
+    await act(async () => pending.reject({ code: '42501', message: 'La sélection ne peut pas être enregistrée.' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('La sélection ne peut pas être enregistrée.');
+    expect(first()).not.toBeChecked(); expect(first()).toBeEnabled(); expect(screen.queryByText('Sélection enregistrée.')).not.toBeInTheDocument();
+    fireEvent.click(first()); await screen.findByText('Sélection enregistrée.'); expect(first()).toBeChecked();
+    expect(mocks.save).toHaveBeenNthCalledWith(2, client, 880, 'generated:41', true);
   });
 
-  it('locks synchronously against duplicate saves and prevents closing or editing during the request', async () => {
-    const pending = deferred<ProjectSeaOperationDocumentSelection>();
-    mocks.save.mockReturnValue(pending.promise);
-    render(<ProjectSeaOperationDocuments {...props} />);
-    const dialog = await openSelection();
-    act(() => { fireEvent.submit(dialog); fireEvent.submit(dialog); });
-    expect(mocks.save).toHaveBeenCalledTimes(1);
-    expect(dialog).toHaveAttribute('aria-busy', 'true');
-    expect(within(dialog).getAllByRole('checkbox').every(item => (item as HTMLInputElement).disabled)).toBe(true);
-    expect(within(dialog).getByRole('button', { name: 'Annuler' })).toBeDisabled();
-    expect(within(dialog).getByRole('button', { name: 'Fermer' })).toBeDisabled();
-    expect(within(dialog).getByRole('button', { name: 'Tout sélectionner' })).toBeDisabled();
-    expect(within(dialog).getByRole('button', { name: 'Tout désélectionner' })).toBeDisabled();
-    fireEvent.keyDown(dialog, { key: 'Escape' });
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    await act(async () => pending.resolve(catalog({ configured: true })));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  it('can refresh authoritative server choices after a failed save without resubmitting the rejected change', async () => {
+    mocks.save.mockRejectedValueOnce(new Error('Enregistrement refusé.'));
+    render(<Harness />); await load(); fireEvent.click(first()); await screen.findByRole('alert');
+    mocks.fetch.mockResolvedValue(selectedCatalog(['project:42']));
+    fireEvent.click(screen.getByRole('button', { name: 'Actualiser les cases' })); await load();
+    expect(first()).not.toBeChecked(); expect(second()).toBeChecked(); expect(mocks.save).toHaveBeenCalledTimes(1); expect(mocks.fetch).toHaveBeenCalledTimes(2);
   });
 
-  it('retains the checked selection and permits retry when the server refuses a save', async () => {
-    mocks.save.mockRejectedValueOnce({ code: '42501', message: 'La sélection ne peut pas être enregistrée.' }).mockResolvedValueOnce(catalog({ configured: true }));
-    render(<ProjectSeaOperationDocuments {...props} />);
-    const dialog = await openSelection();
-    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Plan de prévention/ }));
-    fireEvent.submit(dialog);
-    await within(dialog).findByText('La sélection ne peut pas être enregistrée.');
-    expect(within(dialog).getByRole('checkbox', { name: /Plan de prévention/ })).not.toBeChecked();
-    expect(within(dialog).getByRole('button', { name: 'Enregistrer la sélection' })).toBeEnabled();
+  it('supports selecting a document with the keyboard without opening a dialog', async () => {
+    const user = userEvent.setup(); render(<Harness />); await load(); first().focus(); await user.keyboard(' ');
+    await screen.findByText('Sélection enregistrée.'); expect(first()).toBeChecked(); expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mocks.save).toHaveBeenCalledWith(client, 880, 'generated:41', true);
+  });
+
+  it('does not render an operational checkbox outside its project selection provider', () => {
+    render(<ProjectSeaOperationDocumentCheckbox documentId="generated:41" documentName="Procédure du chantier" />);
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  it.each(['project', 'client', 'account', 'permission', 'archived', 'refresh', 'unmount'])('ignores a late catalog after %s changes', async change => {
+    const pending = deferred<ProjectSeaOperationDocumentSelection>(), replacement = deferred<ProjectSeaOperationDocumentSelection>();
+    mocks.fetch.mockReturnValueOnce(pending.promise).mockReturnValue(replacement.promise);
+    const view = render(<Harness />);
+    if (change === 'unmount') view.unmount(); else view.rerender(<Harness {...changedProps(change)} />);
+    await act(async () => pending.resolve(selectedCatalog(['generated:41'])));
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument(); expect(screen.queryByText('Sélection enregistrée.')).not.toBeInTheDocument(); expect(mocks.save).not.toHaveBeenCalled();
+    if (change !== 'unmount') view.unmount(); await act(async () => replacement.resolve(catalog()));
+  });
+
+  it.each(['project', 'client', 'account', 'permission', 'archived', 'unmount'])('ignores a late save after %s changes without applying it to the new context', async change => {
+    const pending = deferred<ProjectSeaOperationDocumentSelection>(); mocks.save.mockReturnValue(pending.promise);
+    const view = render(<Harness />); await load(); fireEvent.click(first()); expect(first()).toBeChecked();
+    mocks.fetch.mockResolvedValue(catalog({ documents: catalog().documents.map(item => ({ ...item, projectId: change === 'project' ? '881' : '880' })) }));
+    if (change === 'unmount') view.unmount(); else view.rerender(<Harness {...changedProps(change)} />);
+    if (change !== 'permission' && change !== 'unmount') { await load(); expect(first()).not.toBeChecked(); }
+    await act(async () => pending.resolve(selectedCatalog(['generated:41'])));
     expect(screen.queryByText('Sélection enregistrée.')).not.toBeInTheDocument();
-    fireEvent.submit(dialog);
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(mocks.save).toHaveBeenNthCalledWith(2, client, 880, ['generated:41']);
+    if (change === 'permission' || change === 'unmount') expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    else {
+      expect(first()).not.toBeChecked();
+      if (change === 'archived') expect(first()).toBeDisabled(); else expect(first()).toBeEnabled();
+    }
   });
 
-  it.each(['project', 'client', 'account', 'permission', 'archived', 'unmount'])('ignores a late catalog after %s changes', async change => {
-    const pending = deferred<ProjectSeaOperationDocumentSelection>();
-    mocks.fetch.mockReturnValue(pending.promise);
-    const view = render(<ProjectSeaOperationDocuments {...props} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Documents pour Opération en Mer' }));
-    if (change === 'unmount') view.unmount();
-    else view.rerender(<ProjectSeaOperationDocuments {...changedProps(change)} />);
-    await act(async () => pending.resolve(catalog()));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.queryByRole('checkbox', { name: /Procédure du chantier/ })).not.toBeInTheDocument();
-    expect(mocks.save).not.toHaveBeenCalled();
-  });
-
-  it.each(['project', 'client', 'account', 'permission', 'archived', 'unmount'])('ignores a late save after %s changes without announcing success in another context', async change => {
-    const pending = deferred<ProjectSeaOperationDocumentSelection>();
+  it('keeps the optimistic selection locked across an upload refresh and reconciles after the pending write commits', async () => {
+    const pending = deferred<ProjectSeaOperationDocumentSelection>(), reconciliation = deferred<ProjectSeaOperationDocumentSelection>();
+    const uploaded = catalog({ configured: true, documents: [...catalog().documents, { ...document, id: 'generated:43', title: 'Nouveau rapport', selected: false }] });
+    mocks.fetch.mockResolvedValueOnce(catalog()).mockResolvedValueOnce(uploaded).mockReturnValueOnce(reconciliation.promise);
     mocks.save.mockReturnValue(pending.promise);
-    const view = render(<ProjectSeaOperationDocuments {...props} />);
-    const dialog = await openSelection();
-    fireEvent.submit(dialog);
+    const view = render(<Harness />); await load(); fireEvent.click(first()); expect(first()).toBeChecked();
+    view.rerender(<Harness refreshKey="files-b" />);
+    const added = await screen.findByRole('checkbox', { name: 'Afficher Nouveau rapport dans Opération en Mer' });
+    expect(first()).toBeChecked(); expect(first()).toBeDisabled(); expect(second()).toBeDisabled(); expect(added).toBeDisabled(); expect(added).not.toBeChecked();
+    expect(mocks.fetch).toHaveBeenCalledTimes(2); fireEvent.click(second()); expect(mocks.save).toHaveBeenCalledTimes(1);
+    await act(async () => pending.resolve(selectedCatalog(['generated:41'])));
+    await waitFor(() => expect(mocks.fetch).toHaveBeenCalledTimes(3));
+    expect(mocks.fetch).toHaveBeenNthCalledWith(3, client, 880);
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Chargement des cases Opération en Mer…');
+    await act(async () => reconciliation.resolve({ ...uploaded, documents: uploaded.documents.map(item => ({ ...item, selected: item.id === 'generated:41' })) }));
+    expect(first()).toBeChecked(); expect(first()).toBeEnabled(); expect(second()).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Afficher Nouveau rapport dans Opération en Mer' })).not.toBeChecked();
     expect(mocks.save).toHaveBeenCalledTimes(1);
-    if (change === 'unmount') view.unmount();
-    else view.rerender(<ProjectSeaOperationDocuments {...changedProps(change)} />);
-    await act(async () => pending.resolve(catalog({ configured: true })));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.queryByText('Sélection enregistrée.')).not.toBeInTheDocument();
+  });
+
+  it('does not unlock a new project write when an old project write finishes', async () => {
+    const oldSave = deferred<ProjectSeaOperationDocumentSelection>(), newSave = deferred<ProjectSeaOperationDocumentSelection>();
+    mocks.save.mockReturnValueOnce(oldSave.promise).mockReturnValueOnce(newSave.promise);
+    const view = render(<Harness />); await load(); fireEvent.click(first());
+    mocks.fetch.mockResolvedValue(catalog({ documents: catalog().documents.map(item => ({ ...item, projectId: '881' })) }));
+    view.rerender(<Harness projectId={881} />); await load(); fireEvent.click(second());
+    expect(second()).toBeChecked(); expect(first()).toBeDisabled(); expect(second()).toBeDisabled();
+    await act(async () => oldSave.resolve(selectedCatalog(['generated:41'])));
+    expect(first()).toBeDisabled(); expect(second()).toBeDisabled(); expect(second()).toBeChecked(); expect(screen.queryByText('Sélection enregistrée.')).not.toBeInTheDocument();
+    await act(async () => newSave.resolve(selectedCatalog(['project:42'])));
+    expect(first()).not.toBeChecked(); expect(second()).toBeChecked(); expect(second()).toBeEnabled(); expect(mocks.save).toHaveBeenNthCalledWith(2, client, 881, 'project:42', true);
+  });
+
+  it('does not show errors from a previous project after its pending save rejects', async () => {
+    const pending = deferred<ProjectSeaOperationDocumentSelection>(); mocks.save.mockReturnValue(pending.promise);
+    const view = render(<Harness />); await load(); fireEvent.click(first()); view.rerender(<Harness projectId={881} />); await load();
+    await act(async () => pending.reject(new Error('Refus de l’ancien projet.')));
+    expect(screen.queryByText('Refus de l’ancien projet.')).not.toBeInTheDocument(); expect(first()).not.toBeChecked(); expect(first()).toBeEnabled();
   });
 });

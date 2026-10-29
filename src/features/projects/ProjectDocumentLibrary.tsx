@@ -182,7 +182,6 @@ export function ProjectDocumentLibrary({
       {canManage ? <div className="project-documents-actions">
         <button className="sp-button sp-button--primary" disabled={busy || !canUpload} onClick={beginUpload} type="button"><Plus aria-hidden="true" size={17} /> Ajouter un document</button>
         <button className="sp-button sp-button--secondary" disabled={busy || !currentCatalog || Boolean(currentCatalog.error)} onClick={beginCategories} type="button"><FolderCog aria-hidden="true" size={17} /> Gérer les catégories</button>
-        <ProjectSeaOperationDocuments accessKey={accessKey} archived={archived} canManage={canManage} client={client} projectId={projectId} />
       </div> : null}
     </div>
     {!currentCatalog ? <p role="status">Chargement des catégories…</p> : currentCatalog.error ? <div role="alert" className="project-documents-error">{currentCatalog.error}<button className="sp-button sp-button--secondary" onClick={() => setLoadAttempt((attempt) => attempt + 1)} type="button">Réessayer les catégories</button></div> : canManage && !roots.length ? <p role="status">Ajoutez une catégorie pour classer un document.</p> : null}
@@ -198,7 +197,10 @@ export function ProjectDocumentLibrary({
     </div>
     {!currentModal && currentFeedback?.message ? <p role="status">{currentFeedback.message}</p> : null}
     {!currentModal && currentFeedback?.error ? <p role="alert">{currentFeedback.error}</p> : null}
-    {(categoryFilter || subcategoryFilter) && !count ? <p className="project-section-empty">Aucun document dans cette catégorie.</p> : renderDocuments(filteredDocuments, labels)}
+    <ProjectSeaOperationDocuments accessKey={accessKey} archived={archived} canManage={canManage} client={client} projectId={projectId}
+      refreshKey={JSON.stringify([categories.map(category => [category.key, category.parentKey, category.label]), [attachments, otherDocuments, projectDocuments, contractDocuments].map(items => items.map(item => [item.id, item.categoryKey, 'subcategoryKey' in item ? item.subcategoryKey : '', item.fileName]))])}>
+      {(categoryFilter || subcategoryFilter) && !count ? <p className="project-section-empty">Aucun document dans cette catégorie.</p> : renderDocuments(filteredDocuments, labels)}
+    </ProjectSeaOperationDocuments>
     {currentModal === 'upload' ? <AppDialog title="Ajouter un document" eyebrow="Projet · Documents" description="Le fichier sera classé dans l’espace privé du projet." icon={<FileText aria-hidden="true" size={20} />} isBusy={busy} onClose={() => setModal(null)} onSubmit={(event) => { event.preventDefault(); void upload(); }} size="sm" footer={<div className="app-dialog__actions"><button className="sp-button sp-button--secondary" disabled={busy} onClick={() => setModal(null)} type="button">Annuler</button><button className="sp-button sp-button--primary" disabled={busy || !file || !canUpload} type="submit"><Upload aria-hidden="true" size={17} />{busy ? 'Ajout en cours…' : 'Ajouter au projet'}</button></div>}>
       <div className="project-documents-form">
         <label>Fichier<input aria-describedby={fileHelpId} disabled={busy} onChange={(event) => setFile(event.target.files?.[0] || null)} required type="file" /></label>

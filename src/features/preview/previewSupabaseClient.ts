@@ -1847,12 +1847,14 @@ const previewProjectDocumentCategories = new Map([
 ].map(category => [category.key, category]));
 
 function previewProjectDocumentCategoryAllowed(key: unknown): boolean {
+  const compact = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr').replace(/[^a-z0-9]/g, '');
   const visited = new Set<string>();
   let category = typeof key === 'string' ? previewProjectDocumentCategories.get(key) : undefined;
   while (category && !visited.has(category.key)) {
     visited.add(category.key);
-    if (['commercial_offer', 'commercial_contract', 'commercial_appendix', 'billing', 'offer', 'contract_document'].includes(category.key)
-      || ['offre commerciale', 'offres commerciales', 'facturation'].includes(category.label.trim().toLocaleLowerCase('fr'))) return false;
+    if (['commercialoffer', 'commercialoffers', 'commercialcontract', 'commercialcontracts', 'commercialappendix', 'billing', 'offer', 'offers',
+      'contractdocument', 'contractdocuments', 'contract', 'contracts', 'contrat', 'contrats'].includes(compact(category.key))
+      || ['offrecommerciale', 'offrescommerciales', 'facturation', 'contrat', 'contrats', 'contract', 'contracts', 'commercialoffer', 'commercialoffers'].includes(compact(category.label))) return false;
     if (category.parentKey === null) return true;
     category = previewProjectDocumentCategories.get(category.parentKey);
   }
@@ -1893,22 +1895,30 @@ function previewProjectDocumentSelectionRpc(functionName: string, args: Record<s
     return { data: null, error: { code: '22023', message: 'Le projet sélectionné est invalide.' } };
   }
   const project = previewRows('projects').find(row => Number(row.id) === projectId);
-  if (!project || functionName === 'set_project_sea_operation_documents' && project.archived_at) {
+  const singleDocument = functionName === 'set_project_sea_operation_document';
+  const writing = singleDocument || functionName === 'set_project_sea_operation_documents';
+  if (!project || writing && project.archived_at) {
     return { data: null, error: { code: '42501', message: 'La gestion des documents de ce projet est inaccessible.' } };
   }
   const documents = previewProjectOperationalDocumentCandidates(projectId);
-  if (functionName === 'set_project_sea_operation_documents') {
-    const ids = args.p_document_ids;
-    if (!Array.isArray(ids) || ids.length > 5000 || ids.some(id => typeof id !== 'string' || !/^(generated|project):[1-9][0-9]{0,18}$/.test(id))) {
+  if (writing) {
+    const ids = singleDocument ? [args.p_document_id] : args.p_document_ids;
+    if (singleDocument && typeof args.p_selected !== 'boolean' || !Array.isArray(ids) || ids.length > 5000
+      || ids.some(id => typeof id !== 'string' || !/^(generated|project):[1-9][0-9]{0,18}$/.test(id))) {
       return { data: null, error: { code: '22023', message: 'La sélection des documents est invalide.' } };
     }
     if (ids.some(id => !documents.some(document => document.id === id))) {
       return { data: null, error: { code: '42501', message: 'Un document sélectionné est inaccessible pour ce projet.' } };
     }
-    previewProjectDocumentSelections.set(projectId, new Set(ids));
+    const next = singleDocument ? new Set(previewProjectDocumentSelections.get(projectId)) : new Set<string>(ids);
+    if (singleDocument) {
+      if (args.p_selected) next.add(String(args.p_document_id));
+      else next.delete(String(args.p_document_id));
+    }
+    previewProjectDocumentSelections.set(projectId, next);
   }
   const selected = previewProjectDocumentSelections.get(projectId);
-  return { data: { configured: selected !== undefined, documents: documents.map(document => ({ ...document, selected: selected === undefined || selected.has(document.id) })) }, error: null };
+  return { data: { configured: selected !== undefined, documents: documents.map(document => ({ ...document, selected: selected?.has(document.id) ?? false })) }, error: null };
 }
 
 /** Fleet edits are retained only in this demonstration module instance. */
@@ -2221,7 +2231,7 @@ function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
-  if (functionName === 'project_sea_operation_documents' || functionName === 'set_project_sea_operation_documents') {
+  if (functionName === 'project_sea_operation_documents' || functionName === 'set_project_sea_operation_documents' || functionName === 'set_project_sea_operation_document') {
     return createPreviewQuery(previewProjectDocumentSelectionRpc(functionName, args));
   }
   // The pharmacy editor owns its synthetic register; the shared home never reads real inventory.
