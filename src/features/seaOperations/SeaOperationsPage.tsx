@@ -89,7 +89,7 @@ function PortField({ label, value, onChange, disabled }: {
   label: string; value: string; onChange: (value: string) => void; disabled: boolean;
 }) {
   const id = useId();
-  return <div className="so-field"><label htmlFor={id}>{label}</label><ProjectPortCombobox id={id} disabled={disabled} value={value} onChange={onChange} /></div>;
+  return <div className="so-field"><label htmlFor={id}>{label}</label><ProjectPortCombobox id={id} fitWithinScrollContainer disabled={disabled} value={value} onChange={onChange} /></div>;
 }
 
 interface ChoiceOption { value: string; label: string; disabled?: boolean }

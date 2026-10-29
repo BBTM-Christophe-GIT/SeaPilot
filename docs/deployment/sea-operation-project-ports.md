@@ -2,6 +2,9 @@
 
 La fiche utilise le même `ProjectPortCombobox` que Projet. Les changements restent
 locaux pendant la saisie et l’annulation ne modifie aucune donnée du projet.
+Dans la fiche, la liste s’ouvre du côté offrant le plus de place et sa hauteur
+est limitée à la partie visible du volet, pour garder les options accessibles
+au-dessus de la barre d’actions. Le placement par défaut dans Projet est conservé.
 L’enregistrement d’un brouillon peut synchroniser uniquement le port de livraison
 (`projects.delivery_port`) et le port de restitution (`projects.redelivery_port`).
 Les autres champs commerciaux, les opérations du planning et les instantanés
