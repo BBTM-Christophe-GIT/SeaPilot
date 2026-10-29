@@ -8,12 +8,13 @@ interface SeaOperationProjectDocumentsProps {
   client: SupabaseClient;
   projectId: string;
   disabled?: boolean;
+  showWithoutProject?: boolean;
 }
 
 const message = (error: unknown) => error instanceof Error ? error.message : typeof error === 'object' && error && 'message' in error ? String(error.message) : 'Impossible de consulter les documents du projet. Réessayez.';
 
 /** Read-only project documents: access is checked again when opening each file. */
-export function SeaOperationProjectDocuments({ client, projectId, disabled = false }: SeaOperationProjectDocumentsProps) {
+export function SeaOperationProjectDocuments({ client, projectId, disabled = false, showWithoutProject = false }: SeaOperationProjectDocumentsProps) {
   const titleId = useId();
   const [attempt, setAttempt] = useState(0);
   const context = useMemo(() => ({ client, projectId, attempt }), [client, projectId, attempt]);
@@ -60,14 +61,14 @@ export function SeaOperationProjectDocuments({ client, projectId, disabled = fal
     setViewer(null);
   }
 
-  if (!projectId) return null;
+  if (!projectId && !showWithoutProject) return null;
   const externalReader = Boolean(currentViewer?.url && new URL(currentViewer.url, window.location.href).hostname.endsWith('.sharepoint.com'));
   const isPdf = !externalReader && currentViewer?.document.mimeType === 'application/pdf';
   const isImage = Boolean(!externalReader && currentViewer && /^image\/(png|jpe?g|webp|gif|avif)$/i.test(currentViewer.document.mimeType));
 
   return <section aria-labelledby={titleId} className="so-project-documents">
-    <header><FileText aria-hidden="true" size={17} /><h3 id={titleId}>Documents</h3>{currentCatalog && !currentCatalog.error ? <small>{currentCatalog.documents.length} document{currentCatalog.documents.length > 1 ? 's' : ''}</small> : null}</header>
-    {!currentCatalog ? <p role="status">Chargement des documents du projet…</p> : currentCatalog.error ? <div role="alert"><p>{currentCatalog.error}</p><button className="sp-button sp-button--secondary" disabled={disabled} onClick={() => setAttempt((value) => value + 1)} type="button">Réessayer les documents</button></div> : currentCatalog.documents.length ? <ul>{currentCatalog.documents.map((document) => <li key={document.id}>
+    <header><FileText aria-hidden="true" size={17} /><h3 id={titleId} tabIndex={-1}>Documents</h3>{currentCatalog && !currentCatalog.error ? <small>{currentCatalog.documents.length} document{currentCatalog.documents.length > 1 ? 's' : ''}</small> : null}</header>
+    {!projectId ? <p>Sélectionnez un projet dans Armement pour consulter ses documents.</p> : !currentCatalog ? <p role="status">Chargement des documents du projet…</p> : currentCatalog.error ? <div role="alert"><p>{currentCatalog.error}</p><button className="sp-button sp-button--secondary" disabled={disabled} onClick={() => setAttempt((value) => value + 1)} type="button">Réessayer les documents</button></div> : currentCatalog.documents.length ? <ul>{currentCatalog.documents.map((document) => <li key={document.id}>
       <div><strong>{document.title || document.fileName}</strong><small>{[document.categoryLabel, document.subcategoryLabel, document.fileName].filter(Boolean).join(' · ')}</small></div>
       <button aria-label={`Ouvrir : ${document.title || document.fileName}`} className="sp-button sp-button--secondary" disabled={disabled} onClick={() => void openDocument(document)} type="button">Ouvrir</button>
     </li>)}</ul> : <p>Aucun document disponible pour ce projet.</p>}

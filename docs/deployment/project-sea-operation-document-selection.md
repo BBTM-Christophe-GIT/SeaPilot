@@ -1,13 +1,21 @@
 # Documents Projet affichés dans Opération en Mer
 
-Version `3.80.15`, build `2026-10-29.001`.
+Version `3.80.16`, build `2026-10-29.002`.
 
 Dans la fiche Projet, onglet **Documents**, la colonne **Opération en Mer** suit
 le bouton **Ouvrir**. Chaque case enregistre immédiatement le choix pour ce
 document, commun aux opérations du projet. Le bouton de gestion séparé et sa
-fenêtre de sélection ont été retirés. Dans la fiche Opération en Mer, la section
-**Documents** apparaît sous **1 Armement** ; ses liens restent consultables
-dans les fiches signées ou en lecture seule.
+fenêtre de sélection ont été retirés. Les colonnes d'action mesurent 80 et 104 px
+sur ordinateur pour laisser davantage de place aux noms complets des fichiers.
+Les espacements sont réduits et les cibles tactiles restent de 44 px.
+
+Dans la fiche Opération en Mer, **Documents** est un accès du menu de gauche,
+immédiatement sous **1 Armement**. Il ouvre sa propre vue de consultation et ne
+constitue pas une cinquième étape métier. Les quatre étapes gardent leurs numéros,
+leur complétude et leurs règles de signature. La navigation conserve la saisie ;
+Précédent retourne à Armement et Suivant passe aux Contrôles avant appareillage.
+Sans projet sélectionné, un message invite à le choisir dans Armement. Les pièces
+restent consultables dans les fiches signées ou en lecture seule.
 
 ## Comportement
 
@@ -75,7 +83,7 @@ fixture ni sélection de projet existant n'a été créée.
 Les tests React et requêtes couvrent les cases en ligne, le défaut décoché,
 l'enregistrement immédiat, le clavier, les refus, les mises à jour concurrentes,
 les changements de contexte, l'ordre des colonnes, l'exclusion des offres et la
-position de Documents sous Armement. La préversion utilise ses propres documents
+position de Documents dans le menu sous Armement. La préversion utilise ses propres documents
 fictifs et conserve les choix en mémoire.
 
 L'[information du linter RLS sans policy](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)
