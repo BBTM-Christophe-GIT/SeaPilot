@@ -96,7 +96,7 @@ export function seaOperationPreviewRpc(name: string, args: Record<string, unknow
       const current = projectId ? projectPorts.get(projectId) : undefined;
       if (!baseline || !current || draft.transit || baseline.projectId !== projectId
         || typeof baseline.departurePort !== 'string' || typeof baseline.arrivalPort !== 'string') return fail('Les ports du projet reçus sont invalides.');
-      const previous = record?.draft.planning?.projectId === projectId ? record.draft.vessel : baseline;
+      const previous = record && record.draft.planning?.projectId === projectId ? record.draft.vessel : baseline;
       const changes = (['departurePort', 'arrivalPort'] as const).filter(key => draft.vessel[key] !== previous[key]);
       if (changes.some(key => current[key] !== baseline[key] && current[key] !== draft.vessel[key])) return fail('Les ports du projet ont été modifiés. Rechargez la fiche.');
       nextPorts = { projectId: projectId!, ...current };
