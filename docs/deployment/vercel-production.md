@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.80.19`, build `2026-10-30.001`, corrige les heures d'accostage et
+d'appareillage des éléments de facturation pour tous les projets et toutes les
+périodes. Les heures saisies dans les DPR sont conservées en heure de Paris ;
+les anciens horodatages UTC importés sont convertis avec `Europe/Paris`, selon
+l'heure d'été ou d'hiver. Aucune migration ni nouvelle dépendance n'est requise.
+Voir [projects-billing-paris-time.md](./projects-billing-paris-time.md).
+
 Version `3.78.0`, build `2026-10-26.005`, ajoute « À refacturer sur le mois »
 dans l'ajout et la modification d'un frais imputable du module Projet. Le mois
 de facturation devient sélectionnable indépendamment de la date de facture ;
