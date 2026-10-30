@@ -8,6 +8,8 @@ interface Props {
   document: ProjectDocumentFileReference;
   /** Source revision/hash/date supplied by the owning document record. */
   revisionKey: string;
+  /** Other role-gated modules can authorize and load bytes through their own RPC. */
+  loadBlob?: (signal: AbortSignal) => Promise<Blob>;
 }
 
 interface CacheEntry {
@@ -17,8 +19,16 @@ interface CacheEntry {
 }
 // Private bytes live only while consumers are mounted. Different clients never share content.
 const clientThumbnails = new WeakMap<SupabaseClient, Map<string, CacheEntry>>();
+const loaderIdentities = new WeakMap<NonNullable<Props['loadBlob']>, number>();
+let lastLoaderIdentity = 0;
+function loaderKey(loader?: Props['loadBlob']) {
+  if (!loader) return 'project-storage';
+  let identity = loaderIdentities.get(loader);
+  if (identity === undefined) { identity = ++lastLoaderIdentity; loaderIdentities.set(loader, identity); }
+  return `authorized-loader:${identity}`;
+}
 
-function acquireThumbnail(client: SupabaseClient, file: ProjectDocumentFileReference, key: string) {
+function acquireThumbnail(client: SupabaseClient, file: ProjectDocumentFileReference, key: string, loader?: Props['loadBlob']) {
   let cache = clientThumbnails.get(client);
   if (!cache) { cache = new Map(); clientThumbnails.set(client, cache); }
   let entry = cache.get(key);
@@ -26,7 +36,7 @@ function acquireThumbnail(client: SupabaseClient, file: ProjectDocumentFileRefer
     const controller = new AbortController();
     const promise = file.fileSizeBytes && file.fileSizeBytes > PROJECT_THUMBNAIL_FILE_LIMIT
       ? Promise.reject(new Error('Ce fichier dépasse la taille maximale de prévisualisation.'))
-      : loadProjectDocumentBlob(client, file, controller.signal)
+      : Promise.resolve().then(() => loader ? loader(controller.signal) : loadProjectDocumentBlob(client, file, controller.signal))
         .then(blob => renderProjectDocumentThumbnail(blob, file.fileName, file.mimeType || blob.type, controller.signal));
     entry = { controller, promise, users: 0 };
     cache.set(key, entry);
@@ -40,11 +50,11 @@ function acquireThumbnail(client: SupabaseClient, file: ProjectDocumentFileRefer
 }
 
 /** Passive content: the owning card supplies the button and its accessible name. */
-export function ProjectDocumentThumbnail({ client, document, revisionKey }: Props) {
+export function ProjectDocumentThumbnail({ client, document, revisionKey, loadBlob }: Props) {
   const target = useRef<HTMLSpanElement>(null);
   const [visibility, setVisibility] = useState<{ client: SupabaseClient; key: string } | null>(null);
   const [preview, setPreview] = useState<{ client: SupabaseClient; key: string; url?: string; failed?: boolean } | null>(null);
-  const key = JSON.stringify([revisionKey, document.fileName, document.mimeType, document.storageBucket, document.storagePath, document.sharePointWebUrl, document.fileSizeBytes]);
+  const key = JSON.stringify([loaderKey(loadBlob), revisionKey, document.fileName, document.mimeType, document.storageBucket, document.storagePath, document.sharePointWebUrl, document.fileSizeBytes]);
   const visible = visibility?.client === client && visibility.key === key;
   const current = preview?.client === client && preview.key === key ? preview : null;
   const extension = document.fileName.split('.').at(-1)?.toUpperCase() || 'FICHIER';
@@ -64,7 +74,7 @@ export function ProjectDocumentThumbnail({ client, document, revisionKey }: Prop
     if (!visible) return;
     let active = true;
     let url = '';
-    const acquired = acquireThumbnail(client, document, key);
+    const acquired = acquireThumbnail(client, document, key, loadBlob);
     void acquired.promise.then(blob => {
       if (!active) return;
       url = URL.createObjectURL(blob);

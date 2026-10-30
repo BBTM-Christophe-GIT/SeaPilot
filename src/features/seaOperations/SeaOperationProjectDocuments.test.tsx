@@ -6,6 +6,7 @@ import { SeaOperationProjectDocuments } from './SeaOperationProjectDocuments';
 import { createSeaOperationProjectDocumentUrl, fetchSeaOperationProjectDocuments, type SeaOperationProjectDocument } from './seaOperationDocumentQueries';
 
 vi.mock('./seaOperationDocumentQueries', () => ({ fetchSeaOperationProjectDocuments: vi.fn(), createSeaOperationProjectDocumentUrl: vi.fn() }));
+vi.mock('../projects/ProjectDocumentThumbnail', () => ({ ProjectDocumentThumbnail: () => <span aria-hidden="true">Miniature du document</span> }));
 
 const client = {} as SupabaseClient;
 const documentFixture = (overrides: Partial<SeaOperationProjectDocument> = {}): SeaOperationProjectDocument => ({
@@ -31,8 +32,9 @@ describe('read-only Sea Operation project documents', () => {
     expect(section.closest('details')).toBeNull();
     expect(await screen.findByText('Plan de prévention')).toBeInTheDocument();
     expect(fetchSeaOperationProjectDocuments).toHaveBeenCalledWith(client, '501');
-    expect(screen.getByText('1 document')).toBeInTheDocument();
-    expect(screen.getByText('Sécurité · Préparation · Plan de prévention.pdf')).toBeInTheDocument();
+    expect(screen.getAllByText('1 document')).toHaveLength(2);
+    expect(screen.getByRole('region', { name: 'Sécurité' })).toBeInTheDocument();
+    expect(screen.getByText('Préparation')).toBeInTheDocument();
     expect(screen.queryByText(/Offre commerciale|Facturation|storage_path|storage_bucket/i)).not.toBeInTheDocument();
     expect(document.querySelector('a[href], iframe, img')).toBeNull();
     expect(section.querySelector('summary')).toBeNull();

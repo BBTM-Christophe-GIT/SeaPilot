@@ -1,11 +1,45 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
-import { createSeaOperationProjectDocumentUrl, fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries';
+import { createSeaOperationProjectDocumentUrl, fetchSeaOperationProjectDocuments, loadSeaOperationProjectDocumentBlob, type SeaOperationProjectDocument } from './seaOperationDocumentQueries';
+
+const storageMocks = vi.hoisted(() => ({ adapter: vi.fn(), download: vi.fn() }));
+vi.mock('../projects/projectDriveStorage', () => ({ projectDriveStorage: (client: unknown, bucket: string) => { storageMocks.adapter(client, bucket); return { download: storageMocks.download }; } }));
 
 const document = { id: 'generated:41', project_id: '12', title: 'Procédure du chantier', file_name: 'procedure.pdf', mime_type: 'application/pdf',
   category_label: 'HSE', subcategory_label: 'Procédure', created_at: '2026-10-22T08:00:00Z', expires_on: null };
 
 describe('sea operation project document queries', () => {
+  it('reauthorizes bytes through the Sea RPC before passive storage reads and never launches a local connector', async () => {
+    storageMocks.adapter.mockClear(); storageMocks.download.mockClear();
+    const rpc = vi.fn().mockResolvedValue({ data: { bucket: 'project-files', path: 'projects/12/attachments/plan.pdf' }, error: null });
+    const client = { rpc } as unknown as SupabaseClient;
+    const file: SeaOperationProjectDocument = { id: 'project:41', projectId: '12', title: 'Plan', fileName: 'plan.pdf', mimeType: 'application/pdf', categoryLabel: 'HSE', subcategoryLabel: '', createdAt: '2026-10-30', expiresOn: null };
+    const bytes = new Blob(['authorized private bytes']); storageMocks.download.mockResolvedValue({ data: bytes, error: null });
+    const signal = new AbortController().signal;
+    const result = await loadSeaOperationProjectDocumentBlob(client, '12', file, signal);
+    expect(rpc).toHaveBeenCalledWith('sea_operation_project_document_access', { p_project_id: '12', p_document_id: 'project:41' });
+    expect(storageMocks.adapter).toHaveBeenCalledWith(client, 'project-files');
+    expect(rpc.mock.invocationCallOrder[0]).toBeLessThan(storageMocks.adapter.mock.invocationCallOrder[0]);
+    expect(storageMocks.download).toHaveBeenCalledWith('projects/12/attachments/plan.pdf', signal, { allowLocalDrive: false });
+    expect(await result.text()).toBe('authorized private bytes'); expect(result.type).toBe('application/pdf');
+  });
+
+  it('does not read bytes on an access denial, mismatched project or aborted request', async () => {
+    storageMocks.adapter.mockClear(); storageMocks.download.mockClear();
+    const denial = { code: '42501', message: 'Document non autorisé.' };
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: denial });
+    const client = { rpc } as unknown as SupabaseClient;
+    const file = { id: 'project:41', projectId: '12' } as SeaOperationProjectDocument;
+    await expect(loadSeaOperationProjectDocumentBlob(client, '12', file)).rejects.toBe(denial);
+    expect(storageMocks.adapter).not.toHaveBeenCalled();
+    rpc.mockClear();
+    await expect(loadSeaOperationProjectDocumentBlob(client, '13', file)).rejects.toThrow('ne correspond pas');
+    expect(rpc).not.toHaveBeenCalled();
+    const controller = new AbortController(); controller.abort();
+    await expect(loadSeaOperationProjectDocumentBlob(client, '12', file, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(rpc).not.toHaveBeenCalled(); expect(storageMocks.download).not.toHaveBeenCalled();
+  });
+
   it('requests only the selected project projection and maps its operational metadata', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: [document], error: null });
     const rows = await fetchSeaOperationProjectDocuments({ rpc } as unknown as SupabaseClient, '12');

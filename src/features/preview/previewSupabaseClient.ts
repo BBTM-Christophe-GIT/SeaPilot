@@ -10,7 +10,7 @@ import { QHSE_POLICY_ATTACHMENT_MIME_TYPES } from '../qhsePolicy/qhsePolicyAttac
 import { isQhsePolicyId, type QhsePolicyOwnerKind } from '../qhsePolicy/qhsePolicyModel';
 import { normalizeQhsePolicyAxisIconKey, resolveQhsePolicyAxisIcon } from '../qhsePolicy/qhsePolicyIcons';
 import { DEFAULT_PROCEDURE_TAGS } from '../procedures/procedureTagCatalogue';
-import { seaOperationPreviewRpc } from '../seaOperations/seaOperationPreview';
+import { isSeaOperationPreviewProject, seaOperationPreviewDocumentLocationVisible, seaOperationPreviewRpc } from '../seaOperations/seaOperationPreview';
 import { GOURY_WEATHER_MATRIX, isVesselWeatherMatrix, cloneVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { parseProjectLocationPlan } from '../projects/projectLocation';
 import { DEFAULT_PROJECT_DOCUMENT_CATEGORIES, validateProjectDocumentCategories } from '../projects/projectDocumentCategories';
@@ -18,6 +18,15 @@ import { DEFAULT_PROJECT_DOCUMENT_CATEGORIES, validateProjectDocumentCategories 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
 };
+const previewDeletedProjectDocuments = new Map<string, { projectId: number; expected: Record<string, unknown>; deletedAt: string }>();
+const previewDocumentTables: Record<string, string> = { generated: 'project_generated_documents', project: 'project_documents', contract: 'contract_documents' };
+function visiblePreviewRows(table: string): unknown[] {
+  const kind = Object.entries(previewDocumentTables).find(([, name]) => name === table)?.[0];
+  if (!kind) return PREVIEW_ROWS[table];
+  const rows = PREVIEW_ROWS[table];
+  const visible = rows.filter(row => !previewDeletedProjectDocuments.has(`${kind}:${(row as Record<string, unknown>).id}`));
+  return visible.length === rows.length ? rows : visible;
+}
 const previewOrgData = structuredClone(ORG_HIERARCHY_DEMO);
 const PREVIEW_FAVORITES_KEY = 'seapilot:preview:project-favorites:v1';
 let previewFavoriteIds: number[] = [];
@@ -1910,7 +1919,7 @@ function previewProjectDocumentCategoryAllowed(key: unknown): boolean {
 }
 
 function previewProjectOperationalDocumentCandidates(projectId: number) {
-  const generated = previewRows('project_generated_documents').filter(document => Number(document.project_id) === projectId
+  const generated = previewRows('project_generated_documents').filter(document => !previewDeletedProjectDocuments.has(`generated:${document.id}`) && Number(document.project_id) === projectId
     && !previewDocumentOrigin('generated', document)
     && ['operation_attachment', 'project_attachment'].includes(String(document.document_type))
     && (document.document_type === 'operation_attachment' && document.category_key == null || previewProjectDocumentCategoryAllowed(document.category_key))
@@ -1923,7 +1932,7 @@ function previewProjectOperationalDocumentCandidates(projectId: number) {
       subcategory_label: previewProjectDocumentCategories.get(String(document.subcategory_key))?.label || '',
       created_at: String(document.created_at), expires_on: document.expires_on ?? null,
     }));
-  const imported = previewRows('project_documents').filter(document => Number(document.project_id) === projectId
+  const imported = previewRows('project_documents').filter(document => !previewDeletedProjectDocuments.has(`project:${document.id}`) && Number(document.project_id) === projectId
     && document.is_folder === false && !previewDocumentOrigin('project', document) && previewProjectDocumentCategoryAllowed(document.category_key)
     && (document.subcategory_key == null || previewProjectDocumentCategories.get(String(document.subcategory_key))?.parentKey === document.category_key
       && previewProjectDocumentCategoryAllowed(document.subcategory_key)))
@@ -2283,6 +2292,35 @@ function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  if (functionName === 'projects_document_deletion_snapshot' || functionName === 'projects_delete_document') {
+    if (isSeaOperationPreviewProject(args.target_project_id)) return createPreviewQuery(seaOperationPreviewRpc(functionName, args));
+    const failure = (code: string, message: string) => createPreviewQuery({ data: null, error: { code, message } });
+    const projectId = Number(args.target_project_id);
+    const project = previewRows('projects').find(row => Number(row.id) === projectId);
+    const match = typeof args.target_document_id === 'string' ? /^(generated|project|contract):([1-9][0-9]{0,18})$/.exec(args.target_document_id) : null;
+    if (!Number.isSafeInteger(projectId) || !project || project.archived_at || !match) return failure('42501', 'Le document du projet est inaccessible.');
+    const documentId = String(args.target_document_id);
+    const document = previewRows(previewDocumentTables[match[1]]).find(row => String(row.id) === match[2] && Number(row.project_id) === projectId && !row.is_folder);
+    if (!document) return failure('42501', 'Le document du projet est inaccessible.');
+    const text = (value: unknown) => typeof value === 'string' ? value.trim() || null : null;
+    const expected = { file_name: text(document.file_name) || text(document.title) || 'Document sans nom', category_key: text(document.category_key),
+      subcategory_key: text(document.subcategory_key), storage_bucket: text(document.storage_bucket), storage_path: text(document.storage_path),
+      source_url: text(match[1] === 'generated' ? document.sharepoint_web_url : document.file_url),
+      file_size_bytes: typeof document.file_size_bytes === 'number' ? document.file_size_bytes : null,
+      modified_at: text(match[1] === 'generated' ? document.created_at : document.source_modified_at) };
+    const tombstone = previewDeletedProjectDocuments.get(documentId);
+    if (functionName === 'projects_document_deletion_snapshot') return tombstone ? failure('42501', 'Ce document a déjà été supprimé.')
+      : createPreviewQuery({ data: { project_id: String(projectId), document_id: documentId, expected_document: expected }, error: null });
+    const comparison = tombstone?.expected || expected;
+    const requested = args.target_expected_document;
+    if (!requested || typeof requested !== 'object' || Array.isArray(requested)
+      || Object.keys(comparison).some(key => (requested as Record<string, unknown>)[key] !== comparison[key as keyof typeof comparison])) return failure('40001', 'Le document a changé. Actualisez la liste avant de le supprimer.');
+    const deletedAt = tombstone?.deletedAt || new Date().toISOString();
+    previewDeletedProjectDocuments.set(documentId, { projectId, expected: { ...comparison }, deletedAt });
+    const selectedDocuments = previewProjectDocumentSelections.get(projectId);
+    if (selectedDocuments) previewProjectDocumentSelections.set(projectId, new Set([...selectedDocuments].filter(id => id !== documentId)));
+    return createPreviewQuery({ data: { project_id: String(projectId), document_id: documentId, deleted_at: deletedAt }, error: null });
+  }
   if (functionName === 'projects_set_document_category') {
     const failure = (code: string, message: string) => createPreviewQuery({ data: null, error: { code, message } });
     const projectId = Number(args.target_project_id);
@@ -2292,7 +2330,7 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     const kind = match[1] as 'generated' | 'project' | 'contract';
     const table = { generated: 'project_generated_documents', project: 'project_documents', contract: 'contract_documents' }[kind];
     const document = previewRows(table).find(row => String(row.id) === match[2] && Number(row.project_id) === projectId && !row.is_folder);
-    if (!document) return failure('42501', 'Le document du projet est inaccessible.');
+    if (!document || previewDeletedProjectDocuments.has(String(args.target_document_id))) return failure('42501', 'Le document du projet est inaccessible.');
     const category = previewProjectDocumentCategories.get(String(args.target_category_key));
     const subcategory = args.target_subcategory_key == null ? null : previewProjectDocumentCategories.get(String(args.target_subcategory_key));
     const active = (key: string) => previewRows('project_document_categories').some(row => row.category_key === key && row.active !== false);
@@ -2331,7 +2369,7 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   }
   // The pharmacy editor owns its synthetic register; the shared home never reads real inventory.
   if (functionName === 'pharmacy_notifications') return createPreviewQuery({ data: [], error: null });
-  if (functionName === 'document_blob_lookup') return createPreviewQuery({ data: null, error: null });
+  if (functionName === 'document_blob_lookup' || functionName === 'document_drive_lookup') return createPreviewQuery({ data: null, error: null });
   if (functionName === 'document_blob_lookup_batch') {
     const paths = Array.isArray(args.target_paths) ? args.target_paths : [];
     return createPreviewQuery({ data: paths.map((path) => ({ path, document: null, error: null })), error: null });
@@ -3284,7 +3322,7 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
 
 export const previewSupabaseClient = {
   from: (table: string) => table === 'vessels' ? createPreviewVesselQuery() : table in PREVIEW_ROWS
-    ? createPreviewQuery({ data: PREVIEW_ROWS[table], error: null }, table === 'useful_links' || table === 'useful_link_categories')
+    ? createPreviewQuery({ data: visiblePreviewRows(table), error: null }, table === 'useful_links' || table === 'useful_link_categories')
     : createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR }),
   rpc: (functionName: string, args?: Record<string, unknown>) => previewRpc(functionName, args),
   auth: {
@@ -3311,7 +3349,8 @@ export const previewSupabaseClient = {
   },
   storage: {
     from: (bucket: string) => ({
-      createSignedUrl: (path: string) => Promise.resolve({
+      createSignedUrl: (path: string) => Promise.resolve(!seaOperationPreviewDocumentLocationVisible(bucket, path)
+        ? { data: null, error: { code: '42501', message: 'Document de démonstration supprimé.' } } : {
         data: {
           signedUrl: previewStorageAssetUrl(bucket, path),
         },
@@ -3321,6 +3360,7 @@ export const previewSupabaseClient = {
         data: paths.map((path) => ({ path, signedUrl: path.startsWith('demo/') ? `/${path}` : '' })), error: null,
       }),
       download: async (path: string) => {
+        if (!seaOperationPreviewDocumentLocationVisible(bucket, path)) return { data: null, error: { code: '42501', message: 'Document de démonstration supprimé.' } };
         if (bucket === 'qhse-policy-attachments') {
           const upload = Array.from(previewQhseUploads.values()).find((file) => file.path === path);
           return upload?.blob ? { data: upload.blob, error: null } : { data: null, error: PREVIEW_WRITE_ERROR };

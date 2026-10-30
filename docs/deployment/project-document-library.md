@@ -22,6 +22,16 @@ Le client confirme une réponse d’enregistrement perdue par une lecture RLS du
 
 L’ancien éditeur de projet respecte aussi un catalogue confirmé vide. Les catégories ne sont pas recréées implicitement lors de la consultation. Les offres et contrats émis directement au niveau d’un projet restent visibles même sans opération liée.
 
+## Supprimer un document
+
+Chaque chip propose une corbeille aux gestionnaires du projet (Admin et Direction). Elle est absente pour les profils lecteurs et les projets archivés. La confirmation **Supprimer le document ?** charge d’abord la version actuelle du document auprès du serveur ; le bouton de suppression reste désactivé tant que cette lecture n’est pas confirmée. **Annuler** ne modifie rien. Une lecture refusée peut être relancée avec **Réessayer**, sans déclencher de suppression.
+
+La suppression retire uniquement l’entrée documentaire confirmée de la fiche Projet et d’**Opération en Mer**. Les fichiers, leur historique et les références partagées restent conservés : aucun octet Blob, Drive ou Storage n’est effacé. Les documents de facturation ou autres références encore actives sur les mêmes octets conservent leur propre accès. La sélection de téléchargement et les documents affichés sont mis à jour après confirmation du serveur, sans rechargement global du dossier.
+
+Le serveur vérifie le rôle réel, la société, le projet actif, l’identifiant avec sa provenance (`generated`, `project` ou `contract`) et les métadonnées de la version confirmée. Une pièce modifiée entre la confirmation et la requête n’est pas supprimée. En cas de refus, la ligne et sa sélection restent en place. Un changement de projet, de compte, de client, de permission ou de version source ferme la confirmation et ignore ses réponses tardives.
+
+La migration `20261030070155_project_document_soft_delete.sql` ajoute la suppression logique auditée et ses contrôles de lecture. Les accès nouvellement demandés à une référence supprimée sont refusés, sauf si une référence métier encore active autorise le même fichier partagé. Les liens privés déjà émis conservent leur durée de validité limitée.
+
 ## Catégories communes aux projets
 
 Le crayon près du nom de chaque fichier permet aussi de [modifier sa catégorie et
@@ -34,11 +44,12 @@ Un chargement du catalogue refusé ou indisponible bloque les ajouts et sa gesti
 
 ## Vérification
 
-Les tests de `ProjectDocumentLibrary` couvrent le circuit d’ajout existant, classification/échéance, double soumission, changements de contexte, échecs, catalogue vide ou refusé, filtres historiques et gestion commune. Le catalogue complet est transmis au rendu pour respecter les libellés et l’ordre des catégories. Les tests de `ProjectDocumentChips` et `ProjectsPage` vérifient le regroupement des différentes sources, le déplacement immédiat d’une chip après classification, ses vignettes, ses actions, la sélection de fichiers et catégories pour les téléchargements, la sélection Opération en Mer, l’apparition immédiate du document et son lecteur privé. Les tests des téléchargements et vignettes couvrent les octets privés, les erreurs groupées, le ZIP complet, les aperçus de contenu et leur annulation. Les contrôles accessibles aux fixtures Marin et Capitaine restent couverts. Ces fixtures et les captures locales utilisent des données fictives ; les droits réels restent imposés par les RPC/RLS serveur.
+Les tests de `ProjectDocumentLibrary` couvrent le circuit d’ajout existant, classification/échéance, double soumission, changements de contexte, échecs, catalogue vide ou refusé, filtres historiques et gestion commune. Le catalogue complet est transmis au rendu pour respecter les libellés et l’ordre des catégories. Les tests de `ProjectDocumentChips` et `ProjectsPage` vérifient le regroupement des différentes sources, le déplacement immédiat d’une chip après classification, ses vignettes, ses actions, la sélection de fichiers et catégories pour les téléchargements, la sélection Opération en Mer, l’apparition immédiate du document et son lecteur privé. Les tests des téléchargements et vignettes couvrent les octets privés, les erreurs groupées, le ZIP complet, les aperçus de contenu et leur annulation. Les contrôles accessibles aux fixtures Marin et Capitaine restent couverts. Les tests de suppression couvrent la confirmation de version, les refus, les doubles clics, les changements de contexte et les trois provenances documentaires partageant un même identifiant numérique. Ces fixtures et les captures locales utilisent des données fictives ; les droits réels restent imposés par les RPC/RLS serveur.
 
 ```powershell
 corepack pnpm test src/features/projects/ProjectDocumentChips.test.tsx src/features/projects/ProjectDocumentLibrary.test.tsx src/features/projects/ProjectsPage.test.tsx --pool=threads --maxWorkers=1
 corepack pnpm test src/features/projects/projectDocumentAssets.test.ts src/features/projects/projectDocumentThumbnailRenderer.test.ts src/features/projects/ProjectDocumentThumbnail.test.tsx --pool=threads --maxWorkers=1
+corepack pnpm test src/features/projects/ProjectDocumentDeleteDialog.test.tsx src/features/projects/projectDocumentDeletion.test.ts --pool=threads --maxWorkers=1
 corepack pnpm build
 ```
 

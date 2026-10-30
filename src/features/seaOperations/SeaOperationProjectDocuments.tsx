@@ -3,21 +3,26 @@ import { ExternalLink, FileText } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AppDialog } from '../../components/AppDialog';
 import { createSeaOperationProjectDocumentUrl, fetchSeaOperationProjectDocuments, type SeaOperationProjectDocument } from './seaOperationDocumentQueries';
+import { SeaOperationDocumentCards } from './SeaOperationDocumentCards';
+import './seaOperationDocumentLibrary.css';
 
 interface SeaOperationProjectDocumentsProps {
   client: SupabaseClient;
   projectId: string;
   disabled?: boolean;
   showWithoutProject?: boolean;
+  accessKey?: string;
+  canManage?: boolean;
+  onCountChange?: (count: number | null) => void;
 }
 
 const message = (error: unknown) => error instanceof Error ? error.message : typeof error === 'object' && error && 'message' in error ? String(error.message) : 'Impossible de consulter les documents du projet. Réessayez.';
 
-/** Read-only project documents: access is checked again when opening each file. */
-export function SeaOperationProjectDocuments({ client, projectId, disabled = false, showWithoutProject = false }: SeaOperationProjectDocumentsProps) {
+/** Sea-only catalogue and byte access; optional manager deletion keeps its own server guard. */
+export function SeaOperationProjectDocuments({ client, projectId, disabled = false, showWithoutProject = false, accessKey = '', canManage = false, onCountChange }: SeaOperationProjectDocumentsProps) {
   const titleId = useId();
   const [attempt, setAttempt] = useState(0);
-  const context = useMemo(() => ({ client, projectId, attempt }), [client, projectId, attempt]);
+  const context = useMemo(() => ({ client, projectId, attempt, accessKey, canManage }), [client, projectId, attempt, accessKey, canManage]);
   const currentContext = useRef(context);
   currentContext.current = context;
   const mounted = useRef(false);
@@ -33,7 +38,8 @@ export function SeaOperationProjectDocuments({ client, projectId, disabled = fal
   useEffect(() => {
     if (!projectId) return;
     let active = true;
-    void fetchSeaOperationProjectDocuments(client, projectId).then((documents) => {
+    void Promise.resolve().then(() => fetchSeaOperationProjectDocuments(client, projectId)).then((documents) => {
+      if (!Array.isArray(documents)) throw new Error('La réponse des documents du projet est invalide.');
       if (active) setCatalog({ context, documents, error: '' });
     }).catch((error: unknown) => {
       if (active) setCatalog({ context, documents: [], error: message(error) });
@@ -43,6 +49,7 @@ export function SeaOperationProjectDocuments({ client, projectId, disabled = fal
 
   const currentCatalog = catalog?.context === context ? catalog : null;
   const currentViewer = viewer?.context === context ? viewer : null;
+  useEffect(() => { onCountChange?.(!projectId ? 0 : currentCatalog && !currentCatalog.error ? currentCatalog.documents.length : null); }, [currentCatalog, onCountChange, projectId]);
 
   async function openDocument(document: SeaOperationProjectDocument) {
     if (disabled || document.projectId !== projectId) return;
@@ -66,12 +73,12 @@ export function SeaOperationProjectDocuments({ client, projectId, disabled = fal
   const isPdf = !externalReader && currentViewer?.document.mimeType === 'application/pdf';
   const isImage = Boolean(!externalReader && currentViewer && /^image\/(png|jpe?g|webp|gif|avif)$/i.test(currentViewer.document.mimeType));
 
-  return <section aria-labelledby={titleId} className="so-project-documents">
+  return <section aria-labelledby={titleId} className="so-project-document-library project-documents-workspace">
     <header><FileText aria-hidden="true" size={17} /><h3 id={titleId} tabIndex={-1}>Documents</h3>{currentCatalog && !currentCatalog.error ? <small>{currentCatalog.documents.length} document{currentCatalog.documents.length > 1 ? 's' : ''}</small> : null}</header>
-    {!projectId ? <p>Sélectionnez un projet dans Armement pour consulter ses documents.</p> : !currentCatalog ? <p role="status">Chargement des documents du projet…</p> : currentCatalog.error ? <div role="alert"><p>{currentCatalog.error}</p><button className="sp-button sp-button--secondary" disabled={disabled} onClick={() => setAttempt((value) => value + 1)} type="button">Réessayer les documents</button></div> : currentCatalog.documents.length ? <ul>{currentCatalog.documents.map((document) => <li key={document.id}>
-      <div><strong>{document.title || document.fileName}</strong><small>{[document.categoryLabel, document.subcategoryLabel, document.fileName].filter(Boolean).join(' · ')}</small></div>
-      <button aria-label={`Ouvrir : ${document.title || document.fileName}`} className="sp-button sp-button--secondary" disabled={disabled} onClick={() => void openDocument(document)} type="button">Ouvrir</button>
-    </li>)}</ul> : <p>Aucun document disponible pour ce projet.</p>}
+    {!projectId ? <p>Sélectionnez un projet dans Armement pour consulter ses documents.</p> : !currentCatalog ? <p role="status">Chargement des documents du projet…</p> : currentCatalog.error ? <div role="alert"><p>{currentCatalog.error}</p><button className="sp-button sp-button--secondary" disabled={disabled} onClick={() => setAttempt((value) => value + 1)} type="button">Réessayer les documents</button></div> : currentCatalog.documents.length ? <SeaOperationDocumentCards
+      client={client} projectId={projectId} accessKey={accessKey} documents={currentCatalog.documents} disabled={disabled} canManage={canManage} onOpen={document => { void openDocument(document); }}
+      onDeleted={documentId => { setCatalog(current => current?.context === context ? { ...current, documents: current.documents.filter(document => document.id !== documentId) } : current); if (currentViewer?.document.id === documentId) closeViewer(); }}
+    /> : <p>Aucun document disponible pour ce projet.</p>}
     {currentViewer ? <div className="so-project-document-modal" onKeyDown={(event) => event.stopPropagation()}>
       <AppDialog title={currentViewer.document.title || currentViewer.document.fileName} eyebrow="Documents du projet" onClose={closeViewer} size="xl" footer={<div className="app-dialog__actions">{currentViewer.url ? <a className="sp-button sp-button--secondary" href={currentViewer.url} rel="noopener noreferrer" target="_blank"><ExternalLink aria-hidden="true" size={16} />Ouvrir dans un nouvel onglet</a> : null}<button className="sp-button sp-button--secondary" onClick={closeViewer} type="button">Fermer le document</button></div>}>
         <div className="so-project-document-viewer">

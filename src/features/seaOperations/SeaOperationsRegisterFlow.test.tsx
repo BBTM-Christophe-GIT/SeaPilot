@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
@@ -9,10 +9,14 @@ import { emptySeaOperation } from './seaOperationModel';
 import { fetchSeaOperationData, fetchSeaOperationDetail, saveSeaOperation, type SeaOperationData, type SeaOperationRecord } from './seaOperationQueries';
 import { captureSeaOperationValidationWeather } from './seaOperationValidationWeather';
 import { captureSeaOperationValidationUkc } from './seaOperationValidationUkc';
+import { fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries';
+import type { RoleKey } from '../permissions/roles';
 
 type MapProps = ComponentProps<typeof SeaOperationRegisterMap>;
 const mapSpy = vi.hoisted(() => vi.fn());
 vi.mock('./seaOperationQueries', () => ({ fetchSeaOperationData: vi.fn(), fetchSeaOperationDetail: vi.fn(), saveSeaOperation: vi.fn() }));
+vi.mock('./seaOperationDocumentQueries', () => ({ fetchSeaOperationProjectDocuments: vi.fn(), createSeaOperationProjectDocumentUrl: vi.fn(), loadSeaOperationProjectDocumentBlob: vi.fn() }));
+vi.mock('../projects/ProjectDocumentThumbnail', () => ({ ProjectDocumentThumbnail: () => <span aria-hidden="true">Miniature</span> }));
 vi.mock('./seaOperationValidationWeather', () => ({ captureSeaOperationValidationWeather: vi.fn() }));
 vi.mock('./seaOperationValidationUkc', async original => ({ ...await original<typeof import('./seaOperationValidationUkc')>(), captureSeaOperationValidationUkc: vi.fn() }));
 vi.mock('./SeaOperationRegisterMap', () => ({ SeaOperationRegisterMap: (props: MapProps) => {
@@ -28,12 +32,13 @@ function fixture(id: string, canEdit = true): SeaOperationRecord {
 const first = fixture('A'), second = fixture('B');
 const props = () => mapSpy.mock.lastCall![0] as MapProps;
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(accept => { resolve = accept; }); return { promise, resolve }; }
-function mount() {
-  const client = { fixture: 'real-captain' } as unknown as SupabaseClient;
-  const data: SeaOperationData = { companyId: 1, actorId: 'captain', actorName: 'Capitaine', records: [first, second], vessels: [{ id: 12, name: 'GOURY', lengthOverall: '36', registrationImo: '', maxSpeedKnots: 12, canSign: false }] };
+function mount(roles?: RoleKey[]) {
+  const actor = roles?.[0] || 'captain';
+  const client = { fixture: `authenticated-${actor}` } as unknown as SupabaseClient;
+  const data: SeaOperationData = { companyId: 1, actorId: actor, actorName: actor, records: [first, second], vessels: [{ id: 12, name: 'GOURY', lengthOverall: '36', registrationImo: '', maxSpeedKnots: 12, canSign: false }] };
   vi.mocked(fetchSeaOperationData).mockResolvedValue(data);
   vi.mocked(fetchSeaOperationDetail).mockImplementation(async (_client, id) => id === first.id ? structuredClone(first) : structuredClone(second));
-  const app = (value: SupabaseClient) => <MemoryRouter><Routes><Route element={<Outlet context={{ client: value }} />}><Route path="/" element={<SeaOperationsPage />} /></Route></Routes></MemoryRouter>;
+  const app = (value: SupabaseClient) => <MemoryRouter><Routes><Route element={<Outlet context={{ client: value, roles }} />}><Route path="/" element={<SeaOperationsPage />} /></Route></Routes></MemoryRouter>;
   const result = render(app(client));
   return { client, data, changeClient: (next: SupabaseClient) => result.rerender(app(next)) };
 }
@@ -41,12 +46,31 @@ async function select(id = 'A') { fireEvent.click(await screen.findByRole('butto
 
 beforeEach(() => {
   vi.resetAllMocks(); sessionStorage.clear();
+  vi.mocked(fetchSeaOperationProjectDocuments).mockResolvedValue([]);
   vi.mocked(captureSeaOperationValidationWeather).mockImplementation(async (_client, draft) => draft);
   vi.mocked(captureSeaOperationValidationUkc).mockImplementation(async (_client, draft) => draft);
 });
 afterEach(() => vi.restoreAllMocks());
 
 describe('Operation register map integration', () => {
+  it.each(['capitaine', 'marin', 'armement', 'admin', 'direction'] as const)('uses the authenticated %s role for document actions independently of map edit rights', async role => {
+    const { client } = mount([role]);
+    const operation = { ...structuredClone(first), draft: { ...structuredClone(first.draft), planning: { projectId: '501', operationId: '401:12', date: '2026-10-30', captainPersonId: '' } } };
+    vi.mocked(fetchSeaOperationDetail).mockResolvedValue(operation);
+    vi.mocked(fetchSeaOperationProjectDocuments).mockResolvedValue([{ id: 'project:41', projectId: '501', title: 'Plan de prévention', fileName: 'plan.pdf', mimeType: 'application/pdf', categoryLabel: 'HSE', subcategoryLabel: '', createdAt: '', expiresOn: null }]);
+    await select();
+    await waitFor(() => expect(screen.getByRole('tab', { name: /^Documents/ })).toHaveTextContent('Documents1'));
+    fireEvent.click(screen.getByRole('tab', { name: /^Documents/ }));
+    const panel = within(screen.getByRole('tabpanel', { name: /^Documents/ }));
+    expect(fetchSeaOperationProjectDocuments).toHaveBeenCalledWith(client, '501');
+    expect(panel.getByRole('button', { name: 'Ouvrir : Plan de prévention' })).toBeEnabled();
+    expect(panel.getByRole('button', { name: 'Télécharger plan.pdf' })).toBeEnabled();
+    expect(panel.queryByRole('button', { name: /Modifier|Classer/ })).not.toBeInTheDocument();
+    if (role === 'admin' || role === 'direction') expect(panel.getByRole('button', { name: 'Supprimer plan.pdf' })).toBeEnabled();
+    else expect(panel.queryByRole('button', { name: /^Supprimer/ })).not.toBeInTheDocument();
+    expect(operation.canEdit).toBe(true);
+  });
+
   it('selects the fresh authorized operation without opening the form or saving on selection', async () => {
     const { client } = mount(); await select();
     await waitFor(() => expect(props().record?.id).toBe(first.id));

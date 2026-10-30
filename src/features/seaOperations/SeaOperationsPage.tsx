@@ -27,7 +27,7 @@ import { SeaOperationWeatherCard } from './SeaOperationWeatherCard';
 import { SeaOperationRecordedWeather } from './SeaOperationRecordedWeather';
 import { SeaOperationRouteMap } from './SeaOperationRouteMap';
 import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
-import { SeaOperationRegisterMap } from './SeaOperationRegisterMap';
+import { SeaOperationRegisterPane } from './SeaOperationRegisterPane';
 import { SeaOperationEtaPicker } from './SeaOperationEtaPicker';
 import { captureSeaOperationValidationWeather } from './seaOperationValidationWeather';
 import type { SeaPosition } from './seaOperationNavigation';
@@ -156,7 +156,8 @@ function captureRouteEtas(payload: SeaOperationPayload, vessels: SeaOperationDat
 }
 
 export function SeaOperationsPage() {
-  const { client, previewMode = false } = useOutletContext<AppShellOutletContext>();
+  const { client, previewMode = false, roles = [] } = useOutletContext<AppShellOutletContext>();
+  const canManageProjectDocuments = roles.includes('admin') || roles.includes('direction');
   const [data, setData] = useState<SeaOperationData | null>(null);
   const [record, setRecord] = useState<SeaOperationRecord | null>(null);
   const [projectPortsContext, setProjectPortsContext] = useState<ProjectPortsContext | null>(null);
@@ -880,7 +881,7 @@ export function SeaOperationsPage() {
       <div id="sea-operation-register-map" className="so-register-map-pane" aria-busy={mapLoading}>
         {mapLoading ? <p className="so-map-loading" role="status">Chargement de la carte de l’opération…</p> : null}
         {mapError ? <div className="so-alert so-danger" role="alert"><span>{mapError}</span><button type="button" className="so-secondary" onClick={() => { const item = data.records.find(value => value.id === mapSelectionId); if (item) void selectMapOperation(item); }}>Réessayer</button></div> : null}
-        <SeaOperationRegisterMap key={recoveryKey(data)} record={mapRecord} disabled={busy || exporting || mapLoading}
+        <SeaOperationRegisterPane key={`${recoveryKey(data)}:${roles.join(',')}:${mapSelectionId || ''}`} client={client} accessKey={`${recoveryKey(data)}:${roles.join(',')}`} operationId={mapSelectionId || ''} canManageDocuments={canManageProjectDocuments} record={mapRecord} disabled={busy || exporting || mapLoading}
           maxSpeedKnots={data.vessels.find(value => String(value.id) === mapRecord?.draft.vessel.id)?.maxSpeedKnots}
           onSave={saveMapOperation} onDirtyChange={setMapDirty} />
       </div></div>
@@ -1013,7 +1014,7 @@ export function SeaOperationsPage() {
           <Field label="Décision"><ChoiceControl label="Décision" value={draft.decision} onChange={(decision) => update({ decision: decision as SeaOperationPayload['decision'] })} options={[{ value: 'GO', label: 'GO · la mission peut être réalisée', disabled: assessment.blockingChecks.length > 0 }, { value: 'NO_GO', label: 'NO GO · la mission ne peut être réalisée' }]} /></Field><Field label="Risques identifiés / informations à transmettre à l’Armement"><textarea rows={2} value={draft.risks} onChange={(event) => update({ risks: event.target.value })} /></Field><div className="so-grid so-decision-identity-grid"><Field label="Prénom NOM du Capitaine signataire"><input readOnly={linkedToCaptainContext} value={draft.signature.captainName} onChange={(event) => update({ signature: { ...draft.signature, captainName: event.target.value } })} /></Field><Field label="Date de la décision"><input type="date" value={draft.signature.date} onChange={(event) => update({ signature: { ...draft.signature, date: event.target.value } })} /></Field><Field label="Lieu de la décision"><input value={draft.signature.place} onChange={(event) => update({ signature: { ...draft.signature, place: event.target.value } })} /></Field></div>{linkedToCaptainContext && <div className="so-signature-preview"><strong>Signature du Capitaine</strong>{(signed ? record?.signatureUrl : captainSignature?.url) ? <img src={signed ? record?.signatureUrl : captainSignature?.url} alt={`Signature de ${draft.signature.captainName}`} /> : <p className="so-help">{signed ? 'Aucune image de signature attachée à cette fiche.' : signatureError || (signatureLoading ? 'Chargement de la signature…' : selectedCaptain?.hasSignature ? 'La signature RH est indisponible. Rechargez la fiche avant de signer.' : 'Aucune signature RH active enregistrée pour ce Capitaine.')}</p>}<small>{signed ? 'Signature conservée avec la décision.' : 'La signature est apposée lors de la confirmation de la décision par le Capitaine.'}</small></div>}<label className="so-checkbox so-attestation"><input type="checkbox" checked={draft.signature.acknowledged} onChange={(event) => update({ signature: { ...draft.signature, acknowledged: event.target.checked } })} />En qualité de Capitaine, je confirme les informations renseignées et signe cette décision.</label>
         </section>
       </fieldset>
-          <div id="sea-operation-documents-panel" className="so-documents-view" hidden={!documentsOpen}>{documentsOpen && <SeaOperationProjectDocuments client={client} projectId={draft.planning?.projectId || ''} disabled={busy || exporting} showWithoutProject />}</div>
+          <div id="sea-operation-documents-panel" className="so-documents-view" hidden={!documentsOpen}>{documentsOpen && <SeaOperationProjectDocuments client={client} projectId={draft.planning?.projectId || ''} accessKey={`${data ? recoveryKey(data) : ''}:${roles.join(',')}`} canManage={canManageProjectDocuments} disabled={busy || exporting} showWithoutProject />}</div>
           {record && step === 2 && <SeaOperationRecordedWeather record={record} hasUnsavedChanges={dirty} loading={historyLoading} onRefresh={() => void refreshWeatherHistory()} />}
           {step === 2 && <SeaOperationRadioPanel waypoints={draft.waypoints} />}
           {step === 2 && <SeaOperationChartsPanel client={client} projectId={draft.planning?.projectId || ''} transit={draft.transit ? { date: draft.transit.date, vesselId: draft.vessel.id } : undefined} waypoints={draft.waypoints} charts={draft.charts} onChartsChange={charts => { if (canEditMap()) update({ charts }); }} canEdit={editable && !busy && !signed} preview={previewMode} active />}

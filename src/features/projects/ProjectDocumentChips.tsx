@@ -3,6 +3,7 @@ import { BookOpen, BriefcaseBusiness, ClipboardList, Download, FileCheck2, Folde
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { DEFAULT_PROJECT_DOCUMENT_CATEGORIES, type ProjectDocumentCategory } from './projectDocumentCategories';
 import { ProjectDocumentCategoryAction } from './ProjectDocumentClassificationEditor';
+import { ProjectDocumentDeleteAction } from './ProjectDocumentDeleteDialog';
 import { ProjectSeaOperationDocumentCheckbox } from './ProjectSeaOperationDocuments';
 import { ProjectStoredDocumentLink } from './ProjectStoredDocumentLink';
 import { getSharePointDocumentLinkState } from './projectDocuments';
@@ -116,6 +117,7 @@ function DocumentChip({ entry, client, labels, canManage, selected, busy, onSele
     <div className="project-document-chip__actions">
       <button type="button" className="sp-button sp-button--secondary project-document-chip__download" aria-label={`Télécharger ${name}`} title="Télécharger" disabled={busy || !available} onClick={onDownload}><Download aria-hidden="true" size={17} /></button>
       <ProjectDocumentCategoryAction documentId={id} />
+      <ProjectDocumentDeleteAction documentId={id} />
       {canManage && canSelectForSea ? <ProjectSeaOperationDocumentCheckbox documentId={id} documentName={name} showLabel /> : null}
     </div>
   </li>;

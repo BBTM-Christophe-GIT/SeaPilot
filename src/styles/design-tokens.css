@@ -14,6 +14,10 @@
   --sp-primary-soft: #eaf3fc;
   --sp-success: #25815f;
   --sp-focus: #0c66b7;
+  --sp-warning: #b45309;
+  --sp-warning-soft: #fff3df;
+  --sp-danger: #b42318;
+  --sp-danger-hover: #8a1c14;
   /* Document category identities; shared module chrome keeps its neutral palette. */
   --sp-category-project: var(--sp-primary);
   --sp-category-contract: #7050a2;

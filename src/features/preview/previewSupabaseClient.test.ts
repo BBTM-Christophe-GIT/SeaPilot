@@ -10,6 +10,7 @@ import { saveProjectLocation } from '../projects/projectMutations';
 import { fetchProjects, fetchProjectDocuments, fetchContractDocuments } from '../projects/projectQueries';
 import { saveProjectDocumentClassification } from '../projects/projectDocumentClassification';
 import { fetchProjectSeaOperationDocuments, saveProjectSeaOperationDocuments } from '../projects/projectSeaOperationDocumentsQueries';
+import { deleteProjectDocument, fetchProjectDocumentDeletionSnapshot } from '../projects/projectDocumentDeletion';
 
 describe('previewSupabaseClient', () => {
   it('synchronizes demo project ports only on an atomic save and leaves conflicts unsaved', async () => {
@@ -455,6 +456,26 @@ describe('previewSupabaseClient', () => {
       await saveProjectDocumentClassification(previewSupabaseClient, { projectId: 9001, documentId: 'project:9489', categoryKey: 'hse',
         subcategoryKey: null, expectedCategoryKey: 'billing', expectedSubcategoryKey: null });
       expect((await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001)).documents.some(document => document.id === 'project:9489')).toBe(false);
+    } finally { rows.splice(count); }
+  });
+  it.each([
+    ['generated', 'project_generated_documents'], ['project', 'project_documents'], ['contract', 'contract_documents'],
+  ])('keeps a confirmed %s deletion hidden and idempotent in the demo catalogues', async (kind, table) => {
+    const rows = (await previewSupabaseClient.from(table).select('*')).data!;
+    const count = rows.length;
+    const fileName = `${kind} à retirer.pdf`;
+    rows.push({ ...rows[0], id: 9498, project_id: 9001, file_name: fileName });
+    const documentId = `${kind}:9498`;
+    try {
+      const snapshot = await fetchProjectDocumentDeletionSnapshot(previewSupabaseClient, { projectId: 9001, documentId });
+      expect(snapshot.expected.fileName).toBe(fileName);
+      const deleted = await deleteProjectDocument(previewSupabaseClient, snapshot);
+      expect(deleted.documentId).toBe(documentId);
+      expect((await previewSupabaseClient.from(table).select('*')).data!.some(row => row.id === 9498)).toBe(false);
+      expect((await previewSupabaseClient.from(table).select('*')).data!).toHaveLength(count);
+      expect((await fetchProjectSeaOperationDocuments(previewSupabaseClient, 9001)).documents.some(document => document.id === documentId)).toBe(false);
+      expect(await deleteProjectDocument(previewSupabaseClient, snapshot)).toEqual(deleted);
+      await expect(fetchProjectDocumentDeletionSnapshot(previewSupabaseClient, { projectId: 9001, documentId })).rejects.toMatchObject({ code: '42501' });
     } finally { rows.splice(count); }
   });
 });
