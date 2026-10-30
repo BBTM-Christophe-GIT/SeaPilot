@@ -33,6 +33,7 @@ import {
   type BillingPeriodDraft,
   type ProjectBillingDpr,
   type ProjectBillingRawLine,
+  type ProjectChargeableExpense,
 } from './projectBilling';
 
 describe('ensureProjectBillingPeriod', () => {
@@ -660,6 +661,66 @@ describe('monthly billing completion', () => {
       nature: 'Frais de port',
       category: 'port',
     })).toBe('Frais de port');
+  });
+});
+
+describe('billingExpenseAttachmentName', () => {
+  const halbourg: ProjectChargeableExpense = {
+    id: 144,
+    billingPeriodId: 9,
+    category: 'other',
+    nature: 'Pompage Eaux / Hydrocarbures',
+    supplier: 'SARL HALBOURG ET FILS',
+    supplierSpecialties: ['Pompage Eaux / Hydrocarbures'],
+    invoiceDate: '2026-09-30',
+    invoiceNumber: '152450',
+    amountHt: 1330,
+    amountTtc: null,
+    currency: 'EUR',
+    quantity: null,
+    unit: '',
+    comments: '',
+    dprReportId: null,
+  };
+
+  it('makes the HALBOURG invoice acceptable to the document gateway without changing its contents', async () => {
+    const file = new File(['facture HALBOURG 152450'], 'source.pdf', {
+      type: 'application/pdf', lastModified: 1790719200000,
+    });
+    const renamed = billingExpenseAttachmentName(file, halbourg);
+    expect(renamed.name).toBe('2026-09-30 - 152450 - Pompage Eaux - Hydrocarbures.pdf');
+    expect(renamed.type).toBe(file.type);
+    expect(renamed.lastModified).toBe(file.lastModified);
+    expect(renamed.size).toBe(file.size);
+    const content = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(renamed);
+    });
+    expect(content).toBe('facture HALBOURG 152450');
+    expect(halbourg.nature).toBe('Pompage Eaux / Hydrocarbures');
+  });
+
+  it.each(['/', '\\', '\u0000', '\n', '\u007f', ':', '*', '?', '"', '<', '>', '|'])(
+    'cleans the filename when invoice or specialty contains %j', (separator) => {
+      const renamed = billingExpenseAttachmentName(new File(['invoice'], 'source.pdf'), {
+        ...halbourg, invoiceNumber: `152${separator}450`, nature: `Pompage${separator}Hydrocarbures`,
+      });
+      expect(renamed.name).not.toContain(separator);
+      expect(renamed.name).toContain('152-450');
+      expect(renamed.name).toContain('Pompage-Hydrocarbures');
+      expect(renamed.name).toMatch(/\.pdf$/);
+    },
+  );
+
+  it('keeps the extension and readable accents within the gateway filename limit', () => {
+    const renamed = billingExpenseAttachmentName(new File(['invoice'], 'source.xlsx'), {
+      ...halbourg, nature: `Évacuation ${'Hydrocarbures '.repeat(30)}`,
+    });
+    expect(renamed.name.length).toBeLessThanOrEqual(255);
+    expect(renamed.name).toMatch(/^2026-09-30 - 152450 - Évacuation /);
+    expect(renamed.name).toMatch(/\.xlsx$/);
   });
 });
 

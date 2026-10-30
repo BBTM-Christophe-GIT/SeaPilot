@@ -618,7 +618,10 @@ export async function saveProjectBillingPdfSelection(
 }
 
 export function billingExpenseAttachmentName(file: File, expense: ProjectChargeableExpense): File {
-  const extension = file.name.includes('.') ? `.${file.name.split('.').pop()}` : '';
+  // Business labels can contain path separators; the document gateway requires a filename.
+  // eslint-disable-next-line no-control-regex -- Exclude control characters from generated filenames.
+  const forbidden = /[<>:"/\\|?*\u0000-\u001f\u007f]/g;
+  const extension = (file.name.includes('.') ? `.${file.name.split('.').pop()}` : '').replace(forbidden, '-').slice(0, 32);
   const categoryLabels: Record<BillingExpenseCategory, string> = {
     fuel: 'Gasoil',
     port: 'Frais de port',
@@ -626,7 +629,8 @@ export function billingExpenseAttachmentName(file: File, expense: ProjectChargea
     other: expense.nature || 'Autre',
   };
   const invoice = expense.invoiceNumber.trim() || 'sans facture';
-  const name = `${expense.invoiceDate} - ${invoice} - ${categoryLabels[expense.category]}${extension}`;
+  const stem = `${expense.invoiceDate} - ${invoice} - ${categoryLabels[expense.category]}`.replace(forbidden, '-');
+  const name = `${stem.slice(0, 255 - extension.length)}${extension}`;
   return new File([file], name, { type: file.type, lastModified: file.lastModified });
 }
 

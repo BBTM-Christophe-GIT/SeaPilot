@@ -259,6 +259,42 @@ describe('independent expense rebilling month', () => {
     expect(mocks.export.mock.calls[0][2]).toEqual([expect.objectContaining({ billingPeriodId: 20, chargeableExpenseId: 30 })]);
   });
 
+  it('adds a HALBOURG document from the October expense row with a gateway-compatible filename', async () => {
+    const user = userEvent.setup();
+    const p144 = { ...project, id: 144, projectCode: 'P144', title: 'GUARD VESSEL EMDT' };
+    const halbourg = expense({
+      billingPeriodId: october.id, supplier: 'SARL HALBOURG ET FILS',
+      nature: 'Pompage Eaux / Hydrocarbures', supplierSpecialties: ['Pompage Eaux / Hydrocarbures'],
+      invoiceDate: '2026-09-30', invoiceNumber: '152450', amountHt: 1330,
+    });
+    mocks.data.mockResolvedValueOnce(billingData({
+      periods: [{ ...october, projectId: p144.id }], expenses: [halbourg],
+    }));
+    mocks.upload.mockImplementation(async (_client: unknown, input: { billingPeriodId: number; expenseId: number; file: File }) => {
+      // eslint-disable-next-line no-control-regex -- Mirror the document gateway's filename validation.
+      if (/[/\\\u0000-\u001f\u007f]/.test(input.file.name)) throw new Error('INVALID_DOCUMENT_UPLOAD');
+      return attachment({
+        id: 41, billingPeriodId: input.billingPeriodId, chargeableExpenseId: input.expenseId,
+        fileName: input.file.name, objectPath: 'projects/144/20/expenses/30/halbourg.pdf',
+      });
+    });
+    render(<ProjectBillingPanel client={client} project={p144} operations={[]} isManager initialMonth="2026-10" workspace />);
+    const row = (await screen.findByText('SARL HALBOURG ET FILS')).closest('tr')!;
+    expect(within(row).getByText('Pompage Eaux / Hydrocarbures')).toBeVisible();
+    await user.upload(within(row).getByLabelText('Ajouter'), new File(['facture HALBOURG'], 'facture.pdf', { type: 'application/pdf' }));
+    const expectedName = '2026-09-30 - 152450 - Pompage Eaux - Hydrocarbures.pdf';
+    expect(await within(row).findByRole('button', { name: expectedName })).toBeVisible();
+    expect(mocks.upload).toHaveBeenCalledExactlyOnceWith(client, {
+      projectId: p144.id, billingPeriodId: october.id, expenseId: halbourg.id,
+      kind: 'chargeable_expense', file: expect.any(File),
+    });
+    expect(mocks.upload.mock.calls[0][1].file.name).toBe(expectedName);
+    expect(screen.getByText('Documents stockés dans l’espace privé du projet.')).toHaveAttribute('role', 'status');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(mocks.saveExpense).not.toHaveBeenCalled();
+    expect(mocks.ensurePeriod).not.toHaveBeenCalled();
+  });
+
   it('requires a rebilling month before any period, expense or attachment write', async () => {
     const user = userEvent.setup();
     await mount(billingData({ periods: [period()] }));
