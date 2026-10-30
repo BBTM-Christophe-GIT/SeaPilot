@@ -1,4 +1,5 @@
 import { projectDriveStorage } from './projectDriveStorage';
+import { BillingAttachmentExportError, isBillingPdfAttachment, readBillingAttachment, type BillingAttachmentIssue } from './projectBillingAttachments';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ProjectContractRecord,
@@ -1219,34 +1220,27 @@ export async function generateBillingExportPackage(
   input: BillingExportInput,
   documents: ProjectBillingDocument[],
   format: BillingExportFormat,
-): Promise<{ blob: Blob; extension: 'pdf' | 'zip' }> {
+): Promise<{ blob: Blob; extension: 'pdf' | 'zip'; attachmentIssues?: BillingAttachmentIssue[]; checkedDocumentIds?: number[] }> {
   const summary = await generateBillingPdf(input);
   if (format === 'pdf') return { blob: summary, extension: 'pdf' };
 
   const includedExpenses = new Set(input.expenses.filter((expense) => expense.includeInPdf !== false).map((expense) => expense.id));
-  const isPdf = (document: ProjectBillingDocument) => document.mimeType.toLowerCase() === 'application/pdf' || document.fileName.toLowerCase().endsWith('.pdf');
   const includedDocuments = input.period.includeExpensesInPdf === false ? [] : documents.filter((document) => (
     document.chargeableExpenseId !== null && includedExpenses.has(document.chargeableExpenseId)
-    && (format !== 'merged-pdf' || isPdf(document))
+    && (format !== 'merged-pdf' || isBillingPdfAttachment(document))
   ));
-  const downloads = await Promise.allSettled(includedDocuments.map(async (document) => {
-    const { data, error } = await projectDriveStorage(client, document.bucketName).download(document.objectPath);
-    if (error) throw error;
-    if (!(data instanceof Blob)) throw new Error('Le téléchargement n’a retourné aucun fichier.');
-    return { document, blob: data };
-  }));
-  const unavailable = downloads.flatMap((result, index) => {
-    if (result.status === 'fulfilled') return [];
-    const failure: unknown = result.reason;
-    const detail = failure && typeof failure === 'object' && 'message' in failure && typeof failure.message === 'string'
-      ? failure.message : '';
-    return [`${includedDocuments[index].fileName} : ${detail || 'Téléchargement impossible.'}`];
-  });
-  if (unavailable.length) throw new Error(`Pièces jointes indisponibles :\n${unavailable.join('\n')}\nRestaurez l’accès à ces pièces ou ajoutez-les à nouveau dans les frais concernés, puis réessayez l’export.`);
-  // Only assemble the requested package after every selected annex is available.
-  const attachments = downloads.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
+  const reads = await Promise.all(includedDocuments.map(async (document) => ({
+    document, ...await readBillingAttachment(client, document, { allowLocalDrive: true, parsePdf: format === 'merged-pdf' }),
+  })));
+  const checkedDocumentIds = includedDocuments.map((document) => document.id);
+  const attachmentIssues: BillingAttachmentIssue[] = reads.flatMap(({ check }) => (
+    check.status === 'missing' || check.status === 'invalid' || check.status === 'unavailable' ? [check as BillingAttachmentIssue] : []
+  ));
+  const attachments = reads.flatMap((read) => read.blob ? [{ document: read.document, blob: read.blob, pdf: read.pdf }] : []);
 
   if (format === 'zip') {
+    // Archive presence does not prove PDF readability; only report failures to the UI.
+    if (attachmentIssues.length) throw new BillingAttachmentExportError(attachmentIssues, []);
     const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
     zip.file('01-Elements-de-facturation.pdf', summary);
@@ -1264,7 +1258,17 @@ export async function generateBillingExportPackage(
     pages.forEach((page) => merged.addPage(page));
   };
   await appendPdf(summary);
-  for (const attachment of attachments) await appendPdf(attachment.blob);
+  for (const attachment of attachments) {
+    try {
+      // PDF reads were parsed and validated before merging any annex pages.
+      const source = attachment.pdf!;
+      const pages = await merged.copyPages(source, source.getPageIndices());
+      pages.forEach((page) => merged.addPage(page));
+    } catch {
+      attachmentIssues.push({ documentId: attachment.document.id, fileName: attachment.document.fileName,
+        status: 'invalid', message: 'Les pages du PDF n’ont pas pu être ajoutées.' });
+    }
+  }
   const mergedBytes = await merged.save();
-  return { blob: new Blob([mergedBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), extension: 'pdf' };
+  return { blob: new Blob([mergedBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), extension: 'pdf', attachmentIssues, checkedDocumentIds };
 }

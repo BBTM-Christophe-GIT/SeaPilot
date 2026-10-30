@@ -70,7 +70,7 @@ export function projectDriveStorage(client: SupabaseClient, bucket: string) {
         signal?.throwIfAborted();
         return downloadStored('project-drive', String(file.id));
       }
-      if (options?.allowLocalDrive === false) throw new Error('L’aperçu de ce document nécessite une copie privée accessible sans le connecteur SeaPilot.');
+      if (options?.allowLocalDrive === false) throw Object.assign(new Error('L’aperçu de ce document nécessite une copie privée accessible sans le connecteur SeaPilot.'), { code: 'LOCAL_DRIVE_REQUIRED' });
       signal?.throwIfAborted();
       const data = await read(file);
       signal?.throwIfAborted();

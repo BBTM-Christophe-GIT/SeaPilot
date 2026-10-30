@@ -1,9 +1,16 @@
 import './ProjectWorkspace.css';
 import './ProjectBillingPanel.css';
+import './projectBillingAttachmentStatus.css';
 import BillingPeriodCalendar from './BillingPeriodCalendar';
 import { ProjectPdfPreview } from './ProjectPdfPreview';
 import { ProjectBillingRawLines } from './ProjectBillingRawLines';
 import { billingReferenceScope, billingReferenceScopeLabel, fetchBillingReferences, saveBillingReference, type BillingReference } from './projectBillingReferences';
+import {
+  BillingAttachmentExportError,
+  checkBillingAttachments,
+  type BillingAttachmentCheck,
+  type BillingAttachmentIssue,
+} from './projectBillingAttachments';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetNames } from '../fleet/fleetDisplay';
 import {
@@ -86,6 +93,13 @@ import {
 const EMPTY_DATA: ProjectBillingData = { periods: [], expenses: [], documents: [], services: [] };
 const BILLING_UNIT_OPTIONS = ['Unité', 'm²', 'm³', 'L'];
 const EXPANDED_BILLING_SECTIONS = { hire: true, expenses: true, services: true, raw: true, followup: true };
+const ATTACHMENT_STATUS_LABELS: Record<BillingAttachmentCheck['status'], string> = {
+  available: 'Disponible',
+  missing: 'Fichier manquant',
+  invalid: 'Fichier invalide',
+  unavailable: 'Accès impossible',
+  unverified: 'Non vérifié',
+};
 
 interface BillingServiceLineDraft extends BillingServiceDraft {
   key: string;
@@ -245,6 +259,12 @@ export function ProjectBillingPanel({
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [attachmentChecks, setAttachmentChecks] = useState<Record<number, BillingAttachmentCheck>>({});
+  const [attachmentChecking, setAttachmentChecking] = useState(false);
+  const [attachmentExportIssues, setAttachmentExportIssues] = useState<BillingAttachmentIssue[]>([]);
+  const attachmentCheckRevision = useRef(0);
+  const attachmentCheckController = useRef<AbortController | null>(null);
+  const [billingDataContext, setBillingDataContext] = useState<{ client: SupabaseClient; projectId: number } | null>(null);
   const contextRevision = useRef(0);
   const referenceContext = useRef<{ client: SupabaseClient; projectId: number } | null>({ client, projectId: project.id });
   const autoCreatedPeriodId = useRef<number | null>(null);
@@ -271,6 +291,7 @@ export function ProjectBillingPanel({
         fetchBillingReferences(client, project.id),
       ]);
       if (revision !== contextRevision.current) return;
+      setBillingDataContext({ client, projectId: project.id });
       setData(billingData);
       setServiceCatalog(catalog);
       setReferences(savedReferences);
@@ -283,6 +304,7 @@ export function ProjectBillingPanel({
 
   useEffect(() => {
     contextRevision.current += 1;
+    setBillingDataContext(null);
     pendingPeriods.current.clear();
     autoCreatedPeriodId.current = null;
     editedInvoiceFields.current.clear();
@@ -314,14 +336,72 @@ export function ProjectBillingPanel({
       setLegacyReferenceScope(billingReferenceScope({ ...selectedPeriod, includeRawInPdf: selectedPeriod.includeRawInPdf !== false && (data.rawLines || []).some((line) => line.serviceDate.startsWith(selectedMonth)) }));
     }
   }, [selectedPeriod?.id]);
-  const periodExpenses = selectedPeriod
-    ? data.expenses.filter((expense) => expense.billingPeriodId === selectedPeriod.id)
-    : [];
-  const periodExpenseIds = new Set(periodExpenses.map((expense) => expense.id));
+  const selectedPeriodId = selectedPeriod?.id;
+  const periodExpenses = useMemo(() => selectedPeriodId
+    ? data.expenses.filter((expense) => expense.billingPeriodId === selectedPeriodId)
+    : [], [data.expenses, selectedPeriodId]);
+  const periodExpenseIds = useMemo(() => new Set(periodExpenses.map((expense) => expense.id)), [periodExpenses]);
   // An attachment follows its expense, even when it was uploaded against an earlier billing month.
-  const periodDocuments = data.documents.filter((document) => document.chargeableExpenseId != null
+  const periodDocuments = useMemo(() => data.documents.filter((document) => document.chargeableExpenseId != null
     ? periodExpenseIds.has(document.chargeableExpenseId)
-    : selectedPeriod && document.billingPeriodId === selectedPeriod.id);
+    : selectedPeriodId && document.billingPeriodId === selectedPeriodId), [data.documents, periodExpenseIds, selectedPeriodId]);
+  const expenseDocuments = useMemo(() => periodDocuments.filter((document) => document.chargeableExpenseId !== null), [periodDocuments]);
+  const expenseDocumentsKey = JSON.stringify(expenseDocuments);
+
+  function stopAttachmentChecks() {
+    attachmentCheckRevision.current += 1;
+    attachmentCheckController.current?.abort();
+    attachmentCheckController.current = null;
+  }
+
+  async function verifyAttachments(allowLocalDrive: boolean) {
+    stopAttachmentChecks();
+    if (billingDataContext?.client !== client || billingDataContext.projectId !== project.id) return;
+    const controller = new AbortController();
+    attachmentCheckController.current = controller;
+    const checkRevision = attachmentCheckRevision.current;
+    const revision = contextRevision.current;
+    setAttachmentChecking(true);
+    try {
+      const checks = await checkBillingAttachments(client, expenseDocuments, { signal: controller.signal, allowLocalDrive });
+      if (controller.signal.aborted || checkRevision !== attachmentCheckRevision.current || revision !== contextRevision.current) return;
+      setAttachmentChecks(Object.fromEntries(checks.map((check) => [check.documentId, check])));
+    } catch (caught) {
+      if (controller.signal.aborted || checkRevision !== attachmentCheckRevision.current || revision !== contextRevision.current) return;
+      const detail = caught instanceof Error ? caught.message : 'La vérification des justificatifs est momentanément indisponible.';
+      setAttachmentChecks(Object.fromEntries(expenseDocuments.map((document) => [document.id, {
+        documentId: document.id, fileName: document.fileName, status: 'unavailable' as const, message: detail,
+      }])));
+    } finally {
+      if (checkRevision === attachmentCheckRevision.current && revision === contextRevision.current) {
+        attachmentCheckController.current = null;
+        setAttachmentChecking(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    setAttachmentChecks({});
+    setAttachmentExportIssues([]);
+    setAttachmentChecking(false);
+    if (visibleSections.services && expenseDocuments.length) void verifyAttachments(false);
+    return stopAttachmentChecks;
+    // The document list and context identify exactly the files that may receive a result.
+  }, [client, project.id, selectedMonth, expenseDocumentsKey, visibleSections.services, billingDataContext]);
+
+  function recordExportAttachmentChecks(result: { attachmentIssues?: BillingAttachmentIssue[]; checkedDocumentIds?: number[] }) {
+    if (!result.checkedDocumentIds?.length && !result.attachmentIssues?.length) return;
+    const documents = new Map(expenseDocuments.map((document) => [document.id, document]));
+    setAttachmentChecks((current) => {
+      const updated = { ...current };
+      for (const documentId of result.checkedDocumentIds || []) {
+        const document = documents.get(documentId);
+        if (document) updated[documentId] = { documentId, fileName: document.fileName, status: 'available', message: 'Justificatif disponible.' };
+      }
+      for (const issue of result.attachmentIssues || []) if (documents.has(issue.documentId)) updated[issue.documentId] = issue;
+      return updated;
+    });
+  }
   const periodServices = useMemo(
     () => selectedPeriod
       ? data.services.filter((service) => service.billingPeriodId === selectedPeriod.id)
@@ -935,6 +1015,11 @@ export function ProjectBillingPanel({
     }
     setBusy('export');
     setError('');
+    setAttachmentExportIssues([]);
+    if (mode === 'download' && exportFormat !== 'pdf') {
+      stopAttachmentChecks();
+      setAttachmentChecking(false);
+    }
     try {
       const period = await getOrCreatePeriod();
       await storeReference(true);
@@ -960,6 +1045,7 @@ export function ProjectBillingPanel({
         endDate: exportRange.end,
       }, periodDocuments.filter((document) => document.chargeableExpenseId !== null), mode === 'preview' ? 'pdf' : exportFormat);
       if (revision !== contextRevision.current) return;
+      recordExportAttachmentChecks(result);
       const fileName = `${project.projectCode || `P${project.id}`}-Elements-facturation-${selectedMonth}.${result.extension}`;
       if (mode === 'download') {
         if (isManager) {
@@ -972,9 +1058,11 @@ export function ProjectBillingPanel({
       else {
         setPreviewBlob(result.blob);
       }
-      setMessage(mode === 'download' ? 'Export PDF généré.' : 'Aperçu actualisé.');
+      setAttachmentExportIssues(result.attachmentIssues || []);
+      setMessage(mode === 'download' ? 'Export généré.' : 'Aperçu actualisé.');
     } catch (caught) {
       if (revision !== contextRevision.current) return;
+      if (caught instanceof BillingAttachmentExportError) recordExportAttachmentChecks(caught);
       setError(caught instanceof Error ? caught.message : 'Impossible de générer l’export.');
     } finally {
       if (revision === contextRevision.current) setBusy('');
@@ -1023,6 +1111,13 @@ export function ProjectBillingPanel({
       {total ? <strong className="project-billing-section-total">{total}</strong> : null}
     </header>;
   }
+  const attachmentVerifyButton = expenseDocuments.length ? <button
+    className="sp-button sp-button--secondary"
+    disabled={Boolean(busy) || attachmentChecking}
+    aria-busy={attachmentChecking}
+    onClick={() => void verifyAttachments(true)}
+    type="button"
+  >Vérifier les justificatifs</button> : null;
 
   return (
     <section aria-label="Facturation mensuelle" className={`project-billing ${workspace ? 'is-workspace' : ''}`}>
@@ -1045,6 +1140,11 @@ export function ProjectBillingPanel({
       </div>}
 
       {message ? <p className="project-billing-message" role="status">{message}</p> : null}
+      {attachmentExportIssues.length ? <div className="project-billing-attachment-warning" role="status">
+        <strong>PDF généré : {attachmentExportIssues.length} pièce{attachmentExportIssues.length > 1 ? 's' : ''} non jointe{attachmentExportIssues.length > 1 ? 's' : ''}.</strong>
+        <span>Les montants facturés sont conservés. Consultez les justificatifs signalés dans Services refacturables.</span>
+        <ul>{attachmentExportIssues.map((issue) => <li key={issue.documentId}>{issue.fileName} — {ATTACHMENT_STATUS_LABELS[issue.status]}</li>)}</ul>
+      </div> : null}
       {error && !expenseEditor ? <p className="project-billing-error" role="alert">{error}</p> : null}
       <div className={workspace ? 'project-billing-workspace-layout' : 'project-billing-stack'}>
       <div className="project-billing-workspace-main">
@@ -1090,13 +1190,15 @@ export function ProjectBillingPanel({
       </article> : null}
 
       {visibleSections.services ? <article id="billing-view-expenses" className="project-billing-card">
-        {workspace ? sectionHeader('expenses', 'Services refacturables', <Fuel aria-hidden="true" size={20} />, isManager ? <button className="sp-button sp-button--secondary" disabled={Boolean(busy)} onClick={() => { setExpandedSections((current) => ({ ...current, expenses: true })); openExpenseEditor(); }} type="button"><Plus aria-hidden="true" size={16} /> Ajouter</button> : undefined, expenseTotalsByCurrency.size ? [...expenseTotalsByCurrency].map(([currency, total]) => <span key={currency}>{money(total, currency)}</span>) : money(0)) : <header className="project-billing-card-heading">
+        {workspace ? sectionHeader('expenses', 'Services refacturables', <Fuel aria-hidden="true" size={20} />, <>{attachmentVerifyButton}{isManager ? <button className="sp-button sp-button--secondary" disabled={Boolean(busy)} onClick={() => { setExpandedSections((current) => ({ ...current, expenses: true })); openExpenseEditor(); }} type="button"><Plus aria-hidden="true" size={16} /> Ajouter</button> : null}</>, expenseTotalsByCurrency.size ? [...expenseTotalsByCurrency].map(([currency, total]) => <span key={currency}>{money(total, currency)}</span>) : money(0)) : <header className="project-billing-card-heading">
           <div><Fuel aria-hidden="true" size={20} /><span><strong>Services refacturables</strong><small>{money(expenseTotal)} HT sur la période</small></span></div>
           <div className="project-billing-card-actions">
+            {attachmentVerifyButton}
             {isManager ? <button disabled={Boolean(busy)} onClick={() => openExpenseEditor()} type="button"><Plus aria-hidden="true" size={16} /> Ajouter un frais</button> : null}
           </div>
         </header>}
         <div id="billing-content-expenses" hidden={workspace && !expandedSections.expenses}>
+        {attachmentChecking ? <p className="project-billing-attachment-progress" role="status">Vérification des justificatifs…</p> : null}
         <div className="project-billing-table-scroll">
           <table className="project-billing-expense-table">
             <thead><tr><th>Actions</th><th>Fournisseur</th><th>Spécialités</th><th>PDF</th><th>Date</th><th>Facture</th><th>Montant HT</th><th>État</th><th>Pièces</th></tr></thead>
@@ -1104,7 +1206,10 @@ export function ProjectBillingPanel({
               {periodExpenses.map((expense) => {
                 const documents = periodDocuments.filter((document) => document.chargeableExpenseId === expense.id);
                 return (
-                  <tr key={expense.id}>
+                  <tr key={expense.id} data-attachment-issue={documents.some((document) => {
+                    const status = attachmentChecks[document.id]?.status;
+                    return status === 'missing' || status === 'invalid' || status === 'unavailable';
+                  }) || undefined}>
                     <td><div className="project-billing-row-actions">
                       {isManager ? <button aria-label={`Supprimer ${expense.invoiceNumber || expense.supplier}`} className="sp-button sp-button--secondary is-danger project-billing-row-icon" disabled={Boolean(busy)} onClick={() => void removeExpense(expense)} type="button"><Trash2 aria-hidden="true" size={14} /></button> : null}
                       {isManager ? <button aria-label={`Modifier ${expense.invoiceNumber || expense.supplier}`} className="sp-button sp-button--secondary project-billing-row-icon" disabled={Boolean(busy)} onClick={() => openExpenseEditor(expense)} type="button"><Pencil aria-hidden="true" size={14} /></button> : null}
@@ -1118,10 +1223,15 @@ export function ProjectBillingPanel({
                     <td>{expense.includeInPdf !== false ? 'Sélectionné pour le PDF' : 'Exclu du PDF'}</td>
                     <td>
                       <div className="project-billing-expense-documents">
-                        {documents.map((document) => (
+                        {!documents.length ? <span className="project-billing-attachment-empty">Aucun justificatif</span> : null}
+                        {documents.map((document) => {
+                          const check = attachmentChecks[document.id];
+                          const status = check?.status || 'unverified';
+                          const statusId = `billing-attachment-${document.id}-status`;
+                          return <div className="project-billing-attachment" key={document.id}>
                           <button
                             disabled={Boolean(busy)}
-                            key={document.id}
+                            aria-describedby={statusId}
                             onClick={() => void openDocument(document)}
                             title={document.fileName}
                             type="button"
@@ -1130,7 +1240,12 @@ export function ProjectBillingPanel({
                             <span>{document.fileName}</span>
                             <ExternalLink aria-hidden="true" size={12} />
                           </button>
-                        ))}
+                          <span id={statusId} className={`project-billing-attachment-status is-${status}`} aria-label={`${ATTACHMENT_STATUS_LABELS[status]} : ${document.fileName}`}>
+                            <strong>{ATTACHMENT_STATUS_LABELS[status]}</strong>
+                            {check?.message && status !== 'available' ? <small>{check.message}</small> : null}
+                          </span>
+                          </div>;
+                        })}
                         {isManager ? (
                           <label className="project-billing-upload is-compact">
                             <FilePlus2 aria-hidden="true" size={14} /> Ajouter
