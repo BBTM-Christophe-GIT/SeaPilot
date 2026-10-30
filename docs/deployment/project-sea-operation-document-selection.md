@@ -2,12 +2,12 @@
 
 Version `3.80.16`, build `2026-10-29.002`.
 
-Dans la fiche Projet, onglet **Documents**, la colonne **Opération en Mer** suit
-le bouton **Ouvrir**. Chaque case enregistre immédiatement le choix pour ce
-document, commun aux opérations du projet. Le bouton de gestion séparé et sa
-fenêtre de sélection ont été retirés. Les colonnes d'action mesurent 80 et 104 px
-sur ordinateur pour laisser davantage de place aux noms complets des fichiers.
-Les espacements sont réduits et les cibles tactiles restent de 44 px.
+Dans la fiche Projet, onglet **Documents**, chaque chip porte la case
+**Afficher dans « Opération en Mer »** lorsqu’elle est éligible. Chaque case
+enregistre immédiatement le choix pour ce document, commun aux opérations du
+projet. La [bibliothèque documentaire](project-document-library.md) regroupe les
+pièces par catégorie et réunit leurs vignettes, noms cliquables et actions.
+Le bouton de gestion séparé et sa fenêtre de sélection ont été retirés.
 
 Dans la fiche Opération en Mer, **Documents** est un accès du menu de gauche,
 immédiatement sous **1 Armement**. Il ouvre sa propre vue de consultation et ne
@@ -16,6 +16,35 @@ leur complétude et leurs règles de signature. La navigation conserve la saisie
 Précédent retourne à Armement et Suivant passe aux Contrôles avant appareillage.
 Sans projet sélectionné, un message invite à le choisir dans Armement. Les pièces
 restent consultables dans les fiches signées ou en lecture seule.
+
+## Registre : Carte et Documents
+
+Le panneau droit du registre propose deux onglets : **Carte**, sélectionné par
+défaut, et **Documents**. Le badge orange de Documents compte les pièces autorisées
+du projet de l’opération sélectionnée. Il affiche **…** pendant le chargement ou
+si le nombre n’est pas disponible, et **0** lorsqu’aucun projet n’est associé.
+Changer d’opération ou de compte réinitialise Carte et son compteur ; une réponse
+tardive du précédent contexte n’est pas réutilisée.
+
+Les deux panneaux restent montés : consulter Documents puis revenir à Carte
+conserve les modifications cartographiques non enregistrées. Les flèches et les
+touches Début/Fin permettent aussi de parcourir les onglets au clavier.
+
+Les documents reprennent les chips du module Projet : catégories avec icône et
+repère coloré, vignettes de contenu, nom cliquable, téléchargement individuel,
+sélection de plusieurs fichiers ou d’une catégorie entière. Plusieurs fichiers
+sont réunis dans un ZIP complet ; un fichier seul conserve son format d’origine.
+Chaque accès et téléchargement passe par les contrôles opérationnels du serveur.
+Le menu Documents du formulaire utilise également cette présentation.
+
+La corbeille réutilise la [confirmation de suppression du Projet](project-document-library.md#supprimer-un-document)
+pour Admin et Direction uniquement. Le serveur vérifie la société, le projet
+actif et la version confirmée. La suppression logique retire la pièce des deux
+modules et actualise le compteur ; elle conserve les octets, leur historique et
+les autres références métier. Marin, Capitaine et Armement consultent et
+téléchargent les pièces autorisées sans disposer d’une action de suppression.
+La migration `20261030070155_project_document_soft_delete.sql` est requise pour
+ces suppressions et leur révocation des nouveaux accès.
 
 ## Comportement
 
@@ -84,10 +113,17 @@ fixture ni sélection de projet existant n'a été créée.
 
 Les tests React et requêtes couvrent les cases en ligne, le défaut décoché,
 l'enregistrement immédiat, le clavier, les refus, les mises à jour concurrentes,
-les changements de contexte, l'ordre des colonnes, l'exclusion des offres et la
+les changements de contexte, l'exclusion des offres et la
 position de Documents dans le menu sous Armement. La préversion utilise ses propres documents
 fictifs et conserve les choix en mémoire.
 
 L'[information du linter RLS sans policy](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)
 est attendue pour cette table privée : aucun accès direct n'est accordé ; seules
 les fonctions privées autorisées y accèdent.
+
+Les tests de `SeaOperationRegisterPane` couvrent Carte par défaut, le compteur,
+la navigation clavier et la conservation de la saisie cartographique. Les tests
+des documents vérifient les chips, les accès protégés, les téléchargements et les
+suppressions selon le rôle et le contexte. La suppression logique ajoute des
+fixtures SQL réelles pour les profils, les références partagées, les alias de
+stockage et les tentatives de réactivation d’une pièce supprimée.

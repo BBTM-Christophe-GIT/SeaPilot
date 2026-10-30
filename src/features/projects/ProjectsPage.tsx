@@ -49,6 +49,7 @@ import { ProjectStoredDocumentLink } from './ProjectStoredDocumentLink';
 import { ProjectDocumentLibrary } from './ProjectDocumentLibrary';
 import { ProjectDocumentChips } from './ProjectDocumentChips';
 import type { ProjectDocumentClassification } from './projectDocumentClassification';
+import type { ProjectDocumentDeletionResult } from './projectDocumentDeletion';
 import type { StoredProjectDocument } from './projectDocumentStorage';
 import { ClientCatalogDialog, ServiceCatalogDialog, TowedAssetCatalogDialog } from './ProjectCatalogDialogs';
 import { ProjectBillingPanel } from './ProjectBillingPanel';
@@ -559,6 +560,7 @@ function ProjectDocumentEmissionDialog({
 function ProjectDetail({
   documentAccessKey,
   onDocumentClassified,
+  onDocumentDeleted,
   onDocumentStored,
   project,
   contract,
@@ -591,6 +593,7 @@ function ProjectDetail({
 }: {
   documentAccessKey: string;
   onDocumentClassified: (classification: ProjectDocumentClassification) => void;
+  onDocumentDeleted: (result: ProjectDocumentDeletionResult) => void;
   onDocumentStored: (document: ProjectOperationDocumentRecord) => void;
   project: ProjectRecord;
   contract?: ProjectContractRecord;
@@ -812,6 +815,7 @@ function ProjectDetail({
           contractDocuments={contractDocuments}
           onStored={onDocumentStored}
           onClassified={onDocumentClassified}
+          onDeleted={onDocumentDeleted}
           otherDocuments={operationDocuments.filter((document) => !projectAttachments.includes(document))}
           projectDocuments={projectDocuments}
           projectId={project.id}
@@ -1843,6 +1847,13 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
                 return { ...current, operationDocuments: source === 'generated' ? update(current.operationDocuments) : current.operationDocuments,
                   projectDocuments: source === 'project' ? update(current.projectDocuments) : current.projectDocuments,
                   contractDocuments: source === 'contract' ? update(current.contractDocuments) : current.contractDocuments };
+              })}
+              onDocumentDeleted={(result) => setProjectsData(current => {
+                const [source, id] = result.documentId.split(':');
+                const remove = <T extends { id: number; projectId: number | null }>(items: T[]) => items.filter(document => document.id !== Number(id) || document.projectId !== result.projectId);
+                return { ...current, operationDocuments: source === 'generated' ? remove(current.operationDocuments) : current.operationDocuments,
+                  projectDocuments: source === 'project' ? remove(current.projectDocuments) : current.projectDocuments,
+                  contractDocuments: source === 'contract' ? remove(current.contractDocuments) : current.contractDocuments };
               })}
               client={selectedClient}
               supabaseClient={effectiveClient}

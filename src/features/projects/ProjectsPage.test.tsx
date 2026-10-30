@@ -14,6 +14,8 @@ const documentGenerationMocks = vi.hoisted(() => ({
 }));
 const operationSelectionMocks = vi.hoisted(() => ({ fetch: vi.fn(), save: vi.fn() }));
 vi.mock('./projectSeaOperationDocumentsQueries', () => ({ fetchProjectSeaOperationDocuments: operationSelectionMocks.fetch, saveProjectSeaOperationDocument: operationSelectionMocks.save }));
+const documentDeletionMocks = vi.hoisted(() => ({ snapshot: vi.fn(), remove: vi.fn() }));
+vi.mock('./projectDocumentDeletion', () => ({ fetchProjectDocumentDeletionSnapshot: documentDeletionMocks.snapshot, deleteProjectDocument: documentDeletionMocks.remove }));
 
 const documentStorageMocks = vi.hoisted(() => ({
   createProjectDocumentBundle: vi.fn(),
@@ -369,6 +371,8 @@ describe('ProjectsPage', () => {
       mimeType: 'application/zip',
     });
     documentStorageMocks.storeOperationDocuments.mockResolvedValue({ failed: [], stored: [] });
+    documentDeletionMocks.snapshot.mockReset();
+    documentDeletionMocks.remove.mockReset();
     documentStorageMocks.storeProjectAttachment.mockResolvedValue({ fileName: 'Rapport HSE.pdf', folderPath: 'projects/880/attachments/hse', id: 9901, storageBucket: 'project-files', storagePath: 'projects/880/attachments/hse/report.pdf', webUrl: '' });
   });
 
@@ -452,6 +456,7 @@ describe('ProjectsPage', () => {
     expect(screen.getByLabelText('Catégorie')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Ajouter un document' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Gérer les catégories' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Supprimer Plan projet Atlantique.pdf' })).not.toBeInTheDocument();
   });
 
   it('lists project-level emitted files and operation attachments together in Documents', async () => {
@@ -503,6 +508,73 @@ describe('ProjectsPage', () => {
     await user.click(checkbox);
     await waitFor(() => expect(checkbox).toBeChecked());
     expect(operationSelectionMocks.save).toHaveBeenCalledWith(client, 880, 'generated:92', true);
+  });
+
+  it.each(['generated', 'project', 'contract'] as const)('removes only the confirmed %s document and clears its download selection without reloading the project', async source => {
+    const user = userEvent.setup();
+    const files = { generated: 'Pièce classée.pdf', project: 'Plan historique.pdf', contract: 'Contrat signé.pdf' };
+    const generated = { id: 91, project_id: 880, planning_occurrence_id: null, document_type: 'project_attachment',
+      category_key: 'hse', subcategory_key: null, expires_on: null, file_name: files.generated,
+      mime_type: 'application/pdf', file_size_bytes: 512, storage_bucket: 'project-files', storage_path: 'projects/880/attachments/piece.pdf',
+      sharepoint_web_url: null, sharepoint_folder_path: null, created_at: '2026-10-30T10:00:00Z' };
+    const { client, from } = createClient({
+      project_generated_documents: { data: [generated], error: null },
+      project_documents: { data: [{ ...atlantiqueProjectDocumentRow, id: 91, file_name: files.project, category_key: 'hse' }], error: null },
+      contract_documents: { data: [{ ...atlantiqueContractDocumentRow, id: 91, file_name: files.contract, category_key: 'billing' }], error: null },
+    });
+    const snapshot = { projectId: 880, documentId: `${source}:91`, expected: { fileName: files[source],
+      categoryKey: source === 'contract' ? 'billing' : 'hse', subcategoryKey: null,
+      storageBucket: source === 'project' ? null : 'project-files',
+      storagePath: source === 'generated' ? generated.storage_path : source === 'contract' ? atlantiqueContractDocumentRow.storage_path : null,
+      sourceUrl: source === 'generated' ? null : source === 'project' ? atlantiqueProjectDocumentRow.file_url : atlantiqueContractDocumentRow.file_url,
+      fileSizeBytes: source === 'generated' ? 512 : 2048, modifiedAt: '2026-10-30T10:00:00Z' } };
+    documentDeletionMocks.snapshot.mockResolvedValue(snapshot);
+    documentDeletionMocks.remove.mockResolvedValue({ projectId: 880, documentId: `${source}:91`, deletedAt: '2026-10-30T10:01:00Z' });
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Documents' }));
+    await user.click(screen.getByRole('checkbox', { name: `Sélectionner ${files[source]} pour le téléchargement` }));
+    await user.click(screen.getByRole('button', { name: `Supprimer ${files[source]}` }));
+    const dialog = screen.getByRole('dialog', { name: 'Supprimer le document ?' });
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Supprimer le document' })).toBeEnabled());
+    expect(documentDeletionMocks.remove).not.toHaveBeenCalled();
+    const readsBeforeDelete = from.mock.calls.length;
+    await user.click(within(dialog).getByRole('button', { name: 'Supprimer le document' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: `Ouvrir le document : ${files[source]}` })).not.toBeInTheDocument());
+    expect(documentDeletionMocks.snapshot).toHaveBeenCalledExactlyOnceWith(client, { projectId: 880, documentId: `${source}:91` });
+    expect(documentDeletionMocks.remove).toHaveBeenCalledExactlyOnceWith(client, snapshot);
+    for (const [otherSource, fileName] of Object.entries(files)) {
+      if (otherSource !== source) expect(screen.getByRole('button', { name: `Ouvrir le document : ${fileName}` })).toBeVisible();
+    }
+    expect(screen.queryByRole('button', { name: 'Télécharger la sélection (1)' })).not.toBeInTheDocument();
+    expect(from.mock.calls).toHaveLength(readsBeforeDelete);
+    await user.click(screen.getByRole('tab', { name: 'Opérations' }));
+    await user.click(screen.getByRole('tab', { name: 'Documents' }));
+    expect(screen.queryByRole('button', { name: `Ouvrir le document : ${files[source]}` })).not.toBeInTheDocument();
+    for (const [otherSource, fileName] of Object.entries(files)) {
+      if (otherSource !== source) expect(screen.getByRole('button', { name: `Ouvrir le document : ${fileName}` })).toBeVisible();
+    }
+  });
+
+  it('preserves a selected document when its deletion is rejected by the server', async () => {
+    const user = userEvent.setup(); const { client } = createClient();
+    const fileName = atlantiqueProjectDocumentRow.file_name;
+    documentDeletionMocks.snapshot.mockResolvedValue({ projectId: 880, documentId: 'project:882', expected: {
+      fileName, categoryKey: 'planning', subcategoryKey: null, storageBucket: null, storagePath: null,
+      sourceUrl: atlantiqueProjectDocumentRow.file_url, fileSizeBytes: 2048, modifiedAt: atlantiqueProjectDocumentRow.source_modified_at,
+    } });
+    documentDeletionMocks.remove.mockRejectedValue(new Error('Ce document a été modifié. Rechargez la liste.'));
+    render(<ProjectsPage client={client as never} roles={['admin']} />);
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Documents' }));
+    await user.click(screen.getByRole('checkbox', { name: `Sélectionner ${fileName} pour le téléchargement` }));
+    await user.click(screen.getByRole('button', { name: `Supprimer ${fileName}` }));
+    const dialog = screen.getByRole('dialog', { name: 'Supprimer le document ?' });
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Supprimer le document' })).toBeEnabled());
+    await user.click(within(dialog).getByRole('button', { name: 'Supprimer le document' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Ce document a été modifié');
+    expect(screen.getByRole('button', { name: `Ouvrir le document : ${fileName}` })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: `Sélectionner ${fileName} pour le téléchargement` })).toBeChecked();
   });
 
   it('starts with a compact fleet summary and expands only the eligible vessels', async () => {

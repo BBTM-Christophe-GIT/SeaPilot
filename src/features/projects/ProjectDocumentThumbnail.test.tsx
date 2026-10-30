@@ -30,6 +30,18 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('ProjectDocumentThumbnail', () => {
+  it('isolates authoritative module loaders by callback identity without reading Project storage', async () => {
+    const firstLoader = vi.fn().mockResolvedValue(new Blob(['sea authorization A']));
+    const secondLoader = vi.fn().mockResolvedValue(new Blob(['sea authorization B']));
+    const first = render(<ProjectDocumentThumbnail {...props} loadBlob={firstLoader} />);
+    const second = render(<ProjectDocumentThumbnail {...props} loadBlob={secondLoader} />);
+    intersect(0); intersect(1);
+    await waitFor(() => expect(mocks.createUrl).toHaveBeenCalledTimes(2));
+    expect(firstLoader).toHaveBeenCalledOnce(); expect(secondLoader).toHaveBeenCalledOnce();
+    expect(mocks.load).not.toHaveBeenCalled();
+    first.unmount(); second.unmount();
+  });
+
   it('avoids downloading a file already known to exceed the preview byte limit', async () => {
     const view = render(<ProjectDocumentThumbnail {...props} document={{ ...source, fileSizeBytes: 51 * 1024 * 1024 }} />);
     intersect();
@@ -96,6 +108,7 @@ describe('ProjectDocumentThumbnail', () => {
     mocks.load.mockImplementationOnce(() => new Promise<Blob>(resolve => { finish = resolve; }));
     const view = render(<ProjectDocumentThumbnail {...props} />);
     intersect();
+    await waitFor(() => expect(mocks.load).toHaveBeenCalledOnce());
     view.rerender(<ProjectDocumentThumbnail {...props} document={{ ...source, storagePath: 'projects/1/revised.pdf' }} />);
     await act(async () => finish(new Blob(['late bytes'])));
     expect(view.container.querySelector('img')).toBeNull();

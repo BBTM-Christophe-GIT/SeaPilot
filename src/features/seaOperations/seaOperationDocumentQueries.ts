@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSharePointDocumentLinkState } from '../projects/projectDocuments';
+import { projectDriveStorage } from '../projects/projectDriveStorage';
 
 export interface SeaOperationProjectDocument {
   id: string;
@@ -58,7 +59,7 @@ export function parseSeaOperationProjectDocuments(data: unknown, projectId: stri
 }
 
 /** Reauthorize every opening; never use a saved SharePoint URL or a cached access URL. */
-export async function createSeaOperationProjectDocumentUrl(client: SupabaseClient, projectId: string, documentId: string): Promise<string> {
+async function authorizedDocumentLocation(client: SupabaseClient, projectId: string, documentId: string): Promise<{ sharePointUrl: string } | { bucket: 'project-files' | 'project-drive'; path: string }> {
   const key = projectKey(projectId);
   if (!/^(generated|project):[1-9][0-9]{0,18}$/.test(documentId)) throw new Error('Le document sélectionné est invalide.');
   const { data, error } = await client.rpc('sea_operation_project_document_access', { p_project_id: key, p_document_id: documentId });
@@ -67,7 +68,7 @@ export async function createSeaOperationProjectDocumentUrl(client: SupabaseClien
   if ('sharepoint_url' in location) {
     const link = getSharePointDocumentLinkState(requiredText(location.sharepoint_url));
     if (link.status !== 'available') throw new Error('L’accès sécurisé au document est invalide.');
-    return link.href;
+    return { sharePointUrl: link.href } as const;
   }
   const path = requiredText(location.path);
   if (location.bucket !== 'project-files' && location.bucket !== 'project-drive'
@@ -77,9 +78,33 @@ export async function createSeaOperationProjectDocumentUrl(client: SupabaseClien
     || /[\\\u0000-\u001f\u007f]/.test(path) || /(^|\/)\.\.?($|\/)/.test(path)) {
     throw new Error('L’accès sécurisé au document est invalide.');
   }
-  const signed = await client.storage.from(location.bucket).createSignedUrl(path, 300);
+  return { bucket: location.bucket as 'project-files' | 'project-drive', path } as const;
+}
+
+export async function createSeaOperationProjectDocumentUrl(client: SupabaseClient, projectId: string, documentId: string): Promise<string> {
+  const location = await authorizedDocumentLocation(client, projectId, documentId);
+  if ('sharePointUrl' in location) return location.sharePointUrl;
+  const signed = await client.storage.from(location.bucket).createSignedUrl(location.path, 300);
   if (signed.error) throw signed.error;
   const url = signed.data?.signedUrl;
   if (typeof url !== 'string' || !/^(https?:\/\/|blob:|\/(?!\/))/.test(url)) throw new Error('Le lien sécurisé du document est indisponible.');
   return url;
+}
+
+/** Every preview/download obtains a fresh Sea grant before the storage adapter reads bytes. */
+export async function loadSeaOperationProjectDocumentBlob(
+  client: SupabaseClient, projectId: string, document: SeaOperationProjectDocument, signal?: AbortSignal,
+  options?: { allowLocalDrive?: boolean },
+): Promise<Blob> {
+  signal?.throwIfAborted();
+  if (document.projectId !== projectKey(projectId)) throw new Error('Le document ne correspond pas au projet sélectionné.');
+  const location = await authorizedDocumentLocation(client, projectId, document.id);
+  signal?.throwIfAborted();
+  const bucket = 'sharePointUrl' in location ? 'sharepoint' : location.bucket;
+  const path = 'sharePointUrl' in location ? location.sharePointUrl : location.path;
+  const result = await projectDriveStorage(client, bucket).download(path, signal, { allowLocalDrive: options?.allowLocalDrive === true });
+  signal?.throwIfAborted();
+  if (result.error) throw result.error;
+  if (!(result.data instanceof Blob) || !result.data.size) throw new Error('Le document est vide ou indisponible.');
+  return result.data.type ? result.data : result.data.slice(0, result.data.size, document.mimeType);
 }

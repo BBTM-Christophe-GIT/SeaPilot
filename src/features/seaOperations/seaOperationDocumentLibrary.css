@@ -1,0 +1,21 @@
+.so-register-detail { min-width: 0; }
+.so-register-detail-tabs { display: flex; gap: var(--sp-space-1); padding: var(--sp-space-2); margin-bottom: var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); background: var(--sp-surface); }
+.so-page .so-register-detail-tabs > button { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-space-2); min-height: var(--sp-control-height); padding: var(--sp-space-2) var(--sp-space-3); border: 1px solid transparent; border-radius: var(--sp-control-radius); color: var(--sp-muted); background: transparent; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.so-page .so-register-detail-tabs > button[aria-selected=true] { color: var(--sp-primary); border-color: var(--sp-border); background: var(--sp-primary-soft); }
+.so-page .so-register-detail-tabs > button:hover { color: var(--sp-primary); background: var(--sp-surface-subtle); }
+.so-page .so-register-detail-tabs > button:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; }
+.so-register-document-count { display: inline-grid; min-width: 24px; min-height: 24px; place-items: center; padding-inline: var(--sp-space-1); border-radius: var(--sp-control-radius); color: var(--sp-surface); background: var(--sp-warning); font-size: 12px; font-weight: 700; }
+.so-project-document-library { min-width: 0; padding: var(--sp-space-4); border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); background: var(--sp-surface); }
+.so-project-document-library > header { display: flex; align-items: center; gap: var(--sp-space-2); margin-bottom: var(--sp-space-4); color: var(--sp-primary); }
+.so-project-document-library > header h3 { margin: 0; color: var(--sp-heading); font-size: 16px; }
+.so-project-document-library > header small { margin-left: auto; color: var(--sp-muted); font-size: 12px; }
+.so-project-document-library > p, .so-project-document-library > div[role=alert] { margin: var(--sp-space-2) 0; color: var(--sp-muted); font-size: 13px; line-height: 1.5; }
+.so-project-document-library .project-document-chip__identity > .project-document-chip__open { flex: 1; }
+.so-project-document-library .project-document-chip__actions button.sp-button--danger { width: auto; }
+@media (pointer: coarse), (max-width: 640px) {
+  .so-page .so-register-detail-tabs > button { min-height: 44px; }
+}
+@media (max-width: 640px) {
+  .so-project-document-library { padding: var(--sp-space-3); }
+  .so-register-detail-tabs > button { flex: 1; }
+}

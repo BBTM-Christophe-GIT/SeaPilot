@@ -21,6 +21,18 @@
   box-shadow: none;
 }
 
+.sp-button.sp-button--danger,
+.app-shell .app-dialog__footer button.sp-button.sp-button--danger {
+  color: var(--sp-surface);
+  border-color: var(--sp-danger);
+  background: var(--sp-danger);
+}
+.sp-button.sp-button--danger:hover:not(:disabled),
+.app-shell .app-dialog__footer button.sp-button.sp-button--danger:hover:not(:disabled) {
+  border-color: var(--sp-danger-hover);
+  background: var(--sp-danger-hover);
+}
+
 .app-shell .user-avatar {
   flex-shrink: 0;
   overflow: hidden;
