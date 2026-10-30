@@ -816,6 +816,8 @@ function ProjectDetail({
           projectDocuments={projectDocuments}
           projectId={project.id}
           renderDocuments={(documents, labels, categories) => <ProjectDocumentChips
+            key={`${documentAccessKey}:${project.id}:${isManager}`}
+            accessKey={`${documentAccessKey}:${project.id}:${isManager}`}
             client={supabaseClient}
             documents={documents}
             categories={categories}

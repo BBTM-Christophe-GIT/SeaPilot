@@ -48,14 +48,33 @@ export function projectDriveStorage(client: SupabaseClient, bucket: string) {
         });
       } catch (error) { return { error: error instanceof Error ? error : new Error((error as { message?: string })?.message || 'Enregistrement du document impossible.') }; }
     },
-    async download(path: string) {
+    async download(path: string, signal?: AbortSignal, options?: { allowLocalDrive?: boolean }) {
+      signal?.throwIfAborted();
+      const downloadStored = (targetBucket: string, targetPath: string) => signal
+        ? client.storage.from(targetBucket).download(targetPath, {}, { signal })
+        : client.storage.from(targetBucket).download(targetPath);
       // Migrated documents use the same authorized gateway as the browser's
       // other libraries, before consulting a historical desktop receipt.
-      if (bucket !== 'local-demo' && (await hasDocumentBlobFile(client, bucket, path) || await hasDocumentDriveFile(client, bucket, path))) return client.storage.from(bucket).download(path);
+      if (bucket !== 'local-demo' && (await hasDocumentBlobFile(client, bucket, path) || await hasDocumentDriveFile(client, bucket, path))) {
+        signal?.throwIfAborted();
+        return downloadStored(bucket, path);
+      }
+      signal?.throwIfAborted();
       const file = await lookup(path);
-      if (!file) return client.storage.from(bucket).download(path);
-      if (await hasDocumentBlobFile(client, 'project-drive', String(file.id))) return client.storage.from('project-drive').download(String(file.id));
-      return { data: await read(file), error: null };
+      signal?.throwIfAborted();
+      if (!file) {
+        if (bucket === 'sharepoint') throw new Error('Cette référence SharePoint ne possède pas de copie privée téléchargeable. Ouvrez le document dans SharePoint.');
+        return downloadStored(bucket, path);
+      }
+      if (await hasDocumentBlobFile(client, 'project-drive', String(file.id))) {
+        signal?.throwIfAborted();
+        return downloadStored('project-drive', String(file.id));
+      }
+      if (options?.allowLocalDrive === false) throw new Error('L’aperçu de ce document nécessite une copie privée accessible sans le connecteur SeaPilot.');
+      signal?.throwIfAborted();
+      const data = await read(file);
+      signal?.throwIfAborted();
+      return { data, error: null };
     },
     async createSignedUrl(path: string, seconds: number) {
       if (bucket !== 'local-demo' && (await hasDocumentBlobFile(client, bucket, path) || await hasDocumentDriveFile(client, bucket, path))) return client.storage.from(bucket).createSignedUrl(path, seconds);

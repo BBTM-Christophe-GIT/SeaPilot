@@ -87,5 +87,5 @@ export function ProjectSeaOperationDocumentCheckbox({ documentId, documentName, 
   const document = context?.documents.get(documentId);
   if (!context || !document) return null;
   const checked = context.pending?.id === documentId ? context.pending.selected : document.selected;
-  return <label className="project-sea-operation-document-choice" title="Afficher dans Opération en Mer"><input aria-label={`Afficher ${documentName} dans Opération en Mer`} checked={checked} disabled={context.disabled} onChange={event => context.toggle(documentId, event.target.checked)} type="checkbox" />{showLabel ? <><Ship aria-hidden="true" size={15} /><span>En mer</span></> : null}</label>;
+  return <label className="project-sea-operation-document-choice" title="Afficher dans Opération en Mer"><input aria-label={`Afficher ${documentName} dans Opération en Mer`} checked={checked} disabled={context.disabled} onChange={event => context.toggle(documentId, event.target.checked)} type="checkbox" />{showLabel ? <><Ship aria-hidden="true" size={15} /><span>Afficher dans « Opération en Mer »</span></> : null}</label>;
 }

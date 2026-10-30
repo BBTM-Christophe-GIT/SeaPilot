@@ -39,6 +39,15 @@ function previewSignaturePng(): Blob {
 }
 
 function previewStorageAssetUrl(bucket: string, path: string): string {
+  if (bucket === 'local-demo') {
+    const projectFiles: Record<string, string> = {
+      'project-documents/plan.pdf': '/demo/politique-qhse-demo.pdf',
+      'project-documents/contract.pdf': '/templates/contrat-affretement-bbtm.pdf',
+      'project-documents/operation.pdf': '/templates/attestation-embarquement.pdf',
+      'project-documents/instructions.docx': '/templates/procedure.docx',
+    };
+    return projectFiles[path] || '';
+  }
   if (bucket === 'project-files' && ['projects/99101/attachments/sea-operation-demo.pdf', 'projects/99102/attachments/sea-operation-demo.pdf'].includes(path)) return '/demo/politique-qhse-demo.pdf';
   if (bucket === 'project-files' && path === 'projects/99101/attachments/sea-operation-demo.webp') return '/demo/action-plan-closure-proof.webp';
   if (bucket === 'qhse-policy-attachments') return Array.from(previewQhseUploads.values()).find((upload) => upload.path === path)?.url || '';
@@ -872,13 +881,15 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       source_label: 'sharepoint',
       source_sharepoint_id: 'preview-project-document-1',
       file_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/Preview-Projet.pdf',
-      notes: 'Référence synthétique de préversion ; aucun fichier n’est copié dans BBTM.',
+      notes: 'Document fictif servi depuis les fichiers de démonstration de SeaPilot.',
       sharepoint_list_id: 'preview-project-library',
       sharepoint_list_title: 'Documents Projets',
       sharepoint_item_id: 'preview-project-document-1',
       sharepoint_drive_id: 'preview-project-drive',
       sharepoint_drive_item_id: 'preview-project-drive-item-1',
       file_name: 'Preview-Projet.pdf',
+      storage_bucket: 'local-demo',
+      storage_path: 'project-documents/plan.pdf',
       folder_path: '/Documents Projets/Démonstration',
       mime_type: 'application/pdf',
       file_extension: 'pdf',
@@ -906,6 +917,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       sharepoint_drive_id: 'preview-contract-drive',
       sharepoint_drive_item_id: 'preview-contract-drive-item-1',
       file_name: 'Preview-Contrat.pdf',
+      storage_bucket: 'local-demo',
+      storage_path: 'project-documents/contract.pdf',
       folder_path: '/Documents Contractuels/Démonstration',
       mime_type: 'application/pdf',
       file_extension: 'pdf',
@@ -1127,6 +1140,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       planning_occurrence_id: 9601,
       document_type: 'operation_attachment',
       file_name: 'Ordre-de-mission-rotation-1.pdf',
+      storage_bucket: 'local-demo',
+      storage_path: 'project-documents/operation.pdf',
       mime_type: 'application/pdf',
       file_size_bytes: 184320,
       sharepoint_web_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/Preview-Operation-1.pdf',
@@ -1138,6 +1153,8 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
       planning_occurrence_id: 9602,
       document_type: 'operation_attachment',
       file_name: 'Instructions-portuaires.docx',
+      storage_bucket: 'local-demo',
+      storage_path: 'project-documents/instructions.docx',
       mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       file_size_bytes: 96256,
       sharepoint_web_url: 'https://bbtm668.sharepoint.com/sites/QHSE/Documents%20Projets/Preview-Operation-2.docx',

@@ -23,6 +23,8 @@ const documentStorageMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('./projectDocumentGeneration', () => documentGenerationMocks);
+// Raster previews have their own byte-loading/rendering tests; avoid private reads on mount here.
+vi.mock('./ProjectDocumentThumbnail', () => ({ ProjectDocumentThumbnail: () => <span className="project-document-thumbnail" aria-hidden="true">Aperçu de test</span> }));
 // Geometry gestures are exercised by ProjectDetailMap/ProjectLocationEditor tests;
 // this suite keeps the edit surface small while testing the real page and scoped RPC.
 vi.mock('./ProjectLocationEditor', () => ({ ProjectLocationEditor: ({ value, onChange, disabled }: ComponentProps<typeof ProjectLocationEditor>) => {
@@ -488,13 +490,16 @@ describe('ProjectsPage', () => {
     expect(screen.queryByRole('table', { name: 'Documents du projet' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Documents pour Opération en Mer' })).not.toBeInTheDocument();
     const order = screen.getByText('Ordre de mission.pdf').closest('li')!;
-    const checkbox = await within(order).findByRole('checkbox');
+    const checkbox = await within(order).findByRole('checkbox', { name: 'Afficher Ordre de mission.pdf dans Opération en Mer' });
     expect(checkbox).not.toBeChecked();
-    expect(within(order).getByRole('button', { name: /Ouvrir le document/ })).toHaveTextContent(/^Ouvrir$/);
+    expect(within(order).getByRole('button', { name: /Ouvrir le document/ })).toHaveTextContent('Ordre de mission.pdf');
+    expect(within(order).getByRole('button', { name: /Ouvrir le document/ }).querySelector('.project-document-thumbnail')).toBeInTheDocument();
+    expect(within(order).queryByText(/^Ouvrir$/)).not.toBeInTheDocument();
+    expect(within(order).queryByText(/^Détails$/)).not.toBeInTheDocument();
     expect(within(order).getByRole('button', { name: 'Modifier la catégorie de Ordre de mission.pdf' })).toBeVisible();
-    expect(order.querySelector('svg[aria-hidden="true"]')).toBeInTheDocument();
-    expect(within(order).getByText('En mer')).toBeVisible();
-    expect(within(screen.getByText('Offre émise.pdf').closest('li')!).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(order.querySelector('.project-document-thumbnail')).toBeInTheDocument();
+    expect(within(order).getByText('Afficher dans « Opération en Mer »')).toBeVisible();
+    expect(within(screen.getByText('Offre émise.pdf').closest('li')!).queryByRole('checkbox', { name: /Afficher .* dans Opération en Mer/ })).not.toBeInTheDocument();
     await user.click(checkbox);
     await waitFor(() => expect(checkbox).toBeChecked());
     expect(operationSelectionMocks.save).toHaveBeenCalledWith(client, 880, 'generated:92', true);
@@ -1117,7 +1122,7 @@ describe('ProjectsPage', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Documents' }));
     expect(screen.getByText('Attestation Expert BV.pdf')).toBeInTheDocument();
-    expect(screen.getByText(/Toilette de Mer · Attestation Expert\/BV/)).toBeInTheDocument();
+    expect(within(screen.getByRole('list', { name: 'Documents · Toilette de Mer' })).getByText('Attestation Expert/BV')).toBeVisible();
     await user.click(screen.getByRole('button', { name: /Ouvrir le document.*Attestation Expert BV.pdf/ }));
     await waitFor(() => expect(createSignedUrl).toHaveBeenCalledWith('projects/880/attachments/toilette_de_mer/attestation.pdf', 300));
     expect(screen.getByRole('button', { name: /Ouvrir le document.*Plan projet Atlantique.pdf/ })).toBeInTheDocument();
@@ -1417,13 +1422,14 @@ describe('ProjectsPage', () => {
 
     await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
     await user.click(screen.getByRole('tab', { name: 'Documents' }));
-    const link = await screen.findByRole('button', { name: /Contrat Atlantique signé.pdf/ });
+    const link = await screen.findByRole('button', { name: 'Ouvrir le document : Contrat Atlantique signé.pdf' });
     await user.click(link);
     await waitFor(() => expect(createSignedUrl).toHaveBeenCalled());
 
     expect(link).toBeEnabled();
-    expect(link).toHaveTextContent('Ouvrir');
-    expect(screen.getAllByText(/Document du projet/).length).toBeGreaterThan(0);
+    expect(link).toHaveTextContent('Contrat Atlantique signé.pdf');
+    expect(link).toHaveAttribute('title', expect.stringContaining('Document contractuel'));
+    expect(screen.getByRole('button', { name: 'Ouvrir le document : Plan projet Atlantique.pdf' })).toHaveAttribute('title', expect.stringContaining('Document du projet'));
     expect(createSignedUrl).toHaveBeenCalledWith(
       'projects/880/contract-documents/884-Contrat-Atlantique-signe.pdf',
       300,
