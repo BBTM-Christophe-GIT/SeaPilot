@@ -1,5 +1,13 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.80.20`, build `2026-10-30.002`, identifie les justificatifs
+indisponibles qui empêchent un export de facturation complet, au lieu d'afficher
+uniquement une erreur générale de synchronisation. Le PDF fusionné ne lit que
+les annexes PDF ; le ZIP conserve toutes les pièces sélectionnées. Un fichier
+manquant ne produit jamais un export partiel. Aucune migration, mise à jour du
+lanceur Windows ni nouvelle dépendance n'est nécessaire. Voir
+[project-billing-missing-attachments.md](./project-billing-missing-attachments.md).
+
 Version `3.80.19`, build `2026-10-30.001`, corrige les heures d'accostage et
 d'appareillage des éléments de facturation pour tous les projets et toutes les
 périodes. Les heures saisies dans les DPR sont conservées en heure de Paris ;
