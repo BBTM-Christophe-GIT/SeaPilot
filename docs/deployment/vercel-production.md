@@ -1,5 +1,14 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.80.21`, build `2026-10-30.003`, permet de générer le PDF de
+facturation avec les annexes PDF disponibles même si d'autres justificatifs
+sont absents ou invalides. Les pièces non jointes sont signalées dans le tableau
+Services refacturables et dans le résultat de l'export. Le PDF standard reste
+indépendant des justificatifs ; le ZIP conserve son exigence de complétude.
+Les contrôles passifs n'ouvrent pas le lanceur Windows. Aucune migration ni
+nouvelle dépendance n'est requise. Voir
+[billing-pdf-attachment-status.md](./billing-pdf-attachment-status.md).
+
 Version `3.80.20`, build `2026-10-30.002`, identifie les justificatifs
 indisponibles qui empêchent un export de facturation complet, au lieu d'afficher
 uniquement une erreur générale de synchronisation. Le PDF fusionné ne lit que

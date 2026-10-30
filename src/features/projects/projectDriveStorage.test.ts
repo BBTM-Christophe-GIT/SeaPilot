@@ -73,7 +73,7 @@ describe('project Drive routing', () => {
 
   it('does not launch the desktop connector for a passive preview or cancelled read', async () => {
     const { client } = fixture({ id: 71, path: 'Projet/file.pdf' });
-    await expect(projectDriveStorage(client as never, 'project-files').download('old.pdf', undefined, { allowLocalDrive: false })).rejects.toThrow('sans le connecteur');
+    await expect(projectDriveStorage(client as never, 'project-files').download('old.pdf', undefined, { allowLocalDrive: false })).rejects.toMatchObject({ code: 'LOCAL_DRIVE_REQUIRED', message: expect.stringContaining('sans le connecteur') });
     const controller = new AbortController(); controller.abort();
     await expect(projectDriveStorage(client as never, 'project-files').download('old.pdf', controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
     expect(connectLocalDrive).not.toHaveBeenCalled();

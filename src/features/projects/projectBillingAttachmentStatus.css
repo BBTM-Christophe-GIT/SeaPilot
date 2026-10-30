@@ -1,0 +1,52 @@
+.project-billing-attachment {
+  display: grid;
+  min-width: 0;
+  gap: var(--sp-space-1);
+}
+
+.project-billing.is-workspace .project-billing-attachment > button span {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.project-billing-attachment-status {
+  display: grid;
+  max-width: 240px;
+  gap: var(--sp-space-1);
+  overflow-wrap: anywhere;
+  color: var(--sp-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.project-billing-attachment-status strong { font-weight: 600; }
+.project-billing-attachment-status small { color: var(--sp-muted); font-size: inherit; }
+.project-billing-attachment-status.is-available { color: var(--sp-success); }
+.project-billing-attachment-status:is(.is-missing, .is-invalid) { color: var(--sp-danger); }
+.project-billing-attachment-status.is-unavailable { color: var(--sp-warning); }
+.project-billing-attachment-empty { color: var(--sp-muted); font-size: 11px; }
+.project-billing-expense-table tr[data-attachment-issue='true'] > td:last-child { background: var(--sp-warning-soft); }
+.project-billing-attachment-progress { margin: 0; padding: var(--sp-space-2) var(--sp-space-3); color: var(--sp-muted); font-size: 12px; }
+
+.project-billing-attachment-warning {
+  display: grid;
+  min-width: 0;
+  gap: var(--sp-space-2);
+  padding: var(--sp-space-3);
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-panel-radius);
+  background: var(--sp-warning-soft);
+  color: var(--sp-text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.project-billing-attachment-warning strong { color: var(--sp-warning); }
+.project-billing-attachment-warning ul { margin: 0; padding-left: var(--sp-space-4); }
+
+@media (max-width: 600px) {
+  .project-billing .project-billing-card-actions { flex-wrap: wrap; }
+  .project-billing-attachment-status { max-width: 190px; }
+}
