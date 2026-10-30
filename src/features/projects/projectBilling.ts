@@ -715,7 +715,9 @@ export interface ProjectBillingDpr {
   operation: string;
   amountHt: number | null;
   vesselStatus: string;
+  /** Native DPRs use zone-less Paris civil times; imported timestamps retain their explicit zone. */
   arrivalAt: string;
+  /** Same civil-time / instant convention as arrivalAt. */
   departureAt: string;
   fuelLiters: number | null;
 }
@@ -868,17 +870,23 @@ function firstNumber(source: Record<string, unknown>, keys: string[]): number | 
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function addUtcOffset(value: string, hours = 2): string {
-  if (!value) return '';
-  const date = new Date(value);
+function formatBillingPortTime(value: string): string {
+  const timestamp = value.trim();
+  // A native DPR already contains the Paris clock entered in datetime-local.
+  const local = /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d(?:\.\d+)?)?$/.exec(timestamp);
+  if (local) return `${local[1]}h${local[2]}`;
+  // Only explicit instants may be parsed as dates: never depend on the browser's zone.
+  if (!/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(timestamp)) return '';
+  const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return '';
-  date.setTime(date.getTime() + hours * 60 * 60 * 1_000);
-  return `${String(date.getUTCHours()).padStart(2, '0')}h${String(date.getUTCMinutes()).padStart(2, '0')}`;
+  return new Intl.DateTimeFormat('fr-FR', {
+    timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(date).replace(':', 'h');
 }
 
 function formatDate(value: string): string {
   if (!value) return '';
-  return new Intl.DateTimeFormat('fr-FR').format(new Date(`${value}T12:00:00Z`));
+  return new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris' }).format(new Date(`${value}T12:00:00Z`));
 }
 
 function formatWholeNumber(value: number): string {
@@ -909,8 +917,8 @@ export function billingDprComment(
   const isSpecialOperation = operation === '24/24 CREW CHANGE'
     || operation === '24/24 WEATHER STAND-BY'
     || operation === 'CONTRACTUAL MAINTENANCE DAY';
-  const arrival = dpr.arrivalAt ? `Accosté au port à ${addUtcOffset(dpr.arrivalAt)}` : '';
-  const departure = dpr.departureAt ? `Appareillage du quai à ${addUtcOffset(dpr.departureAt)}` : '';
+  const arrival = dpr.arrivalAt ? `Accosté au port à ${formatBillingPortTime(dpr.arrivalAt)}` : '';
+  const departure = dpr.departureAt ? `Appareillage du quai à ${formatBillingPortTime(dpr.departureAt)}` : '';
   const refueling = dpr.fuelLiters && dpr.fuelLiters > 0
     ? `Refueling : ${formatWholeNumber(dpr.fuelLiters)} L`
     : '';
@@ -927,7 +935,7 @@ export async function fetchProjectBillingDprs(
 ): Promise<ProjectBillingDpr[]> {
   const reportResult = await client
     .from('dpr_reports')
-    .select('id,report_date,vessel_id,description,source_payload')
+    .select('id,report_date,vessel_id,description,source_label,source_payload')
     .eq('project_id', projectId)
     .gte('report_date', startDate)
     .lte('report_date', endDate)
@@ -975,10 +983,16 @@ export async function fetchProjectBillingDprs(
     const resolvedVesselName = vesselId ? vessels.get(vesselId) || '' : '';
     if (vesselName && resolvedVesselName !== vesselName) return [];
     const reportCalls = calls.get(id) || [];
+    // Native saves cast Paris datetime-local values to timestamptz without converting
+    // the clock. Match the DPR form's slice(0, 16); SharePoint imports are true instants.
+    const normalizedCallTime = (value: unknown): string => {
+      const timestamp = text(value);
+      return row.source_label === 'sharepoint' ? timestamp : timestamp.slice(0, 16);
+    };
     const arrivalAt = firstText(source, ['Heure_x002d_NavireAccost_x00e9_a'])
-      || text(reportCalls.find((call) => call.arrival_at)?.arrival_at);
+      || normalizedCallTime(reportCalls.find((call) => call.arrival_at)?.arrival_at);
     const departureAt = firstText(source, ['Heure_x002d_AppareillageduPort'])
-      || text([...reportCalls].reverse().find((call) => call.departure_at)?.departure_at);
+      || normalizedCallTime([...reportCalls].reverse().find((call) => call.departure_at)?.departure_at);
     const sourceFuelLiters = firstNumber(source, [
       'P144_x002d_FAC_x002d_Fuel_x0020_',
       'P144-FAC-Fuel',

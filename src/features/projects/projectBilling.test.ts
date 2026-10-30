@@ -416,6 +416,7 @@ describe('billing operation export', () => {
           report_date: '2026-07-28',
           vessel_id: null,
           description: '11H30 START MP\n12H20 LARGUE QUAI DU MAROC',
+          source_label: 'seapilot',
           source_payload: null,
         },
         {
@@ -423,6 +424,7 @@ describe('billing operation export', () => {
           report_date: '2026-07-29',
           vessel_id: null,
           description: '04H00 - QUART BOIS A.\n08H25 - ASSISTANCE TRAVAUX',
+          source_label: 'seapilot',
           source_payload: null,
         },
       ],
@@ -496,6 +498,7 @@ describe('billing operation export', () => {
           report_date: '2026-08-11',
           vessel_id: null,
           description: '',
+          source_label: 'sharepoint',
           source_payload: {
             P144_x002d_FAC_x002d_Fuel_x0020_: '8000',
             P144_x002d_FAC_x002d_Fuel_x0028_: '8',
@@ -506,6 +509,7 @@ describe('billing operation export', () => {
           report_date: '2026-08-12',
           vessel_id: null,
           description: '',
+          source_label: 'sharepoint',
           source_payload: { P144_x002d_FAC_x002d_Fuel_x0020_: '8000' },
         },
       ],
@@ -554,6 +558,85 @@ describe('billing operation export', () => {
       .toBe('24/24 Weather Stand-by');
     expect(resolveBillingDprOperation('', ['weather-standby']))
       .toBe('24/24 Weather Stand-by');
+  });
+});
+
+describe('DPR Paris times in billing exports', () => {
+  let fixtureNumber = 0;
+  function fixture(report: Record<string, unknown>, call: Record<string, unknown>, vesselName: string) {
+    const requests: URL[] = [];
+    const tables: Record<string, unknown[]> = {
+      dpr_reports: [report],
+      dpr_port_calls: [{ dpr_id: report.id, display_order: 0, dpr_port_call_reasons: [{ reason_type_key: 'crew-change' }], ...call }],
+      dpr_supplies: [],
+      vessels: [{ id: report.vessel_id, name: vesselName }],
+    };
+    const client = createClient('https://billing-time.example.invalid', 'fixture-publishable-key', {
+      auth: { storageKey: `billing-time-fixture-${++fixtureNumber}`, persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      global: {
+        fetch: async (request) => {
+          const url = new URL(String(request));
+          requests.push(url);
+          const table = url.pathname.split('/').pop()!;
+          if (!(table in tables)) throw new Error(`Unexpected table ${table}`);
+          return new Response(JSON.stringify(tables[table]), { headers: { 'Content-Type': 'application/json' } });
+        },
+      },
+    });
+    return { client, requests };
+  }
+
+  it.each([
+    {
+      name: 'GOURY DPR 1308 on October 11', id: 1308, projectId: 144, vesselName: 'GOURY', date: '2026-10-11', sourceLabel: 'seapilot',
+      source: null, arrival: null, departure: '2026-10-11T11:00:00+00:00', expectedArrival: '', expectedDeparture: '2026-10-11T11:00',
+      comment: 'Appareillage du quai à 11h00',
+    },
+    {
+      name: 'GOURY DPR 1468 on October 20', id: 1468, projectId: 144, vesselName: 'GOURY', date: '2026-10-20', sourceLabel: 'seapilot',
+      source: null, arrival: '2026-10-20T08:00:00+00:00', departure: null, expectedArrival: '2026-10-20T08:00', expectedDeparture: '',
+      comment: 'Accosté au port à 08h00',
+    },
+    {
+      name: 'a native winter DPR on another project and vessel', id: 2001, projectId: 200, vesselName: 'LE ROZEL', date: '2026-12-15', sourceLabel: 'seapilot',
+      source: null, arrival: '2026-12-15T00:30:00+00:00', departure: '2026-12-15T11:45:00+00:00', expectedArrival: '2026-12-15T00:30', expectedDeparture: '2026-12-15T11:45',
+      comment: 'Accosté au port à 00h30\nAppareillage du quai à 11h45',
+    },
+    {
+      name: 'legacy SharePoint source precedence in summer', id: 3001, projectId: 144, vesselName: 'GOURY', date: '2026-10-11', sourceLabel: 'sharepoint',
+      source: { Heure_x002d_AppareillageduPort: '2026-10-11T09:00:00Z' }, arrival: null, departure: '2026-10-11T15:00:00+00:00',
+      expectedArrival: '', expectedDeparture: '2026-10-11T09:00:00Z', comment: 'Appareillage du quai à 11h00',
+    },
+    {
+      name: 'legacy SharePoint source in winter', id: 3002, projectId: 200, vesselName: 'LE ROZEL', date: '2026-12-15', sourceLabel: 'sharepoint',
+      source: { Heure_x002d_NavireAccost_x00e9_a: '2026-12-15T09:00:00Z' }, arrival: null, departure: null,
+      expectedArrival: '2026-12-15T09:00:00Z', expectedDeparture: '', comment: 'Accosté au port à 10h00',
+    },
+    {
+      name: 'normalized imported fallback in winter', id: 3003, projectId: 144, vesselName: 'GOURY', date: '2026-12-15', sourceLabel: 'sharepoint',
+      source: {}, arrival: '2026-12-15T09:00:00+00:00', departure: '2026-12-15T10:15:00+00:00',
+      expectedArrival: '2026-12-15T09:00:00+00:00', expectedDeparture: '2026-12-15T10:15:00+00:00',
+      comment: 'Accosté au port à 10h00\nAppareillage du quai à 11h15',
+    },
+    {
+      name: 'independently selected legacy arrival and native departure', id: 3004, projectId: 144, vesselName: 'GOURY', date: '2026-10-20', sourceLabel: 'seapilot',
+      source: { Heure_x002d_NavireAccost_x00e9_a: '2026-10-20T06:00:00Z' }, arrival: null, departure: '2026-10-20T11:00:00+00:00',
+      expectedArrival: '2026-10-20T06:00:00Z', expectedDeparture: '2026-10-20T11:00',
+      comment: 'Accosté au port à 08h00\nAppareillage du quai à 11h00',
+    },
+  ])('preserves the Paris clock for $name', async (example) => {
+    const { client, requests } = fixture({
+      id: example.id, report_date: example.date, vessel_id: 3, description: '', source_label: example.sourceLabel, source_payload: example.source,
+    }, { arrival_at: example.arrival, departure_at: example.departure }, example.vesselName);
+    const dprs = await fetchProjectBillingDprs(client, example.projectId, example.date, example.date, example.vesselName);
+
+    expect(requests.find((url) => url.pathname.endsWith('/dpr_reports'))?.searchParams.get('select')).toContain('source_label');
+    expect(dprs).toHaveLength(1);
+    expect(dprs[0]).toMatchObject({ arrivalAt: example.expectedArrival, departureAt: example.expectedDeparture });
+    expect(billingOperationRows({
+      ...input, project: { ...input.project, id: example.projectId, projectCode: `P${example.projectId}` },
+      dprs, startDate: example.date, endDate: example.date, selectedVesselName: example.vesselName,
+    })[0].comments).toBe(example.comment);
   });
 });
 
@@ -724,7 +807,7 @@ describe('billingExpenseAttachmentName', () => {
   });
 });
 
-describe('Power BI P144 comments formula', () => {
+describe('DPR billing comments', () => {
   const base: ProjectBillingDpr = {
     id: 1,
     reportDate: '2026-06-01',
@@ -738,7 +821,7 @@ describe('Power BI P144 comments formula', () => {
     fuelLiters: 7200,
   };
 
-  it('keeps the exact Crew Change line order and UTC+2 conversion', () => {
+  it('keeps the Crew Change line order and converts imported summer instants to Paris time', () => {
     expect(billingDprComment(base)).toBe(
       'Accosté au port à 00h20\nRefueling : 7 200 L\nAppareillage du quai à 14h20',
     );
@@ -764,6 +847,35 @@ describe('Power BI P144 comments formula', () => {
       ...base,
       vesselStatus: 'Navire en Opération - On hire',
     })).toBe('Accosté au port à 00h20\nRefueling : 7 200 L\nAppareillage du quai à 14h20');
+  });
+
+  it.each([
+    ['2026-10-10T11:00', '11h00'],
+    ['2026-12-15T11:00:30', '11h00'],
+    ['2026-10-10T11:00:00+02:00', '11h00'],
+    ['2026-12-15T11:00:00+01:00', '11h00'],
+    ['2026-12-15T11:00:00Z', '12h00'],
+    ['2026-06-01T22:20:00Z', '00h20'],
+    ['2026-03-29T00:30:00Z', '01h30'],
+    ['2026-03-29T01:30:00Z', '03h30'],
+    ['2026-10-25T00:30:00Z', '02h30'],
+    ['2026-10-25T01:30:00Z', '02h30'],
+  ])('formats %s according to Paris civil time and daylight saving', (departureAt, expected) => {
+    expect(billingDprComment({ ...base, arrivalAt: '', fuelLiters: null, departureAt }))
+      .toBe(`Appareillage du quai à ${expected}`);
+  });
+
+  it.each(['UTC', 'America/Los_Angeles', 'Asia/Tokyo', 'Pacific/Kiritimati'])('is independent of the host timezone %s', (timezone) => {
+    vi.stubEnv('TZ', timezone);
+    try {
+      for (const departureAt of ['2026-10-10T11:00', '2026-10-10T09:00:00Z', '2026-12-15T10:00:00Z']) {
+        expect(billingDprComment({ ...base, arrivalAt: '', fuelLiters: null, departureAt }))
+          .toBe('Appareillage du quai à 11h00');
+      }
+      expect(billingOperationRows(input)[0].date).toBe('01/06/2026');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 
