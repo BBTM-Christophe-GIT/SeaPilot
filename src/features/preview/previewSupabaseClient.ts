@@ -10,7 +10,7 @@ import { QHSE_POLICY_ATTACHMENT_MIME_TYPES } from '../qhsePolicy/qhsePolicyAttac
 import { isQhsePolicyId, type QhsePolicyOwnerKind } from '../qhsePolicy/qhsePolicyModel';
 import { normalizeQhsePolicyAxisIconKey, resolveQhsePolicyAxisIcon } from '../qhsePolicy/qhsePolicyIcons';
 import { DEFAULT_PROCEDURE_TAGS } from '../procedures/procedureTagCatalogue';
-import { seaOperationPreviewRpc } from '../seaOperations/seaOperationPreview';
+import { isSeaOperationPreviewProject, seaOperationPreviewDocumentLocationVisible, seaOperationPreviewRpc } from '../seaOperations/seaOperationPreview';
 import { GOURY_WEATHER_MATRIX, isVesselWeatherMatrix, cloneVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { parseProjectLocationPlan } from '../projects/projectLocation';
 import { DEFAULT_PROJECT_DOCUMENT_CATEGORIES, validateProjectDocumentCategories } from '../projects/projectDocumentCategories';
@@ -2293,6 +2293,7 @@ function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
   if (functionName === 'projects_document_deletion_snapshot' || functionName === 'projects_delete_document') {
+    if (isSeaOperationPreviewProject(args.target_project_id)) return createPreviewQuery(seaOperationPreviewRpc(functionName, args));
     const failure = (code: string, message: string) => createPreviewQuery({ data: null, error: { code, message } });
     const projectId = Number(args.target_project_id);
     const project = previewRows('projects').find(row => Number(row.id) === projectId);
@@ -2368,7 +2369,7 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   }
   // The pharmacy editor owns its synthetic register; the shared home never reads real inventory.
   if (functionName === 'pharmacy_notifications') return createPreviewQuery({ data: [], error: null });
-  if (functionName === 'document_blob_lookup') return createPreviewQuery({ data: null, error: null });
+  if (functionName === 'document_blob_lookup' || functionName === 'document_drive_lookup') return createPreviewQuery({ data: null, error: null });
   if (functionName === 'document_blob_lookup_batch') {
     const paths = Array.isArray(args.target_paths) ? args.target_paths : [];
     return createPreviewQuery({ data: paths.map((path) => ({ path, document: null, error: null })), error: null });
@@ -3348,7 +3349,8 @@ export const previewSupabaseClient = {
   },
   storage: {
     from: (bucket: string) => ({
-      createSignedUrl: (path: string) => Promise.resolve({
+      createSignedUrl: (path: string) => Promise.resolve(!seaOperationPreviewDocumentLocationVisible(bucket, path)
+        ? { data: null, error: { code: '42501', message: 'Document de démonstration supprimé.' } } : {
         data: {
           signedUrl: previewStorageAssetUrl(bucket, path),
         },
@@ -3358,6 +3360,7 @@ export const previewSupabaseClient = {
         data: paths.map((path) => ({ path, signedUrl: path.startsWith('demo/') ? `/${path}` : '' })), error: null,
       }),
       download: async (path: string) => {
+        if (!seaOperationPreviewDocumentLocationVisible(bucket, path)) return { data: null, error: { code: '42501', message: 'Document de démonstration supprimé.' } };
         if (bucket === 'qhse-policy-attachments') {
           const upload = Array.from(previewQhseUploads.values()).find((file) => file.path === path);
           return upload?.blob ? { data: upload.blob, error: null } : { data: null, error: PREVIEW_WRITE_ERROR };

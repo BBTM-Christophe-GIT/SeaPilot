@@ -42,7 +42,7 @@ pour Admin et Direction uniquement. Le serveur vérifie la société, le projet
 actif et la version confirmée. La suppression logique retire la pièce des deux
 modules et actualise le compteur ; elle conserve les octets, leur historique et
 les autres références métier. Marin, Capitaine et Armement consultent et
-téléchargent les pièces autorisées sans disposer d’une action de suppression.
+téléchargent les pièces autorisées sans action de modification ni de suppression.
 La migration `20261030070155_project_document_soft_delete.sql` est requise pour
 ces suppressions et leur révocation des nouveaux accès.
 

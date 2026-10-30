@@ -11,6 +11,7 @@
 .so-project-document-library > header small { margin-left: auto; color: var(--sp-muted); font-size: 12px; }
 .so-project-document-library > p, .so-project-document-library > div[role=alert] { margin: var(--sp-space-2) 0; color: var(--sp-muted); font-size: 13px; line-height: 1.5; }
 .so-project-document-library .project-document-chip__identity > .project-document-chip__open { flex: 1; }
+.so-page .so-project-document-library button.project-document-chip__open { justify-content: flex-start; }
 .so-project-document-library .project-document-chip__actions button.sp-button--danger { width: auto; }
 @media (pointer: coarse), (max-width: 640px) {
   .so-page .so-register-detail-tabs > button { min-height: 44px; }

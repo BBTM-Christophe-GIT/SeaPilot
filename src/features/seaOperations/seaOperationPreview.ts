@@ -46,6 +46,16 @@ const projectDocuments = [
   { id: 'project:991012', project_id: 99101, title: 'Exemple photo de démonstration', file_name: 'exemple-photo-projet.webp', mime_type: 'image/webp', category_label: 'Préparation', subcategory_label: 'Exemple', created_at: '2026-10-22T08:00:00Z', expires_on: null, path: 'projects/99101/attachments/sea-operation-demo.webp' },
   { id: 'project:991021', project_id: 99102, title: 'Exemple PDF du second projet', file_name: 'exemple-second-projet.pdf', mime_type: 'application/pdf', category_label: 'Préparation', subcategory_label: 'Exemple', created_at: '2026-10-22T09:00:00Z', expires_on: null, path: 'projects/99102/attachments/sea-operation-demo.pdf' },
 ];
+const deletedProjectDocuments = new Map<string, { expected: Record<string, unknown>; deletedAt: string }>();
+export function isSeaOperationPreviewProject(value: unknown): boolean {
+  const id = typeof value === 'number' ? value : typeof value === 'string' && /^[1-9][0-9]*$/.test(value) ? Number(value) : NaN;
+  return Number.isSafeInteger(id) && projectPorts.has(String(id));
+}
+export function seaOperationPreviewDocumentLocationVisible(bucket: string, path: string): boolean {
+  if (bucket !== 'project-files') return true;
+  const matches = projectDocuments.filter(document => document.path === path);
+  return !matches.length || matches.some(document => !deletedProjectDocuments.has(document.id));
+}
 const records: PreviewRecord[] = [{
   id: '99000000-0000-4000-8000-000000000001', company_id: 9901, version: 1, status: 'draft', draft: sample,
   created_by: 'preview-user', created_by_name: 'Compte de démonstration', created_at: now(),
@@ -57,8 +67,8 @@ function withProjectPorts(record: PreviewRecord) {
   const ports = projectId && !record.draft.transit ? projectPorts.get(projectId) : undefined;
   return { ...record, project_ports: ports ? { projectId, ...ports } : null };
 }
-export function seaOperationPreviewRpc(name: string, args: Record<string, unknown> = {}, vesselSource?: (id: number) => Record<string, unknown> | undefined): { data: unknown; error: { message: string } | null } {
-  const fail = (message: string) => ({ data: null, error: { message } });
+export function seaOperationPreviewRpc(name: string, args: Record<string, unknown> = {}, vesselSource?: (id: number) => Record<string, unknown> | undefined): { data: unknown; error: { message: string; code?: string } | null } {
+  const fail = (message: string, code?: string) => ({ data: null, error: { message, ...(code ? { code } : {}) } });
   const success = (data: unknown) => ({ data: structuredClone(data), error: null });
   let references = vessels;
   if (['sea_operations_overview', 'sea_operation_planning_context', 'sea_operation_save', 'sea_operation_save_with_project_ports'].includes(name)) {
@@ -75,9 +85,27 @@ export function seaOperationPreviewRpc(name: string, args: Record<string, unknow
   if (name === 'sea_operations_overview') return success({ company_id: 9901, actor_id: 'preview-user', actor_name: 'Compte de démonstration', records: records.map(withProjectPorts), vessels: references });
   if (name === 'sea_operation_planning_context') return success(planningContext(typeof args.p_date === 'string' ? args.p_date : seaOperationToday(), references));
   if (name === 'sea_operation_captain_signature') return success(null);
-  if (name === 'sea_operation_project_documents') return success(projectDocuments.filter((document) => document.project_id === Number(args.p_project_id)).map((document) => Object.fromEntries(Object.entries(document).filter(([key]) => key !== 'path'))));
+  if (name === 'projects_document_deletion_snapshot' || name === 'projects_delete_document') {
+    if (!isSeaOperationPreviewProject(args.target_project_id)) return fail('Le document du projet est inaccessible.', '42501');
+    const document = projectDocuments.find(item => item.id === args.target_document_id && item.project_id === Number(args.target_project_id));
+    if (!document) return fail('Le document du projet est inaccessible.', '42501');
+    const tombstone = deletedProjectDocuments.get(document.id);
+    const expected = tombstone?.expected || { file_name: document.file_name, category_key: null, subcategory_key: null,
+      storage_bucket: 'project-files', storage_path: document.path, source_url: null, file_size_bytes: null, modified_at: document.created_at };
+    if (name === 'projects_document_deletion_snapshot') return tombstone ? fail('Ce document a déjà été supprimé.', '42501')
+      : success({ project_id: String(document.project_id), document_id: document.id, expected_document: expected });
+    const requested = args.target_expected_document;
+    if (!requested || typeof requested !== 'object' || Array.isArray(requested) || Object.keys(requested).length !== Object.keys(expected).length
+      || Object.keys(expected).some(key => (requested as Record<string, unknown>)[key] !== expected[key])) {
+      return fail('Le document a changé. Actualisez la liste avant de le supprimer.', '40001');
+    }
+    const deletedAt = tombstone?.deletedAt || now();
+    deletedProjectDocuments.set(document.id, { expected: { ...expected }, deletedAt });
+    return success({ project_id: String(document.project_id), document_id: document.id, deleted_at: deletedAt });
+  }
+  if (name === 'sea_operation_project_documents') return success(projectDocuments.filter((document) => document.project_id === Number(args.p_project_id) && !deletedProjectDocuments.has(document.id)).map((document) => Object.fromEntries(Object.entries(document).filter(([key]) => key !== 'path'))));
   if (name === 'sea_operation_project_document_access') {
-    const document = projectDocuments.find((item) => item.id === args.p_document_id && item.project_id === Number(args.p_project_id));
+    const document = projectDocuments.find((item) => item.id === args.p_document_id && item.project_id === Number(args.p_project_id) && !deletedProjectDocuments.has(item.id));
     return document ? success({ bucket: 'project-files', path: document.path, file_name: document.file_name, mime_type: document.mime_type }) : fail('Document indisponible pour ce projet.');
   }
   const record = records.find((item) => item.id === args.p_id);
