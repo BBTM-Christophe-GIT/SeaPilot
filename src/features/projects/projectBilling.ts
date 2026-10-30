@@ -1224,12 +1224,27 @@ export async function generateBillingExportPackage(
   if (format === 'pdf') return { blob: summary, extension: 'pdf' };
 
   const includedExpenses = new Set(input.expenses.filter((expense) => expense.includeInPdf !== false).map((expense) => expense.id));
-  const includedDocuments = input.period.includeExpensesInPdf === false ? [] : documents.filter((document) => document.chargeableExpenseId !== null && includedExpenses.has(document.chargeableExpenseId));
-  const attachments = await Promise.all(includedDocuments.map(async (document) => {
+  const isPdf = (document: ProjectBillingDocument) => document.mimeType.toLowerCase() === 'application/pdf' || document.fileName.toLowerCase().endsWith('.pdf');
+  const includedDocuments = input.period.includeExpensesInPdf === false ? [] : documents.filter((document) => (
+    document.chargeableExpenseId !== null && includedExpenses.has(document.chargeableExpenseId)
+    && (format !== 'merged-pdf' || isPdf(document))
+  ));
+  const downloads = await Promise.allSettled(includedDocuments.map(async (document) => {
     const { data, error } = await projectDriveStorage(client, document.bucketName).download(document.objectPath);
     if (error) throw error;
+    if (!(data instanceof Blob)) throw new Error('Le téléchargement n’a retourné aucun fichier.');
     return { document, blob: data };
   }));
+  const unavailable = downloads.flatMap((result, index) => {
+    if (result.status === 'fulfilled') return [];
+    const failure: unknown = result.reason;
+    const detail = failure && typeof failure === 'object' && 'message' in failure && typeof failure.message === 'string'
+      ? failure.message : '';
+    return [`${includedDocuments[index].fileName} : ${detail || 'Téléchargement impossible.'}`];
+  });
+  if (unavailable.length) throw new Error(`Pièces jointes indisponibles :\n${unavailable.join('\n')}\nRestaurez l’accès à ces pièces ou ajoutez-les à nouveau dans les frais concernés, puis réessayez l’export.`);
+  // Only assemble the requested package after every selected annex is available.
+  const attachments = downloads.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
 
   if (format === 'zip') {
     const { default: JSZip } = await import('jszip');
@@ -1249,11 +1264,7 @@ export async function generateBillingExportPackage(
     pages.forEach((page) => merged.addPage(page));
   };
   await appendPdf(summary);
-  for (const attachment of attachments) {
-    if (attachment.document.mimeType === 'application/pdf' || attachment.document.fileName.toLowerCase().endsWith('.pdf')) {
-      await appendPdf(attachment.blob);
-    }
-  }
+  for (const attachment of attachments) await appendPdf(attachment.blob);
   const mergedBytes = await merged.save();
   return { blob: new Blob([mergedBytes.buffer as ArrayBuffer], { type: 'application/pdf' }), extension: 'pdf' };
 }

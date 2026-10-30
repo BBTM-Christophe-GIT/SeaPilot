@@ -21853,6 +21853,8 @@ button.planning-p12-conflict-card {
   background: #fff1f2;
   border: 1px solid #fecdd3;
   color: #be123c;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
 }
 
 .project-billing-grid {
