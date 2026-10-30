@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { Ship } from 'lucide-react';
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { fetchProjectSeaOperationDocuments, saveProjectSeaOperationDocument, type ProjectSeaOperationDocument, type ProjectSeaOperationDocumentSelection } from './projectSeaOperationDocumentsQueries';
 import './ProjectSeaOperationDocuments.css';
@@ -81,10 +82,10 @@ export function ProjectSeaOperationDocuments({ accessKey, archived, canManage, c
   </DocumentSelection.Provider>;
 }
 
-export function ProjectSeaOperationDocumentCheckbox({ documentId, documentName }: { documentId: string; documentName: string }) {
+export function ProjectSeaOperationDocumentCheckbox({ documentId, documentName, showLabel = false }: { documentId: string; documentName: string; showLabel?: boolean }) {
   const context = useContext(DocumentSelection);
   const document = context?.documents.get(documentId);
   if (!context || !document) return null;
   const checked = context.pending?.id === documentId ? context.pending.selected : document.selected;
-  return <label className="project-sea-operation-document-choice"><input aria-label={`Afficher ${documentName} dans Opération en Mer`} checked={checked} disabled={context.disabled} onChange={event => context.toggle(documentId, event.target.checked)} type="checkbox" /></label>;
+  return <label className="project-sea-operation-document-choice" title="Afficher dans Opération en Mer"><input aria-label={`Afficher ${documentName} dans Opération en Mer`} checked={checked} disabled={context.disabled} onChange={event => context.toggle(documentId, event.target.checked)} type="checkbox" />{showLabel ? <><Ship aria-hidden="true" size={15} /><span>Afficher dans « Opération en Mer »</span></> : null}</label>;
 }

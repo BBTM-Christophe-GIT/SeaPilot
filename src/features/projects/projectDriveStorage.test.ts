@@ -55,6 +55,30 @@ describe('project Drive routing', () => {
     await projectDriveStorage(client as never, 'project-files').download('old.pdf');
     expect(download).toHaveBeenCalledWith('old.pdf');
   });
+
+  it.each([false, true])('forwards cancellation to an authorized provider read (mapped: %s)', async mapped => {
+    vi.mocked(hasDocumentBlobFile).mockResolvedValue(mapped);
+    const { client, download } = fixture();
+    const signal = new AbortController().signal;
+    await projectDriveStorage(client as never, 'project-files').download('old.pdf', signal);
+    expect(download).toHaveBeenCalledExactlyOnceWith('old.pdf', {}, { signal });
+  });
+
+  it('does not fetch raw SharePoint references without an authorized private mapping', async () => {
+    const { client, download } = fixture();
+    await expect(projectDriveStorage(client as never, 'sharepoint').download('https://bbtm668.sharepoint.com/sites/QHSE/document.pdf')).rejects.toThrow('ne possède pas de copie privée');
+    expect(download).not.toHaveBeenCalled();
+    expect(connectLocalDrive).not.toHaveBeenCalled();
+  });
+
+  it('does not launch the desktop connector for a passive preview or cancelled read', async () => {
+    const { client } = fixture({ id: 71, path: 'Projet/file.pdf' });
+    await expect(projectDriveStorage(client as never, 'project-files').download('old.pdf', undefined, { allowLocalDrive: false })).rejects.toThrow('sans le connecteur');
+    const controller = new AbortController(); controller.abort();
+    await expect(projectDriveStorage(client as never, 'project-files').download('old.pdf', controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(connectLocalDrive).not.toHaveBeenCalled();
+    expect(localDriveRequest).not.toHaveBeenCalled();
+  });
   it('reads and signs a migrated desktop receipt using its registry id before opening the local copy', async () => {
     vi.mocked(hasDocumentBlobFile).mockImplementation(async (_client, bucket, path) => bucket === 'project-drive' && path === '71');
     const { client, download, createSignedUrl } = fixture({ id: 71, path: 'Projet/Contrat/file.pdf', bytes: 3, sha256: 'old' });

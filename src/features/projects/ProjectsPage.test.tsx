@@ -23,6 +23,8 @@ const documentStorageMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('./projectDocumentGeneration', () => documentGenerationMocks);
+// Raster previews have their own byte-loading/rendering tests; avoid private reads on mount here.
+vi.mock('./ProjectDocumentThumbnail', () => ({ ProjectDocumentThumbnail: () => <span className="project-document-thumbnail" aria-hidden="true">Aperçu de test</span> }));
 // Geometry gestures are exercised by ProjectDetailMap/ProjectLocationEditor tests;
 // this suite keeps the edit surface small while testing the real page and scoped RPC.
 vi.mock('./ProjectLocationEditor', () => ({ ProjectLocationEditor: ({ value, onChange, disabled }: ComponentProps<typeof ProjectLocationEditor>) => {
@@ -402,12 +404,12 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('tab', { name: 'Documents' })).toHaveAttribute('aria-selected', 'true');
     expect(from.mock.calls).toHaveLength(readsBeforeSave);
     for (const [otherSource, otherFile] of Object.entries(files)) {
-      const row = screen.getByText(otherFile, { exact: true }).closest('tr')!;
-      expect(row).toHaveTextContent(otherSource === source ? 'Toilette de Mer' : otherSource === 'contract' ? 'Facturation' : 'HSE');
+      const category = otherSource === source ? 'Toilette de Mer' : otherSource === 'contract' ? 'Facturation' : 'HSE';
+      expect(within(screen.getByRole('list', { name: `Documents · ${category}` })).getByText(otherFile, { exact: true })).toBeVisible();
     }
     fireEvent.click(screen.getByRole('tab', { name: 'Opérations' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Documents' }));
-    await waitFor(() => expect(screen.getByText(fileName, { exact: true }).closest('tr')).toHaveTextContent('Toilette de Mer'));
+    await waitFor(() => expect(within(screen.getByRole('list', { name: 'Documents · Toilette de Mer' })).getByText(fileName, { exact: true })).toBeVisible());
   });
 
   it('adds a classified document directly from Documents and immediately exposes its fresh private reader', async () => {
@@ -468,7 +470,7 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('button', { name: /Ouvrir le document.*Offre émise.pdf/ })).toBeVisible();
   });
 
-  it('places opt-in checkboxes after Ouvrir and never offers an emitted commercial document', async () => {
+  it('keeps each document icon, full name and actions together and only offers eligible sea checkboxes', async () => {
     const user = userEvent.setup();
     const metadata = { projectId: '880', mimeType: 'application/pdf', categoryLabel: 'Opérations', subcategoryLabel: '', createdAt: '2026-07-15T10:00:00Z', expiresOn: null, selected: false };
     const catalog = { configured: false, documents: [
@@ -485,16 +487,19 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage client={client as never} roles={['admin']} />);
     await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
     await user.click(screen.getByRole('tab', { name: 'Documents' }));
-    const table = screen.getByRole('table', { name: 'Documents du projet' });
-    expect(within(table).getAllByRole('columnheader').map(header => header.textContent)).toEqual(['Document', 'Ouvrir', 'Opération en Mer']);
+    expect(screen.queryByRole('table', { name: 'Documents du projet' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Documents pour Opération en Mer' })).not.toBeInTheDocument();
-    const order = screen.getByText('Ordre de mission.pdf').closest('tr')!;
-    const checkbox = await within(order).findByRole('checkbox');
+    const order = screen.getByText('Ordre de mission.pdf').closest('li')!;
+    const checkbox = await within(order).findByRole('checkbox', { name: 'Afficher Ordre de mission.pdf dans Opération en Mer' });
     expect(checkbox).not.toBeChecked();
-    expect(within(order).getByRole('button', { name: /Ouvrir le document/ })).toHaveTextContent(/^Ouvrir$/);
-    expect(order.cells[1].querySelector('button')).toBeTruthy();
-    expect(order.cells[2].querySelector('input')).toBe(checkbox);
-    expect(within(screen.getByText('Offre émise.pdf').closest('tr')!).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(within(order).getByRole('button', { name: /Ouvrir le document/ })).toHaveTextContent('Ordre de mission.pdf');
+    expect(within(order).getByRole('button', { name: /Ouvrir le document/ }).querySelector('.project-document-thumbnail')).toBeInTheDocument();
+    expect(within(order).queryByText(/^Ouvrir$/)).not.toBeInTheDocument();
+    expect(within(order).queryByText(/^Détails$/)).not.toBeInTheDocument();
+    expect(within(order).getByRole('button', { name: 'Modifier la catégorie de Ordre de mission.pdf' })).toBeVisible();
+    expect(order.querySelector('.project-document-thumbnail')).toBeInTheDocument();
+    expect(within(order).getByText('Afficher dans « Opération en Mer »')).toBeVisible();
+    expect(within(screen.getByText('Offre émise.pdf').closest('li')!).queryByRole('checkbox', { name: /Afficher .* dans Opération en Mer/ })).not.toBeInTheDocument();
     await user.click(checkbox);
     await waitFor(() => expect(checkbox).toBeChecked());
     expect(operationSelectionMocks.save).toHaveBeenCalledWith(client, 880, 'generated:92', true);
@@ -1117,7 +1122,7 @@ describe('ProjectsPage', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Documents' }));
     expect(screen.getByText('Attestation Expert BV.pdf')).toBeInTheDocument();
-    expect(screen.getByText(/Toilette de Mer · Attestation Expert\/BV/)).toBeInTheDocument();
+    expect(within(screen.getByRole('list', { name: 'Documents · Toilette de Mer' })).getByText('Attestation Expert/BV')).toBeVisible();
     await user.click(screen.getByRole('button', { name: /Ouvrir le document.*Attestation Expert BV.pdf/ }));
     await waitFor(() => expect(createSignedUrl).toHaveBeenCalledWith('projects/880/attachments/toilette_de_mer/attestation.pdf', 300));
     expect(screen.getByRole('button', { name: /Ouvrir le document.*Plan projet Atlantique.pdf/ })).toBeInTheDocument();
@@ -1417,13 +1422,14 @@ describe('ProjectsPage', () => {
 
     await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
     await user.click(screen.getByRole('tab', { name: 'Documents' }));
-    const link = await screen.findByRole('button', { name: /Contrat Atlantique signé.pdf/ });
+    const link = await screen.findByRole('button', { name: 'Ouvrir le document : Contrat Atlantique signé.pdf' });
     await user.click(link);
     await waitFor(() => expect(createSignedUrl).toHaveBeenCalled());
 
     expect(link).toBeEnabled();
-    expect(link).toHaveTextContent('Ouvrir');
-    expect(screen.getAllByText(/Document du projet/).length).toBeGreaterThan(0);
+    expect(link).toHaveTextContent('Contrat Atlantique signé.pdf');
+    expect(link).toHaveAttribute('title', expect.stringContaining('Document contractuel'));
+    expect(screen.getByRole('button', { name: 'Ouvrir le document : Plan projet Atlantique.pdf' })).toHaveAttribute('title', expect.stringContaining('Document du projet'));
     expect(createSignedUrl).toHaveBeenCalledWith(
       'projects/880/contract-documents/884-Contrat-Atlantique-signe.pdf',
       300,

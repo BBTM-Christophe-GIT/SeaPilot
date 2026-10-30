@@ -159,6 +159,19 @@ describe('ProjectDocumentLibrary', () => {
     expect(within(dialog).queryByLabelText('Sous-catégorie')).not.toBeInTheDocument();
   });
 
+  it('keeps historical child category keys visible through their root and referenced inactive subcategory filters', async () => {
+    mocks.fetch.mockResolvedValue(categories.map(category => ({ ...category, active: category.key === 'hse_audits' ? false : category.active })));
+    render(<ProjectDocumentLibrary {...props} attachments={[{ ...attachment, categoryKey: 'hse_audits', subcategoryKey: '' }]} />);
+    await screen.findByRole('option', { name: 'HSE' });
+    fireEvent.change(screen.getByLabelText('Catégorie'), { target: { value: 'hse' } });
+    expect(screen.getByText('audit.pdf · Audits')).toBeVisible();
+    expect(screen.getByRole('option', { name: 'Audits (retirée)' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Sous-catégorie'), { target: { value: 'hse_audits' } });
+    expect(screen.getByText('audit.pdf · Audits')).toBeVisible();
+    expect(screen.getByText('1 document')).toBeVisible();
+    expect(screen.queryByText('Aucun document dans cette catégorie.')).not.toBeInTheDocument();
+  });
+
   it('renames, creates and retires common catalogue entries while keeping historical rows', async () => {
     const user = userEvent.setup(); render(<ProjectDocumentLibrary {...props} />);
     const manage = screen.getByRole('button', { name: 'Gérer les catégories' });
@@ -282,7 +295,7 @@ describe('ProjectDocumentLibrary', () => {
     render(<ProjectDocumentLibrary {...props} otherDocuments={[{ ...attachment, id: 80, documentType: 'offer', categoryKey: '', planningOccurrenceId: 1201 }]} renderDocuments={renderDocuments} />);
     await screen.findByRole('option', { name: 'HSE' });
     expect(screen.getByText('3 documents')).toBeVisible();
-    expect(renderDocuments).toHaveBeenLastCalledWith(expect.objectContaining({ attachments: expect.arrayContaining([expect.objectContaining({ id: 77 }), expect.objectContaining({ id: 78 })]), otherDocuments: [expect.objectContaining({ id: 80 })] }), expect.any(Map));
+    expect(renderDocuments).toHaveBeenLastCalledWith(expect.objectContaining({ attachments: expect.arrayContaining([expect.objectContaining({ id: 77 }), expect.objectContaining({ id: 78 })]), otherDocuments: [expect.objectContaining({ id: 80 })] }), expect.any(Map), categories);
   });
 
   it('keeps an archived project readable and the shared catalogue manageable while refusing new uploads', async () => {
