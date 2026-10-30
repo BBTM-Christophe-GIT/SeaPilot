@@ -40,5 +40,5 @@ export function ProjectStoredDocumentLink({
       setError(caught instanceof Error ? caught.message : 'Document indisponible.');
     } finally { setOpening(false); }
   }
-  return <span className="project-stored-document-link"><button aria-label={`Ouvrir le document : ${document.fileName}`} aria-busy={opening} className={className || 'sp-button sp-button--secondary'} title={title} type="button" disabled={opening} onClick={() => void open()}>{children || <>{includeIcon ? <ExternalLink aria-hidden="true" size={14} /> : null}{opening ? 'Ouverture…' : 'Ouvrir'}</>}</button>{error ? <small role="alert">{error}</small> : null}</span>;
+  return <span className="project-document-access-link"><button aria-label={`Ouvrir le document : ${document.fileName}`} aria-busy={opening} className={className || 'sp-button sp-button--secondary'} title={title} type="button" disabled={opening} onClick={() => void open()}>{children || <>{includeIcon ? <ExternalLink aria-hidden="true" size={14} /> : null}{opening ? 'Ouverture…' : 'Ouvrir'}</>}</button>{error ? <small role="alert">{error}</small> : null}</span>;
 }
