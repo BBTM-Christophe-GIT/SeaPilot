@@ -992,7 +992,7 @@ export function ServiceCatalogDialog({
       size="fullscreen"
       title="Liste des prestations"
     >
-      <div className="project-catalog-workspace">
+      <div className="project-catalog-workspace project-service-catalog-workspace">
         <aside className="project-catalog-sidebar">
           <div className="project-catalog-sidebar-actions">
             <label className="project-catalog-search">
@@ -1004,7 +1004,7 @@ export function ServiceCatalogDialog({
           </div>
           <div aria-label="Prestations" className="project-catalog-list" role="listbox">
             {filteredItems.map((item) => (
-              <button aria-selected={item.id === selectedId} className={item.id === selectedId ? 'is-selected' : undefined} disabled={isSaving} key={item.id} onClick={() => selectService(item.id)} role="option" type="button">
+              <button aria-selected={item.id === selectedId} className={item.id === selectedId ? 'is-selected' : undefined} disabled={isSaving} key={item.id} onClick={() => selectService(item.id)} role="option" title={`${item.category} — ${[item.vesselName, `${serviceAmount(item.unitAmountHt)} HT`].filter(Boolean).join(' · ')}`} type="button">
                 <span className="project-catalog-list-avatar"><PackageCheck aria-hidden="true" size={17} /></span>
                 <span><strong>{item.category}</strong><small>{[item.vesselName, `${serviceAmount(item.unitAmountHt)} HT`].filter(Boolean).join(' · ')}</small></span>
               </button>
