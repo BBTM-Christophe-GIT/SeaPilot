@@ -3,9 +3,16 @@ import { projectDriveCategory, projectDriveStorage } from './projectDriveStorage
 import { connectLocalDrive, localDriveRequest } from '../documents/localDriveLauncher';
 import { hasDocumentBlobFile } from '../documents/documentBlobStorage';
 import { installDocumentDriveStorage } from '../documents/documentDriveStorage';
+import { checkBillingAttachments } from './projectBillingAttachments';
+import type { ProjectBillingDocument } from './projectBilling';
 vi.mock('../documents/localDriveLauncher', async original => ({ ...await original<typeof import('../documents/localDriveLauncher')>(), connectLocalDrive: vi.fn(), localDriveRequest: vi.fn(), blobBase64: vi.fn().mockResolvedValue('cGRm') }));
 vi.mock('../documents/documentBlobStorage', async original => ({ ...await original<typeof import('../documents/documentBlobStorage')>(), hasDocumentBlobFile: vi.fn().mockResolvedValue(false) }));
 const hash = async (blob: Blob) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())), (byte) => byte.toString(16).padStart(2, '0')).join('');
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
 function fixture(mapping: unknown = null) {
   const insert = vi.fn().mockResolvedValue({ error: null });
   const query: Record<string, unknown> = {};
@@ -78,6 +85,67 @@ describe('project Drive routing', () => {
     await expect(projectDriveStorage(client as never, 'project-files').download('old.pdf', controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
     expect(connectLocalDrive).not.toHaveBeenCalled();
     expect(localDriveRequest).not.toHaveBeenCalled();
+  });
+
+  it('attempts a failed local connection only once across several attachment batches in each verification', async () => {
+    const { client } = fixture({ id: 71, path: 'P144/Facturation/old.pdf' });
+    const documents: ProjectBillingDocument[] = Array.from({ length: 9 }, (_, index) => ({
+      id: index + 1, billingPeriodId: 16, chargeableExpenseId: 19, documentKind: 'chargeable_expense',
+      bucketName: 'project-files', objectPath: `projects/2/16/expenses/19/${index}.pdf`, fileName: `${index}.pdf`,
+      mimeType: 'application/pdf', fileSizeBytes: 3,
+    }));
+    vi.mocked(connectLocalDrive).mockRejectedValue(new Error('Lanceur indisponible'));
+
+    const first = await checkBillingAttachments(client as never, documents, { allowLocalDrive: true, signal: new AbortController().signal });
+    expect(first).toHaveLength(9);
+    expect(first.every((check) => check.status === 'unavailable')).toBe(true);
+    expect(connectLocalDrive).toHaveBeenCalledTimes(1);
+    await checkBillingAttachments(client as never, documents, { allowLocalDrive: true, signal: new AbortController().signal });
+    expect(connectLocalDrive).toHaveBeenCalledTimes(2);
+    expect(localDriveRequest).not.toHaveBeenCalled();
+  });
+
+  it('cancels an old connection waiter before its POST while another reader completes shared discovery', async () => {
+    const sha256 = await hash(new Blob(['pdf']));
+    const mapping = { id: 71, path: 'P144/Facturation/old.pdf', bytes: 3, sha256, mime_type: 'application/pdf' };
+    const { client } = fixture(mapping);
+    const discovery = deferred<{ url: string; expiresAt: number; version: string }>();
+    const started = deferred<void>();
+    vi.mocked(connectLocalDrive).mockImplementation(() => { started.resolve(); return discovery.promise; });
+    vi.mocked(localDriveRequest).mockResolvedValue({ ...mapping, base64: 'cGRm' });
+    const oldController = new AbortController();
+    const oldRead = projectDriveStorage(client as never, 'project-files').download('old.pdf', oldController.signal);
+    const cancelled = expect(oldRead).rejects.toMatchObject({ name: 'AbortError' });
+    await started.promise;
+    oldController.abort();
+    await cancelled;
+    expect(localDriveRequest).not.toHaveBeenCalled();
+
+    const newController = new AbortController();
+    const newRead = projectDriveStorage(client as never, 'project-files').download('old.pdf', newController.signal);
+    discovery.resolve({ url: 'http://localhost', expiresAt: Date.now() + 100000, version: '2.7.1' });
+    expect((await newRead).data?.size).toBe(3);
+    expect(localDriveRequest).toHaveBeenCalledExactlyOnceWith(client, expect.objectContaining({ version: '2.7.1' }),
+      { action: 'read', module: 'projects', path: mapping.path }, newController.signal);
+  });
+
+  it('cancels an old native read without cancelling the next reader of the same verified session', async () => {
+    const sha256 = await hash(new Blob(['pdf']));
+    const mapping = { id: 71, path: 'P144/Facturation/old.pdf', bytes: 3, sha256, mime_type: 'application/pdf' };
+    const { client } = fixture(mapping);
+    const started = deferred<void>();
+    vi.mocked(localDriveRequest).mockImplementationOnce(async (_client, _session, _data, signal) => {
+      started.resolve();
+      return new Promise((_resolve, reject) => signal!.addEventListener('abort', () => reject(signal!.reason), { once: true }));
+    }).mockResolvedValue({ ...mapping, base64: 'cGRm' });
+    const controller = new AbortController();
+    const oldRead = projectDriveStorage(client as never, 'project-files').download('old.pdf', controller.signal);
+    const cancelled = expect(oldRead).rejects.toMatchObject({ name: 'AbortError' });
+    await started.promise;
+    controller.abort();
+    await cancelled;
+    expect((await projectDriveStorage(client as never, 'project-files').download('old.pdf', new AbortController().signal)).data?.size).toBe(3);
+    expect(localDriveRequest).toHaveBeenCalledTimes(2);
   });
   it('reads and signs a migrated desktop receipt using its registry id before opening the local copy', async () => {
     vi.mocked(hasDocumentBlobFile).mockImplementation(async (_client, bucket, path) => bucket === 'project-drive' && path === '71');

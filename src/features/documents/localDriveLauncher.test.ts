@@ -4,6 +4,11 @@ import { launcherOpenUri, localDrivePorts, localDriveRequest, supportsLocalDrive
 
 vi.mock('../../lib/env', () => ({ loadAppEnv: () => ({ supabaseUrl: 'https://szlvyrrmvdvhzixilymh.supabase.co', supabaseAnonKey: 'public-test-key' }) }));
 const connection = { url: 'http://127.0.0.1:50000/session', expiresAt: Date.now() + 100000 };
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('common Windows launcher', () => {
@@ -101,5 +106,75 @@ describe('common Windows launcher', () => {
     expect(fetcher).toHaveBeenCalledWith(`${connection.url}/request`, expect.objectContaining({
       method: 'POST', headers: expect.objectContaining({ Authorization: 'Bearer test-session' }),
     }));
+  });
+
+  it('cancels a pending authentication wait before any native POST and removes its abort listener', async () => {
+    const authenticated = { data: { session: { access_token: 'test-session' } }, error: null };
+    const auth = deferred<typeof authenticated>();
+    const getSession = vi.fn().mockReturnValueOnce(auth.promise).mockResolvedValue(authenticated);
+    const client = { auth: { getSession } } as unknown as SupabaseClient;
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ bytes: 3 }) });
+    vi.stubGlobal('fetch', fetcher);
+    const controller = new AbortController();
+    const removeListener = vi.spyOn(controller.signal, 'removeEventListener');
+    const request = localDriveRequest(client, connection, { action: 'read' }, controller.signal);
+    const cancelled = expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    controller.abort();
+    await cancelled;
+    expect(removeListener).toHaveBeenCalledWith('abort', expect.any(Function));
+    auth.resolve(authenticated);
+    expect(await localDriveRequest(client, connection, { action: 'read' })).toEqual({ bytes: 3 });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the shared connection cached when a native fetch is cancelled and allows the next reader', async () => {
+    vi.resetModules();
+    const { connectLocalDrive, localDriveRequest } = await import('./localDriveLauncher');
+    let nonce = '';
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { nonce = new URL(this.href).pathname.split('/')[2]; });
+    const oldResponse = deferred<{ ok: boolean; json: () => Promise<{ bytes: number }> }>();
+    const started = deferred<void>();
+    let nativeReads = 0;
+    let nativeSignal: AbortSignal | undefined;
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string, options?: RequestInit) => {
+      if (url.endsWith('/health')) return { ok: true, json: async () => ({ version: '2.7.1', nonce }) };
+      nativeReads += 1;
+      if (nativeReads === 1) {
+        nativeSignal = options?.signal || undefined;
+        started.resolve();
+        return oldResponse.promise;
+      }
+      return { ok: true, json: async () => ({ bytes: 3 }) };
+    }));
+    const client = { auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'test-session' } }, error: null }) } } as unknown as SupabaseClient;
+    const session = await connectLocalDrive();
+    const controller = new AbortController();
+    const request = localDriveRequest(client, session, { action: 'read' }, controller.signal);
+    const cancelled = expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    await started.promise;
+    controller.abort();
+    await cancelled;
+    expect(nativeSignal?.aborted).toBe(true);
+    expect(await connectLocalDrive()).toBe(session);
+    expect(await localDriveRequest(client, session, { action: 'read' }, new AbortController().signal)).toEqual({ bytes: 3 });
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(nativeReads).toBe(2);
+    oldResponse.resolve({ ok: true, json: async () => ({ bytes: 999 }) });
+  });
+
+  it('discards an obsolete JSON response without affecting the next native read', async () => {
+    const oldJson = deferred<{ bytes: number }>();
+    const started = deferred<void>();
+    const json = vi.fn().mockImplementationOnce(() => { started.resolve(); return oldJson.promise; }).mockResolvedValue({ bytes: 3 });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json }));
+    const client = { auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'test-session' } }, error: null }) } } as unknown as SupabaseClient;
+    const controller = new AbortController();
+    const request = localDriveRequest(client, connection, { action: 'read' }, controller.signal);
+    const cancelled = expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    await started.promise;
+    controller.abort();
+    await cancelled;
+    oldJson.resolve({ bytes: 999 });
+    expect(await localDriveRequest(client, connection, { action: 'read' })).toEqual({ bytes: 3 });
   });
 });

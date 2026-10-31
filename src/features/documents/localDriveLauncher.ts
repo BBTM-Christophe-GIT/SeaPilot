@@ -48,7 +48,8 @@ export function launcherOpenUri(module: DriveModule, relativePath: string): stri
   return `seapilot-drive://root/open/${payload}`;
 }
 
-/** Call directly from the button action, before awaiting other work, to preserve the user gesture. */
+/** Share discovery. Interactive callers should invoke this before awaiting to
+ * retain browser activation; automatic checks use existing protocol permissions. */
 export function connectLocalDrive(options: { fresh?: boolean } = {}): Promise<LocalDriveConnection> {
   if (options.fresh) connection = null;
   if (connection && connection.expiresAt > Date.now()) return Promise.resolve(connection);
@@ -70,23 +71,43 @@ export function connectLocalDrive(options: { fresh?: boolean } = {}): Promise<Lo
   return connecting;
 }
 
-export async function localDriveRequest<T>(client: SupabaseClient, session: LocalDriveConnection, data: Record<string, unknown>): Promise<T> {
-  const { data: auth, error } = await client.auth.getSession();
+/** Cancel one reader's wait without cancelling shared connection discovery. */
+export function abortableLocalDrive<T>(operation: PromiseLike<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return Promise.resolve(operation);
+  return new Promise<T>((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener('abort', onAbort);
+    const onAbort = () => { cleanup(); reject(signal.reason); };
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) onAbort();
+    // Always observe the original promise, including after cancellation.
+    Promise.resolve(operation).then((value) => { cleanup(); resolve(value); }, (error: unknown) => { cleanup(); reject(error); });
+  });
+}
+
+export async function localDriveRequest<T>(client: SupabaseClient, session: LocalDriveConnection, data: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+  signal?.throwIfAborted();
+  const { data: auth, error } = await abortableLocalDrive(client.auth.getSession(), signal);
+  signal?.throwIfAborted();
   if (error || !auth.session) throw new Error('Reconnectez-vous à SeaPilot pour utiliser le dossier synchronisé.');
   const env = loadAppEnv();
   if (env.supabaseUrl.replace(/\/$/, '') !== 'https://szlvyrrmvdvhzixilymh.supabase.co') throw new Error('Ce lanceur est configuré pour l’instance SeaPilot BBTM.');
   let response: Response;
   try {
-    response = await fetch(`${session.url}/request`, {
+    const timeout = AbortSignal.timeout(data.action === 'select-root' ? 180_000 : 90_000);
+    response = await abortableLocalDrive(fetch(`${session.url}/request`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.session.access_token}`, 'X-SeaPilot-Key': env.supabaseAnonKey },
-      body: JSON.stringify(data), signal: AbortSignal.timeout(data.action === 'select-root' ? 180_000 : 90_000),
-    });
+      body: JSON.stringify(data), signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
+    }), signal);
   } catch {
+    // A page/context cancellation says nothing about the shared launcher's health.
+    signal?.throwIfAborted();
     connection = null;
     if (['status', 'configure', 'select-root'].includes(String(data.action))) throw new Error('La connexion au lanceur a été interrompue. Relancez-le pour vérifier automatiquement la configuration du dossier.');
     throw new Error('La connexion au lanceur a été interrompue. Vérifiez le dossier avant de réessayer : un fichier peut avoir été écrit.');
   }
-  const result = await response.json();
+  signal?.throwIfAborted();
+  const result = await abortableLocalDrive(response.json(), signal);
+  signal?.throwIfAborted();
   if (!response.ok) throw new Error(result.error || 'Le lanceur a refusé cette opération.');
   return result as T;
 }

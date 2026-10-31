@@ -101,10 +101,10 @@ const ATTACHMENT_STATUS_LABELS: Record<BillingAttachmentCheck['status'], string>
   unverified: 'Non vérifié',
 };
 
-function attachmentProblemSummary(check: BillingAttachmentCheck): string {
+function attachmentProblemSummary(check: BillingAttachmentCheck): string | null {
   const message = check.message.replace(/\s+/g, ' ').trim();
   if (check.status === 'unavailable' && /Google Drive|connecteur SeaPilot/i.test(message)) {
-    return 'Fichier Google Drive inaccessible.';
+    return null;
   }
   return message.match(/^.*?[.!?](?:\s|$)/)?.[0].trim() || message || ATTACHMENT_STATUS_LABELS[check.status];
 }
@@ -363,7 +363,7 @@ export function ProjectBillingPanel({
     attachmentCheckController.current = null;
   }
 
-  async function verifyAttachments(allowLocalDrive: boolean) {
+  async function verifyAttachments() {
     stopAttachmentChecks();
     if (billingDataContext?.client !== client || billingDataContext.projectId !== project.id) return;
     const controller = new AbortController();
@@ -372,7 +372,7 @@ export function ProjectBillingPanel({
     const revision = contextRevision.current;
     setAttachmentChecking(true);
     try {
-      const checks = await checkBillingAttachments(client, expenseDocuments, { signal: controller.signal, allowLocalDrive });
+      const checks = await checkBillingAttachments(client, expenseDocuments, { signal: controller.signal, allowLocalDrive: true });
       if (controller.signal.aborted || checkRevision !== attachmentCheckRevision.current || revision !== contextRevision.current) return;
       setAttachmentChecks(Object.fromEntries(checks.map((check) => [check.documentId, check])));
     } catch (caught) {
@@ -393,7 +393,7 @@ export function ProjectBillingPanel({
     setAttachmentChecks({});
     setAttachmentExportIssues([]);
     setAttachmentChecking(false);
-    if (visibleSections.services && expenseDocuments.length) void verifyAttachments(false);
+    if (visibleSections.services && expenseDocuments.length) void verifyAttachments();
     return stopAttachmentChecks;
     // The document list and context identify exactly the files that may receive a result.
   }, [client, project.id, selectedMonth, expenseDocumentsKey, visibleSections.services, billingDataContext]);
@@ -1124,9 +1124,9 @@ export function ProjectBillingPanel({
     className="sp-button sp-button--secondary"
     disabled={Boolean(busy) || attachmentChecking}
     aria-busy={attachmentChecking}
-    onClick={() => void verifyAttachments(true)}
+    onClick={() => void verifyAttachments()}
     type="button"
-  >Vérifier les justificatifs</button> : null;
+  >Revérifier les justificatifs</button> : null;
 
   return (
     <section aria-label="Facturation mensuelle" className={`project-billing ${workspace ? 'is-workspace' : ''}`}>
@@ -1239,6 +1239,7 @@ export function ProjectBillingPanel({
                           const statusId = `billing-attachment-${document.id}-status`;
                           const detail = status !== 'available' ? check?.message : undefined;
                           const hasProblem = status === 'missing' || status === 'invalid' || status === 'unavailable';
+                          const problemSummary = hasProblem && check ? attachmentProblemSummary(check) : null;
                           return <div className="project-billing-attachment" key={document.id}>
                           <div className="project-billing-attachment-file-row">
                           <button
@@ -1253,12 +1254,12 @@ export function ProjectBillingPanel({
                             <span>{document.fileName}</span>
                             <ExternalLink aria-hidden="true" size={12} />
                           </button>
-                          <span id={statusId} className={`project-billing-attachment-status is-${status}${hasProblem ? ' is-problem' : ''}`} aria-label={`${ATTACHMENT_STATUS_LABELS[status]} : ${document.fileName}`} title={check?.message || ATTACHMENT_STATUS_LABELS[status]}>
+                          <span id={statusId} className={`project-billing-attachment-status is-${status}${hasProblem ? ' is-problem' : ''}${status === 'available' ? ' sr-only' : ''}`} aria-label={`${ATTACHMENT_STATUS_LABELS[status]} : ${document.fileName}`} title={check?.message || ATTACHMENT_STATUS_LABELS[status]}>
                             {hasProblem ? <TriangleAlert aria-hidden="true" size={12} strokeWidth={2.5} /> : null}
                             <strong className={hasProblem ? 'sr-only' : undefined}>{ATTACHMENT_STATUS_LABELS[status]}</strong>
                           </span>
                           </div>
-                          {hasProblem && check ? <span className="project-billing-attachment-problem-origin" title={check.message}>{attachmentProblemSummary(check)}</span> : null}
+                          {problemSummary ? <span className="project-billing-attachment-problem-origin" title={check?.message}>{problemSummary}</span> : null}
                           {detail ? <small id={`${statusId}-detail`} className="sr-only">{detail}</small> : null}
                           </div>;
                         })}

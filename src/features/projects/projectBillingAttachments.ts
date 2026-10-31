@@ -16,7 +16,7 @@ export interface BillingAttachmentCheck extends Omit<BillingAttachmentIssue, 'st
 
 export interface BillingAttachmentCheckOptions {
   signal?: AbortSignal;
-  /** Explicit user actions may open the local connector; passive checks never do. */
+  /** Enable the local connector for complete automatic checks and exports. */
   allowLocalDrive?: boolean;
 }
 
@@ -112,7 +112,7 @@ export async function readBillingAttachment(
   };
 }
 
-/** Bounded on-demand checks. Local-only files remain unverified until an explicit connector action. */
+/** Bounded checks. Callers decide whether the local connector may be used. */
 export async function checkBillingAttachments(
   client: SupabaseClient,
   documents: ProjectBillingDocument[],
