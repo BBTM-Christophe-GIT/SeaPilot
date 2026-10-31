@@ -1,5 +1,17 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.80.24`, build `2026-10-31.003`, retire le bouton Revérifier : le
+contrôle des pièces reste automatique. La loupe du fournisseur est masquée
+quand une valeur est sélectionnée, avec les gouttières de recherche et du
+chevron conservées. Le dialogue des frais permet de remplacer ou retirer
+chaque pièce jointe, y compris deux fichiers homonymes, lors de l'enregistrement.
+Annuler abandonne les changements en attente. Le remplacement conserve le même
+identifiant et son ancien lien jusqu'au succès du nouveau stockage ; les
+échecs conservent les opérations restantes pour reprise sans doublons.
+Les règles Admin/Direction et société existantes sont conservées, sans
+migration ni nouvelle dépendance. Voir
+[billing-pdf-attachment-status.md](./billing-pdf-attachment-status.md).
+
 Version `3.80.23`, build `2026-10-31.002`, vérifie automatiquement les
 justificatifs à l'ouverture de Facturation, y compris les anciennes copies
 Drive locales. La tentative de connexion est partagée pour tout le contrôle ;

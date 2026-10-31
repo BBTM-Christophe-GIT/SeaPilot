@@ -1,3 +1,4 @@
+import './ServiceProviderPicker.css';
 import { ChevronDown, Plus, Search } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
@@ -41,6 +42,7 @@ export function ServiceProviderPicker<T extends ServiceProviderCatalogEntry>({
 
   const filteredProviders = useMemo(() => filterServiceProviders(providers, query === value ? '' : query), [providers, query, value]);
   const groups = useMemo(() => groupServiceProvidersBySpecialty(filteredProviders), [filteredProviders]);
+  const hasSelectedProvider = value.trim().length > 0 && query === value;
 
   function choose(provider: T) {
     onChange(provider);
@@ -54,8 +56,8 @@ export function ServiceProviderPicker<T extends ServiceProviderCatalogEntry>({
         <span>{label}{required ? ' *' : ''}</span>
         {onAdd ? <button className="service-provider-picker__add" disabled={disabled} onClick={onAdd} type="button"><Plus aria-hidden="true" size={13} /> {addLabel}</button> : null}
       </div>
-      <div className="service-provider-picker__control">
-        <Search aria-hidden="true" size={16} />
+      <div className={`service-provider-picker__control${hasSelectedProvider ? ' has-selection' : ''}`}>
+        {hasSelectedProvider ? null : <Search aria-hidden="true" size={16} />}
         <input
           aria-label={label}
           aria-autocomplete="list"

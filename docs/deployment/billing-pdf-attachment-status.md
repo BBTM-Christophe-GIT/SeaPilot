@@ -1,6 +1,6 @@
 # PDF de facturation et état des justificatifs
 
-Version `3.80.23`, build `2026-10-31.002`.
+Version `3.80.24`, build `2026-10-31.003`.
 
 ## Génération du PDF
 
@@ -32,9 +32,9 @@ après chargement des pièces de la période. Elle couvre les copies en ligne et
 les anciennes références Drive locales, sans clic sur une commande de contrôle.
 Le lanceur local est contacté uniquement lorsqu'un fichier l'exige. Une tentative
 de connexion est partagée pour tout le contrôle, y compris en cas d'échec : les
-lots suivants ne provoquent pas de relances en boucle. Le bouton Revérifier les
-justificatifs reste disponible pour actualiser le résultat après restauration
-ou modification d'un fichier.
+lots suivants ne provoquent pas de relances en boucle. Le bouton Revérifier
+n'est plus affiché depuis la version 3.80.24. Une modification des pièces
+déclenche automatiquement un nouveau contrôle des documents de la période.
 
 Le navigateur conserve ses autorisations d'ouverture du protocole et d'accès
 local ; leur éventuelle confirmation initiale reste gérée par le navigateur
@@ -68,6 +68,39 @@ inaccessible n'est plus affichée sous la puce. La puce rouge et le triangle bla
 signalent toujours le problème, et le diagnostic complet reste disponible au
 survol et dans la description accessible. Les autres causes spécifiques restent
 présentées sur une seule ligne.
+
+## Gestion des pièces dans le dialogue des frais
+
+Chaque document enregistré dispose d'actions Remplacer et Supprimer. Ces
+changements sont préparés dans le dialogue, puis appliqués avec Enregistrer le
+frais. Annuler la modification d'une pièce ou fermer le dialogue avant cet
+enregistrement abandonne les changements correspondants. Les fichiers en
+attente d'ajout peuvent également être remplacés ou retirés avant enregistrement.
+Les noms identiques restent des documents distincts, ciblés par leur identifiant.
+
+Un remplacement téléverse d'abord un nouveau fichier à une adresse unique,
+puis met à jour la même ligne de pièce jointe si son ancien emplacement est
+toujours identique. Il ne crée pas une deuxième pièce jointe. Une erreur de
+téléversement conserve l'ancien lien. Les conflits d'accès ou de modification
+concurrente n'écrasent pas une autre pièce ; une réponse réseau perdue est
+réconciliée avant tout nettoyage d'octets potentiellement liés.
+
+Les remplacements et ajouts sont traités avant les suppressions. Après un
+échec partiel, les opérations réussies quittent la file d'attente et ne sont
+pas rejouées lors de la reprise. Le dialogue signale que le frais a été
+enregistré si la mise à jour de ses pièces reste à terminer. La suppression
+retire la référence du frais et de ses exports ; les anciennes copies
+privées ou Drive restent conservées selon la politique de stockage existante.
+
+Les actions sont réservées aux profils qui gèrent la facturation. Les règles
+RLS existantes limitent les écritures aux profils Admin/Direction appartenant
+à la société concernée. Les opérations ciblent le projet, le frais,
+l'identifiant, le type et l'ancien emplacement de la pièce. Aucune migration
+ni modification des politiques d'accès n'est requise.
+
+Le champ Fournisseur conserve la recherche par société ou spécialité et son
+clavier. La loupe disparaît quand le texte correspond au fournisseur sélectionné ;
+le chevron reste à droite et ne peut plus recouvrir le début du nom.
 
 ## Données et déploiement
 

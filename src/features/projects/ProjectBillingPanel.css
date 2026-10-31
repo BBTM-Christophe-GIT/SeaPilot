@@ -118,10 +118,49 @@
 .project-billing.is-workspace .project-billing-export .project-billing-export-actions { display: grid; gap: 8px; }
 .project-billing.is-workspace .project-billing-export-actions button:last-child { background: var(--sp-primary); color: var(--sp-surface); border-color: var(--sp-primary); }
 .project-billing .project-billing-expense-attachments { display: grid; gap: 8px; }
+.project-billing-expense-attachments { display: grid; min-width: 0; gap: var(--sp-space-2); }
 .project-billing-expense-attachments small { color: var(--sp-muted); }
 .project-billing-expense-attachments ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .project-billing-expense-attachments li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .project-billing-expense-attachments li span { overflow-wrap: anywhere; min-width: 0; }
+.project-billing-expense-attachments .project-billing-expense-attachment {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-space-2);
+  align-items: center;
+}
+.project-billing-expense-attachment-identity { display: grid; min-width: 0; gap: var(--sp-space-1); }
+.project-billing-expense-attachment-identity > span:not(.sr-only),
+.project-billing-expense-attachment-identity > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-billing-expense-attachment-file { display: flex; min-width: 0; align-items: center; gap: var(--sp-space-2); }
+.project-billing-expense-attachment-file > button { flex: 1; min-width: 0; min-height: var(--sp-control-height); justify-content: flex-start; text-align: left; }
+.project-billing-expense-attachments .project-billing-expense-attachment-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-billing-expense-attachment-name svg { flex-shrink: 0; }
+.project-billing-expense-attachment-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--sp-space-1); }
+.project-billing-expense-attachment-actions .sp-button { min-height: var(--sp-control-height); white-space: nowrap; }
+.project-billing-expense-attachment-actions > .project-billing-expense-replace { display: inline-flex; flex-direction: row; align-items: center; justify-content: center; gap: var(--sp-space-1); }
+.project-billing-expense-attachments .project-billing-expense-attachment-actions .sp-button--danger { background: var(--sp-danger); border-color: var(--sp-danger); color: var(--sp-surface); }
+.project-billing-expense-attachments .project-billing-expense-attachment-actions .sp-button--danger:hover:not(:disabled) { background: var(--sp-danger-hover); border-color: var(--sp-danger-hover); }
+.project-billing-expense-replace { position: relative; cursor: pointer; }
+.project-billing-expense-fields { border: 0; margin: 0; min-width: 0; }
+.project-billing-expense-replace:has(input:disabled) { opacity: .55; cursor: wait; }
+.project-billing-expense-replace:focus-within { outline: 2px solid var(--sp-focus); outline-offset: 2px; }
+.project-billing-expense-attachment[data-pending-action='delete'] .project-billing-expense-attachment-name { opacity: .65; text-decoration: line-through; }
+.project-billing-expense-attachments .project-billing-expense-attachment-file > button.project-billing-expense-attachment-name.is-attachment-problem,
+.project-billing-expense-attachments .project-billing-expense-attachment-file > button.project-billing-expense-attachment-name.is-attachment-problem:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--sp-danger) 7%, var(--sp-surface));
+  border-color: color-mix(in srgb, var(--sp-danger) 30%, var(--sp-border));
+  color: var(--sp-danger);
+}
+@media (max-width: 600px) {
+  .project-billing-expense-attachments .project-billing-expense-attachment { grid-template-columns: minmax(0, 1fr); }
+  .project-billing-expense-attachment-actions { justify-self: end; }
+}
+@media (pointer: coarse) {
+  .project-billing-expense-attachment-actions .sp-button,
+  .project-billing-expense-attachment-file > button { min-height: 44px; }
+}
 .project-billing.is-workspace .billing-period-calendar .billing-period-calendar-day {
   min-height: 24px;
   padding: 0;
