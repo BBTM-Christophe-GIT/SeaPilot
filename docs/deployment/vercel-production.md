@@ -1,5 +1,15 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.80.22`, build `2026-10-31.001`, compacte le tableau Services
+refacturables : chaque puce fichier reste sur une ligne. Une pièce en erreur a
+une puce rouge légère, une pastille rouge avec triangle blanc et une seule
+ligne de diagnostic sous le fichier. Les détails et noms complets restent
+accessibles au survol et aux lecteurs d'écran. Ajouter garde sa hauteur normale.
+Le ZIP se télécharge désormais avec les pièces disponibles ; le message après
+export PDF ou ZIP liste uniquement les fichiers non intégrés. Les montants et
+sélections sont conservés. Aucune migration ni dépendance nouvelle. Voir
+[billing-pdf-attachment-status.md](./billing-pdf-attachment-status.md).
+
 Version `3.80.21`, build `2026-10-30.003`, permet de générer le PDF de
 facturation avec les annexes PDF disponibles même si d'autres justificatifs
 sont absents ou invalides. Les pièces non jointes sont signalées dans le tableau

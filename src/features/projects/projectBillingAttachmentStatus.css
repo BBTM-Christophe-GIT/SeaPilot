@@ -1,33 +1,100 @@
-.project-billing-attachment {
+.project-billing .project-billing-expense-documents {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: var(--sp-space-2);
+}
+
+.project-billing-attachment-list {
   display: grid;
-  min-width: 0;
+  align-content: center;
+  min-width: 230px;
+  min-height: var(--sp-control-height);
   gap: var(--sp-space-1);
 }
 
-.project-billing.is-workspace .project-billing-attachment > button span {
-  overflow: visible;
-  text-overflow: clip;
-  white-space: normal;
-  overflow-wrap: anywhere;
+.project-billing-attachment {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  max-width: 360px;
+  gap: var(--sp-space-1);
+}
+
+.project-billing-attachment-file-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--sp-space-2);
+}
+
+.project-billing .project-billing-attachment-file-row > button,
+.project-billing.is-workspace .project-billing-attachment-file-row > button {
+  flex: 0 1 auto;
+  min-width: 160px;
+  max-width: 240px;
+  min-height: var(--sp-control-height);
+}
+
+.project-billing .project-billing-attachment-file-row > button svg { flex-shrink: 0; }
+
+.project-billing .project-billing-attachment-file-row > button span,
+.project-billing.is-workspace .project-billing-attachment-file-row > button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-billing .project-billing-attachment-file-row > button.is-attachment-problem,
+.project-billing .project-billing-attachment-file-row > button.is-attachment-problem:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--sp-danger) 7%, var(--sp-surface));
+  border-color: color-mix(in srgb, var(--sp-danger) 30%, var(--sp-border));
+  color: var(--sp-danger);
+}
+
+.project-billing .project-billing-expense-documents > .project-billing-upload.is-compact {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  min-height: var(--sp-control-height);
+  white-space: nowrap;
+}
+
+.project-billing.is-workspace .project-billing-expense-table td {
+  padding-block: var(--sp-space-2);
 }
 
 .project-billing-attachment-status {
-  display: grid;
-  max-width: 240px;
-  gap: var(--sp-space-1);
-  overflow-wrap: anywhere;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  white-space: nowrap;
   color: var(--sp-muted);
   font-size: 11px;
   line-height: 1.4;
 }
 
 .project-billing-attachment-status strong { font-weight: 600; }
-.project-billing-attachment-status small { color: var(--sp-muted); font-size: inherit; }
 .project-billing-attachment-status.is-available { color: var(--sp-success); }
-.project-billing-attachment-status:is(.is-missing, .is-invalid) { color: var(--sp-danger); }
-.project-billing-attachment-status.is-unavailable { color: var(--sp-warning); }
+.project-billing-attachment-status.is-problem {
+  justify-content: center;
+  width: var(--sp-space-5);
+  height: var(--sp-space-5);
+  border-radius: 50%;
+  background: var(--sp-danger);
+  color: var(--sp-surface);
+}
+.project-billing-attachment-problem-origin {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sp-danger);
+  font-size: 11px;
+  line-height: 1.4;
+}
 .project-billing-attachment-empty { color: var(--sp-muted); font-size: 11px; }
-.project-billing-expense-table tr[data-attachment-issue='true'] > td:last-child { background: var(--sp-warning-soft); }
 .project-billing-attachment-progress { margin: 0; padding: var(--sp-space-2) var(--sp-space-3); color: var(--sp-muted); font-size: 12px; }
 
 .project-billing-attachment-warning {
@@ -48,5 +115,10 @@
 
 @media (max-width: 600px) {
   .project-billing .project-billing-card-actions { flex-wrap: wrap; }
-  .project-billing-attachment-status { max-width: 190px; }
+}
+
+@media (pointer: coarse) {
+  .project-billing .project-billing-attachment-file-row > button,
+  .project-billing.is-workspace .project-billing-attachment-file-row > button,
+  .project-billing .project-billing-expense-documents > .project-billing-upload.is-compact { min-height: 44px; }
 }

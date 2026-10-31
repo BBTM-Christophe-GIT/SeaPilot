@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectBillingPanel } from './ProjectBillingPanel';
-import { BillingAttachmentExportError, type BillingAttachmentCheck } from './projectBillingAttachments';
+import type { BillingAttachmentCheck } from './projectBillingAttachments';
 import type { ProjectBillingData, ProjectBillingDocument, ProjectChargeableExpense } from './projectBilling';
 import type { ProjectRecord } from './projectQueries';
 
@@ -93,14 +93,17 @@ describe('billing attachment availability in Services refacturables', () => {
     const statuses: BillingAttachmentCheck['status'][] = ['available', 'missing', 'invalid', 'unavailable', 'unverified'];
     mocks.data.mockResolvedValue(fixture(documents, [1, 2, 3, 4, 5, 6].map(id => expense(id))));
     mocks.check.mockResolvedValue(documents.map((document, index) => check(document, statuses[index])));
-    render(panel());
+    await act(async () => { render(panel()); });
 
     await screen.findByLabelText('Fichier manquant : facture-2.pdf');
     for (const [index, label] of ['Disponible', 'Fichier manquant', 'Fichier invalide', 'Accès impossible', 'Non vérifié'].entries()) {
       expect(attachmentStatus(documents[index].fileName, label)).toBeVisible();
       const button = screen.getByRole('button', { name: documents[index].fileName });
       expect(button).toBeEnabled();
-      expect(button).toHaveAttribute('aria-describedby', `billing-attachment-${index + 1}-status`);
+      expect(button).toHaveAccessibleDescription(expect.stringContaining(label));
+      if (statuses[index] !== 'available') {
+        expect(button).toHaveAccessibleDescription(expect.stringContaining(check(documents[index], statuses[index]).message));
+      }
     }
     expect(screen.getByText('Aucun justificatif')).toBeVisible();
     const missingRow = screen.getByRole('button', { name: 'facture-2.pdf' }).closest('tr')!;
@@ -114,7 +117,7 @@ describe('billing attachment availability in Services refacturables', () => {
   it('generates a standard PDF while a passive check is pending', async () => {
     const pending = deferred<BillingAttachmentCheck[]>();
     mocks.check.mockReturnValue(pending.promise);
-    render(panel());
+    await act(async () => { render(panel()); });
     await screen.findByText('Vérification des justificatifs…');
     await ready();
     await userEvent.click(screen.getByRole('button', { name: 'Exporter le PDF' }));
@@ -145,11 +148,12 @@ describe('billing attachment availability in Services refacturables', () => {
     await ready();
     await userEvent.selectOptions(screen.getByLabelText('Fichier', { exact: true }), 'merged-pdf');
     await userEvent.click(screen.getByRole('button', { name: 'Exporter le PDF' }));
-    await screen.findByText('PDF généré : 1 pièce non jointe.');
+    await screen.findByText('Fichiers non intégrés au PDF :');
     await waitFor(() => expect(mocks.upload).toHaveBeenCalledOnce());
     expect(attachmentStatus('facture-1.pdf', 'Fichier manquant')).toBeVisible();
     expect(mocks.check).toHaveBeenCalledOnce();
-    expect(screen.getByText('Les montants facturés sont conservés. Consultez les justificatifs signalés dans Services refacturables.')).toBeVisible();
+    const warning = screen.getByText('Fichiers non intégrés au PDF :').closest('[role="status"]')!;
+    expect(within(warning as HTMLElement).getAllByRole('listitem').map(item => item.textContent)).toEqual(['facture-1.pdf']);
     expect(screen.getByLabelText('Totaux sélectionnés pour l’export')).toHaveTextContent(/100,00/);
     expect(screen.getByRole('checkbox', { name: 'Inclure le frais FACTURE-1 dans le PDF' })).toBeChecked();
     expect(screen.getByRole('button', { name: 'facture-1.pdf' }).closest('tr')).toHaveAttribute('data-attachment-issue', 'true');
@@ -167,28 +171,33 @@ describe('billing attachment availability in Services refacturables', () => {
     const passiveSignal = mocks.check.mock.calls[0][2].signal as AbortSignal;
     await userEvent.selectOptions(screen.getByLabelText('Fichier', { exact: true }), 'merged-pdf');
     await userEvent.click(screen.getByRole('button', { name: 'Exporter le PDF' }));
-    await screen.findByText('PDF généré : 1 pièce non jointe.');
+    await screen.findByText('Fichiers non intégrés au PDF :');
     expect(passiveSignal.aborted).toBe(true);
     await act(async () => pending.resolve([check(document, 'unverified')]));
     expect(attachmentStatus('facture-1.pdf', 'Fichier manquant')).toBeVisible();
     expect(screen.queryByLabelText('Non vérifié : facture-1.pdf')).not.toBeInTheDocument();
-    expect(screen.getByText('PDF généré : 1 pièce non jointe.')).toBeVisible();
+    expect(screen.getByText('Fichiers non intégrés au PDF :')).toBeVisible();
   });
 
-  it('records structured ZIP failures on their rows and keeps the standard PDF option usable', async () => {
+  it('downloads a partial ZIP and lists only omitted filenames while preserving the PDF option', async () => {
     const document = attachment(1);
     const issue = { ...check(document, 'missing'), status: 'missing' as const };
-    mocks.export.mockRejectedValueOnce(new BillingAttachmentExportError([issue], [1]));
+    mocks.export.mockResolvedValueOnce({ blob: new Blob(['ZIP']), extension: 'zip', attachmentIssues: [issue] });
     render(panel());
     await ready();
     await userEvent.selectOptions(screen.getByLabelText('Fichier', { exact: true }), 'zip');
     await userEvent.click(screen.getByRole('button', { name: 'Exporter le PDF' }));
     await screen.findByLabelText('Fichier manquant : facture-1.pdf');
-    expect(mocks.upload).not.toHaveBeenCalled();
+    const warning = (await screen.findByText('Fichiers non intégrés au ZIP :')).closest('[role="status"]')!;
+    expect(within(warning as HTMLElement).getAllByRole('listitem').map(item => item.textContent)).toEqual(['facture-1.pdf']);
+    expect(mocks.upload).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     await userEvent.selectOptions(screen.getByLabelText('Fichier', { exact: true }), 'pdf');
     await userEvent.click(screen.getByRole('button', { name: 'Exporter le PDF' }));
     await screen.findByText('Export généré.');
-    expect(mocks.export).toHaveBeenLastCalledWith(client, expect.any(Object), expect.any(Array), 'pdf');
+    await waitFor(() => expect(mocks.export).toHaveBeenLastCalledWith(client, expect.any(Object), expect.any(Array), 'pdf'));
+    await waitFor(() => expect(mocks.upload).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('Fichiers non intégrés au ZIP :')).not.toBeInTheDocument();
   });
 
   it('aborts passive reads and ignores a late result after selecting another billing month', async () => {
@@ -243,7 +252,7 @@ describe('billing attachment availability in Services refacturables', () => {
     view.rerender(panel({ project: { ...project, id: 145, projectCode: 'P145' } }));
     await ready();
     await act(async () => pending.resolve({ blob: new Blob(['old PDF']), extension: 'pdf', attachmentIssues: [check(attachment(1), 'missing')], checkedDocumentIds: [1] }));
-    expect(screen.queryByText(/PDF généré :/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Fichiers non intégrés au/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Fichier manquant : facture-1.pdf')).not.toBeInTheDocument();
     expect(mocks.upload).not.toHaveBeenCalled();
   });
@@ -251,7 +260,8 @@ describe('billing attachment availability in Services refacturables', () => {
   it('rechecks identical document metadata after the authenticated client changes', async () => {
     const document = attachment(1);
     mocks.data.mockResolvedValue(fixture([document]));
-    const view = render(panel());
+    let view!: ReturnType<typeof render>;
+    await act(async () => { view = render(panel()); });
     await screen.findByLabelText('Disponible : facture-1.pdf');
     const nextClient = { marker: 'replacement-session' } as never;
     mocks.check.mockResolvedValue([check(document, 'unavailable')]);

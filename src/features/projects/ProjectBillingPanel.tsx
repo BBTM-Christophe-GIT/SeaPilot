@@ -6,7 +6,6 @@ import { ProjectPdfPreview } from './ProjectPdfPreview';
 import { ProjectBillingRawLines } from './ProjectBillingRawLines';
 import { billingReferenceScope, billingReferenceScopeLabel, fetchBillingReferences, saveBillingReference, type BillingReference } from './projectBillingReferences';
 import {
-  BillingAttachmentExportError,
   checkBillingAttachments,
   type BillingAttachmentCheck,
   type BillingAttachmentIssue,
@@ -27,6 +26,7 @@ import {
   ReceiptText,
   Save,
   Trash2,
+  TriangleAlert,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { AppDialog } from '../../components/AppDialog';
@@ -100,6 +100,14 @@ const ATTACHMENT_STATUS_LABELS: Record<BillingAttachmentCheck['status'], string>
   unavailable: 'Accès impossible',
   unverified: 'Non vérifié',
 };
+
+function attachmentProblemSummary(check: BillingAttachmentCheck): string {
+  const message = check.message.replace(/\s+/g, ' ').trim();
+  if (check.status === 'unavailable' && /Google Drive|connecteur SeaPilot/i.test(message)) {
+    return 'Fichier Google Drive inaccessible.';
+  }
+  return message.match(/^.*?[.!?](?:\s|$)/)?.[0].trim() || message || ATTACHMENT_STATUS_LABELS[check.status];
+}
 
 interface BillingServiceLineDraft extends BillingServiceDraft {
   key: string;
@@ -262,6 +270,7 @@ export function ProjectBillingPanel({
   const [attachmentChecks, setAttachmentChecks] = useState<Record<number, BillingAttachmentCheck>>({});
   const [attachmentChecking, setAttachmentChecking] = useState(false);
   const [attachmentExportIssues, setAttachmentExportIssues] = useState<BillingAttachmentIssue[]>([]);
+  const [attachmentExportType, setAttachmentExportType] = useState<'pdf' | 'zip'>('pdf');
   const attachmentCheckRevision = useRef(0);
   const attachmentCheckController = useRef<AbortController | null>(null);
   const [billingDataContext, setBillingDataContext] = useState<{ client: SupabaseClient; projectId: number } | null>(null);
@@ -1059,10 +1068,10 @@ export function ProjectBillingPanel({
         setPreviewBlob(result.blob);
       }
       setAttachmentExportIssues(result.attachmentIssues || []);
+      setAttachmentExportType(result.extension);
       setMessage(mode === 'download' ? 'Export généré.' : 'Aperçu actualisé.');
     } catch (caught) {
       if (revision !== contextRevision.current) return;
-      if (caught instanceof BillingAttachmentExportError) recordExportAttachmentChecks(caught);
       setError(caught instanceof Error ? caught.message : 'Impossible de générer l’export.');
     } finally {
       if (revision === contextRevision.current) setBusy('');
@@ -1141,9 +1150,8 @@ export function ProjectBillingPanel({
 
       {message ? <p className="project-billing-message" role="status">{message}</p> : null}
       {attachmentExportIssues.length ? <div className="project-billing-attachment-warning" role="status">
-        <strong>PDF généré : {attachmentExportIssues.length} pièce{attachmentExportIssues.length > 1 ? 's' : ''} non jointe{attachmentExportIssues.length > 1 ? 's' : ''}.</strong>
-        <span>Les montants facturés sont conservés. Consultez les justificatifs signalés dans Services refacturables.</span>
-        <ul>{attachmentExportIssues.map((issue) => <li key={issue.documentId}>{issue.fileName} — {ATTACHMENT_STATUS_LABELS[issue.status]}</li>)}</ul>
+        <strong>Fichiers non intégrés au {attachmentExportType.toUpperCase()} :</strong>
+        <ul>{attachmentExportIssues.map((issue) => <li key={issue.documentId}>{issue.fileName}</li>)}</ul>
       </div> : null}
       {error && !expenseEditor ? <p className="project-billing-error" role="alert">{error}</p> : null}
       <div className={workspace ? 'project-billing-workspace-layout' : 'project-billing-stack'}>
@@ -1223,15 +1231,20 @@ export function ProjectBillingPanel({
                     <td>{expense.includeInPdf !== false ? 'Sélectionné pour le PDF' : 'Exclu du PDF'}</td>
                     <td>
                       <div className="project-billing-expense-documents">
+                        <div className="project-billing-attachment-list">
                         {!documents.length ? <span className="project-billing-attachment-empty">Aucun justificatif</span> : null}
                         {documents.map((document) => {
                           const check = attachmentChecks[document.id];
                           const status = check?.status || 'unverified';
                           const statusId = `billing-attachment-${document.id}-status`;
+                          const detail = status !== 'available' ? check?.message : undefined;
+                          const hasProblem = status === 'missing' || status === 'invalid' || status === 'unavailable';
                           return <div className="project-billing-attachment" key={document.id}>
+                          <div className="project-billing-attachment-file-row">
                           <button
+                            className={hasProblem ? 'is-attachment-problem' : undefined}
                             disabled={Boolean(busy)}
-                            aria-describedby={statusId}
+                            aria-describedby={detail ? `${statusId} ${statusId}-detail` : statusId}
                             onClick={() => void openDocument(document)}
                             title={document.fileName}
                             type="button"
@@ -1240,12 +1253,16 @@ export function ProjectBillingPanel({
                             <span>{document.fileName}</span>
                             <ExternalLink aria-hidden="true" size={12} />
                           </button>
-                          <span id={statusId} className={`project-billing-attachment-status is-${status}`} aria-label={`${ATTACHMENT_STATUS_LABELS[status]} : ${document.fileName}`}>
-                            <strong>{ATTACHMENT_STATUS_LABELS[status]}</strong>
-                            {check?.message && status !== 'available' ? <small>{check.message}</small> : null}
+                          <span id={statusId} className={`project-billing-attachment-status is-${status}${hasProblem ? ' is-problem' : ''}`} aria-label={`${ATTACHMENT_STATUS_LABELS[status]} : ${document.fileName}`} title={check?.message || ATTACHMENT_STATUS_LABELS[status]}>
+                            {hasProblem ? <TriangleAlert aria-hidden="true" size={12} strokeWidth={2.5} /> : null}
+                            <strong className={hasProblem ? 'sr-only' : undefined}>{ATTACHMENT_STATUS_LABELS[status]}</strong>
                           </span>
+                          </div>
+                          {hasProblem && check ? <span className="project-billing-attachment-problem-origin" title={check.message}>{attachmentProblemSummary(check)}</span> : null}
+                          {detail ? <small id={`${statusId}-detail`} className="sr-only">{detail}</small> : null}
                           </div>;
                         })}
+                        </div>
                         {isManager ? (
                           <label className="project-billing-upload is-compact">
                             <FilePlus2 aria-hidden="true" size={14} /> Ajouter
