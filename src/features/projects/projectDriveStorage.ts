@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { connectLocalDrive, localDriveRequest, supportsLocalDriveVersion } from '../documents/localDriveLauncher';
+import { abortableLocalDrive, connectLocalDrive, localDriveRequest, supportsLocalDriveVersion, type LocalDriveConnection } from '../documents/localDriveLauncher';
 import { hasDocumentDriveFile } from '../documents/documentDriveStorage';
 import { hasDocumentBlobFile } from '../documents/documentBlobStorage';
 
@@ -15,10 +15,20 @@ export function projectDriveCategory(path: string): string {
   }
   return 'Facturation';
 }
-async function connection() {
-  const session = await connectLocalDrive();
-  if (!supportsLocalDriveVersion(session.version, '2.5.0')) throw new Error('Installez le lanceur SeaPilot 2.5 ou ultérieur depuis Administration → Documents et Google Drive. Le dossier déjà configuré sera conservé.');
-  return session;
+const verificationConnections = new WeakMap<AbortSignal, Promise<LocalDriveConnection>>();
+async function connection(signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  let pending = signal ? verificationConnections.get(signal) : undefined;
+  if (!pending) {
+    pending = (async () => {
+      const session = await connectLocalDrive();
+      if (!supportsLocalDriveVersion(session.version, '2.5.0')) throw new Error('Installez le lanceur SeaPilot 2.5 ou ultérieur depuis Administration → Documents et Google Drive. Le dossier déjà configuré sera conservé.');
+      return session;
+    })();
+    // Keep failures for this verification too: later batches must not reopen the protocol.
+    if (signal) verificationConnections.set(signal, pending);
+  }
+  return abortableLocalDrive(pending, signal);
 }
 async function sha256(blob: Blob): Promise<string> {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -31,9 +41,11 @@ export function projectDriveStorage(client: SupabaseClient, bucket: string) {
     if (error) throw error;
     return data;
   };
-  const read = async (file: DriveFile): Promise<Blob> => {
-    const session = await connection();
-    const receipt = await localDriveRequest<DriveReceipt>(client, session, { action: 'read', module: 'projects', path: file.path });
+  const read = async (file: DriveFile, signal?: AbortSignal): Promise<Blob> => {
+    const session = await connection(signal);
+    signal?.throwIfAborted();
+    const receipt = await localDriveRequest<DriveReceipt>(client, session, { action: 'read', module: 'projects', path: file.path }, signal);
+    signal?.throwIfAborted();
     const blob = new Blob([Uint8Array.from(atob(receipt.base64 || ''), (character) => character.charCodeAt(0))], { type: file.mime_type });
     if (receipt.path !== file.path || blob.size !== file.bytes || receipt.sha256 !== file.sha256 || await sha256(blob) !== file.sha256) throw new Error('Le document Google Drive est incomplet ou a été modifié. La copie historique est conservée.');
     return blob;
@@ -72,7 +84,7 @@ export function projectDriveStorage(client: SupabaseClient, bucket: string) {
       }
       if (options?.allowLocalDrive === false) throw Object.assign(new Error('L’aperçu de ce document nécessite une copie privée accessible sans le connecteur SeaPilot.'), { code: 'LOCAL_DRIVE_REQUIRED' });
       signal?.throwIfAborted();
-      const data = await read(file);
+      const data = await read(file, signal);
       signal?.throwIfAborted();
       return { data, error: null };
     },

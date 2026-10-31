@@ -1,5 +1,16 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.80.23`, build `2026-10-31.002`, vérifie automatiquement les
+justificatifs à l'ouverture de Facturation, y compris les anciennes copies
+Drive locales. La tentative de connexion est partagée pour tout le contrôle ;
+une connexion échouée n'est pas relancée à chaque lot. Les lectures devenues
+obsolètes sont annulées sans interrompre les autres usages du lanceur.
+Les textes visibles Disponible et Fichier Google Drive inaccessible sont
+retirés ; les badges d'erreur et les diagnostics accessibles sont conservés.
+Le contrôle ne bloque pas les exports. Aucune migration, dépendance ou mise à
+jour du lanceur requise. Voir
+[billing-pdf-attachment-status.md](./billing-pdf-attachment-status.md).
+
 Version `3.80.22`, build `2026-10-31.001`, compacte le tableau Services
 refacturables : chaque puce fichier reste sur une ligne. Une pièce en erreur a
 une puce rouge légère, une pastille rouge avec triangle blanc et une seule
