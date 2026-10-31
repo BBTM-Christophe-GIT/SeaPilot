@@ -1,6 +1,7 @@
 import { projectDriveStorage } from './projectDriveStorage';
 import { isBillingPdfAttachment, readBillingAttachment, type BillingAttachmentIssue } from './projectBillingAttachments';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { inclusivePlanningDayCount, isPlanningDate, parsePlanningDate } from '../planning/planningDates';
 import type {
   ProjectContractRecord,
   ProjectPlanningOccurrenceRecord,
@@ -10,6 +11,14 @@ import type {
 export type BillingExpenseCategory = 'fuel' | 'port' | 'water' | 'other';
 export type BillingServiceCategory = string;
 export type BillingPeriodMode = 'calendar-month' | 'custom';
+export type BillingServiceQuantityMode = 'manual' | 'period' | 'month' | 'operations';
+
+export interface BillingServiceQuantitySettings {
+  /** Absent for historical rows: preserve the project's existing calculation. */
+  quantityMode?: BillingServiceQuantityMode;
+  quantityOperationTypes?: string[];
+  clientReference?: string;
+}
 
 export interface ProjectBillingPeriod {
   id: number;
@@ -62,7 +71,7 @@ export interface ProjectBillingDocument {
   fileSizeBytes: number;
 }
 
-export interface ProjectBillingService {
+export interface ProjectBillingService extends BillingServiceQuantitySettings {
   id: number;
   billingPeriodId: number;
   serviceCatalogId: number | null;
@@ -86,7 +95,7 @@ export interface ProjectBillingRawLine {
   includeInPdf?: boolean;
 }
 
-export interface ProjectServiceCatalogEntry {
+export interface ProjectServiceCatalogEntry extends BillingServiceQuantitySettings {
   id: number;
   companyId: number;
   vesselId?: number | null;
@@ -94,6 +103,7 @@ export interface ProjectServiceCatalogEntry {
   category: string;
   unitAmountHt: number;
   descriptionHtml: string;
+  defaultQuantity?: number;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -140,7 +150,7 @@ export interface BillingExpenseDraft {
   dprReportId: number | null;
 }
 
-export interface BillingServiceDraft {
+export interface BillingServiceDraft extends BillingServiceQuantitySettings {
   serviceCatalogId: number | null;
   category: BillingServiceCategory;
   descriptionHtml: string;
@@ -159,13 +169,14 @@ export interface BillingRawLineDraft {
   includeInPdf?: boolean;
 }
 
-export interface ProjectServiceCatalogDraft {
+export interface ProjectServiceCatalogDraft extends BillingServiceQuantitySettings {
   id?: number;
   vesselId?: number | null;
   vesselName?: string;
   category: string;
   unitAmountHt: number;
   descriptionHtml: string;
+  defaultQuantity?: number;
   active?: boolean;
 }
 
@@ -179,6 +190,46 @@ function number(value: unknown): number {
 
 function nullableNumber(value: unknown): number | null {
   return value === null || value === undefined || value === '' ? null : number(value);
+}
+
+function normalizedBillingOperation(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
+function mapBillingServiceQuantitySettings(row: Record<string, unknown>): BillingServiceQuantitySettings {
+  return {
+    ...(['manual', 'period', 'month', 'operations'].includes(text(row.quantity_mode))
+      ? { quantityMode: text(row.quantity_mode) as BillingServiceQuantityMode } : {}),
+    ...(Array.isArray(row.quantity_operation_types) ? { quantityOperationTypes: row.quantity_operation_types.filter((value): value is string => typeof value === 'string') } : {}),
+    ...(typeof row.client_reference === 'string' ? { clientReference: row.client_reference } : {}),
+  };
+}
+
+function billingServiceQuantityPayload(settings: BillingServiceQuantitySettings): Record<string, unknown> {
+  if (settings.quantityMode !== undefined && !['manual', 'period', 'month', 'operations'].includes(settings.quantityMode)) {
+    throw new Error('Le mode de calcul de la quantité est invalide.');
+  }
+  let operationTypes: string[] | undefined;
+  if (settings.quantityOperationTypes !== undefined) {
+    if (!Array.isArray(settings.quantityOperationTypes) || settings.quantityOperationTypes.some((value) => typeof value !== 'string' || !value.trim() || value.trim().length > 120)) {
+      throw new Error('Les types d’opération doivent contenir entre 1 et 120 caractères.');
+    }
+    const distinctTypes = new Map<string, string>();
+    for (const value of settings.quantityOperationTypes) {
+      const key = normalizedBillingOperation(value);
+      if (!distinctTypes.has(key)) distinctTypes.set(key, value.trim().replace(/\s+/g, ' '));
+    }
+    operationTypes = [...distinctTypes.values()];
+    if (operationTypes.length > 50) throw new Error('Sélectionnez au maximum 50 types d’opération.');
+  }
+  if (settings.quantityMode === 'operations' && !operationTypes?.length) throw new Error('Sélectionnez au moins un type d’opération.');
+  const reference = settings.clientReference?.trim();
+  if (reference !== undefined && reference.length > 200) throw new Error('La référence client ne doit pas dépasser 200 caractères.');
+  return {
+    ...(settings.quantityMode !== undefined ? { quantity_mode: settings.quantityMode } : {}),
+    ...(operationTypes !== undefined ? { quantity_operation_types: operationTypes } : {}),
+    ...(reference !== undefined ? { client_reference: reference } : {}),
+  };
 }
 
 export function billingExpenseSpecialtyLabel(expense: Pick<ProjectChargeableExpense, 'supplierSpecialties' | 'nature' | 'category'>): string {
@@ -248,6 +299,7 @@ function mapDocument(row: Record<string, unknown>): ProjectBillingDocument {
 
 function mapService(row: Record<string, unknown>): ProjectBillingService {
   return {
+    ...mapBillingServiceQuantitySettings(row),
     id: number(row.id),
     billingPeriodId: number(row.billing_period_id),
     serviceCatalogId: nullableNumber(row.service_catalog_id),
@@ -276,6 +328,8 @@ function mapRawLine(row: Record<string, unknown>): ProjectBillingRawLine {
 
 function mapServiceCatalogEntry(row: Record<string, unknown>): ProjectServiceCatalogEntry {
   return {
+    ...mapBillingServiceQuantitySettings(row),
+    ...(row.default_quantity !== null && row.default_quantity !== undefined ? { defaultQuantity: number(row.default_quantity) } : {}),
     id: number(row.id),
     companyId: number(row.company_id),
     vesselId: nullableNumber(row.vessel_id),
@@ -304,7 +358,13 @@ export async function saveProjectServiceCatalogEntry(
   client: SupabaseClient,
   draft: ProjectServiceCatalogDraft,
 ): Promise<ProjectServiceCatalogEntry> {
+  const quantitySettings = billingServiceQuantityPayload(draft);
+  if (draft.defaultQuantity !== undefined && (!Number.isFinite(draft.defaultQuantity) || draft.defaultQuantity < 0 || draft.defaultQuantity >= 100000000000)) {
+    throw new Error('La quantité manuelle par défaut doit être comprise entre 0 et 100 milliards (exclus).');
+  }
   const payload = {
+    ...quantitySettings,
+    ...(draft.defaultQuantity !== undefined ? { default_quantity: draft.defaultQuantity } : {}),
     category: draft.category.trim(),
     vessel_id: draft.vesselId ?? null,
     vessel_name: draft.vesselName?.trim() || '',
@@ -512,8 +572,11 @@ export async function saveProjectBillingService(
   draft: BillingServiceDraft,
   serviceId?: number,
 ): Promise<ProjectBillingService> {
+  const quantitySettings = billingServiceQuantityPayload(draft);
+  if (!Number.isFinite(draft.quantity) || draft.quantity < 0 || draft.quantity >= 100000000000) throw new Error('La quantité doit être positive ou nulle et inférieure à 100 milliards.');
   const companyId = await projectCompanyId(client, projectId);
   const payload = {
+    ...quantitySettings,
     company_id: companyId,
     project_id: projectId,
     billing_period_id: billingPeriodId,
@@ -899,11 +962,50 @@ export function automaticBillingServiceQuantity(
   return daysInMonth - weatherStandbyDays.size;
 }
 
+export interface BillingServiceQuantityContext {
+  project: Pick<ProjectRecord, 'projectCode'>;
+  periodMonth: string;
+  startDate: string;
+  endDate: string;
+  /** Real, vessel-filtered DPRs for the selected range; synthetic missing days are ignored. */
+  dprs: ProjectBillingDpr[];
+  monthlyDprs?: ProjectBillingDpr[];
+  excludedOperationKeys?: string[];
+}
+
+export function resolveBillingServiceQuantity(
+  service: Pick<ProjectBillingService, 'category' | 'quantity' | 'quantityMode' | 'quantityOperationTypes'>,
+  context: BillingServiceQuantityContext,
+): number {
+  if (service.quantityMode === undefined) {
+    return automaticBillingServiceQuantity(context.project, service.category, context.periodMonth, context.monthlyDprs ?? context.dprs) ?? service.quantity;
+  }
+  if (service.quantityMode === 'manual') return service.quantity;
+  if (service.quantityMode === 'month') {
+    const monthStart = `${context.periodMonth.slice(0, 7)}-01`;
+    if (!isPlanningDate(monthStart)) return 0;
+    const lastDay = parsePlanningDate(monthStart);
+    lastDay.setUTCMonth(lastDay.getUTCMonth() + 1, 0);
+    return lastDay.getUTCDate();
+  }
+  if (!isPlanningDate(context.startDate) || !isPlanningDate(context.endDate) || context.endDate < context.startDate) return 0;
+  if (service.quantityMode === 'period') return inclusivePlanningDayCount(context.startDate, context.endDate);
+  const operationTypes = new Set((service.quantityOperationTypes || []).map(normalizedBillingOperation));
+  const excluded = new Set(context.excludedOperationKeys || []);
+  return new Set(context.dprs.filter((dpr) => (
+    dpr.id > 0 && dpr.reportDate >= context.startDate && dpr.reportDate <= context.endDate
+    && !excluded.has(billingOperationKey(dpr)) && operationTypes.has(normalizedBillingOperation(dpr.operation))
+  )).map((dpr) => `${dpr.vesselId === null ? `name:${normalizedBillingOperation(dpr.vesselName)}` : `id:${dpr.vesselId}`}|${dpr.reportDate}`)).size;
+}
+
 export function billingExportServices(input: BillingExportInput): ProjectBillingService[] {
   if (input.period.includeBbtmInPdf === false || input.includeBbtmService === false) return [];
   return input.services.filter((service) => service.includeInPdf !== false).map((service) => ({
     ...service,
-    quantity: automaticBillingServiceQuantity(input.project, service.category, input.period.periodMonth, input.monthlyDprs ?? input.dprs) ?? service.quantity,
+    quantity: resolveBillingServiceQuantity(service, {
+      project: input.project, periodMonth: input.period.periodMonth, startDate: input.startDate, endDate: input.endDate,
+      dprs: input.dprs, monthlyDprs: input.monthlyDprs, excludedOperationKeys: input.period.excludedOperationKeys,
+    }),
   }));
 }
 
@@ -1283,7 +1385,7 @@ export async function generateBillingPdf(input: BillingExportInput): Promise<Blo
       expenseCollator.compare(left[1], right[1]) || expenseCollator.compare(left[0], right[0])
     )) : null,
     serviceRows: includeBbtmService ? (services.length ? services.map((service) => [
-      service.category || 'Prestation non renseignée', money(service.unitAmountHt),
+      `${service.category || 'Prestation non renseignée'}${service.clientReference?.trim() ? `\nRéf. client : ${service.clientReference.trim()}` : ''}`, money(service.unitAmountHt),
       quantity(service.quantity), money(service.unitAmountHt * service.quantity),
     ]) : [['Prestation non renseignée', money(0), '0', money(0)]]) : null,
     rawRows: rawLines.map((line) => [

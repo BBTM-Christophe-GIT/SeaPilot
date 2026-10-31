@@ -1,0 +1,97 @@
+.billing-service-quantity-fields {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+  gap: var(--sp-space-2);
+}
+
+.billing-service-quantity-fields .billing-service-quantity-mode {
+  display: grid;
+  min-width: 0;
+  gap: var(--sp-space-1);
+  color: var(--sp-muted);
+  font-size: 12px;
+}
+
+.billing-service-quantity-fields .billing-service-quantity-mode select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--sp-control-height);
+  padding: var(--sp-space-2) var(--sp-space-3);
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  font: inherit;
+}
+
+.billing-service-quantity-fields .billing-service-quantity-operations {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: var(--sp-space-2) var(--sp-space-3);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  gap: var(--sp-space-2);
+}
+
+.billing-service-quantity-operations legend {
+  padding-inline: var(--sp-space-1);
+  color: var(--sp-muted);
+  font-size: 12px;
+}
+
+.billing-service-quantity-operation-options {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-height: 240px;
+  overflow: auto;
+  gap: var(--sp-space-1) var(--sp-space-3);
+}
+
+.billing-service-quantity-fields .billing-service-quantity-operation {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  min-height: var(--sp-control-height);
+  gap: var(--sp-space-2);
+  color: var(--sp-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.billing-service-quantity-fields .billing-service-quantity-operation input {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--sp-primary);
+}
+
+.billing-service-quantity-operation span { overflow-wrap: anywhere; }
+.billing-service-quantity-operation:has(input:disabled) { cursor: default; opacity: .65; }
+.billing-service-quantity-fields select:focus-visible,
+.billing-service-quantity-fields input:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; }
+
+.project-service-catalog-form .project-service-catalog-fields {
+  min-width: 0;
+  margin: 0;
+  padding: var(--sp-space-5) 0 0;
+  border: 0;
+}
+
+.project-service-catalog-form.project-catalog-form .project-service-catalog-fields :is(input:not([type='checkbox']), select, textarea),
+.project-service-catalog-form.project-catalog-form .project-catalog-form-actions button {
+  min-height: var(--sp-control-height);
+}
+
+@media (pointer: coarse) {
+  .billing-service-quantity-fields .billing-service-quantity-mode select,
+  .billing-service-quantity-fields .billing-service-quantity-operation,
+  .project-service-catalog-form.project-catalog-form .project-service-catalog-fields :is(input:not([type='checkbox']), select, textarea),
+  .project-service-catalog-form.project-catalog-form .project-catalog-form-actions button { min-height: 44px; }
+}

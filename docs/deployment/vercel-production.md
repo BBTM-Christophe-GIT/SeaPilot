@@ -1,5 +1,14 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.80.25`, build `2026-10-31.004`, rend le nombre d'unités des
+prestations configurable : saisie manuelle, jours de la période, jours du mois
+ou journées de DPR correspondant à plusieurs types d'opération. Le catalogue
+enregistre les valeurs par défaut ; chaque ligne de facturation conserve son
+propre paramétrage, modifiable après enregistrement. Une référence client peut
+être renseignée pour chaque prestation et apparaît dans le PDF. La migration
+ajoute les champs sans remplacer les données ni les règles d'accès existantes.
+Voir [billing-service-quantities.md](./billing-service-quantities.md).
+
 Version `3.80.24`, build `2026-10-31.003`, retire le bouton Revérifier : le
 contrôle des pièces reste automatique. La loupe du fournisseur est masquée
 quand une valeur est sélectionnée, avec les gouttières de recherche et du
