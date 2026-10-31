@@ -45,8 +45,10 @@ import {
 } from '../serviceProviders/serviceProviders';
 import type { ProjectContractRecord, ProjectPlanningOccurrenceRecord, ProjectRecord, VesselRecord } from './projectQueries';
 import { ServiceCatalogDialog } from './ProjectCatalogDialogs';
+import { BillingServiceQuantityFields } from './BillingServiceQuantityFields';
 import {
   automaticBillingServiceQuantity,
+  resolveBillingServiceQuantity,
   billingExpenseAttachmentName,
   billingExpenseSpecialtyLabel,
   billingOperationKey,
@@ -130,7 +132,11 @@ function serviceLineFromEntry(entry: ProjectServiceCatalogEntry, quantity = 0): 
     category: entry.category,
     descriptionHtml: entry.descriptionHtml,
     unitAmountHt: entry.unitAmountHt,
-    quantity,
+    quantity: entry.defaultQuantity ?? quantity,
+    quantityMode: entry.quantityMode,
+    quantityOperationTypes: [...(entry.quantityOperationTypes || [])],
+    clientReference: entry.clientReference || '',
+    quantityEdited: entry.defaultQuantity !== undefined,
   };
 }
 
@@ -474,7 +480,11 @@ export function ProjectBillingPanel({
   const defaultServiceQuantity = countDailyOperations(periodDprs.filter((dpr) => !(selectedPeriod?.excludedOperationKeys ?? periodDraft.excludedOperationKeys).includes(billingOperationKey(dpr))));
   const calculatedServiceDrafts = serviceDrafts.map((service) => ({
     ...service,
-    quantity: automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) ?? service.quantity,
+    quantity: resolveBillingServiceQuantity(service, {
+      project, periodMonth: selectedMonth, startDate: exportRange.start, endDate: exportRange.end,
+      dprs: periodDprs, monthlyDprs: dprs,
+      excludedOperationKeys: selectedPeriod?.excludedOperationKeys ?? periodDraft.excludedOperationKeys,
+    }),
   }));
   const rawLinesForExport = periodRawLines;
   const referenceScope = billingReferenceScope({
@@ -525,6 +535,9 @@ export function ProjectBillingPanel({
       descriptionHtml: service.descriptionHtml,
       unitAmountHt: service.unitAmountHt,
       quantity: service.quantity,
+      quantityMode: service.quantityMode,
+      quantityOperationTypes: service.quantityOperationTypes,
+      clientReference: service.clientReference,
       includeInPdf: true,
     }));
 
@@ -567,7 +580,7 @@ export function ProjectBillingPanel({
 
   useEffect(() => {
       setServiceDrafts((current) => current.map((service) => (
-        service.id || service.quantityEdited ? service : { ...service, quantity: defaultServiceQuantity }
+        service.id || service.quantityEdited || service.quantityMode !== undefined ? service : { ...service, quantity: defaultServiceQuantity }
       )));
   }, [defaultServiceQuantity, periodServices.length, serviceCatalog]);
 
@@ -915,6 +928,10 @@ export function ProjectBillingPanel({
       category: entry.category,
       descriptionHtml: entry.descriptionHtml,
       unitAmountHt: entry.unitAmountHt,
+      quantity: entry.defaultQuantity ?? defaultServiceQuantity,
+      quantityMode: entry.quantityMode,
+      quantityOperationTypes: [...(entry.quantityOperationTypes || [])],
+      clientReference: entry.clientReference || '',
     });
   }
 
@@ -938,8 +955,12 @@ export function ProjectBillingPanel({
       setError('Sélectionnez une catégorie de prestation.');
       return;
     }
-    if (serviceDraft.unitAmountHt < 0 || serviceDraft.quantity < 0) {
+    if (!Number.isFinite(serviceDraft.unitAmountHt) || !Number.isFinite(serviceDraft.quantity) || serviceDraft.unitAmountHt < 0 || serviceDraft.quantity < 0) {
       setError('Le montant unitaire et le nombre d’unités doivent être positifs.');
+      return;
+    }
+    if (serviceDraft.quantityMode === 'operations' && !serviceDraft.quantityOperationTypes?.length) {
+      setError('Sélectionnez au moins un type d’opération pour calculer la quantité.');
       return;
     }
     setBusy(`service-${serviceDraft.key}`);
@@ -952,6 +973,9 @@ export function ProjectBillingPanel({
         descriptionHtml: serviceDraft.descriptionHtml,
         unitAmountHt: serviceDraft.unitAmountHt,
         quantity: serviceDraft.quantity,
+        quantityMode: serviceDraft.quantityMode,
+        quantityOperationTypes: serviceDraft.quantityOperationTypes,
+        clientReference: serviceDraft.clientReference,
       }, serviceDraft.id);
       if (revision !== contextRevision.current) return;
       setData((current) => ({
@@ -1350,12 +1374,12 @@ export function ProjectBillingPanel({
           </div>
         </header>}
         <div id="billing-content-services" hidden={workspace && !expandedSections.services}>
-        {project.projectCode.trim().toUpperCase() === 'P144' && calculatedServiceDrafts.some((service) => automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) !== null)
+        {project.projectCode.trim().toUpperCase() === 'P144' && calculatedServiceDrafts.some((service) => service.quantityMode === undefined && automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) !== null)
           ? <p className="project-billing-auto-quantity">Spread Antipollution · P144 : jours du mois − jours 24/24 Weather Stand-by. La quantité est calculée automatiquement, y compris pour les journées sans DPR.</p>
-          : <p className="project-billing-auto-quantity">Quantité proposée automatiquement : {defaultServiceQuantity} journée(s) de DPR 24/24 Operation et Crew Change. Chaque quantité reste modifiable avant export ; les journées sans DPR ne sont pas comptées.</p>}
+          : <p className="project-billing-auto-quantity">Choisissez le mode de quantité de chaque prestation. Les valeurs et la référence client restent modifiables après enregistrement. Le calcul par type d’opération compte uniquement les journées avec DPR.</p>}
         <div className="project-billing-service-list">
           {calculatedServiceDrafts.map((service, index) => (
-            <div className="project-billing-service-grid" key={service.key}>
+            <div className="project-billing-service-grid" key={service.key} role="group" aria-label={`Prestation ${index + 1} : ${service.category}`}>
               {isManager ? <div className="project-billing-service-row-actions">
                 <button aria-label={`Supprimer la prestation ${service.category}`} className="sp-button sp-button--secondary is-danger project-billing-row-icon" disabled={Boolean(busy)} onClick={() => void removeService(service)} type="button"><Trash2 aria-hidden="true" size={15} /></button>
                 <button aria-label={`Modifier la prestation ${service.category}`} className="sp-button sp-button--secondary project-billing-row-icon" disabled={Boolean(busy)} onClick={() => serviceInputs.current.get(service.key)?.focus()} type="button"><Pencil aria-hidden="true" size={15} /></button>
@@ -1372,13 +1396,24 @@ export function ProjectBillingPanel({
               </label>
               <label>
                 Montant unitaire HT
-                <input disabled={!isManager} min="0" onChange={(event) => updateServiceDraft(service.key, { unitAmountHt: Number(event.target.value) })} step="0.01" type="number" value={service.unitAmountHt} />
+                <input disabled={!isManager || Boolean(busy)} min="0" onChange={(event) => updateServiceDraft(service.key, { unitAmountHt: Number(event.target.value) })} step="0.01" type="number" value={service.unitAmountHt} />
               </label>
               <label>
                 Nombre d’unités
-                <input disabled={!isManager} readOnly={automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) !== null} min="0" onChange={(event) => updateServiceDraft(service.key, { quantity: Number(event.target.value) })} step="0.001" type="number" value={service.quantity} />
+                <input disabled={!isManager || Boolean(busy)} readOnly={service.quantityMode !== undefined ? service.quantityMode !== 'manual' : automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) !== null} min="0" onChange={(event) => updateServiceDraft(service.key, { quantity: Number(event.target.value), quantityMode: 'manual' })} step="0.001" type="number" value={service.quantity} />
               </label>
               <label>Montant total HT<input disabled value={money(service.unitAmountHt * service.quantity)} /></label>
+              <div className="project-billing-service-settings">
+                <BillingServiceQuantityFields
+                  quantityMode={service.quantityMode}
+                  quantityOperationTypes={service.quantityOperationTypes}
+                  operationTypes={periodDprs.map((dpr) => dpr.operation).filter(Boolean)}
+                  legacyLabel={service.quantityMode === undefined && automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) !== null ? 'Calcul existant du projet' : undefined}
+                  disabled={!isManager || Boolean(busy)}
+                  onChange={(changes) => updateServiceDraft(service.key, { ...changes, quantity: service.quantity })}
+                />
+                <label>Référence client de la prestation<input disabled={!isManager || Boolean(busy)} maxLength={200} onChange={(event) => updateServiceDraft(service.key, { clientReference: event.target.value })} value={service.clientReference || ''} /></label>
+              </div>
               {isManager ? <div className="project-billing-service-actions">
                 <button disabled={Boolean(busy)} onClick={() => void saveService(service)} type="button"><Save aria-hidden="true" size={15} /> Enregistrer</button>
               </div> : null}

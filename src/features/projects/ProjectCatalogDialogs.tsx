@@ -36,6 +36,7 @@ import {
 } from './projectCatalogMedia';
 import { ClientLocationFields } from './ClientLocationFields';
 import { resolveClientCountry } from './clientLocation';
+import { BillingServiceQuantityFields, BILLING_SERVICE_QUANTITY_MODE_LABELS } from './BillingServiceQuantityFields';
 import { ServiceNoteRichTextEditor } from '../serviceNotes/ServiceNoteRichTextEditor';
 import { sanitizeServiceNoteHtml, serviceNoteBodyHasContent } from '../serviceNotes/serviceNoteRichText';
 import {
@@ -814,7 +815,10 @@ export function TowedAssetCatalogDialog({
 }
 
 function emptyServiceForm(): ProjectServiceCatalogDraft {
-  return { category: '', unitAmountHt: 0, descriptionHtml: '', active: true, vesselId: null, vesselName: '' };
+  return {
+    category: '', unitAmountHt: 0, descriptionHtml: '', active: true, vesselId: null, vesselName: '',
+    quantityMode: 'manual', quantityOperationTypes: [], defaultQuantity: 0, clientReference: '',
+  };
 }
 
 function serviceForm(entry?: ProjectServiceCatalogEntry): ProjectServiceCatalogDraft {
@@ -826,6 +830,10 @@ function serviceForm(entry?: ProjectServiceCatalogEntry): ProjectServiceCatalogD
     active: entry.active,
     vesselId: entry.vesselId ?? null,
     vesselName: entry.vesselName || '',
+    quantityMode: entry.quantityMode,
+    quantityOperationTypes: [...(entry.quantityOperationTypes || [])],
+    defaultQuantity: entry.quantityMode === 'manual' ? entry.defaultQuantity ?? 0 : entry.defaultQuantity,
+    clientReference: entry.clientReference || '',
   } : emptyServiceForm();
 }
 
@@ -880,6 +888,7 @@ export function ServiceCatalogDialog({
     .sort(compareFleetAssets);
 
   function selectService(id: number) {
+    if (isSaving) return;
     const entry = items.find((item) => item.id === id);
     setSelectedId(id);
     setForm(serviceForm(entry));
@@ -889,6 +898,7 @@ export function ServiceCatalogDialog({
   }
 
   function beginCreate() {
+    if (!canManage || isSaving || isLoading) return;
     setSelectedId(null);
     setForm(emptyServiceForm());
     setMode('create');
@@ -897,7 +907,7 @@ export function ServiceCatalogDialog({
   }
 
   function beginEdit() {
-    if (!selected) return;
+    if (!selected || !canManage || isSaving || isLoading) return;
     setForm(serviceForm(selected));
     setMode('edit');
     setErrorMessage('');
@@ -920,6 +930,14 @@ export function ServiceCatalogDialog({
     }
     if (!Number.isFinite(form.unitAmountHt) || form.unitAmountHt < 0 || form.unitAmountHt >= 1e12) {
       setErrorMessage('Le montant unitaire doit être positif.');
+      return;
+    }
+    if (form.quantityMode === 'manual' && (!Number.isFinite(form.defaultQuantity) || (form.defaultQuantity ?? 0) < 0 || (form.defaultQuantity ?? 0) >= 1e11)) {
+      setErrorMessage('La quantité par défaut doit être un nombre positif ou nul.');
+      return;
+    }
+    if (form.quantityMode === 'operations' && !form.quantityOperationTypes?.some((type) => type.trim())) {
+      setErrorMessage('Choisissez au moins un type d’opération.');
       return;
     }
     setIsSaving(true);
@@ -947,7 +965,7 @@ export function ServiceCatalogDialog({
   }
 
   async function archiveService() {
-    if (!selected || !window.confirm(`Retirer « ${selected.category} » de la liste des prestations ?`)) return;
+    if (!canManage || isSaving || isLoading || !selected || !window.confirm(`Retirer « ${selected.category} » de la liste des prestations ?`)) return;
     setIsSaving(true);
     setErrorMessage('');
     try {
@@ -982,11 +1000,11 @@ export function ServiceCatalogDialog({
               <span className="sr-only">Rechercher une prestation</span>
               <input onChange={(event) => setQuery(event.target.value)} placeholder="Rechercher une prestation…" type="search" value={query} />
             </label>
-            {canManage ? <button className="project-catalog-add" onClick={beginCreate} type="button"><Plus aria-hidden="true" size={17} />Ajouter</button> : null}
+            {canManage ? <button className="project-catalog-add" disabled={isLoading || isSaving} onClick={beginCreate} type="button"><Plus aria-hidden="true" size={17} />Ajouter</button> : null}
           </div>
           <div aria-label="Prestations" className="project-catalog-list" role="listbox">
             {filteredItems.map((item) => (
-              <button aria-selected={item.id === selectedId} className={item.id === selectedId ? 'is-selected' : undefined} key={item.id} onClick={() => selectService(item.id)} role="option" type="button">
+              <button aria-selected={item.id === selectedId} className={item.id === selectedId ? 'is-selected' : undefined} disabled={isSaving} key={item.id} onClick={() => selectService(item.id)} role="option" type="button">
                 <span className="project-catalog-list-avatar"><PackageCheck aria-hidden="true" size={17} /></span>
                 <span><strong>{item.category}</strong><small>{[item.vesselName, `${serviceAmount(item.unitAmountHt)} HT`].filter(Boolean).join(' · ')}</small></span>
               </button>
@@ -1006,18 +1024,37 @@ export function ServiceCatalogDialog({
 
           {mode === 'view' && selected ? <div className="project-catalog-view project-service-catalog-view">
             <div className="project-catalog-identity"><div className="project-catalog-image is-service"><PackageCheck aria-hidden="true" size={26} /></div><div><h3>{selected.category}</h3><p>{serviceAmount(selected.unitAmountHt)} HT par unité</p></div></div>
-            <dl className="project-catalog-data-grid"><div><dt>Catégorie</dt><dd>{selected.category}</dd></div><div><dt>Navire</dt><dd>{selected.vesselName || 'Sans navire'}</dd></div><div><dt>Montant unitaire</dt><dd>{serviceAmount(selected.unitAmountHt)} HT</dd></div></dl>
+            <dl className="project-catalog-data-grid">
+              <div><dt>Catégorie</dt><dd>{selected.category}</dd></div>
+              <div><dt>Navire</dt><dd>{selected.vesselName || 'Sans navire'}</dd></div>
+              <div><dt>Montant unitaire</dt><dd>{serviceAmount(selected.unitAmountHt)} HT</dd></div>
+              <div><dt>Mode de quantité</dt><dd>{selected.quantityMode ? BILLING_SERVICE_QUANTITY_MODE_LABELS[selected.quantityMode] : 'Réglage actuel'}</dd></div>
+              {selected.quantityMode === 'manual' ? <div><dt>Quantité par défaut</dt><dd>{(selected.defaultQuantity ?? 0).toLocaleString('fr-FR', { maximumFractionDigits: 3 })}</dd></div> : null}
+              {selected.quantityMode === 'operations' ? <div className="is-wide"><dt>Types d’opérations à compter</dt><dd>{selected.quantityOperationTypes?.join(' · ') || 'Non renseignés'}</dd></div> : null}
+              <div className="is-wide"><dt>Référence client de la prestation</dt><dd>{selected.clientReference || 'Non renseignée'}</dd></div>
+            </dl>
             <div className="project-service-description"><strong>Description</strong>{serviceNoteBodyHasContent(selected.descriptionHtml) ? <div dangerouslySetInnerHTML={{ __html: sanitizeServiceNoteHtml(selected.descriptionHtml) }} /> : <p>Non renseignée</p>}</div>
           </div> : null}
           {mode === 'view' && !selected && !isLoading ? <div className="project-catalog-empty-detail"><PackageCheck aria-hidden="true" size={34} /><p>Sélectionnez une prestation ou ajoutez-en une nouvelle.</p></div> : null}
           {mode !== 'view' ? <form className="project-catalog-form project-service-catalog-form" onSubmit={submit}>
-            <div className="project-catalog-form-grid">
+            <fieldset aria-label="Paramètres de la prestation" className="project-catalog-form-grid project-service-catalog-fields" disabled={!canManage || isSaving || isLoading}>
               <label><span>Catégorie *</span><input autoFocus maxLength={120} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))} required value={form.category} /></label>
               <label><span>Montant unitaire (€ HT) *</span><input min="0" onChange={(event) => setForm((current) => ({ ...current, unitAmountHt: Number(event.target.value) }))} required step="0.01" type="number" value={form.unitAmountHt} /></label>
               <label><span>Navire</span><select disabled={!canManage || isSaving || isLoading} onChange={(event) => { const vessel = availableVessels.find((item) => item.id === Number(event.target.value)); setForm((current) => ({ ...current, vesselId: vessel?.id ?? null, vesselName: vessel?.name || '' })); }} value={form.vesselId ?? ''}><option value="">Sans navire</option>{form.vesselId && !availableVessels.some((vessel) => vessel.id === form.vesselId) ? <option value={form.vesselId}>{form.vesselName || 'Navire indisponible'}</option> : null}{availableVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.id === form.vesselId && form.vesselName ? form.vesselName : vessel.name}{vessel.active ? '' : ' (archivé)'}</option>)}</select></label>
-              <label className="is-wide project-service-rich-field"><span>Description</span><ServiceNoteRichTextEditor ariaLabel="Description de la prestation" onChange={(descriptionHtml) => setForm((current) => ({ ...current, descriptionHtml }))} placeholder="Décrivez le contenu et les conditions de la prestation…" toolbarLabel="Mise en forme de la description" value={form.descriptionHtml} /></label>
-            </div>
-            <div className="project-catalog-form-actions"><button disabled={isSaving} onClick={cancelEdit} type="button">Annuler</button><button className="is-primary" disabled={isSaving} type="submit">{isSaving ? 'Enregistrement…' : 'Enregistrer'}</button></div>
+              <label><span>Référence client de la prestation</span><input maxLength={200} onChange={(event) => setForm((current) => ({ ...current, clientReference: event.target.value }))} value={form.clientReference || ''} /></label>
+              <div className="is-wide project-catalog-field"><BillingServiceQuantityFields
+                disabled={!canManage || isSaving || isLoading}
+                legacyLabel="Réglage actuel"
+                onChange={(changes) => setForm((current) => ({ ...current, ...changes,
+                  ...(changes.quantityMode === 'manual' && current.defaultQuantity === undefined ? { defaultQuantity: 0 } : {}),
+                }))}
+                quantityMode={form.quantityMode}
+                quantityOperationTypes={form.quantityOperationTypes}
+              /></div>
+              {form.quantityMode === 'manual' ? <label><span>Quantité par défaut</span><input max="99999999999.999" min="0" onChange={(event) => setForm((current) => ({ ...current, defaultQuantity: Number(event.target.value) }))} step="0.001" type="number" value={form.defaultQuantity ?? 0} /></label> : null}
+              <label className="is-wide project-service-rich-field"><span>Description</span><ServiceNoteRichTextEditor ariaLabel="Description de la prestation" disabled={!canManage || isSaving || isLoading} onChange={(descriptionHtml) => setForm((current) => ({ ...current, descriptionHtml }))} placeholder="Décrivez le contenu et les conditions de la prestation…" toolbarLabel="Mise en forme de la description" value={form.descriptionHtml} /></label>
+            </fieldset>
+            <div className="project-catalog-form-actions"><button disabled={isSaving} onClick={cancelEdit} type="button">Annuler</button><button className="is-primary" disabled={!canManage || isLoading || isSaving} type="submit">{isSaving ? 'Enregistrement…' : 'Enregistrer'}</button></div>
           </form> : null}
           {errorMessage ? <p className="project-catalog-message is-error" role="alert">{errorMessage}</p> : null}
           {successMessage ? <p className="project-catalog-message is-success" role="status">{successMessage}</p> : null}
