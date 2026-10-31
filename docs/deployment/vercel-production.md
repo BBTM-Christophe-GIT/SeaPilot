@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.80.26`, build `2026-10-31.005`, compacte les puces de la Liste des
+prestations sur deux lignes : désignation, puis navire et tarif. La liste reste
+alignée en haut et ses lignes ne s'étirent plus avec la hauteur du dialogue.
+Les textes longs restent accessibles en entier au survol et par leur nom
+accessible. Le correctif cible ce catalogue ; sélection, recherche, édition et
+réglages de facturation conservent leur fonctionnement. Aucune migration requise.
+
 Version `3.80.25`, build `2026-10-31.004`, rend le nombre d'unités des
 prestations configurable : saisie manuelle, jours de la période, jours du mois
 ou journées de DPR correspondant à plusieurs types d'opération. Le catalogue
