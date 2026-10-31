@@ -1,5 +1,5 @@
 import { projectDriveStorage } from './projectDriveStorage';
-import { BillingAttachmentExportError, isBillingPdfAttachment, readBillingAttachment, type BillingAttachmentIssue } from './projectBillingAttachments';
+import { isBillingPdfAttachment, readBillingAttachment, type BillingAttachmentIssue } from './projectBillingAttachments';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ProjectContractRecord,
@@ -1240,14 +1240,13 @@ export async function generateBillingExportPackage(
 
   if (format === 'zip') {
     // Archive presence does not prove PDF readability; only report failures to the UI.
-    if (attachmentIssues.length) throw new BillingAttachmentExportError(attachmentIssues, []);
     const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
     zip.file('01-Elements-de-facturation.pdf', summary);
     attachments.forEach(({ document, blob }, index) => {
       zip.file(`${String(index + 2).padStart(2, '0')}-${safeFileName(document.fileName)}`, blob);
     });
-    return { blob: await zip.generateAsync({ type: 'blob' }), extension: 'zip' };
+    return { blob: await zip.generateAsync({ type: 'blob' }), extension: 'zip', attachmentIssues };
   }
 
   const { PDFDocument } = await import('pdf-lib');

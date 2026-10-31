@@ -31,20 +31,6 @@ interface BillingAttachmentReadOptions extends BillingAttachmentCheckOptions {
   parsePdf?: boolean;
 }
 
-export class BillingAttachmentExportError extends Error {
-  readonly attachmentIssues: BillingAttachmentIssue[];
-  readonly issues: BillingAttachmentIssue[];
-  readonly checkedDocumentIds: number[];
-
-  constructor(issues: BillingAttachmentIssue[], checkedDocumentIds: number[]) {
-    super(`Le ZIP nécessite toutes les pièces sélectionnées. Pièces jointes indisponibles :\n${issues.map((issue) => `${issue.fileName} : ${issue.message}`).join('\n')}\nVérifiez les pièces signalées avant de relancer l’export ZIP.`);
-    this.name = 'BillingAttachmentExportError';
-    this.attachmentIssues = issues;
-    this.issues = issues;
-    this.checkedDocumentIds = checkedDocumentIds;
-  }
-}
-
 export function isBillingPdfAttachment(document: Pick<ProjectBillingDocument, 'mimeType' | 'fileName'>): boolean {
   return document.mimeType.split(';')[0].trim().toLowerCase() === 'application/pdf'
     || document.fileName.toLowerCase().endsWith('.pdf');

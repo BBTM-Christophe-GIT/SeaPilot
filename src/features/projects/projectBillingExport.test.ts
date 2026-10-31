@@ -1,9 +1,8 @@
 // @vitest-environment node
 import JSZip from 'jszip';
-import { PDFDocument } from 'pdf-lib';
+import { PDFArray, PDFDocument, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateBillingExportPackage, type BillingExportInput, type ProjectBillingDocument } from './projectBilling';
-import { BillingAttachmentExportError } from './projectBillingAttachments';
 
 const mocks = vi.hoisted(() => ({ download: vi.fn(), storage: vi.fn() }));
 vi.mock('./projectDriveStorage', () => ({
@@ -60,6 +59,15 @@ async function pdfBlob(pageCount = 1): Promise<Blob> {
   return new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' });
 }
 
+function summaryOperators(pdf: PDFDocument): string {
+  const contents = pdf.getPage(0).node.Contents();
+  const streams = contents instanceof PDFArray ? contents.asArray() : contents ? [contents] : [];
+  return streams.map((reference) => {
+    const stream = pdf.context.lookup(reference);
+    return stream instanceof PDFRawStream ? new TextDecoder('latin1').decode(decodePDFRawStream(stream).decode()) : '';
+  }).join('\n');
+}
+
 async function unavailableP144Annexes() {
   const existing = await pdfBlob();
   const documents = [
@@ -92,24 +100,25 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('billing export attachments', () => {
-  it('reports all three unavailable P144 annexes without producing a partial ZIP', async () => {
+  it('downloads the P144 ZIP with six available annexes and lists the three omitted files without changing its invoice', async () => {
     const documents = await unavailableP144Annexes();
-    const failure = await generateBillingExportPackage(client, billingInput(), documents, 'zip').then(
-      () => { throw new Error('A complete export was expected to fail.'); },
-      (error: unknown) => error,
-    );
-    expect(failure).toBeInstanceOf(BillingAttachmentExportError);
-    const message = (failure as Error).message;
-    for (const name of missingNames) expect(message).toContain(name);
-    expect(message).toContain('Fichier inaccessible');
-    expect(message).toContain('Copie privée indisponible');
-    expect(message).toContain('aucun fichier');
-    expect(message).toContain('relancer l’export ZIP');
-    expect(message).not.toContain('annexe-accessible');
+    const input = billingInput();
+    const original = structuredClone(input);
+    const standardPdf = await generateBillingExportPackage(client, input, [], 'pdf');
+    const result = await generateBillingExportPackage(client, input, documents, 'zip');
+    const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
+    expect(result.extension).toBe('zip');
+    expect(Object.keys(zip.files)).toEqual(['01-Elements-de-facturation.pdf', ...Array.from({ length: 6 }, (_, index) =>
+      `${String(index + 2).padStart(2, '0')}-annexe-accessible-${index + 1}.pdf`)]);
+    const summary = await PDFDocument.load(await zip.file('01-Elements-de-facturation.pdf')!.async('uint8array'));
+    const baseline = await PDFDocument.load(await standardPdf.blob.arrayBuffer());
+    expect(summaryOperators(summary)).toBe(summaryOperators(baseline));
+    expect(input).toEqual(original);
+    expect(result.attachmentIssues?.map((issue) => issue.fileName)).toEqual(missingNames);
     expect(mocks.download).toHaveBeenCalledTimes(9);
-    expect((failure as BillingAttachmentExportError).attachmentIssues.map(({ documentId, status }) => ({ documentId, status })))
+    expect(result.attachmentIssues?.map(({ documentId, status }) => ({ documentId, status })))
       .toEqual([{ documentId: 23, status: 'unavailable' }, { documentId: 24, status: 'missing' }, { documentId: 25, status: 'missing' }]);
-    expect((failure as BillingAttachmentExportError).checkedDocumentIds).toEqual([]);
+    expect(result.checkedDocumentIds).toBeUndefined();
   });
 
   it('generates the merged PDF with six available P144 annexes and reports the three inaccessible files', async () => {
@@ -133,7 +142,7 @@ describe('billing export attachments', () => {
 
     const result = await generateBillingExportPackage(client, billingInput(), documents, 'zip');
     expect(result.extension).toBe('zip');
-    expect(result.attachmentIssues).toBeUndefined();
+    expect(result.attachmentIssues).toEqual([]);
     expect(result.checkedDocumentIds).toBeUndefined();
     const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
     expect(Object.keys(zip.files)).toEqual(['01-Elements-de-facturation.pdf', '02-facture.pdf', '03-preuve.png', '04-notes.docx']);
@@ -144,6 +153,50 @@ describe('billing export attachments', () => {
     }
     expect(mocks.storage).toHaveBeenCalledTimes(3);
     expect(mocks.storage).toHaveBeenCalledWith(client, 'project-files');
+  });
+
+  it('omits invalid uploads from the ZIP while preserving the available annex bytes', async () => {
+    const badMagic = new Blob(['not a PDF']);
+    const image = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
+    const documents = [
+      attachment('fichier-vide.pdf', 1, 19, 'application/pdf', 0),
+      attachment('mauvais-format.pdf', 2, 20, 'application/pdf', badMagic.size),
+      attachment('preuve.png', 3, 21, image.type, image.size),
+    ];
+    mocks.download.mockImplementation(async (path: string) => ({ data: path === documents[1].objectPath ? badMagic : image, error: null }));
+
+    const result = await generateBillingExportPackage(client, billingInput(), documents, 'zip');
+    const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
+    expect(Object.keys(zip.files)).toEqual(['01-Elements-de-facturation.pdf', '02-preuve.png']);
+    expect(await zip.file('02-preuve.png')!.async('uint8array')).toEqual(new Uint8Array(await image.arrayBuffer()));
+    expect(result.attachmentIssues?.map(({ documentId, status }) => ({ documentId, status })))
+      .toEqual([{ documentId: 1, status: 'invalid' }, { documentId: 2, status: 'invalid' }]);
+    expect(result.checkedDocumentIds).toBeUndefined();
+    expect(mocks.download).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns a ZIP containing the summary even when no annex is available', async () => {
+    mocks.download.mockResolvedValue({ data: null, error: { statusCode: 404, message: 'Fichier introuvable' } });
+    const result = await generateBillingExportPackage(client, billingInput(), [attachment('annexe-absente.pdf', 1)], 'zip');
+    const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
+    expect(Object.keys(zip.files)).toEqual(['01-Elements-de-facturation.pdf']);
+    expect(result.attachmentIssues).toEqual([{ documentId: 1, fileName: 'annexe-absente.pdf', status: 'missing', message: 'Fichier introuvable' }]);
+  });
+
+  it('archives original PDF bytes without requiring a merge parser or reporting them as readable', async () => {
+    const pdf = await pdfBlob();
+    mocks.download.mockResolvedValue({ data: pdf, error: null });
+    const parse = vi.spyOn(PDFDocument, 'load').mockRejectedValue(new Error('Encrypted PDF'));
+    try {
+      const result = await generateBillingExportPackage(client, billingInput(), [attachment('annexe-protegee.pdf', 1, 19, pdf.type, pdf.size)], 'zip');
+      expect(parse).not.toHaveBeenCalled();
+      const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
+      expect(await zip.file('02-annexe-protegee.pdf')!.async('uint8array')).toEqual(new Uint8Array(await pdf.arrayBuffer()));
+      expect(result.checkedDocumentIds).toBeUndefined();
+      expect(result.attachmentIssues).toEqual([]);
+    } finally {
+      parse.mockRestore();
+    }
   });
 
   it('merges PDFs identified by MIME or extension and never reads other annexes', async () => {
