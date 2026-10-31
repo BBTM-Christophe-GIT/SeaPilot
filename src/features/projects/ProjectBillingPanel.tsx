@@ -24,9 +24,11 @@ import {
   Pencil,
   Plus,
   ReceiptText,
+  RefreshCw,
   Save,
   Trash2,
   TriangleAlert,
+  Undo2,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { AppDialog } from '../../components/AppDialog';
@@ -57,6 +59,7 @@ import {
   defaultProjectClientReference,
   deleteProjectBillingService,
   deleteProjectBillingRawLine,
+  deleteProjectBillingDocument,
   deleteProjectChargeableExpense,
   fetchProjectBillingData,
   fetchProjectBillingDprs,
@@ -70,6 +73,7 @@ import {
   saveProjectBillingRawLine,
   saveProjectServiceCatalogEntry,
   saveProjectChargeableExpense,
+  replaceProjectBillingDocument,
   setProjectChargeableExpensePdfInclusion,
   signedProjectBillingDocumentUrl,
   uploadProjectBillingDocument,
@@ -114,6 +118,10 @@ interface BillingServiceLineDraft extends BillingServiceDraft {
   id?: number;
   quantityEdited?: boolean;
 }
+
+type ExpenseDocumentChange =
+  | { action: 'replace'; document: ProjectBillingDocument; file: File }
+  | { action: 'delete'; document: ProjectBillingDocument };
 
 function serviceLineFromEntry(entry: ProjectServiceCatalogEntry, quantity = 0): BillingServiceLineDraft {
   return {
@@ -243,6 +251,7 @@ export function ProjectBillingPanel({
     billingMonth: string;
     draft: BillingExpenseDraft;
     files: File[];
+    documentChanges: Record<number, ExpenseDocumentChange>;
   } | null>(null);
   const serviceInputs = useRef(new Map<string, HTMLSelectElement>());
   const [serviceProviders, setServiceProviders] = useState<ServiceProvider[]>([]);
@@ -746,6 +755,7 @@ export function ProjectBillingPanel({
     }
     setBusy('expense');
     setError('');
+    let expenseSaved = false;
     try {
       const period = await getOrCreatePeriod(billingMonth === selectedMonth
         ? periodDraft
@@ -758,13 +768,26 @@ export function ProjectBillingPanel({
         expenseEditor.id,
       );
       if (revision !== contextRevision.current) return;
+      expenseSaved = true;
       setData((current) => ({
         ...current,
         expenses: [saved, ...current.expenses.filter((expense) => expense.id !== saved.id)],
       }));
       // Keep the saved expense ID on retry so partial attachment failures cannot create a duplicate expense.
       const pendingFiles = [...expenseEditor.files];
+      const pendingDocumentChanges = Object.values(expenseEditor.documentChanges);
       setExpenseEditor((current) => current ? { ...current, id: saved.id } : null);
+      // Replace first: an upload failure must not remove the current attachment.
+      for (const change of pendingDocumentChanges) {
+        if (change.action !== 'replace') continue;
+        const document = await replaceProjectBillingDocument(client, {
+          projectId: project.id, billingPeriodId: period.id, expenseId: saved.id,
+          document: change.document, file: billingExpenseAttachmentName(change.file, saved),
+        });
+        if (revision !== contextRevision.current) return;
+        setData((current) => ({ ...current, documents: current.documents.map((item) => item.id === document.id ? document : item) }));
+        clearExpenseDocumentChange(change.document.id);
+      }
       for (const file of pendingFiles) {
         const document = await uploadProjectBillingDocument(client, {
           projectId: project.id, billingPeriodId: period.id, expenseId: saved.id,
@@ -774,12 +797,21 @@ export function ProjectBillingPanel({
         setData((current) => ({ ...current, documents: [document, ...current.documents] }));
         setExpenseEditor((current) => current ? { ...current, files: current.files.filter((pending) => pending !== file) } : null);
       }
+      // Apply removals only after all replacement and additional files are stored.
+      for (const change of pendingDocumentChanges) {
+        if (change.action !== 'delete') continue;
+        await deleteProjectBillingDocument(client, { projectId: project.id, expenseId: saved.id, document: change.document });
+        if (revision !== contextRevision.current) return;
+        setData((current) => ({ ...current, documents: current.documents.filter((document) => document.id !== change.document.id) }));
+        clearExpenseDocumentChange(change.document.id);
+      }
       setExpenseEditor(null);
       const monthLabel = new Date(`${billingMonth}-01T12:00:00`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
       setMessage(`Frais imputable enregistré pour ${monthLabel}.`);
     } catch (caught) {
       if (revision !== contextRevision.current) return;
-      setError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer ce frais.');
+      const detail = caught instanceof Error ? caught.message : 'Impossible d’enregistrer ce frais.';
+      setError(expenseSaved ? `Le frais est enregistré, mais les pièces jointes n’ont pas toutes pu être mises à jour : ${detail}` : detail);
     } finally {
       if (revision === contextRevision.current) setBusy('');
     }
@@ -794,12 +826,29 @@ export function ProjectBillingPanel({
       id: expense?.id,
       billingMonth: (expense ? data.periods.find((period) => period.id === expense.billingPeriodId)?.periodMonth.slice(0, 7) : undefined) || selectedMonth,
       files: [],
+      documentChanges: {},
       draft: {
         ...draft,
         category: 'other',
         nature: specialties.join(' · '),
         supplierSpecialties: specialties,
       },
+    });
+  }
+
+  function stageExpenseDocumentChange(change: ExpenseDocumentChange) {
+    if (!isManager || busy) return;
+    setExpenseEditor((current) => current && current.id === change.document.chargeableExpenseId
+      ? { ...current, documentChanges: { ...current.documentChanges, [change.document.id]: change } }
+      : current);
+  }
+
+  function clearExpenseDocumentChange(documentId: number) {
+    setExpenseEditor((current) => {
+      if (!current) return current;
+      const documentChanges = { ...current.documentChanges };
+      delete documentChanges[documentId];
+      return { ...current, documentChanges };
     });
   }
   function openServiceCatalog(mode: 'view' | 'create' = 'view') {
@@ -1120,13 +1169,6 @@ export function ProjectBillingPanel({
       {total ? <strong className="project-billing-section-total">{total}</strong> : null}
     </header>;
   }
-  const attachmentVerifyButton = expenseDocuments.length ? <button
-    className="sp-button sp-button--secondary"
-    disabled={Boolean(busy) || attachmentChecking}
-    aria-busy={attachmentChecking}
-    onClick={() => void verifyAttachments()}
-    type="button"
-  >Revérifier les justificatifs</button> : null;
 
   return (
     <section aria-label="Facturation mensuelle" className={`project-billing ${workspace ? 'is-workspace' : ''}`}>
@@ -1198,10 +1240,9 @@ export function ProjectBillingPanel({
       </article> : null}
 
       {visibleSections.services ? <article id="billing-view-expenses" className="project-billing-card">
-        {workspace ? sectionHeader('expenses', 'Services refacturables', <Fuel aria-hidden="true" size={20} />, <>{attachmentVerifyButton}{isManager ? <button className="sp-button sp-button--secondary" disabled={Boolean(busy)} onClick={() => { setExpandedSections((current) => ({ ...current, expenses: true })); openExpenseEditor(); }} type="button"><Plus aria-hidden="true" size={16} /> Ajouter</button> : null}</>, expenseTotalsByCurrency.size ? [...expenseTotalsByCurrency].map(([currency, total]) => <span key={currency}>{money(total, currency)}</span>) : money(0)) : <header className="project-billing-card-heading">
+        {workspace ? sectionHeader('expenses', 'Services refacturables', <Fuel aria-hidden="true" size={20} />, isManager ? <button className="sp-button sp-button--secondary" disabled={Boolean(busy)} onClick={() => { setExpandedSections((current) => ({ ...current, expenses: true })); openExpenseEditor(); }} type="button"><Plus aria-hidden="true" size={16} /> Ajouter</button> : undefined, expenseTotalsByCurrency.size ? [...expenseTotalsByCurrency].map(([currency, total]) => <span key={currency}>{money(total, currency)}</span>) : money(0)) : <header className="project-billing-card-heading">
           <div><Fuel aria-hidden="true" size={20} /><span><strong>Services refacturables</strong><small>{money(expenseTotal)} HT sur la période</small></span></div>
           <div className="project-billing-card-actions">
-            {attachmentVerifyButton}
             {isManager ? <button disabled={Boolean(busy)} onClick={() => openExpenseEditor()} type="button"><Plus aria-hidden="true" size={16} /> Ajouter un frais</button> : null}
           </div>
         </header>}
@@ -1418,14 +1459,14 @@ export function ProjectBillingPanel({
 
       {expenseEditor ? (
         <AppDialog
-          footer={<div className="app-dialog__actions"><button className="is-secondary" disabled={busy === 'expense'} onClick={() => setExpenseEditor(null)} type="button">Annuler</button><button disabled={busy === 'expense'} onClick={() => void saveExpense()} type="button">{busy === 'expense' ? 'Enregistrement…' : 'Enregistrer le frais'}</button></div>}
+          footer={<div className="app-dialog__actions"><button className="is-secondary" disabled={busy === 'expense'} onClick={() => setExpenseEditor(null)} type="button">Annuler</button><button disabled={!isManager || busy === 'expense'} onClick={() => void saveExpense()} type="button">{busy === 'expense' ? 'Enregistrement…' : 'Enregistrer le frais'}</button></div>}
           icon={<ReceiptText aria-hidden="true" size={20} />}
           isBusy={busy === 'expense'}
           onClose={() => setExpenseEditor(null)}
           size="lg"
           title={expenseEditor.id ? 'Modifier le frais imputable' : 'Ajouter un frais imputable'}
         >
-          <div className="project-billing-form">
+          <fieldset aria-label="Informations du frais imputable" className="project-billing-form project-billing-expense-fields" disabled={!isManager || busy === 'expense'}>
             <ServiceProviderPicker label="Fournisseur" onAdd={() => setProviderEditor(serviceProviderDraft())} onChange={(provider) => {
               const specialties = serviceProviderSpecialtyNames(provider);
               setExpenseEditor((current) => current ? { ...current, draft: { ...current.draft, category: 'other', nature: specialties.join(' · '), supplier: provider.name, supplierSpecialties: specialties } } : null);
@@ -1447,12 +1488,55 @@ export function ProjectBillingPanel({
                 event.currentTarget.value = '';
               }} /></label>
               <small>Ajoutez un ou plusieurs justificatifs ; ils seront conservés avec ce service et disponibles dans l’export.</small>
-              {expenseEditor.files.length ? <ul>{expenseEditor.files.map((file, index) => <li key={`${file.name}-${index}`}><span>{file.name}</span><button aria-label={`Retirer la pièce ${file.name}`} className="sp-button sp-button--secondary project-billing-row-icon" type="button" disabled={busy === 'expense'} onClick={() => setExpenseEditor((current) => current ? { ...current, files: current.files.filter((_, fileIndex) => fileIndex !== index) } : null)}><Trash2 aria-hidden="true" size={15} /></button></li>)}</ul> : null}
-              {expenseEditor.id ? data.documents.filter((document) => document.chargeableExpenseId === expenseEditor.id).map((document) => <button type="button" disabled={Boolean(busy)} key={document.id} onClick={() => void openDocument(document)}><FileText aria-hidden="true" size={15} />{document.fileName}</button>) : null}
+              {expenseEditor.files.length ? <ul aria-label="Fichiers à ajouter">{expenseEditor.files.map((file, index) => <li className="project-billing-expense-attachment" key={`${file.name}-${index}`}>
+                <div className="project-billing-expense-attachment-identity"><span title={file.name}>{file.name}</span><small>À ajouter à l’enregistrement</small></div>
+                {isManager ? <div className="project-billing-expense-attachment-actions">
+                  <label className="sp-button sp-button--secondary project-billing-expense-replace">
+                    <RefreshCw aria-hidden="true" size={15} /> Remplacer
+                    <input aria-label={`Remplacer le fichier à ajouter ${file.name}`} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx" className="sr-only" disabled={Boolean(busy)} type="file" onChange={(event) => {
+                      const replacement = event.currentTarget.files?.[0];
+                      if (replacement) setExpenseEditor((current) => current ? { ...current, files: current.files.map((pending, fileIndex) => fileIndex === index ? replacement : pending) } : null);
+                      event.currentTarget.value = '';
+                    }} />
+                  </label>
+                  <button aria-label={`Retirer la pièce ${file.name}`} className="sp-button sp-button--danger" type="button" disabled={Boolean(busy)} onClick={() => setExpenseEditor((current) => current ? { ...current, files: current.files.filter((_, fileIndex) => fileIndex !== index) } : null)}><Trash2 aria-hidden="true" size={15} /> Supprimer</button>
+                </div> : null}
+              </li>)}</ul> : null}
+              {expenseEditor.id ? <ul aria-label="Pièces jointes enregistrées">{data.documents.filter((document) => document.chargeableExpenseId === expenseEditor.id).map((document) => {
+                const change = expenseEditor.documentChanges[document.id];
+                const check = attachmentChecks[document.id];
+                const hasProblem = check?.status === 'missing' || check?.status === 'invalid' || check?.status === 'unavailable';
+                const descriptionId = `expense-editor-document-${document.id}`;
+                return <li className="project-billing-expense-attachment" data-document-id={document.id} data-pending-action={change?.action} key={document.id}>
+                  <div className="project-billing-expense-attachment-identity">
+                    <div className="project-billing-expense-attachment-file">
+                      <button aria-describedby={hasProblem ? descriptionId : undefined} className={`sp-button sp-button--secondary project-billing-expense-attachment-name${hasProblem ? ' is-attachment-problem' : ''}`} disabled={Boolean(busy)} title={document.fileName} type="button" onClick={() => void openDocument(document)}><FileText aria-hidden="true" size={15} /><span>{document.fileName}</span><ExternalLink aria-hidden="true" size={12} /></button>
+                      {hasProblem ? <span aria-label={`Problème : ${document.fileName}`} className="project-billing-attachment-status is-problem" title={check?.message}><TriangleAlert aria-hidden="true" size={12} strokeWidth={2.5} /></span> : null}
+                    </div>
+                    {hasProblem ? <span className="sr-only" id={descriptionId}>{check?.message}</span> : null}
+                    {change?.action === 'replace' ? <small title={change.file.name}>Nouveau fichier : {change.file.name}</small> : null}
+                    {change?.action === 'delete' ? <small>Suppression à l’enregistrement</small> : null}
+                  </div>
+                  {isManager ? <div className="project-billing-expense-attachment-actions">
+                    {change ? <button aria-label={`Annuler la modification de ${document.fileName}`} className="sp-button sp-button--secondary" disabled={Boolean(busy)} onClick={() => clearExpenseDocumentChange(document.id)} type="button"><Undo2 aria-hidden="true" size={15} /> Annuler</button> : null}
+                    {change?.action !== 'delete' ? <>
+                      <label className="sp-button sp-button--secondary project-billing-expense-replace">
+                        <RefreshCw aria-hidden="true" size={15} /> Remplacer
+                        <input aria-label={`Remplacer le fichier ${document.fileName}`} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx" className="sr-only" disabled={Boolean(busy)} type="file" onChange={(event) => {
+                          const replacement = event.currentTarget.files?.[0];
+                          if (replacement) stageExpenseDocumentChange({ action: 'replace', document, file: replacement });
+                          event.currentTarget.value = '';
+                        }} />
+                      </label>
+                      <button aria-label={`Supprimer le fichier ${document.fileName}`} className="sp-button sp-button--danger" disabled={Boolean(busy)} onClick={() => stageExpenseDocumentChange({ action: 'delete', document })} type="button"><Trash2 aria-hidden="true" size={15} /> Supprimer</button>
+                    </> : null}
+                  </div> : null}
+                </li>;
+              })}</ul> : null}
             </div>
             {error ? <p className="project-billing-error is-wide" role="alert">{error}</p> : null}
             <datalist id="project-billing-units">{unitOptions.map((unit) => <option key={unit} value={unit} />)}</datalist>
-          </div>
+          </fieldset>
         </AppDialog>
       ) : null}
       {providerEditor ? <ServiceProviderEditorDialog categories={providerCategories} draft={providerEditor} isSaving={busy === 'provider'} onChange={setProviderEditor} onClose={() => setProviderEditor(null)} onSubmit={submitProvider} serviceTypes={providerServiceTypes} /> : null}

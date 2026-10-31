@@ -132,16 +132,14 @@ describe('billing attachment availability in Services refacturables', () => {
     expect(mocks.check).toHaveBeenCalledOnce();
   });
 
-  it('checks local sources on opening and allows an optional recheck after the file changes', async () => {
+  it('checks local sources on opening without a manual verification control', async () => {
     const document = attachment(1);
-    mocks.check.mockResolvedValueOnce([check(document, 'missing')]).mockResolvedValueOnce([check(document, 'available')]);
+    mocks.check.mockResolvedValue([check(document, 'missing')]);
     await renderPanel();
     await screen.findByLabelText('Fichier manquant : facture-1.pdf');
     expect(mocks.check).toHaveBeenCalledOnce();
     expect(mocks.check).toHaveBeenCalledWith(client, [document], { allowLocalDrive: true, signal: expect.any(AbortSignal) });
-    await userEvent.click(screen.getByRole('button', { name: 'Revérifier les justificatifs' }));
-    await screen.findByLabelText('Disponible : facture-1.pdf');
-    expect(mocks.check).toHaveBeenLastCalledWith(client, [document], { allowLocalDrive: true, signal: expect.any(AbortSignal) });
+    expect(screen.queryByRole('button', { name: /Revérifier les justificatifs/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'facture-1.pdf' })).toBeEnabled();
   });
 

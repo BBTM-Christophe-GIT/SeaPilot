@@ -682,6 +682,102 @@ export async function uploadProjectBillingDocument(
   return mapDocument(data as Record<string, unknown>);
 }
 
+interface BillingExpenseDocumentTarget {
+  projectId: number;
+  expenseId: number;
+  document: ProjectBillingDocument;
+}
+
+function validateBillingExpenseDocumentTarget(input: BillingExpenseDocumentTarget): void {
+  if (![input.projectId, input.expenseId, input.document.id].every((id) => Number.isSafeInteger(id) && id > 0)
+    || input.document.documentKind !== 'chargeable_expense' || input.document.chargeableExpenseId !== input.expenseId
+    || !input.document.bucketName || !input.document.objectPath) {
+    throw new Error('La pièce jointe ne correspond pas au frais sélectionné.');
+  }
+}
+
+function billingDocumentConflict(): Error {
+  return Object.assign(new Error('Cette pièce jointe a été modifiée, supprimée ou n’est plus accessible. Actualisez les frais avant de réessayer.'), {
+    code: 'BILLING_DOCUMENT_CONFLICT',
+  });
+}
+
+/** Unlink only this expense's current document. Historical private/Drive copies remain intact. */
+export async function deleteProjectBillingDocument(client: SupabaseClient, input: BillingExpenseDocumentTarget): Promise<void> {
+  validateBillingExpenseDocumentTarget(input);
+  const { data, error } = await client.from('project_billing_documents').delete()
+    .eq('id', input.document.id).eq('project_id', input.projectId).eq('chargeable_expense_id', input.expenseId)
+    .eq('document_kind', 'chargeable_expense').eq('bucket_name', input.document.bucketName).eq('object_path', input.document.objectPath)
+    .select('id').maybeSingle();
+  if (error) throw error;
+  if (!data || number(data.id) !== input.document.id) throw billingDocumentConflict();
+}
+
+/** Upload first, then atomically replace the same row if its original reference still matches. */
+export async function replaceProjectBillingDocument(
+  client: SupabaseClient,
+  input: BillingExpenseDocumentTarget & { billingPeriodId: number; file: File },
+): Promise<ProjectBillingDocument> {
+  validateBillingExpenseDocumentTarget(input);
+  if (!Number.isSafeInteger(input.billingPeriodId) || input.billingPeriodId <= 0 || !input.file.size) {
+    throw new Error('Sélectionnez un fichier non vide pour remplacer cette pièce jointe.');
+  }
+  const { data: existing, error: lookupError } = await client.from('project_billing_documents').select('id')
+    .eq('id', input.document.id).eq('project_id', input.projectId).eq('chargeable_expense_id', input.expenseId)
+    .eq('document_kind', 'chargeable_expense').eq('bucket_name', input.document.bucketName).eq('object_path', input.document.objectPath)
+    .maybeSingle();
+  if (lookupError) throw lookupError;
+  if (!existing || number(existing.id) !== input.document.id) throw billingDocumentConflict();
+
+  const bucketName = 'project-files';
+  const objectPath = `projects/${input.projectId}/${input.billingPeriodId}/expenses/${input.expenseId}/${crypto.randomUUID()}-${safeFileName(input.file.name)}`;
+  const mimeType = input.file.type || 'application/octet-stream';
+  const storage = projectDriveStorage(client, bucketName);
+  const { error: uploadError } = await storage.upload(objectPath, input.file, {
+    cacheControl: '3600', contentType: mimeType, upsert: false,
+  });
+  if (uploadError) throw uploadError;
+
+  const replacement = {
+    billing_period_id: input.billingPeriodId, bucket_name: bucketName, object_path: objectPath,
+    file_name: input.file.name, mime_type: mimeType, file_size_bytes: input.file.size,
+  };
+  let definitelyNotApplied = false;
+  try {
+    const { data, error } = await client.from('project_billing_documents').update(replacement)
+      .eq('id', input.document.id).eq('project_id', input.projectId).eq('chargeable_expense_id', input.expenseId)
+      .eq('document_kind', 'chargeable_expense').eq('bucket_name', input.document.bucketName).eq('object_path', input.document.objectPath)
+      .select('*').maybeSingle();
+    if (error) {
+      // Only explicit permission/integrity refusals prove this statement did not apply.
+      // 08xxx, 40003 and PostgREST response errors can leave completion unknown.
+      const code = String(error.code || '');
+      definitelyNotApplied = code === '42501' || /^23[0-9A-Z]{3}$/.test(code);
+      throw error;
+    }
+    if (!data) { definitelyNotApplied = true; throw billingDocumentConflict(); }
+    return mapDocument(data as Record<string, unknown>);
+  } catch (failure) {
+    if (!definitelyNotApplied) {
+      // A successful UPDATE can lose its response. Confirm only the exact new reference through RLS.
+      try {
+        const { data, error } = await client.from('project_billing_documents').select('*')
+          .eq('id', input.document.id).eq('project_id', input.projectId).eq('chargeable_expense_id', input.expenseId)
+          .eq('document_kind', 'chargeable_expense').eq('bucket_name', bucketName).eq('object_path', objectPath).maybeSingle();
+        if (!error && data && number(data.id) === input.document.id
+          && text(data.file_name) === input.file.name && text(data.mime_type) === mimeType && number(data.file_size_bytes) === input.file.size) {
+          return mapDocument(data as Record<string, unknown>);
+        }
+      } catch { /* An unreadable outcome cannot justify removing potentially linked bytes. */ }
+      throw new Error('Le remplacement n’a pas pu être confirmé. Actualisez les frais avant de réessayer.', { cause: failure });
+    }
+    // Clean up only the new address under the storage adapter's archive-retention policy.
+    // Never remove the original document, even when its local binary is missing.
+    try { await storage.remove([objectPath]); } catch { /* Keep the primary write/conflict error. */ }
+    throw failure;
+  }
+}
+
 export async function signedProjectBillingDocumentUrl(
   client: SupabaseClient,
   document: ProjectBillingDocument,

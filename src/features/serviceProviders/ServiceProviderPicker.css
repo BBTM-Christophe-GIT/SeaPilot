@@ -1,0 +1,19 @@
+.service-provider-picker .service-provider-picker__control > svg.lucide-chevron-down {
+  left: auto;
+  right: var(--sp-space-3);
+}
+
+.service-provider-picker .service-provider-picker__control > svg.lucide-search {
+  left: var(--sp-space-3);
+  right: auto;
+}
+
+.service-provider-picker .service-provider-picker__control > input[role='combobox'] {
+  min-width: 0;
+  padding-inline-start: calc(var(--sp-space-3) + 16px + var(--sp-space-2));
+  padding-inline-end: calc(var(--sp-space-3) + 16px + var(--sp-space-2));
+}
+
+.service-provider-picker .service-provider-picker__control.has-selection > input[role='combobox'] {
+  padding-inline-start: var(--sp-space-3);
+}
