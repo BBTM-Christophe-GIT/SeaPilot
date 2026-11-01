@@ -1,5 +1,15 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.80.27`, build `2026-11-01.001`, compacte la fiche de droite du
+catalogue des prestations et regroupe chaque prestation BBTM sur une seule
+ligne dans Facturation, avec défilement horizontal local sur petit écran.
+La référence client suit la catégorie ; le bouton Calcul quantité suit le
+nombre d'unités et ouvre le menu des modes et types d'opération. Le texte
+explicatif P144 et le bouton + de catégorie sont retirés. Les calculs historiques,
+la sélection multiple, les sauvegardes et les références restent conservés.
+Le menu reprend AppContextMenu, la navigation au clavier et les tokens partagés.
+Aucune migration ni dépendance nouvelle.
+
 Version `3.80.26`, build `2026-10-31.005`, compacte les puces de la Liste des
 prestations sur deux lignes : désignation, puis navire et tarif. La liste reste
 alignée en haut et ses lignes ne s'étirent plus avec la hauteur du dialogue.

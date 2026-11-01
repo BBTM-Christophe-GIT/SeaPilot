@@ -772,3 +772,12 @@
 @media (max-width: 850px) {
   .app-shell .content-area .project-service-catalog-workspace .project-catalog-sidebar .project-catalog-list { max-height: 210px; }
 }
+
+.app-shell .content-area .project-service-catalog-workspace .project-catalog-detail :is(.project-catalog-view, .project-catalog-form) { padding: var(--sp-space-3); }
+.app-shell .content-area .project-service-catalog-workspace .project-catalog-detail .project-catalog-identity { gap: var(--sp-space-3); padding-bottom: var(--sp-space-2); }
+.app-shell .content-area .project-service-catalog-workspace .project-catalog-detail .project-catalog-data-grid { gap: 0 var(--sp-space-3); margin-top: var(--sp-space-1); }
+.app-shell .content-area .project-service-catalog-workspace .project-catalog-detail .project-catalog-data-grid > div { padding: var(--sp-space-2) 0; }
+.app-shell .content-area .project-service-catalog-workspace .project-catalog-detail .project-catalog-data-grid dt { margin-bottom: var(--sp-space-1); }
+.app-shell .content-area .project-service-catalog-workspace .project-catalog-detail .project-service-description { margin-top: var(--sp-space-3); padding: var(--sp-space-3); }
+.app-shell .content-area .project-service-catalog-workspace .project-catalog-detail .project-service-catalog-fields { gap: var(--sp-space-2) var(--sp-space-3); padding-top: var(--sp-space-2); }
+.app-shell .content-area .project-service-catalog-workspace .project-catalog-detail .project-catalog-form-actions { margin-top: var(--sp-space-3); }

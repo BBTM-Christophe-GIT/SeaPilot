@@ -20,7 +20,10 @@ catalogue ne modifie pas les factures existantes.
 
 Dans Facturation, le mode, les types d'opération, le montant unitaire et la
 référence client restent modifiables après Enregistrer. Pour changer directement
-le nombre d'unités calculé, sélectionner Manuel. Enregistrer met à jour la même
+le nombre d'unités calculé, ouvrir **Calcul quantité** et choisir **Manuel**.
+Le même menu propose les journées de la période, celles du mois et les types
+d'opération. Les types se cochent dans le menu ; Terminer ferme leur sélection.
+Enregistrer met à jour la même
 ligne. Le total affiché et les exports utilisent le même calcul ; la référence
 propre à chaque prestation figure avec sa désignation dans le PDF.
 

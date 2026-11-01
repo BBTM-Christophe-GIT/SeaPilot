@@ -1028,7 +1028,7 @@ export function ServiceCatalogDialog({
               <div><dt>Catégorie</dt><dd>{selected.category}</dd></div>
               <div><dt>Navire</dt><dd>{selected.vesselName || 'Sans navire'}</dd></div>
               <div><dt>Montant unitaire</dt><dd>{serviceAmount(selected.unitAmountHt)} HT</dd></div>
-              <div><dt>Mode de quantité</dt><dd>{selected.quantityMode ? BILLING_SERVICE_QUANTITY_MODE_LABELS[selected.quantityMode] : 'Réglage actuel'}</dd></div>
+              <div><dt>Calcul quantité</dt><dd>{selected.quantityMode ? BILLING_SERVICE_QUANTITY_MODE_LABELS[selected.quantityMode] : 'Réglage actuel'}</dd></div>
               {selected.quantityMode === 'manual' ? <div><dt>Quantité par défaut</dt><dd>{(selected.defaultQuantity ?? 0).toLocaleString('fr-FR', { maximumFractionDigits: 3 })}</dd></div> : null}
               {selected.quantityMode === 'operations' ? <div className="is-wide"><dt>Types d’opérations à compter</dt><dd>{selected.quantityOperationTypes?.join(' · ') || 'Non renseignés'}</dd></div> : null}
               <div className="is-wide"><dt>Référence client de la prestation</dt><dd>{selected.clientReference || 'Non renseignée'}</dd></div>

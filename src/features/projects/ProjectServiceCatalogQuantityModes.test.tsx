@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ServiceCatalogDialog } from './ProjectCatalogDialogs';
+import { BILLING_SERVICE_QUANTITY_MODE_LABELS } from './BillingServiceQuantityFields';
+import type { BillingServiceQuantityMode } from './projectBilling';
 import type { ProjectServiceCatalogDraft, ProjectServiceCatalogEntry } from './projectBilling';
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), archive: vi.fn() }));
@@ -31,6 +33,11 @@ async function save() {
 function change(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
+async function chooseMode(mode: BillingServiceQuantityMode) {
+  await click(screen.getByRole('button', { name: 'Calcul quantité' }));
+  await click(screen.getByRole('menuitem', { name: new RegExp(`^${BILLING_SERVICE_QUANTITY_MODE_LABELS[mode]}`) }));
+}
+async function finishTypes() { await click(screen.getByRole('menuitem', { name: 'Terminer' })); }
 
 beforeEach(() => {
   Object.values(mocks).forEach(mock => mock.mockReset());
@@ -41,7 +48,7 @@ beforeEach(() => {
 describe('catalogue service quantity rules', () => {
   it('saves a manual zero and client reference, then lets the saved service be edited again', async () => {
     await mount({ initialMode: 'create' });
-    expect(screen.getByLabelText('Mode de quantité')).toHaveDisplayValue('Manuel');
+    expect(screen.getByRole('button', { name: 'Calcul quantité' })).toHaveAccessibleDescription('Manuel');
     expect(screen.getByLabelText('Quantité par défaut')).toHaveValue(0);
     expect(screen.getByLabelText('Référence client de la prestation')).toHaveAttribute('maxlength', '200');
     change('Catégorie *', 'Assistance configurée');
@@ -67,7 +74,7 @@ describe('catalogue service quantity rules', () => {
     mocks.load.mockResolvedValue([entry({ quantityMode: 'manual', defaultQuantity: 4, clientReference: 'REF-CONSERVEE' })]);
     await mount();
     await click(screen.getByRole('button', { name: 'Modifier' }));
-    change('Mode de quantité', quantityMode);
+    await chooseMode(quantityMode);
     expect(screen.queryByLabelText('Quantité par défaut')).not.toBeInTheDocument();
     await save();
     expect(mocks.save).toHaveBeenCalledExactlyOnceWith(client, expect.objectContaining({ id: 91, quantityMode, defaultQuantity: 4, unitAmountHt: 30, clientReference: 'REF-CONSERVEE' }));
@@ -78,27 +85,31 @@ describe('catalogue service quantity rules', () => {
     mocks.load.mockResolvedValue([entry({ quantityMode: 'manual', defaultQuantity: 2 })]);
     await mount();
     await click(screen.getByRole('button', { name: 'Modifier' }));
-    change('Mode de quantité', 'operations');
+    await chooseMode('operations');
+    await finishTypes();
     await save();
     expect(screen.getByRole('alert')).toHaveTextContent('Choisissez au moins un type d’opération.');
     expect(mocks.save).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('checkbox', { name: '24/24 Crew Change' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: '24/24 Weather Stand-by' }));
+    await click(screen.getByRole('button', { name: 'Calcul quantité' }));
+    await click(screen.getByRole('menuitem', { name: '24/24 Crew Change' }));
+    await click(screen.getByRole('menuitem', { name: '24/24 Weather Stand-by' }));
+    await finishTypes();
     await save();
     expect(mocks.save).toHaveBeenCalledExactlyOnceWith(client, expect.objectContaining({
       id: 91, quantityMode: 'operations', quantityOperationTypes: ['24/24 Crew Change', '24/24 Weather Stand-by'], defaultQuantity: 2,
     }));
     expect(screen.getByText('Types d’opérations à compter').parentElement).toHaveTextContent('24/24 Crew Change · 24/24 Weather Stand-by');
     await click(screen.getByRole('button', { name: 'Modifier' }));
-    expect(screen.getByRole('checkbox', { name: '24/24 Crew Change' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: '24/24 Weather Stand-by' })).toBeChecked();
+    await click(screen.getByRole('button', { name: 'Calcul quantité' }));
+    expect(screen.getByRole('menuitem', { name: '24/24 Crew Change, sélectionné' })).toBeVisible();
+    expect(screen.getByRole('menuitem', { name: '24/24 Weather Stand-by, sélectionné' })).toBeVisible();
   });
 
   it('preserves undefined legacy settings when another catalogue field is edited', async () => {
     mocks.load.mockResolvedValue([entry({ quantityOperationTypes: ['Type importé'], clientReference: 'LEGACY-REF' })]);
     await mount();
     await click(screen.getByRole('button', { name: 'Modifier' }));
-    expect(screen.getByLabelText('Mode de quantité')).toHaveDisplayValue('Réglage actuel');
+    expect(screen.getByRole('button', { name: 'Calcul quantité' })).toHaveAccessibleDescription('Réglage actuel');
     expect(screen.queryByLabelText('Quantité par défaut')).not.toBeInTheDocument();
     change('Montant unitaire (€ HT) *', '35');
     await save();
@@ -106,8 +117,8 @@ describe('catalogue service quantity rules', () => {
       id: 91, unitAmountHt: 35, quantityMode: undefined, defaultQuantity: undefined, quantityOperationTypes: ['Type importé'], clientReference: 'LEGACY-REF',
     }));
     await click(screen.getByRole('button', { name: 'Modifier' }));
-    change('Mode de quantité', 'operations');
-    expect(screen.getByRole('checkbox', { name: 'Type importé' })).toBeChecked();
+    await chooseMode('operations');
+    expect(screen.getByRole('menuitem', { name: 'Type importé, sélectionné' })).toBeVisible();
   });
 
   it('disables quantity, reference and description changes while the catalogue save is pending', async () => {
@@ -118,7 +129,7 @@ describe('catalogue service quantity rules', () => {
     await click(screen.getByRole('button', { name: 'Modifier' }));
     await save();
     expect(screen.getByRole('group', { name: 'Paramètres de la prestation' })).toBeDisabled();
-    expect(screen.getByLabelText('Mode de quantité')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Calcul quantité' })).toBeDisabled();
     expect(screen.getByLabelText('Quantité par défaut')).toBeDisabled();
     expect(screen.getByLabelText('Référence client de la prestation')).toBeDisabled();
     expect(screen.getByRole('textbox', { name: 'Description de la prestation' })).toHaveAttribute('aria-disabled', 'true');
@@ -135,7 +146,7 @@ describe('catalogue service quantity rules', () => {
     expect(detail.getByText('Types d’opérations à compter').parentElement).toHaveTextContent('24/24 Operation · Type importé');
     expect(screen.queryByRole('button', { name: 'Ajouter' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('combobox', { name: 'Mode de quantité' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Calcul quantité' })).not.toBeInTheDocument();
     expect(mocks.save).not.toHaveBeenCalled();
     expect(mocks.archive).not.toHaveBeenCalled();
   });

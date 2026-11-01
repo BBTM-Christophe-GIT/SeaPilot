@@ -1,81 +1,72 @@
 .billing-service-quantity-fields {
-  display: grid;
+  display: inline-flex;
+  position: relative;
   min-width: 0;
   max-width: 100%;
-  gap: var(--sp-space-2);
+  align-items: center;
 }
 
-.billing-service-quantity-fields .billing-service-quantity-mode {
-  display: grid;
-  min-width: 0;
-  gap: var(--sp-space-1);
-  color: var(--sp-muted);
-  font-size: 12px;
-}
-
-.billing-service-quantity-fields .billing-service-quantity-mode select {
-  width: 100%;
+.billing-service-quantity-fields .billing-service-quantity-trigger.sp-button {
+  display: inline-flex;
   min-width: 0;
   max-width: 100%;
   min-height: var(--sp-control-height);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-space-2);
   padding: var(--sp-space-2) var(--sp-space-3);
   border: 1px solid var(--sp-border-strong);
   border-radius: var(--sp-control-radius);
   background: var(--sp-surface);
   color: var(--sp-text);
   font: inherit;
-}
-
-.billing-service-quantity-fields .billing-service-quantity-operations {
-  display: grid;
-  min-width: 0;
-  max-width: 100%;
-  margin: 0;
-  padding: var(--sp-space-2) var(--sp-space-3);
-  border: 1px solid var(--sp-border);
-  border-radius: var(--sp-control-radius);
-  gap: var(--sp-space-2);
-}
-
-.billing-service-quantity-operations legend {
-  padding-inline: var(--sp-space-1);
-  color: var(--sp-muted);
   font-size: 12px;
+  white-space: nowrap;
 }
 
-.billing-service-quantity-operation-options {
+.billing-service-quantity-trigger > span { overflow: hidden; text-overflow: ellipsis; }
+.billing-service-quantity-trigger > svg { flex: 0 0 auto; }
+.billing-service-quantity-trigger[aria-expanded='true'] { border-color: var(--sp-primary); background: var(--sp-primary-soft); }
+.billing-service-quantity-trigger:disabled { opacity: .65; cursor: default; }
+
+.billing-service-quantity-popup {
+  font-family: var(--sp-font);
+  color: var(--sp-text);
+}
+
+.billing-service-quantity-popup .app-context-menu {
+  width: min(320px, calc(100vw - 24px));
+  padding: var(--sp-space-2);
+  border-color: var(--sp-border);
+  border-radius: var(--sp-panel-radius);
+  background: var(--sp-surface);
+  box-shadow: var(--sp-shadow);
+}
+
+.billing-service-quantity-popup .app-context-menu button[role="menuitem"] {
   display: flex;
-  flex-wrap: wrap;
-  min-width: 0;
-  max-height: 240px;
-  overflow: auto;
-  gap: var(--sp-space-1) var(--sp-space-3);
-}
-
-.billing-service-quantity-fields .billing-service-quantity-operation {
-  display: inline-flex;
-  align-items: center;
+  width: 100%;
   min-width: 0;
   min-height: var(--sp-control-height);
+  align-items: center;
+  justify-content: space-between;
   gap: var(--sp-space-2);
+  padding: var(--sp-space-2) var(--sp-space-3);
+  border: 0;
+  border-radius: var(--sp-control-radius);
+  background: transparent;
   color: var(--sp-text);
+  font: inherit;
   font-size: 12px;
-  cursor: pointer;
+  text-align: left;
 }
 
-.billing-service-quantity-fields .billing-service-quantity-operation input {
-  flex: 0 0 16px;
-  width: 16px;
-  height: 16px;
-  min-height: 0;
-  margin: 0;
-  accent-color: var(--sp-primary);
-}
-
-.billing-service-quantity-operation span { overflow-wrap: anywhere; }
-.billing-service-quantity-operation:has(input:disabled) { cursor: default; opacity: .65; }
-.billing-service-quantity-fields select:focus-visible,
-.billing-service-quantity-fields input:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; }
+.billing-service-quantity-popup .app-context-menu button[role="menuitem"] > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.billing-service-quantity-popup .app-context-menu button[role="menuitem"] > svg { flex: 0 0 auto; color: var(--sp-primary); }
+.billing-service-quantity-fields .billing-service-quantity-trigger:focus-visible,
+.billing-service-quantity-popup .app-context-menu button[role="menuitem"]:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; }
+.billing-service-quantity-popup .app-context-menu button[role="menuitem"]:hover:not(:disabled),
+.billing-service-quantity-popup .app-context-menu button[role="menuitem"]:focus-visible { background: var(--sp-primary-soft); color: var(--sp-primary); }
 
 .project-service-catalog-form .project-service-catalog-fields {
   min-width: 0;
@@ -90,8 +81,8 @@
 }
 
 @media (pointer: coarse) {
-  .billing-service-quantity-fields .billing-service-quantity-mode select,
-  .billing-service-quantity-fields .billing-service-quantity-operation,
+  .billing-service-quantity-fields .billing-service-quantity-trigger,
+  .billing-service-quantity-popup .app-context-menu button[role="menuitem"],
   .project-service-catalog-form.project-catalog-form .project-service-catalog-fields :is(input:not([type='checkbox']), select, textarea),
   .project-service-catalog-form.project-catalog-form .project-catalog-form-actions button { min-height: 44px; }
 }
