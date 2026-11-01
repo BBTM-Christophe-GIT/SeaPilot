@@ -1374,26 +1374,21 @@ export function ProjectBillingPanel({
           </div>
         </header>}
         <div id="billing-content-services" hidden={workspace && !expandedSections.services}>
-        {project.projectCode.trim().toUpperCase() === 'P144' && calculatedServiceDrafts.some((service) => service.quantityMode === undefined && automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) !== null)
-          ? <p className="project-billing-auto-quantity">Spread Antipollution · P144 : jours du mois − jours 24/24 Weather Stand-by. La quantité est calculée automatiquement, y compris pour les journées sans DPR.</p>
-          : <p className="project-billing-auto-quantity">Choisissez le mode de quantité de chaque prestation. Les valeurs et la référence client restent modifiables après enregistrement. Le calcul par type d’opération compte uniquement les journées avec DPR.</p>}
         <div className="project-billing-service-list">
           {calculatedServiceDrafts.map((service, index) => (
-            <div className="project-billing-service-grid" key={service.key} role="group" aria-label={`Prestation ${index + 1} : ${service.category}`}>
+            <div className={`project-billing-service-grid${isManager ? '' : ' is-readonly'}`} key={service.key} role="group" aria-label={`Prestation ${index + 1} : ${service.category}`}>
               {isManager ? <div className="project-billing-service-row-actions">
                 <button aria-label={`Supprimer la prestation ${service.category}`} className="sp-button sp-button--secondary is-danger project-billing-row-icon" disabled={Boolean(busy)} onClick={() => void removeService(service)} type="button"><Trash2 aria-hidden="true" size={15} /></button>
                 <button aria-label={`Modifier la prestation ${service.category}`} className="sp-button sp-button--secondary project-billing-row-icon" disabled={Boolean(busy)} onClick={() => serviceInputs.current.get(service.key)?.focus()} type="button"><Pencil aria-hidden="true" size={15} /></button>
               </div> : null}
               <label className="project-billing-service-category">
                 Catégorie
-                <span>
-                  <select ref={(node) => { if (node) serviceInputs.current.set(service.key, node); else serviceInputs.current.delete(service.key); }} aria-label={`Catégorie de la prestation ${index + 1}`} disabled={!isManager || Boolean(busy)} onChange={(event) => selectServiceCategory(service.key, Number(event.target.value))} value={service.serviceCatalogId ?? ''}>
-                    {!serviceCatalog.some((entry) => entry.id === service.serviceCatalogId) && service.category ? <option value={service.serviceCatalogId ?? ''}>{service.category}</option> : null}
-                    {serviceCatalog.map((entry) => <option key={entry.id} value={entry.id}>{entry.category}{entry.vesselName ? ` — ${entry.vesselName}` : ''}</option>)}
-                  </select>
-                  {isManager ? <button aria-label="Ajouter une catégorie de prestation" onClick={() => openServiceCatalog('create')} title="Ajouter une catégorie" type="button"><Plus aria-hidden="true" size={17} /></button> : null}
-                </span>
+                <select ref={(node) => { if (node) serviceInputs.current.set(service.key, node); else serviceInputs.current.delete(service.key); }} aria-label={`Catégorie de la prestation ${index + 1}`} disabled={!isManager || Boolean(busy)} onChange={(event) => selectServiceCategory(service.key, Number(event.target.value))} value={service.serviceCatalogId ?? ''}>
+                  {!serviceCatalog.some((entry) => entry.id === service.serviceCatalogId) && service.category ? <option value={service.serviceCatalogId ?? ''}>{service.category}</option> : null}
+                  {serviceCatalog.map((entry) => <option key={entry.id} value={entry.id}>{entry.category}{entry.vesselName ? ` — ${entry.vesselName}` : ''}</option>)}
+                </select>
               </label>
+              <label className="project-billing-service-reference">Référence client de la prestation<input disabled={!isManager || Boolean(busy)} maxLength={200} onChange={(event) => updateServiceDraft(service.key, { clientReference: event.target.value })} value={service.clientReference || ''} /></label>
               <label>
                 Montant unitaire HT
                 <input disabled={!isManager || Boolean(busy)} min="0" onChange={(event) => updateServiceDraft(service.key, { unitAmountHt: Number(event.target.value) })} step="0.01" type="number" value={service.unitAmountHt} />
@@ -1402,18 +1397,15 @@ export function ProjectBillingPanel({
                 Nombre d’unités
                 <input disabled={!isManager || Boolean(busy)} readOnly={service.quantityMode !== undefined ? service.quantityMode !== 'manual' : automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) !== null} min="0" onChange={(event) => updateServiceDraft(service.key, { quantity: Number(event.target.value), quantityMode: 'manual' })} step="0.001" type="number" value={service.quantity} />
               </label>
+              <BillingServiceQuantityFields
+                quantityMode={service.quantityMode}
+                quantityOperationTypes={service.quantityOperationTypes}
+                operationTypes={periodDprs.map((dpr) => dpr.operation).filter(Boolean)}
+                legacyLabel={service.quantityMode === undefined && automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) !== null ? 'Calcul existant du projet' : undefined}
+                disabled={!isManager || Boolean(busy)}
+                onChange={(changes) => updateServiceDraft(service.key, { ...changes, quantity: service.quantity })}
+              />
               <label>Montant total HT<input disabled value={money(service.unitAmountHt * service.quantity)} /></label>
-              <div className="project-billing-service-settings">
-                <BillingServiceQuantityFields
-                  quantityMode={service.quantityMode}
-                  quantityOperationTypes={service.quantityOperationTypes}
-                  operationTypes={periodDprs.map((dpr) => dpr.operation).filter(Boolean)}
-                  legacyLabel={service.quantityMode === undefined && automaticBillingServiceQuantity(project, service.category, selectedMonth, dprs) !== null ? 'Calcul existant du projet' : undefined}
-                  disabled={!isManager || Boolean(busy)}
-                  onChange={(changes) => updateServiceDraft(service.key, { ...changes, quantity: service.quantity })}
-                />
-                <label>Référence client de la prestation<input disabled={!isManager || Boolean(busy)} maxLength={200} onChange={(event) => updateServiceDraft(service.key, { clientReference: event.target.value })} value={service.clientReference || ''} /></label>
-              </div>
               {isManager ? <div className="project-billing-service-actions">
                 <button disabled={Boolean(busy)} onClick={() => void saveService(service)} type="button"><Save aria-hidden="true" size={15} /> Enregistrer</button>
               </div> : null}

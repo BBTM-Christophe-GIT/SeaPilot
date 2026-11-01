@@ -92,7 +92,8 @@ describe('P144 Spread Antipollution monthly rule', () => {
     expect(screen.getByLabelText('Nombre d’unités')).toHaveAttribute('readonly');
     expect((screen.getByLabelText('Montant total HT') as HTMLInputElement).value).toMatch(/2\s?684,82/);
     expect(screen.getByLabelText('Totaux sélectionnés pour l’export')).toHaveTextContent(/2\s?684,82/);
-    expect(screen.getByText(/jours du mois − jours 24\/24 Weather Stand-by/)).toBeVisible();
+    expect(screen.queryByText(/jours du mois − jours 24\/24 Weather Stand-by/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Calcul quantité' })).toHaveAccessibleDescription('Calcul existant du projet');
   });
   it('saves and exports the calculated quantity using the existing unit price', async () => {
     const user = userEvent.setup();

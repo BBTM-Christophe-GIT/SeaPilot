@@ -46,6 +46,11 @@ let stored: ProjectBillingData;
 let catalog: ProjectServiceCatalogEntry[];
 function line() { return screen.getByRole('group', { name: 'Prestation 1 : Assistance' }); }
 function field(label: string) { return within(line()).getByLabelText(label, { exact: true }); }
+function quantityButton() { return within(line()).getByRole('button', { name: 'Calcul quantité' }); }
+async function openQuantityMenu() {
+  await userEvent.click(quantityButton());
+  return screen.getByRole('menu');
+}
 async function mount(isManager = true) {
   let view!: ReturnType<typeof render>;
   await act(async () => { view = render(<ProjectBillingPanel client={client} project={project} operations={[]} isManager={isManager} initialMonth="2026-09" visibleSections={{ services: false, bbtm: true, billingElements: true, raw: false }} />); });
@@ -85,7 +90,12 @@ beforeEach(() => {
 describe('editable billing service quantities and client references', () => {
   it('saves, edits and reloads the same manual service including a valid zero quantity', async () => {
     let view = await mount();
-    expect(field('Mode de quantité')).toHaveValue('manual');
+    expect(quantityButton()).toHaveAccessibleDescription('Manuel');
+    expect(screen.queryByText(/Choisissez le mode de quantité de chaque prestation/)).not.toBeInTheDocument();
+    expect(within(line()).queryByRole('button', { name: 'Ajouter une catégorie de prestation' })).not.toBeInTheDocument();
+    const menu = await openQuantityMenu();
+    await userEvent.click(within(menu).getByRole('menuitem', { name: /^Manuel.*mode sélectionné$/ }));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     expect(field('Nombre d’unités')).not.toHaveAttribute('readonly');
     fireEvent.change(field('Nombre d’unités'), { target: { value: '7' } });
     fireEvent.change(field('Référence client de la prestation'), { target: { value: 'REF-MODIFIEE' } });
@@ -98,27 +108,34 @@ describe('editable billing service quantities and client references', () => {
     view.unmount();
     view = await mount();
     expect(field('Nombre d’unités')).toHaveValue(0);
-    expect(field('Mode de quantité')).toHaveValue('manual');
+    expect(quantityButton()).toHaveAccessibleDescription('Manuel');
     expect(field('Référence client de la prestation')).toHaveValue('REF-MODIFIEE');
     expect(field('Nombre d’unités')).not.toHaveAttribute('readonly');
     view.unmount();
   });
 
   it('recomputes period and calendar-month modes when the selected range or month changes', async () => {
-    stored.services = [service({ quantityMode: 'period' }), service({ id: 22, billingPeriodId: 11, quantityMode: 'period' })];
+    stored.services = [service(), service({ id: 22, billingPeriodId: 11, quantityMode: 'period' })];
     await mount();
+    const periodMenu = await openQuantityMenu();
+    await userEvent.click(within(periodMenu).getByRole('menuitem', { name: /^Jours de la période sélectionnée/ }));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(quantityButton()).toHaveAccessibleDescription('Jours de la période sélectionnée');
     expect(field('Nombre d’unités')).toHaveValue(30);
     expect(field('Nombre d’unités')).toHaveAttribute('readonly');
     await customRange('2026-09-15', '2026-09-20');
     await waitFor(() => expect(field('Nombre d’unités')).toHaveValue(6));
     await saveLine();
     expect(mocks.save).toHaveBeenLastCalledWith(client, 144, 10, expect.objectContaining({ quantityMode: 'period', quantity: 6 }), 21);
-    await userEvent.selectOptions(field('Mode de quantité'), 'month');
+    const menu = await openQuantityMenu();
+    await userEvent.click(within(menu).getByRole('menuitem', { name: /^Jours du mois sélectionné/ }));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(quantityButton()).toHaveAccessibleDescription('Jours du mois sélectionné');
     expect(field('Nombre d’unités')).toHaveValue(30);
     await saveLine();
     expect(mocks.save).toHaveBeenLastCalledWith(client, 144, 10, expect.objectContaining({ quantityMode: 'month', quantity: 30 }), 21);
     fireEvent.change(screen.getByLabelText('Mois', { exact: true }), { target: { value: '2026-10' } });
-    await waitFor(() => expect(field('Mode de quantité')).toHaveValue('period'));
+    await waitFor(() => expect(quantityButton()).toHaveAccessibleDescription('Jours de la période sélectionnée'));
     expect(field('Nombre d’unités')).toHaveValue(31);
     await saveLine();
     expect(mocks.save).toHaveBeenLastCalledWith(client, 144, 11, expect.objectContaining({ quantityMode: 'period', quantity: 31 }), 22);
@@ -134,11 +151,17 @@ describe('editable billing service quantities and client references', () => {
       dpr(6, 4, '24/24 Operation'), dpr(0, 4, '24/24 Crew Change'), dpr(7, 12, '24/24 Operation'),
     ]);
     let view = await mount();
-    await userEvent.click(within(line()).getByRole('checkbox', { name: '24/24 Crew Change' }));
+    const menu = await openQuantityMenu();
+    await userEvent.click(within(menu).getByRole('menuitem', { name: /^Types d’opérations sélectionnés/ }));
+    expect(menu).toBeVisible();
+    await userEvent.click(within(menu).getByRole('menuitem', { name: /^24\/24 Crew Change/ }));
+    expect(within(menu).getByRole('menuitem', { name: /^24\/24 Operation/ })).toHaveAccessibleName(/sélectionné$/);
+    expect(within(menu).getByRole('menuitem', { name: /^24\/24 Crew Change/ })).toHaveAccessibleName(/sélectionné$/);
+    await userEvent.click(within(menu).getByRole('menuitem', { name: 'Terminer' }));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     await customRange('2026-09-01', '2026-09-04');
     await waitFor(() => expect(field('Nombre d’unités')).toHaveValue(4));
-    expect(within(line()).getByRole('checkbox', { name: '24/24 Operation' })).toBeChecked();
-    expect(within(line()).getByRole('checkbox', { name: '24/24 Crew Change' })).toBeChecked();
+    expect(quantityButton()).toHaveAccessibleDescription(/Types d’opérations sélectionnés.*24\/24 Operation.*24\/24 Crew Change/);
     await saveLine();
     expect(mocks.save).toHaveBeenLastCalledWith(client, 144, 10, expect.objectContaining({ quantityMode: 'operations', quantity: 4,
       quantityOperationTypes: expect.arrayContaining(['24/24 Operation', '24/24 Crew Change']), clientReference: 'REF-PRESTATION' }), 21);
@@ -149,9 +172,11 @@ describe('editable billing service quantities and client references', () => {
     }), [], 'pdf'));
     view.unmount();
     view = await mount();
-    expect(field('Mode de quantité')).toHaveValue('operations');
-    expect(within(line()).getByRole('checkbox', { name: '24/24 Operation' })).toBeChecked();
-    expect(within(line()).getByRole('checkbox', { name: '24/24 Crew Change' })).toBeChecked();
+    expect(quantityButton()).toHaveAccessibleDescription(/Types d’opérations sélectionnés.*24\/24 Operation.*24\/24 Crew Change/);
+    const reloadedMenu = await openQuantityMenu();
+    expect(within(reloadedMenu).getByRole('menuitem', { name: /^24\/24 Operation/ })).toHaveAccessibleName(/sélectionné$/);
+    expect(within(reloadedMenu).getByRole('menuitem', { name: /^24\/24 Crew Change/ })).toHaveAccessibleName(/sélectionné$/);
+    await userEvent.click(within(reloadedMenu).getByRole('menuitem', { name: 'Terminer' }));
     expect(field('Nombre d’unités')).toHaveValue(5);
     view.unmount();
   });
@@ -168,7 +193,7 @@ describe('editable billing service quantities and client references', () => {
   it('copies catalogue defaults into a new service and keeps its overridden reference independent of the global reference', async () => {
     stored.services = [];
     await mount();
-    expect(field('Mode de quantité')).toHaveValue('manual');
+    expect(quantityButton()).toHaveAccessibleDescription('Manuel');
     expect(field('Nombre d’unités')).toHaveValue(0);
     expect(field('Référence client de la prestation')).toHaveValue('REF-CATALOGUE');
     fireEvent.change(field('Référence client de la prestation'), { target: { value: 'REF-LIGNE' } });
@@ -186,7 +211,7 @@ describe('editable billing service quantities and client references', () => {
     const view = await mount(false);
     const group = screen.getByRole('group', { name: 'Prestation 1 : Spread Antipollution' });
     expect(within(group).getByLabelText('Nombre d’unités')).toHaveValue(0);
-    expect(within(group).getByLabelText('Mode de quantité')).toBeDisabled();
+    expect(within(group).getByRole('button', { name: 'Calcul quantité' })).toBeDisabled();
     expect(within(group).getByLabelText('Référence client de la prestation')).toBeDisabled();
     expect(within(group).getByLabelText('Nombre d’unités')).toBeDisabled();
     expect(within(group).queryByRole('button', { name: 'Enregistrer' })).not.toBeInTheDocument();
@@ -195,6 +220,7 @@ describe('editable billing service quantities and client references', () => {
     view.unmount();
     await mount();
     const editable = screen.getByRole('group', { name: 'Prestation 1 : Spread Antipollution' });
+    expect(within(editable).getByRole('button', { name: 'Calcul quantité' })).toHaveAccessibleDescription('Manuel');
     expect(within(editable).getByLabelText('Nombre d’unités')).toBeEnabled();
     expect(within(editable).getByLabelText('Nombre d’unités')).not.toHaveAttribute('readonly');
     expect(within(editable).getByLabelText('Nombre d’unités')).toHaveValue(0);

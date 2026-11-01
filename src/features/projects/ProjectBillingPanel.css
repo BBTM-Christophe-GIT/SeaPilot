@@ -96,41 +96,29 @@
 .project-billing.is-workspace .project-billing-expense-table td { vertical-align: top; }
 .project-billing.is-workspace .project-billing-expense-documents button { max-width: 190px; }
 .project-billing.is-workspace .project-billing-expense-documents button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.project-billing.is-workspace .project-billing-service-list { overflow-x: auto; min-width: 0; }
-.project-billing.is-workspace .project-billing-service-grid {
+.project-billing .project-billing-service-list { overflow-x: auto; min-width: 0; max-width: 100%; }
+.project-billing .project-billing-service-list .project-billing-service-grid {
   display: grid;
-  grid-template-columns: 84px minmax(180px, 1fr) 135px 110px 140px 115px;
-  min-width: 850px;
+  grid-template-columns: calc(var(--sp-control-height) * 2 + var(--sp-space-1)) minmax(200px, 1.4fr) minmax(190px, 1fr) 120px 100px 150px 130px 115px;
+  min-width: 1180px;
   align-items: end;
-  gap: 8px;
-  padding: 12px;
+  gap: var(--sp-space-2);
+  padding: var(--sp-space-3);
   border-top: 1px solid var(--sp-border);
 }
-.project-billing.is-workspace .project-billing-service-grid label { font-size: 11px; }
-.project-billing.is-workspace .project-billing-service-grid .project-billing-service-actions { padding: 0; }
-.project-billing.is-workspace .project-billing-service-grid .project-billing-service-row-actions { align-self: end; padding-bottom: 0; }
-.project-billing .project-billing-service-settings {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-items: start;
-  gap: var(--sp-space-3);
-  min-width: 0;
+.project-billing .project-billing-service-list .project-billing-service-grid.is-readonly {
+  grid-template-columns: minmax(200px, 1.4fr) minmax(190px, 1fr) 120px 100px 150px 130px;
+  min-width: 960px;
 }
-.project-billing .project-billing-service-settings > label { display: grid; gap: var(--sp-space-1); }
-.project-billing .project-billing-service-settings input { width: 100%; min-width: 0; }
-.project-billing.is-workspace .project-billing-service-grid :is(input:not([type='checkbox']), select, button) {
+.project-billing .project-billing-service-list .project-billing-service-grid > label { display: grid; min-width: 0; gap: var(--sp-space-1); white-space: nowrap; font-size: 11px; }
+.project-billing .project-billing-service-list .project-billing-service-actions { grid-column: auto; padding: 0; }
+.project-billing .project-billing-service-list .project-billing-service-actions button { width: 100%; white-space: nowrap; }
+.project-billing .project-billing-service-list .project-billing-service-row-actions { display: flex; flex-wrap: nowrap; gap: var(--sp-space-1); align-self: end; }
+.app-shell .content-area .project-billing .project-billing-service-list .project-billing-service-grid :is(input, select, button) {
   min-height: var(--sp-control-height);
 }
 @media (pointer: coarse) {
-  .project-billing.is-workspace .project-billing-service-grid :is(input:not([type='checkbox']), select, button) { min-height: 44px; }
-}
-@media (max-width: 720px) {
-  .project-billing.is-workspace .project-billing-service-grid {
-    min-width: 0;
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .project-billing .project-billing-service-settings { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .content-area .project-billing .project-billing-service-list .project-billing-service-grid :is(input, select, button) { min-height: 44px; }
 }
 .project-billing.is-workspace .project-billing-export { background: var(--sp-surface-subtle); }
 .project-billing.is-workspace .project-billing-export > header { background: var(--sp-primary-soft); }
