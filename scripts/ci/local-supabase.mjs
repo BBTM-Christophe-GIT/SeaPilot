@@ -186,7 +186,7 @@ function start() {
   writeFileSync(path.join(runtime, 'supabase', 'config.toml'), localConfig)
   const source = path.join(repository, 'supabase', 'migrations')
   const names = readdirSync(source).filter((name) => /^\d+_.+\.sql$/.test(name)).sort()
-  const referenceMigration = '20260811121021_ci_reference_data.sql'
+  const referenceMigration = '20260909070843_ci_reference_data.sql'
   const stale = readdirSync(migrations).filter((name) => !names.includes(name) && name !== referenceMigration)
   if (stale.length) fail('The CI migration snapshot has stale files. Remove only .ci/supabase-local before restarting.')
   // Historical migrations patch stored function definitions using exact LF
