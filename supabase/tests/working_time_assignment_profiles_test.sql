@@ -23,6 +23,7 @@ select set_config('test.coverage_marin',(select id::text from public.people wher
 select set_config('test.coverage_captain',(select id::text from public.people where sailor_number='COVERAGE-C'),true);
 set local session authorization authenticator;
 set local role authenticated;
+select is(session_user::text,'authenticator','coverage assertions run under the real API session identity');
 set local statement_timeout='8s';
 select set_config('request.jwt.claim.sub','91600000-0000-4000-8000-000000000001',true);
 create temp table coverage_actor_response as select public.working_time_assignment_analysis(current_setting('test.coverage_marin')::bigint,'2026-10-01','2026-10-31','UTC',null,null,'[]','{}') result;

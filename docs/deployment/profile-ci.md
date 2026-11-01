@@ -36,9 +36,12 @@ fichier `.env` du développeur ni configuration de production n'est copié.
 ## Vérifications exécutées
 
 1. Démarrage d'une base vide et application de toutes les migrations du dépôt.
-2. Suites pgTAP de permissions : Projets, DPR, Temps de Travail (périmètre de
-   l'acteur et affectation du capitaine compris), capitaine temporaire, demandes
-   d'achat, traitement du plan d'action et publication QSMS.
+2. Treize suites pgTAP de permissions : Projets, DPR, Temps de Travail (signature,
+   soumission et validation quotidiennes, périmètre de l'acteur et affectation du
+   capitaine), capitaine temporaire, demandes d'achat, traitement du plan
+   d'action et publication QSMS. Les anciens endpoints mensuels doivent rester
+   révoqués ; le flux courant est couvert par `working_time_daily_approval` et
+   `working_time_signed_entry_flow`.
 3. Tests SQL avec assertions pour la fenêtre de lecture des affectations, le
    périmètre du tableau de bord DPR et les dépôts de documents RH du capitaine.
    Ces fichiers ne produisent pas de TAP et sont exécutés séparément, avec les
@@ -54,6 +57,17 @@ créent leurs propres utilisateurs et claims authentifiés dans des transactions
 annulées après chaque suite. Les tests navigateur n'utilisent ni la simulation
 administrateur des profils, ni les fixtures visuelles Vercel Preview, ni une API
 Supabase simulée. Ils ne remplacent pas les assertions RPC/RLS.
+
+Les suites qui reproduisent l'identité de connexion PostgREST utilisent le compte
+administrateur du conteneur CI pour préparer `SET SESSION AUTHORIZATION`, puis
+basculent vers `authenticator` et `authenticated` avant les contrôles. Aucun
+privilège supplémentaire n'est accordé au rôle `postgres`. Les autres suites
+utilisent la connexion locale habituelle. Les fichiers SQL avec plusieurs
+instructions passent par `psql` avec arrêt sur erreur dans ce même conteneur.
+La fixture Storage de fenêtre d'affectation accorde, dans sa transaction annulée,
+le prérequis de lecture d'une table consultée par une policy d'un autre bucket,
+après avoir vérifié que sa RLS est active. Cette préparation ne modifie aucun
+grant de production et ne constitue pas une vérification de ces grants distants.
 
 Pour les DPR, le Marin pur ne voit pas le navire sans affectation ; le Capitaine
 voit également les DPR actifs des autres navires de sa société, conformément

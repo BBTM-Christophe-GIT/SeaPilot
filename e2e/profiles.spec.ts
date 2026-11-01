@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const profiles = [
   { role: 'marin', label: 'Marin', name: 'CI MARIN' },
@@ -16,7 +16,11 @@ async function signIn(page: Page, profile: Profile, destination: string) {
   await expect(page).toHaveTitle(/SeaPilot/i);
   await page.getByLabel('Email', { exact: true }).fill(`${profile.role}@seapilot-ci.example.invalid`);
   await page.getByLabel('Mot de passe', { exact: true }).fill('SeaPilot-CI-only-2026!');
+  const authentication = page.waitForResponse((response) => new URL(response.url()).pathname === '/auth/v1/token'
+    && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Se connecter', exact: true }).click();
+  const response = await authentication;
+  expect(response.ok(), response.ok() ? 'Local Auth login' : await response.text()).toBe(true);
   await expect(page).toHaveURL(new RegExp(`${destination}$`));
   await expect(page.getByRole('button', { name: `${profile.name} ${profile.label}`, exact: true })).toBeVisible();
   await expect(page.getByText('Préversion · données de démonstration', { exact: true })).toHaveCount(0);
@@ -28,6 +32,13 @@ async function openNavigation(page: Page) {
   const navigation = page.getByRole('navigation', { name: 'Navigation principale', exact: true });
   await expect(navigation).toBeVisible();
   return navigation;
+}
+
+async function openDailyDprStep(dialog: Locator) {
+  // On mobile the existing UI displays numbered steps and hides their captions.
+  await dialog.getByRole('navigation', { name: 'Étapes du DPR', exact: true })
+    .getByRole('button', { name: /^2(?:\s|$)/ }).click();
+  await expect(dialog.getByRole('heading', { name: 'Informations Journalière', exact: true })).toBeVisible();
 }
 
 const browserErrors = new WeakMap<Page, string[]>();
@@ -79,7 +90,7 @@ for (const profile of profiles) {
       await expect(page.locator('vite-error-overlay')).toHaveCount(0);
     });
 
-    test('DPR : périmètre réel du profil et brouillon conservé après rechargement', async ({ page }) => {
+    test('DPR : périmètre réel du profil et brouillon conservé après rechargement', async ({ page, isMobile }) => {
       await signIn(page, profile, '/modules/dpr');
       await expect(page.getByText('CI VISIBLE REPORT', { exact: true })).toBeVisible();
       // Current RPC/RLS rules grant Capitaine the company's DPR history;
@@ -90,12 +101,13 @@ for (const profile of profiles) {
       await page.getByRole('button', { name: 'Saisir un DPR', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Saisie Daily Progress Report', exact: true });
       await expect(dialog).toBeVisible();
-      await expect(dialog.getByLabel('NAVIRE', { exact: true })).toHaveValue(/\d+/);
-      await expect(dialog.getByLabel('NAVIRE', { exact: true }).locator('option:checked')).toHaveText('CI VESSEL ASSIGNED');
-      await dialog.getByLabel('PROJET', { exact: true }).selectOption({ label: 'Navire à quai' });
-      await dialog.getByRole('button', { name: /Informations Journalière/ }).click();
+      const vessel = dialog.getByRole('combobox', { name: 'NAVIRE', exact: true });
+      await expect(vessel).toHaveValue(/\d+/);
+      await expect(vessel.locator('option:checked')).toHaveText('CI VESSEL ASSIGNED');
+      await dialog.getByRole('combobox', { name: 'PROJET', exact: true }).selectOption({ label: 'Navire à quai' });
+      await openDailyDprStep(dialog);
       const description = `CI ${profile.role} ${test.info().project.name} ${Date.now()}`;
-      await dialog.getByLabel('DESCRIPTION DE LA JOURNÉE', { exact: true }).fill(description);
+      await dialog.getByRole('textbox', { name: 'DESCRIPTION DE LA JOURNÉE', exact: true }).fill(description);
       const saved = page.waitForResponse((response) => response.url().endsWith('/rest/v1/rpc/dpr_save_payload') && response.request().method() === 'POST');
       await dialog.getByRole('button', { name: 'Enregistrer le brouillon', exact: true }).click();
       const response = await saved;
@@ -106,13 +118,26 @@ for (const profile of profiles) {
       await expect(dialog.getByRole('status')).toHaveText('Brouillon enregistré.');
       await dialog.getByRole('button', { name: 'Fermer', exact: true }).click();
 
+      const refreshedReports = page.waitForResponse((reportResponse) => {
+        const url = new URL(reportResponse.url());
+        return url.pathname === '/rest/v1/dpr_reports' && reportResponse.request().method() === 'GET'
+          && Boolean(url.searchParams.get('select')?.includes('description'));
+      });
       await page.reload();
+      const refreshed = await refreshedReports;
+      expect(refreshed.ok()).toBe(true);
+      const reports = await refreshed.json() as Array<{ id: number; description: string; issuer_name_snapshot: string }>;
+      expect(reports.find((item) => Number(item.id) === savedId)).toMatchObject({ description, issuer_name_snapshot: profile.name });
       const savedReport = page.locator('.dpr-row').filter({ has: page.getByText(`Brouillon #${savedId}`, { exact: true }) });
       await expect(savedReport).toBeVisible();
       await expect(savedReport).toContainText(profile.name);
-      await savedReport.getByRole('button', { name: 'Modifier', exact: true }).click();
-      await dialog.getByRole('button', { name: /Informations Journalière/ }).click();
-      await expect(dialog.getByLabel('DESCRIPTION DE LA JOURNÉE', { exact: true })).toHaveValue(description);
+      // Existing mobile rows hide the edit action. Verify their real RLS-backed
+      // reload response above; desktop additionally reopens the persisted form.
+      if (!isMobile) {
+        await savedReport.getByRole('button', { name: 'Modifier', exact: true }).click();
+        await openDailyDprStep(dialog);
+        await expect(dialog.getByRole('textbox', { name: 'DESCRIPTION DE LA JOURNÉE', exact: true })).toHaveValue(description);
+      }
       await expect(page.locator('vite-error-overlay')).toHaveCount(0);
     });
   });

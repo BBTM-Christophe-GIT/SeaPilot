@@ -45,7 +45,8 @@ additional_redirect_urls = ["${appUrl}/**"]
 enable_signup = false
 
 [auth.email]
-enable_signup = false
+# Keep password/email login enabled; the global auth setting forbids signups.
+enable_signup = true
 enable_confirmations = false
 
 [storage]
@@ -73,7 +74,8 @@ enabled = false
 const pgTapTests = [
   'projects_phase6_role_matrix_test.sql',
   'dpr_role_matrix_test.sql',
-  'working_time_workflow_permissions_test.sql',
+  'working_time_signed_entry_flow_test.sql',
+  'working_time_daily_approval_test.sql',
   'working_time_actor_scope_test.sql',
   'working_time_assignment_profiles_test.sql',
   'working_time_captain_assignment_role_test.sql',
@@ -84,6 +86,12 @@ const pgTapTests = [
   'action_plan_captain_treatment_test.sql',
   'qsms_procedure_publishing_test.sql',
 ]
+
+const apiSessionTests = new Set([
+  'working_time_actor_scope_test.sql',
+  'working_time_assignment_profiles_test.sql',
+  'working_time_signed_entry_flow_test.sql',
+])
 
 // These integration tests use PL/pgSQL ASSERT rather than TAP output. Running
 // the whole mixed supabase/tests directory with pg_prove would reject them.
@@ -117,13 +125,14 @@ function diagnostic(output) {
   return `${context.slice(0, 7800)}\n`
 }
 
-function run(command, args, { capture = false, timeout = 20 * 60_000, log } = {}) {
+function run(command, args, { capture = false, timeout = 20 * 60_000, log, input } = {}) {
   const logFile = log ? openSync(safePath(log), 'w', 0o600) : undefined
   const options = {
     cwd: repository,
     env: cleanEnvironment(),
     encoding: 'utf8',
-    stdio: logFile === undefined ? (capture ? 'pipe' : 'inherit') : ['ignore', 'pipe', logFile],
+    stdio: logFile === undefined ? (capture ? 'pipe' : (input === undefined ? 'inherit' : ['pipe', 'inherit', 'inherit'])) : ['ignore', 'pipe', logFile],
+    input,
     maxBuffer: 8 * 1024 * 1024,
     timeout,
     windowsHide: true,
@@ -140,8 +149,8 @@ function run(command, args, { capture = false, timeout = 20 * 60_000, log } = {}
   if (logFile !== undefined) closeSync(logFile)
   if (result.error) fail(`${command} failed: ${result.error.message}${log ? `; details: ${log}` : ''}`)
   if (result.status !== 0) {
-    if (log || (capture && result.stderr)) {
-      process.stderr.write(diagnostic(log ? readFileSync(log, 'utf8') : result.stderr))
+    if (log || (capture && (result.stderr || result.stdout))) {
+      process.stderr.write(diagnostic(log ? readFileSync(log, 'utf8') : [result.stderr, result.stdout].filter(Boolean).join('\n')))
     }
     fail(`${command} ${args.slice(0, 3).join(' ')} exited with ${result.status}`)
   }
@@ -235,9 +244,13 @@ function sql(file) {
   const source = safePath(file)
   if (!source.endsWith('.sql') || !existsSync(source)) fail('Expected an existing SQL file inside this checkout.')
   // ASSERT must remain active even if a local PostgreSQL setting disabled it.
-  const wrapper = path.join(runtime, 'assertions.sql')
-  writeFileSync(wrapper, `set plpgsql.check_asserts = on;\n${readFileSync(source, 'utf8')}`)
-  cli(['db', 'query', '--local', '--file', wrapper])
+  // CLI 2.109.1's db query uses a prepared statement and rejects multi-statement
+  // files. psql streams the complete transaction to this exact local container.
+  run('docker', ['exec', '-i', `supabase_db_${projectId}`, 'psql', '--username', 'postgres', '--dbname', 'postgres', '--no-psqlrc', '--quiet', '--set', 'ON_ERROR_STOP=1'], {
+    input: `set plpgsql.check_asserts = on;\n${readFileSync(source, 'utf8')}`,
+    capture: true,
+  })
+  console.log(`SQL completed in ${projectId}: ${path.relative(repository, source)}`)
 }
 
 function permissions() {
@@ -253,7 +266,24 @@ function permissions() {
     return safePath(target)
   })
   cli(['db', 'query', '--local', 'create extension if not exists pgtap with schema extensions;'])
-  cli(['test', 'db', '--local', ...tests])
+  cli(['test', 'db', '--local', ...tests.filter((file) => !apiSessionTests.has(path.basename(file)))])
+  // These suites must change SESSION AUTHORIZATION to authenticator before
+  // exercising authenticated actors. The CLI's postgres login cannot do that.
+  // Only fixture setup uses the local superuser; tests assert the API identity.
+  const apiResults = run('docker', [
+    'run', '--rm', '--network', `supabase_network_${projectId}`,
+    '--mount', `type=bind,source=${safePath(testDirectory)},target=/tests,readonly`,
+    '--env', 'PGPASSWORD=postgres',
+    'public.ecr.aws/supabase/pg_prove:3.36', 'pg_prove', '--norc', '--nocolor',
+    '--host', `supabase_db_${projectId}`, '--port', '5432',
+    '--username', 'supabase_admin', '--dbname', 'postgres',
+    ...[...apiSessionTests].map((file) => `/tests/${file}`),
+  ], { capture: true })
+  process.stdout.write(apiResults)
+  const apiSummary = /Files=(\d+),\s*Tests=(\d+)/.exec(apiResults)
+  if (!apiSummary || Number(apiSummary[1]) !== apiSessionTests.size || Number(apiSummary[2]) === 0 || !/Result:\s+PASS\b/.test(apiResults)) {
+    fail('The real API-session suites did not report a complete, nonempty passing TAP run.')
+  }
   for (const file of assertionTests) {
     console.log(`Running SQL assertions: ${file}`)
     sql(path.join('supabase', 'tests', file))

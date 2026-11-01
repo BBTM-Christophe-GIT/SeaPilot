@@ -2,6 +2,15 @@
 -- No published release is inserted: ordinary operational readers use confirmed
 -- live assignments. All setup, records, Storage metadata and mutations roll back.
 begin;
+-- Unrelated permissive Storage policies reference billing metadata. PostgreSQL
+-- checks that table privilege while planning storage.objects queries even for
+-- another bucket. Supply only this fixture prerequisite inside the rollback;
+-- this suite validates object RLS scope, not production table-grant setup.
+do $$ begin
+  assert (select relrowsecurity from pg_class where oid='public.project_billing_documents'::regclass),
+    'Billing metadata RLS must remain enabled for the Storage fixture';
+end $$;
+grant select on public.project_billing_documents to authenticated;
 create temporary table window_actors(label text primary key, actor uuid, company_id bigint, person_id bigint);
 create temporary table window_ships(label text primary key, id bigint, company_id bigint);
 create temporary table window_records(label text primary key, lifting_id bigint, inspection_id bigint, lsa_id bigint, certificate_id bigint, dpr_id bigint);
