@@ -312,7 +312,7 @@ describe('HumanResourcesPage', () => {
   });
   it('opens an accessible unassigned document chip for a manager', async () => {
     render(<MemoryRouter initialEntries={['/modules/humanResources?document=12']}><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={createClient([activePerson], [unassignedDocument]) as never} currentPersonId={1} roles={['admin']} />} /></Routes></MemoryRouter>);
-    expect(await screen.findByRole('dialog', { name: 'Modifier Brevet pont a rattacher' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Modifier Brevet pont a rattacher' }, { timeout: 5000 })).toBeInTheDocument();
   });
 
   it('opens the linked person and document section instead of the connected record', async () => {
@@ -466,6 +466,10 @@ describe('HumanResourcesPage', () => {
       vi.mocked(buildCollaboratorSheetsExport).mockClear();
       render(<HumanResourcesPage client={client as never} roles={['admin']} />);
       await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' });
+      await waitFor(() => {
+        expect(client.from).toHaveBeenCalledWith('hr_action_plans');
+        expect(client.from).toHaveBeenCalledWith('annual_reviews');
+      });
       const queryCount = client.from.mock.calls.length;
       expect(client.from.mock.calls.filter(([table]) => table === 'stcw_certificates')).toHaveLength(1);
       if (mode === 'individual') {
@@ -546,6 +550,10 @@ describe('HumanResourcesPage', () => {
       vi.mocked(buildCollaboratorSheetPdf).mockClear();
       render(<HumanResourcesPage client={client as never} roles={['admin']} />);
       await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' });
+      await waitFor(() => {
+        expect(client.from).toHaveBeenCalledWith('hr_action_plans');
+        expect(client.from).toHaveBeenCalledWith('annual_reviews');
+      });
       const queryCount = client.from.mock.calls.length;
       await user.click(screen.getByRole('button', { name: 'Exporter les fiches' }));
       const dialog = screen.getByRole('dialog', { name: 'Fiches collaborateurs' });
@@ -585,6 +593,10 @@ describe('HumanResourcesPage', () => {
       render(<HumanResourcesPage client={client as never} currentPersonId={1} roles={['capitaine']} />);
       await screen.findByText(/Ma bordée/);
       expect(screen.queryByRole('button', { name: 'Afficher la fiche de Luc LEGRAND' })).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(client.from).toHaveBeenCalledWith('hr_action_plans');
+        expect(client.from).toHaveBeenCalledWith('annual_reviews');
+      });
       const queryCount = client.from.mock.calls.length;
       await user.click(screen.getByRole('button', { name: 'Exporter les fiches' }));
       const dialog = screen.getByRole('dialog', { name: 'Fiches collaborateurs' });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Download, Layers3, RefreshCw, Ship, ShieldCheck } from 'lucide-react';
 import type { AppShellOutletContext } from '../shell/AppShell';
@@ -12,6 +12,10 @@ import './emergencyExercises.css';
 const messageOf = (error: unknown) => error instanceof Error ? error.message : 'Impossible de charger le registre des exercices.';
 export function EmergencyExercisesPage({ client }: { client?: SupabaseClient }) {
   const context = useOutletContext<AppShellOutletContext | undefined>();
+  const [searchParams] = useSearchParams();
+  const requestedVessel = Number(searchParams.get('vessel'));
+  const requestedPerson = Number(searchParams.get('person'));
+  const requestedYear = Number(searchParams.get('year'));
   const [preview] = useState(createExercisePreviewClient);
   const db = client || (context?.previewMode ? preview : context?.client) || supabase;
   const [dataOwner, setDataOwner] = useState(() => ({ client: db, userId: context?.userId }));
@@ -19,7 +23,7 @@ export function EmergencyExercisesPage({ client }: { client?: SupabaseClient }) 
   const [roster, setRoster] = useState<ExerciseRoster | null>(null);
   const [personId, setPersonId] = useState<number | null>(null);
   const [vesselId, setVesselId] = useState<number | null>(null);
-  const [year, setYear] = useState(new Date().getFullYear());
+  const [year, setYear] = useState(Number.isInteger(requestedYear) && requestedYear >= 2000 && requestedYear <= new Date().getFullYear() ? requestedYear : new Date().getFullYear());
   const [population, setPopulation] = useState('current');
   const [revision, setRevision] = useState(0);
   const [report, setReport] = useState<ExerciseReport | null>(null);
@@ -36,10 +40,15 @@ export function EmergencyExercisesPage({ client }: { client?: SupabaseClient }) 
       if (!active) return;
       setDataOwner({ client: db, userId: context?.userId });
       setRoster(next);
+      if (Number.isInteger(requestedYear) && requestedYear >= 2000 && requestedYear <= new Date().getFullYear()) setYear(requestedYear);
+      const linkedVessel = next.vessels.find((vessel) => vessel.id === requestedVessel);
+      if (linkedVessel) setVesselId(linkedVessel.id);
+      const linkedPerson = next.people.find((person) => person.id === requestedPerson);
       if (next.scope === 'self') setPersonId(next.people[0]?.id ?? null);
+      else if (linkedPerson) setPersonId(linkedPerson.id);
     }).catch((e) => { if (active) { setError(messageOf(e)); setLoading(false); } });
     return () => { active = false; };
-  }, [db, revision, context?.userId]);
+  }, [db, revision, context?.userId, requestedVessel, requestedPerson, requestedYear]);
   useEffect(() => {
     if (!roster) return;
     let active = true;

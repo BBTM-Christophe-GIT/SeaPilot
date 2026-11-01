@@ -11,6 +11,7 @@ export function HomePage() {
       firstName={currentPerson?.firstName.trim() || ''}
       personId={currentPerson?.id ?? null}
       roles={roles}
+      moduleKeys={visibleModules?.map((module) => module.key)}
     >
       {(!visibleModules || visibleModules.some((module) => module.key === 'qhsePolicy')) ? <QhsePolicyHomeCard client={client} /> : null}
     </ManagerHomeDashboard>
