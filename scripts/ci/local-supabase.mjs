@@ -108,6 +108,15 @@ function cleanEnvironment() {
   return env
 }
 
+function diagnostic(output) {
+  const lines = output.replaceAll('\r', '').split('\n').map((line) => line.trimEnd())
+  const shorten = (line) => line.length > 300 ? `${line.slice(0, 297)}...` : line
+  const lastError = lines.findLast((line) => /^\s*(?:ERROR:|Error:|error:)/.test(line))
+  const lastMigration = lines.findLast((line) => /Applying migration \d+/.test(line))
+  const context = [lastError, lastMigration, ...lines.slice(-60)].filter(Boolean).map(shorten).join('\n')
+  return `${context.slice(0, 7800)}\n`
+}
+
 function run(command, args, { capture = false, timeout = 20 * 60_000, log } = {}) {
   const logFile = log ? openSync(safePath(log), 'w', 0o600) : undefined
   const options = {
@@ -131,8 +140,9 @@ function run(command, args, { capture = false, timeout = 20 * 60_000, log } = {}
   if (logFile !== undefined) closeSync(logFile)
   if (result.error) fail(`${command} failed: ${result.error.message}${log ? `; details: ${log}` : ''}`)
   if (result.status !== 0) {
-    if (capture && result.stderr) process.stderr.write(result.stderr)
-    if (log) process.stderr.write(readFileSync(log, 'utf8').split('\n').slice(-60).join('\n'))
+    if (log || (capture && result.stderr)) {
+      process.stderr.write(diagnostic(log ? readFileSync(log, 'utf8') : result.stderr))
+    }
     fail(`${command} ${args.slice(0, 3).join(' ')} exited with ${result.status}`)
   }
   return result.stdout ?? ''
@@ -176,10 +186,16 @@ function start() {
   writeFileSync(path.join(runtime, 'supabase', 'config.toml'), localConfig)
   const source = path.join(repository, 'supabase', 'migrations')
   const names = readdirSync(source).filter((name) => /^\d+_.+\.sql$/.test(name)).sort()
-  const stale = readdirSync(migrations).filter((name) => !names.includes(name))
+  const referenceMigration = '20260811121021_ci_reference_data.sql'
+  const stale = readdirSync(migrations).filter((name) => !names.includes(name) && name !== referenceMigration)
   if (stale.length) fail('The CI migration snapshot has stale files. Remove only .ci/supabase-local before restarting.')
-  for (const name of names) copyFileSync(path.join(source, name), path.join(migrations, name))
-  console.log(`Starting ${projectId} with ${names.length} migrations at ${apiUrl}.`)
+  // Historical migrations patch stored function definitions using exact LF
+  // strings. Normalize the disposable copies so Windows and Linux replay alike.
+  for (const name of names) {
+    writeFileSync(path.join(migrations, name), readFileSync(path.join(source, name), 'utf8').replaceAll('\r\n', '\n'))
+  }
+  copyFileSync(path.join(repository, 'scripts', 'ci', 'reference-data.sql'), path.join(migrations, referenceMigration))
+  console.log(`Starting ${projectId} with ${names.length} application migrations and CI-only reference placeholders at ${apiUrl}.`)
   // CLI status output includes generated local service keys. Keep those out of
   // the console; env exposes only the public browser configuration separately.
   const log = path.join(runtime, 'start.log')

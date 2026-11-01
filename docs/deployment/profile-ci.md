@@ -18,6 +18,12 @@ PostgreSQL `55322`, shadow database `55320`. Le projet local habituel `SeaPilot`
 et ses ports `543xx` ne sont pas utilisés. Un bac à sable déjà démarré provoque
 un échec explicite plutôt qu'une réutilisation de données anciennes.
 
+Les imports historiques supposent que certaines références existent déjà.
+`scripts/ci/reference-data.sql` fournit uniquement les références synthétiques
+nécessaires à leur exécution sur une base vide. Le runner l'insère comme
+migration dans le dossier temporaire avant ces imports ; ce fichier n'est pas
+une migration de production et aucune migration versionnée n'est ignorée.
+
 Le runner refuse les arguments de connexion distants et les configurations
 liées à un projet cloud. `ci:db:env` exporte uniquement les paramètres publics
 locaux vers `.ci/supabase.env` et, dans GitHub Actions, vers `GITHUB_ENV`. Aucun

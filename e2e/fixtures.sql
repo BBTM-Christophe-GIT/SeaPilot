@@ -36,8 +36,16 @@ join public.companies company on company.code = case
   when actor.id = 'c1b00000-0000-4000-8000-000000000004' then 'seapilot-browser-other'
   else 'seapilot-browser-ci' end
 where actor.id::text like 'c1b00000-0000-4000-8000-%'
-on conflict (id) do update set active_company_id = excluded.active_company_id;
+on conflict (id) do update set email = excluded.email, display_name = excluded.display_name,
+  active_company_id = excluded.active_company_id;
 
+-- Keep reruns deterministic even if a future Auth trigger pre-creates a profile.
+insert into public.company_memberships (company_id, user_id, active)
+select active_company_id, id, true
+from public.profiles where id::text like 'c1b00000-0000-4000-8000-%'
+on conflict (company_id, user_id) do update set active = true;
+
+delete from public.user_roles where user_id::text like 'c1b00000-0000-4000-8000-%';
 insert into public.user_roles (user_id, company_id, role_key)
 select id, active_company_id, case when id = 'c1b00000-0000-4000-8000-000000000002' then 'capitaine' else 'marin' end
 from public.profiles where id::text like 'c1b00000-0000-4000-8000-%'
