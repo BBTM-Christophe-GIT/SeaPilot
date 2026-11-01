@@ -5,12 +5,14 @@
 
 -- 20260820070225 already imports the fleet reference, including SUROIT, GOURY
 -- and LANDEMER. Do not insert duplicates: 20260922093349 checks there is exactly
--- one active GOURY and LANDEMER. Only the legacy acronym is missing on a fresh
--- database and is required by the strict 20260909070844 lifting import.
+-- one active GOURY and LANDEMER. The legacy acronyms are missing on a fresh
+-- database: SUR is required by 20260909070844; GRY/SUR/HIR are required by the
+-- three explicit vessel sources in the 20261020172625 pharmacy import.
 update public.vessels vessel
-set acronym = 'SUR'
-from public.companies company
-where company.id = vessel.company_id and company.code = 'bbtm' and vessel.name = 'SUROIT';
+set acronym = fixture.acronym
+from public.companies company,
+  (values ('SUROIT', 'SUR'), ('GOURY', 'GRY'), ('HIRONDELLE DE LA MANCHE', 'HIR')) fixture(name, acronym)
+where company.id = vessel.company_id and company.code = 'bbtm' and vessel.name = fixture.name;
 
 -- These exact names are also hard prerequisites, not optional UPDATE targets:
 --   20261001140235 raises unless exactly these two BBTM people exist.

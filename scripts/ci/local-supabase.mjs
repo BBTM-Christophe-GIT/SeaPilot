@@ -192,7 +192,18 @@ function start() {
   // Historical migrations patch stored function definitions using exact LF
   // strings. Normalize the disposable copies so Windows and Linux replay alike.
   for (const name of names) {
-    writeFileSync(path.join(migrations, name), readFileSync(path.join(source, name), 'utf8').replaceAll('\r\n', '\n'))
+    let sql = readFileSync(path.join(source, name), 'utf8').replaceAll('\r\n', '\n')
+    // The CLI replays statements independently, whereas these legacy files
+    // explicitly rely on apply_migration's transaction for LOCK / SET LOCAL.
+    const needsTransaction = /^\s*(?:lock\s+table\b|set\s+local\s+)/im.test(sql)
+    const hasTransaction = /^\s*(?:begin|start\s+transaction)\s*;/im.test(sql)
+    if (needsTransaction && !hasTransaction) {
+      if (/^\s*(?:create\s+(?:unique\s+)?index\s+concurrently|vacuum|create\s+database|alter\s+system|alter\s+type\b.*\badd\s+value)\b/im.test(sql)) {
+        fail(`Review the transaction contract before replaying ${name} in CI.`)
+      }
+      sql = `begin;\n${sql}\ncommit;\n`
+    }
+    writeFileSync(path.join(migrations, name), sql)
   }
   copyFileSync(path.join(repository, 'scripts', 'ci', 'reference-data.sql'), path.join(migrations, referenceMigration))
   console.log(`Starting ${projectId} with ${names.length} application migrations and CI-only reference placeholders at ${apiUrl}.`)
@@ -200,7 +211,7 @@ function start() {
   // the console; env exposes only the public browser configuration separately.
   const log = path.join(runtime, 'start.log')
   console.log('Startup diagnostics: .ci/supabase-local/start.log')
-  cli(['start', '--exclude', 'edge-runtime,imgproxy,logflare,mailpit,postgres-meta,realtime,studio,supavisor,vector', '--debug'], { capture: true, log })
+  cli(['start', '--exclude', 'edge-runtime,imgproxy,logflare,mailpit,postgres-meta,realtime,studio,supavisor,vector'], { capture: true, log })
   console.log(`The isolated ${projectId} stack is ready.`)
 }
 

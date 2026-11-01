@@ -23,6 +23,10 @@ Les imports historiques supposent que certaines références existent déjà.
 nécessaires à leur exécution sur une base vide. Le runner l'insère comme
 migration dans le dossier temporaire avant ces imports ; ce fichier n'est pas
 une migration de production et aucune migration versionnée n'est ignorée.
+Les copies temporaires utilisent des fins de ligne LF pour préserver les patchs
+historiques de définitions de fonctions. Les fichiers qui exigent `LOCK TABLE`
+ou `SET LOCAL` sont rejoués dans une transaction s'ils n'en déclarent pas déjà
+une, conformément à leur contrat d'application initial.
 
 Le runner refuse les arguments de connexion distants et les configurations
 liées à un projet cloud. `ci:db:env` exporte uniquement les paramètres publics
