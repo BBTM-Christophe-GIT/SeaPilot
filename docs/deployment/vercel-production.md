@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.80.28`, build `2026-11-01.002`, corrige le double cadre de recherche
+dans les catalogues Projets, notamment la Liste des prestations ouverte depuis
+Facturation. Le cadre et le focus appartiennent au conteneur ; l'input interne
+ne reprend plus les bordures et espacements des champs de facturation. La loupe,
+la recherche, l'effacement et les hauteurs 40/44 px sont conservés. Le style partagé
+couvre également les catalogues Clients et Remorqués. Aucune migration requise.
+
 Version `3.80.27`, build `2026-11-01.001`, compacte la fiche de droite du
 catalogue des prestations et regroupe chaque prestation BBTM sur une seule
 ligne dans Facturation, avec défilement horizontal local sur petit écran.
